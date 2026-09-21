@@ -250,6 +250,10 @@ textarea:focus {
   justify-content: center;
 }
 
+.panel-add.is-active {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
 .panel-add:hover {
   background: var(--panel-2);
   color: var(--text);

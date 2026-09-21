@@ -30,6 +30,11 @@ A Web/PWA client for a running [Herdr](https://herdr.dev) server.
 - The command menu searches workspaces, worktrees, files, tabs, panes, and
   agents, and opens typed file paths.
 - Desktop **Zen mode** hides app chrome so the terminal fills the window.
+- Toggle **all connections** in the workspaces panel to list every ready
+  connection's workspaces, each connection a group in a fixed order. Selecting a
+  workspace or agent on another connection switches to it; drag, pins, and
+  context menus stay with the connection you are on. A connection that stops
+  answering keeps its last list and shows the error beside it.
 
 Each browser keeps its own workspace and tab selection on endpoint connections;
 older (legacy) connections share navigation. Pane focus, layout, and terminal
@@ -42,11 +47,20 @@ Switch between the 12 most recently focused panes across tabs and workspaces.
 On macOS hold Ctrl and press Tab (Shift reverses); release the modifier or press
 Enter to switch, Esc to cancel. Press K to switch to search mode.
 
+With **all connections** on in the workspaces panel, other connections' panes
+follow yours, labelled with their connection: one per workspace here (the one
+most recently used there), every pane in search. Selecting one switches to that
+connection and focuses the pane. With the toggle off the switcher covers only
+the connection you are on.
+
 ### Pane Search
 
 `Alt+K` searches **every** live pane by workspace, tab, cwd, or agent
 name/status. All terms must match, in any order. Enter switches; `Alt+K` or Esc
 closes.
+
+With **all connections** on, search covers every pane of every connection, so
+typing a workspace, agent, or connection name finds it wherever it lives.
 
 ## Full Browser Terminal
 

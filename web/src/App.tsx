@@ -132,10 +132,12 @@ import {
 import {
   activePaneIdForSnapshot,
   type PaneJumpEntry,
+  paneJumpConnectionTarget,
   paneJumpEntries,
   paneJumpTargetId,
   paneSearchEntries,
 } from "./paneJump";
+import { useConnectionSessions } from "./components/useConnectionSessions";
 import {
   type Notice,
   noticeAutoDismissDelay,
@@ -713,11 +715,11 @@ function PaneJumpOverlay({
   const selectedItemRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searching = search !== null;
-  const selectedPaneId = entries[selectedIndex]?.paneId;
+  const selectedEntryKey = entries[selectedIndex]?.key;
 
   useEffect(() => {
     selectedItemRef.current?.scrollIntoView({ block: "nearest" });
-  }, [selectedIndex, selectedPaneId]);
+  }, [selectedIndex, selectedEntryKey]);
   useEffect(() => {
     if (searching) searchInputRef.current?.focus();
   }, [searching]);
@@ -750,8 +752,8 @@ function PaneJumpOverlay({
             aria-autocomplete="list"
             aria-controls={listId}
             aria-activedescendant={
-              selectedPaneId
-                ? `${listId}-${encodeURIComponent(selectedPaneId)}`
+              selectedEntryKey
+                ? `${listId}-${encodeURIComponent(selectedEntryKey)}`
                 : undefined
             }
             onChange={(event) => onSearchChange(event.target.value)}
@@ -771,8 +773,8 @@ function PaneJumpOverlay({
         >
           {entries.map((entry, index) => (
             <button
-              key={entry.paneId}
-              id={`${listId}-${encodeURIComponent(entry.paneId)}`}
+              key={entry.key}
+              id={`${listId}-${encodeURIComponent(entry.key)}`}
               ref={index === selectedIndex ? selectedItemRef : undefined}
               type="button"
               tabIndex={-1}
@@ -1542,6 +1544,7 @@ export default function App() {
     },
     [terminalComposerScopeKey],
   );
+  const connectionSessions = useConnectionSessions();
   const paneJumpOptions = useMemo(() => {
     const snapshot = {
       layout: s.layout,
@@ -1551,10 +1554,16 @@ export default function App() {
       workspaces: s.workspaces,
     };
     return paneJumpSearch === null
-      ? paneJumpEntries(snapshot, activePaneId)
-      : paneSearchEntries(snapshot, paneJumpSearch, activePaneId);
+      ? paneJumpEntries(snapshot, activePaneId, connectionSessions)
+      : paneSearchEntries(
+          snapshot,
+          paneJumpSearch,
+          activePaneId,
+          connectionSessions,
+        );
   }, [
     activePaneId,
+    connectionSessions,
     paneJumpSearch,
     s.layout,
     s.panes,
@@ -2724,10 +2733,20 @@ export default function App() {
   const commitPaneJump = useCallback(
     (index = paneJumpIndexRef.current) => {
       const targetPaneId = paneJumpTargetId(paneJumpOptions, index);
-      closePaneJump(!targetPaneId);
-      if (!targetPaneId) return;
-      if (!inspectorStateRef.current?.open) setMobileView("session");
-      void store.focusPane(targetPaneId);
+      const connectionTarget = paneJumpConnectionTarget(paneJumpOptions, index);
+      closePaneJump(!targetPaneId && !connectionTarget);
+      if (targetPaneId) {
+        if (!inspectorStateRef.current?.open) setMobileView("session");
+        void store.focusPane(targetPaneId);
+        return;
+      }
+      if (connectionTarget) {
+        if (!inspectorStateRef.current?.open) setMobileView("session");
+        void store.jumpToConnectionPane(
+          connectionTarget.connectionId,
+          connectionTarget.paneId,
+        );
+      }
     },
     [closePaneJump, paneJumpOptions],
   );
@@ -2746,7 +2765,7 @@ export default function App() {
   // Typed search drops the held modifier: releasing it must keep the list open
   // instead of committing the way the recent switcher does.
   const openPaneJumpSearch = useCallback(() => {
-    if (store.get().panes.length === 0) return;
+    if (paneJumpOptions.length === 0) return;
     paneJumpReturnFocusRef.current =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -2756,7 +2775,7 @@ export default function App() {
     setPaneJumpIndex(0);
     setPaneJumpSearch("");
     setPaneJumpOpen(true);
-  }, []);
+  }, [paneJumpOptions.length]);
   const changePaneJumpSearch = useCallback((value: string) => {
     paneJumpIndexRef.current = 0;
     setPaneJumpIndex(0);

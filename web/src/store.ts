@@ -64,6 +64,11 @@ import {
   SHORTCUT_SETTING_KEY,
 } from "./shortcutPreferences";
 import { isReconnectRetryableError } from "./reconnectRetry";
+import { readableConnections, topologyIsStale } from "./connectionSessions";
+import {
+  showAllConnections,
+  subscribeShowAllConnections,
+} from "./showAllConnections";
 import { publishLastStepCompletion } from "./lastStepCompletionStore";
 import {
   clearTerminalRelayViewports,
@@ -1566,6 +1571,146 @@ async function refreshBridgeStatus() {
   }
 }
 
+/**
+ * Keeps every other connection's topology (workspaces, tabs, panes, agents)
+ * in its own `sessionsByConnectionId` entry, the same shape the displayed
+ * connection keeps at the top level, so views can treat all connections
+ * alike. Only while the "show all connections" view is on: with it off,
+ * nothing reads another connection and nothing is fetched. Layout,
+ * selection, and terminals stay with the displayed connection; switching to
+ * another one restores its session and the regular refresh fills the rest.
+ */
+const topologyRefreshing = new Set<string>();
+const topologyQueued = new Set<string>();
+const topologyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function readingAllConnections() {
+  return (
+    showAllConnections() &&
+    !state.connectionPaused &&
+    state.status === "connected"
+  );
+}
+
+function readableConnection(connectionId: string) {
+  return readableConnections(state.connections, state.activeConnectionId).find(
+    (connection) => connection.id === connectionId,
+  );
+}
+
+async function refreshConnectionTopology(connectionId: string) {
+  if (!readingAllConnections()) return;
+  const connection = readableConnection(connectionId);
+  if (!connection) return;
+  if (topologyRefreshing.has(connectionId)) {
+    topologyQueued.add(connectionId);
+    return;
+  }
+  topologyRefreshing.add(connectionId);
+  const generation = connection.generation;
+  // Only publish into the runtime this read was issued against, and never
+  // over the displayed connection, whose top-level state is authoritative.
+  const stillReadable = () =>
+    readingAllConnections() &&
+    readableConnection(connectionId)?.generation === generation;
+  try {
+    let error: string | null = null;
+    let topology: Pick<
+      ServerSessionState,
+      "navigationMode" | "workspaces" | "tabs" | "panes"
+    > | null = null;
+    try {
+      const [wsRes, tabRes, paneRes, agentRes] = await Promise.all([
+        bridge.readConnection(connectionId, "workspace.list"),
+        bridge.readConnection(connectionId, "tab.list"),
+        bridge.readConnection(connectionId, "pane.list"),
+        // Older servers may omit agent metadata; topology still works.
+        bridge.readConnection(connectionId, "agent.list").catch(() => null),
+      ]);
+      topology = {
+        navigationMode:
+          wsRes?.navigation_mode === "browser-local"
+            ? "browser-local"
+            : "shared",
+        workspaces: wsRes?.workspaces ?? [],
+        tabs: tabRes?.tabs ?? [],
+        panes: withAgentActivity(paneRes?.panes ?? [], agentRes),
+      };
+    } catch (readError) {
+      error =
+        readError instanceof Error ? readError.message : String(readError);
+    }
+    if (!stillReadable()) return;
+    const previous = state.sessionsByConnectionId[connectionId];
+    const base =
+      previous && previous.serverRuntimeGeneration === generation
+        ? previous
+        : emptyServerSessionState(generation);
+    // A failed read keeps what the connection last reported: it is usually a
+    // transient reconnect, and blanking it would make a live connection look
+    // as if it had lost every workspace.
+    const next: ServerSessionState = topology
+      ? { ...base, ...topology, error: null, lastRefresh: Date.now() }
+      : { ...base, error };
+    if (
+      previous &&
+      jsonDeepEqual(
+        { ...previous, lastRefresh: 0 },
+        { ...next, lastRefresh: 0 },
+      ) &&
+      previous.lastRefresh > 0
+    ) {
+      return;
+    }
+    set({
+      sessionsByConnectionId: {
+        ...state.sessionsByConnectionId,
+        [connectionId]: next,
+      },
+    });
+  } finally {
+    topologyRefreshing.delete(connectionId);
+    if (topologyQueued.delete(connectionId)) {
+      void refreshConnectionTopology(connectionId);
+    }
+  }
+}
+
+/** Coalesces a burst of Herdr events on one connection into a single read. */
+function scheduleConnectionTopologyRefresh(connectionId: string) {
+  if (!readingAllConnections()) return;
+  const pending = topologyTimers.get(connectionId);
+  if (pending) clearTimeout(pending);
+  topologyTimers.set(
+    connectionId,
+    setTimeout(() => {
+      topologyTimers.delete(connectionId);
+      void refreshConnectionTopology(connectionId);
+    }, 150),
+  );
+}
+
+/**
+ * Reads other connections: all of them, or with `staleOnly` just those whose
+ * stored session does not describe their current runtime yet (never read, or
+ * invalidated by a reconnect).
+ */
+function refreshConnectionTopologies(staleOnly = false) {
+  if (!readingAllConnections()) return;
+  for (const connection of readableConnections(
+    state.connections,
+    state.activeConnectionId,
+  )) {
+    if (
+      staleOnly &&
+      !topologyIsStale(connection, state.sessionsByConnectionId[connection.id])
+    ) {
+      continue;
+    }
+    void refreshConnectionTopology(connection.id);
+  }
+}
+
 let metadataTimer: ReturnType<typeof setInterval> | null = null;
 let updateTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1585,6 +1730,9 @@ function startMetadataPolling() {
     if (state.status === "connected") {
       if (catalogReadyForConnection) scheduleRefresh();
       void refreshBridgeStatus();
+      // Other connections follow their Herdr events; this is only the
+      // backstop, the same one the displayed connection gets.
+      refreshConnectionTopologies();
     }
   }, METADATA_POLL_MS);
 }
@@ -1924,6 +2072,7 @@ function applyConnectionCatalog(result: unknown, requestSeq: number) {
     defaultConnectionId === state.defaultConnectionId
   ) {
     if (!nextActive) selectConnectionNow(defaultConnectionId);
+    refreshConnectionTopologies(true);
     return;
   }
 
@@ -1936,6 +2085,9 @@ function applyConnectionCatalog(result: unknown, requestSeq: number) {
   };
   emit();
   if (!nextActive) selectConnectionNow(defaultConnectionId);
+  // A connection that just became ready, or reconnected into a new runtime
+  // (which invalidated its stored session), is read right away.
+  refreshConnectionTopologies(true);
 }
 
 async function refreshConnectionCatalog(): Promise<boolean> {
@@ -2224,6 +2376,7 @@ function handleBridgeStatus(s: ConnectionStatus) {
       rearmTerminalAttachmentsAfterCatalog(true);
       void refreshNow();
       void refreshBridgeStatus();
+      refreshConnectionTopologies();
       // Popup state is pushed only on change, so ask once per
       // settled connection.
       void store.watchPopup();
@@ -2268,6 +2421,18 @@ function handleHerdrEvent(event: HerdrEventMsg) {
       publishLastStepCompletion(event.connection_id, event.data.workspace_id);
     }
     scheduleRefresh();
+    return;
+  }
+  // Every connection's events reach this browser. The displayed one's drive
+  // the refresh above; another's keep its topology current while the
+  // all-connections view reads it, and are dropped otherwise.
+  const connection = readableConnection(event.connection_id);
+  if (
+    connection &&
+    (event.connection_generation === undefined ||
+      event.connection_generation === connection.generation)
+  ) {
+    scheduleConnectionTopologyRefresh(event.connection_id);
   }
 }
 
@@ -2552,6 +2717,9 @@ export const store = {
     bridge.onEvent(handleHerdrEvent);
     bridge.onAssistantNotification(notifyRangerTask);
     bridge.onPopup(handlePopupPush);
+    // Turning the all-connections view on reads every other connection now
+    // rather than on its next event; turning it off simply stops reading.
+    subscribeShowAllConnections(() => refreshConnectionTopologies());
     bridge.onControl((control) => {
       if (control.type === "pause_connection") {
         store.pauseConnection(
@@ -2571,6 +2739,7 @@ export const store = {
       bridge.probeConnectionNow();
       void refreshNow();
       void refreshBridgeStatus();
+      refreshConnectionTopologies();
     };
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", () => {
@@ -2877,6 +3046,31 @@ export const store = {
         retryOnReconnect: true,
       },
     );
+  },
+
+  /**
+   * Switches the active connection (if needed), waits for its workspaces to
+   * load, then focuses the target workspace there. Used by the merged
+   * workspace tree and the cross-connection pane switcher, whose targets
+   * live on a lease other than the one currently active.
+   */
+  async jumpToConnectionWorkspace(connectionId: string, workspaceId: string) {
+    if (state.activeConnectionId !== connectionId) {
+      if (!selectConnectionNow(connectionId)) return;
+      await refreshNow(captureConnectionLease());
+      if (state.activeConnectionId !== connectionId) return;
+    }
+    void store.focusWorkspace(workspaceId);
+  },
+
+  /** Like `jumpToConnectionWorkspace`, landing on one pane of it. */
+  async jumpToConnectionPane(connectionId: string, paneId: string) {
+    if (state.activeConnectionId !== connectionId) {
+      if (!selectConnectionNow(connectionId)) return;
+      await refreshNow(captureConnectionLease());
+      if (state.activeConnectionId !== connectionId) return;
+    }
+    void store.focusPane(paneId);
   },
 
   focusTaskNotificationTarget(target: TaskNotificationTarget) {
@@ -4136,6 +4330,7 @@ export const __storeTesting = {
   notifyRangerTask,
   handleBridgeStatus,
   handleHerdrEvent,
+  refreshConnectionTopology,
   startUpdatePolling,
   handlePreferenceStorageChange,
   updatePollingActive: () => updateTimer !== null,
@@ -4150,6 +4345,10 @@ export const __storeTesting = {
     stopPolling();
     refreshingConnectionKeys.clear();
     queuedConnectionKeys.clear();
+    for (const timer of topologyTimers.values()) clearTimeout(timer);
+    topologyTimers.clear();
+    topologyRefreshing.clear();
+    topologyQueued.clear();
     focusActionChain = Promise.resolve();
     taskCompletionTracker.clear();
     state = snapshot;

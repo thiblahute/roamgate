@@ -25,6 +25,7 @@ import {
   Layers,
   Pin,
   Plus,
+  Waypoints,
 } from "lucide-react";
 import { WorktreeLifecycleDialog } from "./WorktreeLifecycleDialog";
 import {
@@ -68,6 +69,14 @@ import {
 import { useConnectionClient } from "../useConnectionClient";
 import { activePaneIdForSnapshot } from "../paneJump";
 import { ConfirmDialog } from "./ModalDialogs";
+import { connectionTypeLabel } from "../connectionProfiles";
+import type { ConnectionSummary } from "../api";
+import {
+  setShowAllConnections,
+  useShowAllConnections,
+} from "../showAllConnections";
+import type { ConnectionSessionView } from "../connectionSessions";
+import { useConnectionSessions } from "./useConnectionSessions";
 import {
   AgentContextMenu,
   type AgentMenuState,
@@ -227,6 +236,123 @@ function PullRequestBadge({
   );
 }
 
+const NOOP = () => undefined;
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set();
+/** Pull requests are looked up for the displayed connection only. */
+const NO_REVIEWS: Record<string, PullRequestSummary> = {};
+
+/**
+ * One connection's section of the all-connections tree. Every connection is a
+ * group in catalog order, the displayed one included, so selecting a
+ * workspace elsewhere only moves which group is marked current instead of
+ * relocating rows under the pointer.
+ */
+function ConnectionGroup({
+  connection,
+  displayed,
+  children,
+}: {
+  connection: ConnectionSummary;
+  displayed: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`connection-group ${displayed ? "is-displayed" : ""}`}>
+      <div className="connection-group-head">
+        <span
+          className={`connection-runtime-dot connection-runtime-${connection.state}`}
+        />
+        <span className="connection-group-label">{connection.label}</span>
+        <span className="muted">{connectionTypeLabel(connection)}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The rows of a connection that is not displayed, built from its session the
+ * same way the displayed connection's are: worktree nesting, nested agents,
+ * tab counts, collapsing. Selecting a workspace or an agent switches to that
+ * connection first. What needs that connection's lease (drag, context menus,
+ * pins) stays with the displayed connection, and nothing here is drawn as
+ * selected: Herdr's `focused` flags there are that connection's own.
+ */
+function ConnectionWorkspaceRows({
+  view,
+  agentLayout,
+}: {
+  view: ConnectionSessionView;
+  agentLayout: WorkspaceAgentLayout;
+}) {
+  const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
+  const collapsedSet = useMemo(() => new Set(collapsedKeys), [collapsedKeys]);
+  const agentsByWorkspace = useMemo(
+    () =>
+      agentLayout === "nested"
+        ? groupAgentPanesByWorkspace(view.panes)
+        : EMPTY_AGENT_PANES_BY_WORKSPACE,
+    [agentLayout, view.panes],
+  );
+  const tabCountsByWorkspace = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tab of view.tabs) {
+      counts.set(tab.workspace_id, (counts.get(tab.workspace_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [view.tabs]);
+  const { topLevel, childrenByParent } = useMemo(
+    () => buildWorkspaceHierarchy(view.workspaces, EMPTY_STRING_SET),
+    [view.workspaces],
+  );
+  const connectionId = view.connection.id;
+
+  if (!view.loaded && !view.error) {
+    return <p className="muted connection-group-note">Loading…</p>;
+  }
+  return (
+    <>
+      {topLevel.map((w) => (
+        <WorkspaceRow
+          key={w.workspace_id}
+          w={w}
+          reviews={NO_REVIEWS}
+          depth={0}
+          childrenByParent={childrenByParent}
+          agentsByWorkspace={agentsByWorkspace}
+          tabCountsByWorkspace={tabCountsByWorkspace}
+          alwaysShowTabCount={agentLayout === "compact"}
+          activePaneId={null}
+          pinnedWorkspaceKeys={EMPTY_STRING_SET}
+          collapsedWorktreeGroupKeys={collapsedSet}
+          onCollapsedChange={(workspace, collapsed) =>
+            setCollapsedKeys((current) =>
+              setWorktreeGroupCollapsed(current, workspace, collapsed),
+            )
+          }
+          onSelect={(workspace) =>
+            void store.jumpToConnectionWorkspace(
+              connectionId,
+              workspace.workspace_id,
+            )
+          }
+          onSelectAgent={(pane) =>
+            void store.jumpToConnectionPane(connectionId, pane.pane_id)
+          }
+          onAgentContextMenu={NOOP}
+          onContextMenu={NOOP}
+          displayed={false}
+        />
+      ))}
+      {view.error ? (
+        <p className="muted connection-group-note">{view.error}</p>
+      ) : topLevel.length === 0 ? (
+        <p className="muted connection-group-note">No workspaces.</p>
+      ) : null}
+    </>
+  );
+}
+
 export function WorkspaceTree({
   agentsFirst = false,
   onSelect,
@@ -250,6 +376,7 @@ export function WorkspaceTree({
     (state) => ({
       activeConnectionId: state.activeConnectionId,
       connectionGeneration: state.connectionGeneration,
+      connections: state.connections,
       lastRefresh: state.lastRefresh,
       layout: state.layout,
       panes: state.panes,
@@ -309,6 +436,8 @@ export function WorkspaceTree({
   const [lifecycleWorkspaceId, setLifecycleWorkspaceId] = useState<
     string | null
   >(null);
+  const showAllConnections = useShowAllConnections();
+  const connectionSessions = useConnectionSessions();
   const lastPrunedWorkspaceRefresh = useRef(0);
   const pinsStorageKey = connectionStorageKey(
     s.activeConnectionId,
@@ -587,6 +716,27 @@ export function WorkspaceTree({
     );
   };
 
+  const allConnectionsToggleButton = (
+    <button
+      type="button"
+      className={`panel-add panel-action-icon ${showAllConnections ? "is-active" : ""}`}
+      title={
+        showAllConnections
+          ? "Hide workspaces from other connections"
+          : "Show workspaces from all connections"
+      }
+      aria-label={
+        showAllConnections
+          ? "Hide workspaces from other connections"
+          : "Show workspaces from all connections"
+      }
+      aria-pressed={showAllConnections}
+      onClick={() => setShowAllConnections(!showAllConnections)}
+    >
+      <Waypoints size={14} />
+    </button>
+  );
+
   if (s.workspaces.length === 0) {
     return (
       <>
@@ -597,13 +747,16 @@ export function WorkspaceTree({
         >
           <div className="panel-head">
             <h2>Workspaces</h2>
-            <button
-              className="panel-add panel-action-icon"
-              title="New workspace"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus size={14} />
-            </button>
+            <div className="panel-actions">
+              {allConnectionsToggleButton}
+              <button
+                className="panel-add panel-action-icon"
+                title="New workspace"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
           </div>
           <div className="workspace-tree-content">
             <p className="muted">
@@ -611,6 +764,20 @@ export function WorkspaceTree({
                 ? "No workspaces."
                 : "Connect to the bridge to load workspaces."}
             </p>
+            {connectionSessions
+              .filter((view) => !view.active)
+              .map((view) => (
+                <ConnectionGroup
+                  key={view.connection.id}
+                  connection={view.connection}
+                  displayed={false}
+                >
+                  <ConnectionWorkspaceRows
+                    view={view}
+                    agentLayout={agentLayout}
+                  />
+                </ConnectionGroup>
+              ))}
           </div>
           <AgentLayoutControl value={agentLayout} onChange={setAgentLayout} />
         </div>
@@ -630,6 +797,65 @@ export function WorkspaceTree({
   const focusedRepoWorkspace = s.workspaces.find(
     (workspace) => workspace.focused && workspace.worktree,
   );
+
+  const ownWorkspaceRows = topLevel.map((w) => (
+    <WorkspaceRow
+      key={w.workspace_id}
+      w={w}
+      reviews={reviews}
+      depth={0}
+      childrenByParent={childrenByParent}
+      agentsByWorkspace={
+        agentLayout === "nested"
+          ? agentsByWorkspace
+          : EMPTY_AGENT_PANES_BY_WORKSPACE
+      }
+      tabCountsByWorkspace={tabCountsByWorkspace}
+      alwaysShowTabCount={agentLayout === "compact"}
+      activePaneId={activePaneId}
+      pinnedWorkspaceKeys={pinnedWorkspaceSet}
+      collapsedWorktreeGroupKeys={collapsedWorktreeGroupSet}
+      onCollapsedChange={updateCollapsedWorktreeGroup}
+      onSelect={onSelect}
+      onSelectAgent={onSelectAgent}
+      onAgentContextMenu={(pane, x, y) => setAgentMenu({ pane, x, y })}
+      onContextMenu={(w, x, y) => setMenu({ workspace: w, x, y })}
+      workspaceDrag={{
+        isDragging: draggedWorkspaceId === w.workspace_id,
+        dropPosition:
+          workspaceDropTarget?.workspaceId === w.workspace_id
+            ? workspaceDropTarget.position
+            : null,
+        onDragStart: (e) => onWorkspaceDragStart(w, e),
+        onDragOver: (e) => onWorkspaceDragOver(w, e),
+        onDrop: (e) => onWorkspaceDrop(w, e),
+        onDragEnd: clearWorkspaceDrag,
+      }}
+    />
+  ));
+  /**
+   * With the all-connections view on, every connection is a group in catalog
+   * order, the displayed one included. If the catalog does not list the
+   * displayed connection yet, its rows still lead rather than vanish.
+   */
+  const connectionSections = showAllConnections ? (
+    <>
+      {connectionSessions.some((view) => view.active) ? null : ownWorkspaceRows}
+      {connectionSessions.map((view) => (
+        <ConnectionGroup
+          key={view.connection.id}
+          connection={view.connection}
+          displayed={view.active}
+        >
+          {view.active ? (
+            ownWorkspaceRows
+          ) : (
+            <ConnectionWorkspaceRows view={view} agentLayout={agentLayout} />
+          )}
+        </ConnectionGroup>
+      ))}
+    </>
+  ) : null;
 
   const workspacePanel = (
     <div
@@ -653,6 +879,7 @@ export function WorkspaceTree({
               <GitBranch size={14} />
             </button>
           ) : null}
+          {allConnectionsToggleButton}
           <button
             className="panel-add panel-action-icon"
             title="New workspace"
@@ -667,41 +894,7 @@ export function WorkspaceTree({
         role="tree"
         aria-label="Workspaces and agents"
       >
-        {topLevel.map((w) => (
-          <WorkspaceRow
-            key={w.workspace_id}
-            w={w}
-            reviews={reviews}
-            depth={0}
-            childrenByParent={childrenByParent}
-            agentsByWorkspace={
-              agentLayout === "nested"
-                ? agentsByWorkspace
-                : EMPTY_AGENT_PANES_BY_WORKSPACE
-            }
-            tabCountsByWorkspace={tabCountsByWorkspace}
-            alwaysShowTabCount={agentLayout === "compact"}
-            activePaneId={activePaneId}
-            pinnedWorkspaceKeys={pinnedWorkspaceSet}
-            collapsedWorktreeGroupKeys={collapsedWorktreeGroupSet}
-            onCollapsedChange={updateCollapsedWorktreeGroup}
-            onSelect={onSelect}
-            onSelectAgent={onSelectAgent}
-            onAgentContextMenu={(pane, x, y) => setAgentMenu({ pane, x, y })}
-            onContextMenu={(w, x, y) => setMenu({ workspace: w, x, y })}
-            workspaceDrag={{
-              isDragging: draggedWorkspaceId === w.workspace_id,
-              dropPosition:
-                workspaceDropTarget?.workspaceId === w.workspace_id
-                  ? workspaceDropTarget.position
-                  : null,
-              onDragStart: (e) => onWorkspaceDragStart(w, e),
-              onDragOver: (e) => onWorkspaceDragOver(w, e),
-              onDrop: (e) => onWorkspaceDrop(w, e),
-              onDragEnd: clearWorkspaceDrag,
-            }}
-          />
-        ))}
+        {showAllConnections ? connectionSections : ownWorkspaceRows}
       </div>
       <AgentLayoutControl value={agentLayout} onChange={setAgentLayout} />
     </div>
@@ -958,6 +1151,7 @@ function WorkspaceRow({
   onAgentContextMenu,
   onContextMenu,
   workspaceDrag,
+  displayed = true,
 }: {
   w: Workspace;
   reviews: Record<string, PullRequestSummary>;
@@ -975,6 +1169,13 @@ function WorkspaceRow({
   onAgentContextMenu: (pane: Pane, x: number, y: number) => void;
   onContextMenu: (w: Workspace, x: number, y: number) => void;
   workspaceDrag?: WorkspaceDragProps;
+  /**
+   * False for a row on a connection that is not displayed. Selection state
+   * (focused workspace, active agent, pending focus) belongs to the displayed
+   * connection alone; ids repeat across connections, and another
+   * connection's own `focused` flags would add a second selected row.
+   */
+  displayed?: boolean;
 }) {
   const children = childrenByParent.get(w.workspace_id) ?? [];
   const review = workspacePullRequest(reviews[w.workspace_id]);
@@ -992,22 +1193,28 @@ function WorkspaceRow({
   const isChild = depth > 0;
   const hasChildren = children.length > 0;
   const hasNestedItems = hasChildren || agents.length > 0;
-  const hasActiveAgent = agents.some(
-    (pane) => pane.pane_id === activePaneId || (!activePaneId && pane.focused),
-  );
-  const hiddenDescendantActive = children.some((child) =>
-    workspaceSubtreeContainsActiveItem(
-      child,
-      childrenByParent,
-      agentsByWorkspace,
-      activePaneId,
-    ),
-  );
+  const focused = displayed && w.focused;
+  const hasActiveAgent =
+    displayed &&
+    agents.some(
+      (pane) =>
+        pane.pane_id === activePaneId || (!activePaneId && pane.focused),
+    );
+  const hiddenDescendantActive =
+    displayed &&
+    children.some((child) =>
+      workspaceSubtreeContainsActiveItem(
+        child,
+        childrenByParent,
+        agentsByWorkspace,
+        activePaneId,
+      ),
+    );
   const collapsed =
     hasNestedItems && isWorktreeGroupCollapsed(collapsedWorktreeGroupKeys, w);
   const pinned = isWorkspacePinned(pinnedWorkspaceKeys, w);
   const isPendingFocus =
-    s.pendingFocusWorkspaceId === w.workspace_id && !w.focused;
+    displayed && s.pendingFocusWorkspaceId === w.workspace_id && !w.focused;
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressStart = useRef<{ x: number; y: number } | null>(null);
   const longPressTriggered = useRef(false);
@@ -1059,7 +1266,7 @@ function WorkspaceRow({
   return (
     <>
       <div
-        className={`tree-row clickable-row ${w.focused ? "is-focused" : ""} ${
+        className={`tree-row clickable-row ${focused ? "is-focused" : ""} ${
           hasActiveAgent ? "has-active-agent" : ""
         } ${isChild ? "is-child" : ""} ${pinned ? "is-pinned" : ""} ${
           isPendingFocus ? "is-loading" : ""
@@ -1079,7 +1286,7 @@ function WorkspaceRow({
         onDragEnd={workspaceDrag?.onDragEnd}
         tabIndex={
           workspaceTreeItemIsTabStop({
-            workspaceFocused: w.focused,
+            workspaceFocused: focused,
             directAgentActive: hasActiveAgent,
             collapsed,
             hiddenDescendantActive,
@@ -1088,7 +1295,7 @@ function WorkspaceRow({
             : -1
         }
         aria-level={depth + 1}
-        aria-selected={w.focused}
+        aria-selected={focused}
         aria-expanded={hasNestedItems ? !collapsed : undefined}
         onClick={(e) => {
           if (longPressTriggered.current) {
@@ -1230,7 +1437,9 @@ function WorkspaceRow({
               depth={depth + 1}
               showPaneId={paneIdsToShow.has(pane.pane_id)}
               selected={
-                pane.pane_id === activePaneId || (!activePaneId && pane.focused)
+                displayed &&
+                (pane.pane_id === activePaneId ||
+                  (!activePaneId && pane.focused))
               }
               onSelect={onSelectAgent}
               onOpenMenu={(x, y) => onAgentContextMenu(pane, x, y)}
@@ -1254,6 +1463,7 @@ function WorkspaceRow({
               onSelectAgent={onSelectAgent}
               onAgentContextMenu={onAgentContextMenu}
               onContextMenu={onContextMenu}
+              displayed={displayed}
             />
           ))}
         </>

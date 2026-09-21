@@ -267,3 +267,54 @@
   display: inline-block;
   color: var(--muted);
 }
+
+/* The all-connections view: every connection is a group, separated like
+   sections of one list. */
+.connection-group + .connection-group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+.connection-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.connection-group-label {
+  color: var(--text);
+  font-weight: 600;
+  text-transform: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-group-note {
+  padding-left: 6px;
+}
+/* Rows on a connection that is not displayed carry the same markup as the
+   displayed one's, so they are dimmed by their group rather than by a class
+   of their own. */
+.connection-group:not(.is-displayed) .tree-row {
+  opacity: 0.85;
+}
+.connection-group:not(.is-displayed) .tree-row:hover {
+  opacity: 1;
+}
+
+/* The displayed connection is marked rather than relocated. */
+.connection-group.is-displayed > .connection-group-head {
+  color: var(--text);
+}
+.connection-group.is-displayed > .connection-group-head::after {
+  content: "current";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
