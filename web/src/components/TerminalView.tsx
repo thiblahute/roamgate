@@ -1076,6 +1076,12 @@ export function TerminalView({
       ...terminalDensity(terminalFontScaleRef.current),
       theme: terminalThemeRef.current,
       allowProposedApi: true,
+      // Without this, macOS composes Option+<key> into an accented/ligature
+      // character (e.g. Option+F -> "ƒ") and xterm.js types that literal
+      // character instead of sending an Alt-modified key sequence. This
+      // breaks any Alt/Option keybinding forwarded to the remote shell (Herdr
+      // plugin actions among them). No effect on non-mac platforms.
+      macOptionIsMeta: true,
       linkHandler: {
         // Opt in only to route local file URIs below; all other schemes stay inert.
         allowNonHttpProtocols: true,
