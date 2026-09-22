@@ -1134,6 +1134,7 @@ export function ConnectionSwitcher() {
       connectionPaused: snapshot.connectionPaused,
       connections: snapshot.connections,
       defaultConnectionId: snapshot.defaultConnectionId,
+      forwards: snapshot.forwards,
       status: snapshot.status,
     }),
     shallowEqual,
@@ -1383,6 +1384,46 @@ export function ConnectionSwitcher() {
                 </button>
               ))}
             </div>
+            {state.forwards.length > 0 ? (
+              <div className="connection-forwards">
+                <p className="connection-forwards-head">Forwarded ports</p>
+                {state.forwards.map((forward) => (
+                  <div className="connection-forward" key={forward.id}>
+                    <span className="connection-forward-ports">
+                      {forward.state === "failed" ? (
+                        <span className="connection-forward-failed">
+                          {forward.remote_port} failed
+                        </span>
+                      ) : (
+                        <>
+                          localhost:{forward.local_port}
+                          {forward.local_port === forward.remote_port ? null : (
+                            <span className="muted">
+                              {" "}
+                              → {forward.remote_port}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      className="connection-forward-stop"
+                      title={
+                        forward.error ??
+                        `Stop forwarding port ${forward.remote_port}`
+                      }
+                      aria-label={`Stop forwarding port ${forward.remote_port}`}
+                      onClick={() => void store.closeForward(forward.id)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               role="menuitem"

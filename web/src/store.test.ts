@@ -455,6 +455,7 @@ function partitionState(): State {
     ...alpha,
     status: "connected",
     connectionPaused: false,
+    forwards: [],
     bridgeStatus: null,
     connections: [
       {

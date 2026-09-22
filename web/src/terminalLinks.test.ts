@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  browserSharesRoamgateHost,
   findTerminalHttpLinks,
   sanitizeTerminalHttpUrl,
   terminalFileUriPath,
+  terminalForwardCandidate,
 } from "./terminalLinks";
 
 describe("terminal HTTP links", () => {
@@ -125,5 +127,43 @@ describe("terminal OSC 8 local file URIs", () => {
     "vscode://file/tmp/docs",
   ])("rejects unsupported or unsafe target %s", (uri) => {
     expect(terminalFileUriPath(uri)).toBeNull();
+  });
+});
+
+describe("forward candidates", () => {
+  test("only loopback URLs are worth forwarding", () => {
+    expect(terminalForwardCandidate("http://localhost:5173/")?.port).toBe(5173);
+    expect(terminalForwardCandidate("http://127.0.0.1:3000")?.port).toBe(3000);
+    // Bound to every interface on the remote is still the remote's port.
+    expect(terminalForwardCandidate("http://0.0.0.0:8080/app")?.port).toBe(
+      8080,
+    );
+
+    // A routable host already works from here; forwarding it would be wrong.
+    expect(terminalForwardCandidate("https://example.com/app")).toBeNull();
+    expect(terminalForwardCandidate("http://192.168.1.10:3000")).toBeNull();
+    expect(terminalForwardCandidate("not a url")).toBeNull();
+  });
+
+  test("defaults the port from the scheme when none is written", () => {
+    expect(terminalForwardCandidate("http://localhost/")?.port).toBe(80);
+    expect(terminalForwardCandidate("https://localhost/")?.port).toBe(443);
+  });
+
+  test("rewrites to the local port while keeping path and query", () => {
+    const candidate = terminalForwardCandidate("http://localhost:3000/app?x=1");
+    expect(candidate?.rewrite(4123)).toBe("http://localhost:4123/app?x=1");
+  });
+});
+
+describe("forward availability", () => {
+  test("offered only when the browser and Roamgate share a machine", () => {
+    expect(browserSharesRoamgateHost("localhost")).toBe(true);
+    expect(browserSharesRoamgateHost("127.0.0.1")).toBe(true);
+    // Reached over the network: a forward would bind on the server's host and
+    // resolve to the wrong machine here.
+    expect(browserSharesRoamgateHost("desktop.local")).toBe(false);
+    expect(browserSharesRoamgateHost("192.168.1.10")).toBe(false);
+    expect(browserSharesRoamgateHost("")).toBe(false);
   });
 });

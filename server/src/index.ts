@@ -84,6 +84,7 @@ import { createShutdownController } from "./connections/shutdown";
 import { bindListenerBeforeConnectionStart } from "./connections/startup";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "./connections/types";
 import { unixOnlyMessage } from "./connections/unix-only";
+import { createSshForwards, forwardToWire } from "./bridge/ssh-forward";
 import { createAuthHandlers, unauthenticatedLoginRedirect } from "./http/auth";
 import { serveStatic } from "./http/static-files";
 import { handleInstanceSettings } from "./http/instance-settings";
@@ -359,6 +360,18 @@ function summarizeHerdrEvent(event: any): string {
   return [`type=${type}`, ...ids].join(" ");
 }
 
+/**
+ * One registry for the whole server: local ports are a single machine-wide
+ * space, so two connections cannot each decide they own 5173.
+ */
+const sshForwards = createSshForwards({ logger: logger.child("forward") });
+// Forwards belong to the machine, not to a browser tab: every open tab shows
+// the same list, so a port one of them opened can be found and closed from
+// another. Carries no connection envelope for the same reason.
+sshForwards.onChange((forwards) => {
+  const line = JSON.stringify({ forwards: forwards.map(forwardToWire) });
+  for (const ws of clients) safeSend(ws, line, "forwards");
+});
 const connectionProfileStore = new ConnectionProfileStore();
 const syntheticLegacyProfile: SyntheticLocalProfile = {
   id: LEGACY_DEFAULT_CONNECTION_ID,
@@ -594,6 +607,7 @@ function runtimeFactoryForProfile(
             });
           }
         },
+        forwards: sshForwards,
         onUiSettingChanged: (key, value) => {
           // Interface preferences belong to this Roamgate server, not to any
           // one Herdr connection, so the push carries no connection envelope
@@ -958,6 +972,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     herdr,
     worktreeParents,
     handleSettingsRpc,
+    handleForwardRpc,
     worktreeRemovalCoordinator,
     worktreeRemovalRuntime,
     terminalBridge,
@@ -1241,6 +1256,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   }
   if (method.startsWith("settings.")) {
     return handleSettingsRpc(ws, id, method, params ?? {}, requestIsCurrent);
+  }
+  if (method.startsWith("forward.")) {
+    if (!handleForwardRpc) {
+      markRpcError(ws, id, "port forwarding is unavailable");
+      return;
+    }
+    return handleForwardRpc(ws, id, method, params ?? {}, requestIsCurrent);
   }
   if (method === "worktree.create") {
     try {

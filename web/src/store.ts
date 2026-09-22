@@ -44,6 +44,7 @@ import {
 } from "./browserNavigation";
 import { useRef, useSyncExternalStore } from "react";
 import {
+  type ForwardRecord,
   bridge,
   type ConnectionClient,
   type ConnectionStatus,
@@ -130,6 +131,12 @@ export interface State extends ServerSessionState {
   activeConnectionId: string;
   connectionGeneration: number;
   sessionsByConnectionId: Record<string, ServerSessionState>;
+  /**
+   * Machine-wide SSH port forwards, mirrored from the server's registry.
+   * Not per-connection session state: a forward binds a local port, and the
+   * machine has one of those whichever connection asked for it.
+   */
+  forwards: ForwardRecord[];
   notice: Notice | null;
   taskNotificationsEnabled: boolean;
   taskNotificationPreferences: TaskNotificationPreferences;
@@ -351,6 +358,7 @@ const initial: State = {
     [LEGACY_DEFAULT_CONNECTION_ID]: initialSession,
   },
   ...initialSession,
+  forwards: [],
   notice: null,
   taskNotificationsEnabled: storedTaskNotificationsEnabled(),
   taskNotificationPreferences: storedTaskNotificationPreferences(),
@@ -1346,6 +1354,24 @@ async function hydrateUiSettings() {
   }
 }
 
+/**
+ * Reads the server's forward registry once a socket is up. Without this the
+ * list is only ever learned from the change push, so a reloaded page shows
+ * nothing forwarded and offers to forward ports that already are.
+ */
+async function hydrateForwards() {
+  try {
+    const result = await action((lease) => lease.client.call("forward.list"), {
+      refresh: "none",
+    });
+    const forwards = result?.forwards as ForwardRecord[] | undefined;
+    if (Array.isArray(forwards)) set({ forwards });
+  } catch {
+    // An older bridge has no forward.list; the push still fills the list if
+    // anything changes, and nothing else depends on it.
+  }
+}
+
 async function refreshNow(lease = captureConnectionLease()) {
   if (
     state.connectionPaused ||
@@ -2319,7 +2345,10 @@ export function worktreeRemovalCompletionNotice(
 }
 
 function handleBridgeStatus(s: ConnectionStatus) {
-  if (s === "connected") void hydrateUiSettings();
+  if (s === "connected") {
+    void hydrateUiSettings();
+    void hydrateForwards();
+  }
   if (s === "disconnected") {
     set({ tabMoveSupported: false, endpointAvailability: {} });
     uiSettingsHydrated = false;
@@ -2708,7 +2737,9 @@ export const store = {
         void refreshConnectionCatalog();
       }
       void hydrateUiSettings();
+      void hydrateForwards();
     });
+    bridge.onForwards((forwards) => set({ forwards }));
     bridge.onUiSetting((push) => {
       if (push.key === SHORTCUT_SETTING_KEY)
         adoptShortcutPreferences(push.value);
@@ -3054,6 +3085,42 @@ export const store = {
    * workspace tree and the cross-connection pane switcher, whose targets
    * live on a lease other than the one currently active.
    */
+  /**
+   * Opens an on-demand SSH forward for the active connection and answers with
+   * the local port, which may not be the one that was asked for. Forwards are
+   * machine-wide, so the push updates every tab.
+   */
+  async openForward(remotePort: number, label?: string) {
+    // Through a lease like every other RPC: the lease carries the runtime
+    // generation from the catalog, which bridge.connection() alone does not
+    // know and rejects the call without.
+    const result = await action(
+      (lease) =>
+        lease.client.call("forward.open", {
+          remote_port: remotePort,
+          label,
+        }),
+      { refresh: "none" },
+    );
+    const forward = result?.forward as ForwardRecord | undefined;
+    if (forward) {
+      set({
+        forwards: [
+          ...state.forwards.filter((entry) => entry.id !== forward.id),
+          forward,
+        ],
+      });
+    }
+    return forward ?? null;
+  },
+
+  async closeForward(id: string) {
+    await action((lease) => lease.client.call("forward.close", { id }), {
+      refresh: "none",
+    });
+    set({ forwards: state.forwards.filter((entry) => entry.id !== id) });
+  },
+
   async jumpToConnectionWorkspace(connectionId: string, workspaceId: string) {
     if (state.activeConnectionId !== connectionId) {
       if (!selectConnectionNow(connectionId)) return;

@@ -36,6 +36,13 @@ A Web/PWA client for a running [Herdr](https://herdr.dev) server.
   context menus stay with the connection you are on. A connection that stops
   answering keeps its last list and shows the error beside it.
 
+When a pane on an SSH connection prints a `localhost` URL, clicking it offers to
+**forward the port** over SSH (to the same port number when free) and opens the
+forwarded address. **Forward a port** in the command menu does the same, and the
+connection switcher lists active forwards with a stop button. Forwards bind
+loopback only, close with their connection, and are offered only when Roamgate
+runs on the machine you browse from.
+
 Each browser keeps its own workspace and tab selection on endpoint connections;
 older (legacy) connections share navigation. Pane focus, layout, and terminal
 sizes within a tab are always shared. See

@@ -143,3 +143,68 @@ export function findTerminalHttpLinks(text: string): TerminalHttpLink[] {
   }
   return links;
 }
+
+/**
+ * A loopback URL printed by a pane on an SSH connection points at the remote's
+ * own machine, so opening it locally reaches the wrong host or nothing at all.
+ * Those are exactly the links worth offering a port forward for, and the pane
+ * naming one is better evidence than scanning the remote for listeners: it is
+ * a port someone actually published.
+ */
+const LOOPBACK_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "[::1]",
+  "::1",
+]);
+
+export type TerminalForwardCandidate = {
+  url: string;
+  port: number;
+  /** The same URL with the local port substituted, once one is known. */
+  rewrite: (localPort: number) => string;
+};
+
+export function terminalForwardCandidate(
+  raw: string,
+): TerminalForwardCandidate | null {
+  const url = sanitizeTerminalHttpUrl(raw);
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+  const port = Number(
+    parsed.port || (parsed.protocol === "https:" ? "443" : "80"),
+  );
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return {
+    url,
+    port,
+    rewrite: (localPort: number) => {
+      const local = new URL(url);
+      local.hostname = "localhost";
+      local.port = String(localPort);
+      return local.toString();
+    },
+  };
+}
+
+/**
+ * Whether a forward opened by the server would be reachable from this browser.
+ *
+ * A forward binds a local port on whichever machine runs Roamgate, so it is
+ * only useful when that is also the machine holding the browser. Served over
+ * loopback that is true by construction; served over a network address it is
+ * not, and offering the action there would hand out an address that resolves
+ * to the wrong host.
+ */
+export function browserSharesRoamgateHost(
+  hostname: string = typeof location === "undefined" ? "" : location.hostname,
+): boolean {
+  return LOOPBACK_HOSTS.has(hostname.toLowerCase());
+}
