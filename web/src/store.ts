@@ -137,6 +137,10 @@ export interface State extends ServerSessionState {
    * machine has one of those whichever connection asked for it.
    */
   forwards: ForwardRecord[];
+  /** Listening ports found on the active connection's host, asked for rather
+   * than polled; empty until someone looks. */
+  forwardCandidates: { port: number; process?: string }[];
+  forwardCandidatesBusy: boolean;
   notice: Notice | null;
   taskNotificationsEnabled: boolean;
   taskNotificationPreferences: TaskNotificationPreferences;
@@ -359,6 +363,8 @@ const initial: State = {
   },
   ...initialSession,
   forwards: [],
+  forwardCandidates: [],
+  forwardCandidatesBusy: false,
   notice: null,
   taskNotificationsEnabled: storedTaskNotificationsEnabled(),
   taskNotificationPreferences: storedTaskNotificationPreferences(),
@@ -3112,6 +3118,30 @@ export const store = {
       });
     }
     return forward ?? null;
+  },
+
+  /**
+   * Asks the remote what it is listening on. Printed URLs only ever name one
+   * port — a dev server announces its page and says nothing about the
+   * websocket beside it — so the list has to come from the host itself.
+   */
+  async refreshForwardCandidates() {
+    if (state.forwardCandidatesBusy) return;
+    set({ forwardCandidatesBusy: true });
+    try {
+      const result = await action(
+        (lease) => lease.client.call("forward.candidates"),
+        { refresh: "none" },
+      );
+      const candidates = result?.candidates as
+        | { port: number; process?: string }[]
+        | undefined;
+      set({ forwardCandidates: Array.isArray(candidates) ? candidates : [] });
+    } catch {
+      set({ forwardCandidates: [] });
+    } finally {
+      set({ forwardCandidatesBusy: false });
+    }
   },
 
   async closeForward(id: string) {

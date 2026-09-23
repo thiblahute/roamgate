@@ -4,7 +4,14 @@ import {
   serializeConnectionEnvelope,
 } from "../connections/protocol";
 import type { SshForwardRecord } from "./ssh-forward";
-import { forwardToWire, validateForwardPort } from "./ssh-forward";
+import {
+  forwardToWire,
+  LISTENING_PORTS_COMMAND,
+  ownedListeningPorts,
+  parseListeningPorts,
+  validateForwardPort,
+} from "./ssh-forward";
+import { sshCommandArgv } from "./ssh-command";
 
 /**
  * Opens and closes on-demand port forwards for one connection's SSH
@@ -18,6 +25,10 @@ export function createForwardRpcHandler(args: {
   connectionId?: string;
   connectionGeneration?: number;
   sshHost: () => string | undefined;
+  runProcess: (
+    argv: string[],
+    input?: string,
+  ) => Promise<{ stdout: string; stderr: string }>;
   forwards: {
     list: () => SshForwardRecord[];
     open: (request: {
@@ -99,6 +110,24 @@ export function createForwardRpcHandler(args: {
           return fail(settled.error ?? "The forward could not be opened");
         }
         return reply({ forward: forwardToWire(settled) });
+      }
+      if (method === "forward.candidates") {
+        // Asked for, never polled: one ssh round trip when someone opens the
+        // ports list, rather than a standing cost on every connection.
+        const { stdout } = await args.runProcess(
+          sshCommandArgv(destination, LISTENING_PORTS_COMMAND),
+        );
+        const forwarded = new Set(
+          args.forwards
+            .list()
+            .filter((entry) => entry.state !== "failed")
+            .map((entry) => entry.remotePort),
+        );
+        return reply({
+          candidates: ownedListeningPorts(parseListeningPorts(stdout)).filter(
+            (entry) => !forwarded.has(entry.port),
+          ),
+        });
       }
       if (method === "forward.close") {
         const forwardId = String(params.id ?? "");

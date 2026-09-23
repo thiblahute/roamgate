@@ -585,6 +585,14 @@ export function TerminalView({
       return false;
     }
   };
+  // Stable identity for the link provider: the terminal is built once, and a
+  // handler rebuilt each render would rebuild it with them.
+  const proposeForwardRef = useRef<(url: string) => boolean>(() => false);
+  proposeForwardRef.current = proposeForward;
+  const takeHttpLink = useCallback(
+    (url: string) => proposeForwardRef.current(url),
+    [],
+  );
   const forwardConnection = s.connections.find(
     (connection) => connection.id === s.activeConnectionId,
   );
@@ -1180,7 +1188,7 @@ export function TerminalView({
           const url = sanitizeTerminalHttpUrl(text);
           if (!url) return;
           term.clearSelection();
-          if (!proposeForward(url)) {
+          if (!takeHttpLink(url)) {
             window.open(url, "_blank", "noopener,noreferrer");
           }
         },
@@ -1282,7 +1290,7 @@ export function TerminalView({
       },
       // Plain-text URLs are opened by the provider, not by the OSC hyperlink
       // handler, so the forward proposal has to be offered from here too.
-      proposeForward,
+      takeHttpLink,
     );
 
     const imeFallback = new TerminalImeFallbackTracker();
@@ -3078,6 +3086,7 @@ export function TerminalView({
     relayViewportFor,
     resolveTerminalFilePaths,
     scrollPage,
+    takeHttpLink,
     terminalIdentity,
   ]);
 

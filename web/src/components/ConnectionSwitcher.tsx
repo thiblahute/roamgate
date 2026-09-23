@@ -1135,12 +1135,23 @@ export function ConnectionSwitcher() {
       connections: snapshot.connections,
       defaultConnectionId: snapshot.defaultConnectionId,
       forwards: snapshot.forwards,
+      forwardCandidates: snapshot.forwardCandidates,
+      forwardCandidatesBusy: snapshot.forwardCandidatesBusy,
       status: snapshot.status,
     }),
     shallowEqual,
   );
   const [open, setOpen] = useState(false);
   useCloseGlobalMenuForDialog(open, setOpen);
+  const activeIsSsh =
+    state.connections.find(
+      (connection) => connection.id === state.activeConnectionId,
+    )?.type === "ssh";
+  // Scanning costs an ssh round trip, so it happens when someone opens the
+  // menu to look at ports, not on a timer.
+  useEffect(() => {
+    if (open && activeIsSsh) void store.refreshForwardCandidates();
+  }, [open, activeIsSsh]);
   const [manageOpen, setManageOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1384,6 +1395,37 @@ export function ConnectionSwitcher() {
                 </button>
               ))}
             </div>
+            {activeIsSsh &&
+            (state.forwardCandidates.length > 0 ||
+              state.forwardCandidatesBusy) ? (
+              <div className="connection-forwards">
+                <p className="connection-forwards-head">
+                  Listening on the remote
+                  {state.forwardCandidatesBusy ? "…" : ""}
+                </p>
+                {state.forwardCandidates.map((candidate) => (
+                  <div className="connection-forward" key={candidate.port}>
+                    <span className="connection-forward-ports">
+                      {candidate.port}
+                      {candidate.process ? (
+                        <span className="muted"> {candidate.process}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      className="connection-forward-stop"
+                      title={`Forward port ${candidate.port}`}
+                      aria-label={`Forward port ${candidate.port}`}
+                      onClick={() => void store.openForward(candidate.port)}
+                    >
+                      <Plus size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {state.forwards.length > 0 ? (
               <div className="connection-forwards">
                 <p className="connection-forwards-head">Forwarded ports</p>

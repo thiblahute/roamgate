@@ -262,3 +262,88 @@ function defaultPortIsFree(port: number): boolean {
     return false;
   }
 }
+
+export type ListeningPort = {
+  port: number;
+  /** Process name when the remote reported one; ss only shows it for your
+   * own processes unless privileged, so it is often absent. */
+  process?: string;
+};
+
+/**
+ * Ports a remote is listening on, from `ss -ltnH` (or `netstat -ltn`).
+ *
+ * Loopback-bound listeners are the interesting ones: a service bound to a
+ * routable address is already reachable without a tunnel, while one on
+ * 127.0.0.1 is exactly what cannot be reached from here. Addresses like
+ * 0.0.0.0 and :: listen on loopback too, so they count.
+ *
+ * This exists because printed URLs only ever name one port: a dev server
+ * announces its page and says nothing about the websocket beside it.
+ */
+export function parseListeningPorts(output: string): ListeningPort[] {
+  const byPort = new Map<number, ListeningPort>();
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || /^(Netid|Proto|Active)/i.test(trimmed)) continue;
+    const columns = trimmed.split(/\s+/);
+    // ss -ltnH: State Recv-Q Send-Q Local:Port Peer:Port [users:(...)]
+    // netstat -ltn: Proto Recv-Q Send-Q Local:Port Peer:Port State
+    const local = columns.find(
+      (column, index) => index > 1 && /^\[?[\d.:a-f*]+\]?:\d+$/i.test(column),
+    );
+    if (!local) continue;
+    const port = Number(local.slice(local.lastIndexOf(":") + 1));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+    const host = local.slice(0, local.lastIndexOf(":"));
+    if (!listensOnLoopback(host)) continue;
+    const process = trimmed.match(/users:\(\("([^"]+)"/)?.[1];
+    const existing = byPort.get(port);
+    if (!existing) byPort.set(port, process ? { port, process } : { port });
+    else if (process && !existing.process) existing.process = process;
+  }
+  return [...byPort.values()].sort((a, b) => a.port - b.port);
+}
+
+function listensOnLoopback(host: string): boolean {
+  const bare = host.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    bare === "127.0.0.1" ||
+    bare === "::1" ||
+    bare === "localhost" ||
+    // Wildcards cover loopback as well as every other interface.
+    bare === "0.0.0.0" ||
+    bare === "*" ||
+    bare === "::" ||
+    bare.startsWith("127.")
+  );
+}
+
+/**
+ * `-p` is what makes the result usable: an unprivileged user sees the process
+ * behind their own sockets and nothing behind root's, which is exactly the
+ * line between "a server I started" and "a system daemon". `ss` is not
+ * everywhere, so fall back rather than reporting nothing.
+ */
+export const LISTENING_PORTS_COMMAND =
+  "ss -ltnpH 2>/dev/null || netstat -ltnp 2>/dev/null";
+
+/**
+ * Narrows a scan to the listeners worth offering.
+ *
+ * A developer machine listens on a dozen ports it never thinks about — sshd,
+ * resolved, CUPS, mDNS — and burying a dev server among them is how VS Code's
+ * process-based detection earned its reputation for over-forwarding. Ports
+ * whose process the caller can see are the caller's own, so that split does
+ * the work without a denylist of well-known ports to maintain.
+ *
+ * Where nothing is named at all — `ss` without `-p` support, or a netstat that
+ * refuses — the split carries no information, so everything is kept rather
+ * than reporting an empty machine.
+ */
+export function ownedListeningPorts(
+  ports: readonly ListeningPort[],
+): ListeningPort[] {
+  const named = ports.filter((entry) => entry.process);
+  return named.length > 0 ? named : [...ports];
+}

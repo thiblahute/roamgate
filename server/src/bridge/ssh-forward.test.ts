@@ -2,10 +2,12 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  FORWARD_BIND_HOST,
   chooseLocalPort,
   createSshForwards,
-  FORWARD_BIND_HOST,
   forwardId,
+  ownedListeningPorts,
+  parseListeningPorts,
   sshForwardArgv,
   validateForwardPort,
   type ForwardProcess,
@@ -189,5 +191,103 @@ describe("forward supervisor", () => {
     expect(desktop.killed).toHaveLength(1);
     expect(laptop.killed).toHaveLength(0);
     expect(forwards.list().map((r) => r.connectionId)).toEqual(["laptop"]);
+  });
+});
+
+describe("listening port discovery", () => {
+  test("reads ss output, keeping loopback and wildcard listeners", () => {
+    const output = [
+      'LISTEN 0 4096 127.0.0.1:5173 0.0.0.0:* users:(("node",pid=42,fd=23))',
+      'LISTEN 0 4096 127.0.0.1:5174 0.0.0.0:* users:(("node",pid=42,fd=25))',
+      'LISTEN 0 511 0.0.0.0:8787 0.0.0.0:* users:(("roamgate",pid=7,fd=7))',
+      "LISTEN 0 128 [::1]:9229 [::]:* ",
+    ].join("\n");
+
+    expect(parseListeningPorts(output)).toEqual([
+      { port: 5173, process: "node" },
+      // The websocket beside the dev server: never printed as a URL, which is
+      // the whole reason for scanning rather than reading output.
+      { port: 5174, process: "node" },
+      { port: 8787, process: "roamgate" },
+      { port: 9229 },
+    ]);
+  });
+
+  test("drops listeners that are already reachable without a tunnel", () => {
+    const output = [
+      "LISTEN 0 128 192.168.1.10:5432 0.0.0.0:*",
+      "LISTEN 0 128 10.0.0.4:6379 0.0.0.0:*",
+      "LISTEN 0 128 127.0.0.1:5432 0.0.0.0:*",
+    ].join("\n");
+
+    expect(parseListeningPorts(output).map((entry) => entry.port)).toEqual([
+      5432,
+    ]);
+  });
+
+  test("reads netstat output and its header", () => {
+    const output = [
+      "Active Internet connections (only servers)",
+      "Proto Recv-Q Send-Q Local Address           Foreign Address         State",
+      "tcp        0      0 127.0.0.1:3000          0.0.0.0:*               LISTEN",
+      "tcp6       0      0 ::1:3001                :::*                    LISTEN",
+    ].join("\n");
+
+    expect(parseListeningPorts(output).map((entry) => entry.port)).toEqual([
+      3000, 3001,
+    ]);
+  });
+
+  test("reports each port once, preferring the line that names a process", () => {
+    const output = [
+      "LISTEN 0 128 0.0.0.0:3000 0.0.0.0:*",
+      'LISTEN 0 128 [::]:3000 [::]:* users:(("api",pid=9,fd=3))',
+    ].join("\n");
+
+    expect(parseListeningPorts(output)).toEqual([
+      { port: 3000, process: "api" },
+    ]);
+  });
+
+  test("survives empty or unexpected output", () => {
+    expect(parseListeningPorts("")).toEqual([]);
+    expect(parseListeningPorts("ss: command not found")).toEqual([]);
+  });
+});
+
+describe("narrowing a scan to what is worth offering", () => {
+  // Taken from a real desktop: the daemons are unnamed because an
+  // unprivileged user cannot see root's sockets, which is the whole signal.
+  const scanned = parseListeningPorts(
+    [
+      "LISTEN 0 128 0.0.0.0:22 0.0.0.0:*",
+      "LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*",
+      "LISTEN 0 128 127.0.0.1:631 0.0.0.0:*",
+      "LISTEN 0 4096 0.0.0.0:5355 0.0.0.0:*",
+      'LISTEN 0 511 0.0.0.0:5173 0.0.0.0:* users:(("node",pid=3537556,fd=31))',
+      'LISTEN 0 512 0.0.0.0:3000 0.0.0.0:* users:(("gst-dots-viewer",pid=3684462,fd=13))',
+      "LISTEN 0 128 127.0.0.1:9222 0.0.0.0:*",
+    ].join("\n"),
+  );
+
+  test("keeps the ports the user started and drops the machine's own", () => {
+    expect(ownedListeningPorts(scanned)).toEqual([
+      { port: 3000, process: "gst-dots-viewer" },
+      { port: 5173, process: "node" },
+    ]);
+  });
+
+  test("keeps everything when nothing is named at all", () => {
+    // ss without -p support: the split carries no information, so reporting
+    // an empty machine would be worse than reporting noise.
+    const unnamed = parseListeningPorts(
+      [
+        "LISTEN 0 511 127.0.0.1:5173 0.0.0.0:*",
+        "LISTEN 0 128 127.0.0.1:3000 0.0.0.0:*",
+      ].join("\n"),
+    );
+    expect(ownedListeningPorts(unnamed).map((entry) => entry.port)).toEqual([
+      3000, 5173,
+    ]);
   });
 });

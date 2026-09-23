@@ -280,6 +280,7 @@ export function createLegacyConnectionRuntime(args: {
         connectionId: identity.id,
         connectionGeneration: args.connectionGeneration,
         sshHost,
+        runProcess,
         forwards: args.forwards,
         safeSend: args.safeSend,
         markRpcError: args.markRpcError,
