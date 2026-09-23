@@ -30,6 +30,8 @@ import {
 import { lazyWithReload } from "../lazyWithReload";
 import { setDefaultPaneView, useDefaultPaneView } from "../paneView";
 import { setComposerVimKeys, useComposerVimKeys } from "../composerVim";
+import { setPaneJumpScope, usePaneJumpScope } from "../paneJumpScope";
+import { shortcutLabel } from "../shortcutPreferences";
 import {
   mobileTerminalShortcutCount,
   type MobileTerminalShortcutRows,
@@ -149,6 +151,7 @@ export function ConfigurationDialog({
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
   const defaultPaneView = useDefaultPaneView();
   const composerVim = useComposerVimKeys();
+  const paneJumpScope = usePaneJumpScope();
   const [detail, setDetail] = useState<Detail | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const detailTrigger = useRef<HTMLButtonElement | null>(null);
@@ -560,6 +563,38 @@ export function ConfigurationDialog({
                   aria-checked={composerVim}
                   className={"settings-switch" + (composerVim ? " is-on" : "")}
                   onClick={() => setComposerVimKeys(!composerVim)}
+                >
+                  <span />
+                </button>
+              </div>
+              <div className="config-preference-row">
+                <span className="config-item-icon">
+                  <LayoutDashboard size={15} />
+                </span>
+                <div className="config-item-copy">
+                  <strong>Switch between workspaces</strong>
+                  <span>
+                    {`${shortcutLabel("panes.recent")} lists ${
+                      paneJumpScope === "workspaces"
+                        ? "one entry per workspace"
+                        : "recent panes"
+                    }`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Switch between workspaces"
+                  aria-checked={paneJumpScope === "workspaces"}
+                  className={
+                    "settings-switch" +
+                    (paneJumpScope === "workspaces" ? " is-on" : "")
+                  }
+                  onClick={() =>
+                    setPaneJumpScope(
+                      paneJumpScope === "workspaces" ? "panes" : "workspaces",
+                    )
+                  }
                 >
                   <span />
                 </button>
