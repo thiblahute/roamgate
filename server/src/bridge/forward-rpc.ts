@@ -3,7 +3,7 @@ import {
   CONNECTION_CHANGED_DURING_REQUEST,
   serializeConnectionEnvelope,
 } from "../connections/protocol";
-import type { SshForwardRecord } from "./ssh-forward";
+import type { SshForwards } from "./ssh-forward";
 import {
   forwardToWire,
   LISTENING_PORTS_COMMAND,
@@ -29,17 +29,7 @@ export function createForwardRpcHandler(args: {
     argv: string[],
     input?: string,
   ) => Promise<{ stdout: string; stderr: string }>;
-  forwards: {
-    list: () => SshForwardRecord[];
-    open: (request: {
-      connectionId: string;
-      destination: string;
-      remotePort: number;
-      label?: string;
-    }) => SshForwardRecord;
-    markOpen: (id: string) => void;
-    close: (id: string) => boolean;
-  };
+  forwards: SshForwards;
   safeSend: (
     ws: ServerWebSocket<unknown>,
     payload: string,
@@ -87,7 +77,8 @@ export function createForwardRpcHandler(args: {
         );
       }
       if (method === "forward.open") {
-        const remotePort = validateForwardPort(params.remote_port);
+        const port = validateForwardPort(params.remote_port ?? params.port);
+        const direction = params.direction === "remote" ? "remote" : "local";
         const label =
           typeof params.label === "string" && params.label.trim()
             ? params.label.trim().slice(0, 64)
@@ -95,7 +86,8 @@ export function createForwardRpcHandler(args: {
         const record = args.forwards.open({
           connectionId: args.connectionId ?? "",
           destination,
-          remotePort,
+          port,
+          direction,
           label,
         });
         // ssh -N says nothing on success, so treat surviving its own startup
@@ -112,16 +104,27 @@ export function createForwardRpcHandler(args: {
         return reply({ forward: forwardToWire(settled) });
       }
       if (method === "forward.candidates") {
-        // Asked for, never polled: one ssh round trip when someone opens the
+        // Asked for, never polled: one round trip when someone opens the
         // ports list, rather than a standing cost on every connection.
+        const direction = params.direction === "remote" ? "remote" : "local";
+        // A local forward needs to know what the far host is listening on; a
+        // remote forward needs to know what this one is, which is the same
+        // question asked of a different machine.
         const { stdout } = await args.runProcess(
-          sshCommandArgv(destination, LISTENING_PORTS_COMMAND),
+          direction === "local"
+            ? sshCommandArgv(destination, LISTENING_PORTS_COMMAND)
+            : ["sh", "-c", LISTENING_PORTS_COMMAND],
         );
         const forwarded = new Set(
           args.forwards
             .list()
-            .filter((entry) => entry.state !== "failed")
-            .map((entry) => entry.remotePort),
+            .filter(
+              (entry) =>
+                entry.state !== "failed" && entry.direction === direction,
+            )
+            .map((entry) =>
+              direction === "local" ? entry.remotePort : entry.localPort,
+            ),
         );
         return reply({
           candidates: ownedListeningPorts(parseListeningPorts(stdout)).filter(

@@ -277,6 +277,7 @@ export interface UiSettingPush {
 export interface ForwardRecord {
   id: string;
   connection_id: string;
+  direction: "local" | "remote";
   remote_port: number;
   local_port: number;
   label?: string;

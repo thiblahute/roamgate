@@ -25,9 +25,25 @@ export const FORWARD_BIND_HOST = "127.0.0.1";
 
 export type SshForwardState = "starting" | "open" | "failed" | "closed";
 
+/**
+ * Which way the tunnel runs.
+ *
+ * `local` (ssh -L) puts a remote service on a local port: the browser reaches
+ * something running on the far host. `remote` (ssh -R) is the mirror — a
+ * service on this machine appears on the far host, so processes there, agents
+ * included, can reach it.
+ *
+ * The trust story is not symmetric. A local forward exposes the far host's
+ * service to this machine alone; a remote forward exposes ours to everything
+ * on the far host. Both bind loopback, which is the only reason the second is
+ * reasonable at all.
+ */
+export type SshForwardDirection = "local" | "remote";
+
 export type SshForwardRecord = {
   id: string;
   connectionId: string;
+  direction: SshForwardDirection;
   remotePort: number;
   localPort: number;
   label?: string;
@@ -45,6 +61,7 @@ export function sshForwardArgv(
   destination: string,
   localPort: number,
   remotePort: number,
+  direction: SshForwardDirection = "local",
 ): string[] {
   return [
     "ssh",
@@ -56,10 +73,20 @@ export function sshForwardArgv(
     "-o",
     "ServerAliveCountMax=3",
     "-N",
-    "-L",
-    // The remote side resolves "localhost" on the far host, which is what a
-    // dev server printing http://localhost:PORT is actually bound to.
-    `${FORWARD_BIND_HOST}:${localPort}:localhost:${remotePort}`,
+    ...(direction === "local"
+      ? [
+          "-L",
+          // The far side resolves "localhost" on the remote, which is where a
+          // dev server printing http://localhost:PORT is actually bound.
+          `${FORWARD_BIND_HOST}:${localPort}:localhost:${remotePort}`,
+        ]
+      : [
+          "-R",
+          // Bound to the remote's loopback explicitly rather than relying on
+          // its GatewayPorts default: a service of ours must not land on the
+          // far host's network interfaces.
+          `${FORWARD_BIND_HOST}:${remotePort}:localhost:${localPort}`,
+        ]),
     "--",
     validateSshDestination(destination),
   ];
@@ -97,6 +124,7 @@ export function chooseLocalPort(
 export type ForwardWire = {
   id: string;
   connection_id: string;
+  direction: SshForwardDirection;
   remote_port: number;
   local_port: number;
   label?: string;
@@ -108,6 +136,7 @@ export function forwardToWire(record: SshForwardRecord): ForwardWire {
   return {
     id: record.id,
     connection_id: record.connectionId,
+    direction: record.direction,
     remote_port: record.remotePort,
     local_port: record.localPort,
     ...(record.label ? { label: record.label } : {}),
@@ -116,9 +145,15 @@ export function forwardToWire(record: SshForwardRecord): ForwardWire {
   };
 }
 
-export function forwardId(connectionId: string, remotePort: number): string {
-  return `${connectionId}:${remotePort}`;
+export function forwardId(
+  connectionId: string,
+  remotePort: number,
+  direction: SshForwardDirection = "local",
+): string {
+  return `${connectionId}:${direction}:${remotePort}`;
 }
+
+export type SshForwards = ReturnType<typeof createSshForwards>;
 
 export function createSshForwards(args: {
   logger?: Logger;
@@ -158,11 +193,15 @@ export function createSshForwards(args: {
   function open(request: {
     connectionId: string;
     destination: string;
-    remotePort: number;
+    /** The port on whichever host owns the service: the far host for a local
+     * forward, this one for a remote forward. */
+    port: number;
+    direction?: SshForwardDirection;
     label?: string;
   }): SshForwardRecord {
-    const remotePort = validateForwardPort(request.remotePort);
-    const id = forwardId(request.connectionId, remotePort);
+    const direction = request.direction ?? "local";
+    const port = validateForwardPort(request.port);
+    const id = forwardId(request.connectionId, port, direction);
     const existing = records.get(id);
     if (existing && existing.state !== "failed" && existing.state !== "closed")
       return { ...existing };
@@ -172,24 +211,43 @@ export function createSshForwards(args: {
         .filter(
           (record) => record.state === "starting" || record.state === "open",
         )
+        .filter((record) => record.direction === "local")
         .map((record) => record.localPort),
     );
-    const localPort = chooseLocalPort(
-      remotePort,
-      (port) => !taken.has(port) && isPortFree(port),
-    );
+    // Only a local forward binds here, so only it can be moved to a free
+    // port. A remote forward asks the far host for one, and whether that
+    // succeeds is ssh's answer to give: ExitOnForwardFailure turns a taken
+    // port into an immediate exit carrying its own reason.
+    const localPort =
+      direction === "local"
+        ? chooseLocalPort(
+            port,
+            (candidate) => !taken.has(candidate) && isPortFree(candidate),
+          )
+        : port;
     const record: SshForwardRecord = {
       id,
       connectionId: request.connectionId,
-      remotePort,
+      direction,
+      remotePort: port,
       localPort,
       label: request.label,
       state: "starting",
     };
     records.set(id, record);
 
-    const argv = sshForwardArgv(request.destination, localPort, remotePort);
-    logger.debug("opening ssh forward", { id, localPort, remotePort });
+    const argv = sshForwardArgv(
+      request.destination,
+      localPort,
+      record.remotePort,
+      direction,
+    );
+    logger.debug("opening ssh forward", {
+      id,
+      direction,
+      localPort,
+      remotePort: record.remotePort,
+    });
     const proc = spawn(argv);
     processes.set(id, proc);
     // ExitOnForwardFailure means a refused bind exits immediately; staying up

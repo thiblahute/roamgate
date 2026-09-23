@@ -1127,6 +1127,56 @@ function ConnectionManagerDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** One side of the port list: what a host is listening on, and the button
+ * that tunnels it to the other. Both directions render identically; only the
+ * wording and which way the tunnel runs differ. */
+function ListenerSection({
+  show,
+  busy,
+  heading,
+  listeners,
+  describe,
+  onForward,
+}: {
+  show: boolean;
+  busy: boolean;
+  heading: string;
+  listeners: { port: number; process?: string }[];
+  describe: (port: number) => string;
+  onForward: (port: number) => void;
+}) {
+  if (!show || (listeners.length === 0 && !busy)) return null;
+  return (
+    <div className="connection-forwards">
+      <p className="connection-forwards-head">
+        {heading}
+        {busy ? "\u2026" : ""}
+      </p>
+      {listeners.map((listener) => (
+        <div className="connection-forward" key={listener.port}>
+          <span className="connection-forward-ports">
+            {listener.port}
+            {listener.process ? (
+              <span className="muted"> {listener.process}</span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className="connection-forward-stop"
+            title={describe(listener.port)}
+            aria-label={describe(listener.port)}
+            onClick={() => onForward(listener.port)}
+          >
+            <Plus size={13} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConnectionSwitcher() {
   const state = useStoreSelector(
     (snapshot) => ({
@@ -1135,14 +1185,19 @@ export function ConnectionSwitcher() {
       connections: snapshot.connections,
       defaultConnectionId: snapshot.defaultConnectionId,
       forwards: snapshot.forwards,
-      forwardCandidates: snapshot.forwardCandidates,
-      forwardCandidatesBusy: snapshot.forwardCandidatesBusy,
+      remoteListeners: snapshot.remoteListeners,
+      localListeners: snapshot.localListeners,
+      listenersBusy: snapshot.listenersBusy,
       status: snapshot.status,
     }),
     shallowEqual,
   );
   const [open, setOpen] = useState(false);
   useCloseGlobalMenuForDialog(open, setOpen);
+  const activeLabel =
+    state.connections.find(
+      (connection) => connection.id === state.activeConnectionId,
+    )?.label ?? "the remote";
   const activeIsSsh =
     state.connections.find(
       (connection) => connection.id === state.activeConnectionId,
@@ -1150,7 +1205,7 @@ export function ConnectionSwitcher() {
   // Scanning costs an ssh round trip, so it happens when someone opens the
   // menu to look at ports, not on a timer.
   useEffect(() => {
-    if (open && activeIsSsh) void store.refreshForwardCandidates();
+    if (open && activeIsSsh) void store.refreshListeners();
   }, [open, activeIsSsh]);
   const [manageOpen, setManageOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -1395,37 +1450,28 @@ export function ConnectionSwitcher() {
                 </button>
               ))}
             </div>
-            {activeIsSsh &&
-            (state.forwardCandidates.length > 0 ||
-              state.forwardCandidatesBusy) ? (
-              <div className="connection-forwards">
-                <p className="connection-forwards-head">
-                  Listening on the remote
-                  {state.forwardCandidatesBusy ? "…" : ""}
-                </p>
-                {state.forwardCandidates.map((candidate) => (
-                  <div className="connection-forward" key={candidate.port}>
-                    <span className="connection-forward-ports">
-                      {candidate.port}
-                      {candidate.process ? (
-                        <span className="muted"> {candidate.process}</span>
-                      ) : null}
-                    </span>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      tabIndex={-1}
-                      className="connection-forward-stop"
-                      title={`Forward port ${candidate.port}`}
-                      aria-label={`Forward port ${candidate.port}`}
-                      onClick={() => void store.openForward(candidate.port)}
-                    >
-                      <Plus size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            <ListenerSection
+              show={activeIsSsh}
+              busy={state.listenersBusy}
+              heading={`On ${activeLabel}, bring here`}
+              listeners={state.remoteListeners}
+              describe={(port) =>
+                `Forward ${port} from ${activeLabel} to this machine`
+              }
+              onForward={(port) => void store.openForward(port)}
+            />
+            <ListenerSection
+              show={activeIsSsh}
+              busy={false}
+              heading={`Here, expose to ${activeLabel}`}
+              listeners={state.localListeners}
+              describe={(port) =>
+                `Expose ${port} to ${activeLabel}, on its loopback only`
+              }
+              onForward={(port) =>
+                void store.openForward(port, { direction: "remote" })
+              }
+            />
             {state.forwards.length > 0 ? (
               <div className="connection-forwards">
                 <p className="connection-forwards-head">Forwarded ports</p>
@@ -1436,6 +1482,11 @@ export function ConnectionSwitcher() {
                         <span className="connection-forward-failed">
                           {forward.remote_port} failed
                         </span>
+                      ) : forward.direction === "remote" ? (
+                        <>
+                          {forward.local_port}
+                          <span className="muted"> → {activeLabel}</span>
+                        </>
                       ) : (
                         <>
                           localhost:{forward.local_port}

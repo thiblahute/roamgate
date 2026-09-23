@@ -137,10 +137,12 @@ export interface State extends ServerSessionState {
    * machine has one of those whichever connection asked for it.
    */
   forwards: ForwardRecord[];
-  /** Listening ports found on the active connection's host, asked for rather
-   * than polled; empty until someone looks. */
-  forwardCandidates: { port: number; process?: string }[];
-  forwardCandidatesBusy: boolean;
+  /** Ports listening on the far host: what a local forward could bring here.
+   * Asked for rather than polled, so empty until someone looks. */
+  remoteListeners: { port: number; process?: string }[];
+  /** Ports listening on this machine: what a remote forward could put there. */
+  localListeners: { port: number; process?: string }[];
+  listenersBusy: boolean;
   notice: Notice | null;
   taskNotificationsEnabled: boolean;
   taskNotificationPreferences: TaskNotificationPreferences;
@@ -363,8 +365,9 @@ const initial: State = {
   },
   ...initialSession,
   forwards: [],
-  forwardCandidates: [],
-  forwardCandidatesBusy: false,
+  remoteListeners: [],
+  localListeners: [],
+  listenersBusy: false,
   notice: null,
   taskNotificationsEnabled: storedTaskNotificationsEnabled(),
   taskNotificationPreferences: storedTaskNotificationPreferences(),
@@ -3096,15 +3099,19 @@ export const store = {
    * the local port, which may not be the one that was asked for. Forwards are
    * machine-wide, so the push updates every tab.
    */
-  async openForward(remotePort: number, label?: string) {
+  async openForward(
+    port: number,
+    options: { direction?: "local" | "remote"; label?: string } = {},
+  ) {
     // Through a lease like every other RPC: the lease carries the runtime
     // generation from the catalog, which bridge.connection() alone does not
     // know and rejects the call without.
     const result = await action(
       (lease) =>
         lease.client.call("forward.open", {
-          remote_port: remotePort,
-          label,
+          remote_port: port,
+          direction: options.direction ?? "local",
+          label: options.label,
         }),
       { refresh: "none" },
     );
@@ -3125,22 +3132,29 @@ export const store = {
    * port — a dev server announces its page and says nothing about the
    * websocket beside it — so the list has to come from the host itself.
    */
-  async refreshForwardCandidates() {
-    if (state.forwardCandidatesBusy) return;
-    set({ forwardCandidatesBusy: true });
+  async refreshListeners() {
+    if (state.listenersBusy) return;
+    set({ listenersBusy: true });
     try {
-      const result = await action(
-        (lease) => lease.client.call("forward.candidates"),
-        { refresh: "none" },
-      );
-      const candidates = result?.candidates as
-        | { port: number; process?: string }[]
-        | undefined;
-      set({ forwardCandidates: Array.isArray(candidates) ? candidates : [] });
+      const [remote, local] = await Promise.all([
+        action((lease) => lease.client.call("forward.candidates"), {
+          refresh: "none",
+        }),
+        action(
+          (lease) =>
+            lease.client.call("forward.candidates", { direction: "remote" }),
+          { refresh: "none" },
+        ),
+      ]);
+      const ports = (result: { candidates?: unknown } | undefined) =>
+        Array.isArray(result?.candidates)
+          ? (result.candidates as { port: number; process?: string }[])
+          : [];
+      set({ remoteListeners: ports(remote), localListeners: ports(local) });
     } catch {
-      set({ forwardCandidates: [] });
+      set({ remoteListeners: [], localListeners: [] });
     } finally {
-      set({ forwardCandidatesBusy: false });
+      set({ listenersBusy: false });
     }
   },
 

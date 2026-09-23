@@ -26,7 +26,7 @@ import {
 import { roamgateEnv } from "../config/environment";
 import { createSettingsRpcHandler } from "../bridge/settings-rpc";
 import { createForwardRpcHandler } from "../bridge/forward-rpc";
-import type { SshForwardRecord } from "../bridge/ssh-forward";
+import type { SshForwards } from "../bridge/ssh-forward";
 import {
   readGuiSettings,
   terminalSurfaceCodecsEnabled,
@@ -131,18 +131,7 @@ export function createLegacyConnectionRuntime(args: {
    */
   onUiSettingChanged?: (key: string, value: unknown) => void;
   /** Shared across connections: local ports are a single machine-wide space. */
-  forwards?: {
-    list: () => SshForwardRecord[];
-    open: (request: {
-      connectionId: string;
-      destination: string;
-      remotePort: number;
-      label?: string;
-    }) => SshForwardRecord;
-    markOpen: (id: string) => void;
-    close: (id: string) => boolean;
-    closeConnection: (connectionId: string) => void;
-  };
+  forwards?: SshForwards;
   /** Test seam for deterministic shutdown coverage. */
   lastStepBaselines?: LastStepBaselineStore;
   resolveLastStepWorkspaceGitRoot?: (workspaceId: string) => Promise<string>;

@@ -78,7 +78,7 @@ describe("forward supervisor", () => {
     const record = forwards.open({
       connectionId: "desktop",
       destination: "user@desktop",
-      remotePort: 5173,
+      port: 5173,
     });
 
     expect(record).toMatchObject({
@@ -104,12 +104,12 @@ describe("forward supervisor", () => {
     const a = forwards.open({
       connectionId: "desktop",
       destination: "user@desktop",
-      remotePort: 5173,
+      port: 5173,
     });
     const b = forwards.open({
       connectionId: "desktop",
       destination: "user@desktop",
-      remotePort: 3000,
+      port: 3000,
     });
     first.exit(255);
     // The exit handler awaits ssh's stderr before classifying, so let the
@@ -138,7 +138,7 @@ describe("forward supervisor", () => {
     const request = {
       connectionId: "desktop",
       destination: "user@desktop",
-      remotePort: 5173,
+      port: 5173,
     };
 
     const first = forwards.open(request);
@@ -157,12 +157,12 @@ describe("forward supervisor", () => {
     forwards.open({
       connectionId: "a",
       destination: "user@a",
-      remotePort: 5173,
+      port: 5173,
     });
     const second = forwards.open({
       connectionId: "b",
       destination: "user@b",
-      remotePort: 5173,
+      port: 5173,
     });
     // Same remote number on two connections: the second has to move.
     expect(second.localPort).toBe(5174);
@@ -179,12 +179,12 @@ describe("forward supervisor", () => {
     forwards.open({
       connectionId: "desktop",
       destination: "user@desktop",
-      remotePort: 5173,
+      port: 5173,
     });
     forwards.open({
       connectionId: "laptop",
       destination: "user@laptop",
-      remotePort: 8080,
+      port: 8080,
     });
 
     forwards.closeConnection("desktop");
@@ -289,5 +289,57 @@ describe("narrowing a scan to what is worth offering", () => {
     expect(ownedListeningPorts(unnamed).map((entry) => entry.port)).toEqual([
       3000, 5173,
     ]);
+  });
+});
+
+describe("reverse forwards", () => {
+  test("a remote forward binds the far host's loopback, not its interfaces", () => {
+    const argv = sshForwardArgv("user@host", 11434, 11434, "remote");
+    expect(argv).toContain("-R");
+    expect(argv).not.toContain("-L");
+    // Explicit 127.0.0.1 rather than trusting the far host's GatewayPorts:
+    // exposing our service to its network is not what was asked for.
+    expect(argv).toContain("127.0.0.1:11434:localhost:11434");
+  });
+
+  test("the two directions are separate forwards on the same number", () => {
+    expect(forwardId("desktop", 3000, "local")).not.toBe(
+      forwardId("desktop", 3000, "remote"),
+    );
+  });
+
+  test("a remote forward keeps the port asked for rather than moving it", () => {
+    const procs = [deferredProcess().proc, deferredProcess().proc];
+    const forwards = createSshForwards({
+      spawn: () => procs.shift()!,
+      // Taken here, which for a reverse tunnel is irrelevant: the port that
+      // must be free belongs to the far host, and only ssh can say.
+      isPortFree: () => false,
+    });
+
+    const reverse = forwards.open({
+      connectionId: "desktop",
+      destination: "user@desktop",
+      port: 11434,
+      direction: "remote",
+    });
+    expect(reverse.remotePort).toBe(11434);
+    expect(reverse.localPort).toBe(11434);
+    expect(reverse.direction).toBe("remote");
+  });
+
+  test("a local forward still moves off a taken port", () => {
+    const procs = [deferredProcess().proc];
+    const forwards = createSshForwards({
+      spawn: () => procs.shift()!,
+      isPortFree: (port) => port >= 3002,
+    });
+    expect(
+      forwards.open({
+        connectionId: "desktop",
+        destination: "user@desktop",
+        port: 3000,
+      }).localPort,
+    ).toBe(3002);
   });
 });
