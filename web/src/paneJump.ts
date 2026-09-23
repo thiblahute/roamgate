@@ -221,6 +221,59 @@ export function paneJumpConnectionTarget(
     : null;
 }
 
+/** Where a jump started or landed; pane ids repeat across connections. */
+export type PaneJumpLocation = {
+  connectionId: string;
+  paneId: string;
+};
+
+export type PaneJumpRoundTrip = {
+  from: PaneJumpLocation;
+  to: PaneJumpLocation;
+};
+
+export function paneJumpLocation(
+  entry: PaneJumpEntry,
+  activeConnectionId: string,
+): PaneJumpLocation {
+  return {
+    connectionId: entry.connectionId ?? activeConnectionId,
+    paneId: entry.paneId,
+  };
+}
+
+/**
+ * The entry a freshly opened switcher starts on. Recency alone does not make
+ * the round trip exact: panes of the connections that are not displayed are
+ * listed after every displayed one, so the pane a cross-connection jump came
+ * from is never the first candidate, and a focus that settles on another pane
+ * of the target tab reorders the recent list underneath. Remembering the last
+ * jump keeps the shortcut pressed twice on the pane it started from;
+ * everything else falls back to the most recent other pane.
+ */
+export function paneJumpDefaultIndex(
+  entries: PaneJumpEntry[],
+  activeConnectionId: string,
+  roundTrip: PaneJumpRoundTrip | null,
+): number {
+  const at = (entry: PaneJumpEntry, location: PaneJumpLocation) => {
+    const entryLocation = paneJumpLocation(entry, activeConnectionId);
+    return (
+      entryLocation.connectionId === location.connectionId &&
+      entryLocation.paneId === location.paneId
+    );
+  };
+  const current = entries.find((entry) => entry.current);
+  if (roundTrip && current && at(current, roundTrip.to)) {
+    const back = entries.findIndex(
+      (entry) => !entry.current && at(entry, roundTrip.from),
+    );
+    if (back >= 0) return back;
+  }
+  const recent = entries.findIndex((entry) => !entry.current);
+  return recent >= 0 ? recent : 0;
+}
+
 function paneJumpEntry(
   pane: Pane,
   workspaceById: Map<string, Workspace>,

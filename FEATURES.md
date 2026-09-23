@@ -56,6 +56,8 @@ sizes within a tab are always shared. See
 Switch between the 12 most recently focused panes across tabs and workspaces.
 On macOS hold Ctrl and press Tab (Shift reverses); release the modifier or press
 Enter to switch, Esc to cancel. Press K to switch to search mode.
+Pressing the shortcut twice comes back to the pane it started from, whichever
+connection that pane is on.
 
 With **all connections** on in the workspaces panel, other connections' panes
 follow yours, labelled with their connection: one per workspace here (the one

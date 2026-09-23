@@ -5,6 +5,7 @@ import {
   activePaneIdForSnapshot,
   paneCanClose,
   paneJumpConnectionTarget,
+  paneJumpDefaultIndex,
   paneJumpEntries,
   paneJumpTargetId,
   paneSearchEntries,
@@ -372,5 +373,56 @@ describe("pane search projection", () => {
     expect(entries.map((entry) => entry.paneId)).toEqual(["p3", "p2", "p1"]);
     expect(entries[0].current).toBe(true);
     expect(entries[1].current).toBe(false);
+  });
+});
+
+describe("the entry a freshly opened switcher starts on", () => {
+  const snapshot = {
+    panes: [pane("p1", "w1", "t1"), pane("p2", "w2", "t2")],
+    recentPaneIds: ["p2", "p1"],
+    tabs: [tab("t1", "w1"), tab("t2", "w2")],
+    workspaces: [workspace("w1", "local-repo"), workspace("w2", "docs")],
+  };
+  const desktop = connectionView("desktop", "Desktop", {
+    workspaces: [workspace("w1", "tracing")],
+    tabs: [tab("t1", "w1")],
+    panes: [pane("p1", "w1", "t1")],
+    recentPaneIds: ["p1"],
+  });
+  // p2 is displayed; p1 repeats on both connections on purpose.
+  const entries = paneJumpEntries(snapshot, "p2", [desktop]);
+
+  test("is the most recent other pane without a remembered jump", () => {
+    expect(entries.map((entry) => entry.key)).toEqual([
+      "p2",
+      "p1",
+      "desktop:p1",
+    ]);
+    expect(paneJumpDefaultIndex(entries, "local", null)).toBe(1);
+  });
+
+  test("is the pane the last jump came from, connection included", () => {
+    expect(
+      paneJumpDefaultIndex(entries, "local", {
+        from: { connectionId: "desktop", paneId: "p1" },
+        to: { connectionId: "local", paneId: "p2" },
+      }),
+    ).toBe(2);
+    expect(
+      paneJumpDefaultIndex(entries, "local", {
+        from: { connectionId: "local", paneId: "p1" },
+        to: { connectionId: "local", paneId: "p2" },
+      }),
+    ).toBe(1);
+  });
+
+  test("ignores the last jump once focus moved on its own", () => {
+    const moved = paneJumpEntries(snapshot, "p1", [desktop]);
+    expect(
+      paneJumpDefaultIndex(moved, "local", {
+        from: { connectionId: "desktop", paneId: "p1" },
+        to: { connectionId: "local", paneId: "p2" },
+      }),
+    ).toBe(0);
   });
 });

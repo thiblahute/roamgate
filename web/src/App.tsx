@@ -133,7 +133,10 @@ import {
   activePaneIdForSnapshot,
   type PaneJumpEntry,
   paneJumpConnectionTarget,
+  paneJumpDefaultIndex,
   paneJumpEntries,
+  paneJumpLocation,
+  type PaneJumpRoundTrip,
   paneJumpTargetId,
   paneSearchEntries,
 } from "./paneJump";
@@ -1403,6 +1406,7 @@ export default function App() {
     null,
   );
   const paneJumpIndexRef = useRef(0);
+  const paneJumpRoundTripRef = useRef<PaneJumpRoundTrip | null>(null);
   const paneJumpReturnFocusRef = useRef<HTMLElement | null>(null);
   const [inspectorState, setInspectorState] =
     useState<WorkspaceInspectorState | null>(null);
@@ -2735,6 +2739,15 @@ export default function App() {
       const targetPaneId = paneJumpTargetId(paneJumpOptions, index);
       const connectionTarget = paneJumpConnectionTarget(paneJumpOptions, index);
       closePaneJump(!targetPaneId && !connectionTarget);
+      const target = paneJumpOptions[index];
+      const departure = paneJumpOptions.find((entry) => entry.current);
+      if (target && departure && (targetPaneId || connectionTarget)) {
+        // Remembered so that pressing the shortcut again comes back here.
+        paneJumpRoundTripRef.current = {
+          from: paneJumpLocation(departure, s.activeConnectionId),
+          to: paneJumpLocation(target, s.activeConnectionId),
+        };
+      }
       if (targetPaneId) {
         if (!inspectorStateRef.current?.open) setMobileView("session");
         void store.focusPane(targetPaneId);
@@ -2748,7 +2761,7 @@ export default function App() {
         );
       }
     },
-    [closePaneJump, paneJumpOptions],
+    [closePaneJump, paneJumpOptions, s.activeConnectionId],
   );
   const movePaneJumpSelection = useCallback(
     (delta: number) => {
@@ -2756,12 +2769,15 @@ export default function App() {
     },
     [selectPaneJumpIndex],
   );
-  const defaultPaneJumpIndex = useCallback(() => {
-    const previousPaneIndex = paneJumpOptions.findIndex(
-      (entry) => !entry.current,
-    );
-    return previousPaneIndex >= 0 ? previousPaneIndex : 0;
-  }, [paneJumpOptions]);
+  const defaultPaneJumpIndex = useCallback(
+    () =>
+      paneJumpDefaultIndex(
+        paneJumpOptions,
+        s.activeConnectionId,
+        paneJumpRoundTripRef.current,
+      ),
+    [paneJumpOptions, s.activeConnectionId],
+  );
   // Typed search drops the held modifier: releasing it must keep the list open
   // instead of committing the way the recent switcher does.
   const openPaneJumpSearch = useCallback(() => {
