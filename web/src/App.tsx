@@ -137,9 +137,11 @@ import {
   paneJumpEntries,
   paneJumpLocation,
   type PaneJumpRoundTrip,
+  type PaneJumpScope,
   paneJumpTargetId,
   paneSearchEntries,
 } from "./paneJump";
+import { usePaneJumpScope } from "./paneJumpScope";
 import { useConnectionSessions } from "./components/useConnectionSessions";
 import {
   type Notice,
@@ -700,6 +702,7 @@ function paneTitle(
 
 function PaneJumpOverlay({
   entries,
+  scope,
   selectedIndex,
   search,
   onSearchChange,
@@ -708,6 +711,7 @@ function PaneJumpOverlay({
   onClose,
 }: {
   entries: PaneJumpEntry[];
+  scope: PaneJumpScope;
   selectedIndex: number;
   search: string | null;
   onSearchChange: (value: string) => void;
@@ -719,6 +723,9 @@ function PaneJumpOverlay({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searching = search !== null;
   const selectedEntryKey = entries[selectedIndex]?.key;
+  const workspaces = scope === "workspaces";
+  const noun = workspaces ? "Workspace" : "Pane";
+  const plural = workspaces ? "workspaces" : "panes";
 
   useEffect(() => {
     selectedItemRef.current?.scrollIntoView({ block: "nearest" });
@@ -733,10 +740,10 @@ function PaneJumpOverlay({
     <div className="pane-jump-backdrop">
       <div className="pane-jump-popover">
         <div className="pane-jump-head">
-          <strong>{searching ? "Find Pane" : "Switch Pane"}</strong>
+          <strong>{`${searching ? "Find" : "Switch"} ${noun}`}</strong>
           <span>
             {searching
-              ? "Filters every open pane. Use Up / Down and Enter"
+              ? `Filters every open ${plural.slice(0, -1)}. Use Up / Down and Enter`
               : "K to search; Enter or release modifier to switch"}
           </span>
         </div>
@@ -750,7 +757,7 @@ function PaneJumpOverlay({
             autoComplete="off"
             placeholder="Workspace, tab, directory, or agent"
             role="combobox"
-            aria-label="Search panes"
+            aria-label={`Search ${plural}`}
             aria-expanded={true}
             aria-autocomplete="list"
             aria-controls={listId}
@@ -765,14 +772,14 @@ function PaneJumpOverlay({
         ) : null}
         {entries.length === 0 ? (
           <p className="pane-jump-empty" role="status">
-            No panes match this search.
+            {`No ${plural} match this search.`}
           </p>
         ) : null}
         <div
           className="pane-jump-list"
           id={listId}
           role="listbox"
-          aria-label={searching ? "Matching panes" : "Recent panes"}
+          aria-label={`${searching ? "Matching" : "Recent"} ${plural}`}
         >
           {entries.map((entry, index) => (
             <button
@@ -1549,6 +1556,7 @@ export default function App() {
     [terminalComposerScopeKey],
   );
   const connectionSessions = useConnectionSessions();
+  const paneJumpScope = usePaneJumpScope();
   const paneJumpOptions = useMemo(() => {
     const snapshot = {
       layout: s.layout,
@@ -1558,16 +1566,23 @@ export default function App() {
       workspaces: s.workspaces,
     };
     return paneJumpSearch === null
-      ? paneJumpEntries(snapshot, activePaneId, connectionSessions)
+      ? paneJumpEntries(
+          snapshot,
+          activePaneId,
+          connectionSessions,
+          paneJumpScope,
+        )
       : paneSearchEntries(
           snapshot,
           paneJumpSearch,
           activePaneId,
           connectionSessions,
+          paneJumpScope,
         );
   }, [
     activePaneId,
     connectionSessions,
+    paneJumpScope,
     paneJumpSearch,
     s.layout,
     s.panes,
@@ -2734,17 +2749,27 @@ export default function App() {
     },
     [paneJumpOptions.length],
   );
+  const activeWorkspaceId = activePane?.workspace_id;
   const commitPaneJump = useCallback(
     (index = paneJumpIndexRef.current) => {
       const targetPaneId = paneJumpTargetId(paneJumpOptions, index);
       const connectionTarget = paneJumpConnectionTarget(paneJumpOptions, index);
       closePaneJump(!targetPaneId && !connectionTarget);
       const target = paneJumpOptions[index];
-      const departure = paneJumpOptions.find((entry) => entry.current);
+      // The pane being left, not the entry that stands for it: in workspace
+      // scope a workspace leads with the pane it was last used through.
+      const departure =
+        activePaneId && activeWorkspaceId
+          ? {
+              connectionId: s.activeConnectionId,
+              paneId: activePaneId,
+              workspaceId: activeWorkspaceId,
+            }
+          : null;
       if (target && departure && (targetPaneId || connectionTarget)) {
         // Remembered so that pressing the shortcut again comes back here.
         paneJumpRoundTripRef.current = {
-          from: paneJumpLocation(departure, s.activeConnectionId),
+          from: departure,
           to: paneJumpLocation(target, s.activeConnectionId),
         };
       }
@@ -2761,7 +2786,13 @@ export default function App() {
         );
       }
     },
-    [closePaneJump, paneJumpOptions, s.activeConnectionId],
+    [
+      activePaneId,
+      activeWorkspaceId,
+      closePaneJump,
+      paneJumpOptions,
+      s.activeConnectionId,
+    ],
   );
   const movePaneJumpSelection = useCallback(
     (delta: number) => {
@@ -2775,8 +2806,9 @@ export default function App() {
         paneJumpOptions,
         s.activeConnectionId,
         paneJumpRoundTripRef.current,
+        paneJumpScope,
       ),
-    [paneJumpOptions, s.activeConnectionId],
+    [paneJumpOptions, paneJumpScope, s.activeConnectionId],
   );
   // Typed search drops the held modifier: releasing it must keep the list open
   // instead of committing the way the recent switcher does.
@@ -4445,6 +4477,7 @@ export default function App() {
       {paneJumpOpen ? (
         <PaneJumpOverlay
           entries={paneJumpOptions}
+          scope={paneJumpScope}
           selectedIndex={paneJumpIndex}
           search={paneJumpSearch}
           onSearchChange={changePaneJumpSearch}

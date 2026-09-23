@@ -8,6 +8,7 @@ export type PaneJumpEntry = {
   key: string;
   paneId: string;
   paneLabel: string;
+  workspaceId: string;
   title: string;
   tabLabel: string;
   cwd: string;
@@ -17,6 +18,9 @@ export type PaneJumpEntry = {
   /** Set for a pane on a connection other than the displayed one. */
   connectionId?: string;
 };
+
+/** What the switcher lists: every recent pane, or one entry per workspace. */
+export type PaneJumpScope = "panes" | "workspaces";
 
 export type PaneJumpConnectionTarget = {
   connectionId: string;
@@ -121,11 +125,16 @@ export function paneJumpEntries(
   snapshot: PaneJumpSnapshot,
   activePaneId?: string | null,
   connections: readonly ConnectionSessionView[] = [],
+  scope: PaneJumpScope = "panes",
 ): PaneJumpEntry[] {
-  return [
-    ...orderedPaneJumpEntries(snapshot, activePaneId, false),
-    ...connectionPaneEntries(connections, false),
+  // Workspace scope reads every pane: collapsed to one entry each, the recent
+  // panes alone would hide workspaces that were never visited in this browser.
+  const everyPane = scope === "workspaces";
+  const entries = [
+    ...orderedPaneJumpEntries(snapshot, activePaneId, everyPane),
+    ...connectionPaneEntries(connections, everyPane),
   ];
+  return everyPane ? workspaceJumpEntries(entries) : entries;
 }
 
 /**
@@ -139,17 +148,39 @@ export function paneSearchEntries(
   query: string,
   activePaneId?: string | null,
   connections: readonly ConnectionSessionView[] = [],
+  scope: PaneJumpScope = "panes",
 ): PaneJumpEntry[] {
   const entries = [
     ...orderedPaneJumpEntries(snapshot, activePaneId, true),
     ...connectionPaneEntries(connections, true),
   ];
   const tokens = normalizeSearchText(query).split(" ").filter(Boolean);
-  if (tokens.length === 0) return entries;
-  return entries.filter((entry) => {
-    const haystack = normalizeSearchText(paneSearchValue(entry));
-    return tokens.every((token) => haystack.includes(token));
-  });
+  const matches =
+    tokens.length === 0
+      ? entries
+      : entries.filter((entry) => {
+          const haystack = normalizeSearchText(paneSearchValue(entry));
+          return tokens.every((token) => haystack.includes(token));
+        });
+  // Collapsed last, so a workspace stays reachable through any of its panes.
+  return scope === "workspaces" ? workspaceJumpEntries(matches) : matches;
+}
+
+/**
+ * One entry per workspace, keeping the pane each was most recently used
+ * through. The kept entry is current whenever any pane of its workspace is:
+ * the displayed pane is not always the one the workspace leads with.
+ */
+function workspaceJumpEntries(entries: PaneJumpEntry[]): PaneJumpEntry[] {
+  const byWorkspace = new Map<string, PaneJumpEntry>();
+  for (const entry of entries) {
+    const key = `${entry.connectionId ?? ""}:${entry.workspaceId}`;
+    const kept = byWorkspace.get(key);
+    if (!kept) byWorkspace.set(key, entry);
+    else if (entry.current && !kept.current)
+      byWorkspace.set(key, { ...kept, current: true });
+  }
+  return [...byWorkspace.values()];
 }
 
 function orderedPaneJumpEntries(
@@ -225,6 +256,7 @@ export function paneJumpConnectionTarget(
 export type PaneJumpLocation = {
   connectionId: string;
   paneId: string;
+  workspaceId: string;
 };
 
 export type PaneJumpRoundTrip = {
@@ -239,6 +271,7 @@ export function paneJumpLocation(
   return {
     connectionId: entry.connectionId ?? activeConnectionId,
     paneId: entry.paneId,
+    workspaceId: entry.workspaceId,
   };
 }
 
@@ -255,12 +288,15 @@ export function paneJumpDefaultIndex(
   entries: PaneJumpEntry[],
   activeConnectionId: string,
   roundTrip: PaneJumpRoundTrip | null,
+  scope: PaneJumpScope = "panes",
 ): number {
   const at = (entry: PaneJumpEntry, location: PaneJumpLocation) => {
     const entryLocation = paneJumpLocation(entry, activeConnectionId);
     return (
       entryLocation.connectionId === location.connectionId &&
-      entryLocation.paneId === location.paneId
+      (scope === "workspaces"
+        ? entryLocation.workspaceId === location.workspaceId
+        : entryLocation.paneId === location.paneId)
     );
   };
   const current = entries.find((entry) => entry.current);
@@ -294,6 +330,7 @@ function paneJumpEntry(
     key: pane.pane_id,
     paneId: pane.pane_id,
     paneLabel: `Pane ${shortId(pane.pane_id)}`,
+    workspaceId: pane.workspace_id,
     title: workspaceLabel,
     tabLabel,
     cwd,

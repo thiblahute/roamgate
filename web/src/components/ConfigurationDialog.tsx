@@ -26,6 +26,8 @@ import {
   UI_SCALE_STEP,
 } from "../appearance";
 import { lazyWithReload } from "../lazyWithReload";
+import { setPaneJumpScope, usePaneJumpScope } from "../paneJumpScope";
+import { shortcutLabel } from "../shortcutPreferences";
 import {
   mobileTerminalShortcutCount,
   type MobileTerminalShortcutRows,
@@ -131,6 +133,7 @@ export function ConfigurationDialog({
   );
   const connectionClient = useConnectionClient();
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
+  const paneJumpScope = usePaneJumpScope();
   const [detail, setDetail] = useState<Detail | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const detailTrigger = useRef<HTMLButtonElement | null>(null);
@@ -463,6 +466,38 @@ export function ConfigurationDialog({
                   onClick={() =>
                     store.setAutomaticUpdateChecksEnabled(
                       !s.automaticUpdateChecksEnabled,
+                    )
+                  }
+                >
+                  <span />
+                </button>
+              </div>
+              <div className="config-preference-row">
+                <span className="config-item-icon">
+                  <LayoutDashboard size={15} />
+                </span>
+                <div className="config-item-copy">
+                  <strong>Switch between workspaces</strong>
+                  <span>
+                    {`${shortcutLabel("panes.recent")} lists ${
+                      paneJumpScope === "workspaces"
+                        ? "one entry per workspace"
+                        : "recent panes"
+                    }`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Switch between workspaces"
+                  aria-checked={paneJumpScope === "workspaces"}
+                  className={
+                    "settings-switch" +
+                    (paneJumpScope === "workspaces" ? " is-on" : "")
+                  }
+                  onClick={() =>
+                    setPaneJumpScope(
+                      paneJumpScope === "workspaces" ? "panes" : "workspaces",
                     )
                   }
                 >

@@ -65,6 +65,15 @@ most recently used there), every pane in search. Selecting one switches to that
 connection and focuses the pane. With the toggle off the switcher covers only
 the connection you are on.
 
+### Workspace Scope
+
+**Switch between workspaces** in Menu → Configuration → Behavior turns the
+switcher into a workspace switcher: one entry per workspace, most recently used
+first, landing on the pane you last used there. The recent switcher and its
+search both follow the setting, which is remembered for this browser. Every
+workspace is listed, including ones never visited here, and a search still
+matches on the tab, directory, or agent of any pane in a workspace.
+
 ### Pane Search
 
 `Alt+K` searches **every** live pane by workspace, tab, cwd, or agent

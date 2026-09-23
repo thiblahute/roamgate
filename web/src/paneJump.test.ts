@@ -214,6 +214,7 @@ describe("recent pane projection", () => {
         key: "p1",
         paneId: "p1",
         paneLabel: "Pane p1",
+        workspaceId: "w1",
         title: "example-repo",
         tabLabel: "Tab 1",
         cwd: "/repos/w1",
@@ -287,6 +288,7 @@ describe("recent pane projection", () => {
         key: "current",
         paneId: "current",
         paneLabel: "Pane current",
+        workspaceId: "w1",
         title: "one",
         tabLabel: "Tab 1",
         cwd: "",
@@ -296,6 +298,7 @@ describe("recent pane projection", () => {
         key: "previous",
         paneId: "previous",
         paneLabel: "Pane previous",
+        workspaceId: "w2",
         title: "two",
         tabLabel: "Tab 1",
         cwd: "",
@@ -404,14 +407,14 @@ describe("the entry a freshly opened switcher starts on", () => {
   test("is the pane the last jump came from, connection included", () => {
     expect(
       paneJumpDefaultIndex(entries, "local", {
-        from: { connectionId: "desktop", paneId: "p1" },
-        to: { connectionId: "local", paneId: "p2" },
+        from: { connectionId: "desktop", paneId: "p1", workspaceId: "w1" },
+        to: { connectionId: "local", paneId: "p2", workspaceId: "w2" },
       }),
     ).toBe(2);
     expect(
       paneJumpDefaultIndex(entries, "local", {
-        from: { connectionId: "local", paneId: "p1" },
-        to: { connectionId: "local", paneId: "p2" },
+        from: { connectionId: "local", paneId: "p1", workspaceId: "w1" },
+        to: { connectionId: "local", paneId: "p2", workspaceId: "w2" },
       }),
     ).toBe(1);
   });
@@ -420,9 +423,75 @@ describe("the entry a freshly opened switcher starts on", () => {
     const moved = paneJumpEntries(snapshot, "p1", [desktop]);
     expect(
       paneJumpDefaultIndex(moved, "local", {
-        from: { connectionId: "desktop", paneId: "p1" },
-        to: { connectionId: "local", paneId: "p2" },
+        from: { connectionId: "desktop", paneId: "p1", workspaceId: "w1" },
+        to: { connectionId: "local", paneId: "p2", workspaceId: "w2" },
       }),
     ).toBe(0);
+  });
+});
+
+describe("workspace scope", () => {
+  const snapshot = {
+    panes: [
+      pane("p1", "w1", "t1"),
+      pane("p2", "w1", "t2", "claude"),
+      pane("p3", "w2", "t3"),
+    ],
+    recentPaneIds: ["p2", "p1"],
+    tabs: [tab("t1", "w1"), tab("t2", "w1"), tab("t3", "w2")],
+    workspaces: [workspace("w1", "local-repo"), workspace("w2", "docs")],
+  };
+  const desktop = connectionView("desktop", "Desktop", {
+    workspaces: [
+      { ...workspace("w1", "tracing"), number: 1 },
+      { ...workspace("w2", "executor"), number: 2 },
+    ],
+    tabs: [tab("t1", "w1"), tab("t2", "w2")],
+    panes: [
+      pane("p1", "w1", "t1"),
+      pane("p2", "w1", "t1"),
+      pane("p3", "w2", "t2"),
+    ],
+  });
+
+  test("lists one entry per workspace, recent ones first", () => {
+    const entries = paneJumpEntries(snapshot, "p2", [desktop], "workspaces");
+    expect(entries.map((entry) => [entry.key, entry.title])).toEqual([
+      ["p2", "local-repo"],
+      ["p3", "docs"],
+      ["desktop:p1", "tracing"],
+      ["desktop:p3", "executor"],
+    ]);
+  });
+
+  test("marks the workspace current through any of its panes", () => {
+    // p1 is displayed; the workspace leads with p2, the recent pane there.
+    const entries = paneJumpEntries(snapshot, "p1", [desktop], "workspaces");
+    expect(entries[0]).toMatchObject({ paneId: "p2", current: true });
+    expect(paneJumpTargetId(entries, 0)).toBeNull();
+    expect(paneJumpTargetId(entries, 1)).toBe("p3");
+  });
+
+  test("search keeps a workspace its matching pane leads to", () => {
+    const entries = paneSearchEntries(
+      snapshot,
+      "claude",
+      "p1",
+      [desktop],
+      "workspaces",
+    );
+    expect(entries.map((entry) => entry.key)).toEqual(["p2"]);
+  });
+
+  test("comes back to the workspace the last jump came from", () => {
+    const entries = paneJumpEntries(snapshot, "p3", [desktop], "workspaces");
+    const roundTrip = {
+      from: { connectionId: "desktop", paneId: "p2", workspaceId: "w1" },
+      to: { connectionId: "local", paneId: "p3", workspaceId: "w2" },
+    };
+    // The workspace, not the pane: a jump lands on whichever pane leads it.
+    expect(
+      paneJumpDefaultIndex(entries, "local", roundTrip, "workspaces"),
+    ).toBe(2);
   });
 });
