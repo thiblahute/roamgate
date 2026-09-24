@@ -235,6 +235,12 @@ const IMPORTANT_RPC_METHODS = new Set([
   "settings.workspace_auto_sync.update",
   "settings.workspace_auto_sync.update_key",
   "settings.worktree_hooks.get",
+  // The popup is toggled by a single keystroke and closed by several paths,
+  // so every open and close is worth a line: a fast close is exactly the one
+  // that makes the key look dead.
+  "popup.close",
+  "plugin.action.invoke",
+  "terminal.watch_popup",
   "worktree.create",
   "worktree.open",
   "worktree.remove",
