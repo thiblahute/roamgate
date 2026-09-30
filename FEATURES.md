@@ -73,7 +73,8 @@ first across every connection, landing on the pane you last used there. One
 press returns to the workspace you were on just before; each extra press while
 the modifier is held goes one workspace further back. The history is kept in
 this browser, so it survives a reload. The recent switcher and its
-search both follow the setting, which is remembered for this browser. Every
+search both follow the setting, which is remembered for this browser, and
+search lists its matches in the same order. Every
 workspace is listed, including ones never visited here, and a search still
 matches on the tab, directory, or agent of any pane in a workspace.
 

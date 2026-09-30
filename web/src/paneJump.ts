@@ -175,7 +175,7 @@ export function paneJumpEntries(
   activePaneId?: string | null,
   connections: readonly ConnectionSessionView[] = [],
   scope: PaneJumpScope = "panes",
-  workspaceHistory?: { activeConnectionId: string; keys: readonly string[] },
+  workspaceHistory?: WorkspaceHistory,
 ): PaneJumpEntry[] {
   // Workspace scope reads every pane: collapsed to one entry each, the recent
   // panes alone would hide workspaces that were never visited in this browser.
@@ -185,20 +185,35 @@ export function paneJumpEntries(
     ...connectionPaneEntries(connections, everyPane),
   ];
   if (!everyPane) return entries;
-  const workspaces = workspaceJumpEntries(entries);
-  if (!workspaceHistory) return workspaces;
-  const rank = new Map(
-    workspaceHistory.keys.map((key, index) => [key, index] as const),
+  return orderByWorkspaceHistory(
+    workspaceJumpEntries(entries),
+    workspaceHistory,
   );
+}
+
+export type WorkspaceHistory = {
+  activeConnectionId: string;
+  keys: readonly string[];
+};
+
+/**
+ * The current workspace first, then the others by when they were last
+ * visited. Stable: workspaces never visited keep their order at the end.
+ */
+function orderByWorkspaceHistory(
+  workspaces: PaneJumpEntry[],
+  history: WorkspaceHistory | undefined,
+): PaneJumpEntry[] {
+  if (!history) return workspaces;
+  const rank = new Map(history.keys.map((key, index) => [key, index] as const));
   const rankOf = (entry: PaneJumpEntry) => {
     if (entry.current) return -1;
     const key = workspaceHistoryKey(
-      entry.connectionId ?? workspaceHistory.activeConnectionId,
+      entry.connectionId ?? history.activeConnectionId,
       entry.workspaceId,
     );
     return rank.get(key) ?? Number.MAX_SAFE_INTEGER;
   };
-  // Stable: workspaces never visited keep their existing order at the end.
   return workspaces
     .map((entry, index) => ({ entry, index, rank: rankOf(entry) }))
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
@@ -209,7 +224,8 @@ export function paneJumpEntries(
  * Searches every live pane instead of the recent ones alone, so a pane that was
  * never visited stays reachable by workspace, tab, directory, or agent name.
  * Matches keep the recent-first order rather than a relevance ranking, which
- * leaves the list stable while the query grows.
+ * leaves the list stable while the query grows. Workspace scope uses the same
+ * visit order as the recent switcher.
  */
 export function paneSearchEntries(
   snapshot: PaneJumpSnapshot,
@@ -217,6 +233,7 @@ export function paneSearchEntries(
   activePaneId?: string | null,
   connections: readonly ConnectionSessionView[] = [],
   scope: PaneJumpScope = "panes",
+  workspaceHistory?: WorkspaceHistory,
 ): PaneJumpEntry[] {
   const entries = [
     ...orderedPaneJumpEntries(snapshot, activePaneId, true),
@@ -231,7 +248,9 @@ export function paneSearchEntries(
           return tokens.every((token) => haystack.includes(token));
         });
   // Collapsed last, so a workspace stays reachable through any of its panes.
-  return scope === "workspaces" ? workspaceJumpEntries(matches) : matches;
+  return scope === "workspaces"
+    ? orderByWorkspaceHistory(workspaceJumpEntries(matches), workspaceHistory)
+    : matches;
 }
 
 /**

@@ -521,6 +521,37 @@ describe("workspace scope", () => {
     expect(entries[once + 1]?.title).toBe("tracing");
   });
 
+  test("search lists workspaces in the same visit order", () => {
+    const history = {
+      activeConnectionId: "local",
+      keys: [
+        workspaceHistoryKey("local", "w2"),
+        workspaceHistoryKey("desktop", "w2"),
+        workspaceHistoryKey("local", "w1"),
+      ],
+    };
+    const titles = (query: string) =>
+      paneSearchEntries(
+        snapshot,
+        query,
+        "p3",
+        [desktop],
+        "workspaces",
+        history,
+      ).map((entry) => entry.title);
+    const recent = paneJumpEntries(
+      snapshot,
+      "p3",
+      [desktop],
+      "workspaces",
+      history,
+    ).map((entry) => entry.title);
+    expect(titles("")).toEqual(recent);
+    expect(titles("")).toEqual(["docs", "executor", "local-repo", "tracing"]);
+    // Filtering keeps the order of what remains.
+    expect(titles("repos")).toEqual(recent);
+  });
+
   test("records each visited workspace once, most recent first", () => {
     const a = workspaceHistoryKey("local", "w1");
     const b = workspaceHistoryKey("desktop", "w1");

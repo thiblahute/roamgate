@@ -1619,13 +1619,17 @@ export default function App() {
       tabs: s.tabs,
       workspaces: s.workspaces,
     };
+    const history = {
+      activeConnectionId: s.activeConnectionId,
+      keys: workspaceHistory,
+    };
     return paneJumpSearch === null
       ? paneJumpEntries(
           snapshot,
           activePaneId,
           connectionSessions,
           paneJumpScope,
-          { activeConnectionId: s.activeConnectionId, keys: workspaceHistory },
+          history,
         )
       : paneSearchEntries(
           snapshot,
@@ -1633,6 +1637,7 @@ export default function App() {
           activePaneId,
           connectionSessions,
           paneJumpScope,
+          history,
         );
   }, [
     activePaneId,
