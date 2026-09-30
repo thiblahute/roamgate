@@ -11,6 +11,7 @@ import {
   paneJumpTargetId,
   paneSearchEntries,
   serverPaneSearchEntries,
+  parseWorkspaceHistory,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -600,5 +601,16 @@ describe("workspace scope", () => {
     expect(recordWorkspaceVisit(history, b)).toBe(history);
     // Workspace ids repeat across connections.
     expect(a).not.toBe(b);
+  });
+
+  test("reads back a stored history and ignores anything else", () => {
+    const a = workspaceHistoryKey("local", "w1");
+    const b = workspaceHistoryKey("desktop", "w1");
+    expect(parseWorkspaceHistory(JSON.stringify([a, b, a]))).toEqual([a, b]);
+    expect(parseWorkspaceHistory(JSON.stringify([a, 3, "w1", null]))).toEqual([
+      a,
+    ]);
+    for (const raw of [null, "", "{", '{"a":1}', "42"])
+      expect(parseWorkspaceHistory(raw)).toEqual([]);
   });
 });
