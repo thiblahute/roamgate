@@ -69,7 +69,9 @@ the connection you are on.
 
 **Switch between workspaces** in Menu → Configuration → Behavior turns the
 switcher into a workspace switcher: one entry per workspace, most recently used
-first, landing on the pane you last used there. The recent switcher and its
+first across every connection, landing on the pane you last used there. One
+press returns to the workspace you were on just before; each extra press while
+the modifier is held goes one workspace further back. The recent switcher and its
 search both follow the setting, which is remembered for this browser. Every
 workspace is listed, including ones never visited here, and a search still
 matches on the tab, directory, or agent of any pane in a workspace.

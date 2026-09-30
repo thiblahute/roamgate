@@ -9,6 +9,8 @@ import {
   paneJumpEntries,
   paneJumpTargetId,
   paneSearchEntries,
+  recordWorkspaceVisit,
+  workspaceHistoryKey,
 } from "./paneJump";
 import type { Pane, Tab, Workspace } from "./types";
 
@@ -483,15 +485,52 @@ describe("workspace scope", () => {
     expect(entries.map((entry) => entry.key)).toEqual(["p2"]);
   });
 
-  test("comes back to the workspace the last jump came from", () => {
-    const entries = paneJumpEntries(snapshot, "p3", [desktop], "workspaces");
+  test("walks back through workspaces in visit order across connections", () => {
+    // Visited local:docs, then desktop:tracing, then local:local-repo, and
+    // now back on local:docs.
+    const keys = [
+      workspaceHistoryKey("local", "w2"),
+      workspaceHistoryKey("local", "w1"),
+      workspaceHistoryKey("desktop", "w1"),
+    ];
+    const entries = paneJumpEntries(snapshot, "p3", [desktop], "workspaces", {
+      activeConnectionId: "local",
+      keys,
+    });
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "docs",
+      "local-repo",
+      "tracing",
+      // Never visited: listed last, in their existing order.
+      "executor",
+    ]);
     const roundTrip = {
       from: { connectionId: "desktop", paneId: "p2", workspaceId: "w1" },
       to: { connectionId: "local", paneId: "p3", workspaceId: "w2" },
     };
-    // The workspace, not the pane: a jump lands on whichever pane leads it.
-    expect(
-      paneJumpDefaultIndex(entries, "local", roundTrip, "workspaces"),
-    ).toBe(2);
+    // Once: the workspace left last. Twice: the one before it, not a cycle
+    // back through the round trip.
+    const once = paneJumpDefaultIndex(
+      entries,
+      "local",
+      roundTrip,
+      "workspaces",
+    );
+    expect(entries[once]?.title).toBe("local-repo");
+    expect(entries[once + 1]?.title).toBe("tracing");
+  });
+
+  test("records each visited workspace once, most recent first", () => {
+    const a = workspaceHistoryKey("local", "w1");
+    const b = workspaceHistoryKey("desktop", "w1");
+    const c = workspaceHistoryKey("local", "w2");
+    let history = recordWorkspaceVisit([], a);
+    history = recordWorkspaceVisit(history, b);
+    history = recordWorkspaceVisit(history, c);
+    history = recordWorkspaceVisit(history, b);
+    expect(history).toEqual([b, c, a]);
+    expect(recordWorkspaceVisit(history, b)).toBe(history);
+    // Workspace ids repeat across connections.
+    expect(a).not.toBe(b);
   });
 });

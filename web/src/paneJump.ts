@@ -116,16 +116,45 @@ function connectionPaneEntries(
   return entries;
 }
 
+/** Identifies a workspace across connections: workspace ids repeat. */
+export function workspaceHistoryKey(
+  connectionId: string,
+  workspaceId: string,
+): string {
+  return `${connectionId}\0${workspaceId}`;
+}
+
+const WORKSPACE_HISTORY_LIMIT = 100;
+
+/**
+ * Moves a visited workspace to the front of the most-recent-first history.
+ * Returns the same array when it already leads, so callers can skip updates.
+ */
+export function recordWorkspaceVisit(
+  history: readonly string[],
+  key: string,
+): readonly string[] {
+  if (history[0] === key) return history;
+  return [key, ...history.filter((entry) => entry !== key)].slice(
+    0,
+    WORKSPACE_HISTORY_LIMIT,
+  );
+}
+
 /**
  * Projects live pane state into a deduplicated, most-recent-first switcher.
  * `connections` adds the panes of connections that are not displayed (the
  * all-connections view); the displayed one's entry there is ignored.
+ * `workspaceHistory` orders the workspace scope by when each workspace was
+ * last visited, across every connection, so the shortcut walks back through
+ * them in the order they were left.
  */
 export function paneJumpEntries(
   snapshot: PaneJumpSnapshot,
   activePaneId?: string | null,
   connections: readonly ConnectionSessionView[] = [],
   scope: PaneJumpScope = "panes",
+  workspaceHistory?: { activeConnectionId: string; keys: readonly string[] },
 ): PaneJumpEntry[] {
   // Workspace scope reads every pane: collapsed to one entry each, the recent
   // panes alone would hide workspaces that were never visited in this browser.
@@ -134,7 +163,25 @@ export function paneJumpEntries(
     ...orderedPaneJumpEntries(snapshot, activePaneId, everyPane),
     ...connectionPaneEntries(connections, everyPane),
   ];
-  return everyPane ? workspaceJumpEntries(entries) : entries;
+  if (!everyPane) return entries;
+  const workspaces = workspaceJumpEntries(entries);
+  if (!workspaceHistory) return workspaces;
+  const rank = new Map(
+    workspaceHistory.keys.map((key, index) => [key, index] as const),
+  );
+  const rankOf = (entry: PaneJumpEntry) => {
+    if (entry.current) return -1;
+    const key = workspaceHistoryKey(
+      entry.connectionId ?? workspaceHistory.activeConnectionId,
+      entry.workspaceId,
+    );
+    return rank.get(key) ?? Number.MAX_SAFE_INTEGER;
+  };
+  // Stable: workspaces never visited keep their existing order at the end.
+  return workspaces
+    .map((entry, index) => ({ entry, index, rank: rankOf(entry) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(({ entry }) => entry);
 }
 
 /**
@@ -300,7 +347,14 @@ export function paneJumpDefaultIndex(
     );
   };
   const current = entries.find((entry) => entry.current);
-  if (roundTrip && current && at(current, roundTrip.to)) {
+  // Workspace scope is ordered by visit history, whose first other entry is
+  // already the workspace left most recently.
+  if (
+    scope !== "workspaces" &&
+    roundTrip &&
+    current &&
+    at(current, roundTrip.to)
+  ) {
     const back = entries.findIndex(
       (entry) => !entry.current && at(entry, roundTrip.from),
     );
