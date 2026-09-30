@@ -140,6 +140,7 @@ import {
   type PaneJumpScope,
   paneJumpTargetId,
   paneSearchEntries,
+  parseWorkspaceHistory,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -704,6 +705,17 @@ function paneTitle(
 
 /** How long a workspace must stay displayed to count as visited. */
 const WORKSPACE_VISIT_SETTLE_MS = 1000;
+const WORKSPACE_HISTORY_STORAGE_KEY = "workspaceSwitcherHistory";
+
+function readWorkspaceHistory(): readonly string[] {
+  try {
+    return parseWorkspaceHistory(
+      roamgateLocalStorage.getItem(WORKSPACE_HISTORY_STORAGE_KEY),
+    );
+  } catch {
+    return [];
+  }
+}
 
 function PaneJumpOverlay({
   entries,
@@ -1563,9 +1575,19 @@ export default function App() {
   const connectionSessions = useConnectionSessions();
   const paneJumpScope = usePaneJumpScope();
   // Most-recent-first workspaces across every connection, for the switcher.
-  const [workspaceHistory, setWorkspaceHistory] = useState<readonly string[]>(
-    [],
-  );
+  // Kept in this browser so a reload still goes back where you were.
+  const [workspaceHistory, setWorkspaceHistory] =
+    useState<readonly string[]>(readWorkspaceHistory);
+  useEffect(() => {
+    try {
+      roamgateLocalStorage.setItem(
+        WORKSPACE_HISTORY_STORAGE_KEY,
+        JSON.stringify(workspaceHistory),
+      );
+    } catch {
+      /* The switcher still works for this page without storage. */
+    }
+  }, [workspaceHistory]);
   const visitWorkspace = useCallback(
     (connectionId: string, workspaceId: string) =>
       setWorkspaceHistory((history) =>

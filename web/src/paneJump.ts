@@ -127,6 +127,27 @@ export function workspaceHistoryKey(
 const WORKSPACE_HISTORY_LIMIT = 100;
 
 /**
+ * Reads a stored history back, dropping anything that is not a history key.
+ * Stored values come from this browser but can be stale or hand-edited.
+ */
+export function parseWorkspaceHistory(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed.filter(
+          (key): key is string => typeof key === "string" && key.includes("\0"),
+        ),
+      ),
+    ].slice(0, WORKSPACE_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Moves a visited workspace to the front of the most-recent-first history.
  * Returns the same array when it already leads, so callers can skip updates.
  */
