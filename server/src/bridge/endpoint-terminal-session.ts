@@ -117,9 +117,16 @@ export class EndpointTerminalSession extends EventEmitter {
     this.fitAttempts = SURFACE_FIT_MAX_ATTEMPTS;
     this.lastRequest = surfaceSize;
     const ready = (async () => {
+      const startedAt = performance.now();
+      const phases: Record<string, number> = {};
+      const mark = (phase: string) => {
+        phases[phase] = Math.round(performance.now() - startedAt);
+      };
       await this.client.connect(surfaceSize.cols, surfaceSize.rows);
+      mark("hello_ms");
       this.client.assertMethod("pane.focus");
       const paneId = await this.lookupPaneId(this.terminalId);
+      mark("lookup_ms");
       if (!paneId) {
         throw new Error(
           `no pane found for terminal ${this.terminalId} (endpoint path)`,
@@ -132,6 +139,7 @@ export class EndpointTerminalSession extends EventEmitter {
       await this.enqueueCommand(() =>
         this.client.callEndpoint("pane.focus", { pane_id: paneId }),
       );
+      mark("focus_ms");
       // A surface may have arrived before the lookup resolved; process it
       // now if it already contains the pane.
       const current = this.client.currentSurface;
@@ -139,6 +147,11 @@ export class EndpointTerminalSession extends EventEmitter {
         this.onSurface(current);
       }
       await this.waitForSurface(paneId);
+      mark("surface_ms");
+      this.logger.debug("endpoint connected", {
+        terminal: this.terminalId,
+        ...phases,
+      });
     })();
     this.connecting = ready
       .catch((e) => {
