@@ -441,7 +441,15 @@ describe("cross-server pane search", () => {
       tabs: [tab("t1", "w1")],
       workspaces: [workspace("w1", "rozkminy")],
     };
-    const local = paneSearchEntries(snapshot, "local", null, [], "panes", "Local");
+    const local = paneSearchEntries(
+      snapshot,
+      "local",
+      null,
+      [],
+      "panes",
+      undefined,
+      "Local",
+    );
     const remote = serverPaneSearchEntries(panes, "", "local");
 
     expect(local.map((entry) => entry.serverLabel)).toEqual(["Local"]);
@@ -587,6 +595,37 @@ describe("workspace scope", () => {
     );
     expect(entries[once]?.title).toBe("local-repo");
     expect(entries[once + 1]?.title).toBe("tracing");
+  });
+
+  test("search lists workspaces in the same visit order", () => {
+    const history = {
+      activeConnectionId: "local",
+      keys: [
+        workspaceHistoryKey("local", "w2"),
+        workspaceHistoryKey("desktop", "w2"),
+        workspaceHistoryKey("local", "w1"),
+      ],
+    };
+    const titles = (query: string) =>
+      paneSearchEntries(
+        snapshot,
+        query,
+        "p3",
+        [desktop],
+        "workspaces",
+        history,
+      ).map((entry) => entry.title);
+    const recent = paneJumpEntries(
+      snapshot,
+      "p3",
+      [desktop],
+      "workspaces",
+      history,
+    ).map((entry) => entry.title);
+    expect(titles("")).toEqual(recent);
+    expect(titles("")).toEqual(["docs", "executor", "local-repo", "tracing"]);
+    // Filtering keeps the order of what remains.
+    expect(titles("repos")).toEqual(recent);
   });
 
   test("records each visited workspace once, most recent first", () => {
