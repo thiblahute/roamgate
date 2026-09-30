@@ -37,9 +37,13 @@ export class HerdrClient extends EventEmitter {
       .toString(36)
       .slice(2, 6)}`;
     return new Promise((resolve, reject) => {
-      const s = net.createConnection({ path: this.socketPath });
+      // Bun.connect, not node:net: under Bun, node:net unix sockets deliver
+      // this one-shot response about 100 ms late, which every bridge RPC and
+      // terminal attach used to pay.
+      let s: import("bun").Socket<undefined> | null = null;
       let buf = "";
       let done = false;
+      const decoder = new TextDecoder();
 
       const timer = setTimeout(
         () => finish(new Error(`timeout: ${method}`)),
@@ -54,7 +58,7 @@ export class HerdrClient extends EventEmitter {
           // One-shot RPCs never reuse the socket. Force closure so a peer that
           // keeps its readable side half-open cannot retain our descriptor
           // after a timeout or malformed response.
-          s.destroy();
+          s?.terminate();
         } catch {
           /* already closed */
         }
@@ -62,22 +66,8 @@ export class HerdrClient extends EventEmitter {
         else resolve(val);
       }
 
-      s.on("error", (e) =>
-        finish(new Error(`${(e as any).code ?? "error"}: ${e.message}`)),
-      );
-      s.on("connect", () => {
-        if (done) return;
-        try {
-          beforeSend?.();
-          s.write(JSON.stringify({ id: requestId, method, params }) + "\n");
-        } catch (error) {
-          finish(
-            error instanceof Error ? error : new Error("RPC dispatch rejected"),
-          );
-        }
-      });
-      s.on("data", (chunk) => {
-        buf += chunk.toString("utf8");
+      const onData = (chunk: Uint8Array) => {
+        buf += decoder.decode(chunk, { stream: true });
         const i = buf.indexOf("\n");
         if (i === -1) {
           if (Buffer.byteLength(buf) > MAX_NDJSON_LINE_BYTES) {
@@ -122,12 +112,43 @@ export class HerdrClient extends EventEmitter {
         } else {
           finish(undefined, envelope.result);
         }
-      });
-      s.on("close", () => {
-        if (!done) {
-          finish(new Error(`connection closed before response: ${method}`));
-        }
-      });
+      };
+      const request = JSON.stringify({ id: requestId, method, params }) + "\n";
+      Bun.connect({
+        unix: this.socketPath,
+        socket: {
+          open(socket) {
+            s = socket;
+            if (done) {
+              socket.terminate();
+              return;
+            }
+            try {
+              beforeSend?.();
+              // Requests are small; a short write only happens on a full
+              // socket buffer, which a fresh one-shot connection never has.
+              socket.write(request);
+            } catch (error) {
+              finish(
+                error instanceof Error
+                  ? error
+                  : new Error("RPC dispatch rejected"),
+              );
+            }
+          },
+          data(_socket, chunk) {
+            onData(chunk);
+          },
+          close() {
+            finish(new Error(`connection closed before response: ${method}`));
+          },
+          error(_socket, e) {
+            finish(new Error(`${(e as any).code ?? "error"}: ${e.message}`));
+          },
+        },
+      }).catch((e: Error) =>
+        finish(new Error(`${(e as any).code ?? "error"}: ${e.message}`)),
+      );
     });
   }
 
