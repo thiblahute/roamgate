@@ -158,6 +158,8 @@ import {
   paneJumpTargetId,
   paneSearchEntries,
   serverPaneSearchEntries,
+  recordWorkspaceVisit,
+  workspaceHistoryKey,
 } from "./paneJump";
 import { sortAgentPanes } from "./agentOrder";
 import { markAgentOpened } from "./agentRecency";
@@ -756,6 +758,9 @@ function rectPercent(value: number, start: number, size: number) {
   if (size <= 0) return 0;
   return ((value - start) / size) * 100;
 }
+
+/** How long a workspace must stay displayed to count as visited. */
+const WORKSPACE_VISIT_SETTLE_MS = 1000;
 
 function PaneJumpOverlay({
   entries,
@@ -1638,6 +1643,33 @@ export default function App() {
   );
   const connectionSessions = useConnectionSessions();
   const paneJumpScope = usePaneJumpScope();
+  // Most-recent-first workspaces across every connection, for the switcher.
+  const [workspaceHistory, setWorkspaceHistory] = useState<readonly string[]>(
+    [],
+  );
+  const visitWorkspace = useCallback(
+    (connectionId: string, workspaceId: string) =>
+      setWorkspaceHistory((history) =>
+        recordWorkspaceVisit(
+          history,
+          workspaceHistoryKey(connectionId, workspaceId),
+        ),
+      ),
+    [],
+  );
+  const visitedWorkspaceId = activePane?.workspace_id;
+  useEffect(() => {
+    if (!visitedWorkspaceId) return;
+    const connectionId = s.activeConnectionId;
+    // Switching connections first shows the workspace that connection last
+    // displayed. Count only a workspace that stays; switcher jumps record
+    // their endpoints directly.
+    const timer = setTimeout(
+      () => visitWorkspace(connectionId, visitedWorkspaceId),
+      WORKSPACE_VISIT_SETTLE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [s.activeConnectionId, visitedWorkspaceId, visitWorkspace]);
   const paneJumpOptions = useMemo(() => {
     const snapshot = {
       layout: s.layout,
@@ -1652,6 +1684,7 @@ export default function App() {
         activePaneId,
         connectionSessions,
         paneJumpScope,
+        { activeConnectionId: s.activeConnectionId, keys: workspaceHistory },
       );
     // Connections already read for the all-connections view list every pane
     // themselves; the server agent search only adds the others.
@@ -1700,6 +1733,7 @@ export default function App() {
     s.recentPaneIds,
     s.tabs,
     s.workspaces,
+    workspaceHistory,
   ]);
   const activePaneHasAgent = paneHasAgentHistory(activePane);
   const activePaneChat =
@@ -2956,11 +2990,11 @@ export default function App() {
             }
           : null;
       if (target && departure && (targetPaneId || connectionTarget)) {
+        const arrival = paneJumpLocation(target, s.activeConnectionId);
         // Remembered so that pressing the shortcut again comes back here.
-        paneJumpRoundTripRef.current = {
-          from: departure,
-          to: paneJumpLocation(target, s.activeConnectionId),
-        };
+        paneJumpRoundTripRef.current = { from: departure, to: arrival };
+        visitWorkspace(departure.connectionId, departure.workspaceId);
+        visitWorkspace(arrival.connectionId, arrival.workspaceId);
       }
       if (!targetPaneId && !connectionTarget) return;
       if (!inspectorStateRef.current?.open) setMobileView("session");
@@ -2983,6 +3017,7 @@ export default function App() {
       closePaneJump,
       paneJumpOptions,
       s.activeConnectionId,
+      visitWorkspace,
     ],
   );
   const movePaneJumpSelection = useCallback(
