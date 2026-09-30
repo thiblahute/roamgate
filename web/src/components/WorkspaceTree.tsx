@@ -237,7 +237,6 @@ function PullRequestBadge({
 }
 
 const NOOP = () => undefined;
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set();
 /** Pull requests are looked up for the displayed connection only. */
 const NO_REVIEWS: Record<string, PullRequestSummary> = {};
 
@@ -276,7 +275,9 @@ function ConnectionGroup({
  * tab counts, collapsing. Selecting a workspace or an agent switches to that
  * connection first. What needs that connection's lease (drag, context menus,
  * pins) stays with the displayed connection, and nothing here is drawn as
- * selected: Herdr's `focused` flags there are that connection's own.
+ * selected: Herdr's `focused` flags there are that connection's own. Pins and
+ * collapsed groups come from the same per-connection storage the displayed
+ * tree uses, so a connection's order does not change when it is displayed.
  */
 function ConnectionWorkspaceRows({
   view,
@@ -285,7 +286,42 @@ function ConnectionWorkspaceRows({
   view: ConnectionSessionView;
   agentLayout: WorkspaceAgentLayout;
 }) {
-  const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
+  const connectionId = view.connection.id;
+  const pinsStorageKey = connectionStorageKey(
+    connectionId,
+    WORKSPACE_PINS_STORAGE_KEY,
+  );
+  const collapsedGroupsStorageKey = connectionStorageKey(
+    connectionId,
+    COLLAPSED_WORKTREE_GROUPS_STORAGE_KEY,
+  );
+  const [pinnedKeys, setPinnedKeys] = useState<string[]>(() =>
+    parseWorkspacePins(roamgateLocalStorage.getItem(pinsStorageKey)),
+  );
+  const [collapsedKeys, setCollapsedKeys] = useState<string[]>(() =>
+    parseCollapsedWorktreeGroups(
+      roamgateLocalStorage.getItem(collapsedGroupsStorageKey),
+    ),
+  );
+  useEffect(() => {
+    setPinnedKeys(
+      parseWorkspacePins(roamgateLocalStorage.getItem(pinsStorageKey)),
+    );
+    setCollapsedKeys(
+      parseCollapsedWorktreeGroups(
+        roamgateLocalStorage.getItem(collapsedGroupsStorageKey),
+      ),
+    );
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === pinsStorageKey)
+        setPinnedKeys(parseWorkspacePins(event.newValue));
+      else if (event.key === collapsedGroupsStorageKey)
+        setCollapsedKeys(parseCollapsedWorktreeGroups(event.newValue));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [collapsedGroupsStorageKey, pinsStorageKey]);
+  const pinnedSet = useMemo(() => new Set(pinnedKeys), [pinnedKeys]);
   const collapsedSet = useMemo(() => new Set(collapsedKeys), [collapsedKeys]);
   const agentsByWorkspace = useMemo(
     () =>
@@ -302,10 +338,9 @@ function ConnectionWorkspaceRows({
     return counts;
   }, [view.tabs]);
   const { topLevel, childrenByParent } = useMemo(
-    () => buildWorkspaceHierarchy(view.workspaces, EMPTY_STRING_SET),
-    [view.workspaces],
+    () => buildWorkspaceHierarchy(view.workspaces, pinnedSet),
+    [pinnedSet, view.workspaces],
   );
-  const connectionId = view.connection.id;
 
   if (!view.loaded && !view.error) {
     return <p className="muted connection-group-note">Loading…</p>;
@@ -323,12 +358,21 @@ function ConnectionWorkspaceRows({
           tabCountsByWorkspace={tabCountsByWorkspace}
           alwaysShowTabCount={agentLayout === "compact"}
           activePaneId={null}
-          pinnedWorkspaceKeys={EMPTY_STRING_SET}
+          pinnedWorkspaceKeys={pinnedSet}
           collapsedWorktreeGroupKeys={collapsedSet}
           onCollapsedChange={(workspace, collapsed) =>
-            setCollapsedKeys((current) =>
-              setWorktreeGroupCollapsed(current, workspace, collapsed),
-            )
+            setCollapsedKeys((current) => {
+              const next = setWorktreeGroupCollapsed(
+                current,
+                workspace,
+                collapsed,
+              );
+              roamgateLocalStorage.setItem(
+                collapsedGroupsStorageKey,
+                serializeCollapsedWorktreeGroups(next),
+              );
+              return next;
+            })
           }
           onSelect={(workspace) =>
             void store.jumpToConnectionWorkspace(
