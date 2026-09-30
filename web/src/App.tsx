@@ -1700,13 +1700,17 @@ export default function App() {
       tabs: s.tabs,
       workspaces: s.workspaces,
     };
+    const history = {
+      activeConnectionId: s.activeConnectionId,
+      keys: workspaceHistory,
+    };
     if (paneJumpSearch === null)
       return paneJumpEntries(
         snapshot,
         activePaneId,
         connectionSessions,
         paneJumpScope,
-        { activeConnectionId: s.activeConnectionId, keys: workspaceHistory },
+        history,
       );
     // Connections already read for the all-connections view list every pane
     // themselves; the server agent search only adds the others.
@@ -1733,6 +1737,7 @@ export default function App() {
         activePaneId,
         connectionSessions,
         paneJumpScope,
+        history,
         activeServerLabel,
       ),
       ...serverPaneSearchEntries(
@@ -1740,6 +1745,7 @@ export default function App() {
         paneJumpSearch,
         s.activeConnectionId,
         paneJumpScope,
+        history,
       ),
     ];
   }, [
