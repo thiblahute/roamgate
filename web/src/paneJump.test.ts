@@ -12,7 +12,8 @@ import {
   paneSearchEntries,
   serverPaneSearchEntries,
   parseWorkspaceHistory,
-  pointerMovedSince,
+  POINTER_REST_TOLERANCE_PX,
+  pointerLeftOrigin,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -654,12 +655,20 @@ describe("workspace scope", () => {
       expect(parseWorkspaceHistory(raw)).toEqual([]);
   });
 
-  test("only counts a pointer whose screen position changed", () => {
-    const at = { screenX: 10, screenY: 20 };
-    // The first event only records where a stationary pointer sits.
-    expect(pointerMovedSince(null, at)).toBe(false);
-    expect(pointerMovedSince(at, { screenX: 10, screenY: 20 })).toBe(false);
-    expect(pointerMovedSince(at, { screenX: 11, screenY: 20 })).toBe(true);
-    expect(pointerMovedSince(at, { screenX: 10, screenY: 19 })).toBe(true);
+  test("only counts a pointer that left where the switcher first saw it", () => {
+    const origin = { screenX: 10, screenY: 20 };
+    const jitter = POINTER_REST_TOLERANCE_PX;
+    // Nothing to compare against before the first pointer event.
+    expect(pointerLeftOrigin(null, origin)).toBe(false);
+    expect(pointerLeftOrigin(origin, origin)).toBe(false);
+    expect(
+      pointerLeftOrigin(origin, { screenX: 10 + jitter, screenY: 20 }),
+    ).toBe(false);
+    expect(
+      pointerLeftOrigin(origin, { screenX: 10 + jitter + 1, screenY: 20 }),
+    ).toBe(true);
+    expect(
+      pointerLeftOrigin(origin, { screenX: 10, screenY: 20 - jitter - 1 }),
+    ).toBe(true);
   });
 });
