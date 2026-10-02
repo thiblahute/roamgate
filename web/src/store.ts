@@ -3335,13 +3335,17 @@ export const store = {
     // checked on one connection must not be focused on another.
     if (state.activeConnectionId !== connectionId) {
       if (!selectConnectionNow(connectionId)) return;
-      const switched = captureConnectionLease();
-      await refreshNow(switched);
-      if (
-        jump !== rangerJumpSeq ||
-        !isStoreConnectionLeaseCurrent(state, switched)
-      )
-        return;
+      // Known from the connection's last list: shown at once, and the
+      // refresh selectConnectionNow started corrects it.
+      if (!knownBrowserTarget(workspaceId)) {
+        const switched = captureConnectionLease();
+        await refreshNow(switched);
+        if (
+          jump !== rangerJumpSeq ||
+          !isStoreConnectionLeaseCurrent(state, switched)
+        )
+          return;
+      }
     }
     if (paneId) {
       const lease = captureConnectionLease();
@@ -3359,8 +3363,11 @@ export const store = {
   async jumpToConnectionPane(connectionId: string, paneId: string) {
     if (state.activeConnectionId !== connectionId) {
       if (!selectConnectionNow(connectionId)) return;
-      await refreshNow(captureConnectionLease());
-      if (state.activeConnectionId !== connectionId) return;
+      const pane = state.panes.find((each) => each.pane_id === paneId);
+      if (!pane || !knownBrowserTarget(pane.workspace_id, paneId)) {
+        await refreshNow(captureConnectionLease());
+        if (state.activeConnectionId !== connectionId) return;
+      }
     }
     void store.focusPane(paneId);
   },
