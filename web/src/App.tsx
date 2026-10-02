@@ -142,7 +142,7 @@ import {
   paneSearchEntries,
   parseWorkspaceHistory,
   type PointerPosition,
-  pointerMovedSince,
+  pointerLeftOrigin,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -740,7 +740,10 @@ function PaneJumpOverlay({
 }) {
   const selectedItemRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const lastPointerRef = useRef<PointerPosition | null>(null);
+  // Where the pointer rested when the switcher opened; rows only follow the
+  // pointer once it has left that spot.
+  const pointerOriginRef = useRef<PointerPosition | null>(null);
+  const [pointerActive, setPointerActive] = useState(false);
   const searching = search !== null;
   const selectedEntryKey = entries[selectedIndex]?.key;
   const workspaces = scope === "workspaces";
@@ -796,7 +799,7 @@ function PaneJumpOverlay({
           </p>
         ) : null}
         <div
-          className="pane-jump-list"
+          className={`pane-jump-list ${pointerActive ? "is-pointer-active" : ""}`}
           id={listId}
           role="listbox"
           aria-label={`${searching ? "Matching" : "Recent"} ${plural}`}
@@ -814,12 +817,19 @@ function PaneJumpOverlay({
               role="option"
               aria-selected={index === selectedIndex}
               onPointerMove={(event) => {
-                const moved = pointerMovedSince(lastPointerRef.current, event);
-                lastPointerRef.current = {
-                  screenX: event.screenX,
-                  screenY: event.screenY,
-                };
-                if (moved && index !== selectedIndex) onSelectIndex(index);
+                if (!pointerActive) {
+                  if (!pointerOriginRef.current) {
+                    pointerOriginRef.current = {
+                      screenX: event.screenX,
+                      screenY: event.screenY,
+                    };
+                    return;
+                  }
+                  if (!pointerLeftOrigin(pointerOriginRef.current, event))
+                    return;
+                  setPointerActive(true);
+                }
+                if (index !== selectedIndex) onSelectIndex(index);
               }}
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => onCommit(index)}

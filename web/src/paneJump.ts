@@ -436,20 +436,25 @@ function paneJumpEntry(
 
 export type PointerPosition = { screenX: number; screenY: number };
 
+/** Movement that still counts as a resting pointer: mouse and trackpad jitter. */
+export const POINTER_REST_TOLERANCE_PX = 4;
+
 /**
- * Whether a pointer event over the switcher is a real movement. Browsers
- * fire pointer events at a stationary cursor when rows move underneath it:
- * the overlay opening on top of the pointer, the list reordering, or the
- * selected row scrolling into view. Only a change in screen position counts,
- * so a pointer that never moved never selects a row. The first event only
- * records where the pointer is.
+ * Whether the pointer left the spot where the switcher first saw it.
+ * Browsers fire pointer events at a stationary cursor when rows move
+ * underneath it: the overlay opening on top of the pointer, the list
+ * reordering, or the selected row scrolling into view. Only a change in
+ * screen position beyond the jitter tolerance counts, so a pointer resting
+ * over the list never selects or highlights a row. Without an origin there
+ * is nothing to compare against yet.
  */
-export function pointerMovedSince(
-  last: PointerPosition | null,
+export function pointerLeftOrigin(
+  origin: PointerPosition | null,
   event: PointerPosition,
 ): boolean {
   return (
-    last !== null &&
-    (last.screenX !== event.screenX || last.screenY !== event.screenY)
+    origin !== null &&
+    Math.hypot(event.screenX - origin.screenX, event.screenY - origin.screenY) >
+      POINTER_REST_TOLERANCE_PX
   );
 }
