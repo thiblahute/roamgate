@@ -12,6 +12,7 @@ import {
   paneSearchEntries,
   serverPaneSearchEntries,
   parseWorkspaceHistory,
+  pointerMovedSince,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -651,5 +652,14 @@ describe("workspace scope", () => {
     ]);
     for (const raw of [null, "", "{", '{"a":1}', "42"])
       expect(parseWorkspaceHistory(raw)).toEqual([]);
+  });
+
+  test("only counts a pointer whose screen position changed", () => {
+    const at = { screenX: 10, screenY: 20 };
+    // The first event only records where a stationary pointer sits.
+    expect(pointerMovedSince(null, at)).toBe(false);
+    expect(pointerMovedSince(at, { screenX: 10, screenY: 20 })).toBe(false);
+    expect(pointerMovedSince(at, { screenX: 11, screenY: 20 })).toBe(true);
+    expect(pointerMovedSince(at, { screenX: 10, screenY: 19 })).toBe(true);
   });
 });
