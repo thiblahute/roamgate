@@ -262,6 +262,12 @@
   background: var(--accent-soft);
 }
 
+/* A resting pointer keeps the row's own border instead of the generic
+   button hover accent. */
+.pane-jump-list:not(.is-pointer-active) .pane-jump-item:hover:not(:disabled) {
+  border-color: var(--pane-jump-item-border, transparent);
+}
+
 /* Hover only highlights once the pointer has moved, so a cursor resting
    where the switcher opened does not look like a selection. */
 .pane-jump-list.is-pointer-active .pane-jump-item:hover {
@@ -269,7 +275,7 @@
 }
 
 .pane-jump-item.is-current:not(.is-selected) {
-  border-color: var(--border-soft);
+  --pane-jump-item-border: var(--border-soft);
   background: color-mix(in srgb, var(--panel-2) 62%, transparent);
 }
 
