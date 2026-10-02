@@ -159,6 +159,8 @@ import {
   paneSearchEntries,
   serverPaneSearchEntries,
   parseWorkspaceHistory,
+  type PointerPosition,
+  pointerMovedSince,
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
@@ -795,6 +797,7 @@ function PaneJumpOverlay({
 }) {
   const selectedItemRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastPointerRef = useRef<PointerPosition | null>(null);
   const searching = search !== null;
   const selectedEntryKey = entries[selectedIndex]?.key;
   const workspaces = scope === "workspaces";
@@ -870,7 +873,14 @@ function PaneJumpOverlay({
               } ${entry.current ? "is-current" : ""}`}
               role="option"
               aria-selected={index === selectedIndex}
-              onPointerEnter={() => onSelectIndex(index)}
+              onPointerMove={(event) => {
+                const moved = pointerMovedSince(lastPointerRef.current, event);
+                lastPointerRef.current = {
+                  screenX: event.screenX,
+                  screenY: event.screenY,
+                };
+                if (moved && index !== selectedIndex) onSelectIndex(index);
+              }}
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => onCommit(index)}
             >
