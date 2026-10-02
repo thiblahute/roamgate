@@ -433,3 +433,23 @@ function paneJumpEntry(
     current,
   };
 }
+
+export type PointerPosition = { screenX: number; screenY: number };
+
+/**
+ * Whether a pointer event over the switcher is a real movement. Browsers
+ * fire pointer events at a stationary cursor when rows move underneath it:
+ * the overlay opening on top of the pointer, the list reordering, or the
+ * selected row scrolling into view. Only a change in screen position counts,
+ * so a pointer that never moved never selects a row. The first event only
+ * records where the pointer is.
+ */
+export function pointerMovedSince(
+  last: PointerPosition | null,
+  event: PointerPosition,
+): boolean {
+  return (
+    last !== null &&
+    (last.screenX !== event.screenX || last.screenY !== event.screenY)
+  );
+}
