@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import * as net from "node:net";
+import { type Logger, serverLogger } from "../utils/logger";
 
 const MAX_NDJSON_LINE_BYTES = 1024 * 1024;
 const SUBSCRIPTION_ACK_TIMEOUT_MS = 8000;
@@ -22,8 +23,16 @@ export type HerdrSubscription =
  *     of the shape `{ event: "<name>", data: { ... } }`.
  */
 export class HerdrClient extends EventEmitter {
-  constructor(private socketPath: string) {
+  private logger: Logger;
+  private connectionId: string | undefined;
+
+  constructor(
+    private socketPath: string,
+    options: { logger?: Logger; connectionId?: string } = {},
+  ) {
     super();
+    this.logger = options.logger ?? serverLogger.child("herdr");
+    this.connectionId = options.connectionId;
   }
 
   /** One-shot RPC: open -> send one request -> read one response -> close. */
@@ -44,6 +53,15 @@ export class HerdrClient extends EventEmitter {
       let buf = "";
       let done = false;
       const decoder = new TextDecoder();
+      const request = JSON.stringify({ id: requestId, method, params }) + "\n";
+      // Debug timing: total call time, plus write -> first response byte,
+      // which isolates the round trip and Herdr's own wait from the connect.
+      const logger = this.logger;
+      const connectionId = this.connectionId;
+      const startedAt = performance.now();
+      let writtenAt: number | null = null;
+      let firstByteAt: number | null = null;
+      let responseBytes = 0;
 
       const timer = setTimeout(
         () => finish(new Error(`timeout: ${method}`)),
@@ -62,11 +80,33 @@ export class HerdrClient extends EventEmitter {
         } catch {
           /* already closed */
         }
+        if (logger.enabled("debug")) {
+          const finishedAt = performance.now();
+          logger.debug("herdr call", {
+            connection: connectionId,
+            method,
+            status: err ? "error" : "ok",
+            req_bytes: Buffer.byteLength(request),
+            resp_bytes: responseBytes,
+            total_ms: Math.round(finishedAt - startedAt),
+            connect_ms:
+              writtenAt === null
+                ? undefined
+                : Math.round(writtenAt - startedAt),
+            first_byte_ms:
+              writtenAt === null || firstByteAt === null
+                ? undefined
+                : Math.round(firstByteAt - writtenAt),
+            error: err?.message,
+          });
+        }
         if (err) reject(err);
         else resolve(val);
       }
 
       const onData = (chunk: Uint8Array) => {
+        firstByteAt ??= performance.now();
+        responseBytes += chunk.byteLength;
         buf += decoder.decode(chunk, { stream: true });
         const i = buf.indexOf("\n");
         if (i === -1) {
@@ -113,7 +153,6 @@ export class HerdrClient extends EventEmitter {
           finish(undefined, envelope.result);
         }
       };
-      const request = JSON.stringify({ id: requestId, method, params }) + "\n";
       Bun.connect({
         unix: this.socketPath,
         socket: {
@@ -128,6 +167,7 @@ export class HerdrClient extends EventEmitter {
               // Requests are small; a short write only happens on a full
               // socket buffer, which a fresh one-shot connection never has.
               socket.write(request);
+              writtenAt = performance.now();
             } catch (error) {
               finish(
                 error instanceof Error

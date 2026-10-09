@@ -7,6 +7,19 @@ import type { Logger } from "../utils/logger";
 import { silentLogger } from "../utils/logger";
 import { MOUSE_KIND, VtInputClassifier } from "./vt-input-classifier";
 
+/**
+ * Echo timing only samples one typed character. Control keys, escape
+ * sequences and pastes often redraw without a plain echo and skew the sample.
+ */
+export function isTypedCharacter(data: Uint8Array): boolean {
+  if (data.length === 0 || data.length > 4) return false;
+  const text = Buffer.from(data).toString("utf8");
+  return (
+    Array.from(text).length === 1 &&
+    !/[\u0000-\u001f\u007f-\u009f\ufffd]/.test(text)
+  );
+}
+
 const ESC_FLUSH_MS = 25;
 const FIRST_SURFACE_WAIT_MS = 10_000;
 // Boot correction plus rounding follow-ups; nested splits can need three.
@@ -50,6 +63,8 @@ export class EndpointTerminalSession extends EventEmitter {
   private scrollDispatched: ScrollDispatch | null = null;
   private closed = false;
   private seq = 0;
+  // Debug echo timing: when the oldest unanswered typed character was sent.
+  private pendingEchoAt: number | null = null;
   private readonly linkSessionId = crypto.randomUUID();
   private linkLookupEpoch = 0;
   private linkFrame: {
@@ -296,6 +311,9 @@ export class EndpointTerminalSession extends EventEmitter {
       this.scrollDispatched = null;
       return;
     }
+    const surfaceAt = performance.now();
+    const echoSentAt = this.pendingEchoAt;
+    this.pendingEchoAt = null;
     this.fitSurface(surface, pane);
     const previousMaxOffset = this.lastScroll?.maxOffsetFromBottom;
     this.lastScroll = pane.scroll
@@ -383,6 +401,13 @@ export class EndpointTerminalSession extends EventEmitter {
         bytes,
         frame: cropped,
       });
+      if (echoSentAt !== null) {
+        this.logger.debug("terminal echo", {
+          terminal: this.terminalId,
+          input_to_surface_ms: Math.round(surfaceAt - echoSentAt),
+          surface_to_send_ms: Math.round(performance.now() - surfaceAt),
+        });
+      }
     };
     // Wait for the requested geometry regardless of split ratio. New
     // frames replace the pending payload, never extend its deadline.
@@ -562,6 +587,13 @@ export class EndpointTerminalSession extends EventEmitter {
   input(data: Buffer) {
     this.linkFrame = null;
     if (!this.paneId || this.closed) return;
+    if (
+      this.pendingEchoAt === null &&
+      this.logger.enabled("debug") &&
+      isTypedCharacter(data)
+    ) {
+      this.pendingEchoAt = performance.now();
+    }
     // Typing or application input supersedes a queued history gesture.
     if (data.length > 0) {
       this.scrollTarget = null;

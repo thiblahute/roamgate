@@ -1,4 +1,5 @@
 import { SSH_NONINTERACTIVE_ARGS, validateSshDestination } from "./ssh-command";
+import { annotateSshArgv, trackSshProcess } from "./ssh-metrics";
 import {
   classifySshTunnelFailure,
   readBoundedStderr,
@@ -166,9 +167,11 @@ export function createSshForwards(args: {
         stderr: "pipe",
         env: { ...process.env, LC_ALL: "C" },
       });
+      const stderr = readBoundedStderr(proc.stderr);
+      trackSshProcess(argv, proc.exited, stderr);
       return {
         exited: proc.exited,
-        stderr: readBoundedStderr(proc.stderr),
+        stderr,
         kill: (signal) => proc.kill(signal),
       };
     });
@@ -232,11 +235,14 @@ export function createSshForwards(args: {
     };
     records.set(id, record);
 
-    const argv = sshForwardArgv(
-      request.destination,
-      localPort,
-      record.remotePort,
-      direction,
+    const argv = annotateSshArgv(
+      sshForwardArgv(
+        request.destination,
+        localPort,
+        record.remotePort,
+        direction,
+      ),
+      { tag: "forward" },
     );
     logger.debug("opening ssh forward", {
       id,

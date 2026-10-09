@@ -112,7 +112,12 @@ export function createForwardRpcHandler(args: {
         // question asked of a different machine.
         const { stdout } = await args.runProcess(
           direction === "local"
-            ? sshCommandArgv(destination, LISTENING_PORTS_COMMAND)
+            ? sshCommandArgv(
+                destination,
+                LISTENING_PORTS_COMMAND,
+                [],
+                "ports.list",
+              )
             : ["sh", "-c", LISTENING_PORTS_COMMAND],
         );
         const forwarded = new Set(
