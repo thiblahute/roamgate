@@ -68,10 +68,6 @@ export function sshForwardArgv(
     ...SSH_NONINTERACTIVE_ARGS,
     "-o",
     "ExitOnForwardFailure=yes",
-    "-o",
-    "ServerAliveInterval=20",
-    "-o",
-    "ServerAliveCountMax=3",
     "-N",
     ...(direction === "local"
       ? [
