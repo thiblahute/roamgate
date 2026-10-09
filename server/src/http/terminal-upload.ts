@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sshCommandArgv } from "../bridge/ssh-command";
 import { trackSshProcess } from "../bridge/ssh-metrics";
+import { holdSshSession } from "../bridge/ssh-sessions";
 import { roamgateEnv } from "../config/environment";
 import { shQuote } from "../utils/process-utils";
 import { terminalPathText } from "./terminal-path-text";
@@ -140,15 +141,22 @@ export function createTerminalUploadHandler(args: {
         [],
         "upload.cleanup",
       );
-      const proc = Bun.spawn(argv, {
-        stdin: "ignore",
-        stdout: "ignore",
-        stderr: "pipe",
-        timeout: 30_000,
-      });
-      const stderrText = new Response(proc.stderr).text();
-      trackSshProcess(argv, proc.exited, stderrText);
-      const [code, stderr] = await Promise.all([proc.exited, stderrText]);
+      const releaseSession = await holdSshSession(argv);
+      let code: number;
+      let stderr: string;
+      try {
+        const proc = Bun.spawn(argv, {
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "pipe",
+          timeout: 30_000,
+        });
+        const stderrText = new Response(proc.stderr).text();
+        trackSshProcess(argv, proc.exited, stderrText);
+        [code, stderr] = await Promise.all([proc.exited, stderrText]);
+      } finally {
+        releaseSession();
+      }
       if (code !== 0) {
         throw new Error(
           `ssh upload cleanup failed: ${stderr.trim() || `exit ${code}`}`,
@@ -196,28 +204,36 @@ export function createTerminalUploadHandler(args: {
       }
       const host = args.sshHost();
       if (host) {
-        req.signal.throwIfAborted();
         const argv = sshCommandArgv(
           host,
           `sh -c ${shQuote(remoteTerminalUploadScript(name, retentionHours * 60))}`,
           [],
           "upload",
         );
-        const proc = Bun.spawn(argv, {
-          stdin: Bun.file(localPath),
-          stdout: "pipe",
-          stderr: "pipe",
-          signal: req.signal,
-          timeout: args.uploadTimeoutMs ?? TERMINAL_UPLOAD_TIMEOUT_MS,
-          killSignal: "SIGKILL",
-        });
-        const stderrText = new Response(proc.stderr).text();
-        trackSshProcess(argv, proc.exited, stderrText);
-        const [code, path, stderr] = await Promise.all([
-          proc.exited,
-          new Response(proc.stdout).text(),
-          stderrText,
-        ]);
+        const releaseSession = await holdSshSession(argv);
+        let code: number;
+        let path: string;
+        let stderr: string;
+        try {
+          req.signal.throwIfAborted();
+          const proc = Bun.spawn(argv, {
+            stdin: Bun.file(localPath),
+            stdout: "pipe",
+            stderr: "pipe",
+            signal: req.signal,
+            timeout: args.uploadTimeoutMs ?? TERMINAL_UPLOAD_TIMEOUT_MS,
+            killSignal: "SIGKILL",
+          });
+          const stderrText = new Response(proc.stderr).text();
+          trackSshProcess(argv, proc.exited, stderrText);
+          [code, path, stderr] = await Promise.all([
+            proc.exited,
+            new Response(proc.stdout).text(),
+            stderrText,
+          ]);
+        } finally {
+          releaseSession();
+        }
         if (code !== 0 || !path.startsWith("/")) {
           return Response.json(
             { error: `ssh upload failed: ${stderr.trim() || `exit ${code}`}` },

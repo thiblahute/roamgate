@@ -66,6 +66,9 @@ describe("SSH profile runtime socket allocation", () => {
     expect(config.socketPath).toBe(`${directory}/control.sock`);
     expect(config.clientSocketPath).toBe(`${directory}/render.sock`);
     expect(config.socketPath.length).toBeLessThan(100);
+    expect(config.masterControlPath).toBe(`${directory}/m.ctl`);
+    // OpenSSH binds "<path>.<16 chars>" first; macOS sun_path is 104 bytes.
+    expect(config.masterControlPath!.length + 17).toBeLessThan(104);
     expect(dirname(config.clientSocketPath)).toBe(directory);
     expect(directory).not.toContain(profile().id);
     expect(directory).not.toContain("dev-box");
@@ -76,6 +79,15 @@ describe("SSH profile runtime socket allocation", () => {
       hasExplicitSocketPath: true,
       hasExplicitClientSocketPath: true,
     });
+  });
+
+  test("leaves the command master off when the operator disables it", () => {
+    if (process.platform === "win32") return;
+    const config = createSshProfileRuntimeConfig(profile(), {
+      environment: { ROAMGATE_DISABLE_SSH_MASTER: "1" },
+    });
+    directories.push(config.ownedRuntimeDirectory!);
+    expect(config.masterControlPath).toBeUndefined();
   });
 
   test("maps empty profile socket paths to remote home inference", () => {

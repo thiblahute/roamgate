@@ -11,7 +11,7 @@ import {
   parseListeningPorts,
   validateForwardPort,
 } from "./ssh-forward";
-import { sshCommandArgv } from "./ssh-command";
+import { sshReadCommandArgv } from "./ssh-command";
 
 /**
  * Opens and closes on-demand port forwards for one connection's SSH
@@ -112,7 +112,7 @@ export function createForwardRpcHandler(args: {
         // question asked of a different machine.
         const { stdout } = await args.runProcess(
           direction === "local"
-            ? sshCommandArgv(
+            ? sshReadCommandArgv(
                 destination,
                 LISTENING_PORTS_COMMAND,
                 [],

@@ -4,6 +4,7 @@ import {
   assertSshTunnelPlatformSupported,
   type SshTunnelConfig,
 } from "../bridge/ssh-tunnel";
+import { roamgateEnv } from "../config/environment";
 import type { SshConnectionProfile } from "./profiles";
 
 export type SshRuntimeConfigDependencies = {
@@ -12,6 +13,7 @@ export type SshRuntimeConfigDependencies = {
   stat?: (path: string) => { isDirectory(): boolean; mode: number };
   removeDirectory?: (path: string) => void;
   platform?: string;
+  environment?: Record<string, string | undefined>;
 };
 
 export function createSshProfileRuntimeConfig(
@@ -32,11 +34,14 @@ export function createSshProfileRuntimeConfig(
     const directoryStat = stat(directory);
     const socketPath = join(directory, "control.sock");
     const clientSocketPath = join(directory, "render.sock");
+    const masterControlPath = join(directory, "m.ctl");
     if (
       !directoryStat.isDirectory() ||
       (platform !== "win32" && (directoryStat.mode & 0o077) !== 0) ||
       Buffer.byteLength(socketPath) > 100 ||
-      Buffer.byteLength(clientSocketPath) > 100
+      Buffer.byteLength(clientSocketPath) > 100 ||
+      // The master first binds "<path>.<16 random chars>", then renames it.
+      Buffer.byteLength(masterControlPath) + 17 > 100
     ) {
       throw new Error(
         "SSH runtime directory must be a private directory with short socket paths",
@@ -60,6 +65,10 @@ export function createSshProfileRuntimeConfig(
       remoteSocketPath: remoteControlSocketPath,
       remoteClientSocketPath: remoteClientSocketPath,
       ownedRuntimeDirectory: directory,
+      masterControlPath:
+        roamgateEnv("DISABLE_SSH_MASTER", dependencies.environment) === "1"
+          ? undefined
+          : masterControlPath,
     };
   } catch (error) {
     removeDirectory(directory);
