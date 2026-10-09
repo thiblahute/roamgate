@@ -10,6 +10,7 @@ import {
 import { luckyWorktreeBranchName } from "../luckyName";
 import { ConfirmDialog, TextInputDialog } from "./ModalDialogs";
 import { WorktreeHooksDialog } from "./WorktreeHooksDialog";
+import { WorktreeLocationDialog } from "./WorktreeLocationDialog";
 import { WorktreeOpenDialog } from "./WorktreeOpenDialog";
 import { WorkspaceAutoSyncDialog } from "./WorkspaceAutoSyncDialog";
 import { worktreeCreationSource } from "../worktree";
@@ -92,6 +93,9 @@ export function ContextMenu({
   const [openWorktreeWorkspaceId, setOpenWorktreeWorkspaceId] = useState<
     string | null
   >(null);
+  const [locationWorkspaceId, setLocationWorkspaceId] = useState<string | null>(
+    null,
+  );
   const [worktreeHooksWorkspaceId, setWorktreeHooksWorkspaceId] = useState<
     string | null
   >(null);
@@ -246,6 +250,13 @@ export function ContextMenu({
       onClose={() => setAutoSyncWorkspaceId(null)}
     />
   );
+  const locationDialog = (
+    <WorktreeLocationDialog
+      open={!!locationWorkspaceId}
+      workspaceId={locationWorkspaceId}
+      onClose={() => setLocationWorkspaceId(null)}
+    />
+  );
   const lifecycleDialog = (
     <WorktreeLifecycleDialog
       open={!!lifecycleWorkspaceId}
@@ -261,6 +272,7 @@ export function ContextMenu({
         {worktreeHooksDialog}
         {autoSyncDialog}
         {lifecycleDialog}
+        {locationDialog}
       </>
     );
   }
@@ -316,6 +328,10 @@ export function ContextMenu({
     {
       label: "Open worktree…",
       action: () => setOpenWorktreeWorkspaceId(w.workspace_id),
+    },
+    {
+      label: "Worktree location…",
+      action: () => setLocationWorkspaceId(w.workspace_id),
     },
   ];
   if (w.worktree) {
@@ -459,6 +475,7 @@ export function ContextMenu({
       {worktreeHooksDialog}
       {autoSyncDialog}
       {lifecycleDialog}
+      {locationDialog}
     </>
   );
 }
