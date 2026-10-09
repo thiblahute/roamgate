@@ -209,6 +209,21 @@ export function createLegacyConnectionRuntime(args: {
     sshHost,
     runProcessWithCodeTimeout,
     shQuote,
+    onGitStatusChanged: (updates) => {
+      if (disposed) return;
+      args.onEvent(
+        {
+          event: "workspace.git_status",
+          data: { type: "workspace.git_status", statuses: updates },
+        },
+        identity,
+      );
+    },
+    onRefreshError: (error) =>
+      logger.warn("git status refresh failed", {
+        connection: identity.id,
+        error: sanitizeConnectionError(error),
+      }),
   });
   const workspaceAutoSync = createWorkspaceAutoSync({
     connectionId: identity.id,
@@ -390,6 +405,8 @@ export function createLegacyConnectionRuntime(args: {
       });
     },
     completeWorkspaceStep: async (workspaceId) => {
+      // A finished agent turn is the likeliest moment for the tree to change.
+      status.invalidateWorkspaceGitStatus(workspaceId);
       try {
         await lastStepBaselines.completeWorkspace(workspaceId);
       } finally {

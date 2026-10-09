@@ -141,6 +141,18 @@ Terminals stay mounted while the Inspector changes.
 Browser preferences live in namespaced `localStorage` and sync across tabs on the
 same origin. Navigation, open files, drafts, and focus stay per tab.
 
+### Worktree Git status
+
+`workspace.list` attaches each checkout's last known `worktree.git_status`
+without waiting on Git; the first list of a runtime has none. Entries older
+than 20 seconds, or invalidated by Roamgate Git actions, auto-sync and finished
+agent turns, refresh in the background: one refresh per runtime at a time, with
+one batched SSH command on remote hosts and `GIT_OPTIONAL_LOCKS=0` so polling
+never takes the user's `index.lock`. A failed SSH keeps the previous status.
+Changed checkouts arrive as a `workspace.git_status` event whose `data.statuses`
+holds `{ checkout_path, git_status }` entries; the browser patches matching
+workspaces in place and reapplies pushes that overlap an in-flight refresh.
+
 ### Last step capture limits and ownership
 
 Last step snapshots the checkout when the workspace goes from active to idle.
