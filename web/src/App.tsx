@@ -775,7 +775,6 @@ function PaneJumpOverlay({
           <input
             ref={searchInputRef}
             className="pane-jump-search"
-            type="text"
             value={search}
             spellCheck={false}
             autoComplete="off"
