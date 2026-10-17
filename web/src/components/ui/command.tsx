@@ -3,6 +3,7 @@ import { Command as CommandPrimitive } from "cmdk";
 
 import { cn } from "../../utils";
 import "./command.css";
+import { passwordManagerIgnore } from "../../passwordManagerIgnore";
 
 const Command = ({
   className,
@@ -18,6 +19,8 @@ const CommandInput = ({
 }: React.ComponentPropsWithRef<typeof CommandPrimitive.Input>) => (
   <CommandPrimitive.Input
     className={cn("command-input", className)}
+    autoComplete="off"
+    {...passwordManagerIgnore}
     {...props}
   />
 );
