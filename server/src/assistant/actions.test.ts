@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantActionKind } from "../../../shared/assistant";
+import type { GuiSettings } from "../config/gui-settings";
 import type { LegacyConnectionRuntime } from "../connections/runtime";
 import * as processUtils from "../utils/process-utils";
 import { createWorkspaceWorktree } from "../worktree/create";
@@ -446,6 +447,17 @@ describe("confirmed Ranger action targets", () => {
               };
             },
             beforeDispatch,
+            // Not this machine's settings: a configured worktree command
+            // there would replace worktree.create.
+            {
+              readSettings: async (): Promise<GuiSettings> => ({
+                version: 1,
+                repositories: {},
+                workspace_auto_sync: {},
+                custom: {},
+                ui: {},
+              }),
+            },
           ),
       );
       const original = f.call.getMockImplementation()!;

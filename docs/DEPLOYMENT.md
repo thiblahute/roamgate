@@ -472,6 +472,44 @@ characters in the branch name replaced by `-`. The directory must be absolute.
 It is stored per repository as `worktree_directory` in `settings.json`; clear it
 to return to Herdr's default.
 
+## Worktree command
+
+To create worktrees with your own tool instead of Herdr, set a command in
+**Configuration > Instance** (the default) or in a repository's worktree
+dialog (**Worktree command**, which wins). For example:
+
+```sh
+git recworktree add {path} --branch {branch} --base {base}
+```
+
+Roamgate replaces `{path}` (the new checkout), `{branch}`, `{base}` (the commit
+fetched from `origin`) and `{repo}` (the source repository), each shell-quoted,
+and runs the command from the source repository on the workspace's host. The
+path is `<worktree location>/<branch>` when a location is set, otherwise
+Herdr's default `~/.herdr/worktrees/<repo>/<branch>`; set a location if Herdr's
+`[worktrees] directory` is customized. Roamgate then opens the checkout in
+Herdr and runs the setup hook. When the command is not installed on that
+host (the shell's exit 127, or git's "is not a git command"), Herdr creates
+the worktree as without one; any other non-zero exit fails creation with the
+command's output. It is stored as `worktree_command` at the top of
+`settings.json` and per repository; leave it empty to let Herdr create
+worktrees.
+
+A **remove command** works the same way for removal, set beside it:
+
+```sh
+git recworktree remove {path} {force}
+```
+
+Roamgate replaces `{path}` (the checkout) and `{repo}` (the source
+repository), shell-quoted, and `{force}` by `--force` when you force the
+removal. It runs from the source repository on the workspace's host, after
+the teardown hook; when it succeeds Herdr closes the workspace, as its own
+removal would, and the removed hook runs. Not installed on that host, Herdr
+removes the worktree; any other failure stops the removal with the command's
+output. It is stored as `worktree_remove_command`, at the top of
+`settings.json` and per repository.
+
 ## Worktree hooks
 
 Configure hooks in `roamgate.json` at the repository root:

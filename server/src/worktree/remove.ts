@@ -3,6 +3,8 @@ import { realpath, rename } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { sshCommandArgv } from "../bridge/ssh-command";
 import { serverLogger } from "../utils/logger";
+import { shQuote } from "../utils/process-utils";
+import { shQuotePath, worktreeCommandMissing } from "./create";
 
 type RunProcessWithCodeTimeout = (
   argv: string[],
@@ -201,11 +203,68 @@ async function finalizeSuccessfulRemoval({
   return { result, cleanup };
 }
 
+/** Substitutes `{path}`, `{repo}` (shell-quoted) and `{force}` (`--force` or nothing). */
+export function renderWorktreeRemoveCommand(
+  template: string,
+  values: { path: string; repo: string; force: boolean },
+) {
+  return template.replace(/\{(path|repo|force)\}/g, (_, name) =>
+    name === "force"
+      ? values.force
+        ? "--force"
+        : ""
+      : name === "path"
+        ? shQuotePath(values.path)
+        : shQuote(values.repo),
+  );
+}
+
+/**
+ * Removes a checkout with the configured command, from its source repository
+ * on the workspace's host. False when the command is not installed there;
+ * throws with its output when it fails.
+ */
+export async function runWorktreeRemoveCommand({
+  template,
+  checkoutPath,
+  sourceCheckoutPath,
+  force,
+  host,
+  runProcess,
+}: {
+  template: string;
+  checkoutPath: string;
+  sourceCheckoutPath: string;
+  force: boolean;
+  host?: string;
+  runProcess: RunProcessWithCodeTimeout;
+}): Promise<boolean> {
+  const shellCommand = `cd ${shQuote(sourceCheckoutPath)} && ${renderWorktreeRemoveCommand(
+    template,
+    { path: checkoutPath, repo: sourceCheckoutPath, force },
+  )}`;
+  const run = await runProcess(
+    host
+      ? sshCommandArgv(host, shellCommand, [], "worktree-remove-command")
+      : ["sh", "-lc", shellCommand],
+    WORKTREE_REMOVE_TIMEOUT_MS,
+  );
+  if (worktreeCommandMissing(run)) return false;
+  if (run.code !== 0) {
+    const output = (run.stderr.trim() || run.stdout.trim()).slice(-2000);
+    throw new Error(
+      `Worktree remove command failed (exit ${run.code})${output ? `: ${output}` : "."}`,
+    );
+  }
+  return true;
+}
+
 export async function removeWorktreeWithRecovery({
   call,
   params,
   checkoutPath,
   runtime,
+  removeWithCommand,
   log = (message) =>
     serverLogger
       .child("worktree")
@@ -215,6 +274,11 @@ export async function removeWorktreeWithRecovery({
   params: Record<string, unknown>;
   checkoutPath?: string;
   runtime: WorktreeRemovalRuntime;
+  /**
+   * Removes the checkout with the configured command; resolves to Herdr's
+   * worktree.remove reply, or null to let Herdr remove it.
+   */
+  removeWithCommand?: () => Promise<any | null>;
   log?: (message: string) => void;
 }): Promise<WorktreeRemovalOutcome> {
   const terminated = new Set<number>();
@@ -222,6 +286,16 @@ export async function removeWorktreeWithRecovery({
   if (checkoutPath && !cleanupPath) {
     log(`[bridge] refusing worktree cleanup for unsafe path: ${checkoutPath}`);
   }
+
+  const commandResult = removeWithCommand ? await removeWithCommand() : null;
+  if (commandResult)
+    return finalizeSuccessfulRemoval({
+      result: commandResult,
+      cleanupPath,
+      runtime,
+      terminated,
+      log,
+    });
 
   try {
     const result = await call("worktree.remove", params);

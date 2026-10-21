@@ -15,6 +15,7 @@ import {
   type GuiRepoSettings,
   guiSettingsPath,
   readGuiSettings,
+  normalizeWorktreeCommand,
   normalizeWorktreeDirectory,
   repoWorktreeDirectory,
   repoWorktreeHooksEnabled,
@@ -24,11 +25,14 @@ import {
   updateGuiSettings,
   workspaceAutoSyncSettingsKey,
   workspaceRepoSettingsKey,
+  WORKTREE_COMMAND_MAX_LENGTH,
 } from "../config/gui-settings";
 import {
   checkoutPath as workspaceCheckoutPath,
   sourceCheckoutPath as workspaceSourceCheckoutPath,
 } from "../workspace/utils";
+
+const INVALID_WORKTREE_COMMAND = `worktree_command must be at most ${WORKTREE_COMMAND_MAX_LENGTH} characters without NUL bytes`;
 
 type ReadWorktreeHooks = ReturnType<
   typeof createWorktreeHookRunner
@@ -79,6 +83,21 @@ export function createSettingsRpcHandler(args: {
       args.sshHost(),
       args.connectionId,
     );
+  }
+
+  async function worktreeCommandReply(key: string | null) {
+    const settings = await readSettings();
+    return {
+      worktree_command:
+        (key ? settings.repositories[key]?.worktree_command : undefined) ??
+        null,
+      default_worktree_command: settings.worktree_command ?? null,
+      worktree_remove_command:
+        (key
+          ? settings.repositories[key]?.worktree_remove_command
+          : undefined) ?? null,
+      default_worktree_remove_command: settings.worktree_remove_command ?? null,
+    };
   }
 
   function ownsSettingsKey(key: string): boolean {
@@ -213,6 +232,7 @@ export function createSettingsRpcHandler(args: {
           key,
           enabled: await repoWorktreeHooksEnabled(key),
           worktree_directory: (await repoWorktreeDirectory(key)) ?? null,
+          ...(await worktreeCommandReply(key)),
           repo_name: workspace.worktree.repo_name,
           repo_root: workspace.worktree.repo_root,
           checkout_path: checkoutPath,
@@ -374,6 +394,18 @@ export function createSettingsRpcHandler(args: {
           params.settings && typeof params.settings === "object"
             ? (params.settings as Partial<GuiRepoSettings>)
             : {};
+        let command: string | undefined;
+        if (patch.worktree_command !== undefined) {
+          const raw = String(patch.worktree_command ?? "").trim();
+          command = normalizeWorktreeCommand(raw);
+          if (raw && !command) return fail(INVALID_WORKTREE_COMMAND);
+        }
+        let removeCommand: string | undefined;
+        if (patch.worktree_remove_command !== undefined) {
+          const raw = String(patch.worktree_remove_command ?? "").trim();
+          removeCommand = normalizeWorktreeCommand(raw);
+          if (raw && !removeCommand) return fail(INVALID_WORKTREE_COMMAND);
+        }
         let directory: string | undefined;
         if (patch.worktree_directory !== undefined) {
           const raw = String(patch.worktree_directory ?? "").trim();
@@ -391,6 +423,12 @@ export function createSettingsRpcHandler(args: {
           if (patch.worktree_directory !== undefined) {
             next.worktree_directory = directory;
           }
+          if (patch.worktree_command !== undefined) {
+            next.worktree_command = command;
+          }
+          if (patch.worktree_remove_command !== undefined) {
+            next.worktree_remove_command = removeCommand;
+          }
           if (patch.custom && typeof patch.custom === "object") {
             next.custom = { ...(existing.custom ?? {}), ...patch.custom };
           }
@@ -404,6 +442,35 @@ export function createSettingsRpcHandler(args: {
         }, requestIsCurrent);
         const next = settings.repositories[key];
         return reply({ settings, repo: next, key });
+      }
+      if (method === "settings.worktree_command.update") {
+        const raw = String(params.command ?? "").trim();
+        const command = normalizeWorktreeCommand(raw);
+        if (raw && !command) return fail(INVALID_WORKTREE_COMMAND);
+        // The removal command changes only when given.
+        const rawRemove =
+          params.remove_command === undefined
+            ? undefined
+            : String(params.remove_command ?? "").trim();
+        const removeCommand =
+          rawRemove === undefined
+            ? undefined
+            : normalizeWorktreeCommand(rawRemove);
+        if (rawRemove && !removeCommand) return fail(INVALID_WORKTREE_COMMAND);
+        const settings = await updateSettings(
+          (current) => ({
+            ...current,
+            worktree_command: command,
+            ...(rawRemove === undefined
+              ? {}
+              : { worktree_remove_command: removeCommand }),
+          }),
+          requestIsCurrent,
+        );
+        return reply({
+          worktree_command: settings.worktree_command ?? null,
+          worktree_remove_command: settings.worktree_remove_command ?? null,
+        });
       }
       if (method === "settings.ui.update") {
         const key = params.key;

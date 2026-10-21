@@ -9,6 +9,8 @@ import {
   isNotWorkingTreeRemoveError,
   parseCheckoutProcessIds,
   removeWorktreeWithRecovery,
+  renderWorktreeRemoveCommand,
+  runWorktreeRemoveCommand,
   type CheckoutState,
   type WorktreeRemovalRuntime,
 } from "./remove";
@@ -528,4 +530,107 @@ describe("worktree removal checkout inspection", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 10_000);
+});
+
+describe("worktree remove command", () => {
+  test("substitutes the checkout, its repository and --force when forced", () => {
+    expect(
+      renderWorktreeRemoveCommand("git recworktree remove {path} {force}", {
+        path: "/w/it's",
+        repo: "/src",
+        force: true,
+      }),
+    ).toBe(`git recworktree remove '/w/it'\\''s' --force`);
+    expect(
+      renderWorktreeRemoveCommand("tool rm {path} {force} --repo {repo}", {
+        path: "~/wt/a",
+        repo: "/src",
+        force: false,
+      }),
+    ).toBe(`tool rm "$HOME"/'wt/a'  --repo '/src'`);
+  });
+
+  test("runs from the source repository, over SSH on a remote host", async () => {
+    const runs: string[][] = [];
+    const ok = await runWorktreeRemoveCommand({
+      template: "git recworktree remove {path} {force}",
+      checkoutPath: "/w/a",
+      sourceCheckoutPath: "/src",
+      force: false,
+      host: "desktop",
+      runProcess: async (argv) => {
+        runs.push(argv);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(ok).toBe(true);
+    expect(runs[0]![0]).toBe("ssh");
+    expect(runs[0]!.at(-1)).toBe("cd '/src' && git recworktree remove '/w/a' ");
+  });
+
+  test("a command not installed on the host leaves the removal to Herdr", async () => {
+    const calls: string[] = [];
+    const outcome = await removeWorktreeWithRecovery({
+      call: async (method) => {
+        calls.push(method);
+        return { type: "worktree_removed" };
+      },
+      params: { workspace_id: "w2" },
+      checkoutPath: "/w/a",
+      runtime: runtime({ inspectCheckout: async () => "missing" }),
+      removeWithCommand: async () =>
+        (await runWorktreeRemoveCommand({
+          template: "git recworktree remove {path}",
+          checkoutPath: "/w/a",
+          sourceCheckoutPath: "/src",
+          force: false,
+          runProcess: async () => ({
+            code: 1,
+            stdout: "",
+            stderr:
+              "git: 'recworktree' is not a git command. See 'git --help'.",
+          }),
+        }))
+          ? { type: "worktree_removed" }
+          : null,
+    });
+    expect(calls).toEqual(["worktree.remove"]);
+    expect(outcome.result).toEqual({ type: "worktree_removed" });
+  });
+
+  test("the command's removal skips Herdr's, and a failure stops it", async () => {
+    const calls: string[] = [];
+    const call = async (method: string) => {
+      calls.push(method);
+      return {};
+    };
+    const outcome = await removeWorktreeWithRecovery({
+      call,
+      params: { workspace_id: "w2" },
+      checkoutPath: "/w/a",
+      runtime: runtime({ inspectCheckout: async () => "missing" }),
+      removeWithCommand: async () => ({
+        type: "worktree_removed",
+        path: "/w/a",
+      }),
+    });
+    expect(calls).toEqual([]);
+    expect(outcome.result.path).toBe("/w/a");
+
+    await expect(
+      runWorktreeRemoveCommand({
+        template: "git recworktree remove {path}",
+        checkoutPath: "/w/a",
+        sourceCheckoutPath: "/src",
+        force: false,
+        runProcess: async () => ({
+          code: 1,
+          stdout: "",
+          stderr: "Error: worktree has uncommitted changes",
+        }),
+      }),
+    ).rejects.toThrow(
+      "Worktree remove command failed (exit 1): Error: worktree has uncommitted changes",
+    );
+  });
 });

@@ -8,6 +8,7 @@ import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import {
   readGuiSettings,
   workspaceRepoSettingsKey,
+  worktreeCommandFor,
 } from "../config/gui-settings";
 import type { WorktreeHookExpectation } from "./worktree-hooks";
 
@@ -76,6 +77,37 @@ export function worktreeCheckoutPath(directory: string, branch: string) {
   return `${directory.replace(/\/+$/, "")}/${name}`;
 }
 
+/** A worktree command may check out a large tree and its nested repositories. */
+export const WORKTREE_COMMAND_TIMEOUT_MS = 300_000;
+
+/** Herdr's worktree.create default, `~/.herdr/worktrees/<repo>/<branch slug>`. */
+export function herdrDefaultCheckoutPath(repoName: string, branch: string) {
+  const slug = branch
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .toLowerCase()
+    .replace(/^-+|-+$/g, "");
+  return `~/.herdr/worktrees/${repoName}/${slug || "worktree"}`;
+}
+
+/** Quotes a path for the shell, leaving a leading `~/` to the host's $HOME. */
+export function shQuotePath(path: string) {
+  return path.startsWith("~/")
+    ? `"$HOME"/${shQuote(path.slice(2))}`
+    : shQuote(path);
+}
+
+/** Substitutes `{path}`, `{branch}`, `{base}` and `{repo}`, each shell-quoted. */
+export function renderWorktreeCommand(
+  template: string,
+  values: { path: string; branch: string; base: string; repo: string },
+) {
+  return template.replace(/\{(path|branch|base|repo)\}/g, (_, name) =>
+    name === "path"
+      ? shQuotePath(values.path)
+      : shQuote(values[name as "branch" | "base" | "repo"]),
+  );
+}
+
 /** Shared by the workspace UI and Ranger's confirmed operations. */
 export async function createWorkspaceWorktree(
   runtime: LegacyConnectionRuntime,
@@ -84,6 +116,13 @@ export async function createWorkspaceWorktree(
   parentWarning: (error: unknown) => void = () => {},
   syncBase = syncWorktreeBase,
   beforeDispatch?: () => void,
+  {
+    readSettings = readGuiSettings,
+    runProcess = runProcessWithCodeTimeout,
+  }: {
+    readSettings?: typeof readGuiSettings;
+    runProcess?: RunProcessWithCodeTimeout;
+  } = {},
 ) {
   const assertCurrent = () => {
     if (!isCurrent()) throw new Error("The worktree target changed.");
@@ -136,7 +175,7 @@ export async function createWorkspaceWorktree(
     shQuote,
     runProcessWithCodeTimeout: async (argv, timeout) => {
       beforeSend();
-      const result = await runProcessWithCodeTimeout(argv, timeout);
+      const result = await runProcess(argv, timeout);
       assertCurrent();
       return result;
     },
@@ -146,14 +185,17 @@ export async function createWorkspaceWorktree(
     ...createParams,
     base: baseSync.commit,
   };
+  const key = workspaceRepoSettingsKey(
+    sourceWorkspace,
+    runtime.sshHost(),
+    runtime.identity?.id,
+  );
+  const settings = await readSettings();
+  assertCurrent();
+  const command = worktreeCommandFor(settings, key);
   if (!rpcParams.path && typeof rpcParams.branch === "string") {
-    const key = workspaceRepoSettingsKey(
-      sourceWorkspace,
-      runtime.sshHost(),
-      runtime.identity?.id,
-    );
     const directory = key
-      ? (await readGuiSettings()).repositories[key]?.worktree_directory
+      ? settings.repositories[key]?.worktree_directory
       : undefined;
     if (directory)
       rpcParams.path = worktreeCheckoutPath(directory, rpcParams.branch);
@@ -166,12 +208,26 @@ export async function createWorkspaceWorktree(
     rpcParams.cwd = expectedRoot;
   }
   assertCurrent();
-  const result = await runtime.herdr.call(
-    "worktree.create",
-    rpcParams,
-    undefined,
-    beforeSend,
-  );
+  // A command missing on this host (git recworktree not installed there)
+  // falls back to Herdr's own worktree.
+  const result =
+    (command
+      ? await runWorktreeCommand(runtime, command, rpcParams, baseSync, {
+          runProcess,
+          repoName:
+            sourceWorkspace?.worktree?.repo_name ||
+            baseSync.root.replace(/\/+$/, "").split("/").pop() ||
+            "",
+          assertCurrent,
+          beforeSend,
+        })
+      : null) ??
+    (await runtime.herdr.call(
+      "worktree.create",
+      rpcParams,
+      undefined,
+      beforeSend,
+    ));
   assertCurrent();
   let parentTrackingFailed = false;
   await runtime.worktreeParents
@@ -203,4 +259,96 @@ export async function createWorkspaceWorktree(
     setup_hook: setupHook,
     ...(parentTrackingFailed ? { parent_tracking_failed: true } : {}),
   };
+}
+
+/** The shell's or git's answer for a command that is not installed. */
+const COMMAND_MISSING = /command not found|is not a git command/;
+
+/** Whether a worktree command failed only because it is not installed. */
+export function worktreeCommandMissing(run: {
+  code: number;
+  stdout: string;
+  stderr: string;
+}) {
+  return (
+    run.code === 127 ||
+    (run.code !== 0 &&
+      !run.stdout.trim() &&
+      COMMAND_MISSING.test(run.stderr.split("\n")[0] ?? ""))
+  );
+}
+
+/**
+ * Creates the checkout with the configured command on the connection's host,
+ * then registers it with Herdr through worktree.open. The reply has the shape
+ * of Herdr's worktree.create result; null when the command is not installed
+ * on that host.
+ */
+async function runWorktreeCommand(
+  runtime: LegacyConnectionRuntime,
+  template: string,
+  rpcParams: Record<string, unknown>,
+  baseSync: { root: string; commit: string },
+  {
+    runProcess,
+    repoName,
+    assertCurrent,
+    beforeSend,
+  }: {
+    runProcess: RunProcessWithCodeTimeout;
+    repoName: string;
+    assertCurrent: () => void;
+    beforeSend: () => void;
+  },
+) {
+  const branch = typeof rpcParams.branch === "string" ? rpcParams.branch : "";
+  if (!branch.trim()) throw new Error("worktree.create requires branch");
+  const path =
+    typeof rpcParams.path === "string" && rpcParams.path.trim()
+      ? rpcParams.path.trim()
+      : herdrDefaultCheckoutPath(repoName, branch);
+  if (!path.startsWith("/") && !path.startsWith("~/"))
+    throw new Error("Worktree path must be absolute.");
+  // Then the checkout's absolute path, `~` resolved on its host: what
+  // Herdr opens.
+  const shellCommand = `cd ${shQuote(baseSync.root)} && ${renderWorktreeCommand(
+    template,
+    { path, branch, base: baseSync.commit, repo: baseSync.root },
+  )} && cd ${shQuotePath(path)} && printf '\\n%s\\n' "$PWD"`;
+  const host = runtime.sshHost();
+  beforeSend();
+  const run = await runProcess(
+    host
+      ? sshCommandArgv(host, shellCommand, [], "worktree-command")
+      : ["sh", "-lc", shellCommand],
+    WORKTREE_COMMAND_TIMEOUT_MS,
+  );
+  assertCurrent();
+  if (worktreeCommandMissing(run)) return null;
+  if (run.code !== 0) {
+    const output = (run.stderr.trim() || run.stdout.trim()).slice(-2000);
+    throw new Error(
+      `Worktree command failed (exit ${run.code})${output ? `: ${output}` : "."}`,
+    );
+  }
+  const created = run.stdout.trim().split("\n").pop()?.trim() ?? "";
+  if (!created.startsWith("/"))
+    throw new Error("The worktree command left no checkout at its path.");
+  const openParams: Record<string, unknown> = { path: created };
+  for (const name of [
+    "workspace_id",
+    "cwd",
+    "focus",
+    "label",
+    "trust_repository",
+  ])
+    if (rpcParams[name] !== undefined) openParams[name] = rpcParams[name];
+  const opened = await runtime.herdr.call(
+    "worktree.open",
+    openParams,
+    undefined,
+    beforeSend,
+  );
+  delete opened?.already_open;
+  return opened;
 }

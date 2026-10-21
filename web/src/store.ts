@@ -3843,6 +3843,28 @@ export const store = {
     });
   },
 
+  setRepoWorktreeCommand(key: string, command: string) {
+    return action(async (lease) => {
+      const result = await lease.client.call("settings.update_repo", {
+        key,
+        settings: { worktree_command: command },
+      });
+      await refreshNow(lease);
+      return result;
+    });
+  },
+
+  setRepoWorktreeRemoveCommand(key: string, command: string) {
+    return action(async (lease) => {
+      const result = await lease.client.call("settings.update_repo", {
+        key,
+        settings: { worktree_remove_command: command },
+      });
+      await refreshNow(lease);
+      return result;
+    });
+  },
+
   setWorkspaceAutoSyncEnabled(workspaceId: string, enabled: boolean) {
     return action(
       async (lease) => {

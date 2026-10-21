@@ -442,3 +442,90 @@ test("interface preferences are stored, cleared, and announced to every browser"
   // by connection the way repository settings are.
   expect(settings.repositories).toEqual({});
 });
+
+test("worktree commands are set globally and per repository, and cleared when empty", async () => {
+  let settings: GuiSettings = {
+    version: 1 as const,
+    repositories: {},
+    workspace_auto_sync: {},
+    custom: {},
+    ui: {},
+  };
+  const messages: any[] = [];
+  const handler = createSettingsRpcHandler({
+    herdr: {} as HerdrClient,
+    sshHost: () => undefined,
+    readWorktreeHooks: async () => null,
+    resolveWorkspaceGitRoot: async () => ({ workspace: {}, root: "/tmp" }),
+    workspaceAutoSyncIsRunning: () => false,
+    onWorkspaceAutoSyncSettingsChanged: () => undefined,
+    readSettings: async () => settings,
+    updateSettings: async (update) => {
+      settings = await update(settings);
+      return settings;
+    },
+    safeSend: (_ws, payload) => {
+      messages.push(JSON.parse(payload));
+      return true;
+    },
+    markRpcError: () => undefined,
+  });
+  const ws = {} as ServerWebSocket<unknown>;
+
+  await handler(ws, "1", "settings.worktree_command.update", {
+    command: "  git recworktree add {path} --branch {branch}  ",
+  });
+  expect(settings.worktree_command).toBe(
+    "git recworktree add {path} --branch {branch}",
+  );
+  await handler(ws, "2", "settings.update_repo", {
+    key: "local:/repo",
+    settings: { worktree_command: "make-worktree {path}" },
+  });
+  expect(settings.repositories["local:/repo"]?.worktree_command).toBe(
+    "make-worktree {path}",
+  );
+  await handler(ws, "3", "settings.update_repo", {
+    key: "local:/repo",
+    settings: { worktree_command: "x".repeat(5000) },
+  });
+  expect(messages[2].error.message).toContain("worktree_command must be");
+  await handler(ws, "4", "settings.update_repo", {
+    key: "local:/repo",
+    settings: { worktree_command: "" },
+  });
+  expect(
+    settings.repositories["local:/repo"]?.worktree_command,
+  ).toBeUndefined();
+  await handler(ws, "5", "settings.worktree_command.update", { command: " " });
+  expect(settings.worktree_command).toBeUndefined();
+  expect(messages[4].result).toEqual({
+    worktree_command: null,
+    worktree_remove_command: null,
+  });
+
+  // The removal command changes only when given, globally or per repository.
+  await handler(ws, "6", "settings.worktree_command.update", {
+    command: "git recworktree add {path} --branch {branch}",
+    remove_command: " git recworktree remove {path} {force} ",
+  });
+  expect(settings.worktree_remove_command).toBe(
+    "git recworktree remove {path} {force}",
+  );
+  await handler(ws, "7", "settings.worktree_command.update", { command: "" });
+  expect(settings.worktree_remove_command).toBe(
+    "git recworktree remove {path} {force}",
+  );
+  await handler(ws, "8", "settings.update_repo", {
+    key: "local:/repo",
+    settings: { worktree_remove_command: "rm-worktree {path}" },
+  });
+  expect(settings.repositories["local:/repo"]?.worktree_remove_command).toBe(
+    "rm-worktree {path}",
+  );
+  await handler(ws, "9", "settings.update_repo", {
+    key: "local:/repo",
+    settings: { worktree_remove_command: "x".repeat(5000) },
+  });
+  expect(messages[8].error.message).toContain("worktree_command must be");
+});
