@@ -522,9 +522,18 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   Choosing Chat or Terminal is remembered on this browser and reused when
   switching sessions or reloading.
   Shell panes open in Terminal without changing that preference.
-- The bottom bar holds **Message…**, **Direct**, **Chat** (for agent panes), **Tabs** (with the workspace's
+- The bottom bar holds **Message…**, **Direct**, **Chat** (for agent panes), **Workspaces**, **Tabs** (with the workspace's
   tab count, red when another agent needs you) and **⋮**, a menu of views and tools: Chat, Terminal,
   Files, Changes, Commits, Annotations, Ranger, and Workspaces.
+  **Workspaces** sits beside **Tabs**, for switching workspaces in one tap;
+  **Tabs** shows only while the workspace has more than one tab or pane
+  (**New tab** is in **⋮**).
+- The phone's workspace list opens on the recent ones, most recent first,
+  as the switcher lists them, so the previous one is the second row; **All**
+  shows the whole tree. It opens again on the list it showed last in that
+  browser. Its search matches as the pane switcher's does
+  (workspace, tab, directory or agent name, across connections): while it
+  holds text, the matching workspaces replace the list.
 - Mobile hides the top tab strip. Use **Tabs** in the bottom bar to switch,
   create, or close tabs. Tabs with multiple panes list their panes underneath;
   select a pane to open it directly, including across tabs. The current pane is

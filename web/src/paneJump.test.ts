@@ -11,6 +11,7 @@ import {
   paneJumpTargetId,
   paneSearchEntries,
   serverPaneSearchEntries,
+  serverSessionPaneEntries,
   parseWorkspaceHistory,
   POINTER_REST_TOLERANCE_PX,
   pointerLeftOrigin,
@@ -18,7 +19,10 @@ import {
   workspaceHistoryKey,
 } from "./paneJump";
 import type { Pane, Tab, Workspace } from "./types";
-import type { ServerAgentPane } from "./useAllServerAgentSessions";
+import type {
+  ConnectionAgentSessions,
+  ServerAgentPane,
+} from "./useAllServerAgentSessions";
 
 function workspace(workspaceId: string, label: string): Workspace {
   return {
@@ -457,6 +461,109 @@ describe("cross-server pane search", () => {
     expect(local.map((entry) => entry.serverLabel)).toEqual(["Local"]);
     const keys = [...local, ...remote].map(paneJumpEntryKey);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("the phone's workspace search across connections", () => {
+  // The phone shows the desktop; `tasks` only exists on the Mac (`local`),
+  // which this browser holds no session for.
+  const desktop = {
+    layout: null,
+    panes: [pane("p1", "w1", "t1", "claude")],
+    recentPaneIds: ["p1"],
+    tabs: [tab("t1", "w1")],
+    workspaces: [workspace("w1", "roamgate")],
+  };
+  const connections = [
+    connection("desktop", "Desktop"),
+    connection("local", "Mac"),
+  ];
+  const macSessions: ConnectionAgentSessions = {
+    connection_id: "local",
+    connection_generation: 1,
+    workspaces: [workspace("wF", "tasks"), workspace("wG", "notes")],
+    tabs: [tab("tF", "wF"), tab("tG", "wG")],
+    panes: [pane("pF", "wF", "tF"), pane("pG", "wG", "tG")],
+    agents: null,
+  };
+  const activeOnly = [
+    connectionView("desktop", "Desktop", { ...desktop, active: true }),
+  ];
+  const search = (
+    query: string,
+    snapshots: readonly ConnectionAgentSessions[] = [macSessions],
+  ) =>
+    paneSearchEntries(
+      desktop,
+      query,
+      "p1",
+      activeOnly,
+      "workspaces",
+      undefined,
+      undefined,
+      serverSessionPaneEntries(connections, snapshots, "desktop"),
+    );
+
+  test("misses a workspace of a connection with no loaded session without the server's list", () => {
+    expect(
+      paneSearchEntries(desktop, "Tasks", "p1", activeOnly, "workspaces"),
+    ).toEqual([]);
+  });
+
+  test("finds it from the server's list, and opens it on its connection", () => {
+    const [entry] = search("Tasks");
+
+    expect(search("Tasks")).toHaveLength(1);
+    expect(entry).toMatchObject({
+      title: "tasks",
+      workspaceId: "wF",
+      serverLabel: "Mac",
+      source: {
+        connectionId: "local",
+        runtimeGeneration: 1,
+        workspaceId: "wF",
+      },
+    });
+    // Opened through its source, as the switcher opens another server's
+    // pane: not as a pane of the displayed connection.
+    expect(paneJumpTargetId([entry!], 0)).toBe("pF");
+    expect(paneJumpConnectionTarget([entry!], 0)).toBeNull();
+  });
+
+  test("matches by name and path in any case", () => {
+    const titles = (query: string) => search(query).map((entry) => entry.title);
+
+    for (const query of ["tasks", "TASKS", "tAsKs", "Tasks ", " tas"])
+      expect(titles(query)).toEqual(["tasks"]);
+    expect(titles("/REPOS/wf")).toEqual(["tasks"]);
+    expect(titles("mac notes")).toEqual(["notes"]);
+    expect(titles("mac")).toEqual(["tasks", "notes"]);
+  });
+
+  test("leaves out connections it cannot open or already lists", () => {
+    expect(search("tasks", [])).toEqual([]);
+    expect(
+      search("tasks", [{ ...macSessions, connection_generation: 2 }]),
+    ).toEqual([]);
+    expect(search("tasks", [{ ...macSessions, error: "offline" }])).toEqual([]);
+    expect(
+      serverSessionPaneEntries(
+        [{ ...connections[1]!, state: "connecting" }],
+        [macSessions],
+        "desktop",
+      ),
+    ).toEqual([]);
+    expect(
+      serverSessionPaneEntries(connections, [macSessions], "local"),
+    ).toEqual([]);
+    expect(
+      serverSessionPaneEntries(
+        connections,
+        [macSessions],
+        "desktop",
+        new Set(["local"]),
+      ),
+    ).toEqual([]);
   });
 });
 

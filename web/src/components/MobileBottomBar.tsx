@@ -1,4 +1,4 @@
-import { EllipsisVertical, SquareStack } from "lucide-react";
+import { EllipsisVertical, PanelTop, SquareStack } from "lucide-react";
 import { useEffect, type ReactNode, type Ref } from "react";
 import { focusIfUnchanged } from "./dialogFocus";
 import { blurActiveInput } from "../activeTerminalInput";
@@ -9,20 +9,26 @@ export function MobileBottomBar({
   inputRef,
   chatButton,
   tabCount,
+  paneCount = 0,
   attention,
   tabsOpen,
   moreOpen,
   onTabsOpenChange,
   onMoreOpenChange,
+  workspaces,
 }: {
   inputRef: Ref<HTMLDivElement>;
   chatButton?: ReactNode;
   tabCount: number;
+  /** Panes in the focused workspace: the tab sheet also switches those. */
+  paneCount?: number;
   attention: boolean;
   tabsOpen: boolean;
   moreOpen: boolean;
   onTabsOpenChange: (open: boolean) => void;
   onMoreOpenChange: (open: boolean) => void;
+  /** The workspace list, beside the tabs: switching workspaces in one tap. */
+  workspaces?: { open: boolean; onToggle: () => void };
 }) {
   useEffect(() => {
     if (!moreOpen) return;
@@ -51,28 +57,47 @@ export function MobileBottomBar({
       <div className="mobile-bottom-input" ref={inputRef} />
       <nav className="mobile-appbar" aria-label="Workspace navigation">
         {chatButton}
-        <button
-          type="button"
-          className="mobile-appbar-tabs"
-          aria-label="Show tabs"
-          aria-description={`${tabCount} open${attention ? ", an agent needs you" : ""}`}
-          aria-haspopup="dialog"
-          aria-expanded={tabsOpen}
-          onPointerDown={blurActiveInput}
-          onClick={() => {
-            onMoreOpenChange(false);
-            onTabsOpenChange(!tabsOpen);
-          }}
-        >
-          <SquareStack size={21} aria-hidden="true" />
-          <span
-            className="mobile-appbar-count"
-            data-attention={attention || undefined}
-            aria-hidden="true"
+        {workspaces ? (
+          <button
+            type="button"
+            className="mobile-appbar-workspaces"
+            aria-label={workspaces.open ? "Hide workspaces" : "Show workspaces"}
+            aria-pressed={workspaces.open}
+            onPointerDown={blurActiveInput}
+            onClick={() => {
+              onMoreOpenChange(false);
+              onTabsOpenChange(false);
+              workspaces.onToggle();
+            }}
           >
-            {tabCount}
-          </span>
-        </button>
+            <PanelTop size={21} aria-hidden="true" />
+          </button>
+        ) : null}
+        {/* One tab of one pane has nothing to switch to: New tab is in ⋮. */}
+        {tabCount > 1 || paneCount > 1 || tabsOpen ? (
+          <button
+            type="button"
+            className="mobile-appbar-tabs"
+            aria-label="Show tabs"
+            aria-description={`${tabCount} open${attention ? ", an agent needs you" : ""}`}
+            aria-haspopup="dialog"
+            aria-expanded={tabsOpen}
+            onPointerDown={blurActiveInput}
+            onClick={() => {
+              onMoreOpenChange(false);
+              onTabsOpenChange(!tabsOpen);
+            }}
+          >
+            <SquareStack size={21} aria-hidden="true" />
+            <span
+              className="mobile-appbar-count"
+              data-attention={attention || undefined}
+              aria-hidden="true"
+            >
+              {tabCount}
+            </span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="mobile-appbar-more"
