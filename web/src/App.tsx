@@ -4439,7 +4439,7 @@ export default function App() {
     <div
       className={`app ${sidebarHidden && !mobile ? "sidebar-hidden" : ""} ${
         zenMode && !mobile ? "zen" : ""
-      } ${mobile && assistantVisible ? "assistant-view" : ""}`}
+      } ${zenMode && mobile ? "phone-zen" : ""} ${mobile && assistantVisible ? "assistant-view" : ""}`}
       data-mobile-more={mobile && mobileMoreOpen ? "open" : undefined}
     >
       <header className="topbar">
@@ -4693,6 +4693,20 @@ export default function App() {
               <span className="mobile-nav-label">
                 {activePaneChat ? "Terminal view" : "Chat view"}
               </span>
+            </button>
+          ) : null}
+          {zenMode ? (
+            // Zen hides the top bar and its Settings, where Zen is turned on.
+            <button
+              type="button"
+              aria-label="Exit Zen mode"
+              onClick={() => {
+                setMobileMoreOpen(false);
+                applyZenMode(false);
+              }}
+            >
+              <Minimize2 size={16} />
+              <span className="mobile-nav-label">Exit Zen mode</span>
             </button>
           ) : null}
         </nav>
