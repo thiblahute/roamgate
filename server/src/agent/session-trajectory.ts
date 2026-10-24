@@ -333,9 +333,51 @@ function projectClaudeTrajectory(
   records: Record<string, unknown>[],
 ) {
   const steps: Omit<AtifStep, "step_id">[] = [];
+  // Claude's queue of messages sent while it works: enqueue adds, remove
+  // takes one it absorbed mid-turn (shown below as a queued command),
+  // dequeue takes the oldest for a new turn (a user record). What is left
+  // still waits.
+  const queue: { content: string; timestamp: string }[] = [];
   records.forEach((record, index) => {
     const timestamp = messageTime(record, file.mtimeMs, index);
     const type = stringValue(record.type);
+    if (type === "queue-operation") {
+      const content = stringValue(record.content);
+      switch (stringValue(record.operation)) {
+        case "enqueue":
+          // Task notifications and other sessions' messages queue too.
+          if (content.trim() && !/^\s*<[a-z-]+[\s>]/i.test(content))
+            queue.push({ content, timestamp });
+          break;
+        case "remove": {
+          const at = queue.findIndex((queued) => queued.content === content);
+          if (at >= 0) queue.splice(at, 1);
+          break;
+        }
+        case "dequeue":
+          queue.shift();
+          break;
+      }
+      return;
+    }
+    // What the user sends while the agent works reaches it as a queued
+    // command, not a user record. Task notifications and other sessions'
+    // messages come the same way; only the user's own are shown.
+    if (type === "attachment") {
+      const attachment = isRecord(record.attachment) ? record.attachment : {};
+      const origin = isRecord(attachment.origin) ? attachment.origin : {};
+      if (attachment.type !== "queued_command" || origin.kind !== "human")
+        return;
+      const text = cleanMessageText(textFromContent(attachment.prompt));
+      if (text)
+        steps.push({
+          timestamp,
+          source: "user",
+          message: text,
+          extra: { record_type: "queued_command" },
+        });
+      return;
+    }
     if (type !== "user" && type !== "assistant" && type !== "system") return;
     const message = isRecord(record.message) ? record.message : record;
     const role = stringValue(message.role) || type;
@@ -346,6 +388,15 @@ function projectClaudeTrajectory(
     const parts = Array.isArray(message.content)
       ? message.content.filter(isRecord)
       : [];
+    // Turns Claude Code writes itself (notes on an image a tool read, and the
+    // like) are flagged meta: not the user's words.
+    if (
+      record.isMeta === true &&
+      !parts.some(
+        (part) => part.type === "tool_use" || part.type === "tool_result",
+      )
+    )
+      return;
     if (
       parts.some(
         (part) => part.type === "tool_use" || part.type === "tool_result",
@@ -385,11 +436,16 @@ function projectClaudeTrajectory(
               ],
             },
           });
-        } else if (part.type === "text" && stringValue(part.text).trim()) {
+        } else if (
+          part.type === "text" &&
+          cleanMessageText(stringValue(part.text)) &&
+          // Claude Code's note on an image a tool read, not the user's words.
+          !/^\[Image: original \d+x\d+/.test(stringValue(part.text))
+        ) {
           steps.push({
             timestamp,
             source: role === "user" ? "user" : "agent",
-            message: stringValue(part.text),
+            message: cleanMessageText(stringValue(part.text)),
           });
         } else if (
           part.type === "thinking" &&
@@ -424,9 +480,21 @@ function projectClaudeTrajectory(
       extra: {
         record_type: type,
         model: modelNameFromRecord(record) || undefined,
+        // The summary Claude Code writes when it compacts the conversation.
+        compact_summary: record.isCompactSummary === true || undefined,
       },
     });
   });
+  for (const { content, timestamp } of queue) {
+    const text = cleanMessageText(content);
+    if (text)
+      steps.push({
+        timestamp,
+        source: "user",
+        message: text,
+        extra: { record_type: "queue-operation", queued: true },
+      });
+  }
   return createTrajectory("claude", file, records, steps);
 }
 

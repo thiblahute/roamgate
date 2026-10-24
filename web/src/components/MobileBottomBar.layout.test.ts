@@ -94,7 +94,13 @@ test("footer controls share quiet borderless styling without losing selected or 
 
 test("navigation slots and centering track control size without shrinking Message", () => {
   const row = rule(terminal, ".terminal-mobile-input-bar", 1);
-  expect(row).toContain(`padding-right: calc(2 * ${control} + 4px);`);
+  expect(row.replace(/\s+/g, " ")).toContain(
+    `padding-right: calc( var(--mobile-appbar-slots, 2) * ${control} + 4px );`,
+  );
+  // The agent chat switch takes a third slot when it shows.
+  expect(rule(nav, ".mobile-bottom-bar:has(.mobile-appbar-chat)")).toContain(
+    "--mobile-appbar-slots: 3;",
+  );
   expect(row).toContain("align-items: center;");
   const editor = rule(
     terminal,

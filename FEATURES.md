@@ -142,23 +142,42 @@ Inspector state is scoped to each checkout; see
   conversation bubbles with rendered replies and collapsible tool-call blocks
   that follow new output, plus a message box that types into the agent's
   terminal and shares the pane's terminal composer draft. Paste images or use
-  **Add images** to choose them on desktop or mobile; uploaded image paths stay
-  in the draft until you send. Enter sends and Shift+Enter adds a line; on
+  **Add images** to choose them on desktop or mobile; images show as `[Image #N]`
+  with a thumbnail until you send. Enter sends and Shift+Enter adds a line; on
   touch keyboards Enter adds a line and the Send
   button sends. On phones the box replaces the terminal composer dock while
-  the chat is open. Sending to an agent that is working, blocked, or in an
-  unknown state first shows where the text will land and needs **Send
+  the chat is open. Sending to a working agent queues the message (it shows as
+  **Queued** in the conversation until the agent takes it); sending to a blocked agent or one in
+  an unknown state first shows where the text will land and needs **Send
   anyway**. The timeline view adds User/Agent/Tool filters. Exports are always
   complete. **Session Inspector** adds metadata, a timeline, raw/ATIF
   transcripts, and export.
+- An agent pane can show its conversation **as a chat** instead of its
+  terminal, which keeps running underneath: the chat button in the pane's
+  toolbar, Ctrl+Cmd+M (Ctrl+Alt+M elsewhere), or on a phone the chat button
+  beside the tabs in the bottom bar (or **Chat view** in More options). The
+  chat takes the whole pane, with one slim row for the agent's status,
+  search, **Stop** (Esc) and the way back to the terminal; on a phone it
+  stands for the top bar, which hides, and its message box sits in the bottom
+  bar, taking the whole width on its own line while you write, above its
+  buttons and the navigation. The message box has
+  Vim keys with the review's `:vim` setting (insert mode first, `:w` sends;
+  on touch screens an **Esc** button stands in for the missing key). While the agent works, its own word for
+  it on its screen (Claude Code's "Sublimating… 1m 5s") shows above the box;
+  when it is blocked, what it asks on its screen shows there, with its
+  numbered choices as buttons.
+  An agent pane opens as a chat as soon as its agent starts; **Open agents
+  as a chat** in Configuration > Behavior turns that off. Each pane
+  remembers the view it was switched to.
 - **Menu > Configuration > Integrations** installs, updates, or removes Herdr's
   bundled agent integrations (not the agents themselves). See
   [version lookup](docs/ARCHITECTURE.md#agent-integrations).
 
 Session inspection supports **Codex, Claude, Kimi, Grok Build, Pi, Muse Code,
 and Antigravity CLI**. Transcripts must be readable by the bridge. Over SSH,
-Roamgate reads the session path Herdr reports; it never searches local files for
-a remote pane. Muse needs session logging enabled (no `--no-session-log`).
+Roamgate reads the session path Herdr reports, or finds a Claude, Codex or Pi
+transcript by its ID on the remote host; it never searches local files for a
+remote pane. Muse needs session logging enabled (no `--no-session-log`).
 See [History synchronization](docs/HISTORY.md).
 
 ## Ranger

@@ -1,4 +1,6 @@
+import { scrollChatPage } from "./chatPaging";
 import {
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -6,7 +8,9 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ImagePlus, Send, TriangleAlert } from "lucide-react";
+import { roamgateLocalStorage } from "../browserStorage";
+import { lazyWithReload } from "../lazyWithReload";
+import { ImagePlus, Send, TriangleAlert, X } from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -31,9 +35,34 @@ import {
   writeTerminalComposerSelection,
 } from "../terminalComposer";
 import { terminalUploadedPathsText } from "../terminalFileDrop";
+import {
+  attachmentDisplay,
+  rememberComposerAttachment,
+  withoutAttachment,
+} from "../composerAttachments";
 import { agentPromptWarning, agentStateKind } from "./agentSession";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
 import "./AgentHistoryComposer.css";
+
+// CodeMirror comes with the first box that needs Vim keys.
+import type { ComposerVimHandle } from "./ComposerVimEditor";
+const ComposerVimEditor = lazyWithReload("composer-vim-editor", () =>
+  import("./ComposerVimEditor").then((module) => ({
+    default: module.ComposerVimEditor,
+  })),
+);
+
+/** Vim keys in the box: the review's `:vim` setting, on unless turned off. */
+function composerVimKeys(): boolean {
+  try {
+    const prefs = JSON.parse(
+      roamgateLocalStorage.getItem("reviewPrefs") ?? "{}",
+    ) as { vim?: boolean };
+    return prefs.vim !== false;
+  } catch {
+    return true;
+  }
+}
 
 // Grow with the draft up to this height, then scroll inside the textarea.
 const MAX_INPUT_HEIGHT_PX = 160;
@@ -57,6 +86,7 @@ export function AgentHistoryComposer({
   stateSeq,
   onSend,
   onUploadImage,
+  vimKeys: vimKeysProp,
   onError,
 }: {
   draftKey: string;
@@ -66,6 +96,8 @@ export function AgentHistoryComposer({
   stateSeq?: number;
   onSend: (text: string) => Promise<void>;
   onUploadImage: (file: File) => Promise<string>;
+  /** Vim keys in the box; the review's `:vim` setting by default. */
+  vimKeys?: boolean;
   onError: (message: string) => void;
 }) {
   useShortcutPreferences();
@@ -84,6 +116,7 @@ export function AgentHistoryComposer({
   );
   const compositionUploadsRef = useRef<Array<() => void>>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const vimHandleRef = useRef<ComposerVimHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const warning = agentPromptWarning(agent, status);
   const agentState = agentStateKind(status);
@@ -142,7 +175,14 @@ export function AgentHistoryComposer({
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_INPUT_HEIGHT_PX)}px`;
     const selection = readTerminalComposerSelection(draftKey);
-    if (selection) textarea.setSelectionRange(selection.start, selection.end);
+    if (selection) {
+      // The shared selection is in the draft; the box shows attachments short.
+      const shown = attachmentDisplay(text);
+      textarea.setSelectionRange(
+        shown.shownOffset(selection.start),
+        shown.shownOffset(selection.end),
+      );
+    }
   }, [draftKey, text]);
 
   const busy = submissionPending || uploadCount > 0;
@@ -162,7 +202,9 @@ export function AgentHistoryComposer({
       for (const file of files) {
         if (file.type && !file.type.startsWith("image/"))
           throw new Error("Choose an image to attach.");
-        paths.push(await onUploadImage(file));
+        const path = await onUploadImage(file);
+        rememberComposerAttachment(path, file);
+        paths.push(path);
       }
     } catch (error) {
       failed = true;
@@ -238,6 +280,15 @@ export function AgentHistoryComposer({
     ? `Send to the agent's terminal (${sendShortcut})`
     : "Send to the agent's terminal (Enter); Shift+Enter for a new line";
   const name = agent?.trim();
+  const shown = attachmentDisplay(text);
+  const [vimKeys] = useState(() => vimKeysProp ?? composerVimKeys());
+  const stored = vimKeys ? readTerminalComposerSelection(draftKey) : null;
+  const shownSelection = stored
+    ? {
+        start: shown.shownOffset(stored.start),
+        end: shown.shownOffset(stored.end),
+      }
+    : null;
 
   return (
     <div className="agent-history-composer">
@@ -265,6 +316,31 @@ export function AgentHistoryComposer({
           </div>
         </div>
       ) : null}
+      {shown.attachments.length ? (
+        <div className="agent-history-composer-attachments">
+          {shown.attachments.map((attachment, index) => (
+            <span key={attachment.path} title={attachment.name}>
+              {attachment.url ? (
+                <img src={attachment.url} alt={attachment.name} />
+              ) : null}
+              <span>#{index + 1}</span>
+              <button
+                type="button"
+                aria-label={`Remove image ${index + 1}`}
+                onMouseDown={keepTextareaFocus}
+                onClick={() =>
+                  writeTerminalComposerDraft(
+                    draftKey,
+                    withoutAttachment(text, attachment.path),
+                  )
+                }
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="agent-history-composer-row">
         <button
           type="button"
@@ -277,92 +353,161 @@ export function AgentHistoryComposer({
         >
           <ImagePlus size={17} aria-hidden="true" />
         </button>
-        <textarea
-          ref={textareaRef}
-          value={text}
-          rows={1}
-          aria-label={`Message ${name || "agent"}`}
-          placeholder={name ? `Message ${name}...` : "Message..."}
-          enterKeyHint={enterAddsLine ? "enter" : "send"}
-          autoComplete="off"
-          onChange={(event) => {
-            const textarea = event.currentTarget;
-            writeTerminalComposerDraft(draftKey, textarea.value);
-            writeTerminalComposerSelection(
-              draftKey,
-              textarea.selectionStart,
-              textarea.selectionEnd,
-            );
-          }}
-          onPaste={(event) => {
-            const files = Array.from(event.clipboardData.files);
-            const images = (
-              files.length
-                ? files
-                : Array.from(event.clipboardData.items)
-                    .map((item) => item.getAsFile())
-                    .filter((file): file is File => file !== null)
-            ).filter((file) => file.type.startsWith("image/"));
-            if (images.length === 0) return;
-            event.preventDefault();
-            void uploadImages(images);
-          }}
-          onSelect={(event) => {
-            const textarea = event.currentTarget;
-            // Skip selections of a value the shared draft has not committed.
-            if (textarea.value !== readTerminalComposerDraft(draftKey)) return;
-            writeTerminalComposerSelection(
-              draftKey,
-              textarea.selectionStart,
-              textarea.selectionEnd,
-            );
-          }}
-          onCompositionStart={() => {
-            touchSubmit.cancel();
-            if (compositionEndTimerRef.current !== null) {
-              clearTimeout(compositionEndTimerRef.current);
-              compositionEndTimerRef.current = null;
-            }
-            composingRef.current = true;
-            setComposing(true);
-          }}
-          onCompositionEnd={() => {
-            // The final native input can follow compositionend in the same task.
-            compositionEndTimerRef.current = setTimeout(() => {
-              compositionEndTimerRef.current = null;
-              composingRef.current = false;
-              setComposing(false);
-              resumeUploads();
-            }, 0);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.nativeEvent.isComposing ||
-              composingRef.current ||
-              event.keyCode === 229
-            )
-              return;
-            if (event.key === "Escape" && confirming) {
+        {vimKeys && enterAddsLine ? (
+          // Phone keyboards have no Esc key, and Vim needs one.
+          <button
+            type="button"
+            className="agent-history-composer-escape"
+            aria-label="Esc: Vim normal mode"
+            title="Esc: Vim normal mode"
+            onMouseDown={keepTextareaFocus}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => vimHandleRef.current?.escape()}
+          >
+            Esc
+          </button>
+        ) : null}
+        {vimKeys ? (
+          <Suspense fallback={null}>
+            <ComposerVimEditor
+              value={shown.text}
+              selection={shownSelection}
+              label={`Message ${name || "agent"}`}
+              placeholder={name ? `Message ${name}...` : "Message..."}
+              enterSends={!enterAddsLine}
+              onChange={(value, start, end) => {
+                const draft = shown.toDraft(value);
+                const next = attachmentDisplay(draft);
+                writeTerminalComposerDraft(draftKey, draft);
+                writeTerminalComposerSelection(
+                  draftKey,
+                  next.draftOffset(value, start),
+                  next.draftOffset(value, end),
+                );
+              }}
+              onSelect={(start, end) => {
+                const committed = attachmentDisplay(
+                  readTerminalComposerDraft(draftKey),
+                );
+                writeTerminalComposerSelection(
+                  draftKey,
+                  committed.draftOffset(committed.text, start),
+                  committed.draftOffset(committed.text, end),
+                );
+              }}
+              onSubmit={() => void send(false)}
+              onPasteImages={(files) => void uploadImages(files)}
+              handleRef={vimHandleRef}
+              onComposingChange={(composing) => {
+                composingRef.current = composing;
+                setComposing(composing);
+                if (!composing) resumeUploads();
+              }}
+            />
+          </Suspense>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            value={shown.text}
+            rows={1}
+            aria-label={`Message ${name || "agent"}`}
+            placeholder={name ? `Message ${name}...` : "Message..."}
+            enterKeyHint={enterAddsLine ? "enter" : "send"}
+            autoComplete="off"
+            onChange={(event) => {
+              const textarea = event.currentTarget;
+              const draft = shown.toDraft(textarea.value);
+              const next = attachmentDisplay(draft);
+              writeTerminalComposerDraft(draftKey, draft);
+              writeTerminalComposerSelection(
+                draftKey,
+                next.draftOffset(textarea.value, textarea.selectionStart),
+                next.draftOffset(textarea.value, textarea.selectionEnd),
+              );
+            }}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              const images = (
+                files.length
+                  ? files
+                  : Array.from(event.clipboardData.items)
+                      .map((item) => item.getAsFile())
+                      .filter((file): file is File => file !== null)
+              ).filter((file) => file.type.startsWith("image/"));
+              if (images.length === 0) return;
               event.preventDefault();
-              event.stopPropagation();
-              setConfirmation(null);
-              return;
-            }
-            const plainEnter =
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.altKey &&
-              !event.ctrlKey &&
-              !event.metaKey;
-            if (
-              (plainEnter && !enterAddsLine) ||
-              shortcutMatches(event.nativeEvent, "composer.send")
-            ) {
-              event.preventDefault();
-              if (!event.repeat) void send(false);
-            }
-          }}
-        />
+              void uploadImages(images);
+            }}
+            onSelect={(event) => {
+              const textarea = event.currentTarget;
+              // Skip selections of a value the shared draft has not committed.
+              const committed = attachmentDisplay(
+                readTerminalComposerDraft(draftKey),
+              );
+              if (textarea.value !== committed.text) return;
+              writeTerminalComposerSelection(
+                draftKey,
+                committed.draftOffset(textarea.value, textarea.selectionStart),
+                committed.draftOffset(textarea.value, textarea.selectionEnd),
+              );
+            }}
+            onCompositionStart={() => {
+              touchSubmit.cancel();
+              if (compositionEndTimerRef.current !== null) {
+                clearTimeout(compositionEndTimerRef.current);
+                compositionEndTimerRef.current = null;
+              }
+              composingRef.current = true;
+              setComposing(true);
+            }}
+            onCompositionEnd={() => {
+              // The final native input can follow compositionend in the same task.
+              compositionEndTimerRef.current = setTimeout(() => {
+                compositionEndTimerRef.current = null;
+                composingRef.current = false;
+                setComposing(false);
+                resumeUploads();
+              }, 0);
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                composingRef.current ||
+                event.keyCode === 229
+              )
+                return;
+              if (
+                (event.key === "PageUp" || event.key === "PageDown") &&
+                scrollChatPage(
+                  event.currentTarget,
+                  event.key === "PageUp" ? -1 : 1,
+                )
+              ) {
+                event.preventDefault();
+                return;
+              }
+              if (event.key === "Escape" && confirming) {
+                event.preventDefault();
+                event.stopPropagation();
+                setConfirmation(null);
+                return;
+              }
+              const plainEnter =
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey;
+              if (
+                (plainEnter && !enterAddsLine) ||
+                shortcutMatches(event.nativeEvent, "composer.send")
+              ) {
+                event.preventDefault();
+                if (!event.repeat) void send(false);
+              }
+            }}
+          />
+        )}
         <button
           type="button"
           className="agent-history-composer-send"

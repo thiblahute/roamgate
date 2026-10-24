@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { localAgentSessionFiles } from "./session-file-access";
+import {
+  type AgentSessionFileAccess,
+  localAgentSessionFiles,
+} from "./session-file-access";
 import {
   createAgentSessionResolverContext,
   resolveAgentSession,
@@ -65,5 +68,72 @@ describe("agent session resolver context", () => {
     expect(secondResult.path).toBe(sessionPath);
     expect(second.pathCache.get(`pi:${sessionId}`)).toBe(sessionPath);
     expect(first.pathCache).not.toBe(second.pathCache);
+  });
+});
+
+describe("Claude transcripts", () => {
+  const id = "69775585-98cc-4cb1-9275-4956ebb07add";
+
+  test("a resumed session is followed to the transcript it went on in", async () => {
+    const root = await mkdtemp(join(tmpdir(), "roamgate-claude-successor-"));
+    tempDirectories.push(root);
+    const reported = join(root, `${id}.jsonl`);
+    const resumed = join(root, "b6a8466c-831a-4cf8-9659-d65d02fa7db3.jsonl");
+    const other = join(root, "0e3b0c44-298f-4c14-9a3b-2c1d9e5f0a11.jsonl");
+    await writeFile(reported, `{"sessionId":"${id}"}\n`);
+    await writeFile(resumed, `{"sessionId":"${id}"}\n{"sessionId":"b6a8"}\n`);
+    await writeFile(other, '{"sessionId":"0e3b"}\n');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(reported, old, old);
+
+    expect(await localAgentSessionFiles.findClaudeSuccessor(reported, id)).toBe(
+      resumed,
+    );
+    expect(
+      await localAgentSessionFiles.findClaudeSuccessor(resumed, id),
+    ).toBeNull();
+  });
+
+  test("a remote lookup is kept and its successor checked at most every 30s", async () => {
+    const calls = { find: 0, successor: 0 };
+    const reported = "/remote/p/old.jsonl";
+    const resumed = "/remote/p/new.jsonl";
+    let successor: string | null = null;
+    const files = {
+      remote: true,
+      async statFile(path: string) {
+        return { path, mtimeMs: 1, size: 1 };
+      },
+      async findClaudeSessionById() {
+        calls.find += 1;
+        return { path: reported, mtimeMs: 1, size: 1 };
+      },
+      async findClaudeSuccessor() {
+        calls.successor += 1;
+        return successor;
+      },
+    } as unknown as AgentSessionFileAccess;
+    const herdrCall = async () => ({
+      agent: {
+        agent: "claude",
+        workspace_id: "w1",
+        tab_id: "t1",
+        cwd: "/repo",
+        agent_session: { agent: "claude", kind: "id", value: id },
+      },
+    });
+    const context = createAgentSessionResolverContext();
+    const read = () =>
+      resolveAgentSession({ pane_id: "p1" }, herdrCall, files, context);
+
+    expect((await read()).path).toBe(reported);
+    successor = resumed;
+    expect((await read()).path).toBe(reported);
+    expect(calls).toEqual({ find: 1, successor: 1 });
+
+    context.successorChecked.clear();
+    expect((await read()).path).toBe(resumed);
+    expect((await read()).path).toBe(resumed);
+    expect(calls).toEqual({ find: 1, successor: 2 });
   });
 });

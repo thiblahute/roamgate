@@ -73,6 +73,109 @@ test("Pi History includes tool arguments, associated outputs and errors in trans
   });
 });
 
+test("Claude messages the user queued while it worked show as theirs", () => {
+  const queued = (prompt: unknown, origin: unknown) => ({
+    type: "attachment",
+    timestamp: "2026-10-24T11:05:31.060Z",
+    attachment: { type: "queued_command", prompt, origin },
+  });
+  const trajectory = projectAgentTrajectory("claude", file, [
+    queued("Also hide the top bar", { kind: "human" }),
+    queued("<task-notification>done</task-notification>", {
+      kind: "task-notification",
+    }),
+    queued("from another session", { kind: "peer" }),
+    queued([{ type: "text", text: "With an image" }], { kind: "human" }),
+    { type: "attachment", attachment: { type: "todo_reminder" } },
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content:
+          "<task-notification>\n<status>completed</status>\n</task-notification>",
+      },
+    },
+    {
+      type: "user",
+      isMeta: true,
+      message: { role: "user", content: "[Image: original 10x20.]" },
+    },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory);
+  expect(entries.map((entry) => [entry.role, entry.text])).toEqual([
+    ["user", "Also hide the top bar"],
+    ["user", "With an image"],
+  ]);
+});
+
+test("a Claude compaction summary is flagged, not a plain user message", () => {
+  const trajectory = projectAgentTrajectory("claude", file, [
+    {
+      type: "system",
+      subtype: "compact_boundary",
+      content: "Conversation compacted",
+    },
+    {
+      type: "user",
+      isCompactSummary: true,
+      message: { role: "user", content: "This session is being continued" },
+    },
+    { type: "user", message: { role: "user", content: "Go on" } },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory);
+  expect(
+    entries.map((entry) => [entry.text, entry.compact_summary ?? false]),
+  ).toEqual([
+    ["This session is being continued", true],
+    ["Go on", false],
+  ]);
+});
+
+test("Claude messages still in its queue show as queued until they land", () => {
+  const op = (operation: string, content?: string) => ({
+    type: "queue-operation",
+    operation,
+    timestamp: "2026-10-24T11:05:31.060Z",
+    ...(content === undefined ? {} : { content }),
+  });
+  const project = (records: Record<string, unknown>[]) =>
+    historyEntriesFromTrajectory(
+      file,
+      projectAgentTrajectory("claude", file, records),
+    ).map((entry) => [entry.text, entry.queued ?? false]);
+  const waiting = [
+    op("enqueue", "first"),
+    op("enqueue", "<task-notification>x</task-notification>"),
+    op("enqueue", "second"),
+    op("enqueue", "third"),
+  ];
+  expect(project(waiting)).toEqual([
+    ["first", true],
+    ["second", true],
+    ["third", true],
+  ]);
+  // Absorbed mid-turn (a queued command), and the oldest taking a new turn.
+  const later = project([
+    ...waiting,
+    op("remove", "second"),
+    {
+      type: "attachment",
+      attachment: {
+        type: "queued_command",
+        prompt: "second",
+        origin: { kind: "human" },
+      },
+    },
+    op("dequeue"),
+    { type: "user", message: { role: "user", content: "first" } },
+  ]);
+  expect(later).toEqual([
+    ["second", false],
+    ["first", false],
+    ["third", true],
+  ]);
+});
+
 test("Claude mixed text/tool blocks retain order and error output is not counted as a user turn", () => {
   const trajectory = projectAgentTrajectory("claude", file, [
     {
@@ -105,6 +208,10 @@ test("Claude mixed text/tool blocks retain order and error output is not counted
             is_error: true,
           },
           { type: "text", text: "Try again" },
+          {
+            type: "text",
+            text: "[Image: original 1080x2424, displayed at 891x2000.]",
+          },
         ],
       },
     },

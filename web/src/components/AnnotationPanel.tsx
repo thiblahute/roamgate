@@ -77,7 +77,8 @@ export function AnnotationPanel({
   onMove: (id: string, delta: -1 | 1) => void;
   onClear: () => void;
   onCopy: () => void;
-  onSend: (paneId: string | null) => void;
+  /** Pre-fills the agent's input, or with `submit`, sends it. */
+  onSend: (paneId: string | null, submit?: boolean) => void;
   onGoToAgent?: () => void;
 }) {
   useShortcutPreferences();
@@ -309,6 +310,16 @@ export function AnnotationPanel({
               <kbd>{prefillShortcut}</kbd>
             ) : null}
           </button>
+          {agentPanes.length ? (
+            <button
+              type="button"
+              disabled={busy || !hasFeedback || !targetPaneId}
+              onClick={() => onSend(targetPaneId || null, true)}
+              title="Send the feedback to the agent now"
+            >
+              <Send size={14} /> Send
+            </button>
+          ) : null}
         </div>
         {onGoToAgent ? (
           <button type="button" className="ghost" onClick={onGoToAgent}>

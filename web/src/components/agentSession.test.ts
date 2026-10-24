@@ -125,9 +125,8 @@ describe("agent session presentation", () => {
   test("warns before typing into an agent that is not at its prompt", () => {
     expect(agentPromptWarning("codex", "idle")).toBeNull();
     expect(agentPromptWarning("codex", "Done")).toBeNull();
-    expect(agentPromptWarning("codex", "working")).toStartWith(
-      "codex is still working.",
-    );
+    // A working agent queues the message: no question to answer first.
+    expect(agentPromptWarning("codex", "working")).toBeNull();
     expect(agentPromptWarning("claude", "blocked")).toStartWith(
       "claude is waiting on a prompt.",
     );

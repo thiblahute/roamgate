@@ -72,6 +72,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
             onSend={send}
             onUploadImage={upload}
             onError={error}
+            vimKeys={false}
           />,
         ),
       );
@@ -109,12 +110,6 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       configurable: true,
       writable: true,
     });
-    const sendAnyway = () =>
-      React.act(async () =>
-        Array.from(container.querySelectorAll("button"))
-          .find((button) => button.textContent === "Send anyway")!
-          .click(),
-      );
     try {
       // A draft started in the terminal composer appears here.
       writeTerminalComposerDraft(draftKey, "from terminal");
@@ -138,11 +133,11 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(2);
 
-      // A working agent needs Send anyway: Enter again only keeps the warning.
-      await render("working");
+      // A blocked agent needs Send anyway: Enter again only keeps the warning.
+      await render("blocked");
       await fill("next step");
       await key("Enter");
-      expect(warning()?.textContent).toContain("codex is still working.");
+      expect(warning()?.textContent).toContain("codex is waiting on a prompt.");
       await key("Enter");
       await key("Enter");
       expect(send).toHaveBeenCalledTimes(2);
@@ -167,24 +162,25 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       await key("Enter");
       expect(warning()).not.toBeNull();
       stateSeq += 1;
-      await render("working");
+      await render("blocked");
       expect(warning()).toBeNull();
-      await render("working", true);
+      await render("blocked", true);
       expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(2);
 
-      // A state change drops a warning given for the previous state.
+      // A state change drops a warning given for the previous state, and a
+      // working agent queues the message without asking.
       await key("Enter");
-      await render("blocked");
+      await render("working");
       expect(warning()).toBeNull();
       await key("Enter");
-      expect(warning()?.textContent).toContain("waiting on a prompt");
-      await sendAnyway();
+      expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(3);
       expect(send.mock.calls[2]?.[0]).toBe("next steps");
       expect(warning()).toBeNull();
 
       // The warning disappears once the agent is back at its prompt.
+      await render("blocked");
       await fill("approve");
       await key("Enter");
       expect(warning()).not.toBeNull();
@@ -259,7 +255,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       await compatibilityClick("Send");
       expect(send).toHaveBeenCalledTimes(5);
 
-      await render("working");
+      await render("blocked");
       await fill("tapped anyway");
       await release("Send");
       expect(warning()).not.toBeNull();
@@ -322,8 +318,12 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       await fill("look here please");
       writeTerminalComposerSelection(draftKey, 5, 9);
       await React.act(async () => finishUpload("/tmp/photo.png"));
-      expect(input().value).toBe("look /tmp/photo.png  please");
-      expect(input().selectionStart).toBe("look /tmp/photo.png ".length);
+      // The box shows the attached image short; the draft keeps its path.
+      expect(input().value).toBe("look [Image #1]  please");
+      expect(readTerminalComposerDraft(draftKey)).toBe(
+        "look /tmp/photo.png  please",
+      );
+      expect(input().selectionStart).toBe("look [Image #1] ".length);
       expect(terminalComposerUploadCount(draftKey)).toBe(0);
       await key("Enter");
       expect(send.mock.calls[6]?.[0]).toBe("look /tmp/photo.png  please");
@@ -352,7 +352,8 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
           picker.dispatchEvent(new window.Event("change", { bubbles: true }));
         });
       await chooseImages([image]);
-      expect(input().value).toBe("/tmp/photo.png  ");
+      expect(input().value).toBe("[Image #1]  ");
+      expect(readTerminalComposerDraft(draftKey)).toBe("/tmp/photo.png  ");
       expect(picker.value).toBe("");
       expect(send).toHaveBeenCalledTimes(7);
 
@@ -364,7 +365,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       expect(upload.mock.calls[upload.mock.calls.length - 1]?.[0]).toBe(
         untypedImage,
       );
-      expect(input().value).toBe("/tmp/camera.png  ");
+      expect(readTerminalComposerDraft(draftKey)).toBe("/tmp/camera.png  ");
       const uploadedCount = upload.mock.calls.length;
       await chooseImages([
         new File(["text"], "notes.txt", { type: "text/plain" }),
@@ -373,7 +374,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       expect(error.mock.calls[error.mock.calls.length - 1]?.[0]).toBe(
         "Choose an image to attach.",
       );
-      expect(input().value).toBe("/tmp/camera.png  ");
+      expect(readTerminalComposerDraft(draftKey)).toBe("/tmp/camera.png  ");
       expect(terminalComposerUploadCount(draftKey)).toBe(0);
 
       // Partial failure keeps successful paths and unlocks sending.
@@ -383,7 +384,9 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
         throw new Error("Image too large");
       });
       await paste([image, image]);
-      expect(input().value).toBe("review /tmp/first.png  ");
+      expect(readTerminalComposerDraft(draftKey)).toBe(
+        "review /tmp/first.png  ",
+      );
       expect(error.mock.calls[error.mock.calls.length - 1]?.[0]).toBe(
         "Image too large",
       );
@@ -434,7 +437,9 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
           await React.act(async () => {
             jest.advanceTimersByTime(0);
           });
-          expect(input().value).toBe("look \u4f60 /tmp/ime.png  ");
+          expect(readTerminalComposerDraft(draftKey)).toBe(
+            "look \u4f60 /tmp/ime.png  ",
+          );
           expect(terminalComposerUploadCount(draftKey)).toBe(0);
         }
 

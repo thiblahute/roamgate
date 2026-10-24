@@ -1,4 +1,9 @@
-import { EllipsisVertical, SquareStack } from "lucide-react";
+import {
+  EllipsisVertical,
+  MessagesSquare,
+  SquareStack,
+  SquareTerminal,
+} from "lucide-react";
 import { useEffect, type Ref } from "react";
 import { focusIfUnchanged } from "./dialogFocus";
 import { blurActiveInput } from "../activeTerminalInput";
@@ -13,6 +18,8 @@ export function MobileBottomBar({
   moreOpen,
   onTabsOpenChange,
   onMoreOpenChange,
+  chat,
+  onToggleChat,
 }: {
   inputRef: Ref<HTMLDivElement>;
   tabCount: number;
@@ -21,6 +28,9 @@ export function MobileBottomBar({
   moreOpen: boolean;
   onTabsOpenChange: (open: boolean) => void;
   onMoreOpenChange: (open: boolean) => void;
+  /** The focused pane is an agent's: shown as a chat, or as its terminal. */
+  chat?: boolean;
+  onToggleChat?: () => void;
 }) {
   useEffect(() => {
     if (!moreOpen) return;
@@ -44,6 +54,26 @@ export function MobileBottomBar({
     <div className="mobile-bottom-bar" aria-label="Mobile controls">
       <div className="mobile-bottom-input" ref={inputRef} />
       <nav className="mobile-appbar" aria-label="Workspace navigation">
+        {onToggleChat ? (
+          <button
+            type="button"
+            className={`mobile-appbar-chat${chat ? " is-active" : ""}`}
+            aria-label={chat ? "Show the terminal" : "Show as a chat"}
+            aria-pressed={chat}
+            onPointerDown={blurActiveInput}
+            onClick={() => {
+              onMoreOpenChange(false);
+              onTabsOpenChange(false);
+              onToggleChat();
+            }}
+          >
+            {chat ? (
+              <SquareTerminal size={21} aria-hidden="true" />
+            ) : (
+              <MessagesSquare size={21} aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
         <button
           type="button"
           className="mobile-appbar-tabs"

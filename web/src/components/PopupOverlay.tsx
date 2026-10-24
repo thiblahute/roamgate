@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { X } from "lucide-react";
+import { activeTerminalInput } from "../activeTerminalInput";
 import { bridge } from "../api";
 import { store, useStoreSelector, type PopupInfo } from "../store";
 import { useConnectionClient } from "../useConnectionClient";
@@ -280,13 +281,21 @@ export function PopupOverlay({
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
-      if (
-        !store.get().popup &&
-        client.isCurrent() &&
-        previousFocusRef.current?.isConnected
-      ) {
-        previousFocusRef.current.focus();
+      if (!store.get().popup && client.isCurrent()) {
+        const previous = previousFocusRef.current;
         previousFocusRef.current = null;
+        // After the frame the overlay leaves: an agent chat's message box
+        // gets the keys back, whatever had them before the popup.
+        requestAnimationFrame(() => {
+          if (store.get().popup) return;
+          const input = activeTerminalInput(document);
+          const target = input?.closest(".agent-history-composer")
+            ? input
+            : previous?.isConnected && previous.getClientRects().length > 0
+              ? previous
+              : input;
+          target?.focus({ preventScroll: true });
+        });
       }
     };
     // Title/size render separately; theme and font family update without

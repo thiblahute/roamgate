@@ -53,8 +53,9 @@ export function shouldShowAgentStatusLabel(status?: string): boolean {
 /**
  * Explains where a message typed into the agent's terminal will land when the
  * agent is not waiting at its prompt. Returns null for idle and done agents,
- * whose terminal input starts a new turn, and for Codex in the unknown state,
- * which is how Herdr reports it sitting interactive at its prompt.
+ * whose terminal input starts a new turn, for working ones, which queue it,
+ * and for Codex in the unknown state, which is how Herdr reports it sitting
+ * interactive at its prompt.
  */
 export function agentPromptWarning(
   agent: string | undefined,
@@ -66,9 +67,8 @@ export function agentPromptWarning(
   switch (kind) {
     case "idle":
     case "done":
-      return null;
     case "working":
-      return `${name} is still working. The message will be typed into its terminal now, and the agent decides whether to queue it or interrupt.`;
+      return null;
     case "blocked":
       return `${name} is waiting on a prompt. The message will be typed into that prompt, not sent as a new turn.`;
     default:

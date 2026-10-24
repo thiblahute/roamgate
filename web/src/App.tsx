@@ -37,6 +37,7 @@ import {
 } from "./reviewPins";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
 import { useSystemBack } from "./systemBack";
+import { paneView, togglePaneView, usePaneView } from "./paneView";
 import {
   shortcutMatches,
   shortcutTitle,
@@ -59,6 +60,7 @@ import {
   Info,
   LoaderCircle,
   MessageSquareText,
+  MessagesSquare,
   Minimize2,
   PanelTop,
   SquareTerminal,
@@ -188,7 +190,10 @@ import { copyTextFromUserGesture } from "./terminalClipboard";
 import { terminalPasteRequest } from "./terminalPaste";
 import {
   activateTerminalComposerDraftScope,
+  readTerminalComposerDraft,
+  sendTerminalComposerText,
   terminalComposerDraftKey,
+  writeTerminalComposerDraft,
 } from "./terminalComposer";
 import { terminalMountKey } from "./terminalConnection";
 import type { FileExplorerEntry, GitDiffEntry, Pane } from "./types";
@@ -306,6 +311,11 @@ const UI_SCALE_KEY = "uiScale";
 const TERMINAL_FONT_SCALE_KEY = "terminalFontScale";
 const TERMINAL_FONT_FAMILY_KEY = "terminalFontFamily";
 const ZEN_MODE_KEY = "zenMode";
+// Agent chats show their saved history at once after a reload: read it early,
+// outside the first bundle.
+const agentHistoryCache = import("./agentHistoryCache");
+void agentHistoryCache.then((cache) => cache.loadAgentHistoryCache());
+
 const LazyTerminalView = lazyWithReload("terminal-view", () =>
   import("./components/TerminalView").then((module) => ({
     default: module.TerminalView,
@@ -378,8 +388,25 @@ function TerminalLoadingFallback({
 }
 
 function TerminalView(props: TerminalViewProps) {
+  // A pane that opens as a chat never says it loads a terminal; nor does one
+  // not known yet, which may be one.
+  const chat = useStoreSelector((state) => {
+    if (state.panes.length === 0) return true;
+    const selected =
+      state.selectedPaneId &&
+      state.layout?.panes.some((p) => p.pane_id === state.selectedPaneId)
+        ? state.selectedPaneId
+        : null;
+    const paneId =
+      props.paneId ?? selected ?? state.layout?.focused_pane_id ?? null;
+    const pane = state.panes.find((p) => p.pane_id === paneId);
+    return (
+      paneHasAgentHistory(pane) &&
+      paneView(state.activeConnectionId, pane.pane_id) === "chat"
+    );
+  });
   return (
-    <Suspense fallback={<TerminalLoadingFallback />}>
+    <Suspense fallback={chat ? null : <TerminalLoadingFallback />}>
       <LazyTerminalView {...props} />
     </Suspense>
   );
@@ -747,6 +774,20 @@ function isEditableElement(target: EventTarget | null) {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true;
   if (target.closest(".file-preview-code .cm-editor")) return false;
   return target.isContentEditable;
+}
+
+/**
+ * Typing where the navigation shortcuts (switching panes, tabs and
+ * workspaces) must not fire. An agent chat's message box stands for the
+ * agent's terminal, which takes them, so it does too.
+ */
+function blocksNavigationShortcuts(target: EventTarget | null) {
+  if (
+    target instanceof HTMLElement &&
+    target.closest(".agent-history-composer")
+  )
+    return false;
+  return isEditableElement(target);
 }
 
 function tabShortcutIndex(e: KeyboardEvent) {
@@ -1832,6 +1873,24 @@ export default function App() {
     workspaceHistory,
   ]);
   const activePaneHasAgent = paneHasAgentHistory(activePane);
+  // Saved chat histories follow the open agent panes the connection reports.
+  useEffect(() => {
+    if (s.status !== "connected" || s.panes.length === 0) return;
+    const connectionId = s.activeConnectionId;
+    const panes = s.panes.filter(paneHasAgentHistory);
+    void agentHistoryCache.then((cache) =>
+      cache.pruneAgentHistoryCache(
+        connectionId,
+        new Set(
+          panes.map((pane) =>
+            cache.agentHistoryCacheKey(connectionId, pane.pane_id, pane.agent),
+          ),
+        ),
+      ),
+    );
+  }, [s.activeConnectionId, s.panes, s.status]);
+  const activePaneChat =
+    usePaneView(s.activeConnectionId, activePane?.pane_id) === "chat";
   const historyInspectorOpen =
     inspectorState?.open === true && inspectorState.view === "history";
   const agentHistoryOpen =
@@ -2226,12 +2285,46 @@ export default function App() {
   // terminal; the removed overlay held the focus.
   const reviewShown = reviewSessionId !== null || reviewListOpen;
   const reviewWasShown = useRef(false);
+  // The chat box focused before the review: it gets the focus back, as it
+  // was, whatever pane layout it sits in.
+  const chatBeforeReview = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (reviewWasShown.current && !reviewShown && !mobile)
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        !target.closest(".review-overlay, .review-list-overlay")
+      )
+        chatBeforeReview.current = target.closest(".agent-history-composer")
+          ? target
+          : null;
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => document.removeEventListener("focusin", onFocusIn, true);
+  }, []);
+  // On a phone only an agent chat's message box gets it back: a terminal
+  // taking the focus would bring the keyboard up over it.
+  useEffect(() => {
+    if (reviewWasShown.current && !reviewShown)
       requestAnimationFrame(() => {
+        const chat = chatBeforeReview.current;
+        if (chat?.isConnected && chat.getClientRects().length > 0) {
+          chat.focus({ preventScroll: true });
+          return;
+        }
         const active = document.activeElement;
-        if (!active || active === document.body)
-          activeTerminalInput(document)?.focus({ preventScroll: true });
+        if (active && active !== document.body) return;
+        const input = activeTerminalInput(document);
+        const target = !mobile
+          ? input
+          : input?.closest(".agent-history-composer")
+            ? input
+            : Array.from(
+                document.querySelectorAll<HTMLElement>(
+                  ".agent-history-composer :is(textarea, [contenteditable='true'])",
+                ),
+              ).find((box) => box.getClientRects().length > 0);
+        target?.focus({ preventScroll: true });
       });
     reviewWasShown.current = reviewShown;
   }, [reviewShown, mobile]);
@@ -2420,7 +2513,7 @@ export default function App() {
     [annotations, annotationSessionRef],
   );
   const sendFeedback = useCallback(
-    async (paneId: string | null) => {
+    async (paneId: string | null, submit = false) => {
       const target = annotationAgentPanes.find(
         (pane) => pane.pane_id === paneId,
       );
@@ -2438,9 +2531,34 @@ export default function App() {
       }
       const deliverySession = annotationSessionRef.current;
       setAnnotationDeliveryBusy(true);
+      // An agent shown as a chat: pre-filled in its message box, where it
+      // shows, rather than in the terminal under it.
+      const inChat = !!document.querySelector(
+        `.terminal-shell[data-pane-id="${CSS.escape(target.pane_id)}"] .terminal-chat-layer`,
+      );
       try {
-        const request = terminalPasteRequest(target.pane_id, message);
-        await connectionClient.call(request.method, request.params);
+        if (submit)
+          await sendTerminalComposerText(
+            connectionClient,
+            target.pane_id,
+            message,
+            true,
+          );
+        else if (inChat) {
+          const key = terminalComposerDraftKey(
+            connectionClient.connectionId,
+            connectionClient.generation,
+            target.pane_id,
+          );
+          const draft = readTerminalComposerDraft(key).trimEnd();
+          writeTerminalComposerDraft(
+            key,
+            draft ? `${draft}\n\n${message}` : message,
+          );
+        } else {
+          const request = terminalPasteRequest(target.pane_id, message);
+          await connectionClient.call(request.method, request.params);
+        }
         if (!connectionClient.isCurrent()) return;
         const draftActive =
           deliverySession !== null &&
@@ -2453,17 +2571,25 @@ export default function App() {
         }
         store.notify({
           kind: "success",
-          message: "Feedback pre-filled in the agent pane",
+          message: submit
+            ? "Feedback sent to the agent"
+            : inChat
+              ? "Feedback pre-filled in the chat's message box"
+              : "Feedback pre-filled in the agent pane",
           detail: draftActive
-            ? "Review the message there, then press Enter to submit it."
-            : "Original draft retained because its workspace was left or unloaded, or its connection changed. Review the message in the agent pane, then press Enter.",
+            ? submit
+              ? undefined
+              : "Review the message there, then send it."
+            : "Original draft retained because its workspace was left or unloaded, or its connection changed.",
           autoDismissMs: 6000,
         });
       } catch (error) {
         if (!connectionClient.isCurrent()) return;
         store.notify({
           kind: "error",
-          message: "Failed to pre-fill review feedback",
+          message: submit
+            ? "Failed to send review feedback"
+            : "Failed to pre-fill review feedback",
           detail: error instanceof Error ? error.message : String(error),
         });
       } finally {
@@ -3473,7 +3599,7 @@ export default function App() {
       }
       const paneJumpShortcut = shortcutMatches(e, "panes.recent");
       if (paneJumpShortcut) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         if (paneJumpOptions.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -3493,7 +3619,7 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "panes.search")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         openPaneJumpSearch();
@@ -3539,7 +3665,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (
-          isEditableElement(e.target) ||
+          blocksNavigationShortcuts(e.target) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -3595,9 +3721,10 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         // Typing into the popup's own terminal never reaches here, since
-        // isEditableElement stops at the xterm textarea.
+        // isEditableElement stops at the xterm textarea. An agent chat's
+        // message box lets it through, as it does the review's.
         if (
-          isEditableElement(e.target) ||
+          blocksNavigationShortcuts(e.target) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -3625,7 +3752,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (
-          isEditableElement(e.target) ||
+          blocksNavigationShortcuts(e.target) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -3664,7 +3791,7 @@ export default function App() {
       }
       const tabIndex = tabShortcutIndex(e);
       if (tabIndex !== null) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         const current = store.get();
         const focusedWorkspace = current.workspaces.find((w) => w.focused);
         // Number shortcuts address tab-strip positions, pinned tabs first.
@@ -3706,7 +3833,7 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "reviews.list")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) {
@@ -3717,14 +3844,14 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "review.toggle")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) void toggleReviewRef.current();
         return;
       }
+      // Its chord types nothing, so it works from any text box too.
       if (shortcutMatches(e, "assistant.toggle")) {
-        if (isEditableElement(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) toggleAssistant();
@@ -3740,7 +3867,7 @@ export default function App() {
       }
       const workspacesShortcut = shortcutMatches(e, "workspaces.open");
       if (workspacesShortcut) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         openWorkspaces();
@@ -3761,7 +3888,10 @@ export default function App() {
         toggleZenMode();
         return;
       }
-      if (!shortcutMatches(e, "sidebar.toggle") || isEditableElement(e.target))
+      if (
+        !shortcutMatches(e, "sidebar.toggle") ||
+        blocksNavigationShortcuts(e.target)
+      )
         return;
       e.preventDefault();
       toggleSidebar();
@@ -4413,6 +4543,36 @@ export default function App() {
             <History size={16} />
             <span className="mobile-nav-label">History</span>
           </button>
+          {activePaneHasAgent && activePane ? (
+            <button
+              type="button"
+              className={activePaneChat ? "active" : ""}
+              title={shortcutTitle(
+                activePaneChat ? "Show the terminal" : "Show as a chat",
+                "pane.chat",
+              )}
+              aria-label={
+                activePaneChat
+                  ? "Show the agent's terminal"
+                  : "Show the agent as a chat"
+              }
+              aria-pressed={activePaneChat}
+              onClick={() => {
+                togglePaneView(s.activeConnectionId, activePane.pane_id);
+                setMobileMoreOpen(false);
+                activateTerminalSurface();
+              }}
+            >
+              {activePaneChat ? (
+                <SquareTerminal size={16} />
+              ) : (
+                <MessagesSquare size={16} />
+              )}
+              <span className="mobile-nav-label">
+                {activePaneChat ? "Terminal view" : "Chat view"}
+              </span>
+            </button>
+          ) : null}
         </nav>
         <nav
           className="mobile-nav mobile-workspace-tools"
@@ -4870,7 +5030,7 @@ export default function App() {
               }
               onClear={clearAnnotations}
               onCopy={() => void copyFeedback()}
-              onSend={(paneId) => void sendFeedback(paneId)}
+              onSend={(paneId, submit) => void sendFeedback(paneId, submit)}
             />
             {assistantMounted ? (
               <Suspense
@@ -4911,6 +5071,15 @@ export default function App() {
           moreOpen={mobileMoreOpen}
           onTabsOpenChange={setMobileTabSheetOpen}
           onMoreOpenChange={setMobileMoreOpen}
+          chat={activePaneChat}
+          onToggleChat={
+            activePaneHasAgent && activePane
+              ? () => {
+                  togglePaneView(s.activeConnectionId, activePane.pane_id);
+                  activateTerminalSurface();
+                }
+              : undefined
+          }
         />
       ) : null}
       {/* Before the tooltip layer, which shares the modal z-index. */}

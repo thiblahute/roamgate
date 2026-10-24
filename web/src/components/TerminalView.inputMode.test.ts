@@ -348,6 +348,7 @@ async function registerDomTests() {
   }
   mock.module("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
   const { TerminalView } = await import("./TerminalView");
+  const { setDefaultPaneView } = await import("../paneView");
   const { MobileBottomBar } = await import("./MobileBottomBar");
   const { useSystemBack } = await import("../systemBack");
   const { TERMINAL_INPUT_MODE_STORAGE_KEY } = await import(
@@ -394,6 +395,8 @@ async function registerDomTests() {
     scrollReason.mockClear();
     localStorage.clear();
     sessionStorage.clear();
+    // These cover the terminal; agent panes would otherwise open as a chat.
+    setDefaultPaneView("terminal");
     open = false;
     visible = true;
     mobileLayout = true;

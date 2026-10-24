@@ -9,24 +9,27 @@ import {
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
 
-type Handlers = {
+export type VimExHandlers = {
   commit: (explicit: boolean) => void;
   cancel: () => void;
   suggest: () => void;
 };
 
-/** Vim's ex commands are global; each editor registers its own handlers. */
-const editors = new WeakMap<object, Handlers>();
+/**
+ * Vim's ex commands are global; each editor (a review comment, the agent
+ * chat's message box) registers its own handlers.
+ */
+export const vimExEditors = new WeakMap<object, VimExHandlers>();
 let exCommandsDefined = false;
 
-function defineExCommands() {
+export function defineExCommands() {
   if (exCommandsDefined) return;
   exCommandsDefined = true;
-  Vim.defineEx("write", "w", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("wq", "wq", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("xit", "x", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("quit", "q", (cm) => editors.get(cm)?.cancel());
-  Vim.defineEx("suggest", "sugg", (cm) => editors.get(cm)?.suggest());
+  Vim.defineEx("write", "w", (cm) => vimExEditors.get(cm)?.commit(true));
+  Vim.defineEx("wq", "wq", (cm) => vimExEditors.get(cm)?.commit(true));
+  Vim.defineEx("xit", "x", (cm) => vimExEditors.get(cm)?.commit(true));
+  Vim.defineEx("quit", "q", (cm) => vimExEditors.get(cm)?.cancel());
+  Vim.defineEx("suggest", "sugg", (cm) => vimExEditors.get(cm)?.suggest());
 }
 
 /** What the overlay can do to an open editor. */
@@ -236,7 +239,7 @@ export function ReviewCommentEditor({
     };
     host.addEventListener("keydown", onCaptureKey, true);
     if (cm)
-      editors.set(cm, {
+      vimExEditors.set(cm, {
         commit: (explicit) => handlers.current.onCommit(explicit),
         cancel: () => handlers.current.onCancel(),
         suggest: () => handlers.current.onSuggest(),

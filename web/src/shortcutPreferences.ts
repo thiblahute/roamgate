@@ -53,6 +53,7 @@ const LATE_SHORTCUT_IDS: ShortcutId[] = [
   "shortcuts.show",
   "review.toggle",
   "reviews.list",
+  "pane.chat",
 ];
 export function validateShortcutPreset(value: unknown): ShortcutPreset {
   if (!value || typeof value !== "object")

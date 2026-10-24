@@ -4,7 +4,8 @@ import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 
 const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
-const maxFileCount = 169;
+// Saved agent chat histories load in a chunk of their own.
+const maxFileCount = 172;
 const maxTotalBytes = 14 * 1024 * 1024;
 const maxInitialJsBytes = 835 * 1024;
 const maxInitialJsGzipBytes = 256 * 1024;

@@ -18,6 +18,14 @@ export type AgentSessionFileAccess = {
   readPrefix(path: string, byteLimit: number): Promise<Uint8Array>;
   readDownloadBody(path: string): Promise<BodyInit>;
   findPiSessionById(id: string): Promise<SessionFile | null>;
+  /** A remote Claude transcript by session ID; local ones are found locally. */
+  findClaudeSessionById(id: string): Promise<SessionFile | null>;
+  /**
+   * The transcript a Claude session went on in: the newest one beside it,
+   * written since, that names its session (a resume or /clear starts a new
+   * file Herdr does not learn about). Null when it is still the latest.
+   */
+  findClaudeSuccessor(path: string, id: string): Promise<string | null>;
   findCodexSessionById(id: string): Promise<SessionFile | null>;
 };
 
@@ -75,6 +83,24 @@ async function localSessionFile(path: string): Promise<SessionFile | null> {
   }
 }
 
+/** The newest .jsonl beside $f, newer than it, that names $id. */
+const CLAUDE_SUCCESSOR_SCRIPT = `
+best=""
+best_mtime=0
+for g in $(find "$(dirname "$f")" -maxdepth 1 -name '*.jsonl' -newer "$f" -exec grep -l -F -- "$id" {} + 2>/dev/null); do
+  m="$(stat -c %Y "$g" 2>/dev/null || stat -f %m "$g")"
+  if [ "$m" -gt "$best_mtime" ]; then
+    best="$g"
+    best_mtime="$m"
+  fi
+done
+printf %s "$best"
+`;
+
+function validClaudeSessionId(id: string): boolean {
+  return /^[0-9a-f-]{36}$/i.test(id);
+}
+
 export const localAgentSessionFiles: AgentSessionFileAccess = {
   remote: false,
   statFile: localSessionFile,
@@ -89,6 +115,20 @@ export const localAgentSessionFiles: AgentSessionFileAccess = {
   },
   async findPiSessionById() {
     return null;
+  },
+  async findClaudeSessionById() {
+    return null;
+  },
+  async findClaudeSuccessor(path, id) {
+    if (!validClaudeSessionId(id)) return null;
+    const proc = Bun.spawn(["sh", "-c", CLAUDE_SUCCESSOR_SCRIPT], {
+      env: { ...process.env, f: path, id },
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const found = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    return found || null;
   },
   findCodexSessionById: findLocalCodexSession,
 };
@@ -174,6 +214,59 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$mtime" "$path64" "$identity" "$chan
     return parseRemoteFileMetadata(result.stdout.toString("utf8"));
   }
 
+  /**
+   * The newest file named for a session under a directory on the host:
+   * `root` and `names` are shell (find) expressions using $id.
+   */
+  async function findRemoteSession(
+    id: string,
+    root: string,
+    names: string,
+    label: string,
+  ): Promise<SessionFile | null> {
+    const command = `
+set -eu
+id=${args.shQuote(id)}
+root="${root}"
+[ -d "$root" ] || exit 44
+latest=""
+latest_mtime=0
+while IFS= read -r -d '' candidate; do
+  mtime="$(stat -c %Y "$candidate" 2>/dev/null || stat -f %m "$candidate")"
+  if [ "$mtime" -ge "$latest_mtime" ]; then
+    latest="$candidate"
+    latest_mtime="$mtime"
+  fi
+done < <(find "$root" -type f \\( ${names} \\) -print0)
+[ -n "$latest" ] || exit 44
+size="$(stat -c %s "$latest" 2>/dev/null || stat -f %z "$latest")"
+path64="$(printf '%s' "$latest" | base64 | tr -d '\\n')"
+printf '%s\\t%s\\t%s\\n' "$size" "$latest_mtime" "$path64"
+`;
+    const result = await args.runBinaryProcessWithTimeout(
+      sshReadCommandArgv(
+        host,
+        `bash -lc ${args.shQuote(command)}`,
+        [],
+        "agent.session.find",
+      ),
+      SESSION_FILE_TIMEOUT_MS,
+    );
+    if (result.code === 44) return null;
+    if (result.code !== 0) {
+      throw new Error(
+        (
+          result.stderr ||
+          result.stdout.toString("utf8") ||
+          `remote ${label} session search exited ${result.code}`
+        )
+          .trim()
+          .slice(0, 1000),
+      );
+    }
+    return parseRemoteFileMetadata(result.stdout.toString("utf8"));
+  }
+
   return {
     remote: true,
     statFile,
@@ -215,48 +308,34 @@ if matches:
       const bytes = await runRemote(`set -eu\ncat ${args.shQuote(path)}`);
       return Uint8Array.from(bytes).buffer;
     },
-    async findPiSessionById(id) {
-      const command = `
-set -eu
-id=${args.shQuote(id)}
-root="\${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
-[ -d "$root" ] || exit 44
-latest=""
-latest_mtime=0
-while IFS= read -r -d '' candidate; do
-  mtime="$(stat -c %Y "$candidate" 2>/dev/null || stat -f %m "$candidate")"
-  if [ "$mtime" -ge "$latest_mtime" ]; then
-    latest="$candidate"
-    latest_mtime="$mtime"
-  fi
-done < <(find "$root" -type f \\( -name "$id.jsonl" -o -name "*_$id.jsonl" \\) -print0)
-[ -n "$latest" ] || exit 44
-size="$(stat -c %s "$latest" 2>/dev/null || stat -f %z "$latest")"
-path64="$(printf '%s' "$latest" | base64 | tr -d '\\n')"
-printf '%s\\t%s\\t%s\\n' "$size" "$latest_mtime" "$path64"
-`;
-      const result = await args.runBinaryProcessWithTimeout(
-        sshReadCommandArgv(
-          host,
-          `bash -lc ${args.shQuote(command)}`,
-          [],
-          "agent.session.find",
-        ),
-        SESSION_FILE_TIMEOUT_MS,
+    findPiSessionById(id) {
+      return findRemoteSession(
+        id,
+        "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions",
+        '-name "$id.jsonl" -o -name "*_$id.jsonl"',
+        "Pi",
       );
-      if (result.code === 44) return null;
-      if (result.code !== 0) {
-        throw new Error(
-          (
-            result.stderr ||
-            result.stdout.toString("utf8") ||
-            `remote Pi session search exited ${result.code}`
-          )
-            .trim()
-            .slice(0, 1000),
-        );
-      }
-      return parseRemoteFileMetadata(result.stdout.toString("utf8"));
+    },
+    async findClaudeSuccessor(path, id) {
+      if (!validClaudeSessionId(id)) return null;
+      const found = (
+        await runRemote(
+          `f=${args.shQuote(path)}\nid=${args.shQuote(id)}\n${CLAUDE_SUCCESSOR_SCRIPT}`,
+        )
+      )
+        .toString("utf8")
+        .trim();
+      return found || null;
+    },
+    findClaudeSessionById(id) {
+      // Claude names a transcript after its session ID, a UUID.
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return Promise.resolve(null);
+      return findRemoteSession(
+        id,
+        "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects",
+        '-name "$id.jsonl"',
+        "Claude",
+      );
     },
   };
 }
