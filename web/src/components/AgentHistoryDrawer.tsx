@@ -46,6 +46,7 @@ import { AgentTasksSheet } from "./AgentTasksSheet";
 import { useAgentTasks } from "../agentTasks";
 import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
 import { shortcutTitle } from "../shortcutPreferences";
+import { useAgentCommands } from "../claudeCommands";
 import type { Pane } from "../types";
 import {
   DEFAULT_INSPECTOR_NAVIGATION_RATIO,
@@ -205,6 +206,7 @@ export function AgentHistoryDrawer({
     session: tasksSession,
     loaded: tasksLoaded,
   } = useAgentTasks(pane, !!paneChat && open);
+  const agentCommands = useAgentCommands(pane, open);
   const tasksById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
     [tasks],
@@ -1077,6 +1079,7 @@ export function AgentHistoryDrawer({
       stateSeq={pane.state_change_seq}
       onSend={sendFromChatBox}
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
+      commands={agentCommands}
       onError={notifyComposerError}
     />
   );

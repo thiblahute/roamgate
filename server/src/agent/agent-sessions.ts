@@ -126,6 +126,17 @@ export function createAgentSessionHandlers(args: {
         session: basename(resolved.file.path).replace(/\.jsonl$/, ""),
       };
     },
+    readCommands: async (params: Record<string, unknown>) => {
+      const resolved = await resolveAgentSession(
+        params,
+        args.herdrCall,
+        args.files,
+        resolverContext,
+      );
+      if (!resolved.file) return { commands: [] };
+      const projection = await cache.get(resolved);
+      return { commands: projection.commands };
+    },
     /**
      * A task's details: the end of a command's output, or a subagent's own
      * conversation. Paths come from the transcript, never from the caller.

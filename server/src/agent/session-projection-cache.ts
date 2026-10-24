@@ -1,3 +1,4 @@
+import { parseSessionCommands } from "./session-commands";
 import { parseSessionTasks } from "./session-tasks";
 import { randomUUID } from "node:crypto";
 import type { AgentSessionFileAccess } from "./session-file-access";
@@ -50,6 +51,8 @@ export async function readSessionProjection(
     entries: historyEntriesFromTrajectory(projectionFile, trajectory),
     /** What a Claude session ran on the side. */
     tasks: agent === "claude" ? parseSessionTasks(records) : [],
+    /** The skills and custom commands a Claude session offers as /name. */
+    commands: agent === "claude" ? parseSessionCommands(records) : [],
     stats: {
       turns: messages.filter((message) => message.role === "user").length,
       records: records.length,
