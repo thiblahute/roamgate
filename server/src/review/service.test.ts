@@ -1941,3 +1941,28 @@ test("Local from a merge request's review is a local review of its branch", asyn
   expect(found.mergeRequest?.number).toBe(10046);
   expect(found.localReviews).toEqual([local.id]);
 });
+
+test("comparing two versions is its own review, titled OLD vs NEW", () => {
+  const { service } = setup();
+  const range = openSession(service);
+  const compare = service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "range", base: "main", head: "HEAD", compare: true },
+  }).session;
+  expect(compare.id).not.toBe(range.id);
+  expect(compare.title).toBe("main vs HEAD");
+  expect(compare.target).toEqual({
+    kind: "range",
+    base: "main",
+    head: "HEAD",
+    compare: true,
+  });
+  // Anything but true is a plain range.
+  const plain = service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "range", base: "main", head: "HEAD", compare: "yes" },
+  }).session;
+  expect(plain.id).toBe(range.id);
+});

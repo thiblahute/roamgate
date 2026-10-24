@@ -169,6 +169,14 @@ export function parseTargetFlags(
   const mr = form.get("mr");
   if (mr) return { kind: "mr", url: mr };
   if (form.get("worktree")) return { kind: "worktree" };
+  const compare = form.get("compare");
+  if (compare) {
+    // Git refuses ".." in ref names: the two refs split there.
+    const [base, head, ...rest] = compare.split("..");
+    if (!base || !head || rest.length)
+      throw new ReviewError("--compare takes OLD NEW");
+    return { kind: "range", base, head, compare: true };
+  }
   const range = form.get("range");
   if (range) {
     const match = /^([^.\s]+?)\.\.\.?([^.\s]*)$/.exec(range);
