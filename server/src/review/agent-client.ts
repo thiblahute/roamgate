@@ -101,6 +101,12 @@ def parser():
     target.add_argument("--range", help="BASE..HEAD (default: default branch..HEAD)")
     target.add_argument("--worktree", action="store_true", help="uncommitted changes")
     target.add_argument("--mr", help="merge request URL")
+    target.add_argument(
+        "--compare",
+        nargs=2,
+        metavar=("OLD", "NEW"),
+        help="only what changed from OLD to NEW (tree to tree), e.g. a branch before and after a force-push",
+    )
     o.add_argument(
         "--repo",
         action="append",
@@ -302,6 +308,8 @@ def main():
     }
     if args.session:
         body["session"] = args.session
+    if getattr(args, "compare", None):
+        args.compare = "..".join(args.compare)
     for key, value in vars(args).items():
         if key in ("session", "agent", "command", "text") or value in (None, False):
             continue

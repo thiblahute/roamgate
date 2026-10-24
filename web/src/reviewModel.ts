@@ -441,7 +441,10 @@ export function rankReviews(
 }
 
 export function describeReviewTarget(target: ReviewTarget) {
-  if (target.kind === "range") return `${target.base}..${target.head}`;
+  if (target.kind === "range")
+    return target.compare
+      ? `${target.base} vs ${target.head}`
+      : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
   return "working tree";
 }

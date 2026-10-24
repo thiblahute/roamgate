@@ -89,8 +89,11 @@ export function reviewPatchScript(
     lines.push(
       resolveBase(target.base, shQuote),
       `h=$(git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}) || { echo "unknown revision: ${target.head.replace(/["$`\\]/g, "")}" >&2; exit 3; }`,
-      // Review what the head adds, as a merge request would show it.
-      `m=$(git merge-base "$b" "$h" 2>/dev/null) || m="$b"`,
+      // Review what the head adds, as a merge request would show it; or,
+      // comparing two versions of a branch, tree against tree.
+      target.compare
+        ? `m="$b"`
+        : `m=$(git merge-base "$b" "$h" 2>/dev/null) || m="$b"`,
       `{ printf '${SHAS_MARKER} %s %s\\n' "$m" "$h"; ${diff} "$m" "$h"; } | ${cap}`,
     );
   } else if (target.kind === "worktree") {

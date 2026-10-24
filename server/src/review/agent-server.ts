@@ -144,6 +144,12 @@ export function parseTargetFlags(
   const mr = form.get("mr");
   if (mr) return { kind: "mr", url: mr };
   if (form.get("worktree")) return { kind: "worktree" };
+  const compare = form.get("compare");
+  if (compare) {
+    const match = /^([^.\s]+?)\.\.([^.\s]+)$/.exec(compare);
+    if (!match) throw new ReviewError("--compare takes OLD NEW");
+    return { kind: "range", base: match[1]!, head: match[2]!, compare: true };
+  }
   const range = form.get("range");
   if (range) {
     const match = /^([^.\s]+?)\.\.\.?([^.\s]*)$/.exec(range);

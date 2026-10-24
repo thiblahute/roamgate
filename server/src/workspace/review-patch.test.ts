@@ -74,6 +74,44 @@ test("a range reviews what the head adds since the merge base", async () => {
   expect(diff.truncated).toBe(false);
 });
 
+test("comparing two versions of a rewritten branch shows only what changed", async () => {
+  const root = repository();
+  // The reviewed version, kept by name; then the branch is rewritten with
+  // one more fix folded into its commit.
+  git(root, "branch", "topic-before");
+  writeFileSync(join(root, "a.txt"), "one\n2\nthree, fixed\n");
+  git(root, "commit", "-q", "--amend", "-am", "change, folded");
+
+  const lines = (diff: Awaited<ReturnType<typeof readReviewPatch>>) =>
+    diff.files.flatMap((f) =>
+      f.hunks.flatMap((h) =>
+        h.lines.filter((l) => l.kind !== " ").map((l) => `${l.kind}${l.text}`),
+      ),
+    );
+  const range = await readReviewPatch({
+    ...run,
+    root,
+    target: { kind: "range", base: "topic-before", head: "topic" },
+  });
+  // From the merge-base, the whole rewritten branch shows again.
+  expect(lines(range)).toEqual(["-two", "-three", "+2", "+three, fixed"]);
+
+  const compare = await readReviewPatch({
+    ...run,
+    root,
+    target: {
+      kind: "range",
+      base: "topic-before",
+      head: "topic",
+      compare: true,
+    },
+  });
+  // Tree to tree: only the folded fix.
+  expect(lines(compare)).toEqual(["-three", "+three, fixed"]);
+  expect(compare.baseSha).toBe(git(root, "rev-parse", "topic-before"));
+  expect(compare.headSha).toBe(git(root, "rev-parse", "topic"));
+});
+
 test("the working tree includes untracked files", async () => {
   const root = repository();
   writeFileSync(join(root, "a.txt"), "one\n2\nthree\nfour\n");

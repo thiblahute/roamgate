@@ -596,6 +596,9 @@ function getReviewService(): ReviewService {
         connectionManager,
         session.connectionId,
       );
+      // Comparing two versions of a branch: its commits were rewritten, so
+      // they would show the whole branch again, not what changed.
+      if (session.target.kind === "range" && session.target.compare) return [];
       if (session.target.kind === "range")
         return runtime.files.readReviewCommits(
           session.root,

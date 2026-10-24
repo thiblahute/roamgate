@@ -120,6 +120,7 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
       kind: "range",
       base: refName(target.base, "base"),
       head: refName(target.head ?? "HEAD", "head"),
+      ...(target.compare === true ? { compare: true } : {}),
     };
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
@@ -139,7 +140,9 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
 function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "range" && b.kind === "range")
-    return a.base === b.base && a.head === b.head;
+    return (
+      a.base === b.base && a.head === b.head && !!a.compare === !!b.compare
+    );
   if (a.kind === "mr" && b.kind === "mr") {
     // The same merge request, however its URL was written (`/diffs`...).
     const left = parseMergeRequestUrl(a.url);
@@ -188,7 +191,10 @@ const FIND_RETRY_MS = 60_000;
 const GONE_RETRY_MS = 5 * 60_000;
 
 export function describeTarget(target: ReviewTarget): string {
-  if (target.kind === "range") return `${target.base}..${target.head}`;
+  if (target.kind === "range")
+    return target.compare
+      ? `${target.base} vs ${target.head}`
+      : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
   return "working tree";
 }

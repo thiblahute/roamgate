@@ -10,7 +10,17 @@
 
 /** What is being reviewed. Ranges keep ref names so they follow rebases. */
 export type ReviewTarget =
-  | { kind: "range"; base: string; head: string }
+  | {
+      kind: "range";
+      base: string;
+      head: string;
+      /**
+       * Compare the two trees (`git diff BASE HEAD`) instead of what HEAD
+       * adds since their merge-base: what changed between two versions of a
+       * rewritten branch, such as before and after a force-push.
+       */
+      compare?: boolean;
+    }
   | { kind: "worktree" }
   | { kind: "mr"; url: string };
 
