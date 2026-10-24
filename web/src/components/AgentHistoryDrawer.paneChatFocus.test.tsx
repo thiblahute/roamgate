@@ -18,8 +18,6 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
-  // The plain message box: these tests type into its textarea.
-  (await import("../vimKeys")).setVimKeys(false);
   test("a pane's message box keeps the focus when its transcript appears", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });
@@ -27,6 +25,9 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
       window: browser,
       document: browser.document,
       navigator: browser.navigator,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
       Node: browser.Node,
@@ -94,6 +95,8 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
       "../layoutPreferences"
     );
     initializeLayoutPreferences();
+    // A plain message box: Vim keys (CodeMirror) off.
+    browser.localStorage.setItem("vimKeys", "false");
     const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
     const { createRoot } = await import("react-dom/client");
     const container = document.createElement("div");
@@ -120,7 +123,11 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
             pane={pane}
             open
             embedded
-            paneChat={{ onKeys: () => {}, onShowTerminal: () => {} }}
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal: () => {},
+            }}
             onOpenChange={() => {}}
           />,
         );
@@ -158,16 +165,21 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
       expect(box.value).toBe("half a thought");
 
       // And back: a transcript that cannot be read any more (a server
-      // restart) does not take the box away either.
+      // restart) does not take the box away either. Another pane: this
+      // one's conversation is kept in the browser and would show.
       transcript = false;
       await React.act(async () => root.render(null));
       await React.act(async () => {
         root.render(
           <AgentHistoryDrawer
-            pane={pane}
+            pane={{ ...pane, pane_id: "pane-two", terminal_id: "term-two" }}
             open
             embedded
-            paneChat={{ onKeys: () => {}, onShowTerminal: () => {} }}
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal: () => {},
+            }}
             onOpenChange={() => {}}
           />,
         );
@@ -180,6 +192,13 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
       expect(document.activeElement).toBe(first);
 
       // A message sent before there is a transcript shows at once.
+      await React.act(async () => {
+        Object.getOwnPropertyDescriptor(
+          browser.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(first, "half a thought");
+        first.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
       await React.act(async () => {
         first.dispatchEvent(
           new window.KeyboardEvent("keydown", {

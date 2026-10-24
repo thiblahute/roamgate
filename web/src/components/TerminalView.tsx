@@ -582,65 +582,6 @@ export function TerminalView({
     selectedPaneInLayout ?? s.layout?.focused_pane_id ?? null;
   const isActivePane = !!pane && (!paneId || pane.pane_id === activePaneId);
   const canShowAgentHistory = isActivePane && paneHasAgentHistory(pane);
-  /**
-   * Takes a loopback link so the user can forward it instead of opening an
-   * address that belongs to the remote host. Returns false for anything it
-   * does not take, including its own failures, so the caller opens the link
-   * as it always did.
-   */
-  const proposeForward = (url: string): boolean => {
-    try {
-      if (!forwardableRef.current) return false;
-      const candidate = terminalForwardCandidate(url);
-      if (!candidate) return false;
-      // Already forwarded: open it rather than asking again. The proposal is
-      // for ports that have no tunnel, not a toll on every click.
-      const existing = localForwardFor(
-        forwardsRef.current,
-        s.activeConnectionId,
-        candidate.port,
-      );
-      if (existing) {
-        window.open(
-          candidate.rewrite(existing.local_port),
-          "_blank",
-          "noopener,noreferrer",
-        );
-        return true;
-      }
-      setForwardRequest({
-        url,
-        port: candidate.port,
-        rewrite: candidate.rewrite,
-        target: {
-          connectionId: s.activeConnectionId,
-          generation: s.connectionGeneration,
-        },
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  // Stable identity for the link provider: the terminal is built once, and a
-  // handler rebuilt each render would rebuild it with them.
-  const proposeForwardRef = useRef<(url: string) => boolean>(() => false);
-  proposeForwardRef.current = proposeForward;
-  const takeHttpLink = useCallback(
-    (url: string) => proposeForwardRef.current(url),
-    [],
-  );
-  const forwardConnection = s.connections.find(
-    (connection) => connection.id === s.activeConnectionId,
-  );
-  // Needs an SSH transport to forward over, and Roamgate on the machine the
-  // browser runs on: a forward binds wherever ssh runs.
-  // Read at click time from a ref: the provider's handler is installed once,
-  // when the terminal is created.
-  const forwardsRef = useRef(s.forwards);
-  forwardsRef.current = s.forwards;
-  const forwardableRef = useRef(false);
-  forwardableRef.current = canForwardPorts(forwardConnection?.type);
   // An agent pane can show its conversation as a chat instead of its
   // terminal, which keeps running underneath.
   const chatAvailable = !!pane && paneHasAgentHistory(pane);
@@ -714,6 +655,65 @@ export function TerminalView({
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [agentWaiting, agentWorking]);
+  /**
+   * Takes a loopback link so the user can forward it instead of opening an
+   * address that belongs to the remote host. Returns false for anything it
+   * does not take, including its own failures, so the caller opens the link
+   * as it always did.
+   */
+  const proposeForward = (url: string): boolean => {
+    try {
+      if (!forwardableRef.current) return false;
+      const candidate = terminalForwardCandidate(url);
+      if (!candidate) return false;
+      // Already forwarded: open it rather than asking again. The proposal is
+      // for ports that have no tunnel, not a toll on every click.
+      const existing = localForwardFor(
+        forwardsRef.current,
+        s.activeConnectionId,
+        candidate.port,
+      );
+      if (existing) {
+        window.open(
+          candidate.rewrite(existing.local_port),
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return true;
+      }
+      setForwardRequest({
+        url,
+        port: candidate.port,
+        rewrite: candidate.rewrite,
+        target: {
+          connectionId: s.activeConnectionId,
+          generation: s.connectionGeneration,
+        },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // Stable identity for the link provider: the terminal is built once, and a
+  // handler rebuilt each render would rebuild it with them.
+  const proposeForwardRef = useRef<(url: string) => boolean>(() => false);
+  proposeForwardRef.current = proposeForward;
+  const takeHttpLink = useCallback(
+    (url: string) => proposeForwardRef.current(url),
+    [],
+  );
+  const forwardConnection = s.connections.find(
+    (connection) => connection.id === s.activeConnectionId,
+  );
+  // Needs an SSH transport to forward over, and Roamgate on the machine the
+  // browser runs on: a forward binds wherever ssh runs.
+  // Read at click time from a ref: the provider's handler is installed once,
+  // when the terminal is created.
+  const forwardsRef = useRef(s.forwards);
+  forwardsRef.current = s.forwards;
+  const forwardableRef = useRef(false);
+  forwardableRef.current = canForwardPorts(forwardConnection?.type);
   const canClosePane = !!pane && paneCanClose(s.panes, pane.pane_id);
   const paneZoomed =
     s.layout?.zoomed === true && s.layout.focused_pane_id === pane?.pane_id;
@@ -4052,11 +4052,11 @@ export function TerminalView({
                 paneChat={{
                   prompt: agentPrompt,
                   activity: agentActivity,
-                  active: isActivePane,
                   onShowTerminal: () => {
                     setPaneView(s.activeConnectionId, pane.pane_id, "terminal");
                     focusTerminalSoon();
                   },
+                  active: isActivePane,
                   onKeys: (text) => void store.sendText(pane.pane_id, text),
                   composerTarget:
                     isMobileLayout() && isActivePane ? mobileInputTarget : null,

@@ -18,8 +18,6 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
-  // The plain message box: these tests type into its textarea.
-  (await import("../vimKeys")).setVimKeys(false);
   test("mobile disclosures reset per pane and speech stops per session", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/?layout=mobile" });
@@ -35,6 +33,8 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
       NodeFilter: browser.NodeFilter,
       ResizeObserver: browser.ResizeObserver,
       Event: browser.Event,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
       IS_REACT_ACT_ENVIRONMENT: true,
     })) {
       originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
@@ -44,6 +44,8 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
         writable: true,
       });
     }
+    // The message box's Vim editor (CodeMirror) needs more DOM than this.
+    browser.localStorage.setItem("roamgate:vimKeys", "false");
     const cancel = mock(() => {});
     Object.defineProperty(browser, "speechSynthesis", {
       value: { getVoices: () => [], speak: () => {}, cancel },

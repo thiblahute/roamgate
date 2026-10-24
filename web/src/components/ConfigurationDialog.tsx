@@ -28,8 +28,8 @@ import {
   UI_SCALE_STEP,
 } from "../appearance";
 import { lazyWithReload } from "../lazyWithReload";
-import { setDefaultPaneView, useDefaultPaneView } from "../paneView";
 import { setPaneJumpScope, usePaneJumpScope } from "../paneJumpScope";
+import { setDefaultPaneView, useDefaultPaneView } from "../paneView";
 import { setVimKeys, useVimKeys } from "../vimKeys";
 import { shortcutLabel } from "../shortcutPreferences";
 import {
@@ -149,9 +149,9 @@ export function ConfigurationDialog({
   const applePlatform = detectShortcutPlatform() === "mac";
   const connectionClient = useConnectionClient();
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
+  const paneJumpScope = usePaneJumpScope();
   const defaultPaneView = useDefaultPaneView();
   const vim = useVimKeys();
-  const paneJumpScope = usePaneJumpScope();
   const [detail, setDetail] = useState<Detail | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const detailTrigger = useRef<HTMLButtonElement | null>(null);
@@ -516,6 +516,38 @@ export function ConfigurationDialog({
               </div>
               <div className="config-preference-row">
                 <span className="config-item-icon">
+                  <LayoutDashboard size={15} />
+                </span>
+                <div className="config-item-copy">
+                  <strong>Switch between workspaces</strong>
+                  <span>
+                    {`${shortcutLabel("panes.recent")} lists ${
+                      paneJumpScope === "workspaces"
+                        ? "one entry per workspace"
+                        : "recent panes"
+                    }`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Switch between workspaces"
+                  aria-checked={paneJumpScope === "workspaces"}
+                  className={
+                    "settings-switch" +
+                    (paneJumpScope === "workspaces" ? " is-on" : "")
+                  }
+                  onClick={() =>
+                    setPaneJumpScope(
+                      paneJumpScope === "workspaces" ? "panes" : "workspaces",
+                    )
+                  }
+                >
+                  <span />
+                </button>
+              </div>
+              <div className="config-preference-row">
+                <span className="config-item-icon">
                   <MessageSquare size={15} />
                 </span>
                 <div className="config-item-copy">
@@ -563,38 +595,6 @@ export function ConfigurationDialog({
                   aria-checked={vim}
                   className={"settings-switch" + (vim ? " is-on" : "")}
                   onClick={() => setVimKeys(!vim)}
-                >
-                  <span />
-                </button>
-              </div>
-              <div className="config-preference-row">
-                <span className="config-item-icon">
-                  <LayoutDashboard size={15} />
-                </span>
-                <div className="config-item-copy">
-                  <strong>Switch between workspaces</strong>
-                  <span>
-                    {`${shortcutLabel("panes.recent")} lists ${
-                      paneJumpScope === "workspaces"
-                        ? "one entry per workspace"
-                        : "recent panes"
-                    }`}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-label="Switch between workspaces"
-                  aria-checked={paneJumpScope === "workspaces"}
-                  className={
-                    "settings-switch" +
-                    (paneJumpScope === "workspaces" ? " is-on" : "")
-                  }
-                  onClick={() =>
-                    setPaneJumpScope(
-                      paneJumpScope === "workspaces" ? "panes" : "workspaces",
-                    )
-                  }
                 >
                   <span />
                 </button>
