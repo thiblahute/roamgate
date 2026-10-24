@@ -219,12 +219,19 @@ if (process.env.ROAMGATE_APP_HISTORY_TEST !== "1") {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
-    const openHistory = (id: string) =>
-      React.act(async () => {
+    const openHistory = async (id: string) => {
+      // The phone's workspace list opens on the recent ones; the tree,
+      // whose agent rows open History, is under All.
+      const all = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Show all workspaces"]',
+      );
+      if (all) await React.act(async () => all.click());
+      return React.act(async () => {
         Array.from(container.querySelectorAll("button"))
           .find((button) => button.textContent === `History ${id}`)!
           .click();
       });
+    };
     const focusSettled = (id: string) =>
       React.act(async () => {
         snapshot = { ...snapshot, selectedPaneId: id };

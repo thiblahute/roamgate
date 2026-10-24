@@ -1,8 +1,11 @@
+import { withAgentActivity } from "./agentOrder";
+import type { ConnectionSummary } from "./api";
 import type { ConnectionSessionView } from "./connectionSessions";
 import { normalizeSearchText } from "./searchText";
 import { shortId } from "./utils";
 import type { Pane, PaneLayout, Tab, Workspace } from "./types";
 import type {
+  ConnectionAgentSessions,
   ServerAgentPane,
   ServerSessionSource,
 } from "./useAllServerAgentSessions";
@@ -240,7 +243,8 @@ function orderByWorkspaceHistory(
  * never visited stays reachable by workspace, tab, directory, or agent name.
  * Matches keep the recent-first order rather than a relevance ranking, which
  * leaves the list stable while the query grows. Workspace scope uses the same
- * visit order as the recent switcher.
+ * visit order as the recent switcher. `serverEntries` adds connections no
+ * session of this browser covers (see `serverSessionPaneEntries`).
  */
 export function paneSearchEntries(
   snapshot: PaneJumpSnapshot,
@@ -250,6 +254,7 @@ export function paneSearchEntries(
   scope: PaneJumpScope = "panes",
   workspaceHistory?: WorkspaceHistory,
   serverLabel?: string,
+  serverEntries: readonly PaneJumpEntry[] = [],
 ): PaneJumpEntry[] {
   const entries = orderedPaneJumpEntries(snapshot, activePaneId, true);
   return filterPaneSearchEntries(
@@ -258,11 +263,72 @@ export function paneSearchEntries(
         ? entries.map((entry) => ({ ...entry, serverLabel }))
         : entries),
       ...connectionPaneEntries(connections, true),
+      ...serverEntries,
     ],
     query,
     scope,
     workspaceHistory,
   );
+}
+
+/**
+ * Every pane of the other ready connections, read from the summary the
+ * workspace tree lists them by (`connections.agent_sessions`), so a search
+ * finds their workspaces by name, directory, tab or agent even when this
+ * browser holds no session for them. Opening one goes through its `source`,
+ * as the switcher opens another server's agent. Connections in `listed`
+ * are skipped: a session this browser has loaded lists them already.
+ */
+export function serverSessionPaneEntries(
+  connections: readonly ConnectionSummary[],
+  snapshots: readonly ConnectionAgentSessions[],
+  activeConnectionId: string | null | undefined,
+  listed: ReadonlySet<string> = new Set(),
+): PaneJumpEntry[] {
+  const entries: PaneJumpEntry[] = [];
+  for (const connection of connections) {
+    if (
+      connection.id === activeConnectionId ||
+      listed.has(connection.id) ||
+      connection.state !== "ready"
+    )
+      continue;
+    const snapshot = snapshots.find(
+      (entry) =>
+        entry.connection_id === connection.id &&
+        entry.connection_generation === connection.generation,
+    );
+    if (!snapshot || snapshot.error) continue;
+    const workspaceById = new Map(
+      snapshot.workspaces.map((workspace) => [
+        workspace.workspace_id,
+        workspace,
+      ]),
+    );
+    const tabById = new Map(snapshot.tabs.map((tab) => [tab.tab_id, tab]));
+    const workspaceNumber = (pane: Pane) =>
+      workspaceById.get(pane.workspace_id)?.number ?? Number.MAX_SAFE_INTEGER;
+    const panes = withAgentActivity(snapshot.panes, snapshot.agents).sort(
+      (left, right) =>
+        workspaceNumber(left) - workspaceNumber(right) ||
+        Number(right.focused) - Number(left.focused),
+    );
+    for (const pane of panes) {
+      const entry = paneJumpEntry(pane, workspaceById, tabById, false);
+      entries.push({
+        ...entry,
+        key: `${connection.id}:${pane.pane_id}`,
+        serverLabel: connection.label,
+        source: {
+          connectionId: connection.id,
+          runtimeGeneration: connection.generation,
+          serverLabel: connection.label,
+          workspaceId: pane.workspace_id,
+        },
+      });
+    }
+  }
+  return entries;
 }
 
 /**

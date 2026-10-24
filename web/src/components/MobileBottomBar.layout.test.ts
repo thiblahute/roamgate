@@ -108,8 +108,9 @@ test("navigation slots and centering track control size without shrinking Messag
       "",
     ),
   );
+  // Workspaces, Tabs and More; Chat takes a fourth slot.
   expect(rule(nav, ".mobile-bottom-bar[data-chat]")).toContain(
-    "--mobile-navigation-slots: 3;",
+    "--mobile-navigation-slots: 4;",
   );
   expect(row).toContain("align-items: center;");
   const editor = rule(

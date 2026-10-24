@@ -93,6 +93,25 @@ test("Workspaces and page footers do not reserve the rail or safe area again", (
   expect(rule(mobileSidebar, ".sidebar-content")).toContain(
     "padding-bottom: 0;",
   );
+  const workspaceResults = rule(nav, ".workspace-search-results");
+  expect(workspaceResults).toContain("flex: 1 1 auto;");
+  expect(workspaceResults).toContain("min-height: 0;");
+  expect(workspaceResults).toContain("overflow-y: auto;");
+  expect(workspaceResults).toContain("overscroll-behavior-y: contain;");
+  const workspacesButtonStart = app.indexOf(
+    'title={shortcutTitle("Workspaces", "workspaces.open")}',
+  );
+  const workspacesButton = app.slice(
+    workspacesButtonStart,
+    app.indexOf("</button>", workspacesButtonStart),
+  );
+  expect(workspacesButton).not.toContain("onPointerDown={blurActiveInput}");
+  expect(workspacesButton).toContain("? hideWorkspaceSearch");
+  expect(app).toContain("const hideWorkspaceSearch = useCallback(() => {");
+  expect(app).toContain("document.activeElement.blur();");
+  expect(app).toContain("entry.workspaceId ===");
+  expect(app).toContain("focusedWorkspace?.workspace_id");
+  expect(app).toContain("entry.source?.connectionId");
   expect(sidebar).not.toContain("58px");
   for (const css of [annotations, ranger, inspector])
     expect(css).not.toContain("safe-area-inset-bottom");

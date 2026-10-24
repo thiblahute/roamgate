@@ -8,7 +8,7 @@ const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
 const maxFileCount = 172;
 // PDF.js and its worker load only when the native viewer is unavailable.
 const maxTotalBytes = 16 * 1024 * 1024;
-const maxInitialJsBytes = 838 * 1024;
+const maxInitialJsBytes = 843 * 1024;
 const maxInitialJsGzipBytes = 257 * 1024;
 const maxInitialCssBytes = 196 * 1024;
 
