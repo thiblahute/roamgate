@@ -39,6 +39,8 @@ import {
 } from "../terminalComposer";
 import { uploadTerminalImage } from "../terminalImageUpload";
 import type { AgentActivity, AgentPrompt } from "../agentPrompt";
+import type { AgentPermissionPrompt } from "../../../shared/review";
+import { AgentPermissionCard } from "./AgentPermissionCard";
 import type { Pane } from "../types";
 import {
   DEFAULT_INSPECTOR_NAVIGATION_RATIO,
@@ -141,6 +143,8 @@ export function AgentHistoryDrawer({
     prompt: AgentPrompt | null;
     /** What the working agent says it is doing, from its screen. */
     activity?: AgentActivity | null;
+    /** What its permission hook waits on, answered here. */
+    permission?: AgentPermissionPrompt;
     onShowTerminal: () => void;
     /** Types into the terminal: an answer's key, or Esc to stop. */
     onKeys: (text: string) => void;
@@ -1074,7 +1078,19 @@ export function AgentHistoryDrawer({
   };
   // The message box is hidden while a question only takes a choice; an
   // answer of one's own ("Type something.") is written in it.
-  const boxHidden = promptShown && !promptTyping;
+  // A permission or the hook's questions have their own fields.
+  const boxHidden = (promptShown && !promptTyping) || !!paneChat?.permission;
+  // The box gets the keys back when the agent's permission prompt goes.
+  const permissionId = paneChat?.permission?.id;
+  const permissionWas = useRef(permissionId);
+  useEffect(() => {
+    const was = permissionWas.current;
+    permissionWas.current = permissionId;
+    if (!was || permissionId) return;
+    const active = document.activeElement;
+    if (!active || active === document.body)
+      requestAnimationFrame(focusChatBox);
+  }, [permissionId, focusChatBox]);
   // A question takes the keys when it comes, unless the user is writing; the
   // box gets them for an answer of one's own, and back when it goes.
   const promptWas = useRef<"none" | "choice" | "typing">("none");
@@ -1330,7 +1346,11 @@ export function AgentHistoryDrawer({
           {historyMinimap("auto")}
         </div>
       )}
-      {chatStatus}
+      {paneChat?.permission ? (
+        <AgentPermissionCard prompt={paneChat.permission} />
+      ) : (
+        chatStatus
+      )}
       {paneComposer}
     </div>
   );
@@ -1586,7 +1606,11 @@ export function AgentHistoryDrawer({
           // A pane's chat still types into the agent, and answers its
           // questions, without its transcript.
           <>
-            {chatStatus}
+            {paneChat.permission ? (
+              <AgentPermissionCard prompt={paneChat.permission} />
+            ) : (
+              chatStatus
+            )}
             {paneComposer}
           </>
         ) : unavailable ? null : (

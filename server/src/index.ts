@@ -737,6 +737,7 @@ let reviewAgent: ReviewAgentServer | null = null;
 function getReviewAgent(): ReviewAgentServer {
   reviewAgent ??= createReviewAgentServer({
     service: getReviewService(),
+    hasViewers: () => clients.size > 0,
     directory: reviewDirectory(),
     logger: logger.child("review"),
     connections: () =>

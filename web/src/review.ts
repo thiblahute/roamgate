@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react";
-import type { ReviewPush, ReviewSnapshot } from "../../shared/review";
+import type {
+  AgentPermissionPrompt,
+  AgentPromptAnswer,
+  ReviewPush,
+  ReviewSnapshot,
+} from "../../shared/review";
 import { bridge } from "./api";
 import { store } from "./store";
 
@@ -15,9 +20,59 @@ type ReviewState = {
   sessions: ReadonlyMap<string, ReviewSnapshot>;
   /** The latest "open" from an agent, until the app shows it. */
   openRequest: ReviewOpenRequest | null;
+  /** Agents waiting on a permission answer, by connection. */
+  prompts: ReadonlyMap<string, AgentPermissionPrompt[]>;
 };
 
-let state: ReviewState = { sessions: new Map(), openRequest: null };
+let state: ReviewState = {
+  sessions: new Map(),
+  openRequest: null,
+  prompts: new Map(),
+};
+
+function setPrompts(connectionId: string, prompts: AgentPermissionPrompt[]) {
+  const next = new Map(state.prompts);
+  if (prompts.length) next.set(connectionId, prompts);
+  else next.delete(connectionId);
+  publish({ prompts: next });
+}
+
+/** The permission prompt a pane's agent waits on, if any. */
+export function paneAgentPrompt(
+  prompts: ReadonlyMap<string, AgentPermissionPrompt[]>,
+  connectionId: string | null,
+  paneId: string,
+): AgentPermissionPrompt | undefined {
+  return (connectionId ? prompts.get(connectionId) : undefined)?.find(
+    (prompt) => prompt.paneId === paneId,
+  );
+}
+
+/** Hands a prompt back to the terminal, which asks it there. */
+export async function releaseAgentPrompt(
+  connectionId: string,
+  id: string,
+): Promise<void> {
+  await reviewClient(connectionId).call("review.prompt.answer", {
+    id,
+    release: true,
+  });
+}
+
+/** Answers a prompt; false when the terminal already took it back. */
+export async function answerAgentPrompt(
+  connectionId: string,
+  id: string,
+  answer: AgentPromptAnswer,
+): Promise<boolean> {
+  const result = (await reviewClient(connectionId).call(
+    "review.prompt.answer",
+    typeof answer === "object"
+      ? { id, answers: answer.answers }
+      : { id, answer },
+  )) as { answered?: boolean };
+  return result.answered === true;
+}
 const listeners = new Set<() => void>();
 
 function publish(next: Partial<ReviewState>) {
@@ -39,6 +94,10 @@ export function useReviewState(): ReviewState {
 }
 
 export function acceptReviewPush(push: ReviewPush) {
+  if (push.type === "prompts") {
+    setPrompts(push.connectionId, push.prompts);
+    return;
+  }
   const sessions = new Map(state.sessions);
   if (push.type === "session") {
     sessions.set(push.snapshot.session.id, push.snapshot);
@@ -98,6 +157,11 @@ export async function loadReviews(connectionId: string) {
   for (const snapshot of result.sessions ?? [])
     sessions.set(snapshot.session.id, snapshot);
   publish({ sessions });
+  // Prompts made while this page was away still wait.
+  const waiting = (await reviewClient(connectionId)
+    .call("review.prompts")
+    .catch(() => ({}))) as { prompts?: AgentPermissionPrompt[] };
+  setPrompts(connectionId, waiting.prompts ?? []);
 }
 
 let lastLoadedConnection: string | null = null;

@@ -14,6 +14,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  type AgentQuestion,
   commentEdited,
   type ReviewAnchor,
   type ReviewSession,
@@ -152,6 +153,48 @@ export function parseTargetFlags(
   return defaultBase().then((base) => ({ kind: "range", base, head: "HEAD" }));
 }
 
+/** Claude's AskUserQuestion questions, as its hook passes them on. */
+function parseQuestions(raw: string | null): AgentQuestion[] {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw ?? "[]");
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AgentQuestion[] => {
+    if (!item || typeof item !== "object") return [];
+    const { question, header, options, multiSelect } = item as Record<
+      string,
+      unknown
+    >;
+    if (typeof question !== "string" || !Array.isArray(options)) return [];
+    return [
+      {
+        question: question.slice(0, 2000),
+        ...(typeof header === "string" ? { header: header.slice(0, 40) } : {}),
+        options: options.flatMap((option) => {
+          const { label, description } = (option ?? {}) as Record<
+            string,
+            unknown
+          >;
+          return typeof label === "string"
+            ? [
+                {
+                  label: label.slice(0, 200),
+                  ...(typeof description === "string"
+                    ? { description: description.slice(0, 1000) }
+                    : {}),
+                },
+              ]
+            : [];
+        }),
+        multiSelect: multiSelect === true,
+      },
+    ];
+  });
+}
+
 export function createReviewAgentServer(args: {
   service: ReviewService;
   /** The bridge's private directory for sockets. */
@@ -159,6 +202,8 @@ export function createReviewAgentServer(args: {
   connections: () => ReviewAgentConnection[];
   logger?: Logger;
   home?: string;
+  /** Whether any browser could answer a permission prompt now. */
+  hasViewers?: () => boolean;
 }) {
   const logger = args.logger ?? silentLogger;
   const home = args.home ?? homedir();
@@ -258,6 +303,80 @@ export function createReviewAgentServer(args: {
   ): Promise<unknown> {
     if (command === "skill") return { skill: REVIEW_SKILL };
     const connection = connectionFor(socketKey, form);
+    if (command === "permission") {
+      // An agent's permission hook: wait for the user's answer from the
+      // browser, or none (the terminal asks then).
+      const paneId = form.get("pane");
+      // Nobody to ask: the terminal must not wait for nothing.
+      if (!paneId || args.hasViewers?.() === false) return { answer: null };
+      let input: unknown;
+      try {
+        input = JSON.parse(form.get("input") ?? "null");
+      } catch {
+        input = form.get("input");
+      }
+      const seconds = Number(form.get("timeout") ?? 60);
+      logger.info("agent permission prompt waiting", {
+        connection: connection.id,
+        pane: paneId,
+        tool: form.get("tool") || "tool",
+      });
+      const answer = await args.service.prompts.request({
+        connectionId: connection.id,
+        paneId,
+        agent: form.get("agent") || "agent",
+        tool: form.get("tool") || "tool",
+        input,
+        canAlways: form.get("can_always") === "1",
+        timeoutMs:
+          Math.min(Math.max(Number.isFinite(seconds) ? seconds : 60, 1), 3600) *
+          1000,
+        signal,
+      });
+      logger.info("agent permission prompt ended", {
+        connection: connection.id,
+        pane: paneId,
+        answer: answer ?? "none",
+      });
+      return { answer };
+    }
+    if (command === "questions") {
+      // Claude's AskUserQuestion, from its PreToolUse hook: the answers from
+      // the browser, or none (the terminal asks then).
+      const paneId = form.get("pane");
+      if (!paneId || args.hasViewers?.() === false) return { answers: null };
+      const questions = parseQuestions(form.get("questions"));
+      if (!questions.length) return { answers: null };
+      const seconds = Number(form.get("timeout") ?? 180);
+      logger.info("agent questions waiting", {
+        connection: connection.id,
+        pane: paneId,
+        questions: questions.length,
+      });
+      const answer = await args.service.prompts.request({
+        connectionId: connection.id,
+        paneId,
+        agent: form.get("agent") || "agent",
+        tool: "AskUserQuestion",
+        input: { question: questions[0]!.question },
+        canAlways: false,
+        questions,
+        timeoutMs:
+          Math.min(
+            Math.max(Number.isFinite(seconds) ? seconds : 180, 1),
+            3600,
+          ) * 1000,
+        signal,
+      });
+      logger.info("agent questions ended", {
+        connection: connection.id,
+        pane: paneId,
+        answered: !!answer,
+      });
+      return {
+        answers: answer && typeof answer === "object" ? answer.answers : null,
+      };
+    }
     const agent = agentName(form);
     const pane = form.get("pane") || undefined;
     const text = form.get("text") ?? undefined;

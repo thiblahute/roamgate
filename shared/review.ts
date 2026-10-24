@@ -214,7 +214,50 @@ export type ReviewSnapshot = {
 };
 
 /** Pushed to every browser; each keeps the sessions of its connections. */
+/**
+ * An agent asking leave to use a tool (Claude Code's permission prompt), sent
+ * by its hook: answered from the phone, or by the terminal once it gives up.
+ */
+export type AgentPermissionPrompt = {
+  id: string;
+  connectionId: string;
+  paneId: string;
+  agent: string;
+  tool: string;
+  /** What it would do: the command, the file, the URL. */
+  summary: string;
+  /** The tool's input, shortened. */
+  detail?: string;
+  /** "Allow, and don't ask again" applies, as the terminal offers it. */
+  canAlways: boolean;
+  createdAt: string;
+  /** When the hook stops waiting and the terminal asks instead. */
+  expiresAt: string;
+  /** Claude's multiple-choice questions (AskUserQuestion), not a permission. */
+  questions?: AgentQuestion[];
+};
+
+/** One of Claude's questions, as its AskUserQuestion tool puts it. */
+export type AgentQuestion = {
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+  multiSelect: boolean;
+};
+
+export type AgentPermissionAnswer = "allow" | "always" | "deny";
+/** Each question's text to the chosen labels (", "-joined) or the user's own. */
+export type AgentQuestionAnswers = Record<string, string>;
+export type AgentPromptAnswer =
+  | AgentPermissionAnswer
+  | { answers: AgentQuestionAnswers };
+
 export type ReviewPush =
+  | {
+      type: "prompts";
+      connectionId: string;
+      prompts: AgentPermissionPrompt[];
+    }
   | { type: "session"; snapshot: ReviewSnapshot }
   | { type: "removed"; sessionId: string; connectionId: string }
   | {

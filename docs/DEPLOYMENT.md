@@ -463,6 +463,53 @@ this machine and on each SSH host when the connection starts. It needs
 default); a host without either only loses the review client. Merge request
 reviews use the `glab` login on the checkout host, like the PR/MR status card.
 
+### Permission prompts
+
+The same client answers Claude Code's permission prompts from Roamgate (the
+agent chat, or a card over the terminal) when it is registered as a
+`PermissionRequest` hook in `~/.claude/settings.json` on each host:
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.cache/roamgate/bin/roamgate-review permission --timeout 60",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.cache/roamgate/bin/roamgate-review questions --timeout 180",
+            "timeout": 210
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `PreToolUse` hook answers Claude's multiple-choice questions
+(`AskUserQuestion`) the same way: a form with each question's choices (or
+several) and a field for one's own answer; the answers go back as the tool's
+input, so Claude Code does not ask them again.
+
+Claude Code holds its own dialog while the hook runs, so the hook waits only
+while a browser is connected, for `--timeout` seconds at most (60 by
+default); unanswered, the terminal asks as usual. Outside Herdr, or without
+Roamgate, it returns at once.
+
 ## Worktree location
 
 By default Herdr chooses where a new worktree is created. Set a repository's

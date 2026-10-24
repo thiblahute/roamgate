@@ -1,0 +1,205 @@
+/* An agent asking leave to use a tool, from its permission hook. Whole:
+   the conversation above gives way to it. */
+.agent-permission {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.agent-permission-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-permission-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-permission-summary {
+  display: block;
+  max-height: 6em;
+  overflow: auto;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-permission-detail pre {
+  max-height: 12em;
+  margin: 4px 0 0;
+  overflow: auto;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.agent-permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Over a terminal pane: a card at its top. */
+.terminal-permission-layer {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 4;
+}
+
+.terminal-permission-layer .agent-permission {
+  margin: 0;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  background: var(--shell-panel);
+}
+
+.agent-permission.is-compact .agent-permission-summary {
+  max-height: 3em;
+}
+
+/* Clear of the terminal's floating keyboard button on a phone. */
+:where(html[data-layout="mobile"]) .terminal-permission-layer {
+  right: 64px;
+}
+
+/* Claude's questions: a choice (or several) per question, or one's own. */
+.agent-questions {
+  max-height: 55vh;
+  overflow: auto;
+}
+
+.agent-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.agent-question legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.agent-question legend span {
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.agent-question-option:has(input:checked) {
+  border-color: var(--accent);
+}
+
+.agent-question-option input {
+  margin-top: 3px;
+}
+
+.agent-question-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-question-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-question-own {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
+/* On a phone, Claude's questions are a sheet of their own over the screen:
+   the chat or the terminal moving below cannot move it, and Answer stays in
+   reach at its foot. */
+:where(html[data-layout="mobile"]) .agent-questions {
+  position: fixed;
+  /* At the foot of the screen, within the thumb's reach, as tall as it
+     needs. */
+  top: auto;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  left: 8px;
+  /* Above the bottom bar (131) and the More sheet (132). */
+  z-index: 150;
+  max-height: calc(
+    var(--app-viewport-height, 100dvh) -
+    16px -
+    env(safe-area-inset-top, 0px) -
+    env(safe-area-inset-bottom, 0px)
+  );
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--shell-panel);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 50%);
+}
+
+:where(html[data-layout="mobile"]) .agent-questions .agent-permission-actions {
+  position: sticky;
+  bottom: -8px;
+  margin: 0 -10px -8px;
+  padding: 8px 10px;
+  background: var(--shell-panel);
+  border-top: 1px solid var(--border-soft);
+}
+
+:where(html[data-layout="mobile"]) .agent-questions .primary-btn {
+  flex: 1;
+  min-height: 44px;
+}
+
+.agent-permission-terminal {
+  margin-left: auto;
+}
+
+/* Holding the keys: its shortcuts answer. */
+.agent-permission:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.agent-permission-keys {
+  flex: 1;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}

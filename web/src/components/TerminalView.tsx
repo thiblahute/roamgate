@@ -200,6 +200,8 @@ import {
   parseAgentPrompt,
 } from "../agentPrompt";
 import { setPaneView, togglePaneView, usePaneView } from "../paneView";
+import { paneAgentPrompt, useReviewState } from "../review";
+import { AgentPermissionCard } from "./AgentPermissionCard";
 import { ConfirmDialog, MessageDialog } from "./ModalDialogs";
 import {
   readTerminalComposerShortcutsOpen,
@@ -585,6 +587,11 @@ export function TerminalView({
   // new session's "trust this folder?", before Claude's hooks run).
   const agentWaiting =
     chatShown && pane?.agent_status.toLowerCase() !== "working";
+  // What the agent's permission hook waits on: its dialog is held back.
+  const reviewState = useReviewState();
+  const permissionPrompt = pane
+    ? paneAgentPrompt(reviewState.prompts, s.activeConnectionId, pane.pane_id)
+    : undefined;
   const chatShownRef = useRef(chatShown);
   chatShownRef.current = chatShown;
   useEffect(() => {
@@ -4012,6 +4019,11 @@ export function TerminalView({
               if (event.target === event.currentTarget) focusTerminalInput();
             }}
           />
+          {permissionPrompt && !chatShown ? (
+            <div className="terminal-permission-layer">
+              <AgentPermissionCard prompt={permissionPrompt} compact />
+            </div>
+          ) : null}
           {chatShown ? (
             <div className="terminal-chat-layer" ref={chatLayerRef}>
               <AgentHistoryDrawer
@@ -4021,6 +4033,7 @@ export function TerminalView({
                 paneChat={{
                   prompt: agentPrompt,
                   activity: agentActivity,
+                  permission: permissionPrompt,
                   onShowTerminal: () => {
                     setPaneView(s.activeConnectionId, pane.pane_id, "terminal");
                     focusTerminalSoon();

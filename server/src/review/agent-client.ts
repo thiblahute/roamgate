@@ -153,11 +153,144 @@ def parser():
 
     u = sub.add_parser("update", help="say what changed")
     u.add_argument("--message", required=True)
+
+    q = sub.add_parser(
+        "permission",
+        help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",
+    )
+    q.add_argument("--timeout", type=int, default=60, help="seconds to wait (default 60)")
+
+    a = sub.add_parser(
+        "questions",
+        help="Claude Code PreToolUse hook for AskUserQuestion: answer in Roamgate, else the terminal",
+    )
+    a.add_argument("--timeout", type=int, default=180, help="seconds to wait (default 180)")
     return p
+
+
+def ask(args, command, extra):
+    # A hook's request to Roamgate: its reply, or None on any failure.
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return None
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(os.getcwd()),
+        "agent": args.agent,
+        "timeout": str(args.timeout),
+    }
+    body.update(extra)
+    connection = UnixConnection(SOCKET, args.timeout + 30)
+    try:
+        connection.request(
+            "POST",
+            "/v1/" + command,
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        return json.loads(response.read().decode("utf-8", "replace"))
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+
+
+def questions(args):
+    # A PreToolUse hook on AskUserQuestion: Claude Code shows its own
+    # questions only if this prints nothing.
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    tool_input = hook.get("tool_input") or {}
+    asked = tool_input.get("questions") or []
+    if not asked:
+        return
+    reply = ask(args, "questions", {"questions": json.dumps(asked)})
+    answers = (reply or {}).get("answers")
+    if not answers:
+        return
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": dict(tool_input, answers=answers),
+                }
+            }
+        )
+    )
+
+
+def permission(args):
+    # A PermissionRequest hook: Claude Code waits on it before its own
+    # dialog. Any failure, or no answer in time, prints nothing: the
+    # terminal asks as usual.
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    # Claude's questions have their own hook (questions); a permission card
+    # could only allow them unanswered.
+    if hook.get("tool_name") == "AskUserQuestion":
+        return
+    suggestions = hook.get("permission_suggestions") or []
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(os.getcwd()),
+        "agent": args.agent,
+        "tool": hook.get("tool_name") or "tool",
+        "input": json.dumps(hook.get("tool_input")),
+        "can_always": "1" if suggestions else "",
+        "timeout": str(args.timeout),
+    }
+    connection = UnixConnection(SOCKET, args.timeout + 30)
+    try:
+        connection.request(
+            "POST",
+            "/v1/permission",
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        answer = json.loads(response.read().decode("utf-8", "replace")).get("answer")
+    except (OSError, ValueError, http.client.HTTPException):
+        return
+    if answer == "deny":
+        decision = {"behavior": "deny", "message": "Denied from Roamgate"}
+    elif answer == "always":
+        decision = {"behavior": "allow", "updatedPermissions": suggestions}
+    elif answer == "allow":
+        decision = {"behavior": "allow"}
+    else:
+        return
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": decision,
+                }
+            }
+        )
+    )
 
 
 def main():
     args = parser().parse_args()
+    if args.command == "permission":
+        permission(args)
+        return
+    if args.command == "questions":
+        questions(args)
+        return
     if not os.path.exists(SOCKET):
         fail("Roamgate review socket not found: " + SOCKET)
     body = {

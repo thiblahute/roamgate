@@ -170,6 +170,43 @@ export async function handleReviewRpc(
       return service.restoreThread(params);
     case "review.handoff":
       return service.handoff(params);
+    case "review.prompts":
+      // The connection's agents waiting on a permission answer.
+      return { prompts: service.prompts.list(connection.id) };
+    case "review.prompt.answer": {
+      // "In the terminal": the hook gives up, Claude Code asks there.
+      if (raw.release === true)
+        return {
+          answered: service.prompts.release({
+            connectionId: connection.id,
+            id: String(raw.id ?? ""),
+          }),
+        };
+      const answer = raw.answer;
+      // Questions are answered with each question's chosen option(s).
+      const answers = raw.answers;
+      if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+        const clean: Record<string, string> = {};
+        for (const [question, value] of Object.entries(answers))
+          if (typeof value === "string") clean[question] = value.slice(0, 4000);
+        return {
+          answered: service.prompts.answer({
+            connectionId: connection.id,
+            id: String(raw.id ?? ""),
+            answer: { answers: clean },
+          }),
+        };
+      }
+      if (answer !== "allow" && answer !== "always" && answer !== "deny")
+        throw new ReviewError("answer must be allow, always, or deny");
+      return {
+        answered: service.prompts.answer({
+          connectionId: connection.id,
+          id: String(raw.id ?? ""),
+          answer,
+        }),
+      };
+    }
     case "review.gitlab.refresh":
       return service.refreshGitlab(params);
     case "review.gitlab.find":

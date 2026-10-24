@@ -168,7 +168,13 @@ Inspector state is scoped to each checkout; see
   numbered choices as buttons.
   An agent pane opens as a chat as soon as its agent starts; **Open agents
   as a chat** in Configuration > Behavior turns that off. Each pane
-  remembers the view it was switched to.
+  remembers the view it was switched to. With Roamgate's permission hook (see
+  [Deployment](docs/DEPLOYMENT.md#permission-prompts)), what an agent asks
+  leave to do shows in its chat, or as a card over its terminal, with
+  **Allow**, **Always** (the terminal's don't-ask-again rules) and **Deny**,
+  and its multiple-choice questions as a form (one choice, several, or one's
+  own words), a sheet of its own on a phone; **In the terminal** hands either
+  back, and the terminal asks anyway once the hook stops waiting.
 - **Menu > Configuration > Integrations** installs, updates, or removes Herdr's
   bundled agent integrations (not the agents themselves). See
   [version lookup](docs/ARCHITECTURE.md#agent-integrations).

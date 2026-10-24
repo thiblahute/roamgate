@@ -37,6 +37,7 @@ import {
   updateDraftNote,
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
+import { createAgentPrompts } from "./prompts";
 import type { ReviewStorage } from "./storage";
 
 export class ReviewError extends Error {
@@ -293,6 +294,7 @@ export function createReviewService(args: {
   const { storage } = args;
   const now = () => (args.now?.() ?? new Date()).toISOString();
   const clock = () => (args.now?.() ?? new Date()).getTime();
+  const prompts = createAgentPrompts({ publish: args.publish });
   const sessions = new Map<string, ReviewSession>();
   const threads = new Map<string, Map<string, ReviewThread>>();
   const waiters = new Map<string, Set<Waiter>>();
@@ -2193,6 +2195,8 @@ export function createReviewService(args: {
   }
 
   return {
+    /** Agents' permission prompts, answered from the browser. */
+    prompts,
     list,
     refreshGitlab,
     findGitlab,

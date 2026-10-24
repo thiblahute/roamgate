@@ -303,6 +303,8 @@ type Pending = {
 function isReviewPush(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const push = value as Record<string, unknown>;
+  if (push.type === "prompts")
+    return typeof push.connectionId === "string" && Array.isArray(push.prompts);
   if (push.type === "session") {
     const snapshot = push.snapshot as Record<string, unknown> | undefined;
     const session = snapshot?.session as Record<string, unknown> | undefined;
