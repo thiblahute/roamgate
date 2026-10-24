@@ -217,6 +217,7 @@ import {
   appendToPaneComposerDraft,
   terminalComposerDraftKey,
 } from "./terminalComposer";
+import { sendTerminalComposerText } from "./terminalComposerSend";
 import { terminalMountKey } from "./terminalConnection";
 import type { FileExplorerEntry, GitDiffEntry, Pane } from "./types";
 import {
@@ -351,6 +352,11 @@ const TERMINAL_FONT_SCALE_KEY = "terminalFontScale";
 const TERMINAL_FONT_FAMILY_KEY = "terminalFontFamily";
 const ZEN_MODE_KEY = "zenMode";
 const BLACK_BACKGROUND_KEY = "blackBackground";
+// Agent chats show their saved history at once after a reload: read it early,
+// outside the first bundle.
+const agentHistoryCache = import("./agentHistoryCache");
+void agentHistoryCache.then((cache) => cache.loadAgentHistoryCache());
+
 const LazyTerminalView = lazyWithReload("terminal-view", () =>
   import("./components/TerminalView").then((module) => ({
     default: module.TerminalView,
@@ -1965,6 +1971,22 @@ export default function App() {
     workspaceHistory,
   ]);
   const activePaneHasAgent = paneHasAgentHistory(activePane);
+  // Saved chat histories follow the open agent panes the connection reports.
+  useEffect(() => {
+    if (s.status !== "connected" || s.panes.length === 0) return;
+    const connectionId = s.activeConnectionId;
+    const panes = s.panes.filter(paneHasAgentHistory);
+    void agentHistoryCache.then((cache) =>
+      cache.pruneAgentHistoryCache(
+        connectionId,
+        new Set(
+          panes.map((pane) =>
+            cache.agentHistoryCacheKey(connectionId, pane.pane_id, pane.agent),
+          ),
+        ),
+      ),
+    );
+  }, [s.activeConnectionId, s.panes, s.status]);
   const activePaneChat =
     usePaneView(s.activeConnectionId, activePane?.pane_id) === "chat";
   const historyInspectorOpen =
@@ -2402,12 +2424,46 @@ export default function App() {
   // terminal; the removed overlay held the focus.
   const reviewShown = reviewSessionId !== null || reviewListOpen;
   const reviewWasShown = useRef(false);
+  // The chat box focused before the review: it gets the focus back, as it
+  // was, whatever pane layout it sits in.
+  const chatBeforeReview = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (reviewWasShown.current && !reviewShown && !mobile)
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        !target.closest(".review-overlay, .review-list-overlay")
+      )
+        chatBeforeReview.current = target.closest(".agent-history-composer")
+          ? target
+          : null;
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => document.removeEventListener("focusin", onFocusIn, true);
+  }, []);
+  // On a phone only an agent chat's message box gets it back: a terminal
+  // taking the focus would bring the keyboard up over it.
+  useEffect(() => {
+    if (reviewWasShown.current && !reviewShown)
       requestAnimationFrame(() => {
+        const chat = chatBeforeReview.current;
+        if (chat?.isConnected && chat.getClientRects().length > 0) {
+          chat.focus({ preventScroll: true });
+          return;
+        }
         const active = document.activeElement;
-        if (!active || active === document.body)
-          activeTerminalInput(document)?.focus({ preventScroll: true });
+        if (active && active !== document.body) return;
+        const input = activeTerminalInput(document);
+        const target = !mobile
+          ? input
+          : input?.closest(".agent-history-composer")
+            ? input
+            : Array.from(
+                document.querySelectorAll<HTMLElement>(
+                  ".agent-history-composer :is(textarea, [contenteditable='true'])",
+                ),
+              ).find((box) => box.getClientRects().length > 0);
+        target?.focus({ preventScroll: true });
       });
     reviewWasShown.current = reviewShown;
   }, [reviewShown, mobile]);
@@ -2596,7 +2652,7 @@ export default function App() {
     [annotations, annotationSessionRef],
   );
   const sendFeedback = useCallback(
-    async (paneId: string | null) => {
+    async (paneId: string | null, submit = false) => {
       const target = annotationAgentPanes.find(
         (pane) => pane.pane_id === paneId,
       );
@@ -2620,14 +2676,21 @@ export default function App() {
         `.terminal-shell[data-pane-id="${CSS.escape(target.pane_id)}"] .terminal-chat-layer`,
       );
       try {
-        if (inChat) {
+        if (submit)
+          await sendTerminalComposerText(
+            connectionClient,
+            { paneId: target.pane_id, agent: target.agent },
+            message,
+            true,
+          );
+        else if (inChat)
           appendToPaneComposerDraft(
             connectionClient.connectionId,
             connectionClient.generation,
             target,
             message,
           );
-        } else {
+        else {
           const request = terminalPasteRequest(target.pane_id, message);
           await connectionClient.call(request.method, request.params);
         }
@@ -2643,23 +2706,31 @@ export default function App() {
         }
         store.notify({
           kind: "success",
-          message: inChat
-            ? "Feedback pre-filled in the chat's message box"
-            : "Feedback pre-filled in the agent pane",
-          detail: draftActive
-            ? inChat
-              ? "Review the message there, then send it."
-              : "Review the message there, then press Enter to submit it."
+          message: submit
+            ? "Feedback sent to the agent"
             : inChat
-              ? "Original draft retained because its workspace was left or unloaded, or its connection changed. Review the message in the chat's message box, then send it."
-              : "Original draft retained because its workspace was left or unloaded, or its connection changed. Review the message in the agent pane, then press Enter.",
+              ? "Feedback pre-filled in the chat's message box"
+              : "Feedback pre-filled in the agent pane",
+          detail: submit
+            ? draftActive
+              ? undefined
+              : "Original draft retained because its workspace was left or unloaded, or its connection changed."
+            : draftActive
+              ? inChat
+                ? "Review the message there, then send it."
+                : "Review the message there, then press Enter to submit it."
+              : inChat
+                ? "Original draft retained because its workspace was left or unloaded, or its connection changed. Review the message in the chat's message box, then send it."
+                : "Original draft retained because its workspace was left or unloaded, or its connection changed. Review the message in the agent pane, then press Enter.",
           autoDismissMs: 6000,
         });
       } catch (error) {
         if (!connectionClient.isCurrent()) return;
         store.notify({
           kind: "error",
-          message: "Failed to pre-fill review feedback",
+          message: submit
+            ? "Failed to send review feedback"
+            : "Failed to pre-fill review feedback",
           detail: error instanceof Error ? error.message : String(error),
         });
       } finally {
@@ -3866,7 +3937,7 @@ export default function App() {
         e.stopPropagation();
         // Typing into the popup's own terminal never reaches here, since
         // isEditableElement stops at the xterm textarea. An agent chat's
-        // message box lets it through.
+        // message box lets it through, as it does the review's.
         if (
           blocksNavigationShortcuts(e.target) ||
           document.querySelector(".modal-backdrop")
@@ -3977,7 +4048,7 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "reviews.list")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) {
@@ -3988,14 +4059,14 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "review.toggle")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksNavigationShortcuts(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) void toggleReviewRef.current();
         return;
       }
+      // Its chord types nothing, so it works from any text box too.
       if (shortcutMatches(e, "assistant.toggle")) {
-        if (isEditableElement(e.target)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) toggleAssistant();
@@ -4691,6 +4762,29 @@ export default function App() {
               {annotations.length > 0 ? ` ${annotations.length}` : ""}
             </span>
           </button>
+          <button
+            type="button"
+            className={reviewSessionId !== null ? "active" : ""}
+            title={shortcutTitle(
+              reviewSessionId !== null
+                ? "Close the review"
+                : "Review this branch",
+              "review.toggle",
+            )}
+            aria-label={
+              reviewSessionId !== null
+                ? "Close the review"
+                : "Review this branch"
+            }
+            aria-pressed={reviewSessionId !== null}
+            onClick={() => {
+              setMobileMoreOpen(false);
+              void toggleReview();
+            }}
+          >
+            <GitPullRequestArrow size={16} />
+            <span className="mobile-nav-label">Review</span>
+          </button>
           {activePaneHasAgent && activePane ? (
             <button
               type="button"
@@ -4721,29 +4815,6 @@ export default function App() {
               </span>
             </button>
           ) : null}
-          <button
-            type="button"
-            className={reviewSessionId !== null ? "active" : ""}
-            title={shortcutTitle(
-              reviewSessionId !== null
-                ? "Close the review"
-                : "Review this branch",
-              "review.toggle",
-            )}
-            aria-label={
-              reviewSessionId !== null
-                ? "Close the review"
-                : "Review this branch"
-            }
-            aria-pressed={reviewSessionId !== null}
-            onClick={() => {
-              setMobileMoreOpen(false);
-              void toggleReview();
-            }}
-          >
-            <GitPullRequestArrow size={16} />
-            <span className="mobile-nav-label">Review</span>
-          </button>
         </nav>
         <nav
           className="mobile-nav mobile-workspace-tools"
@@ -5211,7 +5282,7 @@ export default function App() {
               }
               onClear={clearAnnotations}
               onCopy={() => void copyFeedback()}
-              onSend={(paneId) => void sendFeedback(paneId)}
+              onSend={(paneId, submit) => void sendFeedback(paneId, submit)}
             />
             {assistantMounted ? (
               <Suspense

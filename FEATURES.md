@@ -198,9 +198,10 @@ Inspector state is scoped to each checkout; see
   Shift+Enter adds a line; on touch keyboards Enter adds a line and the Send
   button sends. Messages are submitted in the terminal with the agent's
   submit key (see **Agent submit keys** below). On phones the box replaces the terminal composer dock while the
-  chat is open. Sending to an agent that is working, blocked, or in an
-  unknown state first shows where the text will land and needs **Send
-  anyway**. The timeline view adds User/Agent/Tool filters. Exports are always
+  chat is open. Sending to a working agent queues the message (it shows as
+  **Queued** in the conversation until the agent takes it); sending to a
+  blocked agent or one in an unknown state first shows where the text will
+  land and needs **Send anyway**. The timeline view adds User/Agent/Tool filters. Exports are always
   complete. **Session Inspector** adds metadata, a timeline, raw/ATIF
   transcripts, and export.
   In a Claude session, messages sent while Claude works show where it took
@@ -245,7 +246,8 @@ Inspector state is scoped to each checkout; see
   (a new session asking to trust its folder). Each pane
   remembers its view; **Open agents as a chat** in Configuration > Behavior
   (off by default) opens agent panes as a chat until switched. Review
-  feedback sent to a pane shown as a chat is pre-filled in its message box.
+  feedback sent to a pane shown as a chat is pre-filled in its message box;
+  its **Send** button sends it at once.
 - A message sent from a chat's message box (in a pane or in Agent History)
   shows at once at the end of the conversation, dimmed with **Sending...**,
   then **On its way** once the pane took it, until the transcript's own entry

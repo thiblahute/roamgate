@@ -28,6 +28,12 @@ import {
   X,
 } from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
+import {
+  agentHistoryCacheKey,
+  cachedAgentHistory,
+  loadAgentHistoryCache,
+  rememberAgentHistory,
+} from "../agentHistoryCache";
 import { store, useStoreSelector } from "../store";
 import { copyTextWithFeedback } from "../copyText";
 import { useConnectionClient } from "../useConnectionClient";
@@ -193,7 +199,16 @@ export function AgentHistoryDrawer({
   const workspaceLabel =
     workspaces.find((workspace) => workspace.workspace_id === pane.workspace_id)
       ?.label ?? pane.workspace_id;
-  const [history, setHistory] = useState<AgentHistory | null>(null);
+  const recentKey = agentHistoryCacheKey(
+    activeConnectionId,
+    pane.pane_id,
+    pane.agent,
+  );
+  const recentKeyRef = useRef(recentKey);
+  recentKeyRef.current = recentKey;
+  const [history, setHistory] = useState<AgentHistory | null>(
+    () => cachedAgentHistory(recentKey)?.history ?? null,
+  );
   const [query, setQuery] = useState("");
   // Tool entries arrive redacted (metadata only) and are fetched on demand.
   const [filters, setFilters] = useState<HistoryFilters>({
@@ -206,7 +221,9 @@ export function AgentHistoryDrawer({
   const [toolEntryLoading, setToolEntryLoading] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [session, setSession] = useState<AgentSessionSummary | null>(null);
+  const [session, setSession] = useState<AgentSessionSummary | null>(
+    () => cachedAgentHistory(recentKey)?.session ?? null,
+  );
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [view, setView] = useState<AgentHistoryView>(readAgentHistoryView);
   const chatView = !!paneChat || view === "chat";
@@ -241,7 +258,8 @@ export function AgentHistoryDrawer({
   const pollScopeRef = useRef(0);
   const loadSeqRef = useRef(0);
   const previewSeqRef = useRef(0);
-  const historyRef = useRef<AgentHistory | null>(null);
+  const historyRef = useRef<AgentHistory | null>(history);
+  const sessionRef = useRef<AgentSessionSummary | null>(session);
   const inFlightRef = useRef<number | null>(null);
   const paneIdRef = useRef(pane.pane_id);
   paneIdRef.current = pane.pane_id;
@@ -286,6 +304,10 @@ export function AgentHistoryDrawer({
           );
           historyRef.current = merged;
           setHistory(merged);
+          rememberAgentHistory(recentKeyRef.current, {
+            history: merged,
+            session: sessionRef.current,
+          });
           if (merged) {
             // Drop on-demand texts for entries that left the window or whose
             // content changed under the same id (hash or byte-length mismatch).
@@ -320,8 +342,15 @@ export function AgentHistoryDrawer({
               : null,
           );
         }
-        if (sessionResult.status === "fulfilled")
-          setSession(sessionResult.value as AgentSessionSummary);
+        if (sessionResult.status === "fulfilled") {
+          const summary = sessionResult.value as AgentSessionSummary;
+          sessionRef.current = summary;
+          setSession(summary);
+          rememberAgentHistory(recentKeyRef.current, {
+            history: historyRef.current,
+            session: summary,
+          });
+        }
         const errors = [historyResult, sessionResult]
           .filter((result) => result.status === "rejected")
           .map((result) =>
@@ -354,7 +383,10 @@ export function AgentHistoryDrawer({
     // switched connection or replacement runtime.
     loadSeqRef.current += 1;
     inFlightRef.current = null;
-    historyRef.current = null;
+    // What this pane showed last comes back at once; the poll refreshes it.
+    const recent = cachedAgentHistory(recentKeyRef.current);
+    historyRef.current = recent?.history ?? null;
+    sessionRef.current = recent?.session ?? null;
     previewSeqRef.current += 1;
     if (highlightTimerRef.current !== null) {
       window.clearTimeout(highlightTimerRef.current);
@@ -363,11 +395,11 @@ export function AgentHistoryDrawer({
     setHighlightedSequence(null);
     setWideSelectedId(null);
     setWideListRatio(DEFAULT_INSPECTOR_NAVIGATION_RATIO);
-    setHistory(null);
+    setHistory(historyRef.current);
     setQuery("");
     setHeaderExpanded(false);
     setSearchOpen(false);
-    setSession(null);
+    setSession(sessionRef.current);
     setDetailsOpen(false);
     setExpandedMessage(null);
     setToolEntryTexts(new Map());
@@ -386,6 +418,31 @@ export function AgentHistoryDrawer({
     pane.workspace_id,
     pane.tab_id,
   ]);
+
+  // Right after a reload the saved histories are still being read: show this
+  // pane's once they are, unless the server answered first.
+  useEffect(() => {
+    if (historyRef.current) return;
+    const key = recentKey;
+    let cancelled = false;
+    void loadAgentHistoryCache().then(() => {
+      const saved = cachedAgentHistory(key);
+      if (cancelled || historyRef.current || !saved?.history) return;
+      historyRef.current = saved.history;
+      sessionRef.current = saved.session;
+      setHistory(saved.history);
+      setSession(saved.session);
+      setLoading(false);
+      // A read in flight asked from no cursor and would be dropped against
+      // the saved one: ask again from it.
+      loadSeqRef.current += 1;
+      inFlightRef.current = null;
+      loadHistory();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadHistory, recentKey]);
 
   const loadToolEntry = useCallback(
     (entry: AgentHistoryEntry) => {
@@ -1257,6 +1314,7 @@ export function AgentHistoryDrawer({
         </div>
       ) : null}
       {promptShown ? (
+        // biome-ignore lint/a11y/noStaticElementInteractions: the menu's keys
         <div
           ref={promptRef}
           className="agent-chat-prompt"
@@ -1389,6 +1447,7 @@ export function AgentHistoryDrawer({
       </div>
     ) : null;
   const historyChat = (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the box has its own keys
     <div
       className="agent-history-messages"
       role="region"

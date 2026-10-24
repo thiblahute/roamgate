@@ -88,7 +88,7 @@ export function AgentHistoryComposer({
   onUploadImage: (file: File) => Promise<string>;
   /** The agent's /commands, offered while one is being typed. */
   commands?: AgentCommand[];
-  /** Vim keys in the box; Configuration's setting by default. */
+  /** Vim keys in the box; the one Vim keys setting by default. */
   vimKeys?: boolean;
   onError: (message: string) => void;
 }) {

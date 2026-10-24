@@ -18,98 +18,121 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
-  // The plain message box: these tests type into its textarea.
-  (await import("../vimKeys")).setVimKeys(false);
-  test("a pane's chat has one slim row and says what the agent does", async () => {
-    const { Window } = await import("happy-dom");
-    const browser = new Window({ url: "http://localhost/" });
-    for (const [key, value] of Object.entries({
-      window: browser,
-      document: browser.document,
-      navigator: browser.navigator,
-      HTMLElement: browser.HTMLElement,
-      Element: browser.Element,
-      Node: browser.Node,
-      DOMParser: browser.DOMParser,
-      NodeFilter: browser.NodeFilter,
-      ResizeObserver: browser.ResizeObserver,
-      Event: browser.Event,
-      matchMedia: () => ({ matches: false }),
-      HTMLTextAreaElement: browser.HTMLTextAreaElement,
-      KeyboardEvent: browser.KeyboardEvent,
-      requestAnimationFrame: (callback: FrameRequestCallback) =>
-        setTimeout(() => callback(0), 0),
-      IS_REACT_ACT_ENVIRONMENT: true,
-    }))
-      Object.defineProperty(globalThis, key, {
-        value,
-        configurable: true,
-        writable: true,
-      });
-    const terminalCalls: string[] = [];
-    const client = {
-      isCurrent: () => true,
-      call: async (method: string) => {
-        if (!method.startsWith("agent_")) terminalCalls.push(method);
-        return !method.startsWith("agent_")
-          ? Promise.reject(new Error("pane closed"))
-          : method === "agent_session.get"
-            ? { status: "ok", stats: {}, session: { value: "s1" } }
-            : {
-                status: "ok",
-                agent: "claude",
-                pane_id: "pane-one",
-                workspace_id: "workspace",
-                tab_id: "tab",
-                path: "/sessions/s1.jsonl",
-                updated_at: "2026-01-01T00:00:00Z",
-                history_version: 2,
-                mode: "snapshot",
-                cursor: { epoch: "e", revision: 1 },
-                window_limit: 200,
-                entries: [
-                  {
-                    id: "m1",
-                    role: "user",
-                    kind: "message",
-                    text: "Run the tests",
-                    sent_at: "2026-01-01T00:00:00Z",
-                  },
-                ],
-              };
-      },
-    };
-    mock.module("../useConnectionClient", () => ({
-      useConnectionClient: () => client,
-      useConnectionReady: () => true,
-      connectionClientScopeKey: () => "test",
-    }));
-    const { initializeLayoutPreferences } = await import(
-      "../layoutPreferences"
-    );
-    initializeLayoutPreferences();
-    const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
-    const { createRoot } = await import("react-dom/client");
+  const { Window } = await import("happy-dom");
+  const browser = new Window({ url: "http://localhost/" });
+  for (const [key, value] of Object.entries({
+    window: browser,
+    document: browser.document,
+    navigator: browser.navigator,
+    localStorage: browser.localStorage,
+    sessionStorage: browser.sessionStorage,
+    HTMLElement: browser.HTMLElement,
+    Element: browser.Element,
+    Node: browser.Node,
+    DOMParser: browser.DOMParser,
+    NodeFilter: browser.NodeFilter,
+    ResizeObserver: browser.ResizeObserver,
+    Event: browser.Event,
+    matchMedia: () => ({ matches: false }),
+    HTMLTextAreaElement: browser.HTMLTextAreaElement,
+    KeyboardEvent: browser.KeyboardEvent,
+    requestAnimationFrame: (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(0), 0),
+    IS_REACT_ACT_ENVIRONMENT: true,
+  }))
+    Object.defineProperty(globalThis, key, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  const typedIntoPanes: string[] = [];
+  const client = {
+    connectionId: "conn",
+    generation: 1,
+    isCurrent: () => true,
+    // The pane refuses what is typed into it; the transcript reads work.
+    call: async (method: string) =>
+      !method.startsWith("agent_")
+        ? (typedIntoPanes.push(method),
+          Promise.reject(new Error("pane closed")))
+        : method === "agent_session.get"
+          ? { status: "ok", stats: {}, session: { value: "s1" } }
+          : {
+              status: "ok",
+              agent: "claude",
+              pane_id: "pane-one",
+              workspace_id: "workspace",
+              tab_id: "tab",
+              path: "/sessions/s1.jsonl",
+              updated_at: "2026-01-01T00:00:00Z",
+              history_version: 2,
+              mode: "snapshot",
+              cursor: { epoch: "e", revision: 1 },
+              window_limit: 200,
+              entries: [
+                {
+                  id: "m1",
+                  role: "user",
+                  kind: "message",
+                  text: "Run the tests",
+                  sent_at: "2026-01-01T00:00:00Z",
+                },
+              ],
+            },
+  };
+  mock.module("../useConnectionClient", () => ({
+    useConnectionClient: () => client,
+    useConnectionReady: () => true,
+    connectionClientScopeKey: () => "test",
+  }));
+  // A plain message box: Vim keys (CodeMirror) off.
+  browser.localStorage.setItem("vimKeys", "false");
+  const { initializeLayoutPreferences } = await import("../layoutPreferences");
+  initializeLayoutPreferences();
+  const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
+  const { createRoot } = await import("react-dom/client");
+  const pane: Pane = {
+    pane_id: "pane-one",
+    terminal_id: "term-one",
+    workspace_id: "workspace",
+    tab_id: "tab",
+    agent: "claude",
+    agent_status: "idle",
+    focused: true,
+    revision: 1,
+  };
+  const onShowTerminal = () => {};
+  const mount = () => {
     const container = document.createElement("div");
     document.body.append(container);
-    const root = createRoot(container);
-    const pane: Pane = {
-      pane_id: "pane-one",
-      terminal_id: "term-one",
-      workspace_id: "workspace",
-      tab_id: "tab",
-      agent: "claude",
-      agent_status: "working",
-      focused: true,
-      revision: 1,
-    };
+    return { container, root: createRoot(container) };
+  };
+  const button = (container: HTMLElement, label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+
+  test("a pane's chat has one slim row and says what the agent does", async () => {
+    const { container, root } = mount();
+    const terminalCalls = typedIntoPanes;
+    const button = (label: string) =>
+      container.querySelector<HTMLButtonElement>(
+        `button[aria-label="${label}"]`,
+      );
+    const click = (element: HTMLElement) =>
+      React.act(async () => element.click());
+    terminalCalls.length = 0;
     const onKeys = mock<(text: string) => void>(() => {});
     const onShowTerminal = mock(() => {});
     const render = (agent_status: string) =>
       React.act(async () => {
         root.render(
           <AgentHistoryDrawer
-            pane={{ ...pane, agent_status }}
+            // A pane of its own: its outbox is not the next test's.
+            pane={{
+              ...pane,
+              pane_id: "pane-slim",
+              terminal_id: "term-slim",
+              agent_status,
+            }}
             open
             embedded
             paneChat={{ onKeys, onShowTerminal }}
@@ -117,12 +140,6 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
           />,
         );
       });
-    const button = (label: string) =>
-      container.querySelector<HTMLButtonElement>(
-        `button[aria-label="${label}"]`,
-      );
-    const click = (element: HTMLElement) =>
-      React.act(async () => element.click());
     try {
       await render("working");
       expect(container.textContent).toContain("Run the tests");
@@ -297,30 +314,126 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       expect(container.textContent).toContain("Not delivered");
       await React.act(async () => root.render(null));
       expect(container.textContent).not.toContain("Not delivered");
-      await render("idle");
+    } finally {
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("only the active pane's question takes keys typed with nothing focused", async () => {
+    const { container, root } = mount();
+    const prompt = {
+      lines: ["Run the tests?"],
+      options: [
+        { key: "1", label: "Yes", input: "1", cursor: true },
+        { key: "2", label: "No", input: "2" },
+      ],
+    };
+    const activeKeys = mock<(text: string) => void>(() => {});
+    const otherKeys = mock<(text: string) => void>(() => {});
+    try {
+      await React.act(async () => {
+        root.render(
+          <>
+            <AgentHistoryDrawer
+              pane={{ ...pane, agent_status: "blocked" }}
+              open
+              embedded
+              paneChat={{
+                prompt,
+                active: true,
+                onKeys: activeKeys,
+                onShowTerminal,
+              }}
+              onOpenChange={() => {}}
+            />
+            <AgentHistoryDrawer
+              pane={{
+                ...pane,
+                pane_id: "pane-two",
+                terminal_id: "term-two",
+                agent_status: "blocked",
+              }}
+              open
+              embedded
+              paneChat={{
+                prompt,
+                active: false,
+                onKeys: otherKeys,
+                onShowTerminal,
+              }}
+              onOpenChange={() => {}}
+            />
+          </>,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(container.querySelectorAll(".agent-chat-prompt")).toHaveLength(2);
+      (document.activeElement as HTMLElement | null)?.blur();
+      await React.act(async () => {
+        document.body.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "2", bubbles: true }),
+        );
+      });
+      expect(activeKeys.mock.calls).toEqual([["2"]]);
+      expect(otherKeys.mock.calls).toEqual([]);
+    } finally {
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a message the pane refused outlives the chat that showed it", async () => {
+    const { container, root } = mount();
+    const render = () =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={pane}
+            open
+            embedded
+            paneChat={{ prompt: null, onKeys: () => {}, onShowTerminal }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    try {
+      await render();
+      expect(container.textContent).toContain("Run the tests");
+      const box = container.querySelector("textarea")!;
+      await React.act(async () => {
+        Object.getOwnPropertyDescriptor(
+          browser.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(box, "Also check the docs");
+        box.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
+      await React.act(async () => {
+        box.dispatchEvent(
+          new window.KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(container.textContent).toContain("Not delivered");
+      // The pane goes to its terminal: the chat unmounts, then comes back.
+      await React.act(async () => root.render(null));
+      expect(container.textContent).not.toContain("Not delivered");
+      await render();
       expect(container.textContent).toContain("Also check the docs");
       expect(container.textContent).toContain("Not delivered");
-      expect(button("Send this message again")).not.toBeNull();
-      await render("working");
-      const callsBeforeRetry = terminalCalls.length;
-      await click(button("Send this message again")!);
-      expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-      expect(container.textContent).toContain("still working");
-      expect(terminalCalls).toHaveLength(callsBeforeRetry);
-      // An agent state change revokes the pending confirmation.
-      await render("idle");
-      expect(container.querySelector('[role="dialog"]')).toBeNull();
-      await render("working");
-      await click(button("Send this message again")!);
-      const confirm = Array.from(
-        container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-      ).find((each) => each.textContent === "Send anyway")!;
-      await click(confirm);
-      expect(terminalCalls.length).toBeGreaterThan(callsBeforeRetry);
-      await click(button("Discard this message")!);
+      expect(button(container, "Send this message again")).not.toBeNull();
+      await React.act(async () =>
+        button(container, "Discard this message")!.click(),
+      );
       expect(container.textContent).not.toContain("Not delivered");
     } finally {
       await React.act(async () => root.unmount());
+      container.remove();
       await browser.happyDOM.close();
     }
   });

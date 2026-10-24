@@ -284,14 +284,18 @@ export function PopupOverlay({
       if (!store.get().popup && client.isCurrent()) {
         const previous = previousFocusRef.current;
         previousFocusRef.current = null;
-        // A pane shown as a chat gets the keys back in its message box,
-        // whatever had them before the popup, once the overlay has left.
-        const input = activeTerminalInput(document);
-        if (input?.closest(".agent-history-composer"))
-          requestAnimationFrame(() => {
-            if (!store.get().popup) input.focus({ preventScroll: true });
-          });
-        else if (previous?.isConnected) previous.focus();
+        // After the frame the overlay leaves: an agent chat's message box
+        // gets the keys back, whatever had them before the popup.
+        requestAnimationFrame(() => {
+          if (store.get().popup) return;
+          const input = activeTerminalInput(document);
+          const target = input?.closest(".agent-history-composer")
+            ? input
+            : previous?.isConnected && previous.getClientRects().length > 0
+              ? previous
+              : input;
+          target?.focus({ preventScroll: true });
+        });
       }
     };
     // Title/size render separately; theme and font family update without

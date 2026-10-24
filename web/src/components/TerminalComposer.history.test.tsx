@@ -56,7 +56,8 @@ if (process.env.ROAMGATE_BOTTOM_HISTORY_COMPOSER_TEST !== "1") {
     );
     const error = mock<(message: string) => void>(() => {});
     const upload = mock(async (file: File) => `/tmp/${file.name}`);
-    let status = "working";
+    // A working agent takes a message as queued; a blocked one warns first.
+    let status = "blocked";
     let stateSeq = 1;
     let open = true;
     let accessoriesVisible = true;

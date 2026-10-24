@@ -622,3 +622,7 @@
 .terminal-main.is-chat > :not(.terminal-chat-layer) {
   visibility: hidden;
 }
+
+.terminal-pane-action.is-active {
+  color: var(--accent);
+}

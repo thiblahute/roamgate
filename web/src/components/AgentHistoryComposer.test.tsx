@@ -26,8 +26,6 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
-  // The plain message box: these tests type into its textarea.
-  (await import("../vimKeys")).setVimKeys(false);
   test("sends the shared draft and confirms before typing into a busy agent", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost" });
@@ -74,6 +72,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
             onSend={send}
             onUploadImage={upload}
             onError={error}
+            vimKeys={false}
           />,
         ),
       );
@@ -111,12 +110,6 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       configurable: true,
       writable: true,
     });
-    const sendAnyway = () =>
-      React.act(async () =>
-        Array.from(container.querySelectorAll("button"))
-          .find((button) => button.textContent === "Send anyway")!
-          .click(),
-      );
     try {
       // A draft started in the terminal composer appears here.
       writeTerminalComposerDraft(draftKey, "from terminal");
@@ -140,11 +133,11 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(2);
 
-      // A working agent needs Send anyway: Enter again only keeps the warning.
-      await render("working");
+      // A blocked agent needs Send anyway: Enter again only keeps the warning.
+      await render("blocked");
       await fill("next step");
       await key("Enter");
-      expect(warning()?.textContent).toContain("codex is still working.");
+      expect(warning()?.textContent).toContain("codex is waiting on a prompt.");
       await key("Enter");
       await key("Enter");
       expect(send).toHaveBeenCalledTimes(2);
@@ -169,24 +162,25 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       await key("Enter");
       expect(warning()).not.toBeNull();
       stateSeq += 1;
-      await render("working");
+      await render("blocked");
       expect(warning()).toBeNull();
-      await render("working", true);
+      await render("blocked", true);
       expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(2);
 
-      // A state change drops a warning given for the previous state.
+      // A state change drops a warning given for the previous state, and a
+      // working agent queues the message without asking.
       await key("Enter");
-      await render("blocked");
+      await render("working");
       expect(warning()).toBeNull();
       await key("Enter");
-      expect(warning()?.textContent).toContain("waiting on a prompt");
-      await sendAnyway();
+      expect(warning()).toBeNull();
       expect(send).toHaveBeenCalledTimes(3);
       expect(send.mock.calls[2]?.[0]).toBe("next steps");
       expect(warning()).toBeNull();
 
       // The warning disappears once the agent is back at its prompt.
+      await render("blocked");
       await fill("approve");
       await key("Enter");
       expect(warning()).not.toBeNull();
@@ -261,7 +255,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       await compatibilityClick("Send");
       expect(send).toHaveBeenCalledTimes(5);
 
-      await render("working");
+      await render("blocked");
       await fill("tapped anyway");
       await release("Send");
       expect(warning()).not.toBeNull();
@@ -539,6 +533,7 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       });
     }
     const { setVimKeys } = await import("../vimKeys");
+    setVimKeys(false);
     const { createRoot } = await import("react-dom/client");
     const container = document.createElement("div");
     document.body.append(container);

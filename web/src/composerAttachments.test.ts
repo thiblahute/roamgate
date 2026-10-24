@@ -60,6 +60,9 @@ test("remembers a bounded number of images and releases older thumbnails", () =>
     expect(attachmentDisplay(path(REMEMBERED_ATTACHMENTS)).text).toBe(
       "[Image #1]",
     );
+    // The same image attached again releases its earlier thumbnail.
+    rememberComposerAttachment(path(1), new File([], "1.png"));
+    expect(revoked).toContain("blob:test-1");
   } finally {
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
