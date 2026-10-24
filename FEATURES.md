@@ -383,6 +383,12 @@ across a project and its subprojects. It works in panes on SSH hosts too.
 - The bottom bar holds **Message…**, **Direct**, **Tabs** (with the workspace's
   tab count, red when another agent needs you) and **⋮**, a menu of views and tools: Terminal, Files,
   Changes, Commits, Annotations, History, Ranger, and Workspaces.
+  **Workspaces** sits beside **Tabs**, for switching workspaces in one tap.
+- The phone's workspace list opens on the recent ones, most recent first,
+  as the switcher lists them, so the previous one is the second row; **All**
+  shows the whole tree. Its search matches as the pane switcher's does
+  (workspace, tab, directory or agent name, across connections): while it
+  holds text, the matching workspaces replace the list.
 - Touch scrolls without opening the keyboard. Long-press selects text for
   **Copy**, **Add comment**, or link actions.
 - Floating terminal shortcuts (a `2×8` grid plus side buttons) are customizable

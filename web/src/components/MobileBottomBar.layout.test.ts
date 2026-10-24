@@ -97,9 +97,9 @@ test("navigation slots and centering track control size without shrinking Messag
   expect(row.replace(/\s+/g, " ")).toContain(
     `padding-right: calc( var(--mobile-appbar-slots, 2) * ${control} + 4px );`,
   );
-  // The agent chat switch takes a third slot when it shows.
+  // Workspaces, Tabs and More; the agent chat switch takes a fourth slot.
   expect(rule(nav, ".mobile-bottom-bar:has(.mobile-appbar-chat)")).toContain(
-    "--mobile-appbar-slots: 3;",
+    "--mobile-appbar-slots: 4;",
   );
   expect(row).toContain("align-items: center;");
   const editor = rule(

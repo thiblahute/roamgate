@@ -350,8 +350,13 @@
     min-width: 0;
   }
 
-  .mobile-bottom-bar:has(.mobile-appbar-chat) {
+  /* Workspaces, Tabs and More, and the agent chat switch when it shows. */
+  .mobile-bottom-bar {
     --mobile-appbar-slots: 3;
+  }
+
+  .mobile-bottom-bar:has(.mobile-appbar-chat) {
+    --mobile-appbar-slots: 4;
   }
 
   /* A chat is the phone's zen: its own slim row stands for the top bar, so
@@ -840,5 +845,55 @@
   body .app[data-mobile-more] .mobile-controls-stack .mobile-controls-toggle,
   body .app[data-mobile-more] .mobile-controls-stack .mobile-nav-badge {
     display: none;
+  }
+}
+
+/* The phone's workspace list: a search above it, as the switcher has. */
+.workspace-search {
+  display: none;
+}
+
+:where(html[data-layout="mobile"]) {
+  .workspace-search {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px 4px;
+  }
+
+  .workspace-search input {
+    flex: 1;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--input-bg);
+    color: var(--text-strong);
+    font-size: 16px;
+  }
+
+  .workspace-tree-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  .workspace-tree-toggle.is-active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .workspace-search-results {
+    max-height: none;
+    padding: 4px 8px;
+    overflow: visible;
   }
 }

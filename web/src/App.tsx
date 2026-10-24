@@ -1,5 +1,5 @@
 import { MobileBottomBar } from "./components/MobileBottomBar";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { bridge } from "./api";
 import {
   listenForTaskNotificationActivation,
@@ -56,8 +56,11 @@ import {
   FolderTree,
   GitGraph,
   GitPullRequestArrow,
+  Settings,
+  SquarePlus,
   History,
   Info,
+  ListTree,
   LoaderCircle,
   MessageSquareText,
   MessagesSquare,
@@ -102,6 +105,7 @@ import {
   CommandCombobox,
 } from "./components/CommandCombobox";
 import { CONFIG_MENU_ID, ConfigMenu } from "./components/ConfigMenu";
+import { openConfiguration } from "./configurationOpen";
 import { ConnectionSwitcher } from "./components/ConnectionSwitcher";
 import {
   type ActiveDiffSelection,
@@ -2019,7 +2023,15 @@ export default function App() {
   const openWorkspaces = useCallback(() => {
     setSidebarHidden(false);
     if (mobile) {
-      setMobileView("workspaces");
+      // Shown now, so the search takes focus within the tap: a phone opens
+      // its keyboard only for a focus its user's gesture made.
+      flushSync(() => {
+        setWorkspaceTreeShown(false);
+        setMobileView("workspaces");
+      });
+      document
+        .querySelector<HTMLInputElement>(".workspace-search input")
+        ?.focus({ preventScroll: true });
       return;
     }
     requestAnimationFrame(() => {
@@ -3189,12 +3201,13 @@ export default function App() {
     [paneJumpOptions.length],
   );
   const activeWorkspaceId = activePane?.workspace_id;
-  const commitPaneJump = useCallback(
-    (index = paneJumpIndexRef.current) => {
-      const targetPaneId = paneJumpTargetId(paneJumpOptions, index);
-      const connectionTarget = paneJumpConnectionTarget(paneJumpOptions, index);
-      closePaneJump(!targetPaneId && !connectionTarget);
-      const target = paneJumpOptions[index];
+  /** Goes to a switcher entry's pane, remembering the round trip. */
+  const jumpToPaneEntry = useCallback(
+    (target: PaneJumpEntry | undefined) => {
+      const targetPaneId = target ? paneJumpTargetId([target], 0) : null;
+      const connectionTarget = target
+        ? paneJumpConnectionTarget([target], 0)
+        : null;
       // The pane being left, not the entry that stands for it: in workspace
       // scope a workspace leads with the pane it was last used through.
       const departure =
@@ -3225,13 +3238,90 @@ export default function App() {
         );
       }
     },
+    [activePaneId, activeWorkspaceId, s.activeConnectionId, visitWorkspace],
+  );
+  const commitPaneJump = useCallback(
+    (index = paneJumpIndexRef.current) => {
+      closePaneJump(
+        !paneJumpTargetId(paneJumpOptions, index) &&
+          !paneJumpConnectionTarget(paneJumpOptions, index),
+      );
+      jumpToPaneEntry(paneJumpOptions[index]);
+    },
+    [closePaneJump, jumpToPaneEntry, paneJumpOptions],
+  );
+  // The phone's workspace list searches the way the switcher does.
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  // It opens on the recent list, the switcher's; the whole tree is a tap away.
+  const [workspaceTreeShown, setWorkspaceTreeShown] = useState(false);
+  const workspaceRecentEntries = useMemo(
+    () =>
+      mobile && !workspaceTreeShown
+        ? paneJumpEntries(
+            {
+              layout: s.layout,
+              panes: s.panes,
+              recentPaneIds: s.recentPaneIds,
+              tabs: s.tabs,
+              workspaces: s.workspaces,
+            },
+            activePaneId,
+            connectionSessions,
+            paneJumpScope,
+            {
+              activeConnectionId: s.activeConnectionId,
+              keys: workspaceHistory,
+            },
+          )
+        : null,
     [
       activePaneId,
-      activeWorkspaceId,
-      closePaneJump,
-      paneJumpOptions,
+      connectionSessions,
+      mobile,
+      paneJumpScope,
       s.activeConnectionId,
-      visitWorkspace,
+      s.layout,
+      s.panes,
+      s.recentPaneIds,
+      s.tabs,
+      s.workspaces,
+      workspaceHistory,
+      workspaceTreeShown,
+    ],
+  );
+  const workspaceSearchResults = useMemo(
+    () =>
+      mobile && workspaceSearch.trim()
+        ? paneSearchEntries(
+            {
+              layout: s.layout,
+              panes: s.panes,
+              recentPaneIds: s.recentPaneIds,
+              tabs: s.tabs,
+              workspaces: s.workspaces,
+            },
+            workspaceSearch,
+            activePaneId,
+            connectionSessions,
+            "workspaces",
+            {
+              activeConnectionId: s.activeConnectionId,
+              keys: workspaceHistory,
+            },
+          )
+        : null,
+    [
+      activePaneId,
+      connectionSessions,
+      mobile,
+      s.activeConnectionId,
+      s.layout,
+      s.panes,
+      s.recentPaneIds,
+      s.tabs,
+      s.workspaces,
+      workspaceHistory,
+      workspaceSearch,
     ],
   );
   const movePaneJumpSelection = useCallback(
@@ -4523,6 +4613,36 @@ export default function App() {
           </button>
           <button
             type="button"
+            title={shortcutTitle("New tab", "tab.create")}
+            aria-label="New tab"
+            onClick={() => {
+              setMobileMoreOpen(false);
+              const workspace = store
+                .get()
+                .workspaces.find((each) => each.focused);
+              if (workspace)
+                void store.createTab(workspace.workspace_id, {
+                  numberedLabel: true,
+                });
+            }}
+          >
+            <SquarePlus size={16} />
+            <span className="mobile-nav-label">New tab</span>
+          </button>
+          <button
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => {
+              setMobileMoreOpen(false);
+              openConfiguration();
+            }}
+          >
+            <Settings size={16} />
+            <span className="mobile-nav-label">Settings</span>
+          </button>
+          <button
+            type="button"
             className={mobileView === "history" ? "active" : ""}
             title={
               activePaneHasAgent || historyInspectorOpen
@@ -4749,31 +4869,138 @@ export default function App() {
       >
         <div className="sidebar">
           <div className="sidebar-content">
-            <WorkspaceTree
-              agentsFirst={
-                (mobile
-                  ? layoutPreferences.mobileSidebarOrder
-                  : layoutPreferences.desktopSidebarOrder) === "agents-first"
-              }
-              key={`${resourceUiKey}:workspaces`}
-              onSelect={(workspace) =>
-                keepInspectorForWorkspace(workspace.workspace_id)
-              }
-              onBrowseFiles={(workspace) =>
-                openFileExplorer(workspace.workspace_id)
-              }
-              onReviewChanges={(workspace) =>
-                openDiffViewer(workspace.workspace_id)
-              }
-              onSelectAgent={(pane) =>
-                keepInspectorForWorkspace(pane.workspace_id, pane)
-              }
-              onBrowseFilesForAgent={browseFilesForPane}
-              onReviewChangesForAgent={reviewChangesForPane}
-              onViewAgentHistory={(pane) =>
-                setAgentHistoryInspectorOpen(true, pane)
-              }
-            />
+            {mobile ? (
+              <div className="workspace-search">
+                <input
+                  type="search"
+                  aria-label="Search workspaces"
+                  placeholder="Search workspaces"
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-bwignore
+                  value={workspaceSearch}
+                  onChange={(event) =>
+                    setWorkspaceSearch(event.currentTarget.value)
+                  }
+                />
+                <button
+                  type="button"
+                  className={`workspace-tree-toggle${workspaceTreeShown ? " is-active" : ""}`}
+                  aria-pressed={workspaceTreeShown}
+                  aria-label={
+                    workspaceTreeShown
+                      ? "Show recent workspaces"
+                      : "Show all workspaces"
+                  }
+                  onClick={() => {
+                    setWorkspaceSearch("");
+                    setWorkspaceTreeShown((shown) => !shown);
+                  }}
+                >
+                  {workspaceTreeShown ? (
+                    <History size={18} aria-hidden="true" />
+                  ) : (
+                    <ListTree size={18} aria-hidden="true" />
+                  )}
+                  <span>{workspaceTreeShown ? "Recent" : "All"}</span>
+                </button>
+              </div>
+            ) : null}
+            {workspaceSearchResults || workspaceRecentEntries ? (
+              <div
+                className="pane-jump-list workspace-search-results"
+                role="list"
+                aria-label={
+                  workspaceSearchResults
+                    ? "Matching workspaces"
+                    : "Recent workspaces"
+                }
+              >
+                {workspaceSearchResults?.length === 0 ? (
+                  <p className="pane-jump-empty" role="status">
+                    No workspace matches.
+                  </p>
+                ) : null}
+                {(workspaceSearchResults ?? workspaceRecentEntries ?? []).map(
+                  (entry) => (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      role="listitem"
+                      className={`pane-jump-item${entry.current ? " is-current" : ""}`}
+                      onClick={() => {
+                        setWorkspaceSearch("");
+                        if (entry.current) activateTerminalSurface();
+                        else jumpToPaneEntry(entry);
+                      }}
+                    >
+                      {entry.agent ? (
+                        <span className="pane-jump-agent-identity">
+                          <AgentIcon agent={entry.agent} compact />
+                          <span
+                            className={`pane-jump-status status-${entry.agentStatus ?? "unknown"}`}
+                          />
+                        </span>
+                      ) : null}
+                      <span className="pane-jump-text">
+                        <span className="pane-jump-title-line">
+                          <strong>{entry.title}</strong>
+                          {entry.current ? (
+                            <span className="pane-jump-current-badge">
+                              Current
+                            </span>
+                          ) : null}
+                          {entry.agentStatus ? (
+                            <span
+                              className={`${agentClass(entry.agentStatus)} pane-jump-agent-status`}
+                            >
+                              {entry.agentStatus}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="pane-jump-subtitle">
+                          <span className="pane-jump-tab">
+                            {entry.tabLabel}
+                          </span>
+                          {entry.cwd ? (
+                            <span className="pane-jump-cwd">
+                              {" · "}
+                              {entry.cwd}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </button>
+                  ),
+                )}
+              </div>
+            ) : (
+              <WorkspaceTree
+                agentsFirst={
+                  (mobile
+                    ? layoutPreferences.mobileSidebarOrder
+                    : layoutPreferences.desktopSidebarOrder) === "agents-first"
+                }
+                key={`${resourceUiKey}:workspaces`}
+                onSelect={(workspace) =>
+                  keepInspectorForWorkspace(workspace.workspace_id)
+                }
+                onBrowseFiles={(workspace) =>
+                  openFileExplorer(workspace.workspace_id)
+                }
+                onReviewChanges={(workspace) =>
+                  openDiffViewer(workspace.workspace_id)
+                }
+                onSelectAgent={(pane) =>
+                  keepInspectorForWorkspace(pane.workspace_id, pane)
+                }
+                onBrowseFilesForAgent={browseFilesForPane}
+                onReviewChangesForAgent={reviewChangesForPane}
+                onViewAgentHistory={(pane) =>
+                  setAgentHistoryInspectorOpen(true, pane)
+                }
+              />
+            )}
           </div>
         </div>
         <div
@@ -5072,6 +5299,13 @@ export default function App() {
           onTabsOpenChange={setMobileTabSheetOpen}
           onMoreOpenChange={setMobileMoreOpen}
           chat={activePaneChat}
+          workspaces={{
+            open: mobileView === "workspaces",
+            onToggle:
+              mobileView === "workspaces"
+                ? activateTerminalSurface
+                : openWorkspaces,
+          }}
           onToggleChat={
             activePaneHasAgent && activePane
               ? () => {

@@ -306,22 +306,23 @@ if (process.env.ROAMGATE_TAB_POPUP_DOM_TEST !== "1") {
       button("More options").focus();
       await escape();
       expect(document.activeElement).toBe(button("More options"));
-      // Empty and single-tab workspaces retain their create affordance.
-      state.tabs = [];
-      await click("Show tabs");
-      expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(0);
-      expect(button("New Tab").disabled).toBe(false);
-      await escape();
+      // One tab or none has nothing to switch to: no tabs button (New tab
+      // is in the ⋮ menu); it comes back with a second tab.
       state.tabs = [
         { tab_id: "one", workspace_id: "ws", name: "Only", focused: true },
       ];
+      await act(async () => render());
+      expect(button("Show tabs")).toBeUndefined();
+      state.tabs = [];
+      await act(async () => render());
+      expect(button("Show tabs")).toBeUndefined();
+      state.tabs = [
+        { tab_id: "one", workspace_id: "ws", name: "Only", focused: true },
+        { tab_id: "two", workspace_id: "ws", name: "Two", focused: false },
+      ];
+      await act(async () => render());
       await click("Show tabs");
-      expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
-      await escape();
-      state.workspaces = [];
-      await click("Show tabs");
-      expect(container.textContent).toContain("Select or create a workspace");
-      expect(button("New Tab").disabled).toBe(true);
+      expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
     } finally {
       await act(async () => root.unmount());
       await browser.happyDOM.abort();

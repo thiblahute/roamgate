@@ -510,7 +510,7 @@ async function registerDomTests() {
         );
     const bar = createElement(MobileBottomBar, {
       inputRef: setInputTarget,
-      tabCount: state.panes.length ? 1 : 0,
+      tabCount: state.panes.length ? 2 : 0,
       attention: true,
       tabsOpen,
       moreOpen,
@@ -1828,20 +1828,15 @@ async function registerDomTests() {
     expectInputBlocked();
   });
 
-  test("empty workspace keeps both navigation entries available", async () => {
+  test("an empty workspace has no tabs button, its menu stays", async () => {
     await mount();
     await act(async () => {
       state.panes = [];
       render();
     });
-    const tabs = container.querySelector<HTMLButtonElement>(
-      ".mobile-appbar-tabs",
-    )!;
-    expect(tabs.disabled).toBe(false);
-    expect(tabs.querySelector(".mobile-appbar-count")?.textContent).toBe("0");
+    // Nothing to switch to: New tab is in the menu.
+    expect(container.querySelector(".mobile-appbar-tabs")).toBeNull();
     expect(container.querySelector(".terminal-mobile-input-bar")).toBeNull();
-    await click(".mobile-appbar-tabs");
-    expect(tabsOpen).toBe(true);
     await click(".mobile-appbar-more");
     expect(tabsOpen).toBe(false);
     expect(moreOpen).toBe(true);

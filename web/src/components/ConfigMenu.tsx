@@ -30,6 +30,7 @@ import type {
   ConfigurationProps,
   ConfigurationTab,
 } from "./ConfigurationDialog";
+import { OPEN_CONFIGURATION } from "../configurationOpen";
 import { ConfigurationLoadingDialog } from "./ConfigurationLoadingDialog";
 import { HerdrSetupCard } from "./HerdrSetupCard";
 import { MobileSheetHandle } from "./MobileSheetHandle";
@@ -89,6 +90,16 @@ export function ConfigMenu({
   const [expanded, setExpanded] = useState(false);
   const [configurationTab, setConfigurationTab] =
     useState<ConfigurationTab | null>(null);
+  useEffect(() => {
+    const show = (event: Event) => {
+      setOpen(false);
+      setConfigurationTab(
+        (event as CustomEvent<ConfigurationTab>).detail ?? "Appearance",
+      );
+    };
+    window.addEventListener(OPEN_CONFIGURATION, show);
+    return () => window.removeEventListener(OPEN_CONFIGURATION, show);
+  }, []);
   const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
   const [health, setHealth] = useState<{
     socket?: string;

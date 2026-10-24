@@ -7,7 +7,7 @@ const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
 // Saved agent chat histories load in a chunk of their own.
 const maxFileCount = 172;
 const maxTotalBytes = 14 * 1024 * 1024;
-const maxInitialJsBytes = 835 * 1024;
+const maxInitialJsBytes = 840 * 1024;
 const maxInitialJsGzipBytes = 256 * 1024;
 const maxInitialCssBytes = 196 * 1024;
 
