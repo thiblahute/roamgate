@@ -314,6 +314,8 @@ type Pending = {
 export function isReviewPush(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const push = value as Record<string, unknown>;
+  if (push.type === "prompts")
+    return typeof push.connectionId === "string" && Array.isArray(push.prompts);
   if (push.type === "session") {
     // Down to what the review pane reads unguarded: a malformed one is
     // dropped rather than break the page.

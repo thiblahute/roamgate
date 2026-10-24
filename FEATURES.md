@@ -255,7 +255,13 @@ Inspector state is scoped to each checkout; see
   seconds later, stays marked **Not delivered** with **Send again** and
   **Discard**, also after switching the pane to its terminal and back; it is
   still replaced if its entry shows up later. Answers typed into a question,
-  `/commands` and `!` lines are sent as before.
+  `/commands` and `!` lines are sent as before. With Roamgate's permission hook (see
+  [Deployment](docs/DEPLOYMENT.md#permission-prompts)), what an agent asks
+  leave to do shows in its chat, or as a card over its terminal, with
+  **Allow**, **Always** (the terminal's don't-ask-again rules) and **Deny**,
+  and its multiple-choice questions as a form (one choice, several, or one's
+  own words), a sheet of its own on a phone; **In the terminal** hands either
+  back, and the terminal asks anyway once the hook stops waiting.
 - **Menu > Configuration > Integrations** installs, updates, or removes Herdr's
   bundled agent integrations (not the agents themselves). See
   [version lookup](docs/ARCHITECTURE.md#agent-integrations).
