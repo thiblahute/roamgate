@@ -430,3 +430,32 @@ test("unknown commands and bad JSON are refused", async () => {
   expect(response.status).toBe(400);
   expect(tmpdir()).toBeTruthy();
 });
+
+test("--compare opens a tree-to-tree review of two versions", async () => {
+  const { parseTargetFlags } = await import("./agent-server");
+  const noDefault = async () => "main";
+  expect(
+    await parseTargetFlags(
+      new URLSearchParams({ compare: "topic-before..topic" }),
+      noDefault,
+    ),
+  ).toEqual({
+    kind: "range",
+    base: "topic-before",
+    head: "topic",
+    compare: true,
+  });
+  expect(() =>
+    parseTargetFlags(new URLSearchParams({ compare: "topic" }), noDefault),
+  ).toThrow("--compare takes OLD NEW");
+  // Versions are often named with dots.
+  expect(
+    await parseTargetFlags(
+      new URLSearchParams({ compare: "v1.2..v1.3" }),
+      noDefault,
+    ),
+  ).toEqual({ kind: "range", base: "v1.2", head: "v1.3", compare: true });
+  expect(() =>
+    parseTargetFlags(new URLSearchParams({ compare: "a..b..c" }), noDefault),
+  ).toThrow("--compare takes OLD NEW");
+});

@@ -58,6 +58,16 @@ Without a target it reviews \`<default branch>..HEAD\`. Others:
 \`--range main..HEAD\` (use branch names, never SHAs, so it follows rebases),
 \`--worktree\`, \`--mr URL\`. The overlay pops up in the user's browser.
 
+Rewrote a branch the user already reviewed (folded fixups, rebased,
+force-pushed)? \`--compare OLD NEW\` shows only what changed between the two
+versions, tree against tree, instead of the whole branch again:
+
+    roamgate-review open --compare topic-before-fold topic \\
+      --message "What changed since your last review"
+
+Keep the old tip under a branch or tag name before rewriting, so OLD still
+resolves. Comments anchor on NEW's lines, as in any review.
+
 Worked in several repositories, such as a series of changes across a
 project and its subprojects? Name the others with \`--repo PATH\` (its
 default branch..HEAD) or \`--repo PATH=BASE..HEAD\`, repeatable:
