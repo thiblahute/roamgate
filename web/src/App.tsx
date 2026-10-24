@@ -37,6 +37,7 @@ import {
 } from "./reviewPins";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
 import { useSystemBack } from "./systemBack";
+import { startFrontendFreshness } from "./frontendFreshness";
 import { paneView, togglePaneView, usePaneView } from "./paneView";
 import {
   shortcutMatches,
@@ -2250,6 +2251,7 @@ export default function App() {
     [connectionClient.connectionId, mobile, setAnnotationDraftScope],
   );
   useEffect(() => startReviewClient(), []);
+  useEffect(() => startFrontendFreshness(), []);
   // Cmd+K from the review: the menu goes to other workspaces, so the review
   // steps aside (it is kept; Option+R brings it back).
   useEffect(() => {
