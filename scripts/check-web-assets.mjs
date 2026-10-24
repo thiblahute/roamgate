@@ -4,9 +4,11 @@ import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 
 const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
-// Saved agent chat histories load in a chunk of their own.
-const maxFileCount = 172;
-const maxTotalBytes = 14 * 1024 * 1024;
+// Saved agent chat histories load in a chunk of their own; PDF.js (its
+// renderer chunk, CSS and worker) only for a PDF on browsers that cannot show
+// one in a frame.
+const maxFileCount = 175;
+const maxTotalBytes = 15.5 * 1024 * 1024;
 const maxInitialJsBytes = 840 * 1024;
 const maxInitialJsGzipBytes = 256 * 1024;
 const maxInitialCssBytes = 196 * 1024;
