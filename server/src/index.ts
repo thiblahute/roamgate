@@ -986,6 +986,12 @@ function safeSend(
   });
 }
 
+const PANE_INPUT_METHODS = new Set([
+  "pane.send_input",
+  "pane.send_text",
+  "pane.send_keys",
+]);
+
 async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   let parsed: unknown;
   try {
@@ -1787,6 +1793,22 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendError("worktree-remove-error", e);
     }
     return;
+  }
+  if (PANE_INPUT_METHODS.has(method) && typeof params?.pane_id === "string") {
+    // Typing through the pane API (the composer, the key buttons) counts as
+    // input for clipboard writes, as typing into the terminal does.
+    try {
+      const pane = (await herdr.call(
+        "pane.get",
+        { pane_id: params.pane_id },
+        2000,
+      )) as { pane?: { terminal_id?: unknown } } | null;
+      const terminalId = pane?.pane?.terminal_id;
+      if (typeof terminalId === "string")
+        terminalBridge.noteTerminalInput(ws, terminalId);
+    } catch {
+      // The input itself still goes through; only its clipboard is lost.
+    }
   }
   try {
     const rawResult = await herdr.call(method, params ?? {});
