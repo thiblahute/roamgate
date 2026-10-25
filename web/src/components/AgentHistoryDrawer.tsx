@@ -43,6 +43,8 @@ import type { AgentActivity, AgentPrompt } from "../agentPrompt";
 import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { AgentTasksSheet } from "./AgentTasksSheet";
+import { AgentArtifactsMenu } from "./AgentArtifactsMenu";
+import { useAgentArtifacts } from "../agentArtifacts";
 import { useAgentTasks } from "../agentTasks";
 import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
 import { shortcutTitle } from "../shortcutPreferences";
@@ -207,6 +209,7 @@ export function AgentHistoryDrawer({
     loaded: tasksLoaded,
   } = useAgentTasks(pane, !!paneChat && open);
   const agentCommands = useAgentCommands(pane, open);
+  const artifacts = useAgentArtifacts(pane, !!paneChat && open);
   const tasksById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
     [tasks],
@@ -1534,6 +1537,7 @@ export function AgentHistoryDrawer({
           <div className="agent-history-actions">
             {paneChat ? (
               <>
+                <AgentArtifactsMenu artifacts={artifacts} />
                 {tasks.length ? (
                   <button
                     type="button"

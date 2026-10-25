@@ -137,6 +137,17 @@ export function createAgentSessionHandlers(args: {
       const projection = await cache.get(resolved);
       return { commands: projection.commands };
     },
+    readArtifacts: async (params: Record<string, unknown>) => {
+      const resolved = await resolveAgentSession(
+        params,
+        args.herdrCall,
+        args.files,
+        resolverContext,
+      );
+      if (!resolved.file) return { artifacts: [] };
+      const projection = await cache.get(resolved);
+      return { artifacts: projection.artifacts };
+    },
     /**
      * A task's details: the end of a command's output, or a subagent's own
      * conversation. Paths come from the transcript, never from the caller.
