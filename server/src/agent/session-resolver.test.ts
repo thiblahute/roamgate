@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -68,6 +75,47 @@ describe("agent session resolver context", () => {
     expect(secondResult.path).toBe(sessionPath);
     expect(second.pathCache.get(`pi:${sessionId}`)).toBe(sessionPath);
     expect(first.pathCache).not.toBe(second.pathCache);
+  });
+});
+
+describe("session search", () => {
+  test("follows a session folder that is a link", async () => {
+    const root = await mkdtemp(join(tmpdir(), "roamgate-session-link-"));
+    tempDirectories.push(root);
+    process.env.PI_CODING_AGENT_DIR = root;
+    const sessionId = `session-${crypto.randomUUID()}`;
+    const kept = join(root, "kept", "project");
+    await mkdir(kept, { recursive: true });
+    await mkdir(join(root, "sessions"));
+    await symlink(kept, join(root, "sessions", "project"));
+    // A link to itself: skipped, not followed forever.
+    await symlink(
+      join(root, "sessions", "loop"),
+      join(root, "sessions", "loop"),
+    );
+    await writeFile(join(kept, `${sessionId}.jsonl`), "{}\n");
+    const result = await resolveAgentSession(
+      { pane_id: "p1" },
+      async () => ({
+        agent: {
+          agent: "pi",
+          workspace_id: "w1",
+          tab_id: "t1",
+          cwd: "/repo",
+          agent_session: {
+            source: "herdr:pi",
+            agent: "pi",
+            kind: "id",
+            value: sessionId,
+          },
+        },
+      }),
+      localAgentSessionFiles,
+      createAgentSessionResolverContext(),
+    );
+    expect(result.path).toBe(
+      join(root, "sessions", "project", `${sessionId}.jsonl`),
+    );
   });
 });
 

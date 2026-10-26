@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAgentSessionFileAccess } from "./session-file-access";
 
 const remotePath = "/srv/herdr-gui-test/sessions/pi-session.jsonl";
@@ -76,5 +79,61 @@ describe("agent session file access", () => {
 
     expect(await files.statFile(remotePath)).toBeNull();
     expect(await files.findPiSessionById("missing")).toBeNull();
+  });
+
+  test("reads again only what was appended to a remote transcript", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "roamgate-remote-read-"));
+    const path = join(dir, "session.jsonl");
+    const outputs: number[] = [];
+    // The "host" is this machine: the remote commands run here.
+    const files = createAgentSessionFileAccess({
+      sshHost: "operator@example.com",
+      shQuote: quote,
+      async runBinaryProcessWithTimeout(argv) {
+        const command = (argv.at(-1) ?? "").replace(/^bash -lc /, "");
+        const proc = Bun.spawn(["bash", "-c", `eval ${command}`], {
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const stdout = Buffer.from(
+          await new Response(proc.stdout).arrayBuffer(),
+        );
+        outputs.push(stdout.length);
+        return {
+          code: await proc.exited,
+          stdout,
+          stderr: await new Response(proc.stderr).text(),
+        };
+      },
+    });
+    try {
+      const first = `${'{"text":"é"}\n'.repeat(1000)}`;
+      writeFileSync(path, first);
+      expect(await files.readText(path)).toBe(first);
+      appendFileSync(path, '{"text":"more"}\n');
+      expect(await files.readText(path)).toBe(`${first}{"text":"more"}\n`);
+      // The second read fetched the checked end and the new line only.
+      expect(outputs[1]).toBeLessThan(5000);
+      // Rewritten in place: the end no longer matches, so it is read whole.
+      const rewritten = first.replaceAll("é", "e");
+      writeFileSync(path, rewritten);
+      expect(await files.readText(path)).toBe(rewritten);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("finds a Claude session in a project folder that is a link", async () => {
+    const commands: string[] = [];
+    const files = createAgentSessionFileAccess({
+      sshHost: "operator@example.com",
+      shQuote: quote,
+      async runBinaryProcessWithTimeout(argv) {
+        commands.push(argv.at(-1) ?? "");
+        return { code: 44, stdout: Buffer.alloc(0), stderr: "" };
+      },
+    });
+    await files.findClaudeSessionById("8b7109b8-e5d2-4744-ac9a-9a8c7d2dd3dc");
+    expect(commands[0]).toContain("find -L ");
   });
 });

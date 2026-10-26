@@ -5,6 +5,14 @@ import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { SessionFile } from "./session-types";
 
 const SESSION_FILE_TIMEOUT_MS = 15_000;
+/** A whole transcript can be tens of MB: give a slow link time to send it. */
+const SESSION_READ_TIMEOUT_MS = 60_000;
+/**
+ * Remote transcripts kept so the next read only fetches what was appended,
+ * and how much of the end is fetched again to check the rest is unchanged.
+ */
+const KEPT_TEXT_BYTES = 128 * 1024 * 1024;
+const KEPT_TEXT_OVERLAP = 4096;
 
 type RunBinaryProcessWithTimeout = (
   argv: string[],
@@ -163,7 +171,10 @@ export function createAgentSessionFileAccess(args: {
   if (!args.sshHost) return localAgentSessionFiles;
   const host = args.sshHost;
 
-  async function runRemote(command: string) {
+  async function runRemote(
+    command: string,
+    timeoutMs = SESSION_FILE_TIMEOUT_MS,
+  ) {
     const result = await args.runBinaryProcessWithTimeout(
       sshReadCommandArgv(
         host,
@@ -171,7 +182,7 @@ export function createAgentSessionFileAccess(args: {
         [],
         "agent.session.read",
       ),
-      SESSION_FILE_TIMEOUT_MS,
+      timeoutMs,
     );
     if (result.code !== 0) {
       throw new Error(
@@ -225,7 +236,8 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$mtime" "$path64" "$identity" "$chan
 
   /**
    * The newest file named for a session under a directory on the host:
-   * `root` and `names` are shell (find) expressions using $id.
+   * `root` and `names` are shell (find) expressions using $id. Symbolic links
+   * are followed: project folders may link to where sessions are kept.
    */
   async function findRemoteSession(
     id: string,
@@ -246,7 +258,7 @@ while IFS= read -r -d '' candidate; do
     latest="$candidate"
     latest_mtime="$mtime"
   fi
-done < <(find "$root" -type f \\( ${names} \\) -print0)
+done < <(find -L "$root" -type f \\( ${names} \\) -print0)
 [ -n "$latest" ] || exit 44
 size="$(stat -c %s "$latest" 2>/dev/null || stat -f %z "$latest")"
 path64="$(printf '%s' "$latest" | base64 | tr -d '\\n')"
@@ -274,6 +286,61 @@ printf '%s\\t%s\\t%s\\n' "$size" "$latest_mtime" "$path64"
       );
     }
     return parseRemoteFileMetadata(result.stdout.toString("utf8"));
+  }
+
+  // Transcripts only grow: keep each one read, most recent last, and fetch
+  // only its new end next time, from a little before so a file rewritten
+  // in place shows up as a mismatch and is read whole.
+  const kept = new Map<string, { identity: string; bytes: Buffer }>();
+  let keptBytes = 0;
+  function forget(path: string) {
+    const old = kept.get(path);
+    if (old) keptBytes -= old.bytes.length;
+    kept.delete(path);
+  }
+  function keep(path: string, identity: string, bytes: Buffer) {
+    forget(path);
+    if (!identity || bytes.length > KEPT_TEXT_BYTES) return;
+    kept.set(path, { identity, bytes });
+    keptBytes += bytes.length;
+    while (keptBytes > KEPT_TEXT_BYTES) forget(kept.keys().next().value!);
+  }
+  async function readRemoteBytes(path: string): Promise<Buffer> {
+    const old = kept.get(path);
+    const overlap = old ? Math.min(KEPT_TEXT_OVERLAP, old.bytes.length) : 0;
+    const output = await runRemote(
+      `set -eu
+path=${args.shQuote(path)}
+known=${args.shQuote(old && overlap ? old.identity : "")}
+identity="$(stat -c '%d:%i' "$path" 2>/dev/null || stat -f '%d:%i' "$path")"
+if [ -n "$known" ] && [ "$identity" = "$known" ]; then
+  printf '%s\ttail\n' "$identity"
+  tail -c +${(old?.bytes.length ?? 0) - overlap + 1} "$path"
+else
+  printf '%s\tfull\n' "$identity"
+  cat "$path"
+fi`,
+      SESSION_READ_TIMEOUT_MS,
+    );
+    const newline = output.indexOf(10);
+    const [identity = "", mode] = output
+      .subarray(0, Math.max(0, newline))
+      .toString("utf8")
+      .split("\t");
+    const body = output.subarray(newline + 1);
+    let bytes: Buffer;
+    if (mode === "tail") {
+      const seen = old?.bytes.subarray(old.bytes.length - overlap);
+      if (!old || !seen || !body.subarray(0, overlap).equals(seen)) {
+        forget(path);
+        return readRemoteBytes(path);
+      }
+      bytes = Buffer.concat([old.bytes, body.subarray(overlap)]);
+    } else {
+      bytes = Buffer.from(body);
+    }
+    keep(path, identity, bytes);
+    return bytes;
   }
 
   return {
@@ -304,9 +371,7 @@ if matches:
       return path ? statFile(path) : null;
     },
     async readText(path) {
-      return (await runRemote(`set -eu\ncat ${args.shQuote(path)}`)).toString(
-        "utf8",
-      );
+      return (await readRemoteBytes(path)).toString("utf8");
     },
     async readPrefix(path, byteLimit) {
       return runRemote(

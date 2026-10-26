@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type {
@@ -80,9 +80,14 @@ async function walkFiles(root: string, match: (path: string) => boolean) {
     }
     for (const entry of entries) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
+      // Follow links: project folders may link to where sessions are kept.
+      // The depth limit ends a loop of links.
+      const target = entry.isSymbolicLink()
+        ? await stat(path).catch(() => null)
+        : entry;
+      if (target?.isDirectory()) {
         await visit(path, depth + 1);
-      } else if (entry.isFile() && match(path)) {
+      } else if (target?.isFile() && match(path)) {
         results.push(path);
       }
     }
