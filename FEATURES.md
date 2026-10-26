@@ -328,6 +328,10 @@ Inspector state is scoped to each checkout; see
   browser's voices, the speed button steps the browser's speaking rate.
   Starting voice chat while Speak reads with the server's voices lets it
   play on, until you talk over it.
+  A message queued in a Claude chat can be taken back before the agent
+  reads it (the cross beside **Queued**) or into the box to edit (the
+  pencil); Up in the empty box takes the whole queue back to edit, as in
+  Claude Code's prompt. The others stay queued, in order.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or

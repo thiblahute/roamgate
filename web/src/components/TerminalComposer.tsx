@@ -1,3 +1,4 @@
+import { useRenderTrace } from "../renderTrace";
 import {
   shortcutMatches,
   shortcutTitle,
@@ -138,6 +139,7 @@ export function TerminalComposer({
   onPreparePathInsertion?: () => (text: string) => Promise<void>;
   onError: (message: string) => void;
 }) {
+  useRenderTrace("TerminalComposer");
   useShortcutPreferences();
   const [text, setText] = useState(() => readTerminalComposerDraft(draftKey));
   const [submissionPending, setSubmissionPending] = useState(() =>

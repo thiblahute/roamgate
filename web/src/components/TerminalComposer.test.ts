@@ -124,6 +124,8 @@ test.each(["claude", "grok-build", "agy"])(
       spyOn(React, "useEffect").mockImplementation((run, deps) => {
         nextEffects.push({ run, deps });
       }),
+      // The render trace only times commits, which this harness has none of.
+      spyOn(React, "useLayoutEffect").mockImplementation(() => {}),
       // Stable across renders like React's, via the ref slots above.
       spyOn(React, "useCallback").mockImplementation(
         (callback) => React.useRef(callback).current,
