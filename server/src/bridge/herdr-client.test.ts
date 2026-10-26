@@ -93,6 +93,50 @@ describe("HerdrClient one-shot lifecycle", () => {
     );
   });
 
+  test("sends a request too large for one socket write", async () => {
+    const socketPath = join(
+      tmpdir(),
+      `herdr-gui-herdr-client-${process.pid}-${crypto.randomUUID()}.sock`,
+    );
+    const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      let received = "";
+      socket.on("data", (data) => {
+        received += data.toString("utf8");
+        const end = received.indexOf("\n");
+        if (end < 0) return;
+        const request = JSON.parse(received.slice(0, end));
+        socket.end(
+          `${JSON.stringify({ id: request.id, result: { length: request.params.text.length } })}\n`,
+        );
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+    const text = "long message ".repeat(70_000);
+    const result = await new HerdrClient(socketPath).call("pane.send_input", {
+      text,
+    });
+    expect(result).toEqual({ length: text.length });
+  });
+
+  test("refuses a request over Herdr's 1 MiB, clearly", async () => {
+    let connected = false;
+    const client = new HerdrClient(
+      await startServer(() => {
+        connected = true;
+      }),
+    );
+    await expect(
+      client.call("pane.send_input", { text: "x".repeat(1024 * 1024) }),
+    ).rejects.toThrow("too large for Herdr");
+    expect(connected).toBe(false);
+  });
+
   test("bounds a one-shot response without a newline", async () => {
     const client = new HerdrClient(
       await startServer((socket) => {

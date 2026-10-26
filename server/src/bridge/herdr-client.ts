@@ -22,6 +22,9 @@ export type HerdrSubscription =
  *     connection open after the ack and pushes events as subsequent lines
  *     of the shape `{ event: "<name>", data: { ... } }`.
  */
+/** The longest request line Herdr reads (1 MiB, found by trying). */
+const HERDR_MAX_REQUEST_BYTES = 1024 * 1024;
+
 export class HerdrClient extends EventEmitter {
   private logger: Logger;
   private connectionId: string | undefined;
@@ -60,6 +63,27 @@ export class HerdrClient extends EventEmitter {
       const connectionId = this.connectionId;
       const startedAt = performance.now();
       let writtenAt: number | null = null;
+      // What the socket has not taken yet: a long message (pane.send_input)
+      // does not fit in one write, and Herdr waits for the whole line.
+      let unsent = Buffer.from(request);
+      // Herdr drops a request line over 1 MiB without answering.
+      if (unsent.length > HERDR_MAX_REQUEST_BYTES) {
+        reject(
+          new Error(
+            `${method}: too large for Herdr (${Math.ceil(unsent.length / 1024)} KiB, at most 1024)`,
+          ),
+        );
+        return;
+      }
+      const sendRest = (socket: { write: (data: Buffer) => number }) => {
+        while (unsent.length) {
+          const written = socket.write(unsent);
+          // A full socket buffer: drain() sends the rest.
+          if (written <= 0) return;
+          unsent = unsent.subarray(written);
+        }
+        writtenAt = performance.now();
+      };
       let firstByteAt: number | null = null;
       let responseBytes = 0;
 
@@ -164,10 +188,19 @@ export class HerdrClient extends EventEmitter {
             }
             try {
               beforeSend?.();
-              // Requests are small; a short write only happens on a full
-              // socket buffer, which a fresh one-shot connection never has.
-              socket.write(request);
-              writtenAt = performance.now();
+              sendRest(socket);
+            } catch (error) {
+              finish(
+                error instanceof Error
+                  ? error
+                  : new Error("RPC dispatch rejected"),
+              );
+            }
+          },
+          drain(socket) {
+            if (done || !unsent.length) return;
+            try {
+              sendRest(socket);
             } catch (error) {
               finish(
                 error instanceof Error
