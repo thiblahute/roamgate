@@ -63,6 +63,7 @@ import { AgentHistoryCard } from "./AgentHistoryCard";
 import { AgentHistoryChat } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { voiceTrace } from "../voiceChat";
+import { useAgentSessionTitle } from "../agentSessionTitle";
 import { useVoiceChat } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
@@ -212,6 +213,7 @@ export function AgentHistoryDrawer({
     loaded: tasksLoaded,
   } = useAgentTasks(pane, !!paneChat && open);
   const agentCommands = useAgentCommands(pane, open);
+  const sessionTitle = useAgentSessionTitle(pane, open);
   const artifacts = useAgentArtifacts(pane, !!paneChat && open);
   const tasksById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
@@ -1549,13 +1551,20 @@ export function AgentHistoryDrawer({
       >
         <div className="agent-history-drawer-head">
           {paneChat ? (
-            <AgentIcon agent={pane.agent} />
+            <>
+              <AgentIcon agent={pane.agent} />
+              {sessionTitle ? (
+                <span className="agent-chat-title" title={sessionTitle}>
+                  {sessionTitle}
+                </span>
+              ) : null}
+            </>
           ) : (
             <div className="agent-history-identity">
               <AgentIcon agent={pane.agent} />
               <div className="agent-history-title">
                 <strong>
-                  Session
+                  {sessionTitle ?? "Session"}
                   {messages.length > 0 ? (
                     <span
                       className="agent-history-count"

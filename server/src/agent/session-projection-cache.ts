@@ -1,3 +1,4 @@
+import { parseSessionTitle } from "./session-title";
 import { parseSessionCommands } from "./session-commands";
 import { parseSessionTasks } from "./session-tasks";
 import { parseSessionArtifacts } from "./session-artifacts";
@@ -54,6 +55,8 @@ export async function readSessionProjection(
     tasks: agent === "claude" ? parseSessionTasks(records) : [],
     /** The pages a Claude session published with its Artifact tool. */
     artifacts: agent === "claude" ? parseSessionArtifacts(records) : [],
+    /** What a Claude session is about (session-title.ts). */
+    title: agent === "claude" ? parseSessionTitle(records) : null,
     /** The skills and custom commands a Claude session offers as /name. */
     commands: agent === "claude" ? parseSessionCommands(records) : [],
     stats: {

@@ -219,6 +219,8 @@ Inspector state is scoped to each checkout; see
   Any of the agent's messages can also be read aloud on its own (its speaker
   button, beside Copy); starting voice chat while one is read lets it play
   on, until you talk over it.
+  A Claude chat's top row says what its session is about: the name given
+  with /rename, else the title Claude Code wrote for it.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or
