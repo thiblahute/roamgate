@@ -1,3 +1,4 @@
+import { useRenderTrace } from "../renderTrace";
 import {
   memo,
   useCallback,
@@ -17,6 +18,7 @@ import {
   ExternalLink,
   RotateCw,
   Mic,
+  Pencil,
   Square,
   Volume2,
   Wrench,
@@ -64,14 +66,16 @@ const EMPTY_LOADING: ReadonlySet<string> = new Set();
 const noop = () => {};
 const NO_OUTBOX: readonly OutboxMessage[] = [];
 
+// A history refresh hands over new entry objects even for messages that did
+// not change: a bubble re-renders only when what it shows changed.
 type BubbleProps = {
   entry: HistoryEntry;
   sequence: number;
   highlighted: boolean;
   onOpen: (entry: HistoryEntry) => void;
+  onRemoveQueued?: (entry: HistoryEntry) => void;
+  onEditQueued?: (entry: HistoryEntry) => void;
 };
-// A history refresh hands over new entry objects even for messages that did
-// not change: a bubble re-renders only when what it shows changed.
 function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
   const x = a.entry;
   const y = b.entry;
@@ -79,6 +83,8 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
     a.sequence === b.sequence &&
     a.highlighted === b.highlighted &&
     a.onOpen === b.onOpen &&
+    a.onRemoveQueued === b.onRemoveQueued &&
+    a.onEditQueued === b.onEditQueued &&
     (x === y ||
       (x.id === y.id &&
         x.text === y.text &&
@@ -88,7 +94,8 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
         x.queued === y.queued &&
         x.compact_summary === y.compact_summary &&
         x.text_bytes === y.text_bytes &&
-        x.text_hash === y.text_hash))
+        x.text_hash === y.text_hash &&
+        x.artifact?.url === y.artifact?.url))
   );
 }
 
@@ -97,7 +104,10 @@ const ChatBubble = memo(function ChatBubble({
   sequence,
   highlighted,
   onOpen,
+  onRemoveQueued,
+  onEditQueued,
 }: BubbleProps) {
+  useRenderTrace("ChatBubble");
   const voice = useVoiceAvailable();
   const readable =
     voice && entry.role === "assistant" && entry.kind === "message";
@@ -188,6 +198,28 @@ const ChatBubble = memo(function ChatBubble({
           >
             Queued
           </span>
+        ) : null}
+        {entry.queued && onEditQueued ? (
+          <button
+            type="button"
+            className="agent-history-copy agent-history-chat-edit-queued"
+            onClick={() => onEditQueued(entry)}
+            aria-label="Edit this queued message"
+            title="Take it back into the box to edit (Up in the empty box takes them all)"
+          >
+            <Pencil size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+        {entry.queued && onRemoveQueued ? (
+          <button
+            type="button"
+            className="agent-history-copy agent-history-chat-unqueue"
+            onClick={() => onRemoveQueued(entry)}
+            aria-label="Take this message out of the queue"
+            title="Take it out of the queue: the agent never gets it"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
         ) : null}
         <time dateTime={entry.sent_at} title={entry.sent_at}>
           {formatUiDateTime(entry.sent_at)}
@@ -683,6 +715,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onDiscardSend,
   tasks,
   onOpenTask,
+  onRemoveQueued,
+  onEditQueued,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -701,7 +735,12 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   /** The session's background tasks, by the tool call that started each. */
   tasks?: ReadonlyMap<string, AgentTask>;
   onOpenTask?: (id: string) => void;
+  /** Takes a queued message back before the agent reads it. */
+  onRemoveQueued?: (entry: HistoryEntry) => void;
+  /** Takes a queued message back into the box to edit. */
+  onEditQueued?: (entry: HistoryEntry) => void;
 }) {
+  useRenderTrace("AgentHistoryChat");
   const followRef = useRef(true);
   const queueRef = useRef<HistoryEntry[]>([]);
   const [queueVersion, setQueueVersion] = useState(0);
@@ -798,6 +837,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               sequence={item.sequence}
               highlighted={highlightedSequence === item.sequence}
               onOpen={onOpen}
+              onRemoveQueued={onRemoveQueued}
+              onEditQueued={onEditQueued}
             />
           ) : (
             <ToolBlock

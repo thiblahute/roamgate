@@ -112,6 +112,11 @@ function responseHeaders(pathname: string): Record<string, string> {
       // Revalidate both install metadata and the entry document after a name
       // change or update. Shared caches must not reuse authenticated responses.
       "cache-control": "private, no-cache, must-revalidate",
+      // TEMPORARY: with voice debugging, the page may sample its own
+      // JavaScript (the composer's typing latency traces).
+      ...(pathname === "/index.html" && process.env.ROAMGATE_VOICE_DEBUG
+        ? { "document-policy": "js-profiling" }
+        : {}),
     };
   }
   return headers;

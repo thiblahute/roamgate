@@ -335,7 +335,8 @@ function projectClaudeTrajectory(
   const steps: Omit<AtifStep, "step_id">[] = [];
   // Claude's queue of messages sent while it works: enqueue adds, remove
   // takes one it absorbed mid-turn (shown below as a queued command),
-  // dequeue takes the oldest for a new turn (a user record). What is left
+  // dequeue takes the oldest for a new turn (a user record), popAll (one
+  // record per message) gives them back to the prompt, on Up. What is left
   // still waits.
   const queue: { content: string; timestamp: string }[] = [];
   records.forEach((record, index) => {
@@ -349,7 +350,8 @@ function projectClaudeTrajectory(
           if (content.trim() && !/^\s*<[a-z-]+[\s>]/i.test(content))
             queue.push({ content, timestamp });
           break;
-        case "remove": {
+        case "remove":
+        case "popAll": {
           const at = queue.findIndex((queued) => queued.content === content);
           if (at >= 0) queue.splice(at, 1);
           break;

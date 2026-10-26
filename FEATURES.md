@@ -219,6 +219,10 @@ Inspector state is scoped to each checkout; see
   Any of the agent's messages can also be read aloud on its own (its speaker
   button, beside Copy); starting voice chat while one is read lets it play
   on, until you talk over it.
+  A message queued in a Claude chat can be taken back before the agent
+  reads it (the cross beside **Queued**) or into the box to edit (the
+  pencil); Up in the empty box takes the whole queue back to edit, as in
+  Claude Code's prompt. The others stay queued, in order.
   A Claude chat's top row says what its session is about: the name given
   with /rename, else the title Claude Code wrote for it.
   A Claude chat also lists what the session runs on the side (the tasks

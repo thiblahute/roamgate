@@ -219,6 +219,16 @@ test("Claude messages still in its queue show as queued until they land", () => 
     ["first", false],
     ["third", true],
   ]);
+  // Up gives the whole queue back to the prompt; one is sent again.
+  expect(
+    project([
+      ...waiting,
+      op("popAll", "first"),
+      op("popAll", "second"),
+      op("popAll", "third"),
+      op("enqueue", "third"),
+    ]),
+  ).toEqual([["third", true]]);
 });
 
 test("Claude mixed text/tool blocks retain order and error output is not counted as a user turn", () => {

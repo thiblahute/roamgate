@@ -1,3 +1,4 @@
+import { useRenderTrace } from "../renderTrace";
 import { createPortal } from "react-dom";
 import {
   createReviewAnnotation,
@@ -392,6 +393,7 @@ export function TerminalView({
   onAgentHistoryOpenChange?: (open: boolean) => void;
   onOpenWorkspaceFile?: (request: TerminalWorkspaceFileRequest) => void;
 }) {
+  useRenderTrace("TerminalView");
   const s = useStoreSelector(
     (state) => ({
       activeConnectionId: state.activeConnectionId,
