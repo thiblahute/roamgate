@@ -372,6 +372,10 @@ export function AgentHistoryDrawer({
           )
           .filter(Boolean);
         setError(errors.join("\n"));
+        // TEMPORARY: what a chat load got, to find why one never shows.
+        voiceTrace(
+          `chat load ${pane.pane_id}: history ${historyResult.status === "fulfilled" ? `${(historyResult.value as AgentHistoryResponse)?.status} ${JSON.stringify(historyResult.value).length}B` : "failed"}, session ${sessionResult.status === "fulfilled" ? (sessionResult.value as AgentSessionSummary)?.status : "failed"}${errors.length ? `, errors: ${errors.join(" | ")}` : ""}`,
+        );
       })
       .finally(() => {
         if (inFlightRef.current === seq) inFlightRef.current = null;
