@@ -1017,6 +1017,96 @@ test("a comment on a part of a message reaches the agent with its quote", async 
   ).rejects.toThrow("a message part needs its thread, comment and quote");
 });
 
+test("a chat's threads: no diff, kept out of the reviews, sent with context", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const prompts: string[] = [];
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => {
+      throw new Error("a chat has no diff");
+    },
+    deliveryDelayMs: 10,
+    promptAgent: async (_connection, _pane, text) => {
+      prompts.push(text);
+    },
+  });
+  services.push(service);
+  const review = openSession(service);
+  const chat = service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "chat", chat: "claude-session-1" },
+    agent: "Claude",
+    paneId: "w1:p2",
+  }).session;
+  expect(chat.id).not.toBe(review.id);
+  expect(chat.title).toBe("chat");
+  expect(
+    service.open({
+      connectionId: "local",
+      root: "/repo",
+      target: { kind: "chat", chat: "claude-session-1" },
+    }).session.id,
+  ).toBe(chat.id);
+  expect(await service.diff({ sessionId: chat.id })).toEqual({
+    files: [],
+    truncated: false,
+  });
+  expect(
+    service
+      .list({ connectionId: "local", root: "/repo" })
+      .map((snapshot) => snapshot.session.id),
+  ).toEqual([review.id]);
+  const thread = await service.addThread({
+    sessionId: chat.id,
+    anchor: {
+      chat: {
+        entry: "entry-7",
+        at: "2026-10-27T14:32:00",
+        excerpt: "I still can't reach the review",
+        quote: "Could you reopen the review?",
+      },
+    },
+    text: "Yes, done.",
+  });
+  expect(thread.anchor.chat?.entry).toBe("entry-7");
+  await Bun.sleep(60);
+  const prompt = prompts.join("\n");
+  expect(prompt).toContain("from me on parts of your messages in this chat");
+  expect(prompt).toContain(
+    'on your message of 14:32 that starts "I still can\'t reach the review", about this part:',
+  );
+  expect(prompt).toContain("  > Could you reopen the review?");
+  expect(prompt).toContain("not on code");
+  // A thread on a part of that thread's message: no checkout to name.
+  prompts.length = 0;
+  await service.addThread({
+    sessionId: chat.id,
+    anchor: {
+      message: {
+        thread: thread.id,
+        comment: thread.comments[0]!.id,
+        quote: "Yes, done.",
+      },
+    },
+    text: "Which one?",
+  });
+  await Bun.sleep(60);
+  expect(prompts.join("\n")).toContain(
+    `on a part of a message in thread [${thread.id.slice(0, 8)}]:`,
+  );
+  expect(prompts.join("\n")).not.toContain("the whole change");
+  await expect(
+    service.addThread({
+      sessionId: chat.id,
+      anchor: { chat: { entry: "entry-7", quote: "" } },
+      text: "No quote",
+    }),
+  ).rejects.toThrow("a chat part needs its message and quote");
+});
+
 test("attaching an agent delivers what was written; failures are reported", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);

@@ -73,6 +73,17 @@ export function threadOutput(thread: ReviewThread) {
     end_line: thread.anchor.endLine ?? thread.anchor.line ?? null,
     side: thread.anchor.side ?? null,
     code: thread.anchor.text ?? null,
+    // On a part of a chat message: which one, and the words quoted.
+    ...(thread.anchor.chat
+      ? {
+          on_chat_message: {
+            entry: thread.anchor.chat.entry,
+            at: thread.anchor.chat.at ?? null,
+            excerpt: thread.anchor.chat.excerpt ?? null,
+            quote: thread.anchor.chat.quote,
+          },
+        }
+      : {}),
     // On a part of an earlier message: which one, and the words quoted.
     ...(thread.anchor.message
       ? {

@@ -1,0 +1,215 @@
+/*
+ * The comments panel (ThreadsPanel) and its chip. App tokens by default
+ * (an agent chat); the review overlay maps them to its palette.
+ */
+.threads-panel,
+.threads-chip {
+  --tp-bg: var(--panel);
+  --tp-surface: var(--panel-2);
+  --tp-border: var(--border);
+  --tp-text: var(--text);
+  --tp-muted: var(--muted);
+  --tp-accent: #e0a84f;
+  --tp-shadow: var(--shadow-lg);
+}
+
+:root[data-theme="light"] :is(.threads-panel, .threads-chip) {
+  --tp-accent: #9a6200;
+}
+
+.threads-chip {
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--tp-accent) 50%, var(--tp-border));
+  border-radius: 999px;
+  background: var(--tp-bg);
+  color: var(--tp-accent);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.threads-chip[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--tp-accent) 14%, var(--tp-bg));
+}
+
+.threads-panel {
+  display: flex;
+  width: min(440px, calc(100% - 32px));
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--tp-border);
+  border-radius: 8px;
+  background: var(--tp-bg);
+  color: var(--tp-text);
+  box-shadow: var(--tp-shadow);
+  font-size: 13px;
+  outline: none;
+}
+
+.threads-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.threads-panel-head strong {
+  font-size: 14px;
+}
+
+.threads-panel-count,
+.threads-panel-when,
+.threads-panel-meta,
+.threads-panel-note {
+  color: var(--tp-muted);
+  font-size: 11px;
+}
+
+.threads-panel-head .threads-panel-count {
+  flex: 1;
+  color: var(--tp-accent);
+}
+
+.threads-panel-close {
+  border: none;
+  background: transparent;
+  color: var(--tp-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.threads-panel-search {
+  padding: 5px 8px;
+  border: 1px solid var(--tp-border);
+  border-radius: 6px;
+  background: var(--tp-surface);
+  color: var(--tp-text);
+  font: inherit;
+}
+
+.threads-panel-note {
+  margin: 4px;
+}
+
+.threads-panel-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.threads-panel-item {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-left: 3px solid var(--tp-accent);
+  border-radius: 6px;
+}
+
+.threads-panel-item.is-resolved {
+  border-left-color: var(--tp-muted);
+}
+
+.threads-panel-item.is-selected {
+  border-color: color-mix(in srgb, var(--tp-accent) 45%, var(--tp-border));
+  border-left-color: var(--tp-accent);
+  background: color-mix(in srgb, var(--tp-accent) 10%, transparent);
+}
+
+.threads-panel-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.threads-panel-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tp-text);
+  font: inherit;
+  font-style: italic;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.threads-panel-where:hover {
+  text-decoration: underline;
+}
+
+.threads-panel-summary {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--tp-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.threads-panel-fold {
+  flex: none;
+  color: var(--tp-muted);
+}
+
+.threads-panel-first {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.threads-panel-summary .threads-panel-count {
+  flex: none;
+}
+
+.threads-panel-message {
+  margin: 4px 0 0 14px;
+  padding-top: 4px;
+  border-top: 1px solid var(--tp-border);
+}
+
+.threads-panel-author {
+  display: block;
+  color: var(--tp-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.threads-panel-reply {
+  margin: 6px 0 0 14px;
+}
+
+.threads-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.threads-panel-actions button {
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tp-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.threads-panel-actions button:hover {
+  border-color: var(--tp-border);
+  color: var(--tp-text);
+}

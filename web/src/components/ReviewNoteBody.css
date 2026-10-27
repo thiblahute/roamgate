@@ -1,0 +1,227 @@
+/*
+ * A comment's body (ReviewNoteBody): parts, code, suggestions and syntax
+ * colors. The review overlay sets the --rv-* palette; an agent chat takes it
+ * from the app's theme (.chat-review).
+ */
+.chat-review {
+  --rv-surface: var(--panel-2);
+  --rv-surface-2: var(--input-bg);
+  --rv-border: var(--border);
+  --rv-text: var(--text);
+  --rv-muted: var(--muted);
+  --rv-faint: color-mix(in srgb, var(--muted) 70%, transparent);
+  --rv-accent: var(--accent);
+  --rv-accent-soft: var(--accent-soft);
+  --rv-agent: var(--accent);
+  --rv-agent-soft: var(--accent-soft);
+  --rv-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --rv-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --rv-sans: inherit;
+  --rv-syn-kw: var(--syntax-keyword);
+  --rv-syn-str: var(--syntax-string);
+  --rv-syn-com: var(--syntax-comment);
+  --rv-syn-num: var(--syntax-number);
+  --rv-syn-def: var(--syntax-function);
+  --rv-syn-type: var(--syntax-type);
+  --rv-syn-meta: var(--syntax-meta);
+  --rv-syn-prop: var(--syntax-property);
+}
+
+/* Syntax colours: maildesk's palette over highlight.js classes */
+:is(.review-overlay, .chat-review) .hljs-keyword,
+:is(.review-overlay, .chat-review) .hljs-built_in,
+:is(.review-overlay, .chat-review) .hljs-literal {
+  color: var(--rv-syn-kw);
+}
+
+:is(.review-overlay, .chat-review) .hljs-string,
+:is(.review-overlay, .chat-review) .hljs-regexp,
+:is(.review-overlay, .chat-review) .hljs-char {
+  color: var(--rv-syn-str);
+}
+
+:is(.review-overlay, .chat-review) .hljs-comment,
+:is(.review-overlay, .chat-review) .hljs-quote {
+  color: var(--rv-syn-com);
+  font-style: italic;
+}
+
+:is(.review-overlay, .chat-review) .hljs-number,
+:is(.review-overlay, .chat-review) .hljs-symbol {
+  color: var(--rv-syn-num);
+}
+
+:is(.review-overlay, .chat-review) .hljs-title,
+:is(.review-overlay, .chat-review) .hljs-section,
+:is(.review-overlay, .chat-review) .hljs-function {
+  color: var(--rv-syn-def);
+}
+
+:is(.review-overlay, .chat-review) .hljs-type,
+:is(.review-overlay, .chat-review) .hljs-class {
+  color: var(--rv-syn-type);
+}
+
+:is(.review-overlay, .chat-review) .hljs-meta,
+:is(.review-overlay, .chat-review) .hljs-tag,
+:is(.review-overlay, .chat-review) .hljs-name {
+  color: var(--rv-syn-meta);
+}
+
+:is(.review-overlay, .chat-review) .hljs-attr,
+:is(.review-overlay, .chat-review) .hljs-attribute,
+:is(.review-overlay, .chat-review) .hljs-property,
+:is(.review-overlay, .chat-review) .hljs-variable {
+  color: var(--rv-syn-prop);
+}
+
+/* Rendered Markdown: its own line breaks, not the source's (a comment's
+   plain text keeps them, .rc .rc-text). */
+.rc-text.rich,
+.rc .rc-text.rich {
+  white-space: normal;
+}
+
+.rc-text.rich p {
+  margin: 6px 0;
+}
+
+.rc-text.rich :is(ul, ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.rc-text.rich :is(h1, h2, h3, h4, h5, h6) {
+  margin: 6px 0 2px;
+  font-size: inherit;
+}
+
+.rc-text.rich blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--rv-border);
+  color: var(--rv-faint);
+}
+
+.rc-text.rich code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--rv-accent-soft);
+}
+
+.rc-text.rich img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 480px;
+  margin: 4px 0;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+}
+
+.rc-text.rich a {
+  color: var(--rv-accent);
+  text-decoration: underline;
+}
+
+/* Code in comments and GitLab suggestions */
+.note-code {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--rv-surface-2);
+  font: 12px / 1.45 var(--rv-code);
+  white-space: pre-wrap;
+}
+
+.suggestion {
+  margin: 6px 0;
+  overflow: hidden;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  font: 12px / 1.45 var(--rv-code);
+}
+
+.sg-head {
+  padding: 3px 8px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.sg-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sg-no {
+  padding-right: 6px;
+  color: var(--rv-faint);
+  text-align: right;
+}
+
+.sg-del {
+  background: rgba(248, 81, 73, 0.14);
+}
+
+.sg-add {
+  background: rgba(46, 160, 67, 0.14);
+}
+
+/* A long message in parts one comments on: + in the margin, the part j / k
+   is on, and the comments on a part right under it. */
+.rc-part {
+  position: relative;
+  border-radius: 4px;
+}
+
+.rc-part.is-focused {
+  background: var(--rv-accent-soft);
+  box-shadow: inset 2px 0 var(--rv-accent);
+}
+
+.rc-part.has-notes {
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--rv-accent) 55%, transparent);
+}
+
+.rc-part-add {
+  position: absolute;
+  top: 1px;
+  left: -22px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+  background: var(--rv-surface-2);
+  color: var(--rv-muted);
+  font: 12px / 16px var(--rv-sans);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rc-part:hover > .rc-part-add,
+.rc-part.is-focused > .rc-part-add,
+.rc-part-add:focus-visible {
+  opacity: 1;
+}
+
+.rc-part-add:hover {
+  border-color: var(--rv-accent);
+  color: var(--rv-text);
+}
+
+/* A code line's + sits outside its block's padding. */
+.rc-code-line > .rc-part-add {
+  left: -30px;
+}
+
+.rc-part-notes {
+  margin: 4px 0 8px 14px;
+}
+
+/* A comment on a part sits under it, not at a line's comment indent. */
+.rc-part-notes > .rc {
+  margin: 0;
+}

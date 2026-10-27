@@ -182,17 +182,6 @@
   white-space: nowrap;
 }
 
-.review-head .rv-group {
-  display: flex;
-  flex: none;
-  gap: 4px;
-}
-
-.review-head .rv-group + .rv-group {
-  padding-left: 10px;
-  border-left: 1px solid var(--rv-border);
-}
-
 .review-overlay .rv-sm {
   padding: 4px 10px;
   font-size: 13px;
@@ -209,9 +198,63 @@
   font-weight: 600;
 }
 
-/* The View group's Diff only, next to Close when that group is hidden. */
-.review-head .rv-only {
-  display: none;
+/* The head's groups: view toggles as icons, the agent's Send and menu, and
+   the rest behind ⋯. */
+.review-head .icon-btn {
+  flex: none;
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+  color: var(--rv-muted);
+}
+
+.review-head .icon-btn:hover {
+  background: var(--rv-surface-2);
+  color: var(--rv-text);
+}
+
+.review-head .icon-btn.on {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+}
+
+.review-head .rv-tools,
+.review-head .rv-agent {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.review-head .rv-tools {
+  padding: 2px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+}
+
+.review-head .rv-tools .icon-btn {
+  width: 30px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.review-head .rv-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--rv-accent);
+  color: var(--accent-contrast, #fff);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.review-head .rv-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* The branch's merge request: the review's mode, and the switch. */
@@ -228,19 +271,139 @@
   color: var(--rv-muted);
 }
 
-@media (max-width: 1100px) {
-  .review-head .rv-group[aria-label="View"] {
-    display: none;
-  }
+/* GitLab mode, at a glance: the head is underlined in the accent. */
+.review-head.is-gitlab {
+  border-bottom-color: var(--rv-accent);
+  box-shadow: inset 0 -1px 0 var(--rv-accent);
+}
 
-  .review-head .rv-only {
-    display: inline-flex;
+/* The review's mode as a switch, shown where the head has room for it
+   (the chip above stands in for it in a narrow window). */
+.review-head .rv-mode-switch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.review-head .rv-mode-mr {
+  padding: 0 6px 0 4px;
+  color: var(--rv-muted);
+}
+
+.review-head .rv-mode-switch button {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rv-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.review-head .rv-mode-switch button:hover {
+  background: var(--rv-surface-2);
+  color: var(--rv-text);
+}
+
+.review-head .rv-mode-switch button.on {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+  font-weight: 600;
+  cursor: default;
+}
+
+@media (min-width: 1101px) {
+  .review-head .rv-mr-chip {
+    display: none;
   }
 }
 
-/* A narrow window (a phone either way up) shows part of the header: it
-   scrolls, and Diff only and Close stay in reach. */
+.review-head .rv-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.review-head .rv-mode {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+  font-size: 11px;
+}
+
+.rv-menu-root {
+  position: relative;
+  flex: none;
+}
+
+.rv-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  min-width: 240px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+  background: var(--rv-surface);
+  box-shadow: var(--rv-shadow);
+}
+
+.rv-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--rv-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rv-menu button:hover,
+.rv-menu button:focus-visible {
+  background: var(--rv-surface-2);
+  outline: none;
+}
+
+.rv-menu button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.rv-menu-check {
+  width: 14px;
+  color: var(--rv-accent);
+}
+
+.rv-menu-label {
+  flex: 1;
+}
+
+.rv-menu kbd {
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+/* A narrow window (a phone either way up): the head scrolls, Close stays in
+   reach. */
 @media (max-width: 1100px) {
+  .review-head .threads-chip-total,
+  .review-head .rv-mode-switch {
+    display: none;
+  }
+
   .review-head {
     overflow-x: auto;
     scrollbar-width: none;
@@ -250,24 +413,9 @@
     position: sticky;
     right: -14px;
     z-index: 1;
-    flex: none;
     margin-left: auto;
     background: var(--rv-bg);
     box-shadow: -8px 0 8px var(--rv-bg);
-  }
-  /* Diff only stays beside Close. */
-  .review-head .rv-only {
-    position: sticky;
-    right: 22px;
-    z-index: 1;
-    flex: none;
-    margin-left: auto;
-    background: var(--rv-bg);
-    box-shadow: -8px 0 8px var(--rv-bg);
-  }
-
-  .review-head .rv-only + .rv-close {
-    margin-left: 0;
   }
 }
 
@@ -696,54 +844,6 @@
   color: inherit;
 }
 
-/* Syntax colours: maildesk's palette over highlight.js classes */
-.review-overlay .hljs-keyword,
-.review-overlay .hljs-built_in,
-.review-overlay .hljs-literal {
-  color: var(--rv-syn-kw);
-}
-
-.review-overlay .hljs-string,
-.review-overlay .hljs-regexp,
-.review-overlay .hljs-char {
-  color: var(--rv-syn-str);
-}
-
-.review-overlay .hljs-comment,
-.review-overlay .hljs-quote {
-  color: var(--rv-syn-com);
-  font-style: italic;
-}
-
-.review-overlay .hljs-number,
-.review-overlay .hljs-symbol {
-  color: var(--rv-syn-num);
-}
-
-.review-overlay .hljs-title,
-.review-overlay .hljs-section,
-.review-overlay .hljs-function {
-  color: var(--rv-syn-def);
-}
-
-.review-overlay .hljs-type,
-.review-overlay .hljs-class {
-  color: var(--rv-syn-type);
-}
-
-.review-overlay .hljs-meta,
-.review-overlay .hljs-tag,
-.review-overlay .hljs-name {
-  color: var(--rv-syn-meta);
-}
-
-.review-overlay .hljs-attr,
-.review-overlay .hljs-attribute,
-.review-overlay .hljs-property,
-.review-overlay .hljs-variable {
-  color: var(--rv-syn-prop);
-}
-
 /* The cursor's word reads in the background colour over any token colour. */
 .review-diff .rv-word,
 .review-diff .rv-word[class*="hljs-"] {
@@ -802,51 +902,6 @@
 
 .rc .rc-text {
   white-space: pre-wrap;
-}
-
-.rc-text.rich {
-  white-space: normal;
-}
-
-.rc-text.rich p {
-  margin: 6px 0;
-}
-
-.rc-text.rich :is(ul, ol) {
-  margin: 4px 0;
-  padding-left: 20px;
-}
-
-.rc-text.rich blockquote {
-  margin: 4px 0;
-  padding-left: 10px;
-  border-left: 3px solid var(--rv-border);
-  color: var(--rv-faint);
-}
-
-.rc-text.rich :is(h1, h2, h3, h4, h5, h6) {
-  margin: 6px 0 2px;
-  font-size: inherit;
-}
-
-.rc-text.rich code {
-  padding: 0 3px;
-  border-radius: 3px;
-  background: var(--rv-accent-soft);
-}
-
-.rc-text.rich img {
-  display: block;
-  max-width: min(100%, 720px);
-  max-height: 480px;
-  margin: 4px 0;
-  border: 1px solid var(--rv-border);
-  border-radius: 4px;
-}
-
-.rc-text.rich a {
-  color: var(--rv-accent);
-  text-decoration: underline;
 }
 
 .rc .rc-reply {
@@ -1015,52 +1070,6 @@
 .mr-where {
   margin-left: 8px;
   font-size: 11px;
-}
-
-/* Code in comments and GitLab suggestions */
-.note-code {
-  margin: 6px 0;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--rv-surface-2);
-  font: 12px / 1.45 var(--rv-code);
-  white-space: pre-wrap;
-}
-
-.suggestion {
-  margin: 6px 0;
-  overflow: hidden;
-  border: 1px solid var(--rv-border);
-  border-radius: 6px;
-  font: 12px / 1.45 var(--rv-code);
-}
-
-.sg-head {
-  padding: 3px 8px;
-  background: var(--rv-surface-2);
-  color: var(--rv-faint);
-  font-size: 11px;
-}
-
-.sg-row {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.sg-no {
-  padding-right: 6px;
-  color: var(--rv-faint);
-  text-align: right;
-}
-
-.sg-del {
-  background: rgba(248, 81, 73, 0.14);
-}
-
-.sg-add {
-  background: rgba(46, 160, 67, 0.14);
 }
 
 /* Modes */
@@ -1233,106 +1242,7 @@
   font-size: 1.5em;
 }
 
-/* Conversations */
-.review-threads {
-  width: min(820px, calc(100vw - 32px));
-}
-
-.rt-item {
-  margin: 10px 0;
-  padding: 8px 10px;
-  border: 1px solid var(--rv-border);
-  border-radius: 8px;
-}
-
-.rt-top {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-}
-
-.rt-item.selected {
-  border-color: var(--rv-accent);
-  box-shadow: 0 0 0 1px var(--rv-accent);
-}
-
-.review-threads:focus {
-  outline: none;
-}
-
-.rt-head {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  width: 100%;
-  padding: 0 0 4px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.rt-head .rt-where {
-  color: var(--rv-accent);
-  font-weight: 600;
-}
-
-.rt-head .rt-when {
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-.rt-item.resolved {
-  opacity: 0.8;
-}
-
-/* A resolved conversation, summed up in one line until expanded. */
-.rt-summary {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  width: 100%;
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  color: var(--rv-muted);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.rt-summary .rt-summary-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rt-summary .note {
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-.rt-comment {
-  padding: 4px 0;
-  border-top: 1px solid var(--rv-border);
-}
-
-.rt-author {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.rt-author.by-claude {
-  color: var(--rv-accent);
-}
-
-#review-keys-filter,
-#review-threads-filter {
+#review-keys-filter {
   width: 100%;
   margin: 6px 0 10px;
   padding: 7px 10px;
@@ -1598,63 +1508,6 @@
   font-size: 11px;
 }
 
-/* A long message in parts one comments on: + in the margin, the part j / k
-   is on, and the comments on a part right under it. */
-.rc-part {
-  position: relative;
-  border-radius: 4px;
-}
-
-.rc-part.is-focused {
-  background: var(--rv-accent-soft);
-  box-shadow: inset 2px 0 var(--rv-accent);
-}
-
-.rc-part.has-notes {
-  box-shadow: inset 2px 0 color-mix(in srgb, var(--rv-accent) 55%, transparent);
-}
-
-.rc-part-add {
-  position: absolute;
-  top: 1px;
-  left: -22px;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--rv-border);
-  border-radius: 4px;
-  background: var(--rv-surface-2);
-  color: var(--rv-muted);
-  font: 12px / 16px var(--rv-sans);
-  opacity: 0;
-  cursor: pointer;
-}
-
-.rc-part:hover > .rc-part-add,
-.rc-part.is-focused > .rc-part-add,
-.rc-part-add:focus-visible {
-  opacity: 1;
-}
-
-.rc-part-add:hover {
-  border-color: var(--rv-accent);
-  color: var(--rv-text);
-}
-
-/* A code line's + sits outside its block's padding. */
-.rc-code-line > .rc-part-add {
-  left: -30px;
-}
-
-.rc-part-notes {
-  margin: 4px 0 8px 14px;
-}
-
-/* A comment on a part sits under it, not at a line's comment indent. */
-.rc-part-notes > .rc {
-  margin: 0;
-}
-
 .rc-select-comment {
   position: fixed;
   z-index: 5600;
@@ -1665,4 +1518,32 @@
   color: var(--rv-text);
   box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
   cursor: pointer;
+}
+
+/* The conversations (ThreadsPanel): on the right of the review, under its
+   head, in the review's palette; their chip at the head's right end. */
+.review-body {
+  position: relative;
+}
+
+.review-overlay :is(.threads-panel, .threads-chip) {
+  --tp-bg: var(--rv-surface);
+  --tp-surface: var(--rv-surface-2);
+  --tp-border: var(--rv-border);
+  --tp-text: var(--rv-text);
+  --tp-muted: var(--rv-muted);
+  --tp-accent: var(--rv-accent);
+  --tp-shadow: var(--rv-shadow);
+}
+
+.review-threads-panel {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  bottom: 8px;
+  z-index: 20;
+}
+
+.review-threads-chip {
+  margin-left: 6px;
 }

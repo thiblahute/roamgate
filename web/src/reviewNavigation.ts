@@ -306,6 +306,7 @@ const SEQUENCES = new Set([
   "gl",
   "gm",
   "gc",
+  "g;",
   "dd",
   "zz",
   "zt",

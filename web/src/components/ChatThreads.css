@@ -1,0 +1,176 @@
+/* A wrapper only: the chat lays out as without it. */
+.chat-threads-scope {
+  display: contents;
+}
+
+/* j / k in the conversation: the list has the keys, not a ring. */
+.agent-history-chat:focus {
+  outline: none;
+}
+
+/* Threads on parts of an agent chat's messages (ChatThreads), in a color of
+   their own: they are not messages of the conversation, whatever the theme
+   and accent. */
+.chat-review,
+.chat-threads-chip,
+.chat-threads-overview {
+  --chat-comment: #e0a84f;
+}
+
+:root[data-theme="light"]
+  :is(.chat-review, .chat-threads-chip, .chat-threads-overview) {
+  --chat-comment: #9a6200;
+}
+
+.chat-thread {
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--chat-comment) 35%, var(--border));
+  border-left: 3px solid var(--chat-comment);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--chat-comment));
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.chat-thread.is-resolved {
+  border-left-color: var(--muted);
+  background: var(--panel);
+}
+
+.chat-thread.is-folded {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.chat-thread-mark,
+.chat-thread-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-thread-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread-message + .chat-thread-message {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.chat-thread-author {
+  display: block;
+  color: var(--chat-comment);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chat-thread-message.from-agent .chat-thread-author {
+  color: var(--text);
+}
+
+.chat-thread-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.chat-thread-bar button {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-thread-bar button:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.chat-thread-bar button.is-primary {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chat-thread-hint {
+  flex: 1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-thread-select {
+  position: fixed;
+  z-index: 200;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-tooltip);
+  cursor: pointer;
+}
+
+.chat-thread-error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 12px;
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+/* The thread message (or folded thread) j / k are on: its bar beside the
+   text, not over it. */
+.chat-thread-message.is-focused,
+.chat-thread.is-folded.is-focused {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--chat-comment) 16%, transparent);
+  box-shadow: inset 2px 0 var(--chat-comment);
+}
+
+.chat-thread-message.is-focused {
+  padding-left: 8px;
+}
+
+/* In a chat: the parts commented on, in the comments' color; the part j / k
+   is on keeps its text clear of its bar. */
+.chat-review .rc-part.has-notes {
+  box-shadow: inset 2px 0 var(--chat-comment);
+}
+
+.chat-review .rc-part.has-notes,
+.chat-review .rc-part.is-focused {
+  padding-left: 8px;
+}
+
+/* The chat's comments: the chip at the top right of the chat, their panel
+   under it (ThreadsPanel). */
+.chat-threads-chip {
+  position: absolute;
+  top: 8px;
+  right: 24px;
+  z-index: 3;
+}
+
+.chat-threads-panel {
+  position: absolute;
+  top: 40px;
+  right: 16px;
+  bottom: 8px;
+  z-index: 4;
+}

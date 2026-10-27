@@ -117,6 +117,7 @@ import {
   voiceSessions,
 } from "../voiceRoute";
 import { setPaneView } from "../paneView";
+import { ChatThreadsProvider } from "./ChatThreads";
 import "./AgentHistoryDrawer.css";
 
 function formatRelativeTime(timestamp: string) {
@@ -820,6 +821,10 @@ export function AgentHistoryDrawer({
     [wideListRatio],
   );
   const sessionReady = session?.status === "ok";
+  /** The chat its threads belong to: the agent's session. */
+  const chatThreadsKey = sessionReady
+    ? (session?.session?.value ?? session?.path ?? null)
+    : null;
   const historyReady = history?.status === "ok" || messages.length > 0;
   const hasSessionData = sessionReady || historyReady;
   const unavailable = !loading && !hasSessionData;
@@ -1692,35 +1697,74 @@ export function AgentHistoryDrawer({
       }}
     >
       {!paneChat || searchOpen || query ? historySearch : null}
-      {(paneOutbox.length ? null : historyEmptyState) ?? (
-        <div className="agent-history-chat-frame">
-          <AgentHistoryChat
-            items={chatItems}
-            listRef={contentRef}
-            contentRef={timelineRef}
-            highlightedSequence={highlightedSequence}
-            followKey={query}
-            toolLoading={toolEntryLoading}
-            onLoadTool={loadToolEntry}
-            onOpen={setExpandedMessage}
-            outbox={paneOutbox}
-            onRetrySend={retrySend}
-            onDiscardSend={discardSend}
-            tasks={paneChat ? tasksById : undefined}
-            onOpenTask={openTask}
-            onRemoveQueued={
-              paneChat && pane.agent === "claude" ? removeQueued : undefined
-            }
-            onEditQueued={
-              paneChat && pane.agent === "claude" ? editQueued : undefined
-            }
-            onRewind={
-              paneChat && pane.agent === "claude" ? rewindEntry : undefined
-            }
-          />
-          {historyMinimap("auto")}
-        </div>
-      )}
+      {(paneOutbox.length ? null : historyEmptyState) ??
+        (paneChat && chatThreadsKey && activeConnectionId ? (
+          // The chat's threads: comments on parts of the agent's messages.
+          <ChatThreadsProvider
+            connectionId={activeConnectionId}
+            workspaceId={pane.workspace_id}
+            chat={chatThreadsKey}
+            path={pane.foreground_cwd ?? pane.cwd ?? ""}
+            agent={pane.agent ?? "agent"}
+            paneId={pane.pane_id}
+          >
+            <div className="agent-history-chat-frame">
+              <AgentHistoryChat
+                items={chatItems}
+                listRef={contentRef}
+                contentRef={timelineRef}
+                highlightedSequence={highlightedSequence}
+                followKey={query}
+                toolLoading={toolEntryLoading}
+                onLoadTool={loadToolEntry}
+                onOpen={setExpandedMessage}
+                outbox={paneOutbox}
+                onRetrySend={retrySend}
+                onDiscardSend={discardSend}
+                tasks={paneChat ? tasksById : undefined}
+                onOpenTask={openTask}
+                onRemoveQueued={
+                  paneChat && pane.agent === "claude" ? removeQueued : undefined
+                }
+                onEditQueued={
+                  paneChat && pane.agent === "claude" ? editQueued : undefined
+                }
+                onRewind={
+                  paneChat && pane.agent === "claude" ? rewindEntry : undefined
+                }
+              />
+              {historyMinimap("auto")}
+            </div>
+          </ChatThreadsProvider>
+        ) : (
+          <div className="agent-history-chat-frame">
+            <AgentHistoryChat
+              items={chatItems}
+              listRef={contentRef}
+              contentRef={timelineRef}
+              highlightedSequence={highlightedSequence}
+              followKey={query}
+              toolLoading={toolEntryLoading}
+              onLoadTool={loadToolEntry}
+              onOpen={setExpandedMessage}
+              outbox={paneOutbox}
+              onRetrySend={retrySend}
+              onDiscardSend={discardSend}
+              tasks={paneChat ? tasksById : undefined}
+              onOpenTask={openTask}
+              onRemoveQueued={
+                paneChat && pane.agent === "claude" ? removeQueued : undefined
+              }
+              onEditQueued={
+                paneChat && pane.agent === "claude" ? editQueued : undefined
+              }
+              onRewind={
+                paneChat && pane.agent === "claude" ? rewindEntry : undefined
+              }
+            />
+            {historyMinimap("auto")}
+          </div>
+        ))}
       {voiceOverlay}
       {paneChat?.permission ? (
         <AgentPermissionCard prompt={paneChat.permission} />

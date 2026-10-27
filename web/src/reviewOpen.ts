@@ -96,6 +96,8 @@ export async function openWorkspaceReview(
       (snapshot) =>
         snapshot.session.connectionId === connectionId &&
         snapshot.session.workspaceId === workspace.workspace_id &&
+        // A chat's threads are not a review of the workspace's code.
+        snapshot.session.target.kind !== "chat" &&
         !(options.local && snapshot.session.target.kind === "mr"),
     )
     .sort((a, b) => b.session.updatedAt.localeCompare(a.session.updatedAt));

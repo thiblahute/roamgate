@@ -65,7 +65,11 @@ export async function handleReviewRpc(
 
   switch (method) {
     case "review.list":
-      return { sessions: service.list({ connectionId: connection.id }) };
+      // The page shows a chat's threads in the chat, from these too: without
+      // them a reload would lose them until the next change.
+      return {
+        sessions: service.list({ connectionId: connection.id, chats: true }),
+      };
     case "review.activity":
       return service.activity({ connectionId: connection.id });
     case "review.import":
@@ -80,6 +84,18 @@ export async function handleReviewRpc(
       // A directory picks one of the workspace's repositories; else the
       // workspace's own.
       const path = typeof raw.path === "string" ? raw.path : "";
+      // A chat has no repository: its agent's directory names it.
+      if ((raw.target as { kind?: unknown } | undefined)?.kind === "chat")
+        return service.open({
+          connectionId: connection.id,
+          workspaceId,
+          root: path || "/",
+          target: raw.target,
+          title: raw.title,
+          agent: raw.agent,
+          paneId: raw.agent_pane,
+          raise: false,
+        });
       const root =
         path.startsWith("/") && connection.readRoot
           ? await connection.readRoot(path)

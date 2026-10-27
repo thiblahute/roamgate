@@ -23,7 +23,7 @@ export type ComposerVimHandle = {
 };
 import { takeRenderCounts } from "../renderTrace";
 import { voiceTrace } from "../voiceChat";
-import { scrollChatPage } from "./chatPaging";
+import { enterChatParts, scrollChatPage } from "./chatPaging";
 import { defineExCommands, vimExEditors } from "./ReviewCommentEditor";
 
 /**
@@ -113,20 +113,35 @@ export function ComposerVimEditor({
             keymap.of([
               { key: "PageUp", run: (view) => scrollChatPage(view.dom, -1) },
               { key: "PageDown", run: (view) => scrollChatPage(view.dom, 1) },
+              // Up into the conversation: Alt+Up, or k in normal mode on
+              // the first line.
+              { key: "Alt-ArrowUp", run: (view) => enterChatParts(view.dom) },
+              {
+                key: "k",
+                run: (view) =>
+                  !getCM(view)?.state.vim?.insertMode &&
+                  view.state.doc.lineAt(view.state.selection.main.head)
+                    .number === 1 &&
+                  enterChatParts(view.dom),
+              },
             ]),
           ),
           vim({ status: false }),
           // Undo and redo: vim's u and Ctrl-R, and Mod-Z / Mod-Shift-Z.
           history(),
           keymap.of(historyKeymap),
-          // Up in the empty box, ahead of vim's own Up.
+          // Up, ahead of vim's own: in the empty box, a queued message back;
+          // else, from the first line, up into the conversation.
           Prec.highest(
             keymap.of([
               {
                 key: "ArrowUp",
                 run: (target) =>
-                  target.state.doc.length === 0 &&
-                  (handlers.current.onUpWhenEmpty?.() ?? false),
+                  (target.state.doc.length === 0 &&
+                    (handlers.current.onUpWhenEmpty?.() ?? false)) ||
+                  (target.state.doc.lineAt(target.state.selection.main.head)
+                    .number === 1 &&
+                    enterChatParts(target.dom)),
               },
             ]),
           ),

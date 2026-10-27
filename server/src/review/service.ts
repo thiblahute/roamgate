@@ -122,6 +122,8 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
       head: refName(target.head ?? "HEAD", "head"),
       ...(target.compare === true ? { compare: true } : {}),
     };
+  if (target.kind === "chat")
+    return { kind: "chat", chat: text(target.chat, "chat", 300) };
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
     let parsed: URL;
@@ -149,6 +151,7 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
     const right = parseMergeRequestUrl(b.url);
     return left && right ? sameMergeRequest(left, right) : a.url === b.url;
   }
+  if (a.kind === "chat" && b.kind === "chat") return a.chat === b.chat;
   return true;
 }
 
@@ -196,7 +199,15 @@ export function describeTarget(target: ReviewTarget): string {
       ? `${target.base} vs ${target.head}`
       : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
+  if (target.kind === "chat") return "chat";
   return "working tree";
+}
+
+/** A chat message's time, as the agent's chat shows it (local, HH:MM). */
+function chatTime(at: string): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return at;
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function parseAnchor(value: unknown): ReviewAnchor {
@@ -251,6 +262,23 @@ function parseAnchor(value: unknown): ReviewAnchor {
         "a message part needs its thread, comment and quote",
       );
     anchor.message = { thread, comment, quote };
+  }
+  if (raw.chat !== undefined && raw.chat !== null) {
+    if (typeof raw.chat !== "object")
+      throw new ReviewError("invalid chat part");
+    const part = raw.chat as Record<string, unknown>;
+    const entry = optionalText(part.entry, "chat message", 300);
+    const quote = optionalText(part.quote, "quote", 4000)?.trim();
+    if (!entry || !quote)
+      throw new ReviewError("a chat part needs its message and quote");
+    const at = optionalText(part.at, "chat message time", 64);
+    const excerpt = optionalText(part.excerpt, "chat message excerpt", 300);
+    anchor.chat = {
+      entry,
+      quote,
+      ...(at ? { at } : {}),
+      ...(excerpt ? { excerpt } : {}),
+    };
   }
   return anchor;
 }
@@ -931,7 +959,9 @@ export function createReviewService(args: {
       .filter(
         (s) =>
           (!connectionId || s.connectionId === connectionId) &&
-          (!root || s.root === root),
+          (!root || s.root === root) &&
+          // A chat's threads are not a review of the checkout.
+          (s.target.kind !== "chat" || params.chats === true),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(snapshot);
@@ -1709,10 +1739,13 @@ export function createReviewService(args: {
         ...overall.split("\n").map((line) => `  ${line}`),
         `It is not a thread: act on it, then say what you did with \`${command} working --done --message "WHAT YOU DID"\`.`,
       );
+    const chat = target.target.kind === "chat";
     if (due.length)
       lines.push(
         ...(overall ? [""] : []),
-        `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+        chat
+          ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on parts of your messages in this chat:`
+          : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
       );
     const since = target.deliveredAt ?? "";
     for (const thread of due) {
@@ -1720,12 +1753,16 @@ export function createReviewService(args: {
         ? ` (\`${thread.anchor.text.trim().slice(0, 120)}\`)`
         : "";
       const part = thread.anchor.message;
+      const said = thread.anchor.chat;
       lines.push(
         "",
-        part
-          ? `- [${thread.id.slice(0, 8)}] on a part of a message in thread [${part.thread.slice(0, 8)}] (on ${describeAnchor(thread.anchor)}):`
-          : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${thread.anchor.commitSubject}"` : ""}${code}:`,
-        ...(part ? part.quote.split("\n").map((line) => `  > ${line}`) : []),
+        said
+          ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
+          : part
+            ? `- [${thread.id.slice(0, 8)}] on a part of a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
+            : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${thread.anchor.commitSubject}"` : ""}${code}:`,
+        ...((said ?? part)?.quote.split("\n").map((line) => `  > ${line}`) ??
+          []),
       );
       // What changed since the agent last heard: new comments, and earlier
       // ones the user rewrote.
@@ -1745,7 +1782,12 @@ export function createReviewService(args: {
       if (thread.kind === "draft")
         lines.push("  (A suggested change: apply it, then reply.)");
     }
-    if (due.length)
+    if (due.length && chat)
+      lines.push(
+        "",
+        `These are threads on our conversation, not on code. Answer each in its thread with \`${command} reply --comment ID -- TEXT\`, not only in the chat; say there what you did or changed.`,
+      );
+    else if (due.length)
       lines.push(
         "",
         `Before working on one, say so with \`${command} working --comment ID --message "WHAT YOU DO"\`; answer each with \`${command} reply --comment ID -- TEXT\` (say what you changed). My next comments come here the same way.`,
@@ -2081,7 +2123,11 @@ export function createReviewService(args: {
     // The overlay opening or reloading: no answer from what was remembered.
     if (params.recheck === true) gone.delete(target.id);
     const { loadCommits } = args;
-    if (target.target.kind === "worktree" || !loadCommits)
+    if (
+      target.target.kind === "worktree" ||
+      target.target.kind === "chat" ||
+      !loadCommits
+    )
       return { commits: [] };
     return { commits: await fromCheckout(target, () => loadCommits(target)) };
   }
@@ -2095,7 +2141,12 @@ export function createReviewService(args: {
   ): Promise<{ state: string }> {
     const target = session(params.sessionId);
     const { loadState } = args;
-    if (target.target.kind === "mr" || !loadState) return { state: "" };
+    if (
+      target.target.kind === "mr" ||
+      target.target.kind === "chat" ||
+      !loadState
+    )
+      return { state: "" };
     return { state: await fromCheckout(target, () => loadState(target)) };
   }
 
@@ -2107,6 +2158,7 @@ export function createReviewService(args: {
         : undefined;
     if (commit && !/^[0-9a-f]{7,64}$/.test(commit))
       throw new ReviewError("invalid commit");
+    if (target.target.kind === "chat") return { files: [], truncated: false };
     if (commit)
       return fromCheckout(target, () => args.loadDiff(target, commit));
     const result = await fromCheckout(target, () => args.loadDiff(target));

@@ -63,6 +63,30 @@ test("a review is invisible from another connection", async () => {
   ).toHaveLength(0);
 });
 
+test("the page's list has the chats, so their threads survive a reload", async () => {
+  const service = setup();
+  await handleReviewRpc(service, local, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "worktree" },
+  });
+  await handleReviewRpc(service, local, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "chat", chat: "claude-session-1" },
+  });
+  const { sessions } = (await handleReviewRpc(
+    service,
+    local,
+    "review.list",
+    {},
+  )) as { sessions: { session: { target: { kind: string } } }[] };
+  expect(sessions.map((each) => each.session.target.kind).sort()).toEqual([
+    "chat",
+    "worktree",
+  ]);
+  // Agents listing the reviews of a checkout still do not see them.
+  expect(service.list({ connectionId: "local" })).toHaveLength(1);
+});
+
 test("the browser finds a review's merge request on its own connection only", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-rpc-"));
   const service = createReviewService({

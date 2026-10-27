@@ -391,7 +391,8 @@ again, and comments follow their code or show as outdated.
   you send it (`Cmd+Enter`, Save, `:w`); Esc or moving away keeps it unsent
   until you reopen it. `t` hides every comment until you show them again, click a
   marked line, or the agent answers; each review opens with them shown.
-  **Conversations** (`T`, `:conversations`) lists every thread of the
+  **Conversations** (`T`, `:conversations`, or the `N open · M` chip at the
+  head's right end) opens a panel on the right listing every thread of the
   review, in any commit and resolved ones too, open ones first and then
   the latest message, and goes to the one you pick; a thread whose commit
   a rebase took out of the review opens in that commit, as long as git
@@ -407,7 +408,23 @@ again, and comments follow their code or show as outdated.
   mouse. Each such comment is its own thread, drawn under the part it
   quotes and given to the agent with the quote. `za` folds any thread,
   resolved or not, and unfolds it again; `gl` goes to the last message of
-  the thread selected or on the line.
+  the thread selected or on the line, and `g;` to the comment written last,
+  in any view (in an agent chat too).
+  In an agent chat, Claude's messages are in parts too: the `+` in a
+  part's margin, or **Comment** on words selected, starts a thread under
+  that part. The threads are the chat's own review: Claude gets them with
+  the quote and where it is, answers in them, and you reply, resolve or
+  fold them there. The message that hands them over shows as one line.
+  From the chat's message box, Up on its first line (or `k` there in
+  Vim's normal mode, or Alt+Up) goes up into the conversation: `j`/`k` step through the
+  parts of Claude's messages and the threads under them, `gg`/`G` to the
+  first or last, `zz`/`zt`/`zb` place the one you are on, `c` or Enter
+  comments on a part or answers a thread, `r` resolves, `za` folds, `dd`
+  deletes your own comment, `J`/`K` go message by message, `n`/`N` go
+  to the next or previous thread,
+  and `i` or Esc (or Down past the last one) go back to the box. `T` (or the comments chip at the top
+  of the chat) opens the chat's comments, open ones first: `j`/`k` select,
+  Enter goes to one, `r` resolves, Esc closes.
   Comments are Markdown; paste or drop a screenshot into one and it is
   kept with the review, shown in the comment, and given to the agent as
   a file path it can read. Comments follow their code through rebases and

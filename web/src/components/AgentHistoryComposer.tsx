@@ -1,5 +1,5 @@
 import { useRenderTrace } from "../renderTrace";
-import { scrollChatPage } from "./chatPaging";
+import { enterChatParts, scrollChatPage } from "./chatPaging";
 import {
   Suspense,
   useCallback,
@@ -677,6 +677,14 @@ export function AgentHistoryComposer({
                 event.keyCode === 229
               )
                 return;
+              if (
+                event.key === "ArrowUp" &&
+                event.altKey &&
+                enterChatParts(event.currentTarget)
+              ) {
+                event.preventDefault();
+                return;
+              }
               if (
                 (event.key === "PageUp" || event.key === "PageDown") &&
                 scrollChatPage(
