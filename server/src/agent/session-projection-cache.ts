@@ -16,6 +16,7 @@ import {
 import { isRecord } from "./session-utils";
 import { summarizeTokenUsage } from "./token-usage";
 import { readAntigravitySessionRecords } from "./antigravity-session";
+import { keptRecords, rewoundRecordIds } from "./session-rewind";
 
 function parseJsonl(text: string) {
   const records: Record<string, unknown>[] = [];
@@ -37,10 +38,13 @@ export async function readSessionProjection(
   files: AgentSessionFileAccess,
   fallbackTime = file.createdAtMs ?? file.mtimeMs,
 ) {
-  const records =
+  const read =
     agent === "agy"
       ? await readAntigravitySessionRecords(file.path)
       : parseJsonl(await files.readText(file.path));
+  const rewound = agent === "claude" ? rewoundRecordIds(read) : null;
+  // What a rewind cut: out, its prompts kept as stand-ins (session-rewind).
+  const records = keptRecords(read, rewound);
   const projectionFile = { ...file, mtimeMs: fallbackTime };
   const trajectory = projectAgentTrajectory(agent, projectionFile, records);
   const messages = conversationMessagesFromTrajectory(
@@ -52,8 +56,8 @@ export async function readSessionProjection(
     trajectory,
     messages,
     entries: historyEntriesFromTrajectory(projectionFile, trajectory),
-    /** What a Claude session ran on the side. */
-    tasks: agent === "claude" ? parseSessionTasks(records) : [],
+    /** What a Claude session ran on the side, rewound turns' still running. */
+    tasks: agent === "claude" ? parseSessionTasks(read, { rewound }) : [],
     /** What a Claude session is about (session-title.ts). */
     title: agent === "claude" ? parseSessionTitle(records) : null,
     /** The pages a Claude session published with its Artifact tool. */
@@ -64,7 +68,7 @@ export async function readSessionProjection(
     images: agent === "claude" ? parseSessionImages(records) : {},
     stats: {
       turns: messages.filter((message) => message.role === "user").length,
-      records: records.length,
+      records: read.length - (rewound?.size ?? 0),
       token_usage: summarizeTokenUsage(records),
     },
   };

@@ -333,6 +333,27 @@ if (process.env.ROAMGATE_TASKS_SHEET_DOM_TEST !== "1") {
     tasks = tasks.filter((task) => task.id !== "t2");
     await reopen();
     expect(title()).toBe("Background tasks");
+    expect(document.querySelector(".agent-tasks-rewound")).toBeNull();
+    await close();
+
+    // A task started in a rewound part says so.
+    session = "s3";
+    tasks = [
+      ...tasks,
+      {
+        id: "t4",
+        kind: "agent",
+        title: "rebase",
+        status: "running",
+        rewound: true,
+      },
+    ];
+    await reopen();
+    const marks = [...document.querySelectorAll(".agent-tasks-rewound")];
+    expect(marks.map((mark) => mark.closest("[data-nav-key]"))).toEqual([
+      document.querySelector('[data-nav-key="t4"]'),
+    ]);
+    expect(marks[0]?.textContent).toBe("started in a rewound part");
     await React.act(async () => root.unmount());
   }, 10_000);
 }

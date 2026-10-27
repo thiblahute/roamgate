@@ -9,6 +9,7 @@ import {
   Keyboard,
   LoaderCircle,
   LocateFixed,
+  RotateCcw,
   SquareTerminal,
   Users,
   Workflow,
@@ -557,6 +558,7 @@ function TaskList({
                 {task.name ? `${task.name}: ` : ""}
                 {task.title}
               </strong>
+              {task.rewound ? <RewoundMark /> : null}
               {task.detail ? <small>{task.detail}</small> : null}
             </span>
             <span className={`agent-task-status is-${task.status}`}>
@@ -568,6 +570,19 @@ function TaskList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A task started in turns a rewind took back, still at work. */
+function RewoundMark() {
+  return (
+    <span
+      className="agent-tasks-rewound"
+      title="Started in a part of the conversation that was rewound: it goes on until it ends, then leaves the list."
+    >
+      <RotateCcw size={11} aria-hidden="true" />
+      started in a rewound part
+    </span>
   );
 }
 
@@ -764,6 +779,7 @@ function TaskDetail({
           {taskStatusLabel(task)}
         </span>
         <span>{taskElapsed(task, now)}</span>
+        {task.rewound ? <RewoundMark /> : null}
         {task.kind === "agent" && task.detail ? (
           <span>{task.detail}</span>
         ) : null}

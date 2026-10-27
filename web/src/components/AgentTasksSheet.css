@@ -123,6 +123,16 @@
   font-size: 11px;
 }
 
+.agent-tasks-rewound {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
 .agent-tasks-time {
   color: var(--muted);
   font-size: 11px;

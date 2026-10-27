@@ -361,6 +361,12 @@ Inspector state is scoped to each checkout; see
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in
   Claude Code's prompt. The others stay queued, in order.
+  A Claude chat rewinds as /rewind does: the arrow beside one of your
+  messages restores the code and the conversation, or either, to before
+  it, through Claude Code's own rewind menu. The message comes back in the
+  box to edit, and the turns undone leave the chat. /rewind typed in the
+  box lists your messages, newest first, to pick one with the arrows or
+  j/k and Enter, then the restore's number.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or
@@ -381,6 +387,9 @@ Inspector state is scoped to each checkout; see
   was left in that session (in this browser tab): the task or agent shown,
   the row, the folded phases, the scroll and whether it followed. A task
   opened from its link in the chat goes back to that place.
+  A task started in turns a rewind undid stays listed while it runs (a
+  teammate also while idle), marked **started in a rewound part**, and
+  leaves the list once it ends.
   Once the turn has ended while some of them still run (subagents, running
   teammates, workflows, background commands, monitors), the chat's status
   reads **Idle · 2 subagents running** in its own colour instead of a bare
