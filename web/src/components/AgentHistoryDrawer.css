@@ -687,6 +687,12 @@
     calc(var(--chat-column-gutter) + var(--chat-rail) + 12px);
 }
 
+/* Its card floats over the same column as the message box. */
+.agent-history-drawer.is-pane-chat .agent-history-composer-router {
+  left: calc(var(--chat-column-gutter) + 12px);
+  right: calc(var(--chat-column-gutter) + var(--chat-rail) + 12px);
+}
+
 .agent-history-drawer.is-pane-chat .agent-chat-prompt,
 .agent-history-drawer.is-pane-chat .agent-chat-activity {
   margin-inline: calc(var(--chat-column-gutter) + 12px)

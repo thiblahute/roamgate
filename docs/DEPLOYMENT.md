@@ -591,7 +591,9 @@ the browser plays it faster by the rest, keeping its pitch.
 With `"route_model"` (a Claude model, such as `"haiku"`), each thing said
 goes first to one background Claude Code session that decides who it is for:
 the agent on screen, another agent session (to show it, or to send it the
-words), or nobody. The page gives it the agent sessions of every connection
+words), Ranger (a question about the sessions, sent as if typed in its
+chat, which needs Ranger's model and workspaces set up), or nobody. The
+page gives it the agent sessions of every connection
 it reads (title, workspace, folder, machine). Haiku decides in about a
 second; a router that fails or takes over 8 seconds leaves the words to the
 agent on screen.

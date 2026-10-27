@@ -18,6 +18,9 @@ export type HistoryEntry = {
   queued?: boolean;
   // The summary that replaced the earlier conversation when it was compacted.
   compact_summary?: boolean;
+  // An agent message that ended its turn (Claude Code): the answer, even
+  // while the agent still shows working for a task in the background.
+  turn_end?: boolean;
   // On an Artifact tool result: the page it published. Kept when the
   // payload is redacted, so the chat can link to it.
   artifact?: PublishedArtifact;
@@ -87,6 +90,7 @@ export function historyEntriesFromTrajectory(
         ...(step.extra?.compact_summary === true
           ? { compact_summary: true }
           : {}),
+        ...(step.extra?.turn_end === true ? { turn_end: true } : {}),
       });
     }
     for (const call of step.tool_calls ?? []) {

@@ -484,6 +484,11 @@ function projectClaudeTrajectory(
         model: modelNameFromRecord(record) || undefined,
         // The summary Claude Code writes when it compacts the conversation.
         compact_summary: record.isCompactSummary === true || undefined,
+        // The reply that ends a turn, whatever else (a background agent)
+        // still runs.
+        turn_end:
+          (role === "assistant" && message.stop_reason === "end_turn") ||
+          undefined,
       },
     });
   });

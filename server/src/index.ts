@@ -207,16 +207,6 @@ const voiceHelper = new VoiceHelper(() => readVoiceConfig());
 const handleVoice = createVoiceRoutes(
   voiceHelper,
   configuredRouter(() => readVoiceConfig()),
-  async (connectionId, paneId) => {
-    const runtime = connectionManager.readyRuntime(connectionId);
-    if (!runtime) throw new Error(`${connectionId} is not connected`);
-    const history = (await runtime.agentSessions.readHistory({
-      history_version: 2,
-      cursor: null,
-      pane_id: paneId,
-    })) as { entries?: { role?: unknown; text?: unknown }[] };
-    return history.entries ?? [];
-  },
   new VoiceErrands({
     read: async (connectionId, paneId) => {
       const runtime = connectionManager.readyRuntime(connectionId);

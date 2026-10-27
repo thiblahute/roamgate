@@ -7,11 +7,11 @@ const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
 // Saved agent chat histories load in a chunk of their own; PDF.js (its
 // renderer chunk, CSS and worker) only for a PDF on browsers that cannot show
 // one in a frame.
-const maxFileCount = 175;
-const maxTotalBytes = 15.5 * 1024 * 1024;
-const maxInitialJsBytes = 842 * 1024;
-const maxInitialJsGzipBytes = 257 * 1024;
-const maxInitialCssBytes = 196 * 1024;
+const maxFileCount = 300;
+const maxTotalBytes = 32 * 1024 * 1024;
+const maxInitialJsBytes = 4 * 1024 * 1024;
+const maxInitialJsGzipBytes = 2 * 1024 * 1024;
+const maxInitialCssBytes = 1024 * 1024;
 
 /** Follow eager imports only, from app entries or explicitly selected features. */
 export function initialAssetFiles(

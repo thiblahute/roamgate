@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ClaudeProcess } from "./voice-cleaner";
 import {
-  conversationEnd,
   parseVoiceRoute,
   type VoiceSessionInfo,
   VoiceRouter,
@@ -31,19 +30,11 @@ describe("parseVoiceRoute", () => {
     ).toEqual({ to: "ask", panes: ["local/w2:p2"], question: "Which?" });
   });
 
-  test("reads a question about all the sessions", () => {
-    expect(parseVoiceRoute('{"to": "overview"}', ids)).toEqual({
-      to: "overview",
-    });
-  });
-
-  test("reads a question about another session", () => {
+  test("reads a question for Ranger", () => {
+    expect(parseVoiceRoute('{"to": "ranger"}', ids)).toEqual({ to: "ranger" });
     expect(
-      parseVoiceRoute(
-        '{"to": "status", "pane": "desktop/w1J:p1", "say": "IGA-184"}',
-        ids,
-      ),
-    ).toEqual({ to: "status", pane: "desktop/w1J:p1", say: "IGA-184" });
+      parseVoiceRoute('{"to": "status", "pane": "desktop/w1J:p1"}', ids),
+    ).toEqual({ to: "current" });
   });
 
   test("anything unclear goes to the agent on screen", () => {
@@ -174,23 +165,5 @@ describe("VoiceRouter", () => {
         timeoutMs: 20,
       }),
     ).toEqual({ to: "current" });
-  });
-});
-
-describe("conversationEnd", () => {
-  test("the last entries with text, long ones cut", () => {
-    const entries = [
-      { role: "user", text: "old" },
-      ...Array.from({ length: 11 }, (_, i) => ({
-        role: "assistant",
-        text: `step ${i}`,
-      })),
-      { role: "assistant", text: "" },
-      { role: "user", text: "x".repeat(2000) },
-    ];
-    const end = conversationEnd(entries);
-    expect(end).not.toContain("old");
-    expect(end).toStartWith("Agent: step 1\n\nAgent: step 2");
-    expect(end).toEndWith(`User: ${"x".repeat(1500)}…`);
   });
 });

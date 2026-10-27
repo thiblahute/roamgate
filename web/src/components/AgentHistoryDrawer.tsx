@@ -108,7 +108,12 @@ import {
   settleOutbox,
 } from "./chatOutbox";
 import { promptKeyInput } from "./promptKeys";
-import { takeVoiceHandoff, voiceSessionId, voiceSessions } from "../voiceRoute";
+import {
+  handOffVoice,
+  takeVoiceHandoff,
+  voiceSessionId,
+  voiceSessions,
+} from "../voiceRoute";
 import { setPaneView } from "../paneView";
 import "./AgentHistoryDrawer.css";
 
@@ -1105,13 +1110,28 @@ export function AgentHistoryDrawer({
       : {}),
   });
   const stopVoice = voice.stop;
+  // The chat rebuilt for the same pane (a reconnect does it) goes on with
+  // its voice chat: left here when this one goes, before it stops.
+  const voiceResumeRef = useRef(voice.resumePoint);
+  voiceResumeRef.current = voice.resumePoint;
+  const voicePaneRef = useRef({ activeConnectionId, paneId: pane.pane_id });
+  voicePaneRef.current = { activeConnectionId, paneId: pane.pane_id };
+  useEffect(
+    () => () => {
+      const point = voiceResumeRef.current();
+      const { activeConnectionId: connectionId, paneId } = voicePaneRef.current;
+      if (point && connectionId)
+        handOffVoice({ connectionId, paneId, message: null, ...point });
+    },
+    [],
+  );
   // Voice talks to one pane: switching panes ends it, unless the router
   // handed it to the pane shown next, which picks it up.
   useEffect(() => stopVoice, [stopVoice, pane.pane_id, activeConnectionId]);
   const takeOverVoice = voice.takeOver;
   useEffect(() => {
     const handed = takeVoiceHandoff(activeConnectionId, pane.pane_id);
-    if (handed) takeOverVoice(handed.message);
+    if (handed) takeOverVoice(handed.message, handed.resume);
   }, [takeOverVoice, pane.pane_id, activeConnectionId]);
   useEffect(
     () => voiceTrace(`chat on pane ${pane.pane_id}, ${activeConnectionId}`),

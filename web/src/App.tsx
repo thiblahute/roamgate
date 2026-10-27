@@ -123,6 +123,7 @@ import { type ActiveFilePreviewSelection } from "./components/FilePreviewContent
 import { AnnotationPanel } from "./components/AnnotationPanel";
 import {
   assistantActionExecuting,
+  onAssistantOpenRequest,
   onAssistantShow,
   useAssistantState,
 } from "./assistant";
@@ -2383,6 +2384,14 @@ export default function App() {
       }
     }
   }, [assistantVisible, mobile]);
+  // The voice card's Open shows Ranger's chat, at its newest answer.
+  useEffect(
+    () =>
+      onAssistantOpenRequest(() => {
+        if (!assistantVisible) toggleAssistant();
+      }),
+    [assistantVisible, toggleAssistant],
+  );
   const closeAssistant = () => {
     const source = document.activeElement;
     setAssistantOpen(false);

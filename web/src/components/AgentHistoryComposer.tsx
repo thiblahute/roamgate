@@ -45,7 +45,25 @@ import { type AgentCommand, matchCommands } from "../claudeCommands";
 import { agentPromptWarning, agentStateKind } from "./agentSession";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
 import type { Heard } from "../voiceChat";
-import { showRouterNote, useRouterNote } from "../voiceRoute";
+import {
+  type RouterNoteTarget,
+  showRouterNote,
+  useRouterNote,
+} from "../voiceRoute";
+import { openAssistant } from "../assistant";
+import { setPaneView } from "../paneView";
+import { store } from "../store";
+
+/** Shows where a card's full answer is: Ranger's chat, or a session's. */
+function openRouterNote(target: RouterNoteTarget) {
+  showRouterNote(null);
+  if ("ranger" in target) {
+    openAssistant();
+    return;
+  }
+  setPaneView(target.connectionId, target.paneId, "chat");
+  void store.jumpToConnectionPane(target.connectionId, target.paneId);
+}
 import type { VoiceState } from "./useVoiceChat";
 import "./AgentHistoryComposer.css";
 
@@ -377,9 +395,18 @@ export function AgentHistoryComposer({
       {routerNote ? (
         <div className="agent-history-composer-router" role="status">
           <Route size={14} aria-hidden="true" />
-          <p>
-            <strong>Roamgate</strong> {routerNote.text}
+          <p title={routerNote.text}>
+            <strong>{routerNote.from}</strong> {routerNote.text}
           </p>
+          {routerNote.open ? (
+            <button
+              type="button"
+              className="agent-history-composer-router-open"
+              onClick={() => openRouterNote(routerNote.open!)}
+            >
+              Open
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => showRouterNote(null)}

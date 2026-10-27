@@ -23,10 +23,8 @@ export type VoiceRoute =
   | { to: "current" }
   | { to: "nobody" }
   | { to: "open" | "send"; pane: string; say: string }
-  /** A question about another session, with the summary to say. */
-  | { to: "status"; pane: string; say: string; answer?: string }
-  /** A question about the sessions in general, with the summary to say. */
-  | { to: "overview"; answer?: string }
+  /** A question or request for Ranger, sent by the page. */
+  | { to: "ranger" }
   /** An errand handed to the errands session, followed by `job`. */
   | { to: "errand"; pane: string; say: string; job?: string }
   | { to: "ask"; panes: string[]; question: string };
@@ -150,7 +148,16 @@ type Handoff = {
   paneId: string;
   /** What to send it first, as said. */
   message: string | null;
+  /** Rather, the voice chat of this very pane, shown again (a reconnect). */
+  resume?: VoiceResume;
   at: number;
+};
+
+/** Where a voice chat was: the message whose answer it awaited. */
+export type VoiceResume = {
+  sent: string;
+  /** The agent's messages already read out. */
+  read: string[];
 };
 
 /** A handoff not taken by then is dropped: that pane never showed. */
@@ -175,7 +182,7 @@ export function voiceHandoffPending(connectionId: string, paneId: string) {
 export function takeVoiceHandoff(
   connectionId: string,
   paneId: string,
-): { message: string | null } | null {
+): { message: string | null; resume?: VoiceResume } | null {
   const taken = handoff;
   if (
     !taken ||
@@ -185,14 +192,25 @@ export function takeVoiceHandoff(
   )
     return null;
   handoff = null;
-  return { message: taken.message };
+  return { message: taken.message, resume: taken.resume };
 }
 
 /**
- * What the router itself last said (a switch, its question, a summary of
- * another session), shown apart from the conversation with the agent.
+ * What the router itself last said (a switch, its question), or Ranger's
+ * answer to a question said aloud, shown apart from the conversation with
+ * the agent.
  */
-export type RouterNote = { text: string; at: number };
+export type RouterNote = {
+  text: string;
+  at: number;
+  /** Who says it: Roamgate's router, or Ranger answering. */
+  from: string;
+  /** Where the full answer is: Ranger's chat, or a session's. */
+  open?: RouterNoteTarget;
+};
+export type RouterNoteTarget =
+  | { ranger: true }
+  | { connectionId: string; paneId: string };
 
 let note: RouterNote | null = null;
 const noteListeners = new Set<() => void>();
@@ -200,14 +218,21 @@ const noteListeners = new Set<() => void>();
 /** Markdown marks an answer may carry, gone: the card shows plain text. */
 export function plainText(text: string) {
   return text
+    .replace(/```[\w-]*\n?/g, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/^#+\s+/gm, "")
     .replace(/^\s*[-*]\s+/gm, "• ");
 }
 
-export function showRouterNote(text: string | null) {
-  note = text ? { text: plainText(text), at: Date.now() } : null;
+export function showRouterNote(
+  text: string | null,
+  from = "Roamgate",
+  open?: RouterNoteTarget,
+) {
+  note = text
+    ? { text: plainText(text), at: Date.now(), from, ...(open ? { open } : {}) }
+    : null;
   for (const listener of noteListeners) listener();
 }
 

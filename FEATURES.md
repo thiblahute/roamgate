@@ -213,19 +213,18 @@ Inspector state is scoped to each checkout; see
   IGA-184 to build the image"), on any connection. Roamgate says "Switched
   to …", shows that session's chat, sends it the words if they were for it,
   reads its answer and keeps listening there. When two sessions fit, it
-  asks which one. A question about another session ("what is IGA-184 up
-  to?") is answered aloud with a short summary of its conversation, without
-  switching, as is one about work it owns (its merge request, CI, branch).
-  A question about the sessions in general ("what did I work on today?")
-  gets a short summary across the recently active ones. Talk about
-  Roamgate itself goes to the session working on
+  asks which one. A question about your sessions ("what is IGA-184 up to?",
+  "which ones wait on me?", "has its merge request been merged?") goes to
+  [Ranger](#ranger), which reads them and answers aloud, in its own chat,
+  without switching. Talk about Roamgate itself goes to the session working on
   Roamgate. A question or errand about nothing in your sessions (the news,
   a WhatsApp message) goes to the session in your errands folder, without
   switching; its answer is read and shown when it comes. Talk to someone
-  else in the room is held as above. What the
-  router says (a switch, its question, a summary) also shows in its own
-  card above the message box, labelled Roamgate, never in the conversation
-  with the agent.
+  else in the room is held as above. What the router says (a switch, its
+  question) shows on one line above the message box, labelled Roamgate,
+  never in the conversation with the agent. An answer from Ranger or the
+  errands session is read aloud, and that line's **Open** shows it in full,
+  in Ranger's chat or that session's.
   Voice chat follows you between workspaces (sidebar, Find workspace,
   shortcuts, the phone's switcher): the workspace you go to shows its agent's
   chat (the pane on screen when it is an agent, else its most recently used

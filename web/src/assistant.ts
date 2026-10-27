@@ -72,6 +72,20 @@ function followShows(snapshot: AssistantSnapshot) {
   }
 }
 
+let openHandler: (() => void) | null = null;
+
+/** Opening Ranger's panel from elsewhere, which only the app can do. */
+export function onAssistantOpenRequest(handler: () => void) {
+  openHandler = handler;
+  return () => {
+    if (openHandler === handler) openHandler = null;
+  };
+}
+
+export function openAssistant() {
+  openHandler?.();
+}
+
 let showHandler: ((show: AssistantShow) => void) | null = null;
 
 /** What following a reply's show does: switching panes is the app's. */
@@ -563,4 +577,67 @@ export function __resetAssistantForTests() {
     draftMentions: [],
   };
   for (const listener of listeners) listener();
+}
+
+/** How long a spoken question waits for Ranger's answer. */
+const ASK_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * A question said aloud, asked as if typed: queued behind a running one,
+ * in the chat Ranger shows, over the workspaces it may read. Resolves with
+ * its answer once Ranger has finished it.
+ */
+export async function askRanger(text: string): Promise<string> {
+  const snapshot = state.snapshot;
+  if (!state.supported || !snapshot) throw new Error("Ranger is unavailable.");
+  if (!snapshot.config.provider || !snapshot.config.model)
+    throw new Error("Choose Ranger's model in its settings first.");
+  const scope = snapshot.config.allowed_workspaces;
+  if (!scope.length)
+    throw new Error("Give Ranger access to workspaces in its settings first.");
+  const requestId = crypto.randomUUID();
+  ownRequests.add(requestId);
+  const before = new Set(snapshot.messages.map((message) => message.id));
+  const expected = snapshot.chat_selection
+    ? assistantChatSelection(snapshot)
+    : undefined;
+  await callAssistant("send", {
+    text,
+    scope,
+    request_id: requestId,
+    ...(assistantQueueSupported(snapshot) ? { when_busy: "queue" } : {}),
+    ...(expected ? { expected } : {}),
+    ...(snapshot.session_id ? { session_id: snapshot.session_id } : {}),
+  });
+  return new Promise((resolve) => {
+    let unsubscribe = () => {};
+    const timer = setTimeout(
+      () => finish("Ranger is still answering; see its chat."),
+      ASK_TIMEOUT_MS,
+    );
+    function finish(answer: string) {
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(answer);
+    }
+    const check = () => {
+      const current = state.snapshot;
+      if (!current) return;
+      if (current.queue?.some((item) => item.id === requestId)) return;
+      const fresh = current.messages.filter(
+        (message) => !before.has(message.id),
+      );
+      const asked = fresh.findIndex(
+        (message) => message.role === "user" && message.text === text,
+      );
+      const reply = asked < 0 ? undefined : fresh[asked + 1];
+      if (!reply) return;
+      // Still answering while its reply is the newest message of a turn.
+      const newest = current.messages[current.messages.length - 1];
+      if (current.running && newest?.id === reply.id) return;
+      finish(reply.text || current.error || "Ranger gave no answer.");
+    };
+    unsubscribe = subscribeAssistant(check);
+    check();
+  });
 }

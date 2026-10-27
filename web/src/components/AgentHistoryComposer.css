@@ -1,4 +1,5 @@
 .agent-history-composer {
+  position: relative;
   flex: 0 0 auto;
   display: grid;
   gap: 8px;
@@ -170,19 +171,21 @@
 
 /* A /command being typed: the matching commands above the box. */
 /* Said to someone else, by the cleaner's reading: greyed, sent on a tap. */
-/* The voice router speaking for itself, not the agent: its own colors. */
+/*
+ * The voice router or Ranger speaking, not the agent: its own colors, over
+ * the end of the chat rather than in it.
+ */
 .agent-history-composer-router {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 10px;
+  right: 10px;
+  z-index: 5;
   display: flex;
-  flex: none;
-  align-self: stretch;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  width: 100%;
-  /* A long answer scrolls inside, the message box stays in view. */
-  max-height: min(40vh, 320px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
   padding: 6px 4px 6px 10px;
   border: 1px solid var(--accent);
   border-left-width: 3px;
@@ -190,18 +193,34 @@
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
 }
 
+/* On a phone the box shares its row with the app's buttons: span the screen. */
+@media (max-width: 700px) {
+  .agent-history-composer-router {
+    right: auto;
+    width: calc(100vw - 32px);
+  }
+}
+
 .agent-history-composer-router > svg {
   flex: none;
-  margin-top: 3px;
   color: var(--accent);
 }
 
+/* One line: the full answer is read aloud, and Open shows where it is. */
 .agent-history-composer-router p {
   flex: 1;
   min-width: 0;
   margin: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-history-composer-router button.agent-history-composer-router-open {
+  width: auto;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
 }
 
 .agent-history-composer-router strong {
@@ -209,8 +228,6 @@
 }
 
 .agent-history-composer-router button {
-  position: sticky;
-  top: 0;
   display: grid;
   flex: none;
   place-items: center;
