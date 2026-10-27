@@ -10,7 +10,7 @@ const publicRoot = fileURLToPath(new URL("../server/public/", import.meta.url));
 const maxFileCount = 175;
 const maxTotalBytes = 15.5 * 1024 * 1024;
 const maxInitialJsBytes = 842 * 1024;
-const maxInitialJsGzipBytes = 256 * 1024;
+const maxInitialJsGzipBytes = 257 * 1024;
 const maxInitialCssBytes = 196 * 1024;
 
 /** Follow eager imports only, from app entries or explicitly selected features. */

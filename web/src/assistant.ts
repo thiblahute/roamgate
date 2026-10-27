@@ -6,6 +6,7 @@ import {
   isAssistantMentions,
   type AssistantMention,
   type AssistantMentionCatalog,
+  type AssistantShow,
   type AssistantSnapshot,
   type AssistantConfig,
   type AssistantWorkspaceCatalog,
@@ -55,6 +56,29 @@ function publish(patch: Partial<AssistantClientState>) {
   for (const listener of listeners) listener();
 }
 
+/** The questions this browser sent: a reply showing a session switches it. */
+const ownRequests = new Set<string>();
+/** Replies whose show this browser already followed. */
+const followed = new Set<string>();
+
+/** Goes where a reply to this browser's question showed, once. */
+function followShows(snapshot: AssistantSnapshot) {
+  for (const message of snapshot.messages) {
+    const show = message.show;
+    if (!show || followed.has(message.id) || !ownRequests.has(show.request_id))
+      continue;
+    followed.add(message.id);
+    showHandler?.(show);
+  }
+}
+
+let showHandler: ((show: AssistantShow) => void) | null = null;
+
+/** What following a reply's show does: switching panes is the app's. */
+export function onAssistantShow(handler: (show: AssistantShow) => void) {
+  showHandler = handler;
+}
+
 function acceptSnapshot(value: unknown, requestVersion?: number) {
   if (!isAssistantSnapshot(value)) {
     throw new Error("Invalid Ranger state received from the bridge.");
@@ -85,6 +109,7 @@ function acceptSnapshot(value: unknown, requestVersion?: number) {
     draft,
     draftMentions,
   });
+  followShows(value);
 }
 
 export function readAssistantState() {
@@ -482,6 +507,7 @@ export async function sendAssistant(
   ]);
   if (submission?.key !== key)
     submission = { key, requestId: crypto.randomUUID() };
+  ownRequests.add(submission.requestId);
   sending = true;
   try {
     await callAssistant("send", {

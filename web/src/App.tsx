@@ -121,7 +121,19 @@ import {
 } from "./components/fileExplorerResources";
 import { type ActiveFilePreviewSelection } from "./components/FilePreviewContent";
 import { AnnotationPanel } from "./components/AnnotationPanel";
-import { assistantActionExecuting, useAssistantState } from "./assistant";
+import {
+  assistantActionExecuting,
+  onAssistantShow,
+  useAssistantState,
+} from "./assistant";
+
+// Ranger showing a workspace or session switches this browser to it.
+onAssistantShow((show) => {
+  if (show.pane_id)
+    void store.jumpToConnectionPane(show.connection_id, show.pane_id);
+  else
+    void store.jumpToConnectionWorkspace(show.connection_id, show.workspace_id);
+});
 import type { AssistantSource } from "../../shared/assistant";
 import { GlobalTooltip } from "./components/GlobalTooltip";
 import { MobileTabSheet } from "./components/MobileTabSheet";
