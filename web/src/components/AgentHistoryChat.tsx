@@ -50,6 +50,8 @@ import {
 } from "./agentHistoryView";
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
+import { reviewDelivery, useChatParts } from "./ChatThreads";
+import { NoteBody } from "./ReviewNoteBody";
 import {
   attachedImagePieces,
   type MessagePiece,
@@ -121,6 +123,8 @@ const ChatBubble = memo(function ChatBubble({
   images,
 }: BubbleProps) {
   useRenderTrace("ChatBubble");
+  // In a chat with threads, Claude's messages are in parts one comments on.
+  const parts = useChatParts(entry);
   const [showHeard, setShowHeard] = useState(false);
   const [rewinding, setRewinding] = useState(false);
   // A compaction summary is long and written by Claude Code, not the user:
@@ -131,6 +135,26 @@ const ChatBubble = memo(function ChatBubble({
         <span>Conversation compacted</span>
         <button type="button" onClick={() => onOpen(entry)}>
           Show the summary
+        </button>
+      </div>
+    );
+  // Review comments Roamgate handed to the agent: one line, the threads
+  // being where they are read.
+  const delivery =
+    entry.role === "user" && entry.kind === "message"
+      ? reviewDelivery(entry.text)
+      : null;
+  if (delivery)
+    return (
+      <div className="agent-history-chat-compacted" data-sequence={sequence}>
+        <span>
+          {delivery.count
+            ? `${delivery.count} review comment${delivery.count === 1 ? "" : "s"} sent to the agent`
+            : "Review sent to the agent"}
+          {` (${delivery.title})`}
+        </span>
+        <button type="button" onClick={() => onOpen(entry)}>
+          Show it
         </button>
       </div>
     );
@@ -198,6 +222,10 @@ const ChatBubble = memo(function ChatBubble({
           ) : (
             <p>{preview}</p>
           )
+        ) : parts && entry.kind === "message" ? (
+          <div className="agent-history-chat-markdown chat-review">
+            <NoteBody text={preview} parts={parts} />
+          </div>
         ) : (
           <MarkdownPreview
             text={preview}
@@ -946,10 +974,19 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     followRef.current = true;
   }, [followKey]);
 
+  // Keys in the conversation (j / k, a comment being written): what arrives
+  // or grows does not move it under the reader.
+  const reading = useCallback(() => {
+    const list = listRef.current;
+    const active = document.activeElement;
+    return !!list && !!active && list.contains(active);
+  }, [listRef]);
+
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (list && followRef.current) list.scrollTop = list.scrollHeight;
-  }, [items, listRef]);
+    if (list && followRef.current && !reading())
+      list.scrollTop = list.scrollHeight;
+  }, [items, listRef, reading]);
 
   // A message just sent is shown where the conversation goes on.
   const lastOutboxId = outbox[outbox.length - 1]?.id;
@@ -970,12 +1007,12 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     const observer = new ResizeObserver(() => {
       // A list that does not overflow is at its newest message already.
       if (list.scrollHeight <= list.clientHeight) followRef.current = true;
-      if (followRef.current) list.scrollTop = list.scrollHeight;
+      if (followRef.current && !reading()) list.scrollTop = list.scrollHeight;
     });
     observer.observe(list);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [listRef, contentRef]);
+  }, [listRef, contentRef, reading]);
 
   return (
     <div

@@ -154,6 +154,8 @@ export type ReviewCommand =
   | { type: "send" }
   | { type: "hold" }
   | { type: "threads" }
+  /** Only the unresolved threads where they are, or all of them again. */
+  | { type: "unresolved" }
   /** The next hunk not reviewed (gu). */
   | { type: "unreviewed" }
   | { type: "review"; focus: string | null }
@@ -186,6 +188,7 @@ export const REVIEW_COMMANDS: [string, string][] = [
   ["overall", "write the overall comment on the review"],
   ["conversations", "every conversation of the review, resolved too (T)"],
   ["threads", "every conversation of the review, resolved too (T)"],
+  ["unresolved", "show only the unresolved threads, or all again (gH)"],
   ["unreviewed", "the next chunk not reviewed (gu)"],
   ["suggest", "suggest a change on this line"],
   ["open", "open the MR on GitLab"],
@@ -255,6 +258,9 @@ export function parseReviewCommand(input: string): ReviewCommand {
     case "conversations":
     case "conv":
       return { type: "threads" };
+    case "unresolved":
+    case "openonly":
+      return { type: "unresolved" };
     case "unreviewed":
       return { type: "unreviewed" };
     case "review":
@@ -311,6 +317,10 @@ const SEQUENCES = new Set([
   "gl",
   "gm",
   "gc",
+  "g;",
+  "gn",
+  "gN",
+  "gH",
   "gu",
   "gU",
   "gr",

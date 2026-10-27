@@ -32,6 +32,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
     DOMParser: browser.DOMParser,
     NodeFilter: browser.NodeFilter,
     ResizeObserver: browser.ResizeObserver,
+    MutationObserver: browser.MutationObserver,
     Event: browser.Event,
     matchMedia: () => ({ matches: false }),
     HTMLTextAreaElement: browser.HTMLTextAreaElement,

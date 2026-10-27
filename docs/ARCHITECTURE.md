@@ -400,20 +400,22 @@ tried again up to 10 times, 15 s apart at first and doubling up to 10
 minutes. `watch`, a long poll on the service, is for agents without a pane.
 
 Comments follow the agent's session, not a pane. When a review binds an agent
-pane, the service records the session Herdr reports there (`agent.sessionId`).
-Each delivery looks the session up (`agent.list`): the pane reporting it, else
-the pane reporting the session a Claude session went on in after a resume or
-/clear (its successor transcript, see `session-resolver.ts`). That pane becomes
-the review's pane. A review whose session is not found tries the pane it was
-bound to, and forgets a pane with no agent left, so the overlay attaches the
-workspace's agent pane in its place. When the session runs in no pane, the
-review says so in plain words ("Claude for this review is not running in any
-pane") and the comments wait: the service looks for the session every 20 s
-(and again after a restart, for a review that still has an error and comments
-waiting) and sends them once it runs again, as does the next comment. A user
-comment answered in its thread counts as delivered, however it got there
-(`unheardComments` in `shared/review.ts`): only newer ones and edits made after
-the answer are sent.
+pane, the service records the session Herdr reports there (`agent.sessionId`);
+a chat's threads (target `chat`) follow the chat's own session. Each delivery
+looks the session up (`agent.list`): the pane reporting it, else the pane
+reporting the session a Claude session went on in after a resume or /clear
+(its successor transcript, see `session-resolver.ts`). That pane becomes the
+review's pane. A review whose session is not found tries the pane it was bound
+to, and forgets a pane with no agent left, so the overlay attaches the
+workspace's agent pane in its place; a chat's threads never go to a pane
+running another session. When the session runs in no pane, the review says so
+in plain words ("Claude for this chat is not running in any pane") and the
+comments wait: the service looks for the session every 20 s (and again after a
+restart, for a review that still has an error and comments waiting) and sends
+them once it runs again, as does the next comment or **Retry** in a chat's
+threads (`review.retry`). A user comment answered in its thread counts as
+delivered, however it got there (`unheardComments` in `shared/review.ts`): only
+newer ones and edits made after the answer are sent.
 
 ## Voice helper
 
