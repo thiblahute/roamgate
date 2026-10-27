@@ -318,3 +318,14 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Clipped at the start, the end kept: "…ject-system-iga-184". The text
+   inside stays left to right. */
+.start-ellipsis {
+  direction: rtl;
+  text-align: left;
+}
+
+.start-ellipsis > span {
+  unicode-bidi: isolate;
+}
