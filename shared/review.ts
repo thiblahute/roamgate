@@ -22,7 +22,12 @@ export type ReviewTarget =
       compare?: boolean;
     }
   | { kind: "worktree" }
-  | { kind: "mr"; url: string };
+  | { kind: "mr"; url: string }
+  /**
+   * An agent chat (its agent session, or its pane): no diff, threads on
+   * parts of its messages.
+   */
+  | { kind: "chat"; chat: string };
 
 export type ReviewSide = "old" | "new";
 
@@ -53,6 +58,18 @@ export type ReviewAnchor = {
    * the words quoted from it. The rest of the anchor is that thread's.
    */
   message?: ReviewMessagePart;
+  /** On a part of a message of an agent chat (a chat review). */
+  chat?: ReviewChatPart;
+};
+
+export type ReviewChatPart = {
+  /** The chat message's id in the agent's history. */
+  entry: string;
+  /** When it was written, and how it starts: for the agent to find it. */
+  at?: string;
+  excerpt?: string;
+  /** The words commented on. */
+  quote: string;
 };
 
 export type ReviewMessagePart = {

@@ -532,7 +532,8 @@ again, and comments follow their code or show as outdated.
   until you reopen it. Unsent text, and text whose save failed, stays in this
   browser through reloads and connection switches. `t` hides every comment until you show them again, click a
   marked line, or the agent answers; each review opens with them shown.
-  **Conversations** (`T`, `:conversations`) lists every thread of the
+  **Conversations** (`T`, `:conversations`, or the `N open · M` chip at the
+  head's right end) opens a panel on the right listing every thread of the
   review, in any commit and resolved ones too, open ones first and then
   the latest message, and goes to the one you pick; a thread whose commit
   a rebase took out of the review opens in that commit, as long as git
@@ -544,6 +545,14 @@ again, and comments follow their code or show as outdated.
   where it is), `R` (or `a`, or **Reply**) answers right there, and Esc or `q` closes.
   `/` searches them all (file, author or words), where arrows select,
   Enter goes and Esc returns to the list.
+  `gn`/`gN` (or the up and down arrows beside the chip) go to the next or
+  previous unresolved thread only, in any file or commit of the review:
+  a reviewed or folded file opens, and the thread it is drawn in unfolds.
+  Past the last one they wrap around to the first and say so; the arrows
+  show where you are ("2 of 5 unresolved"). `gH`, `:unresolved` or the
+  filter button beside them shows only the unresolved threads (`n`/`N`
+  then skip the resolved ones, and `r` goes on to the next unresolved
+  one); the choice is kept in the browser, for agent chats too.
   A long message is read in parts (paragraphs, list items, each code
   line): `n`/`N` select it whole, `j`/`k` step into its parts, and `c` or
   the `+` in a part's margin
@@ -551,7 +560,33 @@ again, and comments follow their code or show as outdated.
   mouse. Each such comment is its own thread, drawn under the part it
   quotes and given to the agent with the quote. `za` folds any thread,
   resolved or not, and unfolds it again; `gl` goes to the last message of
-  the thread selected or on the line.
+  the thread selected or on the line, and `g;` to the comment written last,
+  in any view (in an agent chat too).
+  In an agent chat, Claude's messages are in parts too: the `+` in a
+  part's margin, or **Comment** on words selected, starts a thread under
+  that part. The threads are the chat's own review: Claude gets them with
+  the quote and where it is, answers in them, and you reply, resolve or
+  fold them there. The message that hands them over shows as one line.
+  From the chat's message box, Up on its first line (or `k` there in
+  Vim's normal mode, or Alt+Up) goes up into the conversation: `j`/`k` step through the
+  parts of Claude's messages and the threads under them, `gg`/`G` to the
+  first or last, `zz`/`zt`/`zb` place the one you are on, `c` or Enter
+  comments on a part or answers a thread, `r` resolves, `za` folds, `dd`
+  deletes your own comment, `J`/`K` go message by message, `n`/`N` go
+  to the next or previous thread, `gn`/`gN` (or the arrows beside the
+  comments chip, with "2 of 5 unresolved") to the next or previous
+  unresolved one, reading older messages for it if need be, and `gH`
+  shows only the unresolved ones,
+  and `i` or Esc (or Down past the last one) go back to the box. `T` (or the comments chip at the top
+  of the chat) opens the chat's comments, open ones first: `j`/`k` select,
+  Enter goes to one, `r` resolves (the selection moves to the next open
+  one and the list stays where it is), `H` shows or hides the resolved
+  ones, Esc closes.
+  A thread stays on its message when the chat is read anew and the
+  message comes back with another id (a long transcript read from its
+  end): it is found by its time and the words it quotes. Open threads on
+  messages not shown are counted beside the chip ("2 on messages not
+  shown") and listed in the panel.
   Comments are Markdown; paste or drop a screenshot into one and it is
   kept with the review, shown in the comment, and given to the agent as
   a file path it can read. Comments follow their code through rebases and

@@ -54,20 +54,8 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
 
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  const { Diagram } = await import("./DiagramSlots");
-  const { messageBlocks } = await import("../reviewMessageParts");
-  /** A comment's diagrams, as the review draws its parts. */
-  function Diagrams({ text }: { text: string }) {
-    return (
-      <>
-        {messageBlocks(text).map((block, index) =>
-          block.kind === "diagram" ? (
-            <Diagram key={index} lang={block.lang} code={block.code} />
-          ) : null,
-        )}
-      </>
-    );
-  }
+  const { NoteBody } = await import("./ReviewNoteBody");
+  const { MarkdownPreview } = await import("./markdown");
   const { inlineDiagramScale } = await import("./DiagramBlock");
   const { svgImage } = await import("../svgImage");
 
@@ -161,7 +149,7 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
   test("a mermaid block in a comment becomes an SVG diagram", async () => {
     const view = mount();
     await view.render(
-      <Diagrams
+      <NoteBody
         text={`**d. (recommended)** one channel\n\n${fence("mermaid", SEQUENCE)}\n\nEverything goes through one channel.`}
       />,
     );
@@ -174,6 +162,7 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
     expect(svg.textContent).toContain("read in order");
     // Drawn, not shown as code; its source is a toggle away.
     expect(view.container.querySelector(".diagram-block-source")).toBe(null);
+    expect(view.container.querySelector(".note-code")).toBe(null);
     const toggle = [...view.container.querySelectorAll("button")].find(
       (button) => button.textContent === "Source",
     )!;
@@ -181,13 +170,15 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
     expect(
       view.container.querySelector(".diagram-block-source")?.textContent,
     ).toBe(SEQUENCE);
+    // The diagram is one part one can comment on, the paragraphs others.
+    expect(view.container.querySelectorAll("[data-part]").length).toBe(3);
     await view.unmount();
   });
 
   test("a diagram that cannot be drawn shows its source and why", async () => {
     const view = mount();
     const code = "sequenceDiagramm\n    A->>B: typo in the type";
-    await view.render(<Diagrams text={fence("mermaid", code)} />);
+    await view.render(<NoteBody text={fence("mermaid", code)} />);
     await until(
       () => !!view.container.querySelector(".diagram-block-error"),
       "the error note",
@@ -217,7 +208,7 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
   ] as const)
     test(`${name} is drawn as an image: its script never runs`, async () => {
       const view = mount();
-      await view.render(<Diagrams text={text} />);
+      await view.render(<NoteBody text={text} />);
       await until(
         () => !!view.container.querySelector(".diagram-block img"),
         "the image",
@@ -242,4 +233,72 @@ if (process.env.ROAMGATE_DIAGRAM_DOM_TEST !== "1") {
       ).toBeUndefined();
       await view.unmount();
     });
+
+  test("a chat message streamed: a diagram waits for its block to close, then stays", async () => {
+    const view = mount();
+    const intro = "The race, step by step:\n\n";
+    const half = `${intro}\`\`\`mermaid\n${SEQUENCE.split("\n").slice(0, 4).join("\n")}`;
+    await view.render(<MarkdownPreview text={half} breaks />);
+    await act(settle);
+    // Still being written: shown as code, not drawn.
+    expect(view.container.querySelector(".markdown-diagram-slot")).toBe(null);
+    expect(
+      view.container.querySelector("pre > code.language-mermaid"),
+    ).not.toBe(null);
+
+    const closed = `${intro}${fence("mermaid", SEQUENCE)}\n\nSo the`;
+    await view.render(<MarkdownPreview text={closed} breaks />);
+    await until(
+      () =>
+        !!view.container.querySelector(`.markdown-diagram-slot ${DIAGRAM_SVG}`),
+      "the diagram",
+    );
+    expect(view.container.querySelector("pre > code.language-mermaid")).toBe(
+      null,
+    );
+    const slot = view.container.querySelector(".markdown-diagram-slot")!;
+    const svg = slot.querySelector(DIAGRAM_SVG)!;
+
+    // More text streams in, and a second diagram starts: the first one is
+    // the same element, not drawn again; the second is code until closed.
+    await view.render(
+      <MarkdownPreview
+        text={`${closed} EOS counts.\n\n\`\`\`mermaid\nsequenceDiagram\n    A->>B`}
+        breaks
+      />,
+    );
+    await act(settle);
+    expect(
+      view.container.querySelectorAll(".markdown-diagram-slot").length,
+    ).toBe(1);
+    expect(view.container.querySelector(".markdown-diagram-slot")).toBe(slot);
+    expect(slot.querySelector(DIAGRAM_SVG)).toBe(svg);
+    expect(view.container.textContent).toContain("EOS counts.");
+    expect(
+      view.container.querySelector("pre > code.language-mermaid")?.textContent,
+    ).toContain("A->>B");
+    await view.unmount();
+  });
+
+  test("SVG markup streamed alone is code until closed, then an image", async () => {
+    const view = mount();
+    await view.render(
+      <MarkdownPreview text={HOSTILE_SVG.slice(0, 80)} breaks />,
+    );
+    await act(settle);
+    expect(view.container.querySelector(".markdown-diagram-slot")).toBe(null);
+    expect(view.container.querySelector("pre > code.language-svg")).not.toBe(
+      null,
+    );
+    await view.render(<MarkdownPreview text={HOSTILE_SVG} breaks />);
+    await until(
+      () =>
+        !!view.container.querySelector(
+          ".markdown-diagram-slot .diagram-block img",
+        ),
+      "the image",
+    );
+    expect(document.querySelector("script")).toBe(null);
+    await view.unmount();
+  });
 }

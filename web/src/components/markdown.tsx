@@ -1,14 +1,9 @@
 import { resolveWorkspaceMarkdownLink } from "../workspaceFileUrl";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef } from "react";
 import { marked } from "marked";
-import { lazyWithReload } from "../lazyWithReload";
+import { diagramMarkdown, endsInOpenFence } from "../diagramSource";
+import { useDiagramSlots } from "./DiagramSlots";
 import "./markdown.css";
-const MermaidDiagram = lazyWithReload("mermaid-preview", () =>
-  import("./MermaidDiagram").then((module) => ({
-    default: module.MermaidDiagram,
-  })),
-);
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
   "a",
@@ -126,7 +121,7 @@ export function markdownSelectionTarget(
   if (!start || !end || !root.contains(start) || !root.contains(end)) {
     return null;
   }
-  if (start.closest(".mermaid-diagram") || end.closest(".mermaid-diagram")) {
+  if (start.closest(".diagram-block") || end.closest(".diagram-block")) {
     return null;
   }
   const quote = selection
@@ -189,8 +184,8 @@ export function sanitizeMarkdownHtml(
         tag === "ol" &&
         /^\d{1,9}$/.test(attr.value.trim())
       ) {
-        // A list marked splits in parts (an item, then a code block not
-        // indented under it, then the next item) keeps its numbers.
+        // A list drawn in parts (a chat message's commentable items) keeps
+        // each item's number.
         continue;
       }
       if (
@@ -290,15 +285,17 @@ export function MarkdownPreview({
   fragment?: string;
   onSelectionChange?: (target: MarkdownSelectionTarget | null) => void;
 }) {
+  // SVG markup alone is drawn as an ```svg block.
+  const source = useMemo(() => diagramMarkdown(text), [text]);
   const html = useMemo(
     () =>
-      renderMarkdown(text, {
+      renderMarkdown(source, {
         breaks,
         imageUrlResolver,
         documentPath,
         linkUrlResolver,
       }),
-    [text, breaks, imageUrlResolver, documentPath, linkUrlResolver],
+    [source, breaks, imageUrlResolver, documentPath, linkUrlResolver],
   );
   const articleRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -330,32 +327,10 @@ export function MarkdownPreview({
     }
   };
 
-  const [diagrams, setDiagrams] = useState<
-    Array<{ target: HTMLElement; code: string }>
-  >([]);
-  useEffect(() => {
-    const root = articleRef.current;
-    if (!root) return;
-    const diagrams: Array<{ target: HTMLElement; code: string }> = [];
-    const originals: Array<{ target: HTMLElement; pre: HTMLElement }> = [];
-    for (const code of root.querySelectorAll("pre > code.language-mermaid")) {
-      const pre = code.parentElement;
-      if (!pre) continue;
-      const target = document.createElement("div");
-      target.className = "markdown-mermaid-slot";
-      pre.replaceWith(target);
-      originals.push({ target, pre });
-      diagrams.push({ target, code: code.textContent ?? "" });
-    }
-    setDiagrams(diagrams);
-    return () => {
-      // Restore the sanitized code blocks for StrictMode's effect replay.
-      // On navigation the article's new HTML already owns different nodes.
-      for (const { target, pre } of originals) {
-        if (root.contains(target)) target.replaceWith(pre);
-      }
-    };
-  }, [html]);
+  // Its ```mermaid and ```svg blocks, as diagrams; a block still being
+  // streamed stays code until it is closed.
+  const openAtEnd = useMemo(() => endsInOpenFence(source), [source]);
+  const diagrams = useDiagramSlots(articleRef, html, openAtEnd);
 
   useEffect(() => {
     if (!onSelectionChange) return;
@@ -396,21 +371,7 @@ export function MarkdownPreview({
         }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {diagrams.map(({ target, code }, index) =>
-        createPortal(
-          <Suspense
-            fallback={
-              <div className="file-preview-state" role="status">
-                Rendering diagram
-              </div>
-            }
-          >
-            <MermaidDiagram code={code} fitToWidth />
-          </Suspense>,
-          target,
-          String(index),
-        ),
-      )}
+      {diagrams}
     </>
   );
 }

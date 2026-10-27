@@ -4,7 +4,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -73,11 +72,6 @@ import {
   type WorkspaceRepo,
 } from "../reviewModel";
 import {
-  looseText,
-  type MessageBlock,
-  messageBlocks,
-} from "../reviewMessageParts";
-import {
   commandCompletions,
   EMPTY_KEY_STATE,
   feedKey,
@@ -101,16 +95,14 @@ import {
   wordMotion,
 } from "../reviewNavigation";
 import { followCommit, nearestLine } from "../reviewFollow";
-import { reviewMrSwitch } from "../reviewMrSwitch";
+import { mergeRequestNumber, reviewMrSwitch } from "../reviewMrSwitch";
 import { store } from "../store";
 import {
   failedForConnection,
   useReloadOnReconnect,
 } from "../useReloadOnReconnect";
 import { useSystemBack } from "../systemBack";
-import { endsInOpenFence } from "../diagramSource";
-import { Diagram, useDiagramSlots } from "./DiagramSlots";
-import { markdownSelectionTarget, renderMarkdown } from "./markdown";
+import { markdownSelectionTarget } from "./markdown";
 import {
   type CommentEditorHandle,
   IMAGE_UPLOADING,
@@ -119,9 +111,42 @@ import {
 } from "./ReviewCommentEditor";
 import {
   highlightCodeTokens,
-  highlightSnippetTokens,
   type SyntaxTokenRange,
 } from "./syntaxHighlighting";
+import {
+  type Mark,
+  type MessageParts,
+  markedText,
+  messageLayout,
+  NoteBody,
+  quotedPart,
+} from "./ReviewNoteBody";
+import {
+  ThreadsChip,
+  ThreadsPanel,
+  UnresolvedNav,
+  useOpenOnly,
+} from "./ThreadsPanel";
+import {
+  compareKeys,
+  type NavPlace,
+  placeBefore,
+  stepNotice,
+  stepUnresolved,
+  unresolvedPosition,
+} from "../unresolvedThreads";
+import { ReviewMenu } from "./ReviewMenu";
+import {
+  ChevronDown,
+  Columns2,
+  Maximize2,
+  MessageSquare,
+  MessageSquareOff,
+  MoreHorizontal,
+  PanelLeft,
+  Send,
+  X,
+} from "lucide-react";
 import "./ReviewOverlay.css";
 
 /**
@@ -146,8 +171,6 @@ type Editor = {
   /** Remounts the editor when a suggestion is inserted from outside. */
   version: number;
 };
-
-type Mark = { start: number; end: number; className: string };
 
 /** A message under a line, or one part of it: where j / k and n / N stop. */
 type CommentStop = {
@@ -192,8 +215,6 @@ const NOT_FOUND_MS = 2500;
 type Prefs = {
   split?: boolean;
   filesHidden?: boolean;
-  /** Resolved conversations listed too (H in the list); hidden by default. */
-  resolvedShown?: boolean;
 };
 
 function readPrefs(): Prefs {
@@ -317,421 +338,6 @@ function plural(count: number, word: string, many = `${word}s`) {
   return `${count} ${count === 1 ? word : many}`;
 }
 
-/** Text cut at every mark boundary; overlapping marks stack their classes. */
-function markedText(text: string, marks: readonly Mark[] | undefined) {
-  if (!marks?.length) return text;
-  const cuts = new Set<number>([0, text.length]);
-  for (const mark of marks) {
-    cuts.add(Math.max(0, Math.min(text.length, mark.start)));
-    cuts.add(Math.max(0, Math.min(text.length, mark.end)));
-  }
-  const points = [...cuts].sort((a, b) => a - b);
-  const parts: ReactNode[] = [];
-  for (let index = 0; index < points.length - 1; index++) {
-    const start = points[index]!;
-    const end = points[index + 1]!;
-    if (start === end) continue;
-    const classes = marks
-      .filter((mark) => mark.start <= start && mark.end >= end)
-      .map((mark) => mark.className);
-    const piece = text.slice(start, end);
-    parts.push(
-      classes.length ? (
-        <span key={start} className={classes.join(" ")}>
-          {piece}
-        </span>
-      ) : (
-        piece
-      ),
-    );
-  }
-  return parts;
-}
-
-/** Syntax colors for a snippet in a comment, once the highlighter answers. */
-function useSnippetMarks(code: string, language: string, path?: string) {
-  const [marks, setMarks] = useState<Mark[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    highlightSnippetTokens(code, language, path)
-      .then((tokens) => {
-        if (!cancelled)
-          setMarks(
-            tokens.map((token) => ({
-              start: token.from,
-              end: token.to,
-              className: token.className,
-            })),
-          );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [code, language, path]);
-  return marks;
-}
-
-/** Marks of one line of a snippet, from where the line starts in it. */
-function lineMarks(marks: readonly Mark[], start: number, length: number) {
-  return marks
-    .filter((mark) => mark.end > start && mark.start < start + length)
-    .map((mark) => ({
-      ...mark,
-      start: mark.start - start,
-      end: mark.end - start,
-    }));
-}
-
-/** Comments on parts of a message, and the part the cursor is on. */
-type MessageParts = {
-  /** Drawn under the part they quote. */
-  notes: readonly { key: string; quote: string; node: ReactNode }[];
-  /** The part j / k is on, by its index among the parts. */
-  focused: number | null;
-  /** + beside a part: comment on it, quoting it. */
-  onComment?: (quote: string) => void;
-  /** A click on a part puts j / k on it. */
-  onSelect?: (index: number) => void;
-};
-
-/** + in the margin of a part of a message: comment on that part. */
-function PartButton({
-  quote,
-  parts,
-}: {
-  quote: string;
-  parts: MessageParts | undefined;
-}) {
-  if (!parts?.onComment) return null;
-  const onComment = parts.onComment;
-  return (
-    <button
-      type="button"
-      className="rc-part-add"
-      title="Comment on this part"
-      aria-label="Comment on this part"
-      onClick={(event) => {
-        event.stopPropagation();
-        onComment(quote);
-      }}
-    >
-      +
-    </button>
-  );
-}
-
-/**
- * A fenced code block in a comment, in its language's colors, a part per
- * line: the comments on a line come right under it.
- */
-function NoteCode({
-  lines,
-  language,
-  path,
-  first,
-  parts,
-  notesAt,
-}: {
-  lines: readonly string[];
-  language: string;
-  path?: string;
-  /** The index of its first line among the message's parts. */
-  first: number;
-  parts?: MessageParts;
-  notesAt: (index: number) => ReactNode[];
-}) {
-  const code = lines.join("\n");
-  const marks = useSnippetMarks(code, language, path);
-  const segments: ReactNode[] = [];
-  let rowsHere: ReactNode[] = [];
-  let offset = 0;
-  lines.forEach((text, line) => {
-    const index = first + line;
-    const start = offset;
-    offset += text.length + 1;
-    const notes = notesAt(index);
-    rowsHere.push(
-      // biome-ignore lint/a11y/useKeyWithClickEvents: j / k select by key
-      <div
-        key={index}
-        data-part={index}
-        onClick={(event) => {
-          if (!parts?.onSelect) return;
-          event.stopPropagation();
-          parts.onSelect(index);
-        }}
-        className={`rc-part rc-code-line${parts?.focused === index ? " is-focused" : ""}${notes.length ? " has-notes" : ""}`}
-      >
-        <PartButton quote={text} parts={parts} />
-        {text
-          ? markedText(text, lineMarks(marks, start, text.length))
-          : "\u00a0"}
-      </div>,
-    );
-    if (notes.length || line === lines.length - 1) {
-      segments.push(
-        <pre key={`c${index}`} className="note-code">
-          {rowsHere}
-        </pre>,
-        ...notes,
-      );
-      rowsHere = [];
-    }
-  });
-  return <>{segments}</>;
-}
-
-/** A GitLab suggestion: the replaced lines, then the new ones. */
-function SuggestionBlock({
-  range,
-  code,
-  newLines,
-  line,
-  path,
-}: {
-  range: string;
-  code: string;
-  newLines: ReadonlyMap<number, string> | undefined;
-  line: number | undefined;
-  path?: string;
-}) {
-  const marks = useSnippetMarks(code, "", path);
-  let offset = 0;
-  const match = /^-(\d+)\+(\d+)$/.exec(range);
-  const above = match ? Number(match[1]) : 0;
-  const below = match ? Number(match[2]) : 0;
-  const replaced: [number, string][] = [];
-  if (line !== undefined && newLines)
-    for (let n = line - above; n <= line + below; n++) {
-      const text = newLines.get(n);
-      if (text !== undefined) replaced.push([n, text]);
-    }
-  return (
-    <div className="suggestion">
-      <div className="sg-head">
-        {replaced.length
-          ? "Suggested change"
-          : "Suggested change (the lines it replaces are not shown)"}
-      </div>
-      {replaced.map(([n, text]) => (
-        <div key={`d${n}`} className="sg-row sg-del">
-          <span className="sg-no">{n}</span>
-          <span>-{text}</span>
-        </div>
-      ))}
-      {code.split("\n").map((text, index) => {
-        const start = offset;
-        offset += text.length + 1;
-        return (
-          <div key={`a${index}`} className="sg-row sg-add">
-            <span className="sg-no" />
-            <span>
-              +{markedText(text, lineMarks(marks, start, text.length))}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * Images in comments: only those pasted into a review, by their file's
- * path; any other source (a tracker on the web) is dropped.
- */
-function reviewImageUrl(source: string): string | null {
-  let path = source;
-  try {
-    path = decodeURI(source);
-  } catch {}
-  const match =
-    /\/images\/([0-9a-f]{16})\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))$/.exec(
-      path,
-    );
-  return match
-    ? `/api/review/image?session=${match[1]}&name=${match[2]}`
-    : null;
-}
-
-/** The text a reader sees of rendered HTML: quotes are found in it. */
-function renderedText(html: string): string {
-  return (
-    new DOMParser().parseFromString(html, "text/html").body.textContent ?? ""
-  );
-}
-
-/**
- * A message cut into its parts (messageBlocks), rendered, with what each
- * part reads: the same for drawing it and for the keys that step through it.
- */
-type MessageLayout = {
-  blocks: MessageBlock[];
-  html: string[];
-  /** What each part reads, as the reader sees it. */
-  quotes: string[];
-  /** The same, compared loosely. */
-  texts: string[];
-};
-
-const messageLayouts = new Map<string, MessageLayout>();
-
-function messageLayout(text: string): MessageLayout {
-  const known = messageLayouts.get(text);
-  if (known) return known;
-  const blocks = messageBlocks(text);
-  const html = blocks.map((block) =>
-    block.kind === "markdown"
-      ? renderMarkdown(block.source, {
-          breaks: true,
-          imageUrlResolver: reviewImageUrl,
-        })
-      : "",
-  );
-  const quotes: string[] = [];
-  blocks.forEach((block, index) => {
-    if (block.kind === "markdown")
-      quotes.push(renderedText(html[index]!).trim());
-    else if (block.kind === "code") quotes.push(...block.lines);
-    else if (block.kind === "suggestion" || block.kind === "diagram")
-      quotes.push(block.code);
-  });
-  const layout = { blocks, html, quotes, texts: quotes.map(looseText) };
-  if (messageLayouts.size > 500) messageLayouts.clear();
-  messageLayouts.set(text, layout);
-  return layout;
-}
-
-/**
- * The part of a message a comment quotes: the first one its quote's first
- * line is in (a selection may run over several), else the last.
- */
-function quotedPart(layout: MessageLayout, quote: string): number {
-  const first = looseText(quote.split("\n")[0] ?? "").slice(0, 160);
-  const index = first
-    ? layout.texts.findIndex((text) => text.includes(first))
-    : -1;
-  return index >= 0 ? index : Math.max(0, layout.texts.length - 1);
-}
-
-/**
- * maildesk's note body: Markdown, code fences, diagrams and GitLab
- * suggestions, in parts one can comment on (see messageBlocks), with those
- * comments under the part they quote.
- */
-function NoteBody({
-  text,
-  newLines,
-  line,
-  path,
-  parts,
-}: {
-  text: string;
-  newLines?: ReadonlyMap<number, string>;
-  line?: number;
-  /** The file commented on: the language of fences that name none. */
-  path?: string;
-  parts?: MessageParts;
-}) {
-  const layout = messageLayout(text);
-  const { blocks, html, quotes } = layout;
-  // Diagrams in a part (a list item's ```mermaid): a block not closed yet
-  // stays code.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const last = blocks[blocks.length - 1];
-  const diagrams = useDiagramSlots(
-    rootRef,
-    html.join("\u0000"),
-    last?.kind === "markdown" && endsInOpenFence(last.source),
-  );
-  const notesByPart = useMemo(() => {
-    const byPart = new Map<number, ReactNode[]>();
-    for (const note of parts?.notes ?? []) {
-      const index = quotedPart(layout, note.quote);
-      byPart.set(index, [
-        ...(byPart.get(index) ?? []),
-        <div key={note.key} className="rc-part-notes">
-          {note.node}
-        </div>,
-      ]);
-    }
-    return byPart;
-  }, [parts?.notes, layout]);
-  const notesAt = (index: number) => notesByPart.get(index) ?? [];
-  const partClass = (index: number) =>
-    `rc-part${parts?.focused === index && quotes.length > 1 ? " is-focused" : ""}${notesAt(index).length ? " has-notes" : ""}`;
-
-  const out: ReactNode[] = [];
-  let index = 0;
-  blocks.forEach((block, position) => {
-    if (block.kind === "blank") {
-      out.push(
-        <div
-          key={`b${position}`}
-          className="rc-blank"
-          style={{ height: `${block.lines * 1.45}em` }}
-        />,
-      );
-      return;
-    }
-    if (block.kind === "code") {
-      out.push(
-        <NoteCode
-          key={`c${position}`}
-          lines={block.lines}
-          language={block.lang}
-          path={path}
-          first={index}
-          parts={parts}
-          notesAt={notesAt}
-        />,
-      );
-      index += block.lines.length;
-      return;
-    }
-    const at = index++;
-    out.push(
-      // biome-ignore lint/a11y/useKeyWithClickEvents: j / k select by key
-      <div
-        key={`p${position}`}
-        data-part={at}
-        className={partClass(at)}
-        onClick={(event) => {
-          if (!parts?.onSelect) return;
-          event.stopPropagation();
-          parts.onSelect(at);
-        }}
-      >
-        <PartButton quote={quotes[at] ?? ""} parts={parts} />
-        {block.kind === "suggestion" ? (
-          <SuggestionBlock
-            range={block.range}
-            code={block.code}
-            newLines={newLines}
-            line={line}
-            path={path}
-          />
-        ) : block.kind === "diagram" ? (
-          <Diagram lang={block.lang} code={block.code} />
-        ) : (
-          <div
-            // renderMarkdown sanitises the HTML it produces.
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised
-            dangerouslySetInnerHTML={{ __html: html[position]! }}
-          />
-        )}
-      </div>,
-      ...notesAt(at),
-    );
-  });
-  return (
-    <div ref={rootRef} className="rc-text rich">
-      {out}
-      {diagrams}
-    </div>
-  );
-}
-
 function drawnRows(rows: ReviewRow[], split: boolean): DrawnRow[] {
   if (!split) return rows.map((row) => ({ type: "line", row }));
   const result: DrawnRow[] = [];
@@ -818,7 +424,16 @@ const REVIEW_KEYS: [string, string][] = [
     "za",
     "fold / unfold a thread, resolved or not (resolved ones start folded); on a reviewed chunk, show it or fold it again",
   ],
+  [
+    "gn gN",
+    "next / previous unresolved thread, in any file, commit or fold (wrapping); also the arrows beside the comments chip",
+  ],
+  [
+    "gH :unresolved",
+    "show only the unresolved threads (n / N skip the resolved ones; r goes on to the next), or all again; remembered",
+  ],
   ["gl", "the last message of the thread selected, or on the line"],
+  ["g;", "the comment written last, in any view"],
   ["u", "undo that delete"],
   [
     "n N",
@@ -971,7 +586,9 @@ function useWorkspaceRepos(
       if (
         other.connectionId !== session.connectionId ||
         !session.workspaceId ||
-        other.workspaceId !== session.workspaceId
+        other.workspaceId !== session.workspaceId ||
+        // A chat's threads are not comments on a checkout.
+        other.target.kind === "chat"
       )
         continue;
       const entry = byRoot.get(other.root) ?? { root: other.root };
@@ -1135,6 +752,8 @@ export function ReviewOverlay({
   const [foldFlipped, setFoldFlipped] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  /** Only the unresolved threads drawn (gH): remembered in the browser. */
+  const [openOnly, setOpenOnly] = useOpenOnly();
   // Resolved or reopened, a thread folds as its new state does: a fold
   // flipped by hand is for the state it was flipped in.
   const resolvedBefore = useRef(new Map<string, boolean>());
@@ -1191,20 +810,6 @@ export function ReviewOverlay({
   // The phone's Back closes the conversations, then the review.
   useSystemBack(!hidden && threadsOpen, () => setThreadsOpen(false), "popup");
   useSystemBack(!hidden, () => close(), "navigation");
-  const [threadsQuery, setThreadsQuery] = useState("");
-  /** The selected conversation in the list, for the keys. */
-  const [threadsSel, setThreadsSel] = useState<string | null>(null);
-  const threadsPanelRef = useRef<HTMLDivElement | null>(null);
-  /** Conversations folded or unfolded by hand (resolved ones start folded). */
-  const [threadsExpanded, setThreadsExpanded] = useState<Set<string>>(
-    () => new Set(),
-  );
-  /** Whether the resolved conversations are listed, after the open ones. */
-  const [resolvedShown, setResolvedShown] = useState(
-    () => readPrefs().resolvedShown === true,
-  );
-  /** Set by a move by key: only that brings the selection into view. */
-  const threadsScrollPending = useRef(false);
   /** Bumped to move to a remembered place in the view already shown. */
   const [placeTick, setPlaceTick] = useState(0);
   const [keysFilter, setKeysFilter] = useState("");
@@ -2133,228 +1738,6 @@ export function ReviewOverlay({
     [threads],
   );
 
-  /**
-   * The conversations matching the search: every word, anywhere in one;
-   * the resolved ones only when they are listed.
-   */
-  const matchedConversations = useMemo(() => {
-    const words = threadsQuery.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return conversations;
-    return conversations.filter((thread) => {
-      const text = [
-        thread.anchor.path ?? "the review",
-        thread.resolved ? "resolved" : "open",
-        thread.kind === "draft" ? "review comment" : "discussion",
-        ...thread.comments.flatMap((comment) => [
-          authorLabel(comment.author),
-          comment.body,
-        ]),
-      ]
-        .join("\n")
-        .toLowerCase();
-      return words.every((word) => text.includes(word));
-    });
-  }, [conversations, threadsQuery]);
-  const shownConversations = useMemo(
-    () =>
-      resolvedShown
-        ? matchedConversations
-        : matchedConversations.filter((thread) => !thread.resolved),
-    [matchedConversations, resolvedShown],
-  );
-  const hiddenResolved = resolvedShown
-    ? 0
-    : matchedConversations.length - shownConversations.length;
-
-  function toggleResolvedShown() {
-    setResolvedShown((shown) => {
-      writePrefs({ resolvedShown: !shown });
-      return !shown;
-    });
-  }
-
-  useEffect(() => {
-    if (!threadsOpen) return;
-    setThreadsQuery("");
-    setThreadsExpanded(new Set());
-    setThreadsSel(null);
-    // The list has the keys (j / k); / goes to the search.
-    requestAnimationFrame(() => threadsPanelRef.current?.focus());
-  }, [threadsOpen]);
-
-  const selectedConversation =
-    shownConversations.find((thread) => thread.id === threadsSel) ??
-    shownConversations[0];
-  const selectedConversationId = selectedConversation?.id;
-
-  // A conversation resolved while selected (here or elsewhere) leaves the
-  // selection on the next open one, in its place: the list does not follow
-  // it to the resolved ones or to the top.
-  const lastConversations = useRef<{ ids: string[]; resolved: Set<string> }>({
-    ids: [],
-    resolved: new Set(),
-  });
-  useLayoutEffect(() => {
-    const before = lastConversations.current;
-    const resolved = new Set(
-      conversations.filter((t) => t.resolved).map((t) => t.id),
-    );
-    lastConversations.current = {
-      ids: shownConversations.map((t) => t.id),
-      resolved,
-    };
-    if (!threadsSel || before.resolved.has(threadsSel)) return;
-    if (!resolved.has(threadsSel)) return;
-    const at = before.ids.indexOf(threadsSel);
-    const openNow = new Set(
-      shownConversations.filter((t) => !t.resolved).map((t) => t.id),
-    );
-    const next =
-      before.ids.slice(at + 1).find((id) => openNow.has(id)) ??
-      before.ids
-        .slice(0, Math.max(0, at))
-        .reverse()
-        .find((id) => openNow.has(id));
-    if (next) setThreadsSel(next);
-  }, [conversations, shownConversations, threadsSel]);
-
-  // Only a move by key brings the selection into view: new threads (one
-  // resolved, an answer come in) leave the list where it is.
-  useEffect(() => {
-    if (!threadsOpen || !selectedConversationId) return;
-    if (!threadsScrollPending.current) return;
-    threadsScrollPending.current = false;
-    threadsPanelRef.current
-      ?.querySelector(`[data-thread-id="${selectedConversationId}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [threadsOpen, selectedConversationId]);
-
-  /** The count of resolved conversations, as the button showing them. */
-  function resolvedToggle(label: string) {
-    return (
-      <button
-        type="button"
-        className="rt-resolved-toggle"
-        aria-pressed={resolvedShown}
-        title={
-          resolvedShown
-            ? "Hide the resolved conversations (H)"
-            : "Show the resolved conversations after the open ones (H)"
-        }
-        onClick={toggleResolvedShown}
-      >
-        {label}
-      </button>
-    );
-  }
-
-  function conversationFolded(thread: ReviewThread): boolean {
-    return thread.resolved !== threadsExpanded.has(thread.id);
-  }
-
-  function toggleConversation(thread: ReviewThread) {
-    setThreadsExpanded((toggled) => {
-      const next = new Set(toggled);
-      if (!next.delete(thread.id)) next.add(thread.id);
-      return next;
-    });
-  }
-
-  /**
-   * Keys of the conversation list, which has them when it opens: j / k,
-   * Enter or o goes, Space folds, r resolves, R (or a) answers, / searches,
-   * Esc or q closes.
-   * In the search: arrows (Ctrl-n / Ctrl-p) select, Enter goes, Esc goes
-   * back to the list.
-   */
-  function onConversationKey(event: ReactKeyboardEvent<HTMLDivElement>) {
-    const inSearch = event.target instanceof HTMLInputElement;
-    const count = shownConversations.length;
-    const select = (next: ReviewThread | undefined) => {
-      if (!next) return;
-      threadsScrollPending.current = next.id !== selectedConversationId;
-      setThreadsSel(next.id);
-    };
-    const move = (delta: number) => {
-      const at = selectedConversation
-        ? shownConversations.indexOf(selectedConversation)
-        : 0;
-      select(shownConversations[Math.max(0, Math.min(count - 1, at + delta))]);
-    };
-    let handled = true;
-    const key = event.ctrlKey ? `C-${event.key}` : event.key;
-    switch (key) {
-      case "ArrowDown":
-      case "C-n":
-        move(1);
-        break;
-      case "ArrowUp":
-      case "C-p":
-        move(-1);
-        break;
-      case "Enter":
-        if (selectedConversation) openThread(selectedConversation);
-        break;
-      case "Escape":
-        if (inSearch) threadsPanelRef.current?.focus();
-        else handled = false;
-        break;
-      default:
-        if (inSearch || event.metaKey || event.altKey || event.ctrlKey) {
-          handled = false;
-          break;
-        }
-        switch (event.key) {
-          case "j":
-            move(1);
-            break;
-          case "k":
-            move(-1);
-            break;
-          case "g":
-            select(shownConversations[0]);
-            break;
-          case "G":
-            select(shownConversations[count - 1]);
-            break;
-          case "H":
-            toggleResolvedShown();
-            break;
-          case "o":
-            if (selectedConversation) openThread(selectedConversation);
-            break;
-          case " ":
-            if (selectedConversation) toggleConversation(selectedConversation);
-            break;
-          case "r":
-            if (selectedConversation) {
-              setThreadsSel(selectedConversation.id);
-              toggleResolved(selectedConversation);
-            }
-            break;
-          case "R":
-          case "a":
-            if (selectedConversation) replyInList(selectedConversation);
-            break;
-          case "/":
-            threadsPanelRef.current
-              ?.querySelector<HTMLInputElement>("#review-threads-filter")
-              ?.focus();
-            break;
-          case "q":
-            setThreadsOpen(false);
-            rootRef.current?.focus({ preventScroll: true });
-            break;
-          default:
-            handled = false;
-        }
-    }
-    if (handled) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  }
-
   /** A thread's view, in words. */
   function viewLabel(thread: ReviewThread): string {
     const own = commitOf(thread);
@@ -2365,9 +1748,18 @@ export function ReviewOverlay({
       : `${own.slice(0, 8)}, no longer in the review`;
   }
 
-  /** To a thread, in its view, comments shown. */
-  function openThread(thread: ReviewThread) {
-    const own = commitOf(thread);
+  /**
+   * To a thread, in its view (`view`, else its commit's), comments shown;
+   * the conversations panel closes unless `keepPanel`.
+   */
+  function openThread(
+    thread: ReviewThread,
+    {
+      view,
+      keepPanel = false,
+    }: { view?: string | null; keepPanel?: boolean } = {},
+  ) {
+    const own = view === undefined ? commitOf(thread) : view;
     if (own !== null && !commits?.some((c) => c.sha === own))
       setGoneCommit({
         sha: own,
@@ -2377,7 +1769,7 @@ export function ReviewOverlay({
         subject: thread.anchor.commitSubject ?? "",
         body: "",
       });
-    setThreadsOpen(false);
+    if (!keepPanel) setThreadsOpen(false);
     setHideComments(false);
     if (own !== commitSha) showView(own);
     const { path, line, side } = thread.anchor;
@@ -2434,11 +1826,40 @@ export function ReviewOverlay({
     () => new Set([...messageParts.values()].flat().map((thread) => thread.id)),
     [messageParts],
   );
+  /**
+   * Resolved threads left out while only the unresolved ones are shown
+   * (gH): all of them but those holding an unresolved one on a part of
+   * their messages, which is drawn in them.
+   */
+  const hiddenThreads = useMemo(() => {
+    const hidden = new Set<string>();
+    if (!openOnly) return hidden;
+    const holdsOpen = (thread: ReviewThread, seen: Set<string>): boolean =>
+      thread.comments.some((comment) =>
+        (messageParts.get(comment.id) ?? []).some(
+          (note) =>
+            !seen.has(note.id) &&
+            (seen.add(note.id), !note.resolved || holdsOpen(note, seen)),
+        ),
+      );
+    for (const thread of threads)
+      if (thread.resolved && !holdsOpen(thread, new Set([thread.id])))
+        hidden.add(thread.id);
+    return hidden;
+  }, [openOnly, threads, messageParts]);
+  /** The threads drawn on parts of a message. */
+  const partNotes = (comment: string) =>
+    (messageParts.get(comment) ?? []).filter(
+      (note) => !hiddenThreads.has(note.id),
+    );
 
   const placedThreads = useMemo(
     () =>
       viewThreads
-        .filter((thread) => !nestedThreads.has(thread.id))
+        .filter(
+          (thread) =>
+            !nestedThreads.has(thread.id) && !hiddenThreads.has(thread.id),
+        )
         .map((thread) => {
           const moved = relocations.get(thread.id);
           if (moved)
@@ -2461,7 +1882,14 @@ export function ReviewOverlay({
             return { ...thread, anchor: {} };
           return thread;
         }),
-    [viewThreads, nestedThreads, relocations, diff?.headSha, currentCommit],
+    [
+      viewThreads,
+      nestedThreads,
+      hiddenThreads,
+      relocations,
+      diff?.headSha,
+      currentCommit,
+    ],
   );
   const drawn = useMemo(() => drawnRows(rows, split), [rows, split]);
   /** For ←/→ in side by side: the pair a row belongs to. */
@@ -2546,7 +1974,7 @@ export function ReviewOverlay({
         }
         const layout = messageLayout(comment.body);
         const notes = new Map<number, ReviewThread[]>();
-        for (const note of messageParts.get(comment.id) ?? []) {
+        for (const note of partNotes(comment.id)) {
           const part = quotedPart(layout, note.anchor.message?.quote ?? "");
           notes.set(part, [...(notes.get(part) ?? []), note]);
         }
@@ -2573,9 +2001,9 @@ export function ReviewOverlay({
         pushThread(at, thread);
     }
     return stops;
-    // threadFolded reads foldFlipped.
+    // threadFolded reads foldFlipped, partNotes hiddenThreads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentRows, placement, foldFlipped, messageParts]);
+  }, [commentRows, placement, foldFlipped, messageParts, hiddenThreads]);
   /**
    * The rows of the cursor's drawn line: side by side, both halves, whose
    * comments are all drawn under it.
@@ -2727,6 +2155,13 @@ export function ReviewOverlay({
     };
   }, [findMr, hidden, diffShown, shownHead, session.target.kind, call]);
   const mrSwitch = reviewMrSwitch(session, gitlabMr, foundMr, !!onOpenLocal);
+  // The head's Local / GitLab switch, where there is room for it.
+  const modeSwitch =
+    session.target.kind === "mr" ||
+    session.target.kind === "range" ||
+    session.target.kind === "worktree";
+  const mrNumber = gitlabMr ? mergeRequestNumber(gitlabMr.url) : null;
+  const mrLabel = mrSwitch?.label ?? (mrNumber ? `MR !${mrNumber}` : null);
 
   /**
    * GitLab is the merge request's own review, Local the checkout's: each
@@ -3235,6 +2670,263 @@ export function ReviewOverlay({
     goToStop(stop, "none");
   }
 
+  /** A comment to put the cursor on once its view is shown (g;). */
+  const pendingComment = useRef<string | null>(null);
+  useEffect(() => {
+    const id = pendingComment.current;
+    if (!id) return;
+    const stop = commentStops.find((s) => s.comment.id === id);
+    if (!stop) return;
+    pendingComment.current = null;
+    goToStop(stop, "none");
+    // Once the view with that comment is drawn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentStops]);
+
+  /** g;: the comment written last, yours or the agent's, in any view. */
+  function jumpLatestComment() {
+    let latest: {
+      thread: ReviewThread;
+      comment: ReviewComment;
+      at: string;
+    } | null = null;
+    for (const thread of threads)
+      for (const comment of thread.comments) {
+        const at =
+          comment.updatedAt > comment.createdAt
+            ? comment.updatedAt
+            : comment.createdAt;
+        if (!latest || at > latest.at) latest = { thread, comment, at };
+      }
+    if (!latest) {
+      notify("No comment yet.", "info", 1500);
+      return;
+    }
+    // A folded thread is one stop: its first message.
+    const stop =
+      commentStops.find((s) => s.comment.id === latest.comment.id) ??
+      commentStops.find((s) => s.thread.id === latest.thread.id);
+    if (stop) {
+      goToStop(stop, "none");
+      return;
+    }
+    pendingComment.current = latest.comment.id;
+    openThread(latest.thread);
+  }
+
+  // ---- Unresolved threads, one after the other (gn / gN) ---------------
+
+  /**
+   * The view a thread is read in: this one when it shows here (a comment
+   * on the whole review shows in every view), else its commit's.
+   */
+  const threadView = useCallback(
+    (thread: ReviewThread): string | null =>
+      viewThreads.includes(thread) ? commitSha : commitOf(thread),
+    [viewThreads, commitSha, commitOf],
+  );
+
+  /**
+   * Every thread of the review in the order it is read: view by view (all
+   * changes, then each commit), file by file as the diff lists them, line
+   * by line; a thread on a part of a message right after the thread it is
+   * in. Resolved ones too, so a step starts from wherever you are.
+   */
+  const threadOrder = useMemo(() => {
+    const byId = new Map(threads.map((thread) => [thread.id, thread]));
+    const placedById = new Map(
+      placedThreads.map((thread) => [thread.id, thread]),
+    );
+    const rank = (view: string | null) => {
+      if (view === null) return -1;
+      const index = commits?.findIndex((c) => c.sha === view) ?? -1;
+      return index < 0 ? (commits?.length ?? 0) : index;
+    };
+    const keys = new Map<string, (number | string)[]>();
+    const keyOf = (
+      thread: ReviewThread,
+      seen: Set<string>,
+    ): (number | string)[] => {
+      const known = keys.get(thread.id);
+      if (known) return known;
+      const holder = thread.anchor.message?.thread;
+      const parent = holder ? byId.get(holder) : undefined;
+      let key: (number | string)[];
+      if (parent && !seen.has(parent.id)) {
+        seen.add(parent.id);
+        key = [...keyOf(parent, seen), thread.createdAt];
+      } else {
+        const view = threadView(thread);
+        const { path, line } = (placedById.get(thread.id) ?? thread).anchor;
+        const file =
+          view === commitSha
+            ? path
+              ? (viewDiff?.files.findIndex(
+                  (f) => f.path === path || f.oldPath === path,
+                ) ?? -1)
+              : -1
+            : (path ?? "");
+        key = [rank(view), file, line ?? 0, thread.createdAt];
+      }
+      keys.set(thread.id, key);
+      return key;
+    };
+    return threads
+      .map((thread) => ({ thread, key: keyOf(thread, new Set([thread.id])) }))
+      .sort((a, b) => compareKeys(a.key, b.key));
+  }, [threads, placedThreads, threadView, commits, commitSha, viewDiff]);
+
+  /** The thread you are on: the message selected, else an open one here. */
+  const currentThread =
+    focusedStop?.thread ??
+    (hideComments ? undefined : threadsHere().find((t) => !t.resolved));
+  const unresolvedTotal = threadOrder.filter(
+    ({ thread }) => !thread.resolved,
+  ).length;
+  const unresolvedAt = unresolvedPosition(
+    threadOrder.map(({ thread }) => thread),
+    currentThread?.id,
+  );
+
+  /** Where you are among the threads: on one, or between two. */
+  function threadPlace(): NavPlace {
+    const index = currentThread
+      ? threadOrder.findIndex(({ thread }) => thread.id === currentThread.id)
+      : -1;
+    if (index >= 0) return { index, on: true };
+    const row = rows[cursor];
+    const here: (number | string)[] = [
+      commitSha === null
+        ? -1
+        : (commits?.findIndex((c) => c.sha === commitSha) ?? -1),
+      row?.file ?? -1,
+      row ? (row.line.new ?? row.line.old ?? 0) : 0,
+      "",
+    ];
+    return placeBefore(
+      threadOrder.map(({ key }) => key),
+      here,
+      compareKeys,
+    );
+  }
+
+  /** A file of this view folded (reviewed, by a click, or large): opened. */
+  function unfoldFile(index: number) {
+    const key = reviewedKey(index);
+    if (reviewedFolded.has(index))
+      setRevealed((current) => new Set(current).add(key));
+    if (collapsedFiles.has(index))
+      setCollapsed((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    if (folded.has(index))
+      setOpenedLarge((current) => new Set(current).add(index));
+  }
+
+  /** A file to open once its view is shown: a thread is gone to there. */
+  const unfoldFor = useRef<{ view: string | null; path: string } | null>(null);
+  useEffect(() => {
+    const wanted = unfoldFor.current;
+    if (!wanted || !viewDiff || wanted.view !== commitSha) return;
+    if (diff !== diffs.current.get(wanted.view ?? "")) return;
+    unfoldFor.current = null;
+    const index = viewDiff.files.findIndex(
+      (f) => f.path === wanted.path || f.oldPath === wanted.path,
+    );
+    if (index >= 0) unfoldFile(index);
+    // Once the view wanted is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewDiff, commitSha, diff]);
+
+  /**
+   * To a thread wherever it is: its view shown, its file opened, the
+   * threads it is in unfolded, its first message selected.
+   */
+  function goToThread(thread: ReviewThread, keepPanel = true) {
+    const byId = new Map(threads.map((t) => [t.id, t]));
+    // A thread on a part of a message is where that message's thread is.
+    let root = thread;
+    const holders: ReviewThread[] = [];
+    for (let seen = 0; root.anchor.message && seen < 20; seen++) {
+      const holder = byId.get(root.anchor.message.thread);
+      if (!holder) break;
+      holders.push(holder);
+      root = holder;
+    }
+    const folds = holders.filter(threadFolded).map((t) => t.id);
+    if (threadFolded(thread) && !thread.resolved) folds.push(thread.id);
+    if (folds.length)
+      setFoldFlipped((current) => {
+        const next = new Set(current);
+        for (const id of folds) {
+          if (!next.delete(id)) next.add(id);
+        }
+        return next;
+      });
+    const first = thread.comments[0];
+    const view = threadView(root);
+    const path = root.anchor.path;
+    // In a folded file of this view, it is listed above the diff: the file
+    // is opened to read it on its line.
+    const fileIndex =
+      view === commitSha && path
+        ? (viewDiff?.files.findIndex(
+            (f) => f.path === path || f.oldPath === path,
+          ) ?? -1)
+        : -1;
+    const fileFolded =
+      fileIndex >= 0 &&
+      (reviewedFolded.has(fileIndex) ||
+        collapsedFiles.has(fileIndex) ||
+        folded.has(fileIndex));
+    if (view === commitSha && !folds.length && !fileFolded && first) {
+      const stop = commentStops.find(
+        (s) =>
+          s.thread.id === thread.id &&
+          s.comment.id === first.id &&
+          s.part === undefined,
+      );
+      if (stop) {
+        setHideComments(false);
+        goToStop(stop);
+        return;
+      }
+    }
+    if (first) pendingComment.current = first.id;
+    if (fileFolded) unfoldFile(fileIndex);
+    else if (path && view !== commitSha) unfoldFor.current = { view, path };
+    openThread(root, { view, keepPanel });
+  }
+
+  /** gn / gN: the next or previous unresolved thread, wrapping around. */
+  function jumpUnresolved(direction: 1 | -1) {
+    const step = stepUnresolved(
+      threadOrder.map(({ thread }) => thread),
+      threadPlace(),
+      direction,
+    );
+    if (!step) {
+      notify("No unresolved thread.", "info", 1500);
+      return;
+    }
+    if (step.wrapped) notify(stepNotice(step, direction), "info", 1500);
+    goToThread(threadOrder[step.index]!.thread);
+  }
+
+  /** gH, :unresolved: only the unresolved threads drawn, or all again. */
+  function toggleOpenOnly(on = !openOnly) {
+    setOpenOnly(on);
+    notify(
+      on
+        ? "Only the unresolved threads (gH shows them all)"
+        : "All the threads, resolved ones folded",
+      "info",
+      1800,
+    );
+  }
+
   function editable(thread: ReviewThread, comment: ReviewComment) {
     if (comment.gitlabDraftId !== undefined) return true;
     return (
@@ -3671,7 +3363,16 @@ export function ReviewOverlay({
       );
       return;
     }
+    // Showing only the unresolved ones, the thread resolved goes away: on
+    // to the next one.
+    const order = threadOrder.map(({ thread }) => thread);
+    const index = order.findIndex((t) => t.id === thread.id);
+    const next =
+      openOnly && !thread.resolved && index >= 0
+        ? stepUnresolved(order, { index, on: true }, 1)
+        : null;
     toggleResolved(thread);
+    if (next && next.id !== thread.id) goToThread(order[next.index]!);
   }
 
   function toggleResolved(thread: ReviewThread) {
@@ -3680,8 +3381,13 @@ export function ReviewOverlay({
         comment_id: thread.id,
         resolved: !thread.resolved,
       });
+      const left = threads.filter(
+        (t) => !t.resolved && t.id !== thread.id,
+      ).length;
       notify(
-        thread.resolved ? "Reopened" : "Resolved (r reopens)",
+        thread.resolved
+          ? "Reopened"
+          : `Resolved (r reopens); ${left ? `${left} unresolved left, gn goes on` : "none unresolved left"}`,
         "info",
         2000,
       );
@@ -4399,6 +4105,9 @@ export function ReviewOverlay({
       case "threads":
         setThreadsOpen(true);
         break;
+      case "unresolved":
+        toggleOpenOnly();
+        break;
       case "unreviewed":
         jumpUnreviewed(1);
         break;
@@ -4683,6 +4392,18 @@ export function ReviewOverlay({
         break;
       case "gc":
         openCommitPicker();
+        break;
+      case "g;":
+        jumpLatestComment();
+        break;
+      case "gn":
+        jumpUnresolved(1);
+        break;
+      case "gN":
+        jumpUnresolved(-1);
+        break;
+      case "gH":
+        toggleOpenOnly();
         break;
       case "G":
         if (result.count) jumpTo(result.count - 1, 0);
@@ -5179,7 +4900,10 @@ export function ReviewOverlay({
 
   /** Back to the conversation list when the editor was in it, else the diff. */
   function refocusAfterEditor() {
-    (threadsOpen ? threadsPanelRef.current : rootRef.current)?.focus({
+    (threadsOpen
+      ? rootRef.current?.querySelector<HTMLElement>(".threads-panel")
+      : rootRef.current
+    )?.focus({
       preventScroll: true,
     });
   }
@@ -5190,8 +4914,6 @@ export function ReviewOverlay({
       notify("Review comments are edited, not answered.", "info", 2000);
       return;
     }
-    setThreadsSel(thread.id);
-    if (conversationFolded(thread)) toggleConversation(thread);
     commitEditor();
     openEditor({
       at: null,
@@ -5361,7 +5083,7 @@ export function ReviewOverlay({
     thread: ReviewThread,
     comment: ReviewComment,
   ): MessageParts {
-    const notes = (messageParts.get(comment.id) ?? []).map((note) => ({
+    const notes = partNotes(comment.id).map((note) => ({
       key: note.id,
       quote: note.anchor.message?.quote ?? "",
       node: renderComment(note),
@@ -6343,15 +6065,16 @@ export function ReviewOverlay({
           Comment
         </button>
       ) : null}
-      <div className="review-head">
+      <div className={`review-head${session.gitlab ? " is-gitlab" : ""}`}>
         <button
           type="button"
-          className={`btn ghost rv-sm${filesShown ? " on" : ""}`}
+          className={`icon-btn rv-icon${filesShown ? " on" : ""}`}
           aria-pressed={filesShown}
+          aria-label="Files"
           title="Show / hide the file list (f)"
           onClick={toggleFiles}
         >
-          Files
+          <PanelLeft size={16} />
         </button>
         <h2
           title={`${session.title}\n${
@@ -6375,109 +6098,135 @@ export function ReviewOverlay({
             {mrSwitch.label}
             <span className="rv-mode">{mrSwitch.mode}</span>
           </button>
+        ) : session.gitlab ? (
+          <span
+            className="rv-mr-chip rv-mode"
+            title="Reviewing the merge request on GitLab"
+          >
+            GitLab
+          </span>
         ) : null}
-        <div className="rv-group" role="group" aria-label="View">
+        {modeSwitch ? (
+          <div
+            className="rv-mode-switch"
+            role="group"
+            aria-label="Review mode"
+            title={mrSwitch?.title}
+          >
+            {mrLabel ? <span className="rv-mode-mr">{mrLabel}</span> : null}
+            <button
+              type="button"
+              className={session.gitlab ? "" : "on"}
+              aria-pressed={!session.gitlab}
+              title={
+                session.gitlab
+                  ? session.target.kind === "mr"
+                    ? "Review the checkout's branch locally (gm, :switch)"
+                    : "Keep your comments here instead of GitLab draft notes (gm, :switch)"
+                  : "A local review: your comments stay in Roamgate"
+              }
+              onClick={() => {
+                if (!session.gitlab) return;
+                if (session.target.kind === "mr") switchMode();
+                else setGitlab(false);
+              }}
+            >
+              Local
+            </button>
+            <button
+              type="button"
+              className={session.gitlab ? "on" : ""}
+              aria-pressed={session.gitlab}
+              title={
+                session.gitlab
+                  ? "GitLab mode: the merge request's discussions are shown and your comments are draft notes"
+                  : "Use the branch's GitLab merge request: its discussions, and your review as draft notes (gm, :switch)"
+              }
+              onClick={() => {
+                if (!session.gitlab) setGitlab(true);
+              }}
+            >
+              GitLab
+            </button>
+          </div>
+        ) : null}
+        {conversations.length ? (
+          <ThreadsChip
+            className="review-threads-chip"
+            threads={conversations}
+            open={threadsOpen}
+            onToggle={() => setThreadsOpen((open) => !open)}
+          />
+        ) : null}
+        {threadOrder.length ? (
+          <UnresolvedNav
+            className="review-unresolved-nav"
+            total={unresolvedTotal}
+            position={unresolvedAt}
+            openOnly={openOnly}
+            onStep={(direction) => {
+              jumpUnresolved(direction);
+              if (!threadsOpen) rootRef.current?.focus({ preventScroll: true });
+            }}
+            onOpenOnly={(on) => {
+              toggleOpenOnly(on);
+              rootRef.current?.focus({ preventScroll: true });
+            }}
+          />
+        ) : null}
+        <div className="rv-tools" role="group" aria-label="View">
           <button
             type="button"
-            className={`btn ghost rv-sm${zen ? " on" : ""}`}
+            className={`icon-btn rv-icon${hideComments ? "" : " on"}`}
+            aria-pressed={!hideComments}
+            aria-label="Comments"
+            title={
+              hideComments && commentRows.length
+                ? `Show the ${plural(commentRows.length, "hidden comment")} (t, :comments)`
+                : "Show / hide every comment, yours and GitLab's (t, :comments)"
+            }
+            onClick={toggleComments}
+          >
+            {hideComments ? (
+              <MessageSquareOff size={16} />
+            ) : (
+              <MessageSquare size={16} />
+            )}
+            {hideComments && commentRows.length ? (
+              <span className="rv-badge">{commentRows.length}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            className={`icon-btn rv-icon${split ? " on" : ""}`}
+            aria-pressed={split}
+            aria-label="Side by side"
+            title={
+              split
+                ? "Side by side; click for unified (S, :diff)"
+                : "Unified; click for side by side (S, :diff)"
+            }
+            onClick={toggleSplit}
+          >
+            <Columns2 size={16} />
+          </button>
+          <button
+            type="button"
+            className={`icon-btn rv-icon${zen ? " on" : ""}`}
+            aria-pressed={zen}
+            aria-label="Diff only"
             title="Diff only: hide all the chrome, just the diff (o, :only; o or Esc brings it back)"
             onClick={toggleZen}
           >
-            Diff only
-          </button>
-          <button
-            type="button"
-            className={`btn ghost rv-sm${hideComments ? "" : " on"}`}
-            aria-pressed={!hideComments}
-            title="Show / hide every comment, yours and GitLab's (t, :comments)"
-            onClick={toggleComments}
-          >
-            {hideComments && commentRows.length
-              ? `Show ${commentRows.length} hidden comment${commentRows.length === 1 ? "" : "s"}`
-              : "Comments"}
-          </button>
-          {conversations.length ? (
-            <button
-              type="button"
-              className="btn ghost rv-sm"
-              title="Every conversation of the review, in any commit, resolved too (T, :threads)"
-              onClick={() => setThreadsOpen(true)}
-            >
-              Conversations ({conversations.length})
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn ghost rv-sm"
-            title="Switch between side by side and unified (S, :diff)"
-            onClick={toggleSplit}
-          >
-            {split ? "Unified" : "Side by side"}
+            <Maximize2 size={16} />
           </button>
         </div>
         {agentAllowed ? (
-          <div className="rv-group" role="group" aria-label="Agent">
-            {!session.gitlab && agentPaneId ? (
-              <button
-                type="button"
-                className={`btn ghost rv-sm${talk ? " on" : ""}`}
-                aria-pressed={talk}
-                title={
-                  talk
-                    ? `Your comments go to ${agentName} as you write them; click to write review comments instead`
-                    : `Send your comments to ${agentName} as you write them`
-                }
-                onClick={() =>
-                  void run(async () =>
-                    rememberReviewSnapshot(
-                      await call<ReviewSnapshot>("review.update", {
-                        autoSend: !talk,
-                      }),
-                    ),
-                  )
-                }
-              >
-                Comments → {agentName}
-              </button>
-            ) : null}
-            {talk ? (
-              <button
-                type="button"
-                className={`btn ghost rv-sm${held ? " on" : ""}`}
-                aria-pressed={held}
-                title={
-                  held
-                    ? `Your comments wait until you Send them to ${agentName}; click to send each as you write it`
-                    : `Hold your comments and Send them to ${agentName} when you are done (:hold)`
-                }
-                onClick={toggleHold}
-              >
-                Hold
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="btn rv-sm"
-              title={`Ask ${agentName} about these changes: a discussion on the line your cursor is on (C, :ask)`}
-              onClick={askAgent}
-            >
-              Ask {agentName}
-            </button>
-            <button
-              type="button"
-              className="btn rv-sm"
-              title={`${agentName} reviews line by line, reading the checkout; you can give it a focus first (:review [focus])`}
-              onClick={() => {
-                if (!reviewing) setFocusBar((value) => value ?? "");
-              }}
-              disabled={reviewing}
-            >
-              {agentName} review
-            </button>
+          <div className="rv-agent" role="group" aria-label="Agent">
             {agent.name ? (
               <button
                 type="button"
-                className={`btn rv-sm${heldCount || overallUnsent ? " on" : " ghost"}`}
+                className={`btn rv-sm rv-send${heldCount || overallUnsent ? " primary" : ""}`}
                 title={
                   heldCount
                     ? `Send your ${plural(heldCount, "held comment")} to ${agentName} (:send)`
@@ -6487,76 +6236,118 @@ export function ReviewOverlay({
                 }
                 onClick={() => void handoff()}
               >
-                {heldCount
-                  ? `Send ${heldCount} to ${agentName}`
-                  : `Send to ${agentName}`}
+                <Send size={14} />
+                {heldCount ? `Send ${heldCount}` : "Send"}
               </button>
             ) : null}
-            {agentPaneId && onFocusAgentPane ? (
-              <button
-                type="button"
-                className="btn ghost rv-sm"
-                title={`Go to ${agentName}'s pane (the review is kept)`}
-                onClick={() => onFocusAgentPane(agentPaneId)}
-              >
-                Show
-              </button>
-            ) : null}
+            <ReviewMenu
+              title={`${agentName}: how your comments reach it, and asking it`}
+              label={
+                <>
+                  {agentName}
+                  {talk ? (
+                    <span className="rv-mode">{held ? "holding" : "live"}</span>
+                  ) : null}
+                  <ChevronDown size={14} />
+                </>
+              }
+              items={[
+                !session.gitlab &&
+                  !!agentPaneId && {
+                    label: `Comments go to ${agentName}`,
+                    title: talk
+                      ? `Your comments go to ${agentName} as you write them; uncheck to write review comments instead`
+                      : `Send your comments to ${agentName} as you write them`,
+                    checked: talk,
+                    onSelect: () =>
+                      void run(async () =>
+                        rememberReviewSnapshot(
+                          await call<ReviewSnapshot>("review.update", {
+                            autoSend: !talk,
+                          }),
+                        ),
+                      ),
+                  },
+                talk && {
+                  label: "Hold until Send",
+                  hint: ":hold",
+                  title: held
+                    ? `Your comments wait until you Send them to ${agentName}; uncheck to send each as you write it`
+                    : `Hold your comments and Send them to ${agentName} when you are done`,
+                  checked: held,
+                  onSelect: toggleHold,
+                },
+                {
+                  label: `Ask ${agentName} about this line`,
+                  hint: "C",
+                  title: `A discussion with ${agentName} on the line your cursor is on (:ask)`,
+                  onSelect: askAgent,
+                },
+                {
+                  label: `${agentName} reviews the changes`,
+                  hint: ":review",
+                  title: `${agentName} reviews line by line, reading the checkout; you can give it a focus first`,
+                  disabled: reviewing,
+                  onSelect: () => setFocusBar((value) => value ?? ""),
+                },
+                !!agentPaneId &&
+                  !!onFocusAgentPane && {
+                    label: `Go to ${agentName}'s pane`,
+                    title: "The review is kept",
+                    onSelect: () => onFocusAgentPane(agentPaneId),
+                  },
+              ]}
+            />
           </div>
         ) : null}
-        <div className="rv-group" role="group" aria-label="Send">
+        {session.gitlab && localDrafts > 0 ? (
           <button
             type="button"
-            className={`btn ghost rv-sm${session.gitlab ? " on" : ""}`}
-            title={
-              session.gitlab
-                ? "Reviewing the merge request from GitLab: your comments are draft notes; click for the local review (gm, :switch)"
-                : "Review the branch's merge request from GitLab: its diff, its discussions, and your review as draft notes (gm, :switch)"
+            className="btn primary rv-sm"
+            title="Send the review comments waiting here (the local review's and the agent's drafts) to GitLab as draft notes; you submit the review there"
+            onClick={() =>
+              void run(async () =>
+                rememberReviewSnapshot(
+                  await call<ReviewSnapshot>("review.gitlab.push"),
+                ),
+              )
             }
-            onClick={() => setGitlab(!session.gitlab)}
           >
-            GitLab
+            GitLab draft ({localDrafts})
           </button>
-          {gitlabMr ? (
-            <button
-              type="button"
-              className="btn ghost rv-sm"
-              title="Open the merge request on GitLab, where you submit the review (O, :open)"
-              onClick={openMr}
-            >
-              GitLab ↗
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn rv-sm"
-            title="Copy the review as Markdown: the overall comment, then each comment under its line"
-            onClick={() => {
-              const text = reviewAsMarkdown(session.summary, viewThreads);
-              if (!text.trim())
-                notify("Nothing to send yet: comment a line first.");
-              else void copyTextWithFeedback(text);
-            }}
-          >
-            Copy review
-          </button>
-          {session.gitlab && localDrafts > 0 ? (
-            <button
-              type="button"
-              className="btn primary rv-sm"
-              title="Send the review comments waiting here (the local review's and the agent's drafts) to GitLab as draft notes; you submit the review there"
-              onClick={() =>
-                void run(async () =>
-                  rememberReviewSnapshot(
-                    await call<ReviewSnapshot>("review.gitlab.push"),
-                  ),
-                )
-              }
-            >
-              GitLab draft ({localDrafts})
-            </button>
-          ) : null}
-        </div>
+        ) : null}
+        <ReviewMenu
+          className="rv-more"
+          title="More: GitLab, copying the review"
+          label={<MoreHorizontal size={16} />}
+          items={[
+            {
+              label: "GitLab mode",
+              title: session.gitlab
+                ? "Reviewing the merge request from GitLab: your comments are draft notes; uncheck for the local review"
+                : "Review the branch's merge request from GitLab: its diff, its discussions, and your review as draft notes",
+              checked: session.gitlab,
+              ...(mrSwitch?.action === "gitlab" ? { hint: "gm" } : {}),
+              onSelect: () => setGitlab(!session.gitlab),
+            },
+            !!gitlabMr && {
+              label: "Open the merge request on GitLab",
+              hint: "O",
+              title: "Where you submit the review (:open)",
+              onSelect: openMr,
+            },
+            {
+              label: "Copy the review as Markdown",
+              title: "The overall comment, then each comment under its line",
+              onSelect: () => {
+                const text = reviewAsMarkdown(session.summary, viewThreads);
+                if (!text.trim())
+                  notify("Nothing to send yet: comment a line first.");
+                else void copyTextWithFeedback(text);
+              },
+            },
+          ]}
+        />
         <button
           type="button"
           className="icon-btn"
@@ -6571,20 +6362,12 @@ export function ReviewOverlay({
         </button>
         <button
           type="button"
-          className="icon-btn rv-only"
-          aria-label="Diff only"
-          title="Diff only: hide all the chrome, just the diff (o, :only)"
-          onClick={toggleZen}
-        >
-          ⤢
-        </button>
-        <button
-          type="button"
           className="icon-btn rv-close"
+          aria-label="Close"
           title="Close (Esc, :q); your review is kept"
           onClick={close}
         >
-          ×
+          <X size={16} />
         </button>
       </div>
       {repos.length > 1 ? (
@@ -6749,6 +6532,58 @@ export function ReviewOverlay({
         </button>
       </div>
       <div className="review-body">
+        {threadsOpen ? (
+          <ThreadsPanel
+            className="review-threads-panel"
+            title="Conversations"
+            threads={conversations.map((thread) => ({
+              id: thread.id,
+              resolved: thread.resolved,
+              where: thread.anchor.path
+                ? locationLabel(thread.anchor)
+                : "The review",
+              meta: `${viewLabel(thread)}${thread.kind === "draft" ? " · review comment" : ""}`,
+              when: fmtDate(lastMessageAt(thread)),
+              comments: thread.comments.map((comment) => ({
+                id: comment.id,
+                author: authorLabel(comment.author),
+                body: comment.body,
+              })),
+              canReply: thread.kind === "discussion",
+              search: thread.kind === "draft" ? "review comment" : "discussion",
+            }))}
+            onClose={() => {
+              setThreadsOpen(false);
+              rootRef.current?.focus({ preventScroll: true });
+            }}
+            onGo={(id) => {
+              const thread = conversations.find((t) => t.id === id);
+              if (thread) openThread(thread);
+            }}
+            onResolve={(id) => {
+              const thread = conversations.find((t) => t.id === id);
+              if (thread) toggleResolved(thread);
+            }}
+            onReply={(id) => {
+              const thread = conversations.find((t) => t.id === id);
+              if (thread) replyInList(thread);
+            }}
+            replying={
+              editor?.replyTo &&
+              conversations.some((t) => t.id === editor.replyTo)
+                ? { id: editor.replyTo, editor: editorFor(editor) }
+                : null
+            }
+            renderBody={(thread, body) => (
+              <NoteBody
+                text={body}
+                path={
+                  conversations.find((t) => t.id === thread.id)?.anchor.path
+                }
+              />
+            )}
+          />
+        ) : null}
         <nav className="review-files" aria-label="Files">
           {fingerprints.length ? (
             <div className="rf-progress note">
@@ -7081,195 +6916,6 @@ export function ReviewOverlay({
                 <li className="note">No repository matches.</li>
               )}
             </ul>
-          </div>
-        </div>
-      ) : null}
-      {threadsOpen ? (
-        // biome-ignore lint/a11y/useKeyWithClickEvents: Esc closes it
-        <div
-          className="review-keys"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setThreadsOpen(false);
-          }}
-        >
-          <div
-            ref={threadsPanelRef}
-            className="review-keys-panel review-threads"
-            tabIndex={-1}
-            onKeyDown={onConversationKey}
-          >
-            <div className="settings-head">
-              <h2>Conversations</h2>
-              {conversations.length ? (
-                <span className="rt-count note">
-                  {conversations.filter((t) => !t.resolved).length} open
-                  {conversations.some((t) => t.resolved) ? (
-                    <>
-                      {" · "}
-                      {resolvedToggle(
-                        `${conversations.filter((t) => t.resolved).length} resolved, ${resolvedShown ? "hide" : "show"}`,
-                      )}
-                    </>
-                  ) : null}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                className="icon-btn"
-                title="Close (Esc)"
-                onClick={() => setThreadsOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            {conversations.length ? (
-              <input
-                id="review-threads-filter"
-                type="search"
-                placeholder="Search conversations (/): file, author, words...; ↓ ↑ select, Enter goes, Esc back to the list"
-                value={threadsQuery}
-                onChange={(event) => {
-                  setThreadsQuery(event.target.value);
-                  setThreadsSel(null);
-                }}
-              />
-            ) : (
-              <p className="note">No conversation yet.</p>
-            )}
-            {conversations.length && !shownConversations.length ? (
-              <p className="note">
-                {!hiddenResolved
-                  ? "No conversation matches."
-                  : threadsQuery.trim()
-                    ? "No open conversation matches."
-                    : "No open conversation."}
-              </p>
-            ) : null}
-            {shownConversations.flatMap((thread, index) => {
-              const folded = conversationFolded(thread);
-              const firstResolved =
-                thread.resolved &&
-                (index === 0 || !shownConversations[index - 1]?.resolved);
-              const first = thread.comments[0];
-              const last = thread.comments[thread.comments.length - 1];
-              return [
-                firstResolved ? (
-                  <div key="resolved-group" className="rt-group note">
-                    {resolvedToggle(
-                      `${matchedConversations.filter((t) => t.resolved).length} resolved, hide`,
-                    )}
-                  </div>
-                ) : null,
-                // biome-ignore lint/a11y/useKeyWithClickEvents: j / k select by key
-                <section
-                  key={thread.id}
-                  data-thread-id={thread.id}
-                  onClick={(event) => {
-                    // A click selects it; the header and buttons act on it
-                    // too. The list keeps the keys, unless text is selected
-                    // or the click is in the reply being written.
-                    setThreadsSel(thread.id);
-                    if (
-                      !window.getSelection()?.toString() &&
-                      !(event.target as HTMLElement).closest(".rc")
-                    )
-                      threadsPanelRef.current?.focus({ preventScroll: true });
-                  }}
-                  className={`rt-item${thread.resolved ? " resolved" : ""}${thread === selectedConversation ? " selected" : ""}`}
-                >
-                  <div className="rt-top">
-                    <button
-                      type="button"
-                      className="rt-head"
-                      title="Go to it (Enter)"
-                      onClick={() => openThread(thread)}
-                    >
-                      <span className="rt-where">
-                        {thread.anchor.path
-                          ? locationLabel(thread.anchor)
-                          : "The review"}
-                      </span>
-                      <span className="note">
-                        {viewLabel(thread)}
-                        {thread.kind === "draft" ? " · review comment" : ""}
-                        {thread.resolved ? " · resolved" : ""}
-                      </span>
-                      <span className="rt-when note">
-                        {fmtDate(lastMessageAt(thread))}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn ghost rv-sm rt-resolve"
-                      title={
-                        thread.resolved ? "Reopen it (r)" : "Resolve it (r)"
-                      }
-                      onClick={() => toggleResolved(thread)}
-                    >
-                      {thread.resolved ? "Reopen" : "Resolve"}
-                    </button>
-                    {thread.kind === "discussion" &&
-                    editor?.replyTo !== thread.id ? (
-                      <button
-                        type="button"
-                        className="btn ghost rv-sm"
-                        title="Answer it here (R)"
-                        onClick={() => replyInList(thread)}
-                      >
-                        Reply
-                      </button>
-                    ) : null}
-                  </div>
-                  {thread.resolved || folded ? (
-                    <button
-                      type="button"
-                      className="rt-summary"
-                      aria-expanded={!folded}
-                      title={
-                        folded
-                          ? "Show the conversation (Space)"
-                          : "Fold it (Space)"
-                      }
-                      onClick={() => toggleConversation(thread)}
-                    >
-                      <span className="rt-fold">{folded ? "▸" : "▾"}</span>
-                      <span className="rt-summary-text">
-                        {folded
-                          ? (first?.body ?? "").split("\n")[0]!.slice(0, 160)
-                          : "Fold"}
-                      </span>
-                      {folded ? (
-                        <span className="note">
-                          {plural(thread.comments.length, "message")}
-                          {last ? ` · last by ${authorLabel(last.author)}` : ""}
-                        </span>
-                      ) : null}
-                    </button>
-                  ) : null}
-                  {folded
-                    ? null
-                    : thread.comments.map((comment) => (
-                        <div key={comment.id} className="rt-comment">
-                          <span
-                            className={`rt-author${comment.author === REVIEW_USER ? "" : " by-claude"}`}
-                          >
-                            {authorLabel(comment.author)}
-                          </span>
-                          <NoteBody
-                            text={comment.body}
-                            path={thread.anchor.path}
-                          />
-                        </div>
-                      ))}
-                  {editor?.replyTo === thread.id ? editorFor(editor) : null}
-                </section>,
-              ];
-            })}
-            {hiddenResolved ? (
-              <div className="rt-group note">
-                {resolvedToggle(`${hiddenResolved} resolved, show`)}
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}

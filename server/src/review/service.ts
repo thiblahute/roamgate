@@ -162,6 +162,8 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
       head: refName(target.head ?? "HEAD", "head"),
       ...(target.compare === true ? { compare: true } : {}),
     };
+  if (target.kind === "chat")
+    return { kind: "chat", chat: text(target.chat, "chat", 300) };
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
     let parsed: URL;
@@ -189,6 +191,7 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
     const right = parseMergeRequestUrl(b.url);
     return left && right ? sameMergeRequest(left, right) : a.url === b.url;
   }
+  if (a.kind === "chat" && b.kind === "chat") return a.chat === b.chat;
   return true;
 }
 
@@ -238,7 +241,15 @@ export function describeTarget(target: ReviewTarget): string {
       ? `${target.base} vs ${target.head}`
       : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
+  if (target.kind === "chat") return "chat";
   return "working tree";
+}
+
+/** A chat message's time, as the agent's chat shows it (local, HH:MM). */
+function chatTime(at: string): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return at;
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function parseAnchor(value: unknown): ReviewAnchor {
@@ -293,6 +304,23 @@ function parseAnchor(value: unknown): ReviewAnchor {
         "a message part needs its thread, comment and quote",
       );
     anchor.message = { thread, comment, quote };
+  }
+  if (raw.chat !== undefined && raw.chat !== null) {
+    if (typeof raw.chat !== "object")
+      throw new ReviewError("invalid chat part");
+    const part = raw.chat as Record<string, unknown>;
+    const entry = optionalText(part.entry, "chat message", 300);
+    const quote = optionalText(part.quote, "quote", 4000)?.trim();
+    if (!entry || !quote)
+      throw new ReviewError("a chat part needs its message and quote");
+    const at = optionalText(part.at, "chat message time", 64);
+    const excerpt = optionalText(part.excerpt, "chat message excerpt", 300);
+    anchor.chat = {
+      entry,
+      quote,
+      ...(at ? { at } : {}),
+      ...(excerpt ? { excerpt } : {}),
+    };
   }
   return anchor;
 }
@@ -1094,7 +1122,9 @@ export function createReviewService(args: {
       .filter(
         (s) =>
           (!connectionId || s.connectionId === connectionId) &&
-          (!root || s.root === root),
+          (!root || s.root === root) &&
+          // A chat's threads are not a review of the checkout.
+          (s.target.kind !== "chat" || params.chats === true),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(snapshot);
@@ -1973,7 +2003,9 @@ export function createReviewService(args: {
 
   /** The agent session the review's comments follow, when one is known. */
   function agentSession(target: ReviewSession): string | undefined {
-    return target.agent.sessionId;
+    return target.target.kind === "chat"
+      ? target.target.chat
+      : target.agent.sessionId;
   }
 
   /** The review's agent as the user calls it: "claude" is Claude. */
@@ -1987,7 +2019,7 @@ export function createReviewService(args: {
 
   function notRunning(target: ReviewSession): AgentNotRunning {
     return new AgentNotRunning(
-      `${agentLabel(target)} for this review is not running in any pane`,
+      `${agentLabel(target)} for this ${target.target.kind === "chat" ? "chat" : "review"} is not running in any pane`,
     );
   }
 
@@ -2002,7 +2034,7 @@ export function createReviewService(args: {
   }
 
   async function recordSession(target: ReviewSession, paneId: string) {
-    if (!args.paneSession) return;
+    if (!args.paneSession || target.target.kind === "chat") return;
     let sessionId: string | null;
     try {
       sessionId = await args.paneSession(target.connectionId, paneId);
@@ -2018,8 +2050,9 @@ export function createReviewService(args: {
 
   /**
    * The pane the comments go to: the one running the agent's session now,
-   * which becomes the review's pane, else the pane it was bound to. Throws
-   * AgentNotRunning when the session runs in no pane and none is bound.
+   * which becomes the review's pane, else the pane it was bound to. A
+   * chat's threads only go to its own session. Throws AgentNotRunning when
+   * the session runs in no pane.
    */
   async function agentPane(target: ReviewSession): Promise<string> {
     const session = agentSession(target);
@@ -2038,7 +2071,11 @@ export function createReviewService(args: {
         }
         return found;
       }
-      if (found === null && !target.agent.paneId) throw notRunning(target);
+      if (
+        found === null &&
+        (target.target.kind === "chat" || !target.agent.paneId)
+      )
+        throw notRunning(target);
     }
     if (!target.agent.paneId)
       throw new Error(
@@ -2278,10 +2315,13 @@ export function createReviewService(args: {
         ...overall.split("\n").map((line) => `  ${line}`),
         `It is not a thread: act on it, then say what you did with \`${command} working --done --message "WHAT YOU DID"\`.`,
       );
+    const chat = target.target.kind === "chat";
     if (due.length)
       lines.push(
         ...(overall ? [""] : []),
-        `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+        chat
+          ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on parts of your messages in this chat:`
+          : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
       );
     const since = target.deliveredAt ?? "";
     for (const thread of due) {
@@ -2289,12 +2329,16 @@ export function createReviewService(args: {
         ? ` (code: \`${oneLine(thread.anchor.text, 120).replace(/`/g, "'")}\`)`
         : "";
       const part = thread.anchor.message;
+      const said = thread.anchor.chat;
       lines.push(
         "",
-        part
-          ? `- [${thread.id.slice(0, 8)}] on a part of a message in thread [${part.thread.slice(0, 8)}] (on ${describeAnchor(thread.anchor)}):`
-          : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
-        ...(part ? part.quote.split("\n").map((line) => `  > ${line}`) : []),
+        said
+          ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
+          : part
+            ? `- [${thread.id.slice(0, 8)}] on a part of a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
+            : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
+        ...((said ?? part)?.quote.split("\n").map((line) => `  > ${line}`) ??
+          []),
       );
       // What changed since the agent last heard: new comments, and earlier
       // ones the user rewrote.
@@ -2311,7 +2355,12 @@ export function createReviewService(args: {
       if (thread.kind === "draft")
         lines.push("  (A suggested change: apply it, then reply.)");
     }
-    if (due.length)
+    if (due.length && chat)
+      lines.push(
+        "",
+        `These are threads on our conversation, not on code. Answer each in its thread with \`${command} reply --comment ID -- TEXT\`, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,
+      );
+    else if (due.length)
       lines.push(
         "",
         `Before working on one, say so with \`${command} working --comment ID --message "WHAT YOU DO"\`; answer each with \`${command} reply --comment ID -- TEXT\` (say what you changed). My next comments come here the same way.`,
@@ -2330,6 +2379,7 @@ export function createReviewService(args: {
       // followed): the overlay attaches the workspace's agent pane instead.
       if (
         gone instanceof AgentNotRunning &&
+        target.target.kind !== "chat" &&
         target.agent.paneId === paneId &&
         live(target)
       ) {
@@ -2404,6 +2454,42 @@ export function createReviewService(args: {
           `Read them with \`${clientCommand(target)} get\` and answer each with \`${clientCommand(target)} reply --comment ID -- TEXT\` (say what you changed).`,
         ]),
       );
+    }
+    return snapshot(target);
+  }
+
+  /**
+   * Retry after a failed delivery: the comments the agent has not had go
+   * now, to the pane its session runs in. Throws, saying why, when they
+   * cannot; nothing is sent when nothing waits.
+   */
+  async function retry(
+    params: Record<string, unknown>,
+  ): Promise<ReviewSnapshot> {
+    const target = session(params.sessionId);
+    if (!args.promptAgent)
+      throw new ReviewError("comments cannot be sent to agents here");
+    const fail = (reason: string) =>
+      new ReviewError(
+        `could not reach ${target.agent.name ?? "the agent"}: ${reason}`,
+      );
+    const reason = cannotDeliver(target);
+    if (reason) {
+      undeliverable(target, reason);
+      throw fail(reason);
+    }
+    cancelDelivery(target);
+    retries.delete(target.id);
+    try {
+      await deliver(target.id);
+    } catch (error) {
+      deliveryFailed(target, error);
+      throw fail(error instanceof Error ? error.message : String(error));
+    }
+    if (target.deliveryError !== undefined && !undelivered(target).length) {
+      delete target.deliveryError;
+      storage.saveSession(target);
+      publishSession(target);
     }
     return snapshot(target);
   }
@@ -2745,7 +2831,11 @@ export function createReviewService(args: {
     // The overlay opening or reloading: no answer from what was remembered.
     if (params.recheck === true) gone.delete(target.id);
     const { loadCommits, loadPatchIds } = args;
-    if (target.target.kind === "worktree" || !loadCommits)
+    if (
+      target.target.kind === "worktree" ||
+      target.target.kind === "chat" ||
+      !loadCommits
+    )
       return { commits: [] };
     const list = await commitList(target, loadCommits);
     const follow =
@@ -2780,7 +2870,12 @@ export function createReviewService(args: {
   ): Promise<{ state: string }> {
     const target = session(params.sessionId);
     const { loadState } = args;
-    if (target.target.kind === "mr" || !loadState) return { state: "" };
+    if (
+      target.target.kind === "mr" ||
+      target.target.kind === "chat" ||
+      !loadState
+    )
+      return { state: "" };
     return { state: await fromCheckout(target, () => loadState(target)) };
   }
 
@@ -2792,6 +2887,7 @@ export function createReviewService(args: {
         : undefined;
     if (commit && !/^[0-9a-f]{7,64}$/.test(commit))
       throw new ReviewError("invalid commit");
+    if (target.target.kind === "chat") return { files: [], truncated: false };
     if (commit)
       return fromCheckout(target, () => args.loadDiff(target, commit));
     // The view the overlay opens on, asked with the commits rather than
@@ -3007,6 +3103,7 @@ export function createReviewService(args: {
     restoreThread,
     agentStatus,
     handoff,
+    retry,
     watch,
     diff,
     state,

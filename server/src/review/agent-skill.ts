@@ -110,7 +110,10 @@ fixed and the user agreed on; never to end a disagreement. \`reopen --comment ID
 reopens a resolved thread when the user asks.
 A thread with \`on_message\` is the user's comment on a part of an earlier
 message (\`quote\`, usually yours, in thread \`on_message.thread\`): answer it
-on its own, about that part.
+on its own, about that part. A thread with \`on_chat_message\` is a comment on
+a part of one of your messages in your chat with the user (a review whose
+target is \`chat\`): answer it with \`reply\` in that thread, and only there;
+the chat does not get the same answer again.
 
 ## Reviewing for the user
 

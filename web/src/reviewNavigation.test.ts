@@ -180,6 +180,17 @@ test("side by side, j and k go line by line on their side", () => {
   expect(splitStep(lines, 7, 1, "left")).toBe(null);
 });
 
+test("gn / gN / gH and :unresolved go through the unresolved threads", () => {
+  expect(parseReviewCommand(":unresolved")).toEqual({ type: "unresolved" });
+  expect(parseReviewCommand("openonly")).toEqual({ type: "unresolved" });
+  for (const sequence of ["gn", "gN", "gH"]) {
+    const first = feedKey(EMPTY_KEY_STATE, "g");
+    expect(first.type).toBe("wait");
+    const second = feedKey(first.state, sequence[1]!);
+    expect(second).toMatchObject({ type: "command", key: sequence });
+  }
+});
+
 const hunk = (lines: string[]) => ({
   lines: lines.map((line) => ({ kind: line[0]!, text: line.slice(1) })),
 });

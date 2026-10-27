@@ -39,6 +39,7 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     HTMLInputElement: browser.HTMLInputElement,
     Event: browser.Event,
     KeyboardEvent: browser.KeyboardEvent,
+    CSS: { escape: (value: string) => value },
     requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) =>
       clearTimeout(id),
@@ -601,8 +602,9 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     const scrolled: string[] = [];
     const scrollIntoView = browser.Element.prototype.scrollIntoView;
     browser.Element.prototype.scrollIntoView = function (this: Element) {
-      const id =
-        this.closest("[data-thread-id]")?.getAttribute("data-thread-id");
+      const id = this.closest("[data-panel-thread]")?.getAttribute(
+        "data-panel-thread",
+      );
       if (id) scrolled.push(id);
     };
     const thread = (i: number, resolved: boolean) => ({
@@ -647,32 +649,34 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     const resolved = new Set([13, 14, 15]);
     await show(resolved);
     await act(settle);
-    const button = (label: RegExp, scope: ParentNode = host) =>
-      [...scope.querySelectorAll("button")].find((element) =>
-        label.test(element.textContent ?? ""),
-      );
-    await act(async () => button(/^Conversations \(/)!.click());
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>(".review-threads-chip")!.click(),
+    );
     await act(settle);
-    const list = host.querySelector<HTMLElement>(".review-threads")!;
+    const panel = host.querySelector<HTMLElement>(".review-threads-panel")!;
+    const list = panel.querySelector<HTMLElement>(".threads-panel-list")!;
     const ids = () =>
-      [...list.querySelectorAll("[data-thread-id]")].map((node) =>
-        node.getAttribute("data-thread-id"),
+      [...list.querySelectorAll("[data-panel-thread]")].map((node) =>
+        node.getAttribute("data-panel-thread"),
       );
     const selected = () =>
-      list.querySelector(".rt-item.selected")?.getAttribute("data-thread-id");
+      list
+        .querySelector(".threads-panel-item.is-selected")
+        ?.getAttribute("data-panel-thread");
     const key = (name: string) =>
       act(async () => {
-        list.dispatchEvent(
+        panel.dispatchEvent(
           new KeyboardEvent("keydown", { key: name, bubbles: true }),
         );
       });
 
     // Open ones only, with the count of the resolved ones to show them.
     expect(ids()).toEqual(Array.from({ length: 12 }, (_, i) => `t${i + 1}`));
-    expect(list.querySelector(".rt-count")?.textContent).toBe(
-      "12 open · 3 resolved, show",
-    );
-    expect(list.querySelector(".rt-group")?.textContent).toBe(
+    expect(
+      panel.querySelector(".threads-panel-head .threads-panel-count")
+        ?.textContent,
+    ).toBe("12 open · 3 resolved, show");
+    expect(list.querySelector(".threads-panel-group")?.textContent).toBe(
       "3 resolved, show",
     );
 
@@ -706,12 +710,12 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
       ...[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12].map((i) => `t${i}`),
       ...[7, 13, 14, 15].map((i) => `t${i}`),
     ]);
-    expect(list.querySelector(".rt-group")?.textContent).toBe(
+    expect(list.querySelector(".threads-panel-group")?.textContent).toBe(
       "4 resolved, hide",
     );
-    expect(
-      JSON.parse(localStorage.getItem("roamgate:reviewPrefs") ?? "{}"),
-    ).toMatchObject({ resolvedShown: true });
+    expect(localStorage.getItem("roamgate:threadsPanel.showResolved")).toBe(
+      "1",
+    );
 
     // R answers the selected one right there; it reloads nothing.
     const loads = () => calls.filter((call) => call === "review.commits");
@@ -720,7 +724,9 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     await act(settle);
     expect(selected()).toBe("t9");
     expect(
-      list.querySelector("[data-thread-id='t9'] .rc-editor"),
+      panel.querySelector(
+        "[data-panel-thread='t9'] .threads-panel-reply .rc-editor",
+      ),
     ).not.toBeNull();
     expect(loads()).toHaveLength(loaded);
     browser.Element.prototype.scrollIntoView = scrollIntoView;
@@ -881,6 +887,146 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     await act(async () => root.unmount());
     diffFiles = [];
     fileText = "";
+  });
+
+  test("gn / gN go through the unresolved threads only, opening a reviewed file; gH shows only them", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ReviewOverlay } = await import("./ReviewOverlay");
+    failing.clear();
+    localStorage.clear();
+    const file = (path: string) => ({
+      path,
+      oldPath: path,
+      hunks: [
+        {
+          header: "@@ -1,0 +1,10 @@",
+          lines: Array.from({ length: 10 }, (_, i) => ({
+            kind: "+",
+            old: null,
+            new: i + 1,
+            text: `${path} line ${i + 1}`,
+          })),
+        },
+      ],
+    });
+    diffFiles = [file("a.ts"), file("b.ts")];
+    // b.ts is marked reviewed: folded to its header.
+    let hash = 5381;
+    for (const line of (diffFiles[1] as ReturnType<typeof file>).hunks[0]!
+      .lines) {
+      const text = `${line.kind}${line.text}\n`;
+      for (let i = 0; i < text.length; i++)
+        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+    }
+    const fingerprint = `1:${(hash >>> 0).toString(36)}`;
+    const thread = (
+      id: string,
+      path: string,
+      line: number,
+      resolved: boolean,
+    ) => ({
+      id,
+      sessionId: "s1",
+      kind: "discussion",
+      anchor: { path, line, side: "new" },
+      comments: [
+        {
+          id: `${id}c`,
+          author: "you",
+          body: `Question ${id}`,
+          createdAt: "2026-11-05T10:00:00Z",
+          updatedAt: "2026-11-05T10:00:00Z",
+        },
+      ],
+      resolved,
+      createdAt: "2026-11-05T10:00:00Z",
+      updatedAt: "2026-11-05T10:00:00Z",
+    });
+    const review = {
+      ...snapshot,
+      session: { ...snapshot.session, reviewed: { "all:b.ts": fingerprint } },
+      threads: [
+        thread("t3", "b.ts", 3, false),
+        thread("t1", "a.ts", 2, false),
+        thread("t2", "a.ts", 5, true),
+      ],
+    } as unknown as ReviewSnapshot;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <ReviewOverlay
+          snapshot={review}
+          connectionId="desktop"
+          onClose={() => {}}
+        />,
+      );
+    });
+    await act(settle);
+    const overlay = host.querySelector<HTMLElement>(".review-overlay")!;
+    const where = () =>
+      host.querySelector(".review-unresolved-nav .unresolved-nav-where")
+        ?.textContent;
+    const keys = (...names: string[]) =>
+      act(async () => {
+        for (const name of names)
+          overlay.dispatchEvent(
+            new KeyboardEvent("keydown", { key: name, bubbles: true }),
+          );
+      });
+    const focused = () =>
+      host
+        .querySelector("[data-comment-id].focused")
+        ?.getAttribute("data-comment-id");
+
+    expect(where()).toBe("2 unresolved");
+    // The reviewed file shows no line yet.
+    expect(host.textContent).not.toContain("b.ts line 3");
+    await keys("g", "n");
+    await act(settle);
+    expect(where()).toBe("1 of 2 unresolved");
+    // Over the resolved one on a.ts into the reviewed file, opened.
+    await keys("g", "n");
+    await act(settle);
+    await act(settle);
+    expect(host.textContent).toContain("b.ts line 3");
+    expect(where()).toBe("2 of 2 unresolved");
+    expect(focused()).toBe("t3c");
+    // Past the last: back at the first.
+    await keys("g", "n");
+    await act(settle);
+    expect(where()).toBe("1 of 2 unresolved");
+    expect(focused()).toBe("t1c");
+    await keys("g", "N");
+    await act(settle);
+    expect(focused()).toBe("t3c");
+    // The arrows do the same.
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(
+          '.review-unresolved-nav [aria-label="Previous unresolved thread"]',
+        )!
+        .click(),
+    );
+    await act(settle);
+    expect(focused()).toBe("t1c");
+
+    // The resolved one is drawn folded; gH leaves it out, remembered.
+    expect(host.textContent).toContain("Question t2");
+    await keys("g", "H");
+    await act(settle);
+    expect(host.textContent).not.toContain("Question t2");
+    expect(localStorage.getItem("roamgate:threads.openOnly")).toBe("1");
+    expect(
+      host
+        .querySelector(".review-unresolved-nav .unresolved-nav-only")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    await act(async () => root.unmount());
+    diffFiles = [];
+    localStorage.clear();
   });
 
   test("r marks the chunk under the cursor reviewed, folded to a line; Option+V the file", async () => {

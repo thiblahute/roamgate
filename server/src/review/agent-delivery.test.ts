@@ -483,3 +483,120 @@ test("a comment answered in its thread is not sent again; after a restart the re
   expect(after.deliveryError).toBeUndefined();
   expect(after.agent.paneId).toBe("w1:p7");
 });
+
+/** The Claude session a chat review is about, as Herdr reports it. */
+const CHAT_SESSION = "362be254-14eb-4390-a96c-25032526572a";
+
+/** A chat's threads, begun while its Claude ran in pane w2:p2. */
+function openChat(service: ReviewService) {
+  return service.open({
+    connectionId: "local",
+    workspaceId: "w2",
+    root: "/repo",
+    target: { kind: "chat", chat: CHAT_SESSION },
+    agent: "claude",
+    paneId: "w2:p2",
+  }).session;
+}
+
+function chatComment(service: ReviewService, sessionId: string, text: string) {
+  return service.addThread({
+    sessionId,
+    anchor: { chat: { entry: `entry-${text.length}`, quote: "One tunnel" } },
+    text,
+  });
+}
+
+test("a chat's comments go to the pane its session runs in now, which the review keeps", async () => {
+  const { service, panes, prompts } = deliverySetup({
+    sessionPane: async (id) => (id === CHAT_SESSION ? "w2:p14" : null),
+  });
+  const chat = openChat(service);
+  await chatComment(service, chat.id, "Still there?");
+  await Bun.sleep(40);
+  expect(panes).toEqual(["w2:p14"]);
+  expect(prompts[0]).toContain("Still there?");
+  const after = service.get({ sessionId: chat.id }).session;
+  expect(after.agent.paneId).toBe("w2:p14");
+  expect(after.deliveryError).toBeUndefined();
+});
+
+test("a chat whose session runs in no pane says so, and its comments go once it runs again", async () => {
+  let running: string | null = null;
+  const { service, panes, prompts } = deliverySetup({
+    sessionPane: async () => running,
+  });
+  const chat = openChat(service);
+  await chatComment(service, chat.id, "First");
+  await chatComment(service, chat.id, "Second one");
+  await Bun.sleep(40);
+  // Never typed into the pane the chat was in when its threads began.
+  expect(panes).toEqual([]);
+  expect(service.get({ sessionId: chat.id }).session.deliveryError).toBe(
+    "Claude for this chat is not running in any pane",
+  );
+  // The session runs again (resumed in another pane): both go, once.
+  running = "w2:p14";
+  await Bun.sleep(80);
+  expect(panes).toEqual(["w2:p14"]);
+  expect(prompts[0]).toContain("First");
+  expect(prompts[0]).toContain("Second one");
+  expect(
+    service.get({ sessionId: chat.id }).session.deliveryError,
+  ).toBeUndefined();
+  await Bun.sleep(40);
+  expect(panes).toHaveLength(1);
+});
+
+test("comments answered meanwhile are not sent again; after a restart the rest goes once the session runs", async () => {
+  let running: string | null = null;
+  const { service, panes, prompts, make } = deliverySetup({
+    sessionPane: async () => running,
+  });
+  const chat = openChat(service);
+  const pasted = await chatComment(service, chat.id, "Tailscale too?");
+  await chatComment(service, chat.id, "That's done now right?");
+  await Bun.sleep(40);
+  expect(panes).toEqual([]);
+  // The user pasted one by hand; it was answered in its thread, under
+  // another spelling of the agent's name.
+  await service.reply({
+    sessionId: chat.id,
+    commentId: pasted.id,
+    text: "Yes, cleaner than a tunnel.",
+    author: "Claude",
+  });
+  service.close();
+  services.splice(services.indexOf(service), 1);
+  running = "w2:p14";
+  const restarted = make();
+  services.push(restarted);
+  await Bun.sleep(80);
+  expect(panes).toEqual(["w2:p14"]);
+  expect(prompts[0]).toContain("That's done now right?");
+  expect(prompts[0]).not.toContain("Tailscale too?");
+  const after = restarted.get({ sessionId: chat.id }).session;
+  expect(after.deliveryError).toBeUndefined();
+  expect(after.agent.paneId).toBe("w2:p14");
+});
+
+test("Retry sends what waits to the session's pane, or says why it cannot", async () => {
+  let running: string | null = null;
+  const { service, panes } = deliverySetup({
+    sessionPane: async () => running,
+  });
+  const chat = openChat(service);
+  await chatComment(service, chat.id, "Retry me");
+  await Bun.sleep(30);
+  await expect(service.retry({ sessionId: chat.id })).rejects.toThrow(
+    "could not reach claude: Claude for this chat is not running in any pane",
+  );
+  running = "w2:p14";
+  const after = await service.retry({ sessionId: chat.id });
+  expect(panes).toEqual(["w2:p14"]);
+  expect(after.session.deliveryError).toBeUndefined();
+  // Nothing waits any more: nothing is typed again.
+  await service.retry({ sessionId: chat.id });
+  await Bun.sleep(40);
+  expect(panes).toHaveLength(1);
+});
