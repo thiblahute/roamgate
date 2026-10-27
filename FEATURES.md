@@ -553,6 +553,9 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   closed. Delivery is best-effort.
 - Themes, accents, interface scale (80–150%), terminal font, font size, and
   terminal color themes. Preferences sync across tabs in the same browser.
+- A black background option turns the dark theme pure black with neutral
+  greys, and the default dark terminal with it; with the default accent,
+  highlights are grey too.
 - Run as a [user service](docs/DEPLOYMENT.md#run-as-a-user-service) with
   checksum-verified updates, and probe `/health` or `/healthz`.
 - [Command-line tools](docs/DEPLOYMENT.md#command-line-management) such as
