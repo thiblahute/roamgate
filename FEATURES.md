@@ -250,6 +250,12 @@ Inspector state is scoped to each checkout; see
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in
   Claude Code's prompt. The others stay queued, in order.
+  A Claude chat rewinds as /rewind does: the arrow beside one of your
+  messages restores the code and the conversation, or either, to before
+  it, through Claude Code's own rewind menu. The message comes back in the
+  box to edit, and the turns undone leave the chat. /rewind typed in the
+  box lists your messages, newest first, to pick one with the arrows or
+  j/k and Enter, then the restore's number.
   A Claude chat's top row says what its session is about: the name given
   with /rename, else the title Claude Code wrote for it.
   A Claude chat also lists what the session runs on the side (the tasks

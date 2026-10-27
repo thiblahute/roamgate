@@ -32,6 +32,8 @@ import {
   rememberAgentHistory,
 } from "../agentHistoryCache";
 import { store, useStoreSelector } from "../store";
+import { rewindClaude, type RewindMode } from "../claudeRewind";
+import { AgentRewindSheet } from "./AgentRewindSheet";
 import { copyTextWithFeedback } from "../copyText";
 import { useConnectionClient } from "../useConnectionClient";
 import {
@@ -170,6 +172,8 @@ export function AgentHistoryDrawer({
     onShowTerminal: () => void;
     /** Types into the terminal: an answer's key, or Esc to stop. */
     onKeys: (text: string) => void;
+    /** The terminal's screen, as text: what its menus show. */
+    readScreen: () => string[];
     /** Where the message box goes: the phone's bottom bar. */
     composerTarget?: HTMLElement | null;
   };
@@ -517,7 +521,24 @@ export function AgentHistoryDrawer({
     ],
   );
 
-  const messages = useMemo(() => history?.messages ?? [], [history?.messages]);
+  // A rewind takes the turns from its message on out of Claude Code's
+  // conversation at once, but out of its transcript only once the next
+  // message hangs from before them (session-rewind.ts): until then, the
+  // chat leaves them out itself.
+  const [rewound, setRewound] = useState<{
+    id: string;
+    sent_at: string;
+  } | null>(null);
+  const messages = useMemo(() => {
+    const all = history?.messages ?? [];
+    const cut = rewound
+      ? all.findIndex(
+          (entry) =>
+            entry.id === rewound.id && entry.sent_at === rewound.sent_at,
+        )
+      : -1;
+    return cut < 0 ? all : all.slice(0, cut);
+  }, [history?.messages, rewound]);
   // Substitute fetched tool payloads only while they still match the entry.
   const hydrateEntry = useCallback(
     (entry: AgentHistoryEntry): AgentHistoryEntry => {
@@ -957,6 +978,7 @@ export function AgentHistoryDrawer({
       {historyEmptyState ?? historyCards}
     </div>
   );
+  const paneChatShown = !!paneChat;
   const sendMessage = useCallback(
     async (text: string) => {
       const scope = pollScopeRef.current;
@@ -1073,15 +1095,19 @@ export function AgentHistoryDrawer({
       setOutbox((current) => current.filter((each) => each.id !== message.id)),
     [],
   );
-  // /tasks typed in a Claude chat opens the chat's own list of what the
-  // session runs on the side, not Claude Code's in its terminal.
+  // /rewind and /tasks typed in a Claude chat open the chat's own picker
+  // (AgentRewindSheet) and list of what the session runs on the side, not
+  // Claude Code's in its terminal, which would only show as its screen.
+  const [rewindOpen, setRewindOpen] = useState(false);
   const sendFromChatBox = useCallback(
     async (text: string) => {
-      if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
+      if (paneChatShown && pane.agent === "claude" && text.trim() === "/rewind")
+        setRewindOpen(true);
+      else if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
         openTask(null);
       else await sendFromBox(text);
     },
-    [chatPaneId, openTask, pane.agent, sendFromBox],
+    [chatPaneId, openTask, pane.agent, paneChatShown, sendFromBox],
   );
   const notifyComposerError = useCallback((detail: string) => {
     store.notify({ kind: "error", message: "Message input failed", detail });
@@ -1264,6 +1290,80 @@ export function AgentHistoryDrawer({
   const editQueued = useCallback(
     (entry: AgentHistoryEntry) => void takeQueued(entry, false),
     [takeQueued],
+  );
+  // The rewind handler stays the same across renders, as bubbles compare
+  // their handlers: it reads the screen and the status when it runs.
+  const readScreenRef = useRef(paneChat?.readScreen);
+  readScreenRef.current = paneChat?.readScreen;
+  /** Rewinds the session to before `entry`, as /rewind does. */
+  const rewind = useCallback(
+    async (entry: AgentHistoryEntry, mode: RewindMode) => {
+      const readScreen = readScreenRef.current;
+      if (!readScreen) return;
+      if (agentStatusRef.current.toLowerCase() === "working") {
+        store.notify({
+          kind: "error",
+          message: "Rewind failed",
+          detail: "Stop the agent first: Claude Code rewinds between turns.",
+        });
+        return;
+      }
+      const messages = messagesRef.current;
+      const index = messages.findIndex(
+        (each) => each.id === entry.id && each.sent_at === entry.sent_at,
+      );
+      const after = messages
+        .slice(index + 1)
+        .filter(
+          (each) =>
+            each.kind === "message" &&
+            each.role === "user" &&
+            !each.queued &&
+            !each.compact_summary,
+        ).length;
+      try {
+        await rewindClaude(
+          {
+            readScreen,
+            command: (text) =>
+              sendTerminalComposerText(
+                connectionClient,
+                pane.pane_id,
+                text,
+                true,
+              ),
+            send: (text) => store.sendText(pane.pane_id, text),
+          },
+          entry.text,
+          after,
+          mode,
+        );
+        if (mode !== "code") {
+          setRewound({ id: entry.id, sent_at: entry.sent_at });
+          // Claude Code puts the message back in its prompt to edit: it is
+          // edited here instead. Backspace and Delete, as in takeQueueBack.
+          for (let sent = 0; sent < entry.text.length + 16; sent += 4)
+            await store.sendText(pane.pane_id, "\x7f\x1b[3~".repeat(4));
+          const draft = readTerminalComposerDraft(composerDraftKey);
+          writeTerminalComposerDraft(
+            composerDraftKey,
+            draft ? `${entry.text}\n${draft}` : entry.text,
+          );
+        }
+        loadHistory();
+      } catch (error) {
+        store.notify({
+          kind: "error",
+          message: "Rewind failed",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [composerDraftKey, connectionClient, loadHistory, pane.pane_id],
+  );
+  const rewindEntry = useCallback(
+    (entry: AgentHistoryEntry, mode: RewindMode) => void rewind(entry, mode),
+    [rewind],
   );
   const hasQueued = messages.some(
     (entry) => entry.queued && entry.role === "user",
@@ -1614,6 +1714,9 @@ export function AgentHistoryDrawer({
             onEditQueued={
               paneChat && pane.agent === "claude" ? editQueued : undefined
             }
+            onRewind={
+              paneChat && pane.agent === "claude" ? rewindEntry : undefined
+            }
           />
           {historyMinimap("auto")}
         </div>
@@ -1705,6 +1808,13 @@ export function AgentHistoryDrawer({
 
   return (
     <>
+      {paneChat && rewindOpen ? (
+        <AgentRewindSheet
+          entries={messages}
+          onRewind={rewindEntry}
+          onClose={() => setRewindOpen(false)}
+        />
+      ) : null}
       {/* Once it is known which session's place to open on. */}
       {paneChat && tasksOpen && tasksLoaded ? (
         <AgentTasksSheet

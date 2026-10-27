@@ -19,6 +19,7 @@ import {
   RotateCw,
   Mic,
   Pencil,
+  RotateCcw,
   Square,
   Volume2,
   Wrench,
@@ -33,6 +34,7 @@ import {
   toggleReading,
 } from "../voiceChat";
 import { store } from "../store";
+import { REWIND_MODES, type RewindMode } from "../claudeRewind";
 import { useVoiceAvailable } from "./useVoiceChat";
 import { type AgentTask, taskStatusLabel } from "../agentTasks";
 import { formatUiDateTime } from "../uiLocale";
@@ -75,6 +77,7 @@ type BubbleProps = {
   onOpen: (entry: HistoryEntry) => void;
   onRemoveQueued?: (entry: HistoryEntry) => void;
   onEditQueued?: (entry: HistoryEntry) => void;
+  onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
 };
 function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
   const x = a.entry;
@@ -85,6 +88,7 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
     a.onOpen === b.onOpen &&
     a.onRemoveQueued === b.onRemoveQueued &&
     a.onEditQueued === b.onEditQueued &&
+    a.onRewind === b.onRewind &&
     (x === y ||
       (x.id === y.id &&
         x.text === y.text &&
@@ -106,6 +110,7 @@ const ChatBubble = memo(function ChatBubble({
   onOpen,
   onRemoveQueued,
   onEditQueued,
+  onRewind,
 }: BubbleProps) {
   useRenderTrace("ChatBubble");
   const voice = useVoiceAvailable();
@@ -114,6 +119,7 @@ const ChatBubble = memo(function ChatBubble({
   const read =
     useSyncExternalStore(subscribeReading, readingId, readingId) === entry.id;
   const [showHeard, setShowHeard] = useState(false);
+  const [rewinding, setRewinding] = useState(false);
   // A compaction summary is long and written by Claude Code, not the user:
   // one line, with the summary a tap away.
   if (entry.compact_summary)
@@ -233,6 +239,21 @@ const ChatBubble = memo(function ChatBubble({
         >
           <Copy size={12} />
         </button>
+        {onRewind &&
+        entry.role === "user" &&
+        entry.kind === "message" &&
+        !entry.queued ? (
+          <button
+            type="button"
+            className="agent-history-copy agent-history-chat-rewind"
+            aria-expanded={rewinding}
+            onClick={() => setRewinding((open) => !open)}
+            aria-label="Rewind to before this message"
+            title="Rewind to before this message, as /rewind does"
+          >
+            <RotateCcw size={12} />
+          </button>
+        ) : null}
         {readable ? (
           <button
             type="button"
@@ -254,6 +275,33 @@ const ChatBubble = memo(function ChatBubble({
           </button>
         ) : null}
       </div>
+      {rewinding && onRewind ? (
+        <div
+          className="agent-history-chat-rewind-menu"
+          role="group"
+          aria-label="Rewind to before this message"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setRewinding(false);
+          }}
+        >
+          <span>Rewind to before this message:</span>
+          {REWIND_MODES.map(({ mode, label }) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                setRewinding(false);
+                onRewind(entry, mode);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <button type="button" onClick={() => setRewinding(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }, sameBubble);
@@ -717,6 +765,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onOpenTask,
   onRemoveQueued,
   onEditQueued,
+  onRewind,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -739,6 +788,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onRemoveQueued?: (entry: HistoryEntry) => void;
   /** Takes a queued message back into the box to edit. */
   onEditQueued?: (entry: HistoryEntry) => void;
+  /** Rewinds the session to before a message of the user's. */
+  onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
 }) {
   useRenderTrace("AgentHistoryChat");
   const followRef = useRef(true);
@@ -839,6 +890,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               onOpen={onOpen}
               onRemoveQueued={onRemoveQueued}
               onEditQueued={onEditQueued}
+              onRewind={onRewind}
             />
           ) : (
             <ToolBlock

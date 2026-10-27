@@ -113,6 +113,40 @@
   opacity: 1;
 }
 
+.agent-history-chat-meta .agent-history-chat-rewind[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* What to restore when rewinding to before a message: under it, aligned
+   with it. */
+.agent-history-chat-rewind-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: min(88%, 680px);
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-history-chat-rewind-menu button {
+  padding: 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-history-chat-rewind-menu button:hover {
+  background: var(--accent-soft);
+}
+
 .agent-history-chat-tools {
   min-width: 0;
   max-width: min(88%, 680px);

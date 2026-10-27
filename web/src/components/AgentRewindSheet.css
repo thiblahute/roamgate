@@ -1,0 +1,130 @@
+/* /rewind in a Claude chat: a sheet over the app, as the tasks sheet. */
+.agent-rewind-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 35%);
+}
+
+.agent-rewind-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(70vh, 720px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--shell-panel);
+  color: var(--text);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 50%);
+  outline: none;
+}
+
+.agent-rewind-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.agent-rewind-head strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.agent-rewind-list {
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.agent-rewind-list button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.agent-rewind-list button.is-current {
+  background: var(--accent-soft);
+}
+
+.agent-rewind-list span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-rewind-list time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-rewind-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.agent-rewind-quote {
+  max-height: 30vh;
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  overflow-y: auto;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.agent-rewind-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.agent-rewind-mode:hover {
+  background: var(--accent-soft);
+}
+
+.agent-rewind-mode kbd {
+  min-width: 26px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-rewind-empty {
+  margin: 0;
+  padding: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
