@@ -135,7 +135,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
             }}
             open
             embedded
-            paneChat={{ onKeys, onShowTerminal }}
+            paneChat={{ onKeys, onShowTerminal, readScreen: () => [] }}
             onOpenChange={() => {}}
           />,
         );
@@ -195,6 +195,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
                 active: true,
                 onKeys: activeKeys,
                 onShowTerminal,
+                readScreen: () => [],
               }}
               onOpenChange={() => {}}
             />
@@ -212,6 +213,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
                 active: false,
                 onKeys: otherKeys,
                 onShowTerminal,
+                readScreen: () => [],
               }}
               onOpenChange={() => {}}
             />
@@ -253,7 +255,12 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
               }}
               open
               embedded
-              paneChat={{ active: false, onKeys: otherKeys, onShowTerminal }}
+              paneChat={{
+                active: false,
+                onKeys: otherKeys,
+                onShowTerminal,
+                readScreen: () => [],
+              }}
               onOpenChange={() => {}}
             />
             <AgentHistoryDrawer
@@ -264,6 +271,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
                 active: true,
                 onKeys,
                 onShowTerminal,
+                readScreen: () => [],
                 prompt: {
                   lines: ["Your answer?"],
                   options: [
@@ -344,6 +352,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
                 active: true,
                 onKeys: activeKeys,
                 onShowTerminal,
+                readScreen: () => [],
               }}
               onOpenChange={() => {}}
             />
@@ -361,6 +370,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
                 active: false,
                 onKeys: otherKeys,
                 onShowTerminal,
+                readScreen: () => [],
               }}
               onOpenChange={() => {}}
             />
@@ -392,7 +402,12 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
             pane={pane}
             open
             embedded
-            paneChat={{ prompt: null, onKeys: () => {}, onShowTerminal }}
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+            }}
             onOpenChange={() => {}}
           />,
         );

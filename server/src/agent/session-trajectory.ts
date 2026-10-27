@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { grokReasoningText, grokUserMessageText } from "./grok-session";
+import { REWOUND_PROMPT } from "./session-rewind";
 import type { AtifStep, AtifTrajectory, SessionFile } from "./session-types";
 import { attachedImages } from "./session-images";
 import {
@@ -389,6 +390,20 @@ function projectClaudeTrajectory(
   records.forEach((record, index) => {
     const timestamp = messageTime(record, file.mtimeMs, index);
     const type = stringValue(record.type);
+    if (type === REWOUND_PROMPT) {
+      // A prompt a rewind cut (session-rewind.ts): taken from the queue for
+      // its turn all the same.
+      dequeueQueued(queue, dequeued, textFromContent(record.content));
+      dequeued = 0;
+      return;
+    }
+    if (type === "last-prompt" && record.rewound === true) {
+      // Claude Code rewinds with nothing queued (commands_queued): what
+      // the history still counts as waiting went with the rewind.
+      queue.length = 0;
+      dequeued = 0;
+      return;
+    }
     if (type === "queue-operation") {
       const content = stringValue(record.content);
       switch (stringValue(record.operation)) {

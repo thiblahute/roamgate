@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { rewoundRecordIds } from "./session-rewind";
 import {
   type AgentTask,
   commandOutputsToWatch,
@@ -354,4 +355,283 @@ test("a command with an end notice, or an unknown output, is left alone", () => 
   expect(withCommandActivity([unseen], new Map(), NOW, nobody)[0]!.status).toBe(
     "running",
   );
+});
+
+// A conversation with a rewind, in Claude Code's own records: each record
+// names its parent, and the rewind adds a last-prompt record naming the
+// message it cut. The conversation goes on from before that message.
+describe("tasks started in a rewound part", () => {
+  const session = "362be254-14eb-4390-a96c-25032526572a";
+  const record = (
+    uuid: string,
+    parentUuid: string | null,
+    timestamp: string,
+    fields: Record<string, unknown>,
+  ) => ({
+    parentUuid,
+    isSidechain: false,
+    uuid,
+    timestamp,
+    userType: "external",
+    entrypoint: "sdk-cli",
+    sessionId: session,
+    version: "2.1.316",
+    ...fields,
+  });
+  const prompt = (
+    uuid: string,
+    parent: string | null,
+    at: string,
+    text: string,
+  ) =>
+    record(uuid, parent, at, {
+      type: "user",
+      promptId: `${uuid}-prompt`,
+      message: { role: "user", content: text },
+    });
+  const reply = (uuid: string, parent: string, at: string, text: string) =>
+    record(uuid, parent, at, {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        type: "message",
+        content: [{ type: "text", text }],
+      },
+    });
+  const call = (
+    uuid: string,
+    parent: string,
+    at: string,
+    id: string,
+    name: string,
+    input: Record<string, unknown>,
+  ) =>
+    record(uuid, parent, at, {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        type: "message",
+        content: [
+          { type: "tool_use", id, name, input, caller: { type: "direct" } },
+        ],
+        stop_reason: "tool_use",
+      },
+    });
+  const launched = (
+    uuid: string,
+    parent: string,
+    at: string,
+    id: string,
+    text: string,
+    toolUseResult: Record<string, unknown>,
+  ) =>
+    record(uuid, parent, at, {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            tool_use_id: id,
+            type: "tool_result",
+            content: [{ type: "text", text }],
+          },
+        ],
+      },
+      toolUseResult,
+      sourceToolAssistantUUID: parent,
+    });
+  const system = (uuid: string, parent: string, at: string) =>
+    record(uuid, parent, at, { type: "system", subtype: "turn_duration" });
+  const lastPrompt = (fields: Record<string, unknown>) => ({
+    type: "last-prompt",
+    sessionId: session,
+    ...fields,
+  });
+  const ended = (
+    uuid: string,
+    parent: string,
+    at: string,
+    taskId: string,
+    toolUseId: string,
+  ) =>
+    record(uuid, parent, at, {
+      type: "user",
+      promptId: `${uuid}-prompt`,
+      message: {
+        role: "user",
+        content: [
+          "<task-notification>",
+          `<task-id>${taskId}</task-id>`,
+          `<tool-use-id>${toolUseId}</tool-use-id>`,
+          `<output-file>/private/tmp/claude-501/x/${session}/tasks/${taskId}.output</output-file>`,
+          "<status>completed</status>",
+          '<summary>Agent "Make rewind degrade without checkpoints" finished</summary>',
+          "</task-notification>",
+        ].join("\n"),
+      },
+      origin: { kind: "task-notification", producer: "session-task" },
+      promptSource: "system",
+    });
+
+  const agentId = "a2ad3ca23f343e44c";
+  const toolUseId = "toolu_0154ikGxTsuGRZr77UMQ6jrb";
+  /** Up to the rewind: an agent started in the turn the rewind cut. */
+  const rewound = (
+    input: Record<string, unknown>,
+    toolUseResult = {},
+  ): Record<string, unknown>[] => [
+    prompt("u1", null, "2026-10-31T16:00:00.000Z", "Let's see"),
+    reply("a1", "u1", "2026-10-31T16:00:05.000Z", "Looking."),
+    system("s1", "a1", "2026-10-31T16:00:06.000Z"),
+    lastPrompt({ lastPrompt: "Let's see", leafUuid: "s1" }),
+    prompt("u2", "s1", "2026-10-31T16:07:00.000Z", "Fix the rewind"),
+    call("c2", "u2", "2026-10-31T16:07:35.161Z", toolUseId, "Agent", input),
+    launched(
+      "r2",
+      "c2",
+      "2026-10-31T16:07:35.483Z",
+      toolUseId,
+      `Async agent launched successfully.\nagentId: ${agentId}`,
+      {
+        isAsync: true,
+        status: "async_launched",
+        agentId,
+        outputFile: `/private/tmp/claude-501/x/${session}/tasks/${agentId}.output`,
+        ...toolUseResult,
+      },
+    ),
+    reply("a2", "r2", "2026-10-31T16:07:40.000Z", "Started it."),
+    system("s2", "a2", "2026-10-31T16:07:41.000Z"),
+    lastPrompt({
+      leafUuid: "s1",
+      explicit: true,
+      rewound: true,
+      cutUuid: "u2",
+    }),
+    prompt("u3", "s1", "2026-10-31T16:10:00.000Z", "Something else"),
+    reply("a3", "u3", "2026-10-31T16:10:05.000Z", "Sure."),
+  ];
+  const tasksOf = (records: Record<string, unknown>[]) =>
+    parseSessionTasks(records, { rewound: rewoundRecordIds(records) });
+  const agent = {
+    description: "Make rewind degrade without checkpoints",
+    prompt: "...",
+    run_in_background: true,
+  };
+
+  test("still running: listed and flagged", () => {
+    expect(tasksOf(rewound(agent))).toEqual([
+      expect.objectContaining({
+        id: toolUseId,
+        kind: "agent",
+        status: "running",
+        agentId,
+        rewound: true,
+      }),
+    ]);
+  });
+
+  test("an end notice after the rewind ends it, and it leaves the list", () => {
+    const records = rewound(agent);
+    expect(
+      tasksOf([
+        ...records,
+        ended("n1", "a3", "2026-10-31T16:35:17.060Z", agentId, toolUseId),
+      ]),
+    ).toEqual([]);
+    // Matched by its agent id alone too.
+    const byId = ended("n1", "a3", "2026-10-31T16:35:17.060Z", agentId, "");
+    expect(tasksOf([...records, byId])).toEqual([]);
+  });
+
+  test("a day on with no end notice it is lost, and leaves the list", () => {
+    expect(
+      tasksOf([
+        ...rewound(agent),
+        reply("a4", "a3", "2026-11-01T17:00:00.000Z", "Later."),
+      ]),
+    ).toEqual([]);
+  });
+
+  test("tasks on the conversation's line are unchanged", () => {
+    const records = [
+      ...rewound(agent),
+      call("c4", "a3", "2026-10-31T16:11:00.000Z", "toolu_bash", "Bash", {
+        command: "bun run test",
+        description: "Run the tests",
+        run_in_background: true,
+      }),
+      launched(
+        "r4",
+        "c4",
+        "2026-10-31T16:11:01.000Z",
+        "toolu_bash",
+        "Command running in background with ID: b1k2",
+        { backgroundTaskId: "b1k2" },
+      ),
+      call(
+        "c5",
+        "r4",
+        "2026-10-31T16:12:00.000Z",
+        "toolu_done",
+        "Agent",
+        agent,
+      ),
+      launched(
+        "r5",
+        "c5",
+        "2026-10-31T16:12:01.000Z",
+        "toolu_done",
+        "Async agent launched successfully.\nagentId: adone",
+        { isAsync: true, status: "async_launched", agentId: "adone" },
+      ),
+      ended("n5", "r5", "2026-10-31T16:20:00.000Z", "adone", "toolu_done"),
+    ];
+    const tasks = tasksOf(records);
+    expect(tasks.map((task) => [task.id, task.status, task.rewound])).toEqual([
+      ["toolu_done", "completed", undefined],
+      ["toolu_bash", "running", undefined],
+      [toolUseId, "running", true],
+    ]);
+    // Without a rewind, the same tasks read the same.
+    const line = records.filter(
+      (each) => !["u2", "c2", "r2", "a2", "s2"].includes(String(each.uuid)),
+    );
+    expect(tasksOf(line)).toEqual(tasks.slice(0, 2));
+  });
+
+  test("a teammate idle but alive stays listed, until it ends", () => {
+    const teammate = { ...agent, name: "rewind-no-checkpoint" };
+    const idle = prompt(
+      "i1",
+      "a3",
+      "2026-10-31T16:30:00.000Z",
+      `<teammate-message teammate_id="rewind-no-checkpoint" color="blue">\n${JSON.stringify(
+        {
+          type: "idle_notification",
+          from: "rewind-no-checkpoint",
+          result: "Rebased the stack.",
+        },
+      )}\n</teammate-message>`,
+    );
+    const records = [
+      ...rewound(teammate, { status: "teammate_spawned" }),
+      idle,
+    ];
+    expect(tasksOf(records)).toEqual([
+      expect.objectContaining({
+        kind: "teammate",
+        name: "rewind-no-checkpoint",
+        status: "completed",
+        summary: "Rebased the stack.",
+        rewound: true,
+      }),
+    ]);
+    expect(
+      tasksOf([
+        ...records,
+        ended("n1", "i1", "2026-10-31T16:35:17.060Z", agentId, toolUseId),
+      ]),
+    ).toEqual([]);
+  });
 });

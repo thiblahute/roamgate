@@ -4115,6 +4115,8 @@ export function TerminalView({
                   },
                   active: isActivePane,
                   onKeys: (text) => void store.sendText(pane.pane_id, text),
+                  readScreen: () =>
+                    termRef.current ? terminalScreenLines(termRef.current) : [],
                   composerTarget:
                     isMobileLayout() && isActivePane ? mobileInputTarget : null,
                 }}

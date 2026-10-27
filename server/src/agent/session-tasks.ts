@@ -38,6 +38,12 @@ export type AgentTask = {
   /** A subagent's conversation: subagents/agent-<id>.jsonl beside the session. */
   agentId?: string;
   outputFile?: string;
+  /**
+   * Started in a part of the conversation a rewind took back. Listed only
+   * while it still runs (a teammate also while idle): what it did is gone
+   * from the conversation, not the work it goes on doing.
+   */
+  rewound?: boolean;
 };
 
 export type WorkflowAgentView = {
@@ -94,8 +100,15 @@ function endStatus(raw: string | undefined): AgentTask["status"] {
   return "completed";
 }
 
+/**
+ * The tasks a transcript's records started. `rewound` names the records a
+ * rewind took back (session-rewind.ts): tasks they started are flagged and
+ * kept while they run, and end notices, which come on the conversation's
+ * line after the rewind, end them all the same.
+ */
 export function parseSessionTasks(
   records: readonly Record<string, unknown>[],
+  options: { rewound?: ReadonlySet<string> | null } = {},
 ): AgentTask[] {
   const tasks = new Map<string, AgentTask>();
   const byTaskId = new Map<string, AgentTask>();
@@ -173,6 +186,9 @@ export function parseSessionTasks(
     )
       continue;
     const at = stringValue(record.timestamp) || undefined;
+    const rewound =
+      typeof record.uuid === "string" &&
+      options.rewound?.has(record.uuid) === true;
     const attachment = isRecord(record.attachment) ? record.attachment : null;
     if (attachment?.type === "queued_command")
       notified(contentText(attachment.prompt), at);
@@ -254,6 +270,8 @@ export function parseSessionTasks(
             status: "running",
             startedAt: at,
           });
+        const started = tasks.get(id);
+        if (rewound && started) started.rewound = true;
       }
       if (part.type === "tool_result") {
         const stopped = stops.get(stringValue(part.tool_use_id));
@@ -350,21 +368,25 @@ export function parseSessionTasks(
   const latest = records.length
     ? Date.parse(stringValue(records[records.length - 1]!.timestamp))
     : Number.NaN;
+  const listed: AgentTask[] = [];
   for (const task of tasks.values()) {
     const since = task.resumedAt ?? task.startedAt;
     const started = since ? Date.parse(since) : Number.NaN;
-    if (
-      task.status === "running" &&
+    const old =
       Number.isFinite(started) &&
       Number.isFinite(latest) &&
-      latest - started > LOST_AFTER_MS
-    ) {
+      latest - started > LOST_AFTER_MS;
+    if (task.status === "running" && old) {
       task.status = "lost";
       task.summary =
         "No end notice a day later: it probably ended with its session.";
     }
+    // Rewound history stays hidden once its task is done.
+    if (task.rewound && task.status !== "running" && !(idle.has(task) && !old))
+      continue;
+    listed.push(task);
   }
-  return [...tasks.values()].reverse().slice(0, MAX_TASKS);
+  return listed.reverse().slice(0, MAX_TASKS);
 }
 
 /**

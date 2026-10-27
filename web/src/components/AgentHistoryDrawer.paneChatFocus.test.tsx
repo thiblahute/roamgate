@@ -127,6 +127,7 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
               prompt: null,
               onKeys: () => {},
               onShowTerminal: () => {},
+              readScreen: () => [],
             }}
             onOpenChange={() => {}}
           />,
@@ -179,6 +180,7 @@ if (process.env.ROAMGATE_PANE_CHAT_FOCUS_DOM_TEST !== "1") {
               prompt: null,
               onKeys: () => {},
               onShowTerminal: () => {},
+              readScreen: () => [],
             }}
             onOpenChange={() => {}}
           />,
