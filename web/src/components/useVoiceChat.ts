@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { nextSpeechRate } from "../../../shared/speechRate";
+import { askRanger } from "../assistant";
 import type { HistoryEntry } from "./agentHistory";
 import { agentStateKind } from "./agentSession";
 import {
@@ -59,6 +60,7 @@ import {
   plainText,
   routeSpeech,
   showRouterNote,
+  type VoiceResume,
   type VoiceSessionInfo,
 } from "../voiceRoute";
 import {
@@ -191,6 +193,8 @@ export function useVoiceChat({
   const [moveQuestion, setMoveQuestion] = useState<MoveQuestion | null>(null);
   const stateRef = useRef<VoiceState>("off");
   stateRef.current = state;
+  // While an answer is awaited: the message, and what was read of it.
+  const awaitingRef = useRef<(() => VoiceResume) | null>(null);
   // The loop reads the latest history and status, not those it started with.
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -217,6 +221,7 @@ export function useVoiceChat({
       const started = performance.now();
       let reply: string | null = null;
       let settledSince = 0;
+      let awaitingTrace = "";
       while (
         !signal.aborted &&
         performance.now() - started < REPLY_TIMEOUT_MS
@@ -225,7 +230,20 @@ export function useVoiceChat({
         const kind = agentStateKind(statusRef.current);
         if (kind === "blocked") return "blocked";
         const latest = replyAfter(entriesRef.current, sent);
-        if (latest !== reply || kind === "working") {
+        // The agent may show working after its answer, for a task left
+        // running in the background: the turn's end says it is over.
+        const replies = replyEntriesAfter(entriesRef.current, sent);
+        const ended =
+          replies.length > 0 &&
+          replies[replies.length - 1]!.turn_end === true &&
+          entriesRef.current[entriesRef.current.length - 1] ===
+            replies[replies.length - 1];
+        const seen = `agent ${kind}, ${replies.length} replies, turn ended ${ended}, last entry ${entriesRef.current[entriesRef.current.length - 1]?.kind ?? "none"}`;
+        if (seen !== awaitingTrace) {
+          awaitingTrace = seen;
+          voiceTrace(`awaiting the answer: ${seen}`);
+        }
+        if (latest !== reply || (kind === "working" && !ended)) {
           reply = latest;
           settledSince = performance.now();
           continue;
@@ -246,6 +264,7 @@ export function useVoiceChat({
       controller: AbortController,
       carried: ReturnType<typeof ongoingReading>,
       handedOver: string | null = null,
+      resumed: VoiceResume | null = null,
     ) => {
       const { signal } = controller;
       installVoiceFollow();
@@ -288,6 +307,9 @@ export function useVoiceChat({
       const moving: { to: MoveQuestion | null } = { to: null };
       // Words another pane's voice chat routed here: sent first, unheard.
       let forwarded = handedOver;
+      // This pane's voice chat, shown again: its answer is awaited again,
+      // nothing sent.
+      let resuming = resumed;
       // What was said when the router asked which session: what to send
       // once the answer names one.
       let asked: string | null = null;
@@ -348,21 +370,35 @@ export function useVoiceChat({
               ),
             ).then((answer) => {
               const said = answer ?? `${name} gave no answer.`;
-              showRouterNote(said);
+              // The answer is read; the card points at the session it is in.
+              const session = parseVoiceSessionId(route.pane);
+              showRouterNote(
+                answer ? `${name} answered.` : said,
+                "Roamgate",
+                session ?? undefined,
+              );
               if (!signal.aborted)
                 void speak(plainText(said), signal).catch(() => {});
             });
             return "nobody";
           }
-          case "overview":
-          case "status": {
-            const answer =
-              route.answer ||
-              (route.to === "status"
-                ? `Nothing to say about ${route.say}.`
-                : "Nothing to say about your sessions.");
-            showRouterNote(answer);
-            await speak(answer, signal).catch(() => {});
+          case "ranger": {
+            showRouterNote(`Asked Ranger: ${words}`, "Ranger");
+            // Ranger answers when it has read what it needs: voice chat
+            // goes on meanwhile, and its answer is read when it comes.
+            void askRanger(words).then(
+              (answer) => {
+                // The answer is read; the card points at Ranger's chat.
+                showRouterNote("Ranger answered.", "Ranger", { ranger: true });
+                if (!signal.aborted)
+                  void speak(plainText(answer), signal).catch(() => {});
+              },
+              (error: Error) => {
+                showRouterNote(error.message, "Ranger");
+                if (!signal.aborted)
+                  void speak(error.message, signal).catch(() => {});
+              },
+            );
             return "nobody";
           }
           default: {
@@ -601,7 +637,10 @@ export function useVoiceChat({
             let heard: Heard | null;
             const handed = forwarded;
             forwarded = null;
-            if (handed !== null) heard = { text: handed, speechMs: 0 };
+            const back = resuming;
+            resuming = null;
+            if (back) heard = { text: back.sent, speechMs: 0 };
+            else if (handed !== null) heard = { text: handed, speechMs: 0 };
             else if (next) {
               heard = await next;
               next = null;
@@ -681,7 +720,8 @@ export function useVoiceChat({
               await readOn("not-for-agent");
               continue;
             }
-            const route = handed !== null ? "here" : await routed(heard);
+            const route =
+              handed !== null || back ? "here" : await routed(heard);
             if (route === "left") break;
             if (route === "nobody") {
               setHeard("");
@@ -691,9 +731,11 @@ export function useVoiceChat({
               await readOn("not-for-agent");
               continue;
             }
-            const message = voiceMessage(text, interruptedAt);
+            const message = back
+              ? back.sent
+              : voiceMessage(text, interruptedAt);
             interruptedAt = null;
-            await onSend(message);
+            if (!back) await onSend(message);
             if (raw) rememberHeardAs(text, raw);
             setHeard("");
             // Listen while the agent works: each thing said is sent too,
@@ -705,13 +747,15 @@ export function useVoiceChat({
             let deaf = false;
             // The agent's messages are read while it works, so its progress
             // is heard: each once something follows it (it is complete).
-            const readIds = new Set<string>();
+            const readIds = new Set<string>(back?.read);
+            awaitingRef.current = () => ({ sent, read: [...readIds] });
             // Those cut short by speaking up that came to nothing: read
             // again, from the sentence they were cut at.
             const skipped = new Map<string, number>();
             turnAck = startTurnAck({
               said: text,
-              signal,
+              // Shown again with its answer awaited: it was heard long ago.
+              signal: back ? AbortSignal.abort() : signal,
               // Being read, or written already and about to be.
               started: () =>
                 readIds.size > 0 ||
@@ -933,6 +977,7 @@ export function useVoiceChat({
             await ack.end();
             turnAck = null;
             if (stopping || signal.aborted) break;
+            awaitingRef.current = null;
             // What was read while the agent worked is not read again.
             if (reply && reply !== "blocked") {
               const { ids } = reply;
@@ -1000,6 +1045,7 @@ export function useVoiceChat({
         // Nothing keeps the microphone once the loop is over.
         controller.abort();
         void turnAck?.end();
+        if (controllerRef.current === controller) awaitingRef.current = null;
         link?.close();
         highlightReading([], null);
         setHeard("");
@@ -1018,20 +1064,39 @@ export function useVoiceChat({
     [hold, onError, onSend, waitForReply],
   );
 
-  /** Picks up a voice chat another pane routed here, sending its words. */
+  /**
+   * Picks up a voice chat another pane routed here, sending its words, or
+   * this pane's own, back from a reconnect, awaiting its answer again.
+   */
   const takeOver = useCallback(
-    (message: string | null) => {
+    (message: string | null, resume?: VoiceResume) => {
       if (controllerRef.current && !controllerRef.current.signal.aborted)
         return;
-      voiceTrace(`voice chat handed over${message ? `: ${message}` : ""}`);
+      voiceTrace(
+        resume
+          ? `voice chat resumed, awaiting the answer to: ${resume.sent}`
+          : `voice chat handed over${message ? `: ${message}` : ""}`,
+      );
       stopSpeaker();
       const controller = new AbortController();
       controllerRef.current = controller;
       holdAudioFocus(controller.signal);
-      void run(controller, null, message);
+      void run(controller, null, message, resume ?? null);
     },
     [run],
   );
+
+  /**
+   * Where the voice chat is, if on: what a reconnected pane needs to go on
+   * with it (takeOver).
+   */
+  const resumePoint = useCallback((): { resume?: VoiceResume } | null => {
+    // Unmounting aborts it first (the effect above); on until its loop ends
+    // or a tap stops it.
+    if (!controllerRef.current) return null;
+    const awaiting = awaitingRef.current?.();
+    return awaiting ? { resume: awaiting } : {};
+  }, []);
 
   const toggle = useCallback(() => {
     // While a reply is read, a tap stops it and listens, as speaking up does.
@@ -1145,5 +1210,6 @@ export function useVoiceChat({
     /** A move to a workspace with no agent, held until answered. */
     moveQuestion,
     answerMove,
+    resumePoint,
   };
 }
