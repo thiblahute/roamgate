@@ -131,6 +131,36 @@ test("a Claude compaction summary is flagged, not a plain user message", () => {
   ]);
 });
 
+test("a Claude reply that ends its turn is flagged", () => {
+  const trajectory = projectAgentTrajectory("claude", file, [
+    { type: "user", message: { role: "user", content: "Run the survey" } },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        stop_reason: "tool_use",
+        content: [{ type: "text", text: "Starting it." }],
+      },
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "It runs in the background." }],
+      },
+    },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory);
+  expect(entries.map((entry) => [entry.text, entry.turn_end ?? false])).toEqual(
+    [
+      ["Run the survey", false],
+      ["Starting it.", false],
+      ["It runs in the background.", true],
+    ],
+  );
+});
+
 test("an Artifact result keeps the page it published when redacted", () => {
   const trajectory = projectAgentTrajectory("claude", file, [
     {

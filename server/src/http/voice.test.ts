@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { VoiceErrands } from "../voice/voice-errands";
 import type { VoiceHelper } from "../voice/voice-helper";
 import type { VoiceRouter } from "../voice/voice-router";
-import { createVoiceRoutes, overviewSessions } from "./voice";
+import { createVoiceRoutes } from "./voice";
 
 const helper = {
   status: () => ({ available: true }),
@@ -87,122 +87,6 @@ describe("voice routes", () => {
   });
 });
 
-describe("questions about another session", () => {
-  test("come back with a summary of its conversation's end", async () => {
-    const summarized: string[][] = [];
-    const router = {
-      warm: () => {},
-      route: async () => ({
-        to: "status",
-        pane: "desktop/w1J:p1",
-        say: "IGA-184",
-      }),
-      summarize: async (question: string, session: string, end: string) => {
-        summarized.push([question, session, end]);
-        return "It waits for you to open the PR.";
-      },
-    } as unknown as VoiceRouter;
-    const read: string[] = [];
-    const routes = createVoiceRoutes(
-      helper,
-      () => router,
-      async (connectionId, paneId) => {
-        read.push(`${connectionId} ${paneId}`);
-        return [{ role: "assistant", text: "Pushed; open the PR." }];
-      },
-    );
-    const response = await routes(
-      post(
-        { current: "local/w2:p2", said: "What is 184 doing?", sessions: [] },
-        { "x-roamgate-voice": "1" },
-      ),
-      "/api/voice/route",
-    );
-    expect(await response!.json()).toEqual({
-      to: "status",
-      pane: "desktop/w1J:p1",
-      say: "IGA-184",
-      answer: "It waits for you to open the PR.",
-    });
-    expect(read).toEqual(["desktop w1J:p1"]);
-    expect(summarized).toEqual([
-      ["What is 184 doing?", "IGA-184", "Agent: Pushed; open the PR."],
-    ]);
-  });
-});
-
-describe("questions about all the sessions", () => {
-  const session = (id: string, active?: number) => ({
-    id,
-    machine: "Mac",
-    workspace: id,
-    title: `title ${id}`,
-    folder: "/src",
-    agent: "claude",
-    status: "idle",
-    ...(active === undefined ? {} : { active }),
-  });
-
-  test("cover today's most recently active sessions", () => {
-    expect(
-      overviewSessions([
-        session("local/a", 300),
-        session("local/b", 5),
-        session("local/c", 3000),
-        session("local/d"),
-      ]).map((each) => each.id),
-    ).toEqual(["local/b", "local/a"]);
-  });
-
-  test("are answered from each session's conversation end", async () => {
-    let asked: unknown[] = [];
-    const router = {
-      warm: () => {},
-      route: async () => ({ to: "overview" }),
-      summarizeAll: async (question: string, ends: unknown[]) => {
-        asked = [question, ends];
-        return "Two sessions; IGA-184 waits on you.";
-      },
-    } as unknown as VoiceRouter;
-    const routes = createVoiceRoutes(
-      helper,
-      () => router,
-      async (_connectionId, paneId) =>
-        paneId === "slow"
-          ? new Promise(() => {})
-          : [{ role: "assistant", text: `Done in ${paneId}.` }],
-    );
-    const response = await routes(
-      post(
-        {
-          current: "local/a",
-          said: "What did I do today?",
-          sessions: [session("local/a", 1), session("desktop/b", 2)],
-        },
-        { "x-roamgate-voice": "1" },
-      ),
-      "/api/voice/route",
-    );
-    expect(await response!.json()).toEqual({
-      to: "overview",
-      answer: "Two sessions; IGA-184 waits on you.",
-    });
-    expect(asked).toEqual([
-      "What did I do today?",
-      [
-        {
-          name: "title local/a (Mac, idle)",
-          conversation: "Agent: Done in a.",
-        },
-        {
-          name: "title desktop/b (Mac, idle)",
-          conversation: "Agent: Done in b.",
-        },
-      ],
-    ]);
-  });
-});
-
 describe("errands", () => {
   test("go to the session in the errand folder, followed by a job", async () => {
     let listed: { id: string; errands?: boolean }[] = [];
@@ -227,7 +111,6 @@ describe("errands", () => {
     const routes = createVoiceRoutes(
       helper,
       () => router,
-      null,
       errands,
       () => "/docs/tasks/",
     );
@@ -276,5 +159,23 @@ describe("errands", () => {
       answer: "Sunny.",
       stalled: false,
     });
+  });
+});
+
+describe("questions for Ranger", () => {
+  test("come back as they are, for the page to send", async () => {
+    const router = {
+      warm: () => {},
+      route: async () => ({ to: "ranger" }),
+    } as unknown as VoiceRouter;
+    const routes = createVoiceRoutes(helper, () => router);
+    const response = await routes(
+      post(
+        { current: "local/w2:p2", said: "What did I do today?", sessions: [] },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect(await response!.json()).toEqual({ to: "ranger" });
   });
 });

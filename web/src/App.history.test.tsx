@@ -140,7 +140,9 @@ if (process.env.ROAMGATE_APP_HISTORY_TEST !== "1") {
       useConnectionReady: () => true,
       connectionClientScopeKey: () => `local:${client.generation}`,
     }));
+    const assistantModule = await import("./assistant");
     mock.module("./assistant", () => ({
+      ...assistantModule,
       useAssistantState: () => ({ snapshot: null }),
       assistantActionExecuting: () => false,
       onAssistantShow: () => () => {},

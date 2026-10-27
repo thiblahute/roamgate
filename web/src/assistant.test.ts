@@ -10,6 +10,7 @@ import { diffState } from "../../shared/stateDelta";
 import { type AssistantDeltaPush, bridge, type ConnectionStatus } from "./api";
 import {
   __resetAssistantForTests,
+  askRanger,
   assistantActionExecuting,
   callAssistant,
   getAssistantTask,
@@ -1132,4 +1133,94 @@ test("after a reload, a reply to a question sent before it does not move the bro
   } finally {
     stop();
   }
+});
+
+function message(
+  id: string,
+  role: "user" | "assistant",
+  text: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    role,
+    text,
+    sent_at: "2026-10-27T00:00:00Z",
+    tools: [],
+    sources: [],
+    ...extra,
+  };
+}
+
+test("a question asked aloud is sent like a typed one and answered once finished", async () => {
+  const server = installBridge();
+  startAssistantClient();
+  await refreshAssistant();
+  server.call.mockClear();
+  const answer = askRanger("What waits on me?");
+  await Promise.resolve();
+  const [method, params] = server.call.mock.calls[0]! as [
+    string,
+    Record<string, unknown>,
+  ];
+  expect(method).toBe("bridge.assistant.send");
+  expect(params).toMatchObject({ text: "What waits on me?", scope });
+  let answered = "";
+  void answer.then((value) => {
+    answered = value;
+  });
+  server.push({
+    ...snapshot(1),
+    running: true,
+    messages: [
+      message("q", "user", "What waits on me?"),
+      message("a", "assistant", "IGA-184"),
+    ],
+  });
+  await Promise.resolve();
+  expect(answered).toBe("");
+  server.push({
+    ...snapshot(2),
+    messages: [
+      message("q", "user", "What waits on me?"),
+      message("a", "assistant", "IGA-184 waits for its PR."),
+    ],
+  });
+  expect(await answer).toBe("IGA-184 waits for its PR.");
+});
+
+test("only the browser that asked follows what a reply showed", async () => {
+  const server = installBridge();
+  startAssistantClient();
+  await refreshAssistant();
+  const shown: unknown[] = [];
+  onAssistantShow((show) => shown.push(show));
+  const show = (request_id: string) => ({
+    connection_id: "local",
+    workspace_id: "workspace",
+    pane_id: "workspace:p1",
+    request_id,
+  });
+  // A reply to another browser's question: this one stays put.
+  server.push({
+    ...snapshot(1, "bridge-show"),
+    messages: [message("a1", "assistant", "Shown.", { show: show("theirs") })],
+  });
+  expect(shown).toEqual([]);
+  const answer = askRanger("Go to it");
+  await Promise.resolve();
+  const calls = server.call.mock.calls;
+  const requestId = (calls[calls.length - 1]![1] as { request_id: string })
+    .request_id;
+  const reply = message("a2", "assistant", "Shown.", {
+    show: show(requestId),
+  });
+  const pushed = {
+    ...snapshot(2, "bridge-show"),
+    messages: [message("q", "user", "Go to it"), reply],
+  };
+  server.push(pushed);
+  server.push({ ...pushed, revision: 3 });
+  expect(shown).toEqual([show(requestId)]);
+  expect(await answer).toBe("Shown.");
 });
