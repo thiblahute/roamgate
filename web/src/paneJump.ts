@@ -28,7 +28,16 @@ export type PaneJumpEntry = {
   source?: ServerSessionSource & { workspaceId: string };
   /** Set for a pane on a connection other than the displayed one. */
   connectionId?: string;
+  /** When the user last had it on screen, on any device (ms). */
+  seenAt?: number;
+  /** Its agent waits on the user: asking something, or done unseen. */
+  needsYou?: "blocked" | "done";
+  /** What it waits on, when known: its question, or its last message. */
+  waitsOn?: string;
 };
+
+/** Typed first in the search: only what needs the user. */
+export const NEEDS_YOU_QUERY = "!";
 
 /** What the switcher lists: every recent pane, or one entry per workspace. */
 export type PaneJumpScope = "panes" | "workspaces";
@@ -213,17 +222,20 @@ export type WorkspaceHistory = {
 };
 
 /**
- * The current workspace first, then the others by when they were last
- * visited. Stable: workspaces never visited keep their order at the end.
+ * The current workspace first, then the others by when the user last looked
+ * at them on any device, then by when this browser last visited those it
+ * has no such time for. Stable: workspaces never visited keep their order
+ * at the end.
  */
 function orderByWorkspaceHistory(
   workspaces: PaneJumpEntry[],
   history: WorkspaceHistory | undefined,
 ): PaneJumpEntry[] {
-  if (!history) return workspaces;
-  const rank = new Map(history.keys.map((key, index) => [key, index] as const));
+  const rank = new Map(
+    (history?.keys ?? []).map((key, index) => [key, index] as const),
+  );
   const rankOf = (entry: PaneJumpEntry) => {
-    if (entry.current) return -1;
+    if (!history) return Number.MAX_SAFE_INTEGER;
     const key = workspaceHistoryKey(
       entry.connectionId ??
         entry.source?.connectionId ??
@@ -234,7 +246,13 @@ function orderByWorkspaceHistory(
   };
   return workspaces
     .map((entry, index) => ({ entry, index, rank: rankOf(entry) }))
-    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .sort(
+      (left, right) =>
+        Number(right.entry.current) - Number(left.entry.current) ||
+        (right.entry.seenAt ?? -1) - (left.entry.seenAt ?? -1) ||
+        left.rank - right.rank ||
+        left.index - right.index,
+    )
     .map(({ entry }) => entry);
 }
 
@@ -377,6 +395,9 @@ function filterPaneSearchEntries(
   scope: PaneJumpScope,
   workspaceHistory?: WorkspaceHistory,
 ): PaneJumpEntry[] {
+  // What needs the user leads the search; "!" first keeps only that.
+  const only = query.trimStart().startsWith(NEEDS_YOU_QUERY);
+  if (only) query = query.trimStart().slice(NEEDS_YOU_QUERY.length);
   const tokens = normalizeSearchText(query).split(" ").filter(Boolean);
   const matches =
     tokens.length === 0
@@ -386,9 +407,12 @@ function filterPaneSearchEntries(
           return tokens.every((token) => haystack.includes(token));
         });
   // Collapsed last, so a workspace stays reachable through any of its panes.
-  return scope === "workspaces"
-    ? orderByWorkspaceHistory(workspaceJumpEntries(matches), workspaceHistory)
-    : matches;
+  return needsYouFirst(
+    scope === "workspaces"
+      ? orderByWorkspaceHistory(workspaceJumpEntries(matches), workspaceHistory)
+      : matches,
+    only,
+  );
 }
 
 /**
@@ -402,9 +426,18 @@ function workspaceJumpEntries(entries: PaneJumpEntry[]): PaneJumpEntry[] {
     const connectionId = entry.connectionId ?? entry.source?.connectionId;
     const key = `${connectionId ?? ""}:${entry.workspaceId}`;
     const kept = byWorkspace.get(key);
-    if (!kept) byWorkspace.set(key, entry);
-    else if (entry.current && !kept.current)
-      byWorkspace.set(key, { ...kept, current: true });
+    if (!kept) {
+      byWorkspace.set(key, entry);
+      continue;
+    }
+    // A pane that needs the user leads its workspace: going there goes to it.
+    const lead = needsRank(entry) < needsRank(kept) ? entry : kept;
+    const seenAt = Math.max(entry.seenAt ?? -1, kept.seenAt ?? -1);
+    byWorkspace.set(key, {
+      ...lead,
+      current: kept.current || entry.current,
+      ...(seenAt >= 0 ? { seenAt } : {}),
+    });
   }
   return [...byWorkspace.values()];
 }
@@ -572,7 +605,35 @@ function paneJumpEntry(
     agent: pane.agent,
     agentStatus: pane.agent ? pane.agent_status : undefined,
     current,
+    ...(pane.seen_at !== undefined ? { seenAt: pane.seen_at } : {}),
+    ...(pane.agent &&
+    (pane.agent_status === "blocked" || pane.agent_status === "done")
+      ? { needsYou: pane.agent_status }
+      : {}),
   };
+}
+
+const NEEDS_YOU_RANK = { blocked: 0, done: 1 } as const;
+const needsRank = (entry: PaneJumpEntry) =>
+  entry.needsYou ? NEEDS_YOU_RANK[entry.needsYou] : 2;
+
+/**
+ * What needs the user first, the agents asking something before those done
+ * unseen, each group keeping its order; with `only`, nothing else.
+ */
+export function needsYouFirst(
+  entries: PaneJumpEntry[],
+  only = false,
+): PaneJumpEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => !only || entry.needsYou)
+    .sort(
+      (left, right) =>
+        needsRank(left.entry) - needsRank(right.entry) ||
+        left.index - right.index,
+    )
+    .map(({ entry }) => entry);
 }
 
 export type PointerPosition = { screenX: number; screenY: number };

@@ -13,6 +13,7 @@ import {
   serverPaneSearchEntries,
   serverSessionPaneEntries,
   parseWorkspaceHistory,
+  needsYouFirst,
   POINTER_REST_TOLERANCE_PX,
   pointerLeftOrigin,
   recordWorkspaceVisit,
@@ -777,5 +778,107 @@ describe("workspace scope", () => {
     expect(
       pointerLeftOrigin(origin, { screenX: 10, screenY: 20 - jitter - 1 }),
     ).toBe(true);
+  });
+});
+
+describe("what needs the user, and when they last looked", () => {
+  const withState = (
+    base: Pane,
+    agent_status: string,
+    seen_at?: number,
+  ): Pane => ({ ...base, agent_status, ...(seen_at ? { seen_at } : {}) });
+  const snapshot = {
+    panes: [
+      withState(pane("p1", "w1", "t1", "claude"), "idle", 300),
+      withState(pane("p2", "w2", "t2", "claude"), "done", 100),
+      withState(pane("p3", "w3", "t3", "claude"), "working", 200),
+      withState(pane("p4", "w4", "t4", "claude"), "blocked"),
+      withState(pane("p5", "w2", "t5", "claude"), "idle", 500),
+    ],
+    recentPaneIds: [],
+    tabs: [
+      tab("t1", "w1"),
+      tab("t2", "w2"),
+      tab("t3", "w3"),
+      tab("t4", "w4"),
+      tab("t5", "w2"),
+    ],
+    workspaces: [
+      workspace("w1", "one"),
+      workspace("w2", "two"),
+      workspace("w3", "three"),
+      workspace("w4", "four"),
+    ],
+  };
+  const history = { activeConnectionId: "local", keys: [] };
+  const titles = (entries: { title: string }[]) =>
+    entries.map((entry) => entry.title);
+
+  test("workspaces go by the last look at any of their agents", () => {
+    const entries = paneJumpEntries(snapshot, null, [], "workspaces", history);
+    // two was looked at last (through p5), never-looked four at the end.
+    expect(titles(entries)).toEqual(["two", "one", "three", "four"]);
+    // Going to two goes to its agent that is done.
+    expect(entries[0]?.paneId).toBe("p2");
+    expect(entries[0]?.needsYou).toBe("done");
+  });
+
+  test("Find puts what needs the user first; ! keeps only that", () => {
+    expect(
+      titles(paneSearchEntries(snapshot, "", null, [], "workspaces", history)),
+    ).toEqual(["four", "two", "one", "three"]);
+    expect(
+      titles(paneSearchEntries(snapshot, "!", null, [], "workspaces", history)),
+    ).toEqual(["four", "two"]);
+    expect(
+      titles(
+        paneSearchEntries(snapshot, "! fo", null, [], "workspaces", history),
+      ),
+    ).toEqual(["four"]);
+  });
+
+  test("! finds what needs the user on a connection this browser has no session for", () => {
+    const sessions = {
+      connection_id: "box",
+      connection_generation: 1,
+      workspaces: [workspace("wF", "tasks"), workspace("wG", "notes")],
+      tabs: [tab("tF", "wF"), tab("tG", "wG")],
+      panes: [
+        { ...pane("pF", "wF", "tF", "claude"), agent_status: "blocked" },
+        pane("pG", "wG", "tG", "claude"),
+      ],
+      agents: null,
+    };
+    const search = (query: string) =>
+      paneSearchEntries(
+        snapshot,
+        query,
+        null,
+        [],
+        "workspaces",
+        history,
+        undefined,
+        serverSessionPaneEntries(
+          [connection("local", "Desktop"), connection("box", "Mac")],
+          [sessions],
+          "local",
+        ),
+      );
+
+    expect(titles(search("!"))).toEqual(["four", "tasks", "two"]);
+    expect(titles(search("! TASKS"))).toEqual(["tasks"]);
+    expect(search("! tasks")[0]).toMatchObject({
+      needsYou: "blocked",
+      source: { connectionId: "box", workspaceId: "wF" },
+    });
+    expect(titles(search("! notes"))).toEqual([]);
+    expect(titles(search("notes"))).toEqual(["notes"]);
+  });
+
+  test("needsYouFirst keeps each group's order", () => {
+    const entries = paneSearchEntries(snapshot, "", null, [], "panes");
+    expect(
+      needsYouFirst(entries).map((entry) => entry.needsYou ?? "-"),
+    ).toEqual(["blocked", "done", "-", "-", "-"]);
   });
 });
