@@ -227,3 +227,25 @@ test("Composer focus overrides closed bar muted styling and coordinates shortcut
     "&.keyboard-open .app:has(.terminal-composer-input:focus) .topbar > *",
   );
 });
+
+test("a chat box holding a draft keeps the writing layout when the focus is elsewhere", () => {
+  // The workspace sheet's search took the focus: the box keeps the width,
+  // and the navigation stays on the line below, as while writing.
+  const flat = (value: string) => value.replace(/\s/g, "");
+  const drafted =
+    ".agent-history-composer:is(:focus-within,:has(.agent-history-composer-send:not(:disabled)))";
+  expect(flat(nav)).toContain(
+    `.mobile-bottom-input>${drafted}.agent-history-composer-row{row-gap:4px;}`,
+  );
+  expect(flat(nav)).toContain(
+    `.mobile-bottom-input>${drafted}:is(.agent-history-composer-row>textarea,.agent-history-composer-field){`,
+  );
+  // Only an empty box, not focused, hides its other buttons.
+  expect(flat(nav)).toContain(
+    ".mobile-bottom-input>.agent-history-composer:not(:focus-within,:has(.agent-history-composer-send:not(:disabled)))",
+  );
+  // A :has() cannot hold another: the bar tells a draft by its Send.
+  expect(flat(nav)).toContain(
+    ".mobile-bottom-bar:has(.agent-history-composer.agent-history-composer-send:not(:disabled)).mobile-appbar{",
+  );
+});

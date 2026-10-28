@@ -135,6 +135,15 @@
   color: var(--muted);
 }
 
+/* The chat's head icons: clear on any background, black included. */
+.agent-history-icon {
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+}
+
+.agent-history-icon:hover {
+  color: var(--text-strong);
+}
+
 .agent-history-icon {
   width: 24px;
   height: 24px;
@@ -805,6 +814,26 @@
 .agent-history-drawer.is-pane-chat .agent-chat-activity {
   margin-inline: calc(var(--chat-column-gutter) + 12px)
     calc(var(--chat-column-gutter) + var(--chat-rail) + 12px);
+}
+
+/* No minimap in a phone layout, whatever its pointer: neither the side rail
+   nor the timeline's strip of ticks. The conversation scrolls under the
+   thumb, and a desktop's jump ruler only takes a line from it. */
+:where(html[data-layout="mobile"]) .agent-history-drawer .conversation-minimap {
+  display: none;
+}
+
+:where(html[data-layout="mobile"])
+  .agent-history-chat-frame:has(> .conversation-minimap:not(.is-horizontal))
+  > .agent-history-chat {
+  padding-right: 0;
+}
+
+:where(html[data-layout="mobile"])
+  .agent-history-drawer.is-pane-chat:has(
+    .conversation-minimap:not(.is-horizontal)
+  ) {
+  --chat-rail: 0px;
 }
 
 /* On a phone, every line counts: no minimap rail, tighter bubbles. */

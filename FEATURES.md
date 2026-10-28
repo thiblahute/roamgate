@@ -234,8 +234,8 @@ Inspector state is scoped to each checkout; see
 - An agent pane can show its conversation **as a chat** instead of its
   terminal, which keeps running underneath and does not take the keyboard:
   the chat button in the pane's toolbar, Ctrl+Cmd+M (Ctrl+Alt+M elsewhere), or
-  on a phone **Chat in pane** in More options (the bottom bar's **Chat** opens
-  Agent History instead). The chat takes the whole pane, with one slim row for
+  on a phone the bottom bar's **Chat** or **Chat in pane** in More options.
+  The chat takes the whole pane, with one slim row for
   the agent's icon, what a Claude session is about (its `/rename` name, else
   the title Claude Code gives it, also shown as Agent History's heading), its
   status, the pages the session published with Claude Code's Artifact tool
@@ -252,8 +252,9 @@ Inspector state is scoped to each checkout; see
   while only a choice is asked, and comes back for a "Type something." answer.
   A menu shows as a question even before the agent's hooks report it blocked
   (a new session asking to trust its folder). Each pane
-  remembers its view; **Open agents as a chat** in Configuration > Behavior
-  (off by default) opens agent panes as a chat until switched. Review
+  remembers its view; until switched, an agent pane opens as a chat on a
+  phone, and on the desktop as **Open agents as a chat** in Configuration >
+  Behavior (off by default) says. Review
   feedback sent to a pane shown as a chat is pre-filled in its message box;
   its **Send** button sends it at once.
 - A message sent from a chat's message box (in a pane or in Agent History)
@@ -700,10 +701,10 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   in the bottom bar. It opens Agent History for reading and replying in a
   conversation, without adding a row above the content. Chat is the default
   history view; a saved timeline preference is still respected.
-- Mobile agent sessions initially open in Terminal; select **Chat** to opt in.
-  Choosing Chat or Terminal is remembered on this browser and reused when
-  switching sessions or reloading.
-  Shell panes open in Terminal without changing that preference.
+- Mobile agent sessions initially open in Chat. Each agent pane keeps its
+  own Chat or Terminal choice, remembered on this browser across switching
+  sessions and reloading; a pane never switched opens in Chat.
+  Shell panes open in Terminal.
 - The bottom bar holds **Message…**, **Direct**, **Chat** (for agent panes), **Workspaces**, **Tabs** (with the workspace's
   tab count, red when another agent needs you) and **⋮**, a menu of views and tools: Chat, Terminal,
   Files, Changes, Commits, Annotations, Ranger, and Workspaces.

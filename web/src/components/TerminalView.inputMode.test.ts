@@ -358,6 +358,7 @@ async function registerDomTests() {
     "../browserStorage"
   );
   const { normalizeTerminalFontScale } = await import("../appearance");
+  const { setPaneView } = await import("../paneView");
   const { activeTerminalInput } = await import("../activeTerminalInput");
   const {
     clearTerminalComposerDraft,
@@ -400,6 +401,11 @@ async function registerDomTests() {
     scrollReason.mockClear();
     localStorage.clear();
     sessionStorage.clear();
+    // These agent panes show their terminal, which a phone opens as a chat
+    // until switched: each was switched to it.
+    for (const connection of ["connection-a", "connection-b"])
+      for (const pane of ["pane-a", "pane-b"])
+        setPaneView(connection, pane, "terminal");
     open = false;
     visible = true;
     mobileLayout = true;
