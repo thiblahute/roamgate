@@ -281,13 +281,16 @@ export function PopupOverlay({
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
-      if (!store.get().popup && client.isCurrent()) {
+      // Closed, or asked to: the overlay is gone either way.
+      const gone = () =>
+        !store.get().popup || store.get().popupMoving === "closing";
+      if (gone() && client.isCurrent()) {
         const previous = previousFocusRef.current;
         previousFocusRef.current = null;
         // After the frame the overlay leaves: an agent chat's message box
         // gets the keys back, whatever had them before the popup.
         requestAnimationFrame(() => {
-          if (store.get().popup) return;
+          if (!gone()) return;
           const input = activeTerminalInput(document);
           const target = input?.closest(".agent-history-composer")
             ? input

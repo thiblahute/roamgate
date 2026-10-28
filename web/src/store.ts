@@ -114,6 +114,11 @@ export interface ServerSessionState {
   recentPaneIds: string[];
   /** A plugin's session-modal floating pane (e.g. Herdr Float), if open. */
   popup: PopupInfo | null;
+  /**
+   * Asked to open or close, Herdr not having said so yet: the overlay shows
+   * the move at once.
+   */
+  popupMoving: "opening" | "closing" | null;
   error: string | null;
   pendingFocusWorkspaceId: string | null;
   pendingFocusWorkspaceSeq: number;
@@ -298,6 +303,7 @@ export function emptyServerSessionState(
     selectedPaneId: null,
     recentPaneIds: [],
     popup: null,
+    popupMoving: null,
     error: null,
     pendingFocusWorkspaceId: null,
     pendingFocusWorkspaceSeq: 0,
@@ -468,6 +474,7 @@ function serverSessionFromState(snapshot: State): ServerSessionState {
     selectedPaneId: snapshot.selectedPaneId,
     recentPaneIds: snapshot.recentPaneIds,
     popup: snapshot.popup,
+    popupMoving: null,
     error: snapshot.error,
     pendingFocusWorkspaceId: snapshot.pendingFocusWorkspaceId,
     pendingFocusWorkspaceSeq: snapshot.pendingFocusWorkspaceSeq,
@@ -2533,8 +2540,23 @@ function handlePopupPush(push: PopupStatePush) {
       push.connection_generation,
     )
   ) {
-    set({ popup: push.popup });
+    set({ popup: push.popup, popupMoving: null });
   }
+}
+
+let popupMoveTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Shows a popup's move at once; Herdr's answer (or 5 s) ends it. */
+function movePopup(move: "opening" | "closing", call: () => Promise<unknown>) {
+  clearTimeout(popupMoveTimer);
+  set({ popupMoving: move });
+  popupMoveTimer = setTimeout(() => {
+    if (state.popupMoving === move) set({ popupMoving: null });
+  }, 5000);
+  return call().catch((error: unknown) => {
+    if (state.popupMoving === move) set({ popupMoving: null });
+    throw error;
+  });
 }
 
 function handleHerdrEvent(event: HerdrEventMsg) {
@@ -2682,6 +2704,7 @@ function navigateBrowser(workspaceId: string, tabId?: string, paneId?: string) {
           ),
           state.panes,
           activeTabId,
+          projected.selectedPaneId,
         );
   set({
     ...projected,
@@ -4611,7 +4634,9 @@ export const store = {
 
   /** Close the open popup, if any (Herdr's generic popup.close method). */
   closePopup() {
-    return action((lease) => lease.client.call("popup.close", {}));
+    return movePopup("closing", () =>
+      action((lease) => lease.client.call("popup.close", {})),
+    );
   },
 
   /**
@@ -4629,37 +4654,40 @@ export const store = {
     actionId: string,
     context: Record<string, unknown> = {},
   ) {
-    return action(async (lease) => {
-      try {
-        await lease.client.call("popup.close", {});
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("popup_not_open")) throw error;
-      }
-      if (!leaseIsCurrent(lease)) return;
-      // Herdr opens a popup in whichever Space it has focused, and the
-      // observer that reports popup state watches that same Space, so a
-      // mismatch opens a popup nobody sees and the key looks dead. Always
-      // align Herdr with the Space the action is invoked for: browser-local
-      // navigation keeps its selection in this browser, and Herdr's own
-      // focus can sit on another Space entirely. This cannot be skipped by
-      // comparing against `workspaces[].focused`, which browser-local
-      // navigation projects to this browser's selection (see
-      // projectBrowserNavigation), making the comparison always agree.
-      const workspaceId = context.workspace_id;
-      if (typeof workspaceId === "string" && workspaceId) {
-        await lease.client.call("workspace.focus", {
-          workspace_id: workspaceId,
-        });
+    return movePopup(state.popup ? "closing" : "opening", () =>
+      action(async (lease) => {
+        try {
+          await lease.client.call("popup.close", {});
+          return;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (!message.includes("popup_not_open")) throw error;
+        }
         if (!leaseIsCurrent(lease)) return;
-      }
-      await lease.client.call("plugin.action.invoke", {
-        plugin_id: pluginId,
-        action_id: actionId,
-        context,
-      });
-    });
+        // Herdr opens a popup in whichever Space it has focused, and the
+        // observer that reports popup state watches that same Space, so a
+        // mismatch opens a popup nobody sees and the key looks dead. Always
+        // align Herdr with the Space the action is invoked for: browser-local
+        // navigation keeps its selection in this browser, and Herdr's own
+        // focus can sit on another Space entirely. This cannot be skipped by
+        // comparing against `workspaces[].focused`, which browser-local
+        // navigation projects to this browser's selection (see
+        // projectBrowserNavigation), making the comparison always agree.
+        const workspaceId = context.workspace_id;
+        if (typeof workspaceId === "string" && workspaceId) {
+          await lease.client.call("workspace.focus", {
+            workspace_id: workspaceId,
+          });
+          if (!leaseIsCurrent(lease)) return;
+        }
+        await lease.client.call("plugin.action.invoke", {
+          plugin_id: pluginId,
+          action_id: actionId,
+          context,
+        });
+      }),
+    );
   },
 
   closePane(paneId: string) {

@@ -260,6 +260,9 @@ export function AgentHistoryDrawer({
   const [expandedMessage, setExpandedMessage] =
     useState<AgentHistoryEntry | null>(null);
   const [loading, setLoading] = useState(false);
+  // Whether a load answered since the pane was switched to: until then what
+  // shows is what it had last, and the chat says it is catching up.
+  const [caughtUp, setCaughtUp] = useState(false);
   const [error, setError] = useState("");
   const [highlightedSequence, setHighlightedSequence] = useState<number | null>(
     null,
@@ -393,6 +396,7 @@ export function AgentHistoryDrawer({
         if (inFlightRef.current === seq) inFlightRef.current = null;
         if (connectionClient.isCurrent() && loadSeqRef.current === seq) {
           setLoading(false);
+          setCaughtUp(true);
         }
       });
   }, [
@@ -434,6 +438,7 @@ export function AgentHistoryDrawer({
     setPreviewLoading(false);
     setPreviewError("");
     setLoading(false);
+    setCaughtUp(false);
     setError("");
   }, [
     connectionClient,
@@ -1702,6 +1707,14 @@ export function AgentHistoryDrawer({
       }}
     >
       {!paneChat || searchOpen || query ? historySearch : null}
+      {paneChat && open && !caughtUp && messages.length > 0 ? (
+        <div
+          className="agent-chat-catching-up"
+          role="status"
+          aria-label="Updating the conversation"
+          title="Updating the conversation"
+        />
+      ) : null}
       {(paneOutbox.length ? null : historyEmptyState) ??
         (paneChat && chatThreadsKey && activeConnectionId ? (
           // The chat's threads: comments on parts of the agent's messages.
@@ -1887,11 +1900,13 @@ export function AgentHistoryDrawer({
           {paneChat ? (
             <>
               <AgentIcon agent={pane.agent} />
-              {sessionTitle ? (
-                <span className="agent-chat-title" title={sessionTitle}>
-                  {sessionTitle}
-                </span>
-              ) : null}
+              {/* The workspace names it until its title is read. */}
+              <span
+                className={`agent-chat-title${sessionTitle ? "" : " is-placeholder"}`}
+                title={sessionTitle ?? workspaceLabel}
+              >
+                {sessionTitle ?? workspaceLabel}
+              </span>
             </>
           ) : (
             <div className="agent-history-identity">
