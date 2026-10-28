@@ -160,6 +160,13 @@ def parser():
     u = sub.add_parser("update", help="say what changed")
     u.add_argument("--message", required=True)
 
+    n = sub.add_parser(
+        "notify",
+        help="tell the user they need to act: a notification, and this agent in their list of what needs them",
+    )
+    n.add_argument("--title", help="a few words (default: your agent and workspace)")
+    n.add_argument("text", nargs="*", help="what the user needs to do, or - for standard input")
+
     q = sub.add_parser(
         "permission",
         help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",
