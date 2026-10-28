@@ -41,6 +41,9 @@ function fixture(agent = "pi") {
     async readDownloadBody() {
       return text;
     },
+    async findPiSessionForCwd() {
+      return null;
+    },
     async findPiSessionById() {
       return file;
     },

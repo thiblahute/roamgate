@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgentSessionFileAccess } from "./session-file-access";
+import {
+  createAgentSessionFileAccess,
+  piSessionDirectoryName,
+} from "./session-file-access";
 
 const remotePath = "/srv/herdr-gui-test/sessions/pi-session.jsonl";
 const metadata = `42\t1784872800\t${Buffer.from(remotePath).toString("base64")}\t1:42\t1784872800.123:1784872800.456\n`;
@@ -136,4 +139,17 @@ describe("agent session file access", () => {
     await files.findClaudeSessionById("8b7109b8-e5d2-4744-ac9a-9a8c7d2dd3dc");
     expect(commands[0]).toContain("find -L ");
   });
+});
+
+test("Pi names a directory's sessions after its path", () => {
+  expect(
+    piSessionDirectoryName(
+      "/Volumes/data/cloud.thibaultsaunier.com/Documents/tasks/subtasks/pi",
+    ),
+  ).toBe(
+    "--Volumes-data-cloud.thibaultsaunier.com-Documents-tasks-subtasks-pi--",
+  );
+  expect(piSessionDirectoryName("relative/path")).toBeNull();
+  expect(piSessionDirectoryName('/a/"b')).toBeNull();
+  expect(piSessionDirectoryName("/a/$(rm)")).toBeNull();
 });

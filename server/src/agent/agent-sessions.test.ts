@@ -108,6 +108,9 @@ function remotePiFiles(text: string): AgentSessionFileAccess {
     async readDownloadBody() {
       return bytes;
     },
+    async findPiSessionForCwd() {
+      return null;
+    },
     async findPiSessionById() {
       return null;
     },

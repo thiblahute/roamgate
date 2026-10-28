@@ -367,6 +367,20 @@ export async function resolveAgentSessionInfo(
       };
     }
   }
+  if (agent === "pi" && !resolvedSession && cwd) {
+    // Without Herdr's Pi integration: the newest session in its directory.
+    file = await files.findPiSessionForCwd(cwd);
+    const id = file
+      ? /(?:^|_)([^_]+)\.jsonl$/.exec(basename(file.path))?.[1]
+      : undefined;
+    if (file && id)
+      resolvedSession = {
+        source: "pi-local",
+        agent: "pi",
+        kind: "id",
+        value: id,
+      };
+  }
   if (agent === "muse" && !resolvedSession && !files.remote) {
     file = await findMuseSession({ cwd, metadataCache: context.museMetadata });
     if (file?.sessionId) {
