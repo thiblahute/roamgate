@@ -1,4 +1,5 @@
 import { MobileBottomBar } from "./components/MobileBottomBar";
+import { withWaitsOn } from "./needsYou";
 import { useMarkAgentsSeen } from "./agentSeen";
 import { createPortal, flushSync } from "react-dom";
 import { bridge } from "./api";
@@ -179,6 +180,8 @@ import {
   type PaneJumpScope,
   paneJumpTargetId,
   paneSearchEntries,
+  needsYouFirst,
+  NEEDS_YOU_QUERY,
   parseWorkspaceHistory,
   type PointerPosition,
   pointerLeftOrigin,
@@ -925,7 +928,7 @@ function PaneJumpOverlay({
           <strong>{`${searching ? "Find" : "Switch"} ${noun}`}</strong>
           <span>
             {searching
-              ? `Filters every open ${plural.slice(0, -1)}. Use Up / Down and Enter`
+              ? `${NEEDS_YOU_QUERY} first: what needs you · Up / Down, Enter`
               : "K to search; Enter or release modifier to switch"}
           </span>
         </div>
@@ -1038,6 +1041,11 @@ function PaneJumpOverlay({
                     </span>
                   ) : null}
                 </span>
+                {entry.waitsOn ? (
+                  <span className="pane-jump-waits" title={entry.waitsOn}>
+                    {entry.waitsOn}
+                  </span>
+                ) : null}
               </span>
             </button>
           ))}
@@ -1903,23 +1911,28 @@ export default function App() {
       activeConnectionId: s.activeConnectionId,
       keys: workspaceHistory,
     };
-    return paneJumpSearch === null
-      ? paneJumpEntries(
-          snapshot,
-          activePaneId,
-          connectionSessions,
-          paneJumpScope,
-          history,
-        )
-      : paneSearchEntries(
-          snapshot,
-          paneJumpSearch,
-          activePaneId,
-          connectionSessions,
-          paneJumpScope,
-          history,
-        );
+    return withWaitsOn(
+      paneJumpSearch === null
+        ? paneJumpEntries(
+            snapshot,
+            activePaneId,
+            connectionSessions,
+            paneJumpScope,
+            history,
+          )
+        : paneSearchEntries(
+            snapshot,
+            paneJumpSearch,
+            activePaneId,
+            connectionSessions,
+            paneJumpScope,
+            history,
+          ),
+      s.activeConnectionId,
+      reviewState.prompts,
+    );
   }, [
+    reviewState.prompts,
     activePaneId,
     connectionSessions,
     paneJumpScope,
@@ -1932,6 +1945,32 @@ export default function App() {
     s.workspaces,
     workspaceHistory,
   ]);
+  // The workspaces whose agent needs the user, on every connection.
+  const needsYouCount = useMemo(
+    () =>
+      paneSearchEntries(
+        {
+          layout: s.layout,
+          panes: s.panes,
+          recentPaneIds: s.recentPaneIds,
+          tabs: s.tabs,
+          workspaces: s.workspaces,
+        },
+        NEEDS_YOU_QUERY,
+        activePaneId,
+        connectionSessions,
+        "workspaces",
+      ).length,
+    [
+      activePaneId,
+      connectionSessions,
+      s.layout,
+      s.panes,
+      s.recentPaneIds,
+      s.tabs,
+      s.workspaces,
+    ],
+  );
   const activePaneHasAgent = paneHasAgentHistory(activePane);
   // Saved chat histories follow the open agent panes the connection reports.
   useEffect(() => {
@@ -3319,37 +3358,52 @@ export default function App() {
   const [workspaceSearch, setWorkspaceSearch] = useState("");
   // It opens on the recent list, the switcher's; the whole tree is a tap away.
   const [workspaceTreeShown, setWorkspaceTreeShown] = useState(false);
+  // The phone's workspace list: what needs the user first, with what for.
+  const workspaceAttention = useCallback(
+    (entries: PaneJumpEntry[]) =>
+      withWaitsOn(
+        needsYouFirst(entries),
+        s.activeConnectionId,
+        reviewState.prompts,
+      ),
+    [s.activeConnectionId, reviewState.prompts],
+  );
   const workspaceRecentEntries = useMemo(
     () =>
       mobile && !workspaceTreeShown
-        ? paneJumpEntries(
-            {
-              layout: s.layout,
-              panes: s.panes,
-              recentPaneIds: s.recentPaneIds,
-              tabs: s.tabs,
-              workspaces: s.workspaces,
-            },
-            activePaneId,
-            connectionSessions,
-            paneJumpScope,
-            {
-              activeConnectionId: s.activeConnectionId,
-              keys: workspaceHistory,
-            },
+        ? // Every pane, one entry per workspace: an agent that needs the user
+          // leads its workspace even in a pane not visited lately.
+          workspaceAttention(
+            paneSearchEntries(
+              {
+                layout: s.layout,
+                panes: s.panes,
+                recentPaneIds: s.recentPaneIds,
+                tabs: s.tabs,
+                workspaces: s.workspaces,
+              },
+              "",
+              activePaneId,
+              connectionSessions,
+              "workspaces",
+              {
+                activeConnectionId: s.activeConnectionId,
+                keys: workspaceHistory,
+              },
+            ),
           )
         : null,
     [
       activePaneId,
       connectionSessions,
       mobile,
-      paneJumpScope,
       s.activeConnectionId,
       s.layout,
       s.panes,
       s.recentPaneIds,
       s.tabs,
       s.workspaces,
+      workspaceAttention,
       workspaceHistory,
       workspaceTreeShown,
     ],
@@ -3357,22 +3411,24 @@ export default function App() {
   const workspaceSearchResults = useMemo(
     () =>
       mobile && workspaceSearch.trim()
-        ? paneSearchEntries(
-            {
-              layout: s.layout,
-              panes: s.panes,
-              recentPaneIds: s.recentPaneIds,
-              tabs: s.tabs,
-              workspaces: s.workspaces,
-            },
-            workspaceSearch,
-            activePaneId,
-            connectionSessions,
-            "workspaces",
-            {
-              activeConnectionId: s.activeConnectionId,
-              keys: workspaceHistory,
-            },
+        ? workspaceAttention(
+            paneSearchEntries(
+              {
+                layout: s.layout,
+                panes: s.panes,
+                recentPaneIds: s.recentPaneIds,
+                tabs: s.tabs,
+                workspaces: s.workspaces,
+              },
+              workspaceSearch,
+              activePaneId,
+              connectionSessions,
+              "workspaces",
+              {
+                activeConnectionId: s.activeConnectionId,
+                keys: workspaceHistory,
+              },
+            ),
           )
         : null,
     [
@@ -3387,6 +3443,7 @@ export default function App() {
       s.workspaces,
       workspaceHistory,
       workspaceSearch,
+      workspaceAttention,
     ],
   );
   const movePaneJumpSelection = useCallback(
@@ -3419,6 +3476,11 @@ export default function App() {
     setPaneJumpSearch("");
     setPaneJumpOpen(true);
   }, [paneJumpOptions.length]);
+  // The count's button: Find, showing only what needs the user.
+  const openNeedsYou = useCallback(() => {
+    openPaneJumpSearch();
+    setPaneJumpSearch(NEEDS_YOU_QUERY);
+  }, [openPaneJumpSearch]);
   const changePaneJumpSearch = useCallback((value: string) => {
     paneJumpIndexRef.current = 0;
     setPaneJumpIndex(0);
@@ -4532,6 +4594,18 @@ export default function App() {
           <ConnectionSwitcher />
         </div>
         <div className="topbar-actions">
+          {needsYouCount ? (
+            <button
+              type="button"
+              className="topbar-button needs-you-button"
+              title="The agents that need you: blocked or done since you looked"
+              onClick={openNeedsYou}
+            >
+              <span className="needs-you-mark" aria-hidden="true" />
+              {needsYouCount}
+              {mobile ? null : ` need${needsYouCount === 1 ? "s" : ""} you`}
+            </button>
+          ) : null}
           {mobile ? null : (
             <div className="topbar-command-group">
               <button
@@ -5060,6 +5134,11 @@ export default function App() {
                             </span>
                           ) : null}
                         </span>
+                        {entry.waitsOn ? (
+                          <span className="pane-jump-waits">
+                            {entry.waitsOn}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   ),

@@ -346,6 +346,24 @@
   max-width: 40%;
 }
 
+/* Rows, the head and the search keep their height and the list scrolls: a
+   row with what its agent waits on has a third line, which a shrunk row
+   would draw over the next. */
+.pane-jump-list > .pane-jump-item,
+.pane-jump-popover > .pane-jump-head,
+.pane-jump-popover > .pane-jump-search {
+  flex-shrink: 0;
+}
+
+/* What an agent needing the user waits on: its question or last message. */
+.pane-jump-waits {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .pane-jump-cwd {
   min-width: 0;
   flex: 1;
