@@ -135,6 +135,15 @@
   color: var(--muted);
 }
 
+/* The chat's head icons: clear on any background, black included. */
+.agent-history-icon {
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+}
+
+.agent-history-icon:hover {
+  color: var(--text-strong);
+}
+
 .agent-history-icon {
   width: 24px;
   height: 24px;

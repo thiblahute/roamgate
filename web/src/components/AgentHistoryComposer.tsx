@@ -11,7 +11,15 @@ import {
 } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import { lazyWithReload } from "../lazyWithReload";
-import { ImagePlus, Mic, Route, Send, TriangleAlert, X } from "lucide-react";
+import {
+  ImagePlus,
+  Mic,
+  Route,
+  Send,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -114,6 +122,7 @@ export function AgentHistoryComposer({
   onError,
   voice,
   onRecallQueued,
+  onStop,
 }: {
   draftKey: string;
   agent?: string;
@@ -132,6 +141,8 @@ export function AgentHistoryComposer({
    * edit, as Up does in Claude Code's own prompt.
    */
   onRecallQueued?: () => void;
+  /** While the agent works: stop it, beside Send. */
+  onStop?: () => void;
   /** Hands-free chat, when the server has voice set up. */
   voice?: {
     state: VoiceState;
@@ -549,186 +560,208 @@ export function AgentHistoryComposer({
             Esc
           </button>
         ) : null}
-        {vimKeys ? (
-          <Suspense fallback={null}>
-            <ComposerVimEditor
+        {/* The box, with the microphone on it, at its right edge. */}
+        <div
+          className={`agent-history-composer-field${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}`}
+        >
+          {vimKeys ? (
+            <Suspense fallback={null}>
+              <ComposerVimEditor
+                value={shown.text}
+                selection={shownSelection}
+                label={`Message ${name || "agent"}`}
+                placeholder={name ? `Message ${name}...` : "Message..."}
+                enterSends={!enterAddsLine}
+                onUpWhenEmpty={
+                  onRecallQueued
+                    ? () => {
+                        onRecallQueued();
+                        return true;
+                      }
+                    : undefined
+                }
+                onChange={(value, start, end) => {
+                  const draft = shown.toDraft(value);
+                  const next = attachmentDisplay(draft);
+                  writeTerminalComposerDraft(draftKey, draft);
+                  writeTerminalComposerSelection(
+                    draftKey,
+                    next.draftOffset(value, start),
+                    next.draftOffset(value, end),
+                  );
+                }}
+                onSelect={(start, end) => {
+                  const committed = attachmentDisplay(
+                    readTerminalComposerDraft(draftKey),
+                  );
+                  writeTerminalComposerSelection(
+                    draftKey,
+                    committed.draftOffset(committed.text, start),
+                    committed.draftOffset(committed.text, end),
+                  );
+                }}
+                onSubmit={() => void send(false)}
+                onPasteImages={(files) => void uploadImages(files)}
+                handleRef={vimHandleRef}
+                onComposingChange={(composing) => {
+                  composingRef.current = composing;
+                  setComposing(composing);
+                  if (!composing) resumeUploads();
+                }}
+              />
+            </Suspense>
+          ) : (
+            <textarea
+              ref={textareaRef}
               value={shown.text}
-              selection={shownSelection}
-              label={`Message ${name || "agent"}`}
+              rows={1}
+              aria-label={`Message ${name || "agent"}`}
               placeholder={name ? `Message ${name}...` : "Message..."}
-              enterSends={!enterAddsLine}
-              onUpWhenEmpty={
-                onRecallQueued
-                  ? () => {
-                      onRecallQueued();
-                      return true;
-                    }
-                  : undefined
-              }
-              onChange={(value, start, end) => {
-                const draft = shown.toDraft(value);
+              enterKeyHint={enterAddsLine ? "enter" : "send"}
+              autoComplete="off"
+              onChange={(event) => {
+                const textarea = event.currentTarget;
+                const draft = shown.toDraft(textarea.value);
                 const next = attachmentDisplay(draft);
                 writeTerminalComposerDraft(draftKey, draft);
                 writeTerminalComposerSelection(
                   draftKey,
-                  next.draftOffset(value, start),
-                  next.draftOffset(value, end),
+                  next.draftOffset(textarea.value, textarea.selectionStart),
+                  next.draftOffset(textarea.value, textarea.selectionEnd),
                 );
               }}
-              onSelect={(start, end) => {
+              onPaste={(event) => {
+                const files = Array.from(event.clipboardData.files);
+                const images = (
+                  files.length
+                    ? files
+                    : Array.from(event.clipboardData.items)
+                        .map((item) => item.getAsFile())
+                        .filter((file): file is File => file !== null)
+                ).filter((file) => file.type.startsWith("image/"));
+                if (images.length === 0) return;
+                event.preventDefault();
+                void uploadImages(images);
+              }}
+              onSelect={(event) => {
+                const textarea = event.currentTarget;
+                // Skip selections of a value the shared draft has not committed.
                 const committed = attachmentDisplay(
                   readTerminalComposerDraft(draftKey),
                 );
+                if (textarea.value !== committed.text) return;
                 writeTerminalComposerSelection(
                   draftKey,
-                  committed.draftOffset(committed.text, start),
-                  committed.draftOffset(committed.text, end),
+                  committed.draftOffset(
+                    textarea.value,
+                    textarea.selectionStart,
+                  ),
+                  committed.draftOffset(textarea.value, textarea.selectionEnd),
                 );
               }}
-              onSubmit={() => void send(false)}
-              onPasteImages={(files) => void uploadImages(files)}
-              handleRef={vimHandleRef}
-              onComposingChange={(composing) => {
-                composingRef.current = composing;
-                setComposing(composing);
-                if (!composing) resumeUploads();
+              onCompositionStart={() => {
+                touchSubmit.cancel();
+                if (compositionEndTimerRef.current !== null) {
+                  clearTimeout(compositionEndTimerRef.current);
+                  compositionEndTimerRef.current = null;
+                }
+                composingRef.current = true;
+                setComposing(true);
+              }}
+              onCompositionEnd={() => {
+                // The final native input can follow compositionend in the same task.
+                compositionEndTimerRef.current = setTimeout(() => {
+                  compositionEndTimerRef.current = null;
+                  composingRef.current = false;
+                  setComposing(false);
+                  resumeUploads();
+                }, 0);
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "ArrowUp" &&
+                  !shown.text &&
+                  onRecallQueued &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  event.preventDefault();
+                  onRecallQueued();
+                  return;
+                }
+                if (
+                  event.nativeEvent.isComposing ||
+                  composingRef.current ||
+                  event.keyCode === 229
+                )
+                  return;
+                if (
+                  event.key === "ArrowUp" &&
+                  event.altKey &&
+                  enterChatParts(event.currentTarget)
+                ) {
+                  event.preventDefault();
+                  return;
+                }
+                if (
+                  (event.key === "PageUp" || event.key === "PageDown") &&
+                  scrollChatPage(
+                    event.currentTarget,
+                    event.key === "PageUp" ? -1 : 1,
+                  )
+                ) {
+                  event.preventDefault();
+                  return;
+                }
+                if (event.key === "Escape" && confirming) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setConfirmation(null);
+                  return;
+                }
+                const plainEnter =
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey;
+                if (
+                  (plainEnter && !enterAddsLine) ||
+                  shortcutMatches(event.nativeEvent, "composer.send")
+                ) {
+                  event.preventDefault();
+                  if (!event.repeat) void send(false);
+                }
               }}
             />
-          </Suspense>
-        ) : (
-          <textarea
-            ref={textareaRef}
-            value={shown.text}
-            rows={1}
-            aria-label={`Message ${name || "agent"}`}
-            placeholder={name ? `Message ${name}...` : "Message..."}
-            enterKeyHint={enterAddsLine ? "enter" : "send"}
-            autoComplete="off"
-            onChange={(event) => {
-              const textarea = event.currentTarget;
-              const draft = shown.toDraft(textarea.value);
-              const next = attachmentDisplay(draft);
-              writeTerminalComposerDraft(draftKey, draft);
-              writeTerminalComposerSelection(
-                draftKey,
-                next.draftOffset(textarea.value, textarea.selectionStart),
-                next.draftOffset(textarea.value, textarea.selectionEnd),
-              );
-            }}
-            onPaste={(event) => {
-              const files = Array.from(event.clipboardData.files);
-              const images = (
-                files.length
-                  ? files
-                  : Array.from(event.clipboardData.items)
-                      .map((item) => item.getAsFile())
-                      .filter((file): file is File => file !== null)
-              ).filter((file) => file.type.startsWith("image/"));
-              if (images.length === 0) return;
-              event.preventDefault();
-              void uploadImages(images);
-            }}
-            onSelect={(event) => {
-              const textarea = event.currentTarget;
-              // Skip selections of a value the shared draft has not committed.
-              const committed = attachmentDisplay(
-                readTerminalComposerDraft(draftKey),
-              );
-              if (textarea.value !== committed.text) return;
-              writeTerminalComposerSelection(
-                draftKey,
-                committed.draftOffset(textarea.value, textarea.selectionStart),
-                committed.draftOffset(textarea.value, textarea.selectionEnd),
-              );
-            }}
-            onCompositionStart={() => {
-              touchSubmit.cancel();
-              if (compositionEndTimerRef.current !== null) {
-                clearTimeout(compositionEndTimerRef.current);
-                compositionEndTimerRef.current = null;
-              }
-              composingRef.current = true;
-              setComposing(true);
-            }}
-            onCompositionEnd={() => {
-              // The final native input can follow compositionend in the same task.
-              compositionEndTimerRef.current = setTimeout(() => {
-                compositionEndTimerRef.current = null;
-                composingRef.current = false;
-                setComposing(false);
-                resumeUploads();
-              }, 0);
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "ArrowUp" &&
-                !shown.text &&
-                onRecallQueued &&
-                !event.shiftKey &&
-                !event.altKey
-              ) {
-                event.preventDefault();
-                onRecallQueued();
-                return;
-              }
-              if (
-                event.nativeEvent.isComposing ||
-                composingRef.current ||
-                event.keyCode === 229
-              )
-                return;
-              if (
-                event.key === "ArrowUp" &&
-                event.altKey &&
-                enterChatParts(event.currentTarget)
-              ) {
-                event.preventDefault();
-                return;
-              }
-              if (
-                (event.key === "PageUp" || event.key === "PageDown") &&
-                scrollChatPage(
-                  event.currentTarget,
-                  event.key === "PageUp" ? -1 : 1,
-                )
-              ) {
-                event.preventDefault();
-                return;
-              }
-              if (event.key === "Escape" && confirming) {
-                event.preventDefault();
-                event.stopPropagation();
-                setConfirmation(null);
-                return;
-              }
-              const plainEnter =
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.altKey &&
-                !event.ctrlKey &&
-                !event.metaKey;
-              if (
-                (plainEnter && !enterAddsLine) ||
-                shortcutMatches(event.nativeEvent, "composer.send")
-              ) {
-                event.preventDefault();
-                if (!event.repeat) void send(false);
-              }
-            }}
-          />
-        )}
-        {voice?.state === "off" ? (
-          // A running conversation is controlled from over the chat.
+          )}
+          <div className="agent-history-composer-inline">
+            {voice?.state === "off" ? (
+              // A running conversation is controlled from over the chat.
+              <button
+                type="button"
+                className="agent-history-composer-voice is-off"
+                aria-label="Talk to the agent"
+                aria-pressed={false}
+                title="Talk to the agent"
+                onMouseDown={keepTextareaFocus}
+                onClick={voice.onToggle}
+              >
+                <Mic size={17} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {onStop ? (
           <button
             type="button"
-            className="agent-history-composer-voice is-off"
-            aria-label="Talk to the agent"
-            aria-pressed={false}
-            title="Talk to the agent"
+            className="agent-history-composer-stop"
+            aria-label="Stop the agent"
+            title="Stop the agent: Esc in its terminal"
             onMouseDown={keepTextareaFocus}
-            onClick={voice.onToggle}
+            onClick={onStop}
           >
-            <Mic size={17} aria-hidden="true" />
+            <Square size={10} fill="currentColor" aria-hidden="true" />
           </button>
         ) : null}
         <button

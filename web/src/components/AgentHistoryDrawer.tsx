@@ -1387,6 +1387,11 @@ export function AgentHistoryDrawer({
       agent={pane.agent}
       status={pane.agent_status}
       stateSeq={pane.state_change_seq}
+      onStop={
+        paneChat && pane.agent_status.toLowerCase() === "working"
+          ? () => paneChat.onKeys("\x1b")
+          : undefined
+      }
       onSend={sendFromChatBox}
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
       commands={agentCommands}
@@ -1950,17 +1955,6 @@ export function AgentHistoryDrawer({
                 >
                   <Search size={14} />
                 </button>
-                {pane.agent_status.toLowerCase() === "working" ? (
-                  <button
-                    type="button"
-                    className="agent-history-icon"
-                    aria-label="Stop"
-                    title="Stop: Esc in the terminal"
-                    onClick={() => paneChat.onKeys("\x1b")}
-                  >
-                    <Square size={14} />
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   className="agent-history-icon"

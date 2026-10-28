@@ -391,8 +391,6 @@
 
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-attach,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-escape,
-  .mobile-bottom-input > .agent-history-composer .agent-history-composer-voice,
-  .mobile-bottom-input > .agent-history-composer .agent-history-composer-mute,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-send {
     height: max(44px, calc(44px / var(--ui-scale, 1)));
     min-width: max(44px, calc(44px / var(--ui-scale, 1)));
@@ -401,6 +399,10 @@
   }
 
   .mobile-bottom-input > .agent-history-composer .cm-placeholder {
+    /* Inline, it would not clip: the text would run under the microphone. */
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -431,18 +433,21 @@
     :is(
       .agent-history-composer-attach,
       .agent-history-composer-escape,
-      .agent-history-composer-voice,
-      .agent-history-composer-mute,
       .agent-history-composer-send
     ) {
     height: 36px;
     min-width: 36px;
   }
 
-  /* Not writing: the box alone beside the navigation. */
+  /* Not writing: the box alone beside the navigation, with Send only
+     when there is something to send. */
   .mobile-bottom-input
     > .agent-history-composer:not(:focus-within)
-    :is(.agent-history-composer-attach, .agent-history-composer-escape) {
+    :is(
+      .agent-history-composer-attach,
+      .agent-history-composer-escape,
+      .agent-history-composer-send:disabled
+    ) {
     display: none;
   }
 
@@ -456,10 +461,7 @@
 
   .mobile-bottom-input
     > .agent-history-composer:focus-within
-    :is(
-      .agent-history-composer-row > textarea,
-      .agent-history-composer-editor
-    ) {
+    :is(.agent-history-composer-row > textarea, .agent-history-composer-field) {
     /* Send (36px) and the row gap (6px) beside it. */
     flex: 1 0 calc(100% - 42px);
     order: -2;
@@ -499,8 +501,40 @@
     padding: 11px 14px;
   }
 
+  /* The microphone on the box: the text keeps clear of it. */
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-field.has-voice
+    :is(textarea, .cm-content) {
+    padding-right: 40px;
+  }
+
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-field.has-voice.has-mute
+    :is(textarea, .cm-content) {
+    padding-right: 70px;
+  }
+
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-inline {
+    right: 6px;
+    bottom: 8px;
+  }
+
   .mobile-bottom-input > .agent-history-composer-attachments {
     padding-bottom: 4px;
+  }
+
+  /* Stop, while the agent works: a round button the size of a fingertip,
+     centred on the box. */
+  .mobile-bottom-input > .agent-history-composer .agent-history-composer-stop {
+    align-self: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    border-radius: 18px;
   }
 
   /* Its icon says Send; the word would take the message's room. */
