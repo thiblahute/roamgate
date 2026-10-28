@@ -1,11 +1,15 @@
 import { useSyncExternalStore } from "react";
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
+import { isMobileLayout, LAYOUT_CHANGE_EVENT } from "./layoutPreferences";
 
 /** How an agent pane shows: its terminal, or its conversation as a chat. */
 export type PaneView = "terminal" | "chat";
 
 const STORAGE_KEY = "paneViews";
-/** How an agent pane shows until it is switched: its terminal by default. */
+/**
+ * How an agent pane shows on the desktop until it is switched: its terminal
+ * by default. A phone opens it as a chat.
+ */
 const DEFAULT_STORAGE_KEY = "paneViewDefault";
 /** Panes come and go; only the most recent choices are kept. */
 const MAX_REMEMBERED = 200;
@@ -14,7 +18,10 @@ const listeners = new Set<() => void>();
 let cache: Record<string, PaneView> | null = null;
 let defaultCache: PaneView | null = null;
 
-/** The view an agent pane opens in, as soon as its agent is detected. */
+/**
+ * The view an agent pane opens in on the desktop, as soon as its agent is
+ * detected: the Open agents as a chat setting.
+ */
 export function defaultPaneView(): PaneView {
   if (defaultCache) return defaultCache;
   let stored: string | null;
@@ -62,7 +69,11 @@ export function paneView(
   paneId: string | null | undefined,
 ): PaneView {
   if (!paneId) return "terminal";
-  return read()[paneKey(connectionId, paneId)] ?? defaultPaneView();
+  // Until switched, an agent pane opens as a chat on a phone.
+  return (
+    read()[paneKey(connectionId, paneId)] ??
+    (isMobileLayout() ? "chat" : defaultPaneView())
+  );
 }
 
 export function setPaneView(
@@ -106,9 +117,13 @@ function subscribe(listener: () => void): () => void {
     defaultCache = null;
     listener();
   });
+  // Turning to or from the phone layout changes the panes not switched yet.
+  const target = typeof window === "undefined" ? null : window;
+  target?.addEventListener(LAYOUT_CHANGE_EVENT, listener);
   return () => {
     listeners.delete(listener);
     unsubscribe();
+    target?.removeEventListener(LAYOUT_CHANGE_EVENT, listener);
   };
 }
 

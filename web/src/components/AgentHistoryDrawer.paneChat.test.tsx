@@ -151,13 +151,14 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       expect(container.querySelector('input[type="search"]')).toBeNull();
       expect(container.querySelector(".agent-history-composer")).not.toBeNull();
       expect(container.querySelector(".agent-chat-activity")).not.toBeNull();
-      await click(button("Stop")!);
+      // Stopping the agent sits beside Send while it works.
+      await click(button("Stop the agent")!);
       expect(onKeys.mock.calls).toEqual([["\x1b"]]);
       await click(button("Search the conversation")!);
       expect(container.querySelector('input[type="search"]')).not.toBeNull();
 
       await render("blocked");
-      expect(button("Stop")).toBeNull();
+      expect(button("Stop the agent")).toBeNull();
       expect(container.querySelector(".agent-chat-activity")).toBeNull();
       expect(container.textContent).toContain("claude is waiting for you");
       const toTerminal = Array.from(

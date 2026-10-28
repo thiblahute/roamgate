@@ -399,8 +399,6 @@
 
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-attach,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-escape,
-  .mobile-bottom-input > .agent-history-composer .agent-history-composer-voice,
-  .mobile-bottom-input > .agent-history-composer .agent-history-composer-mute,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-send {
     height: max(44px, calc(44px / var(--ui-scale, 1)));
     min-width: max(44px, calc(44px / var(--ui-scale, 1)));
@@ -409,6 +407,10 @@
   }
 
   .mobile-bottom-input > .agent-history-composer .cm-placeholder {
+    /* Inline, it would not clip: the text would run under the microphone. */
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -420,62 +422,90 @@
     white-space: nowrap;
   }
 
-  /* Writing: the box spans the width with Send at its right; its other
-     buttons share the line below with the navigation, which stays, all a
-     size smaller. */
-  .mobile-bottom-input > .agent-history-composer:focus-within {
+  /* Writing, or a draft in the box while something else has the focus (the
+     workspace search): the box spans the width with Send at its right; its
+     other buttons share the line below with the navigation, which stays,
+     all a size smaller. */
+  .mobile-bottom-input
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    ) {
     gap: 4px;
     padding-right: 0;
   }
 
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
     .agent-history-composer-row {
     row-gap: 4px;
   }
 
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
     :is(
       .agent-history-composer-attach,
       .agent-history-composer-escape,
-      .agent-history-composer-voice,
-      .agent-history-composer-mute,
       .agent-history-composer-send
     ) {
     height: 36px;
     min-width: 36px;
   }
 
-  /* Not writing: the box alone beside the navigation. */
+  /* Not writing, and nothing in the box: the box alone beside the
+     navigation. */
   .mobile-bottom-input
-    > .agent-history-composer:not(:focus-within)
-    :is(.agent-history-composer-attach, .agent-history-composer-escape) {
+    > .agent-history-composer:not(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
+    :is(
+      .agent-history-composer-attach,
+      .agent-history-composer-escape,
+      .agent-history-composer-send:disabled
+    ) {
     display: none;
   }
 
   /* Writing: the box and Send fill the first line, a few lines high; the
      other buttons wrap below. */
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
     .agent-history-composer-row {
     flex-wrap: wrap;
   }
 
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
-    :is(
-      .agent-history-composer-row > textarea,
-      .agent-history-composer-editor
-    ) {
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
+    :is(.agent-history-composer-row > textarea, .agent-history-composer-field) {
     /* Send (36px) and the row gap (6px) beside it. */
     flex: 1 0 calc(100% - 42px);
     order: -2;
   }
 
-  .mobile-bottom-input > .agent-history-composer:focus-within textarea,
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
+    textarea,
+  .mobile-bottom-input
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
     .agent-history-composer-editor
     .cm-content {
     /* One line to start; it grows with the text. */
@@ -483,7 +513,10 @@
   }
 
   .mobile-bottom-input
-    > .agent-history-composer:focus-within
+    > .agent-history-composer:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
     .agent-history-composer-send {
     order: -1;
     margin: 0;
@@ -503,12 +536,47 @@
     > .agent-history-composer
     .agent-history-composer-editor
     .cm-content {
+    /* Not wider than the box: at its min-content width, the placeholder's
+       one line, it ran under the microphone once Stop narrowed the box. */
+    min-width: 0;
     min-height: 0;
     padding: 11px 14px;
   }
 
+  /* The microphone on the box: the text keeps clear of it. */
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-field.has-voice
+    :is(textarea, .cm-content) {
+    padding-right: 40px;
+  }
+
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-field.has-voice.has-mute
+    :is(textarea, .cm-content) {
+    padding-right: 70px;
+  }
+
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-inline {
+    right: 6px;
+    bottom: 8px;
+  }
+
   .mobile-bottom-input > .agent-history-composer-attachments {
     padding-bottom: 4px;
+  }
+
+  /* Stop, while the agent works: a round button the size of a fingertip,
+     centred on the box. */
+  .mobile-bottom-input > .agent-history-composer .agent-history-composer-stop {
+    align-self: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    border-radius: 18px;
   }
 
   /* Its icon says Send; the word would take the message's room. */
@@ -567,13 +635,23 @@
     touch-action: manipulation;
   }
 
-  /* Writing in an agent chat: the navigation a size smaller, on the line
-     of the box's buttons. */
-  .mobile-bottom-bar:has(.agent-history-composer:focus-within) .mobile-appbar {
+  /* Writing in an agent chat, or a draft in its box: the navigation a size
+     smaller, on the line of the box's buttons. (A draft is told by its
+     enabled Send: a :has() cannot hold another.) */
+  .mobile-bottom-bar:has(.agent-history-composer:focus-within) .mobile-appbar,
+  .mobile-bottom-bar:has(
+      .agent-history-composer .agent-history-composer-send:not(:disabled)
+    )
+    .mobile-appbar {
     bottom: calc(4px + env(safe-area-inset-bottom, 0px));
   }
 
   .mobile-bottom-bar:has(.agent-history-composer:focus-within)
+    .mobile-appbar
+    button,
+  .mobile-bottom-bar:has(
+      .agent-history-composer .agent-history-composer-send:not(:disabled)
+    )
     .mobile-appbar
     button {
     width: 36px;
