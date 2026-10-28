@@ -87,6 +87,8 @@ export interface Pane {
   terminal_title_stripped?: string;
   /** Herdr agent.list state-change sequence, scoped to this server lifetime. */
   state_change_seq?: number;
+  /** When the user last had the agent on screen in Roamgate (ms). */
+  seen_at?: number;
   /** Session file modification time in epoch milliseconds, from the bridge. */
   last_activity_at?: number;
   revision: number;

@@ -1,4 +1,5 @@
 import { loadOrCreateSessionSecret } from "./config/session-secret";
+import { createAgentSeenStore } from "./agent/agent-seen";
 import {
   authTokenPrintCommand,
   isShortAuthPassword,
@@ -199,6 +200,8 @@ const cpuProfile = config.profile
       logger,
     )
   : undefined;
+// Which agents' finished turns the user saw in Roamgate (agent-seen.ts).
+const agentSeen = createAgentSeenStore();
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
 });
@@ -1405,14 +1408,43 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
 
   if (method === "agent.list") {
     try {
-      const result =
+      const result = agentSeen.annotate(
+        connection.identity.id,
         connection.remotePlatform === "windows"
           ? await herdr.call("agent.list", params ?? {})
-          : await connection.agentSessions.listWithActivity(params ?? {});
+          : await connection.agentSessions.listWithActivity(params ?? {}),
+      );
       sendReply({ id, result }, "agent-list");
     } catch (e) {
       sendError("agent-list-error", e);
     }
+    return;
+  }
+  if (method === "agent_seen.mark") {
+    const pane = params?.pane_id;
+    const terminal = params?.terminal_id;
+    const seq = params?.seq;
+    if (
+      typeof pane !== "string" ||
+      !pane ||
+      pane.length > 200 ||
+      typeof terminal !== "string" ||
+      !terminal ||
+      terminal.length > 200 ||
+      (seq !== undefined && typeof seq !== "number")
+    ) {
+      sendError("agent-seen-error", new Error("invalid agent_seen.mark"));
+      return;
+    }
+    sendReply(
+      {
+        id,
+        result: {
+          marked: agentSeen.mark(connection.identity.id, pane, terminal, seq),
+        },
+      },
+      method,
+    );
     return;
   }
   if (method === "agent_history.get") {
