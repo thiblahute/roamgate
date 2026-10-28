@@ -42,6 +42,14 @@ const MAX_NOTIFICATIONS = 100;
 const MANAGEMENT_PREVIEW_MS = 10 * 60_000;
 const key = (ref: { connection_id: string; workspace_id: string }) =>
   `${ref.connection_id}\0${ref.workspace_id}`;
+/**
+ * What a notification is unique within: the task's exact workspaces, or, for
+ * a task over all workspaces, the task itself, whose workspaces change.
+ */
+const runScopeKey = (input: AssistantTaskInput, targets: RecoveryTarget[]) =>
+  input.all_workspaces
+    ? createHash("sha256").update("all-workspaces").digest("hex")
+    : notificationScopeKey(targets, input.mentions);
 const notificationScopeKey = (
   targets: RecoveryTarget[],
   mentions: AssistantMentionTarget[] = [],
@@ -148,8 +156,10 @@ export function validateTaskInput(value: unknown): AssistantTaskInput {
           "schedule",
           "notification_mode",
           "mentions",
+          "all_workspaces",
         ].includes(field),
     ) ||
+    (value.all_workspaces !== undefined && value.all_workspaces !== true) ||
     (value.notification_mode !== undefined &&
       value.notification_mode !== "status" &&
       value.notification_mode !== "agent") ||
@@ -207,6 +217,7 @@ export function validateTaskInput(value: unknown): AssistantTaskInput {
       ? { notification_mode: value.notification_mode }
       : {}),
     ...(mentions !== undefined ? { mentions } : {}),
+    ...(value.all_workspaces ? { all_workspaces: true as const } : {}),
   };
 }
 function validNotificationInput(value: unknown) {
@@ -465,6 +476,8 @@ export function createAssistantTasks(options: {
   notify?(notification: AssistantTaskNotification): void;
   validate(prepared: PreparedTask, signal?: AbortSignal): Promise<void>;
   validateCleanup?(prepared: PreparedTask, signal?: AbortSignal): Promise<void>;
+  /** A task over all workspaces, prepared again over those of now. */
+  rescope?(prepared: PreparedTask, signal?: AbortSignal): Promise<PreparedTask>;
   child(
     run: SavedTaskRun,
     directory: string,
@@ -1063,6 +1076,24 @@ export function createAssistantTasks(options: {
         run.error = null;
       });
       if (!validPrepared(run)) throw new Error("Invalid task admission");
+      // A new run over all workspaces covers those Ranger may use now.
+      if (!recover && run.input.all_workspaces && options.rescope) {
+        const fresh = seal(await options.rescope(seal(run), admission.signal));
+        if (disposed || !["running", "waiting"].includes(run.status)) {
+          if (busy === run.id) busy = undefined;
+          return;
+        }
+        const unscoped = (input: AssistantTaskInput) =>
+          JSON.stringify({ ...input, scope: [], mentions: [] });
+        change(() => {
+          Object.assign(run, fresh);
+          // The task shows them too, unless it was edited since.
+          if (unscoped(entry.input) === unscoped(fresh.input)) {
+            Object.assign(entry, seal(fresh));
+            bump(entry.task.id);
+          }
+        });
+      }
       await validate(run, admission.signal);
       if (disposed || !["running", "waiting"].includes(run.status)) {
         if (busy === run.id) busy = undefined;
@@ -1104,8 +1135,11 @@ export function createAssistantTasks(options: {
         }
         change(() => {
           run.status = "failed";
+          // Say why when it is safe to: a scope or model no longer allowed.
           run.error =
-            "The task could not safely start or resume. Check its original workspace permissions, identity and model.";
+            error instanceof AssistantUserError
+              ? `The task could not safely start or resume: ${error.message}`
+              : "The task could not safely start or resume. Check its original workspace permissions, identity and model.";
           run.finished_at = now();
           compact(run);
         });
@@ -1236,9 +1270,9 @@ export function createAssistantTasks(options: {
           : entry.runs.find((run) => run.id === runId);
       if (runId !== undefined && (!run || !validPrepared(run)))
         throw new Error("The original task run is no longer available.");
-      const scopeKey = notificationScopeKey(
+      const scopeKey = runScopeKey(
+        run?.input ?? entry.input,
         run?.targets ?? entry.targets,
-        run ? run.input?.mentions : entry.input.mentions,
       );
       return structuredClone(
         entry.notifications?.filter(
@@ -1272,7 +1306,7 @@ export function createAssistantTasks(options: {
       const original = active();
       await check(original.entry.task.id, seal(original.run), signal);
       const { entry, run } = active();
-      const scopeKey = notificationScopeKey(run.targets, run.input.mentions);
+      const scopeKey = runScopeKey(run.input, run.targets);
       if (
         entry.notifications?.some(
           (previous) =>

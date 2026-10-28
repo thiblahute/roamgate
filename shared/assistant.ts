@@ -232,6 +232,11 @@ export type AssistantTaskInput = {
   prompt: string;
   mentions?: AssistantMentionTarget[];
   scope: AssistantWorkspaceRef[];
+  /**
+   * Every workspace Ranger may use when a run starts, new ones included:
+   * `scope` is then the list as of the last run (or creation).
+   */
+  all_workspaces?: true;
   schedule: AssistantTaskSchedule;
   notification_mode?: "status" | "agent";
 };
