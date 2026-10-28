@@ -221,6 +221,17 @@ export function createReviewAgentServer(args: {
   home?: string;
   /** Whether any browser could answer a permission prompt now. */
   hasViewers?: () => boolean;
+  /**
+   * An agent telling the user they need to act: a notification, and the
+   * agent in their list of what needs them.
+   */
+  notify?: (input: {
+    connectionId: string;
+    paneId: string;
+    agent: string;
+    title?: string;
+    text: string;
+  }) => Promise<void>;
 }) {
   const logger = args.logger ?? silentLogger;
   const home = args.home ?? homedir();
@@ -393,6 +404,29 @@ export function createReviewAgentServer(args: {
       return {
         answers: answer && typeof answer === "object" ? answer.answers : null,
       };
+    }
+    if (command === "notify") {
+      // The agent itself says the user needs to act: no review involved.
+      const paneId = form.get("pane");
+      const text = (form.get("text") ?? "").trim();
+      const title = (form.get("title") ?? "").trim();
+      if (!paneId) throw new ReviewError("notify runs inside a Herdr pane");
+      if (!text) throw new ReviewError("say what the user needs to do");
+      if (text.length > 2000 || title.length > 200)
+        throw new ReviewError("keep it short: 2000 characters, title 200");
+      if (!args.notify) throw new ReviewError("notifications are unavailable");
+      await args.notify({
+        connectionId: connection.id,
+        paneId,
+        agent: agentName(form),
+        ...(title ? { title } : {}),
+        text,
+      });
+      logger.info("agent notified the user", {
+        connection: connection.id,
+        pane: paneId,
+      });
+      return { notified: true };
     }
     const agent = agentName(form);
     const pane = form.get("pane") || undefined;

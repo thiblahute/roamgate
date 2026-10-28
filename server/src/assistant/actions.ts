@@ -85,6 +85,14 @@ function sessionIdentity(value: unknown) {
   };
 }
 
+export type AssistantPromptListener = (input: {
+  connectionId: string;
+  paneId: string;
+  terminalId: string;
+  seq: number;
+  status: string;
+}) => void;
+
 export async function readAssistantPaneOccupant(
   call: (method: string, params: Record<string, unknown>) => Promise<unknown>,
   workspaceId: string,
@@ -173,6 +181,8 @@ export async function prepareAssistantAction(args: {
   params: Record<string, unknown>;
   signal?: AbortSignal;
   createWorktree?: AssistantWorktreeCreator;
+  /** A prompt reached an agent, sent from this state of it. */
+  onAgentPrompted?: AssistantPromptListener;
 }): Promise<PreparedAssistantAction> {
   const { kind, target, lease, signal } = args;
   const { runtime } = lease;
@@ -1019,6 +1029,14 @@ export async function prepareAssistantAction(args: {
               detail:
                 "Prompt submission was sent, but its target or delivery could not be verified. Inspect this pane; do not resend automatically.",
             };
+          if (Number.isSafeInteger(frozen.agent.state_change_seq))
+            args.onAgentPrompted?.({
+              connectionId: target.connection_id,
+              paneId,
+              terminalId: String(frozen.pane.terminal_id),
+              seq: frozen.agent.state_change_seq as number,
+              status: String(frozen.agent.agent_status ?? ""),
+            });
           return {
             status: "uncertain",
             detail:

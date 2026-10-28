@@ -279,12 +279,15 @@ function fixture(paneId = "w1:p1") {
       isCurrent: () => generation === capturedGeneration,
     };
   });
+  const prompted: unknown[] = [];
   const context = createAssistantContext({
     catalog: () => [{ id: "local", label: "Local" }],
     lease,
     createWorktree,
+    onAgentPrompted: (input) => prompted.push(input),
   });
   return {
+    prompted,
     context,
     runtime,
     call,
@@ -1304,6 +1307,29 @@ describe("confirmed Ranger action targets", () => {
       5000,
       expect.any(Function),
     );
+  });
+
+  test("a prompt that reached the agent says from which state", async () => {
+    const f = fixture();
+    f.useAgent();
+    Object.assign(f.agent, { state_change_seq: 12, agent_status: "idle" });
+    const scope = await f.context.captureScope([ref]);
+    const prepared = await f.context.prepareAction("send_prompt", scope, {
+      ...ref,
+      pane_id: "w1:p1",
+      prompt: "Check your MR.",
+    });
+    expect(f.prompted).toEqual([]);
+    await prepared.execute();
+    expect(f.prompted).toEqual([
+      {
+        connectionId: "local",
+        paneId: "w1:p1",
+        terminalId: String(f.panes[0]!.terminal_id),
+        seq: 12,
+        status: "idle",
+      },
+    ]);
   });
 
   test("a blocked prompt is explicitly rejected without claiming acceptance", async () => {

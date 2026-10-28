@@ -654,6 +654,28 @@ describe("what needs the user, and when they last looked", () => {
     ).toEqual(["four"]);
   });
 
+  test("an agent that said the user must act comes after the blocked ones", () => {
+    const noted = {
+      ...snapshot,
+      panes: snapshot.panes.map((each) =>
+        each.pane_id === "p3"
+          ? { ...each, attention_note: "MR !12: a test is asked" }
+          : each,
+      ),
+    };
+    const entries = paneSearchEntries(
+      noted,
+      "!",
+      null,
+      [],
+      "workspaces",
+      history,
+    );
+    expect(titles(entries)).toEqual(["four", "three", "two"]);
+    expect(entries[1]?.needsYou).toBe("asked");
+    expect(entries[1]?.waitsOn).toBe("MR !12: a test is asked");
+  });
+
   test("needsYouFirst keeps each group's order", () => {
     const entries = paneSearchEntries(snapshot, "", null, [], "panes");
     expect(

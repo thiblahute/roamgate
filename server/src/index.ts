@@ -537,6 +537,9 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
 
 const assistantContext = createAssistantContext({
   catalog: () => connectionProfiles.list(),
+  // A turn Ranger starts is not one the user has to look at.
+  onAgentPrompted: ({ connectionId, paneId, terminalId, seq, status }) =>
+    agentSeen.quietTurn(connectionId, paneId, terminalId, seq, status),
   lease: (id) => connectionManager.readyRuntimeLease(id),
   recoveryFingerprint: (id) => {
     const profile = connectionProfiles
@@ -782,6 +785,7 @@ function getReviewAgent(): ReviewAgentServer {
   reviewAgent ??= createReviewAgentServer({
     service: getReviewService(),
     hasViewers: () => clients.size > 0,
+    notify: notifyFromAgent,
     directory: reviewDirectory(),
     logger: logger.child("review"),
     connections: () =>
@@ -801,6 +805,69 @@ function getReviewAgent(): ReviewAgentServer {
       }),
   });
   return reviewAgent;
+}
+
+/**
+ * An agent saying the user needs to act (`roamgate-review notify`): kept with
+ * the agent until the user looks at it, pushed to their devices, and the open
+ * pages told to read their agents again.
+ */
+async function notifyFromAgent(input: {
+  connectionId: string;
+  paneId: string;
+  agent: string;
+  title?: string;
+  text: string;
+}) {
+  const { connectionId, paneId, agent, title, text } = input;
+  agentSeen.note(connectionId, paneId, { text, ...(title ? { title } : {}) });
+  const status = connectionManager
+    .list()
+    .find((each) => each.id === connectionId);
+  const runtime = connectionManager.readyRuntime(connectionId);
+  let pane: { workspace_id?: string; tab_id?: string } | undefined;
+  let workspaceLabel: string | undefined;
+  try {
+    const [panes, workspaces] = (await Promise.all([
+      runtime?.herdr.call("pane.list", {}),
+      runtime?.herdr.call("workspace.list", {}),
+    ])) as [
+      { panes?: { pane_id: string; workspace_id?: string; tab_id?: string }[] },
+      { workspaces?: { workspace_id: string; label?: string }[] },
+    ];
+    pane = panes?.panes?.find((each) => each.pane_id === paneId);
+    workspaceLabel = workspaces?.workspaces?.find(
+      (each) => each.workspace_id === pane?.workspace_id,
+    )?.label;
+  } catch {
+    // The push still goes, without its workspace.
+  }
+  if (status)
+    webPush.notify(
+      {
+        kind: "blocked",
+        connectionId,
+        runtimeGeneration: status.generation,
+        paneId,
+        ...(pane?.workspace_id ? { workspaceId: pane.workspace_id } : {}),
+        ...(pane?.tab_id ? { tabId: pane.tab_id } : {}),
+        ...(workspaceLabel ? { workspaceLabel } : {}),
+        agent,
+        title: `${workspaceLabel ?? agent}: ${title ?? "needs you"}`,
+        body: text,
+      },
+      () => true,
+    );
+  try {
+    const line = serializeHerdrEventEnvelope(
+      connectionId,
+      { event: "roamgate.agent_note", data: { pane_id: paneId } },
+      status?.generation,
+    );
+    for (const ws of clients) safeSend(ws, line, "event");
+  } catch {
+    // The pages see it with their next read.
+  }
 }
 
 /** Lets agents on an SSH host reach the review pane over the master. */

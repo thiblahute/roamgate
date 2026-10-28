@@ -89,6 +89,8 @@ export interface Pane {
   state_change_seq?: number;
   /** When the user last had the agent on screen in Roamgate (ms). */
   seen_at?: number;
+  /** What the agent said the user needs to do, until they looked at it. */
+  attention_note?: string;
   /** Session file modification time in epoch milliseconds, from the bridge. */
   last_activity_at?: number;
   revision: number;

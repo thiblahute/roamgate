@@ -171,6 +171,9 @@ export function withAgentActivity(
       ...(typeof agent.seen_at === "number" && Number.isFinite(agent.seen_at)
         ? { seen_at: agent.seen_at }
         : {}),
+      ...(typeof agent.attention_note === "string" && agent.attention_note
+        ? { attention_note: agent.attention_note }
+        : {}),
       ...(sameCompletedState && typeof agent.seen_done === "boolean"
         ? { agent_status: agent.seen_done ? "done" : "idle" }
         : {}),

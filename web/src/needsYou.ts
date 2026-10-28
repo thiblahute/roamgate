@@ -27,7 +27,8 @@ export function withWaitsOn(
   prompts: ReadonlyMap<string, AgentPermissionPrompt[]>,
 ): PaneJumpEntry[] {
   return entries.map((entry) => {
-    if (!entry.needsYou) return entry;
+    // What the agent said itself needs no guessing.
+    if (!entry.needsYou || entry.waitsOn) return entry;
     const connectionId = entry.connectionId ?? activeConnectionId;
     let waitsOn: string | undefined;
     if (entry.needsYou === "blocked") {

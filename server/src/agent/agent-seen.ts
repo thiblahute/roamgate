@@ -33,18 +33,50 @@ export type AgentSeenStore = {
     seq?: number,
   ): boolean;
   /**
+   * Roamgate itself (a Ranger task) prompted the agent, in this state: the
+   * turn this starts does not make it Done. An agent already Done stays so.
+   */
+  quietTurn(
+    connectionId: string,
+    paneId: string,
+    terminalId: string,
+    seq: number,
+    status: string,
+  ): void;
+  /**
+   * An agent saying the user needs to act: shown with it until the user
+   * next looks at it.
+   */
+  note(
+    connectionId: string,
+    paneId: string,
+    note: { text: string; title?: string },
+  ): void;
+  /**
    * Herdr's agent list with each finished agent's own Done: `seen_done` is
    * true when it changed state since it was last seen in Roamgate, false
    * when it has not. Agents Roamgate never saw keep Herdr's. `seen_at` is
-   * when the user last looked at the agent, if ever.
+   * when the user last looked at the agent, if ever. `attention_note` is
+   * what the agent said the user needs to do, until the user looked at it.
    */
   annotate(connectionId: string, result: unknown): unknown;
 };
 
-type Entry = { seq: number; at: number };
+type Entry = {
+  seq: number;
+  at: number;
+  /**
+   * Prompted by Roamgate itself (Ranger) from this state: the turn it starts
+   * is not the user's to see, so its end is not Done.
+   */
+  quiet?: number;
+};
+type Note = { text: string; title?: string; at: number };
 type Saved = {
   version: 1;
   connections: Record<string, Record<string, Entry>>;
+  /** By connection, then pane. */
+  notes?: Record<string, Record<string, Note>>;
 };
 
 /** Seen marks kept per connection, the oldest dropped beyond it. */
@@ -75,10 +107,34 @@ function load(path: string): Saved {
           Number.isSafeInteger(entry.seq) &&
           Number.isFinite(entry.at)
         )
-          kept[key] = { seq: entry.seq as number, at: entry.at as number };
+          kept[key] = {
+            seq: entry.seq as number,
+            at: entry.at as number,
+            ...(Number.isSafeInteger(entry.quiet)
+              ? { quiet: entry.quiet as number }
+              : {}),
+          };
       connections[connection] = kept;
     }
-    return { version: 1, connections };
+    const notes: NonNullable<Saved["notes"]> = {};
+    if (isRecord(value.notes))
+      for (const [connection, panes] of Object.entries(value.notes)) {
+        if (!isRecord(panes)) continue;
+        const kept: Record<string, Note> = {};
+        for (const [pane, note] of Object.entries(panes))
+          if (
+            isRecord(note) &&
+            typeof note.text === "string" &&
+            Number.isFinite(note.at)
+          )
+            kept[pane] = {
+              text: note.text,
+              at: note.at as number,
+              ...(typeof note.title === "string" ? { title: note.title } : {}),
+            };
+        notes[connection] = kept;
+      }
+    return { version: 1, connections, notes };
   } catch {
     // A damaged file only forgets what was seen: Herdr's Done comes back.
     return { version: 1, connections: {} };
@@ -112,6 +168,7 @@ export function createAgentSeenStore(
       const key = keyOf(paneId, terminalId);
       const before = entries[key]?.seq ?? -1;
       const advanced = seq !== undefined && seq > before;
+      // A look settles any quiet turn: what it shows is seen.
       entries[key] = { seq: advanced ? seq : before, at: now() };
       const keys = Object.keys(entries);
       if (keys.length > MAX_PER_CONNECTION)
@@ -121,6 +178,22 @@ export function createAgentSeenStore(
           delete entries[old];
       save();
       return advanced;
+    },
+    quietTurn(connectionId, paneId, terminalId, seq, status) {
+      if (!Number.isSafeInteger(seq)) return;
+      const entries = (saved.connections[connectionId] ??= {});
+      const key = keyOf(paneId, terminalId);
+      const entry = entries[key];
+      const finished = status === "idle" || status === "done";
+      // Finished and not seen since: real work waits there, it stays Done.
+      if (finished && (entry ? seq > entry.seq : status === "done")) return;
+      entries[key] = { seq: entry?.seq ?? seq, at: entry?.at ?? 0, quiet: seq };
+      save();
+    },
+    note(connectionId, paneId, note) {
+      const notes = (saved.notes ??= {});
+      (notes[connectionId] ??= {})[paneId] = { ...note, at: now() };
+      save();
     },
     annotate(connectionId, result) {
       if (!isRecord(result) || !Array.isArray(result.agents)) return result;
@@ -137,15 +210,34 @@ export function createAgentSeenStore(
             saved.connections[connectionId]?.[
               keyOf(agent.pane_id, agent.terminal_id)
             ];
-          if (!entry) return agent;
+          const note = saved.notes?.[connectionId]?.[agent.pane_id];
+          // Said since the user last looked at it.
+          const unread =
+            note && note.at > (entry?.at ?? 0)
+              ? {
+                  attention_note: note.title
+                    ? `${note.title}: ${note.text}`
+                    : note.text,
+                }
+              : {};
+          if (!entry) return { ...agent, ...unread };
           const finished =
             (agent.agent_status === "idle" || agent.agent_status === "done") &&
             Number.isSafeInteger(agent.state_change_seq);
+          const seq = agent.state_change_seq as number;
+          // The end of a turn Roamgate started: seen, as nothing was asked.
+          if (finished && entry.quiet !== undefined && seq > entry.quiet) {
+            entry.seq = Math.max(entry.seq, seq);
+            delete entry.quiet;
+            save();
+          }
           return {
             ...agent,
-            seen_at: entry.at,
+            ...unread,
+            // Never looked at: only Roamgate's own prompt made the entry.
+            ...(entry.at > 0 ? { seen_at: entry.at } : {}),
             ...(finished
-              ? { seen_done: (agent.state_change_seq as number) > entry.seq }
+              ? { seen_done: entry.quiet === undefined && seq > entry.seq }
               : {}),
           };
         }),

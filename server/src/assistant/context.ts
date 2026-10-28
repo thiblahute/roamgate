@@ -20,6 +20,7 @@ import { assertUnixHost } from "../connections/unix-only";
 import { sanitizeExplorerPath } from "../workspace/file-paths";
 import {
   prepareAssistantAction,
+  type AssistantPromptListener,
   readAssistantPaneOccupant,
   type AssistantWorktreeCreator,
 } from "./actions";
@@ -143,6 +144,8 @@ export function createAssistantContext(args: {
   /** SHA-256 of the configured endpoint, excluding labels and transient tunnels. */
   recoveryFingerprint?(connectionId: string): string;
   createWorktree?: AssistantWorktreeCreator;
+  /** Ranger prompted an agent (actions.ts). */
+  onAgentPrompted?: AssistantPromptListener;
 }) {
   // Keep each turn's original leases, including runtime identity, out of model data.
   const scopes = new WeakMap<AssistantWorkspace[], Map<string, RuntimeLease>>();
@@ -1117,6 +1120,7 @@ export function createAssistantContext(args: {
       params,
       signal,
       createWorktree: args.createWorktree,
+      onAgentPrompted: args.onAgentPrompted,
     });
     if (paneId) await assertMentionAgent(captured, target, paneId, signal);
     if (

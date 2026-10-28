@@ -42,6 +42,7 @@ type Setup = {
   other: string;
 };
 
+const notified: Record<string, unknown>[] = [];
 function setup(): Setup {
   const dir = temp("rg-rev-");
   const home = temp("rg-home-");
@@ -68,6 +69,9 @@ function setup(): Setup {
         readDefaultBase: async () => "origin/main",
       },
     ],
+    notify: async (input) => {
+      notified.push(input);
+    },
   });
   cleanups.push(() => {
     agent.stop();
@@ -305,4 +309,31 @@ test("--compare opens a tree-to-tree review of two versions", async () => {
   expect(() =>
     parseTargetFlags(new URLSearchParams({ compare: "topic" }), noDefault),
   ).toThrow("--compare takes OLD NEW");
+});
+
+test("an agent tells the user they need to act", async () => {
+  const s = setup();
+  notified.length = 0;
+  const sent = await run(s, [
+    "notify",
+    "--title",
+    "MR !12",
+    "The reviewer asks for a test; I can add it, OK?",
+  ]);
+  expect(sent.json).toEqual({ notified: true });
+  expect(notified).toEqual([
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      agent: "Claude",
+      title: "MR !12",
+      text: "The reviewer asks for a test; I can add it, OK?",
+    },
+  ]);
+  // Nothing to say, or outside a pane: refused.
+  expect((await run(s, ["notify"])).code).not.toBe(0);
+  expect(
+    (await run(s, ["notify", "hi"], undefined, { HERDR_PANE_ID: "" })).code,
+  ).not.toBe(0);
+  expect(notified).toHaveLength(1);
 });

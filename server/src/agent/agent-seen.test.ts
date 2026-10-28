@@ -81,3 +81,56 @@ test("an agent looked at while working is Done once it finishes", () => {
   expect(annotated.agents[0]).toMatchObject({ seen_done: true, seen_at: 1000 });
   expect(annotated.agents[1]!.seen_at).toBeUndefined();
 });
+
+test("what an agent says the user must do shows until they look at it", () => {
+  let clock = 1000;
+  const file = path();
+  const store = createAgentSeenStore(file, () => clock);
+  const list = { agents: [agent("idle", 2)] };
+  store.note("local", "w1:p1", { title: "MR !12", text: "A test is asked" });
+  const noted = (s = store) =>
+    (s.annotate("local", list) as { agents: Record<string, unknown>[] })
+      .agents[0]!.attention_note;
+  expect(noted()).toBe("MR !12: A test is asked");
+  // Kept across a restart.
+  expect(noted(createAgentSeenStore(file, () => clock))).toBe(
+    "MR !12: A test is asked",
+  );
+  clock = 2000;
+  store.mark("local", "w1:p1", "term-w1:p1");
+  expect(noted()).toBeUndefined();
+  // A new one after that shows again.
+  clock = 3000;
+  store.note("local", "w1:p1", { text: "Pipeline failed" });
+  expect(noted()).toBe("Pipeline failed");
+});
+
+test("a turn Roamgate started does not make the agent Done", () => {
+  const clock = 1000;
+  const store = createAgentSeenStore(path(), () => clock);
+  const done = (status: string, seq: number, pane = "w1:p1") =>
+    (
+      store.annotate("local", { agents: [agent(status, seq, pane)] }) as {
+        agents: Record<string, unknown>[];
+      }
+    ).agents[0]!;
+  // Seen idle at 4, Ranger prompts it there.
+  store.mark("local", "w1:p1", "term-w1:p1", 4);
+  store.quietTurn("local", "w1:p1", "term-w1:p1", 4, "idle");
+  expect(done("working", 5).seen_done).toBeUndefined();
+  expect(done("idle", 6).seen_done).toBe(false);
+  // Its next turn counts again.
+  expect(done("idle", 8).seen_done).toBe(true);
+
+  // Already Done (unseen work) when Ranger prompts it: it stays Done.
+  store.mark("local", "w1:p2", "term-w1:p2", 2);
+  store.quietTurn("local", "w1:p2", "term-w1:p2", 3, "idle");
+  expect(done("idle", 5, "w1:p2").seen_done).toBe(true);
+
+  // Never seen in Roamgate, idle: its Ranger turn is not Done either, and it
+  // has no look time.
+  store.quietTurn("local", "w1:p3", "term-w1:p3", 7, "idle");
+  const fresh = done("idle", 9, "w1:p3");
+  expect(fresh.seen_done).toBe(false);
+  expect(fresh.seen_at).toBeUndefined();
+});
