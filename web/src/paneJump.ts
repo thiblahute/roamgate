@@ -30,8 +30,11 @@ export type PaneJumpEntry = {
   connectionId?: string;
   /** When the user last had it on screen, on any device (ms). */
   seenAt?: number;
-  /** Its agent waits on the user: asking something, or done unseen. */
-  needsYou?: "blocked" | "done";
+  /**
+   * Its agent waits on the user: asking something, saying (with
+   * `roamgate-review notify`) they need to act, or done unseen.
+   */
+  needsYou?: "blocked" | "asked" | "done";
   /** What it waits on, when known: its question, or its last message. */
   waitsOn?: string;
 };
@@ -693,23 +696,27 @@ function paneJumpEntry(
     agentStatus: pane.agent ? pane.agent_status : undefined,
     current,
     ...(pane.seen_at !== undefined ? { seenAt: pane.seen_at } : {}),
-    ...(pane.agent &&
-    (pane.agent_status === "blocked" || pane.agent_status === "done")
-      ? { needsYou: pane.agent_status }
-      : {}),
+    ...(pane.agent_status === "blocked" && pane.agent
+      ? { needsYou: "blocked" as const }
+      : pane.attention_note
+        ? { needsYou: "asked" as const, waitsOn: pane.attention_note }
+        : pane.agent_status === "done" && pane.agent
+          ? { needsYou: "done" as const }
+          : {}),
   };
 }
 
-const NEEDS_YOU_RANK = { blocked: 0, done: 1 } as const;
+const NEEDS_YOU_RANK = { blocked: 0, asked: 1, done: 2 } as const;
 /** What lifts an entry in a list: an agent waiting on the user, never Done. */
 const needsRank = (entry: PaneJumpEntry) =>
   entry.needsYou && entry.needsYou !== "done"
     ? NEEDS_YOU_RANK[entry.needsYou]
-    : 2;
+    : 3;
 
 /**
- * The agents asking something first, keeping their order, then the rest
- * as they were: one done unseen shows it but stays in place; with `only`,
+ * What waits on the user first: agents asking something, then those that
+ * said the user must act, each group keeping its order, then the rest as
+ * they were: one done unseen shows it but stays in place; with `only`,
  * nothing but what needs the user.
  */
 export function needsYouFirst(
