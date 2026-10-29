@@ -79,6 +79,7 @@ export function ImageLightbox({
           className="image-lightbox-button"
           onClick={onClose}
           // Enter right after opening must not leave for a tab.
+          // biome-ignore lint/a11y/noAutofocus: the dialog's first stop
           autoFocus
           aria-label="Close"
           title="Close (Esc)"
@@ -92,7 +93,7 @@ export function ImageLightbox({
           if (event.target === event.currentTarget) onClose();
         }}
       >
-        {/* Zoom is a pointer convenience; Esc and the buttons work by keyboard. */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: zoom is a pointer convenience; Esc and the buttons work by keyboard */}
         <img
           src={src}
           alt={name}

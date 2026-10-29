@@ -52,6 +52,7 @@ import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
 import { reviewDelivery, useChatParts } from "./ChatThreads";
 import { NoteBody } from "./ReviewNoteBody";
+import { looksLikeMarkdown } from "../userMarkdown";
 import {
   attachedImagePieces,
   type MessagePiece,
@@ -220,7 +221,7 @@ const ChatBubble = memo(function ChatBubble({
           imageUrl || images?.length ? (
             <UserText text={preview} imageUrl={imageUrl} images={images} />
           ) : (
-            <p>{preview}</p>
+            <UserMessageText text={preview} />
           )
         ) : parts && entry.kind === "message" ? (
           <div className="agent-history-chat-markdown chat-review">
@@ -382,7 +383,8 @@ function UserText({
       ? [{ text: piece.image }]
       : [piece],
   );
-  if (!pieces.some((piece) => "image" in piece)) return <p>{text}</p>;
+  if (!pieces.some((piece) => "image" in piece))
+    return <UserMessageText text={text} />;
   const nameOf = (path: string) => path.split(/[\\/]/).pop() ?? path;
   const urlOf = (piece: MessageImage) => piece.url ?? imageUrl!(piece.image);
   return (
@@ -390,7 +392,7 @@ function UserText({
       {pieces.map((piece, index) =>
         "image" in piece ? (
           <a
-            // The pieces of a message never move.
+            // biome-ignore lint/suspicious/noArrayIndexKey: pieces do not move
             key={index}
             className="agent-history-chat-image"
             href={urlOf(piece)}
@@ -420,7 +422,8 @@ function UserText({
             <img src={urlOf(piece)} alt={nameOf(piece.image)} loading="lazy" />
           </a>
         ) : (
-          <p key={index}>{piece.text}</p>
+          // biome-ignore lint/suspicious/noArrayIndexKey: pieces do not move
+          <UserMessageText key={index} text={piece.text} />
         ),
       )}
       {shown ? (
@@ -437,6 +440,22 @@ function UserText({
 // A message sent from the chat that the transcript does not show yet: on its
 // way (dashed and dimmed, like a queued one) until its entry replaces it, or
 // not delivered, with the ways out.
+/**
+ * What the user typed: as typed, unless written in Markdown (a code fence,
+ * inline code, a list, a link), which renders as the agent's replies do,
+ * sanitised the same way.
+ */
+export function UserMessageText({ text }: { text: string }) {
+  if (!looksLikeMarkdown(text)) return <p>{text}</p>;
+  return (
+    <MarkdownPreview
+      text={text}
+      className="agent-history-chat-markdown is-user-markdown"
+      breaks
+    />
+  );
+}
+
 function OutboxBubble({
   message,
   onRetry,
@@ -453,7 +472,7 @@ function OutboxBubble({
       data-outbox-id={message.id}
     >
       <div className="agent-history-chat-bubble">
-        <p>{message.text.slice(0, HISTORY_PREVIEW_CHARS)}</p>
+        <UserMessageText text={message.text.slice(0, HISTORY_PREVIEW_CHARS)} />
       </div>
       <div className="agent-history-chat-meta">
         {failed ? (
@@ -891,13 +910,13 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   outbox = NO_OUTBOX,
   onRetrySend,
   onDiscardSend,
-  imageUrl,
   attachedImages,
   tasks,
   onOpenTask,
   onRemoveQueued,
   onEditQueued,
   onRewind,
+  imageUrl,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -915,8 +934,6 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   outbox?: readonly OutboxMessage[];
   onRetrySend?: (message: OutboxMessage) => void;
   onDiscardSend?: (message: OutboxMessage) => void;
-  /** Where an image the user uploaded loads from; none shows the path. */
-  imageUrl?: (path: string) => string;
   /** The images messages carried, loaded, by entry id. */
   attachedImages?: ReadonlyMap<string, readonly string[]>;
   /** The session's background tasks, by the tool call that started each. */
@@ -928,6 +945,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onEditQueued?: (entry: HistoryEntry) => void;
   /** Rewinds the session to before a message of the user's. */
   onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
+  /** Where an image the user uploaded loads from; none shows the path. */
+  imageUrl?: (path: string) => string;
 }) {
   const speech = useChatSpeech(speechActive, speechScopeKey);
   useRenderTrace("AgentHistoryChat");
