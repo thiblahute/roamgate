@@ -1909,6 +1909,7 @@ export function AgentHistoryDrawer({
                 toolLoading={toolEntryLoading}
                 onLoadTool={loadToolEntry}
                 onOpen={setExpandedMessage}
+                imageUrl={imageUrl}
                 outbox={paneOutbox}
                 onRetrySend={retrySend}
                 onDiscardSend={discardSend}
@@ -1944,6 +1945,7 @@ export function AgentHistoryDrawer({
               toolLoading={toolEntryLoading}
               onLoadTool={loadToolEntry}
               onOpen={setExpandedMessage}
+              imageUrl={imageUrl}
               outbox={paneOutbox}
               onRetrySend={retrySend}
               onDiscardSend={discardSend}
