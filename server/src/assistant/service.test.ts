@@ -30,7 +30,11 @@ import {
   AssistantRecoveryNotReadyError,
 } from "./context";
 import { type AssistantDriver, createPiDriver } from "./pi-driver";
-import { boundAssistantThinking, createAssistantService } from "./service";
+import {
+  boundAssistantThinking,
+  createAssistantService,
+  sameAssistantConfig,
+} from "./service";
 import type { PreparedAssistantAction } from "./actions";
 
 const workspace: AssistantWorkspace = {
@@ -6419,4 +6423,33 @@ test("a task over all workspaces runs over those Ranger may use when it starts",
     "ws",
     "ws2",
   ]);
+});
+
+test("a task's configuration is the same whatever the order of its fields", () => {
+  const allowed_workspaces = [{ connection_id: "local", workspace_id: "w1" }];
+  // As saved when Ranger is allowed every workspace, and as read back.
+  const saved = {
+    provider: "claude-code",
+    model: "opus",
+    credential_source: "pi" as const,
+    allowed_workspaces,
+    approval_mode: "auto" as const,
+    workspace_scope: "all" as const,
+  };
+  const loaded = {
+    provider: "claude-code",
+    model: "opus",
+    credential_source: "pi" as const,
+    allowed_workspaces,
+    workspace_scope: "all" as const,
+    approval_mode: "auto" as const,
+  };
+  expect(JSON.stringify(saved)).not.toBe(JSON.stringify(loaded));
+  expect(sameAssistantConfig(saved, loaded)).toBe(true);
+  expect(sameAssistantConfig(saved, { ...loaded, model: "sonnet" })).toBe(
+    false,
+  );
+  expect(
+    sameAssistantConfig(saved, { ...loaded, allowed_workspaces: [] }),
+  ).toBe(false);
 });
