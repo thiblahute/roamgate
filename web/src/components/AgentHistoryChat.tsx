@@ -60,6 +60,8 @@ import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
 import { reviewDelivery, useChatParts } from "./ChatThreads";
 import { NoteBody } from "./ReviewNoteBody";
+import { messageImagePieces } from "../chatImages";
+import { ImageLightbox } from "./ImageLightbox";
 import "./AgentHistoryChat.css";
 
 // Treat the list as pinned while the reader is within this distance of the
@@ -80,6 +82,7 @@ type BubbleProps = {
   onRemoveQueued?: (entry: HistoryEntry) => void;
   onEditQueued?: (entry: HistoryEntry) => void;
   onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
+  imageUrl?: (path: string) => string;
 };
 function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
   const x = a.entry;
@@ -88,6 +91,7 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
     a.sequence === b.sequence &&
     a.highlighted === b.highlighted &&
     a.onOpen === b.onOpen &&
+    a.imageUrl === b.imageUrl &&
     a.onRemoveQueued === b.onRemoveQueued &&
     a.onEditQueued === b.onEditQueued &&
     a.onRewind === b.onRewind &&
@@ -113,6 +117,7 @@ const ChatBubble = memo(function ChatBubble({
   onRemoveQueued,
   onEditQueued,
   onRewind,
+  imageUrl,
 }: BubbleProps) {
   useRenderTrace("ChatBubble");
   // In a chat with threads, Claude's messages are in parts one comments on.
@@ -202,7 +207,11 @@ const ChatBubble = memo(function ChatBubble({
           <p className="agent-history-chat-heard">{raw}</p>
         ) : null}
         {entry.role === "user" ? (
-          <p>{preview}</p>
+          imageUrl ? (
+            <UserText text={preview} imageUrl={imageUrl} />
+          ) : (
+            <p>{preview}</p>
+          )
         ) : parts && entry.kind === "message" ? (
           <div className="agent-history-chat-markdown chat-review">
             <NoteBody text={preview} parts={parts} />
@@ -337,6 +346,68 @@ const ChatBubble = memo(function ChatBubble({
 // A message sent from the chat that the transcript does not show yet: on its
 // way (dashed and dimmed, like a queued one) until its entry replaces it, or
 // not delivered, with the ways out.
+/** A message of the user's, with the images it sent shown. */
+function UserText({
+  text,
+  imageUrl,
+}: {
+  text: string;
+  imageUrl: (path: string) => string;
+}) {
+  const [shown, setShown] = useState<string | null>(null);
+  const pieces = messageImagePieces(text);
+  if (!pieces.some((piece) => "image" in piece)) return <p>{text}</p>;
+  const nameOf = (path: string) => path.split(/[\\/]/).pop() ?? path;
+  return (
+    <>
+      {pieces.map((piece, index) =>
+        "image" in piece ? (
+          <a
+            // biome-ignore lint/suspicious/noArrayIndexKey: pieces do not move
+            key={index}
+            className="agent-history-chat-image"
+            href={imageUrl(piece.image)}
+            target="_blank"
+            rel="noreferrer"
+            title={piece.image}
+            onClick={(event) => {
+              // Cmd / Ctrl / Shift / middle click still open a tab.
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              setShown(piece.image);
+            }}
+          >
+            <img
+              src={imageUrl(piece.image)}
+              alt={nameOf(piece.image)}
+              loading="lazy"
+            />
+          </a>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: pieces do not move
+          <p key={index}>{piece.text}</p>
+        ),
+      )}
+      {shown ? (
+        <ImageLightbox
+          src={imageUrl(shown)}
+          name={nameOf(shown)}
+          onClose={() => setShown(null)}
+          // Focus left in the list would stop the chat following new messages.
+          returnFocus={false}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function OutboxBubble({
   message,
   onRetry,
@@ -794,6 +865,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onRemoveQueued,
   onEditQueued,
   onRewind,
+  imageUrl,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -818,6 +890,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onEditQueued?: (entry: HistoryEntry) => void;
   /** Rewinds the session to before a message of the user's. */
   onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
+  /** Where an image the user uploaded loads from; none shows the path. */
+  imageUrl?: (path: string) => string;
 }) {
   useRenderTrace("AgentHistoryChat");
   const followRef = useRef(true);
@@ -928,6 +1002,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               onRemoveQueued={onRemoveQueued}
               onEditQueued={onEditQueued}
               onRewind={onRewind}
+              imageUrl={imageUrl}
             />
           ) : (
             <ToolBlock
