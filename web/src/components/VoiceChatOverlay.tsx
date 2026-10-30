@@ -66,6 +66,10 @@ export function VoiceChatOverlay({
   onToggleMute,
   onEnd,
   onCycleSpeechRate,
+  moveQuestion,
+  onAnswerMove,
+  notSent = null,
+  onSendAnyway,
 }: {
   state: ActiveVoiceState;
   level: number;
@@ -83,6 +87,18 @@ export function VoiceChatOverlay({
   /** Ends the voice conversation, whatever it is doing. */
   onEnd: () => void;
   onCycleSpeechRate?: () => void;
+  /**
+   * The question about moving to a workspace with no agent, answered here
+   * by a tap as well as aloud.
+   */
+  moveQuestion?: string | null;
+  onAnswerMove?: (yes: boolean) => void;
+  /**
+   * The last sentence taken as not for the agent: shown, marked not sent,
+   * with `onSendAnyway` to send it after all.
+   */
+  notSent?: string | null;
+  onSendAnyway?: () => void;
 }) {
   const view = voiceControlView(state, muted, level);
   const name = voiceCallName(agent, place);
@@ -202,9 +218,55 @@ export function VoiceChatOverlay({
             </button>
           </div>
         </div>
-        <div className="voice-chat-overlay-heard" aria-live="polite">
-          {heard ? <p>{heard}</p> : <p className="is-hint">{view.hint}</p>}
-        </div>
+        {moveQuestion && onAnswerMove ? (
+          <div className="voice-chat-overlay-move" role="group">
+            <p aria-live="polite">{moveQuestion}</p>
+            <div className="voice-chat-overlay-move-actions">
+              <button
+                type="button"
+                className="voice-chat-overlay-move-go"
+                title="Move there; voice turns off"
+                onMouseDown={keepFocus}
+                onClick={() => onAnswerMove(true)}
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                className="voice-chat-overlay-move-stay"
+                title="Stay here; voice goes on"
+                onMouseDown={keepFocus}
+                onClick={() => onAnswerMove(false)}
+              >
+                Stay
+              </button>
+            </div>
+          </div>
+        ) : !heard && notSent && onSendAnyway ? (
+          <div
+            className="voice-chat-overlay-not-sent"
+            role="group"
+            aria-label="Not sent"
+          >
+            <p aria-live="polite">
+              <span className="voice-chat-overlay-not-sent-tag">Not sent:</span>{" "}
+              {notSent}
+            </p>
+            <button
+              type="button"
+              className="voice-chat-overlay-not-sent-send"
+              title="It was for the agent: send it"
+              onMouseDown={keepFocus}
+              onClick={onSendAnyway}
+            >
+              Send anyway
+            </button>
+          </div>
+        ) : (
+          <div className="voice-chat-overlay-heard" aria-live="polite">
+            {heard ? <p>{heard}</p> : <p className="is-hint">{view.hint}</p>}
+          </div>
+        )}
       </div>
     </div>
   );

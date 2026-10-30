@@ -309,6 +309,75 @@
   font-style: italic;
 }
 
+/*
+ * Moving to a workspace with no agent waits for a yes: the question and its
+ * two answers take the place of the words heard, in the same height.
+ */
+.voice-chat-overlay-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(var(--voice-heard-lines) * var(--voice-heard-line));
+  padding: 0 4px 2px 8px;
+}
+
+.voice-chat-overlay-move p {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: var(--voice-heard-line);
+  overflow-wrap: anywhere;
+}
+
+.voice-chat-overlay-move-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.voice-chat-overlay .voice-chat-overlay-move-go {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.voice-chat-overlay .voice-chat-overlay-move-stay {
+  border-color: var(--border);
+}
+
+/*
+ * A sentence the router took as not for the agent: in place of the words
+ * heard, marked not sent, with a tap to send it after all.
+ */
+.voice-chat-overlay-not-sent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: calc(var(--voice-heard-lines) * var(--voice-heard-line));
+  padding: 0 4px 2px 8px;
+}
+
+.voice-chat-overlay-not-sent p {
+  flex: 1 1 auto;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: var(--voice-heard-line);
+  overflow-wrap: anywhere;
+}
+
+.voice-chat-overlay-not-sent-tag {
+  font-style: italic;
+}
+
+.voice-chat-overlay .voice-chat-overlay-not-sent-send {
+  flex: 0 0 auto;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 @keyframes voice-chat-overlay-spin {
   to {
     transform: rotate(360deg);
@@ -336,6 +405,10 @@
 
 /* Thumb-sized call buttons on a touch screen; two lines of words there. */
 @media (pointer: coarse) {
+  .voice-chat-overlay-not-sent p {
+    font-size: 14px;
+  }
+
   .voice-chat-overlay-anchor {
     --voice-heard-lines: 2;
     --voice-heard-line: 19px;
@@ -364,7 +437,8 @@
     font-size: 13px;
   }
 
-  .voice-chat-overlay-heard p {
+  .voice-chat-overlay-heard p,
+  .voice-chat-overlay-move p {
     font-size: 14px;
   }
 }

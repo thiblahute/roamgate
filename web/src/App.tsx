@@ -43,6 +43,7 @@ import {
   REVIEW_MEMORY_KEPT,
   reviewPinKey as makeReviewPinKey,
 } from "./reviewPins";
+import { takeVoiceArrival } from "./voiceArrival";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
 import { useSystemBack } from "./systemBack";
 import { startFrontendFreshness } from "./frontendFreshness";
@@ -1732,11 +1733,15 @@ export default function App() {
     },
     [],
   );
-  // Arriving in a workspace shows its pinned review, if any.
+  // Arriving in a workspace shows its pinned review, if any, unless voice
+  // chat brought you there: the agent's chat shows, the review steps aside
+  // (Option+R brings it back).
   // biome-ignore lint/correctness/useExhaustiveDependencies: on change only
   useEffect(() => {
-    setReviewSuspended(false);
-  }, [focusedWorkspaceId]);
+    setReviewSuspended(
+      takeVoiceArrival(s.activeConnectionId ?? "", focusedWorkspaceId),
+    );
+  }, [focusedWorkspaceId, s.activeConnectionId]);
   useEffect(() => {
     if (annotationsOpen) setAssistantOpen(false);
   }, [annotationsOpen]);

@@ -2724,6 +2724,8 @@ test("a delayed Ranger pane lookup cannot override a newer show target", async (
   const originalConnection = bridge.connection;
   const originalPane = store.focusPane;
   const originalWorkspace = store.focusWorkspace;
+  const originalPaneNow = store.focusPaneNow;
+  const originalWorkspaceNow = store.focusWorkspaceNow;
   const pending = Promise.withResolvers<unknown>();
   const focused: string[] = [];
   bridge.connection = ((connectionId = "alpha") => ({
@@ -2738,6 +2740,10 @@ test("a delayed Ranger pane lookup cannot override a newer show target", async (
   store.focusWorkspace = async (id) => {
     focused.push(`workspace:${id}`);
   };
+  // Past the focus guard, the jump focuses through the guard-free variants.
+  store.focusPaneNow = store.focusPane as typeof store.focusPaneNow;
+  store.focusWorkspaceNow =
+    store.focusWorkspace as typeof store.focusWorkspaceNow;
   try {
     __storeTesting.replaceState(partitionState());
     const first = store.jumpToConnectionWorkspace(
@@ -2753,6 +2759,8 @@ test("a delayed Ranger pane lookup cannot override a newer show target", async (
     bridge.connection = originalConnection;
     store.focusPane = originalPane;
     store.focusWorkspace = originalWorkspace;
+    store.focusPaneNow = originalPaneNow;
+    store.focusWorkspaceNow = originalWorkspaceNow;
   }
 });
 
@@ -2876,4 +2884,57 @@ test("a port confirmation cannot open on a replacement connection", async () => 
     bridge.connection = originalConnection;
     __storeTesting.replaceState(previous);
   }
+});
+
+describe("jumping to another connection while it changes again", () => {
+  test("focuses nothing when the connection's runtime changes while its workspaces load", async () => {
+    const previousState = store.get();
+    const previousConnection = bridge.connection;
+    const calls: string[] = [];
+    bridge.connection = (connectionId = "alpha") => ({
+      connectionId,
+      generation: store.get().connectionGeneration,
+      serverRuntimeGeneration: 1,
+      isCurrent: () => true,
+      acceptsServerGeneration: () => true,
+      call: (async (method: string) => {
+        calls.push(`${connectionId}:${method}`);
+        if (method === "workspace.list") {
+          // The connection is reopened on a new runtime meanwhile.
+          __storeTesting.replaceState({
+            ...store.get(),
+            activeConnectionId: "alpha",
+            connectionGeneration: store.get().connectionGeneration + 1,
+          });
+          return { workspaces: session("alpha").workspaces };
+        }
+        if (method === "tab.list") return { tabs: session("alpha").tabs };
+        if (method === "pane.list") return { panes: session("alpha").panes };
+        return {};
+      }) as ConnectionClient["call"],
+    });
+    try {
+      __storeTesting.replaceState({
+        ...partitionState(),
+        activeConnectionId: "beta",
+      });
+      await store.jumpToConnectionWorkspaceNow("alpha", "same-workspace");
+      await Promise.resolve();
+      expect(calls.filter((call) => call.endsWith(".focus"))).toEqual([]);
+      expect(calls).toContain("alpha:workspace.list");
+
+      __storeTesting.replaceState({
+        ...partitionState(),
+        activeConnectionId: "beta",
+      });
+      calls.length = 0;
+      await store.jumpToConnectionPaneNow("alpha", "same-pane");
+      await Promise.resolve();
+      expect(calls.filter((call) => call.endsWith(".focus"))).toEqual([]);
+      expect(calls).toContain("alpha:workspace.list");
+    } finally {
+      bridge.connection = previousConnection;
+      __storeTesting.replaceState(previousState);
+    }
+  });
 });
