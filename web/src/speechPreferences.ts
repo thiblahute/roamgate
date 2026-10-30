@@ -61,6 +61,11 @@ export function updateSpeechPreferences(patch: Partial<SpeechPreferences>) {
   }
   publish(value);
 }
+/** The preferences now, outside React (voice chat's browser reading). */
+export function getSpeechPreferences(): SpeechPreferences {
+  initialize();
+  return snapshot;
+}
 export function useSpeechPreferences() {
   return useSyncExternalStore(
     subscribe,

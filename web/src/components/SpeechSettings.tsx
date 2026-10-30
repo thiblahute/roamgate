@@ -1,13 +1,45 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import {
+  formatSpeechRate,
+  SPEECH_RATE_STEPS,
+} from "../../../shared/speechRate";
+import { setReadWith, useSpeechEngine } from "../speechEngine";
 import {
   updateSpeechPreferences,
   useSpeechPreferences,
 } from "../speechPreferences";
+import { store } from "../store";
+import { getSpeechRate, saveSpeechRate, subscribeSpeechRate } from "../voiceChat";
 import "./SpeechSettings.css";
+
+/** What the Speech section says reads aloud, and what voice chat can do. */
+export function speechEngineSummary({
+  engine,
+  server,
+}: {
+  engine: "server" | "browser" | null;
+  server: boolean | null;
+}): string {
+  const reads =
+    engine === "server"
+      ? "Replies are read by Roamgate's voice engine on the server."
+      : engine === "browser"
+        ? "Replies are read by this browser's speech synthesis."
+        : "Nothing here can read replies aloud.";
+  const listens =
+    server === true
+      ? " Voice chat listens through the server's voice engine."
+      : server === false
+        ? " The server has no voice engine, so voice chat cannot listen."
+        : "";
+  return reads + listens;
+}
 
 export function SpeechSettings() {
   const id = useId();
   const preferences = useSpeechPreferences();
+  const speech = useSpeechEngine();
+  const serverRate = useSyncExternalStore(subscribeSpeechRate, getSpeechRate);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const synthesis =
     typeof window === "undefined" ? null : window.speechSynthesis;
@@ -27,52 +59,107 @@ export function SpeechSettings() {
     <fieldset className="speech-settings">
       <legend>Speech</legend>
       <p id={`${id}-description`}>
-        Listen to agent replies with Speak in Agent History Chat. Some browser
-        voices use an online service and may send message text to the voice
-        provider. Playback may stop when the browser is in the background or the
-        screen is locked.
+        Listen to agent replies with Speak in Agent History Chat, and in voice
+        chat. Some browser voices use an online service and may send message
+        text to the voice provider. Playback may stop when the browser is in
+        the background or the screen is locked.
       </p>
+      <p role="status" className="speech-settings-engine">
+        {speechEngineSummary(speech)}
+      </p>
+      {speech.server ? (
+        <>
+          <label htmlFor={`${id}-engine`}>Read aloud with</label>
+          <select
+            id={`${id}-engine`}
+            value={speech.readWith}
+            onChange={(event) =>
+              setReadWith(
+                event.target.value === "browser" ? "browser" : "server",
+              )
+            }
+          >
+            <option value="server">Roamgate's voice engine (server)</option>
+            <option value="browser" disabled={!supported}>
+              This browser's voice
+            </option>
+          </select>
+          <label htmlFor={`${id}-server-rate`}>
+            Server reading speed: {formatSpeechRate(serverRate)}
+          </label>
+          <select
+            id={`${id}-server-rate`}
+            value={String(serverRate)}
+            onChange={(event) =>
+              saveSpeechRate(Number(event.target.value)).catch((error) =>
+                store.notify({
+                  kind: "error",
+                  message: "The reading speed was not kept",
+                  detail: (error as Error).message,
+                }),
+              )
+            }
+          >
+            {[
+              ...new Set<number>([...SPEECH_RATE_STEPS, serverRate]),
+            ]
+              .sort((a, b) => a - b)
+              .map((rate) => (
+                <option key={rate} value={String(rate)}>
+                  {formatSpeechRate(rate)}
+                </option>
+              ))}
+          </select>
+        </>
+      ) : null}
       {!supported ? (
         <p role="status">Speech is not supported by this browser.</p>
       ) : null}
-      <label htmlFor={`${id}-voice`}>Voice</label>
-      <select
-        id={`${id}-voice`}
-        disabled={!supported}
-        aria-describedby={`${id}-description`}
-        value={preferences.voiceURI}
-        onChange={(event) =>
-          updateSpeechPreferences({ voiceURI: event.target.value })
-        }
-      >
-        <option value="">Browser default</option>
-        {missingVoice ? (
-          <option value={preferences.voiceURI}>
-            Saved voice unavailable (using browser default)
-          </option>
-        ) : null}
-        {voices.map((voice) => (
-          <option key={voice.voiceURI} value={voice.voiceURI}>
-            {voice.name} ({voice.lang}){voice.localService ? "" : " - online"}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={`${id}-rate`}>
-        Speaking rate: {preferences.rate.toFixed(1)}x
-      </label>
-      <input
-        id={`${id}-rate`}
-        type="range"
-        min="0.5"
-        max="2"
-        step="0.1"
-        disabled={!supported}
-        value={preferences.rate}
-        aria-valuetext={`${preferences.rate.toFixed(1)} times normal speed`}
-        onChange={(event) =>
-          updateSpeechPreferences({ rate: Number(event.target.value) })
-        }
-      />
+      {/* Only for this browser's voice: the server's engine reads at the
+          server's speed, so a browser rate here would not apply. */}
+      {speech.engine === "server" ? null : (
+        <>
+        <label htmlFor={`${id}-voice`}>Browser voice</label>
+        <select
+          id={`${id}-voice`}
+          disabled={!supported}
+          aria-describedby={`${id}-description`}
+          value={preferences.voiceURI}
+          onChange={(event) =>
+            updateSpeechPreferences({ voiceURI: event.target.value })
+          }
+        >
+          <option value="">Browser default</option>
+          {missingVoice ? (
+            <option value={preferences.voiceURI}>
+              Saved voice unavailable (using browser default)
+            </option>
+          ) : null}
+          {voices.map((voice) => (
+            <option key={voice.voiceURI} value={voice.voiceURI}>
+              {voice.name} ({voice.lang})
+              {voice.localService ? "" : " - online"}
+            </option>
+          ))}
+        </select>
+        <label htmlFor={`${id}-rate`}>
+          Browser speaking rate: {preferences.rate.toFixed(1)}x
+        </label>
+        <input
+          id={`${id}-rate`}
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.1"
+          disabled={!supported}
+          value={preferences.rate}
+          aria-valuetext={`${preferences.rate.toFixed(1)} times normal speed`}
+          onChange={(event) =>
+            updateSpeechPreferences({ rate: Number(event.target.value) })
+          }
+        />
+        </>
+      )}
     </fieldset>
   );
 }

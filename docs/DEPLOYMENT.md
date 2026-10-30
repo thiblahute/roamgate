@@ -522,6 +522,113 @@ while a browser is connected, for `--timeout` seconds at most (60 by
 default); unanswered, the terminal asks as usual. Outside Herdr, or without
 Roamgate, it returns at once.
 
+## Voice chat
+
+Without this setup, Speak reads replies with the browser's speech synthesis
+and voice chat cannot listen (see the Speak entry in
+[FEATURES.md](../FEATURES.md)). An agent chat can be spoken to and listened
+to (the microphone beside its message box) when the server has a voice
+helper, Roamgate's voice engine: `voice/helper`, a small Rust
+program that keeps two models loaded, Whisper for speech to text
+(`whispertranscriber`) and Kokoro for text to speech (`kokorosynthesizer`),
+both GStreamer elements from gst-plugins-rs. The browser streams its microphone
+to it over `/api/voice/ws`; the helper tells speech from noise and silence
+with RNNoise (`audiornnoise`), and `speechgate` (from the same
+gst-plugins-rs branch as the Parakeet element) lets only the speech through
+to the transcriber, ending each utterance when the speaker is done; the
+speaker and turn models below are its properties.
+`cargo build --release` in `voice/helper` makes one binary with GStreamer,
+those plugins and ONNX Runtime linked in: it downloads GStreamer's official prebuilt package (once,
+about 720 MB on macOS) through gstreamer-rs's `binary` feature. Kokoro also
+needs espeak-ng installed (`brew install espeak-ng`).
+
+With `GST_DEBUG_DUMP_DOT_DIR` set in Roamgate's environment, the helper
+writes its pipelines' graphs there (`roamgate-voice-speak.dot`,
+`roamgate-voice-listen.dot`) when they start
+and again once audio has gone through them; `dot -Tsvg` renders them.
+
+Point `voice.json` in Roamgate's data directory (`~/.config/roamgate/` on
+Linux and macOS) at the helper and the models:
+
+```json
+{
+  "helper": "/path/to/roamgate-voice",
+  "whisper_model": "/path/to/ggml-large-v3-turbo.bin",
+  "kokoro_model": "/path/to/kokoro-v1.0.onnx",
+  "kokoro_voices": "/path/to/voices-v1.0.bin"
+}
+```
+
+With `"parakeet_model"`, a directory with
+istupakov/parakeet-tdt-0.6b-v3-onnx's `nemo128.onnx`,
+`encoder-model.int8.onnx`, `decoder_joint-model.int8.onnx` and `vocab.txt`,
+Parakeet TDT v3 transcribes in place of Whisper (then `whisper_model` is not
+needed), with the `parakeettranscriber` element from the same gst-plugins-rs
+branch: it writes 25 European languages as spoken, never translating, and
+takes about 0.1 s for a few seconds of speech on a CPU.
+Parakeet has no language setting, and on some French speech (a voice it
+knows less, music under it, an English word in it) it drifts to English
+words that sound alike ("Mets un peu de musique et baisse le volume" came
+out "Well put the music and best of the volume"). With `whisper_model` set
+too, Whisper (loaded beside Parakeet once something was heard, about 1 GB)
+hears again a final that reads as English while the conversation is in
+another language (the last reply read, or the last thing said): when it
+hears that language more than English, it reads the utterance again in it,
+about a second more, and the log says `said in fr, not English`. Speech
+really in English is kept as Parakeet wrote it, and so is French with
+English words in it.
+With `"speaker_model"` (sherpa-onnx's `wespeaker_en_voxceleb_resnet34.onnx`),
+only the voice of whoever speaks first in a voice chat counts (learnt from
+its first two seconds of speech): other people talking nearby are left out.
+That first voice may not be yours: music, a reply played aloud, a TV or
+someone else talking when the voice chat starts is then kept, and your
+own words are left out instead. With `"speaker_reference"`, a list of
+recordings of your voice (any audio file the helper decodes, a few seconds
+each), your voice is learnt from them instead, whatever is heard first; give
+one per language you speak, since a voice scores lower against itself in
+another language, and a French sentence after an English start can be cut:
+
+```json
+"speaker_reference": ["/path/to/me-fr.wav", "/path/to/me-en.wav"]
+```
+
+The log says which voice was kept: `the speaker's voice is taken from their
+reference recordings`, or `a new speaker: the first voice heard is taken as
+theirs`, and with `ROAMGATE_VOICE_DEBUG` the first words heard from it. With `"turn_model"` (Pipecat's
+`smart-turn-v3.2-cpu.onnx`), a pause ends speech only when the model hears
+a finished turn: thinking pauses rarely cut a message, and 5 s of silence
+ends one anyway. With Parakeet, `"text_turn_model"` (the directory of
+onnx-community/Qwen3-0.6B-ONNX: `onnx/model_int8.onnx`, `tokenizer.json`,
+`config.json`) also reads what was said at each pause: words that are
+clearly unfinished ("I think we should find a way to") keep the turn open,
+clearly finished ones end it sooner. Whisper models are
+whisper.cpp's ggml files; the Kokoro model and voices are
+the v1.0 files of kokoro-onnx's releases. A helper built against an installed
+GStreamer instead finds its plugins in `gst_prefix`, when given. The helper
+starts with the first voice request and stops with the server. A helper that
+writes something that is not a frame on its standard output is restarted at
+once, the log showing the first bytes it wrote. When the helper stops, each
+listening it had ends with what was heard, and the page listens again on the
+same voice link. Browsers only
+give the microphone to secure pages: reach Roamgate over HTTPS or localhost.
+
+With `"clean_model"` (a Claude model, such as `"haiku"`), what is said goes
+through Claude Code before it is sent: fillers, false starts and misheard
+words are cleaned up, and words said to someone else in the room are held
+rather than sent. Two Claude Code sessions are kept running in the
+background (`claude -p`, with `--safe-mode` and no tools), on the account
+`claude` is logged in with; `"claude_command"` names another command.
+Sentences are cleaned while the user still talks and the end as soon as
+they pause, so little time is added; a failing or slow model sends the words
+as heard.
+
+`"speech_rate"` (0.5 to 2, 1.2 by default) is how fast replies are read, as
+a multiple of the voice's own pace; the voice card's speed button and
+**Configuration > Behavior > Speech** change it and write it back to
+`voice.json`, for every browser. Speech comes with the
+rate it was made at (`X-Voice-Native-Rate`, 1 for the voice's own pace) and
+the browser plays it faster by the rest, keeping its pitch.
+
 ## Worktree location
 
 By default Herdr chooses where a new worktree is created. Set a repository's

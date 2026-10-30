@@ -1,0 +1,403 @@
+/*
+ * A running voice conversation floats as an ongoing call over the bottom of
+ * the chat, just above the message box. The anchor takes no room; the card
+ * rises from it. The card's size does not depend on what is said, so it
+ * stays put.
+ */
+.voice-chat-overlay-anchor {
+  position: relative;
+  flex: 0 0 auto;
+  height: 0;
+  z-index: 3;
+  --voice-heard-lines: 3;
+  --voice-heard-line: 18px;
+  --voice-call-button: 40px;
+  --voice-call-avatar: 36px;
+}
+
+.voice-chat-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(
+    440px,
+    calc(
+      100% -
+      20px -
+      env(safe-area-inset-left, 0px) -
+      env(safe-area-inset-right, 0px)
+    )
+  );
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
+  box-shadow: var(--shadow-tooltip);
+  backdrop-filter: blur(8px);
+}
+
+.voice-chat-overlay button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.voice-chat-overlay button:hover {
+  background: var(--accent-hover);
+}
+
+.voice-chat-overlay button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The call bar: who it is with on the left, the call buttons on the right. */
+.voice-chat-overlay-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/*
+ * Who the call is with: a tap sends what was said now, interrupts the
+ * reading, or stops, as the state line's title says.
+ */
+.voice-chat-overlay .voice-chat-overlay-who {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  height: auto;
+  min-height: var(--voice-call-button);
+  padding: 0 6px 0 0;
+  text-align: left;
+  container-type: inline-size;
+}
+
+.voice-chat-overlay-avatar {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--voice-call-avatar);
+  height: var(--voice-call-avatar);
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+.voice-chat-overlay-avatar .agent-icon {
+  width: calc(var(--voice-call-avatar) - 12px);
+  height: calc(var(--voice-call-avatar) - 12px);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+}
+
+/* The ring around the avatar: it follows the voice heard while listening. */
+.voice-chat-overlay-avatar::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-chat-overlay.is-listening:not(.is-muted) .voice-chat-overlay-avatar {
+  box-shadow: 0 0 0 calc(var(--voice-level, 0) * 6px)
+    color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: box-shadow 60ms linear;
+}
+
+/* A subtle pulse while the call is live: listening or speaking. */
+.voice-chat-overlay:is(.is-listening:not(.is-muted), .is-speaking)
+  .voice-chat-overlay-avatar::after {
+  animation: voice-chat-overlay-pulse 1.8s ease-out infinite;
+}
+
+.voice-chat-overlay-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.voice-chat-overlay-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The call state line: what it is doing, the level, the call's length. */
+.voice-chat-overlay-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 16px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.voice-chat-overlay-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* "Listening", or who is speaking: cut short if need be. */
+.voice-chat-overlay-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-chat-overlay-meter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.voice-chat-overlay-meter > span {
+  width: 3px;
+  height: calc(3px + var(--voice-level, 0) * var(--bar-weight, 1) * 11px);
+  border-radius: 2px;
+  background: var(--accent);
+  transition: height 60ms linear;
+}
+
+.voice-chat-overlay-timer {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-chat-overlay-timer::before {
+  content: "\00b7";
+  margin-right: 4px;
+}
+
+/* A narrow bar keeps the words and the timer; the ring shows the level. */
+@container (max-width: 190px) {
+  .voice-chat-overlay-meter,
+  .voice-chat-overlay-icon {
+    display: none;
+  }
+}
+
+.voice-chat-overlay:is(.is-transcribing, .is-waiting)
+  .voice-chat-overlay-icon
+  svg {
+  animation: voice-chat-overlay-spin 1s linear infinite;
+}
+
+.voice-chat-overlay.is-muted .voice-chat-overlay-status {
+  color: var(--muted);
+}
+
+/* The round call buttons. */
+.voice-chat-overlay-calls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-chat-overlay .voice-chat-overlay-call {
+  flex: 0 0 auto;
+  width: var(--voice-call-button);
+  min-width: var(--voice-call-button);
+  height: var(--voice-call-button);
+  padding: 0;
+  border-color: var(--border);
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.voice-chat-overlay .voice-chat-overlay-call:hover {
+  background: var(--accent-hover);
+}
+
+/* Muted: the button lights up, as a phone's does. */
+.voice-chat-overlay .voice-chat-overlay-mute.is-muted {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+
+/* The reading speed, as round as the others: "1.3x" fits. */
+.voice-chat-overlay .voice-chat-overlay-rate {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Hanging up is the only red on the card. */
+.voice-chat-overlay .voice-chat-overlay-hangup {
+  border-color: transparent;
+  background: var(--red);
+  color: #fff;
+}
+
+.voice-chat-overlay .voice-chat-overlay-hangup:hover {
+  background: color-mix(in srgb, var(--red) 85%, #000);
+}
+
+.voice-chat-overlay .voice-chat-overlay-hangup:focus-visible {
+  outline-color: var(--red);
+}
+
+/*
+ * The words being heard: a fixed few lines, the newest at the bottom; older
+ * lines leave through the faded top instead of growing the card.
+ */
+.voice-chat-overlay-heard {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: calc(var(--voice-heard-lines) * var(--voice-heard-line));
+  padding: 0 8px 2px;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--voice-heard-line)
+  );
+}
+
+.voice-chat-overlay-heard p {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: var(--voice-heard-line);
+  overflow-wrap: anywhere;
+}
+
+.voice-chat-overlay-heard p.is-hint {
+  color: var(--muted);
+  font-style: italic;
+}
+
+@keyframes voice-chat-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes voice-chat-overlay-pulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-chat-overlay-icon svg,
+  .voice-chat-overlay-avatar::after {
+    animation: none !important;
+  }
+}
+
+/* Thumb-sized call buttons on a touch screen; two lines of words there. */
+@media (pointer: coarse) {
+  .voice-chat-overlay-anchor {
+    --voice-heard-lines: 2;
+    --voice-heard-line: 19px;
+    --voice-call-button: 48px;
+    --voice-call-avatar: 40px;
+  }
+
+  .voice-chat-overlay {
+    bottom: 12px;
+    padding: 6px;
+    border-radius: 30px;
+  }
+
+  .voice-chat-overlay button {
+    min-width: 48px;
+    height: 48px;
+    font-size: 14px;
+  }
+
+  .voice-chat-overlay-name {
+    font-size: 14px;
+    line-height: 18px;
+  }
+
+  .voice-chat-overlay .voice-chat-overlay-rate {
+    font-size: 13px;
+  }
+
+  .voice-chat-overlay-heard p {
+    font-size: 14px;
+  }
+}
+
+/* A narrow phone: the call buttons draw closer, still 44px to the thumb. */
+@media (pointer: coarse) and (max-width: 400px) {
+  .voice-chat-overlay-anchor {
+    --voice-call-button: 44px;
+    --voice-call-avatar: 36px;
+  }
+
+  .voice-chat-overlay-bar,
+  .voice-chat-overlay-calls {
+    gap: 4px;
+  }
+}
+
+/*
+ * The last message stays readable above the floating card: a spacer at the
+ * end of the chat (not padding, so the chat's resize observer sees it and
+ * following the newest message lands above the card).
+ */
+.agent-history-messages:has(.voice-chat-overlay-anchor)
+  .agent-history-chat
+  > .agent-history-chat-content::after {
+  content: "";
+  flex: 0 0 116px;
+}
+
+@media (pointer: coarse) {
+  .agent-history-messages:has(.voice-chat-overlay-anchor)
+    .agent-history-chat
+    > .agent-history-chat-content::after {
+    flex-basis: 118px;
+  }
+}

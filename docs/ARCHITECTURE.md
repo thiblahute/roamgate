@@ -415,6 +415,46 @@ comment answered in its thread counts as delivered, however it got there
 (`unheardComments` in `shared/review.ts`): only newer ones and edits made after
 the answer are sent.
 
+## Voice helper
+
+The bridge runs the voice helper (`voice/helper`) as a child process and
+talks to it in frames (`voice/helper/src/frames.rs`,
+`server/src/voice/voice-helper.ts`): a little-endian u32 length, a kind
+byte (0 for JSON, 1 for a listening session's audio), then the payload,
+16 MiB at most. A length of 0 or past 16 MiB, or another kind, is output
+that is not frames: the bridge logs its first 200 bytes, escaped, and
+restarts the helper at once.
+
+Each listening session lives in one helper process. When that process
+stops, each of its sessions gets an `error` event with its `session` and
+`recoverable: true`, and is over: the voice socket passes it on and drops
+the session (never finishing it in another process), and the page ends
+that listening with what it heard so far and listens again on the same
+link. An `error` without a session (the channel's own), or one for the
+listening that is not recoverable, fails the link; one for another
+session is not this listening's.
+
+The page streams its microphone on the voice socket as 16 kHz mono
+S16LE, through a windowed-sinc low-pass from the browser's rate, so what
+lies above 8 kHz does not fold back into the speech band. With a speaker
+model, the helper's listener keeps one voice: from the speaker's reference
+recordings (`speaker_reference`), heard first in a session of their own
+that is stopped at once, or else from the first 2 s of voice it hears
+after a `new_speaker` listening (or after its first listening, when it
+knows no voice yet). The helper logs which, so a voice taken from music or
+someone else shows. The listener counts the voice the gate's speaker check
+takes in, as the gate does, so it knows when a learnt voice is taken.
+
+The listener's final is Parakeet's text, except when the helper also has
+Whisper's model: a final that reads as English at least as much as in the
+conversation's language (Lingua's confidence), when that language is
+another one (the language of the last sentence spoken, or of the last
+final), is heard by Whisper's language identification, on the audio the
+transcriber got; when Whisper hears the conversation's language more than
+English, its reading in that language is the final (`reread.rs`).
+Parakeet drifts to English on some speech in other languages, never the
+other way.
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell

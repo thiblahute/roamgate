@@ -17,11 +17,13 @@ import {
   RotateCw,
   Square,
   Volume2,
+  Mic,
   Wrench,
   X,
 } from "lucide-react";
 import { useChatSpeech } from "../useChatSpeech";
 import { copyTextWithFeedback } from "../copyText";
+import { heardAs, parseVoiceMessage } from "../voiceChat";
 import { type AgentTask, taskStatusLabel } from "../agentTasks";
 import { formatUiDateTime } from "../uiLocale";
 import { HISTORY_PREVIEW_CHARS } from "./AgentHistoryCard";
@@ -104,6 +106,7 @@ const ChatBubble = memo(function ChatBubble({
   imageUrl,
   images,
 }: BubbleProps) {
+  const [showHeard, setShowHeard] = useState(false);
   // A compaction summary is long and written by Claude Code, not the user:
   // one line, with the summary a tap away.
   if (entry.compact_summary)
@@ -115,8 +118,13 @@ const ChatBubble = memo(function ChatBubble({
         </button>
       </div>
     );
-  const preview = entry.text.slice(0, HISTORY_PREVIEW_CHARS);
-  const truncated = preview.length < entry.text.length;
+  // A message said by voice shows that as a label, not as its text.
+  const spoken = entry.role === "user" ? parseVoiceMessage(entry.text) : null;
+  const shownText = spoken?.voice ? spoken.text : entry.text;
+  // A cleaned voice message keeps, in this browser, the words as heard.
+  const raw = spoken?.voice ? heardAs(spoken.text) : null;
+  const preview = shownText.slice(0, HISTORY_PREVIEW_CHARS);
+  const truncated = preview.length < shownText.length;
   const label = historyEntryLabel(entry);
   const tone = entry.kind === "error" ? "is-error" : `is-${entry.role}`;
   const playback = speech.state?.messageId === entry.id ? speech.state : null;
@@ -135,8 +143,39 @@ const ChatBubble = memo(function ChatBubble({
     <article
       className={`agent-history-chat-message ${tone} ${highlighted ? "is-minimap-target" : ""}${entry.queued ? " is-queued" : ""}`}
       data-sequence={sequence}
+      data-entry-id={entry.id}
     >
       <div className="agent-history-chat-bubble">
+        {spoken?.voice ? (
+          <span
+            className="agent-history-chat-voice"
+            title={
+              spoken.interruptedAt
+                ? `Said by voice, interrupting the reading at: ${spoken.interruptedAt}`
+                : "Said by voice"
+            }
+          >
+            <Mic size={11} aria-hidden="true" />
+            {spoken.interruptedAt
+              ? `Interrupted at "${spoken.interruptedAt}"`
+              : "Voice"}
+            {raw ? (
+              <button
+                type="button"
+                className="agent-history-chat-heard-toggle"
+                aria-expanded={showHeard}
+                onClick={() => setShowHeard((shown) => !shown)}
+              >
+                {showHeard
+                  ? "Hide what was heard"
+                  : "Cleaned: show what was heard"}
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+        {raw && showHeard ? (
+          <p className="agent-history-chat-heard">{raw}</p>
+        ) : null}
         {entry.role === "user" ? (
           imageUrl || images?.length ? (
             <UserText text={preview} imageUrl={imageUrl} images={images} />
