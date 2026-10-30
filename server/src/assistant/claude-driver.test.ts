@@ -13,6 +13,7 @@ import {
   CLAUDE_CODE_PROVIDER,
   type ClaudeCodeProcess,
   createClaudeCodeDriver,
+  spawnClaudeProcess,
 } from "./claude-driver";
 import { createRangerMcp } from "./claude-mcp";
 
@@ -433,4 +434,15 @@ test("a spawn failure removes the private MCP configuration", async () => {
     mcp.stop();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("a write after stdin closed throws instead of vanishing", async () => {
+  const child = spawnClaudeProcess({ argv: ["cat"] });
+  child.write("kept\n");
+  child.end();
+  expect(() => child.write("lost\n")).toThrow(/closing/);
+  const lines: string[] = [];
+  for await (const line of child.lines) lines.push(line);
+  expect(lines).toEqual(["kept"]);
+  expect(await child.exited).toBe(0);
 });

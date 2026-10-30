@@ -20,6 +20,7 @@ import {
   migrateDataFile,
   publishDataFile,
   replaceDataFile,
+  replaceDataFileAsync,
 } from "./data-paths";
 import { defaultAuthTokenPath, loadOrCreateAuthToken } from "./auth-token";
 
@@ -145,6 +146,21 @@ test("replacement overwrites atomically with private permissions", () => {
   const link = join(root, "roamgate", "link.env");
   symlinkSync(target, link);
   expect(() => replaceDataFile(link, "third")).toThrow("symlink");
+  expect(readFileSync(target, "utf8")).toBe("second");
+});
+
+test("asynchronous replacement is as atomic and private", async () => {
+  const root = home();
+  const target = join(root, "roamgate", "leases.json");
+  await replaceDataFileAsync(target, "first", 0o644);
+  await replaceDataFileAsync(target, "second");
+  expect(readFileSync(target, "utf8")).toBe("second");
+  expect(readdirSync(dirname(target))).toEqual(["leases.json"]);
+  if (process.platform !== "win32")
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+  const link = join(root, "roamgate", "link.json");
+  symlinkSync(target, link);
+  await expect(replaceDataFileAsync(link, "third")).rejects.toThrow("symlink");
   expect(readFileSync(target, "utf8")).toBe("second");
 });
 

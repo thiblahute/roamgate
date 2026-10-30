@@ -1,4 +1,8 @@
 import { normalizeTitleSuffix } from "../../../shared/instanceName";
+import {
+  DEFAULT_IDLE_STOP_MINUTES,
+  isIdleStopMinutes,
+} from "../../../shared/agentChat";
 import { defaultDataFile } from "./data-paths";
 import { roamgateEnv } from "./environment";
 import { dirname } from "node:path";
@@ -36,6 +40,28 @@ export type GuiWorkspaceAutoSyncSettings = {
   last_branch?: string;
 };
 
+/** Conversation mode's settings (`conversation` in settings.json). */
+export type GuiConversationSettings = {
+  /**
+   * Minutes a conversation-mode session sits idle before its headless
+   * process stops (its next message starts it again); 0: never.
+   */
+  idle_stop_minutes?: number;
+};
+
+/** Idle stop in minutes, the default included; 0: off. */
+export function conversationIdleStopMinutes(settings: GuiSettings): number {
+  return settings.conversation?.idle_stop_minutes ?? DEFAULT_IDLE_STOP_MINUTES;
+}
+
+function normalizeConversationSettings(
+  raw: unknown,
+): GuiConversationSettings | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const minutes = (raw as Record<string, unknown>).idle_stop_minutes;
+  return isIdleStopMinutes(minutes) ? { idle_stop_minutes: minutes } : {};
+}
+
 export type GuiSettings = {
   version: 1;
   title_suffix?: string;
@@ -47,6 +73,8 @@ export type GuiSettings = {
   repositories: Record<string, GuiRepoSettings>;
   workspace_auto_sync: Record<string, GuiWorkspaceAutoSyncSettings>;
   terminal_transport?: Record<string, { surface_codecs: boolean }>;
+  /** Conversation mode (absent: its defaults, idle stop after 30 min). */
+  conversation?: GuiConversationSettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -253,6 +281,7 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
           : [],
       ),
     ),
+    conversation: normalizeConversationSettings(obj.conversation),
     custom:
       obj.custom && typeof obj.custom === "object"
         ? (obj.custom as Record<string, unknown>)

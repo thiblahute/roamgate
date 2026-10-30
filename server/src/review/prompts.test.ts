@@ -121,3 +121,25 @@ test("In the terminal hands a prompt back unanswered", async () => {
   expect(prompts.release({ connectionId: "local", id: prompt!.id })).toBe(true);
   expect(await waiting).toBeNull();
 });
+
+test("a question or a permission may be dismissed, unanswered", async () => {
+  for (const questions of [
+    [{ question: "Which?", options: [{ label: "A" }], multiSelect: false }],
+    undefined,
+  ]) {
+    const { prompts, ask } = setup();
+    const waiting = ask(
+      questions ? { tool: "AskUserQuestion", canAlways: false, questions } : {},
+    );
+    const [prompt] = prompts.list("local");
+    expect(
+      prompts.answer({
+        connectionId: "local",
+        id: prompt!.id,
+        answer: "dismiss",
+      }),
+    ).toBe(true);
+    expect(await waiting).toBe("dismiss");
+    expect(prompts.list("local")).toEqual([]);
+  }
+});

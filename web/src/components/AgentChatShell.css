@@ -1,0 +1,247 @@
+/*
+ * A `!` line in an agent's chat: a command the user ran, on the user's side
+ * of the chat, drawn as a terminal (not as a message bubble).
+ */
+.agent-chat-shell {
+  --shell-mono: var(
+    --mono-font,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace
+  );
+  display: flex;
+  box-sizing: border-box;
+  width: min(94%, 720px);
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  align-self: flex-end;
+  margin: 4px 0 4px auto;
+}
+
+/* "You ran", and where: above the terminal, as a message's own line. */
+.agent-chat-shell-by {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.agent-chat-shell-you {
+  flex: 0 0 auto;
+  color: var(--bash-mode);
+  font-weight: 600;
+}
+
+.agent-chat-shell-where {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--shell-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat-shell-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--bash-mode) 45%, var(--border));
+  border-left: 3px solid var(--bash-mode);
+  border-radius: 8px 8px 0 0;
+  background: color-mix(in srgb, var(--bash-mode) 10%, var(--terminal-bg));
+  color: var(--terminal-fg);
+}
+
+/* Nothing printed: the command alone, a closed box. */
+.agent-chat-shell-head:not(:has(+ .agent-chat-shell-output)) {
+  border-radius: 8px;
+}
+
+.agent-chat-shell-prompt {
+  flex: 0 0 auto;
+  color: var(--bash-mode);
+  font-family: var(--shell-mono);
+  font-weight: 700;
+}
+
+.agent-chat-shell-command {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  background: none;
+  color: var(--text-strong);
+  font-family: var(--shell-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* How it runs or ended: a chip of its own colour. */
+.agent-chat-shell-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-chat-shell-chip.is-running {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.agent-chat-shell-chip.is-ok {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.agent-chat-shell-chip.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.agent-chat-shell-chip.is-stopped {
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.agent-chat-shell-spinner {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: row-spinner 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat-shell-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.agent-chat-shell-stop {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.agent-chat-shell-output {
+  max-height: 60vh;
+  margin: -4px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--bash-mode) 45%, var(--border));
+  border-top: 0;
+  border-left: 3px solid var(--bash-mode);
+  border-radius: 0 0 8px 8px;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  font-family: var(--shell-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Folded: its last line fades, there is more. */
+.agent-chat-shell-output.is-folded {
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+
+.agent-chat-shell-stderr {
+  color: var(--danger-text);
+}
+
+.agent-chat-shell-note {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-chat-shell-note.is-error {
+  color: var(--danger-text);
+}
+
+/* Show all, Copy, and what Claude has of it. */
+.agent-chat-shell-foot {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.agent-chat-shell-more,
+.agent-chat-shell-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.agent-chat-shell-copy {
+  min-width: 28px;
+  padding: 0;
+  color: var(--muted);
+}
+
+.agent-chat-shell-claude {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.agent-chat-shell-claude.is-sent svg {
+  color: var(--success-text);
+}
+
+/* Before the session has a transcript: the blocks above the box. */
+.agent-chat-shells {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: auto;
+  padding: 8px 12px;
+}

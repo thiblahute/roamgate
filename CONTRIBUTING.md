@@ -59,6 +59,12 @@ backend and record the device/browser and results in the PR:
 - Two tabs on the same origin: preferences sync without reload, while workspace,
   files, drafts, and focus stay independent.
 
+A test server gets its own `$HOME`, so it never replaces the real client and
+socket in `~/.cache/roamgate`. Such a server does not connect SSH profiles:
+on the host it would take the Roamgate socket from the running bridge, whose
+conversation-mode holders poll there. Use local connections, or set
+`ROAMGATE_ALLOW_SSH=1` against a host no other Roamgate serves.
+
 ### Windows SSH end-to-end test
 
 This opt-in test needs a disposable bridge (allowing unauthenticated loopback

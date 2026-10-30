@@ -2629,6 +2629,12 @@ function movePopup(move: "opening" | "closing", call: () => Promise<unknown>) {
 }
 
 function handleHerdrEvent(event: HerdrEventMsg) {
+  // A chat's own stream and history pushes: they change no topology.
+  if (
+    event.event.startsWith("agent_chat.") ||
+    event.event === "agent_history.changed"
+  )
+    return;
   if (
     !state.connectionPaused &&
     connectionEventIsActive(

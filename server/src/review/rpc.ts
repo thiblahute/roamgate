@@ -214,8 +214,13 @@ export async function handleReviewRpc(
           }),
         };
       }
-      if (answer !== "allow" && answer !== "always" && answer !== "deny")
-        throw new ReviewError("answer must be allow, always, or deny");
+      if (
+        answer !== "allow" &&
+        answer !== "always" &&
+        answer !== "deny" &&
+        answer !== "dismiss"
+      )
+        throw new ReviewError("answer must be allow, always, deny or dismiss");
       return {
         answered: service.prompts.answer({
           connectionId: connection.id,

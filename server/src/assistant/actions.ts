@@ -1033,13 +1033,16 @@ export async function prepareAssistantAction(args: {
             throw new Error("Pane occupant changed");
           let result: unknown;
           try {
-            result = await dispatch((beforeSend) =>
-              runtime.herdr.call(
-                "agent.prompt",
-                { target: paneId, text: prompt },
-                5000,
-                beforeSend,
-              ),
+            result = await dispatch(async (beforeSend) =>
+              // Conversation mode holds the pane: a message, not keystrokes.
+              (await runtime.conversation.prompt(paneId, prompt, beforeSend))
+                ? { sent: true }
+                : runtime.herdr.call(
+                    "agent.prompt",
+                    { target: paneId, text: prompt },
+                    5000,
+                    beforeSend,
+                  ),
             );
           } catch (error) {
             // The public API rejects blocked agents before submitting any input.

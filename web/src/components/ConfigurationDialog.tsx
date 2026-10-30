@@ -53,6 +53,7 @@ import {
 } from "../useConnectionClient";
 import { AgentIntegrationsSettings } from "./AgentIntegrationsSettings";
 import { AgentAutoRenameSettings } from "./AgentAutoRenameSettings";
+import { ConversationIdleSettings } from "./ConversationIdleSettings";
 import { AutoSyncRepositoriesDialog } from "./AutoSyncRepositoriesDialog";
 import { CloseButton } from "./CloseButton";
 import { TerminalTransportSettings } from "./TerminalTransportSettings";
@@ -554,8 +555,8 @@ export function ConfigurationDialog({
                   <strong>Open agents as a chat</strong>
                   <span>
                     {defaultPaneView === "chat"
-                      ? "An agent pane shows its chat once the agent starts"
-                      : "An agent pane shows its terminal"}
+                      ? "An agent pane shows its chat once the agent starts; Claude shows its mode's view"
+                      : "An agent pane shows its terminal; Claude shows its mode's view"}
                   </span>
                 </div>
                 <button
@@ -780,6 +781,12 @@ export function ConfigurationDialog({
                 <>
                   <AgentAutoRenameSettings
                     key={`auto-rename-${connectionClientScopeKey(
+                      connectionClient,
+                      connectionClient.serverRuntimeGeneration,
+                    )}`}
+                  />
+                  <ConversationIdleSettings
+                    key={`idle-stop-${connectionClientScopeKey(
                       connectionClient,
                       connectionClient.serverRuntimeGeneration,
                     )}`}

@@ -240,8 +240,9 @@ Inspector state is scoped to each checkout; see
   the title Claude Code gives it, also shown as Agent History's heading), its
   status, the pages the session published with Claude Code's Artifact tool
   (a list to open or copy each link; each publish also links under the tool
-  calls that made it), search, **Stop** (Esc in the terminal) and the way back
-  to the terminal; on a phone that row stands for the top bar, which hides,
+  calls that made it), search, **Stop** (Esc in the terminal) and, on a
+  desktop, the way back to the terminal (on a phone, **Terminal** in More
+  options); on a phone that row stands for the top bar, which hides,
   and the message box sits in the bottom bar, taking the whole width while
   you write. Below the conversation, a working agent shows its own word for
   what it does, read from its screen (Claude Code's "Sublimating... (1m 5s)"),
@@ -257,6 +258,10 @@ Inspector state is scoped to each checkout; see
   Behavior (off by default) says. Review
   feedback sent to a pane shown as a chat is pre-filled in its message box;
   its **Send** button sends it at once.
+  A Claude pane is the exception: it shows the view of its mode
+  (conversation mode below), never a chat over its terminal mode, except
+  where the server has no conversation mode (an older Roamgate, a Windows
+  host).
 - A message sent from a chat's message box (in a pane or in Agent History)
   shows at once at the end of the conversation, dimmed with **Sending...**,
   then **On its way** once the pane took it, until the transcript's own entry
@@ -270,7 +275,11 @@ Inspector state is scoped to each checkout; see
   **Allow**, **Always** (the terminal's don't-ask-again rules) and **Deny**,
   and its multiple-choice questions as a form (one choice, several, or one's
   own words), a sheet of its own on a phone; **In the terminal** hands either
-  back, and the terminal asks anyway once the hook stops waiting.
+  back, and the terminal asks anyway once the hook stops waiting. **Dismiss**
+  (Esc, or `d` on a permission card) puts either away unanswered: the agent
+  is told the user dismissed it and goes on, and its chat shows the step as
+  _Dismissed_. A conversation-mode pane shown as a terminal says when Claude
+  waits on a question, with **Show the question** and **Dismiss it**.
   With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the microphone
   beside the message box talks hands-free: speak, and what you said is sent
   once you pause; the agent's answer is read aloud by the engine Speak uses
@@ -358,16 +367,84 @@ Inspector state is scoped to each checkout; see
   browser's voices, the speed button steps the browser's speaking rate.
   Starting voice chat while Speak reads with the server's voices lets it
   play on, until you talk over it.
+  **Conversation mode** (Claude Code): a Claude pane has two modes, each
+  with one view. In terminal mode the pane shows Claude Code's terminal
+  only, with **Conversation mode** in its toolbar (and the pane's chat
+  shortcut, or **Chat** on a phone, which asks first): it hands the session
+  to a headless Claude Code that the chat drives. While Claude works, waits
+  on a question or runs background work, the switch says so and waits for
+  it, until cancelled; when it cannot go (a draft in the prompt box, say),
+  the terminal says why. When another Claude runs the same session in
+  another pane (one left open there), it says where, by the workspace and
+  tab names the sidebar shows (and the connection when it is not local),
+  that only one Claude can write a session, and whether that one is idle;
+  **Go to it** shows that pane and, while that Claude is idle, **Quit it
+  and switch** exits it (its pane and shell stay) and switches. One that
+  works or waits on a question is never quit. In conversation mode the
+  pane shows the chat only,
+  with no mode label in its header, and **Open in terminal** in that header
+  (on a phone, **Terminal** in More options) hands the session back; when it
+  cannot go, the header says why until you put it away. Nothing switches by
+  itself: which view a device shows never moves the session. A
+  terminal-mode Claude's History is read only, with the switch in its
+  header. When the pane's environment has an
+  `ANTHROPIC_API_KEY`, the headless Claude uses it only if you said yes to
+  Claude Code's own question about it; if you never answered, the chat asks
+  the same question (the API key, billed to the API, or your subscription
+  login) before Claude starts, messages waiting meanwhile, and files your
+  answer where Claude Code keeps it, so the terminal does not ask again.
+  In conversation mode replies, tool calls and
+  their results appear as they are written; messages sent while Claude works
+  wait in Roamgate's queue (taken back or edited as below) and go as one
+  turn when it ends; **Stop** interrupts the turn, keeping what was written;
+  `/compact`, `/clear`, `/cost`, `/context` and `/rewind` work, and other
+  terminal-only commands are refused. A message starting with `!` runs as a
+  shell command, as Claude Code's bash mode does: on the pane's host (over
+  SSH for a remote one), in the session's directory, with your login shell.
+  The chat shows its output as it comes, its exit code and **Stop**; Claude
+  reads the command and its output (the first 30,000 characters of each
+  stream) with your next message, without a turn of its own. After a turn,
+  Claude Code's guess at your next message (its prompt suggestions, unless
+  turned off in your Claude Code settings) shows in grey in the empty box:
+  Tab or Right puts it in the box to edit, typing anything else puts it
+  away, and nothing is ever sent by itself. A phone shows it as a chip
+  above the box that fills it; a voice call shows none. Voice reads each sentence as soon as it is written,
+  cleaned as Speak cleans a whole reply: a list item once the next starts, a
+  table once it is complete, a code block announced once its fence closes;
+  speaking up while Claude only writes interrupts the turn and starts the
+  next one, while it runs a tool steers that turn, and "stop" interrupts it.
   A message queued in a Claude chat can be taken back before the agent
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in
-  Claude Code's prompt. The others stay queued, in order.
+  Claude Code's prompt. The others stay queued, in order. When Roamgate
+  cannot read the conversation process any more, the chat says **Lost the
+  conversation process** and why, with **Recover**, which ends that process
+  and resumes the session in a new one with the queued messages; messages
+  that wait 30 seconds with Claude not at work show the same warning.
+  **Stop idle conversations** (Configuration > Integrations, after 30
+  minutes by default): a conversation idle that long has its headless
+  Claude stopped to free its memory, the pane and its chat staying as they
+  are. The next message of any kind (typed, spoken, a review comment, the
+  voice companion, Ranger, another agent's) starts it again, with **Waking
+  Claude...** in the chat, then goes to it once. Never while Claude works,
+  asks you something, runs background work, during a voice call or a
+  companion job on it, or within 10 minutes of another session's message.
   A Claude chat rewinds as /rewind does: the arrow beside one of your
   messages restores the code and the conversation, or either, to before
   it, through Claude Code's own rewind menu. The message comes back in the
-  box to edit, and the turns undone leave the chat. /rewind typed in the
+  box to edit, and the turns undone leave the chat. Your messages the
+  rewind cut stay as one "Rewound" line in their place, never as queued
+  or current: open it to send one again, or to put it back in the box. /rewind typed in the
   box lists your messages, newest first, to pick one with the arrows or
   j/k and Enter, then the restore's number.
+  In conversation mode the headless Claude Code rewinds itself, the code
+  included, and the rewind lasts: the terminal, shown later, goes on from
+  the same point. A turn running is stopped first if you confirm; queued
+  messages must be sent or taken back first. What a rewind takes out is no
+  longer read aloud. Restoring the code undoes the edits Claude made with
+  its file tools, not what commands changed: when the turns undone edited
+  no file, or only before Claude Code kept checkpoints, the code choices
+  are off and say why, and the conversation alone is rewound.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or

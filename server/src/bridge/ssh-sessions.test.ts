@@ -251,6 +251,29 @@ describe("SSH command execution", () => {
     await Promise.all([...runs, other]);
     expect(started).toBe(SSH_SESSION_LIMIT + 3);
   });
+
+  test("an aborted wait gives up without taking a slot", async () => {
+    const releases = await Promise.all(
+      Array.from({ length: SSH_SESSION_LIMIT }, () =>
+        acquireSshSession("abort-box"),
+      ),
+    );
+    const controller = new AbortController();
+    const waiting = acquireSshSession("abort-box", {
+      signal: controller.signal,
+    });
+    const after = acquireSshSession("abort-box");
+    controller.abort(new Error("gave up"));
+    await expect(waiting).rejects.toThrow("gave up");
+    // The freed slot goes to the next waiter, not to the one that gave up.
+    releases[0]!();
+    const release = await after;
+    release();
+    for (const each of releases) each();
+    await expect(
+      acquireSshSession("abort-box", { signal: AbortSignal.abort() }),
+    ).rejects.toThrow();
+  });
 });
 
 describe("SSH session wait", () => {

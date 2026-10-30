@@ -53,6 +53,8 @@
   --success-text: #9ce9b6;
   --warning-text: #ffe0a3;
   --info-text: #c2d8ff;
+  /* Shell lines (`!` in an agent's chat), pink as Claude Code's bash mode. */
+  --bash-mode: #f471b5;
   --diff-bg: #0b0d12;
   --diff-line-bg: #0f1219;
   --diff-text: #d6d9e2;
@@ -152,6 +154,7 @@
   --success-text: #11552a;
   --warning-text: #654800;
   --info-text: #12417f;
+  --bash-mode: #b72f6c;
   --diff-bg: #f7f8fb;
   --diff-line-bg: #ffffff;
   --diff-text: #24304f;

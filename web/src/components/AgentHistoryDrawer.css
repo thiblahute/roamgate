@@ -239,6 +239,83 @@
   border-color: var(--danger-border);
 }
 
+/* Who writes to a Claude session: its terminal or conversation mode. */
+.agent-chat-owner {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agent-chat-owner small {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.agent-chat-owner-switch {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.agent-chat-owner.is-conversation {
+  color: var(--accent);
+}
+
+/* A refused Open in terminal says why as text a phone can read: it wraps
+   in the header instead of being cut, until put away. */
+.agent-chat-owner.has-refusal {
+  align-items: center;
+  white-space: normal;
+}
+
+.agent-chat-owner-reason {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-owner-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 2px;
+}
+
+/* A phone's header row is narrow: the title gives way first, so the mode
+   stays readable. */
+:where(html[data-layout="mobile"]) .is-pane-chat .agent-chat-title {
+  flex-shrink: 4;
+  min-width: 4.5em;
+}
+
+:where(html[data-layout="mobile"]) .is-pane-chat .agent-chat-owner {
+  max-width: 60%;
+}
+
+/* A terminal-mode Claude's History: read only, where the box would be. */
+.agent-history-readonly {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-chat-owner.is-busy {
+  color: var(--warning-text);
+}
+
 .agent-history-error {
   margin: 10px 12px 0;
   padding: 9px 10px;

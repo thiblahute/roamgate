@@ -17,9 +17,12 @@ import {
   Route,
   Send,
   Square,
+  Terminal,
   TriangleAlert,
   X,
 } from "lucide-react";
+import { shellLine } from "../../../shared/bashMode";
+import { shortCwd } from "../shortCwd";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -111,6 +114,8 @@ export function AgentHistoryComposer({
   voice,
   onRecallQueued,
   onStop,
+  shell,
+  nextPrompt,
 }: {
   draftKey: string;
   agent?: string;
@@ -131,6 +136,18 @@ export function AgentHistoryComposer({
   onRecallQueued?: () => void;
   /** While the agent works: stop it, beside Send. */
   onStop?: () => void;
+  /**
+   * A line starting with `!` runs as a shell command (Claude Code's bash
+   * mode): where. Without it, `!` is plain text.
+   */
+  shell?: { host?: string; cwd?: string | null };
+  /**
+   * What the agent guesses the user will say next (Claude Code's prompt
+   * suggestion): offered in the empty box as grey text, which Tab or Right
+   * puts in the box to edit, or on a phone as a chip above it. Never sent
+   * by itself; typing anything puts it away.
+   */
+  nextPrompt?: { key: string; text: string } | null;
   /**
    * Hands-free chat; `listen` false when the server has no voice engine:
    * the button then says why it cannot listen.
@@ -169,7 +186,13 @@ export function AgentHistoryComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const vimHandleRef = useRef<ComposerVimHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const warning = agentPromptWarning(agent, status);
+  // Shell mode: the box starts with `!`, and Send runs it.
+  const shellMode = !!shell && /^\s*!/.test(text);
+  const shellCommand = shellMode ? shellLine(text) : null;
+  const shellHost = shell?.host?.trim() || "this host";
+  const shellCwd = shell?.cwd ? shortCwd(shell.cwd) : null;
+  const shellWhere = `${shellHost}${shellCwd ? ` in ${shellCwd}` : ""}`;
+  const warning = shellMode ? null : agentPromptWarning(agent, status);
   const agentState = agentStateKind(status);
   // What a warning was shown for: the draft, the agent, and its state.
   const context = JSON.stringify([text, agent, agentState, stateSeq]);
@@ -237,7 +260,8 @@ export function AgentHistoryComposer({
   }, [draftKey, text]);
 
   const busy = submissionPending || uploadCount > 0;
-  const sendDisabled = !text.trim() || busy || composing;
+  const sendDisabled =
+    !text.trim() || busy || composing || (shellMode && shellCommand === null);
 
   const uploadImages = async (files: File[]) => {
     if (
@@ -327,9 +351,13 @@ export function AgentHistoryComposer({
     canFinish: () => true,
   });
   const sendShortcut = shortcutLabel("composer.send");
-  const sendTitle = enterAddsLine
-    ? `Send to the agent's terminal (${sendShortcut})`
-    : "Send to the agent's terminal (Enter); Shift+Enter for a new line";
+  const sendTitle = shellMode
+    ? enterAddsLine
+      ? `Run on ${shellWhere} (${sendShortcut})`
+      : `Run on ${shellWhere} (Enter); Shift+Enter for a new line`
+    : enterAddsLine
+      ? `Send to the agent's terminal (${sendShortcut})`
+      : "Send to the agent's terminal (Enter); Shift+Enter for a new line";
   const name = agent?.trim();
   const shown = attachmentDisplay(text);
   // A /command being typed: the matching commands, until Esc puts them away
@@ -376,6 +404,49 @@ export function AgentHistoryComposer({
     event.preventDefault();
     event.nativeEvent.stopPropagation();
   };
+  // The predicted next message: offered while the box is empty, until
+  // something is typed (it does not come back once the box empties again).
+  const [nextPromptGone, setNextPromptGone] = useState<string | null>(null);
+  const nextPromptKey = nextPrompt?.key ?? null;
+  useEffect(() => {
+    if (text && nextPromptKey) setNextPromptGone(nextPromptKey);
+  }, [text, nextPromptKey]);
+  const offered =
+    nextPrompt &&
+    nextPrompt.text.trim() &&
+    !text &&
+    nextPromptGone !== nextPrompt.key &&
+    !composing &&
+    // Never during a voice call.
+    (!voice || voice.state === "off")
+      ? nextPrompt
+      : null;
+  const acceptNextPrompt = () => {
+    if (!offered) return;
+    const draft = offered.text;
+    setNextPromptGone(offered.key);
+    writeTerminalComposerDraft(draftKey, draft);
+    writeTerminalComposerSelection(draftKey, draft.length, draft.length);
+  };
+  const onNextPromptKeys = (event: React.KeyboardEvent) => {
+    if (
+      !offered ||
+      commandMatches.length ||
+      event.nativeEvent.isComposing ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      (event.key !== "Tab" && event.key !== "ArrowRight")
+    )
+      return false;
+    event.preventDefault();
+    event.nativeEvent.stopPropagation();
+    acceptNextPrompt();
+    return true;
+  };
+  // Grey text in the box itself, but a chip on a phone.
+  const ghost = offered && !mobile ? offered : null;
   const vimSetting = useVimKeys();
   const vimKeys = vimKeysProp ?? vimSetting;
   const stored = vimKeys ? readTerminalComposerSelection(draftKey) : null;
@@ -388,8 +459,10 @@ export function AgentHistoryComposer({
 
   return (
     <div
-      className="agent-history-composer"
-      onKeyDownCapture={onCommandKeys}
+      className={`agent-history-composer${shellMode ? " is-shell" : ""}`}
+      onKeyDownCapture={(event) => {
+        if (!onNextPromptKeys(event)) onCommandKeys(event);
+      }}
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
@@ -527,6 +600,45 @@ export function AgentHistoryComposer({
           ))}
         </div>
       ) : null}
+      {offered && mobile ? (
+        <div className="agent-history-composer-next">
+          <button
+            type="button"
+            title="Put it in the box to edit"
+            aria-label={`Suggested message: ${offered.text}. Put it in the box`}
+            // Fills the box without bringing the keyboard up.
+            onMouseDown={(event) => event.preventDefault()}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={acceptNextPrompt}
+          >
+            {offered.text}
+          </button>
+        </div>
+      ) : null}
+      {shell ? (
+        // Said once, when the box turns into a shell line and back.
+        <div className="agent-history-composer-shell" aria-live="polite">
+          {shellMode ? (
+            <>
+              <Terminal size={13} aria-hidden="true" />
+              <strong>Shell</strong>
+              <span className="agent-history-composer-shell-where">
+                <span aria-hidden="true">{" \u00b7 "}</span>
+                runs on {shellHost}
+                {shellCwd ? (
+                  <>
+                    {" in "}
+                    <code title={shell.cwd ?? undefined}>{shellCwd}</code>
+                  </>
+                ) : null}
+              </span>
+              <span className="agent-history-composer-shell-hint">
+                Delete the ! to write to Claude
+              </span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <div className="agent-history-composer-row">
         <button
           type="button"
@@ -555,7 +667,7 @@ export function AgentHistoryComposer({
         ) : null}
         {/* The box, with the microphone on it, at its right edge. */}
         <div
-          className={`agent-history-composer-field${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}`}
+          className={`agent-history-composer-field${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
         >
           {vimKeys ? (
             <Suspense fallback={null}>
@@ -563,7 +675,13 @@ export function AgentHistoryComposer({
                 value={shown.text}
                 selection={shownSelection}
                 label={`Message ${name || "agent"}`}
-                placeholder={name ? `Message ${name}...` : "Message..."}
+                placeholder={
+                  ghost
+                    ? ghost.text
+                    : name
+                      ? `Message ${name}...`
+                      : "Message..."
+                }
                 enterSends={!enterAddsLine}
                 onUpWhenEmpty={
                   onRecallQueued
@@ -608,8 +726,17 @@ export function AgentHistoryComposer({
               ref={textareaRef}
               value={shown.text}
               rows={1}
-              aria-label={`Message ${name || "agent"}`}
-              placeholder={name ? `Message ${name}...` : "Message..."}
+              aria-label={
+                shellMode ? "Shell command" : `Message ${name || "agent"}`
+              }
+              placeholder={
+                ghost ? ghost.text : name ? `Message ${name}...` : "Message..."
+              }
+              aria-description={
+                ghost
+                  ? "Tab or Right puts the suggestion in the box"
+                  : undefined
+              }
               enterKeyHint={enterAddsLine ? "enter" : "send"}
               autoComplete="off"
               onChange={(event) => {
@@ -729,6 +856,15 @@ export function AgentHistoryComposer({
             />
           )}
           <div className="agent-history-composer-inline">
+            {ghost ? (
+              <span
+                className="agent-history-composer-next-key"
+                title="Tab or Right puts it in the box to edit"
+                aria-hidden="true"
+              >
+                Tab
+              </span>
+            ) : null}
             {voice?.state === "off" ? (
               // A running conversation is controlled from over the chat.
               <button
@@ -768,18 +904,30 @@ export function AgentHistoryComposer({
         <button
           type="button"
           className="agent-history-composer-send"
-          aria-label="Send message to the agent"
+          aria-label={
+            shellMode
+              ? `Run the command on ${shellWhere}`
+              : "Send message to the agent"
+          }
           title={sendTitle}
           disabled={sendDisabled || confirming}
           onMouseDown={keepTextareaFocus}
           {...touchSubmit.buttonProps(() => void send(false))}
         >
-          <Send size={13} />
+          {shellMode ? (
+            <Terminal size={13} aria-hidden="true" />
+          ) : (
+            <Send size={13} aria-hidden="true" />
+          )}
           {uploadCount > 0
             ? "Uploading..."
             : submissionPending
-              ? "Sending..."
-              : "Send"}
+              ? shellMode
+                ? "Starting..."
+                : "Sending..."
+              : shellMode
+                ? "Run"
+                : "Send"}
         </button>
         <input
           ref={fileInputRef}

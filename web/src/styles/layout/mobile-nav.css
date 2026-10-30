@@ -589,6 +589,37 @@
     height: 18px;
   }
 
+  /* Shell mode: Run says its word, so it is not taken for Send; the box
+     leaves it the room. */
+  .mobile-bottom-input
+    > .agent-history-composer.is-shell
+    .agent-history-composer-send {
+    gap: 4px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .mobile-bottom-input
+    > .agent-history-composer.is-shell:is(
+      :focus-within,
+      :has(.agent-history-composer-send:not(:disabled))
+    )
+    :is(.agent-history-composer-row > textarea, .agent-history-composer-field) {
+    flex-basis: calc(100% - 84px);
+  }
+
+  .mobile-bottom-input > .agent-history-composer .agent-history-composer-shell {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+
+  /* One line on a phone: the label alone. */
+  .mobile-bottom-input
+    > .agent-history-composer
+    .agent-history-composer-shell-hint {
+    display: none;
+  }
+
   .mobile-appbar {
     position: absolute;
     right: calc(8px + env(safe-area-inset-right, 0px));

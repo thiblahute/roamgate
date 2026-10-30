@@ -219,6 +219,7 @@ environment file. `roamgate --help` lists everything.
 | `ROAMGATE_RESTART_SUPERVISOR=0\|1`                     | Override supervisor detection                                                                   |
 | `ROAMGATE_DISABLE_ENDPOINT=1`                          | Force legacy terminal mode                                                                      |
 | `ROAMGATE_DISABLE_SSH_MASTER=1`                        | Give every SSH host command its own login; see [SSH transport](./ARCHITECTURE.md#ssh-transport) |
+| `ROAMGATE_ALLOW_SSH=1`                                 | Connect SSH profiles even with a `$HOME` other than the account's (a test server's own HOME)    |
 | `ROAMGATE_ALLOW_FILE_REVEAL=1`                         | Enable [host file reveal](#host-file-reveal)                                                    |
 | `ROAMGATE_UPLOAD_MAX_BYTES`                            | Max terminal upload size (default 100 MiB)                                                      |
 | `ROAMGATE_UPLOAD_RETENTION_HOURS`                      | Upload retention (default 24)                                                                   |
@@ -512,6 +513,9 @@ agent chat, or a card over the terminal) when it is registered as a
 }
 ```
 
+In conversation mode (`ROAMGATE_HEADLESS=1`) both hooks print nothing:
+Roamgate asks over the headless process's own permission channel instead.
+
 The `PreToolUse` hook answers Claude's multiple-choice questions
 (`AskUserQuestion`) the same way: a form with each question's choices (or
 several) and a field for one's own answer; the answers go back as the tool's
@@ -521,6 +525,25 @@ Claude Code holds its own dialog while the hook runs, so the hook waits only
 while a browser is connected, for `--timeout` seconds at most (60 by
 default); unanswered, the terminal asks as usual. Outside Herdr, or without
 Roamgate, it returns at once.
+
+### Stopping idle conversations
+
+**Configuration > Integrations > Stop idle conversations** (the
+`conversation.idle_stop_minutes` key of `settings.json`, a whole number of
+minutes from 0 to 1440, 30 by default, 0 for never) stops the headless
+claude of a conversation-mode session that sat idle that long, checked once
+a minute; its pane holder stays, and so does the chat. The next message
+starts it again (`--resume`) and is then delivered once:
+
+```json
+{ "conversation": { "idle_stop_minutes": 30 } }
+```
+
+A session is never stopped while a turn runs, a permission or question
+waits for you, background work (a background command, a subagent) or a
+`!` line runs, messages wait in its queue, a voice socket is open or was
+used in the last 10 minutes, the voice companion has a job on it, or
+another session's message reached it in the last 10 minutes.
 
 ## Voice chat
 

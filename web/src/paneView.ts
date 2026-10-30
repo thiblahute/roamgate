@@ -134,6 +134,24 @@ export function usePaneView(
   return useSyncExternalStore(subscribe, () => paneView(connectionId, paneId));
 }
 
+/** The view kept for a pane, null when none was ever kept for it. */
+export function storedPaneView(
+  connectionId: string | null,
+  paneId: string | null | undefined,
+): PaneView | null {
+  if (!paneId) return null;
+  return read()[paneKey(connectionId, paneId)] ?? null;
+}
+
+export function useStoredPaneView(
+  connectionId: string | null,
+  paneId: string | null | undefined,
+): PaneView | null {
+  return useSyncExternalStore(subscribe, () =>
+    storedPaneView(connectionId, paneId),
+  );
+}
+
 export function useDefaultPaneView(): PaneView {
   return useSyncExternalStore(subscribe, defaultPaneView);
 }

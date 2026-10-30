@@ -273,6 +273,8 @@ function fixture(paneId = "w1:p1") {
   }));
   const runtime = {
     herdr: { call },
+    // No pane is in conversation mode: prompts are typed into the pane.
+    conversation: { prompt: async () => false },
     files: { resolveWorkspaceGitRoot },
     worktreeHooks: { readWorktreeHooks },
     sshHost: () => undefined,

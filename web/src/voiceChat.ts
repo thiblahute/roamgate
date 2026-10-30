@@ -5,6 +5,7 @@ import {
   isSpeechRate,
   playbackRateFor,
 } from "../../shared/speechRate";
+import { marked, type Token, type Tokens } from "marked";
 import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
@@ -465,7 +466,13 @@ export function replyEntriesAfter(
   const sent = sentText.trim();
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.role === "user" && entry.kind === "message" && !entry.queued) {
+    if (
+      entry.role === "user" &&
+      entry.kind === "message" &&
+      !entry.queued &&
+      // A subagent's report or a task ending is not what was said.
+      !entry.injected
+    ) {
       if (entry.text.trim().includes(sent) || sent.includes(entry.text.trim()))
         start = index;
       break;
@@ -559,7 +566,7 @@ export async function saveSpeechRate(rate: number): Promise<void> {
   if (!response.ok) throw new Error(response.statusText);
 }
 
-async function fetchSpeech(
+export async function fetchSpeech(
   text: string,
   signal: AbortSignal,
   language?: string,
@@ -754,6 +761,216 @@ export async function speakWith(
   onSentence?.(null);
 }
 
+/**
+ * Whether a paragraph cut at `prefix` leaves no inline markup open (code,
+ * emphasis, a link): its sentences then read as they will in the whole.
+ */
+function closedInline(prefix: string): boolean {
+  const count = (pattern: RegExp) => (prefix.match(pattern) ?? []).length;
+  return (
+    count(/`/g) % 2 === 0 &&
+    count(/\*\*/g) % 2 === 0 &&
+    count(/~~/g) % 2 === 0 &&
+    count(/(?<!\*)\*(?!\*)/g) % 2 === 0 &&
+    // Underscores mark emphasis only around words, not inside names such
+    // as forwards_upstream.
+    count(/(?<![\p{L}\p{N}_])_|_(?![\p{L}\p{N}_])/gu) % 2 === 0 &&
+    count(/\[/g) === count(/\]/g) &&
+    count(/\(/g) === count(/\)/g)
+  );
+}
+
+/** Whether a fenced code block's text has its closing fence. */
+function closedFence(raw: string): boolean {
+  const open = /^ {0,3}(`{3,}|~{3,})/.exec(raw);
+  if (!open) return false;
+  const lines = raw.replace(/\n$/, "").split("\n");
+  if (lines.length < 2) return false;
+  const fence = open[1]!;
+  return new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*$`).test(
+    lines[lines.length - 1]!,
+  );
+}
+
+/**
+ * How much of `raw`, the last block of the text so far, is complete: all
+ * of it once nothing can be added to it (followed by a blank line, a heading's
+ * line ended, a code block's fence closed), a list's items but the last,
+ * and a paragraph's sentences that ended; 0 for a table or code block still
+ * being written.
+ */
+function completeLength(token: Token, raw: string, blankAfter: boolean) {
+  if (token.type === "code")
+    return closedFence(raw) || (blankAfter && !/^ {0,3}(`|~){3}/.test(raw))
+      ? raw.length
+      : 0;
+  if (blankAfter) return raw.length;
+  switch (token.type) {
+    case "heading":
+    case "hr":
+      return raw.endsWith("\n") ? raw.length : 0;
+    case "list": {
+      const items = (token as Tokens.List).items;
+      return items
+        .slice(0, -1)
+        .reduce((length, item) => length + item.raw.length, 0);
+    }
+    case "paragraph": {
+      // A line starting with "|" may be a table's: it is not cut into.
+      const table = /^\s*\|/m.exec(raw);
+      const text = table ? raw.slice(0, table.index) : raw;
+      let end = 0;
+      for (const match of text.matchAll(/\S[.!?…]["')\]]*\s+/g)) {
+        const at = match.index + match[0].length;
+        if (closedInline(text.slice(0, at))) end = at;
+      }
+      return end;
+    }
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Markdown as it is written, a piece at a time, in sentences worth hearing,
+ * cleaned as a whole reply is (markdownToSpeech): each block once it is
+ * complete (a paragraph or list item that ended, a code block once its
+ * fence closes, announced then, a table once something follows it), and in
+ * a paragraph still being written, the sentences that ended. A sentence is
+ * given once, never twice.
+ */
+export class SpeakableStream {
+  private pending = "";
+
+  /** The sentences that `chunk` completes. */
+  push(chunk: string): string[] {
+    this.pending += chunk;
+    const cut = this.completeEnd();
+    if (cut <= 0) return [];
+    const head = this.pending.slice(0, cut);
+    this.pending = this.pending.slice(cut);
+    return speakableSentences(head);
+  }
+
+  /** What is left, at the end of the turn. */
+  flush(): string[] {
+    const rest = this.pending;
+    this.pending = "";
+    return speakableSentences(rest);
+  }
+
+  /** Where the text so far is complete: what follows may still change. */
+  private completeEnd(): number {
+    const tokens = marked.lexer(this.pending, { gfm: true, breaks: true });
+    let last = tokens.length - 1;
+    while (last >= 0 && tokens[last]!.type === "space") last -= 1;
+    if (last < 0) return 0;
+    let offset = 0;
+    for (let index = 0; index < last; index += 1)
+      offset += tokens[index]!.raw.length;
+    const token = tokens[last]!;
+    return offset + completeLength(token, token.raw, last < tokens.length - 1);
+  }
+}
+
+function speakableSentences(markdown: string): string[] {
+  return sentences(markdownToSpeech(markdown));
+}
+
+/**
+ * Reads text that is still being written: each sentence as soon as it ends,
+ * the next ones fetched while one plays. `source` gives the text in pieces
+ * and ends with the reply; `onSentence` hears each as it starts, then null.
+ * Stops when `signal` aborts. `skip` leaves out its first sentences: a
+ * reading going on from where it was cut.
+ */
+export async function speakStream(
+  source: AsyncIterable<string>,
+  signal: AbortSignal,
+  onSentence: ((sentence: string | null) => void) | undefined,
+  options: {
+    prefetch?: number;
+    skip?: number;
+    /** What makes each sentence speech and plays it (speechEngine.ts). */
+    voice: SentenceVoice;
+  },
+): Promise<void> {
+  const prefetch = Math.max(1, options.prefetch ?? 2);
+  const { voice } = options;
+  voice.begin?.();
+  const splitter = new SpeakableStream();
+  const queue: { text: string; audio: Promise<unknown> }[] = [];
+  const waiting: string[] = [];
+  let ended = false;
+  let wake: (() => void) | null = null;
+  const poke = () => {
+    const resolve = wake;
+    wake = null;
+    resolve?.();
+  };
+  // Fetches ahead: up to `prefetch` sentences beyond the one playing.
+  const fill = () => {
+    while (waiting.length && queue.length < prefetch && !signal.aborted) {
+      const text = waiting.shift()!;
+      const audio = voice.prepare(text, signal);
+      // Failed ahead: reported when its turn comes.
+      audio.catch(() => {});
+      queue.push({ text, audio });
+    }
+  };
+  let skip = Math.max(0, options.skip ?? 0);
+  const take = (given: string[]) => {
+    const list = given.slice(skip);
+    skip -= given.length - list.length;
+    if (!list.length) return;
+    waiting.push(...list);
+    fill();
+    poke();
+  };
+  const reading = (async () => {
+    try {
+      for await (const chunk of source) {
+        if (signal.aborted) break;
+        take(splitter.push(chunk));
+      }
+      take(splitter.flush());
+    } finally {
+      ended = true;
+      poke();
+    }
+  })();
+  reading.catch(() => {});
+  const aborted = new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  try {
+    while (!signal.aborted) {
+      const next = queue.shift();
+      if (!next) {
+        if (ended && !waiting.length) break;
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            wake = resolve;
+          }),
+          aborted,
+        ]);
+        fill();
+        continue;
+      }
+      fill();
+      const audio = await next.audio;
+      if (signal.aborted) break;
+      voiceTrace(`streamed sentence: ${next.text}`);
+      onSentence?.(next.text);
+      await voice.play(audio, signal);
+    }
+  } finally {
+    onSentence?.(null);
+  }
+  if (!signal.aborted) await reading;
+}
+
 // One voice at a time: whatever reads aloud claims the speaker, which stops
 // the reading before it, from a message's button or voice chat, and the
 // browser's own reading of a message (speechPlayback).
@@ -776,6 +993,28 @@ export function stopSpeaker() {
   speakerOwner?.abort();
   speakerOwner = null;
   speechPlayback.stop();
+}
+
+// Rewinds made from this browser, counted: an answer awaited from before
+// one is not read (its turn may be rewound away).
+let rewinds = 0;
+
+/** How many rewinds this browser made: see noteRewind. */
+export function rewindCount(): number {
+  return rewinds;
+}
+
+/**
+ * A rewind takes messages out of the conversation: nothing goes on reading
+ * them (a message's button, voice chat's reading, the highlight), and an
+ * answer voice chat awaits from before it is not read.
+ */
+export function noteRewind() {
+  rewinds += 1;
+  voiceTrace("a rewind silences the speaker");
+  stopReading();
+  stopSpeaker();
+  highlightReading([], null);
 }
 
 // One message read aloud at a time, from its read button.
@@ -890,7 +1129,8 @@ export function conversationContext(entries: readonly HistoryEntry[]): string {
   let length = 0;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.kind !== "message" || !entry.text.trim()) continue;
+    if (entry.kind !== "message" || !entry.text.trim() || entry.injected)
+      continue;
     const text =
       entry.role === "user" ? parseVoiceMessage(entry.text).text : entry.text;
     const line = `${entry.role === "user" ? "User" : "Agent"}: ${text.trim()}`;

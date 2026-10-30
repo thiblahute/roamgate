@@ -6,6 +6,8 @@ import {
   createHerdrBootCache,
   markAgentSeen,
 } from "./agent/agent-seen";
+import { historyFilePath } from "./agent/history-watch";
+import { withOwnedSessions } from "./agent/agent-sessions";
 import {
   authTokenPrintCommand,
   isShortAuthPassword,
@@ -61,12 +63,14 @@ import {
   sanitizeConnectionError,
 } from "./connections/manager";
 import {
+  ConnectionProbeError,
   ConnectionProfileService,
   connectionIdentityForProfile,
   loadConnectionProfileBootstrap,
   type SyntheticLocalProfile,
   testConnectionSockets,
 } from "./connections/profile-service";
+import { sshRefusal } from "./connections/ssh-guard";
 import {
   type ConnectionProfile,
   ConnectionProfileStore,
@@ -135,10 +139,22 @@ import {
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
-import { createReviewService, type ReviewService } from "./review/service";
+import {
+  AGENT_CHAT_METHODS,
+  handleAgentChatRpc,
+  isAgentChatMethod,
+} from "./conversation/rpc";
+import { defaultLeaseFile } from "./conversation/lease";
+import { promptPaneAgent } from "./conversation/prompt-pane";
+import {
+  createReviewService,
+  ReviewError,
+  type ReviewService,
+} from "./review/service";
 import { pruneReviewImages, reviewImageFile } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { ReviewGoneError } from "./workspace/review-patch";
+import { SessionImageGoneError } from "./agent/session-images";
 import {
   type GlabContext,
   findBranchMergeRequest,
@@ -231,26 +247,46 @@ const webPush = createWebPushService({
 });
 // Voice chat's helper starts on the first voice request.
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
+// Work said by voice on sessions (errands): their processes stay up
+// while it runs (idle stop).
+const voiceErrands = new VoiceErrands({
+  read: async (connectionId, paneId) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) throw new Error(`${connectionId} is not connected`);
+    const history = (await runtime.agentSessions.readHistory({
+      history_version: 2,
+      cursor: null,
+      pane_id: paneId,
+    })) as { entries?: ErrandEntry[] };
+    return history.entries ?? [];
+  },
+  prompt: async (connectionId, paneId, text) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) throw new Error(`${connectionId} is not connected`);
+    if (!(await runtime.conversation.prompt(paneId, text)))
+      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+  },
+});
+// Voice sockets open, and when one was last used: a call keeps the
+// sessions' processes up (idle stop), its pauses included.
+let voiceSocketsOpen = 0;
+let lastVoiceAt = 0;
+const VOICE_KEEPS_AWAKE_MS = 10 * 60_000;
+/** Why a conversation's process must stay up now; null: nothing. */
+function conversationKeepAwake(
+  connectionId: string,
+  paneId: string,
+): string | null {
+  if (voiceSocketsOpen > 0 || Date.now() - lastVoiceAt < VOICE_KEEPS_AWAKE_MS)
+    return "a voice call is open";
+  if (voiceErrands.working(`${connectionId}/${paneId}`))
+    return "a companion job runs on it";
+  return null;
+}
 const handleVoice = createVoiceRoutes(
   voiceHelper,
   configuredRouter(() => readVoiceConfig()),
-  new VoiceErrands({
-    read: async (connectionId, paneId) => {
-      const runtime = connectionManager.readyRuntime(connectionId);
-      if (!runtime) throw new Error(`${connectionId} is not connected`);
-      const history = (await runtime.agentSessions.readHistory({
-        history_version: 2,
-        cursor: null,
-        pane_id: paneId,
-      })) as { entries?: ErrandEntry[] };
-      return history.entries ?? [];
-    },
-    prompt: async (connectionId, paneId, text) => {
-      const runtime = connectionManager.readyRuntime(connectionId);
-      if (!runtime) throw new Error(`${connectionId} is not connected`);
-      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
-    },
-  }),
+  voiceErrands,
   () => {
     const config = readVoiceConfig();
     return "error" in config ? undefined : config.errand_folder;
@@ -313,6 +349,10 @@ const IMPORTANT_RPC_METHODS = new Set([
   "agent_history.get",
   "agent_history.entry",
   "agent_session.get",
+  ...AGENT_CHAT_METHODS.filter(
+    (method) =>
+      method !== "agent_chat.state" && method !== "agent_chat.subscribe",
+  ),
   "file.read",
   "git.diff_file",
   "git.commit_file",
@@ -852,7 +892,7 @@ function getReviewService(): ReviewService {
         connectionManager,
         connectionId,
       );
-      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+      await promptPaneAgent(runtime, paneId, text);
     },
     // The comments follow the agent's session to the pane it runs in now.
     sessionPane: async (connectionId, sessionId) => {
@@ -966,6 +1006,32 @@ function getReviewAgent(): ReviewAgentServer {
     service: getReviewService(),
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
+    // Conversation mode's pane holders (roamgate-hold).
+    holder: {
+      hold: ({ connectionId, paneId, sessionId, signal, status }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.hold({
+          paneId,
+          sessionId,
+          signal,
+          status,
+        });
+      },
+      output: ({ connectionId, ...input }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.output(input);
+      },
+      handback: ({ connectionId, paneId }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.handback({ paneId });
+      },
+    },
     directory: reviewDirectory(),
     logger: logger.child("review"),
     connections: () =>
@@ -1128,6 +1194,9 @@ function runtimeFactoryForProfile(
               hasExplicitClientSocketPath: true,
               ownedRuntimeDirectory: undefined,
             };
+    // A test server (a HOME of its own) stays off the real hosts.
+    const refusal = profileConfig.sshHost ? sshRefusal() : null;
+    if (refusal) throw new ConnectionProbeError(refusal, false);
     let runtime: LegacyConnectionRuntime;
     try {
       runtime = createLegacyConnectionRuntime({
@@ -1142,6 +1211,20 @@ function runtimeFactoryForProfile(
         clientLabel,
         markRpcError,
         taskNotificationSource: config.taskNotificationSource,
+        conversationLeaseFile: defaultLeaseFile(),
+        conversationKeepAwake,
+        // No terminal to fall back on: the prompt waits for a browser, and
+        // its timeout denies.
+        askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
+          getReviewService().prompts.request({
+            ...prompt,
+            connectionId,
+            paneId,
+            agent: "Claude",
+            // A headless claude: there is no terminal to ask instead.
+            noTerminal: true,
+            signal,
+          }),
         onTaskEvent: (event) => {
           const connections = connectionProfiles.list();
           webPush.notify(
@@ -1241,6 +1324,8 @@ const webSocketCleanup = new WebSocketCleanupTracker<
   connectionManager.forEachCurrentRuntime((runtime) => {
     viewedTerminals.push(...runtime.terminalBridge.viewedTerminals(ws));
     runtime.terminalBridge.cleanupWs(ws);
+    runtime.conversation.cleanupWs(ws);
+    runtime.historyWatcher.cleanupWs(ws);
   });
   const snapshot = {
     client: clientLabel(ws),
@@ -1411,8 +1496,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const sendError = (context: string, error: unknown) => {
     const message = (error as Error).message;
     markRpcError(ws, id, message);
-    // A review whose checkout or commits are gone says so to the overlay.
-    const code = error instanceof ReviewGoneError ? error.code : undefined;
+    // A review whose checkout or commits are gone says so to the overlay; a
+    // sent image that is not there says so to the chat.
+    const code =
+      error instanceof ReviewGoneError || error instanceof SessionImageGoneError
+        ? error.code
+        : undefined;
     sendReply({ id, error: code ? { message, code } : { message } }, context);
   };
   if (
@@ -1612,7 +1701,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const connection = route.runtime;
   if (
     connection.remotePlatform === "windows" &&
-    /^(?:file\.|git\.|worktree\.|agent_history\.|agent_session\.|agent_commands\.|agent_artifacts\.|agent_tasks?\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
+    /^(?:file\.|git\.|worktree\.|agent_chat\.|agent_history\.|agent_session\.|agent_commands\.|agent_artifacts\.|agent_tasks?\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
       method,
     )
   ) {
@@ -1664,6 +1753,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     readHistory: readAgentMessageHistory,
     readSummary: readAgentSessionSummary,
     readEntry: readAgentHistoryEntry,
+    readImage: readAgentHistoryImage,
     readCommands: readAgentCommands,
     readArtifacts: readAgentArtifacts,
     readTasks: readAgentTasks,
@@ -1782,6 +1872,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (method === "agent_history.get") {
     try {
       const result = await readAgentMessageHistory(params ?? {});
+      // The pane may have moved to another file (/clear, a new session):
+      // its watcher follows now instead of at its next re-resolve.
+      if (typeof params?.pane_id === "string")
+        connection.historyWatcher.notePath(
+          params.pane_id,
+          historyFilePath(result),
+        );
       sendReply({ id, result }, "agent-history-get");
     } catch (e) {
       sendError("agent-history-get-error", e);
@@ -1822,6 +1919,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "agent-history-entry");
     } catch (e) {
       sendError("agent-history-entry-error", e);
+    }
+    return;
+  }
+  if (method === "agent_history.image") {
+    try {
+      const result = await readAgentHistoryImage(params ?? {});
+      sendReply({ id, result }, "agent-history-image");
+    } catch (e) {
+      sendError("agent-history-image-error", e);
     }
     return;
   }
@@ -1878,6 +1984,21 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "file-search");
     } catch (e) {
       sendError("file-search-error", e);
+    }
+    return;
+  }
+  if (isAgentChatMethod(method)) {
+    try {
+      const result = await handleAgentChatRpc(
+        connection.conversation,
+        connection.historyWatcher,
+        ws,
+        method,
+        params ?? {},
+      );
+      sendReply({ id, result }, "agent-chat");
+    } catch (e) {
+      sendError("agent-chat-error", e);
     }
     return;
   }
@@ -2207,6 +2328,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const isPaneInput = PANE_INPUT_METHODS.has(method);
   let inputTerminalId: string | undefined;
   if (isPaneInput && typeof params?.pane_id === "string") {
+    // While Claude exits for conversation mode (or the holder resumes it),
+    // text would land in the dying TUI or the bare shell.
+    const refusal = connection.conversation.inputRefusal(params.pane_id);
+    if (refusal) {
+      sendError("pane-input-refused", new Error(refusal));
+      return;
+    }
     // Resolve the recipient before input can produce a clipboard write.
     try {
       const pane = await herdr.call(
@@ -2233,13 +2361,17 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         typeof params.label === "string" ? params.label : undefined,
       );
     }
-    const rawResult = await herdr.call(method, params ?? {}, undefined, () => {
+    // Panes conversation mode holds are Claude panes still; Herdr sees
+    // only their holder, and answers agent.get on one with not found.
+    let result = (await withOwnedSessions(
+      (...args) => herdr.call(...args),
+      () => connection.conversation.ownedPanes(),
+    )(method, params ?? {}, undefined, () => {
       if (isPaneInput && !requestIsCurrent())
         throw new Error(CONNECTION_CHANGED_DURING_REQUEST);
       if (inputTerminalId)
         terminalBridge.noteTerminalInput(ws, inputTerminalId);
-    });
-    let result = rawResult;
+    })) as Awaited<ReturnType<typeof herdr.call>>;
     if (
       method === "integration.list" &&
       connection.remotePlatform !== "windows"
@@ -2564,7 +2696,11 @@ function main() {
           backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
           open(ws) {
             // A voice socket is no Herdr client: see voiceSocket.
-            if (ws.data.voice) return;
+            if (ws.data.voice) {
+              voiceSocketsOpen += 1;
+              lastVoiceAt = Date.now();
+              return;
+            }
             clients.add(ws);
             clientSessions.set(ws, ws.data.sessionToken);
             const label = assignClientId(ws);
@@ -2618,7 +2754,10 @@ function main() {
             });
           },
           message(ws, message) {
-            if (ws.data.voice) return voiceSocket.message(ws, message);
+            if (ws.data.voice) {
+              lastVoiceAt = Date.now();
+              return voiceSocket.message(ws, message);
+            }
             if (!clients.has(ws)) return;
             const text =
               typeof message === "string" ? message : message.toString();
@@ -2695,7 +2834,11 @@ function main() {
               });
           },
           close(ws) {
-            if (ws.data.voice) return voiceSocket.close(ws);
+            if (ws.data.voice) {
+              voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
+              lastVoiceAt = Date.now();
+              return voiceSocket.close(ws);
+            }
             const { client, viewedTerminals } = webSocketCleanup.complete(ws);
             const flow = webSocketFlowStats(ws);
             logger.debug("client disconnected", {

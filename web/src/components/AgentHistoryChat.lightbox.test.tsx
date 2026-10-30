@@ -59,18 +59,23 @@ if (process.env.ROAMGATE_CHAT_LIGHTBOX_DOM_TEST !== "1") {
               id: "1",
               role: "user",
               kind: "message",
-              text: "[Image #1] what is wrong here?",
+              text: "what is wrong here?",
               sent_at: "2026-01-01T00:00:00Z",
-              images: [{ media_type: "image/png", bytes: 9, hash: "h1" }],
+              uuid: "u1",
+              images: 1,
             },
           ])}
           listRef={React.createRef<HTMLDivElement>()}
           contentRef={React.createRef<HTMLDivElement>()}
           onOpen={() => {}}
-          attachedImages={new Map([["1", ["blob:http://localhost/one"]]])}
+          sentImageUrl={async () => "blob:http://localhost/one"}
         />,
       ),
     );
+    // The image loads once the chat has asked for it.
+    await React.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
     box.focus();
     const link = container.querySelector<HTMLElement>(
       "a.agent-history-chat-image",

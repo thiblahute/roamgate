@@ -30,6 +30,23 @@ const cutTexts = [
   "No, I'm telling you to look at Romate last messages.",
 ];
 
+const shown = (
+  entries: {
+    role: string;
+    kind: string;
+    text: string;
+    queued?: boolean;
+    injected?: { kind: string };
+  }[],
+) =>
+  entries
+    .filter((entry) => entry.kind === "message")
+    .map((entry) => [
+      entry.role,
+      entry.injected?.kind ?? (entry.queued ? "queued" : ""),
+      entry.text.slice(0, 40),
+    ]);
+
 describe("a rewind past messages sent through Claude Code's queue", () => {
   test("keeps the cut prompts as stand-ins, without their uuids", () => {
     const records = rewoundAfterQueuedRecords;
@@ -58,6 +75,43 @@ describe("a rewind past messages sent through Claude Code's queue", () => {
     expect(messages.slice(-2).map((entry) => entry.text.slice(0, 26))).toEqual([
       "whether the um mcp the sou",
       "Yes, there are two levels:",
+    ]);
+  });
+
+  test("the cut messages stay as one notice where they were", async () => {
+    const { file, files } = access(jsonl(rewoundAfterQueuedRecords));
+    const projection = await readSessionProjection("claude", file, files);
+    expect(shown(projection.entries)).toEqual([
+      ["user", "task", 'Agent "Vet Spotify MCP servers" finished'],
+      ["user", "rewound", "I think you should check out his last me"],
+      ["user", "", "whether the um mcp the sound can be used"],
+      ["assistant", "", "Yes, there are two levels:\n\n1. **In Clau"],
+    ]);
+    const notice = projection.entries.find(
+      (entry) => entry.injected?.kind === "rewound",
+    );
+    expect(notice?.injected?.label).toBe(
+      "Rewound: 2 of your messages left the conversation",
+    );
+    expect(notice?.rewound).toEqual([
+      { text: cutTexts[0], sent_at: "2026-11-05T00:27:47.794Z" },
+      { text: cutTexts[1], sent_at: "2026-11-05T00:28:03.746Z" },
+    ]);
+    // The notice is not a turn of the user's.
+    expect(projection.stats.turns).toBe(1);
+  });
+
+  test("before the next message, the cut messages are already out and not queued", async () => {
+    const records = rewoundAfterQueuedRecords;
+    // Up to the rewind's own record: nothing sent after it yet.
+    const at = records.findIndex(
+      (record) => record.type === "last-prompt" && record.rewound === true,
+    );
+    const { file, files } = access(jsonl(records.slice(0, at + 1)));
+    const projection = await readSessionProjection("claude", file, files);
+    expect(shown(projection.entries)).toEqual([
+      ["user", "task", 'Agent "Vet Spotify MCP servers" finished'],
+      ["user", "rewound", "I think you should check out his last me"],
     ]);
   });
 

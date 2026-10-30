@@ -7,6 +7,8 @@
  * rather than undoing the wrong thing.
  */
 
+import type { AgentChatRewindCheck } from "../../shared/agentChat";
+
 export type RewindMode = "both" | "conversation" | "code";
 
 export const REWIND_MODES: { mode: RewindMode; label: string }[] = [
@@ -14,6 +16,54 @@ export const REWIND_MODES: { mode: RewindMode; label: string }[] = [
   { mode: "conversation", label: "Restore conversation" },
   { mode: "code", label: "Restore code" },
 ];
+
+/** What restoring the code covers, said beside the choices. */
+export const REWIND_CODE_HELP =
+  "Restoring the code undoes the edits Claude made with its file tools. What commands (Bash) changed is not known, and is not undone.";
+
+/** Files listed in a note: the first few, then how many more. */
+export function listedFiles(files: readonly string[], shown = 5): string {
+  const listed = files.slice(0, shown).join(", ");
+  return files.length > shown
+    ? `${listed} and ${files.length - shown} more`
+    : listed;
+}
+
+/** What is asked when the code of edits has no checkpoint. */
+export function noCheckpointQuestion(files?: readonly string[]): string {
+  return [
+    "Claude Code has no code checkpoint for these changes (made before checkpoints were on). Rewind the conversation only?",
+    ...(files?.length ? ["", `Files changed: ${listedFiles(files)}`] : []),
+  ].join("\n");
+}
+
+/**
+ * Which choices a rewind offers, from what is known of its code before the
+ * user picks (null: not known yet, or at all): the code ones are off, with
+ * why, when there is nothing to restore or no checkpoint to restore from.
+ */
+export function rewindModeStates(check: AgentChatRewindCheck | null): {
+  disabled: ReadonlySet<RewindMode>;
+  note: string | null;
+} {
+  const code = new Set<RewindMode>(["both", "code"]);
+  switch (check?.code) {
+    case "none":
+      return {
+        disabled: code,
+        note: "No code changes to restore: Claude edited no file after this message.",
+      };
+    case "no_checkpoint":
+      return {
+        disabled: code,
+        note: `Claude Code has no code checkpoint for these changes (made before checkpoints were on)${
+          check.files?.length ? `: ${listedFiles(check.files)}` : ""
+        }. Restore the conversation only.`,
+      };
+    default:
+      return { disabled: new Set(), note: null };
+  }
+}
 
 const PICKER = "Restore the code and/or conversation to the point before";
 const CONFIRM = "Confirm you want to restore to the point before";

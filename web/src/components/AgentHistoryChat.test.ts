@@ -167,53 +167,45 @@ test("messages not in the transcript yet follow the conversation, in order", () 
   expect(html.match(/is-outbox/g)).toHaveLength(3);
 });
 
-test("an image the user sent shows instead of its uploaded path", () => {
-  const path = "/tmp/roamgate-uploads-501/upload-x/img-1.png";
-  const items = groupHistoryChatItems([
-    entry("1", "user", { text: `${path} what is wrong here?` }),
-    entry("2", "user", { text: "/tmp/shot.png stays a path" }),
-  ]);
-  const render = (imageUrl?: (path: string) => string) =>
-    renderToStaticMarkup(
-      createElement(AgentHistoryChat, {
-        items,
-        listRef: createRef<HTMLDivElement>(),
-        contentRef: createRef<HTMLDivElement>(),
-        onOpen() {},
-        imageUrl,
-      }),
-    );
-  const markup = render((file) => `/file/download?path=${file}`);
-  expect(markup).toContain(`<img src="/file/download?path=${path}"`);
-  expect(markup).toContain('alt="img-1.png"');
-  expect(markup).toContain("<p>what is wrong here?</p>");
-  expect(markup).toContain("<p>/tmp/shot.png stays a path</p>");
-  // Without a place to load it from, the path shows as sent.
-  expect(render()).toContain(`<p>${path} what is wrong here?</p>`);
-});
-
-test("an image a Claude message carried shows where it says [Image #N]", () => {
-  const items = groupHistoryChatItems([
-    entry("1", "user", {
-      text: "[Image #2] what is wrong here?",
-      images: [{ media_type: "image/png", bytes: 9, hash: "h1" }],
+test("a slash command typed in the terminal renders as a command chip", () => {
+  const html = renderChat([
+    entry("c1", "user", {
+      text: "/exit",
+      command: { name: "/exit", args: "" },
+    }),
+    entry("c2", "user", {
+      text: "/model opus",
+      command: { name: "/model", args: "opus" },
     }),
   ]);
-  const render = (attachedImages?: ReadonlyMap<string, readonly string[]>) =>
-    renderToStaticMarkup(
-      createElement(AgentHistoryChat, {
-        items,
-        listRef: createRef<HTMLDivElement>(),
-        contentRef: createRef<HTMLDivElement>(),
-        onOpen() {},
-        attachedImages,
-      }),
-    );
-  const markup = render(new Map([["1", ["blob:http://x/one"]]]));
-  expect(markup).toContain('<img src="blob:http://x/one"');
-  expect(markup).toContain('alt="Image #2"');
-  expect(markup).toContain("<p>what is wrong here?</p>");
-  expect(markup).not.toContain("[Image #2]");
-  // Until its data is loaded, the message shows as Claude Code wrote it.
-  expect(render()).toContain("<p>[Image #2] what is wrong here?</p>");
+  expect(html).toContain(
+    '<span class="agent-history-chat-command"><code>/exit</code></span>',
+  );
+  expect(html).toContain(
+    '<span class="agent-history-chat-command"><code>/model</code><span class="agent-history-chat-command-args">opus</span></span>',
+  );
+  expect(html).not.toContain("command-args&gt;");
+  expect(html).not.toContain("&lt;command");
+});
+
+test("a question dismissed unanswered shows as Dismissed, not as an error", () => {
+  const markup = renderChat([
+    entry("1", "tool", {
+      tool_name: "AskUserQuestion",
+      source_call_id: "ask",
+      text: "",
+      text_bytes: 40,
+    }),
+    entry("2", "tool", {
+      kind: "tool_result",
+      tool_name: "AskUserQuestion",
+      source_call_id: "ask",
+      text: "",
+      text_bytes: 52,
+      is_error: true,
+      dismissed: true,
+    }),
+  ]);
+  expect(markup).toContain("Dismissed");
+  expect(markup).not.toContain("1 error");
 });
