@@ -127,6 +127,8 @@ export function createLegacyConnectionRuntime(args: {
   taskNotificationSource?: TaskNotificationSource;
   onError?: (error: unknown, identity: ConnectionIdentity) => void;
   onTransportExit?: (error: SshTunnelError) => void;
+  /** The SSH command master became ready (again). */
+  onSshMasterReady?: () => void;
   /** Shared across connections: local ports are a single machine-wide space. */
   forwards?: SshForwards;
   /** Test seam for deterministic shutdown coverage. */
@@ -271,6 +273,9 @@ export function createLegacyConnectionRuntime(args: {
     config,
     runProcess,
     onUnexpectedExit: args.onTransportExit,
+    onMasterReady: () => {
+      if (!disposed) args.onSshMasterReady?.();
+    },
   });
   const handleSettingsRpc = createSettingsRpcHandler({
     connectionId: identity.id,

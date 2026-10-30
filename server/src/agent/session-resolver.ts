@@ -153,6 +153,22 @@ async function findClaudeTranscript(
   return (successor && (await files.statFile(successor))) || file;
 }
 
+/**
+ * The ID of the session a Claude session went on in, should a resume or
+ * /clear have started another transcript; null when it did not, or when
+ * no transcript of it is found on the host.
+ */
+export async function claudeSuccessorId(
+  id: string,
+  files: AgentSessionFileAccess,
+  context: AgentSessionResolverContext,
+): Promise<string | null> {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) return null;
+  const file = await findClaudeTranscript(id, files, context);
+  const next = file ? basename(file.path).replace(/\.jsonl$/, "") : "";
+  return next && next !== id ? next : null;
+}
+
 async function findCodexSession(
   id: string,
   files: AgentSessionFileAccess,

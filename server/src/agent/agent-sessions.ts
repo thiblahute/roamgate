@@ -1,8 +1,10 @@
+import { isRecord } from "./session-utils";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { enrichAgentActivity } from "./agent-activity";
 import type { HerdrCall, SessionFile } from "./session-types";
 import {
+  claudeSuccessorId,
   createAgentSessionResolverContext,
   type AgentSessionResolverContext,
   resolveAgentSession,
@@ -25,6 +27,13 @@ import {
 
 const MAX_MESSAGES_PER_AGENT = 200;
 
+/** The session Herdr reports for an agent. */
+function agentSessionValue(agent: unknown): string | null {
+  if (!isRecord(agent) || !isRecord(agent.agent_session)) return null;
+  const value = agent.agent_session.value;
+  return typeof value === "string" && value ? value : null;
+}
+
 export function createAgentSessionHandlers(args: {
   herdrCall: HerdrCall;
   files: AgentSessionFileAccess;
@@ -38,6 +47,45 @@ export function createAgentSessionHandlers(args: {
         args.files,
         resolverContext,
       ),
+    /** The session a pane's agent runs now; null when none is known. */
+    paneSession: async (paneId: string) => {
+      let result: unknown;
+      try {
+        result = await args.herdrCall("agent.get", { target: paneId }, 5000);
+      } catch (error) {
+        if (/not[_ ]found/i.test(String(error))) return null;
+        throw error;
+      }
+      return agentSessionValue(isRecord(result) ? result.agent : null);
+    },
+    /**
+     * The pane whose agent runs a session now: the one reporting it, else
+     * the one reporting the session a Claude session went on in after a
+     * resume or /clear. Null when no pane runs it.
+     */
+    sessionPane: async (sessionId: string) => {
+      const listed = await args.herdrCall("agent.list", {}, 10_000);
+      const agents =
+        isRecord(listed) && Array.isArray(listed.agents) ? listed.agents : [];
+      const paneOf = (id: string) => {
+        for (const agent of agents)
+          if (
+            isRecord(agent) &&
+            typeof agent.pane_id === "string" &&
+            agentSessionValue(agent) === id
+          )
+            return agent.pane_id;
+        return null;
+      };
+      const pane = paneOf(sessionId);
+      if (pane) return pane;
+      const next = await claudeSuccessorId(
+        sessionId,
+        args.files,
+        resolverContext,
+      ).catch(() => null);
+      return next ? paneOf(next) : null;
+    },
     readHistory: async (params: Record<string, unknown>) => {
       if (params.history_version !== 2) {
         return readAgentMessageHistory(

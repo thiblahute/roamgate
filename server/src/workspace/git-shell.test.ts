@@ -226,4 +226,29 @@ describe("existing shell contracts", () => {
       }),
     ).toEqual(sshCommandArgv("user@dev.example", command));
   });
+
+  test("runs a Git-only script in a plain shell off Windows, a login one there", () => {
+    expect(
+      gitShellCommandArgv(command, undefined, {
+        platform: "linux",
+        login: false,
+      }),
+    ).toEqual(["sh", "-c", command]);
+    expect(
+      gitShellCommandArgv(command, undefined, {
+        platform: "darwin",
+        login: false,
+      }),
+    ).toEqual(["sh", "-c", command]);
+    const shell = "C:\\Program Files\\Git\\bin\\bash.exe";
+    expect(
+      gitShellCommandArgv(command, undefined, {
+        ...windowsOptions({
+          git: "C:\\Program Files\\Git\\cmd\\git.exe",
+          files: [shell],
+        }),
+        login: false,
+      }),
+    ).toEqual([shell, "-lc", command]);
+  });
 });

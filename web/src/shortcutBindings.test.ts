@@ -101,8 +101,12 @@ describe("platform shortcut maps", () => {
       getModifierState: (state: string) => state === "AltGraph",
     });
     const windows = defaultShortcutBindings("windows");
-    expect(matchesShortcut(altGr("&"), "shortcuts.show", windows)).toBe(false);
-    expect(matchesShortcut(altGr("K"), "shortcuts.show", windows)).toBe(true);
+    expect(
+      matchesShortcut(altGr("&"), "shortcuts.show", windows, "windows"),
+    ).toBe(false);
+    expect(
+      matchesShortcut(altGr("K"), "shortcuts.show", windows, "windows"),
+    ).toBe(true);
   });
   test("Linux and Windows share the pane-switcher bindings", () => {
     for (const id of ["panes.recent", "panes.search", "command.menu"] as const)
@@ -249,6 +253,7 @@ describe("shortcut matching and validation", () => {
           altKey: true,
           getModifierState: (key) => key === "AltGraph",
         }),
+        "windows",
       ),
     ).toBeNull();
     // Plain Ctrl+Alt on Windows AltGr layouts also reports AltGraph; bindings
@@ -258,8 +263,28 @@ describe("shortcut matching and validation", () => {
       altKey: true,
       getModifierState: (key) => key === "AltGraph",
     });
-    expect(shortcutFromEvent(altGrCtrlAlt)).toBe("Ctrl+Alt+K");
-    expect(matchesShortcut(altGrCtrlAlt, "command.menu", linux())).toBe(true);
+    expect(shortcutFromEvent(altGrCtrlAlt, "linux")).toBe("Ctrl+Alt+K");
+    expect(
+      matchesShortcut(altGrCtrlAlt, "command.menu", linux(), "linux"),
+    ).toBe(true);
+    // Firefox on macOS reports Option as AltGraph; a Mac has no AltGr key, so
+    // Option+R is the review shortcut even though it would type "®".
+    const option = event({
+      key: "®",
+      code: "KeyR",
+      ctrlKey: false,
+      altKey: true,
+      getModifierState: (key) => key === "AltGraph",
+    });
+    expect(
+      matchesShortcut(
+        option,
+        "review.toggle",
+        defaultShortcutBindings("mac"),
+        "mac",
+      ),
+    ).toBe(true);
+    expect(shortcutFromEvent(option, "linux")).toBeNull();
   });
   test("rejects malformed, unmodified printable, pointer-only, and dismissal bindings", () => {
     for (const key of [

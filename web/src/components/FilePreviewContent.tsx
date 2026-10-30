@@ -1,4 +1,5 @@
 import { shortcutMatches } from "../shortcutPreferences";
+import { roamgateLocalStorage } from "../browserStorage";
 import {
   audioMimeForPath,
   AUDIO_INLINE_PREVIEW_MAX_BYTES,
@@ -17,7 +18,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { EditorView as CodeMirrorEditorView } from "@codemirror/view";
-import { ChevronLeft, FolderPlus, RefreshCw, X } from "lucide-react";
+import {
+  ChevronLeft,
+  FolderPlus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { fileReviewLineLabel, MAX_QUOTE_LENGTH } from "../annotations";
 import {
   FileAnnotationDrag,
@@ -107,11 +115,12 @@ type CodeMirrorPreviewDeps = Awaited<
 let codeMirrorPreviewDepsPromise: Promise<CodeMirrorPreviewDeps> | null = null;
 
 async function importCodeMirrorPreviewDeps() {
-  const [codemirror, state, view, searchModule] = await Promise.all([
+  const [codemirror, state, view, searchModule, vimModule] = await Promise.all([
     import("codemirror"),
     import("@codemirror/state"),
     import("@codemirror/view"),
     import("@codemirror/search"),
+    import("@replit/codemirror-vim"),
   ]);
 
   return {
@@ -134,7 +143,35 @@ async function importCodeMirrorPreviewDeps() {
     openSearchPanel: searchModule.openSearchPanel,
     search: searchModule.search,
     searchKeymap: searchModule.searchKeymap,
+    vim: vimModule.vim,
+    getCM: vimModule.getCM,
+    Vim: vimModule.Vim,
   };
+}
+
+/** `:files` in a preview's Vim keys: each preview registers its handler. */
+const previewFilesCommands = new WeakMap<object, () => void>();
+let previewExCommandsDefined = false;
+
+function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
+  if (previewExCommandsDefined) return;
+  previewExCommandsDefined = true;
+  deps.Vim.defineEx("files", "files", (cm) => previewFilesCommands.get(cm)?.());
+}
+
+/**
+ * Vim keys to move around a previewed file, as in the review (its `:vim`
+ * setting, on unless turned off there).
+ */
+function previewVimKeys(): boolean {
+  try {
+    const prefs = JSON.parse(
+      roamgateLocalStorage.getItem("reviewPrefs") ?? "{}",
+    ) as { vim?: boolean };
+    return prefs.vim !== false;
+  } catch {
+    return true;
+  }
 }
 
 function loadCodeMirrorPreviewDeps() {
@@ -216,6 +253,8 @@ export function FilePreviewContent({
   onOpenChanges,
   onOpenFile,
   onRefresh,
+  onToggleTree,
+  treeHidden = false,
   onClosePreview,
   onCreateAnnotation,
   onReanchorAnnotations,
@@ -234,6 +273,9 @@ export function FilePreviewContent({
   onOpenChanges?: () => void;
   onOpenFile?: (path: string, fragment?: string) => void;
   onRefresh?: () => void;
+  /** Hides or shows the file tree beside the preview (also `:files`). */
+  onToggleTree?: () => void;
+  treeHidden?: boolean;
   onClosePreview?: () => void;
   onCreateAnnotation?: (annotation: NewReviewAnnotation) => void;
   onReanchorAnnotations?: (path: string, text: string) => void;
@@ -554,6 +596,28 @@ export function FilePreviewContent({
                 <FolderPlus size={13} aria-hidden="true" />
               </button>
             ) : null}
+            {onToggleTree ? (
+              <button
+                type="button"
+                className="file-preview-refresh"
+                title={
+                  treeHidden
+                    ? "Show the file tree (:files)"
+                    : "Hide the file tree (:files)"
+                }
+                aria-label={
+                  treeHidden ? "Show the file tree" : "Hide the file tree"
+                }
+                aria-pressed={treeHidden}
+                onClick={onToggleTree}
+              >
+                {treeHidden ? (
+                  <PanelLeftOpen size={13} aria-hidden="true" />
+                ) : (
+                  <PanelLeftClose size={13} aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
             {!showingChanges && entry && onRefresh ? (
               <button
                 type="button"
@@ -810,6 +874,7 @@ export function FilePreviewContent({
               theme={theme}
               annotations={lineAnnotations}
               editorViewRef={editorViewRef}
+              onToggleTree={onToggleTree}
               onRequestAnnotation={
                 onCreateAnnotation
                   ? ({ line, endLine, quote, x, y }) =>
@@ -1018,6 +1083,7 @@ function CodeMirrorPreview({
   annotations,
   editorViewRef,
   onRequestAnnotation,
+  onToggleTree,
 }: {
   text: string;
   path: string;
@@ -1026,7 +1092,11 @@ function CodeMirrorPreview({
   annotations: readonly FileLineReviewAnnotation[];
   editorViewRef: MutableRefObject<CodeMirrorEditorView | null>;
   onRequestAnnotation?: (request: CodeMirrorAnnotationRequest) => void;
+  /** `:files`: hides or shows the file tree beside the preview. */
+  onToggleTree?: () => void;
 }) {
+  const toggleTreeRef = useRef(onToggleTree);
+  toggleTreeRef.current = onToggleTree;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const annotationRuntimeRef = useRef<CodeMirrorAnnotationRuntime | null>(null);
   const annotationsRef = useRef(annotations);
@@ -1068,6 +1138,7 @@ function CodeMirrorPreview({
         state: deps.EditorState.create({
           doc: text,
           extensions: [
+            ...(previewVimKeys() ? [deps.vim()] : []),
             deps.basicSetup,
             deps.configuredShortcutGuard,
             deps.search({ top: true }),
@@ -1129,6 +1200,15 @@ function CodeMirrorPreview({
                   },
                 ".cm-cursor": {
                   borderLeftColor: "var(--accent)",
+                },
+                ".cm-fat-cursor": {
+                  background:
+                    "color-mix(in srgb, var(--accent) 60%, transparent) !important",
+                },
+                "&:not(.cm-focused) .cm-fat-cursor": {
+                  background: "none !important",
+                  outline:
+                    "1px solid color-mix(in srgb, var(--accent) 60%, transparent) !important",
                 },
                 ".cm-panels, .cm-panels.cm-panels-top, .cm-panels.cm-panels-bottom":
                   {
@@ -1232,12 +1312,21 @@ function CodeMirrorPreview({
         }),
       });
       editorViewRef.current = view;
+      const cm = deps.getCM(view);
+      if (cm) {
+        definePreviewExCommands(deps);
+        previewFilesCommands.set(cm, () => toggleTreeRef.current?.());
+      }
       annotationRuntimeRef.current = {
         deps,
         compartment: annotationCompartment,
         view,
       };
-      if (lineRef.current) scrollToLine(deps, view, lineRef.current);
+      if (lineRef.current) {
+        scrollToLine(deps, view, lineRef.current);
+        // Opened at a line (gf, a search hit): its keys go to the file.
+        view.focus();
+      }
       const activeView = view;
 
       void highlightCodeTokens(text, path)

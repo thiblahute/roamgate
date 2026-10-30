@@ -370,6 +370,130 @@ Open **Annotations** independently of the Inspector.
 
 Drafts stay in this browser and re-anchor to changed files on refresh.
 
+## Review
+
+Option+R (Ctrl+Alt+R elsewhere), **Review** in the tab bar, or on a phone **Review** in the ⋮ More options sheet, opens a review of
+the focused workspace's branch against its default branch, over the
+terminals. Option+Shift+R lists the reviews in progress, the ones with new
+commits or discussions waiting on you first. Closing a review only hides
+it: Option+R brings it back exactly as you left it (view, place, folds,
+drafts), and a workspace's other repositories keep theirs too. On a phone,
+Back closes it too, and the header scrolls with Close kept in reach. When the
+code changes under an open review it says so; `R`, `gr`, `:e` (or **Reload**) reads it
+again, and comments follow their code or show as outdated.
+
+- Comment a line with `c` (to the agent while **Comments → Agent** is on,
+  else a review comment) or `C` (always a discussion with the agent working
+  on the code). A message to the agent or a GitLab reply leaves only when
+  you send it (`Cmd+Enter`, Save, `:w`); Esc or moving away keeps it unsent
+  until you reopen it. Unsent text, and text whose save failed, stays in this
+  browser through reloads and connection switches. `t` hides every comment until you show them again, click a
+  marked line, or the agent answers; each review opens with them shown.
+  **Conversations** (`T`, `:conversations`) lists every thread of the
+  review, in any commit and resolved ones too, open ones first and then
+  the latest message, and goes to the one you pick; a thread whose commit
+  a rebase took out of the review opens in that commit, as long as git
+  keeps it. Resolved ones are hidden until `H` (or their count) shows them
+  after the open ones, one line each until unfolded; the choice is kept in
+  the browser. A click selects
+  a thread; `j`/`k` move, Enter or `o` goes, Space folds, `r` resolves or
+  reopens (the selection moves to the next open one and the list stays
+  where it is), `R` (or `a`, or **Reply**) answers right there, and Esc or `q` closes.
+  `/` searches them all (file, author or words), where arrows select,
+  Enter goes and Esc returns to the list.
+  A long message is read in parts (paragraphs, list items, each code
+  line): `n`/`N` select it whole, `j`/`k` step into its parts, and `c` or
+  the `+` in a part's margin
+  comments on that part, as does **Comment** on words selected with the
+  mouse. Each such comment is its own thread, drawn under the part it
+  quotes and given to the agent with the quote. `za` folds any thread,
+  resolved or not, and unfolds it again; `gl` goes to the last message of
+  the thread selected or on the line.
+  Comments are Markdown; paste or drop a screenshot into one and it is
+  kept with the review, shown in the comment, and given to the agent as
+  a file path it can read. Comments follow their code through rebases and
+  show as outdated once it is gone. Discussion comments reach the agent as
+  you write them; with **Hold** (`:hold`) they wait until **Send** (`:send`)
+  hands them over in one go. Comments go to the agent's session wherever
+  it runs now, not to a pane it left. A comment that could not reach the
+  agent says so ("not delivered" and why) with **Retry**, and goes by
+  itself once the session runs in a pane again. Threads show on their
+  lines: a large file with open threads starts unfolded, and a thread on
+  unchanged code shows with three lines each side. `e` rewrites your
+  last message; the agent hears about the change, and can rewrite its own
+  answers too.
+  While the agent works on a thread, the thread says so with what it is
+  doing and for how long, until it answers there.
+- `gf` (or a file's **Open**) opens the file at the cursor line in the
+  file preview, as the checkout has it now; the review steps aside until
+  Option+R. The preview moves with Vim keys too (`j`/`k`, `gg`/`G`, `/`,
+  Ctrl-d/u...) unless `:vim` turned them off, and `:files` (or its button
+  beside refresh) hides the file tree next to it, until shown again.
+- Vim keys throughout: counts, `gg`/`G`, Ctrl-d/u/f/b, `{`/`}` hunks, `]`/`[`
+  files, word motions, `*`/`#` and `/`/`?` search, `:` commands, `zo`/`zO`/`zR`
+  to show more context. Comments are written in a Vim editor (`:vim` toggles);
+  on touch screens its **Esc** button stands in for the missing key.
+  `j`/`k` stop on each message under a line as on a line, so `r`, `e` and `dd`
+  act on it there; side by side they go straight down or up on one side, and
+  only the left and right arrows change side.
+- **Local** and **GitLab**: a local review shows the checkout's diff and only
+  your local comments. **GitLab** (the MR chip, `gm`, `:switch`) opens the
+  review of the branch's merge request in the same overlay: the diff and
+  commits as GitLab has them, its discussions on their lines (older ones
+  moved to today's code), and your review comments and overall comment as
+  GitLab draft notes, shared with any other tool that writes them. Review
+  comments written in the local review (and the agent's draft replies) wait
+  there until **GitLab draft (N)** sends them; you submit the review on
+  GitLab. **Local** goes back to the local review; each keeps its own place.
+  Replies to discussions post publicly. Security merge requests are never
+  shared with agents.
+- `<` / `>` (or the arrows of the commit bar) step through the branch's
+  commits and its whole change, wrapping around; on the default branch
+  itself, through its history, latest first. The bar names the commit shown
+  by its subject; clicking it, `gc` or `:commits` opens a list of the
+  commits by subject, sha, author and date, the one shown marked: typing
+  searches subject words (letters in order too) or a sha prefix, `j`/`k`
+  (until you type) or the arrows move, Enter shows it, Esc closes.
+  `:commit 2` goes to the second one, `:commit words` to the one matching,
+  `:all` back to the whole change. In diff only (`o`) a quiet strip at the
+  bottom keeps the commit's name and its arrows, and these keys still work.
+- `r` resolves the thread on the line (or the selected message's), and
+  reopens a resolved one. On a line without a thread it marks the chunk
+  (hunk) there reviewed: it folds to one "chunk reviewed" line and the
+  cursor goes on to the next chunk not reviewed, in any file. `r` again
+  unmarks it; a click or `za` shows it again (`za` folds it back), and a
+  chunk with comments stays open. After `V`, `r` marks every chunk the
+  selection covers. `gu`/`gU` (or `:unreviewed`) go to the next or
+  previous chunk not reviewed, wrapping around. Resolved threads fold.
+- `Option+V` (`Alt+V` on Windows/Linux, or `v`) marks the whole file
+  reviewed, as in tuicr: it folds to its header and the file list ticks it;
+  `Option+V` again unmarks it and its chunks.
+  A file whose every chunk is reviewed is reviewed too; until then the file
+  list shows how many are ("3/7 chunks"). Marks are kept per view (all the
+  changes, or each commit) and a chunk is known by its changed lines, not
+  its place: a rebase or new changes elsewhere keep the marks, while a
+  chunk whose own lines change is no longer reviewed, nor its file. The
+  same chunk marked in another view counts too, unless unmarked in this one.
+- **Several repositories**: a workspace's review covers each repository its
+  panes (and the `subprojects/` on a branch, not pinned by a build tool)
+  have recent changes in, or that the agent edits or names; `p` searches them (name, branch or path) and `(` /
+  `)` step through them. Option+R reopens the repository last reviewed in
+  the workspace, else the focused pane's, else the agent's.
+- **Agent review** asks the agent in the workspace for review comments, with
+  an optional focus. **Send to** hands it the open discussions, and your
+  overall comment when it has not had it yet.
+- The overall comment is a comment like the others: **Overall comment** (or
+  `:overall`) opens the same editor, and it then shows as a card with Edit,
+  Delete and whether the agent has it. With comments sent as written, saving
+  it sends it.
+
+Agents drive a review with `~/.cache/roamgate/bin/roamgate-review` (open,
+watch, reply, add, summary...); `roamgate-review skill` prints how. Where
+they exist, Roamgate links its skill into `~/.claude/skills/roamgate-review`
+and the client into `~/.local/bin`, never over a file of yours.
+`open --repo PATH=BASE..HEAD` adds another repository's range, for a series
+across a project and its subprojects. It works in panes on SSH hosts too.
+
 ## Diff Viewer
 
 - Compare **Working tree**, **Against branch**, or **Last step** (the latest
@@ -513,6 +637,8 @@ and is skipped, with a note, on a browser that does not match.
 | Workspaces                                                            | `Ctrl+Shift+W`          | `Ctrl+Alt+O`                            |
 | File Explorer                                                         | `Cmd+Shift+E`           | `Ctrl+Alt+E`                            |
 | Diff Viewer                                                           | `Ctrl+Shift+G`          | `Ctrl+Alt+G`                            |
+| Review of this branch (open / close)                                  | `Option+R`              | `Ctrl+Alt+R`                            |
+| Reviews in progress                                                   | `Option+Shift+R`        | `Ctrl+Alt+Shift+R`                      |
 | Agent history                                                         | `Cmd+Shift+H`           | `Ctrl+Alt+H`                            |
 | Search raw preview / diff                                             | `Cmd+F`                 | `Ctrl+F`                                |
 | Send composer / add review comment / pre-fill agent (focused surface) | `Cmd+Enter`             | `Ctrl+Enter`                            |

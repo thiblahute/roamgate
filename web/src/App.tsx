@@ -25,6 +25,20 @@ import {
 } from "./annotations";
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 import { passwordManagerIgnore } from "./passwordManagerIgnore";
+import {
+  getReviewSnapshot,
+  loadedReviewConnections,
+  loadReviews,
+  startReviewClient,
+  useReviewState,
+} from "./review";
+import {
+  addLatest,
+  livePins,
+  pinHolds,
+  REVIEW_MEMORY_KEPT,
+  reviewPinKey as makeReviewPinKey,
+} from "./reviewPins";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
 import { useSystemBack } from "./systemBack";
 import { startFrontendFreshness } from "./frontendFreshness";
@@ -39,7 +53,7 @@ import {
   shortcutTitle,
   useShortcutPreferences,
 } from "./shortcutPreferences";
-import { SHORTCUT_NUMBERS } from "./shortcutBindings";
+import { SHORTCUT_NUMBERS, type ShortcutId } from "./shortcutBindings";
 import { activeTerminalInput, blurActiveInput } from "./activeTerminalInput";
 import {
   CheckCircle2,
@@ -49,6 +63,7 @@ import {
   FileDiff,
   FolderTree,
   GitGraph,
+  GitPullRequestArrow,
   Info,
   LoaderCircle,
   MessageSquareText,
@@ -92,7 +107,10 @@ import { agentStateKind, paneHasAgentHistory } from "./components/agentSession";
 import { CloseButton } from "./components/CloseButton";
 import { Toast } from "./components/Toast";
 import { focusIfUnchanged } from "./components/dialogFocus";
-import { CommandCombobox } from "./components/CommandCombobox";
+import {
+  COMMAND_MENU_OPENING,
+  CommandCombobox,
+} from "./components/CommandCombobox";
 import { CONFIG_MENU_ID, ConfigMenu } from "./components/ConfigMenu";
 import { ConnectionSwitcher } from "./components/ConnectionSwitcher";
 import {
@@ -123,7 +141,7 @@ import { WorkspaceTree } from "./components/WorkspaceTree";
 import { CreateWorkspaceDialog } from "./components/CreateWorkspaceDialog";
 import { AGENT_LIST_SCOPE_STORAGE_KEY } from "./workspaceAgentLayout";
 import { isIosDevice } from "./downloadFile";
-import { lazyWithReload } from "./lazyWithReload";
+import { lazyWithReload, preloadableLazy } from "./lazyWithReload";
 import {
   LEGACY_MOBILE_TERMINAL_SHORTCUTS_STORAGE_KEY,
   MOBILE_TERMINAL_SHORTCUTS_STORAGE_KEY,
@@ -250,6 +268,50 @@ const AssistantPanel = lazyWithReload("assistant", () =>
   })),
 );
 
+/** Reviews kept mounted besides the pinned ones. */
+const REVIEWS_KEPT = 6;
+const REVIEW_PINS_KEY = "reviewPins";
+const REVIEW_CLOSED_KEY = "reviewClosed";
+
+function readStoredJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = roamgateLocalStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredJson(key: string, value: unknown) {
+  try {
+    roamgateLocalStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+/** After the page shows: the review pane's code is fetched then. */
+const REVIEW_PRELOAD_DELAY_MS = 3000;
+
+const ReviewHost = preloadableLazy("review", () =>
+  import("./components/ReviewHost").then((module) => ({
+    default: module.ReviewHost,
+  })),
+);
+
+/** The review pane's code, its highlighter included, loading ahead. */
+function preloadReviewCode() {
+  void import("./reviewOpen").catch(() => {});
+  void ReviewHost.preload().catch(() => {});
+  void import("./components/syntaxHighlighting")
+    .then(({ preloadSyntaxHighlighter }) => preloadSyntaxHighlighter())
+    .catch(() => {});
+}
+
+const ReviewList = lazyWithReload("review-list", () =>
+  import("./components/ReviewList").then((module) => ({
+    default: module.ReviewList,
+  })),
+);
+
 const ShortcutCheatSheet = lazyWithReload("shortcut-cheatsheet", () =>
   import("./components/ShortcutLookupDialog").then((module) => ({
     default: module.ShortcutCheatSheet,
@@ -261,6 +323,23 @@ const WorkspaceInspectorHost = lazyWithReload("workspace-inspector", () =>
     default: module.WorkspaceInspectorHost,
   })),
 );
+
+/**
+ * Shortcuts that take you to another workspace, tab or pane: from the
+ * review they put it away (it is kept) and go on.
+ */
+const REVIEW_LEAVING_SHORTCUTS: ShortcutId[] = [
+  "panes.search",
+  "panes.recent",
+  "workspaces.open",
+  "tab.next",
+  "tab.previous",
+  "pane.left",
+  "pane.right",
+  "pane.up",
+  "pane.down",
+  ...SHORTCUT_NUMBERS.map((n): ShortcutId => `tab.${n}`),
+];
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 560;
@@ -416,6 +495,8 @@ type OpenInspectorOptions = {
   entry?: FileExplorerEntry;
   path?: string;
   fragment?: string;
+  /** Line to show in the file preview. */
+  line?: number;
   initialDirectory?: string;
   originPaneId?: string;
   focusInspector?: boolean;
@@ -1539,6 +1620,106 @@ export default function App() {
     update: updateAnnotationDraft,
   } = useReviewAnnotationDraft(resourceUiKey);
   const [annotationsOpen, setAnnotationsOpen] = useState(false);
+  const reviewState = useReviewState();
+  // A review is pinned to its workspace: it shows while that workspace is
+  // focused and keeps its place while you are elsewhere.
+  // They survive a reload: the same review comes back in each workspace.
+  const [reviewPins, setReviewPins] = useState<Record<string, string>>(() =>
+    readStoredJson<Record<string, string>>(REVIEW_PINS_KEY, {}),
+  );
+  // Stepped aside for a menu, switcher or another tab; back on the next
+  // workspace change or Option+R.
+  const [reviewSuspended, setReviewSuspended] = useState(false);
+  // Closed reviews are only hidden: Option+R brings each back as it was.
+  const [reviewClosed, setReviewClosed] = useState<ReadonlySet<string>>(
+    () =>
+      new Set(
+        readStoredJson<string[]>(REVIEW_CLOSED_KEY, []).slice(
+          -REVIEW_MEMORY_KEPT,
+        ),
+      ),
+  );
+  useEffect(() => {
+    writeStoredJson(REVIEW_PINS_KEY, reviewPins);
+  }, [reviewPins]);
+  useEffect(() => {
+    writeStoredJson(REVIEW_CLOSED_KEY, [...reviewClosed]);
+  }, [reviewClosed]);
+  // The reviews shown lately stay mounted, hidden, with their place,
+  // drafts and folds: switching repositories and back loses nothing.
+  const [reviewKept, setReviewKept] = useState<readonly string[]>([]);
+  const [reviewListOpen, setReviewListOpen] = useState(false);
+  const focusedWorkspaceId =
+    s.workspaces.find((w) => w.focused)?.workspace_id ?? "";
+  const reviewPinKey = makeReviewPinKey(
+    s.activeConnectionId ?? "",
+    focusedWorkspaceId,
+  );
+  // A discarded review lets go of its workspace, and so does one opened
+  // since from another workspace: Option+R then finds this one's own.
+  const pinned = reviewPins[reviewPinKey];
+  const pinnedSnapshot = pinned ? reviewState.sessions.get(pinned) : undefined;
+  const pinnedSessionId =
+    pinned && pinnedSnapshot && pinHolds(reviewPinKey, pinnedSnapshot)
+      ? pinned
+      : null;
+  // Pins of reviews that moved, the stored ones too, are dropped.
+  useEffect(() => {
+    // A loaded list publishes its sessions, which runs this again.
+    setReviewPins((pins) =>
+      livePins(pins, reviewState.sessions, loadedReviewConnections()),
+    );
+  }, [reviewState.sessions]);
+  const reviewSessionId =
+    reviewSuspended || reviewClosed.has(reviewPinKey) ? null : pinnedSessionId;
+  const reviewSnapshot = reviewSessionId
+    ? reviewState.sessions.get(reviewSessionId)
+    : undefined;
+  /**
+   * Shows a review, pinned to its workspace (the focused one for a review
+   * without one). With `focus`, its workspace is brought forward; else it
+   * shows when you get there. Null closes the focused workspace's review.
+   */
+  const setReviewSessionId = useCallback(
+    (sessionId: string | null, focus = false) => {
+      const current = store.get();
+      const focused =
+        current.workspaces.find((w) => w.focused)?.workspace_id ?? "";
+      const here = makeReviewPinKey(current.activeConnectionId ?? "", focused);
+      setReviewSuspended(false);
+      if (sessionId === null) {
+        setReviewClosed((closed) => addLatest(closed, here));
+        return;
+      }
+      const snapshot = getReviewSnapshot(sessionId);
+      const workspaceId = snapshot?.session.workspaceId || focused;
+      const key = makeReviewPinKey(
+        snapshot?.session.connectionId ?? current.activeConnectionId ?? "",
+        workspaceId,
+      );
+      setReviewClosed((closed) => {
+        if (!closed.has(key)) return closed;
+        const rest = new Set(closed);
+        rest.delete(key);
+        return rest;
+      });
+      setReviewPins((pins) => ({ ...pins, [key]: sessionId }));
+      setReviewKept((kept) =>
+        [sessionId, ...kept.filter((id) => id !== sessionId)].slice(
+          0,
+          REVIEWS_KEPT,
+        ),
+      );
+      if (focus && workspaceId !== focused)
+        void store.focusWorkspace(workspaceId);
+    },
+    [],
+  );
+  // Arriving in a workspace shows its pinned review, if any.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on change only
+  useEffect(() => {
+    setReviewSuspended(false);
+  }, [focusedWorkspaceId]);
   useEffect(() => {
     if (annotationsOpen) setAssistantOpen(false);
   }, [annotationsOpen]);
@@ -1945,12 +2126,18 @@ export default function App() {
     });
   }, [mobile]);
   const loadInspectorFilePreview = useCallback(
-    (workspaceId: string, entry: FileExplorerEntry, fragment?: string) => {
+    (
+      workspaceId: string,
+      entry: FileExplorerEntry,
+      fragment?: string,
+      line?: number,
+    ) => {
       const requestId = fileQuickOpenRequestRef.current + 1;
       fileQuickOpenRequestRef.current = requestId;
       setActiveFilePreview({
         entry,
         fragment,
+        line,
         preview: null,
         loading: true,
         error: null,
@@ -1969,6 +2156,7 @@ export default function App() {
           setActiveFilePreview({
             entry,
             fragment,
+            line,
             preview,
             loading: false,
             error: null,
@@ -1984,6 +2172,7 @@ export default function App() {
           setActiveFilePreview({
             entry,
             fragment,
+            line,
             preview: null,
             loading: false,
             error: error instanceof Error ? error.message : String(error),
@@ -2108,7 +2297,12 @@ export default function App() {
       }
       if (view !== "files" || !selectedPath) return;
       const entry = options.entry ?? inspectorFileEntry(selectedPath);
-      loadInspectorFilePreview(workspace.workspace_id, entry, options.fragment);
+      loadInspectorFilePreview(
+        workspace.workspace_id,
+        entry,
+        options.fragment,
+        options.line,
+      );
     },
     [
       commitInspectorState,
@@ -2142,6 +2336,83 @@ export default function App() {
     },
     [connectionClient.connectionId, mobile, setAnnotationDraftScope],
   );
+  useEffect(() => startReviewClient(), []);
+  // Cmd+K from the review: the menu goes to other workspaces, so the review
+  // steps aside (it is kept; Option+R brings it back).
+  useEffect(() => {
+    const leave = () => {
+      setReviewSuspended(true);
+      setReviewListOpen(false);
+    };
+    window.addEventListener(COMMAND_MENU_OPENING, leave);
+    return () => window.removeEventListener(COMMAND_MENU_OPENING, leave);
+  }, []);
+  // The review pane's code loads once the page is idle: the first Option+R
+  // then waits on no download (each a round trip away from a remote
+  // server), only on the review itself.
+  useEffect(() => {
+    let idle = 0;
+    const timer = window.setTimeout(() => {
+      const preload = () => preloadReviewCode();
+      if (typeof window.requestIdleCallback === "function")
+        idle = window.requestIdleCallback(preload, { timeout: 10_000 });
+      else preload();
+    }, REVIEW_PRELOAD_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+      if (idle) window.cancelIdleCallback?.(idle);
+    };
+  }, []);
+  useEffect(() => {
+    if (!s.activeConnectionId) return;
+    void loadReviews(s.activeConnectionId).catch(() => {});
+  }, [s.activeConnectionId, s.connectionGeneration]);
+  // An agent raised a review: show it here when this tab is on its
+  // connection; otherwise it opens once the user switches there.
+  useEffect(() => {
+    const request = reviewState.openRequest;
+    if (!request) return;
+    void import("./reviewOpen").then(({ takeOpenRequest }) => {
+      const sessionId = takeOpenRequest(request, s.activeConnectionId);
+      if (sessionId) setReviewSessionId(sessionId);
+    });
+  }, [reviewState.openRequest, s.activeConnectionId, setReviewSessionId]);
+  const toggleReview = useCallback(async () => {
+    if (reviewSessionId) {
+      setReviewSessionId(null);
+      return;
+    }
+    if (pinnedSessionId) {
+      setReviewSessionId(pinnedSessionId);
+      return;
+    }
+    // Loaded on first use: opening a review is not part of the first paint.
+    // The overlay's code loads meanwhile, not once the review is known.
+    preloadReviewCode();
+    const { openWorkspaceReview } = await import("./reviewOpen");
+    const sessionId = await openWorkspaceReview(reviewState.sessions);
+    if (sessionId) setReviewSessionId(sessionId);
+  }, [
+    reviewSessionId,
+    pinnedSessionId,
+    reviewState.sessions,
+    setReviewSessionId,
+  ]);
+  // Closing the review (or its list) by any means hands the keys back to the
+  // terminal; the removed overlay held the focus.
+  const reviewShown = reviewSessionId !== null || reviewListOpen;
+  const reviewWasShown = useRef(false);
+  useEffect(() => {
+    if (reviewWasShown.current && !reviewShown && !mobile)
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (!active || active === document.body)
+          activeTerminalInput(document)?.focus({ preventScroll: true });
+      });
+    reviewWasShown.current = reviewShown;
+  }, [reviewShown, mobile]);
+  const toggleReviewRef = useRef(toggleReview);
+  toggleReviewRef.current = toggleReview;
   const toggleAnnotations = useCallback(() => {
     if (annotationsOpen && (!mobile || mobileView === "annotations")) {
       setAnnotationsOpen(false);
@@ -3373,6 +3644,22 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      // The review has its own keys (Esc included); only its own toggles
+      // and the ways to another workspace reach the app's shortcuts from
+      // inside it. Those put the review away (it is kept) and go on.
+      if (
+        (e.target as HTMLElement | null)?.closest?.(
+          ".review-overlay, .review-list-overlay",
+        ) &&
+        !shortcutMatches(e, "review.toggle") &&
+        !shortcutMatches(e, "reviews.list") &&
+        !shortcutMatches(e, "sidebar.toggle")
+      ) {
+        if (!REVIEW_LEAVING_SHORTCUTS.some((id) => shortcutMatches(e, id)))
+          return;
+        setReviewSuspended(true);
+        setReviewListOpen(false);
+      }
       if (
         document.querySelector(
           ".modal-backdrop, .command-popover, .context-menu",
@@ -3689,6 +3976,24 @@ export default function App() {
         if (!e.repeat) toggleAnnotations();
         return;
       }
+      if (shortcutMatches(e, "reviews.list")) {
+        if (isEditableElement(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) {
+          // The list steps over the review; the review keeps its place.
+          setReviewSuspended(true);
+          setReviewListOpen((open) => !open);
+        }
+        return;
+      }
+      if (shortcutMatches(e, "review.toggle")) {
+        if (isEditableElement(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) void toggleReviewRef.current();
+        return;
+      }
       if (shortcutMatches(e, "assistant.toggle")) {
         if (isEditableElement(e.target)) return;
         e.preventDefault();
@@ -3992,6 +4297,19 @@ export default function App() {
     // mobile/desktop layout switches instead.
     window.dispatchEvent(new Event(LAYOUT_CHANGE_EVENT));
   }, [sidebarHidden]);
+  // The review opens beside the workspace list when it is shown, not over it.
+  useLayoutEffect(() => {
+    const sidebar = document.querySelector(".body > .sidebar");
+    // Past the resize handle that follows it.
+    const left =
+      sidebarHidden || mobile || !sidebar
+        ? 0
+        : Math.round(sidebar.getBoundingClientRect().right) + 6;
+    document.documentElement.style.setProperty(
+      "--review-inset-left",
+      `${left}px`,
+    );
+  }, [mobile, sidebarHidden, sidebarWidth]);
   useEffect(() => {
     const normalizedWidth = normalizeSidebarWidth(sidebarWidth);
     if (normalizedWidth !== sidebarWidth) {
@@ -4403,6 +4721,29 @@ export default function App() {
               </span>
             </button>
           ) : null}
+          <button
+            type="button"
+            className={reviewSessionId !== null ? "active" : ""}
+            title={shortcutTitle(
+              reviewSessionId !== null
+                ? "Close the review"
+                : "Review this branch",
+              "review.toggle",
+            )}
+            aria-label={
+              reviewSessionId !== null
+                ? "Close the review"
+                : "Review this branch"
+            }
+            aria-pressed={reviewSessionId !== null}
+            onClick={() => {
+              setMobileMoreOpen(false);
+              void toggleReview();
+            }}
+          >
+            <GitPullRequestArrow size={16} />
+            <span className="mobile-nav-label">Review</span>
+          </button>
         </nav>
         <nav
           className="mobile-nav mobile-workspace-tools"
@@ -4622,10 +4963,78 @@ export default function App() {
             annotationCount={annotations.length}
             onToggleInspector={toggleWorkspaceInspector}
             onToggleAnnotations={toggleAnnotations}
+            reviewOpen={reviewSessionId !== null}
+            onToggleReview={() => void toggleReview()}
           />
           <div
             className={`workspace-surfaces ${annotationsDocked ? "has-annotations" : ""} ${assistantDocked ? "has-assistant" : ""}`}
           >
+            {reviewListOpen && !reviewSnapshot && s.activeConnectionId ? (
+              <Suspense fallback={null}>
+                <ReviewList
+                  connectionId={s.activeConnectionId}
+                  sessions={[...reviewState.sessions.values()].filter(
+                    (snapshot) =>
+                      snapshot.session.connectionId === s.activeConnectionId,
+                  )}
+                  onOpen={(sessionId) => {
+                    setReviewListOpen(false);
+                    setReviewSessionId(sessionId, true);
+                  }}
+                  onClose={() => {
+                    setReviewListOpen(false);
+                    // The pinned review comes back from under the list.
+                    setReviewSuspended(false);
+                  }}
+                />
+              </Suspense>
+            ) : null}
+            {s.activeConnectionId &&
+            (Object.keys(reviewPins).length || reviewKept.length) ? (
+              <Suspense fallback={null}>
+                <ReviewHost
+                  connectionId={s.activeConnectionId}
+                  pinned={[
+                    ...new Set([
+                      ...Object.entries(reviewPins)
+                        .filter(([key]) =>
+                          key.startsWith(`${s.activeConnectionId}\n`),
+                        )
+                        .map(([, id]) => id),
+                      ...reviewKept,
+                    ]),
+                  ].flatMap((id) => {
+                    const snapshot = reviewState.sessions.get(id);
+                    return snapshot?.session.connectionId ===
+                      s.activeConnectionId
+                      ? [snapshot]
+                      : [];
+                  })}
+                  shownId={reviewSessionId}
+                  panes={s.panes}
+                  onClose={() => setReviewSessionId(null)}
+                  onShow={(id) => setReviewSessionId(id)}
+                  onShowList={() => {
+                    setReviewSuspended(true);
+                    setReviewListOpen(true);
+                  }}
+                  onFocusAgentPane={(paneId) => {
+                    setReviewSuspended(true);
+                    void store.focusPane(paneId);
+                  }}
+                  onOpenFile={(workspaceId, path, line) => {
+                    // The review steps aside; Option+R brings it back.
+                    setReviewSuspended(true);
+                    openInspector("files", workspaceId, {
+                      entry: inspectorFileEntry(path),
+                      path,
+                      line,
+                      focusInspector: true,
+                    });
+                  }}
+                />
+              </Suspense>
+            ) : null}
             <div
               ref={inspectorStageRef}
               className={`workspace-stage ${

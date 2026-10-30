@@ -11,6 +11,8 @@ const descriptions: [ShortcutId, string, string][] = [
   ["inspector.toggle", "Toggle the Workspace Inspector", "Global"],
   ["inspector.expand", "Expand or restore the Inspector on desktop", "Global"],
   ["annotations.toggle", "Toggle Annotations", "Global"],
+  ["review.toggle", "Open or close the review of this branch", "Global"],
+  ["reviews.list", "List the reviews in progress", "Global"],
   ["assistant.toggle", "Toggle Ranger", "Global"],
   ["zen.toggle", "Toggle Zen mode on desktop", "Global"],
   ["panes.recent", "Open the recent pane switcher", "Global"],

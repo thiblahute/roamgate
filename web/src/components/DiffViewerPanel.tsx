@@ -1181,7 +1181,13 @@ export function DiffViewerPanel({
     });
     setExpandedDirs(expandedDirsForEntries(summary.entries));
     const pendingEntries = pendingWorkingEntriesRef.current;
-    if (diffScope === "working" && pendingEntries.length) {
+    // Switching to Working, the summary kept from before is read anew at
+    // once: the entries asked for wait for that one.
+    if (
+      diffScope === "working" &&
+      pendingEntries.length &&
+      previousFilesRef.current.context === runtimeContextKey
+    ) {
       pendingWorkingEntriesRef.current = [];
       const currentEntries = pendingEntries.flatMap((target) => {
         const match = summary.entries.find(

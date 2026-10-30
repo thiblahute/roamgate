@@ -71,6 +71,12 @@ export default defineConfig({
               test: /node_modules[\\/](?:@codemirror|@lezer|codemirror)[\\/]/,
             },
             {
+              // mermaid.js draws the diagram types beautiful-mermaid does not
+              // (diagramRender.ts): one lazy asset, not a request per type.
+              name: "mermaid-js",
+              test: /node_modules[\\/](?:mermaid|@mermaid-js|@chevrotain|chevrotain|@iconify|@upsetjs|@braintree|@antfu|d3|d3-[a-z-]+|dagre-d3-es|cytoscape(?:-[a-z-]+)?|cose-base|layout-base|delaunator|es-toolkit|hachure-fill|internmap|katex|khroma|dayjs|lodash-es|path-data-parser|points-on-curve|points-on-path|robust-predicates|roughjs|stylis|ts-dedent)[\\/]/,
+            },
+            {
               name: "syntax-config",
               test: /@shikijs\/langs\/dist\/(awk|diff|docker|ini|json5|jsonl|make|nginx|proto|toml|xml|yaml)\.mjs$/,
             },
