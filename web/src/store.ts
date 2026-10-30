@@ -180,6 +180,50 @@ export interface State extends ServerSessionState {
   dismissedUpdateVersion: string | null;
 }
 
+/** A change of the focused workspace about to happen, for the guard. */
+export type FocusGuardRequest = {
+  connectionId: string;
+  workspaceId: string;
+  /** The pane asked for in it, when one was. */
+  paneId?: string;
+  /** The same change again, unguarded once the guard lets it through. */
+  retry: () => void;
+};
+
+/**
+ * Whether it goes ahead: as asked, not at all, or landing on this pane of
+ * the same workspace instead.
+ */
+export type FocusVerdict = "go" | "block" | { paneId: string };
+
+let focusGuard: ((request: FocusGuardRequest) => FocusVerdict) | null = null;
+
+function guardFocus(
+  connectionId: string,
+  workspaceId: string | undefined,
+  paneId: string | undefined,
+  retry: () => void,
+): FocusVerdict {
+  if (!focusGuard || !workspaceId) return "go";
+  try {
+    return focusGuard({
+      connectionId,
+      workspaceId,
+      ...(paneId ? { paneId } : {}),
+      retry,
+    });
+  } catch {
+    return "go";
+  }
+}
+
+/** The panes of a connection, displayed or not. */
+function connectionPanes(connectionId: string): readonly Pane[] {
+  return connectionId === state.activeConnectionId
+    ? state.panes
+    : (state.sessionsByConnectionId[connectionId]?.panes ?? []);
+}
+
 export interface Notice {
   kind: "info" | "success" | "error";
   message: string;
@@ -3220,7 +3264,28 @@ export const store = {
     );
   },
 
-  focusWorkspace(workspaceId: string) {
+  /**
+   * Lets a guard (voice chat following the user) judge each change of the
+   * focused workspace before it happens.
+   */
+  setFocusGuard(guard: ((request: FocusGuardRequest) => FocusVerdict) | null) {
+    focusGuard = guard;
+  },
+
+  focusWorkspace(workspaceId: string): Promise<unknown> {
+    const verdict = guardFocus(
+      state.activeConnectionId,
+      workspaceId,
+      undefined,
+      () => void store.focusWorkspaceNow(workspaceId),
+    );
+    if (verdict === "block") return Promise.resolve();
+    if (verdict !== "go") return store.focusPaneNow(verdict.paneId);
+    return store.focusWorkspaceNow(workspaceId);
+  },
+
+  /** `focusWorkspace`, past the guard. */
+  focusWorkspaceNow(workspaceId: string) {
     if (state.navigationMode === "browser-local") {
       return state.workspaces.some(
         (workspace) => workspace.workspace_id === workspaceId,
@@ -3356,6 +3421,33 @@ export const store = {
     workspaceId: string,
     paneId?: string,
   ) {
+    const verdict = guardFocus(
+      connectionId,
+      workspaceId,
+      paneId,
+      () =>
+        void store.jumpToConnectionWorkspaceNow(
+          connectionId,
+          workspaceId,
+          paneId,
+        ),
+    );
+    if (verdict === "block") return;
+    if (verdict !== "go")
+      return store.jumpToConnectionPaneNow(connectionId, verdict.paneId);
+    return store.jumpToConnectionWorkspaceNow(
+      connectionId,
+      workspaceId,
+      paneId,
+    );
+  },
+
+  /** `jumpToConnectionWorkspace`, past the guard. */
+  async jumpToConnectionWorkspaceNow(
+    connectionId: string,
+    workspaceId: string,
+    paneId?: string,
+  ) {
     const jump = ++rangerJumpSeq;
     // Another connection chosen meanwhile decides what is shown: a target
     // checked on one connection must not be focused on another.
@@ -3378,24 +3470,43 @@ export const store = {
       const inWorkspace = await paneIsInWorkspace(lease, paneId, workspaceId);
       if (jump !== rangerJumpSeq || !leaseIsCurrent(lease)) return;
       if (inWorkspace) {
-        void store.focusPane(paneId);
+        void store.focusPaneNow(paneId);
         return;
       }
     }
-    void store.focusWorkspace(workspaceId);
+    void store.focusWorkspaceNow(workspaceId);
   },
 
   /** Like `jumpToConnectionWorkspace`, landing on one pane of it. */
   async jumpToConnectionPane(connectionId: string, paneId: string) {
+    const verdict = guardFocus(
+      connectionId,
+      connectionPanes(connectionId).find((pane) => pane.pane_id === paneId)
+        ?.workspace_id,
+      paneId,
+      () => void store.jumpToConnectionPaneNow(connectionId, paneId),
+    );
+    if (verdict === "block") return;
+    return store.jumpToConnectionPaneNow(
+      connectionId,
+      verdict === "go" ? paneId : verdict.paneId,
+    );
+  },
+
+  /** `jumpToConnectionPane`, past the guard. */
+  async jumpToConnectionPaneNow(connectionId: string, paneId: string) {
     if (state.activeConnectionId !== connectionId) {
       if (!selectConnectionNow(connectionId)) return;
       const pane = state.panes.find((each) => each.pane_id === paneId);
+      // Another connection, or another runtime of this one, chosen while the
+      // workspaces load decides what is shown: nothing is focused there.
       if (!pane || !knownBrowserTarget(pane.workspace_id, paneId)) {
-        await refreshNow(captureConnectionLease());
-        if (state.activeConnectionId !== connectionId) return;
+        const switched = captureConnectionLease();
+        await refreshNow(switched);
+        if (!isStoreConnectionLeaseCurrent(state, switched)) return;
       }
     }
-    void store.focusPane(paneId);
+    void store.focusPaneNow(paneId);
   },
 
   focusTaskNotificationTarget(target: TaskNotificationTarget) {
@@ -3409,6 +3520,28 @@ export const store = {
    * where to go at once.
    */
   focusWorkspaceSource(
+    target: WorkspaceSourceTarget,
+    options: { fromKnownList?: boolean } = {},
+  ): Promise<boolean> {
+    if (!taskNotificationTargetIsCurrent(state, target)) {
+      return Promise.resolve(false);
+    }
+    const verdict = guardFocus(
+      target.connectionId,
+      target.workspaceId,
+      target.paneId,
+      () => void store.focusWorkspaceSourceNow(target, options),
+    );
+    if (verdict === "block") return Promise.resolve(false);
+    if (verdict !== "go")
+      return store
+        .jumpToConnectionPaneNow(target.connectionId, verdict.paneId)
+        .then(() => true);
+    return store.focusWorkspaceSourceNow(target, options);
+  },
+
+  /** `focusWorkspaceSource`, past the guard. */
+  focusWorkspaceSourceNow(
     target: WorkspaceSourceTarget,
     options: { fromKnownList?: boolean } = {},
   ): Promise<boolean> {
@@ -4476,7 +4609,19 @@ export const store = {
     );
   },
 
-  focusPane(paneId: string) {
+  focusPane(paneId: string): Promise<unknown> {
+    const verdict = guardFocus(
+      state.activeConnectionId,
+      state.panes.find((pane) => pane.pane_id === paneId)?.workspace_id,
+      paneId,
+      () => void store.focusPaneNow(paneId),
+    );
+    if (verdict === "block") return Promise.resolve();
+    return store.focusPaneNow(verdict === "go" ? paneId : verdict.paneId);
+  },
+
+  /** `focusPane`, past the guard. */
+  focusPaneNow(paneId: string) {
     const pane = state.panes.find((p) => p.pane_id === paneId);
     if (state.navigationMode === "browser-local") {
       return pane
