@@ -1,8 +1,14 @@
 import { basename } from "node:path";
+import { type BashModePart, splitBashMode } from "../../../shared/bashMode";
+import { parseInjectedMessage } from "../../../shared/injectedMessage";
+import {
+  localCommandOutput,
+  parseSlashCommand,
+  slashCommandText,
+} from "../../../shared/slashCommand";
 import { grokReasoningText, grokUserMessageText } from "./grok-session";
 import { REWOUND_PROMPT } from "./session-rewind";
 import type { AtifStep, AtifTrajectory, SessionFile } from "./session-types";
-import { attachedImages } from "./session-images";
 import {
   cleanMessageText,
   isRecord,
@@ -94,6 +100,8 @@ function createTrajectory(
     .filter(
       (step) =>
         step.message.trim() ||
+        // A message of images only.
+        (typeof step.extra?.images === "number" && step.extra.images > 0) ||
         step.reasoning_content?.trim() ||
         step.tool_calls?.length ||
         step.observation?.results.length,
@@ -387,19 +395,109 @@ function projectClaudeTrajectory(
   // oldest: the turn's user record that follows does (dequeueQueued).
   const queue: { content: string; timestamp: string; shown: boolean }[] = [];
   let dequeued = 0;
+  // Claude Code writes one record per content block, all with the API
+  // message id: the blocks of a message, counted, give each its index (as
+  // conversation mode's stream numbers them).
+  const blockCounts = new Map<string, number>();
+  // What Claude Code put in the user's turn itself (a subagent's report,
+  // another session's message, a task ending): a notice each, in its
+  // place, then the user's words that follow, if any. False when the text
+  // is not one.
+  const injected = (
+    text: string,
+    timestamp: string,
+    extra: Record<string, unknown>,
+  ) => {
+    const parsed = parseInjectedMessage(text);
+    if (!parsed) return false;
+    for (const notice of parsed.notices)
+      steps.push({
+        timestamp,
+        source: "user",
+        message: notice.body.trim() || notice.label,
+        extra: {
+          ...extra,
+          injected: { kind: notice.kind, label: notice.label },
+        },
+      });
+    const rest = cleanMessageText(parsed.rest);
+    if (rest) steps.push({ timestamp, source: "user", message: rest, extra });
+    return true;
+  };
+  /**
+   * `!` lines (Claude Code's bash mode) as steps of their own: the terminal
+   * writes a command and its output as two records, conversation mode both
+   * before the next message.
+   */
+  const shellSteps = (
+    parts: BashModePart[],
+    timestamp: string,
+    extra: Record<string, unknown>,
+    cwd: string,
+  ) => {
+    for (const part of parts) {
+      const last = steps.at(-1)?.extra?.shell as BashModePart | undefined;
+      if (part.command === undefined && last && last.stdout === undefined) {
+        last.stdout = part.stdout ?? "";
+        last.stderr = part.stderr ?? "";
+        continue;
+      }
+      steps.push({
+        timestamp,
+        source: "user",
+        message: part.command?.trim() || "!",
+        extra: {
+          ...extra,
+          shell: {
+            ...part,
+            command: part.command ?? "",
+            ...(cwd ? { cwd } : {}),
+          },
+        },
+      });
+    }
+  };
+  // The user's words a rewind cut (session-rewind.ts), until the
+  // conversation goes on: one notice for them, where they were.
+  let cut: { text: string; sent_at: string }[] = [];
+  const flushCut = () => {
+    if (!cut.length) return;
+    const label =
+      cut.length === 1
+        ? "Rewound: your message left the conversation"
+        : `Rewound: ${cut.length} of your messages left the conversation`;
+    steps.push({
+      timestamp: cut[0]!.sent_at,
+      source: "user",
+      message: cut.map((each) => each.text).join("\n\n"),
+      extra: {
+        record_type: REWOUND_PROMPT,
+        injected: { kind: "rewound", label },
+        rewound: cut,
+      },
+    });
+    cut = [];
+  };
   records.forEach((record, index) => {
     const timestamp = messageTime(record, file.mtimeMs, index);
     const type = stringValue(record.type);
+    if (cut.length && typeof record.uuid === "string") flushCut();
     if (type === REWOUND_PROMPT) {
       // A prompt a rewind cut (session-rewind.ts): taken from the queue for
       // its turn all the same.
-      dequeueQueued(queue, dequeued, textFromContent(record.content));
+      const text = textFromContent(record.content);
+      dequeueQueued(queue, dequeued, text);
       dequeued = 0;
+      const parsed = parseInjectedMessage(text);
+      const words = cleanMessageText(parsed ? parsed.rest : text);
+      if (words && !splitBashMode(text))
+        cut.push({ text: words, sent_at: timestamp });
       return;
     }
     if (type === "last-prompt" && record.rewound === true) {
       // Claude Code rewinds with nothing queued (commands_queued): what
       // the history still counts as waiting went with the rewind.
+      flushCut();
       queue.length = 0;
       dequeued = 0;
       return;
@@ -426,26 +524,66 @@ function projectClaudeTrajectory(
     }
     // What the user sends while the agent works reaches it as a queued
     // command, not a user record. Task notifications and other sessions'
-    // messages come the same way; only the user's own are shown.
+    // messages come the same way; only the user's own are shown: the TUI's
+    // (a human origin), and a headless process's steered prompts (no
+    // origin, a prompt, and the uuid of the stdin message it came from).
     if (type === "attachment") {
       const attachment = isRecord(record.attachment) ? record.attachment : {};
-      const origin = isRecord(attachment.origin) ? attachment.origin : {};
-      if (attachment.type !== "queued_command" || origin.kind !== "human")
+      const origin = isRecord(attachment.origin) ? attachment.origin : null;
+      const sourceUuid = stringValue(attachment.source_uuid);
+      const human = origin
+        ? origin.kind === "human"
+        : attachment.commandMode === "prompt" && !!sourceUuid;
+      if (attachment.type !== "queued_command") return;
+      const extra = {
+        record_type: "queued_command",
+        ...(sourceUuid ? { uuid: sourceUuid } : {}),
+      };
+      const prompt = textFromContent(attachment.prompt);
+      if (!human) {
+        injected(prompt, timestamp, extra);
         return;
-      const text = cleanMessageText(textFromContent(attachment.prompt));
+      }
+      if (injected(prompt, timestamp, extra)) return;
+      const text = cleanMessageText(prompt);
       if (text)
         steps.push({
           timestamp,
           source: "user",
           message: text,
-          extra: { record_type: "queued_command" },
+          extra: {
+            record_type: "queued_command",
+            ...(sourceUuid ? { uuid: sourceUuid } : {}),
+          },
         });
       return;
     }
     if (type !== "user" && type !== "assistant" && type !== "system") return;
+    // A command run in Claude Code itself (/reload-plugins, /rename) and
+    // what it printed: the terminal writes both this way, conversation
+    // mode the output only. Each shows where it was written, the output
+    // under its command, as the terminal shows it.
+    if (type === "system" && record.subtype === "local_command") {
+      const content = textFromContent(record.content);
+      const uuid = stringValue(record.uuid);
+      const command = parseSlashCommand(content);
+      const output = command ? null : localCommandOutput(content);
+      if (command || output)
+        steps.push({
+          timestamp,
+          source: command ? "user" : "agent",
+          message: command ? slashCommandText(command) : output!,
+          extra: {
+            record_type: type,
+            ...(command ? { command } : { command_output: true }),
+            ...(uuid ? { uuid } : {}),
+          },
+        });
+      return;
+    }
     const message = isRecord(record.message) ? record.message : record;
     const role = stringValue(message.role) || type;
-    const text = cleanMessageText(
+    let text = cleanMessageText(
       textFromContent(message.content ?? record.content),
     );
     const usage = tokenUsageForRecord(record).usage;
@@ -466,6 +604,68 @@ function projectClaudeTrajectory(
       );
       dequeued = 0;
     }
+    const apiMessageId = type === "assistant" ? stringValue(message.id) : "";
+    const firstBlock = apiMessageId ? (blockCounts.get(apiMessageId) ?? 0) : 0;
+    if (apiMessageId)
+      blockCounts.set(apiMessageId, firstBlock + Math.max(parts.length, 1));
+    const recordUuid = stringValue(record.uuid);
+    const ids = (block: number) => ({
+      ...(apiMessageId
+        ? { message_id: apiMessageId, block_index: firstBlock + block }
+        : {}),
+      ...(recordUuid ? { uuid: recordUuid } : {}),
+    });
+    if (
+      role === "user" &&
+      !parts.some(
+        (part) => part.type === "tool_use" || part.type === "tool_result",
+      )
+    ) {
+      const bash = splitBashMode(
+        textFromContent(message.content ?? record.content),
+      );
+      if (bash) {
+        shellSteps(
+          bash.parts,
+          timestamp,
+          { record_type: type },
+          stringValue(record.cwd),
+        );
+        // What follows them is the user's message.
+        text = cleanMessageText(bash.rest);
+        if (!text && !parts.some((part) => part.type === "image")) return;
+      }
+    }
+    // A slash command typed in the terminal (/exit, /model opus): the
+    // command, flagged so the chat shows it as one, not its tags.
+    const command =
+      role === "user" &&
+      record.isMeta !== true &&
+      !parts.some(
+        (part) => part.type === "tool_use" || part.type === "tool_result",
+      )
+        ? parseSlashCommand(textFromContent(message.content ?? record.content))
+        : null;
+    if (command) {
+      steps.push({
+        timestamp,
+        source: "user",
+        message: slashCommandText(command),
+        extra: { record_type: type, command, ...ids(0) },
+      });
+      return;
+    }
+    if (
+      role === "user" &&
+      !parts.some(
+        (part) => part.type === "tool_use" || part.type === "tool_result",
+      ) &&
+      injected(textFromContent(message.content ?? record.content), timestamp, {
+        record_type: type,
+        ...ids(0),
+      })
+    )
+      return;
     // Turns Claude Code writes itself (notes on an image a tool read, and the
     // like) are flagged meta: not the user's words.
     if (
@@ -481,7 +681,7 @@ function projectClaudeTrajectory(
       )
     ) {
       const start = steps.length;
-      for (const part of parts) {
+      for (const [block, part] of parts.entries()) {
         if (part.type === "tool_use") {
           const name = stringValue(part.name) || "tool";
           steps.push({
@@ -524,6 +724,7 @@ function projectClaudeTrajectory(
             timestamp,
             source: role === "user" ? "user" : "agent",
             message: cleanMessageText(stringValue(part.text)),
+            extra: ids(block),
           });
         } else if (
           part.type === "thinking" &&
@@ -548,19 +749,29 @@ function projectClaudeTrajectory(
       }
       return;
     }
-    if (!text && !usage) return;
-    // An image pasted into Claude Code's prompt is kept with the message,
-    // shown as [Image #N] in its text; its path is not recorded.
-    const images = role === "user" ? attachedImages(parts) : [];
+    // Images the user sent inline (conversation mode, a pasted image): the
+    // chat loads them by the record's uuid (agent_history.image).
+    const images =
+      role === "user"
+        ? parts.filter((part) => part.type === "image").length
+        : 0;
+    if (!text && !usage && !images) return;
     steps.push({
       timestamp,
       source:
         role === "user" ? "user" : role === "assistant" ? "agent" : "system",
-      message: text || "Token usage",
+      message: text || (images ? "" : "Token usage"),
       metrics: tokenUsageToMetrics(usage),
       extra: {
         record_type: type,
+        images: images || undefined,
         model: modelNameFromRecord(record) || undefined,
+        ...ids(
+          Math.max(
+            0,
+            parts.findIndex((part) => part.type === "text"),
+          ),
+        ),
         // The summary Claude Code writes when it compacts the conversation.
         compact_summary: record.isCompactSummary === true || undefined,
         // The reply that ends a turn, whatever else (a background agent)
@@ -568,10 +779,10 @@ function projectClaudeTrajectory(
         turn_end:
           (role === "assistant" && message.stop_reason === "end_turn") ||
           undefined,
-        ...(images.length ? { images } : {}),
       },
     });
   });
+  flushCut();
   // Taken for a turn not written yet: the oldest, as a guess, until it is.
   queue.splice(0, dequeued);
   for (const { content, timestamp, shown } of queue) {

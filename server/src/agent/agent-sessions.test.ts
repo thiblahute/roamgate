@@ -728,60 +728,6 @@ describe("Claude session artifacts", () => {
   });
 });
 
-describe("Claude session images", () => {
-  test("agent_history.entry gives the images a message carried", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "roamgate-claude-images-"));
-    tempDirectories.push(directory);
-    const path = join(directory, "session.jsonl");
-    const png = Buffer.from("png bytes").toString("base64");
-    await writeFile(
-      path,
-      `${JSON.stringify({
-        type: "user",
-        timestamp: "2026-10-30T10:00:00.000Z",
-        message: {
-          role: "user",
-          content: [
-            { type: "text", text: "[Image #1] look" },
-            {
-              type: "image",
-              source: { type: "base64", media_type: "image/png", data: png },
-            },
-          ],
-        },
-      })}\n`,
-    );
-    const handlers = createAgentSessionHandlers({
-      herdrCall: async () => ({
-        agent: {
-          agent: "claude",
-          workspace_id: "w1",
-          tab_id: "t1",
-          cwd: directory,
-          agent_session: { agent: "claude", kind: "path", value: path },
-        },
-      }),
-      files: localAgentSessionFiles,
-    });
-    const history = await handlers.readHistory({
-      pane_id: "p1",
-      history_version: 2,
-    });
-    if (!("mode" in history) || history.mode !== "snapshot")
-      throw new Error("Expected history snapshot");
-    const [message] = history.entries;
-    // The history says there is an image, without its data.
-    expect(message!.images).toEqual([
-      { media_type: "image/png", bytes: 9, hash: expect.any(String) },
-    ]);
-    const entry = await handlers.readEntry({
-      pane_id: "p1",
-      entry_id: message!.id,
-    });
-    expect(entry.images).toEqual([{ ...message!.images![0]!, data: png }]);
-  });
-});
-
 test("finds the pane running a session, following a Claude session that went on under a new ID", async () => {
   const first = "362be254-14eb-4390-a96c-25032526572a";
   const next = "9f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";

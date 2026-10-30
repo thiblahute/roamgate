@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  listedFiles,
+  noCheckpointQuestion,
   rewindChoices,
   rewindClaude,
+  rewindModeStates,
   selectedRewindEntry,
   showsMessage,
   type RewindMode,
@@ -149,5 +152,46 @@ describe("claude rewind", () => {
       'does not offer "Restore code"',
     );
     expect(claude.picked).toEqual({});
+  });
+});
+
+describe("what a rewind offers for the code", () => {
+  test("nothing edited after the message: the code choices are off", () => {
+    const states = rewindModeStates({ code: "none" });
+    expect([...states.disabled].sort()).toEqual(["both", "code"]);
+    expect(states.note).toContain("No code changes to restore");
+  });
+
+  test("edits with no checkpoint: off, with why and the files", () => {
+    const states = rewindModeStates({
+      code: "no_checkpoint",
+      files: ["/w/a.ts", "/w/b.ts"],
+    });
+    expect([...states.disabled].sort()).toEqual(["both", "code"]);
+    expect(states.note).toBe(
+      "Claude Code has no code checkpoint for these changes (made before checkpoints were on): /w/a.ts, /w/b.ts. Restore the conversation only.",
+    );
+  });
+
+  test("restorable, unknown or not known yet: everything offered", () => {
+    for (const check of [
+      { code: "restorable" as const, files: ["/w/a.ts"] },
+      { code: "unknown" as const },
+      null,
+    ]) {
+      const states = rewindModeStates(check);
+      expect(states.disabled.size).toBe(0);
+      expect(states.note).toBeNull();
+    }
+  });
+
+  test("the question for edits without a checkpoint lists the files", () => {
+    expect(noCheckpointQuestion()).toBe(
+      "Claude Code has no code checkpoint for these changes (made before checkpoints were on). Rewind the conversation only?",
+    );
+    expect(noCheckpointQuestion(["/w/a.ts"])).toContain(
+      "\n\nFiles changed: /w/a.ts",
+    );
+    expect(listedFiles(["a", "b", "c"], 2)).toBe("a, b and 1 more");
   });
 });

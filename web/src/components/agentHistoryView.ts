@@ -258,6 +258,8 @@ export function previewToolArgumentFields(
 export type ToolBlockSummary = {
   calls: number;
   errors: number;
+  /** Questions or permissions dismissed unanswered (not errors). */
+  dismissed: number;
   tools: { name: string; count: number }[];
 };
 
@@ -272,7 +274,10 @@ export function summarizeToolSteps(
   }
   return {
     calls: steps.length,
-    errors: steps.filter((step) => step.result?.is_error).length,
+    errors: steps.filter(
+      (step) => step.result?.is_error && !step.result.dismissed,
+    ).length,
+    dismissed: steps.filter((step) => step.result?.dismissed).length,
     tools: [...counts]
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count),

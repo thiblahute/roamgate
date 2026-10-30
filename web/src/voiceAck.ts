@@ -159,6 +159,8 @@ export type TurnAck = {
   activity(): void;
   /** The user talks over it: the ack playing stops. */
   hush(): void;
+  /** Whether an ack plays (or is about to) now. */
+  playing(): boolean;
   /** Resolves when no ack plays: the one playing ends, cut past ACK_CUT_MS. */
   quiet(): Promise<void>;
   /** No ack anymore this turn; resolves as quiet() does. */
@@ -303,6 +305,7 @@ export function startTurnAck<Speech>({
     hush() {
       playing?.controller.abort();
     },
+    playing: () => playing !== null,
     quiet,
     async end() {
       ended = true;

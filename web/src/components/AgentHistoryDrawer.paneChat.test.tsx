@@ -47,15 +47,48 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       writable: true,
     });
   const typedIntoPanes: string[] = [];
+  // The session's transcript as the bridge serves it; a test adds to it.
+  const transcript: Record<string, unknown>[] = [
+    {
+      id: "m1",
+      role: "user",
+      kind: "message",
+      text: "Run the tests",
+      sent_at: "2026-01-01T00:00:00Z",
+    },
+  ];
+  let revision = 1;
+  const sent: { text: string; uuid?: string }[] = [];
+  let imageCalls = 0;
+  const imageLanes: (string | undefined)[] = [];
+  URL.createObjectURL = () => "blob:sent-image";
   const client = {
     connectionId: "conn",
     generation: 1,
     isCurrent: () => true,
-    // The pane refuses what is typed into it; the transcript reads work.
-    call: async (method: string) =>
-      !method.startsWith("agent_")
-        ? (typedIntoPanes.push(method),
-          Promise.reject(new Error("pane closed")))
+    // The pane refuses what is typed into it; the transcript reads work,
+    // and conversation mode takes what is sent.
+    call: async (
+      method: string,
+      params?: Record<string, unknown>,
+      _timeoutMs?: number | null,
+      options?: { lane?: string },
+    ) => {
+      if (method === "agent_history.image") {
+        imageCalls += 1;
+        imageLanes.push(options?.lane);
+        // The first try is lost (a phone's socket away), the next loads.
+        return imageCalls === 1
+          ? Promise.reject(new Error("bridge hello is unavailable"))
+          : { media_type: "image/png", data: "iVBORw0KGgo=" };
+      }
+      if (method === "agent_chat.send") {
+        sent.push(params as { text: string; uuid?: string });
+        return { status: "sent", id: params?.uuid };
+      }
+      if (!method.startsWith("agent_")) typedIntoPanes.push(method);
+      return !method.startsWith("agent_")
+        ? Promise.reject(new Error("pane closed"))
         : method === "agent_session.get"
           ? { status: "ok", stats: {}, session: { value: "s1" } }
           : {
@@ -68,18 +101,11 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
               updated_at: "2026-01-01T00:00:00Z",
               history_version: 2,
               mode: "snapshot",
-              cursor: { epoch: "e", revision: 1 },
+              cursor: { epoch: "e", revision },
               window_limit: 200,
-              entries: [
-                {
-                  id: "m1",
-                  role: "user",
-                  kind: "message",
-                  text: "Run the tests",
-                  sent_at: "2026-01-01T00:00:00Z",
-                },
-              ],
-            },
+              entries: [...transcript],
+            };
+    },
   };
   mock.module("../useConnectionClient", () => ({
     useConnectionClient: () => client,
@@ -88,7 +114,9 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
   }));
   // A plain message box: Vim keys (CodeMirror) off.
   browser.localStorage.setItem("vimKeys", "false");
-  const { initializeLayoutPreferences } = await import("../layoutPreferences");
+  const { initializeLayoutPreferences, updateLayoutPreferences } = await import(
+    "../layoutPreferences"
+  );
   initializeLayoutPreferences();
   const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
   const { createRoot } = await import("react-dom/client");
@@ -389,6 +417,336 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       });
       expect(activeKeys.mock.calls).toEqual([["2"]]);
       expect(otherKeys.mock.calls).toEqual([]);
+    } finally {
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("an agent that cannot rewind or run ! lines offers neither", async () => {
+    const { container, root } = mount();
+    const render = (capabilities?: Record<string, unknown>) =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={pane}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+              conversation: {
+                state: {
+                  pane_id: "pane-one",
+                  owner: "conversation",
+                  phase: "conversation",
+                  session_id: "s1",
+                  cwd: "/repo",
+                  status: "idle",
+                  tools_running: false,
+                  activity: null,
+                  queue: [],
+                  interrupted: null,
+                  ...(capabilities ? { capabilities } : {}),
+                },
+                live: { items: [], endedAt: null },
+                refusal: null,
+                handing: null,
+                departing: [],
+                unavailable: false,
+              } as never,
+              modeBound: true,
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const rewind = () =>
+      container.querySelectorAll(
+        'button[aria-label="Rewind to before this message"]',
+      ).length;
+    const typed = async (text: string) => {
+      const box = container.querySelector("textarea")!;
+      await React.act(async () => {
+        Object.getOwnPropertyDescriptor(
+          browser.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(box, text);
+        box.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
+    };
+    const shellBox = () =>
+      !!container.querySelector(".agent-history-composer.is-shell");
+    try {
+      // No capabilities (an older bridge): Claude's, rewind and ! lines on.
+      await render();
+      expect(rewind()).toBeGreaterThan(0);
+      await typed("!ls");
+      expect(shellBox()).toBe(true);
+      await typed("");
+      await render({
+        steer: true,
+        questions: true,
+        alwaysAllow: true,
+        rewind: null,
+        promptSuggestions: false,
+        shellLines: null,
+        backgroundTasks: false,
+        images: "path",
+        slashCommands: null,
+      });
+      expect(rewind()).toBe(0);
+      await typed("!ls");
+      expect(shellBox()).toBe(false);
+    } finally {
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a Claude chat in conversation mode goes back by Open in terminal, a phone's by its bottom bar", async () => {
+    const { container, root } = mount();
+    let opened = 0;
+    const conversation = (phase: "conversation" | "to_conversation") => ({
+      state: {
+        pane_id: "pane-one",
+        owner: "conversation" as const,
+        phase,
+        session_id: "s1",
+        cwd: "/repo",
+        status: "idle" as const,
+        tools_running: false,
+        activity: null,
+        queue: [],
+        interrupted: null,
+      },
+      live: { items: [], endedAt: null },
+      refusal: null,
+      handing: null,
+      departing: [],
+      unavailable: false,
+    });
+    const render = (
+      phase: "conversation" | "to_conversation",
+      modeBound = true,
+    ) =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={pane}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal: () => {
+                opened += 1;
+              },
+              readScreen: () => [],
+              ...(modeBound
+                ? { conversation: conversation(phase) as never, modeBound }
+                : {}),
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const phone = (on: boolean) =>
+      React.act(async () => {
+        updateLayoutPreferences({ mode: on ? "mobile" : "auto" });
+      });
+    try {
+      // Still taking over: nothing to open in the terminal yet.
+      await render("to_conversation");
+      expect(button(container, "Open in terminal")?.disabled).toBe(true);
+      expect(button(container, "Show the terminal")).toBeNull();
+      expect(container.querySelector(".agent-chat-owner")?.textContent).toBe(
+        "Switching to conversation mode",
+      );
+      await render("conversation");
+      // In conversation mode the header has no mode line.
+      expect(container.querySelector(".agent-chat-owner")).toBeNull();
+      const open = button(container, "Open in terminal")!;
+      expect(open.disabled).toBe(false);
+      await React.act(async () => open.click());
+      expect(opened).toBe(1);
+      // An agent without conversation mode shows its terminal from there.
+      await render("conversation", false);
+      expect(button(container, "Show the terminal")).not.toBeNull();
+
+      // A phone's way to the terminal is its bottom bar's More options:
+      // none in the header, for either.
+      await phone(true);
+      await render("conversation");
+      expect(container.querySelector(".agent-chat-title")).not.toBeNull();
+      expect(button(container, "Open in terminal")).toBeNull();
+      expect(button(container, "Show the terminal")).toBeNull();
+      await render("conversation", false);
+      expect(button(container, "Show the terminal")).toBeNull();
+      expect(button(container, "Open in terminal")).toBeNull();
+    } finally {
+      await phone(false);
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a conversation-mode message is drawn once its replay lands, also after a remount", async () => {
+    const { container, root } = mount();
+    const conversation = {
+      state: {
+        pane_id: "pane-one",
+        owner: "conversation" as const,
+        phase: "conversation" as const,
+        session_id: "s1",
+        cwd: "/repo",
+        status: "idle" as const,
+        tools_running: false,
+        activity: null,
+        queue: [],
+        interrupted: null,
+      },
+      live: { items: [], endedAt: null },
+      refusal: null,
+      handing: null,
+      departing: [],
+    };
+    const render = () =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={{ ...pane, pane_id: "pane-one" }}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+              conversation: conversation as never,
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const question = "Has upstream started reviewing?";
+    const drawn = () => container.textContent!.split(question).length - 1;
+    try {
+      await render();
+      const box = container.querySelector("textarea")!;
+      await React.act(async () => {
+        Object.getOwnPropertyDescriptor(
+          browser.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(box, question);
+        box.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
+      await React.act(async () => {
+        box.dispatchEvent(
+          new window.KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(sent.map((each) => each.text)).toEqual([question]);
+      const uuid = sent[0]!.uuid;
+      expect(uuid).toBeTruthy();
+      // On its way until the transcript has it.
+      expect(container.querySelectorAll("[data-outbox-id]")).toHaveLength(1);
+      expect(drawn()).toBe(1);
+      // Claude took it as a turn and answered.
+      transcript.push(
+        {
+          id: "u2",
+          uuid,
+          role: "user",
+          kind: "message",
+          text: question,
+          sent_at: "2026-01-01T00:01:00Z",
+        },
+        {
+          id: "a2",
+          role: "assistant",
+          kind: "message",
+          text: "Not yet.",
+          sent_at: "2026-01-01T00:01:05Z",
+        },
+      );
+      revision += 1;
+      // The chat goes away (the pane shows its terminal) and comes back:
+      // it reads the transcript again.
+      await React.act(async () => root.render(null));
+      await render();
+      expect(container.textContent).toContain("Not yet.");
+      expect(drawn()).toBe(1);
+      expect(container.querySelectorAll("[data-outbox-id]")).toHaveLength(0);
+      expect(container.querySelector(".agent-history-chat-queued")).toBeNull();
+      await React.act(async () => root.render(null));
+      await render();
+      expect(drawn()).toBe(1);
+      expect(container.querySelectorAll("[data-outbox-id]")).toHaveLength(0);
+    } finally {
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("an image sent in a message shows once it loads, even after a failed try", async () => {
+    const { container, root } = mount();
+    transcript.push({
+      id: "u3",
+      uuid: "image-message",
+      role: "user",
+      kind: "message",
+      text: "this is a regression",
+      images: 1,
+      sent_at: "2026-01-01T00:02:00Z",
+    });
+    revision += 1;
+    try {
+      await React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={pane}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(container.textContent).toContain("this is a regression");
+      expect(imageCalls).toBe(1);
+      // Images fill in behind what the user waits on.
+      expect(imageLanes).toEqual(["background"]);
+      // One lost request is no reason to say it is missing.
+      expect(container.textContent).not.toContain("could not be loaded");
+      expect(
+        container.querySelector(".agent-history-chat-image.is-loading"),
+      ).not.toBeNull();
+      await React.act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      });
+      expect(imageCalls).toBe(2);
+      expect(
+        container
+          .querySelector(".agent-history-chat-image img")
+          ?.getAttribute("src"),
+      ).toBe("blob:sent-image");
     } finally {
       await React.act(async () => root.unmount());
       container.remove();

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
+import type { InjectedKind } from "../../../shared/injectedMessage";
+import { isDismissedResult } from "../../../shared/review";
+import type { SlashCommand } from "../../../shared/slashCommand";
 import type { AtifTrajectory, SessionFile } from "./session-types";
 import { isConversationStep } from "./session-messages";
 import { historyWindowEntries } from "./session-history-window";
 import { type PublishedArtifact, publishedArtifact } from "./session-artifacts";
-import type { HistoryImage } from "./session-images";
-export type { HistoryImage };
 
 export type HistoryEntry = {
   id: string;
@@ -26,8 +27,10 @@ export type HistoryEntry = {
   // On an Artifact tool result: the page it published. Kept when the
   // payload is redacted, so the chat can link to it.
   artifact?: PublishedArtifact;
-  // On a user message: the images it carried, without their data.
-  images?: HistoryImage[];
+  // On a tool result: the user dismissed the question or permission it
+  // waited on, unanswered, from Roamgate. Kept when the payload is
+  // redacted, so the chat can say so.
+  dismissed?: boolean;
   // Set on redacted wire entries: UTF-8 byte length of the withheld text,
   // fetchable via agent_history.entry when the user expands the card.
   text_bytes?: number;
@@ -35,7 +38,50 @@ export type HistoryEntry = {
   // tell a payload rewritten in place (even at the same length) from the one
   // they already fetched.
   text_hash?: string;
+  // Claude Code: the API message id and block index of an assistant
+  // message, and the transcript record's uuid, so a streamed block can be
+  // matched to the entry that replaces it.
+  message_id?: string;
+  block_index?: number;
+  uuid?: string;
+  // How many images the user sent inline with this message (conversation
+  // mode, a pasted image), fetchable by uuid via agent_history.image.
+  images?: number;
+  // A user-turn message the user did not type (Claude Code): a subagent's
+  // report, another session's message, a task ending. Its text is what it
+  // says; the chat shows the label, as a notice, and voice never reads it.
+  injected?: { kind: InjectedKind; label: string };
+  // On a rewind's notice (injected kind "rewound"): the user's messages the
+  // rewind cut, as sent, so the chat can offer them back.
+  rewound?: { text: string; sent_at: string }[];
+  // A slash command the user typed in the terminal (Claude Code): its
+  // text is the command as typed ("/exit"); the chat shows it as one.
+  command?: SlashCommand;
+  // What a command run in Claude Code itself printed ("Reloaded: 11
+  // plugins..."), right after it: not the agent's words.
+  command_output?: true;
+  // A `!` line the user ran (Claude Code's bash mode), with what it
+  // printed when the transcript has it. Its text is the command.
+  shell?: {
+    command: string;
+    stdout?: string;
+    stderr?: string;
+    // Its output is longer than the chat shows of it (SHELL_SHOWN).
+    truncated?: boolean;
+    // The directory it ran in, as the transcript has it.
+    cwd?: string;
+    // Filled by the browser from the run it saw end (the transcript keeps
+    // no exit code), and the connection's name.
+    status?: "running" | "done" | "stopped" | "failed";
+    exit_code?: number | null;
+    started_at?: string;
+    finished_at?: string;
+    host?: string;
+  };
 };
+
+/** What the chat shows of each stream of a `!` line from the transcript. */
+const SHELL_SHOWN = 8000;
 export type HistoryCursor = { epoch: string; revision: number };
 export type HistoryUpdate = {
   history_version: 2;
@@ -95,11 +141,27 @@ export function historyEntriesFromTrajectory(
           ? { compact_summary: true }
           : {}),
         ...(step.extra?.turn_end === true ? { turn_end: true } : {}),
-        ...(step.source === "user" && Array.isArray(step.extra?.images)
-          ? {
-              images: step.extra.images as HistoryImage[],
-            }
+        ...(typeof step.extra?.message_id === "string"
+          ? { message_id: step.extra.message_id }
           : {}),
+        ...(typeof step.extra?.block_index === "number"
+          ? { block_index: step.extra.block_index }
+          : {}),
+        ...(typeof step.extra?.uuid === "string"
+          ? { uuid: step.extra.uuid }
+          : {}),
+        ...(step.source === "user" &&
+        typeof step.extra?.images === "number" &&
+        step.extra.images > 0
+          ? { images: step.extra.images }
+          : {}),
+        ...injectedField(step.extra?.injected),
+        ...rewoundField(step.extra?.rewound),
+        ...commandField(step.extra?.command),
+        ...(step.extra?.command_output === true
+          ? { command_output: true as const }
+          : {}),
+        ...shellField(step.extra?.shell),
       });
     }
     for (const call of step.tool_calls ?? []) {
@@ -128,6 +190,10 @@ export function historyEntriesFromTrajectory(
           artifactCalls.get(result.source_call_id ?? ""),
           result.extra?.is_error === true ? "" : (result.content ?? ""),
         ),
+        ...(result.extra?.is_error === true &&
+        isDismissedResult(result.content ?? step.message)
+          ? { dismissed: true }
+          : {}),
       });
     }
     if (typeof step.extra?.error_message === "string") {
@@ -141,6 +207,57 @@ export function historyEntriesFromTrajectory(
     }
   }
   return historyWindowEntries(entries, HISTORY_WINDOW_LIMIT);
+}
+
+function shellField(value: unknown): Pick<HistoryEntry, "shell"> {
+  if (!value || typeof value !== "object") return {};
+  const { command, stdout, stderr, cwd } = value as Record<string, unknown>;
+  if (typeof command !== "string") return {};
+  const long = [stdout, stderr].some(
+    (each) => typeof each === "string" && each.length > SHELL_SHOWN,
+  );
+  return {
+    shell: {
+      command,
+      ...(typeof stdout === "string"
+        ? { stdout: stdout.slice(0, SHELL_SHOWN) }
+        : {}),
+      ...(typeof stderr === "string"
+        ? { stderr: stderr.slice(0, SHELL_SHOWN) }
+        : {}),
+      ...(long ? { truncated: true } : {}),
+      ...(typeof cwd === "string" && cwd ? { cwd } : {}),
+    },
+  };
+}
+
+function rewoundField(value: unknown): Pick<HistoryEntry, "rewound"> {
+  if (!Array.isArray(value)) return {};
+  const messages = value.flatMap((each) =>
+    each &&
+    typeof each === "object" &&
+    typeof each.text === "string" &&
+    typeof each.sent_at === "string"
+      ? [{ text: each.text as string, sent_at: each.sent_at as string }]
+      : [],
+  );
+  return messages.length ? { rewound: messages } : {};
+}
+
+function injectedField(value: unknown): Pick<HistoryEntry, "injected"> {
+  if (!value || typeof value !== "object") return {};
+  const { kind, label } = value as Record<string, unknown>;
+  return typeof kind === "string" && typeof label === "string"
+    ? { injected: { kind: kind as InjectedKind, label } }
+    : {};
+}
+
+function commandField(value: unknown): Pick<HistoryEntry, "command"> {
+  if (!value || typeof value !== "object") return {};
+  const { name, args } = value as Record<string, unknown>;
+  return typeof name === "string" && name
+    ? { command: { name, args: typeof args === "string" ? args : "" } }
+    : {};
 }
 
 function artifactField(

@@ -53,9 +53,16 @@ import {
   defaultPaneView,
   paneView,
   setPaneView,
+  storedPaneView,
   togglePaneView,
   usePaneView,
 } from "./paneView";
+import { agentChatSnapshot, useAgentChat } from "./agentChat";
+import { modeView, paneShownView } from "./agentChatOwnership";
+import {
+  ModeSwitchDialog,
+  offerModeSwitch,
+} from "./components/ModeSwitchDialog";
 import {
   shortcutMatches,
   shortcutTitle,
@@ -147,6 +154,7 @@ import {
 } from "./assistant";
 
 import type { AssistantSource } from "../../shared/assistant";
+import { isConversationAgent } from "../../shared/agentChat";
 import { GlobalTooltip } from "./components/GlobalTooltip";
 import "./components/MobileTabSheet.css";
 import { requestClosePane, requestCloseTab, TabBar } from "./components/TabBar";
@@ -486,9 +494,16 @@ function TerminalView(props: TerminalViewProps) {
     const paneId =
       props.paneId ?? selected ?? state.layout?.focused_pane_id ?? null;
     const pane = state.panes.find((p) => p.pane_id === paneId);
+    if (!paneHasAgentHistory(pane)) return false;
+    // A Claude pane shows its mode's view, the last one seen until known.
     return (
-      paneHasAgentHistory(pane) &&
-      paneView(state.activeConnectionId, pane.pane_id) === "chat"
+      paneShownView({
+        agent: true,
+        claude: isConversationAgent(pane.agent),
+        chat: agentChatSnapshot(state.activeConnectionId, pane.pane_id),
+        stored: storedPaneView(state.activeConnectionId, pane.pane_id),
+        chosen: paneView(state.activeConnectionId, pane.pane_id),
+      }).view === "chat"
     );
   });
   return (
@@ -2085,8 +2100,44 @@ export default function App() {
       ),
     );
   }, [s.activeConnectionId, s.panes, s.status]);
-  const activePaneChat =
-    usePaneView(s.activeConnectionId, activePane?.pane_id) === "chat";
+  // One view per mode: a Claude pane's chat shows only in conversation
+  // mode, so its Chat and Terminal buttons offer the switch instead.
+  const chosenPaneView = usePaneView(s.activeConnectionId, activePane?.pane_id);
+  const activeClaude =
+    isConversationAgent(activePane?.agent) ||
+    (!!activePane && !activePane.agent && chosenPaneView === "chat");
+  const activeConversation = useAgentChat(
+    connectionClient,
+    activePane?.pane_id,
+    activeClaude,
+  );
+  const activeShown = paneShownView({
+    agent: true,
+    claude: activeClaude,
+    chat: activeConversation,
+    stored: storedPaneView(s.activeConnectionId, activePane?.pane_id),
+    chosen: chosenPaneView,
+  });
+  const activeModeBound = activeShown.modeBound;
+  const activePaneChat = activeShown.view === "chat";
+  /** Offers the switch of a Claude pane's mode, on a phone. */
+  const offerActiveModeSwitch = (to: "conversation" | "terminal") => {
+    if (!activePane) return;
+    const kind = agentStateKind(activePane.agent_status);
+    const chat = activeConversation?.state;
+    offerModeSwitch({
+      connectionId: connectionClient.connectionId,
+      paneId: activePane.pane_id,
+      to,
+      busy:
+        to === "conversation"
+          ? kind === "working" || kind === "blocked"
+          : chat?.status === "working" ||
+            chat?.status === "starting" ||
+            chat?.status === "blocked" ||
+            !!chat?.queue.length,
+    });
+  };
   const historyInspectorOpen =
     inspectorState?.open === true && inspectorState.view === "history";
   const historyInspectorVisible =
@@ -2979,7 +3030,27 @@ export default function App() {
       // A phone shows the agent's chat in its pane, as conversation mode
       // does: one header, one message box, the terminal a tap away.
       if (mobile) {
-        setPaneView(snapshot.activeConnectionId, targetPane.pane_id, "chat");
+        // A terminal-mode Claude has no chat to show: its terminal, and the
+        // offer to switch it.
+        const chat = agentChatSnapshot(
+          snapshot.activeConnectionId,
+          targetPane.pane_id,
+        );
+        if (
+          isConversationAgent(targetPane.agent) &&
+          chat.state &&
+          !chat.unavailable &&
+          modeView(chat.state) === "terminal"
+        ) {
+          const kind = agentStateKind(targetPane.agent_status);
+          offerModeSwitch({
+            connectionId: connectionClient.connectionId,
+            paneId: targetPane.pane_id,
+            to: "conversation",
+            busy: kind === "working" || kind === "blocked",
+          });
+        } else
+          setPaneView(snapshot.activeConnectionId, targetPane.pane_id, "chat");
         if (targetPane.pane_id !== activePaneIdForSnapshot(snapshot))
           void store.focusPane(targetPane.pane_id);
         activateTerminalSurface();
@@ -3005,6 +3076,7 @@ export default function App() {
     [
       activateTerminalSurface,
       closeInspector,
+      connectionClient,
       mobile,
       openInspector,
       resourceUiKey,
@@ -4834,11 +4906,16 @@ export default function App() {
     // The Chat button switches the agent pane between its chat and its
     // terminal, the History drawer giving way to the pane's own chat.
     if (activePane && activePaneHasAgent && !historyInspectorVisible) {
-      setPaneView(
-        s.activeConnectionId,
-        activePane.pane_id,
-        activePaneChat && mobileView === "session" ? "terminal" : "chat",
-      );
+      // A Claude pane's chat is its conversation mode: on a terminal-mode
+      // one, Chat offers the switch; on its chat, it shows it.
+      if (activeModeBound) {
+        if (!activePaneChat) offerActiveModeSwitch("conversation");
+      } else
+        setPaneView(
+          s.activeConnectionId,
+          activePane.pane_id,
+          activePaneChat && mobileView === "session" ? "terminal" : "chat",
+        );
       activateTerminalSurface();
     } else setAgentHistoryInspectorOpen(true);
   };
@@ -5125,7 +5202,9 @@ export default function App() {
             <Settings size={16} />
             <span className="mobile-nav-label">Settings</span>
           </button>
-          {activePaneHasAgent && activePane ? (
+          {/* A Claude pane's view is its mode's: this menu's own Chat and
+              Terminal are its switch, so it has no entry of its own here. */}
+          {activePaneHasAgent && activePane && !activeModeBound ? (
             <button
               type="button"
               className={activePaneChat ? "active" : ""}
@@ -5207,13 +5286,18 @@ export default function App() {
               title="Terminal"
               aria-label="Show terminal session"
               onClick={() => {
-                // An agent pane shown as a chat shows its terminal again.
-                if (activePane && activePaneChat)
-                  setPaneView(
-                    s.activeConnectionId,
-                    activePane.pane_id,
-                    "terminal",
-                  );
+                // An agent pane shown as a chat shows its terminal again; a
+                // Claude chat is its conversation mode: open in terminal is
+                // the user's switch, offered.
+                if (activePane && activePaneChat) {
+                  if (activeModeBound) offerActiveModeSwitch("terminal");
+                  else
+                    setPaneView(
+                      s.activeConnectionId,
+                      activePane.pane_id,
+                      "terminal",
+                    );
+                }
                 activateTerminalSurface();
               }}
             >
@@ -5830,6 +5914,7 @@ export default function App() {
         allServers={createWorkspaceScope === true}
         onClose={() => setCreateWorkspaceScope(null)}
       />
+      <ModeSwitchDialog />
       {/* Before the tooltip layer, which shares the modal z-index. */}
       {shortcutCheatSheetOpen && !mobile ? (
         <Suspense fallback={null}>

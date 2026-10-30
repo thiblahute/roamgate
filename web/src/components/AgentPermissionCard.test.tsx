@@ -93,6 +93,20 @@ if (process.env.ROAMGATE_PERMISSION_CARD_DOM_TEST !== "1") {
     expect(release).toHaveBeenCalledTimes(1);
     await press(card, "x");
     expect(answer).toHaveBeenCalledTimes(2);
+    // Dismissed, unanswered: d, Esc, or its button.
+    await press(card, "Escape");
+    expect(lastAnswer()).toEqual(["local", "p1", "dismiss"]);
+    await settle();
+    await press(card, "d");
+    expect(lastAnswer()).toEqual(["local", "p1", "dismiss"]);
+    await settle();
+    const dismissButton = [
+      ...container.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Dismiss");
+    expect(dismissButton).toBeTruthy();
+    await React.act(async () => dismissButton!.click());
+    expect(answer).toHaveBeenCalledTimes(5);
+    await settle();
 
     await React.act(async () =>
       root.render(
@@ -149,6 +163,21 @@ if (process.env.ROAMGATE_PERMISSION_CARD_DOM_TEST !== "1") {
       "q1",
       { answers: { "Which color?": "blue", "Which fruit?": "apple" } },
     ]);
+    await settle();
+    // Always there, whatever is chosen: Esc, even from the own-answer
+    // field, or the button, dismisses the questions unanswered.
+    const own = container.querySelector<HTMLInputElement>(
+      ".agent-question-own",
+    )!;
+    await press(own, "Escape");
+    expect(lastAnswer()).toEqual(["local", "q1", "dismiss"]);
+    await settle();
+    const dismissQuestion = [
+      ...container.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Dismiss question");
+    expect(dismissQuestion?.disabled).toBe(false);
+    await React.act(async () => dismissQuestion!.click());
+    expect(lastAnswer()).toEqual(["local", "q1", "dismiss"]);
     await React.act(async () => root.unmount());
   });
 }

@@ -35,9 +35,7 @@ const drawer = (paneChat: boolean, orientation: string) => `
   <aside class="agent-history-drawer is-open is-embedded${paneChat ? " is-pane-chat" : ""}">
     <div class="agent-history-drawer-head">
       <span class="agent-chat-title">A long session title</span>
-      <span class="agent-chat-owner is-terminal">Terminal mode
-        <button class="agent-chat-owner-switch">Switch to conversation mode</button>
-      </span>
+      <span class="agent-chat-owner is-conversation has-refusal">Still in conversation mode<span class="agent-chat-owner-reason">The pane holder is not connected</span></span>
     </div>
     <div class="agent-history-messages">
       <div class="agent-history-chat-frame">
@@ -86,4 +84,25 @@ test("the phone's message box is never wider than its field", () => {
   expect(placeholder.slice(0, placeholder.indexOf("}"))).toContain(
     "text-overflow: ellipsis;",
   );
+});
+
+test("a phone's chat header keeps the mode in view", async () => {
+  const phone = render("mobile", drawer(true, ""));
+  const desktop = render("desktop", drawer(true, ""));
+  try {
+    // The title gives way first.
+    expect(phone.style(".agent-chat-title").flexShrink).toBe("4");
+    expect(phone.style(".agent-chat-title").minWidth).not.toBe("0px");
+    expect(phone.style(".agent-chat-owner").maxWidth).toBe("60%");
+    expect(desktop.style(".agent-chat-owner").maxWidth).not.toBe("60%");
+    // A refusal's reason is read, not hovered: shown, and wrapped rather
+    // than cut.
+    for (const layout of [phone, desktop]) {
+      expect(layout.style(".agent-chat-owner-reason").display).not.toBe("none");
+      expect(layout.style(".agent-chat-owner").whiteSpace).toBe("normal");
+    }
+  } finally {
+    await phone.close();
+    await desktop.close();
+  }
 });

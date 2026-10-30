@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  DISMISSED_PERMISSION_MESSAGE,
+  DISMISSED_QUESTION_MESSAGE,
+} from "../../../shared/review";
 
 /**
  * The agent-side client, installed by the bridge as
@@ -25,6 +29,9 @@ SOCKET = os.environ.get(
     "ROAMGATE_REVIEW_SOCKET",
     os.path.join(os.path.expanduser("~"), ".cache", "roamgate", "review.sock"),
 )
+# What Claude is told of a question or request put away in Roamgate.
+DISMISSED_QUESTION = ${JSON.stringify(DISMISSED_QUESTION_MESSAGE)}
+DISMISSED_PERMISSION = ${JSON.stringify(DISMISSED_PERMISSION_MESSAGE)}
 
 
 class UnixConnection(http.client.HTTPConnection):
@@ -209,9 +216,17 @@ def ask(args, command, extra):
         return None
 
 
+def headless():
+    # Roamgate's conversation mode runs this claude and asks the user itself
+    # (over stdio): its hooks must not ask a second time.
+    return os.environ.get("ROAMGATE_HEADLESS") == "1"
+
+
 def questions(args):
     # A PreToolUse hook on AskUserQuestion: Claude Code shows its own
     # questions only if this prints nothing.
+    if headless():
+        return
     try:
         hook = json.load(sys.stdin)
     except ValueError:
@@ -221,6 +236,20 @@ def questions(args):
     if not asked:
         return
     reply = ask(args, "questions", {"questions": json.dumps(asked)})
+    if (reply or {}).get("dismissed"):
+        # Put away unanswered in Roamgate: Claude is told so and goes on.
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": DISMISSED_QUESTION,
+                    }
+                }
+            )
+        )
+        return
     answers = (reply or {}).get("answers")
     if not answers:
         return
@@ -241,6 +270,8 @@ def permission(args):
     # A PermissionRequest hook: Claude Code waits on it before its own
     # dialog. Any failure, or no answer in time, prints nothing: the
     # terminal asks as usual.
+    if headless():
+        return
     pane = os.environ.get("HERDR_PANE_ID", "")
     if not pane or not os.path.exists(SOCKET):
         return
@@ -278,6 +309,8 @@ def permission(args):
         return
     if answer == "deny":
         decision = {"behavior": "deny", "message": "Denied from Roamgate"}
+    elif answer == "dismiss":
+        decision = {"behavior": "deny", "message": DISMISSED_PERMISSION}
     elif answer == "always":
         decision = {"behavior": "allow", "updatedPermissions": suggestions}
     elif answer == "allow":
@@ -306,10 +339,13 @@ def main():
         return
     if not os.path.exists(SOCKET):
         fail("Roamgate review socket not found: " + SOCKET)
+    # A claude in conversation mode has its pane under Roamgate's names
+    # (Herdr's would make Herdr's hook claim the pane).
     body = {
-        "pane": os.environ.get("HERDR_PANE_ID", ""),
+        "pane": os.environ.get("HERDR_PANE_ID") or os.environ.get("ROAMGATE_PANE_ID", ""),
         "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
-        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH")
+        or os.environ.get("ROAMGATE_HERDR_SOCKET_PATH", ""),
         "cwd": os.path.realpath(os.getcwd()),
         "agent": args.agent,
     }

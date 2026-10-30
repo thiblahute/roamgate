@@ -1,4 +1,10 @@
 import { useRenderTrace } from "../renderTrace";
+import { shellLine } from "../../../shared/bashMode";
+import {
+  chatCapabilities,
+  isConversationAgent,
+} from "../../../shared/agentChat";
+import { ShellCommandBlock } from "./AgentChatShell";
 import {
   useCallback,
   useEffect,
@@ -37,10 +43,53 @@ import {
   rememberAgentHistory,
 } from "../agentHistoryCache";
 import { store, useStoreSelector } from "../store";
-import { rewindClaude, type RewindMode } from "../claudeRewind";
+import {
+  type AgentChatSnapshot,
+  answerAgentChatApiKey,
+  cutOffNotice,
+  deliveryNotice,
+  dismissAgentChatInterrupted,
+  QUEUE_STALL_MS,
+  queueWaiting,
+  recoverAgentChat,
+  interruptAgentChat,
+  runAgentChatShell,
+  stopAgentChatShell,
+  lastUserUuid,
+  rewindAgentChat,
+  checkAgentChatRewind,
+  messageUuid,
+  onAgentChatEvent,
+  queuedEntries,
+  queuedEntryId,
+  removeAgentChatQueued,
+  sendAgentChat,
+  sendAgentChatVoice,
+  historyUserUuids,
+  settleAgentChatLive,
+  useAgentChat,
+} from "../agentChat";
+import {
+  conversationActivity,
+  conversationAgentStatus,
+  conversationOwns,
+} from "../agentChatOwnership";
+import { watchAgentHistory } from "../agentHistoryPush";
+import { messageImagePieces } from "../chatImages";
+import { liveTurnEntries, reconcileLiveTurn } from "./liveTurn";
+import {
+  listedFiles,
+  noCheckpointQuestion,
+  rewindClaude,
+  type RewindMode,
+} from "../claudeRewind";
 import { AgentRewindSheet } from "./AgentRewindSheet";
 import { copyTextWithFeedback } from "../copyText";
-import { useConnectionClient } from "../useConnectionClient";
+import {
+  connectionClientScopeKey,
+  useConnectionClient,
+} from "../useConnectionClient";
+import { sentImageUrl } from "../sentImages";
 import {
   readTerminalComposerDraft,
   TerminalComposerSubmitKeyError,
@@ -52,14 +101,19 @@ import { uploadTerminalImage } from "../terminalImageUpload";
 import type { AgentActivity, AgentPrompt } from "../agentPrompt";
 import { AgentArtifactsMenu } from "./AgentArtifactsMenu";
 import { useAgentArtifacts } from "../agentArtifacts";
-import { useAgentCommands } from "../claudeCommands";
 import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { AgentTasksSheet } from "./AgentTasksSheet";
 import { AgentStatusChip } from "./AgentStatusChip";
+import { AgentChatOwnerChip } from "./AgentChatOwnerChip";
 import { useAgentTasks } from "../agentTasks";
 import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
 import { shortcutTitle } from "../shortcutPreferences";
+import {
+  conversationCommands,
+  conversationRefusal,
+  useAgentCommands,
+} from "../claudeCommands";
 import type { Pane } from "../types";
 import {
   DEFAULT_INSPECTOR_NAVIGATION_RATIO,
@@ -71,11 +125,18 @@ import { AgentIcon } from "./AgentIcon";
 import { AgentMessageContent } from "./AgentMessageContent";
 import { AgentMessageDialog } from "./AgentMessageDialog";
 import { AgentHistoryCard } from "./AgentHistoryCard";
-import { AgentHistoryChat } from "./AgentHistoryChat";
+import {
+  AgentHistoryChat,
+  type ChatApiKeyQuestion,
+  type ChatCutOff,
+  type ChatDelivery,
+  type ChatItem,
+} from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
-import { voiceTrace } from "../voiceChat";
+import { withShellOutcomes } from "../shellOutcomes";
+import { noteRewind, voiceTrace } from "../voiceChat";
 import { agentStateKind } from "./agentSession";
-import { useVoiceChat } from "./useVoiceChat";
+import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
 import { ConversationMinimap } from "./ConversationMinimap";
@@ -98,7 +159,6 @@ import {
   type AgentHistory,
   type AgentHistoryResponse,
   type HistoryEntry as AgentHistoryEntry,
-  type HistoryImage as AgentHistoryImage,
 } from "./agentHistory";
 import { AgentSessionPreviewDialog } from "./AgentSessionPreviewDialog";
 import {
@@ -114,7 +174,9 @@ import {
 import {
   newOutboxMessage,
   nextOutboxDeadline,
+  releaseHeldOutbox,
   type OutboxMessage,
+  outboxNotShown,
   readOutbox,
   settleOutbox,
   subscribeOutbox,
@@ -129,7 +191,6 @@ import {
 } from "../voiceRoute";
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
-import { useAttachedImages } from "./useAttachedImages";
 import { ConfirmDialog } from "./ModalDialogs";
 import "./AgentHistoryDrawer.css";
 
@@ -159,6 +220,11 @@ const PROMPT_KEYS: [string, string, string][] = [
 
 /** How long a pane's chat waits for its transcript before saying why. */
 const UNAVAILABLE_QUIET_MS = 20_000;
+
+/** How often the history is read while the bridge pushes its changes. */
+const PUSHED_POLL_MS = 30_000;
+/** And while it cannot. */
+const POLL_MS = 4000;
 
 export function AgentHistoryDrawer({
   pane,
@@ -195,6 +261,16 @@ export function AgentHistoryDrawer({
     readScreen: () => string[];
     /** Where the message box goes: the phone's bottom bar. */
     composerTarget?: HTMLElement | null;
+    /**
+     * A Claude pane's conversation mode: while it owns the session the chat
+     * talks to its headless Claude instead of the terminal.
+     */
+    conversation?: AgentChatSnapshot | null;
+    /**
+     * The chat is the pane's conversation mode (one view per mode): its
+     * terminal button hands the session back to the terminal.
+     */
+    modeBound?: boolean;
   };
   onOpenChange: (open: boolean) => void;
 }) {
@@ -216,6 +292,13 @@ export function AgentHistoryDrawer({
   const connectionGeneration = useStoreSelector(
     (state) => state.connectionGeneration,
   );
+  // Where `!` lines run, as the chat says it.
+  const connectionLabel = useStoreSelector(
+    (state) =>
+      state.connections.find(
+        (connection) => connection.id === state.activeConnectionId,
+      )?.label,
+  );
   const connectionClient = useConnectionClient();
   // Images the user uploaded load from the pane's host.
   const imageUrl = useCallback(
@@ -224,6 +307,35 @@ export function AgentHistoryDrawer({
         inline: true,
       }),
     [connectionClient, pane.workspace_id],
+  );
+  // Images sent inline in a message load from the session itself.
+  const sentImage = useCallback(
+    (uuid: string, index: number) =>
+      sentImageUrl(
+        connectionClientScopeKey(connectionClient, pane.pane_id, uuid, index),
+        () =>
+          // Images fill in behind the conversation: background work.
+          connectionClient.call(
+            "agent_history.image",
+            {
+              pane_id: pane.pane_id,
+              workspace_id: pane.workspace_id,
+              tab_id: pane.tab_id,
+              agent: pane.agent,
+              uuid,
+              index,
+            },
+            undefined,
+            { lane: "background" },
+          ),
+      ),
+    [
+      connectionClient,
+      pane.pane_id,
+      pane.workspace_id,
+      pane.tab_id,
+      pane.agent,
+    ],
   );
   const workspaceLabel =
     workspaces.find((workspace) => workspace.workspace_id === pane.workspace_id)
@@ -320,6 +432,9 @@ export function AgentHistoryDrawer({
   const historyRef = useRef<AgentHistory | null>(history);
   const sessionRef = useRef<AgentSessionSummary | null>(session);
   const inFlightRef = useRef<number | null>(null);
+  // A change was pushed while a read was in flight: read again after it.
+  const reloadRef = useRef(false);
+  const loadHistoryRef = useRef<() => void>(() => {});
   const paneIdRef = useRef(pane.pane_id);
   paneIdRef.current = pane.pane_id;
   // Entries whose content fetch failed; suppresses auto-refetch loops while
@@ -327,12 +442,12 @@ export function AgentHistoryDrawer({
   const toolEntryFailedRef = useRef<Set<string>>(new Set());
 
   const loadHistory = useCallback(() => {
-    if (
-      !pane.agent ||
-      inFlightRef.current !== null ||
-      !connectionClient.isCurrent()
-    )
+    if (!pane.agent || !connectionClient.isCurrent()) return;
+    if (inFlightRef.current !== null) {
+      reloadRef.current = true;
       return;
+    }
+    reloadRef.current = false;
     const seq = loadSeqRef.current + 1;
     loadSeqRef.current = seq;
     inFlightRef.current = seq;
@@ -427,6 +542,7 @@ export function AgentHistoryDrawer({
         if (connectionClient.isCurrent() && loadSeqRef.current === seq) {
           setLoading(false);
           setCaughtUp(true);
+          if (reloadRef.current) loadHistoryRef.current();
         }
       });
   }, [
@@ -436,6 +552,7 @@ export function AgentHistoryDrawer({
     pane.tab_id,
     pane.workspace_id,
   ]);
+  loadHistoryRef.current = loadHistory;
 
   useEffect(() => {
     // Resource-derived state belongs to one pane and one connection lease.
@@ -577,41 +694,6 @@ export function AgentHistoryDrawer({
       : -1;
     return cut < 0 ? all : all.slice(0, cut);
   }, [history?.messages, rewound]);
-  // The images the user's messages carried (Claude Code keeps a pasted image
-  // in the message): their data comes with the entry, fetched once.
-  const fetchEntryImages = useCallback(
-    async (entryId: string) => {
-      if (!pane.agent) return undefined;
-      const result = (await connectionClient.call("agent_history.entry", {
-        pane_id: pane.pane_id,
-        workspace_id: pane.workspace_id,
-        tab_id: pane.tab_id,
-        agent: pane.agent,
-        entry_id: entryId,
-      })) as { images?: unknown };
-      return Array.isArray(result.images)
-        ? (result.images as AgentHistoryImage[])
-        : undefined;
-    },
-    [
-      connectionClient,
-      pane.agent,
-      pane.pane_id,
-      pane.tab_id,
-      pane.workspace_id,
-    ],
-  );
-  const attachedImages = useAttachedImages(
-    messages,
-    fetchEntryImages,
-    JSON.stringify([
-      activeConnectionId,
-      connectionGeneration,
-      pane.pane_id,
-      pane.terminal_id,
-      history?.path,
-    ]),
-  );
   // Substitute fetched tool payloads only while they still match the entry.
   const hydrateEntry = useCallback(
     (entry: AgentHistoryEntry): AgentHistoryEntry => {
@@ -639,10 +721,138 @@ export function AgentHistoryDrawer({
   );
   const visibleMessages = chatEntries ?? timelineSelection.visible;
   const counts = timelineSelection.counts;
-  const chatItems = useMemo(
-    () => (chatView ? groupHistoryChatItems(visibleMessages) : []),
-    [chatView, visibleMessages],
+  // Conversation mode: the turn being streamed, and the bridge's queue,
+  // after the transcript, each item until the transcript shows it.
+  // Outside a pane (the workspace inspector's history), the chat follows
+  // conversation mode itself: what it sends must not reach the holder.
+  const ownConversation = useAgentChat(
+    connectionClient,
+    pane.pane_id,
+    !paneChat && open && isConversationAgent(pane.agent),
   );
+  const conversation = paneChat?.conversation ?? ownConversation ?? null;
+  const conversationState = conversation?.state ?? null;
+  // A takeover asked from here counts from the moment it is asked: nothing
+  // is typed into the pane while Claude exits and the holder starts.
+  const owns = conversationOwns(conversationState) || !!conversation?.handing;
+  const inConversation = conversationState?.phase === "conversation";
+  // What the conversation's agent can do (an older bridge says nothing:
+  // Claude's); the chat hides the rest.
+  const capabilities = chatCapabilities(conversationState);
+  const conversationAgent = isConversationAgent(pane.agent);
+  // One view per mode: outside conversation mode, a Claude session's
+  // History types into nothing; it is read only, its header offering the
+  // switch to conversation mode.
+  const readOnlyHistory =
+    !paneChat &&
+    conversationAgent &&
+    !!conversation &&
+    !conversation.unavailable &&
+    !inConversation;
+  const readOnlyHistoryRef = useRef(readOnlyHistory);
+  readOnlyHistoryRef.current = readOnlyHistory;
+  // Read by the send paths when they run.
+  const inConversationRef = useRef(inConversation);
+  inConversationRef.current = inConversation;
+  const ownsRef = useRef(owns);
+  ownsRef.current = owns;
+  const liveTurn = conversation?.live;
+  const liveQueue = owns ? conversationState?.queue : undefined;
+  // Taken out of the queue, not replayed yet: still shown as queued.
+  const departing = owns ? conversation?.departing : undefined;
+  const historyUuids = useMemo(() => historyUserUuids(messages), [messages]);
+  // The live entries, and the uuids of every conversation-mode message the
+  // chat shows (transcript, live turn, queue): the outbox hides those in
+  // the same render, so no message is ever missing for a frame.
+  const { liveEntries, shownUuids } = useMemo(() => {
+    const shown = new Set(historyUuids);
+    if (!liveTurn?.items.length && !liveQueue?.length && !departing?.length)
+      return { liveEntries: [], shownUuids: shown };
+    const turn = liveTurn
+      ? reconcileLiveTurn(liveTurn, messages, Date.now())
+      : null;
+    for (const item of turn?.items ?? [])
+      if (item.kind === "user" && item.uuid) shown.add(item.uuid);
+    const queue = [
+      ...(departing ?? []).filter((item) => !shown.has(item.id)),
+      ...(liveQueue ?? []),
+    ];
+    for (const item of queue) shown.add(item.id);
+    const live = turn ? liveTurnEntries(turn) : [];
+    return {
+      liveEntries: queue.length ? [...live, ...queuedEntries(queue)] : live,
+      shownUuids: shown,
+    };
+  }, [departing, historyUuids, liveTurn, liveQueue, messages]);
+  useEffect(() => {
+    if (liveTurn?.items.length || departing?.length)
+      settleAgentChatLive(activeConnectionId, pane.pane_id, messages);
+  }, [activeConnectionId, departing, liveTurn, messages, pane.pane_id]);
+  // `!` lines run from the chat: those Claude has not read yet, and the
+  // last few sent (the transcript shows them, without how they ended).
+  const allShells = owns ? conversationState?.shells : undefined;
+  const liveShells = useMemo(
+    () => allShells?.filter((shell) => !shell.delivered),
+    [allShells],
+  );
+  const sentShells = useMemo(
+    () => allShells?.filter((shell) => shell.delivered) ?? [],
+    [allShells],
+  );
+  const shellItems = useMemo(
+    (): ChatItem[] =>
+      (liveShells ?? []).map((shell) => ({
+        type: "custom" as const,
+        id: `shell:${shell.id}`,
+        node: (
+          <ShellCommandBlock
+            command={shell.command}
+            stdout={shell.stdout}
+            stderr={shell.stderr}
+            status={shell.status}
+            exitCode={shell.exit_code}
+            truncated={shell.truncated}
+            error={shell.error}
+            host={connectionLabel}
+            cwd={shell.cwd ?? conversationState?.cwd ?? undefined}
+            startedAt={shell.started_at}
+            finishedAt={shell.finished_at}
+            pending
+            onStop={() =>
+              void stopAgentChatShell(
+                connectionClient,
+                pane.pane_id,
+                shell.id,
+              ).catch(() => {})
+            }
+          />
+        ),
+      })),
+    [
+      connectionClient,
+      connectionLabel,
+      conversationState?.cwd,
+      liveShells,
+      pane.pane_id,
+    ],
+  );
+  // The transcript's `!` lines, with where they ran and, for those run
+  // from here, how they ended.
+  const shownMessages = useMemo(
+    () => withShellOutcomes(visibleMessages, sentShells, connectionLabel),
+    [connectionLabel, sentShells, visibleMessages],
+  );
+  const chatItems = useMemo((): ChatItem[] => {
+    if (!chatView) return [];
+    const items: ChatItem[] = groupHistoryChatItems(
+      liveEntries.length && !query.trim()
+        ? [...shownMessages, ...liveEntries]
+        : shownMessages,
+    );
+    return query.trim() || !shellItems.length
+      ? items
+      : [...items, ...shellItems];
+  }, [chatView, liveEntries, query, shellItems, shownMessages]);
   // The chat view reads full messages in the modal dialog at any width; only
   // the wide timeline uses the inline master-detail reader.
   const masterDetail = wide && !chatView;
@@ -675,13 +885,51 @@ export function AgentHistoryDrawer({
     loadToolEntry(activeMessage);
   }, [activeMessage, open, toolEntryTexts, toolEntryLoading, loadToolEntry]);
 
+  // The bridge says when the session file changes (agent_history.changed):
+  // the history is read then, and slowly otherwise in case a push is lost;
+  // a bridge that cannot push is polled as before.
   useEffect(() => {
     if (!open) return;
-    if (document.visibilityState === "visible") loadHistory();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") loadHistory();
-    }, 4000);
+    const visible = () => document.visibilityState === "visible";
+    // Changed while hidden: read once shown again.
+    let missed = false;
+    if (visible()) loadHistory();
+    const onChange = () => {
+      if (visible()) loadHistory();
+      else missed = true;
+    };
+    const onVisible = () => {
+      if (visible() && missed) {
+        missed = false;
+        loadHistory();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const watch = pane.agent
+      ? watchAgentHistory(
+          connectionClient,
+          {
+            pane_id: pane.pane_id,
+            workspace_id: pane.workspace_id,
+            tab_id: pane.tab_id,
+            agent: pane.agent,
+          },
+          onChange,
+        )
+      : null;
+    let interval = POLL_MS;
+    let timer = window.setInterval(onChange, interval);
+    let live = true;
+    void watch?.pushed.then((pushed) => {
+      if (!live || !pushed) return;
+      window.clearInterval(timer);
+      interval = PUSHED_POLL_MS;
+      timer = window.setInterval(onChange, interval);
+    });
     return () => {
+      live = false;
+      watch?.close();
+      document.removeEventListener("visibilitychange", onVisible);
       window.clearInterval(timer);
       pollScopeRef.current += 1;
       if (sentRefreshTimerRef.current !== null) {
@@ -690,8 +938,28 @@ export function AgentHistoryDrawer({
       }
       loadSeqRef.current += 1;
       inFlightRef.current = null;
+      reloadRef.current = false;
     };
-  }, [loadHistory, open]);
+  }, [
+    connectionClient,
+    loadHistory,
+    open,
+    pane.agent,
+    pane.pane_id,
+    pane.tab_id,
+    pane.workspace_id,
+  ]);
+
+  // Herdr saw the agent change state (a turn, /clear, a new session in the
+  // pane): read now. The bridge's watcher may still follow the old session
+  // file, and this read moves it to the new one.
+  const stateSeq = pane.state_change_seq;
+  const seenStateSeqRef = useRef(stateSeq);
+  useEffect(() => {
+    if (seenStateSeqRef.current === stateSeq) return;
+    seenStateSeqRef.current = stateSeq;
+    if (open && document.visibilityState === "visible") loadHistory();
+  }, [loadHistory, open, stateSeq]);
 
   useEffect(() => {
     if (!open) {
@@ -1086,8 +1354,34 @@ export function AgentHistoryDrawer({
     </div>
   );
   const paneChatShown = !!paneChat;
+  const sendConversationRef = useRef<(text: string) => Promise<unknown>>(
+    async () => {},
+  );
   const sendMessage = useCallback(
     async (text: string) => {
+      // Conversation mode has the session: its terminal only holds the
+      // pane, and what is typed there would hand it back.
+      if (inConversationRef.current) {
+        // A `!` line runs, as Claude Code's bash mode: Claude reads it with
+        // the next message.
+        const command = shellLine(text);
+        if (command !== null) {
+          await runAgentChatShell(connectionClient, pane.pane_id, command);
+          return;
+        }
+        const refused = conversationRefusal(text);
+        if (refused) throw new Error(refused);
+        await sendConversationRef.current(text);
+        return;
+      }
+      if (ownsRef.current)
+        throw new Error(
+          "The session is being handed over; try again in a moment.",
+        );
+      // One view per mode: nothing is typed into a terminal-mode Claude
+      // from a chat.
+      if (paneChat?.modeBound || readOnlyHistoryRef.current)
+        throw new Error("Claude is in terminal mode: switch it first.");
       const scope = pollScopeRef.current;
       // Writing a question's own answer ("Type something.") where Enter would
       // tick the box off again: the text alone.
@@ -1116,7 +1410,14 @@ export function AgentHistoryDrawer({
       };
       refresh(1000);
     },
-    [connectionClient, loadHistory, pane.agent, pane.pane_id, paneChat?.prompt],
+    [
+      connectionClient,
+      loadHistory,
+      pane.agent,
+      pane.pane_id,
+      paneChat?.modeBound,
+      paneChat?.prompt,
+    ],
   );
   // Messages sent from the box that the transcript does not show yet
   // (chatOutbox): shown on their way, then replaced by their entries. Kept
@@ -1129,6 +1430,13 @@ export function AgentHistoryDrawer({
   );
   const paneOutbox = useSyncExternalStore(subscribeOutbox, () =>
     readOutbox(outboxKey),
+  );
+  // Bound to this pane's outbox when called: a send that settles late
+  // updates the outbox of the pane it was sent from.
+  const setOutbox = useCallback(
+    (update: (current: readonly OutboxMessage[]) => readonly OutboxMessage[]) =>
+      updateOutbox(outboxKey, update),
+    [outboxKey],
   );
   const historyMessagesRef = useRef(history?.messages ?? []);
   historyMessagesRef.current = history?.messages ?? [];
@@ -1144,6 +1452,24 @@ export function AgentHistoryDrawer({
     // empty one.
     if (history) settlePaneOutbox(history.messages);
   }, [history, settlePaneOutbox]);
+  // What the chat draws: a message its queued, live or transcript bubble
+  // shows is hidden here in that same render, then dropped.
+  const chatShownUuids = query.trim() ? historyUuids : shownUuids;
+  const visibleOutbox = useMemo(
+    () => outboxNotShown(paneOutbox, chatShownUuids),
+    [chatShownUuids, paneOutbox],
+  );
+  useEffect(() => {
+    if (visibleOutbox === paneOutbox) return;
+    setOutbox((current) =>
+      current.filter(
+        (each) =>
+          each.paneId !== pane.pane_id ||
+          !each.uuid ||
+          !chatShownUuids.has(each.uuid),
+      ),
+    );
+  }, [chatShownUuids, pane.pane_id, paneOutbox, setOutbox, visibleOutbox]);
   useEffect(() => {
     const deadline = nextOutboxDeadline(paneOutbox);
     if (deadline === null) return;
@@ -1153,8 +1479,133 @@ export function AgentHistoryDrawer({
     );
     return () => window.clearTimeout(timer);
   }, [paneOutbox, settlePaneOutbox]);
+  /**
+   * Conversation mode: the message goes to the headless Claude, its
+   * uploaded images as images. Sent now, or queued by the bridge while a
+   * turn runs (shown with the live turn).
+   */
+  const sendConversation = useCallback(
+    (text: string, uuid?: string) => {
+      const images: string[] = [];
+      const words: string[] = [];
+      for (const piece of messageImagePieces(text))
+        if ("image" in piece) images.push(piece.image);
+        else words.push(piece.text);
+      return sendAgentChat(connectionClient, pane.pane_id, {
+        text: images.length ? words.join("\n") : text,
+        images,
+        ...(uuid ? { uuid } : {}),
+      });
+    },
+    [connectionClient, pane.pane_id],
+  );
+  sendConversationRef.current = sendConversation;
+  /** Sends an outbox message to conversation mode under its own uuid. */
+  const deliverConversation = useCallback(
+    async (message: OutboxMessage & { uuid: string }) => {
+      try {
+        await sendConversation(message.text, message.uuid);
+        // Sent or queued: the bubble stays until the queue, the live turn
+        // or the transcript draws the message (visibleOutbox).
+        setOutbox((current) =>
+          current.map((each) =>
+            each.id === message.id
+              ? { ...each, state: "sent", sentAtMs: Date.now() }
+              : each,
+          ),
+        );
+      } catch (error) {
+        setOutbox((current) =>
+          current.map((each) =>
+            each.id === message.id
+              ? {
+                  ...each,
+                  state: "failed",
+                  reason:
+                    error instanceof Error ? error.message : String(error),
+                }
+              : each,
+          ),
+        );
+      }
+    },
+    [sendConversation, setOutbox],
+  );
+  // Messages sent while the session was being handed over wait in the
+  // outbox: they go out, in order and under their uuid, once conversation
+  // mode has the session, and fail if it stays in the terminal.
+  useEffect(() => {
+    const held = paneOutbox.filter((each) => each.held);
+    if (!held.length) return;
+    if (inConversation) {
+      const ids = new Set(held.map((each) => each.id));
+      setOutbox((current) =>
+        current.map((each) =>
+          ids.has(each.id) ? { ...each, held: undefined } : each,
+        ),
+      );
+      void (async () => {
+        for (const message of held)
+          if (message.uuid)
+            await deliverConversation({ ...message, uuid: message.uuid });
+      })();
+    } else if (!owns)
+      setOutbox((current) =>
+        releaseHeldOutbox(
+          current,
+          pane.pane_id,
+          "The session is in the terminal now; send it again",
+        ),
+      );
+  }, [
+    deliverConversation,
+    inConversation,
+    owns,
+    pane.pane_id,
+    paneOutbox,
+    setOutbox,
+  ]);
   const sendFromBox = useCallback(
     async (text: string, replacing?: string) => {
+      const handingOver = ownsRef.current && !inConversationRef.current;
+      if (handingOver || inConversationRef.current) {
+        const command = shellLine(text);
+        if (command !== null) {
+          if (handingOver)
+            throw new Error(
+              "The session is being handed over; try again in a moment.",
+            );
+          await runAgentChatShell(connectionClient, pane.pane_id, command);
+          return;
+        }
+        const refused = conversationRefusal(text);
+        if (refused) throw new Error(refused);
+        // Commands are not the user's words: no bubble on its way.
+        if (/^\s*\//.test(text)) {
+          if (handingOver)
+            throw new Error(
+              "The session is being handed over; try again in a moment.",
+            );
+          await sendConversation(text.trim());
+          return;
+        }
+        const message = {
+          ...newOutboxMessage(
+            pane.pane_id,
+            text,
+            historyMessagesRef.current,
+            Date.now(),
+          ),
+          uuid: messageUuid(),
+          ...(handingOver ? { held: true as const } : {}),
+        };
+        setOutbox((current) => [
+          ...current.filter((each) => each.id !== replacing),
+          message,
+        ]);
+        if (!handingOver) await deliverConversation(message);
+        return;
+      }
       // An answer typed into a question, a /command or a ! shell line is
       // not recorded as the user's message: those are sent as before.
       const answering = paneChat?.prompt?.options.some(
@@ -1199,7 +1650,16 @@ export function AgentHistoryDrawer({
         });
       }
     },
-    [outboxKey, pane.pane_id, paneChat?.prompt, sendMessage],
+    [
+      connectionClient,
+      deliverConversation,
+      outboxKey,
+      pane.pane_id,
+      paneChat?.prompt,
+      sendConversation,
+      sendMessage,
+      setOutbox,
+    ],
   );
   const retryContext = JSON.stringify([
     outboxKey,
@@ -1250,13 +1710,31 @@ export function AgentHistoryDrawer({
   const [rewindOpen, setRewindOpen] = useState(false);
   const sendFromChatBox = useCallback(
     async (text: string) => {
-      if (paneChatShown && pane.agent === "claude" && text.trim() === "/rewind")
+      if (
+        paneChatShown &&
+        conversationAgent &&
+        capabilities.rewind &&
+        text.trim() === "/rewind"
+      )
         setRewindOpen(true);
-      else if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
+      else if (
+        chatPaneId &&
+        conversationAgent &&
+        capabilities.backgroundTasks &&
+        isTasksCommand(text)
+      )
         openTask(null);
       else await sendFromBox(text);
     },
-    [chatPaneId, openTask, pane.agent, paneChatShown, sendFromBox],
+    [
+      capabilities.backgroundTasks,
+      capabilities.rewind,
+      chatPaneId,
+      conversationAgent,
+      openTask,
+      paneChatShown,
+      sendFromBox,
+    ],
   );
   const composerDraftKey = terminalComposerDraftKey(
     activeConnectionId,
@@ -1264,10 +1742,37 @@ export function AgentHistoryDrawer({
     pane.pane_id,
     pane.terminal_id,
   );
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
+  const voiceStream = useMemo<VoiceStream | undefined>(() => {
+    if (!activeConnectionId || !isConversationAgent(pane.agent))
+      return undefined;
+    const connectionId = activeConnectionId;
+    const paneId = pane.pane_id;
+    return {
+      active: () => conversationRef.current?.state?.phase === "conversation",
+      busy: () => {
+        const status = conversationRef.current?.state?.status;
+        return status === "working" || status === "blocked";
+      },
+      subscribe: (listener) => onAgentChatEvent(connectionId, paneId, listener),
+      send: async (text, options) =>
+        (
+          await sendAgentChatVoice(connectionClient, paneId, {
+            text,
+            uuid: options.uuid,
+            ...(options.stop ? { stop: true } : {}),
+          })
+        ).action,
+    };
+  }, [activeConnectionId, connectionClient, pane.agent, pane.pane_id]);
   const voice = useVoiceChat({
     entries: messages,
-    agentStatus: pane.agent_status,
+    agentStatus: inConversation
+      ? conversationAgentStatus(conversationState!.status)
+      : pane.agent_status,
     onSend: sendMessage,
+    stream: voiceStream,
     onError: (detail) =>
       store.notify({ kind: "error", message: "Voice chat stopped", detail }),
     routeContext: () => ({
@@ -1403,6 +1908,9 @@ export function AgentHistoryDrawer({
    */
   const takeQueued = useCallback(
     async (only: AgentHistoryEntry | null, drop: boolean) => {
+      // Claude Code's own queue is in its terminal, which conversation mode
+      // does not type into.
+      if (ownsRef.current) return;
       try {
         const taken = await takeQueueBack();
         if (!taken) return;
@@ -1435,21 +1943,362 @@ export function AgentHistoryDrawer({
       takeQueueBack,
     ],
   );
+  /**
+   * Conversation mode's queue: a message taken out of the bridge's queue,
+   * into the box to edit unless dropped.
+   */
+  const takeConversationQueued = useCallback(
+    async (ids: string[], drop: boolean) => {
+      try {
+        const taken: string[] = [];
+        for (const id of ids) {
+          const { removed } = await removeAgentChatQueued(
+            connectionClient,
+            pane.pane_id,
+            id,
+          );
+          // Gone already: sent with the turn that just ended.
+          if (removed)
+            taken.push(
+              [removed.text, ...removed.images].filter(Boolean).join("\n"),
+            );
+        }
+        if (drop || !taken.length) return;
+        const draft = readTerminalComposerDraft(composerDraftKey);
+        const text = taken.join("\n");
+        writeTerminalComposerDraft(
+          composerDraftKey,
+          draft ? `${text}\n${draft}` : text,
+        );
+      } catch (error) {
+        notifyComposerError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    },
+    [composerDraftKey, connectionClient, notifyComposerError, pane.pane_id],
+  );
   const removeQueued = useCallback(
-    (entry: AgentHistoryEntry) => void takeQueued(entry, true),
-    [takeQueued],
+    (entry: AgentHistoryEntry) => {
+      const id = queuedEntryId(entry);
+      if (id) void takeConversationQueued([id], true);
+      else void takeQueued(entry, true);
+    },
+    [takeConversationQueued, takeQueued],
   );
   const editQueued = useCallback(
-    (entry: AgentHistoryEntry) => void takeQueued(entry, false),
-    [takeQueued],
+    (entry: AgentHistoryEntry) => {
+      const id = queuedEntryId(entry);
+      if (id) void takeConversationQueued([id], false);
+      else void takeQueued(entry, false);
+    },
+    [takeConversationQueued, takeQueued],
+  );
+  // In conversation mode only Roamgate's own queue can give a message back:
+  // one Claude Code queued (spoken while it ran tools) is its already.
+  const queuedHandedOver = useCallback(
+    (entry: AgentHistoryEntry) => owns && !queuedEntryId(entry),
+    [owns],
+  );
+  // A turn cut short (a Roamgate restart, Claude's process exiting): the
+  // chat says so after its last entry, with a Continue that sends a message
+  // the usual way. Hidden once clicked, so it cannot go twice.
+  const cutOffText =
+    conversationAgent && inConversation
+      ? cutOffNotice(conversationState)
+      : null;
+  const cutOffAt = cutOffText ? conversationState?.interrupted?.at : undefined;
+  const [continuedAt, setContinuedAt] = useState<string | null>(null);
+  const cutOff = useMemo<ChatCutOff | null>(
+    () =>
+      cutOffText && cutOffAt && continuedAt !== cutOffAt
+        ? {
+            text: cutOffText,
+            onContinue: () => {
+              setContinuedAt(cutOffAt);
+              sendFromBox("continue").catch((error: unknown) => {
+                setContinuedAt(null);
+                store.notify({
+                  kind: "error",
+                  message: "Could not continue",
+                  detail:
+                    error instanceof Error ? error.message : String(error),
+                });
+              });
+            },
+            onDismiss: () => {
+              setContinuedAt(cutOffAt);
+              dismissAgentChatInterrupted(connectionClient, pane.pane_id).catch(
+                () => setContinuedAt(null),
+              );
+            },
+          }
+        : null,
+    [
+      connectionClient,
+      continuedAt,
+      cutOffAt,
+      cutOffText,
+      pane.pane_id,
+      sendFromBox,
+    ],
+  );
+  // Nothing sent goes out: the conversation process is lost, or the queue
+  // has waited, with nothing at work, longer than a start takes. Timed in
+  // this browser (its clock may differ from the bridge's).
+  const waiting =
+    conversationAgent && inConversation && queueWaiting(conversationState);
+  const oldestQueued = waiting ? conversationState?.queue[0]?.id : undefined;
+  const [stalledQueue, setStalledQueue] = useState<string | null>(null);
+  useEffect(() => {
+    if (!oldestQueued) return;
+    const timer = setTimeout(
+      () => setStalledQueue(oldestQueued),
+      QUEUE_STALL_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [oldestQueued]);
+  const deliveryNoticeNow =
+    conversationAgent && inConversation
+      ? deliveryNotice(
+          conversationState,
+          !!oldestQueued && stalledQueue === oldestQueued,
+        )
+      : null;
+  const deliveryText = deliveryNoticeNow?.text;
+  const deliveryDetail = deliveryNoticeNow?.detail ?? null;
+  const deliveryStuck = deliveryNoticeNow?.stuck;
+  const [recovering, setRecovering] = useState(false);
+  const delivery = useMemo<ChatDelivery | null>(
+    () =>
+      deliveryText
+        ? {
+            text: deliveryText,
+            detail: deliveryDetail,
+            recovering,
+            ...(deliveryStuck
+              ? {
+                  stuck: deliveryStuck,
+                  onInterrupt: () =>
+                    void interruptAgentChat(
+                      connectionClient,
+                      pane.pane_id,
+                    ).catch((error: Error) =>
+                      store.notify({
+                        kind: "error",
+                        message: "Could not interrupt Claude",
+                        detail: error.message,
+                      }),
+                    ),
+                }
+              : {}),
+            onRecover: () => {
+              setRecovering(true);
+              recoverAgentChat(connectionClient, pane.pane_id)
+                .then((result) => {
+                  if (!result.ok)
+                    store.notify({
+                      kind: "error",
+                      message: deliveryStuck
+                        ? "Could not restart Claude"
+                        : "Could not recover the conversation",
+                      detail: result.reason,
+                    });
+                  else setStalledQueue(null);
+                })
+                .catch((error: unknown) =>
+                  store.notify({
+                    kind: "error",
+                    message: "Could not recover the conversation",
+                    detail:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+                )
+                .finally(() => setRecovering(false));
+            },
+          }
+        : null,
+    [
+      connectionClient,
+      deliveryDetail,
+      deliveryStuck,
+      deliveryText,
+      pane.pane_id,
+      recovering,
+    ],
+  );
+  // Claude waits to start until the user answers the API key question.
+  const apiKeyAsked =
+    conversationAgent &&
+    inConversation &&
+    !!conversationState?.api_key_question;
+  const apiKeyQueued = apiKeyAsked ? (conversationState?.queue.length ?? 0) : 0;
+  const [answeringApiKey, setAnsweringApiKey] = useState(false);
+  const apiKeyQuestion = useMemo<ChatApiKeyQuestion | null>(
+    () =>
+      apiKeyAsked
+        ? {
+            queued: apiKeyQueued,
+            answering: answeringApiKey,
+            onAnswer: (use) => {
+              setAnsweringApiKey(true);
+              answerAgentChatApiKey(connectionClient, pane.pane_id, use)
+                .then((result) => {
+                  if (!result.ok)
+                    store.notify({
+                      kind: "error",
+                      message: "Could not answer the API key question",
+                      detail: result.reason,
+                    });
+                })
+                .catch((error: unknown) =>
+                  store.notify({
+                    kind: "error",
+                    message: "Could not answer the API key question",
+                    detail:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+                )
+                .finally(() => setAnsweringApiKey(false));
+            },
+          }
+        : null,
+    [
+      answeringApiKey,
+      apiKeyAsked,
+      apiKeyQueued,
+      connectionClient,
+      pane.pane_id,
+    ],
   );
   // The rewind handler stays the same across renders, as bubbles compare
   // their handlers: it reads the screen and the status when it runs.
   const readScreenRef = useRef(paneChat?.readScreen);
   readScreenRef.current = paneChat?.readScreen;
+  const conversationStateRef = useRef(conversationState);
+  conversationStateRef.current = conversationState;
+  /** Puts the message rewound to in the chat's box, before any draft. */
+  const restoreDraft = useCallback(
+    (text: string) => {
+      const draft = readTerminalComposerDraft(composerDraftKey);
+      writeTerminalComposerDraft(
+        composerDraftKey,
+        draft ? `${text}\n${draft}` : text,
+      );
+    },
+    [composerDraftKey],
+  );
+  /**
+   * Conversation mode: the headless Claude Code rewinds itself, between
+   * turns, over its control protocol (the bridge's agent_chat.rewind); the
+   * code too, from its checkpoints.
+   */
+  const rewindConversation = useCallback(
+    async (entry: AgentHistoryEntry, mode: RewindMode) => {
+      const state = conversationStateRef.current;
+      if (!entry.uuid) {
+        store.notify({
+          kind: "error",
+          message: "Rewind failed",
+          detail:
+            "This message is not in the transcript yet; try again in a moment.",
+        });
+        return;
+      }
+      if (state?.queue.length) {
+        store.notify({
+          kind: "error",
+          message: "Rewind failed",
+          detail:
+            "Messages wait in the queue: send them or take them back first.",
+        });
+        return;
+      }
+      const running =
+        state?.status === "working" ||
+        state?.status === "blocked" ||
+        state?.status === "starting";
+      if (
+        running &&
+        !window.confirm("Claude is working. Stop the turn and rewind?")
+      )
+        return;
+      // Nothing goes on reading what is about to be rewound away.
+      if (mode !== "code") noteRewind();
+      const result = await rewindAgentChat(connectionClient, pane.pane_id, {
+        uuid: entry.uuid,
+        mode,
+        lastSeen: lastUserUuid(messagesRef.current),
+        interrupt: running,
+      });
+      if (!result.ok) {
+        // Edits from before checkpoints were on: nothing was rewound, and
+        // the conversation alone still can be.
+        if (result.no_checkpoint) {
+          if (
+            mode === "both" &&
+            window.confirm(noCheckpointQuestion(result.files))
+          )
+            await rewindConversation(entry, "conversation");
+          else if (mode === "code")
+            store.notify({
+              kind: "error",
+              message: "Code not restored",
+              detail: result.files?.length
+                ? `${result.reason}: ${listedFiles(result.files)}.`
+                : `${result.reason}.`,
+            });
+          return;
+        }
+        store.notify({
+          kind: "error",
+          message: "Rewind failed",
+          detail: result.reason,
+        });
+        return;
+      }
+      if (mode !== "code") {
+        setRewound({ id: entry.id, sent_at: entry.sent_at });
+        restoreDraft(result.prefill ?? entry.text);
+      }
+      if (mode !== "conversation")
+        store.notify(
+          result.code === "none"
+            ? {
+                kind: "info",
+                message: "No code changes to restore",
+                detail:
+                  mode === "both"
+                    ? "Claude edited no file after this message: the conversation alone was rewound."
+                    : "Claude edited no file after this message.",
+              }
+            : {
+                kind: "info",
+                message: "Code restored",
+                detail: result.files?.length
+                  ? `${result.files.length} file${result.files.length === 1 ? "" : "s"} changed back.`
+                  : "No file needed changing.",
+              },
+        );
+      loadHistory();
+    },
+    [connectionClient, loadHistory, pane.pane_id, restoreDraft],
+  );
+  /** What a rewind to before `entry` could do to the code (the sheet's). */
+  const rewindCheck = useCallback(
+    (entry: AgentHistoryEntry) =>
+      entry.uuid
+        ? checkAgentChatRewind(connectionClient, pane.pane_id, entry.uuid)
+        : Promise.resolve({ code: "unknown" as const }),
+    [connectionClient, pane.pane_id],
+  );
   /** Rewinds the session to before `entry`, as /rewind does. */
   const rewind = useCallback(
     async (entry: AgentHistoryEntry, mode: RewindMode) => {
+      if (inConversationRef.current) {
+        await rewindConversation(entry, mode);
+        return;
+      }
       const readScreen = readScreenRef.current;
       if (!readScreen) return;
       if (agentStatusRef.current.toLowerCase() === "working") {
@@ -1471,7 +2320,8 @@ export function AgentHistoryDrawer({
             each.kind === "message" &&
             each.role === "user" &&
             !each.queued &&
-            !each.compact_summary,
+            !each.compact_summary &&
+            !each.injected,
         ).length;
       try {
         await rewindClaude(
@@ -1491,16 +2341,13 @@ export function AgentHistoryDrawer({
           mode,
         );
         if (mode !== "code") {
+          noteRewind();
           setRewound({ id: entry.id, sent_at: entry.sent_at });
           // Claude Code puts the message back in its prompt to edit: it is
           // edited here instead. Backspace and Delete, as in takeQueueBack.
           for (let sent = 0; sent < entry.text.length + 16; sent += 4)
             await store.sendText(pane.pane_id, "\x7f\x1b[3~".repeat(4));
-          const draft = readTerminalComposerDraft(composerDraftKey);
-          writeTerminalComposerDraft(
-            composerDraftKey,
-            draft ? `${entry.text}\n${draft}` : entry.text,
-          );
+          restoreDraft(entry.text);
         }
         loadHistory();
       } catch (error) {
@@ -1511,7 +2358,13 @@ export function AgentHistoryDrawer({
         });
       }
     },
-    [composerDraftKey, connectionClient, loadHistory, pane.pane_id],
+    [
+      connectionClient,
+      loadHistory,
+      pane.pane_id,
+      restoreDraft,
+      rewindConversation,
+    ],
   );
   const rewindEntry = useCallback(
     (entry: AgentHistoryEntry, mode: RewindMode) => void rewind(entry, mode),
@@ -1520,6 +2373,13 @@ export function AgentHistoryDrawer({
   const hasQueued = messages.some(
     (entry) => entry.queued && entry.role === "user",
   );
+  const conversationQueue = inConversation ? conversationState!.queue : [];
+  // The status the chat goes by: conversation mode's stream when it owns
+  // the session, Herdr's otherwise.
+  const chatAgentStatus = inConversation
+    ? conversationAgentStatus(conversationState!.status)
+    : pane.agent_status;
+  const chatWorking = chatAgentStatus.toLowerCase() === "working";
   const historyComposer = (
     <AgentHistoryComposer
       // A pane or connection switch must never render, or send, the
@@ -1527,21 +2387,55 @@ export function AgentHistoryDrawer({
       key={composerDraftKey}
       draftKey={composerDraftKey}
       onRecallQueued={
-        hasQueued && pane.agent === "claude"
-          ? () => void takeQueued(null, false)
-          : undefined
+        inConversation
+          ? conversationQueue.length
+            ? () =>
+                void takeConversationQueued(
+                  conversationQueue.map((item) => item.id),
+                  false,
+                )
+            : undefined
+          : hasQueued && conversationAgent
+            ? () => void takeQueued(null, false)
+            : undefined
       }
       agent={pane.agent}
-      status={pane.agent_status}
+      status={chatAgentStatus}
       stateSeq={pane.state_change_seq}
       onStop={
-        paneChat && pane.agent_status.toLowerCase() === "working"
-          ? () => paneChat.onKeys("\x1b")
-          : undefined
+        paneChat && inConversation
+          ? conversationState!.status === "working" ||
+            conversationState!.status === "blocked"
+            ? () =>
+                void interruptAgentChat(connectionClient, pane.pane_id).catch(
+                  (error: Error) => notifyComposerError(error.message),
+                )
+            : undefined
+          : paneChat && !owns && pane.agent_status.toLowerCase() === "working"
+            ? () => paneChat.onKeys("\x1b")
+            : undefined
       }
       onSend={sendFromChatBox}
+      shell={
+        inConversation && capabilities.shellLines
+          ? { host: connectionLabel, cwd: conversationState?.cwd }
+          : undefined
+      }
+      nextPrompt={
+        inConversation &&
+        capabilities.promptSuggestions &&
+        conversationState?.next_prompt &&
+        voice.state === "off"
+          ? {
+              key: conversationState.next_prompt.uuid,
+              text: conversationState.next_prompt.text,
+            }
+          : null
+      }
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
-      commands={agentCommands}
+      commands={
+        inConversation ? conversationCommands(agentCommands) : agentCommands
+      }
       onError={notifyComposerError}
       voice={
         paneChat && (voice.available || voice.unavailable)
@@ -1574,6 +2468,7 @@ export function AgentHistoryDrawer({
   // Blocked, or a menu on its screen though it still counts as working.
   const promptShown =
     !!paneChat &&
+    !owns &&
     (pane.agent_status.toLowerCase() === "blocked" ||
       !!paneChat.prompt?.confirm ||
       !!paneChat.prompt?.tabs);
@@ -1689,7 +2584,14 @@ export function AgentHistoryDrawer({
     promptRef.current?.focus({ preventScroll: true });
   };
   // Hidden by not being drawn: its draft stays in the store.
-  const shownComposer = boxHidden ? null : historyComposer;
+  const shownComposer = readOnlyHistory ? (
+    <p className="agent-history-readonly" role="note">
+      Claude is in terminal mode: write to it in its terminal, or switch to
+      conversation mode to write here.
+    </p>
+  ) : boxHidden ? null : (
+    historyComposer
+  );
   // The History view on a phone writes through the bottom bar's Message box.
   const paneComposer = paneChat?.composerTarget
     ? createPortal(shownComposer, paneChat.composerTarget)
@@ -1700,9 +2602,15 @@ export function AgentHistoryDrawer({
   // before it has one (a new session asking to trust its folder).
   const chatStatus = (
     <>
-      {paneChat &&
-      !promptShown &&
-      pane.agent_status.toLowerCase() === "working" ? (
+      {paneChat && inConversation && chatWorking ? (
+        <div className="agent-chat-activity" role="status">
+          <span className="agent-chat-activity-mark" aria-hidden="true" />
+          <strong>{conversationActivity(conversationState!.activity)}</strong>
+        </div>
+      ) : paneChat &&
+        !owns &&
+        !promptShown &&
+        pane.agent_status.toLowerCase() === "working" ? (
         <div className="agent-chat-activity" role="status">
           <span className="agent-chat-activity-mark" aria-hidden="true" />
           <strong>{paneChat.activity?.word ?? "Working..."}</strong>
@@ -1881,7 +2789,9 @@ export function AgentHistoryDrawer({
           title="Updating the conversation"
         />
       ) : null}
-      {(paneOutbox.length ? null : historyEmptyState) ??
+      {(visibleOutbox.length || shellItems.length
+        ? null
+        : (paneWaiting ?? historyEmptyState)) ??
         (paneChat && chatThreadsKey && activeConnectionId ? (
           // The chat's threads: comments on parts of the agent's messages.
           <ChatThreadsProvider
@@ -1910,20 +2820,36 @@ export function AgentHistoryDrawer({
                 onLoadTool={loadToolEntry}
                 onOpen={setExpandedMessage}
                 imageUrl={imageUrl}
-                outbox={paneOutbox}
+                sentImageUrl={sentImage}
+                outbox={visibleOutbox}
                 onRetrySend={retrySend}
                 onDiscardSend={discardSend}
                 tasks={paneChat ? tasksById : undefined}
                 onOpenTask={openTask}
                 onRemoveQueued={
-                  paneChat && pane.agent === "claude" ? removeQueued : undefined
+                  paneChat && conversationAgent ? removeQueued : undefined
                 }
                 onEditQueued={
-                  paneChat && pane.agent === "claude" ? editQueued : undefined
+                  paneChat && conversationAgent ? editQueued : undefined
                 }
+                queuedHandedOver={queuedHandedOver}
                 onRewind={
-                  paneChat && pane.agent === "claude" ? rewindEntry : undefined
+                  paneChat &&
+                  (owns
+                    ? conversationAgent &&
+                      !!capabilities.rewind &&
+                      inConversation &&
+                      !conversation?.handing
+                    : pane.agent === "claude")
+                    ? rewindEntry
+                    : undefined
                 }
+                onRewindCheck={rewindCheck}
+                onSendAgain={paneChat ? sendFromBox : undefined}
+                onEditAgain={paneChat ? restoreDraft : undefined}
+                cutOff={cutOff}
+                delivery={delivery}
+                apiKeyQuestion={apiKeyQuestion}
               />
               {historyMinimap("auto")}
             </div>
@@ -1946,61 +2872,40 @@ export function AgentHistoryDrawer({
               onLoadTool={loadToolEntry}
               onOpen={setExpandedMessage}
               imageUrl={imageUrl}
-              outbox={paneOutbox}
+              sentImageUrl={sentImage}
+              outbox={visibleOutbox}
               onRetrySend={retrySend}
               onDiscardSend={discardSend}
               tasks={paneChat ? tasksById : undefined}
               onOpenTask={openTask}
               onRemoveQueued={
-                paneChat && pane.agent === "claude" ? removeQueued : undefined
+                paneChat && conversationAgent ? removeQueued : undefined
               }
               onEditQueued={
-                paneChat && pane.agent === "claude" ? editQueued : undefined
+                paneChat && conversationAgent ? editQueued : undefined
               }
+              queuedHandedOver={queuedHandedOver}
               onRewind={
-                paneChat && pane.agent === "claude" ? rewindEntry : undefined
+                paneChat &&
+                (owns
+                  ? conversationAgent &&
+                    !!capabilities.rewind &&
+                    inConversation &&
+                    !conversation?.handing
+                  : pane.agent === "claude")
+                  ? rewindEntry
+                  : undefined
               }
+              onRewindCheck={rewindCheck}
+              onSendAgain={paneChat ? sendFromBox : undefined}
+              onEditAgain={paneChat ? restoreDraft : undefined}
+              cutOff={cutOff}
+              delivery={delivery}
+              apiKeyQuestion={apiKeyQuestion}
             />
             {historyMinimap("auto")}
           </div>
         ))}
-      {(paneOutbox.length ? null : (paneWaiting ?? historyEmptyState)) ?? (
-        <div className="agent-history-chat-frame">
-          <AgentHistoryChat
-            items={chatItems}
-            speechActive={open}
-            speechScopeKey={JSON.stringify([
-              composerDraftKey,
-              history?.path,
-              session?.session?.value,
-            ])}
-            listRef={contentRef}
-            contentRef={timelineRef}
-            highlightedSequence={highlightedSequence}
-            followKey={query}
-            toolLoading={toolEntryLoading}
-            onLoadTool={loadToolEntry}
-            onOpen={setExpandedMessage}
-            imageUrl={imageUrl}
-            attachedImages={attachedImages}
-            outbox={paneOutbox}
-            onRetrySend={retrySend}
-            onDiscardSend={discardSend}
-            tasks={paneChat ? tasksById : undefined}
-            onOpenTask={openTask}
-            onRemoveQueued={
-              paneChat && pane.agent === "claude" ? removeQueued : undefined
-            }
-            onEditQueued={
-              paneChat && pane.agent === "claude" ? editQueued : undefined
-            }
-            onRewind={
-              paneChat && pane.agent === "claude" ? rewindEntry : undefined
-            }
-          />
-          {historyMinimap("auto")}
-        </div>
-      )}
       {voiceOverlay}
       {paneChat?.permission ? (
         <AgentPermissionCard prompt={paneChat.permission} />
@@ -2010,6 +2915,20 @@ export function AgentHistoryDrawer({
       {paneComposer}
     </div>
   );
+  // Who has the session, in the chat's header, when it is worth saying: the
+  // terminal's Claude and the user's switch, a switch on its way, and why
+  // one was refused. Conversation mode alone shows nothing.
+  const ownerChip =
+    conversationAgent && conversationState ? (
+      <AgentChatOwnerChip
+        client={connectionClient}
+        paneId={pane.pane_id}
+        chat={conversationState}
+        refusal={conversation?.refusal ?? null}
+        handing={conversation?.handing ?? null}
+        agentStatus={pane.agent_status}
+      />
+    ) : null;
   const changeView = (next: AgentHistoryView) => {
     setView(next);
     writeAgentHistoryView(next);
@@ -2107,6 +3026,7 @@ export function AgentHistoryDrawer({
           entries={messages}
           onRewind={rewindEntry}
           onClose={() => setRewindOpen(false)}
+          check={rewindCheck}
         />
       ) : null}
       {/* Once it is known which session's place to open on. */}
@@ -2222,8 +3142,9 @@ export function AgentHistoryDrawer({
               </div>
             </div>
           )}
+          {ownerChip}
           <AgentStatusChip
-            status={pane.agent_status}
+            status={paneChat ? chatAgentStatus : pane.agent_status}
             tasks={tasks}
             onOpenTasks={() => openTask(null)}
           />
@@ -2259,15 +3180,27 @@ export function AgentHistoryDrawer({
                 >
                   <Search size={14} />
                 </button>
-                <button
-                  type="button"
-                  className="agent-history-icon"
-                  aria-label="Show the terminal"
-                  title="Show the terminal"
-                  onClick={paneChat.onShowTerminal}
-                >
-                  <SquareTerminal size={14} />
-                </button>
+                {/* A phone's way to the terminal is its bottom bar's. */}
+                {!mobile ? (
+                  <button
+                    type="button"
+                    className="agent-history-icon"
+                    aria-label={
+                      paneChat.modeBound
+                        ? "Open in terminal"
+                        : "Show the terminal"
+                    }
+                    title={
+                      paneChat.modeBound
+                        ? "Open in terminal: hand the session back to Claude in the terminal"
+                        : "Show the terminal"
+                    }
+                    disabled={paneChat.modeBound && !inConversation}
+                    onClick={paneChat.onShowTerminal}
+                  >
+                    <SquareTerminal size={14} />
+                  </button>
+                ) : null}
               </>
             ) : (
               <>

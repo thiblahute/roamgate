@@ -1,0 +1,49 @@
+/* A rewind's notice: the user's messages it cut, each offered back. */
+.agent-history-chat-injected.is-rewound .agent-history-chat-compacted span {
+  color: var(--warning-text);
+}
+
+.agent-history-chat-rewound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-history-chat-rewound-message {
+  padding: 8px 12px;
+  border: 1px dashed var(--border-soft);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.agent-history-chat-rewound-message p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agent-history-chat-rewound-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-history-chat-rewound-actions button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-history-chat-rewound-actions button:disabled {
+  color: var(--muted);
+  cursor: default;
+}

@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { HistoryEntry } from "./components/agentHistory";
 import {
+  conversationContext,
   Downsampler,
   isStopCommand,
   nextHeard,
   parseVoiceMessage,
+  noteRewind,
+  readingId,
   replyAfter,
+  rewindCount,
   type SentenceVoice,
   sentences,
   speakWith,
+  toggleReading,
   voiceMessage,
 } from "./voiceChat";
 import { markdownToSpeech } from "./markdownToSpeech";
@@ -137,6 +142,25 @@ describe("voice chat text", () => {
     ).toBe("Two files.\n\nBoth tests pass.");
   });
 
+  test("a report or a task ending is not the message answered, nor read", () => {
+    const notice = (label: string, text: string) =>
+      entry("user", text, "message", {
+        injected: { kind: "task", label },
+      });
+    const entries = [
+      entry("user", "[Voice] float it"),
+      entry("assistant", "On it."),
+      notice("Report from voice-overlay", "I committed it."),
+      entry("assistant", "It is committed."),
+      notice("Task finished: x", "x finished"),
+    ];
+    // The answer goes on past them, and they are not part of it.
+    expect(replyAfter(entries, "[Voice] float it")).toBe(
+      "On it.\n\nIt is committed.",
+    );
+    expect(conversationContext(entries)).not.toContain("I committed it.");
+  });
+
   test("a voice message says so, and where it cut the reading", () => {
     expect(voiceMessage("hello")).toBe("[Voice] hello");
     const cut = voiceMessage("wait", 'He said "go".');
@@ -248,5 +272,28 @@ describe("words heard so far", () => {
     expect(heard.text).toBe("I think we should go.");
     // An empty one keeps what was heard.
     expect(nextHeard(heard, "text", " ").text).toBe("I think we should go.");
+  });
+});
+
+describe("a rewind", () => {
+  test("stops the message being read and counts itself", async () => {
+    const played: string[] = [];
+    const never: SentenceVoice<string> = {
+      prepare: async (sentence) => sentence,
+      play: (sentence, signal) =>
+        new Promise<void>((resolve) => {
+          played.push(sentence);
+          signal.addEventListener("abort", () => resolve());
+        }),
+    };
+    const before = rewindCount();
+    toggleReading("m1", "First sentence. Second one.", () => {}, never);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(readingId()).toBe("m1");
+    noteRewind();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(readingId()).toBeNull();
+    expect(rewindCount()).toBe(before + 1);
+    expect(played).toEqual(["First sentence."]);
   });
 });

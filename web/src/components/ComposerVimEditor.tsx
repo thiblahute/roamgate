@@ -7,11 +7,20 @@ import {
   selectLineBoundaryBackward,
   selectLineBoundaryForward,
 } from "@codemirror/commands";
-import { EditorSelection, EditorState, Prec } from "@codemirror/state";
 import {
+  Compartment,
+  EditorSelection,
+  EditorState,
+  Prec,
+} from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
   EditorView,
   keymap,
   placeholder as placeholderText,
+  ViewPlugin,
+  type ViewUpdate,
 } from "@codemirror/view";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
@@ -25,6 +34,34 @@ import { takeRenderCounts } from "../renderTrace";
 import { voiceTrace } from "../voiceChat";
 import { enterChatParts, scrollChatPage } from "./chatPaging";
 import { defineExCommands, vimExEditors } from "./vimEx";
+
+const shellBangMark = Decoration.mark({ class: "cm-shell-bang" });
+
+function shellBang(view: EditorView): DecorationSet {
+  const start = /^\s*!/.exec(view.state.doc.sliceString(0, 256));
+  return start
+    ? Decoration.set([
+        shellBangMark.range(start[0].length - 1, start[0].length),
+      ])
+    : Decoration.none;
+}
+
+/**
+ * The `!` that makes the box a shell line (Claude Code's bash mode), marked
+ * so the box can colour it.
+ */
+const shellBangPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = shellBang(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = shellBang(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 /**
  * The agent chat's message box with Vim keys (the one Vim keys setting).
@@ -64,6 +101,8 @@ export function ComposerVimEditor({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // The placeholder changes (a predicted next message shows there).
+  const placeholderSlot = useRef(new Compartment());
   // What the box reported and the draft has not caught up with: the draft
   // comes back with each, maybe after more was typed, and must not undo it.
   const reportedRef = useRef(new Set<string>());
@@ -167,13 +206,14 @@ export function ComposerVimEditor({
             },
           ]),
           EditorView.lineWrapping,
+          shellBangPlugin,
           EditorView.contentAttributes.of({
             "aria-label": label,
             spellcheck: "true",
             autocorrect: "on",
             autocapitalize: "sentences",
           }),
-          placeholderText(placeholder),
+          placeholderSlot.current.of(placeholderText(placeholder)),
           EditorView.updateListener.of((update) => {
             const { from, to } = update.state.selection.main;
             if (update.docChanged) {
@@ -312,6 +352,17 @@ export function ComposerVimEditor({
       for (const observer of observers) observer.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || placeholder === initial.current.placeholder) return;
+    initial.current.placeholder = placeholder;
+    view.dispatch({
+      effects: placeholderSlot.current.reconfigure(
+        placeholderText(placeholder),
+      ),
+    });
+  }, [placeholder]);
 
   // Someone else's change to the draft (an upload, the terminal's box).
   useEffect(() => {

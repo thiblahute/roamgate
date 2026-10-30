@@ -9,7 +9,11 @@ import {
   useSpeechPreferences,
 } from "../speechPreferences";
 import { store } from "../store";
-import { getSpeechRate, saveSpeechRate, subscribeSpeechRate } from "../voiceChat";
+import {
+  getSpeechRate,
+  saveSpeechRate,
+  subscribeSpeechRate,
+} from "../voiceChat";
 import "./SpeechSettings.css";
 
 /** What the Speech section says reads aloud, and what voice chat can do. */
@@ -61,8 +65,8 @@ export function SpeechSettings() {
       <p id={`${id}-description`}>
         Listen to agent replies with Speak in Agent History Chat, and in voice
         chat. Some browser voices use an online service and may send message
-        text to the voice provider. Playback may stop when the browser is in
-        the background or the screen is locked.
+        text to the voice provider. Playback may stop when the browser is in the
+        background or the screen is locked.
       </p>
       <p role="status" className="speech-settings-engine">
         {speechEngineSummary(speech)}
@@ -100,9 +104,7 @@ export function SpeechSettings() {
               )
             }
           >
-            {[
-              ...new Set<number>([...SPEECH_RATE_STEPS, serverRate]),
-            ]
+            {[...new Set<number>([...SPEECH_RATE_STEPS, serverRate])]
               .sort((a, b) => a - b)
               .map((rate) => (
                 <option key={rate} value={String(rate)}>
@@ -119,45 +121,45 @@ export function SpeechSettings() {
           server's speed, so a browser rate here would not apply. */}
       {speech.engine === "server" ? null : (
         <>
-        <label htmlFor={`${id}-voice`}>Browser voice</label>
-        <select
-          id={`${id}-voice`}
-          disabled={!supported}
-          aria-describedby={`${id}-description`}
-          value={preferences.voiceURI}
-          onChange={(event) =>
-            updateSpeechPreferences({ voiceURI: event.target.value })
-          }
-        >
-          <option value="">Browser default</option>
-          {missingVoice ? (
-            <option value={preferences.voiceURI}>
-              Saved voice unavailable (using browser default)
-            </option>
-          ) : null}
-          {voices.map((voice) => (
-            <option key={voice.voiceURI} value={voice.voiceURI}>
-              {voice.name} ({voice.lang})
-              {voice.localService ? "" : " - online"}
-            </option>
-          ))}
-        </select>
-        <label htmlFor={`${id}-rate`}>
-          Browser speaking rate: {preferences.rate.toFixed(1)}x
-        </label>
-        <input
-          id={`${id}-rate`}
-          type="range"
-          min="0.5"
-          max="2"
-          step="0.1"
-          disabled={!supported}
-          value={preferences.rate}
-          aria-valuetext={`${preferences.rate.toFixed(1)} times normal speed`}
-          onChange={(event) =>
-            updateSpeechPreferences({ rate: Number(event.target.value) })
-          }
-        />
+          <label htmlFor={`${id}-voice`}>Browser voice</label>
+          <select
+            id={`${id}-voice`}
+            disabled={!supported}
+            aria-describedby={`${id}-description`}
+            value={preferences.voiceURI}
+            onChange={(event) =>
+              updateSpeechPreferences({ voiceURI: event.target.value })
+            }
+          >
+            <option value="">Browser default</option>
+            {missingVoice ? (
+              <option value={preferences.voiceURI}>
+                Saved voice unavailable (using browser default)
+              </option>
+            ) : null}
+            {voices.map((voice) => (
+              <option key={voice.voiceURI} value={voice.voiceURI}>
+                {voice.name} ({voice.lang})
+                {voice.localService ? "" : " - online"}
+              </option>
+            ))}
+          </select>
+          <label htmlFor={`${id}-rate`}>
+            Browser speaking rate: {preferences.rate.toFixed(1)}x
+          </label>
+          <input
+            id={`${id}-rate`}
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.1"
+            disabled={!supported}
+            value={preferences.rate}
+            aria-valuetext={`${preferences.rate.toFixed(1)} times normal speed`}
+            onChange={(event) =>
+              updateSpeechPreferences({ rate: Number(event.target.value) })
+            }
+          />
         </>
       )}
     </fieldset>

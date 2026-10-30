@@ -357,6 +357,48 @@
   padding-right: 66px;
 }
 
+/* A predicted next message: grey text in the empty box, Tab takes it. */
+.agent-history-composer-field.has-next-prompt textarea,
+.agent-history-composer-field.has-next-prompt .cm-content {
+  padding-right: 44px;
+}
+
+.agent-history-composer-field.has-voice.has-next-prompt textarea,
+.agent-history-composer-field.has-voice.has-next-prompt .cm-content {
+  padding-right: 76px;
+}
+
+.agent-history-composer-next-key {
+  align-self: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+/* On a phone: a chip above the box that fills it. */
+.agent-history-composer-next {
+  display: flex;
+  min-width: 0;
+}
+
+.agent-history-composer-next button {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-history-composer-inline {
   position: absolute;
   right: 4px;
@@ -390,4 +432,87 @@
   border: 1px solid color-mix(in srgb, var(--danger-text) 45%, var(--border));
   border-radius: 6px;
   color: var(--danger-text);
+}
+
+/*
+ * Shell mode: the box starts with `!` (Claude Code's bash mode). Its own
+ * colour on the box, the `!` and Run, a monospace font, and where it runs
+ * above the box.
+ */
+.agent-history-composer-shell {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  color: var(--bash-mode);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Out of shell mode: nothing shown, still there to announce the next. */
+.agent-history-composer-shell:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.agent-history-composer-shell-where {
+  min-width: 0;
+  color: var(--text);
+}
+
+.agent-history-composer-shell-where code {
+  padding: 0;
+  background: none;
+  color: var(--text-strong);
+  font-family: var(
+    --mono-font,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace
+  );
+}
+
+.agent-history-composer-shell-hint {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.agent-history-composer.is-shell
+  :is(
+    .agent-history-composer-row > textarea,
+    .agent-history-composer-field textarea
+  ),
+.agent-history-composer.is-shell .agent-history-composer-editor .cm-editor {
+  border-color: var(--bash-mode);
+  box-shadow: 0 0 0 1px var(--bash-mode);
+}
+
+.agent-history-composer.is-shell textarea,
+.agent-history-composer.is-shell .agent-history-composer-editor .cm-scroller {
+  font-family: var(
+    --mono-font,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace
+  );
+}
+
+.agent-history-composer.is-shell .cm-shell-bang {
+  color: var(--bash-mode);
+  font-weight: 700;
+}
+
+.agent-history-composer.is-shell .agent-history-composer-send:not(:disabled) {
+  border-color: var(--bash-mode);
+  background: var(--bash-mode);
+  color: var(--terminal-bg);
+  font-weight: 600;
 }

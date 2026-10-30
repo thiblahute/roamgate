@@ -67,7 +67,7 @@ export function AgentPermissionCard({
         store.notify({
           kind: "info",
           message: "Already answered",
-          detail: "The terminal asks it now.",
+          detail: prompt.noTerminal ? undefined : "The terminal asks it now.",
         });
     } catch (error) {
       store.notify({
@@ -93,6 +93,7 @@ export function AgentPermissionCard({
         left={left}
         busy={busy}
         onAnswer={(answers) => void answer({ answers })}
+        onDismiss={() => void answer("dismiss")}
         onTerminal={toTerminal}
       />
     );
@@ -117,9 +118,11 @@ export function AgentPermissionCard({
               ? "always"
               : key === "n"
                 ? "deny"
-                : null;
+                : key === "d" || key === "Escape"
+                  ? "dismiss"
+                  : null;
         if (choice) void answer(choice);
-        else if (key === "t") toTerminal();
+        else if (key === "t" && !prompt.noTerminal) toTerminal();
         else return;
         event.preventDefault();
         event.stopPropagation();
@@ -131,10 +134,17 @@ export function AgentPermissionCard({
         </strong>
         {compact ? null : (
           <small className="agent-permission-keys">
-            y allow{prompt.canAlways ? " · a always" : ""} · n deny · t terminal
+            y allow{prompt.canAlways ? " · a always" : ""} · n deny · d/Esc
+            dismiss
+            {prompt.noTerminal ? "" : " · t terminal"}
           </small>
         )}
-        <span className="agent-permission-time" title="Then the terminal asks">
+        <span
+          className="agent-permission-time"
+          title={
+            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
+          }
+        >
           {left}s
         </span>
       </div>
@@ -177,13 +187,25 @@ export function AgentPermissionCard({
         </button>
         <button
           type="button"
-          className="secondary-btn agent-permission-terminal"
+          className="secondary-btn agent-permission-dismiss"
           disabled={busy}
-          title="Let the terminal ask it now (t)"
-          onClick={toTerminal}
+          title="Put it away without answering; the agent is told and goes on (d, Esc)"
+          onClick={() => void answer("dismiss")}
         >
-          In the terminal
+          Dismiss
         </button>
+        {prompt.noTerminal ? null : (
+          // Conversation mode's headless claude has no terminal to ask.
+          <button
+            type="button"
+            className="secondary-btn agent-permission-terminal"
+            disabled={busy}
+            title="Let the terminal ask it now (t)"
+            onClick={toTerminal}
+          >
+            In the terminal
+          </button>
+        )}
       </div>
     </div>
   );
@@ -199,6 +221,7 @@ function QuestionsForm({
   left,
   busy,
   onAnswer,
+  onDismiss,
   onTerminal,
 }: {
   prompt: AgentPermissionPrompt;
@@ -206,6 +229,8 @@ function QuestionsForm({
   left: number;
   busy: boolean;
   onAnswer: (answers: Record<string, string>) => void;
+  /** Put away unanswered: the agent is told so, and goes on. */
+  onDismiss: () => void;
   onTerminal: () => void;
 }) {
   // Per question: the chosen labels, and the user's own answer.
@@ -247,6 +272,18 @@ function QuestionsForm({
       className="agent-permission agent-questions"
       aria-label={`${prompt.agent} asks`}
       onKeyDown={(event) => {
+        // Esc, even from a text field: dismissed, unanswered.
+        if (
+          event.key === "Escape" &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!busy) onDismiss();
+          return;
+        }
         // 1 to 9 pick a choice of the question the keys are in; one answer
         // moves on to the next question.
         const key = plainKey(event);
@@ -295,9 +332,14 @@ function QuestionsForm({
       <div className="agent-permission-head">
         <strong>{prompt.agent} asks</strong>
         <small className="agent-permission-keys">
-          1–9 · ↑↓ · Tab · Enter answers
+          1–9 · ↑↓ · Tab · Enter answers · Esc dismisses
         </small>
-        <span className="agent-permission-time" title="Then the terminal asks">
+        <span
+          className="agent-permission-time"
+          title={
+            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
+          }
+        >
           {left}s
         </span>
       </div>
@@ -352,13 +394,24 @@ function QuestionsForm({
         </button>
         <button
           type="button"
-          className="secondary-btn agent-permission-terminal"
+          className="secondary-btn agent-permission-dismiss"
           disabled={busy}
-          title="Let the terminal ask them now"
-          onClick={onTerminal}
+          title="Put the question away without answering; the agent is told and goes on (Esc)"
+          onClick={onDismiss}
         >
-          In the terminal
+          Dismiss question
         </button>
+        {prompt.noTerminal ? null : (
+          <button
+            type="button"
+            className="secondary-btn agent-permission-terminal"
+            disabled={busy}
+            title="Let the terminal ask them now"
+            onClick={onTerminal}
+          >
+            In the terminal
+          </button>
+        )}
       </div>
     </form>
   );

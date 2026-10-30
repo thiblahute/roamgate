@@ -1,46 +1,74 @@
 import { expect, test } from "bun:test";
-import { attachedImages, parseSessionImages } from "./session-images";
+import { sessionImage } from "./session-images";
 
-const message = (...data: string[]) => ({
-  type: "user",
-  message: {
-    role: "user",
-    content: [
-      { type: "text", text: data.map((_, n) => `[Image #${n + 1}]`).join(" ") },
-      ...data.map((value) => ({
-        type: "image",
-        source: { type: "base64", media_type: "image/png", data: value },
-      })),
-    ],
-  },
-});
-const hashes = (record: ReturnType<typeof message>) =>
-  attachedImages(record.message.content).map((image) => image.hash);
+const jsonl = [
+  JSON.stringify({ type: "user", uuid: "other", message: { content: "x" } }),
+  "{not json",
+  JSON.stringify({
+    type: "user",
+    uuid: "u1",
+    message: {
+      role: "user",
+      content: [
+        { type: "text", text: "two" },
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/png", data: "AAA" },
+        },
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/jpeg", data: "BBB" },
+        },
+      ],
+    },
+  }),
+  JSON.stringify({
+    type: "user",
+    uuid: "bad",
+    message: {
+      content: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: "text/html", data: "CCC" },
+        },
+      ],
+    },
+  }),
+].join("\n");
 
-test("an image's size is decoded from its base64", () => {
-  expect(attachedImages(message("aGk=").message.content)).toEqual([
-    { media_type: "image/png", bytes: 2, hash: expect.any(String) },
-  ]);
-  // Not base64: left out.
-  expect(attachedImages(message("<svg>").message.content)).toEqual([]);
-  for (const malformed of ["a", "a=", "aa=", "aaaa="])
-    expect(attachedImages(message(malformed).message.content)).toEqual([]);
-});
-
-test("a session keeps the data of its most recent messages' images, whole messages within its cap", () => {
-  const big = (letter: string) => letter.repeat(5 * 1024 * 1024);
-  const oldest = message(big("A"));
-  const middle = message(big("B"), big("C"));
-  const newest = message(big("D"));
-  const images = parseSessionImages([oldest, middle, newest]);
-  expect(Object.keys(images).sort()).toEqual(
-    [...hashes(middle), ...hashes(newest)].sort(),
-  );
-  expect(images[hashes(newest)[0]!]).toEqual({
+test("finds the n-th inline image of a user record by uuid", () => {
+  expect(sessionImage(jsonl, "u1", 0)).toEqual({
     media_type: "image/png",
-    data: big("D"),
+    data: "AAA",
   });
-  // An image the next message carries again is kept once.
-  const again = parseSessionImages([newest, message(big("D"))]);
-  expect(Object.keys(again)).toEqual(hashes(newest));
+  expect(sessionImage(jsonl, "u1", 1)).toEqual({
+    media_type: "image/jpeg",
+    data: "BBB",
+  });
+});
+
+test("nothing for a missing record, index or a type that is not an image", () => {
+  expect(sessionImage(jsonl, "u1", 2)).toBeNull();
+  expect(sessionImage(jsonl, "u1", -1)).toBeNull();
+  expect(sessionImage(jsonl, "nope", 0)).toBeNull();
+  expect(sessionImage(jsonl, "other", 0)).toBeNull();
+  expect(sessionImage(jsonl, "bad", 0)).toBeNull();
+});
+
+test("malformed base64 is not an image", () => {
+  for (const data of ["a", "a=", "aa=", "aaaa=", "<svg>", ""]) {
+    const record = JSON.stringify({
+      type: "user",
+      uuid: "m",
+      message: {
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data },
+          },
+        ],
+      },
+    });
+    expect(sessionImage(record, "m", 0)).toBeNull();
+  }
 });

@@ -68,6 +68,7 @@ test("tool block summaries count paired steps by tool, most used first", () => {
   ).toEqual({
     calls: 3,
     errors: 1,
+    dismissed: 0,
     tools: [
       { name: "bash", count: 2 },
       { name: "read", count: 1 },
@@ -80,7 +81,12 @@ test("tool block summaries count paired steps by tool, most used first", () => {
         entry("1", "tool", { kind: "tool_result", tool_name: "edit" }),
       ]),
     ),
-  ).toEqual({ calls: 1, errors: 0, tools: [{ name: "edit", count: 1 }] });
+  ).toEqual({
+    calls: 1,
+    errors: 0,
+    dismissed: 0,
+    tools: [{ name: "edit", count: 1 }],
+  });
 });
 
 test("tool steps pair each call with its result by call id", () => {

@@ -270,6 +270,11 @@ export type AgentPermissionPrompt = {
   expiresAt: string;
   /** Claude's multiple-choice questions (AskUserQuestion), not a permission. */
   questions?: AgentQuestion[];
+  /**
+   * No terminal can ask it instead (conversation mode's headless claude):
+   * unanswered, the tool is denied.
+   */
+  noTerminal?: boolean;
 };
 
 /** One of Claude's questions, as its AskUserQuestion tool puts it. */
@@ -280,7 +285,27 @@ export type AgentQuestion = {
   multiSelect: boolean;
 };
 
-export type AgentPermissionAnswer = "allow" | "always" | "deny";
+/**
+ * "dismiss": the user puts the prompt away without answering it. The agent
+ * is told so (a denial saying the user dismissed it) and goes on.
+ */
+export type AgentPermissionAnswer = "allow" | "always" | "deny" | "dismiss";
+
+/** What the agent is told of a question the user dismissed. */
+export const DISMISSED_QUESTION_MESSAGE =
+  "The user dismissed this question without answering.";
+/** What the agent is told of a permission the user dismissed. */
+export const DISMISSED_PERMISSION_MESSAGE =
+  "The user dismissed this request without answering.";
+
+/** Whether a tool's result is the denial a dismissed prompt sends. */
+export function isDismissedResult(text: string | undefined | null): boolean {
+  return (
+    !!text &&
+    (text.includes(DISMISSED_QUESTION_MESSAGE) ||
+      text.includes(DISMISSED_PERMISSION_MESSAGE))
+  );
+}
 /** Each question's text to the chosen labels (", "-joined) or the user's own. */
 export type AgentQuestionAnswers = Record<string, string>;
 export type AgentPromptAnswer =

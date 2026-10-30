@@ -63,6 +63,7 @@ import {
   type MobileTerminalSideShortcuts,
   mobileTerminalShortcutOption,
 } from "../mobileTerminalShortcuts";
+import { otherWriterPlaceIn } from "../otherWriter";
 import { activePaneIdForSnapshot, paneCanClose } from "../paneJump";
 import { HerdrSetupCard } from "./HerdrSetupCard";
 import {
@@ -206,9 +207,24 @@ import {
   parseAgentActivity,
   parseAgentPrompt,
 } from "../agentPrompt";
-import { setPaneView, togglePaneView, usePaneView } from "../paneView";
+import {
+  setPaneView,
+  togglePaneView,
+  usePaneView,
+  useStoredPaneView,
+} from "../paneView";
 import { paneAgentPrompt, useReviewState } from "../review";
+import { requestAgentChatHandover, useAgentChat } from "../agentChat";
+import { isConversationAgent } from "../../../shared/agentChat";
+import {
+  conversationOwns,
+  modeView,
+  paneShownView,
+} from "../agentChatOwnership";
+import { useConversationSwitch } from "../conversationSwitch";
 import { AgentPermissionCard } from "./AgentPermissionCard";
+import { TerminalModeStrip } from "./TerminalModeStrip";
+import { takeVoiceHandoff, voiceHandoffPending } from "../voiceRoute";
 import { ConfirmDialog, MessageDialog } from "./ModalDialogs";
 import {
   readTerminalComposerShortcutsOpen,
@@ -587,17 +603,136 @@ export function TerminalView({
   const activePaneId =
     selectedPaneInLayout ?? s.layout?.focused_pane_id ?? null;
   const isActivePane = !!pane && (!paneId || pane.pane_id === activePaneId);
-  const canShowAgentHistory = isActivePane && paneHasAgentHistory(pane);
+  // Between Claude's /exit and the holder's report (and between the
+  // holder's exit and claude --resume), Herdr knows no agent in the pane:
+  // it stays a Claude pane while a handover runs or conversation mode holds
+  // it, so the chat (its outbox, its voice) is not torn down meanwhile.
+  const heldClaudeRef = useRef<string | null>(null);
+  const heldClaude =
+    !!pane && !pane.agent && heldClaudeRef.current === pane.pane_id;
+  const agentPane = useMemo(
+    () => (pane && heldClaude ? { ...pane, agent: "claude" } : pane),
+    [pane, heldClaude],
+  );
+  const canShowAgentHistory = isActivePane && paneHasAgentHistory(agentPane);
   // An agent pane can show its conversation as a chat instead of its
   // terminal, which keeps running underneath.
-  const chatAvailable = !!pane && paneHasAgentHistory(pane);
-  const chatShown =
-    usePaneView(s.activeConnectionId, pane?.pane_id) === "chat" &&
-    chatAvailable;
+  const chatAvailable = !!agentPane && paneHasAgentHistory(agentPane);
+  const claudePane = isConversationAgent(agentPane?.agent);
+  // A Claude pane's conversation mode: who writes to its session, the
+  // terminal's Claude or a headless one the chat drives.
+  const conversation = useAgentChat(
+    connectionClient,
+    pane?.pane_id,
+    claudePane,
+  );
+  // One view per mode: a Claude pane shows its chat in conversation mode
+  // and its terminal in terminal mode, nothing else; only the user's
+  // switch moves it. Other agents, and a Claude where the bridge has no
+  // conversation mode, show the view chosen for the pane. The last mode
+  // seen is kept as the pane's view, shown until the bridge answers.
+  const chosenView = usePaneView(s.activeConnectionId, pane?.pane_id);
+  const storedView = useStoredPaneView(s.activeConnectionId, pane?.pane_id);
+  const { view: shownView, modeBound } = paneShownView({
+    agent: chatAvailable,
+    claude: claudePane,
+    chat: conversation,
+    stored: storedView,
+    chosen: chosenView,
+  });
+  const boundView = modeBound ? modeView(conversation?.state) : null;
+  const chatShown = shownView === "chat";
+  const boundPaneId = pane?.pane_id;
+  useEffect(() => {
+    if (!boundView || !boundPaneId || storedView === boundView) return;
+    setPaneView(s.activeConnectionId, boundPaneId, boundView);
+  }, [boundPaneId, boundView, s.activeConnectionId, storedView]);
+  // Taking it over counts too: nothing is typed into the pane meanwhile.
+  const conversationOwnsPane =
+    conversationOwns(conversation?.state) || !!conversation?.handing;
+  // Handed back, the holder resumes claude, which Herdr reports a moment
+  // later: the chat stays a while for it.
+  const heldUntilRef = useRef(0);
+  if (conversationOwnsPane) heldUntilRef.current = Date.now() + 20_000;
+  heldClaudeRef.current =
+    pane &&
+    (isConversationAgent(pane.agent) ||
+      (heldClaude &&
+        (conversationOwnsPane || Date.now() < heldUntilRef.current)))
+      ? pane.pane_id
+      : null;
+  const conversationOwnsRef = useRef(conversationOwnsPane);
+  conversationOwnsRef.current = conversationOwnsPane;
+  const chatState = conversation?.state ?? null;
+  // The user's "Switch to conversation mode" (toolbar, phone, shortcut):
+  // asked once Claude is not busy, shown on the terminal meanwhile.
+  const conversationSwitch = useConversationSwitch({
+    client: connectionClient,
+    paneId: modeBound ? pane?.pane_id : null,
+    phase: chatState?.phase ?? null,
+    handing: !!conversation?.handing,
+    agentStatus: pane?.agent_status,
+  });
+  // A refusal of the user's switch, shown until put away or asked again.
+  const [refusalShown, setRefusalShown] = useState<string | null>(null);
+  const switchRefusal = conversation?.refusal ?? null;
+  useEffect(() => setRefusalShown(switchRefusal), [switchRefusal]);
+  // Refused for another Claude on the session: where it is, as the
+  // sidebar names it.
+  const refusalWriter = conversation?.refusalWriter ?? null;
+  const refusalWriterPlace = useStoreSelector((state) =>
+    refusalWriter
+      ? otherWriterPlaceIn(refusalWriter, {
+          workspaces: state.workspaces,
+          tabs: state.tabs,
+          connection: state.connections.find(
+            (connection) => connection.id === terminalIdentity.connectionId,
+          ),
+        })
+      : "",
+  );
+  /** The user's own switch, from wherever it is asked. */
+  const switchToConversation = () => {
+    setRefusalShown(null);
+    conversationSwitch.request();
+  };
+  /** "Open in terminal": the user hands the session back. */
+  const openInTerminal = () => {
+    if (!pane) return;
+    void requestAgentChatHandover(connectionClient, pane.pane_id, "terminal");
+  };
+  // A voice chat handed to this pane (the router switched to it) has no
+  // chat to go on in terminal mode: it ends here, and says why.
+  const voicePaneId = pane?.pane_id;
+  useEffect(() => {
+    const connectionId = s.activeConnectionId;
+    if (boundView !== "terminal" || !voicePaneId || !connectionId) return;
+    if (!voiceHandoffPending(connectionId, voicePaneId)) return;
+    const handed = takeVoiceHandoff(connectionId, voicePaneId);
+    if (!handed) return;
+    store.notify({
+      kind: "info",
+      message: "That session is in terminal mode",
+      detail: `Voice chat ended: it talks to Claude in conversation mode only. Switch the session to conversation mode to talk to it.${
+        handed.message ? ` Not sent: "${handed.message}"` : ""
+      }`,
+      autoDismissMs: 10_000,
+    });
+  }, [boundView, s.activeConnectionId, voicePaneId]);
+  const modeBoundRef = useRef(modeBound);
+  modeBoundRef.current = modeBound;
+  const switchToConversationRef = useRef(switchToConversation);
+  switchToConversationRef.current = switchToConversation;
+  const openInTerminalRef = useRef(openInTerminal);
+  openInTerminalRef.current = openInTerminal;
   // Not working: blocked on a question, or one Herdr does not report yet (a
-  // new session's "trust this folder?", before Claude's hooks run).
+  // new session's "trust this folder?", before Claude's hooks run). Its
+  // screen is not read while conversation mode has the session: the
+  // terminal only holds the pane then.
   const agentWaiting =
-    chatShown && pane?.agent_status.toLowerCase() !== "working";
+    chatShown &&
+    !conversationOwnsPane &&
+    pane?.agent_status.toLowerCase() !== "working";
   // What the agent's permission hook waits on: its dialog is held back.
   const reviewState = useReviewState();
   const permissionPrompt = pane
@@ -609,7 +744,9 @@ export function TerminalView({
     if (chatShown) termRef.current?.textarea?.blur();
   }, [chatShown]);
   const agentWorking =
-    chatShown && pane?.agent_status.toLowerCase() === "working";
+    chatShown &&
+    !conversationOwnsPane &&
+    pane?.agent_status.toLowerCase() === "working";
   const [agentPrompt, setAgentPrompt] = useState<AgentPrompt | null>(null);
   const [agentActivity, setAgentActivity] = useState<AgentActivity | null>(
     null,
@@ -1166,7 +1303,12 @@ export function TerminalView({
         return;
       e.preventDefault();
       e.stopPropagation();
-      togglePaneView(s.activeConnectionId, paneId);
+      // A Claude pane's view is its mode's: the shortcut is the user's
+      // switch, both ways.
+      if (modeBoundRef.current) {
+        if (chatShownRef.current) openInTerminalRef.current();
+        else switchToConversationRef.current();
+      } else togglePaneView(s.activeConnectionId, paneId);
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
@@ -4094,7 +4236,58 @@ export function TerminalView({
               onClose={() => setTasksOpen(false)}
             />
           ) : null}
-          {permissionPrompt && !chatShown ? (
+          {conversationOwnsPane && !chatShown ? (
+            // Between the modes: nothing is typed into the pane meanwhile.
+            <div className="terminal-conversation-layer">
+              <div className="terminal-conversation-notice" role="status">
+                <strong>
+                  {chatState?.phase === "to_terminal" ||
+                  conversation?.handing === "terminal"
+                    ? "Opening Claude in the terminal\u2026"
+                    : chatState?.phase === "to_conversation" ||
+                        conversation?.handing === "conversation"
+                      ? "Switching to conversation mode\u2026"
+                      : "This session is in conversation mode"}
+                </strong>
+                <p>
+                  {chatState?.phase === "to_terminal" ||
+                  conversation?.handing === "terminal"
+                    ? "Claude resumes here in a moment."
+                    : "Claude in the terminal closes, and its chat shows once conversation mode has the session."}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {modeBound &&
+          !chatShown &&
+          !conversationOwnsPane &&
+          (conversationSwitch.state !== "none" ||
+            refusalShown ||
+            (chatState?.queue.length ?? 0) > 0) ? (
+            <TerminalModeStrip
+              state={conversationSwitch.state}
+              refusal={refusalShown}
+              writer={refusalWriter}
+              writerPlace={refusalWriterPlace}
+              queued={chatState?.queue.length ?? 0}
+              onSwitch={switchToConversation}
+              onCancel={conversationSwitch.cancel}
+              onDismiss={() => setRefusalShown(null)}
+              onGoToWriter={() => {
+                if (refusalWriter)
+                  void store.jumpToConnectionPane(
+                    terminalIdentity.connectionId,
+                    refusalWriter.pane_id,
+                  );
+              }}
+              onQuitWriter={() => {
+                if (!refusalWriter) return;
+                setRefusalShown(null);
+                conversationSwitch.quitAndSwitch(refusalWriter.pane_id);
+              }}
+            />
+          ) : null}
+          {permissionPrompt && !chatShown && !conversationOwnsPane ? (
             <div className="terminal-permission-layer">
               <AgentPermissionCard prompt={permissionPrompt} compact />
             </div>
@@ -4102,21 +4295,38 @@ export function TerminalView({
           {chatShown ? (
             <div className="terminal-chat-layer" ref={chatLayerRef}>
               <AgentHistoryDrawer
-                pane={pane}
+                pane={agentPane ?? pane}
                 open
                 embedded
                 paneChat={{
                   prompt: agentPrompt,
                   activity: agentActivity,
                   permission: permissionPrompt,
-                  onShowTerminal: () => {
-                    setPaneView(s.activeConnectionId, pane.pane_id, "terminal");
-                    focusTerminalSoon();
-                  },
+                  // A Claude chat is its conversation mode: the terminal
+                  // comes back by handing the session back.
+                  onShowTerminal: modeBound
+                    ? openInTerminal
+                    : () => {
+                        setPaneView(
+                          s.activeConnectionId,
+                          pane.pane_id,
+                          "terminal",
+                        );
+                        focusTerminalSoon();
+                      },
+                  modeBound,
                   active: isActivePane,
-                  onKeys: (text) => void store.sendText(pane.pane_id, text),
+                  // Nothing is typed into, nor read from, a terminal that
+                  // only holds the pane for conversation mode.
+                  onKeys: (text) => {
+                    if (!conversationOwnsRef.current)
+                      void store.sendText(pane.pane_id, text);
+                  },
                   readScreen: () =>
-                    termRef.current ? terminalScreenLines(termRef.current) : [],
+                    termRef.current && !conversationOwnsRef.current
+                      ? terminalScreenLines(termRef.current)
+                      : [],
+                  conversation,
                   composerTarget:
                     isMobileLayout() && isActivePane ? mobileInputTarget : null,
                 }}
@@ -4283,8 +4493,29 @@ export function TerminalView({
           className={`terminal-pane-toolbar${chatShown ? " is-over-chat" : ""}`}
           aria-label="Pane actions"
         >
-          {/* Over a chat, its own top row shows the terminal. */}
-          {chatAvailable && !chatShown ? (
+          {/* Over a chat, its own top row shows the terminal. A Claude
+              pane's terminal offers its switch to conversation mode. */}
+          {modeBound && !chatShown ? (
+            <button
+              type="button"
+              className="terminal-pane-action is-labelled"
+              title={shortcutTitle(
+                conversationSwitch.busy
+                  ? "Switch to conversation mode once Claude's turn ends"
+                  : "Switch to conversation mode",
+                "pane.chat",
+              )}
+              aria-label="Switch to conversation mode"
+              disabled={
+                conversationOwnsPane || conversationSwitch.state !== "none"
+              }
+              onPointerDown={preventPaneActionFocus}
+              onClick={switchToConversation}
+            >
+              <MessagesSquare size={14} />
+              <span>Conversation mode</span>
+            </button>
+          ) : chatAvailable && !chatShown ? (
             <button
               type="button"
               className="terminal-pane-action"

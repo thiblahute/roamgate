@@ -24,6 +24,11 @@ import {
   REVIEW_USER,
 } from "../../../shared/review";
 import { type Logger, silentLogger } from "../utils/logger";
+import { HOLD_CLIENT_INSTALLED_SCRIPT } from "../conversation/holder-script";
+import {
+  type HolderStatus,
+  parseHolderStatus,
+} from "../conversation/pane-child";
 import { REVIEW_CLIENT_CHECKSUM, REVIEW_CLIENT_SCRIPT } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
@@ -52,6 +57,13 @@ export const LOCAL_SOCKET_KEY = "@local";
 
 /** The largest request an agent may send: comments are at most 20k chars. */
 export const REVIEW_AGENT_MAX_BODY_BYTES = 1024 * 1024;
+
+/**
+ * The largest chunk of a conversation holder's log: whole lines, and one
+ * line (a tool result with screenshots, say) can pass a megabyte. A chunk
+ * refused here is sent again forever, and the conversation is never read.
+ */
+export const HOLD_OUTPUT_MAX_BODY_BYTES = 64 * 1024 * 1024;
 
 /** Long polls at once on one review; more are refused. */
 export const REVIEW_AGENT_MAX_WATCHES = 8;
@@ -198,7 +210,7 @@ export function parseTargetFlags(
 }
 
 /** Claude's AskUserQuestion questions, as its hook passes them on. */
-function parseQuestions(raw: string | null): AgentQuestion[] {
+export function parseQuestions(raw: string | null): AgentQuestion[] {
   let value: unknown;
   try {
     value = JSON.parse(raw ?? "[]");
@@ -259,6 +271,36 @@ export function createReviewAgentServer(args: {
     title?: string;
     text: string;
   }) => Promise<void>;
+  /**
+   * Conversation mode's pane holder (roamgate-hold): `hold` waits until the
+   * session goes back to the terminal (or a while passes), `handback` asks
+   * for it now. Both answer `{action: "resume", session_id, cwd}` once the
+   * headless process is gone.
+   */
+  holder?: {
+    hold: (input: {
+      connectionId: string;
+      paneId: string;
+      sessionId: string;
+      signal: AbortSignal;
+      /** What a holder running the headless claude says of it. */
+      status: HolderStatus | null;
+    }) => Promise<Record<string, unknown>>;
+    /** A holder sending its log from `offset` to `end`. */
+    output: (input: {
+      connectionId: string;
+      paneId: string;
+      holderId: string;
+      offset: number;
+      end: number;
+      data: string;
+    }) => Record<string, unknown>;
+    handback: (input: {
+      connectionId: string;
+      paneId: string;
+      sessionId: string;
+    }) => Promise<Record<string, unknown>>;
+  };
 }) {
   const logger = args.logger ?? silentLogger;
   const home = args.home ?? homedir();
@@ -273,6 +315,11 @@ export function createReviewAgentServer(args: {
     return join(socketDirectory, `${name}.sock`);
   }
 
+  /**
+   * The connection a request comes from. A pane naming its Herdr socket is
+   * never taken for another connection's (a holder told to resume by a
+   * connection that has no lease for its pane would start a second writer).
+   */
   function connectionFor(
     socketKey: string,
     form: URLSearchParams,
@@ -440,7 +487,53 @@ export function createReviewAgentServer(args: {
       });
       return {
         answers: answer && typeof answer === "object" ? answer.answers : null,
+        // Put away unanswered: the hook denies the tool, saying so.
+        ...(answer === "dismiss" ? { dismissed: true } : {}),
       };
+    }
+    if (
+      command === "hold" ||
+      command === "handback" ||
+      command === "hold_output"
+    ) {
+      const paneId = form.get("pane");
+      const sessionId = form.get("session") ?? "";
+      if (!paneId)
+        throw new ReviewError("roamgate-hold runs inside a Herdr pane");
+      if (!args.holder)
+        throw new ReviewError("conversation mode is unavailable", 503);
+      if (command === "hold_output") {
+        const offset = Number(form.get("offset"));
+        const end = Number(form.get("end"));
+        if (
+          !Number.isSafeInteger(offset) ||
+          !Number.isSafeInteger(end) ||
+          offset < 0 ||
+          end < offset
+        )
+          throw new ReviewError("invalid offsets");
+        return args.holder.output({
+          connectionId: connection.id,
+          paneId,
+          holderId: form.get("holder_id") ?? "",
+          offset,
+          end,
+          data: form.get("data") ?? "",
+        });
+      }
+      return command === "hold"
+        ? args.holder.hold({
+            connectionId: connection.id,
+            paneId,
+            sessionId,
+            signal,
+            status: parseHolderStatus(form),
+          })
+        : args.holder.handback({
+            connectionId: connection.id,
+            paneId,
+            sessionId,
+          });
     }
     if (command === "notify") {
       // The agent itself says the user needs to act: no review involved.
@@ -704,7 +797,7 @@ export function createReviewAgentServer(args: {
     rmSync(path, { force: true });
     const server = Bun.serve({
       unix: path,
-      maxRequestBodySize: REVIEW_AGENT_MAX_BODY_BYTES,
+      maxRequestBodySize: HOLD_OUTPUT_MAX_BODY_BYTES,
       fetch: async (request, server) => {
         // Watches are long polls; the client sets its own deadline.
         server.timeout(request, 0);
@@ -712,8 +805,18 @@ export function createReviewAgentServer(args: {
         const command = url.pathname.replace(/^\/v1\//, "");
         if (request.method !== "POST" || command === url.pathname)
           return json({ error: "not found" }, 404);
+        // Only a holder's log is larger than an agent's request.
+        const limit =
+          command === "hold_output"
+            ? HOLD_OUTPUT_MAX_BODY_BYTES
+            : REVIEW_AGENT_MAX_BODY_BYTES;
+        if (Number(request.headers.get("content-length") ?? 0) > limit)
+          return json({ error: "request too large" }, 413);
         try {
-          const form = formOf(await request.text());
+          const body = await request.text();
+          if (Buffer.byteLength(body) > limit)
+            return json({ error: "request too large" }, 413);
+          const form = formOf(body);
           return json(await handle(socketKey, command, form, request.signal));
         } catch (error) {
           const status = error instanceof ReviewError ? error.status : 500;
@@ -766,6 +869,11 @@ export function createReviewAgentServer(args: {
     const temp = `${client}.${process.pid}.tmp`;
     writeFileSync(temp, REVIEW_CLIENT_INSTALLED_SCRIPT, { mode: 0o755 });
     renameSync(temp, client);
+    // Conversation mode's pane holder, beside it.
+    const holder = join(bin, "roamgate-hold");
+    const holderTemp = `${holder}.${process.pid}.tmp`;
+    writeFileSync(holderTemp, HOLD_CLIENT_INSTALLED_SCRIPT, { mode: 0o755 });
+    renameSync(holderTemp, holder);
     const skillDirectory = join(base, "skills", "roamgate-review");
     mkdirSync(skillDirectory, { recursive: true, mode: 0o700 });
     writeFileSync(join(skillDirectory, "SKILL.md"), REVIEW_SKILL, {

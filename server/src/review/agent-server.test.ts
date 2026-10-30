@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createReviewAgentServer,
+  HOLD_OUTPUT_MAX_BODY_BYTES,
   LOCAL_SOCKET_KEY,
   REVIEW_AGENT_MAX_BODY_BYTES,
   REVIEW_AGENT_MAX_WATCHES,
@@ -180,6 +181,26 @@ test("in Claude Code the agent is named Claude by default", async () => {
   const opened = await run(s, ["open"], undefined, { CLAUDECODE: "1" });
   const sessionId = opened.json.session.id as string;
   expect(s.service.get({ sessionId }).session.agent.name).toBe("Claude");
+});
+
+test("a claude in conversation mode names its pane under Roamgate's names", async () => {
+  const s = setup();
+  // The holder's headless claude: no Herdr names (Herdr's hook would claim
+  // the pane), Roamgate's instead.
+  const opened = await run(s, ["open"], undefined, {
+    CLAUDECODE: "1",
+    HERDR_PANE_ID: undefined,
+    HERDR_SOCKET_PATH: undefined,
+    ROAMGATE_HEADLESS: "1",
+    ROAMGATE_PANE_ID: "w1:p7",
+    ROAMGATE_HERDR_SOCKET_PATH: "/herdr.sock",
+  });
+  expect(opened.stderr).toBe("");
+  const sessionId = opened.json.session.id as string;
+  expect(s.service.get({ sessionId }).session.agent).toMatchObject({
+    name: "Claude",
+    paneId: "w1:p7",
+  });
 });
 
 test("the agent loop: open, discuss, watch, reply, resolve", async () => {
@@ -362,6 +383,31 @@ test("a request larger than the limit is refused unread", async () => {
   expect(response.status).toBe(413);
 });
 
+test("a conversation holder's log chunk may pass the agent limit", async () => {
+  const s = setup();
+  // A chunk with a line past a megabyte (a screenshot in a tool result):
+  // read, not refused (no conversation mode here, so 503).
+  const response = await post(
+    s,
+    "hold_output",
+    JSON.stringify({
+      pane: "w1:p1",
+      holder_id: "a".repeat(32),
+      offset: 0,
+      end: 10,
+      data: "x".repeat(REVIEW_AGENT_MAX_BODY_BYTES + 1),
+    }),
+  );
+  expect(response.status).toBe(503);
+  // Past its own limit it is refused unread too.
+  const huge = await post(
+    s,
+    "hold_output",
+    "x".repeat(HOLD_OUTPUT_MAX_BODY_BYTES + 1),
+  );
+  expect(huge.status).toBe(413);
+});
+
 test("watches on one review are capped", async () => {
   const s = setup();
   const opened = await run(s, ["open", "--worktree"]);
@@ -489,4 +535,168 @@ test("an agent tells the user they need to act", async () => {
     (await run(s, ["notify", "hi"], undefined, { HERDR_PANE_ID: "" })).code,
   ).not.toBe(0);
   expect(notified).toHaveLength(1);
+});
+
+test("a holder is never routed to another local connection's Herdr", async () => {
+  const dir = temp("rg-rev-");
+  const home = temp("rg-home-");
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+  });
+  const held: string[] = [];
+  const outputs: Record<string, unknown>[] = [];
+  const agent = createReviewAgentServer({
+    service,
+    directory: dir,
+    home,
+    // The other local connection is reconnecting: only this one is ready.
+    connections: () => [
+      {
+        id: "b",
+        herdrSocketPath: "/b.sock",
+        readRoot: async () => "/repo",
+        readDefaultBase: async () => "origin/main",
+      },
+    ],
+    holder: {
+      hold: async ({ connectionId }) => {
+        held.push(connectionId);
+        return { action: "hold", session_id: "s" };
+      },
+      output: (input) => {
+        outputs.push(input);
+        return { offset: input.end };
+      },
+      handback: async ({ connectionId }) => {
+        held.push(connectionId);
+        return { action: "refused", reason: "no" };
+      },
+    },
+  });
+  cleanups.push(() => {
+    agent.stop();
+    service.close();
+  });
+  agent.installLocal();
+  const post = (command: string, herdrSocket: string) =>
+    fetch(`http://roamgate/v1/${command}`, {
+      unix: join(home, ".cache/roamgate/review.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pane: "w1:p2",
+        session: "s",
+        herdr_socket: herdrSocket,
+      }),
+    } as RequestInit);
+  const refused = await post("hold", "/a.sock");
+  expect(refused.status).toBe(503);
+  expect(await refused.json()).toEqual({
+    error: "this pane's Herdr server is not one of Roamgate's connections",
+  });
+  expect((await post("handback", "/a.sock")).status).toBe(503);
+  expect(held).toEqual([]);
+  // Only its own socket reaches it, even as the only local connection.
+  expect((await post("hold", "/b.sock")).status).toBe(200);
+  expect((await post("hold", "/a.sock")).status).toBe(503);
+  expect(held).toEqual(["b"]);
+  // The holder's log goes the same way, offsets checked.
+  const output = (offset: number, end: number) =>
+    fetch("http://roamgate/v1/hold_output", {
+      unix: join(home, ".cache/roamgate/review.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pane: "w1:p2",
+        herdr_socket: "/b.sock",
+        holder_id: "f".repeat(32),
+        offset,
+        end,
+        data: '{"type":"x"}\n',
+      }),
+    } as RequestInit);
+  const taken = await output(0, 13);
+  expect(await taken.json()).toEqual({ offset: 13 });
+  expect(outputs).toEqual([
+    {
+      connectionId: "b",
+      paneId: "w1:p2",
+      holderId: "f".repeat(32),
+      offset: 0,
+      end: 13,
+      data: '{"type":"x"}\n',
+    },
+  ]);
+  expect((await output(5, 2)).status).toBe(400);
+});
+
+test("an SSH connection named local has its own socket", async () => {
+  // The desktop serving: its Herdr is the local connection "desktop", and
+  // the Mac is the SSH connection that kept the id "local".
+  const dir = temp("rg-rev-");
+  const home = temp("rg-home-");
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+  });
+  const held: string[] = [];
+  const agent = createReviewAgentServer({
+    service,
+    directory: dir,
+    home,
+    connections: () => [
+      {
+        id: "desktop",
+        herdrSocketPath: "/desktop/herdr.sock",
+        readRoot: async () => "/repo",
+        readDefaultBase: async () => "origin/main",
+      },
+      {
+        id: "local",
+        sshHost: "mac",
+        readRoot: async () => "/repo",
+        readDefaultBase: async () => "origin/main",
+      },
+    ],
+    holder: {
+      hold: async ({ connectionId }) => {
+        held.push(connectionId);
+        return { action: "hold", session_id: "s" };
+      },
+      output: (input) => ({ offset: input.end }),
+      handback: async () => ({ action: "refused", reason: "no" }),
+    },
+  });
+  cleanups.push(() => {
+    agent.stop();
+    service.close();
+  });
+  agent.installLocal();
+  const remote = agent.listen("local");
+  expect(remote).not.toBe(agent.socketPath(LOCAL_SOCKET_KEY));
+  const hold = (unix: string, herdrSocket: string) =>
+    fetch("http://roamgate/v1/hold", {
+      unix,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pane: "w2:p14",
+        session: "s",
+        herdr_socket: herdrSocket,
+      }),
+    } as RequestInit);
+  // A Mac pane, through the forward of the Mac's review.sock.
+  expect(
+    (await hold(remote, "/Users/me/.config/herdr/herdr.sock")).status,
+  ).toBe(200);
+  // A desktop pane, through the desktop's own link.
+  const link = join(home, ".cache/roamgate/review.sock");
+  expect((await hold(link, "/desktop/herdr.sock")).status).toBe(200);
+  expect(held).toEqual(["local", "desktop"]);
+  // Stopping the Mac's socket leaves the desktop's link in place.
+  agent.stop("local");
+  expect(readlinkSync(link)).toBe(agent.socketPath(LOCAL_SOCKET_KEY)!);
 });

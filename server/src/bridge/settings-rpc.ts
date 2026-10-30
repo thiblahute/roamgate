@@ -10,7 +10,12 @@ import {
 import type { HerdrClient } from "./herdr-client";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "../connections/types";
 import {
+  isIdleStopMinutes,
+  MAX_IDLE_STOP_MINUTES,
+} from "../../../shared/agentChat";
+import {
   connectionSettingsPrefix,
+  conversationIdleStopMinutes,
   DEFAULT_WORKSPACE_AUTO_SYNC_INTERVAL_MINUTES,
   type GuiRepoSettings,
   guiSettingsPath,
@@ -180,6 +185,33 @@ export function createSettingsRpcHandler(args: {
         args.onAgentAutoRenameSettingsChanged?.();
         return reply({
           enabled: settings.auto_rename_agent_tabs !== false,
+        });
+      }
+      if (method === "settings.conversation.get")
+        return reply({
+          idle_stop_minutes: conversationIdleStopMinutes(await readSettings()),
+        });
+      if (method === "settings.conversation.update") {
+        const minutes = params.idle_stop_minutes;
+        if (
+          !isIdleStopMinutes(minutes) ||
+          Object.keys(params).some((key) => key !== "idle_stop_minutes")
+        )
+          return fail(
+            `settings.conversation.update takes only idle_stop_minutes: a whole number of minutes from 0 (never) to ${MAX_IDLE_STOP_MINUTES}`,
+          );
+        const settings = await updateSettings(
+          (current) => ({
+            ...current,
+            conversation: {
+              ...current.conversation,
+              idle_stop_minutes: minutes,
+            },
+          }),
+          requestIsCurrent,
+        );
+        return reply({
+          idle_stop_minutes: conversationIdleStopMinutes(settings),
         });
       }
       if (method === "settings.terminal_transport.get") {

@@ -45,6 +45,8 @@ function isAnswer(entry: ErrandEntry | undefined) {
  */
 export class VoiceErrands {
   private jobs = new Map<string, ErrandState>();
+  /** The session (`<connection>/<pane>`) each job runs on. */
+  private panes = new Map<string, string>();
 
   constructor(
     private readonly deps: ErrandDeps,
@@ -66,14 +68,27 @@ export class VoiceErrands {
     const id = randomUUID();
     const state: ErrandState = { done: false, answer: null, stalled: false };
     this.jobs.set(id, state);
-    void this.watch(state, connectionId, paneId, before).finally(() =>
-      setTimeout(() => this.jobs.delete(id), KEPT_MS),
-    );
+    this.panes.set(id, pane);
+    void this.watch(state, connectionId, paneId, before).finally(() => {
+      // Over (answered, or given up): the session may idle-stop again.
+      state.done = true;
+      setTimeout(() => {
+        this.jobs.delete(id);
+        this.panes.delete(id);
+      }, KEPT_MS);
+    });
     return id;
   }
 
   state(id: string): ErrandState | null {
     return this.jobs.get(id) ?? null;
+  }
+
+  /** Whether a job still runs on the session (`<connection>/<pane>`). */
+  working(pane: string): boolean {
+    for (const [id, state] of this.jobs)
+      if (!state.done && this.panes.get(id) === pane) return true;
+    return false;
   }
 
   private async watch(

@@ -15,6 +15,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { lstat, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -159,6 +160,79 @@ export function replaceDataFile(
   mode = 0o600,
 ): void {
   writeDataFile(path, contents, mode, true);
+}
+
+async function statIfPresentAsync(path: string, follow: boolean) {
+  try {
+    return await (follow ? stat(path) : lstat(path));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** assertSafeDataPath, off the event loop. */
+async function assertSafeDataPathAsync(path: string): Promise<void> {
+  const configRoots = userConfigRoots();
+  for (const entry of [dirname(dirname(path)), dirname(path), path]) {
+    const found = await statIfPresentAsync(
+      entry,
+      configRoots.has(resolve(entry)),
+    );
+    if (found?.isSymbolicLink())
+      throw new Error(`data path contains a symlink: ${entry}`);
+    if (found && (entry === path ? !found.isFile() : !found.isDirectory())) {
+      throw new Error(`data path has an unexpected file type: ${entry}`);
+    }
+  }
+}
+
+/**
+ * replaceDataFile without blocking the event loop: a file rewritten often
+ * (a sync on a busy disk can take a second) is written this way, every step
+ * on Node's thread pool.
+ */
+export async function replaceDataFileAsync(
+  path: string,
+  contents: string | Buffer,
+  mode = 0o600,
+): Promise<void> {
+  await assertSafeDataPathAsync(path);
+  const directory = dirname(path);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const temporaryPath = join(directory, `.roamgate-${randomUUID()}.tmp`);
+  try {
+    const handle = await open(
+      temporaryPath,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+      0o600,
+    );
+    try {
+      await handle.writeFile(contents);
+      await handle.chmod(mode);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await assertSafeDataPathAsync(path);
+    await rename(temporaryPath, path);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+  if (process.platform === "win32") return;
+  try {
+    const handle = await open(
+      directory,
+      constants.O_RDONLY | (constants.O_DIRECTORY ?? 0),
+    );
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    // Best effort, as for the synchronous writer.
+  }
 }
 
 /** Copy only missing files. Originals and concurrent/new values always win. */

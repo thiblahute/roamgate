@@ -1,91 +1,78 @@
-import { createHash } from "node:crypto";
 import { isRecord } from "./session-utils";
 
-/**
- * An image a user message carried: Claude Code keeps an image pasted into
- * its prompt in the message, as [Image #N] in its text. History entries
- * carry its type, size and hash; agent_history.entry adds its data.
- */
-export type HistoryImage = {
-  media_type: string;
-  /** Decoded size. */
-  bytes: number;
-  /** A content hash: where its data is kept, and tells it apart. */
-  hash: string;
-  /** Base64, from agent_history.entry only. */
-  data?: string;
-};
-type ImageData = { media_type: string; data: string };
+const MEDIA_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 
-/** Image types a browser shows, as Claude Code records them. */
-const IMAGE_TYPE = /^image\/(?:png|jpeg|gif|webp)$/;
+export type SessionImage = { media_type: string; data: string };
+
 /** Base64 characters: a larger image is left out. */
 const MAX_IMAGE_CHARS = 16 * 1024 * 1024;
-/** Base64 characters a session keeps, for its most recent messages. */
-const MAX_SESSION_IMAGE_CHARS = 16 * 1024 * 1024;
 
-function imageData(parts: readonly unknown[]): ImageData[] {
-  const images: ImageData[] = [];
-  for (const part of parts) {
-    if (!isRecord(part) || part.type !== "image" || !isRecord(part.source))
-      continue;
-    const { type, media_type, data } = part.source;
-    if (
-      type === "base64" &&
-      typeof media_type === "string" &&
-      IMAGE_TYPE.test(media_type) &&
-      typeof data === "string" &&
-      data.length > 0 &&
-      data.length % 4 !== 1 &&
-      (!data.endsWith("=") || data.length % 4 === 0) &&
-      data.length <= MAX_IMAGE_CHARS &&
-      /^[A-Za-z0-9+/]+={0,2}$/.test(data)
-    )
-      images.push({ media_type, data });
-  }
-  return images;
+/** Well-formed base64 a browser decodes: no stray length or padding. */
+function validBase64(data: unknown): data is string {
+  return (
+    typeof data === "string" &&
+    data.length > 0 &&
+    data.length <= MAX_IMAGE_CHARS &&
+    data.length % 4 !== 1 &&
+    (!data.endsWith("=") || data.length % 4 === 0) &&
+    /^[A-Za-z0-9+/]+={0,2}$/.test(data)
+  );
 }
 
-function imageHash(data: string) {
-  return createHash("sha256").update(data).digest("hex").slice(0, 16);
-}
+/** The code a sent image that will never load is answered with. */
+export const SESSION_IMAGE_GONE = "image_gone";
 
-/** The images a user message carries, in their order, without their data. */
-export function attachedImages(parts: readonly unknown[]): HistoryImage[] {
-  return imageData(parts).map(({ media_type, data }) => ({
-    media_type,
-    bytes:
-      Math.floor((data.length * 3) / 4) - (/=*$/.exec(data)?.[0].length ?? 0),
-    hash: imageHash(data),
-  }));
+/**
+ * A sent image that is not there to load (not in the session, or asked for
+ * wrongly): trying again will not change it, so the chat says so instead of
+ * waiting.
+ */
+export class SessionImageGoneError extends Error {
+  readonly code = SESSION_IMAGE_GONE;
 }
 
 /**
- * The data of the images Claude Code user messages carried, by hash: whole
- * messages, the most recent first, up to MAX_SESSION_IMAGE_CHARS. An older
- * message's images show as its [Image #N] text.
+ * The index-th image the user sent inline in the transcript record with this
+ * uuid (a Claude JSONL), or null: a conversation-mode message or a pasted
+ * image keeps it there as base64, with no file to load.
  */
-export function parseSessionImages(
-  records: readonly Record<string, unknown>[],
-): Record<string, ImageData> {
-  const images: Record<string, ImageData> = {};
-  let chars = 0;
-  for (let index = records.length - 1; index >= 0; index--) {
-    const record = records[index]!;
-    const message = record.message;
-    if (
-      record.type !== "user" ||
-      record.isMeta === true ||
-      !isRecord(message) ||
-      !Array.isArray(message.content)
-    )
+export function sessionImage(
+  jsonl: string,
+  uuid: string,
+  index: number,
+): SessionImage | null {
+  if (!uuid || !Number.isSafeInteger(index) || index < 0) return null;
+  const needle = JSON.stringify(uuid);
+  for (const line of jsonl.split("\n")) {
+    if (!line.includes(needle)) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(line);
+    } catch {
       continue;
-    const found = imageData(message.content);
-    const size = found.reduce((sum, image) => sum + image.data.length, 0);
-    if (size === 0) continue;
-    if (chars + size > MAX_SESSION_IMAGE_CHARS) break;
-    chars += size;
-    for (const image of found) images[imageHash(image.data)] = image;
+    }
+    if (!isRecord(record) || record.uuid !== uuid || record.type !== "user")
+      continue;
+    const message = isRecord(record.message) ? record.message : record;
+    if (!Array.isArray(message.content)) return null;
+    const image = message.content.filter(
+      (part) => isRecord(part) && part.type === "image",
+    )[index];
+    const source = isRecord(image) ? image.source : null;
+    if (
+      !isRecord(source) ||
+      source.type !== "base64" ||
+      typeof source.media_type !== "string" ||
+      !MEDIA_TYPES.has(source.media_type) ||
+      !validBase64(source.data)
+    )
+      return null;
+    return { media_type: source.media_type, data: source.data };
   }
-  return images;
+  return null;
 }
