@@ -337,3 +337,101 @@ test("an agent tells the user they need to act", async () => {
   ).not.toBe(0);
   expect(notified).toHaveLength(1);
 });
+
+test("a holder is never routed to another local connection's Herdr", async () => {
+  const dir = temp("rg-rev-");
+  const home = temp("rg-home-");
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+  });
+  const held: string[] = [];
+  const outputs: Record<string, unknown>[] = [];
+  let locals = 2;
+  const agent = createReviewAgentServer({
+    service,
+    directory: dir,
+    home,
+    // The other local connection is reconnecting: only this one is ready.
+    connections: () => [
+      {
+        id: "b",
+        herdrSocketPath: "/b.sock",
+        readRoot: async () => "/repo",
+        readDefaultBase: async () => "origin/main",
+      },
+    ],
+    localConnectionCount: () => locals,
+    holder: {
+      hold: async ({ connectionId }) => {
+        held.push(connectionId);
+        return { action: "hold", session_id: "s" };
+      },
+      output: (input) => {
+        outputs.push(input);
+        return { offset: input.end };
+      },
+      handback: async ({ connectionId }) => {
+        held.push(connectionId);
+        return { action: "refused", reason: "no" };
+      },
+    },
+  });
+  cleanups.push(() => {
+    agent.stop();
+    service.close();
+  });
+  agent.installLocal();
+  const post = (command: string, herdrSocket: string) =>
+    fetch(`http://roamgate/v1/${command}`, {
+      unix: join(home, ".cache/roamgate/review.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pane: "w1:p2",
+        session: "s",
+        herdr_socket: herdrSocket,
+      }),
+    } as RequestInit);
+  const refused = await post("hold", "/a.sock");
+  expect(refused.status).toBe(503);
+  expect(await refused.json()).toEqual({
+    error: "cannot tell which local connection this pane belongs to",
+  });
+  expect((await post("handback", "/a.sock")).status).toBe(503);
+  expect(held).toEqual([]);
+  // Its own socket, or a single local connection, reaches it.
+  expect((await post("hold", "/b.sock")).status).toBe(200);
+  locals = 1;
+  expect((await post("hold", "/a.sock")).status).toBe(200);
+  expect(held).toEqual(["b", "b"]);
+  // The holder's log goes the same way, offsets checked.
+  const output = (offset: number, end: number) =>
+    fetch("http://roamgate/v1/hold_output", {
+      unix: join(home, ".cache/roamgate/review.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pane: "w1:p2",
+        herdr_socket: "/b.sock",
+        holder_id: "f".repeat(32),
+        offset,
+        end,
+        data: '{"type":"x"}\n',
+      }),
+    } as RequestInit);
+  const taken = await output(0, 13);
+  expect(await taken.json()).toEqual({ offset: 13 });
+  expect(outputs).toEqual([
+    {
+      connectionId: "b",
+      paneId: "w1:p2",
+      holderId: "f".repeat(32),
+      offset: 0,
+      end: 13,
+      data: '{"type":"x"}\n',
+    },
+  ]);
+  expect((await output(5, 2)).status).toBe(400);
+});

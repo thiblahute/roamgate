@@ -38,9 +38,57 @@ export function findSentence(root: Node, sentence: string): Range | null {
   return range;
 }
 
+/** The bubble of a message: by its chat id, else by its reply block. */
+function bubbleOf(id: string): Element | null {
+  const byId = document.querySelector(
+    `[data-entry-id="${CSS.escape(id)}"] .agent-history-chat-bubble`,
+  );
+  if (byId || !id.startsWith("live:")) return byId;
+  // A streamed block (live:<message>:<index>) once its saved entry took
+  // its place.
+  return document.querySelector(
+    `[data-block-key="${CSS.escape(id.slice(5))}"] .agent-history-chat-bubble`,
+  );
+}
+
+/** What is read now, put back when the chat redraws under it. */
+let reading: {
+  ids: readonly string[];
+  sentence: string;
+  scrolled: boolean;
+} | null = null;
+let observer: MutationObserver | null = null;
+let pending = 0;
+
+function apply(): boolean {
+  const registry = globalThis.CSS?.highlights;
+  if (!registry || typeof Highlight === "undefined" || !reading) return false;
+  registry.delete(HIGHLIGHT);
+  for (const id of reading.ids) {
+    const bubble = bubbleOf(id);
+    const range = bubble && findSentence(bubble, reading.sentence);
+    if (!range) continue;
+    registry.set(HIGHLIGHT, new Highlight(range));
+    // Brought into view once per sentence, not on every redraw.
+    if (!reading.scrolled) {
+      reading.scrolled = true;
+      const box = range.getBoundingClientRect();
+      if (box.top < 0 || box.bottom > window.innerHeight)
+        range.startContainer.parentElement?.scrollIntoView({
+          block: "center",
+          behavior: "smooth",
+        });
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Highlights `sentence` in the first of the messages `ids` that shows it,
- * scrolling it into view; null clears the highlight.
+ * scrolling it into view; null clears the highlight. While it is read, a
+ * redraw of the chat (a reply still streaming in, its saved copy taking the
+ * streamed one's place) puts it back.
  */
 export function highlightReading(
   ids: readonly string[],
@@ -48,21 +96,27 @@ export function highlightReading(
 ) {
   const registry = globalThis.CSS?.highlights;
   if (!registry || typeof Highlight === "undefined") return;
-  registry.delete(HIGHLIGHT);
-  if (!sentence) return;
-  for (const id of ids) {
-    const bubble = document.querySelector(
-      `[data-entry-id="${CSS.escape(id)}"] .agent-history-chat-bubble`,
-    );
-    const range = bubble && findSentence(bubble, sentence);
-    if (!range) continue;
-    registry.set(HIGHLIGHT, new Highlight(range));
-    const box = range.getBoundingClientRect();
-    if (box.top < 0 || box.bottom > window.innerHeight)
-      range.startContainer.parentElement?.scrollIntoView({
-        block: "center",
-        behavior: "smooth",
-      });
+  if (!sentence) {
+    reading = null;
+    registry.delete(HIGHLIGHT);
+    observer?.disconnect();
+    observer = null;
     return;
+  }
+  reading = { ids: [...ids], sentence, scrolled: false };
+  apply();
+  if (!observer && typeof MutationObserver !== "undefined") {
+    observer = new MutationObserver(() => {
+      if (pending) return;
+      pending = requestAnimationFrame(() => {
+        pending = 0;
+        apply();
+      });
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
   }
 }

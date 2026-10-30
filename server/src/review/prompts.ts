@@ -16,6 +16,8 @@ export type PermissionRequest = {
   canAlways: boolean;
   /** Claude's questions, answered with the chosen options. */
   questions?: AgentQuestion[];
+  /** No terminal asks instead (a headless claude): only here. */
+  noTerminal?: boolean;
   /** How long the hook waits before the terminal asks instead. */
   timeoutMs: number;
   /** The hook went away: the terminal is asking now. */
@@ -100,6 +102,7 @@ export function createAgentPrompts(args: {
       createdAt: new Date(created).toISOString(),
       expiresAt: new Date(created + params.timeoutMs).toISOString(),
       ...(params.questions ? { questions: params.questions } : {}),
+      ...(params.noTerminal ? { noTerminal: true } : {}),
     };
     return new Promise((resolve) => {
       const finish = (answer: AgentPromptAnswer | null) => {

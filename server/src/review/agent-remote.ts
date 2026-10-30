@@ -4,6 +4,10 @@ import {
   validateSshDestination,
 } from "../bridge/ssh-command";
 import { annotateSshArgv } from "../bridge/ssh-metrics";
+import {
+  HOLD_CLIENT_CHECKSUM,
+  HOLD_CLIENT_INSTALLED_SCRIPT,
+} from "../conversation/holder-script";
 import { REVIEW_CLIENT_CHECKSUM } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
 import {
@@ -37,6 +41,13 @@ export function remoteSetupScript(): string {
     `  python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' '${encoded}' > "$f.tmp"`,
     '  chmod 755 "$f.tmp"',
     '  mv "$f.tmp" "$f"',
+    "fi",
+    // Conversation mode's pane holder, beside it.
+    'h="$d/bin/roamgate-hold"',
+    `if ! grep -q 'roamgate-hold ${HOLD_CLIENT_CHECKSUM}' "$h" 2>/dev/null; then`,
+    `  python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' '${Buffer.from(HOLD_CLIENT_INSTALLED_SCRIPT).toString("base64")}' > "$h.tmp"`,
+    '  chmod 755 "$h.tmp"',
+    '  mv "$h.tmp" "$h"',
     "fi",
     'mkdir -p "$d/skills/roamgate-review"',
     `python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' '${Buffer.from(REVIEW_SKILL).toString("base64")}' > "$d/skills/roamgate-review/SKILL.md"`,

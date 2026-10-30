@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { HistoryEntry } from "./components/agentHistory";
 import {
+  conversationContext,
   Downsampler,
   isStopCommand,
   nextHeard,
@@ -85,6 +86,25 @@ describe("voice chat text", () => {
         "what changed?",
       ),
     ).toBe("Two files.\n\nBoth tests pass.");
+  });
+
+  test("a report or a task ending is not the message answered, nor read", () => {
+    const notice = (label: string, text: string) =>
+      entry("user", text, "message", {
+        injected: { kind: "task", label },
+      });
+    const entries = [
+      entry("user", "[Voice] float it"),
+      entry("assistant", "On it."),
+      notice("Report from voice-overlay", "I committed it."),
+      entry("assistant", "It is committed."),
+      notice("Task finished: x", "x finished"),
+    ];
+    // The answer goes on past them, and they are not part of it.
+    expect(replyAfter(entries, "[Voice] float it")).toBe(
+      "On it.\n\nIt is committed.",
+    );
+    expect(conversationContext(entries)).not.toContain("I committed it.");
   });
 
   test("a voice message says so, and where it cut the reading", () => {

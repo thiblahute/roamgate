@@ -624,3 +624,39 @@
 .terminal-pane-action.is-active {
   color: var(--accent);
 }
+
+/* Conversation mode holds the session: the terminal shows this instead of
+   its Claude, which is not running there. */
+.terminal-conversation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--shell-panel);
+}
+
+.terminal-conversation-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.terminal-conversation-notice p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.terminal-conversation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}

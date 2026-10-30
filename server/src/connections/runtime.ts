@@ -12,7 +12,35 @@ import {
   createEmptyWorkspaceCreator,
 } from "../bridge/endpoint-creation";
 import type { ServerWebSocket } from "bun";
-import { createAgentSessionHandlers } from "../agent/agent-sessions";
+import type { AgentPromptAnswer } from "../../../shared/review";
+import {
+  createAgentSessionHandlers,
+  withOwnedSessions,
+} from "../agent/agent-sessions";
+import {
+  createHistoryWatcher,
+  createRemoteStatSpawner,
+  type HistoryWatcher,
+} from "../agent/history-watch";
+import { sshReadCommandArgv } from "../bridge/ssh-command";
+import {
+  conversationCloseEvent,
+  createConversationHerdr,
+  localPidAlive,
+} from "../conversation/herdr";
+import type { SpawnHeadless } from "../conversation/headless";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { holderCommand, resumeCommand } from "../conversation/holder-script";
+import { REVIEW_HOME_DIR } from "../review/agent-server";
+import { createImageReader } from "../conversation/images";
+import { createLeaseStore } from "../conversation/lease";
+import {
+  type ConversationService,
+  createConversationService,
+} from "../conversation/service";
+import type { ConversationPrompt } from "../conversation/session";
+import { serializeHerdrEventEnvelope } from "./protocol";
 import { createAgentSessionFileAccess } from "../agent/session-file-access";
 import { HerdrClient } from "../bridge/herdr-client";
 import {
@@ -139,6 +167,17 @@ export function createLegacyConnectionRuntime(args: {
   lastStepBaselines?: LastStepBaselineStore;
   resolveLastStepWorkspaceGitRoot?: (workspaceId: string) => Promise<string>;
   lastStepTransitionDebounceMs?: number;
+  /**
+   * Where conversation mode's leases are kept; null (the default) keeps
+   * them in memory only.
+   */
+  conversationLeaseFile?: string | null;
+  /** Conversation mode's permission and question prompts, to the browser. */
+  askAgentPrompt?: (
+    input: ConversationPrompt & { connectionId: string; paneId: string },
+  ) => Promise<AgentPromptAnswer | null>;
+  /** Test seam: how the headless claude is started. */
+  spawnHeadless?: SpawnHeadless;
 }) {
   const { config } = args;
   const remotePlatform = config.remotePlatform;
@@ -172,14 +211,138 @@ export function createLegacyConnectionRuntime(args: {
     shQuote,
   });
   // These helper groups run Unix shell commands over SSH.
+  // Set below; the session resolver asks it which sessions it owns.
+  let conversation: ConversationService<ServerWebSocket<unknown>> | null = null;
   const agentSessions = unixOnlyHandlers(
     remotePlatform,
     "Agent history",
     createAgentSessionHandlers({
-      herdrCall: (...args) => herdr.call(...args),
+      herdrCall: withOwnedSessions(
+        (...args) => herdr.call(...args),
+        () => conversation?.ownedPanes() ?? [],
+      ),
       files: agentSessionFiles,
     }),
   );
+  const sendConnectionEvent = (
+    ws: ServerWebSocket<unknown>,
+    event: { event: string; data: unknown },
+    context: string,
+  ) => {
+    if (disposed) return;
+    try {
+      args.safeSend(
+        ws,
+        serializeHerdrEventEnvelope(
+          identity.id,
+          event,
+          args.connectionGeneration,
+        ),
+        context,
+      );
+    } catch (error) {
+      logger.warn("dropped a connection event", {
+        connection: identity.id,
+        error: sanitizeConnectionError(error),
+      });
+    }
+  };
+  conversation = createConversationService<ServerWebSocket<unknown>>({
+    connectionId: identity.id,
+    herdr: createConversationHerdr({
+      call: (method, params, timeoutMs) =>
+        herdr.call(method, params, timeoutMs),
+      pidAlive: config.sshHost
+        ? async (pid) => {
+            const result = await runProcessWithCodeTimeout(
+              sshReadCommandArgv(
+                config.sshHost!,
+                `ps -p ${Math.trunc(pid)} >/dev/null`,
+                [],
+                "agent_chat.pid",
+              ),
+              10_000,
+            );
+            // Unsure (no answer from the host) counts as alive.
+            return result.code !== 1;
+          }
+        : localPidAlive,
+      // Unsure (no answer from the host) throws: nothing starts or resumes.
+      listProcesses: async () => {
+        const result = await runProcessWithCodeTimeout(
+          config.sshHost
+            ? sshReadCommandArgv(
+                config.sshHost,
+                "ps -eo pid=,args=",
+                [],
+                "agent_chat.ps",
+              )
+            : ["ps", "-eo", "pid=,args="],
+          10_000,
+        );
+        if (result.code !== 0)
+          throw new Error(
+            `Could not list the host's processes (ps exited ${result.code})`,
+          );
+        return result.stdout;
+      },
+    }),
+    leases: createLeaseStore({
+      connectionId: identity.id,
+      file: args.conversationLeaseFile ?? null,
+    }),
+    ...(args.spawnHeadless ? { spawn: args.spawnHeadless } : {}),
+    ask: (paneId, prompt) =>
+      args.askAgentPrompt
+        ? args.askAgentPrompt({ ...prompt, connectionId: identity.id, paneId })
+        : Promise.resolve(null),
+    readImage: createImageReader({
+      sshHost: config.sshHost,
+      run: (argv, timeoutMs) => runProcessWithCodeTimeout(argv, timeoutMs),
+      shQuote,
+    }),
+    send: (ws, envelope) => sendConnectionEvent(ws, envelope, "agent_chat"),
+    // Locally, this Roamgate's own holder and socket, whatever the pane's
+    // $HOME; over SSH, the host's.
+    holderCommand: config.sshHost
+      ? (sessionId) => holderCommand(sessionId)
+      : (sessionId) =>
+          holderCommand(sessionId, {
+            bin: join(homedir(), REVIEW_HOME_DIR, "bin", "roamgate-hold"),
+            socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
+          }),
+    resumeCommand,
+    onLeaseChanged: (paneId) => {
+      // The pane's history may now be another file (/clear).
+      historyWatcher?.refresh(paneId);
+      // Herdr's view of the pane changes with it (see overlayOwnedPanes):
+      // the browsers read it again.
+      if (!disposed)
+        args.onEvent(
+          { event: "roamgate.conversation_lease", data: { pane_id: paneId } },
+          identity,
+        );
+    },
+    log: (message, fields) =>
+      logger.info(message, { connection: identity.id, ...fields }),
+  });
+  // oxlint-disable-next-line prefer-const -- read by conversation above.
+  let historyWatcher: HistoryWatcher<ServerWebSocket<unknown>> | undefined;
+  historyWatcher = createHistoryWatcher<ServerWebSocket<unknown>>({
+    resolvePath: (params) => agentSessions.resolvePath(params),
+    send: (ws, event) => sendConnectionEvent(ws, event, "agent_history"),
+    ...(config.sshHost
+      ? {
+          spawnRemote: createRemoteStatSpawner({
+            host: config.sshHost,
+            shQuote,
+            annotate: forConnection,
+          }),
+        }
+      : {}),
+    log: (message, fields) =>
+      logger.debug(message, { connection: identity.id, ...fields }),
+  });
   const worktreeParents = createWorktreeParentStore({
     connectionId: identity.id,
     herdr,
@@ -315,6 +478,28 @@ export function createLegacyConnectionRuntime(args: {
       })
     : null;
 
+  /** The pane showing a terminal, from Herdr's pane list. */
+  const lookupPaneId = async (terminalId: string): Promise<string | null> => {
+    try {
+      const result = await herdr.call("pane.list", {}, 5000);
+      const panes = (result as { panes?: unknown } | null)?.panes;
+      if (!Array.isArray(panes)) return null;
+      for (const pane of panes) {
+        if (!pane || typeof pane !== "object" || Array.isArray(pane)) continue;
+        const record = pane as { pane_id?: unknown; terminal_id?: unknown };
+        if (
+          record.terminal_id === terminalId &&
+          typeof record.pane_id === "string" &&
+          record.pane_id.length > 0
+        ) {
+          return record.pane_id;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
   const terminalBridge = createTerminalBridge({
     connectionId: identity.id,
     broadcast: args.broadcast,
@@ -348,27 +533,13 @@ export function createLegacyConnectionRuntime(args: {
         )?.workspace_id ?? null
       );
     },
-    lookupPaneId: async (terminalId) => {
-      try {
-        const result = await herdr.call("pane.list", {}, 5000);
-        const panes = (result as { panes?: unknown } | null)?.panes;
-        if (!Array.isArray(panes)) return null;
-        for (const pane of panes) {
-          if (!pane || typeof pane !== "object" || Array.isArray(pane))
-            continue;
-          const record = pane as { pane_id?: unknown; terminal_id?: unknown };
-          if (
-            record.terminal_id === terminalId &&
-            typeof record.pane_id === "string" &&
-            record.pane_id.length > 0
-          ) {
-            return record.pane_id;
-          }
-        }
-        return null;
-      } catch {
-        return null;
-      }
+    lookupPaneId,
+    // While a handover runs, keys typed in a browser's terminal would land
+    // in the exiting TUI or the bare shell.
+    inputRefusal: async (terminalId) => {
+      if (!conversation?.handingOver()) return null;
+      const paneId = await lookupPaneId(terminalId);
+      return paneId ? conversation.inputRefusal(paneId) : null;
     },
     safeSend: args.safeSend,
     dropCoalesced: dropCoalescedMessage,
@@ -594,6 +765,10 @@ export function createLegacyConnectionRuntime(args: {
   });
 
   const onHerdrEvent = (event: unknown) => {
+    // A closed pane takes its conversation lease (and process) with it.
+    const closed = conversationCloseEvent(event);
+    if (closed === "sweep") void conversation?.sweep();
+    else if (closed) conversation?.paneClosed(closed.paneId);
     taskEvents.handleHerdrEvent(event);
     lastStepTurns.handleHerdrEvent(event);
     agentStatusSubscriptions.handleHerdrEvent(event);
@@ -617,6 +792,8 @@ export function createLegacyConnectionRuntime(args: {
       // after every ACK (including reconnect) to close that missed-event gap.
       // The browser's generic refresh path queues another snapshot if busy.
       args.onEvent({ event: "session.resync_required", data: {} }, identity);
+      // Panes closed while no event could come.
+      void conversation?.sweep();
       if (!eventSubscriptionRecovery.recovered({ connection: identity.id })) {
         logger.info("subscribed to Herdr events", { connection: identity.id });
       }
@@ -715,6 +892,10 @@ export function createLegacyConnectionRuntime(args: {
     // and host as the connection that asked for it.
     args.forwards?.closeConnection(identity.id);
     terminalBridge.dispose();
+    // The headless processes go with the connection; their leases stay and
+    // the next turn starts them again.
+    conversation?.dispose();
+    historyWatcher?.dispose();
     const subscriptionStop = subscriptionLoop.stop();
     const agentStatusStop = agentStatusSubscriptions.stop();
     const lastStepStop = lastStepTurns
@@ -755,6 +936,8 @@ export function createLegacyConnectionRuntime(args: {
     worktreeRemovalRuntime,
     terminalBridge,
     agentSessions,
+    conversation: conversation!,
+    historyWatcher: historyWatcher!,
     recoveryIdentity,
     taskNotificationSource,
     startTransport,

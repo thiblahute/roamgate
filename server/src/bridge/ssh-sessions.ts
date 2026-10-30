@@ -64,9 +64,15 @@ export function routeSshCommand(
   routes.set(argv, route);
 }
 
+/**
+ * Waits for one of the destination's session slots. An aborted `signal`
+ * gives up the wait (it rejects) without taking a slot.
+ */
 export async function acquireSshSession(
   destination: string,
+  signal?: AbortSignal,
 ): Promise<() => void> {
+  signal?.throwIfAborted();
   let slot = sessionSlots.get(destination);
   if (!slot) {
     slot = { active: 0, waiters: [] };
@@ -74,7 +80,19 @@ export async function acquireSshSession(
   }
   const current = slot;
   if (current.active >= SSH_SESSION_LIMIT) {
-    await new Promise<void>((resolve) => current.waiters.push(resolve));
+    await new Promise<void>((resolve, reject) => {
+      const granted = () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      };
+      const onAbort = () => {
+        const at = current.waiters.indexOf(granted);
+        if (at >= 0) current.waiters.splice(at, 1);
+        reject(signal!.reason);
+      };
+      current.waiters.push(granted);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   } else {
     current.active += 1;
   }
@@ -94,9 +112,14 @@ export async function acquireSshSession(
 }
 
 /** Holds a session slot for argv built by sshCommandArgv; others pass through. */
-export function holdSshSession(argv: readonly string[]): Promise<() => void> {
+export function holdSshSession(
+  argv: readonly string[],
+  signal?: AbortSignal,
+): Promise<() => void> {
   const route = routes.get(argv);
-  return route ? acquireSshSession(route.destination) : Promise.resolve(noop);
+  return route
+    ? acquireSshSession(route.destination, signal)
+    : Promise.resolve(noop);
 }
 
 function noop() {}

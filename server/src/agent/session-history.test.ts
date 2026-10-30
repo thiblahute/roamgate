@@ -7,6 +7,7 @@ import {
   historyTextHash,
   redactHistoryUpdate,
 } from "./session-history";
+import { conversationMessagesFromTrajectory } from "./session-messages";
 import { projectAgentTrajectory } from "./session-trajectory";
 
 const file = { path: "/tmp/history.jsonl", mtimeMs: 1000 };
@@ -102,9 +103,153 @@ test("Claude messages the user queued while it worked show as theirs", () => {
     },
   ]);
   const entries = historyEntriesFromTrajectory(file, trajectory);
-  expect(entries.map((entry) => [entry.role, entry.text])).toEqual([
-    ["user", "Also hide the top bar"],
-    ["user", "With an image"],
+  expect(
+    entries.map((entry) => [entry.role, entry.text, entry.injected?.label]),
+  ).toEqual([
+    ["user", "Also hide the top bar", undefined],
+    // Claude Code's own notes: notices, not the user's words.
+    ["user", "Task update", "Task update"],
+    ["user", "With an image", undefined],
+    ["user", "Task finished", "Task finished"],
+  ]);
+});
+
+// As Claude Code 2.1.312 records them: a subagent's report and its task's
+// end absorbed mid-turn (queued commands, the uuids of their replays), a
+// teammate's and another session's message starting turns (user records),
+// a reminder alone.
+const REPORT = `<agent-message from="voice-overlay">
+[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The report follows:
+  I made a new local commit.
+  
+  - one
+</agent-message>`;
+const TASK = `<task-notification>
+<task-id>a9103b98b32d5fb61</task-id>
+<status>completed</status>
+<summary>Agent "Float the voice control" finished</summary>
+<result>Its report was delivered to you as a message from "voice-overlay".
+</result>
+</task-notification>`;
+
+test("Claude Code's injected messages are notices in their place, with their uuid", () => {
+  const trajectory = projectAgentTrajectory("claude", file, [
+    {
+      type: "user",
+      uuid: "u1",
+      timestamp: "2026-10-30T17:00:00.000Z",
+      message: { role: "user", content: "[Voice] Float it" },
+    },
+    {
+      type: "attachment",
+      timestamp: "2026-10-30T17:07:13.871Z",
+      attachment: {
+        type: "queued_command",
+        prompt: REPORT,
+        source_uuid: "a00c50ce",
+        commandMode: "prompt",
+        origin: { kind: "peer", from: "voice-overlay" },
+      },
+    },
+    {
+      type: "attachment",
+      timestamp: "2026-10-30T17:07:13.902Z",
+      attachment: {
+        type: "queued_command",
+        prompt: TASK,
+        source_uuid: "804da890",
+        commandMode: "task-notification",
+        origin: { kind: "task-notification" },
+      },
+    },
+    {
+      type: "user",
+      uuid: "t1",
+      timestamp: "2026-10-30T17:08:00.000Z",
+      message: {
+        role: "user",
+        content:
+          'Another Claude session sent a message:\n<teammate-message teammate_id="tasks-view" color="blue" summary="Keys committed">\nCommitted as c78863af.\n</teammate-message>',
+      },
+    },
+    {
+      type: "user",
+      uuid: "c1",
+      isMeta: true,
+      timestamp: "2026-10-30T17:09:00.000Z",
+      message: {
+        role: "user",
+        content:
+          '<cross-session-message from="uds:/tmp/cc-socks/1.sock" from-name="maildesk" from-mode="prompting">\nBug report: it hangs.\n</cross-session-message>',
+      },
+    },
+    {
+      type: "user",
+      uuid: "r1",
+      message: {
+        role: "user",
+        content: "<system-reminder>\nBe brief.\n</system-reminder>",
+      },
+    },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory);
+  expect(
+    entries.map((entry) => [entry.uuid, entry.injected?.label, entry.text]),
+  ).toEqual([
+    ["u1", undefined, "[Voice] Float it"],
+    [
+      "a00c50ce",
+      "Report from voice-overlay",
+      "I made a new local commit.\n\n- one",
+    ],
+    [
+      "804da890",
+      'Task finished: Agent "Float the voice control" finished',
+      'Its report was delivered to you as a message from "voice-overlay".',
+    ],
+    ["t1", "Teammate tasks-view: Keys committed", "Committed as c78863af."],
+    ["c1", "Message from maildesk", "Bug report: it hangs."],
+  ]);
+  expect(entries.slice(1).every((entry) => entry.role === "user")).toBe(true);
+});
+
+test("injected messages are not the user's turns", () => {
+  const trajectory = projectAgentTrajectory("claude", file, [
+    { type: "user", message: { role: "user", content: "hello" } },
+    { type: "user", uuid: "x", message: { role: "user", content: TASK } },
+  ]);
+  expect(
+    conversationMessagesFromTrajectory(file, trajectory).map((m) => m.text),
+  ).toEqual(["hello"]);
+});
+
+test("a message steered into a headless turn shows as the user's, with its uuid", () => {
+  // As Claude Code 2.1.312 records speech written to stdin mid-turn.
+  const trajectory = projectAgentTrajectory("claude", file, [
+    {
+      type: "attachment",
+      timestamp: "2026-10-29T19:58:00.903Z",
+      uuid: "3ee7826e-0a10-4260-8021-b65df0f51ceb",
+      attachment: {
+        type: "queued_command",
+        prompt: "Also: end your answer with the word BANANA.",
+        source_uuid: "7d19afe2-57fd-4871-bf7c-0742a47f6a22",
+        commandMode: "prompt",
+      },
+    },
+    // No origin and no source: not known to be the user's.
+    {
+      type: "attachment",
+      attachment: { type: "queued_command", prompt: "a notification" },
+    },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory);
+  expect(entries.map((entry) => [entry.role, entry.text, entry.uuid])).toEqual([
+    [
+      "user",
+      "Also: end your answer with the word BANANA.",
+      "7d19afe2-57fd-4871-bf7c-0742a47f6a22",
+    ],
   ]);
 });
 
@@ -598,4 +743,59 @@ test("content identities survive early step renumbering and disambiguate repeate
   });
   expect(first.map((entry) => entry.id)).toEqual(next.map((entry) => entry.id));
   expect(new Set(first.map((entry) => entry.id)).size).toBe(2);
+});
+
+test("Claude entries carry the API message id, block index and record uuid", () => {
+  const block = (uuid: string, content: unknown[]) => ({
+    type: "assistant",
+    uuid,
+    message: { id: "msg_1", role: "assistant", content },
+  });
+  const trajectory = projectAgentTrajectory("claude", file, [
+    {
+      type: "user",
+      uuid: "u-0",
+      message: { role: "user", content: "hello" },
+    },
+    block("u-1", [{ type: "thinking", thinking: "" }]),
+    block("u-2", [{ type: "text", text: "Looking." }]),
+    block("u-3", [
+      {
+        type: "tool_use",
+        id: "toolu_1",
+        name: "Bash",
+        input: { command: "ls" },
+      },
+    ]),
+    {
+      type: "assistant",
+      uuid: "u-4",
+      message: {
+        id: "msg_2",
+        role: "assistant",
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Done." }],
+      },
+    },
+  ]);
+  const entries = historyEntriesFromTrajectory(file, trajectory).filter(
+    (entry) => entry.kind === "message",
+  );
+  expect(
+    entries.map(({ text, message_id, block_index, uuid }) => ({
+      text,
+      message_id,
+      block_index,
+      uuid,
+    })),
+  ).toEqual([
+    {
+      text: "hello",
+      message_id: undefined,
+      block_index: undefined,
+      uuid: "u-0",
+    },
+    { text: "Looking.", message_id: "msg_1", block_index: 1, uuid: "u-2" },
+    { text: "Done.", message_id: "msg_2", block_index: 0, uuid: "u-4" },
+  ]);
 });

@@ -1,5 +1,7 @@
 import { loadOrCreateSessionSecret } from "./config/session-secret";
 import { createAgentSeenStore } from "./agent/agent-seen";
+import { historyFilePath } from "./agent/history-watch";
+import { withOwnedSessions } from "./agent/agent-sessions";
 import {
   authTokenPrintCommand,
   isShortAuthPassword,
@@ -117,7 +119,17 @@ import {
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
-import { createReviewService, type ReviewService } from "./review/service";
+import {
+  AGENT_CHAT_METHODS,
+  handleAgentChatRpc,
+  isAgentChatMethod,
+} from "./conversation/rpc";
+import { defaultLeaseFile } from "./conversation/lease";
+import {
+  createReviewService,
+  ReviewError,
+  type ReviewService,
+} from "./review/service";
 import { reviewImageFile } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { ReviewGoneError } from "./workspace/review-patch";
@@ -289,6 +301,10 @@ const IMPORTANT_RPC_METHODS = new Set([
   "agent_history.get",
   "agent_history.entry",
   "agent_session.get",
+  ...AGENT_CHAT_METHODS.filter(
+    (method) =>
+      method !== "agent_chat.state" && method !== "agent_chat.subscribe",
+  ),
   "file.read",
   "git.diff_file",
   "git.commit_file",
@@ -786,8 +802,37 @@ function getReviewAgent(): ReviewAgentServer {
     service: getReviewService(),
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
+    // Conversation mode's pane holders (roamgate-hold).
+    holder: {
+      hold: ({ connectionId, paneId, sessionId, signal, status }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.hold({
+          paneId,
+          sessionId,
+          signal,
+          status,
+        });
+      },
+      output: ({ connectionId, ...input }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.output(input);
+      },
+      handback: ({ connectionId, paneId }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.handback({ paneId });
+      },
+    },
     directory: reviewDirectory(),
     logger: logger.child("review"),
+    localConnectionCount: () =>
+      connectionProfiles.list().filter((profile) => profile.type === "local")
+        .length,
     connections: () =>
       connectionManager.list().flatMap((status) => {
         const runtime = connectionManager.readyRuntime(status.id);
@@ -957,6 +1002,19 @@ function runtimeFactoryForProfile(
         clientLabel,
         markRpcError,
         taskNotificationSource: config.taskNotificationSource,
+        conversationLeaseFile: defaultLeaseFile(),
+        // No terminal to fall back on: the prompt waits for a browser, and
+        // its timeout denies.
+        askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
+          getReviewService().prompts.request({
+            ...prompt,
+            connectionId,
+            paneId,
+            agent: "Claude",
+            // A headless claude: there is no terminal to ask instead.
+            noTerminal: true,
+            signal,
+          }),
         onTaskEvent: (event) => {
           const connections = connectionProfiles.list();
           webPush.notify(
@@ -1065,6 +1123,8 @@ const webSocketCleanup = new WebSocketCleanupTracker<
   connectionManager.forEachCurrentRuntime((runtime) => {
     viewedTerminals.push(...runtime.terminalBridge.viewedTerminals(ws));
     runtime.terminalBridge.cleanupWs(ws);
+    runtime.conversation.cleanupWs(ws);
+    runtime.historyWatcher.cleanupWs(ws);
   });
   const snapshot = {
     client: clientLabel(ws),
@@ -1358,7 +1418,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const connection = route.runtime;
   if (
     connection.remotePlatform === "windows" &&
-    /^(?:file\.|git\.|worktree\.|agent_history\.|agent_session\.|agent_tasks?\.|agent_commands\.|agent_artifacts\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
+    /^(?:file\.|git\.|worktree\.|agent_chat\.|agent_history\.|agent_session\.|agent_tasks?\.|agent_commands\.|agent_artifacts\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
       method,
     )
   ) {
@@ -1517,6 +1577,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (method === "agent_history.get") {
     try {
       const result = await readAgentMessageHistory(params ?? {});
+      // The pane may have moved to another file (/clear, a new session):
+      // its watcher follows now instead of at its next re-resolve.
+      if (typeof params?.pane_id === "string")
+        connection.historyWatcher.notePath(
+          params.pane_id,
+          historyFilePath(result),
+        );
       sendReply({ id, result }, "agent-history-get");
     } catch (e) {
       sendError("agent-history-get-error", e);
@@ -1613,6 +1680,21 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "file-search");
     } catch (e) {
       sendError("file-search-error", e);
+    }
+    return;
+  }
+  if (isAgentChatMethod(method)) {
+    try {
+      const result = await handleAgentChatRpc(
+        connection.conversation,
+        connection.historyWatcher,
+        ws,
+        method,
+        params ?? {},
+      );
+      sendReply({ id, result }, "agent-chat");
+    } catch (e) {
+      sendError("agent-chat-error", e);
     }
     return;
   }
@@ -1932,6 +2014,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     return;
   }
   if (PANE_INPUT_METHODS.has(method) && typeof params?.pane_id === "string") {
+    // While Claude exits for conversation mode (or the holder resumes it),
+    // text would land in the dying TUI or the bare shell.
+    const refusal = connection.conversation.inputRefusal(params.pane_id);
+    if (refusal) {
+      sendError("pane-input-refused", new Error(refusal));
+      return;
+    }
     // Typing through the pane API (the composer, the key buttons) counts as
     // input for clipboard writes, as typing into the terminal does.
     try {
@@ -1948,8 +2037,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     }
   }
   try {
-    const rawResult = await herdr.call(method, params ?? {});
-    let result = rawResult;
+    // Panes conversation mode holds are Claude panes still; Herdr sees
+    // only their holder, and answers agent.get on one with not found.
+    let result = (await withOwnedSessions(
+      (...args) => herdr.call(...args),
+      () => connection.conversation.ownedPanes(),
+    )(method, params ?? {})) as Awaited<ReturnType<typeof herdr.call>>;
     if (
       method === "integration.list" &&
       connection.remotePlatform !== "windows"

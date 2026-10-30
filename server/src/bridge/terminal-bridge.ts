@@ -91,6 +91,8 @@ export function createTerminalBridge(args: {
   herdrProtocol: () => Promise<number>;
   /** Resolve a terminal id to its owning pane id (control-socket pane.list). */
   lookupPaneId?: (terminalId: string) => Promise<string | null>;
+  /** Why nothing may be typed into this terminal now, if so. */
+  inputRefusal?: (terminalId: string) => Promise<string | null>;
   /** Popup surfaces follow this connection's focused Space, not the shell default. */
   focusedWorkspaceId?: () => Promise<string | null>;
   surfaceCodecsEnabled?: () => Promise<boolean>;
@@ -1522,6 +1524,12 @@ export function createTerminalBridge(args: {
         }
         const input = Buffer.from(b64, "base64");
         if (input.length === 0) return fail("terminal input required");
+        // Only when asked: an await here is a tick the attachment checks
+        // below must cover.
+        if (args.inputRefusal) {
+          const refusal = await args.inputRefusal(requestedTerminalId);
+          if (refusal) return fail(refusal);
+        }
         const validateAttachment = await waitForOwnedTerminal(
           ws,
           requestedTerminalId,

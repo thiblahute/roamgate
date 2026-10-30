@@ -204,6 +204,16 @@ import {
 } from "../agentPrompt";
 import { setPaneView, togglePaneView, usePaneView } from "../paneView";
 import { paneAgentPrompt, useReviewState } from "../review";
+import {
+  requestAgentChatHandover,
+  setAgentChatView,
+  useAgentChat,
+} from "../agentChat";
+import {
+  conversationOwns,
+  type OwnershipAttempt,
+  ownershipStep,
+} from "../agentChatOwnership";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { ConfirmDialog, MessageDialog } from "./ModalDialogs";
 import {
@@ -580,17 +590,156 @@ export function TerminalView({
   const activePaneId =
     selectedPaneInLayout ?? s.layout?.focused_pane_id ?? null;
   const isActivePane = !!pane && (!paneId || pane.pane_id === activePaneId);
-  const canShowAgentHistory = isActivePane && paneHasAgentHistory(pane);
+  // Between Claude's /exit and the holder's report (and between the
+  // holder's exit and claude --resume), Herdr knows no agent in the pane:
+  // it stays a Claude pane while a handover runs or conversation mode holds
+  // it, so the chat (its outbox, its voice) is not torn down meanwhile.
+  const heldClaudeRef = useRef<string | null>(null);
+  const heldClaude =
+    !!pane && !pane.agent && heldClaudeRef.current === pane.pane_id;
+  const agentPane = useMemo(
+    () => (pane && heldClaude ? { ...pane, agent: "claude" } : pane),
+    [pane, heldClaude],
+  );
+  const canShowAgentHistory = isActivePane && paneHasAgentHistory(agentPane);
   // An agent pane can show its conversation as a chat instead of its
   // terminal, which keeps running underneath.
-  const chatAvailable = !!pane && paneHasAgentHistory(pane);
+  const chatAvailable = !!agentPane && paneHasAgentHistory(agentPane);
   const chatShown =
     usePaneView(s.activeConnectionId, pane?.pane_id) === "chat" &&
     chatAvailable;
+  // A Claude pane's conversation mode: who writes to its session, the
+  // terminal's Claude or a headless one the chat drives.
+  const conversation = useAgentChat(
+    connectionClient,
+    pane?.pane_id,
+    agentPane?.agent === "claude",
+  );
+  // Taking it over counts too: nothing is typed into the pane meanwhile.
+  const conversationOwnsPane =
+    conversationOwns(conversation?.state) || !!conversation?.handing;
+  // Handed back, the holder resumes claude, which Herdr reports a moment
+  // later: the chat stays a while for it.
+  const heldUntilRef = useRef(0);
+  if (conversationOwnsPane) heldUntilRef.current = Date.now() + 20_000;
+  heldClaudeRef.current =
+    pane &&
+    (pane.agent === "claude" ||
+      (heldClaude &&
+        (conversationOwnsPane || Date.now() < heldUntilRef.current)))
+      ? pane.pane_id
+      : null;
+  const conversationOwnsRef = useRef(conversationOwnsPane);
+  conversationOwnsRef.current = conversationOwnsPane;
+  // The view decides who has the session (shown chat: conversation mode,
+  // shown terminal: the terminal), when this browser shows the pane.
+  const [pageVisible, setPageVisible] = useState(
+    () =>
+      typeof document === "undefined" || document.visibilityState === "visible",
+  );
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  const viewShown: "chat" | "terminal" = chatShown ? "chat" : "terminal";
+  const handoverPaneIdForView = pane?.pane_id;
+  const shownNow = isActivePane && pageVisible;
+  // A new showing: another view, or this one shown again (the pane made
+  // active, the page back in front).
+  const viewSeqRef = useRef({ view: viewShown, visible: shownNow, seq: 0 });
+  if (
+    viewSeqRef.current.view !== viewShown ||
+    (shownNow && !viewSeqRef.current.visible)
+  )
+    viewSeqRef.current = {
+      view: viewShown,
+      visible: shownNow,
+      seq: viewSeqRef.current.seq + 1,
+    };
+  else viewSeqRef.current.visible = shownNow;
+  const viewSeq = viewSeqRef.current.seq;
+  // The bridge arbitrates between devices by what each one shows.
+  const chatFollowed = conversation !== null;
+  const shownView = shownNow ? viewShown : null;
+  useEffect(() => {
+    if (!chatFollowed || !handoverPaneIdForView) return;
+    setAgentChatView(connectionClient, handoverPaneIdForView, shownView);
+  }, [chatFollowed, connectionClient, handoverPaneIdForView, shownView]);
+  const lastHandoverRef = useRef<OwnershipAttempt | null>(null);
+  // A refused takeover is asked again now and then for a while: what
+  // refused it (a dialog, text in the prompt box) can go away without
+  // Herdr's state changing.
+  const [takeoverRetry, setTakeoverRetry] = useState(0);
+  const [takeoverRefused, setTakeoverRefused] = useState(false);
+  useEffect(() => {
+    if (!takeoverRefused || !chatShown || !shownNow) return;
+    let left = 12;
+    const timer = window.setInterval(() => {
+      left -= 1;
+      if (left <= 0) window.clearInterval(timer);
+      setTakeoverRetry((count) => count + 1);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [takeoverRefused, chatShown, shownNow, viewSeq]);
+  const chatState = conversation?.state ?? null;
+  const ownership = ownershipStep(
+    {
+      view: viewShown,
+      visible: shownNow,
+      agent: agentPane?.agent,
+      agentStatus: pane?.agent_status,
+      stateSeq: pane?.state_change_seq,
+      viewSeq,
+      chat: chatState
+        ? {
+            owner: chatState.owner,
+            phase: chatState.phase,
+            status: chatState.status,
+            session_id: chatState.session_id,
+            queue: chatState.queue.length,
+          }
+        : null,
+      handing: !!conversation?.handing,
+      retry: takeoverRetry,
+    },
+    lastHandoverRef.current,
+  );
+  lastHandoverRef.current = ownership.last;
+  const handover = ownership.request;
+  const handoverKey = handover?.key ?? null;
+  const handoverRef = useRef(handover);
+  handoverRef.current = handover;
+  const handoverPaneId = pane?.pane_id;
+  useEffect(() => {
+    const request = handoverRef.current;
+    if (!handoverKey || !request || !handoverPaneId) return;
+    const attempt = request.attempt;
+    lastHandoverRef.current = attempt;
+    // It follows the view: the bridge refuses it while another device
+    // shows the other view.
+    void requestAgentChatHandover(
+      connectionClient,
+      handoverPaneId,
+      request.to,
+      {
+        auto: true,
+      },
+    ).then((result) => {
+      // Refused: asked again once something changes.
+      if (!result.ok && lastHandoverRef.current === attempt)
+        lastHandoverRef.current = { ...attempt, ok: false };
+      setTakeoverRefused(!result.ok && request.to === "conversation");
+    });
+  }, [connectionClient, handoverKey, handoverPaneId]);
   // Not working: blocked on a question, or one Herdr does not report yet (a
-  // new session's "trust this folder?", before Claude's hooks run).
+  // new session's "trust this folder?", before Claude's hooks run). Its
+  // screen is not read while conversation mode has the session: the
+  // terminal only holds the pane then.
   const agentWaiting =
-    chatShown && pane?.agent_status.toLowerCase() !== "working";
+    chatShown &&
+    !conversationOwnsPane &&
+    pane?.agent_status.toLowerCase() !== "working";
   // What the agent's permission hook waits on: its dialog is held back.
   const reviewState = useReviewState();
   const permissionPrompt = pane
@@ -602,7 +751,9 @@ export function TerminalView({
     if (chatShown) termRef.current?.textarea?.blur();
   }, [chatShown]);
   const agentWorking =
-    chatShown && pane?.agent_status.toLowerCase() === "working";
+    chatShown &&
+    !conversationOwnsPane &&
+    pane?.agent_status.toLowerCase() === "working";
   const [agentPrompt, setAgentPrompt] = useState<AgentPrompt | null>(null);
   const [agentActivity, setAgentActivity] = useState<AgentActivity | null>(
     null,
@@ -4063,6 +4214,57 @@ export function TerminalView({
               onClose={() => setTasksOpen(false)}
             />
           ) : null}
+          {conversationOwnsPane && !chatShown ? (
+            <div className="terminal-conversation-layer">
+              <div className="terminal-conversation-notice" role="status">
+                <strong>
+                  {chatState?.phase === "to_terminal" ||
+                  conversation?.handing === "terminal"
+                    ? "Handing the session back to the terminal\u2026"
+                    : chatState?.phase === "to_conversation"
+                      ? "The chat is taking this session over\u2026"
+                      : "This session is in conversation mode"}
+                </strong>
+                <p>
+                  {conversation?.refusal
+                    ? `It stays there: ${conversation.refusal}`
+                    : chatState?.status === "working" ||
+                        chatState?.status === "blocked"
+                      ? "Claude comes back here once its turn ends."
+                      : chatState?.queue.length
+                        ? "Claude comes back here once its queued messages are sent."
+                        : "Claude comes back here in a moment, unless another device shows its chat."}
+                </p>
+                <div className="terminal-conversation-actions">
+                  {chatState?.phase === "conversation" &&
+                  !conversation?.handing ? (
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={() =>
+                        void requestAgentChatHandover(
+                          connectionClient,
+                          pane.pane_id,
+                          "terminal",
+                        )
+                      }
+                    >
+                      Take it back here
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() =>
+                      setPaneView(s.activeConnectionId, pane.pane_id, "chat")
+                    }
+                  >
+                    Show the chat
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {permissionPrompt && !chatShown ? (
             <div className="terminal-permission-layer">
               <AgentPermissionCard prompt={permissionPrompt} compact />
@@ -4071,7 +4273,7 @@ export function TerminalView({
           {chatShown ? (
             <div className="terminal-chat-layer" ref={chatLayerRef}>
               <AgentHistoryDrawer
-                pane={pane}
+                pane={agentPane ?? pane}
                 open
                 embedded
                 paneChat={{
@@ -4082,9 +4284,17 @@ export function TerminalView({
                     setPaneView(s.activeConnectionId, pane.pane_id, "terminal");
                     focusTerminalSoon();
                   },
-                  onKeys: (text) => void store.sendText(pane.pane_id, text),
+                  // Nothing is typed into, nor read from, a terminal that
+                  // only holds the pane for conversation mode.
+                  onKeys: (text) => {
+                    if (!conversationOwnsRef.current)
+                      void store.sendText(pane.pane_id, text);
+                  },
                   readScreen: () =>
-                    termRef.current ? terminalScreenLines(termRef.current) : [],
+                    termRef.current && !conversationOwnsRef.current
+                      ? terminalScreenLines(termRef.current)
+                      : [],
+                  conversation,
                   composerTarget:
                     isMobileLayout() && isActivePane ? mobileInputTarget : null,
                 }}

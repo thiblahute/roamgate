@@ -45,50 +45,74 @@ export function isClaudeCodePointer(
 
 export type ClaudeCodeProcess = {
   lines: AsyncIterable<string>;
+  /** Throws once stdin was closed (end): nothing written is ever dropped. */
   write(line: string): void;
   /** No more input: the process exits once it has answered. */
   end(): void;
   kill(): void;
   exited: Promise<number>;
+  /** The spawned process (for SSH, the local ssh client). */
+  pid?: number;
 };
 export type SpawnClaudeCode = (
   args: string[],
   cwd: string,
 ) => ClaudeCodeProcess;
 
-function spawnClaudeCode(command: string): SpawnClaudeCode {
-  return (args, cwd) => {
-    const child = Bun.spawn([command, ...args], {
-      cwd,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    async function* lines() {
-      const decoder = new TextDecoder();
-      let buffered = "";
-      for await (const chunk of child.stdout) {
-        buffered += decoder.decode(chunk, { stream: true });
-        let newline = buffered.indexOf("\n");
-        while (newline >= 0) {
-          yield buffered.slice(0, newline);
-          buffered = buffered.slice(newline + 1);
-          newline = buffered.indexOf("\n");
-        }
+/**
+ * Runs a stream-json Claude Code process: `argv` as given (a local claude,
+ * or ssh running one on a host), its stdout split into lines. `onExit` runs
+ * once it has exited, to release what it held (an SSH session slot).
+ */
+export function spawnClaudeProcess(options: {
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  onExit?: () => void;
+}): ClaudeCodeProcess {
+  const child = Bun.spawn(options.argv, {
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.env ? { env: options.env } : {}),
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const exited = child.exited.finally(() => options.onExit?.());
+  async function* lines() {
+    const decoder = new TextDecoder();
+    let buffered = "";
+    for await (const chunk of child.stdout) {
+      buffered += decoder.decode(chunk, { stream: true });
+      let newline = buffered.indexOf("\n");
+      while (newline >= 0) {
+        yield buffered.slice(0, newline);
+        buffered = buffered.slice(newline + 1);
+        newline = buffered.indexOf("\n");
       }
-      if (buffered) yield buffered;
     }
-    return {
-      lines: lines(),
-      write: (line) => {
-        child.stdin.write(line);
-        child.stdin.flush();
-      },
-      end: () => void child.stdin.end(),
-      kill: () => child.kill(),
-      exited: child.exited,
-    };
+    if (buffered) yield buffered;
+  }
+  let ended = false;
+  return {
+    lines: lines(),
+    write: (line) => {
+      if (ended) throw new Error("The Claude Code process is closing");
+      child.stdin.write(line);
+      child.stdin.flush();
+    },
+    end: () => {
+      if (ended) return;
+      ended = true;
+      void child.stdin.end();
+    },
+    kill: () => child.kill(),
+    exited,
+    pid: child.pid,
   };
+}
+
+function spawnClaudeCode(command: string): SpawnClaudeCode {
+  return (args, cwd) => spawnClaudeProcess({ argv: [command, ...args], cwd });
 }
 
 function bounded(value: string, max: number) {

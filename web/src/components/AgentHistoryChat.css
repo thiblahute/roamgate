@@ -465,6 +465,24 @@
   cursor: pointer;
 }
 
+/* What Claude Code put in the user's turn: a notice line, its text below
+   once expanded. */
+.agent-history-chat-injected .agent-history-chat-compacted span {
+  min-width: 0;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-history-chat-injected-body {
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 /* Sent while the agent works, still waiting in its queue. */
 .agent-history-chat-message.is-queued .agent-history-chat-bubble {
   border-style: dashed;
@@ -644,4 +662,39 @@
   font-size: 11px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.agent-history-chat-cut-off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  font-size: 12px;
+}
+
+.agent-history-chat-cut-off-continue {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-history-chat-cut-off-continue:hover,
+.agent-history-chat-cut-off-continue:focus-visible {
+  background: var(--accent-soft);
+}
+
+.agent-history-chat-cut-off .agent-history-copy {
+  width: 24px;
+  height: 24px;
 }

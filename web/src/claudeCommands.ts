@@ -118,3 +118,43 @@ export function matchCommands(
     : [];
   return [...starts, ...contains].slice(0, limit);
 }
+
+/**
+ * Claude Code's own commands that work in conversation mode (a headless
+ * Claude Code): sent as text, or, for /rewind, done in the terminal.
+ */
+const CONVERSATION_BUILTINS = new Set([
+  "clear",
+  "compact",
+  "context",
+  "cost",
+  "rewind",
+]);
+
+/** The commands offered in conversation mode: no TUI-only ones. */
+export function conversationCommands(
+  commands: readonly AgentCommand[],
+): AgentCommand[] {
+  const builtin = new Set(CLAUDE_BUILTIN_COMMANDS.map((each) => each.name));
+  return commands.filter(
+    (each) => !builtin.has(each.name) || CONVERSATION_BUILTINS.has(each.name),
+  );
+}
+
+/**
+ * Why a message cannot go to conversation mode, or null: a `!` shell line,
+ * or a command only Claude Code's terminal has.
+ */
+export function conversationRefusal(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("!"))
+    return "Shell lines run in the terminal: show the terminal to use them.";
+  const command = /^\/([\w:.-]+)/.exec(trimmed)?.[1];
+  if (
+    command &&
+    !CONVERSATION_BUILTINS.has(command) &&
+    CLAUDE_BUILTIN_COMMANDS.some((each) => each.name === command)
+  )
+    return `/${command} works only in the terminal: show the terminal to use it.`;
+  return null;
+}

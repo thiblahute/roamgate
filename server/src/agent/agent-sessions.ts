@@ -31,6 +31,143 @@ const TASK_OUTPUT_BYTES = 32 * 1024;
 const TASK_ENTRIES = 200;
 const TASK_ENTRY_CHARS = 4000;
 
+/** A pane conversation mode holds: Herdr knows no agent there. */
+export type OwnedPane = {
+  pane_id: string;
+  session_id: string;
+  cwd: string;
+  agent_status?: string;
+  /** The lease's phase; none counts as held ("conversation"). */
+  phase?: string;
+};
+
+function ownedAgentSession(owned: OwnedPane) {
+  return {
+    source: "roamgate:headless",
+    agent: "claude",
+    kind: "id",
+    value: owned.session_id,
+  };
+}
+
+/**
+ * Whether what Herdr says of the pane is still the terminal claude's: only
+ * while a takeover starts (the TUI has not exited yet), and only with the
+ * session Herdr got from it. Otherwise any claude Herdr sees there is the
+ * holder's headless child, detected with no session id and always idle,
+ * or the TUI's last word, which no longer holds.
+ */
+function herdrStillRight(pane: Record<string, unknown>, owned: OwnedPane) {
+  if (owned.phase !== "to_conversation") return false;
+  if (typeof pane.agent !== "string" || !pane.agent) return false;
+  const session = pane.agent_session;
+  return isRecord(session) && session.value === owned.session_id;
+}
+
+/** Herdr's view of a pane with conversation mode's agent laid over it. */
+function overlayPane(
+  pane: Record<string, unknown>,
+  owned: OwnedPane,
+): Record<string, unknown> {
+  if (herdrStillRight(pane, owned)) return pane;
+  return {
+    ...pane,
+    agent: "claude",
+    agent_status: owned.agent_status ?? "idle",
+    agent_session: ownedAgentSession(owned),
+    foreground_cwd: owned.cwd,
+  };
+}
+
+/**
+ * What Herdr says of panes and agents, with the panes conversation mode
+ * holds shown as the Claude panes they are: their holder is no agent to
+ * Herdr, which drops their agent and session meanwhile.
+ */
+export function overlayOwnedPanes(
+  method: string,
+  params: Record<string, unknown> | undefined,
+  result: unknown,
+  owned: readonly OwnedPane[],
+): unknown {
+  if (!owned.length) return result;
+  const byPane = new Map(owned.map((each) => [each.pane_id, each]));
+  const record = isRecord(result) ? result : {};
+  const over = (item: unknown) => {
+    if (!isRecord(item) || typeof item.pane_id !== "string") return item;
+    const mine = byPane.get(item.pane_id);
+    return mine ? overlayPane(item, mine) : item;
+  };
+  switch (method) {
+    case "agent.get": {
+      const paneId = typeof params?.target === "string" ? params.target : "";
+      const mine = byPane.get(paneId);
+      if (!mine) return result;
+      const agent = isRecord(record.agent) ? record.agent : {};
+      return {
+        ...record,
+        agent: overlayPane({ ...agent, pane_id: paneId }, mine),
+      };
+    }
+    case "agent.list": {
+      if (!Array.isArray(record.agents)) return result;
+      const listed = new Set(
+        record.agents.flatMap((agent) =>
+          isRecord(agent) && typeof agent.pane_id === "string"
+            ? [agent.pane_id]
+            : [],
+        ),
+      );
+      return {
+        ...record,
+        agents: [
+          ...record.agents.map(over),
+          ...owned
+            .filter((each) => !listed.has(each.pane_id))
+            .map((each) => overlayPane({ pane_id: each.pane_id }, each)),
+        ],
+      };
+    }
+    case "pane.list":
+      return Array.isArray(record.panes)
+        ? { ...record, panes: record.panes.map(over) }
+        : result;
+    case "pane.get":
+      return isRecord(record.pane)
+        ? { ...record, pane: over(record.pane) }
+        : result;
+    default:
+      return result;
+  }
+}
+
+/**
+ * Herdr's calls, with the session conversation mode owns in a pane: while
+ * its holder runs, the pane's claude is headless and Herdr does not know
+ * the agent (`agent.get` answers not found).
+ */
+export function withOwnedSessions(
+  herdrCall: HerdrCall,
+  owned: () => readonly OwnedPane[],
+): HerdrCall {
+  return async (method, params, ...rest) => {
+    let result: unknown;
+    try {
+      result = await herdrCall(method, params, ...rest);
+    } catch (error) {
+      const paneId = typeof params?.target === "string" ? params.target : "";
+      if (
+        method !== "agent.get" ||
+        !owned().some((each) => each.pane_id === paneId) ||
+        !/not[_ ]found/i.test(String(error))
+      )
+        throw error;
+      result = {};
+    }
+    return overlayOwnedPanes(method, params, result, owned());
+  };
+}
+
 export function createAgentSessionHandlers(args: {
   herdrCall: HerdrCall;
   files: AgentSessionFileAccess;
@@ -38,6 +175,16 @@ export function createAgentSessionHandlers(args: {
   const resolverContext = createAgentSessionResolverContext();
   const cache = createSessionProjectionCache(args.files);
   return {
+    /** The pane's session file now, for the history watcher. */
+    resolvePath: async (params: Record<string, unknown>) =>
+      (
+        await resolveAgentSession(
+          params,
+          args.herdrCall,
+          args.files,
+          resolverContext,
+        )
+      ).file?.path ?? null,
     listWithActivity: async (params: Record<string, unknown>) =>
       enrichAgentActivity(
         await args.herdrCall("agent.list", params),

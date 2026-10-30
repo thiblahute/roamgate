@@ -17,6 +17,13 @@ export type OutboxMessage = {
   state: "sending" | "sent" | "failed";
   /** Why it failed. */
   reason?: string;
+  /** Conversation mode: the message's uuid, which its replay carries. */
+  uuid?: string;
+  /**
+   * Sent while the session was being handed over to conversation mode: it
+   * waits here and goes out once conversation mode has the session.
+   */
+  held?: true;
 };
 
 /** How long a sent message may take to show in the transcript. */
@@ -42,7 +49,10 @@ export function newOutboxMessage(
 
 function isUserMessage(entry: HistoryEntry) {
   return (
-    entry.kind === "message" && entry.role === "user" && !entry.compact_summary
+    entry.kind === "message" &&
+    entry.role === "user" &&
+    !entry.compact_summary &&
+    !entry.injected
   );
 }
 
@@ -102,6 +112,24 @@ export function settleOutbox(
   return unchanged ? (outbox as OutboxMessage[]) : next;
 }
 
+/**
+ * The outbox without the conversation-mode messages the chat shows
+ * elsewhere already (`shown`: the uuids of its queued, live and transcript
+ * messages). Hidden in the same render as their other bubble appears, so a
+ * message is never drawn twice nor missing for a frame, whichever of the
+ * send's answer, the queue and the replay comes first. The same array when
+ * nothing is hidden.
+ */
+export function outboxNotShown(
+  outbox: readonly OutboxMessage[],
+  shown: ReadonlySet<string>,
+): readonly OutboxMessage[] {
+  const kept = outbox.filter(
+    (message) => !message.uuid || !shown.has(message.uuid),
+  );
+  return kept.length === outbox.length ? outbox : kept;
+}
+
 /** When the next sent message runs out of time, if one is waiting. */
 export function nextOutboxDeadline(
   outbox: readonly OutboxMessage[],
@@ -111,4 +139,22 @@ export function nextOutboxDeadline(
     .filter((message) => message.state === "sent")
     .map((message) => message.sentAtMs + timeoutMs);
   return waiting.length ? Math.min(...waiting) : null;
+}
+
+/**
+ * The handover a pane's held messages waited for did not happen: they fail,
+ * kept in the chat to send again, instead of waiting forever.
+ */
+export function releaseHeldOutbox(
+  outbox: readonly OutboxMessage[],
+  paneId: string,
+  reason: string,
+): OutboxMessage[] {
+  if (!outbox.some((each) => each.paneId === paneId && each.held))
+    return outbox as OutboxMessage[];
+  return outbox.map((each) =>
+    each.paneId === paneId && each.held
+      ? { ...each, held: undefined, state: "failed", reason }
+      : each,
+  );
 }

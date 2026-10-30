@@ -4,6 +4,8 @@ import {
   newOutboxMessage,
   nextOutboxDeadline,
   type OutboxMessage,
+  outboxNotShown,
+  releaseHeldOutbox,
   settleOutbox,
 } from "./chatOutbox";
 
@@ -105,4 +107,62 @@ test("nextOutboxDeadline is the earliest sent message's", () => {
       100,
     ),
   ).toBe(120);
+});
+
+describe("conversation mode's other bubbles", () => {
+  const sent = (text: string, uuid?: string): OutboxMessage => ({
+    ...newOutboxMessage("p1", text, [], 1000),
+    state: "sent",
+    ...(uuid ? { uuid } : {}),
+  });
+
+  test("hides a message its queued, live or transcript bubble shows", () => {
+    const a = sent("same words here", "u1");
+    const b = sent("same words here", "u2");
+    expect(outboxNotShown([a, b], new Set(["u2"]))).toEqual([a]);
+  });
+
+  test("keeps a message without a uuid: the transcript settles it", () => {
+    const list = [sent("hello there friend")];
+    expect(outboxNotShown(list, new Set(["u1"]))).toBe(list);
+  });
+
+  test("the same list when nothing is shown elsewhere", () => {
+    const list = [sent("hello there friend", "u1")];
+    expect(outboxNotShown(list, new Set(["u9"]))).toBe(list);
+  });
+});
+
+describe("held messages", () => {
+  const held = (paneId: string, text: string): OutboxMessage => ({
+    ...newOutboxMessage(paneId, text, [], 0),
+    uuid: `uuid-${text}`,
+    held: true,
+  });
+
+  test("a message held through the handover waits without timing out", () => {
+    const message = held("p1", "Sent during the takeover");
+    expect(settleOutbox([message], [], 10 * 60_000)).toEqual([message]);
+    expect(nextOutboxDeadline([message])).toBeNull();
+  });
+
+  test("fails a pane's held messages when the handover did not happen", () => {
+    const mine = held("p1", "first");
+    const other = held("p2", "elsewhere");
+    const plain = newOutboxMessage("p1", "not held", [], 0);
+    const released = releaseHeldOutbox([mine, other, plain], "p1", "why");
+    expect(released[0]).toMatchObject({
+      state: "failed",
+      reason: "why",
+      held: undefined,
+      text: "first",
+    });
+    expect(released[1]).toBe(other);
+    expect(released[2]).toBe(plain);
+  });
+
+  test("leaves the outbox untouched when nothing is held", () => {
+    const outbox = [newOutboxMessage("p1", "a", [], 0)];
+    expect(releaseHeldOutbox(outbox, "p1", "why")).toBe(outbox);
+  });
 });

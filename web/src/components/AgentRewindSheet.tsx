@@ -28,6 +28,7 @@ export function AgentRewindSheet({
             entry.role === "user" &&
             !entry.queued &&
             !entry.compact_summary &&
+            !entry.injected &&
             // A command run (/model haiku), not a message to rewind to.
             !entry.text.startsWith("<command-"),
         )

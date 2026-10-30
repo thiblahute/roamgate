@@ -297,6 +297,137 @@ comments reach a review's agent as a prompt typed into its Herdr pane, a
 few seconds after they are written (a burst goes as one prompt); `watch`,
 a long poll on the service, is for agents without a pane.
 
+## Conversation mode
+
+A Claude session can be driven by a long-lived headless `claude -p
+--resume <id>` (stream-json both ways, partial messages, replayed user
+messages, permissions over stdio) instead of the TUI in its pane. The pane's
+holder (below) runs that process as its own child, on the pane's host, so an
+SSH link that drops, a runtime that is replaced or a Roamgate restart does
+not end it; only closing the pane does. The holder appends each line the
+child prints to a log on its host
+(`~/.cache/roamgate/headless/<holder id>/out.jsonl`, one directory per
+holder so two panes on one session never share a log, framed by start and
+exit lines with the child's pid and exit status, and noting each line
+written to its stdin, or dropped when its stdin was closed already) and
+sends it over the review socket (`hold_output`) from the byte
+offset the bridge asks for; the bridge takes a chunk only when it starts
+where the last one ended, so each line is read once. The bridge's commands
+(`start`, `input`, `end`, `kill`) ride the `hold` long poll's answers,
+numbered: the holder applies each once, in order, and reports the last one
+applied with every poll; unconfirmed ones are sent again. A user message the child never got (the
+holder dropped it, or it was still unconfirmed when the child exited) goes
+back to the front of the queue for the next child instead of counting as a
+turn cut short. Like the terminal's claude, the child is never closed for
+being idle: it runs until the session is handed back, the user stops it,
+or the pane closes. The child's environment is the
+pane's minus outer Claude Code, Herdr and API key variables, plus
+`ROAMGATE_HEADLESS=1`, so the account is the claude.ai login, the user's
+hooks run, and Roamgate's own permission hooks step aside. It stays in the
+pane's foreground process group (the holder turns off the terminal's signal
+keys), so Herdr's process listing for the pane includes it; a small guard
+process beside it kills it should the holder die without ending it (killed
+outright, crashed); Roamgate's own
+checks do not count a stream-json claude as a TUI, and the bridge still
+lays the session's agent over Herdr's answers (below).
+
+The TUI and the headless process never run on one session together. A lease
+per pane (`conversation-leases.json` in the data directory) says who writes:
+`terminal` (no entry), `to_conversation`, `conversation`, `to_terminal`.
+Taking over needs an idle Claude with an empty prompt box (and vim insert
+mode, if any); it sends `/exit`, waits for Claude's pid to end and the shell
+to be in the foreground, then types `roamgate-hold <id>` into the pane (on a
+local connection with the holder's and the socket's full paths, so the
+pane's `$HOME` does not matter). The holder (installed beside
+`roamgate-review`) keeps the pane, long-polls the review socket (`hold`),
+and, told to resume, ends its child (stdin closed, then waited for) before
+it `exec`s `claude --resume` with the flags the TUI ran with (model,
+permission mode, directories, MCP configs): one process sequences both
+writers. Handing back needs no running turn (a message the CLI
+queued as a turn of its own counts as one) and an empty queue; Enter alone
+in the holder asks for it (`handback`), other text does not. When the bridge
+cannot answer for the pane, the holder resumes only if its own child has
+ended and no headless process on the session shows up on the host; while
+its child runs, a second Enter within ten seconds ends it (stdin closed,
+killed after five seconds) first, since a child waiting on a permission
+never goes idle. Any failed check refuses and leaves the
+session with its current writer; a TUI that exited when the holder could not
+start, or after the exit deadline, gets `claude --resume` typed into the
+shell it left.
+
+A headless process starts only while the lease says `conversation`, a holder
+that holds the session polls from the pane, no claude runs in the pane, no
+earlier headless process runs on the session, and no other writer does:
+neither a pane Herdr maps to the session nor an interactive
+`claude --resume <id>` on the host. A pane where claude runs again (the
+holder resumed it while Roamgate was away) gives the session back to the
+terminal. A pane that closes takes its lease and process with it; leases
+are also swept when a tab or workspace closes and when the event
+subscription comes back. In a held pane Herdr sees the holder and, at most,
+its child as a claude it detects itself: always `idle` (its fallback, since
+the holder's screen matches no rule), sometimes without the session, which
+it also drops for a few seconds while the pane changes hands. Roamgate's own
+`pane.report_agent` reports do not override that detection. So the bridge
+lays the session's agent (status from the stream, source
+`roamgate:headless`) over `pane.list`, `pane.get`, `agent.list` and
+`agent.get` for a held pane, and tools that ask Herdr directly rather than
+the bridge see Herdr's view, not the conversation's state.
+
+A runtime that goes away (an SSH drop, a Herdr reconnect, a restart) stops
+reading its holders' children and leaves them running, keeps the leases,
+stores in them the queued messages, how far each holder's log was read and
+its unconfirmed commands (the offset is also saved about once a second
+while reading, and unconfirmed commands as soon as they are added), and
+changes nothing more: a handover still running there
+stops, and its holders poll the next runtime. That runtime turns a cut
+`to_terminal` back into `conversation`, drops a cut `to_conversation`, and,
+once it is up (or when a holder that was slow to come back first polls),
+reads each holder's log again from its latest child's start: the lines the
+runtime before had read rebuild the turn's state (status, tools, tasks, the
+reply so far) without reaching the browsers again; nothing acts on the
+session (a hand-back, the queue) before every line that was in the log at
+that point is handled; then the permission prompts and questions still open
+are asked again, once, and the rest is live. A note of a write this runtime
+did not make (a message an earlier one sent, an answer it gave) marks the
+turn as running or withdraws the prompt asked again. A read that times out
+retries on the holder's next poll; reading a long log only times out when
+it stalls. A child that ended while nobody read is read to
+its end; only one that died in the middle of a turn (or a holder that no
+longer runs one) marks the turn as cut short. Then the carried queue is
+sent. With several local connections, a
+holder is served only by the connection whose Herdr socket it names.
+
+Browsers call connection-scoped `agent_chat.*` methods (`state`,
+`subscribe`, `unsubscribe`, `send`, `voice`, `interrupt`, `queue.edit`,
+`queue.remove`, `handover`) and receive `agent_chat.<type>` events for the
+panes they subscribed to (`shared/agentChat.ts`). Text deltas are coalesced
+to about a frame and keyed by API message id and block index, which history
+entries carry as `message_id` and `block_index`. Messages typed during a
+turn wait in the bridge's queue; speech interrupts a turn that is only
+writing text, steers one that runs a tool, and "stop" interrupts.
+Permissions and questions use the review prompts, marked as having no
+terminal to fall back on; unanswered, they are denied. A message sent twice
+with one id is taken once.
+
+In the browser, the view decides the writer: a Claude pane's chat, shown
+and idle, asks for `handover` to conversation mode, and its terminal, shown
+with no turn running and an empty queue, asks for it back; each request is
+made once until the view, Herdr's state or the stream's status changes (a
+refused takeover is also retried every few seconds for a minute, since a
+dialog can close without Herdr's state changing), so a refusal stands and
+is shown in the chat's header. Keys typed in a browser's terminal are
+refused while a handover runs, as pane input is. While conversation mode
+holds the session, the browser neither types into nor reads the pane's
+terminal. The streamed blocks render after the transcript's entries and
+leave once an entry with the same message id and block index (tools: tool
+use id; user messages: uuid) arrives.
+
+`agent_history.subscribe` pushes `agent_history.changed` when a pane's
+session file changes, for every agent kind; the browser then fetches its
+delta with `agent_history.get`, and polls every 30 seconds in case a push
+is lost (every 4 seconds from a bridge that cannot push). Local files are
+watched; an SSH connection runs one stat loop for all its watched files.
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell

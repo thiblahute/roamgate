@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { parseInjectedMessage } from "../../../shared/injectedMessage";
 import { grokReasoningText, grokUserMessageText } from "./grok-session";
 import type { AtifStep, AtifTrajectory, SessionFile } from "./session-types";
 import {
@@ -339,6 +340,35 @@ function projectClaudeTrajectory(
   // record per message) gives them back to the prompt, on Up. What is left
   // still waits.
   const queue: { content: string; timestamp: string }[] = [];
+  // Claude Code writes one record per content block, all with the API
+  // message id: the blocks of a message, counted, give each its index (as
+  // conversation mode's stream numbers them).
+  const blockCounts = new Map<string, number>();
+  // What Claude Code put in the user's turn itself (a subagent's report,
+  // another session's message, a task ending): a notice each, in its
+  // place, then the user's words that follow, if any. False when the text
+  // is not one.
+  const injected = (
+    text: string,
+    timestamp: string,
+    extra: Record<string, unknown>,
+  ) => {
+    const parsed = parseInjectedMessage(text);
+    if (!parsed) return false;
+    for (const notice of parsed.notices)
+      steps.push({
+        timestamp,
+        source: "user",
+        message: notice.body.trim() || notice.label,
+        extra: {
+          ...extra,
+          injected: { kind: notice.kind, label: notice.label },
+        },
+      });
+    const rest = cleanMessageText(parsed.rest);
+    if (rest) steps.push({ timestamp, source: "user", message: rest, extra });
+    return true;
+  };
   records.forEach((record, index) => {
     const timestamp = messageTime(record, file.mtimeMs, index);
     const type = stringValue(record.type);
@@ -364,19 +394,37 @@ function projectClaudeTrajectory(
     }
     // What the user sends while the agent works reaches it as a queued
     // command, not a user record. Task notifications and other sessions'
-    // messages come the same way; only the user's own are shown.
+    // messages come the same way; only the user's own are shown: the TUI's
+    // (a human origin), and a headless process's steered prompts (no
+    // origin, a prompt, and the uuid of the stdin message it came from).
     if (type === "attachment") {
       const attachment = isRecord(record.attachment) ? record.attachment : {};
-      const origin = isRecord(attachment.origin) ? attachment.origin : {};
-      if (attachment.type !== "queued_command" || origin.kind !== "human")
+      const origin = isRecord(attachment.origin) ? attachment.origin : null;
+      const sourceUuid = stringValue(attachment.source_uuid);
+      const human = origin
+        ? origin.kind === "human"
+        : attachment.commandMode === "prompt" && !!sourceUuid;
+      if (attachment.type !== "queued_command") return;
+      const extra = {
+        record_type: "queued_command",
+        ...(sourceUuid ? { uuid: sourceUuid } : {}),
+      };
+      const prompt = textFromContent(attachment.prompt);
+      if (!human) {
+        injected(prompt, timestamp, extra);
         return;
-      const text = cleanMessageText(textFromContent(attachment.prompt));
+      }
+      if (injected(prompt, timestamp, extra)) return;
+      const text = cleanMessageText(prompt);
       if (text)
         steps.push({
           timestamp,
           source: "user",
           message: text,
-          extra: { record_type: "queued_command" },
+          extra: {
+            record_type: "queued_command",
+            ...(sourceUuid ? { uuid: sourceUuid } : {}),
+          },
         });
       return;
     }
@@ -390,6 +438,28 @@ function projectClaudeTrajectory(
     const parts = Array.isArray(message.content)
       ? message.content.filter(isRecord)
       : [];
+    const apiMessageId = type === "assistant" ? stringValue(message.id) : "";
+    const firstBlock = apiMessageId ? (blockCounts.get(apiMessageId) ?? 0) : 0;
+    if (apiMessageId)
+      blockCounts.set(apiMessageId, firstBlock + Math.max(parts.length, 1));
+    const recordUuid = stringValue(record.uuid);
+    const ids = (block: number) => ({
+      ...(apiMessageId
+        ? { message_id: apiMessageId, block_index: firstBlock + block }
+        : {}),
+      ...(recordUuid ? { uuid: recordUuid } : {}),
+    });
+    if (
+      role === "user" &&
+      !parts.some(
+        (part) => part.type === "tool_use" || part.type === "tool_result",
+      ) &&
+      injected(textFromContent(message.content ?? record.content), timestamp, {
+        record_type: type,
+        ...ids(0),
+      })
+    )
+      return;
     // Turns Claude Code writes itself (notes on an image a tool read, and the
     // like) are flagged meta: not the user's words.
     if (
@@ -405,7 +475,7 @@ function projectClaudeTrajectory(
       )
     ) {
       const start = steps.length;
-      for (const part of parts) {
+      for (const [block, part] of parts.entries()) {
         if (part.type === "tool_use") {
           const name = stringValue(part.name) || "tool";
           steps.push({
@@ -448,6 +518,7 @@ function projectClaudeTrajectory(
             timestamp,
             source: role === "user" ? "user" : "agent",
             message: cleanMessageText(stringValue(part.text)),
+            extra: ids(block),
           });
         } else if (
           part.type === "thinking" &&
@@ -482,6 +553,12 @@ function projectClaudeTrajectory(
       extra: {
         record_type: type,
         model: modelNameFromRecord(record) || undefined,
+        ...ids(
+          Math.max(
+            0,
+            parts.findIndex((part) => part.type === "text"),
+          ),
+        ),
         // The summary Claude Code writes when it compacts the conversation.
         compact_summary: record.isCompactSummary === true || undefined,
         // The reply that ends a turn, whatever else (a background agent)

@@ -5,6 +5,7 @@ import { createLogger } from "../utils/logger";
 import { sshCommandArgv, sshReadCommandArgv } from "./ssh-command";
 import { createSshProcessMonitor } from "./ssh-metrics";
 import {
+  acquireSshSession,
   holdSshSession,
   registerSshMaster,
   runSshCommand,
@@ -242,5 +243,26 @@ describe("SSH command execution", () => {
     for (const gate of gates) gate.resolve();
     await Promise.all([...runs, other]);
     expect(started).toBe(SSH_SESSION_LIMIT + 3);
+  });
+
+  test("an aborted wait gives up without taking a slot", async () => {
+    const releases = await Promise.all(
+      Array.from({ length: SSH_SESSION_LIMIT }, () =>
+        acquireSshSession("abort-box"),
+      ),
+    );
+    const controller = new AbortController();
+    const waiting = acquireSshSession("abort-box", controller.signal);
+    const after = acquireSshSession("abort-box");
+    controller.abort(new Error("gave up"));
+    await expect(waiting).rejects.toThrow("gave up");
+    // The freed slot goes to the next waiter, not to the one that gave up.
+    releases[0]!();
+    const release = await after;
+    release();
+    for (const each of releases) each();
+    await expect(
+      acquireSshSession("abort-box", AbortSignal.abort()),
+    ).rejects.toThrow();
   });
 });

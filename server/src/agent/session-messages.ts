@@ -26,12 +26,15 @@ export function conversationMessagesFromTrajectory(
   file: SessionFile,
   trajectory: AtifTrajectory,
 ): AgentMessageHistoryEntry[] {
-  return trajectory.steps.filter(isConversationStep).map((step) => ({
-    id: stableMessageId(file.path, step.step_id),
-    role: step.source === "user" ? "user" : "assistant",
-    text: step.message,
-    sent_at:
-      step.timestamp ??
-      new Date(file.mtimeMs + Math.max(0, step.step_id)).toISOString(),
-  }));
+  // What Claude Code put in the user's turn is not the user's message.
+  return trajectory.steps
+    .filter((step) => isConversationStep(step) && !step.extra?.injected)
+    .map((step) => ({
+      id: stableMessageId(file.path, step.step_id),
+      role: step.source === "user" ? "user" : "assistant",
+      text: step.message,
+      sent_at:
+        step.timestamp ??
+        new Date(file.mtimeMs + Math.max(0, step.step_id)).toISOString(),
+    }));
 }

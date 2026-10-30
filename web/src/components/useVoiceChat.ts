@@ -7,6 +7,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { nextSpeechRate } from "../../../shared/speechRate";
+import type {
+  AgentChatEvent,
+  AgentChatVoiceAction,
+} from "../../../shared/agentChat";
+import { messageUuid } from "../agentChat";
 import { askRanger } from "../assistant";
 import type { HistoryEntry } from "./agentHistory";
 import { agentStateKind } from "./agentSession";
@@ -30,7 +35,14 @@ import {
   voiceRouting,
   voiceTrace,
   speak,
+  speakStream,
 } from "../voiceChat";
+import {
+  type ClaudeTurn,
+  createTurnFeed,
+  type TurnFeed,
+  watchClaudeTurns,
+} from "./voiceStream";
 import { highlightReading } from "../readingHighlight";
 import {
   handOffVoice,
@@ -49,6 +61,24 @@ import {
   type MoveQuestion,
 } from "../voiceFollow";
 import { installVoiceFollow } from "../voiceFollowGuard";
+
+/**
+ * Conversation mode's stream, when it owns the session: replies are read
+ * as they are written, and what is said goes through the bridge's barge-in
+ * mix (interrupt a reply being written, steer a turn running tools, "stop"
+ * interrupts).
+ */
+export type VoiceStream = {
+  /** Whether conversation mode owns the session now. */
+  active: () => boolean;
+  /** Whether a turn runs now. */
+  busy: () => boolean;
+  subscribe: (listener: (event: AgentChatEvent) => void) => () => void;
+  send: (
+    text: string,
+    options: { uuid: string; stop?: boolean },
+  ) => Promise<AgentChatVoiceAction>;
+};
 
 export type VoiceState =
   | "off"
@@ -108,6 +138,7 @@ export function useVoiceChat({
   routeContext,
   onSwitch,
   voiceKey,
+  stream,
 }: {
   entries: readonly HistoryEntry[];
   agentStatus: string | undefined;
@@ -123,6 +154,8 @@ export function useVoiceChat({
    * next.
    */
   voiceKey?: { connectionId: string; paneId: string };
+  /** Conversation mode's stream, read when it owns the session. */
+  stream?: VoiceStream;
 }) {
   const available = useVoiceAvailable();
   const speechRate = useSpeechRate(onError);
@@ -181,6 +214,8 @@ export function useVoiceChat({
   routeContextRef.current = routeContext;
   const onSwitchRef = useRef(onSwitch);
   onSwitchRef.current = onSwitch;
+  const streamRef = useRef(stream);
+  streamRef.current = stream;
 
   useEffect(
     () => () => {
@@ -392,6 +427,50 @@ export function useVoiceChat({
       let next: Promise<Heard | null> | null = null;
       // The sentence being read when the speaker cut in.
       let interruptedAt: string | null = null;
+      // Conversation mode: the turn being read, and a turn Claude started
+      // by itself (a subagent's report or a task ending came) waiting to be
+      // read. Those are read too, as long as voice chat is on.
+      let currentFeed: TurnFeed | null = null;
+      let claudeTurn: ClaudeTurn | null = null;
+      let onClaudeTurn: (() => void) | null = null;
+      let watched: VoiceStream | null = null;
+      let unwatch: (() => void) | null = null;
+      const dropClaudeTurn = () => {
+        claudeTurn?.unsubscribe();
+        claudeTurn = null;
+      };
+      const watchStream = () => {
+        const live = streamRef.current?.active() ? streamRef.current : null;
+        if (live === watched) return;
+        unwatch?.();
+        dropClaudeTurn();
+        watched = live;
+        unwatch = live
+          ? watchClaudeTurns(
+              live.subscribe,
+              () =>
+                currentFeed && !currentFeed.ended()
+                  ? currentFeed
+                  : (claudeTurn?.feed ?? null),
+              (turn) => {
+                dropClaudeTurn();
+                claudeTurn = turn;
+                voiceTrace("Claude started a turn by itself: reading it");
+                onClaudeTurn?.();
+                // Muted, voice still reads.
+                unmutedRef.current?.();
+              },
+            )
+          : null;
+      };
+      signal.addEventListener(
+        "abort",
+        () => {
+          unwatch?.();
+          dropClaudeTurn();
+        },
+        { once: true },
+      );
       // Waits, unless voice chat ends first.
       const pause = (ms: number) =>
         new Promise<void>((resolve) => {
@@ -408,15 +487,198 @@ export function useVoiceChat({
       // Only the person ends voice chat: a lost connection or a failing
       // helper is retried, more slowly each time, and said once.
       let failures = 0;
+      // Listening stops with the chat, when muted, or for a move question.
+      const listening = () => {
+        const mute = new AbortController();
+        muteAbortRef.current = mute;
+        return AbortSignal.any([signal, mute.signal, askRef.current.signal]);
+      };
+      /**
+       * Conversation mode: sends `first`, reads the answer as it is written
+       * and listens meanwhile. Speaking up stops the reading and goes to the
+       * bridge, which interrupts a reply being written, steers a turn running
+       * tools, or sends it once the turn is over; "stop" interrupts while a
+       * turn runs, and ends voice chat otherwise, as it always did.
+       */
+      const streamedTurns = async (
+        live: VoiceStream,
+        voice: VoiceLink,
+        first: string | null,
+        own: ClaudeTurn | null = null,
+      ): Promise<"listen" | "stop"> => {
+        let text: string | null = first;
+        let stopTurn = false;
+        let deaf = false;
+        // A turn Claude started: read, nothing sent.
+        let ownTurn = own;
+        while (!signal.aborted && (text !== null || stopTurn || ownTurn)) {
+          const uuid = messageUuid();
+          const sentText = text;
+          const reads = ownTurn;
+          ownTurn = null;
+          // Something said now: a turn Claude started meanwhile is not read.
+          if (!reads) dropClaudeTurn();
+          const feed =
+            reads?.feed ??
+            createTurnFeed(sentText === null ? {} : { uuid, text: sentText });
+          const unsubscribe = reads?.unsubscribe ?? live.subscribe(feed.handle);
+          currentFeed = feed;
+          awaitingRef.current = () => ({
+            sent: sentText ?? first ?? "",
+            read: [],
+          });
+          const reading = new AbortController();
+          claimSpeaker(reading);
+          let current: string | null = null;
+          // A sentence is playing: only a louder voice counts then.
+          let sounding = false;
+          const stopReading = () => {
+            if (reading.signal.aborted) return;
+            if (sounding) interruptedAt = current;
+            voiceTrace(`streamed reading stopped at: ${current}`);
+            sounding = false;
+            reading.abort();
+          };
+          interruptRef.current = () => {
+            stopReading();
+            setState("listening");
+          };
+          setState("waiting");
+          const spoken = speakStream(
+            feed.text,
+            AbortSignal.any([reading.signal, signal]),
+            (sentence) => {
+              sounding = sentence !== null;
+              if (sentence) {
+                current = sentence;
+                setState("speaking");
+              } else if (!signal.aborted && stateRef.current === "speaking")
+                setState("waiting");
+              highlightReading(feed.ids(), sentence);
+            },
+          ).catch((error) => {
+            if (!reading.signal.aborted) voiceTrace(`reading failed: ${error}`);
+          });
+          text = null;
+          try {
+            if (stopTurn) {
+              stopTurn = false;
+              feed.close();
+              await live.send("stop", { uuid, stop: true });
+              await speak("Stopped.", signal).catch(() => {});
+              break;
+            }
+            if (!reads) {
+              const action = await live.send(sentText!, { uuid });
+              voiceTrace(`conversation mode took the speech: ${action}`);
+              if (action === "steered") feed.start();
+              else if (action === "interrupted") feed.close();
+            }
+            // Listen while the answer comes and is read.
+            for (;;) {
+              const waiting = new AbortController();
+              let speaking = false;
+              const finish = new AbortController();
+              finishRef.current = finish;
+              const heardMeanwhile =
+                mutedRef.current || deaf
+                  ? null
+                  : voice.listen(
+                      AbortSignal.any([listening(), waiting.signal]),
+                      {
+                        finish: finish.signal,
+                        holding: () => sounding,
+                        onLevel: (value) => {
+                          if (!sounding) setLevel(value);
+                        },
+                        onSpeech: () => {
+                          speaking = true;
+                          stopReading();
+                          setState("listening");
+                        },
+                        onSpeechEnd: () => setState("transcribing"),
+                        onHeard: setHeard,
+                        conversation: conversationContext(entriesRef.current),
+                      },
+                    );
+              heardMeanwhile?.catch(() => {});
+              let heard: Heard | null = null;
+              try {
+                const firstDone = await Promise.race([
+                  spoken.then(() => "read" as const),
+                  ...(heardMeanwhile
+                    ? [heardMeanwhile.then(() => "heard" as const)]
+                    : []),
+                ]);
+                // Read to its end with nothing said: listen as usual.
+                if (firstDone === "read" && !speaking) return "listen";
+                heard = heardMeanwhile ? await heardMeanwhile : null;
+              } finally {
+                waiting.abort();
+                finishRef.current = null;
+              }
+              setLevel(0);
+              if (signal.aborted) return "stop";
+              if (!heard) {
+                // Muted, or the helper gave up: the answer is still read.
+                if (!mutedRef.current) deaf = true;
+                await spoken;
+                return "listen";
+              }
+              if (isStopCommand(heard.raw ?? heard.text)) {
+                setHeard("");
+                stopReading();
+                // A turn running: "stop" stops it, and voice chat goes on.
+                if (live.busy()) {
+                  stopTurn = true;
+                  break;
+                }
+                await speak("Okay, stopping.", signal);
+                return "stop";
+              }
+              if (!heard.text) {
+                setHeard("");
+                continue;
+              }
+              if (heard.forAgent === false) {
+                hold(heard);
+                setHeard("");
+                continue;
+              }
+              const route = await routed(heard);
+              if (route === "left") return "stop";
+              if (route === "nobody") {
+                setHeard("");
+                continue;
+              }
+              stopReading();
+              text = voiceMessage(heard.text, interruptedAt);
+              interruptedAt = null;
+              if (heard.raw) rememberHeardAs(heard.text, heard.raw);
+              setHeard("");
+              break;
+            }
+          } finally {
+            interruptRef.current = null;
+            feed.close();
+            unsubscribe();
+            if (currentFeed === feed) currentFeed = null;
+            stopReading();
+            await spoken;
+            highlightReading([], null);
+            awaitingRef.current = null;
+          }
+        }
+        return "listen";
+      };
       try {
-        // Listening stops with the chat, or when muted.
-        const listening = () => {
-          const mute = new AbortController();
-          muteAbortRef.current = mute;
-          return AbortSignal.any([signal, mute.signal, askRef.current.signal]);
-        };
         const unmuted = async () => {
-          while (mutedRef.current && !signal.aborted && !moveRef.current)
+          while (
+            mutedRef.current &&
+            !signal.aborted &&
+            !claudeTurn &&
+            !moveRef.current
+          )
             await new Promise<void>((resolve) => {
               unmutedRef.current = resolve;
               signal.addEventListener("abort", () => resolve(), {
@@ -520,6 +782,17 @@ export function useVoiceChat({
               if (await askMove(voice)) break;
               continue;
             }
+            watchStream();
+            // A turn Claude started by itself, while nothing was said: read.
+            const own = claudeTurn;
+            const ownLive = streamRef.current;
+            if (own && !forwarded && !resuming && !next && ownLive?.active()) {
+              claudeTurn = null;
+              const outcome = await streamedTurns(ownLive, voice, null, own);
+              if (outcome === "stop") break;
+              failures = 0;
+              continue;
+            }
             let heard: Heard | null;
             const handed = forwarded;
             forwarded = null;
@@ -533,32 +806,49 @@ export function useVoiceChat({
             } else {
               await unmuted();
               if (signal.aborted) break;
-              if (moveRef.current) continue;
+              if (moveRef.current || claudeTurn) continue;
               setState("listening");
               const finish = new AbortController();
               finishRef.current = finish;
               const over = carriedPlaying ? carried : null;
-              heard = await voice.listen(listening(), {
-                finish: finish.signal,
-                onLevel: setLevel,
-                ...(over
-                  ? {
-                      holding: () => carriedPlaying,
-                      onSpeech: () => {
-                        if (!carriedPlaying) return;
-                        carriedPlaying = false;
-                        interruptedAt = over.sentence();
-                        voiceTrace(
-                          `talked over the reading at: ${interruptedAt}`,
-                        );
-                        over.stop();
-                      },
-                    }
-                  : {}),
-                onSpeechEnd: () => setState("transcribing"),
-                onHeard: setHeard,
-                conversation: conversationContext(entriesRef.current),
-              });
+              // A turn Claude starts by itself ends the listening, unless
+              // the person is speaking: then what they say goes first.
+              const ownTurnCame = new AbortController();
+              let talking = false;
+              onClaudeTurn = () => {
+                if (!talking) ownTurnCame.abort();
+              };
+              try {
+                heard = await voice.listen(
+                  AbortSignal.any([listening(), ownTurnCame.signal]),
+                  {
+                    finish: finish.signal,
+                    onLevel: setLevel,
+                    ...(over ? { holding: () => carriedPlaying } : {}),
+                    onSpeech: () => {
+                      talking = true;
+                      if (!over || !carriedPlaying) return;
+                      carriedPlaying = false;
+                      interruptedAt = over.sentence();
+                      voiceTrace(
+                        `talked over the reading at: ${interruptedAt}`,
+                      );
+                      over.stop();
+                    },
+                    onSpeechEnd: () => setState("transcribing"),
+                    onHeard: setHeard,
+                    conversation: conversationContext(entriesRef.current),
+                  },
+                );
+              } finally {
+                onClaudeTurn = null;
+              }
+              if (ownTurnCame.signal.aborted && !signal.aborted) {
+                finishRef.current = null;
+                setLevel(0);
+                setHeard("");
+                continue;
+              }
             }
             finishRef.current = null;
             setLevel(0);
@@ -598,6 +888,15 @@ export function useVoiceChat({
               ? back.sent
               : voiceMessage(text, interruptedAt);
             interruptedAt = null;
+            const live = streamRef.current;
+            if (!back && live?.active()) {
+              if (raw) rememberHeardAs(text, raw);
+              setHeard("");
+              const outcome = await streamedTurns(live, voice, message);
+              if (outcome === "stop") break;
+              failures = 0;
+              continue;
+            }
             if (!back) await onSend(message);
             if (raw) rememberHeardAs(text, raw);
             setHeard("");

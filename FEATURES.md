@@ -246,6 +246,20 @@ Inspector state is scoped to each checkout; see
   Any of the agent's messages can also be read aloud on its own (its speaker
   button, beside Copy); starting voice chat while one is read lets it play
   on, until you talk over it.
+  **Conversation mode** (Claude Code): showing the chat of an idle Claude
+  hands its session to a headless Claude Code that the chat drives, and
+  showing the terminal hands it back once no turn runs; the terminal shows
+  a notice meanwhile, and the chat's header says who has the session (and
+  why it stayed in the terminal, when it could not move: a draft in its
+  prompt box, a turn running). In conversation mode replies, tool calls and
+  their results appear as they are written; messages sent while Claude works
+  wait in Roamgate's queue (taken back or edited as below) and go as one
+  turn when it ends; **Stop** interrupts the turn, keeping what was written;
+  `/compact`, `/clear`, `/cost` and `/context` work, `/rewind` hands the
+  session back to the terminal for it, and other terminal-only commands and
+  `!` lines are refused. Voice reads each sentence as soon as it is written;
+  speaking up while Claude only writes interrupts the turn and starts the
+  next one, while it runs a tool steers that turn, and "stop" interrupts it.
   A message queued in a Claude chat can be taken back before the agent
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in

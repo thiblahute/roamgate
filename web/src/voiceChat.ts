@@ -411,7 +411,13 @@ export function replyEntriesAfter(
   const sent = sentText.trim();
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.role === "user" && entry.kind === "message" && !entry.queued) {
+    if (
+      entry.role === "user" &&
+      entry.kind === "message" &&
+      !entry.queued &&
+      // A subagent's report or a task ending is not what was said.
+      !entry.injected
+    ) {
       if (entry.text.trim().includes(sent) || sent.includes(entry.text.trim()))
         start = index;
       break;
@@ -636,6 +642,159 @@ export async function speak(
   onSentence?.(null);
 }
 
+/** Markers a sentence cut out of its markdown may keep: not read out. */
+function strayMarkup(sentence: string): string {
+  return sentence
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/(^|\s)[*_](?=\S)/g, "$1")
+    .replace(/(\S)[*_](?=\s|$)/g, "$1")
+    .trim();
+}
+
+/**
+ * Markdown as it is written, a piece at a time, in sentences worth hearing:
+ * a sentence is given once it has ended, never twice. A code block is held
+ * until it closes (then left out, as speakableText does), and a table row
+ * until its line ends.
+ */
+export class SpeakableStream {
+  private pending = "";
+
+  /** The sentences that `chunk` completes. */
+  push(chunk: string): string[] {
+    this.pending += chunk;
+    const cut = this.safeCut();
+    if (cut <= 0) return [];
+    const head = this.pending.slice(0, cut);
+    this.pending = this.pending.slice(cut);
+    return speakableSentences(head);
+  }
+
+  /** What is left, at the end of a block or of the turn. */
+  flush(): string[] {
+    const rest = this.pending;
+    this.pending = "";
+    return speakableSentences(rest);
+  }
+
+  /** Where the text may be cut now: after a sentence or line that ended. */
+  private safeCut(): number {
+    let text = this.pending;
+    // An open code fence: everything from it waits for its end.
+    const fences = [...text.matchAll(/^\s{0,3}```/gm)];
+    if (fences.length % 2 === 1)
+      text = text.slice(0, fences[fences.length - 1]!.index);
+    let cut = 0;
+    const lineEnd = text.lastIndexOf("\n");
+    if (lineEnd >= 0) cut = lineEnd + 1;
+    // In the last line, after its last ended sentence, unless the line is a
+    // table row: that is cut at its end only.
+    const line = text.slice(cut);
+    if (!/^\s*\|/.test(line)) {
+      let end = -1;
+      for (const match of line.matchAll(/\S[.!?…]["')\]]*\s+/g))
+        end = match.index + match[0].length;
+      if (end > 0) cut += end;
+    }
+    return cut;
+  }
+}
+
+function speakableSentences(markdown: string): string[] {
+  return sentences(speakableText(markdown))
+    .map(strayMarkup)
+    .filter((sentence) => /[\p{L}\p{N}]/u.test(sentence));
+}
+
+/**
+ * Reads text that is still being written: each sentence as soon as it ends,
+ * the next ones fetched while one plays. `source` gives the text in pieces
+ * and ends with the reply; `onSentence` hears each as it starts, then null.
+ * Stops when `signal` aborts.
+ */
+export async function speakStream(
+  source: AsyncIterable<string>,
+  signal: AbortSignal,
+  onSentence?: (sentence: string | null) => void,
+  options: {
+    prefetch?: number;
+    fetchAudio?: (text: string, signal: AbortSignal) => Promise<Blob>;
+    playAudio?: (audio: Blob, signal: AbortSignal) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const prefetch = Math.max(1, options.prefetch ?? 2);
+  const fetchAudio = options.fetchAudio ?? fetchSpeech;
+  const playAudio = options.playAudio ?? play;
+  const splitter = new SpeakableStream();
+  const queue: { text: string; audio: Promise<Blob> }[] = [];
+  const waiting: string[] = [];
+  let ended = false;
+  let wake: (() => void) | null = null;
+  const poke = () => {
+    const resolve = wake;
+    wake = null;
+    resolve?.();
+  };
+  // Fetches ahead: up to `prefetch` sentences beyond the one playing.
+  const fill = () => {
+    while (waiting.length && queue.length < prefetch && !signal.aborted) {
+      const text = waiting.shift()!;
+      const audio = fetchAudio(text, signal);
+      // Failed ahead: reported when its turn comes.
+      audio.catch(() => {});
+      queue.push({ text, audio });
+    }
+  };
+  const take = (list: string[]) => {
+    if (!list.length) return;
+    waiting.push(...list);
+    fill();
+    poke();
+  };
+  const reading = (async () => {
+    try {
+      for await (const chunk of source) {
+        if (signal.aborted) break;
+        take(splitter.push(chunk));
+      }
+      take(splitter.flush());
+    } finally {
+      ended = true;
+      poke();
+    }
+  })();
+  reading.catch(() => {});
+  const aborted = new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  try {
+    while (!signal.aborted) {
+      const next = queue.shift();
+      if (!next) {
+        if (ended && !waiting.length) break;
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            wake = resolve;
+          }),
+          aborted,
+        ]);
+        fill();
+        continue;
+      }
+      fill();
+      const audio = await next.audio;
+      if (signal.aborted) break;
+      voiceTrace(`streamed sentence: ${next.text}`);
+      onSentence?.(next.text);
+      await playAudio(audio, signal);
+    }
+  } finally {
+    onSentence?.(null);
+  }
+  if (!signal.aborted) await reading;
+}
+
 // One voice at a time: whatever reads aloud claims the speaker, which stops
 // the reading before it, from a message's button or voice chat.
 let speakerOwner: AbortController | null = null;
@@ -757,7 +916,8 @@ export function conversationContext(entries: readonly HistoryEntry[]): string {
   let length = 0;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.kind !== "message" || !entry.text.trim()) continue;
+    if (entry.kind !== "message" || !entry.text.trim() || entry.injected)
+      continue;
     const text =
       entry.role === "user" ? parseVoiceMessage(entry.text).text : entry.text;
     const line = `${entry.role === "user" ? "User" : "Agent"}: ${text.trim()}`;

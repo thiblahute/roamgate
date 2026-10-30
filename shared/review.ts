@@ -262,6 +262,11 @@ export type AgentPermissionPrompt = {
   expiresAt: string;
   /** Claude's multiple-choice questions (AskUserQuestion), not a permission. */
   questions?: AgentQuestion[];
+  /**
+   * No terminal can ask it instead (conversation mode's headless claude):
+   * unanswered, the tool is denied.
+   */
+  noTerminal?: boolean;
 };
 
 /** One of Claude's questions, as its AskUserQuestion tool puts it. */

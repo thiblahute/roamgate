@@ -103,6 +103,7 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
         x.sent_at === y.sent_at &&
         x.queued === y.queued &&
         x.compact_summary === y.compact_summary &&
+        x.injected?.label === y.injected?.label &&
         x.text_bytes === y.text_bytes &&
         x.text_hash === y.text_hash &&
         x.artifact?.url === y.artifact?.url))
@@ -129,6 +130,7 @@ const ChatBubble = memo(function ChatBubble({
     useSyncExternalStore(subscribeReading, readingId, readingId) === entry.id;
   const [showHeard, setShowHeard] = useState(false);
   const [rewinding, setRewinding] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   // A compaction summary is long and written by Claude Code, not the user:
   // one line, with the summary a tap away.
   if (entry.compact_summary)
@@ -140,6 +142,52 @@ const ChatBubble = memo(function ChatBubble({
         </button>
       </div>
     );
+  // What Claude Code put in the user's turn (a subagent's report, another
+  // session's message, a task ending): not the user's words, one line in
+  // its place, what it says a tap away.
+  if (entry.injected) {
+    const body = entry.text.trim();
+    const more = !!body && body !== entry.injected.label;
+    const shown = body.slice(0, HISTORY_PREVIEW_CHARS);
+    return (
+      <div
+        className="agent-history-chat-injected"
+        data-sequence={sequence}
+        data-entry-id={entry.id}
+      >
+        <div className="agent-history-chat-compacted">
+          <span title={entry.injected.label}>{entry.injected.label}</span>
+          {more ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {expanded ? "Hide it" : "Show it"}
+            </button>
+          ) : null}
+        </div>
+        {more && expanded ? (
+          <div className="agent-history-chat-injected-body">
+            <MarkdownPreview
+              text={shown}
+              className="agent-history-chat-markdown"
+              breaks
+            />
+            {shown.length < body.length ? (
+              <button
+                type="button"
+                className="agent-history-chat-more"
+                onClick={() => onOpen(entry)}
+              >
+                View full message
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   // Review comments Roamgate handed to the agent: one line, the threads
   // being where they are read.
   const delivery =
@@ -174,6 +222,13 @@ const ChatBubble = memo(function ChatBubble({
       className={`agent-history-chat-message ${tone} ${highlighted ? "is-minimap-target" : ""}${entry.queued ? " is-queued" : ""}`}
       data-sequence={sequence}
       data-entry-id={entry.id}
+      // The same reply block, streamed then saved: what voice reads is
+      // found in either.
+      data-block-key={
+        entry.message_id
+          ? `${entry.message_id}:${entry.block_index ?? 0}`
+          : undefined
+      }
     >
       <div className="agent-history-chat-bubble">
         {spoken?.voice ? (
@@ -486,6 +541,38 @@ function OutboxBubble({
         </button>
       </div>
     </article>
+  );
+}
+
+/** A turn cut short, after the conversation's last entry. */
+export type ChatCutOff = {
+  text: string;
+  onContinue: () => void;
+  onDismiss: () => void;
+};
+
+function CutOffNotice({ cutOff }: { cutOff: ChatCutOff }) {
+  return (
+    <div className="agent-history-chat-cut-off" role="status">
+      <span>{cutOff.text}</span>
+      <button
+        type="button"
+        className="agent-history-chat-cut-off-continue"
+        onClick={cutOff.onContinue}
+        title="Ask Claude to go on with the answer"
+      >
+        Continue
+      </button>
+      <button
+        type="button"
+        className="agent-history-copy"
+        onClick={cutOff.onDismiss}
+        aria-label="Dismiss this notice"
+        title="Dismiss"
+      >
+        <X size={12} />
+      </button>
+    </div>
   );
 }
 
@@ -866,6 +953,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onEditQueued,
   onRewind,
   imageUrl,
+  cutOff = null,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -892,6 +980,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onRewind?: (entry: HistoryEntry, mode: RewindMode) => void;
   /** Where an image the user uploaded loads from; none shows the path. */
   imageUrl?: (path: string) => string;
+  /** The last turn was cut short: said after the last entry. */
+  cutOff?: ChatCutOff | null;
 }) {
   useRenderTrace("AgentHistoryChat");
   const followRef = useRef(true);
@@ -1024,6 +1114,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
             onDiscard={onDiscardSend}
           />
         ))}
+        {cutOff ? <CutOffNotice cutOff={cutOff} /> : null}
       </div>
     </div>
   );

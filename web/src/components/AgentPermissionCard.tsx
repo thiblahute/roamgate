@@ -67,7 +67,7 @@ export function AgentPermissionCard({
         store.notify({
           kind: "info",
           message: "Already answered",
-          detail: "The terminal asks it now.",
+          detail: prompt.noTerminal ? undefined : "The terminal asks it now.",
         });
     } catch (error) {
       store.notify({
@@ -119,7 +119,7 @@ export function AgentPermissionCard({
                 ? "deny"
                 : null;
         if (choice) void answer(choice);
-        else if (key === "t") toTerminal();
+        else if (key === "t" && !prompt.noTerminal) toTerminal();
         else return;
         event.preventDefault();
         event.stopPropagation();
@@ -131,10 +131,16 @@ export function AgentPermissionCard({
         </strong>
         {compact ? null : (
           <small className="agent-permission-keys">
-            y allow{prompt.canAlways ? " · a always" : ""} · n deny · t terminal
+            y allow{prompt.canAlways ? " · a always" : ""} · n deny
+            {prompt.noTerminal ? "" : " · t terminal"}
           </small>
         )}
-        <span className="agent-permission-time" title="Then the terminal asks">
+        <span
+          className="agent-permission-time"
+          title={
+            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
+          }
+        >
           {left}s
         </span>
       </div>
@@ -175,15 +181,18 @@ export function AgentPermissionCard({
         >
           Deny
         </button>
-        <button
-          type="button"
-          className="secondary-btn agent-permission-terminal"
-          disabled={busy}
-          title="Let the terminal ask it now (t)"
-          onClick={toTerminal}
-        >
-          In the terminal
-        </button>
+        {prompt.noTerminal ? null : (
+          // Conversation mode's headless claude has no terminal to ask.
+          <button
+            type="button"
+            className="secondary-btn agent-permission-terminal"
+            disabled={busy}
+            title="Let the terminal ask it now (t)"
+            onClick={toTerminal}
+          >
+            In the terminal
+          </button>
+        )}
       </div>
     </div>
   );
@@ -297,7 +306,12 @@ function QuestionsForm({
         <small className="agent-permission-keys">
           1–9 · ↑↓ · Tab · Enter answers
         </small>
-        <span className="agent-permission-time" title="Then the terminal asks">
+        <span
+          className="agent-permission-time"
+          title={
+            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
+          }
+        >
           {left}s
         </span>
       </div>
@@ -350,15 +364,17 @@ function QuestionsForm({
         >
           Answer
         </button>
-        <button
-          type="button"
-          className="secondary-btn agent-permission-terminal"
-          disabled={busy}
-          title="Let the terminal ask them now"
-          onClick={onTerminal}
-        >
-          In the terminal
-        </button>
+        {prompt.noTerminal ? null : (
+          <button
+            type="button"
+            className="secondary-btn agent-permission-terminal"
+            disabled={busy}
+            title="Let the terminal ask them now"
+            onClick={onTerminal}
+          >
+            In the terminal
+          </button>
+        )}
       </div>
     </form>
   );

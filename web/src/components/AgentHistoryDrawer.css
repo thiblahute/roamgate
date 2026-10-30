@@ -196,6 +196,41 @@
   border-color: var(--danger-border);
 }
 
+/* Who writes to a Claude session: its terminal or conversation mode. */
+.agent-chat-owner {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agent-chat-owner small {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.agent-chat-owner-switch {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.agent-chat-owner.is-conversation {
+  color: var(--accent);
+}
+
+.agent-chat-owner.is-busy {
+  color: var(--warning-text);
+}
+
 .agent-history-error {
   margin: 10px 12px 0;
   padding: 9px 10px;

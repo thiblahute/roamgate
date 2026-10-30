@@ -505,6 +505,9 @@ agent chat, or a card over the terminal) when it is registered as a
 }
 ```
 
+In conversation mode (`ROAMGATE_HEADLESS=1`) both hooks print nothing:
+Roamgate asks over the headless process's own permission channel instead.
+
 The `PreToolUse` hook answers Claude's multiple-choice questions
 (`AskUserQuestion`) the same way: a form with each question's choices (or
 several) and a field for one's own answer; the answers go back as the tool's

@@ -209,9 +209,17 @@ def ask(args, command, extra):
         return None
 
 
+def headless():
+    # Roamgate's conversation mode runs this claude and asks the user itself
+    # (over stdio): its hooks must not ask a second time.
+    return os.environ.get("ROAMGATE_HEADLESS") == "1"
+
+
 def questions(args):
     # A PreToolUse hook on AskUserQuestion: Claude Code shows its own
     # questions only if this prints nothing.
+    if headless():
+        return
     try:
         hook = json.load(sys.stdin)
     except ValueError:
@@ -241,6 +249,8 @@ def permission(args):
     # A PermissionRequest hook: Claude Code waits on it before its own
     # dialog. Any failure, or no answer in time, prints nothing: the
     # terminal asks as usual.
+    if headless():
+        return
     pane = os.environ.get("HERDR_PANE_ID", "")
     if not pane or not os.path.exists(SOCKET):
         return

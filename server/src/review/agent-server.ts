@@ -23,6 +23,11 @@ import {
   REVIEW_USER,
 } from "../../../shared/review";
 import { type Logger, silentLogger } from "../utils/logger";
+import { HOLD_CLIENT_INSTALLED_SCRIPT } from "../conversation/holder-script";
+import {
+  type HolderStatus,
+  parseHolderStatus,
+} from "../conversation/pane-child";
 import { REVIEW_CLIENT_CHECKSUM, REVIEW_CLIENT_SCRIPT } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
@@ -171,7 +176,7 @@ export function parseTargetFlags(
 }
 
 /** Claude's AskUserQuestion questions, as its hook passes them on. */
-function parseQuestions(raw: string | null): AgentQuestion[] {
+export function parseQuestions(raw: string | null): AgentQuestion[] {
   let value: unknown;
   try {
     value = JSON.parse(raw ?? "[]");
@@ -217,6 +222,8 @@ export function createReviewAgentServer(args: {
   /** The bridge's private directory for sockets. */
   directory: string;
   connections: () => ReviewAgentConnection[];
+  /** How many local connections exist, ready or not. */
+  localConnectionCount?: () => number;
   logger?: Logger;
   home?: string;
   /** Whether any browser could answer a permission prompt now. */
@@ -232,6 +239,36 @@ export function createReviewAgentServer(args: {
     title?: string;
     text: string;
   }) => Promise<void>;
+  /**
+   * Conversation mode's pane holder (roamgate-hold): `hold` waits until the
+   * session goes back to the terminal (or a while passes), `handback` asks
+   * for it now. Both answer `{action: "resume", session_id, cwd}` once the
+   * headless process is gone.
+   */
+  holder?: {
+    hold: (input: {
+      connectionId: string;
+      paneId: string;
+      sessionId: string;
+      signal: AbortSignal;
+      /** What a holder running the headless claude says of it. */
+      status: HolderStatus | null;
+    }) => Promise<Record<string, unknown>>;
+    /** A holder sending its log from `offset` to `end`. */
+    output: (input: {
+      connectionId: string;
+      paneId: string;
+      holderId: string;
+      offset: number;
+      end: number;
+      data: string;
+    }) => Record<string, unknown>;
+    handback: (input: {
+      connectionId: string;
+      paneId: string;
+      sessionId: string;
+    }) => Promise<Record<string, unknown>>;
+  };
 }) {
   const logger = args.logger ?? silentLogger;
   const home = args.home ?? homedir();
@@ -244,9 +281,16 @@ export function createReviewAgentServer(args: {
     return join(socketDirectory, `${name}.sock`);
   }
 
+  /**
+   * The connection a request comes from. `exact`: a pane naming its Herdr
+   * socket is never taken for another connection's (a holder told to
+   * resume by a connection that has no lease for its pane would start a
+   * second writer).
+   */
   function connectionFor(
     socketKey: string,
     form: URLSearchParams,
+    exact = false,
   ): ReviewAgentConnection {
     const all = args.connections();
     if (socketKey !== "local") {
@@ -260,7 +304,11 @@ export function createReviewAgentServer(args: {
       ? local.find((connection) => connection.herdrSocketPath === herdrSocket)
       : undefined;
     if (match) return match;
-    if (local.length === 1) return local[0]!;
+    const others =
+      exact && herdrSocket
+        ? (args.localConnectionCount?.() ?? local.length)
+        : local.length;
+    if (local.length === 1 && others <= 1) return local[0]!;
     throw new ReviewError(
       local.length === 0
         ? "no local connection is ready"
@@ -330,7 +378,11 @@ export function createReviewAgentServer(args: {
     signal: AbortSignal,
   ): Promise<unknown> {
     if (command === "skill") return { skill: REVIEW_SKILL };
-    const connection = connectionFor(socketKey, form);
+    const connection = connectionFor(
+      socketKey,
+      form,
+      command === "hold" || command === "handback" || command === "hold_output",
+    );
     if (command === "permission") {
       // An agent's permission hook: wait for the user's answer from the
       // browser, or none (the terminal asks then).
@@ -404,6 +456,50 @@ export function createReviewAgentServer(args: {
       return {
         answers: answer && typeof answer === "object" ? answer.answers : null,
       };
+    }
+    if (
+      command === "hold" ||
+      command === "handback" ||
+      command === "hold_output"
+    ) {
+      const paneId = form.get("pane");
+      const sessionId = form.get("session") ?? "";
+      if (!paneId)
+        throw new ReviewError("roamgate-hold runs inside a Herdr pane");
+      if (!args.holder)
+        throw new ReviewError("conversation mode is unavailable", 503);
+      if (command === "hold_output") {
+        const offset = Number(form.get("offset"));
+        const end = Number(form.get("end"));
+        if (
+          !Number.isSafeInteger(offset) ||
+          !Number.isSafeInteger(end) ||
+          offset < 0 ||
+          end < offset
+        )
+          throw new ReviewError("invalid offsets");
+        return args.holder.output({
+          connectionId: connection.id,
+          paneId,
+          holderId: form.get("holder_id") ?? "",
+          offset,
+          end,
+          data: form.get("data") ?? "",
+        });
+      }
+      return command === "hold"
+        ? args.holder.hold({
+            connectionId: connection.id,
+            paneId,
+            sessionId,
+            signal,
+            status: parseHolderStatus(form),
+          })
+        : args.holder.handback({
+            connectionId: connection.id,
+            paneId,
+            sessionId,
+          });
     }
     if (command === "notify") {
       // The agent itself says the user needs to act: no review involved.
@@ -705,6 +801,11 @@ export function createReviewAgentServer(args: {
     const temp = `${client}.${process.pid}.tmp`;
     writeFileSync(temp, REVIEW_CLIENT_INSTALLED_SCRIPT, { mode: 0o755 });
     renameSync(temp, client);
+    // Conversation mode's pane holder, beside it.
+    const holder = join(bin, "roamgate-hold");
+    const holderTemp = `${holder}.${process.pid}.tmp`;
+    writeFileSync(holderTemp, HOLD_CLIENT_INSTALLED_SCRIPT, { mode: 0o755 });
+    renameSync(holderTemp, holder);
     const skillDirectory = join(base, "skills", "roamgate-review");
     mkdirSync(skillDirectory, { recursive: true, mode: 0o700 });
     writeFileSync(join(skillDirectory, "SKILL.md"), REVIEW_SKILL, {

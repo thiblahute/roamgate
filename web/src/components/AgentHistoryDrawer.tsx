@@ -33,6 +33,32 @@ import {
   rememberAgentHistory,
 } from "../agentHistoryCache";
 import { store, useStoreSelector } from "../store";
+import {
+  type AgentChatSnapshot,
+  cutOffNotice,
+  dismissAgentChatInterrupted,
+  interruptAgentChat,
+  messageUuid,
+  onAgentChatEvent,
+  queuedEntries,
+  queuedEntryId,
+  removeAgentChatQueued,
+  requestAgentChatHandover,
+  sendAgentChat,
+  sendAgentChatVoice,
+  historyUserUuids,
+  settleAgentChatLive,
+  useAgentChat,
+} from "../agentChat";
+import {
+  conversationActivity,
+  conversationAgentStatus,
+  conversationOwns,
+  ownershipLabel,
+} from "../agentChatOwnership";
+import { watchAgentHistory } from "../agentHistoryPush";
+import { messageImagePieces } from "../chatImages";
+import { liveTurnEntries, reconcileLiveTurn } from "./liveTurn";
 import { rewindClaude, type RewindMode } from "../claudeRewind";
 import { AgentRewindSheet } from "./AgentRewindSheet";
 import { copyTextWithFeedback } from "../copyText";
@@ -53,7 +79,11 @@ import { useAgentArtifacts } from "../agentArtifacts";
 import { useAgentTasks } from "../agentTasks";
 import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
 import { shortcutTitle } from "../shortcutPreferences";
-import { useAgentCommands } from "../claudeCommands";
+import {
+  conversationCommands,
+  conversationRefusal,
+  useAgentCommands,
+} from "../claudeCommands";
 import type { Pane } from "../types";
 import {
   DEFAULT_INSPECTOR_NAVIGATION_RATIO,
@@ -65,12 +95,12 @@ import { AgentIcon } from "./AgentIcon";
 import { AgentMessageContent } from "./AgentMessageContent";
 import { AgentMessageDialog } from "./AgentMessageDialog";
 import { AgentHistoryCard } from "./AgentHistoryCard";
-import { AgentHistoryChat } from "./AgentHistoryChat";
+import { AgentHistoryChat, type ChatCutOff } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { voiceTrace } from "../voiceChat";
 import { useAgentSessionTitle } from "../agentSessionTitle";
 import { agentStateKind } from "./agentSession";
-import { useVoiceChat } from "./useVoiceChat";
+import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
 import { ConversationMinimap } from "./ConversationMinimap";
@@ -107,7 +137,9 @@ import {
 import {
   newOutboxMessage,
   nextOutboxDeadline,
+  releaseHeldOutbox,
   type OutboxMessage,
+  outboxNotShown,
   settleOutbox,
 } from "./chatOutbox";
 import { promptKeyInput } from "./promptKeys";
@@ -148,6 +180,11 @@ const PROMPT_KEYS: [string, string, string][] = [
 /** How long a pane's chat waits for its transcript before saying why. */
 const UNAVAILABLE_QUIET_MS = 20_000;
 
+/** How often the history is read while the bridge pushes its changes. */
+const PUSHED_POLL_MS = 30_000;
+/** And while it cannot. */
+const POLL_MS = 4000;
+
 export function AgentHistoryDrawer({
   pane,
   open,
@@ -178,6 +215,11 @@ export function AgentHistoryDrawer({
     readScreen: () => string[];
     /** Where the message box goes: the phone's bottom bar. */
     composerTarget?: HTMLElement | null;
+    /**
+     * A Claude pane's conversation mode: while it owns the session the chat
+     * talks to its headless Claude instead of the terminal.
+     */
+    conversation?: AgentChatSnapshot | null;
   };
   onOpenChange: (open: boolean) => void;
 }) {
@@ -295,6 +337,9 @@ export function AgentHistoryDrawer({
   const historyRef = useRef<AgentHistory | null>(history);
   const sessionRef = useRef<AgentSessionSummary | null>(session);
   const inFlightRef = useRef<number | null>(null);
+  // A change was pushed while a read was in flight: read again after it.
+  const reloadRef = useRef(false);
+  const loadHistoryRef = useRef<() => void>(() => {});
   const paneIdRef = useRef(pane.pane_id);
   paneIdRef.current = pane.pane_id;
   // Entries whose content fetch failed; suppresses auto-refetch loops while
@@ -302,12 +347,12 @@ export function AgentHistoryDrawer({
   const toolEntryFailedRef = useRef<Set<string>>(new Set());
 
   const loadHistory = useCallback(() => {
-    if (
-      !pane.agent ||
-      inFlightRef.current !== null ||
-      !connectionClient.isCurrent()
-    )
+    if (!pane.agent || !connectionClient.isCurrent()) return;
+    if (inFlightRef.current !== null) {
+      reloadRef.current = true;
       return;
+    }
+    reloadRef.current = false;
     const seq = loadSeqRef.current + 1;
     loadSeqRef.current = seq;
     inFlightRef.current = seq;
@@ -406,6 +451,7 @@ export function AgentHistoryDrawer({
         if (connectionClient.isCurrent() && loadSeqRef.current === seq) {
           setLoading(false);
           setCaughtUp(true);
+          if (reloadRef.current) loadHistoryRef.current();
         }
       });
   }, [
@@ -415,6 +461,7 @@ export function AgentHistoryDrawer({
     pane.tab_id,
     pane.workspace_id,
   ]);
+  loadHistoryRef.current = loadHistory;
 
   useEffect(() => {
     // Resource-derived state belongs to one pane and one connection lease.
@@ -581,9 +628,68 @@ export function AgentHistoryDrawer({
   );
   const visibleMessages = chatEntries ?? timelineSelection.visible;
   const counts = timelineSelection.counts;
+  // Conversation mode: the turn being streamed, and the bridge's queue,
+  // after the transcript, each item until the transcript shows it.
+  // Outside a pane (the workspace inspector's history), the chat follows
+  // conversation mode itself: what it sends must not reach the holder.
+  const ownConversation = useAgentChat(
+    connectionClient,
+    pane.pane_id,
+    !paneChat && open && pane.agent === "claude",
+  );
+  const conversation = paneChat?.conversation ?? ownConversation ?? null;
+  const conversationState = conversation?.state ?? null;
+  // A takeover asked from here counts from the moment it is asked: nothing
+  // is typed into the pane while Claude exits and the holder starts.
+  const owns = conversationOwns(conversationState) || !!conversation?.handing;
+  const inConversation = conversationState?.phase === "conversation";
+  // Read by the send paths when they run.
+  const inConversationRef = useRef(inConversation);
+  inConversationRef.current = inConversation;
+  const ownsRef = useRef(owns);
+  ownsRef.current = owns;
+  const liveTurn = conversation?.live;
+  const liveQueue = owns ? conversationState?.queue : undefined;
+  // Taken out of the queue, not replayed yet: still shown as queued.
+  const departing = owns ? conversation?.departing : undefined;
+  const historyUuids = useMemo(() => historyUserUuids(messages), [messages]);
+  // The live entries, and the uuids of every conversation-mode message the
+  // chat shows (transcript, live turn, queue): the outbox hides those in
+  // the same render, so no message is ever missing for a frame.
+  const { liveEntries, shownUuids } = useMemo(() => {
+    const shown = new Set(historyUuids);
+    if (!liveTurn?.items.length && !liveQueue?.length && !departing?.length)
+      return { liveEntries: [], shownUuids: shown };
+    const turn = liveTurn
+      ? reconcileLiveTurn(liveTurn, messages, Date.now())
+      : null;
+    for (const item of turn?.items ?? [])
+      if (item.kind === "user" && item.uuid) shown.add(item.uuid);
+    const queue = [
+      ...(departing ?? []).filter((item) => !shown.has(item.id)),
+      ...(liveQueue ?? []),
+    ];
+    for (const item of queue) shown.add(item.id);
+    const live = turn ? liveTurnEntries(turn) : [];
+    return {
+      liveEntries: queue.length ? [...live, ...queuedEntries(queue)] : live,
+      shownUuids: shown,
+    };
+  }, [departing, historyUuids, liveTurn, liveQueue, messages]);
+  useEffect(() => {
+    if (liveTurn?.items.length || departing?.length)
+      settleAgentChatLive(activeConnectionId, pane.pane_id, messages);
+  }, [activeConnectionId, departing, liveTurn, messages, pane.pane_id]);
   const chatItems = useMemo(
-    () => (chatView ? groupHistoryChatItems(visibleMessages) : []),
-    [chatView, visibleMessages],
+    () =>
+      chatView
+        ? groupHistoryChatItems(
+            liveEntries.length && !query.trim()
+              ? [...visibleMessages, ...liveEntries]
+              : visibleMessages,
+          )
+        : [],
+    [chatView, liveEntries, query, visibleMessages],
   );
   // The chat view reads full messages in the modal dialog at any width; only
   // the wide timeline uses the inline master-detail reader.
@@ -617,13 +723,51 @@ export function AgentHistoryDrawer({
     loadToolEntry(activeMessage);
   }, [activeMessage, open, toolEntryTexts, toolEntryLoading, loadToolEntry]);
 
+  // The bridge says when the session file changes (agent_history.changed):
+  // the history is read then, and slowly otherwise in case a push is lost;
+  // a bridge that cannot push is polled as before.
   useEffect(() => {
     if (!open) return;
-    if (document.visibilityState === "visible") loadHistory();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") loadHistory();
-    }, 4000);
+    const visible = () => document.visibilityState === "visible";
+    // Changed while hidden: read once shown again.
+    let missed = false;
+    if (visible()) loadHistory();
+    const onChange = () => {
+      if (visible()) loadHistory();
+      else missed = true;
+    };
+    const onVisible = () => {
+      if (visible() && missed) {
+        missed = false;
+        loadHistory();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const watch = pane.agent
+      ? watchAgentHistory(
+          connectionClient,
+          {
+            pane_id: pane.pane_id,
+            workspace_id: pane.workspace_id,
+            tab_id: pane.tab_id,
+            agent: pane.agent,
+          },
+          onChange,
+        )
+      : null;
+    let interval = POLL_MS;
+    let timer = window.setInterval(onChange, interval);
+    let live = true;
+    void watch?.pushed.then((pushed) => {
+      if (!live || !pushed) return;
+      window.clearInterval(timer);
+      interval = PUSHED_POLL_MS;
+      timer = window.setInterval(onChange, interval);
+    });
     return () => {
+      live = false;
+      watch?.close();
+      document.removeEventListener("visibilitychange", onVisible);
       window.clearInterval(timer);
       pollScopeRef.current += 1;
       if (sentRefreshTimerRef.current !== null) {
@@ -632,8 +776,28 @@ export function AgentHistoryDrawer({
       }
       loadSeqRef.current += 1;
       inFlightRef.current = null;
+      reloadRef.current = false;
     };
-  }, [loadHistory, open]);
+  }, [
+    connectionClient,
+    loadHistory,
+    open,
+    pane.agent,
+    pane.pane_id,
+    pane.tab_id,
+    pane.workspace_id,
+  ]);
+
+  // Herdr saw the agent change state (a turn, /clear, a new session in the
+  // pane): read now. The bridge's watcher may still follow the old session
+  // file, and this read moves it to the new one.
+  const stateSeq = pane.state_change_seq;
+  const seenStateSeqRef = useRef(stateSeq);
+  useEffect(() => {
+    if (seenStateSeqRef.current === stateSeq) return;
+    seenStateSeqRef.current = stateSeq;
+    if (open && document.visibilityState === "visible") loadHistory();
+  }, [loadHistory, open, stateSeq]);
 
   useEffect(() => {
     if (!open) {
@@ -998,8 +1162,23 @@ export function AgentHistoryDrawer({
     </div>
   );
   const paneChatShown = !!paneChat;
+  const sendConversationRef = useRef<(text: string) => Promise<unknown>>(
+    async () => {},
+  );
   const sendMessage = useCallback(
     async (text: string) => {
+      // Conversation mode has the session: its terminal only holds the
+      // pane, and what is typed there would hand it back.
+      if (inConversationRef.current) {
+        const refused = conversationRefusal(text);
+        if (refused) throw new Error(refused);
+        await sendConversationRef.current(text);
+        return;
+      }
+      if (ownsRef.current)
+        throw new Error(
+          "The session is being handed over; try again in a moment.",
+        );
       const scope = pollScopeRef.current;
       // Writing a question's own answer ("Type something.") where Enter would
       // tick the box off again: the text alone.
@@ -1056,6 +1235,24 @@ export function AgentHistoryDrawer({
     () => outbox.filter((each) => each.paneId === pane.pane_id),
     [outbox, pane.pane_id],
   );
+  // What the chat draws: a message its queued, live or transcript bubble
+  // shows is hidden here in that same render, then dropped.
+  const chatShownUuids = query.trim() ? historyUuids : shownUuids;
+  const visibleOutbox = useMemo(
+    () => outboxNotShown(paneOutbox, chatShownUuids),
+    [chatShownUuids, paneOutbox],
+  );
+  useEffect(() => {
+    if (visibleOutbox === paneOutbox) return;
+    setOutbox((current) =>
+      current.filter(
+        (each) =>
+          each.paneId !== pane.pane_id ||
+          !each.uuid ||
+          !chatShownUuids.has(each.uuid),
+      ),
+    );
+  }, [chatShownUuids, pane.pane_id, paneOutbox, visibleOutbox]);
   useEffect(() => {
     const deadline = nextOutboxDeadline(paneOutbox);
     if (deadline === null) return;
@@ -1065,8 +1262,117 @@ export function AgentHistoryDrawer({
     );
     return () => window.clearTimeout(timer);
   }, [paneOutbox, settlePaneOutbox]);
+  /**
+   * Conversation mode: the message goes to the headless Claude, its
+   * uploaded images as images. Sent now, or queued by the bridge while a
+   * turn runs (shown with the live turn).
+   */
+  const sendConversation = useCallback(
+    (text: string, uuid?: string) => {
+      const images: string[] = [];
+      const words: string[] = [];
+      for (const piece of messageImagePieces(text))
+        if ("image" in piece) images.push(piece.image);
+        else words.push(piece.text);
+      return sendAgentChat(connectionClient, pane.pane_id, {
+        text: images.length ? words.join("\n") : text,
+        images,
+        ...(uuid ? { uuid } : {}),
+      });
+    },
+    [connectionClient, pane.pane_id],
+  );
+  sendConversationRef.current = sendConversation;
+  /** Sends an outbox message to conversation mode under its own uuid. */
+  const deliverConversation = useCallback(
+    async (message: OutboxMessage & { uuid: string }) => {
+      try {
+        await sendConversation(message.text, message.uuid);
+        // Sent or queued: the bubble stays until the queue, the live turn
+        // or the transcript draws the message (visibleOutbox).
+        setOutbox((current) =>
+          current.map((each) =>
+            each.id === message.id
+              ? { ...each, state: "sent", sentAtMs: Date.now() }
+              : each,
+          ),
+        );
+      } catch (error) {
+        setOutbox((current) =>
+          current.map((each) =>
+            each.id === message.id
+              ? {
+                  ...each,
+                  state: "failed",
+                  reason:
+                    error instanceof Error ? error.message : String(error),
+                }
+              : each,
+          ),
+        );
+      }
+    },
+    [sendConversation],
+  );
+  // Messages sent while the session was being handed over wait in the
+  // outbox: they go out, in order and under their uuid, once conversation
+  // mode has the session, and fail if it stays in the terminal.
+  useEffect(() => {
+    const held = paneOutbox.filter((each) => each.held);
+    if (!held.length) return;
+    if (inConversation) {
+      const ids = new Set(held.map((each) => each.id));
+      setOutbox((current) =>
+        current.map((each) =>
+          ids.has(each.id) ? { ...each, held: undefined } : each,
+        ),
+      );
+      void (async () => {
+        for (const message of held)
+          if (message.uuid)
+            await deliverConversation({ ...message, uuid: message.uuid });
+      })();
+    } else if (!owns)
+      setOutbox((current) =>
+        releaseHeldOutbox(
+          current,
+          pane.pane_id,
+          "The session is in the terminal now; send it again",
+        ),
+      );
+  }, [deliverConversation, inConversation, owns, pane.pane_id, paneOutbox]);
   const sendFromBox = useCallback(
     async (text: string, replacing?: string) => {
+      const handingOver = ownsRef.current && !inConversationRef.current;
+      if (handingOver || inConversationRef.current) {
+        const refused = conversationRefusal(text);
+        if (refused) throw new Error(refused);
+        // Commands are not the user's words: no bubble on its way.
+        if (/^\s*\//.test(text)) {
+          if (handingOver)
+            throw new Error(
+              "The session is being handed over; try again in a moment.",
+            );
+          await sendConversation(text.trim());
+          return;
+        }
+        const message = {
+          ...newOutboxMessage(
+            pane.pane_id,
+            text,
+            historyMessagesRef.current,
+            Date.now(),
+          ),
+          uuid: messageUuid(),
+          ...(handingOver ? { held: true as const } : {}),
+        };
+        setOutbox((current) => [
+          ...current.filter((each) => each.id !== replacing),
+          message,
+        ]);
+        if (!handingOver) await deliverConversation(message);
+        return;
+      }
       // An answer typed into a question, a /command or a ! shell line is
       // not recorded as the user's message: those are sent as before.
       const answering = paneChat?.prompt?.options.some(
@@ -1103,7 +1409,13 @@ export function AgentHistoryDrawer({
         });
       }
     },
-    [pane.pane_id, paneChat?.prompt, sendMessage],
+    [
+      deliverConversation,
+      pane.pane_id,
+      paneChat?.prompt,
+      sendConversation,
+      sendMessage,
+    ],
   );
   const retrySend = useCallback(
     (message: OutboxMessage) => void sendFromBox(message.text, message.id),
@@ -1118,11 +1430,27 @@ export function AgentHistoryDrawer({
   // (AgentRewindSheet) and list of what the session runs on the side, not
   // Claude Code's in its terminal, which would only show as its screen.
   const [rewindOpen, setRewindOpen] = useState(false);
+  // In conversation mode, /rewind is done in the terminal: showing it hands
+  // the session back once no turn runs.
+  const showTerminalRef = useRef(paneChat?.onShowTerminal);
+  showTerminalRef.current = paneChat?.onShowTerminal;
   const sendFromChatBox = useCallback(
     async (text: string) => {
-      if (paneChatShown && pane.agent === "claude" && text.trim() === "/rewind")
-        setRewindOpen(true);
-      else if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
+      if (
+        paneChatShown &&
+        pane.agent === "claude" &&
+        text.trim() === "/rewind"
+      ) {
+        if (inConversationRef.current) {
+          store.notify({
+            kind: "info",
+            message: "Rewind in the terminal",
+            detail:
+              "Conversation mode hands the session back to the terminal; type /rewind there.",
+          });
+          showTerminalRef.current?.();
+        } else setRewindOpen(true);
+      } else if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
         openTask(null);
       else await sendFromBox(text);
     },
@@ -1136,10 +1464,36 @@ export function AgentHistoryDrawer({
     connectionGeneration,
     pane.pane_id,
   );
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
+  const voiceStream = useMemo<VoiceStream | undefined>(() => {
+    if (!activeConnectionId || pane.agent !== "claude") return undefined;
+    const connectionId = activeConnectionId;
+    const paneId = pane.pane_id;
+    return {
+      active: () => conversationRef.current?.state?.phase === "conversation",
+      busy: () => {
+        const status = conversationRef.current?.state?.status;
+        return status === "working" || status === "blocked";
+      },
+      subscribe: (listener) => onAgentChatEvent(connectionId, paneId, listener),
+      send: async (text, options) =>
+        (
+          await sendAgentChatVoice(connectionClient, paneId, {
+            text,
+            uuid: options.uuid,
+            ...(options.stop ? { stop: true } : {}),
+          })
+        ).action,
+    };
+  }, [activeConnectionId, connectionClient, pane.agent, pane.pane_id]);
   const voice = useVoiceChat({
     entries: messages,
-    agentStatus: pane.agent_status,
+    agentStatus: inConversation
+      ? conversationAgentStatus(conversationState!.status)
+      : pane.agent_status,
     onSend: sendMessage,
+    stream: voiceStream,
     onError: (detail) =>
       store.notify({ kind: "error", message: "Voice chat stopped", detail }),
     routeContext: () => ({
@@ -1270,6 +1624,9 @@ export function AgentHistoryDrawer({
    */
   const takeQueued = useCallback(
     async (only: AgentHistoryEntry | null, drop: boolean) => {
+      // Claude Code's own queue is in its terminal, which conversation mode
+      // does not type into.
+      if (ownsRef.current) return;
       try {
         const taken = await takeQueueBack();
         if (!taken) return;
@@ -1302,13 +1659,99 @@ export function AgentHistoryDrawer({
       takeQueueBack,
     ],
   );
+  /**
+   * Conversation mode's queue: a message taken out of the bridge's queue,
+   * into the box to edit unless dropped.
+   */
+  const takeConversationQueued = useCallback(
+    async (ids: string[], drop: boolean) => {
+      try {
+        const taken: string[] = [];
+        for (const id of ids) {
+          const { removed } = await removeAgentChatQueued(
+            connectionClient,
+            pane.pane_id,
+            id,
+          );
+          // Gone already: sent with the turn that just ended.
+          if (removed)
+            taken.push(
+              [removed.text, ...removed.images].filter(Boolean).join("\n"),
+            );
+        }
+        if (drop || !taken.length) return;
+        const draft = readTerminalComposerDraft(composerDraftKey);
+        const text = taken.join("\n");
+        writeTerminalComposerDraft(
+          composerDraftKey,
+          draft ? `${text}\n${draft}` : text,
+        );
+      } catch (error) {
+        notifyComposerError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    },
+    [composerDraftKey, connectionClient, notifyComposerError, pane.pane_id],
+  );
   const removeQueued = useCallback(
-    (entry: AgentHistoryEntry) => void takeQueued(entry, true),
-    [takeQueued],
+    (entry: AgentHistoryEntry) => {
+      const id = queuedEntryId(entry);
+      if (id) void takeConversationQueued([id], true);
+      else void takeQueued(entry, true);
+    },
+    [takeConversationQueued, takeQueued],
   );
   const editQueued = useCallback(
-    (entry: AgentHistoryEntry) => void takeQueued(entry, false),
-    [takeQueued],
+    (entry: AgentHistoryEntry) => {
+      const id = queuedEntryId(entry);
+      if (id) void takeConversationQueued([id], false);
+      else void takeQueued(entry, false);
+    },
+    [takeConversationQueued, takeQueued],
+  );
+  // A turn cut short (a Roamgate restart, Claude's process exiting): the
+  // chat says so after its last entry, with a Continue that sends a message
+  // the usual way. Hidden once clicked, so it cannot go twice.
+  const cutOffText =
+    pane.agent === "claude" && inConversation
+      ? cutOffNotice(conversationState)
+      : null;
+  const cutOffAt = cutOffText ? conversationState?.interrupted?.at : undefined;
+  const [continuedAt, setContinuedAt] = useState<string | null>(null);
+  const cutOff = useMemo<ChatCutOff | null>(
+    () =>
+      cutOffText && cutOffAt && continuedAt !== cutOffAt
+        ? {
+            text: cutOffText,
+            onContinue: () => {
+              setContinuedAt(cutOffAt);
+              sendFromBox("continue").catch((error: unknown) => {
+                setContinuedAt(null);
+                store.notify({
+                  kind: "error",
+                  message: "Could not continue",
+                  detail:
+                    error instanceof Error ? error.message : String(error),
+                });
+              });
+            },
+            onDismiss: () => {
+              setContinuedAt(cutOffAt);
+              dismissAgentChatInterrupted(connectionClient, pane.pane_id).catch(
+                () => setContinuedAt(null),
+              );
+            },
+          }
+        : null,
+    [
+      connectionClient,
+      continuedAt,
+      cutOffAt,
+      cutOffText,
+      pane.pane_id,
+      sendFromBox,
+    ],
   );
   // The rewind handler stays the same across renders, as bubbles compare
   // their handlers: it reads the screen and the status when it runs.
@@ -1338,7 +1781,8 @@ export function AgentHistoryDrawer({
             each.kind === "message" &&
             each.role === "user" &&
             !each.queued &&
-            !each.compact_summary,
+            !each.compact_summary &&
+            !each.injected,
         ).length;
       try {
         await rewindClaude(
@@ -1387,6 +1831,13 @@ export function AgentHistoryDrawer({
   const hasQueued = messages.some(
     (entry) => entry.queued && entry.role === "user",
   );
+  const conversationQueue = inConversation ? conversationState!.queue : [];
+  // The status the chat goes by: conversation mode's stream when it owns
+  // the session, Herdr's otherwise.
+  const chatAgentStatus = inConversation
+    ? conversationAgentStatus(conversationState!.status)
+    : pane.agent_status;
+  const chatWorking = chatAgentStatus.toLowerCase() === "working";
   const historyComposer = (
     <AgentHistoryComposer
       // A pane or connection switch must never render, or send, the
@@ -1394,21 +1845,39 @@ export function AgentHistoryDrawer({
       key={composerDraftKey}
       draftKey={composerDraftKey}
       onRecallQueued={
-        hasQueued && pane.agent === "claude"
-          ? () => void takeQueued(null, false)
-          : undefined
+        inConversation
+          ? conversationQueue.length
+            ? () =>
+                void takeConversationQueued(
+                  conversationQueue.map((item) => item.id),
+                  false,
+                )
+            : undefined
+          : hasQueued && pane.agent === "claude"
+            ? () => void takeQueued(null, false)
+            : undefined
       }
       agent={pane.agent}
-      status={pane.agent_status}
+      status={chatAgentStatus}
       stateSeq={pane.state_change_seq}
       onStop={
-        paneChat && pane.agent_status.toLowerCase() === "working"
-          ? () => paneChat.onKeys("\x1b")
-          : undefined
+        paneChat && inConversation
+          ? conversationState!.status === "working" ||
+            conversationState!.status === "blocked"
+            ? () =>
+                void interruptAgentChat(connectionClient, pane.pane_id).catch(
+                  (error: Error) => notifyComposerError(error.message),
+                )
+            : undefined
+          : paneChat && !owns && pane.agent_status.toLowerCase() === "working"
+            ? () => paneChat.onKeys("\x1b")
+            : undefined
       }
       onSend={sendFromChatBox}
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
-      commands={agentCommands}
+      commands={
+        inConversation ? conversationCommands(agentCommands) : agentCommands
+      }
       onError={notifyComposerError}
       voice={
         paneChat && voice.available
@@ -1431,6 +1900,7 @@ export function AgentHistoryDrawer({
   // Blocked, or a menu on its screen though it still counts as working.
   const promptShown =
     !!paneChat &&
+    !owns &&
     (pane.agent_status.toLowerCase() === "blocked" ||
       !!paneChat.prompt?.confirm ||
       !!paneChat.prompt?.tabs);
@@ -1554,9 +2024,15 @@ export function AgentHistoryDrawer({
   // before it has one (a new session asking to trust its folder).
   const chatStatus = (
     <>
-      {paneChat &&
-      !promptShown &&
-      pane.agent_status.toLowerCase() === "working" ? (
+      {paneChat && inConversation && chatWorking ? (
+        <div className="agent-chat-activity" role="status">
+          <span className="agent-chat-activity-mark" aria-hidden="true" />
+          <strong>{conversationActivity(conversationState!.activity)}</strong>
+        </div>
+      ) : paneChat &&
+        !owns &&
+        !promptShown &&
+        pane.agent_status.toLowerCase() === "working" ? (
         <div className="agent-chat-activity" role="status">
           <span className="agent-chat-activity-mark" aria-hidden="true" />
           <strong>{paneChat.activity?.word ?? "Working…"}</strong>
@@ -1724,7 +2200,7 @@ export function AgentHistoryDrawer({
           title="Updating the conversation"
         />
       ) : null}
-      {(paneOutbox.length ? null : historyEmptyState) ??
+      {(visibleOutbox.length ? null : historyEmptyState) ??
         (paneChat && chatThreadsKey && activeConnectionId ? (
           // The chat's threads: comments on parts of the agent's messages.
           <ChatThreadsProvider
@@ -1746,7 +2222,7 @@ export function AgentHistoryDrawer({
                 onLoadTool={loadToolEntry}
                 onOpen={setExpandedMessage}
                 imageUrl={imageUrl}
-                outbox={paneOutbox}
+                outbox={visibleOutbox}
                 onRetrySend={retrySend}
                 onDiscardSend={discardSend}
                 tasks={paneChat ? tasksById : undefined}
@@ -1758,8 +2234,11 @@ export function AgentHistoryDrawer({
                   paneChat && pane.agent === "claude" ? editQueued : undefined
                 }
                 onRewind={
-                  paneChat && pane.agent === "claude" ? rewindEntry : undefined
+                  paneChat && pane.agent === "claude" && !owns
+                    ? rewindEntry
+                    : undefined
                 }
+                cutOff={cutOff}
               />
               {historyMinimap("auto")}
             </div>
@@ -1776,7 +2255,7 @@ export function AgentHistoryDrawer({
               onLoadTool={loadToolEntry}
               onOpen={setExpandedMessage}
               imageUrl={imageUrl}
-              outbox={paneOutbox}
+              outbox={visibleOutbox}
               onRetrySend={retrySend}
               onDiscardSend={discardSend}
               tasks={paneChat ? tasksById : undefined}
@@ -1788,8 +2267,11 @@ export function AgentHistoryDrawer({
                 paneChat && pane.agent === "claude" ? editQueued : undefined
               }
               onRewind={
-                paneChat && pane.agent === "claude" ? rewindEntry : undefined
+                paneChat && pane.agent === "claude" && !owns
+                  ? rewindEntry
+                  : undefined
               }
+              cutOff={cutOff}
             />
             {historyMinimap("auto")}
           </div>
@@ -1803,6 +2285,45 @@ export function AgentHistoryDrawer({
       {paneComposer}
     </div>
   );
+  // Who has the session, in the chat's header: the terminal's Claude or
+  // conversation mode, and why a takeover was refused.
+  const owner =
+    pane.agent === "claude" && conversationState
+      ? ownershipLabel({
+          chat: conversationState,
+          refusal: conversation?.refusal ?? null,
+          handing: conversation?.handing ?? null,
+        })
+      : null;
+  const ownerChip = owner ? (
+    <span
+      className={`agent-chat-owner is-${owner.tone}`}
+      role="status"
+      title={owner.detail ?? owner.label}
+    >
+      {owner.label}
+      {owner.detail && owner.tone === "terminal" ? (
+        <small>{owner.detail}</small>
+      ) : null}
+      {owner.tone === "terminal" && conversationState?.phase === "terminal" ? (
+        // The user's own switch: it goes ahead whatever other devices show.
+        <button
+          type="button"
+          className="agent-chat-owner-switch ghost"
+          title="Hand this session to conversation mode"
+          onClick={() =>
+            void requestAgentChatHandover(
+              connectionClient,
+              pane.pane_id,
+              "conversation",
+            )
+          }
+        >
+          Switch here
+        </button>
+      ) : null}
+    </span>
+  ) : null;
   const changeView = (next: AgentHistoryView) => {
     setView(next);
     writeAgentHistoryView(next);
@@ -1944,10 +2465,11 @@ export function AgentHistoryDrawer({
               </div>
             </div>
           )}
+          {ownerChip}
           <span
-            className={`agent-history-status is-${pane.agent_status.toLowerCase()}`}
+            className={`agent-history-status is-${(paneChat ? chatAgentStatus : pane.agent_status).toLowerCase()}`}
           >
-            {pane.agent_status}
+            {paneChat ? chatAgentStatus : pane.agent_status}
           </span>
           <div className="agent-history-actions">
             {paneChat ? (

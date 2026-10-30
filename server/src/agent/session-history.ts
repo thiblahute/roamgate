@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { InjectedKind } from "../../../shared/injectedMessage";
 import type { AtifTrajectory, SessionFile } from "./session-types";
 import { isConversationStep } from "./session-messages";
 import { historyWindowEntries } from "./session-history-window";
@@ -31,6 +32,16 @@ export type HistoryEntry = {
   // tell a payload rewritten in place (even at the same length) from the one
   // they already fetched.
   text_hash?: string;
+  // Claude Code: the API message id and block index of an assistant
+  // message, and the transcript record's uuid, so a streamed block can be
+  // matched to the entry that replaces it.
+  message_id?: string;
+  block_index?: number;
+  uuid?: string;
+  // A user-turn message the user did not type (Claude Code): a subagent's
+  // report, another session's message, a task ending. Its text is what it
+  // says; the chat shows the label, as a notice, and voice never reads it.
+  injected?: { kind: InjectedKind; label: string };
 };
 export type HistoryCursor = { epoch: string; revision: number };
 export type HistoryUpdate = {
@@ -91,6 +102,16 @@ export function historyEntriesFromTrajectory(
           ? { compact_summary: true }
           : {}),
         ...(step.extra?.turn_end === true ? { turn_end: true } : {}),
+        ...(typeof step.extra?.message_id === "string"
+          ? { message_id: step.extra.message_id }
+          : {}),
+        ...(typeof step.extra?.block_index === "number"
+          ? { block_index: step.extra.block_index }
+          : {}),
+        ...(typeof step.extra?.uuid === "string"
+          ? { uuid: step.extra.uuid }
+          : {}),
+        ...injectedField(step.extra?.injected),
       });
     }
     for (const call of step.tool_calls ?? []) {
@@ -132,6 +153,14 @@ export function historyEntriesFromTrajectory(
     }
   }
   return historyWindowEntries(entries, HISTORY_WINDOW_LIMIT);
+}
+
+function injectedField(value: unknown): Pick<HistoryEntry, "injected"> {
+  if (!value || typeof value !== "object") return {};
+  const { kind, label } = value as Record<string, unknown>;
+  return typeof kind === "string" && typeof label === "string"
+    ? { injected: { kind: kind as InjectedKind, label } }
+    : {};
 }
 
 function artifactField(
