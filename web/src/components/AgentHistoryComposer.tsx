@@ -11,7 +11,7 @@ import {
 } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import { lazyWithReload } from "../lazyWithReload";
-import { ImagePlus, Mic, Send, TriangleAlert, X } from "lucide-react";
+import { ImagePlus, Mic, Route, Send, TriangleAlert, X } from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -45,6 +45,7 @@ import { type AgentCommand, matchCommands } from "../claudeCommands";
 import { agentPromptWarning, agentStateKind } from "./agentSession";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
 import type { Heard } from "../voiceChat";
+import { showRouterNote, useRouterNote } from "../voiceRoute";
 import type { VoiceState } from "./useVoiceChat";
 import "./AgentHistoryComposer.css";
 
@@ -129,6 +130,8 @@ export function AgentHistoryComposer({
   useRenderTrace("AgentHistoryComposer");
   useShortcutPreferences();
   const { mobile } = useLayoutPreferences();
+  // What the voice router said, kept apart from the agent's conversation.
+  const routerNote = useRouterNote();
   const [text, setText] = useState(() => readTerminalComposerDraft(draftKey));
   const [submissionPending, setSubmissionPending] = useState(() =>
     terminalComposerSubmissionPending(draftKey),
@@ -371,6 +374,22 @@ export function AgentHistoryComposer({
           setFocused(false);
       }}
     >
+      {routerNote ? (
+        <div className="agent-history-composer-router" role="status">
+          <Route size={14} aria-hidden="true" />
+          <p>
+            <strong>Roamgate</strong> {routerNote.text}
+          </p>
+          <button
+            type="button"
+            onClick={() => showRouterNote(null)}
+            aria-label="Close"
+            title="Close"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
       {voice?.held.length ? (
         <ul className="agent-history-composer-held" aria-label="Not sent">
           {voice.held.map((said, index) => (

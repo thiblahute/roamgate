@@ -32,7 +32,17 @@ export type VoiceConfig = {
    * it was said to the agent (voice-cleaner.ts), through Claude Code.
    */
   clean_model?: string;
-  /** The Claude Code command for `clean_model`; `claude` by default. */
+  /**
+   * A Claude model ("haiku") that decides who each thing said is for: the
+   * agent on screen, another session, or nobody (voice-router.ts).
+   */
+  route_model?: string;
+  /**
+   * The folder of the agent session that general questions and errands go
+   * to (a tasks repository), when the router has one.
+   */
+  errand_folder?: string;
+  /** The Claude Code command for those models; `claude` by default. */
   claude_command?: string;
   /**
    * How fast replies are read, as a multiple of the voice's own pace, from
@@ -71,7 +81,12 @@ export function readVoiceConfig(
     if (!existsSync(config[key] as string))
       return { error: `${key} not found: ${config[key]}` };
   }
-  for (const key of ["clean_model", "claude_command"])
+  for (const key of [
+    "clean_model",
+    "route_model",
+    "errand_folder",
+    "claude_command",
+  ])
     if (
       config[key] !== undefined &&
       (typeof config[key] !== "string" || !config[key])

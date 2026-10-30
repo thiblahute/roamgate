@@ -108,6 +108,8 @@ import {
   settleOutbox,
 } from "./chatOutbox";
 import { promptKeyInput } from "./promptKeys";
+import { takeVoiceHandoff, voiceSessionId, voiceSessions } from "../voiceRoute";
+import { setPaneView } from "../paneView";
 import "./AgentHistoryDrawer.css";
 
 function formatRelativeTime(timestamp: string) {
@@ -1090,10 +1092,27 @@ export function AgentHistoryDrawer({
     onSend: sendMessage,
     onError: (detail) =>
       store.notify({ kind: "error", message: "Voice chat stopped", detail }),
+    routeContext: () => ({
+      current: voiceSessionId(activeConnectionId, pane.pane_id),
+      sessions: voiceSessions(store.get()),
+    }),
+    onSwitch: (connectionId, paneId) => {
+      setPaneView(connectionId, paneId, "chat");
+      void store.jumpToConnectionPane(connectionId, paneId);
+    },
+    ...(paneChat && activeConnectionId
+      ? { voiceKey: { connectionId: activeConnectionId, paneId: pane.pane_id } }
+      : {}),
   });
   const stopVoice = voice.stop;
-  // Voice talks to one pane: switching panes ends it.
+  // Voice talks to one pane: switching panes ends it, unless the router
+  // handed it to the pane shown next, which picks it up.
   useEffect(() => stopVoice, [stopVoice, pane.pane_id, activeConnectionId]);
+  const takeOverVoice = voice.takeOver;
+  useEffect(() => {
+    const handed = takeVoiceHandoff(activeConnectionId, pane.pane_id);
+    if (handed) takeOverVoice(handed.message);
+  }, [takeOverVoice, pane.pane_id, activeConnectionId]);
   useEffect(
     () => voiceTrace(`chat on pane ${pane.pane_id}, ${activeConnectionId}`),
     [pane.pane_id, activeConnectionId],
@@ -1110,6 +1129,8 @@ export function AgentHistoryDrawer({
         onToggle={voice.toggle}
         onToggleMute={voice.toggleMute}
         onCycleSpeechRate={voice.cycleSpeechRate}
+        moveQuestion={voice.moveQuestion?.text ?? null}
+        onAnswerMove={voice.answerMove}
       />
     ) : null;
   // Claude Code gives its whole queue back to the prompt on Up. Taking a

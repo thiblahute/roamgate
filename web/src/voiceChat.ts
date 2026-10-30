@@ -17,9 +17,17 @@ export type VoiceAvailability = {
   debug?: boolean;
   /** How fast replies are read (shared/speechRate.ts). */
   speech_rate?: number;
+  /** The server decides who each thing said is for (voiceRoute.ts). */
+  route?: boolean;
 };
 
 let tracing = false;
+let routing = false;
+
+/** Whether what is said goes through the server's router first. */
+export function voiceRouting() {
+  return routing;
+}
 const traceStart = performance.now();
 
 /** With the server's voice debugging on, a step of reading aloud, logged. */
@@ -41,6 +49,7 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
     tracing = availability.debug === true;
     if (isSpeechRate(availability.speech_rate))
       setSpeechRate(availability.speech_rate);
+    routing = availability.route === true;
     return availability;
   } catch (error) {
     return { available: false, detail: (error as Error).message };

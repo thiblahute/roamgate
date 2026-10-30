@@ -215,7 +215,11 @@ export type ClaudeProcess = {
   exited: Promise<unknown>;
 };
 
-export function spawnClaude(model: string, command = "claude"): ClaudeProcess {
+export function spawnClaude(
+  model: string,
+  command = "claude",
+  systemPrompt = CLEANER_SYSTEM_PROMPT,
+): ClaudeProcess {
   const child = Bun.spawn(
     [
       command,
@@ -234,7 +238,7 @@ export function spawnClaude(model: string, command = "claude"): ClaudeProcess {
       "--strict-mcp-config",
       "--no-session-persistence",
       "--system-prompt",
-      CLEANER_SYSTEM_PROMPT,
+      systemPrompt,
     ],
     {
       cwd: tmpdir(),
@@ -271,13 +275,21 @@ export function spawnClaude(model: string, command = "claude"): ClaudeProcess {
 const REQUESTS_PER_PROCESS = 40;
 
 /** One background Claude Code session, answering one request at a time. */
-class Worker {
+/** One background Claude Code session, answering one request at a time. */
+export class Worker {
   private process: ClaudeProcess | null = null;
   private answer: ((result: string | Error) => void) | null = null;
   private served = 0;
   busy = false;
+  /** Counts the sessions started: a new one knows nothing said before. */
+  generation = 0;
 
   constructor(private readonly spawn: () => ClaudeProcess) {}
+
+  /** Whether a session runs now: the next request goes to the same one. */
+  get running() {
+    return this.process !== null;
+  }
 
   /** Starts the session ahead of its first request. */
   warm() {
@@ -289,6 +301,7 @@ class Worker {
     const process = this.spawn();
     this.process = process;
     this.served = 0;
+    this.generation += 1;
     void (async () => {
       for await (const line of process.lines) {
         let event: Record<string, unknown>;

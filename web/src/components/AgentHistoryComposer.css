@@ -170,6 +170,58 @@
 
 /* A /command being typed: the matching commands above the box. */
 /* Said to someone else, by the cleaner's reading: greyed, sent on a tap. */
+/* The voice router speaking for itself, not the agent: its own colors. */
+.agent-history-composer-router {
+  display: flex;
+  flex: none;
+  align-self: stretch;
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  /* A long answer scrolls inside, the message box stays in view. */
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 4px 6px 10px;
+  border: 1px solid var(--accent);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.agent-history-composer-router > svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.agent-history-composer-router p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.agent-history-composer-router strong {
+  color: var(--accent);
+}
+
+.agent-history-composer-router button {
+  position: sticky;
+  top: 0;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
 .agent-history-composer-held {
   display: flex;
   flex-direction: column;

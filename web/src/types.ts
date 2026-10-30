@@ -83,6 +83,8 @@ export interface Pane {
   foreground_cwd?: string;
   agent?: string;
   agent_status: string;
+  /** The terminal's title as the program set it: Claude Code names its session there. */
+  terminal_title_stripped?: string;
   /** Herdr agent.list state-change sequence, scoped to this server lifetime. */
   state_change_seq?: number;
   /** Session file modification time in epoch milliseconds, from the bridge. */

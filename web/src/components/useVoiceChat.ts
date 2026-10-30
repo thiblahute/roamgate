@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -25,10 +26,27 @@ import {
   stopSpeaker,
   subscribeSpeechRate,
   voiceMessage,
+  voiceRouting,
   voiceTrace,
   speak,
 } from "../voiceChat";
 import { highlightReading } from "../readingHighlight";
+import {
+  handOffVoice,
+  parseVoiceSessionId,
+  followErrand,
+  plainText,
+  routeSpeech,
+  showRouterNote,
+  type VoiceSessionInfo,
+} from "../voiceRoute";
+import {
+  answerMoveQuestion,
+  claimVoice,
+  isMoveYes,
+  type MoveQuestion,
+} from "../voiceFollow";
+import { installVoiceFollow } from "../voiceFollowGuard";
 
 export type VoiceState =
   | "off"
@@ -41,6 +59,8 @@ export type VoiceState =
 const REPLY_SETTLED_MS = 1200;
 const REPLY_POLL_MS = 300;
 const REPLY_TIMEOUT_MS = 30 * 60_000;
+/** How long the answer to "do you still want to move?" is waited for. */
+const MOVE_ANSWER_MS = 20_000;
 
 let availability: Promise<boolean> | null = null;
 
@@ -83,11 +103,24 @@ export function useVoiceChat({
   agentStatus,
   onSend,
   onError,
+  routeContext,
+  onSwitch,
+  voiceKey,
 }: {
   entries: readonly HistoryEntry[];
   agentStatus: string | undefined;
   onSend: (text: string) => Promise<void>;
   onError: (message: string) => void;
+  /** This session and all those the user may name, for the router. */
+  routeContext?: () => { current: string; sessions: VoiceSessionInfo[] };
+  /** Shows another session, which picks up the voice chat. */
+  onSwitch?: (connectionId: string, paneId: string) => void;
+  /**
+   * The pane this voice chat talks to: it is then the one voice chat
+   * running, and follows the user to the agent of the workspace focused
+   * next.
+   */
+  voiceKey?: { connectionId: string; paneId: string };
 }) {
   const available = useVoiceAvailable();
   const speechRate = useSpeechRate(onError);
@@ -97,11 +130,25 @@ export function useVoiceChat({
   const [heard, setHeard] = useState("");
   // What was said to someone else, by the cleaner's reading: not sent
   // unless asked.
-  const [held, setHeld] = useState<Heard[]>([]);
-  const hold = useCallback(
-    (said: Heard) => setHeld((list) => [...list, said].slice(-5)),
-    [],
+  // Each with its pane: it stays there when voice chat moves on.
+  const [heldByPane, setHeld] = useState<{ pane: string; said: Heard }[]>([]);
+  const voiceKeyRef = useRef(voiceKey);
+  voiceKeyRef.current = voiceKey;
+  const heldPane = voiceKey
+    ? `${voiceKey.connectionId}/${voiceKey.paneId}`
+    : "";
+  const held = useMemo(
+    () =>
+      heldByPane
+        .filter((item) => item.pane === heldPane)
+        .map((item) => item.said),
+    [heldByPane, heldPane],
   );
+  const hold = useCallback((said: Heard) => {
+    const key = voiceKeyRef.current;
+    const pane = key ? `${key.connectionId}/${key.paneId}` : "";
+    setHeld((list) => [...list, { pane, said }].slice(-10));
+  }, []);
   const controllerRef = useRef<AbortController | null>(null);
   // Muted: voice chat goes on, replies are read, nothing is listened to.
   const [muted, setMuted] = useState(false);
@@ -113,6 +160,12 @@ export function useVoiceChat({
   const finishRef = useRef<AbortController | null>(null);
   // Stops the reading and listens, as speaking up does.
   const interruptRef = useRef<(() => void) | null>(null);
+  // A move to a workspace with no agent, waiting for the user's answer.
+  const moveRef = useRef<MoveQuestion | null>(null);
+  // Ends the listening in progress when that question comes.
+  const askRef = useRef(new AbortController());
+  // The same question, for the card's Move and Stay.
+  const [moveQuestion, setMoveQuestion] = useState<MoveQuestion | null>(null);
   const stateRef = useRef<VoiceState>("off");
   stateRef.current = state;
   // The loop reads the latest history and status, not those it started with.
@@ -120,6 +173,10 @@ export function useVoiceChat({
   entriesRef.current = entries;
   const statusRef = useRef(agentStatus);
   statusRef.current = agentStatus;
+  const routeContextRef = useRef(routeContext);
+  routeContextRef.current = routeContext;
+  const onSwitchRef = useRef(onSwitch);
+  onSwitchRef.current = onSwitch;
 
   useEffect(
     () => () => {
@@ -165,8 +222,126 @@ export function useVoiceChat({
     async (
       controller: AbortController,
       carried: ReturnType<typeof ongoingReading>,
+      handedOver: string | null = null,
     ) => {
       const { signal } = controller;
+      installVoiceFollow();
+      moveRef.current = null;
+      askRef.current = new AbortController();
+      // The one voice chat running: another starting, or the user moving
+      // to another workspace's agent, ends this one at once.
+      const key = voiceKeyRef.current;
+      const release = key
+        ? claimVoice({
+            ...key,
+            handAway: () => {
+              if (signal.aborted) return;
+              voiceTrace("voice chat ends: it moved to another pane");
+              controller.abort();
+              if (controllerRef.current === controller) {
+                controllerRef.current = null;
+                setState("off");
+                setLevel(0);
+              }
+            },
+            ask: (question) => {
+              moveRef.current = question;
+              setMoveQuestion(question);
+              void question.answered.then(() =>
+                setMoveQuestion((shown) => (shown === question ? null : shown)),
+              );
+              askRef.current.abort();
+              interruptRef.current?.();
+              unmutedRef.current?.();
+              unmutedRef.current = null;
+            },
+          })
+        : () => {};
+      // The workspace the user said yes to moving to: moved to once voice
+      // chat is over.
+      const moving: { to: MoveQuestion | null } = { to: null };
+      // Words another pane's voice chat routed here: sent first, unheard.
+      let forwarded = handedOver;
+      // What was said when the router asked which session: what to send
+      // once the answer names one.
+      let asked: string | null = null;
+      /**
+       * Who what was said is for, by the router when the server has one:
+       * this agent ("here"), nobody (held, or the router's question asked),
+       * or another session, which now has the voice chat ("left").
+       */
+      const routed = async (
+        heard: Heard,
+      ): Promise<"here" | "nobody" | "left"> => {
+        const context = routeContextRef.current?.();
+        if (!context || !voiceRouting()) return "here";
+        setState("transcribing");
+        const route = await routeSpeech(
+          heard.text,
+          context.current,
+          context.sessions,
+        );
+        voiceTrace(`routed ${JSON.stringify(route)}: ${heard.text}`);
+        const words = asked ?? heard.text;
+        asked = null;
+        switch (route.to) {
+          case "current":
+            return "here";
+          case "nobody":
+            hold(heard);
+            return "nobody";
+          case "ask":
+            asked = words;
+            showRouterNote(route.question);
+            await speak(route.question, signal).catch(() => {});
+            return "nobody";
+          case "errand": {
+            const name = route.say || "the errands session";
+            if (!route.job) return "nobody";
+            showRouterNote(`Asked ${name}: ${words}`);
+            // Its answer comes when it comes: voice chat goes on meanwhile.
+            void followErrand(route.job, (state) =>
+              showRouterNote(
+                state.stalled
+                  ? `${name} waits on its screen, perhaps for your OK.`
+                  : `Asked ${name}: ${words}`,
+              ),
+            ).then((answer) => {
+              const said = answer ?? `${name} gave no answer.`;
+              showRouterNote(said);
+              if (!signal.aborted)
+                void speak(plainText(said), signal).catch(() => {});
+            });
+            return "nobody";
+          }
+          case "overview":
+          case "status": {
+            const answer =
+              route.answer ||
+              (route.to === "status"
+                ? `Nothing to say about ${route.say}.`
+                : "Nothing to say about your sessions.");
+            showRouterNote(answer);
+            await speak(answer, signal).catch(() => {});
+            return "nobody";
+          }
+          default: {
+            const target = parseVoiceSessionId(route.pane);
+            if (!target) return "here";
+            if (route.pane === context.current)
+              return route.to === "send" ? "here" : "nobody";
+            const switched = `Switched to ${route.say || "that session"}.`;
+            showRouterNote(switched);
+            await speak(switched, signal).catch(() => {});
+            handOffVoice({
+              ...target,
+              message: route.to === "send" ? words : null,
+            });
+            onSwitchRef.current?.(target.connectionId, target.paneId);
+            return "left";
+          }
+        }
+      };
       // A message read from its button when voice chat started plays on,
       // until it ends or the speaker talks over it.
       let carriedPlaying = carried !== null;
@@ -202,10 +377,10 @@ export function useVoiceChat({
         const listening = () => {
           const mute = new AbortController();
           muteAbortRef.current = mute;
-          return AbortSignal.any([signal, mute.signal]);
+          return AbortSignal.any([signal, mute.signal, askRef.current.signal]);
         };
         const unmuted = async () => {
-          while (mutedRef.current && !signal.aborted)
+          while (mutedRef.current && !signal.aborted && !moveRef.current)
             await new Promise<void>((resolve) => {
               unmutedRef.current = resolve;
               signal.addEventListener("abort", () => resolve(), {
@@ -213,17 +388,113 @@ export function useVoiceChat({
               });
             });
         };
+        /**
+         * Asks whether to move to the workspace with no agent the user
+         * went for, and takes the answer, said or tapped; nothing of it is
+         * sent to the agent. True when it is a yes: voice chat ends and the
+         * move is made.
+         */
+        const askMove = async (voice: VoiceLink): Promise<boolean> => {
+          const asked = moveRef.current;
+          moveRef.current = null;
+          askRef.current = new AbortController();
+          if (!asked) return false;
+          if (carriedPlaying) {
+            carriedPlaying = false;
+            carried?.stop();
+          }
+          setHeard("");
+          setLevel(0);
+          let open = true;
+          void asked.answered.then(() => {
+            open = false;
+          });
+          // A tap answers at once, cutting the question short.
+          const answering = new AbortController();
+          void asked.answered.then(() => answering.abort());
+          const timer = setTimeout(() => answering.abort(), MOVE_ANSWER_MS);
+          try {
+            showRouterNote(asked.text);
+            setState("speaking");
+            const reading = new AbortController();
+            claimSpeaker(reading);
+            await speak(
+              asked.text,
+              AbortSignal.any([signal, reading.signal, answering.signal]),
+            ).catch(() => {});
+            if (open && !signal.aborted) {
+              if (mutedRef.current)
+                // Nothing is listened to: only a tap answers.
+                await new Promise<void>((resolve) => {
+                  answering.signal.addEventListener("abort", () => resolve(), {
+                    once: true,
+                  });
+                  signal.addEventListener("abort", () => resolve(), {
+                    once: true,
+                  });
+                });
+              else {
+                setState("listening");
+                const answer = await voice
+                  .listen(AbortSignal.any([listening(), answering.signal]), {
+                    onLevel: setLevel,
+                    onSpeechEnd: () => setState("transcribing"),
+                    onHeard: setHeard,
+                  })
+                  .catch(() => null);
+                if (answer)
+                  answerMoveQuestion(
+                    asked,
+                    isMoveYes(answer.raw ?? answer.text),
+                  );
+              }
+            }
+          } finally {
+            clearTimeout(timer);
+            setHeard("");
+            setLevel(0);
+          }
+          // Not answered by then, or by something else: no.
+          answerMoveQuestion(asked, false);
+          const yes = await asked.answered;
+          if (signal.aborted) return false;
+          if (yes) {
+            const said = `Moving to ${asked.workspace}. Voice is off: carry on with the keyboard.`;
+            showRouterNote(said);
+            setState("speaking");
+            await speak(said, signal).catch(() => {});
+            moving.to = asked;
+            return true;
+          }
+          // Replaced by a newer question: that one is asked next.
+          if (yes === null) return false;
+          showRouterNote("Staying here.");
+          setState("speaking");
+          await speak("Okay, staying here.", signal).catch(() => {});
+          return false;
+        };
         while (!signal.aborted) {
           try {
             link ??= await VoiceLink.open();
             const voice = link;
+            // The user went for a workspace with no agent: asked first.
+            if (moveRef.current && forwarded === null) {
+              await next?.catch(() => null);
+              next = null;
+              if (await askMove(voice)) break;
+              continue;
+            }
             let heard: Heard | null;
-            if (next) {
+            const handed = forwarded;
+            forwarded = null;
+            if (handed !== null) heard = { text: handed, speechMs: 0 };
+            else if (next) {
               heard = await next;
               next = null;
             } else {
               await unmuted();
               if (signal.aborted) break;
+              if (moveRef.current) continue;
               setState("listening");
               const finish = new AbortController();
               finishRef.current = finish;
@@ -255,6 +526,8 @@ export function useVoiceChat({
             if (signal.aborted) break;
             if (!heard) {
               setHeard("");
+              // Cut short by the question about moving: asked next.
+              if (moveRef.current) continue;
               // Muted while listening: wait for the microphone.
               if (mutedRef.current) continue;
               break;
@@ -272,6 +545,12 @@ export function useVoiceChat({
             }
             if (heard.forAgent === false) {
               hold(heard);
+              setHeard("");
+              continue;
+            }
+            const route = handed !== null ? "here" : await routed(heard);
+            if (route === "left") break;
+            if (route === "nobody") {
               setHeard("");
               continue;
             }
@@ -361,14 +640,23 @@ export function useVoiceChat({
                   sent,
                   AbortSignal.any([signal, waiting.signal]),
                 );
+                const askSignal = askRef.current.signal;
+                const asked = new Promise<{ asked: true }>((resolve) => {
+                  const done = () => resolve({ asked: true });
+                  if (askSignal.aborted) done();
+                  else
+                    askSignal.addEventListener("abort", done, { once: true });
+                });
                 const first = await Promise.race([
                   replied.then((value) => ({ reply: value })),
                   ...(heardMeanwhile
                     ? [heardMeanwhile.then((value) => ({ heard: value }))]
                     : []),
+                  asked,
                 ]);
                 let heard: Heard | null;
-                if ("reply" in first) {
+                if ("asked" in first) heard = null;
+                else if ("reply" in first) {
                   // Answered while nothing was being said: read it.
                   if (!speaking || !heardMeanwhile) {
                     reply = first.reply;
@@ -379,6 +667,19 @@ export function useVoiceChat({
                 } else heard = first.heard;
                 setLevel(0);
                 if (signal.aborted) break;
+                if (!heard && moveRef.current) {
+                  // The user went for a workspace with no agent: nothing
+                  // more is read meanwhile, the question is asked, and the
+                  // answer is waited for again after.
+                  waiting.abort();
+                  await heardMeanwhile?.catch(() => null);
+                  await progress;
+                  if (await askMove(voice)) {
+                    stopping = true;
+                    break;
+                  }
+                  continue;
+                }
                 if (!heard) {
                   // Muted, or the helper gave up: only wait for the answer.
                   if (!mutedRef.current) deaf = true;
@@ -395,6 +696,15 @@ export function useVoiceChat({
                 }
                 if (heard.forAgent === false) {
                   hold(heard);
+                  setHeard("");
+                  continue;
+                }
+                const route = await routed(heard);
+                if (route === "left") {
+                  stopping = true;
+                  break;
+                }
+                if (route === "nobody") {
                   setHeard("");
                   continue;
                 }
@@ -437,6 +747,7 @@ export function useVoiceChat({
               // Back to listening once it is answered.
               while (
                 !signal.aborted &&
+                !moveRef.current &&
                 agentStateKind(statusRef.current) === "blocked"
               )
                 await pause(REPLY_POLL_MS);
@@ -518,9 +829,28 @@ export function useVoiceChat({
           setState("off");
           setLevel(0);
         }
+        release();
+        moveRef.current = null;
+        // Said yes to a workspace with no agent: moved there, voice off.
+        moving.to?.move();
       }
     },
     [hold, onError, onSend, waitForReply],
+  );
+
+  /** Picks up a voice chat another pane routed here, sending its words. */
+  const takeOver = useCallback(
+    (message: string | null) => {
+      if (controllerRef.current && !controllerRef.current.signal.aborted)
+        return;
+      voiceTrace(`voice chat handed over${message ? `: ${message}` : ""}`);
+      stopSpeaker();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      holdAudioFocus(controller.signal);
+      void run(controller, null, message);
+    },
+    [run],
   );
 
   const toggle = useCallback(() => {
@@ -581,7 +911,7 @@ export function useVoiceChat({
   /** Sends a held message after all, or lets it go. */
   const sendHeld = useCallback(
     (said: Heard) => {
-      setHeld((list) => list.filter((item) => item !== said));
+      setHeld((list) => list.filter((item) => item.said !== said));
       void onSend(voiceMessage(said.text))
         .then(() => {
           if (said.raw) rememberHeardAs(said.text, said.raw);
@@ -591,8 +921,16 @@ export function useVoiceChat({
     [onError, onSend],
   );
   const dropHeld = useCallback(
-    (said: Heard) => setHeld((list) => list.filter((item) => item !== said)),
+    (said: Heard) =>
+      setHeld((list) => list.filter((item) => item.said !== said)),
     [],
+  );
+
+  const answerMove = useCallback(
+    (yes: boolean) => {
+      if (moveQuestion) answerMoveQuestion(moveQuestion, yes);
+    },
+    [moveQuestion],
   );
 
   return {
@@ -609,5 +947,9 @@ export function useVoiceChat({
     stop,
     speechRate: speechRate.rate,
     cycleSpeechRate: speechRate.cycle,
+    takeOver,
+    /** A move to a workspace with no agent, held until answered. */
+    moveQuestion,
+    answerMove,
   };
 }

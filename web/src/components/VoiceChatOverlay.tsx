@@ -31,6 +31,8 @@ export function VoiceChatOverlay({
   onToggle,
   onToggleMute,
   onCycleSpeechRate,
+  moveQuestion,
+  onAnswerMove,
 }: {
   state: ActiveVoiceState;
   level: number;
@@ -42,6 +44,12 @@ export function VoiceChatOverlay({
   onToggle: () => void;
   onToggleMute: () => void;
   onCycleSpeechRate?: () => void;
+  /**
+   * The question about moving to a workspace with no agent, answered here
+   * by a tap as well as aloud.
+   */
+  moveQuestion?: string | null;
+  onAnswerMove?: (yes: boolean) => void;
 }) {
   const view = voiceControlView(state, muted, level);
   const rate =
@@ -125,9 +133,35 @@ export function VoiceChatOverlay({
             </button>
           ) : null}
         </div>
-        <div className="voice-chat-overlay-heard" aria-live="polite">
-          {heard ? <p>{heard}</p> : <p className="is-hint">{view.hint}</p>}
-        </div>
+        {moveQuestion && onAnswerMove ? (
+          <div className="voice-chat-overlay-move" role="group">
+            <p aria-live="polite">{moveQuestion}</p>
+            <div className="voice-chat-overlay-move-actions">
+              <button
+                type="button"
+                className="voice-chat-overlay-move-go"
+                title="Move there; voice turns off"
+                onMouseDown={keepFocus}
+                onClick={() => onAnswerMove(true)}
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                className="voice-chat-overlay-move-stay"
+                title="Stay here; voice goes on"
+                onMouseDown={keepFocus}
+                onClick={() => onAnswerMove(false)}
+              >
+                Stay
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="voice-chat-overlay-heard" aria-live="polite">
+            {heard ? <p>{heard}</p> : <p className="is-hint">{view.hint}</p>}
+          </div>
+        )}
       </div>
     </div>
   );

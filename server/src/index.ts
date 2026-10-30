@@ -100,6 +100,8 @@ import {
 import { createVoiceRoutes } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
+import { configuredRouter } from "./voice/voice-router";
+import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import { readVoiceConfig, VoiceHelper } from "./voice/voice-helper";
 import {
   createUpdateHandlers,
@@ -202,7 +204,41 @@ const webPush = createWebPushService({
 });
 // Voice chat's helper starts on the first voice request.
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
-const handleVoice = createVoiceRoutes(voiceHelper);
+const handleVoice = createVoiceRoutes(
+  voiceHelper,
+  configuredRouter(() => readVoiceConfig()),
+  async (connectionId, paneId) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) throw new Error(`${connectionId} is not connected`);
+    const history = (await runtime.agentSessions.readHistory({
+      history_version: 2,
+      cursor: null,
+      pane_id: paneId,
+    })) as { entries?: { role?: unknown; text?: unknown }[] };
+    return history.entries ?? [];
+  },
+  new VoiceErrands({
+    read: async (connectionId, paneId) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime) throw new Error(`${connectionId} is not connected`);
+      const history = (await runtime.agentSessions.readHistory({
+        history_version: 2,
+        cursor: null,
+        pane_id: paneId,
+      })) as { entries?: ErrandEntry[] };
+      return history.entries ?? [];
+    },
+    prompt: async (connectionId, paneId, text) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime) throw new Error(`${connectionId} is not connected`);
+      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+    },
+  }),
+  () => {
+    const config = readVoiceConfig();
+    return "error" in config ? undefined : config.errand_folder;
+  },
+);
 const voiceSocket = createVoiceSocket(
   voiceHelper,
   configuredCleaner(() => readVoiceConfig()),

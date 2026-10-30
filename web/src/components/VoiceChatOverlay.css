@@ -171,6 +171,42 @@
   font-style: italic;
 }
 
+/*
+ * Moving to a workspace with no agent waits for a yes: the question and its
+ * two answers take the place of the words heard, in the same height.
+ */
+.voice-chat-overlay-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(var(--voice-heard-lines) * var(--voice-heard-line));
+  padding: 0 4px 2px 8px;
+}
+
+.voice-chat-overlay-move p {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: var(--voice-heard-line);
+  overflow-wrap: anywhere;
+}
+
+.voice-chat-overlay-move-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.voice-chat-overlay .voice-chat-overlay-move-go {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.voice-chat-overlay .voice-chat-overlay-move-stay {
+  border-color: var(--border);
+}
+
 @keyframes voice-chat-overlay-spin {
   to {
     transform: rotate(360deg);
@@ -210,7 +246,8 @@
     font-size: 13px !important;
   }
 
-  .voice-chat-overlay-heard p {
+  .voice-chat-overlay-heard p,
+  .voice-chat-overlay-move p {
     font-size: 14px;
   }
 }

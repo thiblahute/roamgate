@@ -207,6 +207,34 @@ Inspector state is scoped to each checkout; see
   was meant. Words said to someone else in the room are held, greyed above
   the box, with a tap to send them after all; a cleaned message's voice
   label shows what was heard.
+  With a router set up, voice chat reaches every agent session: each thing
+  said goes to the agent on screen unless it asks for another session, by
+  what it is about ("go to the tracer session in gst-plugins-rs", "tell
+  IGA-184 to build the image"), on any connection. Roamgate says "Switched
+  to …", shows that session's chat, sends it the words if they were for it,
+  reads its answer and keeps listening there. When two sessions fit, it
+  asks which one. A question about another session ("what is IGA-184 up
+  to?") is answered aloud with a short summary of its conversation, without
+  switching, as is one about work it owns (its merge request, CI, branch).
+  A question about the sessions in general ("what did I work on today?")
+  gets a short summary across the recently active ones. Talk about
+  Roamgate itself goes to the session working on
+  Roamgate. A question or errand about nothing in your sessions (the news,
+  a WhatsApp message) goes to the session in your errands folder, without
+  switching; its answer is read and shown when it comes. Talk to someone
+  else in the room is held as above. What the
+  router says (a switch, its question, a summary) also shows in its own
+  card above the message box, labelled Roamgate, never in the conversation
+  with the agent.
+  Voice chat follows you between workspaces (sidebar, Find workspace,
+  shortcuts, the phone's switcher): the workspace you go to shows its agent's
+  chat (the pane on screen when it is an agent, else its most recently used
+  one) and the conversation goes on there; what was held stays with the
+  pane it was said to, and only one voice chat listens at a time. A
+  workspace with no agent is not switched to: Roamgate says so and asks
+  whether to move anyway; "yes" or Move switches and turns voice off for
+  the keyboard, anything else or Stay keeps voice where it was, and the
+  answer is never sent to the agent.
   What is heard shows above the message box as it is said (with Parakeet,
   updated about every second).
   Replies are read a little faster than the voice's own pace (1.2x); the
