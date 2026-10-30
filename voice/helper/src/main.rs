@@ -19,7 +19,9 @@
 //!
 //! Speaking: `{"id": 2, "op": "speak", "text": "...", "language": "fr"}`, one
 //! sentence to Ogg Opus speech, in the language given or the one its words
-//! look like: `{"id": 2, "audio": "<base64>", "language": "fr"}`.
+//! look like: `{"id": 2, "audio": "<base64>", "language": "fr"}`. Kokoro
+//! reads it, or with `--tts-models` the first of those any-tts models that
+//! speaks its language.
 //!
 //! A failed request answers `{"id": ..., "error": "..."}`. Listening and
 //! speaking run on threads of their own, so neither waits for the other.
@@ -73,8 +75,41 @@ struct Config {
     turn_model: Option<String>,
     /// A small language model reading whether the words are finished.
     text_turn_model: Option<String>,
-    kokoro_model: String,
-    kokoro_voices: String,
+    kokoro_model: Option<String>,
+    kokoro_voices: Option<String>,
+    /// any-tts models reading in place of Kokoro, in order of preference: a
+    /// JSON array of objects with a "model" name and anyttssynthesizer's
+    /// fields for it ({"model": "qwen3-tts", "path": "...", ...}).
+    tts_models: Option<String>,
+}
+
+/// anyttssynthesizer's models from `--tts-models`.
+fn tts_models(json: &str) -> Result<gst::Array, String> {
+    let models: Vec<serde_json::Map<String, Value>> =
+        serde_json::from_str(json).map_err(|e| format!("--tts-models: {e}"))?;
+    let models = models
+        .into_iter()
+        .map(|fields| {
+            let Some(Value::String(name)) = fields.get("model") else {
+                return Err("--tts-models: each model needs a \"model\" name".to_string());
+            };
+            let mut structure = gst::Structure::new_empty(name.as_str());
+            for (field, value) in &fields {
+                // JSON's snake case, GStreamer's dashes.
+                let field = field.replace('_', "-");
+                match value {
+                    _ if field == "model" => (),
+                    Value::String(value) => structure.set(field.as_str(), value),
+                    Value::Number(value) => {
+                        structure.set(field.as_str(), value.as_f64().unwrap_or_default())
+                    }
+                    _ => return Err(format!("--tts-models: {field} of {name}: {value}")),
+                }
+            }
+            Ok(structure.to_send_value())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(gst::Array::new(models))
 }
 
 type Output = Arc<Mutex<std::io::Stdout>>;
@@ -94,7 +129,7 @@ fn arg(name: &str) -> Option<String> {
     None
 }
 
-/// Text to speech: one pipeline kept playing, from kokorosynthesizer to Ogg
+/// Text to speech: one pipeline kept playing, from a synthesizer to Ogg
 /// Opus (small enough for a phone on the go), a sentence at a time. Each
 /// sentence ends with EOS, so oggmux finishes a file the browser can play
 /// on its own, then a flush readies the pipeline for the next one, which
@@ -107,17 +142,40 @@ struct Speaker {
 
 impl Speaker {
     fn new(config: &Config) -> Result<Self, String> {
-        let description = format!(
+        let (synthesizer, name) = match (&config.tts_models, &config.kokoro_model) {
+            (Some(models), _) => {
+                let models = tts_models(models)?;
+                let synthesizer = gst::ElementFactory::make("anyttssynthesizer")
+                    .property("models", models)
+                    .build()
+                    .map_err(|e| e.to_string())?;
+                (synthesizer, "any-tts")
+            }
+            (None, Some(model)) => {
+                let synthesizer = gst::ElementFactory::make("kokorosynthesizer")
+                    .property("model-path", model)
+                    .property("voices-path", config.kokoro_voices.as_deref().unwrap_or(""))
+                    .build()
+                    .map_err(|e| e.to_string())?;
+                (synthesizer, "kokoro")
+            }
+            (None, None) => return Err("--tts-models or --kokoro-model is required".into()),
+        };
+        let pipeline = gst::parse::launch(
             "appsrc name=src format=time caps=text/x-raw,format=utf8 ! \
-             kokorosynthesizer model-path=\"{}\" voices-path=\"{}\" ! \
-             audioconvert ! audioresample ! opusenc bitrate=32000 ! oggmux ! \
+             audioconvert name=convert ! audioresample ! opusenc bitrate=32000 ! oggmux ! \
              appsink name=sink sync=false",
-            config.kokoro_model, config.kokoro_voices
-        );
-        let pipeline = gst::parse::launch(&description)
-            .map_err(|e| e.to_string())?
-            .downcast::<gst::Pipeline>()
-            .unwrap();
+        )
+        .map_err(|e| e.to_string())?
+        .downcast::<gst::Pipeline>()
+        .unwrap();
+        // appsrc ! synthesizer ! audioconvert: the synthesizer goes between.
+        let src_element = pipeline.by_name("src").unwrap();
+        let convert = pipeline.by_name("convert").unwrap();
+        src_element.unlink(&convert);
+        pipeline.add(&synthesizer).unwrap();
+        gst::Element::link_many([&src_element, &synthesizer, &convert])
+            .map_err(|e| e.to_string())?;
         let src = pipeline
             .by_name("src")
             .unwrap()
@@ -128,9 +186,23 @@ impl Speaker {
             .unwrap()
             .downcast::<gst_app::AppSink>()
             .unwrap();
-        pipeline
-            .set_state(gst::State::Playing)
-            .map_err(|e| format!("kokoro failed to load: {e}"))?;
+        if let Err(err) = pipeline.set_state(gst::State::Playing) {
+            // The synthesizer says why on the bus.
+            let detail = pipeline
+                .bus()
+                .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
+                .and_then(|message| match message.view() {
+                    gst::MessageView::Error(e) => {
+                        Some(format!("{} ({})", e.error(), e.debug().unwrap_or_default()))
+                    }
+                    _ => None,
+                });
+            let _ = pipeline.set_state(gst::State::Null);
+            return Err(format!(
+                "{name} failed to load: {}",
+                detail.unwrap_or_else(|| err.to_string())
+            ));
+        }
         dump_dot(&pipeline, "roamgate-voice-speak");
         Ok(Self {
             pipeline,
@@ -196,6 +268,7 @@ fn main() {
     // Our plugins are linked in, not looked up on disk.
     if let Err(err) = gstwhisper::plugin_register_static()
         .and_then(|_| gstkokoro::plugin_register_static())
+        .and_then(|_| gstanytts::plugin_register_static())
         .and_then(|_| gstparakeet::plugin_register_static())
         .and_then(|_| gstspeechgate::plugin_register_static())
         .and_then(|_| gstrsaudiofx::plugin_register_static())
@@ -209,8 +282,9 @@ fn main() {
         speaker_model: arg("--speaker-model"),
         turn_model: arg("--turn-model"),
         text_turn_model: arg("--text-turn-model"),
-        kokoro_model: arg("--kokoro-model").expect("--kokoro-model is required"),
-        kokoro_voices: arg("--kokoro-voices").expect("--kokoro-voices is required"),
+        kokoro_model: arg("--kokoro-model"),
+        kokoro_voices: arg("--kokoro-voices"),
+        tts_models: arg("--tts-models"),
     });
     let output: Output = Arc::new(Mutex::new(std::io::stdout()));
 

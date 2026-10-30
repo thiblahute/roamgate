@@ -10,6 +10,8 @@ import {
   FRAME_JSON,
   type Frame,
   FrameReader,
+  helperTtsModels,
+  nativeSpeechRate,
   readVoiceConfig,
   type VoiceConfig,
   VoiceHelper,
@@ -352,5 +354,100 @@ describe("voice routes", () => {
     expect(
       await routes(new Request("http://roamgate/api/other"), "/api/other"),
     ).toBeNull();
+  });
+});
+
+describe("readVoiceConfig", () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-voice-config-"));
+  const file = join(dir, "voice.json");
+  writeFileSync(join(dir, "helper"), "");
+  writeFileSync(join(dir, "kokoro.onnx"), "");
+  writeFileSync(join(dir, "whisper.bin"), "");
+  const read = (config: object) => {
+    writeFileSync(file, JSON.stringify(config));
+    return readVoiceConfig(file);
+  };
+  const base = {
+    helper: join(dir, "helper"),
+    whisper_model: join(dir, "whisper.bin"),
+  };
+
+  test("any-tts models read in place of Kokoro", () => {
+    const config = read({
+      ...base,
+      tts_models: [
+        {
+          model: "qwen3-tts",
+          path: "/models/qwen3",
+          voice_embedding: "me.json",
+        },
+        { model: "kokoro" },
+      ],
+    });
+    expect("error" in config).toBe(false);
+  });
+
+  test("Kokoro's files are needed without them", () => {
+    expect(read(base)).toEqual({
+      error: `${file}: kokoro_model and kokoro_voices, or tts_models, are required`,
+    });
+    expect(
+      read({
+        ...base,
+        kokoro_model: join(dir, "kokoro.onnx"),
+        kokoro_voices: join(dir, "missing.bin"),
+      }),
+    ).toEqual({
+      error: `kokoro_voices not found: ${join(dir, "missing.bin")}`,
+    });
+  });
+
+  test("each any-tts model is named", () => {
+    expect(read({ ...base, tts_models: [{ path: "/models/qwen3" }] })).toEqual({
+      error: `${file}: tts_models must be a list of objects with a model name`,
+    });
+    expect(read({ ...base, tts_models: [] })).toEqual({
+      error: `${file}: tts_models must be a list of objects with a model name`,
+    });
+  });
+});
+
+describe("native speech rate", () => {
+  const kokoro = { model: "kokoro", path: "/models/kokoro" };
+  const qwen = { model: "qwen3-tts", path: "/models/qwen3" };
+
+  test("Kokoro alone is made at the reading speed", () => {
+    const config = { ...CONFIG, speech_rate: 1.3, tts_models: [kokoro] };
+    expect(nativeSpeechRate(config)).toBe(1.3);
+    expect(helperTtsModels(config)).toEqual([{ ...kokoro, speed: 1.3 }]);
+    expect(nativeSpeechRate({ ...config, speech_rate: undefined })).toBe(1.2);
+  });
+
+  test("other models, or a speed of its own, leave it to the browser", () => {
+    const mixed = { ...CONFIG, tts_models: [qwen, kokoro] };
+    expect(nativeSpeechRate(mixed)).toBe(1);
+    expect(helperTtsModels(mixed)).toEqual([qwen, kokoro]);
+    const own = { ...CONFIG, tts_models: [{ ...kokoro, speed: 1.1 }] };
+    expect(nativeSpeechRate(own)).toBe(1);
+    // kokorosynthesizer is given no speed.
+    expect(nativeSpeechRate(CONFIG)).toBe(1);
+  });
+
+  test("speech says the rate the running helper makes it at", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "speak"
+        ? [{ id: request.id, audio: "", language: "en" }]
+        : [],
+    );
+    let config: VoiceConfig = {
+      ...CONFIG,
+      speech_rate: 1.3,
+      tts_models: [kokoro],
+    };
+    const helper = new VoiceHelper(() => config, fake.spawn);
+    expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
+    // A new rate is the browser's to make up until the helper restarts.
+    config = { ...config, speech_rate: 1.5 };
+    expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
   });
 });

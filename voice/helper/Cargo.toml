@@ -2,7 +2,7 @@
 name = "roamgate-voice"
 version = "0.1.0"
 edition = "2024"
-description = "Roamgate's voice helper: speech to text with whispertranscriber, text to speech with kokorosynthesizer"
+description = "Roamgate's voice helper: speech to text with whispertranscriber, text to speech with kokorosynthesizer or anyttssynthesizer"
 license = "MIT"
 publish = false
 
@@ -22,6 +22,8 @@ gst-plugin-kokoro = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugi
 gst-plugin-parakeet = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 # speechgate: lets through only speech, and ends each utterance.
 gst-plugin-speechgate = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+# anyttssynthesizer: any-tts's models (Qwen3-TTS...), on Metal on macOS.
+gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -52,6 +54,16 @@ gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs"
 gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
 gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
 gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
+
+# any-tts with the Metal speedups, streaming Qwen3-TTS decoding and voice
+# cloning, until they are merged upstream.
+[patch.crates-io]
+any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }
 
 [profile.release]
 strip = true

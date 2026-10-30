@@ -569,7 +569,34 @@ clearly finished ones end it sooner. Whisper models are
 whisper.cpp's ggml files; the Kokoro model and voices are
 the v1.0 files of kokoro-onnx's releases. A helper built against an installed
 GStreamer instead finds its plugins in `gst_prefix`, when given. The helper
-starts with the first voice request and stops with the server. Browsers only
+starts with the first voice request and stops with the server.
+With `"tts_models"`, [any-tts](https://github.com/TM9657/any-tts) models read
+replies in place of Kokoro's ONNX model (then `kokoro_model` and
+`kokoro_voices` are not needed), through the `anyttssynthesizer` element from
+the same gst-plugins-rs branch, on the GPU on macOS. They are listed in order
+of preference, and each sentence goes to the first one speaking its
+language; `"model"` names each, the other fields are the element's for it:
+
+```json
+"tts_models": [
+  {
+    "model": "qwen3-tts",
+    "path": "/path/to/Qwen3-TTS-12Hz-1.7B-Base",
+    "voice_embedding": "/path/to/my-voice.json"
+  },
+  { "model": "kokoro", "path": "/path/to/Kokoro-82M" }
+]
+```
+
+`path` is the model's directory from Hugging Face; Qwen3-TTS speaks with one
+of its named voices (`"voice"`, with a CustomVoice model) or a cloned one
+(`"voice_embedding"`, a Base model and a voice saved with any-tts's
+`scripts/qwen3_tts_voice.py`). A model that fails to load is left out.
+Only Kokoro takes a speed: when every model is Kokoro and none sets its own
+`"speed"`, they are given `speech_rate` and the browser plays their speech as
+made; otherwise the models speak at their own pace and the browser plays it
+faster (Qwen3-TTS has no speed control).
+Browsers only
 give the microphone to secure pages: reach Roamgate over HTTPS or localhost.
 
 With `"clean_model"` (a Claude model, such as `"haiku"`), what is said goes

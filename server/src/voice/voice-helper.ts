@@ -19,8 +19,16 @@ export type VoiceConfig = {
   whisper_model?: string;
   /** The Parakeet TDT ONNX directory (voice/helper/src/parakeet.rs). */
   parakeet_model?: string;
-  kokoro_model: string;
-  kokoro_voices: string;
+  /** Kokoro's ONNX model and voices; needed without `tts_models`. */
+  kokoro_model?: string;
+  kokoro_voices?: string;
+  /**
+   * any-tts models (anyttssynthesizer) reading replies in place of Kokoro,
+   * in order of preference: each sentence goes to the first one speaking its
+   * language. `model` names it ("qwen3-tts", "kokoro", ...), the other fields
+   * are the element's for it (path, voice, voice_embedding, speed, ...).
+   */
+  tts_models?: Array<{ model: string } & Record<string, string | number>>;
   /** Speaker embeddings: only the first voice of a voice chat counts. */
   speaker_model?: string;
   /** Smart Turn v3: a pause ends speech only when it sounds finished. */
@@ -56,7 +64,7 @@ export type VoiceStatus =
   | { available: true }
   | { available: false; detail: string };
 
-const REQUIRED = ["helper", "kokoro_model", "kokoro_voices"] as const;
+const REQUIRED = ["helper"] as const;
 
 export function voiceConfigPath(root = dataRoot()): string {
   return join(root, "voice.json");
@@ -96,7 +104,31 @@ export function readVoiceConfig(
     return { error: `${path}: speech_rate must be a number from 0.5 to 2` };
   if (config.whisper_model === undefined && config.parakeet_model === undefined)
     return { error: `${path}: whisper_model or parakeet_model is required` };
+  if (config.tts_models !== undefined) {
+    const models = config.tts_models;
+    if (
+      !Array.isArray(models) ||
+      models.length === 0 ||
+      !models.every(
+        (model) =>
+          model &&
+          typeof model === "object" &&
+          typeof (model as { model?: unknown }).model === "string",
+      )
+    )
+      return {
+        error: `${path}: tts_models must be a list of objects with a model name`,
+      };
+  } else if (
+    config.kokoro_model === undefined ||
+    config.kokoro_voices === undefined
+  )
+    return {
+      error: `${path}: kokoro_model and kokoro_voices, or tts_models, are required`,
+    };
   for (const key of [
+    "kokoro_model",
+    "kokoro_voices",
     "whisper_model",
     "parakeet_model",
     "speaker_model",
@@ -125,6 +157,32 @@ export function writeSpeechRate(rate: number, path = voiceConfigPath()) {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`);
   renameSync(temporary, path);
+}
+
+/**
+ * The rate the helper's voice speaks at by itself, which the browser's
+ * playback makes up the rest of. Only Kokoro takes a speed (Qwen3-TTS and
+ * the other any-tts models refuse one), and which model reads a sentence is
+ * the element's choice: `speech_rate` goes to the models only when all of
+ * them are Kokoro and none sets its own `speed`, else they speak at their
+ * own pace (1) and the browser does it all.
+ */
+export function nativeSpeechRate(config: VoiceConfig): number {
+  const models = config.tts_models;
+  return models?.length &&
+    models.every((model) => model.model === "kokoro" && !("speed" in model))
+    ? speechRateOr(config.speech_rate)
+    : 1;
+}
+
+/** `tts_models` as the helper gets them: with the native rate's speed. */
+export function helperTtsModels(
+  config: VoiceConfig,
+): VoiceConfig["tts_models"] {
+  const rate = nativeSpeechRate(config);
+  return rate === 1
+    ? config.tts_models
+    : config.tts_models?.map((model) => ({ ...model, speed: rate }));
 }
 
 type Pending = {
@@ -199,10 +257,14 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
       ...(config.parakeet_model
         ? ["--parakeet-model", config.parakeet_model]
         : ["--whisper-model", config.whisper_model ?? ""]),
-      "--kokoro-model",
-      config.kokoro_model,
-      "--kokoro-voices",
-      config.kokoro_voices,
+      ...(config.tts_models
+        ? ["--tts-models", JSON.stringify(helperTtsModels(config))]
+        : [
+            "--kokoro-model",
+            config.kokoro_model ?? "",
+            "--kokoro-voices",
+            config.kokoro_voices ?? "",
+          ]),
       ...(config.speaker_model
         ? ["--speaker-model", config.speaker_model]
         : []),
@@ -274,11 +336,7 @@ export class VoiceHelper {
   private listeners = new Map<number, (event: VoiceEvent) => void>();
   private nextId = 1;
   private nextSession = 1;
-  /**
-   * The rate the running helper's voice speaks at by itself, which the
-   * browser's playback makes up the rest of: kokorosynthesizer is given no
-   * speed.
-   */
+  /** The rate the running helper's voice speaks at by itself. */
   private nativeRate = 1;
 
   constructor(
@@ -317,6 +375,7 @@ export class VoiceHelper {
     if ("error" in config) throw new Error(config.error);
     const helper = this.spawn(config);
     this.process = helper;
+    this.nativeRate = nativeSpeechRate(config);
     void (async () => {
       for await (const frame of helper.frames) {
         if (frame.kind !== FRAME_JSON) continue;
