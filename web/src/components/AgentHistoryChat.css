@@ -552,3 +552,44 @@
   flex: none;
   color: var(--muted);
 }
+
+/* Read aloud: lit while its message is being read. */
+.agent-history-chat-read.is-reading {
+  color: var(--accent);
+}
+
+/* The sentence being read aloud. */
+::highlight(roamgate-reading) {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+}
+
+/* A cleaned voice message: the words as heard, a tap away. */
+.agent-history-chat-heard-toggle {
+  padding: 0 0 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.agent-history-chat-heard {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* A message said by voice: its label, above its text. */
+.agent-history-chat-voice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

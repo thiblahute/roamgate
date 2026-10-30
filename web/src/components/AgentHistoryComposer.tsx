@@ -10,7 +10,7 @@ import {
 } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import { lazyWithReload } from "../lazyWithReload";
-import { ImagePlus, Send, TriangleAlert, X } from "lucide-react";
+import { ImagePlus, Mic, Send, TriangleAlert, X } from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -43,6 +43,8 @@ import {
 import { type AgentCommand, matchCommands } from "../claudeCommands";
 import { agentPromptWarning, agentStateKind } from "./agentSession";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
+import type { Heard } from "../voiceChat";
+import type { VoiceState } from "./useVoiceChat";
 import "./AgentHistoryComposer.css";
 
 // CodeMirror comes with the first box that needs Vim keys.
@@ -90,6 +92,7 @@ export function AgentHistoryComposer({
   vimKeys: vimKeysProp,
   commands = [],
   onError,
+  voice,
 }: {
   draftKey: string;
   agent?: string;
@@ -103,6 +106,18 @@ export function AgentHistoryComposer({
   /** The agent's /commands, offered while one is being typed. */
   commands?: AgentCommand[];
   onError: (message: string) => void;
+  /** Hands-free chat, when the server has voice set up. */
+  voice?: {
+    state: VoiceState;
+    level: number;
+    muted: boolean;
+    /** What was said to someone else: sent only when asked. */
+    held: Heard[];
+    onSendHeld: (said: Heard) => void;
+    onDropHeld: (said: Heard) => void;
+    onToggle: () => void;
+    onToggleMute: () => void;
+  };
 }) {
   useShortcutPreferences();
   const { mobile } = useLayoutPreferences();
@@ -348,6 +363,36 @@ export function AgentHistoryComposer({
           setFocused(false);
       }}
     >
+      {voice?.held.length ? (
+        <ul className="agent-history-composer-held" aria-label="Not sent">
+          {voice.held.map((said, index) => (
+            <li
+              key={`${index}-${said.text}`}
+              title={
+                said.raw ? `Heard as: ${said.raw}` : "Said to someone else"
+              }
+            >
+              <span>{said.text}</span>
+              <button
+                type="button"
+                onClick={() => voice.onSendHeld(said)}
+                aria-label="Send it to the agent"
+                title="It was for the agent: send it"
+              >
+                <Send size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => voice.onDropHeld(said)}
+                aria-label="Forget it"
+                title="Forget it"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {commandMatches.length ? (
         <ul
           className="agent-history-composer-commands"
@@ -591,6 +636,20 @@ export function AgentHistoryComposer({
             }}
           />
         )}
+        {voice?.state === "off" ? (
+          // A running conversation is controlled from over the chat.
+          <button
+            type="button"
+            className="agent-history-composer-voice is-off"
+            aria-label="Talk to the agent"
+            aria-pressed={false}
+            title="Talk to the agent"
+            onMouseDown={keepTextareaFocus}
+            onClick={voice.onToggle}
+          >
+            <Mic size={17} aria-hidden="true" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="agent-history-composer-send"

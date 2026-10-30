@@ -97,6 +97,10 @@ import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
   terminalUploadRequestBodyLimit,
 } from "./http/terminal-upload";
+import { createVoiceRoutes } from "./http/voice";
+import { createVoiceSocket } from "./http/voice-socket";
+import { configuredCleaner } from "./voice/voice-cleaner";
+import { readVoiceConfig, VoiceHelper } from "./voice/voice-helper";
 import {
   createUpdateHandlers,
   UPDATE_HTTP_IDLE_TIMEOUT_SECONDS,
@@ -196,6 +200,14 @@ const cpuProfile = config.profile
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
 });
+// Voice chat's helper starts on the first voice request.
+const voiceHelper = new VoiceHelper(() => readVoiceConfig());
+const handleVoice = createVoiceRoutes(voiceHelper);
+const voiceSocket = createVoiceSocket(
+  voiceHelper,
+  configuredCleaner(() => readVoiceConfig()),
+);
+const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {
   socketPath: config.socketPath,
   clientSocketPath: config.clientSocketPath,
@@ -1966,7 +1978,7 @@ async function handleConnectionHttpRequest(
 function main() {
   const server = bindListenerBeforeConnectionStart({
     bindListener: () =>
-      Bun.serve<{ sessionToken: string | null }>({
+      Bun.serve<{ sessionToken: string | null; voice?: true }>({
         port: config.port,
         hostname: config.host,
         tls: config.tls,
@@ -2070,6 +2082,21 @@ function main() {
             server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
             return handleHerdrSetup(req);
           }
+          if (url.pathname === "/api/voice/ws") {
+            if (
+              server.upgrade(req, {
+                data: { sessionToken: sessionToken(req), voice: true },
+              })
+            )
+              return undefined;
+            return new Response("websocket upgrade failed", { status: 400 });
+          }
+          if (url.pathname.startsWith("/api/voice")) {
+            // Transcribing a long recording can outlast the default timeout.
+            server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
+            const response = await handleVoice(req, url.pathname);
+            if (response) return response;
+          }
           const connectionRoute = parseConnectionHttpRoute(
             requestPathname,
             req.method,
@@ -2102,6 +2129,8 @@ function main() {
         websocket: {
           perMessageDeflate: WS_PER_MESSAGE_DEFLATE,
           open(ws) {
+            // A voice socket is no Herdr client: see voiceSocket.
+            if (ws.data.voice) return;
             clients.add(ws);
             clientSessions.set(ws, ws.data.sessionToken);
             const label = assignClientId(ws);
@@ -2131,6 +2160,7 @@ function main() {
             );
           },
           drain(ws) {
+            if (ws.data.voice) return;
             // The viewer caught up: send the newest repaint we held back.
             flushCoalescedMessages(ws, {
               cleanup: () => {
@@ -2143,6 +2173,7 @@ function main() {
             });
           },
           message(ws, message) {
+            if (ws.data.voice) return voiceSocket.message(ws, message);
             if (!clients.has(ws)) return;
             const text =
               typeof message === "string" ? message : message.toString();
@@ -2205,6 +2236,7 @@ function main() {
               });
           },
           close(ws) {
+            if (ws.data.voice) return voiceSocket.close(ws);
             const { client, viewedTerminals } = webSocketCleanup.complete(ws);
             logger.debug("client disconnected", {
               client,
@@ -2334,6 +2366,7 @@ function scheduleManagedShutdown(): void {
 }
 
 process.on("exit", () => {
+  voiceHelper.stop();
   void stopManagerOnce();
 });
 process.on("SIGINT", () => {

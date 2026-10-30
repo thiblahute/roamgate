@@ -28,7 +28,8 @@
 
 .agent-history-composer-send,
 .agent-history-composer-attach,
-.agent-history-composer-escape {
+.agent-history-composer-escape,
+.agent-history-composer-voice {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -39,7 +40,8 @@
 }
 
 .agent-history-composer-attach,
-.agent-history-composer-escape {
+.agent-history-composer-escape,
+.agent-history-composer-voice {
   min-width: 36px;
   padding: 0;
 }
@@ -167,6 +169,44 @@
 }
 
 /* A /command being typed: the matching commands above the box. */
+/* Said to someone else, by the cleaner's reading: greyed, sent on a tap. */
+.agent-history-composer-held {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-history-composer-held li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.agent-history-composer-held span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-history-composer-held button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+
 .agent-history-composer-commands {
   display: flex;
   flex-direction: column;

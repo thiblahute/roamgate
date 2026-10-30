@@ -391,6 +391,8 @@
 
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-attach,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-escape,
+  .mobile-bottom-input > .agent-history-composer .agent-history-composer-voice,
+  .mobile-bottom-input > .agent-history-composer .agent-history-composer-mute,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-send {
     height: max(44px, calc(44px / var(--ui-scale, 1)));
     min-width: max(44px, calc(44px / var(--ui-scale, 1)));
@@ -429,6 +431,8 @@
     :is(
       .agent-history-composer-attach,
       .agent-history-composer-escape,
+      .agent-history-composer-voice,
+      .agent-history-composer-mute,
       .agent-history-composer-send
     ) {
     height: 36px;

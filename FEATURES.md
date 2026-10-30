@@ -175,6 +175,50 @@ Inspector state is scoped to each checkout; see
   and its multiple-choice questions as a form (one choice, several, or one's
   own words), a sheet of its own on a phone; **In the terminal** hands either
   back, and the terminal asks anyway once the hook stops waiting.
+  With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the microphone
+  beside the message box talks hands-free: speak, and what you said is sent
+  once you pause; the agent's answer is read aloud (its prose, not code or
+  tables), in its language (English, French, Spanish...), then it listens
+  again; speaking up while it reads stops the reading and is heard. It
+  listens while the agent works too: each further message said is sent,
+  queued behind the others, and the answer read is the one to the last.
+  The agent's messages are read as it works, each once it is complete, so
+  progress is heard; at the end, only what was not read yet is. A
+  pause of 2.5 s sends what was said, or a tap at once. Only a tap, or
+  saying just "stop" ("arrête", "para"...), ends
+  it (while it waits, or listens before anything was said); a tap while it
+  reads stops the reading and listens. It keeps listening through silence,
+  waits while the agent asks something on screen, and reconnects on its
+  own. Only one thing reads aloud at a time, and on a phone other apps'
+  music or podcasts pause while voice chat is on.
+  Its mute button, beside it while voice chat is on, stops listening without
+  ending it: replies are still read, and what was being said when it was
+  pressed is sent, as a tap would.
+  With a speaker model set up, the first voice heard in a voice chat (its
+  first two seconds of speech) is the one listened to; other people talking
+  nearby are left out.
+  With a turn model set up, a pause sends what was said only when it sounds
+  finished, and the words read as finished too when a text turn model is
+  set up: a pause after "I think we should", or after an "um", "euh", "and"
+  or "du coup", waits for the rest. Five seconds of silence sends it anyway
+  (ten after an "um").
+  With a cleaner set up, what was said is cleaned before it is sent:
+  fillers, false starts and misheard words go, self-corrections keep what
+  was meant. Words said to someone else in the room are held, greyed above
+  the box, with a tap to send them after all; a cleaned message's voice
+  label shows what was heard.
+  What is heard shows above the message box as it is said (with Parakeet,
+  updated about every second).
+  Replies are read a little faster than the voice's own pace (1.2x); the
+  speed button on the voice card steps through 1x, 1.1x, 1.2x, 1.3x and
+  1.5x, from the sentence playing on, and every browser keeps it.
+  The sentence being read is highlighted. What is said goes to the agent
+  marked `[Voice]`, with the sentence it cut short when it interrupted the
+  reading, so the agent knows it talks live and what was heard; the chat
+  shows that as a label on the message.
+  Any of the agent's messages can also be read aloud on its own (its speaker
+  button, beside Copy); starting voice chat while one is read lets it play
+  on, until you talk over it.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or

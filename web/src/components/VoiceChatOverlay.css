@@ -1,0 +1,236 @@
+/*
+ * A running voice conversation floats as a card over the bottom of the chat,
+ * just above the message box. The anchor takes no room; the card rises from
+ * it. The card's size does not depend on what is said, so it stays put.
+ */
+.voice-chat-overlay-anchor {
+  position: relative;
+  flex: 0 0 auto;
+  height: 0;
+  z-index: 3;
+  --voice-heard-lines: 3;
+  --voice-heard-line: 18px;
+}
+
+.voice-chat-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(
+    440px,
+    calc(
+      100% -
+      20px -
+      env(safe-area-inset-left, 0px) -
+      env(safe-area-inset-right, 0px)
+    )
+  );
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: var(--shadow-tooltip);
+  backdrop-filter: blur(8px);
+}
+
+.voice-chat-overlay-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.voice-chat-overlay button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.voice-chat-overlay button:hover {
+  background: var(--accent-hover);
+}
+
+.voice-chat-overlay button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.voice-chat-overlay-state {
+  flex: 1 1 auto;
+  justify-content: flex-start !important;
+  min-width: 0;
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+}
+
+.voice-chat-overlay-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+/* While listening, the icon's ring and the meter follow the voice heard. */
+.voice-chat-overlay.is-listening .voice-chat-overlay-icon {
+  box-shadow: 0 0 0 calc(2px + var(--voice-level, 0) * 7px)
+    color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: box-shadow 60ms linear;
+}
+
+.voice-chat-overlay-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  margin-left: auto;
+}
+
+.voice-chat-overlay-meter > span {
+  width: 4px;
+  height: calc(4px + var(--voice-level, 0) * var(--bar-weight, 1) * 18px);
+  border-radius: 2px;
+  background: var(--accent);
+  transition: height 60ms linear;
+}
+
+.voice-chat-overlay:is(.is-transcribing, .is-waiting)
+  .voice-chat-overlay-icon
+  svg {
+  animation: voice-chat-overlay-spin 1s linear infinite;
+}
+
+.voice-chat-overlay.is-muted .voice-chat-overlay-state {
+  opacity: 0.7;
+}
+
+.voice-chat-overlay-mute {
+  flex: 0 0 auto;
+  width: 40px;
+  padding: 0 !important;
+}
+
+/* The reading speed, beside mute and as tall: wide enough for "1.3x". */
+.voice-chat-overlay-rate {
+  flex: 0 0 auto;
+  min-width: 48px !important;
+  padding: 0 6px !important;
+  font-size: 12px !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted) !important;
+}
+
+.voice-chat-overlay-mute.is-muted {
+  border-color: var(--danger-text) !important;
+  color: var(--danger-text) !important;
+}
+
+/*
+ * The words being heard: a fixed few lines, the newest at the bottom; older
+ * lines leave through the faded top instead of growing the card.
+ */
+.voice-chat-overlay-heard {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: calc(var(--voice-heard-lines) * var(--voice-heard-line));
+  padding: 0 8px 2px;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--voice-heard-line)
+  );
+}
+
+.voice-chat-overlay-heard p {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: var(--voice-heard-line);
+  overflow-wrap: anywhere;
+}
+
+.voice-chat-overlay-heard p.is-hint {
+  color: var(--muted);
+  font-style: italic;
+}
+
+@keyframes voice-chat-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-chat-overlay-icon svg {
+    animation: none !important;
+  }
+}
+
+/* A thumb-sized control on a touch screen; two lines of words there. */
+@media (pointer: coarse) {
+  .voice-chat-overlay-anchor {
+    --voice-heard-lines: 2;
+    --voice-heard-line: 19px;
+  }
+
+  .voice-chat-overlay {
+    bottom: 12px;
+    padding: 6px;
+  }
+
+  .voice-chat-overlay button {
+    min-width: 48px;
+    height: 48px;
+    font-size: 14px;
+  }
+
+  .voice-chat-overlay-mute {
+    width: 48px;
+  }
+
+  .voice-chat-overlay-rate {
+    min-width: 52px !important;
+    font-size: 13px !important;
+  }
+
+  .voice-chat-overlay-heard p {
+    font-size: 14px;
+  }
+}
+
+/*
+ * The last message stays readable above the floating card: a spacer at the
+ * end of the chat (not padding, so the chat's resize observer sees it and
+ * following the newest message lands above the card).
+ */
+.agent-history-messages:has(.voice-chat-overlay-anchor)
+  .agent-history-chat
+  > .agent-history-chat-content::after {
+  content: "";
+  flex: 0 0 116px;
+}
+
+@media (pointer: coarse) {
+  .agent-history-messages:has(.voice-chat-overlay-anchor)
+    .agent-history-chat
+    > .agent-history-chat-content::after {
+    flex-basis: 118px;
+  }
+}

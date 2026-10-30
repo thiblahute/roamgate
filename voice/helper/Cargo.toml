@@ -1,0 +1,57 @@
+[package]
+name = "roamgate-voice"
+version = "0.1.0"
+edition = "2024"
+description = "Roamgate's voice helper: speech to text with whispertranscriber, text to speech with kokorosynthesizer"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Which language a sentence is read in: only the voices' languages.
+lingua = { version = "1.8", default-features = false, features = ["chinese", "english", "french", "hindi", "italian", "japanese", "portuguese", "spanish"] }
+# GStreamer, its plugins and ours are all linked into the binary: the
+# `binary` feature builds against GStreamer's official prebuilt bundle.
+gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary", "v1_28"] }
+gst-audio = { package = "gstreamer-audio", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary", "v1_20"] }
+gst-app = { package = "gstreamer-app", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
+# audiornnoise: RNNoise's denoiser, and its voice activity verdict.
+gst-plugin-audiofx = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+gst-plugin-kokoro = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+# parakeettranscriber: Parakeet TDT speech to text.
+gst-plugin-parakeet = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+# speechgate: lets through only speech, and ends each utterance.
+gst-plugin-speechgate = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# The GStreamer plugins linked in, from the prebuilt bundle.
+[package.metadata.gstreamer-plugins]
+include = [
+    "coreelements",
+    "app",
+    "typefindfunctions",
+    "playback",
+    "matroska",
+    "wavparse",
+    "opus",
+    "ogg",
+    "audioconvert",
+    "audioresample",
+]
+
+# gstreamer-rs's prebuilt bundle support, until it is merged:
+# https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
+[patch."https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"]
+gstreamer = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+
+[profile.release]
+strip = true
