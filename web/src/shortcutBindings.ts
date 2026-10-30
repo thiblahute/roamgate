@@ -25,6 +25,8 @@ const base = {
   "inspector.toggle": ["Ctrl+Alt+Shift+B"],
   "inspector.expand": ["Ctrl+Alt+Shift+Enter"],
   "annotations.toggle": ["Ctrl+Alt+A"],
+  "review.toggle": ["Ctrl+Alt+R"],
+  "reviews.list": ["Ctrl+Alt+Shift+R"],
   "assistant.toggle": ["Ctrl+Alt+Shift+A"],
   "zen.toggle": ["Ctrl+Alt+Z"],
   "panes.recent": ["Ctrl+Alt+J"],
@@ -111,6 +113,8 @@ export function defaultShortcutBindings(
       "inspector.toggle": ["Meta+Shift+B"],
       "inspector.expand": ["Alt+Meta+Enter"],
       "annotations.toggle": ["Alt+Meta+A"],
+      "review.toggle": ["Alt+R"],
+      "reviews.list": ["Alt+Shift+R"],
       "assistant.toggle": ["Alt+Meta+Shift+A"],
       "zen.toggle": ["Meta+Shift+Z"],
       "panes.recent": ["Ctrl+Tab", "Ctrl+Shift+Tab"],
@@ -223,13 +227,18 @@ export type ShortcutEvent = Pick<
       "code" | "isComposing" | "keyCode" | "type" | "getModifierState"
     >
   >;
-export function shortcutFromEvent(event: ShortcutEvent): string | null {
+export function shortcutFromEvent(
+  event: ShortcutEvent,
+  platform: ShortcutPlatform = detectShortcutPlatform(),
+): string | null {
   if (event.isComposing || event.keyCode === 229) return null;
   if (event.type && !["keydown", "keyup"].includes(event.type)) return null;
   // Chromium on Windows AltGr layouts reports AltGraph for plain Ctrl+Alt, so
   // only treat AltGraph as text input when it yields an alternate character
   // (AltGr+2 → "@"), not for named keys or code-matching letters (Ctrl+Alt+K).
-  if (event.getModifierState?.("AltGraph")) {
+  // Firefox on macOS reports Option as AltGraph, but a Mac has no AltGr:
+  // Option+letter is a shortcut there even though it would type "®".
+  if (event.getModifierState?.("AltGraph") && platform !== "mac") {
     const codeKey =
       event.code && /^(Key[A-Z]|Digit[0-9])$/.test(event.code)
         ? event.code.replace(/^(Key|Digit)/, "")
@@ -265,8 +274,9 @@ export function matchesShortcut(
   event: ShortcutEvent,
   id: ShortcutId,
   bindings: ShortcutBindings,
+  platform?: ShortcutPlatform,
 ): boolean {
-  const key = shortcutFromEvent(event);
+  const key = shortcutFromEvent(event, platform);
   return key !== null && bindings[id].includes(key);
 }
 

@@ -194,6 +194,8 @@ export function createSshTunnelManager(args: {
   config: SshTunnelConfig;
   runProcess: RunProcess;
   onUnexpectedExit?: (error: SshTunnelError) => void;
+  /** Runs each time the command master becomes ready. */
+  onMasterReady?: () => void;
   dependencies?: {
     exists?: (path: string) => boolean;
     remove?: (path: string) => void;
@@ -277,6 +279,7 @@ export function createSshTunnelManager(args: {
               controlPath,
               connectionId: args.connectionId,
               logger,
+              onReady: args.onMasterReady,
             }))
         )(args.config.sshHost, args.config.masterControlPath)
       : null;

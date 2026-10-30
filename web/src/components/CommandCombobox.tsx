@@ -62,6 +62,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { canCreateWorktree, worktreeCreationSource } from "../worktree";
 import { WorktreeLifecycleDialog } from "./WorktreeLifecycleDialog";
 
+/** Fired on window when Cmd+K opens the menu, so overlays above it close. */
+export const COMMAND_MENU_OPENING = "roamgate:command-menu-opening";
+
 type TextAction =
   | { type: "rename-workspace"; workspace: Workspace }
   | { type: "rename-tab"; tab: Tab }
@@ -360,6 +363,8 @@ export function CommandCombobox({
         return;
       e.preventDefault();
       e.stopPropagation();
+      // The menu draws under the review overlay: put the review away.
+      window.dispatchEvent(new Event(COMMAND_MENU_OPENING));
       setOpen((value) => {
         const next = !value;
         if (!next) setSearch("");

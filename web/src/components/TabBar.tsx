@@ -7,7 +7,12 @@ import {
 } from "../store";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MessageSquareText, PanelRight, Pin } from "lucide-react";
+import {
+  GitPullRequestArrow,
+  MessageSquareText,
+  PanelRight,
+  Pin,
+} from "lucide-react";
 import type { Tab } from "../types";
 import {
   orderTabsForDisplay,
@@ -71,6 +76,8 @@ export function TabBar({
   mobile = false,
   inspectorOpen = false,
   annotationsOpen = false,
+  reviewOpen = false,
+  onToggleReview,
   annotationCount = 0,
   onToggleInspector,
   onToggleAnnotations,
@@ -78,6 +85,8 @@ export function TabBar({
   mobile?: boolean;
   inspectorOpen?: boolean;
   annotationsOpen?: boolean;
+  reviewOpen?: boolean;
+  onToggleReview?: () => void;
   annotationCount?: number;
   onToggleInspector?: () => void;
   onToggleAnnotations?: () => void;
@@ -406,6 +415,21 @@ export function TabBar({
                 <span className="tabbar-change-count">{annotationCount}</span>
               ) : null}
             </button>
+            {onToggleReview ? (
+              <button
+                type="button"
+                className={reviewOpen ? "is-active" : ""}
+                aria-expanded={reviewOpen}
+                title={shortcutTitle(
+                  reviewOpen ? "Close the review" : "Review this branch",
+                  "review.toggle",
+                )}
+                onClick={onToggleReview}
+              >
+                <GitPullRequestArrow size={14} />
+                <span>Review</span>
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

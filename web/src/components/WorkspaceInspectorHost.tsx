@@ -95,6 +95,7 @@ function checkoutLabel(workspace?: Workspace) {
 }
 
 const INSPECTOR_RESOURCE_HORIZONTAL_PADDING = 16;
+const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
 
 export function WorkspaceInspectorHost({
   state,
@@ -206,6 +207,23 @@ export function WorkspaceInspectorHost({
     resourceKey: string;
     entries: GitDiffEntry[];
   }>(() => ({ resourceKey: "", entries: [] }));
+  /** The file tree beside a previewed file, hidden by `:files` or its button. */
+  const [filesTreeHidden, setFilesTreeHidden] = useState(() => {
+    try {
+      return roamgateLocalStorage.getItem(FILES_TREE_HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleFilesTree = () =>
+    setFilesTreeHidden((hidden) => {
+      try {
+        roamgateLocalStorage.setItem(FILES_TREE_HIDDEN_KEY, hidden ? "0" : "1");
+      } catch {
+        /* Kept for this page only. */
+      }
+      return !hidden;
+    });
   const [drillInByView, setDrillInByView] = useState<
     Record<InspectorView, boolean>
   >(() => ({
@@ -305,6 +323,8 @@ export function WorkspaceInspectorHost({
         ? !!diffSelection.entry
         : false;
   const hasDetail = detailAvailable && drillInByView[state.view];
+  // Compact layouts show the tree or the file, never both.
+  const treeHideable = !compact && !!fileSelection.entry;
   const fileChangesEntries = fileSelection.entry
     ? fileDiffEntries.filter(
         (entry) => entry.path === fileSelection.entry?.path,
@@ -563,7 +583,9 @@ export function WorkspaceInspectorHost({
           <div
             className={`workspace-inspector-resource inspector-files-resource ${
               state.view === "files" ? "" : "is-hidden"
-            } ${splitEnabled ? "has-split-resizer" : ""}`}
+            } ${splitEnabled ? "has-split-resizer" : ""} ${
+              treeHideable && filesTreeHidden ? "files-tree-hidden" : ""
+            }`}
             style={splitEnabled ? splitStyle("files") : undefined}
           >
             <div
@@ -645,6 +667,8 @@ export function WorkspaceInspectorHost({
                 snippet={fileSelection.snippet}
                 onOpenFile={onOpenDocument}
                 onRefresh={onRefreshFile}
+                onToggleTree={treeHideable ? toggleFilesTree : undefined}
+                treeHidden={filesTreeHidden}
                 backAction={
                   compact && drillInByView.files && fileSelection.entry
                     ? {

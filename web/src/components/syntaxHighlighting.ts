@@ -187,6 +187,33 @@ export async function highlightCodeTokens(text: string, path: string) {
   return collectTokenRanges(result.value, text.length);
 }
 
+/**
+ * Tokens of a code snippet (a Markdown code fence): in the fence's language
+ * (a name or an extension), else in the language of `path`.
+ */
+export async function highlightSnippetTokens(
+  text: string,
+  language: string,
+  path?: string,
+) {
+  if (!text) return [];
+  const deps = await loadSyntaxHighlighter();
+  const named = language.toLowerCase();
+  const resolved = !named
+    ? path
+      ? resolvedSyntaxLanguage(path, deps)
+      : "plaintext"
+    : deps.highlighter.getLanguage(named)
+      ? named
+      : resolvedSyntaxLanguage(`snippet.${named}`, deps);
+  if (resolved === "plaintext") return [];
+  const result = deps.highlighter.highlight(text, {
+    language: resolved,
+    ignoreIllegals: true,
+  });
+  return collectTokenRanges(result.value, text.length);
+}
+
 export async function highlightDiffCode(
   root: HTMLElement,
   viewMode: DiffSyntaxViewMode,

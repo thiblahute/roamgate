@@ -4,6 +4,7 @@ import directHighlighter from "highlight.js/lib/core";
 import webPackage from "../../package.json";
 import {
   highlightCodeTokens,
+  highlightSnippetTokens,
   syntaxLanguageHintForPath,
 } from "./syntaxHighlighting";
 
@@ -46,5 +47,26 @@ describe("syntaxLanguageHintForPath", () => {
     expect(keyword && text.slice(keyword.from, keyword.to)).toBe("const");
     expect(number && text.slice(number.from, number.to)).toBe("42");
     expect(tokens.every((token) => token.to > token.from)).toBe(true);
+  });
+});
+
+describe("highlightSnippetTokens", () => {
+  const keyword = (tokens: { className: string }[]) =>
+    tokens.some((token) => token.className.includes("hljs-keyword"));
+
+  test("uses the fence's language, by name or extension", async () => {
+    expect(keyword(await highlightSnippetTokens("fn main() {}", "rust"))).toBe(
+      true,
+    );
+    expect(keyword(await highlightSnippetTokens("fn main() {}", "rs"))).toBe(
+      true,
+    );
+  });
+
+  test("falls back to the commented file's language", async () => {
+    expect(
+      keyword(await highlightSnippetTokens("def f(): pass", "", "a/b.py")),
+    ).toBe(true);
+    expect(await highlightSnippetTokens("def f(): pass", "")).toEqual([]);
   });
 });

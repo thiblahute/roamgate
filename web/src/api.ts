@@ -9,6 +9,7 @@ import {
   type AssistantSnapshot,
   type AssistantTaskNotification,
 } from "../../shared/assistant";
+import type { ReviewPush } from "../../shared/review";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -299,6 +300,26 @@ type Pending = {
   serverRuntimeGeneration: number | null;
 };
 
+function isReviewPush(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const push = value as Record<string, unknown>;
+  if (push.type === "session") {
+    const snapshot = push.snapshot as Record<string, unknown> | undefined;
+    const session = snapshot?.session as Record<string, unknown> | undefined;
+    return (
+      typeof session?.id === "string" &&
+      typeof session.connectionId === "string" &&
+      Array.isArray(snapshot?.threads)
+    );
+  }
+  if (push.type === "removed" || push.type === "open")
+    return (
+      typeof push.sessionId === "string" &&
+      typeof push.connectionId === "string"
+    );
+  return false;
+}
+
 export interface ConnectionClient {
   readonly connectionId: string;
   readonly generation: number;
@@ -393,6 +414,7 @@ function isBridgeHello(value: unknown): value is BridgeHello {
     "terminal_clipboard",
     "assistant",
     "assistant_notification",
+    "review",
   ]) {
     if (Object.prototype.hasOwnProperty.call(message, field)) return false;
   }
@@ -418,6 +440,16 @@ function isBridgeHello(value: unknown): value is BridgeHello {
  * Global RPC:     { id, method, params }
  * Scoped replies and pushes carry a top-level connection_id.
  */
+/** A failed call; `code` tells the failures the caller handles apart. */
+export class RpcError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
 export class Bridge {
   private ws: WebSocket | null = null;
   private seq = 0;
@@ -437,6 +469,7 @@ export class Bridge {
   private popupHandlers = new Set<(popup: PopupStatePush) => void>();
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
   private forwardsHandlers = new Set<(forwards: ForwardRecord[]) => void>();
+  private reviewHandlers = new Set<(push: ReviewPush) => void>();
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
   private controlHandlers = new Set<(c: BridgeControlMsg) => void>();
   private helloHandlers = new Set<(hello: BridgeHello) => void>();
@@ -820,6 +853,7 @@ export class Bridge {
     const hasPopup = owns("popup");
     const hasUiSettings = owns("ui_settings");
     const hasForwards = owns("forwards");
+    const hasReview = owns("review");
     const hasControl = owns("control");
     const hasAssistant = owns("assistant");
     const hasAssistantNotification = owns("assistant_notification");
@@ -833,6 +867,7 @@ export class Bridge {
       hasPopup,
       hasUiSettings,
       hasForwards,
+      hasReview,
       hasControl,
       hasAssistant,
       hasAssistantNotification,
@@ -931,7 +966,12 @@ export class Bridge {
       ) {
         pending.reject(new Error("invalid error response"));
       } else if (hasError) {
-        pending.reject(new Error(msg.error.message));
+        pending.reject(
+          new RpcError(
+            msg.error.message,
+            typeof msg.error.code === "string" ? msg.error.code : undefined,
+          ),
+        );
       } else {
         pending.resolve(msg.result);
       }
@@ -1062,6 +1102,16 @@ export class Bridge {
         this._hello?.capabilities?.connection_runtime_generation === true,
       );
       if (popup) this.popupHandlers.forEach((handler) => handler(popup));
+      return;
+    }
+
+    if (hasReview) {
+      // Machine-wide like forwards: the review store filters by connection,
+      // and an agent may raise a review on a connection this tab is not on.
+      if (isReviewPush(msg.review)) {
+        const push = msg.review as ReviewPush;
+        this.reviewHandlers.forEach((handler) => handler(push));
+      }
       return;
     }
 
@@ -1258,6 +1308,11 @@ export class Bridge {
   onPopup(cb: (popup: PopupStatePush) => void): () => void {
     this.popupHandlers.add(cb);
     return () => this.popupHandlers.delete(cb);
+  }
+
+  onReview(cb: (push: ReviewPush) => void): () => void {
+    this.reviewHandlers.add(cb);
+    return () => this.reviewHandlers.delete(cb);
   }
 
   onForwards(cb: (forwards: ForwardRecord[]) => void): () => void {

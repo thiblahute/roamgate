@@ -125,6 +125,8 @@ export function createLegacyConnectionRuntime(args: {
   taskNotificationSource?: TaskNotificationSource;
   onError?: (error: unknown, identity: ConnectionIdentity) => void;
   onTransportExit?: (error: SshTunnelError) => void;
+  /** The SSH command master became ready (again). */
+  onSshMasterReady?: () => void;
   /**
    * An interface preference changed. Unlike everything else here this is not
    * scoped to the connection — it belongs to the Roamgate server, so the host
@@ -272,6 +274,9 @@ export function createLegacyConnectionRuntime(args: {
     config,
     runProcess,
     onUnexpectedExit: args.onTransportExit,
+    onMasterReady: () => {
+      if (!disposed) args.onSshMasterReady?.();
+    },
   });
   const handleSettingsRpc = createSettingsRpcHandler({
     connectionId: identity.id,

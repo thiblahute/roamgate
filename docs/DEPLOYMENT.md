@@ -227,6 +227,7 @@ environment file. `roamgate --help` lists everything.
 | `ROAMGATE_SETTINGS_PATH` | GUI settings file (one per bridge) |
 | `ROAMGATE_CONNECTIONS_PATH` | Connection profiles file |
 | `ROAMGATE_ASSISTANT_DIR` | Ranger data directory |
+| `ROAMGATE_REVIEW_DIR` | Review sessions and agent sockets |
 | `ROAMGATE_WEB_PUSH_PATH` / `ROAMGATE_WEB_PUSH_SUBJECT` | [Web Push](#web-push-notifications) |
 
 Legacy `HERDR_GUI_*` names still work; the `ROAMGATE_*` name wins, even when
@@ -453,6 +454,14 @@ tell apart. The suffix (up to 32 characters) is saved on the server and shared b
 all viewers. Set it before installing the PWA; already installed apps (especially
 on Android) may keep the old name until the browser updates the manifest or you
 reinstall.
+
+## Reviews
+
+Agents use `~/.cache/roamgate/bin/roamgate-review`, which Roamgate installs on
+this machine and on each SSH host when the connection starts. It needs
+`python3` there, and SSH hosts must allow stream-local forwarding (sshd's
+default); a host without either only loses the review client. Merge request
+reviews use the `glab` login on the checkout host, like the PR/MR status card.
 
 ## Worktree location
 

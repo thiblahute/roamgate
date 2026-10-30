@@ -28,6 +28,8 @@ export function createSshMaster(args: {
   controlPath: string;
   connectionId?: string;
   logger?: Logger;
+  /** Runs each time the master becomes ready, including after a restart. */
+  onReady?: () => void;
   dependencies?: {
     spawn?: (argv: string[]) => SshMasterProcess;
     exists?: (path: string) => boolean;
@@ -170,6 +172,14 @@ export function createSshMaster(args: {
       isAlive,
     });
     logger.debug("SSH command master ready", { connection });
+    try {
+      args.onReady?.();
+    } catch (error) {
+      logger.debug("SSH command master ready hook failed", {
+        connection,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return true;
   }
 

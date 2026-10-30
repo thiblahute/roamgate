@@ -258,6 +258,38 @@ state; sends are never replayed.
   combined, and runs re-verify identities and permissions. Run results emit an
   `assistant_notification` push; custom notices are deduplicated by event key.
 
+## Reviews
+
+Review sessions and their threads live in `reviews.sqlite` in the data
+directory (`ROAMGATE_REVIEW_DIR` overrides), written through on every change
+and pushed to every browser as `review` messages; browsers call
+connection-scoped `review.*` methods and always write as the user. A diff is
+one shell script on the checkout host. A local review (a range or the
+working tree) never shows merge request content; GitLab is the separate
+review of the merge request (target `mr`, opened from the local review by
+`review.gitlab.open`). There the user's review comments and overall comment
+are GitLab draft notes read and written through `glab api` on the checkout
+host, and nothing of them is kept locally. Review comments written in a
+local review of the same checkout on the merge request's branch, and
+agents' draft replies, are shown there as pending and sent by
+`review.gitlab.push`. A local review comment records the merge request found
+for its branch when it is written (`pendingFor`), so a later checkout of
+another branch does not move it; one written before any merge request was
+found follows its review's branch, checked again before sending. Local from
+the merge request's review returns to a local review of that branch
+(`review.gitlab.find` with `local`), else opens one.
+
+Agents reach the bridge through one unix socket per connection in
+`<review dir>/agent/`, served as HTTP with JSON. Local panes find it through
+the `~/.cache/roamgate/review.sock` link; on an SSH host, each time the
+connection's command master is ready the bridge installs the client and adds
+`ssh -O forward -R ~/.cache/roamgate/review.sock:<socket>` on that master, so
+agents there use the existing login and no port listens. An agent can edit
+only its own comments and cannot post on GitLab. The user's discussion
+comments reach a review's agent as a prompt typed into its Herdr pane, a
+few seconds after they are written (a burst goes as one prompt); `watch`,
+a long poll on the service, is for agents without a pane.
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell

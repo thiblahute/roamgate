@@ -59,6 +59,18 @@ import {
 } from "../../../shared/filePreview";
 import { HtmlPreviewError, readHtmlPreviewFile } from "./html-preview-files";
 import { HTML_PREVIEW_CSP, renderHtmlPreview } from "./html-preview";
+import {
+  readDefaultBase,
+  readReviewCommitPatch,
+  readReviewCommits,
+  readReviewFile,
+  readReviewHeads,
+  readReviewPatch,
+  readReviewRoot,
+  readReviewState,
+  scanReviewRepos,
+} from "./review-patch";
+import type { ReviewTarget } from "../../../shared/review";
 import { searchWorkspaceFiles } from "./search";
 
 const MAX_FILE_RESOLUTION_CANDIDATES = 32;
@@ -754,5 +766,76 @@ export function createFileHandlers({
     runWorkspaceGitFileAction,
     runWorkspaceGitRepoAction,
     resolveWorkspaceGitRoot: workspaceAndGitRoot,
+    readReviewPatch: (root: string, target: ReviewTarget) =>
+      readReviewPatch({
+        root,
+        target,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewCommits: (root: string, base: string, head: string) =>
+      readReviewCommits({
+        root,
+        base,
+        head,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewCommitPatch: (root: string, commit: string) =>
+      readReviewCommitPatch({
+        root,
+        commit,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewFile: (root: string, rev: string, path: string) =>
+      readReviewFile({
+        root,
+        rev,
+        path,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewState: (root: string, target: ReviewTarget) =>
+      readReviewState({
+        root,
+        target,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewHeads: (entries: { root: string; ref: string }[]) =>
+      readReviewHeads({
+        entries,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readDefaultBase: (root: string) =>
+      readDefaultBase({
+        root,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewRoot: (path: string) =>
+      readReviewRoot({
+        path,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    scanReviewRepos: (paths: string[], agentPaths: string[] = []) =>
+      scanReviewRepos({
+        paths,
+        agentPaths,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
   };
 }

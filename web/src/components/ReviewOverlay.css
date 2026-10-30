@@ -1,0 +1,1668 @@
+/*
+ * The review overlay, laid out after maildesk's review view, in Roamgate's
+ * theme: light or dark, black background, accent color and syntax colors
+ * all come from the app's tokens. Only GitLab's and the agent's own colors
+ * are the review's.
+ */
+.review-overlay,
+.review-list-overlay {
+  --rv-bg: var(--shell-bg);
+  --rv-surface: var(--shell-panel);
+  --rv-surface-2: var(--panel-2);
+  --rv-border: var(--shell-border);
+  --rv-text: var(--text);
+  --rv-muted: var(--muted);
+  --rv-faint: color-mix(in srgb, var(--muted) 70%, var(--bg));
+  --rv-accent: var(--accent);
+  --rv-accent-soft: var(--accent-soft);
+  --rv-danger: var(--red);
+  --rv-danger-soft: var(--danger-soft);
+  --rv-shadow: var(--shadow-lg);
+  --rv-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --rv-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --rv-sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --rv-syn-kw: var(--syntax-keyword);
+  --rv-syn-str: var(--syntax-string);
+  --rv-syn-com: var(--syntax-comment);
+  --rv-syn-num: var(--syntax-number);
+  --rv-syn-def: var(--syntax-function);
+  --rv-syn-type: var(--syntax-type);
+  --rv-syn-meta: var(--syntax-meta);
+  --rv-syn-prop: var(--syntax-property);
+  --rv-gitlab: #fc6d26;
+  --rv-agent: #c9a4f2;
+  --rv-agent-soft: color-mix(in srgb, #c9a4f2 14%, var(--panel));
+}
+
+:root[data-theme="light"] .review-overlay,
+:root[data-theme="light"] .review-list-overlay {
+  --rv-agent: #7b45c4;
+  --rv-agent-soft: color-mix(in srgb, #7b45c4 10%, var(--panel));
+}
+
+/* Pinned to a workspace that is not the one shown. */
+.review-overlay[hidden] {
+  display: none !important;
+}
+
+.review-overlay {
+  position: fixed;
+  inset: 0;
+  /* Beside the workspace list when it is shown (App sets it). */
+  left: var(--review-inset-left, 0px);
+  /* Above the app, below Roamgate's dialogs (6000) and toasts (6001). */
+  z-index: 5500;
+  display: flex;
+  flex-direction: column;
+  background: var(--rv-bg);
+  color: var(--rv-text);
+  font: 14px / 1.45 var(--rv-sans);
+  outline: none;
+}
+
+/* On a phone the overlay ends at the keyboard, as the app's content does:
+   a comment being written stays in view above it. */
+:where(html[data-layout="mobile"]) :is(.review-overlay, .review-list-overlay) {
+  bottom: var(--keyboard-inset-content, var(--keyboard-inset-bottom, 0px));
+}
+
+.review-overlay *,
+.review-list-overlay * {
+  box-sizing: border-box;
+}
+
+.review-overlay button,
+.review-overlay input,
+.review-overlay textarea,
+.review-overlay select,
+.review-list-overlay button {
+  font: inherit;
+  color: inherit;
+}
+
+.review-overlay kbd {
+  font: 11px var(--rv-mono);
+  padding: 1px 5px;
+  border: 1px solid var(--rv-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--rv-surface);
+}
+
+.review-overlay code {
+  font-family: var(--rv-mono);
+  font-size: 0.92em;
+}
+
+.review-overlay .btn,
+.review-overlay .icon-btn,
+.review-list-overlay .icon-btn {
+  border: 1px solid var(--rv-border);
+  background: var(--rv-surface);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.review-overlay .btn {
+  padding: 5px 11px;
+}
+
+.review-overlay .btn:hover,
+.review-overlay .icon-btn:hover,
+.review-list-overlay .icon-btn:hover {
+  background: var(--rv-surface-2);
+}
+
+.review-overlay .btn.primary {
+  background: var(--rv-accent);
+  border-color: var(--rv-accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.review-overlay .btn.primary:hover {
+  filter: brightness(1.08);
+  background: var(--rv-accent);
+}
+
+.review-overlay .btn.ghost {
+  border-color: transparent;
+  color: var(--rv-muted);
+}
+
+.review-overlay .btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.review-overlay .icon-btn,
+.review-list-overlay .icon-btn {
+  width: 32px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.review-overlay .note,
+.review-list-overlay .note {
+  font-size: 12px;
+  color: var(--rv-faint);
+}
+
+.review-overlay .link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--rv-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Header */
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rv-border);
+}
+
+.review-head h2 {
+  flex: 1 1 0;
+  min-width: 80px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-head .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.review-head .rv-group {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.review-head .rv-group + .rv-group {
+  padding-left: 10px;
+  border-left: 1px solid var(--rv-border);
+}
+
+.review-overlay .rv-sm {
+  padding: 4px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.review-overlay .btn.on {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+}
+
+#review-keys-btn {
+  flex: none;
+  font-weight: 600;
+}
+
+/* The View group's Diff only, next to Close when that group is hidden. */
+.review-head .rv-only {
+  display: none;
+}
+
+/* The branch's merge request: the review's mode, and the switch. */
+.review-head .rv-mr-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.review-head .rv-mr-chip:not(.on) .rv-mode {
+  background: var(--rv-surface-2);
+  color: var(--rv-muted);
+}
+
+@media (max-width: 1100px) {
+  .review-head .rv-group[aria-label="View"] {
+    display: none;
+  }
+
+  .review-head .rv-only {
+    display: inline-flex;
+  }
+}
+
+/* A narrow window (a phone either way up) shows part of the header: it
+   scrolls, and Diff only and Close stay in reach. */
+@media (max-width: 1100px) {
+  .review-head {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .review-head .rv-close {
+    position: sticky;
+    right: -14px;
+    z-index: 1;
+    flex: none;
+    margin-left: auto;
+    background: var(--rv-bg);
+    box-shadow: -8px 0 8px var(--rv-bg);
+  }
+  /* Diff only stays beside Close. */
+  .review-head .rv-only {
+    position: sticky;
+    right: 22px;
+    z-index: 1;
+    flex: none;
+    margin-left: auto;
+    background: var(--rv-bg);
+    box-shadow: -8px 0 8px var(--rv-bg);
+  }
+
+  .review-head .rv-only + .rv-close {
+    margin-left: 0;
+  }
+}
+
+/* Commit bar and focus bar */
+.review-commits,
+.review-repos {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--rv-border);
+}
+
+.review-changed {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--rv-border);
+  background: var(--rv-accent-soft);
+  color: var(--rv-text);
+}
+
+.review-repos select {
+  flex: 0 1 640px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  background: var(--rv-surface);
+  color: var(--rv-text);
+}
+
+/* The view shown, by name: a click (or gc) opens the commit picker. */
+.review-commit-name {
+  display: flex;
+  flex: 0 1 640px;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  background: var(--rv-surface);
+  color: var(--rv-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-commit-name > span {
+  flex: none;
+  white-space: nowrap;
+}
+
+.review-commit-name > span:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review-focusbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rv-border);
+  background: var(--rv-surface-2);
+}
+
+.review-focusbar input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  background: var(--rv-surface);
+}
+
+/* Body */
+.review-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.review-files {
+  width: 260px;
+  flex: none;
+  overflow: auto;
+  padding: 8px;
+  border-right: 1px solid var(--rv-border);
+  font-size: 12px;
+}
+
+.review-files button {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-files button:hover,
+.review-files button.on {
+  background: var(--rv-surface-2);
+}
+
+.review-files .rf-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.review-files .count {
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.review-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 10px 14px 40px;
+}
+
+/* On wide screens the review keeps a readable width, centered, rather than
+   running from edge to edge; side by side gets room for two columns. */
+.review-overlay .review-main > * {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+
+.review-overlay .review-main:has(> .review-diff.split) > * {
+  max-width: 1800px;
+}
+
+/* Lines and messages scrolled to stay clear of the sticky file header. */
+.review-main [data-at],
+.review-main [data-comment-id] {
+  scroll-margin-top: 40px;
+}
+
+/* The overall comment: a comment like the others, on the whole review. */
+.review-overall .rc {
+  margin: 0;
+}
+
+.review-overall > .rc-bar {
+  display: flex;
+  font-size: 11px;
+}
+
+.review-overall > .rc-bar .btn {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+#review-status {
+  min-height: 1em;
+  margin: 6px 0;
+}
+
+.review-commit-message {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--rv-surface-2);
+  color: var(--rv-muted);
+  font: 12px / 1.45 var(--rv-code);
+  white-space: pre-wrap;
+}
+
+.review-mr {
+  margin: 4px 0 8px;
+}
+
+.review-mr .mrt,
+.review-mr .rc {
+  margin-left: 0;
+}
+
+.mr-open h4 {
+  margin: 6px 0 4px;
+  color: var(--rv-gitlab);
+  font-size: 13px;
+}
+
+.mr-other > summary {
+  margin-bottom: 4px;
+  color: var(--rv-faint);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Diff */
+.rd-file {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 6px 8px;
+  border-radius: 6px 6px 0 0;
+  background: var(--rv-surface-2);
+  font: 600 12px var(--rv-code);
+}
+
+.rd-file .rd-show,
+.rd-file .rd-open {
+  margin-left: auto;
+  padding: 1px 8px;
+  font: 12px var(--rv-sans);
+}
+
+.rd-hunk {
+  padding: 2px 8px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font: 11px var(--rv-code);
+  opacity: 0.8;
+}
+
+.rl {
+  display: grid;
+  grid-template-columns: 44px 44px 1fr;
+  font: 12px / 1.45 var(--rv-code);
+  cursor: pointer;
+}
+
+.rl:hover {
+  background: var(--rv-surface-2);
+}
+
+.rl .no {
+  padding-right: 6px;
+  color: var(--rv-faint);
+  text-align: right;
+  user-select: none;
+}
+
+.rl .tx {
+  padding-left: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.rl.add {
+  background: rgba(46, 160, 67, 0.14);
+}
+
+.rl.del {
+  background: rgba(248, 81, 73, 0.14);
+}
+
+.rl.cur {
+  outline: 2px solid var(--rv-accent);
+  outline-offset: -2px;
+}
+
+.rl.has .no:first-child {
+  box-shadow: inset 3px 0 var(--rv-accent);
+}
+
+.rl.has-mr .no:first-child {
+  box-shadow: inset 3px 0 var(--rv-gitlab);
+}
+
+.srow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.rd-side-threads {
+  align-items: start;
+}
+
+.rd-side {
+  min-width: 0;
+}
+
+.review-diff.split .rd-side + .rd-side {
+  border-left: 1px solid var(--rv-border);
+}
+
+.rl.half {
+  grid-template-columns: 44px 1fr;
+  min-width: 0;
+}
+
+.rl.half.empty {
+  background: var(--rv-surface-2);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rl.split {
+  grid-template-columns: 44px 1fr 44px 1fr;
+}
+
+.rl.msg {
+  grid-template-columns: 44px 1fr;
+}
+
+.rl.split .tx,
+.rl.half .tx {
+  min-width: 0;
+}
+
+.review-diff.split .rl.half + .rl.half,
+.review-diff.split .rl.split .no:nth-child(3) {
+  border-left: 1px solid var(--rv-border);
+}
+
+.rl.in-sel {
+  background: rgba(130, 80, 223, 0.22) !important;
+}
+
+.review-diff.split .srow:has(.rl.in-sel) {
+  background: rgba(130, 80, 223, 0.1);
+}
+
+.rd-expand {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 8px;
+  border-top: 1px dashed var(--rv-border);
+  border-bottom: 1px dashed var(--rv-border);
+  background: var(--rv-surface-2);
+  font-size: 12px;
+}
+
+.rd-expand .btn {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+/* Cursor and search */
+.rv-word {
+  border-radius: 2px;
+  background: var(--rv-accent);
+  color: var(--rv-bg);
+}
+
+.rv-hit {
+  border-radius: 2px;
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+.rv-hit.rv-cur {
+  background: #facc15;
+  color: #111;
+  outline: 1px solid #facc15;
+}
+
+.rv-search-label {
+  color: var(--rv-faint);
+}
+
+.review-searchline {
+  padding: 6px 14px;
+  border-top: 1px solid var(--rv-border);
+  background: var(--rv-surface-2);
+  font-size: 13px;
+}
+
+.review-searchline mark {
+  padding: 0 4px;
+  font-family: var(--rv-code);
+}
+
+.review-cmdline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--rv-border);
+  font: 13px var(--rv-code);
+}
+
+.review-cmd {
+  flex: 0 1 220px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+}
+
+.review-wild {
+  display: flex;
+  gap: 10px;
+  margin-left: 12px;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wild-item {
+  color: var(--rv-faint);
+}
+
+.wild-item .note {
+  display: none;
+}
+
+.wild-item.on {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--rv-accent);
+  color: var(--rv-bg);
+}
+
+.wild-item.on .note {
+  display: inline;
+  color: inherit;
+}
+
+/* Syntax colours: maildesk's palette over highlight.js classes */
+.review-overlay .hljs-keyword,
+.review-overlay .hljs-built_in,
+.review-overlay .hljs-literal {
+  color: var(--rv-syn-kw);
+}
+
+.review-overlay .hljs-string,
+.review-overlay .hljs-regexp,
+.review-overlay .hljs-char {
+  color: var(--rv-syn-str);
+}
+
+.review-overlay .hljs-comment,
+.review-overlay .hljs-quote {
+  color: var(--rv-syn-com);
+  font-style: italic;
+}
+
+.review-overlay .hljs-number,
+.review-overlay .hljs-symbol {
+  color: var(--rv-syn-num);
+}
+
+.review-overlay .hljs-title,
+.review-overlay .hljs-section,
+.review-overlay .hljs-function {
+  color: var(--rv-syn-def);
+}
+
+.review-overlay .hljs-type,
+.review-overlay .hljs-class {
+  color: var(--rv-syn-type);
+}
+
+.review-overlay .hljs-meta,
+.review-overlay .hljs-tag,
+.review-overlay .hljs-name {
+  color: var(--rv-syn-meta);
+}
+
+.review-overlay .hljs-attr,
+.review-overlay .hljs-attribute,
+.review-overlay .hljs-property,
+.review-overlay .hljs-variable {
+  color: var(--rv-syn-prop);
+}
+
+/* The cursor's word reads in the background colour over any token colour. */
+.review-diff .rv-word,
+.review-diff .rv-word[class*="hljs-"] {
+  color: var(--rv-bg);
+}
+
+.review-diff .rv-hit.rv-cur,
+.review-diff .rv-hit.rv-cur[class*="hljs-"] {
+  color: #111;
+}
+
+/* Comments: yours and the agent's */
+.rc {
+  margin: 4px 8px 8px 94px;
+  padding: 6px 8px;
+  border: 1px solid var(--rv-border);
+  border-left: 3px solid var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-surface, transparent);
+  font-size: 13px;
+}
+
+.rc.talk {
+  border-left-style: double;
+}
+
+.rc.resolved {
+  opacity: 0.65;
+}
+
+/* A resolved thread, folded to one line until unfolded. */
+.rc.folded {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: calc(100% - 102px);
+  padding: 3px 8px;
+  color: var(--rv-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc.folded .rc-fold-mark {
+  color: var(--rv-faint);
+  white-space: nowrap;
+}
+
+.rc.folded .rc-fold-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc .rc-text {
+  white-space: pre-wrap;
+}
+
+.rc-text.rich {
+  white-space: normal;
+}
+
+.rc-text.rich p {
+  margin: 6px 0;
+}
+
+.rc-text.rich :is(ul, ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.rc-text.rich blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--rv-border);
+  color: var(--rv-faint);
+}
+
+.rc-text.rich :is(h1, h2, h3, h4, h5, h6) {
+  margin: 6px 0 2px;
+  font-size: inherit;
+}
+
+.rc-text.rich code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--rv-accent-soft);
+}
+
+.rc-text.rich img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 480px;
+  margin: 4px 0;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+}
+
+.rc-text.rich a {
+  color: var(--rv-accent);
+  text-decoration: underline;
+}
+
+.rc .rc-reply {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rv-border);
+}
+
+.rc .rc-bar,
+.mrt .rc-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+/* The agent says it is working on this thread. */
+.rc .rc-working {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--rv-accent-soft);
+  color: var(--rv-text);
+  font-size: 12px;
+}
+
+.rc .rc-working-mark {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid var(--rv-border);
+  border-top-color: var(--rv-accent);
+  border-radius: 50%;
+  animation: row-spinner 0.8s linear infinite;
+}
+
+.rc .rc-working-time {
+  margin-left: auto;
+  color: var(--rv-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc .rc-working-mark {
+    animation: none;
+    border-color: var(--rv-accent);
+  }
+}
+
+.rc .rc-bar .spacer,
+.mrt .rc-bar .spacer {
+  flex: 1;
+}
+
+.rc .rc-bar .btn,
+.mrt .rc-bar .btn {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.rc .rc-kind {
+  color: var(--rv-faint);
+}
+
+/*
+ * The agent's answers stand apart from your comments: a band across the
+ * whole box, so the thread reads as one flat conversation, not nested boxes.
+ */
+.rc .from-agent {
+  margin: 0 -8px;
+  padding: 4px 8px;
+  background: var(--rv-agent-soft);
+}
+
+/* The message j / k, n / N stopped on (r, e, dd act on it); a folded
+   resolved thread is one. */
+.rc .focused,
+.rc.folded.focused,
+.mrt .mr-note.focused {
+  box-shadow: inset 2px 0 0 var(--rv-accent);
+  outline: 1px solid var(--rv-accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.rc > .focused:not(.from-agent) {
+  margin-right: -8px;
+  margin-left: -8px;
+  padding: 3px 8px;
+}
+
+.rc .rc-reply.from-agent {
+  margin-top: 4px;
+  border-top: 0;
+}
+
+.rc .from-agent + .rc-reply {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.rc .by-claude {
+  color: var(--rv-agent);
+  font-weight: 600;
+}
+
+/* GitLab threads */
+.mrt {
+  margin: 4px 8px 8px 94px;
+  padding: 4px 8px;
+  border: 1px solid var(--rv-border);
+  border-left: 3px solid var(--rv-gitlab);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.mrt.resolved {
+  opacity: 0.65;
+}
+
+.mrt summary {
+  color: var(--rv-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mr-tag {
+  color: var(--rv-gitlab);
+  font-weight: 600;
+}
+
+.mr-note {
+  margin-top: 4px;
+  padding: 4px 0;
+  border-top: 1px solid var(--rv-border);
+}
+
+.mr-who {
+  color: var(--rv-faint);
+  font-size: 12px;
+}
+
+/* Your reply, on GitLab but not submitted: only you see it. */
+.mr-note.mr-draft {
+  padding: 4px 8px;
+  border: 1px dashed var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-accent-soft);
+}
+
+.mr-draft-tag {
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.mr-body p {
+  margin: 4px 0;
+}
+
+.mr-where {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+/* Code in comments and GitLab suggestions */
+.note-code {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--rv-surface-2);
+  font: 12px / 1.45 var(--rv-code);
+  white-space: pre-wrap;
+}
+
+.suggestion {
+  margin: 6px 0;
+  overflow: hidden;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  font: 12px / 1.45 var(--rv-code);
+}
+
+.sg-head {
+  padding: 3px 8px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.sg-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sg-no {
+  padding-right: 6px;
+  color: var(--rv-faint);
+  text-align: right;
+}
+
+.sg-del {
+  background: rgba(248, 81, 73, 0.14);
+}
+
+.sg-add {
+  background: rgba(46, 160, 67, 0.14);
+}
+
+/* Modes */
+.review-overlay.no-files .review-files {
+  display: none;
+}
+
+.review-overlay.hide-comments .mrt,
+.review-overlay.hide-comments .review-mr {
+  display: none;
+}
+
+.review-overlay.hide-comments .rc:not(:has(.rc-editor)) {
+  display: none;
+}
+
+/* A line whose comments are hidden: clicking it shows them. */
+.review-overlay.hide-comments .rl.has .no,
+.review-overlay.hide-comments .rl.has-mr .no {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-zen-hint {
+  display: none;
+}
+
+.review-overlay.zen .review-head,
+.review-overlay.zen .review-commits,
+.review-overlay.zen .review-repos,
+.review-overlay.zen .review-focusbar,
+.review-overlay.zen .review-files,
+.review-overlay.zen .review-overall,
+.review-overlay.zen .review-mr,
+.review-overlay.zen #review-status,
+.review-overlay.zen .review-commit-message {
+  display: none !important;
+}
+
+/* Diff only: the commit shown and the steps through them, in a quiet strip
+   at the bottom that takes its own room rather than covering the diff. */
+.review-zen-commits {
+  display: none;
+}
+
+.review-overlay.zen .review-zen-commits {
+  order: 1;
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 8px calc(1px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rv-border);
+  color: var(--rv-faint);
+  font-size: 12px;
+}
+
+.review-zen-commits button {
+  min-height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.review-zen-commits .review-commit-name {
+  flex: 0 1 720px;
+  justify-content: center;
+}
+
+.review-zen-commits button:hover {
+  background: var(--rv-surface-2);
+  color: var(--rv-text);
+}
+
+@media (pointer: coarse) {
+  .review-zen-commits button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* Diff only: the way back and the way out, the only chrome left. */
+.review-overlay.zen .review-zen-hint {
+  position: absolute;
+  top: calc(6px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  opacity: 0.85;
+}
+
+.review-zen-hint button {
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--rv-border);
+  border-radius: 999px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.review-zen-hint button:hover {
+  color: var(--rv-text, inherit);
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .review-zen-hint button {
+    min-height: 40px;
+    min-width: 40px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 800px) {
+  .review-files {
+    display: none;
+  }
+
+  .rc {
+    margin-left: 8px;
+  }
+}
+
+.rc-editor {
+  min-height: 64px;
+}
+
+/* Shortcuts overlay */
+.review-keys {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.review-keys-panel {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 76vh;
+  overflow: auto;
+  padding: 14px 18px;
+  border: 1px solid var(--rv-border);
+  border-radius: 10px;
+  background: var(--rv-surface);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
+}
+
+.review-overlay .settings-head,
+.review-list-overlay .settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.review-overlay .settings-head h2 {
+  margin: 0;
+  font-size: 1.5em;
+}
+
+/* Conversations */
+.review-threads {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.rt-item {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+}
+
+.rt-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.rt-item.selected {
+  border-color: var(--rv-accent);
+  box-shadow: 0 0 0 1px var(--rv-accent);
+}
+
+.review-threads:focus {
+  outline: none;
+}
+
+.rt-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 0 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rt-head .rt-where {
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.rt-head .rt-when {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.rt-item.resolved {
+  opacity: 0.8;
+}
+
+/* A resolved conversation, summed up in one line until expanded. */
+.rt-summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--rv-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rt-summary .rt-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-summary .note {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.rt-comment {
+  padding: 4px 0;
+  border-top: 1px solid var(--rv-border);
+}
+
+.rt-author {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rt-author.by-claude {
+  color: var(--rv-accent);
+}
+
+#review-keys-filter,
+#review-threads-filter {
+  width: 100%;
+  margin: 6px 0 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+  background: var(--rv-surface-2);
+}
+
+.review-overlay .keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.review-overlay .keys-row {
+  display: contents;
+}
+
+.review-overlay .keys dt {
+  display: flex;
+  gap: 4px;
+}
+
+.review-overlay .keys dd {
+  margin: 0;
+  color: var(--rv-muted);
+}
+
+/* Reviews in progress */
+.review-list-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5500;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.35);
+  color: var(--rv-text);
+  font: 14px / 1.45 var(--rv-sans);
+  outline: none;
+}
+
+.review-list-overlay .panel {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow: auto;
+  padding: 18px 22px;
+  border-radius: 12px;
+  background: var(--rv-surface);
+  box-shadow: var(--rv-shadow);
+}
+
+.review-list-overlay .panel h2 {
+  margin: 6px 0 10px;
+  font-size: 15px;
+}
+
+.review-list-overlay .chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-list-overlay .hist-item {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-list-overlay .hist-item:hover,
+.review-list-overlay .hist-item:focus,
+.review-list-overlay .hist-item.on {
+  border-color: var(--rv-accent);
+  background: var(--rv-surface-2);
+  outline: none;
+}
+
+.review-list-overlay .review-item.done {
+  opacity: 0.6;
+}
+
+.review-list-overlay .hist-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-list-overlay .hist-when {
+  color: var(--rv-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.review-list-overlay .hist-last {
+  grid-column: 1 / 3;
+  overflow: hidden;
+  color: var(--rv-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-list-overlay .review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  white-space: normal;
+}
+
+.review-list-overlay .chip-s {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.review-list-overlay .chip-s.news {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.review-list-overlay .bubble.error {
+  margin: 6px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--rv-danger-soft);
+  color: var(--rv-danger);
+}
+
+/* A review whose checkout or base is gone: said plainly, with what to do. */
+.review-overlay .review-gone {
+  margin-block: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--rv-danger-soft);
+  color: var(--rv-danger);
+}
+
+.review-gone p {
+  margin: 0 0 8px;
+}
+
+.review-gone .note {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.review-gone-retarget,
+.review-gone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.review-gone-retarget {
+  margin-bottom: 8px;
+}
+
+.review-gone-retarget input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+/* Reviewed files, as in tuicr */
+.review-files .rf-progress {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+}
+
+.review-files .rf-check {
+  flex: none;
+  width: 14px;
+  color: var(--rv-faint);
+}
+
+.review-files .rf-check.done {
+  color: var(--rv-accent);
+}
+
+.rd-file .rd-reviewed {
+  color: var(--rv-accent);
+}
+
+/* A file's name folds or unfolds it. */
+.rd-file .rd-name {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rd-file .rd-caret {
+  color: var(--rv-faint);
+  font-size: 10px;
+}
+
+/* p: the repository picker */
+.review-picker input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--rv-border);
+  border-radius: 6px;
+  background: var(--rv-surface-2);
+  color: var(--rv-text);
+}
+
+.review-picker ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-picker li button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--rv-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-picker li button.on {
+  background: var(--rv-accent-soft);
+}
+
+.review-picker li button.current span:first-child::after {
+  content: "  (shown)";
+  color: var(--rv-faint);
+}
+
+.review-picker li .note {
+  font-size: 11px;
+}
+
+/* A long message in parts one comments on: + in the margin, the part j / k
+   is on, and the comments on a part right under it. */
+.rc-part {
+  position: relative;
+  border-radius: 4px;
+}
+
+.rc-part.is-focused {
+  background: var(--rv-accent-soft);
+  box-shadow: inset 2px 0 var(--rv-accent);
+}
+
+.rc-part.has-notes {
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--rv-accent) 55%, transparent);
+}
+
+.rc-part-add {
+  position: absolute;
+  top: 1px;
+  left: -22px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+  background: var(--rv-surface-2);
+  color: var(--rv-muted);
+  font: 12px / 16px var(--rv-sans);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rc-part:hover > .rc-part-add,
+.rc-part.is-focused > .rc-part-add,
+.rc-part-add:focus-visible {
+  opacity: 1;
+}
+
+.rc-part-add:hover {
+  border-color: var(--rv-accent);
+  color: var(--rv-text);
+}
+
+/* A code line's + sits outside its block's padding. */
+.rc-code-line > .rc-part-add {
+  left: -30px;
+}
+
+.rc-part-notes {
+  margin: 4px 0 8px 14px;
+}
+
+/* A comment on a part sits under it, not at a line's comment indent. */
+.rc-part-notes > .rc {
+  margin: 0;
+}
+
+.rc-select-comment {
+  position: fixed;
+  z-index: 5600;
+  padding: 4px 10px;
+  border: 1px solid var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-surface);
+  color: var(--rv-text);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+  cursor: pointer;
+}
