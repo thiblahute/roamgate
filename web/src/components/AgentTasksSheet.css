@@ -1,0 +1,484 @@
+/* The session's background commands and subagents: a sheet over the app. */
+.agent-tasks-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 35%);
+}
+
+.agent-tasks-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: min(80vh, 900px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--shell-panel);
+  color: var(--text);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 50%);
+}
+
+.agent-tasks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.agent-tasks-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tasks-list {
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+/* A row the keys move through: a task, a phase or an agent. */
+.agent-tasks-row,
+.agent-workflow-phase,
+.agent-workflow-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.agent-tasks-row:hover,
+.agent-workflow-phase:hover,
+.agent-workflow-agent:hover,
+.agent-tasks-row.is-cursor,
+.agent-workflow-phase.is-cursor,
+.agent-workflow-agent.is-cursor {
+  background: var(--accent-soft);
+}
+
+/* The cursor stays visible without the focus, on failed rows too. */
+.agent-tasks-row.is-cursor,
+.agent-workflow-phase.is-cursor,
+.agent-workflow-agent.is-cursor {
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+}
+
+.agent-tasks-row:focus-visible,
+.agent-workflow-phase:focus-visible,
+.agent-workflow-agent:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+.agent-tasks-row.is-running,
+.agent-workflow-agent.is-running {
+  border-left-color: var(--accent);
+}
+
+.agent-tasks-row.is-failed,
+.agent-tasks-row.is-lost,
+.agent-workflow-agent.is-failed {
+  border-left-color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+.agent-tasks-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-tasks-title strong,
+.agent-tasks-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tasks-title small {
+  color: var(--muted);
+  font-family: var(--mono-font);
+  font-size: 11px;
+}
+
+.agent-tasks-time {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-tasks-empty {
+  margin: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-task-detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 10px 10px;
+  overflow-y: auto;
+}
+
+/* Its header lines keep their height; the output or conversation below
+   takes the rest. */
+.agent-task-detail > :not(.agent-task-output, .agent-task-conversation) {
+  flex-shrink: 0;
+}
+
+.agent-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-task-command {
+  display: block;
+  max-height: 5em;
+  overflow: auto;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-task-summary {
+  max-height: 12em;
+  margin: 0;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-task-output {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--terminal-bg, #000);
+  color: var(--text);
+  font-family: var(--mono-font);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-task-conversation {
+  display: flex;
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+/* On a phone, a sheet from the foot of the screen, nearly all of it. */
+:where(html[data-layout="mobile"]) {
+  .agent-tasks-backdrop {
+    align-items: flex-end;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px
+      calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .agent-tasks-sheet {
+    max-height: 100%;
+    height: 85%;
+  }
+}
+
+/* A workflow: its progress, then its phases, each with its agents. */
+.agent-task-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-workflow-summary {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--shell-panel);
+}
+
+.agent-workflow-bar {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border-soft);
+}
+
+.agent-workflow-bar > span {
+  flex-basis: 0;
+}
+
+.agent-workflow-bar .is-done {
+  background: var(--green);
+}
+
+.agent-workflow-bar .is-failed {
+  background: var(--danger-text);
+}
+
+.agent-workflow-bar .is-running {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.agent-workflow-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.agent-workflow-counts .is-running {
+  color: var(--accent);
+}
+
+.agent-workflow-counts .is-failed {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.agent-workflow-active {
+  color: var(--muted);
+}
+
+.agent-workflow-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-workflow-follow.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.agent-workflow-phase {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.agent-workflow-phase.is-active {
+  border-left-color: var(--accent);
+}
+
+.agent-workflow-phase.is-failed {
+  border-left-color: var(--danger-text);
+}
+
+.agent-workflow-phase-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-workflow-phase-number,
+.agent-workflow-phase-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-workflow-phase-count {
+  font-size: 12px;
+}
+
+.agent-workflow-phase-bar {
+  flex: none;
+  width: 48px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border-soft);
+}
+
+.agent-workflow-phase-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.agent-workflow-agent {
+  padding-left: 28px;
+}
+
+/* Results read in full lines, a few of them. */
+.agent-workflow-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.agent-tasks-title small.agent-workflow-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-workflow-agent.is-followed .agent-tasks-title strong {
+  color: var(--accent);
+}
+
+.agent-workflow-times {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.agent-workflow-quiet {
+  color: var(--warning-text);
+  font-size: 11px;
+}
+
+.agent-workflow-result {
+  margin-top: 8px;
+}
+
+.agent-workflow-result h4 {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-task-spinner {
+  flex: none;
+  color: var(--accent);
+  animation: agent-task-spin 1s linear infinite;
+}
+
+.agent-task-failed {
+  flex: none;
+  color: var(--danger-text);
+}
+
+.agent-task-done {
+  flex: none;
+  color: var(--green);
+}
+
+@keyframes agent-task-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-task-spinner {
+    animation: none;
+  }
+}
+
+/* The keys, over the sheet's foot. */
+.agent-tasks-help {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 2;
+  max-height: 70%;
+  padding: 8px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--shell-panel);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
+  font-size: 12px;
+}
+
+.agent-tasks-help dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.agent-tasks-help dl > div {
+  display: contents;
+}
+
+.agent-tasks-help dt {
+  white-space: nowrap;
+}
+
+.agent-tasks-help dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.agent-tasks-help kbd {
+  margin-right: 2px;
+  padding: 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  font-family: var(--mono-font);
+  font-size: 11px;
+}
+
+:where(html[data-layout="mobile"]) .agent-tasks-keys-button {
+  display: none;
+}
+
+.agent-task-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}

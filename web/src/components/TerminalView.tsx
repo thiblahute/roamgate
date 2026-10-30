@@ -197,6 +197,8 @@ import {
   paneHasAgentHistory,
 } from "./agentSession";
 import { AgentHistoryDrawer } from "./AgentHistoryDrawer";
+import { PaneAgentTasksSheet } from "./AgentTasksSheet";
+import { onAgentTasksRequest, requestAgentTasks } from "../agentTasksOpen";
 import {
   type AgentActivity,
   type AgentPrompt,
@@ -1155,7 +1157,9 @@ export function TerminalView({
       if (
         e.defaultPrevented ||
         !shortcutMatches(e, "pane.chat") ||
-        document.querySelector(".modal-backdrop, .command-popover")
+        document.querySelector(
+          ".modal-backdrop, .agent-tasks-backdrop, .command-popover",
+        )
       )
         return;
       e.preventDefault();
@@ -1166,6 +1170,38 @@ export function TerminalView({
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true });
   }, [chatAvailable, isActivePane, pane, s.activeConnectionId]);
+
+  // What a Claude pane runs on the side: its chat opens its own list, and
+  // over the terminal this one. The shortcut asks whichever shows.
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const tasksPaneId = pane?.agent === "claude" ? pane.pane_id : null;
+  useEffect(() => {
+    if (!tasksPaneId || chatShown) {
+      setTasksOpen(false);
+      return;
+    }
+    return onAgentTasksRequest(tasksPaneId, () =>
+      setTasksOpen((shown) => !shown),
+    );
+  }, [chatShown, tasksPaneId]);
+  useEffect(() => {
+    if (!isActivePane || !tasksPaneId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        e.repeat ||
+        !shortcutMatches(e, "pane.tasks") ||
+        document.querySelector(".modal-backdrop, .command-popover") ||
+        !requestAgentTasks(tasksPaneId)
+      )
+        return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, { capture: true });
+  }, [isActivePane, tasksPaneId]);
 
   const blurTerminalInput = () => {
     termRef.current?.textarea?.blur();
@@ -4050,6 +4086,12 @@ export function TerminalView({
               if (event.target === event.currentTarget) focusTerminalInput();
             }}
           />
+          {tasksOpen && !chatShown && pane ? (
+            <PaneAgentTasksSheet
+              pane={pane}
+              onClose={() => setTasksOpen(false)}
+            />
+          ) : null}
           {permissionPrompt && !chatShown ? (
             <div className="terminal-permission-layer">
               <AgentPermissionCard prompt={permissionPrompt} compact />
