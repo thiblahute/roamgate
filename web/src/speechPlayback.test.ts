@@ -1,5 +1,9 @@
 import { expect, mock, test } from "bun:test";
-import { SpeechPlayback, type SpeechRuntime } from "./speechPlayback";
+import {
+  SpeechPlayback,
+  type SpeechRuntime,
+  speakWithBrowser,
+} from "./speechPlayback";
 
 function setup() {
   const utterances: SpeechSynthesisUtterance[] = [];
@@ -126,4 +130,51 @@ test("unavailable APIs and empty text fail understandably", () => {
   const { controller: available } = setup();
   available.start(Symbol(), "one", "", preferences);
   expect(available.getSnapshot().error).toContain("no readable text");
+});
+
+test("browser reading of one sentence: preferences, language, end and stop", async () => {
+  const { runtime, utterances } = setup();
+  const voices = [
+    { voiceURI: "en", lang: "en-GB" },
+    { voiceURI: "fr", lang: "fr-FR" },
+  ] as SpeechSynthesisVoice[];
+  runtime.synthesis.getVoices = () => voices;
+  const done = speakWithBrowser(
+    "Bonjour.",
+    new AbortController().signal,
+    { voiceURI: "en", rate: 1.3 },
+    "fr",
+    () => runtime,
+  );
+  // The chosen voice does not speak French: a French one reads it.
+  expect(utterances[0]!.voice).toBe(voices[1]!);
+  expect(utterances[0]!.rate).toBe(1.3);
+  end(utterances[0]!);
+  await done;
+
+  const stop = new AbortController();
+  const stopped = speakWithBrowser(
+    "Long. ".repeat(100),
+    stop.signal,
+    { voiceURI: "en", rate: 1 },
+    undefined,
+    () => runtime,
+  );
+  expect(utterances[1]!.voice).toBe(voices[0]!);
+  stop.abort();
+  await stopped;
+  expect(runtime.synthesis.cancel).toHaveBeenCalled();
+  // A stale end after the stop starts nothing more.
+  end(utterances[1]!);
+  expect(utterances).toHaveLength(2);
+
+  const failing = speakWithBrowser(
+    "Fails.",
+    new AbortController().signal,
+    preferences,
+    undefined,
+    () => runtime,
+  );
+  error(utterances[2]!);
+  await expect(failing).rejects.toThrow("Speech playback failed.");
 });

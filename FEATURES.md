@@ -210,19 +210,27 @@ Inspector state is scoped to each checkout; see
   reminders, task notifications, notes on images a tool read) is not shown as
   the user's, and a compaction summary shows as one **Conversation
   compacted** line that opens the summary.
-  **Speak** beside an assistant message reads its full text using browser speech
-  synthesis; **Stop**, another message, or closing/switching the chat cancels it.
-  On desktop, Speak appears on hover or keyboard focus, like Copy; Stop remains
-  visible during playback. On mobile, the speech control stays visible.
-  Playback reads a snapshot, never automatically narrates new replies, and is
-  limited to one message per browser tab. Code blocks, Mermaid diagrams, oversized
-  tables, and long hashes/values are omitted or announced instead of read aloud.
-  Simple tables retain column labels. Raw HTML blocks are omitted. Voice and
-  speaking rate are saved for this browser under **Configuration > Behavior >
-  Speech**; unavailable voices fall back to the browser default. Some voices use
-  online services and may send message text to their provider. No microphone or
-  server-side speech software is required. Browser support and voices vary;
-  background and locked-screen playback are not guaranteed, including on iOS.
+  **Speak** beside an assistant message reads its full text aloud; **Stop**,
+  another message, or closing/switching the chat cancels it. Two engines read
+  aloud, here and in voice chat. When the server has Roamgate's voice engine
+  ([voice chat](docs/DEPLOYMENT.md#voice-chat)), its voices read a sentence
+  at a time, at the server's reading speed, and the sentence being read is
+  highlighted; otherwise the browser's speech synthesis reads, with the voice
+  and speaking rate saved for this browser (unavailable voices fall back to
+  the browser default). **Configuration > Behavior > Speech** says which
+  engine reads and whether voice chat can listen, sets the browser voice and
+  rate, and with the server engine its reading speed and whether this browser
+  reads with its own voices instead. Both engines read the same text: code
+  blocks, Mermaid diagrams, oversized tables, and long hashes/values are
+  omitted or announced instead of read aloud, simple tables retain column
+  labels, and raw HTML blocks are omitted. On desktop, Speak appears on hover
+  or keyboard focus, like Copy; Stop remains visible during playback. On
+  mobile, the speech control stays visible. Playback reads a snapshot, never
+  automatically narrates new replies, and is limited to one message per
+  browser tab. Some browser voices use online services and may send message
+  text to their provider; the browser engine needs no microphone or
+  server-side speech software. Browser support and voices vary; background
+  and locked-screen playback are not guaranteed, including on iOS.
 - An agent pane can show its conversation **as a chat** instead of its
   terminal, which keeps running underneath and does not take the keyboard:
   the chat button in the pane's toolbar, Ctrl+Cmd+M (Ctrl+Alt+M elsewhere), or
@@ -262,6 +270,64 @@ Inspector state is scoped to each checkout; see
   and its multiple-choice questions as a form (one choice, several, or one's
   own words), a sheet of its own on a phone; **In the terminal** hands either
   back, and the terminal asks anyway once the hook stops waiting.
+  With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the microphone
+  beside the message box talks hands-free: speak, and what you said is sent
+  once you pause; the agent's answer is read aloud by the engine Speak uses
+  (as Speak cleans it), in its language with the server's voices (English,
+  French, Spanish...), then it listens
+  again; speaking up while it reads stops the reading and is heard. It
+  listens while the agent works too: each further message said is sent,
+  queued behind the others, and the answer read is the one to the last.
+  The agent's messages are read as it works, each once it is complete, so
+  progress is heard; at the end, only what was not read yet is. A
+  pause of 2.5 s sends what was said, or a tap at once. While it is on, a
+  call bar floats over the chat: who you talk to (the agent and its
+  workspace), what it is doing, the call's length and the microphone level
+  on the left; mute, the reading speed and a red hang-up button on the
+  right. Hang-up ends it at any time; so do saying just "stop" ("arrête",
+  "para"...) and a tap on the call's name while it waits or listens before
+  anything was said. A tap there while it reads stops the reading and
+  listens. It keeps listening through silence,
+  waits while the agent asks something on screen, and reconnects on its
+  own; when the voice helper on the Mac restarts, what was being said is
+  sent and it listens again. Only one thing reads aloud at a time, and on a phone other apps'
+  music or podcasts pause while voice chat is on.
+  Its mute button, on the call bar, stops listening without
+  ending it: replies are still read, and what was being said when it was
+  pressed is sent, as a tap would.
+  With a speaker model set up, the first voice heard in a voice chat (its
+  first two seconds of speech) is the one listened to; other people talking
+  nearby are left out. With recordings of your voice set up
+  (`speaker_reference`), yours is the one listened to from the start, even
+  when music, a reply or someone else is heard first, and in each language
+  you recorded.
+  With a turn model set up, a pause sends what was said only when it sounds
+  finished, and the words read as finished too when a text turn model is
+  set up: a pause after "I think we should", or after an "um", "euh", "and"
+  or "du coup", waits for the rest. Five seconds of silence sends it anyway
+  (ten after an "um").
+  With a cleaner set up, what was said is cleaned before it is sent:
+  fillers, false starts and misheard words go, self-corrections keep what
+  was meant. Words said to someone else in the room are held, greyed above
+  the box, with a tap to send them after all; a cleaned message's voice
+  label shows what was heard.
+  What is heard shows above the message box as it is said (with Parakeet,
+  updated about every second). With Whisper's model set up too, a sentence
+  Parakeet wrote in English while the conversation is in another language
+  (it drifts to English on some French) is read again in that language
+  when it was said in it.
+  Replies are read a little faster than the voice's own pace (1.2x); the
+  speed button on the voice card steps through 1x, 1.1x, 1.2x, 1.3x and
+  1.5x, from the sentence playing on, and every browser keeps it.
+  The sentence being read is highlighted. What is said goes to the agent
+  marked `[Voice]`, with the sentence it cut short when it interrupted the
+  reading, so the agent knows it talks live and what was heard; the chat
+  shows that as a label on the message.
+  Listening needs the server's voice engine: without it, the microphone is
+  dimmed and says so when tapped. Reading works with either engine; with the
+  browser's voices, the speed button steps the browser's speaking rate.
+  Starting voice chat while Speak reads with the server's voices lets it
+  play on, until you talk over it.
   A Claude chat also lists what the session runs on the side (the tasks
   button in its top row, counting those still running; `/tasks` typed in
   the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or

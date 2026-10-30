@@ -69,6 +69,9 @@ import { AgentMessageDialog } from "./AgentMessageDialog";
 import { AgentHistoryCard } from "./AgentHistoryCard";
 import { AgentHistoryChat } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
+import { voiceTrace } from "../voiceChat";
+import { useVoiceChat } from "./useVoiceChat";
+import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
 import { ConversationMinimap } from "./ConversationMinimap";
 import {
@@ -1214,6 +1217,37 @@ export function AgentHistoryDrawer({
     pane.pane_id,
     pane.terminal_id,
   );
+  const voice = useVoiceChat({
+    entries: messages,
+    agentStatus: pane.agent_status,
+    onSend: sendMessage,
+    onError: (detail) =>
+      store.notify({ kind: "error", message: "Voice chat stopped", detail }),
+  });
+  const stopVoice = voice.stop;
+  // Voice talks to one pane: switching panes ends it.
+  useEffect(() => stopVoice, [stopVoice, pane.pane_id, activeConnectionId]);
+  useEffect(
+    () => voiceTrace(`chat on pane ${pane.pane_id}, ${activeConnectionId}`),
+    [pane.pane_id, activeConnectionId],
+  );
+  // A running voice conversation floats over the chat, not in its box.
+  const voiceOverlay =
+    paneChat && voice.available && voice.state !== "off" ? (
+      <VoiceChatOverlay
+        state={voice.state}
+        level={voice.level}
+        muted={voice.muted}
+        heard={voice.heard}
+        speechRate={voice.speechRate}
+        agent={pane.agent}
+        place={workspaceLabel}
+        onToggle={voice.toggle}
+        onToggleMute={voice.toggleMute}
+        onEnd={voice.stop}
+        onCycleSpeechRate={voice.cycleSpeechRate}
+      />
+    ) : null;
   const historyComposer = (
     <AgentHistoryComposer
       // A pane or connection switch must never render, or send, the
@@ -1227,6 +1261,29 @@ export function AgentHistoryDrawer({
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
       commands={agentCommands}
       onError={notifyComposerError}
+      voice={
+        paneChat && (voice.available || voice.unavailable)
+          ? {
+              listen: voice.available,
+              state: voice.state,
+              level: voice.level,
+              muted: voice.muted,
+              held: voice.held,
+              onSendHeld: voice.sendHeld,
+              onDropHeld: voice.dropHeld,
+              onToggle: voice.available
+                ? voice.toggle
+                : () =>
+                    store.notify({
+                      kind: "info",
+                      message: "Voice chat cannot listen here",
+                      detail:
+                        "Listening needs Roamgate's voice engine on the server (docs/DEPLOYMENT.md, Voice chat). Speak still reads replies aloud with this browser's voice.",
+                    }),
+              onToggleMute: voice.toggleMute,
+            }
+          : undefined
+      }
     />
   );
   // An agent's question takes the keys in its card, as in the terminal.
@@ -1562,6 +1619,7 @@ export function AgentHistoryDrawer({
           {historyMinimap("auto")}
         </div>
       )}
+      {voiceOverlay}
       {paneChat?.permission ? (
         <AgentPermissionCard prompt={paneChat.permission} />
       ) : (

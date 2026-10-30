@@ -137,3 +137,103 @@ export class SpeechPlayback {
   }
 }
 export const speechPlayback = new SpeechPlayback();
+
+/**
+ * Speaks `text` with the browser's speech synthesis and `preferences`, in
+ * bounded chunks; resolves when it is over or `signal` aborts. Without a
+ * chosen voice, or when the chosen one does not speak `language`, a voice
+ * of `language` reads it. Voice chat reads a sentence at a time with it.
+ */
+export function speakWithBrowser(
+  text: string,
+  signal: AbortSignal,
+  preferences: SpeechPreferences,
+  language?: string,
+  getRuntime = browserSpeechRuntime,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return resolve();
+    const runtime = getRuntime();
+    if (!runtime)
+      return reject(new Error("Speech is not supported by this browser."));
+    const chunks = chunkSpeech(text);
+    const voices = runtime.synthesis.getVoices();
+    const chosen = voices.find(
+      (item) => item.voiceURI === preferences.voiceURI,
+    );
+    const speaks = (voice: SpeechSynthesisVoice) =>
+      !language || voice.lang.toLowerCase().startsWith(language.toLowerCase());
+    const voice =
+      chosen && speaks(chosen)
+        ? chosen
+        : language
+          ? voices.find(speaks)
+          : undefined;
+    let current: SpeechSynthesisUtterance | null = null;
+    let index = 0;
+    const finish = (error?: Error) => {
+      signal.removeEventListener("abort", stop);
+      if (current) {
+        current.onend = null;
+        current.onerror = null;
+      }
+      current = null;
+      if (error) reject(error);
+      else resolve();
+    };
+    const stop = () => {
+      finish();
+      try {
+        runtime.synthesis.cancel();
+      } catch {
+        /* Cancellation is best effort. */
+      }
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    const next = () => {
+      if (signal.aborted) return;
+      if (index === chunks.length) return finish();
+      try {
+        const utterance = runtime.utterance(chunks[index++]!);
+        // Kept: some browsers otherwise lose utterance callbacks.
+        current = utterance;
+        utterance.rate = preferences.rate;
+        if (voice) {
+          utterance.voice = voice;
+          utterance.lang = voice.lang;
+        } else if (language) utterance.lang = language;
+        utterance.onend = () => {
+          if (current === utterance) next();
+        };
+        utterance.onerror = (event) => {
+          if (current !== utterance) return;
+          // Cancelled by another reading: over, not failed.
+          const reason = (event as SpeechSynthesisErrorEvent | undefined)
+            ?.error;
+          if (reason === "interrupted" || reason === "canceled") finish();
+          else finish(new Error("Speech playback failed."));
+        };
+        runtime.synthesis.speak(utterance);
+      } catch {
+        finish(new Error("Speech playback failed."));
+      }
+    };
+    next();
+  });
+}
+
+/**
+ * Lets the browser speak later: some (iOS Safari) only speak after a first
+ * utterance started from a tap, such as the one starting voice chat.
+ */
+export function unlockBrowserSpeech(getRuntime = browserSpeechRuntime) {
+  const runtime = getRuntime();
+  if (!runtime) return;
+  try {
+    const utterance = runtime.utterance("");
+    utterance.volume = 0;
+    runtime.synthesis.speak(utterance);
+  } catch {
+    /* Best effort. */
+  }
+}
