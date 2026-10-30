@@ -1,6 +1,7 @@
 import { afterEach, expect, test, jest } from "bun:test";
 import { Window as BrowserWindow, Event as BrowserEvent } from "happy-dom";
 import { entryScript, startFrontendFreshness } from "./frontendFreshness";
+import { reviewDialogRole } from "./reviewDialog";
 
 test("the entry script is the hashed index chunk", () => {
   expect(
@@ -149,6 +150,27 @@ test("an unfocused API key survives a stale build until its dialog closes", asyn
   } finally {
     jest.useRealTimers();
   }
+});
+
+test("a pinned review kept hidden does not hold back a reload", async () => {
+  const tab = page("/assets/index-old.js");
+  const review = document.createElement("div");
+  const show = (hidden: boolean) => {
+    review.hidden = hidden;
+    const role = reviewDialogRole(hidden);
+    if (role) review.setAttribute("role", role);
+    else review.removeAttribute("role");
+  };
+  show(false);
+  document.body.append(review);
+  tab.serve("/assets/index-new.js");
+  await tab.reconnect();
+  // Shown: the review may hold unsaved work.
+  expect(tab.reloads()).toBe(0);
+  show(true);
+  tab.box.dispatchEvent(new BrowserEvent("input", { bubbles: true }));
+  await tab.settle();
+  expect(tab.reloads()).toBe(1);
 });
 
 test("pending uploads delay a reload even with an empty composer", async () => {

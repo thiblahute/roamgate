@@ -328,6 +328,93 @@ state; sends are never replayed.
   again, keeps one whose ID still holds the same path and checkout under the
   new boot ID, and skips and names one whose ID now holds another workspace.
 
+## Reviews
+
+Review sessions and their threads live in `reviews.sqlite` in the data
+directory (`ROAMGATE_REVIEW_DIR` overrides), written through on every change
+and pushed to every browser as `review` messages; browsers call
+connection-scoped `review.*` methods and always write as the user. Browsers
+drop a malformed pushed or listed review, and keep comment text not yet saved
+per review in `localStorage` (20 per review, 200k characters in all). A diff is
+one shell script on the checkout host. A local review (a range or the
+working tree) never shows merge request content; GitLab is the separate
+review of the merge request (target `mr`, opened from the local review by
+`review.gitlab.open`). There the user's review comments and overall comment
+are GitLab draft notes read and written through `glab api` on the checkout
+host, and nothing of them is kept locally. Review comments written in a
+local review of the same checkout on the merge request's branch, and
+agents' draft replies, are shown there as pending and sent by
+`review.gitlab.push`. A local review comment records the merge request found
+for its branch when it is written (`pendingFor`), so a later checkout of
+another branch does not move it; one written before any merge request was
+found follows its review's branch, checked again before sending. Local from
+the merge request's review returns to a local review of that branch
+(`review.gitlab.find` with `local`), else opens one. Before `glab api`
+asks a merge request's host, glab on the checkout host is asked which host
+is its default and whether it has a login of its own for that host:
+environment tokens (`GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, `OAUTH_TOKEN`) and
+host-less config tokens go only to the default host, another logged-in host
+is asked with them removed, and any other host is refused. Agents are kept
+from a merge request's review unless GitLab has named a project that is not
+a security one (fail closed: before GitLab answers, after a failed refresh,
+or for a numeric project id), and such reviews are left out of a
+workspace's `watch`, handoffs and the agent's review list. A shown merge
+request review polls `review.gitlab.refresh` every minute while the page is
+visible (not again within 30 s when shown again); a poll reads the merge
+request alone and keeps its threads while its `updated_at` and head are
+unchanged, reading them again at least every 5 minutes.
+
+Review diffs run git with the settings that change a patch's shape pinned
+(`core.quotePath`, `diff.noprefix`, `diff.mnemonicPrefix`,
+`diff.suppressBlankEmpty`, external diff and textconv drivers off), Git Bash
+on a Windows server. Context read from the working tree must be a regular
+file inside the checkout, links resolved. Images pasted into comments are
+stored under `<review dir>/images/<review id>/` and served to signed-in
+browsers by `/api/review/image`; a discarded review keeps them until the
+bridge restarts, so its undo brings them back. A review restored by that
+undo is rebuilt field by field: its id must be a review id, and a thread id
+another review uses is replaced.
+
+Agents reach the bridge through one unix socket per connection in
+`<review dir>/agent/`, served as HTTP with JSON (requests up to 1 MiB, at
+most 8 watches at once per review). Local panes find it through the
+`~/.cache/roamgate/review.sock` link, which the bridge replaces in one step
+when it starts (not on a Windows server) and removes on exit while it still
+points there. A local pane whose `HERDR_SOCKET_PATH` names a Herdr server
+Roamgate is not connected to is refused, so its pane ids never reach another
+server's panes. On an SSH host, each time the connection's command master is
+ready the bridge installs the client and adds
+`ssh -O forward -R ~/.cache/roamgate/review.sock:<socket>` on that master, so
+agents there use the existing login and no port listens. An agent signs with
+a plain name, can edit only its own comments and cannot post on GitLab. The
+user's discussion comments reach a review's agent as a prompt typed into its
+Herdr pane (`agent.prompt`), a few seconds after they are written: a burst
+goes as one prompt, one delivery at a time per review, without control
+characters and cut at 16,000 characters. Only connections whose host has
+the client get them (local connections once it is installed, SSH hosts once
+the setup above succeeded); elsewhere the review says why. So does a
+review whose agent has no known pane: the overlay attaches the workspace's
+agent pane it shows the review as live with, and **Retry** on an
+undelivered comment attaches it or sends again. A busy agent is
+tried again up to 10 times, 15 s apart at first and doubling up to 10
+minutes. `watch`, a long poll on the service, is for agents without a pane.
+
+Comments follow the agent's session, not a pane. When a review binds an agent
+pane, the service records the session Herdr reports there (`agent.sessionId`).
+Each delivery looks the session up (`agent.list`): the pane reporting it, else
+the pane reporting the session a Claude session went on in after a resume or
+/clear (its successor transcript, see `session-resolver.ts`). That pane becomes
+the review's pane. A review whose session is not found tries the pane it was
+bound to, and forgets a pane with no agent left, so the overlay attaches the
+workspace's agent pane in its place. When the session runs in no pane, the
+review says so in plain words ("Claude for this review is not running in any
+pane") and the comments wait: the service looks for the session every 20 s
+(and again after a restart, for a review that still has an error and comments
+waiting) and sends them once it runs again, as does the next comment. A user
+comment answered in its thread counts as delivered, however it got there
+(`unheardComments` in `shared/review.ts`): only newer ones and edits made after
+the answer are sent.
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell

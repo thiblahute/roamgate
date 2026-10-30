@@ -726,3 +726,58 @@ describe("Claude session images", () => {
     expect(entry.images).toEqual([{ ...message!.images![0]!, data: png }]);
   });
 });
+
+test("finds the pane running a session, following a Claude session that went on under a new ID", async () => {
+  const first = "362be254-14eb-4390-a96c-25032526572a";
+  const next = "9f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+  const agents = [
+    {
+      pane_id: "w1:p3",
+      agent: "claude",
+      agent_session: { kind: "id", value: "another-session" },
+    },
+    {
+      pane_id: "w2:p14",
+      agent: "claude",
+      agent_session: { kind: "id", value: next },
+    },
+  ];
+  const herdrCall: HerdrCall = async (method, params) => {
+    if (method === "agent.list") return { agents };
+    if (method === "agent.get") {
+      const agent = agents.find((each) => each.pane_id === params?.target);
+      if (!agent)
+        throw new Error(
+          `agent_not_found: agent target ${String(params?.target)} not found`,
+        );
+      return { agent };
+    }
+    throw new Error(`unexpected ${method}`);
+  };
+  const project = "/home/user/.claude/projects/-repo";
+  const files: AgentSessionFileAccess = {
+    ...remotePiFiles(""),
+    async statFile(path) {
+      return { path, mtimeMs: 1, size: 1 };
+    },
+    async findClaudeSessionById(id) {
+      return id === first
+        ? { path: `${project}/${first}.jsonl`, mtimeMs: 1, size: 1 }
+        : null;
+    },
+    async findClaudeSuccessor(path) {
+      return path === `${project}/${first}.jsonl`
+        ? `${project}/${next}.jsonl`
+        : null;
+    },
+  };
+  const handlers = createAgentSessionHandlers({ herdrCall, files });
+  expect(await handlers.sessionPane(next)).toBe("w2:p14");
+  // Resumed or cleared: Herdr reports the new ID; the old one leads there.
+  expect(await handlers.sessionPane(first)).toBe("w2:p14");
+  expect(
+    await handlers.sessionPane("0b1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f"),
+  ).toBeNull();
+  expect(await handlers.paneSession("w2:p14")).toBe(next);
+  expect(await handlers.paneSession("w2:p2")).toBeNull();
+});

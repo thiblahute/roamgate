@@ -7,6 +7,13 @@ type ShellOptions = {
   env?: NodeJS.ProcessEnv;
   which?: (command: string) => string | null;
   isFile?: (path: string) => boolean;
+  /**
+   * False for a script of Git and POSIX tools only: a plain shell where Git
+   * needs no login setup (all but Windows). A login shell reads the
+   * profile on every run, 50 to 100 ms more each, several times that when
+   * a few run at once (the review pane opening).
+   */
+  login?: boolean;
 };
 
 function isFile(path: string): boolean {
@@ -82,11 +89,9 @@ export function gitShellCommandArgv(
 ): string[] {
   // SSH scripts execute on the remote host; never resolve a local Git shell.
   if (host) return sshCommandArgv(host, command, [], "git.shell");
-  const shell =
-    (options.platform ?? process.platform) === "win32"
-      ? windowsGitShell(options)
-      : "sh";
+  const windows = (options.platform ?? process.platform) === "win32";
+  const shell = windows ? windowsGitShell(options) : "sh";
   // Login startup initializes Git for Windows' Git/coreutils PATH. Keep the
   // executable and script as separate argv entries, including paths with spaces.
-  return [shell, "-lc", command];
+  return [shell, windows || options.login !== false ? "-lc" : "-c", command];
 }

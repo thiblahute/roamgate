@@ -79,6 +79,7 @@ import {
   createLegacyRoutingLogger,
   isBridgeGlobalMethod,
   serializeConnectionEnvelope,
+  resolveReadyConnection,
   serializeHerdrEventEnvelope,
   validateConnectionGeneration,
   validateConnectionId,
@@ -125,6 +126,27 @@ import {
 } from "./utils/logger";
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { rpcLogLevel } from "./utils/rpc-logging";
+import { handleReviewRpc, isReviewMethod } from "./review/rpc";
+import { createReviewService, type ReviewService } from "./review/service";
+import { pruneReviewImages, reviewImageFile } from "./review/images";
+import { openReviewStorage, reviewDirectory } from "./review/storage";
+import { ReviewGoneError } from "./workspace/review-patch";
+import {
+  type GlabContext,
+  findBranchMergeRequest,
+  readCheckout,
+  readCommitDiff,
+  readMergeRequest,
+  readMergeRequestCommits,
+  readMergeRequestDiff,
+  readRawFile,
+} from "./review/gitlab";
+import {
+  createReviewAgentServer,
+  type ReviewAgentServer,
+} from "./review/agent-server";
+import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
+import { sshMasterControlPath } from "./bridge/ssh-sessions";
 import { createWorkspaceWorktree } from "./worktree/create";
 import { inspectWorkspacePath } from "./workspace/path";
 import {
@@ -361,8 +383,21 @@ function shouldLogRpc(
   if (method === "bridge.ping" || method === "bridge.status") return false;
   if (method === "terminal.input" || method === "terminal.scroll") return false;
   if (method === "terminal.resize" && elapsedMs < SLOW_RPC_LOG_MS) return false;
-  return IMPORTANT_RPC_METHODS.has(method) || elapsedMs >= SLOW_RPC_LOG_MS;
+  return (
+    IMPORTANT_RPC_METHODS.has(method) ||
+    // What the review pane waits on, but its polls.
+    (method.startsWith("review.") && !REVIEW_POLL_METHODS.has(method)) ||
+    elapsedMs >= SLOW_RPC_LOG_MS
+  );
 }
+
+/** Review methods asked every few seconds: logged only when slow. */
+const REVIEW_POLL_METHODS = new Set([
+  "review.state",
+  "review.prompts",
+  "review.list",
+  "review.activity",
+]);
 
 function logRpc(
   ws: ServerWebSocket<unknown>,
@@ -564,6 +599,300 @@ function getAssistantService() {
   return assistantServiceTask;
 }
 
+/** GitLab project ids by host and path, for finding branches' merge requests. */
+const reviewProjectIds = new Map<string, number>();
+
+function reviewGlabContext(
+  runtime: LegacyConnectionRuntime,
+  root: string,
+): GlabContext {
+  return {
+    root,
+    host: runtime.sshHost(),
+    shQuote,
+    runProcessWithCodeTimeout,
+  };
+}
+
+/** An image pasted into a review comment, to the signed-in browser. */
+async function serveReviewImage(url: URL): Promise<Response> {
+  const image = reviewImageFile(
+    reviewDirectory(),
+    url.searchParams.get("session") ?? "",
+    url.searchParams.get("name") ?? "",
+  );
+  const file = image ? Bun.file(image.path) : null;
+  if (!image || !file || !(await file.exists()))
+    return new Response("not found", { status: 404 });
+  return new Response(file, {
+    headers: {
+      "content-type": image.type,
+      "cache-control": "private, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'",
+    },
+  });
+}
+
+let reviewService: ReviewService | null = null;
+function getReviewService(): ReviewService {
+  if (reviewService) return reviewService;
+  reviewService = createReviewService({
+    storage: openReviewStorage(reviewDirectory()),
+    publish: (push) => {
+      // Machine-wide like forwards: each browser keeps the reviews of the
+      // connections it shows and can raise a review opened on another one.
+      const payload = JSON.stringify({ review: push });
+      for (const ws of clients) safeSend(ws, payload, "review");
+    },
+    loadCommits: async (session) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      if (session.target.kind === "range")
+        return runtime.files.readReviewCommits(
+          session.root,
+          session.target.base,
+          session.target.head,
+        );
+      if (session.target.kind !== "mr") return [];
+      const context = reviewGlabContext(runtime, session.root);
+      const mr = await readMergeRequest(context, session.target.url);
+      try {
+        return await runtime.files.readReviewCommits(
+          session.root,
+          mr.baseSha,
+          mr.headSha,
+        );
+      } catch {
+        return readMergeRequestCommits(context, mr);
+      }
+    },
+    loadPatchIds: async (session, shas) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      return runtime.files.readReviewPatchIds(session.root, shas);
+    },
+    loadDiff: async (session, commit) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      if (commit) {
+        try {
+          return await runtime.files.readReviewCommitPatch(
+            session.root,
+            commit,
+          );
+        } catch (error) {
+          if (session.target.kind !== "mr") throw error;
+          const context = reviewGlabContext(runtime, session.root);
+          const mr = await readMergeRequest(context, session.target.url);
+          const listed = (await readMergeRequestCommits(context, mr)).find(
+            (entry) => entry.sha.startsWith(commit),
+          );
+          return readCommitDiff(context, mr, commit, listed?.parent ?? null);
+        }
+      }
+      if (session.target.kind !== "mr")
+        return runtime.files.readReviewPatch(session.root, session.target);
+      // A merge request: diff its commits locally when the checkout has
+      // them (one host command), else ask GitLab for the diff.
+      const context = reviewGlabContext(runtime, session.root);
+      const mr = await readMergeRequest(context, session.target.url);
+      try {
+        const diff = await runtime.files.readReviewPatch(session.root, {
+          kind: "range",
+          base: mr.baseSha,
+          head: mr.headSha,
+        });
+        return { ...diff, baseSha: mr.baseSha, headSha: mr.headSha };
+      } catch {
+        return readMergeRequestDiff(context, mr);
+      }
+    },
+    onDeliveryError: (session, reason) =>
+      logger.warn("review comments not delivered", {
+        connection: session.connectionId,
+        pane: session.agent.paneId ?? "",
+        error: reason,
+      }),
+    promptAgent: async (connectionId, paneId, text) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        connectionId,
+      );
+      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+    },
+    // The comments follow the agent's session to the pane it runs in now.
+    sessionPane: async (connectionId, sessionId) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        connectionId,
+      );
+      return runtime.agentSessions.sessionPane(sessionId);
+    },
+    paneSession: async (connectionId, paneId) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        connectionId,
+      );
+      return runtime.agentSessions.paneSession(paneId);
+    },
+    // Agents run the review client: on this machine once it is installed,
+    // on an SSH host once its client and socket forward are set up there.
+    agentChannel: (connectionId) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime || runtime.remotePlatform === "windows") return false;
+      return runtime.sshHost()
+        ? reviewAgentHosts.has(connectionId)
+        : reviewAgentInstalled;
+    },
+    gitlab: {
+      context: (session) => {
+        const { runtime } = resolveReadyConnection(
+          connectionManager,
+          session.connectionId,
+        );
+        return reviewGlabContext(runtime, session.root);
+      },
+      checkout: (session) => {
+        const { runtime } = resolveReadyConnection(
+          connectionManager,
+          session.connectionId,
+        );
+        return readCheckout(reviewGlabContext(runtime, session.root));
+      },
+      find: (session, checkout) => {
+        const { runtime } = resolveReadyConnection(
+          connectionManager,
+          session.connectionId,
+        );
+        return findBranchMergeRequest(
+          reviewGlabContext(runtime, session.root),
+          checkout,
+          reviewProjectIds,
+        );
+      },
+    },
+    loadState: (session) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      return runtime.files.readReviewState(session.root, session.target);
+    },
+    loadHeads: (connectionId, entries) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        connectionId,
+      );
+      return runtime.files.readReviewHeads(entries);
+    },
+    loadFile: async (session, rev, path) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      try {
+        return await runtime.files.readReviewFile(session.root, rev, path);
+      } catch (error) {
+        // An MR's commits may not be in the checkout; GitLab has the file.
+        if (!rev || !session.gitlab) throw error;
+        const context = reviewGlabContext(runtime, session.root);
+        const url =
+          session.target.kind === "mr" ? session.target.url : undefined;
+        if (!url) throw error;
+        return readRawFile(
+          context,
+          await readMergeRequest(context, url),
+          path,
+          rev,
+        );
+      }
+    },
+  });
+  // Images of reviews discarded before the last restart.
+  try {
+    pruneReviewImages(
+      reviewDirectory(),
+      new Set(reviewService.list().map(({ session }) => session.id)),
+    );
+  } catch (error) {
+    logger.warn("review images not pruned", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return reviewService;
+}
+
+let reviewAgent: ReviewAgentServer | null = null;
+/** The review client and its socket are set up on this machine. */
+let reviewAgentInstalled = false;
+/** SSH connections whose host has the review client and its socket. */
+const reviewAgentHosts = new Set<string>();
+function getReviewAgent(): ReviewAgentServer {
+  reviewAgent ??= createReviewAgentServer({
+    service: getReviewService(),
+    directory: reviewDirectory(),
+    logger: logger.child("review"),
+    connections: () =>
+      connectionManager.list().flatMap((status) => {
+        const runtime = connectionManager.readyRuntime(status.id);
+        if (!runtime || runtime.remotePlatform === "windows") return [];
+        return [
+          {
+            id: runtime.identity.id,
+            herdrSocketPath: runtime.socketPath,
+            sshHost: runtime.sshHost(),
+            readRoot: (path: string) => runtime.files.readReviewRoot(path),
+            readDefaultBase: (root: string) =>
+              runtime.files.readDefaultBase(root),
+          },
+        ];
+      }),
+  });
+  return reviewAgent;
+}
+
+/** Lets agents on an SSH host reach the review pane over the master. */
+function setupRemoteReviewAgent(connectionId: string, host: string) {
+  // Until it is set up again, comments are not typed for a missing client.
+  reviewAgentHosts.delete(connectionId);
+  const controlPath = sshMasterControlPath(host);
+  if (!controlPath) return;
+  let localSocket: string;
+  try {
+    localSocket = getReviewAgent().listen(connectionId);
+  } catch (error) {
+    logger.warn("review agent socket unavailable", {
+      connection: connectionId,
+      error: sanitizeConnectionError(error),
+    });
+    return;
+  }
+  void setupRemoteReviewClient({
+    host,
+    controlPath,
+    localSocket,
+    connectionId,
+    run: runProcessWithCodeTimeout,
+  }).then(
+    () => {
+      reviewAgentHosts.add(connectionId);
+      logger.debug("review client ready", { connection: connectionId });
+    },
+    (error) =>
+      logger.warn("review client unavailable on this host", {
+        connection: connectionId,
+        error: sanitizeConnectionError(error),
+      }),
+  );
+}
+
 function resumeAssistantIfLoaded() {
   void assistantServiceTask
     ?.then((service) => service.resume())
@@ -659,6 +988,12 @@ function runtimeFactoryForProfile(
           }
         },
         forwards: sshForwards,
+        onSshMasterReady: profileConfig.sshHost
+          ? () => {
+              if (context.isCurrent() && profileConfig.sshHost)
+                setupRemoteReviewAgent(identity.id, profileConfig.sshHost);
+            }
+          : undefined,
         onTransportExit: profileConfig.sshHost
           ? (error) => {
               if (!context.isCurrent()) return;
@@ -879,7 +1214,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const sendError = (context: string, error: unknown) => {
     const message = (error as Error).message;
     markRpcError(ws, id, message);
-    sendReply({ id, error: { message } }, context);
+    // A review whose checkout or commits are gone says so to the overlay.
+    const code = error instanceof ReviewGoneError ? error.code : undefined;
+    sendReply({ id, error: code ? { message, code } : { message } }, context);
   };
   if (
     method === "bridge.ui_settings.get" ||
@@ -1268,6 +1605,45 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "file-search");
     } catch (e) {
       sendError("file-search-error", e);
+    }
+    return;
+  }
+  if (isReviewMethod(method)) {
+    try {
+      const result = await handleReviewRpc(
+        getReviewService(),
+        {
+          id: connection.identity.id,
+          resolveRoot: async (workspaceId) =>
+            (
+              await connection.files.resolveWorkspaceGitRoot({
+                workspace_id: workspaceId,
+              })
+            ).root,
+          readDefaultBase: (root) => connection.files.readDefaultBase(root),
+          readRoot: (path) => connection.files.readReviewRoot(path),
+          scanRepos: (paths, agentPaths) =>
+            connection.files.scanReviewRepos(paths, agentPaths),
+        },
+        method,
+        params ?? {},
+      );
+      if (method === "review.open")
+        logger.info("review opened", {
+          connection: connection.identity.id,
+          workspace: String(params?.workspace_id ?? ""),
+        });
+      sendReply({ id, result }, "review");
+    } catch (e) {
+      // A removed checkout fails each poll the same way: not a warning each.
+      logger[e instanceof ReviewGoneError ? "debug" : "warn"](
+        "review request failed",
+        {
+          method,
+          error: e instanceof Error ? e.message : String(e),
+        },
+      );
+      sendError("review-error", e);
     }
     return;
   }
@@ -1831,6 +2207,9 @@ function main() {
             server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
             return handleUpdateInstall(req);
           }
+          if (url.pathname === "/api/review/image" && req.method === "GET") {
+            return serveReviewImage(url);
+          }
           if (url.pathname === "/api/herdr/status" && req.method === "GET") {
             return handleHerdrStatus();
           }
@@ -2088,6 +2467,16 @@ function main() {
       logger.warn("no LAN IPv4 address detected");
     }
   }
+  if (process.platform !== "win32") {
+    try {
+      getReviewAgent().installLocal();
+      reviewAgentInstalled = true;
+    } catch (error) {
+      logger.warn("review agent unavailable", {
+        error: sanitizeConnectionError(error),
+      });
+    }
+  }
   openBrowser(config, browserUrl);
 }
 
@@ -2103,6 +2492,8 @@ function stopManagerOnce(): Promise<void> {
       ?.then((assistant) => assistant.dispose())
       .catch(() => undefined);
     await Promise.all([connectionManager.stopAll(), cpuProfile?.stop()]);
+    reviewAgent?.stop();
+    reviewService?.close();
   })();
   return managerStopTask;
 }
