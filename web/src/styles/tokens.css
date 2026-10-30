@@ -42,6 +42,9 @@
   --red: #ff6b6b;
   --yellow: #f0c453;
   --blue: #7aa2f7;
+  /* An agent idle with side tasks still running. */
+  --background-work: #2ac3de;
+  --background-work-text: #a8ecf7;
   --danger-border: #5a2b2b;
   --danger-text: #ffb3b3;
   --danger-soft: rgba(255, 107, 107, 0.14);
@@ -139,6 +142,8 @@
   --red: #d03b3b;
   --yellow: #a36f00;
   --blue: #2e7de9;
+  --background-work: #007c99;
+  --background-work-text: #005a70;
   --danger-border: #d8a2a2;
   --danger-text: #852020;
   --danger-soft: rgba(208, 59, 59, 0.11);

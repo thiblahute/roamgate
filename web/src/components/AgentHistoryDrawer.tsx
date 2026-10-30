@@ -21,6 +21,7 @@ import {
   Info,
   MessagesSquare,
   RefreshCw,
+  ListChecks,
   Search,
   Square,
   SquareCheck,
@@ -50,6 +51,11 @@ import { useAgentArtifacts } from "../agentArtifacts";
 import { useAgentCommands } from "../claudeCommands";
 import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
+import { AgentTasksSheet } from "./AgentTasksSheet";
+import { AgentStatusChip } from "./AgentStatusChip";
+import { useAgentTasks } from "../agentTasks";
+import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
+import { shortcutTitle } from "../shortcutPreferences";
 import type { Pane } from "../types";
 import {
   DEFAULT_INSPECTOR_NAVIGATION_RATIO,
@@ -233,6 +239,33 @@ export function AgentHistoryDrawer({
   const chatView = !!paneChat || view === "chat";
   const agentCommands = useAgentCommands(pane, open);
   const artifacts = useAgentArtifacts(pane, !!paneChat && open);
+  // What the session runs on the side, followed while the chat shows.
+  const {
+    tasks,
+    session: tasksSession,
+    loaded: tasksLoaded,
+  } = useAgentTasks(pane, !!paneChat && open);
+  const tasksById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
+  const runningTasks = tasks.filter((task) => task.status === "running").length;
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const openTask = useCallback((id: string | null) => {
+    setOpenTaskId(id);
+    setTasksOpen(true);
+  }, []);
+  // Its shortcut and the command menu open (or close) the list here, where
+  // it was left.
+  const chatPaneId = paneChat ? pane.pane_id : null;
+  useEffect(() => {
+    if (!chatPaneId) return;
+    return onAgentTasksRequest(chatPaneId, () => {
+      setOpenTaskId(null);
+      setTasksOpen((shown) => !shown);
+    });
+  }, [chatPaneId]);
   const [previewPane, setPreviewPane] = useState<Pane | null>(null);
   const [previewSummary, setPreviewSummary] =
     useState<AgentSessionSummary | null>(null);
@@ -1165,6 +1198,16 @@ export function AgentHistoryDrawer({
       ),
     [outboxKey],
   );
+  // /tasks typed in a Claude chat opens the chat's own list of what the
+  // session runs on the side, not Claude Code's in its terminal.
+  const sendFromChatBox = useCallback(
+    async (text: string) => {
+      if (chatPaneId && pane.agent === "claude" && isTasksCommand(text))
+        openTask(null);
+      else await sendFromBox(text);
+    },
+    [chatPaneId, openTask, pane.agent, sendFromBox],
+  );
   const composerDraftKey = terminalComposerDraftKey(
     activeConnectionId,
     connectionGeneration,
@@ -1180,7 +1223,7 @@ export function AgentHistoryDrawer({
       agent={pane.agent}
       status={pane.agent_status}
       stateSeq={pane.state_change_seq}
-      onSend={sendFromBox}
+      onSend={sendFromChatBox}
       onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
       commands={agentCommands}
       onError={notifyComposerError}
@@ -1513,6 +1556,8 @@ export function AgentHistoryDrawer({
             outbox={paneOutbox}
             onRetrySend={retrySend}
             onDiscardSend={discardSend}
+            tasks={paneChat ? tasksById : undefined}
+            onOpenTask={openTask}
           />
           {historyMinimap("auto")}
         </div>
@@ -1617,6 +1662,16 @@ export function AgentHistoryDrawer({
 
   return (
     <>
+      {/* Once it is known which session's place to open on. */}
+      {paneChat && tasksOpen && tasksLoaded ? (
+        <AgentTasksSheet
+          pane={pane}
+          tasks={tasks}
+          session={tasksSession}
+          initialTaskId={openTaskId}
+          onClose={() => setTasksOpen(false)}
+        />
+      ) : null}
       <aside
         ref={drawerRef}
         className={`agent-history-drawer ${open ? "is-open" : ""} ${
@@ -1718,15 +1773,30 @@ export function AgentHistoryDrawer({
               </div>
             </div>
           )}
-          <span
-            className={`agent-history-status is-${pane.agent_status.toLowerCase()}`}
-          >
-            {pane.agent_status}
-          </span>
+          <AgentStatusChip
+            status={pane.agent_status}
+            tasks={tasks}
+            onOpenTasks={() => openTask(null)}
+          />
           <div className="agent-history-actions">
             {paneChat ? (
               <>
                 <AgentArtifactsMenu artifacts={artifacts} />
+                {tasks.length ? (
+                  <button
+                    type="button"
+                    className={`agent-history-icon agent-chat-tasks-button${runningTasks ? " is-running" : ""}`}
+                    aria-label={`Background tasks: ${runningTasks} running`}
+                    title={shortcutTitle(
+                      "Background commands, subagents and workflows",
+                      "pane.tasks",
+                    )}
+                    onClick={() => openTask(null)}
+                  >
+                    <ListChecks size={14} />
+                    {runningTasks ? <span>{runningTasks}</span> : null}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="agent-history-icon"

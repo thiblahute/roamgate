@@ -692,6 +692,13 @@ input[type="search"]::-webkit-search-decoration {
   background: color-mix(in srgb, var(--panel) 86%, var(--red));
 }
 
+/* An agent idle while its side tasks run: its dot breathes. */
+@keyframes background-work-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .badge-idle {
   color: var(--info-text);
   border-color: var(--accent);

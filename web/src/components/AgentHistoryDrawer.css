@@ -176,6 +176,49 @@
   border-color: color-mix(in srgb, var(--green) 48%, var(--border));
 }
 
+/* Idle, with subagents or commands still running: opens the Tasks sheet. */
+.agent-history-status.has-background {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.agent-history-status.is-background {
+  color: var(--background-work-text);
+  border-color: color-mix(in srgb, var(--background-work) 55%, var(--border));
+  background: color-mix(in srgb, var(--background-work) 10%, transparent);
+}
+
+.agent-history-status.has-background:hover {
+  border-color: var(--background-work);
+}
+
+.agent-history-status.has-background:focus-visible {
+  outline: 2px solid var(--background-work);
+  outline-offset: 1px;
+}
+
+.agent-history-status-pulse {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--background-work);
+  border-radius: 999px;
+  animation: background-work-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-history-status-pulse {
+    animation: none;
+  }
+}
+
 .agent-history-status.is-working {
   color: var(--warning-text);
   border-color: color-mix(in srgb, var(--yellow) 48%, var(--border));
@@ -939,4 +982,20 @@
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* Background tasks: how many run, at a glance. */
+.agent-chat-tasks-button {
+  gap: 2px;
+  width: auto;
+  padding: 0 4px;
+}
+
+.agent-chat-tasks-button.is-running {
+  color: var(--accent);
+}
+
+.agent-chat-tasks-button span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
