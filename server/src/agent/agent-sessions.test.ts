@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,8 +8,12 @@ import {
   downloadAgentSessionFile,
   readAgentMessageHistory,
   readAgentSessionSummary,
+  readWorkflowRun,
 } from "./agent-sessions";
-import type { AgentSessionFileAccess } from "./session-file-access";
+import {
+  type AgentSessionFileAccess,
+  localAgentSessionFiles,
+} from "./session-file-access";
 import type { HerdrCall } from "./session-types";
 
 const tempDirectories: string[] = [];
@@ -97,6 +101,9 @@ function remotePiFiles(text: string): AgentSessionFileAccess {
     },
     async readPrefix(_path, byteLimit) {
       return bytes.subarray(0, byteLimit);
+    },
+    async readTail(_path, byteLimit) {
+      return bytes.subarray(Math.max(0, bytes.length - byteLimit));
     },
     async readDownloadBody() {
       return bytes;
@@ -431,4 +438,55 @@ describe("Pi agent sessions", () => {
       agent: { name: "antigravity-cli" },
     });
   });
+});
+
+test("a live workflow's agents carry when they started and were last active", async () => {
+  const runDir = await mkdtemp(join(tmpdir(), "roamgate-workflow-run-"));
+  tempDirectories.push(runDir);
+  await writeFile(
+    join(runDir, "journal.jsonl"),
+    [
+      { type: "launched" },
+      { type: "started", agentId: "a1", label: "server", phase: "Build" },
+      { type: "result", agentId: "a1", result: { summary: "built" } },
+      { type: "started", agentId: "a2", label: "web", phase: "Build" },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n"),
+  );
+  const at = async (name: string, seconds: number) => {
+    await writeFile(join(runDir, name), "{}");
+    await utimes(join(runDir, name), seconds, seconds);
+  };
+  await at("agent-a1.meta.json", 1000);
+  await at("agent-a1.jsonl", 1090);
+  await at("agent-a2.meta.json", 1100);
+  await at("agent-a2.jsonl", 1150);
+  const view = await readWorkflowRun(
+    localAgentSessionFiles,
+    runDir,
+    join(runDir, "missing.json"),
+  );
+  expect(view.phases).toEqual([
+    {
+      title: "Build",
+      agents: [
+        {
+          agentId: "a1",
+          label: "server",
+          state: "done",
+          resultPreview: JSON.stringify({ summary: "built" }, null, 2),
+          startedAt: 1_000_000,
+          durationMs: 90_000,
+        },
+        {
+          agentId: "a2",
+          label: "web",
+          state: "running",
+          startedAt: 1_100_000,
+          lastActiveAt: 1_150_000,
+        },
+      ],
+    },
+  ]);
 });

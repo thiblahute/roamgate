@@ -465,3 +465,58 @@
   color: var(--muted);
   font-weight: 600;
 }
+
+/* What a block's calls started in the background: open it from here. */
+.agent-history-chat-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+
+.agent-history-chat-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-history-chat-task > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A background task's status: on the blocks that started one, and in
+   the tasks sheet. */
+.agent-task-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-task-status.is-running {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.agent-task-status.is-failed {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.agent-task-status.is-lost {
+  border-style: dashed;
+}

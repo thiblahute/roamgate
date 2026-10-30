@@ -23,6 +23,7 @@ import {
   GitCommitHorizontal,
   GitBranch,
   Keyboard,
+  ListChecks,
   Maximize2,
   MoveDown,
   MoveLeft,
@@ -49,6 +50,7 @@ import { WorktreeHooksDialog } from "./WorktreeHooksDialog";
 import { WorktreeLocationDialog } from "./WorktreeLocationDialog";
 import { WorktreeOpenDialog } from "./WorktreeOpenDialog";
 import { AgentIcon } from "./AgentIcon";
+import { requestAgentTasks } from "../agentTasksOpen";
 import {
   Command,
   CommandEmpty,
@@ -996,6 +998,23 @@ export function CommandCombobox({
     : [];
 
   const agentActions: ActionDefinition[] = [];
+  if (activeAgent?.agent === "claude") {
+    agentActions.push({
+      key: "show-agent-tasks",
+      icon: <ListChecks size={15} />,
+      title: "Show background tasks",
+      detail: agentName(activeAgent),
+      shortcut: shortcutLabel("pane.tasks"),
+      keywords: [
+        "tasks",
+        "workflows",
+        "subagents",
+        "background commands",
+        "monitors",
+      ],
+      run: () => requestAgentTasks(activeAgent.pane_id),
+    });
+  }
   if (activeAgent) {
     agentActions.push({
       key: "close-active-agent-pane",

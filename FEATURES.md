@@ -175,6 +175,26 @@ Inspector state is scoped to each checkout; see
   and its multiple-choice questions as a form (one choice, several, or one's
   own words), a sheet of its own on a phone; **In the terminal** hands either
   back, and the terminal asks anyway once the hook stops waiting.
+  A Claude chat also lists what the session runs on the side (the tasks
+  button in its top row, counting those still running; `/tasks` typed in
+  the chat; Ctrl+Cmd+T, Ctrl+Alt+Shift+M elsewhere, from the chat or
+  over the pane's terminal; or **Show background tasks** in the command
+  menu): background
+  commands, monitors, subagents, teammates (by name) and workflows, with
+  how each ended (or **lost**: no end notice a day later). A command shows
+  the end of its output, followed while it runs; a subagent or teammate its
+  own conversation; a workflow its phases in order with their progress
+  (done ones folded, the running one open, failures marked), each agent's
+  state and time, its conversation, and the result. **Follow** keeps the
+  running agent in sight until you move or scroll. Each block of tool calls
+  that started one links to it. In the sheet, `j`/`k` (or arrows) move,
+  `g`/`G` go to the first or last, `n`/`N` and `e`/`E` to the next or
+  previous running or failed one, `Enter` opens, `h`/`l` fold and unfold a
+  phase, `f` follows, `Esc` or `Backspace` goes back and then closes, and
+  `?` lists the keys. Closed and opened again, the list comes back where it
+  was left in that session (in this browser tab): the task or agent shown,
+  the row, the folded phases, the scroll and whether it followed. A task
+  opened from its link in the chat goes back to that place.
 - **Menu > Configuration > Integrations** installs, updates, or removes Herdr's
   bundled agent integrations (not the agents themselves). See
   [version lookup](docs/ARCHITECTURE.md#agent-integrations).
@@ -487,6 +507,7 @@ and is skipped, with a note, on a browser that does not match.
 | Move pane (swap with neighbor) | `Cmd+Ctrl+Shift+Arrow` | `Ctrl+Alt+Shift+Arrow` |
 | Split right / down | `Cmd+D` / `Cmd+Shift+D` | `Ctrl+Alt+D` / `Ctrl+Alt+Shift+D` |
 | Zoom / restore pane | `Cmd+Shift+Enter` | `Ctrl+Alt+Enter` |
+| Claude pane's background tasks | `Cmd+Ctrl+T` | `Ctrl+Alt+Shift+M` |
 | Numbered tab | `Ctrl+1…9` | `Ctrl+Alt+1…9` |
 | Numbered command menu action | `Option+1…9` | `Alt+1…9` |
 | Workspaces | `Ctrl+Shift+W` | `Ctrl+Alt+O` |

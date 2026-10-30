@@ -1,3 +1,4 @@
+import { parseSessionTasks } from "./session-tasks";
 import { randomUUID } from "node:crypto";
 import type { AgentSessionFileAccess } from "./session-file-access";
 import type { AgentSessionResolved, SessionFile } from "./session-types";
@@ -47,6 +48,8 @@ export async function readSessionProjection(
     trajectory,
     messages,
     entries: historyEntriesFromTrajectory(projectionFile, trajectory),
+    /** What a Claude session ran on the side. */
+    tasks: agent === "claude" ? parseSessionTasks(records) : [],
     stats: {
       turns: messages.filter((message) => message.role === "user").length,
       records: records.length,

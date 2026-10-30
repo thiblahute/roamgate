@@ -3610,7 +3610,7 @@ export default function App() {
       }
       if (
         document.querySelector(
-          ".modal-backdrop, .command-popover, .context-menu",
+          ".modal-backdrop, .agent-tasks-backdrop, .command-popover, .context-menu",
         ) ||
         document.getElementById(CONFIG_MENU_ID)
       )
@@ -3735,7 +3735,7 @@ export default function App() {
         if (
           document.getElementById(CONFIG_MENU_ID) ||
           document.querySelector(
-            ".context-menu, .command-popover, .modal-backdrop",
+            ".context-menu, .command-popover, .modal-backdrop, .agent-tasks-backdrop",
           )
         ) {
           return;

@@ -16,6 +16,8 @@ export type AgentSessionFileAccess = {
   statFile(path: string): Promise<SessionFile | null>;
   readText(path: string): Promise<string>;
   readPrefix(path: string, byteLimit: number): Promise<Uint8Array>;
+  /** The end of a file, at most byteLimit bytes of it. */
+  readTail(path: string, byteLimit: number): Promise<Uint8Array>;
   readDownloadBody(path: string): Promise<BodyInit>;
   findPiSessionById(id: string): Promise<SessionFile | null>;
   /** A remote Claude transcript by session ID; local ones are found locally. */
@@ -112,6 +114,13 @@ export const localAgentSessionFiles: AgentSessionFileAccess = {
   },
   async readDownloadBody(path) {
     return Bun.file(path);
+  },
+  async readTail(path, byteLimit) {
+    const file = Bun.file(path);
+    const size = file.size;
+    return new Uint8Array(
+      await file.slice(Math.max(0, size - byteLimit), size).arrayBuffer(),
+    );
   },
   async findPiSessionById() {
     return null;
@@ -302,6 +311,11 @@ if matches:
     async readPrefix(path, byteLimit) {
       return runRemote(
         `set -eu\nhead -c ${Math.max(1, Math.floor(byteLimit))} ${args.shQuote(path)}`,
+      );
+    },
+    async readTail(path, byteLimit) {
+      return runRemote(
+        `set -eu\ntail -c ${Math.max(1, Math.floor(byteLimit))} ${args.shQuote(path)}`,
       );
     },
     async readDownloadBody(path) {

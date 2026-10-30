@@ -50,6 +50,9 @@ const noTranscriptReads = {
   async readPrefix(): Promise<Uint8Array> {
     throw new Error("Activity must not read transcripts");
   },
+  async readTail(): Promise<Uint8Array> {
+    throw new Error("Activity must not read transcripts");
+  },
 };
 
 describe("agent activity timestamps", () => {

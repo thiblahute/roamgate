@@ -41,6 +41,11 @@ const descriptions: [ShortcutId, string, string][] = [
     "Show the active agent pane as a chat or as its terminal",
     "Tabs & panes",
   ],
+  [
+    "pane.tasks",
+    "Show what the active Claude pane runs in the background",
+    "Tabs & panes",
+  ],
   ...SHORTCUT_NUMBERS.map((n): [ShortcutId, string, string] => [
     `tab.${n}`,
     `Switch to tab ${n}`,

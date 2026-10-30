@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Check, ChevronRight, Copy, RotateCw, Wrench, X } from "lucide-react";
 import { copyTextWithFeedback } from "../copyText";
+import { type AgentTask, taskStatusLabel } from "../agentTasks";
 import { formatUiDateTime } from "../uiLocale";
 import { HISTORY_PREVIEW_CHARS } from "./AgentHistoryCard";
 import type { OutboxMessage } from "./chatOutbox";
@@ -415,13 +416,27 @@ function ToolBlock({
   loader,
   onToggle,
   onOpen,
+  tasks,
+  onOpenTask,
 }: {
   entries: HistoryEntry[];
   loader: ToolContentLoader;
   // Called before the reader opens or closes part of the block.
   onToggle: () => void;
   onOpen: (entry: HistoryEntry) => void;
+  tasks?: ReadonlyMap<string, AgentTask>;
+  onOpenTask?: (id: string) => void;
 }) {
+  // The background commands and subagents these calls started.
+  const started = tasks
+    ? entries.flatMap((entry) => {
+        const task =
+          entry.kind === "tool_call" && entry.source_call_id
+            ? tasks.get(entry.source_call_id)
+            : undefined;
+        return task ? [task] : [];
+      })
+    : [];
   const [open, setOpen] = useState(false);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const listId = useId();
@@ -497,6 +512,23 @@ function ToolBlock({
           ) : null}
         </span>
       </button>
+      {started.length ? (
+        <div className="agent-history-chat-tasks">
+          {started.map((task) => (
+            <button
+              key={task.id}
+              type="button"
+              className="agent-history-chat-task"
+              onClick={() => onOpenTask?.(task.id)}
+            >
+              <span>{task.title}</span>
+              <span className={`agent-task-status is-${task.status}`}>
+                {taskStatusLabel(task)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {open ? (
         <ul id={listId} className="agent-history-chat-tools-list">
           {steps.map((step) => (
@@ -538,6 +570,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   outbox = NO_OUTBOX,
   onRetrySend,
   onDiscardSend,
+  tasks,
+  onOpenTask,
 }: {
   items: HistoryChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -553,6 +587,9 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   outbox?: readonly OutboxMessage[];
   onRetrySend?: (message: OutboxMessage) => void;
   onDiscardSend?: (message: OutboxMessage) => void;
+  /** The session's background tasks, by the tool call that started each. */
+  tasks?: ReadonlyMap<string, AgentTask>;
+  onOpenTask?: (id: string) => void;
 }) {
   const followRef = useRef(true);
   const queueRef = useRef<HistoryEntry[]>([]);
@@ -658,6 +695,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               loader={loader}
               onToggle={pauseFollow}
               onOpen={onOpen}
+              tasks={tasks}
+              onOpenTask={onOpenTask}
             />
           ),
         )}

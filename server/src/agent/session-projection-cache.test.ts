@@ -34,6 +34,10 @@ function fixture(agent = "pi") {
     async readPrefix(_path, limit) {
       return Buffer.from(text).subarray(0, limit);
     },
+    async readTail(_path, limit) {
+      const all = Buffer.from(text);
+      return all.subarray(Math.max(0, all.length - limit));
+    },
     async readDownloadBody() {
       return text;
     },
