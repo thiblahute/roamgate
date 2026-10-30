@@ -58,6 +58,16 @@ export type VoiceConfig = {
    * button changes it.
    */
   speech_rate?: number;
+  /**
+   * Where voices recorded from the page are kept (voice-library.ts);
+   * ~/.local/share/roamgate/voices by default.
+   */
+  voices_dir?: string;
+  /**
+   * The Qwen3-TTS Base model voices are cloned for; the first Qwen3-TTS
+   * model of `tts_models` that is a Base model by default.
+   */
+  clone_model?: string;
 };
 
 export type VoiceStatus =
@@ -94,6 +104,8 @@ export function readVoiceConfig(
     "route_model",
     "errand_folder",
     "claude_command",
+    "voices_dir",
+    "clone_model",
   ])
     if (
       config[key] !== undefined &&
@@ -481,9 +493,14 @@ export class VoiceHelper {
     };
   }
 
+  /**
+   * Speaks `text`, with `models` (`tts_models`) for this once when given,
+   * such as a voice to hear before choosing it.
+   */
   async speak(
     text: string,
     language?: string,
+    models?: VoiceConfig["tts_models"],
   ): Promise<{
     audio: Uint8Array<ArrayBuffer>;
     language: string;
@@ -492,16 +509,69 @@ export class VoiceHelper {
   }> {
     // Started first: its rate is the one this speech is made at.
     this.start();
-    const nativeRate = this.nativeRate;
+    let nativeRate = this.nativeRate;
+    let override: VoiceConfig["tts_models"];
+    if (models) {
+      const config = this.config();
+      const own = {
+        ...("error" in config ? { helper: "" } : config),
+        tts_models: models,
+      };
+      nativeRate = nativeSpeechRate(own);
+      override = helperTtsModels(own);
+    }
     const reply = await this.request({
       op: "speak",
       text,
       ...(language ? { language } : {}),
+      ...(override ? { tts_models: JSON.stringify(override) } : {}),
     });
     return {
       audio: Buffer.from(String(reply.audio ?? ""), "base64"),
       language: String(reply.language ?? ""),
       nativeRate,
+    };
+  }
+
+  /**
+   * The running helper reads with voice.json's `tts_models` from the next
+   * sentence on, loading only what changed; one not running reads them when
+   * it starts.
+   */
+  async applyTtsModels() {
+    if (!this.process) return;
+    const config = this.config();
+    if ("error" in config || !config.tts_models) return;
+    await this.request({
+      op: "set_tts_models",
+      tts_models: JSON.stringify(helperTtsModels(config)),
+    });
+    this.nativeRate = nativeSpeechRate(config);
+  }
+
+  /**
+   * A voice from a recording (voice/helper/src/clone.rs): its x-vector and
+   * codec codes, and what the speech to text model heard in it.
+   */
+  async cloneVoice(request: {
+    audio: string;
+    model: string;
+    reference: string;
+    language: string;
+  }): Promise<{
+    embedding: number[];
+    codes: number[][];
+    heard: string;
+    seconds: number;
+  }> {
+    const reply = await this.request({ op: "clone_voice", ...request });
+    if (!Array.isArray(reply.embedding) || !Array.isArray(reply.codes))
+      throw new Error("The voice helper sent no voice");
+    return {
+      embedding: reply.embedding as number[],
+      codes: reply.codes as number[][],
+      heard: typeof reply.heard === "string" ? reply.heard : "",
+      seconds: typeof reply.seconds === "number" ? reply.seconds : 0,
     };
   }
 

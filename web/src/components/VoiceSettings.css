@@ -1,0 +1,357 @@
+/*
+ * Configuration's Voice tab: big rows a child can tap (hear, use), a big
+ * button for a new voice, and the recording steps in its place.
+ */
+.voice-settings-error {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-border, var(--border));
+  border-radius: 10px;
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.voice-settings-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.voice-settings-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.voice-settings-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-settings-voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.voice-settings-voice.is-reading {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: var(--accent-soft);
+}
+
+.voice-settings-voice-name {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.voice-settings-voice-name strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-settings-voice-name span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.voice-settings-voice-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.voice-settings button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.voice-settings-icon {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.voice-settings-use {
+  min-width: 84px;
+  height: 38px;
+  border-radius: 999px;
+  font-weight: 650;
+}
+
+.voice-settings-use.is-reading {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  color: var(--accent);
+}
+
+.voice-settings-rename {
+  display: flex;
+  gap: 4px;
+}
+
+.voice-settings-rename input,
+.voice-new-field input,
+.voice-settings-language select {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.voice-settings-rename input {
+  flex: 1 1 auto;
+}
+
+.voice-settings-new {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 60%, var(--border));
+  border-radius: 14px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.voice-settings-new:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.voice-settings-section {
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.voice-settings-section summary {
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.voice-settings-language {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.voice-settings-language > span {
+  flex: 0 0 90px;
+}
+
+.voice-settings-language select {
+  flex: 1 1 auto;
+}
+
+.voice-settings-speed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.voice-settings-speed > span {
+  margin-right: 4px;
+  font-weight: 650;
+}
+
+.voice-settings-speed button {
+  min-width: 48px;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.voice-settings-speed button[aria-pressed="true"],
+.voice-new-languages button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+/* ===== a new voice ===== */
+.voice-new {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-new h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.voice-new-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.voice-new-field input {
+  font-size: 18px;
+}
+
+.voice-new-languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.voice-new-languages legend {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.voice-new-languages button {
+  min-height: 36px;
+  padding-inline: 12px;
+  border-radius: 999px;
+}
+
+.voice-new-text {
+  margin: 0;
+  padding: 14px 16px;
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.voice-new-other {
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+.voice-new-recorder {
+  padding: 8px 0 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.voice-new-record {
+  flex: 0 0 auto;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--panel);
+  box-shadow: 0 0 0 calc(4px + var(--voice-level, 0) * 14px)
+    color-mix(in srgb, var(--accent) 25%, transparent);
+  transition: box-shadow 60ms linear;
+}
+
+.voice-new-record.is-recording {
+  background: var(--danger-text);
+  box-shadow: 0 0 0 calc(4px + var(--voice-level, 0) * 14px)
+    color-mix(in srgb, var(--danger-text) 25%, transparent);
+}
+
+.voice-new-progress {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.voice-new-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+}
+
+.voice-new-meter > span {
+  width: 5px;
+  height: calc(4px + var(--voice-level, 0) * var(--bar-weight, 1) * 24px);
+  border-radius: 3px;
+  background: var(--accent);
+  transition: height 60ms linear;
+}
+
+.voice-new-time {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-new-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      var(--accent) calc(var(--done, 0) * 100%),
+      transparent 0
+    ),
+    var(--border);
+}
+
+.voice-new-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.voice-new-actions button {
+  min-height: 38px;
+  padding-inline: 14px;
+  font-weight: 650;
+}
+
+.voice-new-primary {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+.voice-new-making,
+.voice-new-done {
+  align-items: center;
+  padding: 18px 0;
+  text-align: center;
+}
+
+.voice-new-making p {
+  margin: 0;
+}

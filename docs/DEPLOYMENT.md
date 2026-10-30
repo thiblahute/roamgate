@@ -593,8 +593,28 @@ language; `"model"` names each, the other fields are the element's for it:
 
 `path` is the model's directory from Hugging Face; Qwen3-TTS speaks with one
 of its named voices (`"voice"`, with a CustomVoice model) or a cloned one
-(`"voice_embedding"`, a Base model and a voice saved with any-tts's
-`scripts/qwen3_tts_voice.py`). A model that fails to load is left out.
+(`"voice_embedding"`, a Base model and a voice saved with any-tts). A model
+that fails to load is left out.
+
+Voices are cloned from the Voice tab of Configuration with a Qwen3-TTS Base
+model (`"clone_model"`, or the first Qwen3-TTS model of `tts_models` that is
+a Base model): the helper reads the recording (any format GStreamer
+decodes), cuts its silences, transcribes it (with Parakeet or Whisper), and
+computes the voice natively with candle (the Base model's ECAPA-TDNN speaker
+encoder and its speech tokenizer's Mimi encoder), in a couple of seconds on
+the CPU. The words kept with the voice must be what the recording says: the
+text shown when it was heard read to its end, the start of it as far as it
+was read when the reading stopped early or the recording was cut mid-speech,
+else what was heard. Each voice is
+`<voices_dir>/<id>.json` (any-tts's voice embedding) with its recording
+`<id>.wav`; `voices_dir` is `~/.local/share/roamgate/voices` by default, and
+its `voices.json` lists the voices with their names, those `tts_models`
+reads with included. Choosing voices rewrites the Qwen3-TTS entries of
+`tts_models` (one per language with its own voice, `"languages": "fr"`, then
+one for every other language), keeps the other models after them, and the
+running helper switches to them from the next sentence. From a shell,
+`roamgate-voice --clone rec.wav --model <Qwen3-TTS Base dir> --text "what it
+says" --output voice.json` makes one.
 Only Kokoro takes a speed: when every model is Kokoro and none sets its own
 `"speed"`, they are given `speech_rate` and the browser plays their speech as
 made; otherwise the models speak at their own pace and the browser plays it

@@ -180,6 +180,92 @@ describe("voice helper", () => {
     expect(fake.spawned).toHaveLength(2);
   });
 
+  test("a sentence read with its own models, and models changed live", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "speak"
+        ? [{ id: request.id, audio: "", language: "en" }]
+        : [{ id: request.id, ok: true }],
+    );
+    const qwen = {
+      model: "qwen3-tts",
+      path: "/base",
+      voice_embedding: "/v/lea.json",
+    };
+    let config: VoiceConfig = {
+      ...CONFIG,
+      speech_rate: 1.3,
+      tts_models: [qwen, { model: "kokoro", path: "/k" }],
+    };
+    const helper = new VoiceHelper(() => config, fake.spawn);
+    // Not running: nothing to tell, it reads voice.json when it starts.
+    await helper.applyTtsModels();
+    expect(fake.spawned).toHaveLength(0);
+    // Kokoro alone, to hear it: at the rate, as Kokoro reads.
+    const kokoro = await helper.speak("Hi.", "en", [
+      { model: "kokoro", path: "/k" },
+    ]);
+    expect(kokoro.nativeRate).toBe(1.3);
+    const child = fake.spawned[0]!;
+    expect(requests(child.frames)[0]).toEqual({
+      op: "speak",
+      text: "Hi.",
+      language: "en",
+      tts_models: JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.3 }]),
+      id: 1,
+    });
+    const own = await helper.speak("Hi.");
+    expect(own.nativeRate).toBe(1);
+    expect(requests(child.frames)[1]).not.toHaveProperty("tts_models");
+    config = { ...config, tts_models: [{ model: "kokoro", path: "/k" }] };
+    await helper.applyTtsModels();
+    expect(requests(child.frames)[2]).toEqual({
+      op: "set_tts_models",
+      tts_models: JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.3 }]),
+      id: 3,
+    });
+    expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
+  });
+
+  test("clones a voice from a recording", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "clone_voice"
+        ? [
+            {
+              id: request.id,
+              embedding: [0.5],
+              codes: [[1, 2]],
+              heard: "hello",
+              seconds: 9.5,
+            },
+          ]
+        : [],
+    );
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    const request = {
+      audio: "/tmp/rec.wav",
+      model: "/base",
+      reference: "/voices/lea.wav",
+      language: "fr",
+    };
+    expect(await helper.cloneVoice(request)).toEqual({
+      embedding: [0.5],
+      codes: [[1, 2]],
+      heard: "hello",
+      seconds: 9.5,
+    });
+    expect(requests(fake.spawned[0]!.frames)[0]).toEqual({
+      op: "clone_voice",
+      ...request,
+      id: 1,
+    });
+    const failing = new VoiceHelper(
+      () => CONFIG,
+      fakeHelper((r) => [{ id: r.id, error: "No speech in the recording" }])
+        .spawn,
+    );
+    expect(failing.cloneVoice(request)).rejects.toThrow("No speech");
+  });
+
   test("without a configuration, voice is unavailable", async () => {
     const helper = new VoiceHelper(() => ({ error: "No voice configuration" }));
     expect(helper.status()).toEqual({

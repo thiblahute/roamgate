@@ -23,8 +23,26 @@
 //! reads it, or with `--tts-models` the first of those any-tts models that
 //! speaks its language.
 //!
-//! A failed request answers `{"id": ..., "error": "..."}`. Listening and
-//! speaking run on threads of their own, so neither waits for the other.
+//! A speak request may carry its own `tts_models` (the `--tts-models` JSON)
+//! to read that sentence with, such as a voice to hear before choosing it;
+//! `{"op": "set_tts_models", "tts_models": "[...]"}` changes the models every
+//! sentence is read with from then on. Either loads only what changed
+//! (a voice: a second), between sentences.
+//!
+//! Cloning a voice (see `clone`): `{"id": 4, "op": "clone_voice", "audio":
+//! "rec.wav", "model": "<Qwen3-TTS Base dir>", "reference": "voice.wav",
+//! "language": "fr"}` reads the recording, cuts its silences, keeps it at
+//! `reference` (24 kHz WAV), and answers `{"id": 4, "embedding": [...],
+//! "codes": [[...], ...], "heard": "...", "seconds": 12.4}`: the voice's
+//! x-vector and codec codes, and what the speech to text model heard.
+//!
+//! A failed request answers `{"id": ..., "error": "..."}`. Listening,
+//! speaking and cloning run on threads of their own, so none waits for
+//! another.
+//!
+//! `roamgate-voice --clone <audio> --model <Qwen3-TTS Base dir> --text
+//! "<what it says>" --output voice.json` writes a voice from the command
+//! line.
 
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -36,9 +54,11 @@ use gst::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod clone;
 mod frames;
 mod language;
 mod listen;
+mod reference;
 
 /// With GStreamer's `GST_DEBUG_DUMP_DOT_DIR` set, writes `pipeline`'s graph
 /// there as `<name>.dot`, replacing the previous one.
@@ -63,8 +83,20 @@ struct Request {
     end_silence_ms: Option<u64>,
     #[serde(default)]
     new_speaker: bool,
+    /// The models to read with (`--tts-models`' JSON).
+    #[serde(default)]
+    tts_models: Option<String>,
+    /// clone_voice: the recording, the Base model, where to keep the
+    /// reference.
+    #[serde(default)]
+    audio: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    reference: Option<String>,
 }
 
+#[derive(Clone)]
 struct Config {
     whisper_model: Option<String>,
     /// Parakeet TDT, in place of Whisper.
@@ -138,6 +170,21 @@ struct Speaker {
     pipeline: gst::Pipeline,
     src: gst_app::AppSrc,
     sink: gst_app::AppSink,
+    /// anyttssynthesizer, whose models can change; None for Kokoro's.
+    anytts: Option<gst::Element>,
+}
+
+/// Why `pipeline` failed to change state, from its bus.
+fn bus_error(pipeline: &gst::Pipeline) -> Option<String> {
+    pipeline
+        .bus()
+        .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
+        .and_then(|message| match message.view() {
+            gst::MessageView::Error(e) => {
+                Some(format!("{} ({})", e.error(), e.debug().unwrap_or_default()))
+            }
+            _ => None,
+        })
 }
 
 impl Speaker {
@@ -188,15 +235,7 @@ impl Speaker {
             .unwrap();
         if let Err(err) = pipeline.set_state(gst::State::Playing) {
             // The synthesizer says why on the bus.
-            let detail = pipeline
-                .bus()
-                .and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error]))
-                .and_then(|message| match message.view() {
-                    gst::MessageView::Error(e) => {
-                        Some(format!("{} ({})", e.error(), e.debug().unwrap_or_default()))
-                    }
-                    _ => None,
-                });
+            let detail = bus_error(&pipeline);
             let _ = pipeline.set_state(gst::State::Null);
             return Err(format!(
                 "{name} failed to load: {}",
@@ -208,7 +247,28 @@ impl Speaker {
             pipeline,
             src,
             sink,
+            anytts: (name == "any-tts").then_some(synthesizer),
         })
+    }
+
+    /// Reads with `models` (`--tts-models`' JSON) from now on. Back in READY,
+    /// anyttssynthesizer keeps its models loaded, and going on to PLAYING
+    /// loads only what changed: a voice is read and warmed up, its model
+    /// stays.
+    fn set_models(&self, models: &str) -> Result<(), String> {
+        let Some(synthesizer) = &self.anytts else {
+            return Err("Voices need tts_models: Kokoro alone has one voice".into());
+        };
+        let models = tts_models(models)?;
+        self.pipeline
+            .set_state(gst::State::Ready)
+            .map_err(|e| e.to_string())?;
+        synthesizer.set_property("models", models);
+        if let Err(err) = self.pipeline.set_state(gst::State::Playing) {
+            let detail = bus_error(&self.pipeline).unwrap_or_else(|| err.to_string());
+            return Err(format!("the voices failed to load: {detail}"));
+        }
+        Ok(())
     }
 
     fn speak(&self, text: &str, language: &str) -> Result<Vec<u8>, String> {
@@ -260,6 +320,85 @@ impl Drop for Speaker {
     }
 }
 
+/// The shortest and longest a voice's reference may be, in seconds: too
+/// short and the voice is a guess, too long and every sentence is slower
+/// (Qwen3-TTS reads the whole reference before each one).
+const MIN_REFERENCE_SECONDS: f32 = 3.0;
+const MAX_REFERENCE_SECONDS: f32 = 30.0;
+
+/// The recording at `path`, without its silences, checked.
+fn reference_samples(path: &str) -> Result<Vec<f32>, String> {
+    let samples = reference::decode(path)?;
+    let trimmed = reference::trim(&samples).to_vec();
+    let seconds = trimmed.len() as f32 / clone::RATE as f32;
+    if seconds < MIN_REFERENCE_SECONDS {
+        return Err(if trimmed.is_empty() {
+            "No speech in the recording: is the microphone on?".to_string()
+        } else {
+            format!("Only {seconds:.1} s of speech: speak a little longer")
+        });
+    }
+    if seconds > MAX_REFERENCE_SECONDS {
+        return Err(format!(
+            "{seconds:.0} s of speech: keep it under {MAX_REFERENCE_SECONDS:.0} s"
+        ));
+    }
+    Ok(trimmed)
+}
+
+/// The clone_voice op: the voice in `request.audio`, and what was heard.
+fn clone_voice(config: &Config, request: Request) -> Result<Value, String> {
+    let audio = request.audio.ok_or("audio is required")?;
+    let model = request.model.ok_or("model is required")?;
+    let samples = reference_samples(&audio)?;
+    if let Some(path) = &request.reference {
+        reference::write_wav(path, &samples)?;
+    }
+    let transcriber = match (&config.parakeet_model, &config.whisper_model) {
+        (Some(dir), _) => Some(listen::Model::Parakeet(dir)),
+        (None, Some(path)) => Some(listen::Model::Whisper(path)),
+        (None, None) => None,
+    };
+    // Without it, the text shown to read is taken as said.
+    let heard = match transcriber {
+        Some(model) => reference::transcribe(&samples, model, request.language.as_deref())
+            .map_err(|e| format!("Transcribing the recording failed: {e}"))?,
+        None => String::new(),
+    };
+    let voice = clone::Cloner::load(std::path::Path::new(&model))?.clone_voice(&samples)?;
+    Ok(json!({
+        "embedding": voice.embedding,
+        "codes": voice.codes,
+        "heard": heard,
+        "seconds": samples.len() as f32 / clone::RATE as f32,
+    }))
+}
+
+/// `--clone`: the voice of `audio`, written to `--output`.
+fn clone_to_file(audio: &str) -> Result<String, String> {
+    let model = arg("--model").ok_or("--model <Qwen3-TTS Base dir> is required")?;
+    let output = arg("--output").ok_or("--output <voice.json> is required")?;
+    let samples = reference_samples(audio)?;
+    let started = std::time::Instant::now();
+    let voice = clone::Cloner::load(std::path::Path::new(&model))?.clone_voice(&samples)?;
+    let mut json = json!({
+        "data": voice.embedding,
+        "shape": [voice.embedding.len()],
+        "model_type": "qwen3-tts",
+    });
+    // Without the words, only the timbre is cloned.
+    if let Some(text) = arg("--text").filter(|text| !text.trim().is_empty()) {
+        json["prompt"] = json!({"codes": voice.codes, "text": text.trim()});
+    }
+    std::fs::write(&output, json.to_string()).map_err(|e| format!("{output}: {e}"))?;
+    Ok(format!(
+        "{output}: {:.2} s of speech, {} frames, in {:.1} s",
+        samples.len() as f32 / clone::RATE as f32,
+        voice.codes.len(),
+        started.elapsed().as_secs_f32()
+    ))
+}
+
 fn main() {
     if let Err(err) = gst::init() {
         eprintln!("GStreamer failed to initialize: {err}");
@@ -275,6 +414,18 @@ fn main() {
     {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
+    }
+    if let Some(audio) = arg("--clone") {
+        std::process::exit(match clone_to_file(&audio) {
+            Ok(summary) => {
+                println!("{summary}");
+                0
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                1
+            }
+        });
     }
     let config = Arc::new(Config {
         whisper_model: arg("--whisper-model"),
@@ -349,14 +500,61 @@ fn main() {
         let output = output.clone();
         let config = config.clone();
         std::thread::spawn(move || {
-            let speaker = Speaker::new(&config);
+            let mut speaker = Speaker::new(&config);
+            // What every sentence is read with, and what the speaker has now.
+            let mut models = config.tts_models.clone();
+            let mut current = models.clone();
             for request in speak_rx {
+                if request.op == "set_tts_models" {
+                    let result = match &request.tts_models {
+                        None => Err("tts_models is required".to_string()),
+                        Some(wanted) => {
+                            let result = match &speaker {
+                                Ok(speaker) => speaker.set_models(wanted),
+                                // Made again with them, since it failed.
+                                Err(_) => Speaker::new(&Config {
+                                    tts_models: Some(wanted.clone()),
+                                    ..config.as_ref().clone()
+                                })
+                                .map(|made| speaker = Ok(made)),
+                            };
+                            if result.is_ok() {
+                                models = Some(wanted.clone());
+                                current = models.clone();
+                            }
+                            result
+                        }
+                    };
+                    reply(
+                        &output,
+                        match result {
+                            Ok(()) => json!({"id": request.id, "ok": true}),
+                            Err(error) => json!({"id": request.id, "error": error}),
+                        },
+                    );
+                    continue;
+                }
                 let text = request.text.unwrap_or_default();
                 let language = request.language.unwrap_or_else(|| language::detect(&text));
-                let result = match &speaker {
-                    Ok(speaker) if language::has_words(&text) => speaker.speak(&text, &language),
-                    Ok(_) => Err("nothing to say".to_string()),
-                    Err(err) => Err(err.clone()),
+                // This sentence's own models, or back to everyone's.
+                let wanted = request.tts_models.or_else(|| models.clone());
+                let switched = match &speaker {
+                    Ok(speaker) if wanted != current => match &wanted {
+                        Some(wanted) => speaker.set_models(wanted).map(|()| true),
+                        None => Ok(false),
+                    },
+                    _ => Ok(false),
+                };
+                if let Ok(true) = switched {
+                    current = wanted;
+                }
+                let result = match (&speaker, switched) {
+                    (_, Err(err)) => Err(err),
+                    (Ok(speaker), _) if language::has_words(&text) => {
+                        speaker.speak(&text, &language)
+                    }
+                    (Ok(_), _) => Err("nothing to say".to_string()),
+                    (Err(err), _) => Err(err.clone()),
                 };
                 reply(
                     &output,
@@ -402,7 +600,25 @@ fn main() {
         };
         let session = request.session.unwrap_or_default();
         let sent = match request.op.as_str() {
-            "speak" => speak_tx.send(request).map_err(|e| e.0),
+            "speak" | "set_tts_models" => speak_tx.send(request).map_err(|e| e.0),
+            "clone_voice" => {
+                let output = output.clone();
+                let config = config.clone();
+                std::thread::spawn(move || {
+                    let id = request.id.clone();
+                    reply(
+                        &output,
+                        match clone_voice(&config, request) {
+                            Ok(mut answer) => {
+                                answer["id"] = id;
+                                answer
+                            }
+                            Err(error) => json!({"id": id, "error": error}),
+                        },
+                    );
+                });
+                Ok(())
+            }
             "listen_start" => {
                 let _ = listen_tx.send(listen::Command::Start {
                     id: session,

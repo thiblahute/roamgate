@@ -65,6 +65,11 @@ const TerminalThemeDialog = lazyWithReload("terminal-theme", () =>
     default: module.TerminalThemeDialog,
   })),
 );
+const VoiceSettings = lazyWithReload("voices", () =>
+  import("./VoiceSettings").then((module) => ({
+    default: module.VoiceSettings,
+  })),
+);
 const MobileLayoutDialog = lazyWithReload("mobile-layout", () =>
   import("./MobileLayoutDialog").then((module) => ({
     default: module.MobileLayoutDialog,
@@ -106,9 +111,10 @@ const tabs = [
   "Instance",
   "Connection",
   "Integrations",
+  "Voice",
 ] as const;
 export type ConfigurationTab = (typeof tabs)[number];
-type Detail = "terminal" | "layout" | "keyboard" | "mobile" | "sync";
+type Detail = "terminal" | "layout" | "keyboard" | "mobile" | "sync" | "voices";
 
 export function ConfigurationDialog({
   onClose,
@@ -138,6 +144,8 @@ export function ConfigurationDialog({
   );
   const connectionClient = useConnectionClient();
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
+  // Asked again on another tab while open (the voice card's Voices).
+  useEffect(() => setTab(initialTab), [initialTab]);
   const paneJumpScope = usePaneJumpScope();
   const defaultPaneView = useDefaultPaneView();
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -220,7 +228,8 @@ export function ConfigurationDialog({
             <div>
               <h2>Configuration</h2>
               <p>
-                Appearance, behavior, instance, connections, and integrations
+                Appearance, behavior, instance, connections, integrations, and
+                voices
               </p>
             </div>
             <CloseButton label="Close Configuration" onClick={onClose} />
@@ -722,6 +731,20 @@ export function ConfigurationDialog({
                   connectionLabel={s.connectionLabel}
                   sshDestination={s.sshDestination}
                 />
+              ) : null}
+            </section>
+            <section
+              role="tabpanel"
+              id="configuration-panel-Voice"
+              aria-labelledby="configuration-tab-Voice"
+              hidden={tab !== "Voice"}
+            >
+              {tab === "Voice" ? (
+                <Suspense
+                  fallback={<p className="muted">Loading the voices...</p>}
+                >
+                  <VoiceSettings />
+                </Suspense>
               ) : null}
             </section>
           </div>

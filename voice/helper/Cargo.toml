@@ -2,7 +2,7 @@
 name = "roamgate-voice"
 version = "0.1.0"
 edition = "2024"
-description = "Roamgate's voice helper: speech to text with whispertranscriber, text to speech with kokorosynthesizer or anyttssynthesizer"
+description = "Roamgate's voice helper: speech to text with whispertranscriber, text to speech with kokorosynthesizer or anyttssynthesizer, and voice cloning for Qwen3-TTS"
 license = "MIT"
 publish = false
 
@@ -24,6 +24,12 @@ gst-plugin-parakeet = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plu
 gst-plugin-speechgate = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 # anyttssynthesizer: any-tts's models (Qwen3-TTS...), on Metal on macOS.
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+# Cloning voices for Qwen3-TTS (clone.rs): its speaker encoder, and its
+# speech tokenizer's encoder (Mimi), the versions any-tts uses.
+candle-core = "0.10.2"
+candle-nn = "0.10.2"
+candle-transformers = "0.10.2"
+realfft = "3.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

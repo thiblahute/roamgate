@@ -1,4 +1,11 @@
-import { AudioLines, LoaderCircle, Mic, MicOff, Volume2 } from "lucide-react";
+import {
+  AudioLines,
+  LoaderCircle,
+  Mic,
+  MicOff,
+  Speech,
+  Volume2,
+} from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import {
   type ActiveVoiceState,
@@ -19,8 +26,8 @@ const METER_BARS = [0.55, 0.85, 1, 0.75, 0.45];
 /**
  * A running voice conversation, as a card floating over the bottom of the
  * chat: what it is doing, the live microphone level, the words being heard
- * (their last lines), the mute toggle, the reading speed, and a tap to send
- * what was said now or to stop. Its size is fixed, so it stays put while the user talks.
+ * (their last lines), the mute toggle, the reading speed, the voices (who
+ * reads, new ones), and a tap to send what was said now or to stop. Its size is fixed, so it stays put while the user talks.
  */
 export function VoiceChatOverlay({
   state,
@@ -33,6 +40,7 @@ export function VoiceChatOverlay({
   onCycleSpeechRate,
   moveQuestion,
   onAnswerMove,
+  onOpenVoices,
 }: {
   state: ActiveVoiceState;
   level: number;
@@ -50,6 +58,8 @@ export function VoiceChatOverlay({
    */
   moveQuestion?: string | null;
   onAnswerMove?: (yes: boolean) => void;
+  /** Opens the voices: who reads the replies, new ones. */
+  onOpenVoices?: () => void;
 }) {
   const view = voiceControlView(state, muted, level);
   const rate =
@@ -130,6 +140,18 @@ export function VoiceChatOverlay({
               onClick={onCycleSpeechRate}
             >
               {rate.label}
+            </button>
+          ) : null}
+          {onOpenVoices ? (
+            <button
+              type="button"
+              className="voice-chat-overlay-voices"
+              aria-label="Voices"
+              title="Voices: who reads the replies, and new ones"
+              onMouseDown={keepFocus}
+              onClick={onOpenVoices}
+            >
+              <Speech size={18} aria-hidden="true" />
             </button>
           ) : null}
         </div>

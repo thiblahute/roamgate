@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   Server,
   Settings,
+  Speech,
   Wifi,
 } from "lucide-react";
 import packageJson from "../../package.json";
@@ -416,6 +417,7 @@ export function ConfigMenu({
                           ["Behavior", SlidersHorizontal],
                           ["Connection", Server],
                           ["Integrations", Plug],
+                          ["Voice", Speech],
                         ] as const
                       ).map(([name, Icon]) => (
                         <ConfigMenuItem

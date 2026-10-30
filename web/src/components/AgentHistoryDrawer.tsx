@@ -102,6 +102,8 @@ import { useAgentSessionTitle } from "../agentSessionTitle";
 import { agentStateKind } from "./agentSession";
 import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
+import { openConfiguration } from "../configurationOpen";
+import { subscribeVoiceRecording } from "../voiceLibrary";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
 import { ConversationMinimap } from "./ConversationMinimap";
 import {
@@ -1536,6 +1538,23 @@ export function AgentHistoryDrawer({
     () => voiceTrace(`chat on pane ${pane.pane_id}, ${activeConnectionId}`),
     [pane.pane_id, activeConnectionId],
   );
+  // While a voice is recorded (Configuration's Voice tab), the voice
+  // conversation is muted, so what is read aloud is not sent to the agent.
+  const voiceToggleMute = voice.toggleMute;
+  const voiceMutedRef = useRef(voice.muted);
+  voiceMutedRef.current = voice.muted;
+  useEffect(() => {
+    let mutedForRecording = false;
+    return subscribeVoiceRecording((recording) => {
+      if (recording && !voiceMutedRef.current) {
+        mutedForRecording = true;
+        voiceToggleMute();
+      } else if (!recording && mutedForRecording) {
+        mutedForRecording = false;
+        if (voiceMutedRef.current) voiceToggleMute();
+      }
+    });
+  }, [voiceToggleMute]);
   // A running voice conversation floats over the chat, not in its box.
   const voiceOverlay =
     paneChat && voice.available && voice.state !== "off" ? (
@@ -1550,6 +1569,7 @@ export function AgentHistoryDrawer({
         onCycleSpeechRate={voice.cycleSpeechRate}
         moveQuestion={voice.moveQuestion?.text ?? null}
         onAnswerMove={voice.answerMove}
+        onOpenVoices={() => openConfiguration("Voice")}
       />
     ) : null;
   // Claude Code gives its whole queue back to the prompt on Up. Taking a

@@ -239,6 +239,18 @@ Inspector state is scoped to each checkout; see
   Replies are read a little faster than the voice's own pace (1.2x); the
   speed button on the voice card steps through 1x, 1.1x, 1.2x, 1.3x and
   1.5x, from the sentence playing on, and every browser keeps it.
+  The voice card's Voices button opens Configuration's **Voice** tab (also in
+  the menu, on phones too): hear each voice, choose which one reads every
+  reply or only one language (French read in a French voice, say), rename or
+  delete them, and set the speed. **New voice** clones one, simple enough for
+  children: give it a name and a language, press the big button and read the
+  two short sentences shown aloud (a level meter follows the voice); the
+  recording stops by itself at the pause after the reading, or on stop, never
+  mid-sentence before its 30 s limit. Listen back or record again, then
+  **Make the voice**; a few seconds later it can be heard and chosen. When
+  only part of the text was read, or something else was said, the voice
+  learns from what the recording says, shows it, and offers to record again. A choice applies from the next sentence, without
+  restarting anything.
   The sentence being read is highlighted. What is said goes to the agent
   marked `[Voice]`, with the sentence it cut short when it interrupted the
   reading, so the agent knows it talks live and what was heard; the chat

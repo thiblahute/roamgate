@@ -4537,6 +4537,9 @@ name = "roamgate-voice"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
  "gst-plugin-anytts",
  "gst-plugin-audiofx",
  "gst-plugin-kokoro",
@@ -4547,6 +4550,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-audio",
  "lingua",
+ "realfft",
  "serde",
  "serde_json",
 ]
