@@ -64,12 +64,22 @@ import {
   offerModeSwitch,
 } from "./components/ModeSwitchDialog";
 import {
+  shortcutLabel,
   shortcutMatches,
   shortcutTitle,
   useShortcutPreferences,
 } from "./shortcutPreferences";
-import { SHORTCUT_NUMBERS, type ShortcutId } from "./shortcutBindings";
+import { OVERLAY_TAB_DEFAULT_LABEL, overlayTabOf } from "./overlayTabs";
+import { OverlayTabFrame } from "./components/OverlayTab";
+import { requestOverlayFullscreenToggle } from "./overlayGeometry";
+import { SHORTCUT_NUMBERS } from "./shortcutBindings";
 import { activeTerminalInput, blurActiveInput } from "./activeTerminalInput";
+import {
+  focusShownOverlay,
+  overlayHideFocusTarget,
+  overlayPaneInput,
+} from "./overlayFocus";
+import { reviewKeyRoute } from "./reviewKeys";
 import {
   CheckCircle2,
   CircleAlert,
@@ -87,6 +97,7 @@ import {
   MessagesSquare,
   Minimize2,
   PanelTop,
+  PictureInPicture2,
   Search,
   Settings,
   SquarePlus,
@@ -157,7 +168,12 @@ import type { AssistantSource } from "../../shared/assistant";
 import { isConversationAgent } from "../../shared/agentChat";
 import { GlobalTooltip } from "./components/GlobalTooltip";
 import "./components/MobileTabSheet.css";
-import { requestClosePane, requestCloseTab, TabBar } from "./components/TabBar";
+import {
+  requestClosePane,
+  requestCloseTab,
+  TabBar,
+  tabName,
+} from "./components/TabBar";
 import type { TerminalWorkspaceFileRequest } from "./components/TerminalView";
 import { WorkspaceSearchField } from "./components/WorkspaceSearchField";
 import { WorkspaceTree } from "./components/WorkspaceTree";
@@ -189,6 +205,7 @@ import {
 } from "./terminalThemes";
 import {
   activePaneIdForSnapshot,
+  overlayActivePaneId,
   type PaneJumpEntry,
   paneJumpConnectionTarget,
   paneJumpDefaultIndex,
@@ -219,6 +236,12 @@ import {
   useAllServerAgentSessions,
 } from "./useAllServerAgentSessions";
 import { usePaneJumpScope } from "./paneJumpScope";
+import {
+  type PaneScope,
+  PaneScopeContext,
+  scopedPaneState,
+  usePaneScope,
+} from "./paneScope";
 import { useConnectionSessions } from "./components/useConnectionSessions";
 import {
   type Notice,
@@ -233,7 +256,6 @@ import {
   type WorktreeRemovedTarget,
 } from "./store";
 import { paneShortcutAction } from "./paneShortcuts";
-import { pluginActionShortcut } from "./pluginActionShortcuts";
 import {
   adjacentTabId,
   closeShortcutTarget,
@@ -355,23 +377,6 @@ const WorkspaceInspectorHost = lazyWithReload("workspace-inspector", () =>
   })),
 );
 
-/**
- * Shortcuts that take you to another workspace, tab or pane: from the
- * review they put it away (it is kept) and go on.
- */
-const REVIEW_LEAVING_SHORTCUTS: ShortcutId[] = [
-  "panes.search",
-  "panes.recent",
-  "workspaces.open",
-  "tab.next",
-  "tab.previous",
-  "pane.left",
-  "pane.right",
-  "pane.up",
-  "pane.down",
-  ...SHORTCUT_NUMBERS.map((n): ShortcutId => `tab.${n}`),
-];
-
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 560;
 const DEFAULT_SIDEBAR = 284;
@@ -482,18 +487,20 @@ function TerminalLoadingFallback({
 }
 
 function TerminalView(props: TerminalViewProps) {
+  const scope = usePaneScope();
   // A pane that opens as a chat never says it loads a terminal; nor does one
   // not known yet, which may be one when agents open as a chat.
   const chat = useStoreSelector((state) => {
-    if (state.panes.length === 0) return defaultPaneView() === "chat";
+    const scoped = scopedPaneState(state, scope);
+    if (scoped.panes.length === 0) return defaultPaneView() === "chat";
     const selected =
-      state.selectedPaneId &&
-      state.layout?.panes.some((p) => p.pane_id === state.selectedPaneId)
-        ? state.selectedPaneId
+      scoped.selectedPaneId &&
+      scoped.layout?.panes.some((p) => p.pane_id === scoped.selectedPaneId)
+        ? scoped.selectedPaneId
         : null;
     const paneId =
-      props.paneId ?? selected ?? state.layout?.focused_pane_id ?? null;
-    const pane = state.panes.find((p) => p.pane_id === paneId);
+      props.paneId ?? selected ?? scoped.layout?.focused_pane_id ?? null;
+    const pane = scoped.panes.find((p) => p.pane_id === paneId);
     if (!paneHasAgentHistory(pane)) return false;
     // A Claude pane shows its mode's view, the last one seen until known.
     return (
@@ -888,6 +895,13 @@ function isEditableElement(target: EventTarget | null) {
  * workspaces) must not fire. An agent chat's message box stands for the
  * agent's terminal, which takes them, so it does too.
  */
+/** The review (or the list of reviews) on screen, if any. */
+function shownReviewOverlay(root: Document): HTMLElement | null {
+  return root.querySelector<HTMLElement>(
+    ".review-overlay:not([hidden]), .review-list-overlay",
+  );
+}
+
 function blocksNavigationShortcuts(target: EventTarget | null) {
   if (
     target instanceof HTMLElement &&
@@ -1266,6 +1280,7 @@ function resizeTargetForSplit(
 // Render the active tab's Herdr pane layout; single-pane and zoomed tabs keep
 // the old full terminal view.
 function TerminalPaneLayout({
+  scope = "main",
   visible,
   mobileInputTarget,
   onActivateTerminalSurface,
@@ -1282,6 +1297,8 @@ function TerminalPaneLayout({
   zenMode,
   onExitZenMode,
 }: {
+  /** The displayed tab, or the overlay tab floating above it. */
+  scope?: PaneScope;
   visible: boolean;
   mobileInputTarget: HTMLElement | null;
   onActivateTerminalSurface: () => void;
@@ -1300,11 +1317,9 @@ function TerminalPaneLayout({
 }) {
   const s = useStoreSelector(
     (state) => ({
+      ...scopedPaneState(state, scope),
       activeConnectionId: state.activeConnectionId,
       connectionGeneration: state.connectionGeneration,
-      layout: state.layout,
-      panes: state.panes,
-      selectedPaneId: state.selectedPaneId,
     }),
     shallowEqual,
   );
@@ -1336,25 +1351,27 @@ function TerminalPaneLayout({
 
   if (mobile || !layout || layout.zoomed || visiblePanes.length <= 1) {
     return (
-      <TerminalView
-        key={mountKeyForPane(activePaneId)}
-        paneId={activePaneId ?? undefined}
-        terminalTheme={terminalTheme}
-        terminalFontFamily={terminalFontFamily}
-        terminalFontScale={terminalFontScale}
-        mobileShortcuts={mobileShortcuts}
-        mobileSideShortcuts={mobileSideShortcuts}
-        visible={visible}
-        mobileInputTarget={mobileInputTarget}
-        onActivateTerminalSurface={onActivateTerminalSurface}
-        composerOpen={composerOpen}
-        onComposerOpenChange={onComposerOpenChange}
-        agentHistoryOpen={agentHistoryOpen}
-        onAgentHistoryOpenChange={onAgentHistoryOpenChange}
-        onOpenWorkspaceFile={onOpenWorkspaceFile}
-        zenMode={zenMode}
-        onExitZenMode={onExitZenMode}
-      />
+      <PaneScopeContext.Provider value={scope}>
+        <TerminalView
+          key={mountKeyForPane(activePaneId)}
+          paneId={activePaneId ?? undefined}
+          terminalTheme={terminalTheme}
+          terminalFontFamily={terminalFontFamily}
+          terminalFontScale={terminalFontScale}
+          mobileShortcuts={mobileShortcuts}
+          mobileSideShortcuts={mobileSideShortcuts}
+          visible={visible}
+          mobileInputTarget={mobileInputTarget}
+          onActivateTerminalSurface={onActivateTerminalSurface}
+          composerOpen={composerOpen}
+          onComposerOpenChange={onComposerOpenChange}
+          agentHistoryOpen={agentHistoryOpen}
+          onAgentHistoryOpenChange={onAgentHistoryOpenChange}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+          zenMode={zenMode}
+          onExitZenMode={onExitZenMode}
+        />
+      </PaneScopeContext.Provider>
     );
   }
 
@@ -1428,75 +1445,176 @@ function TerminalPaneLayout({
   };
 
   return (
-    <div ref={layoutRef} className="pane-layout" aria-label="Terminal panes">
-      {visiblePanes.map((layoutPane) => {
-        const rect = layoutPane.rect;
-        const isActive = layoutPane.pane_id === activePaneId;
-        return (
-          <div
-            key={mountKeyForPane(layoutPane.pane_id)}
-            className={`pane-layout-cell ${isActive ? "is-active" : ""}`}
-            data-pane-id={layoutPane.pane_id}
-            style={{
-              left: `${rectPercent(rect.x, area.x, areaWidth)}%`,
-              top: `${rectPercent(rect.y, area.y, areaHeight)}%`,
-              width: `${(rect.width / areaWidth) * 100}%`,
-              height: `${(rect.height / areaHeight) * 100}%`,
-            }}
-            onPointerDownCapture={() => {
-              if (!isActive) void store.focusPane(layoutPane.pane_id);
-            }}
-          >
-            <TerminalView
+    <PaneScopeContext.Provider value={scope}>
+      <div ref={layoutRef} className="pane-layout" aria-label="Terminal panes">
+        {visiblePanes.map((layoutPane) => {
+          const rect = layoutPane.rect;
+          const isActive = layoutPane.pane_id === activePaneId;
+          return (
+            <div
               key={mountKeyForPane(layoutPane.pane_id)}
-              paneId={layoutPane.pane_id}
-              terminalTheme={terminalTheme}
-              terminalFontFamily={terminalFontFamily}
-              terminalFontScale={terminalFontScale}
-              showMobileKeys={isActive}
-              mobileShortcuts={mobileShortcuts}
-              mobileSideShortcuts={mobileSideShortcuts}
-              visible={visible}
-              mobileInputTarget={mobileInputTarget}
-              onActivateTerminalSurface={onActivateTerminalSurface}
-              composerOpen={isActive ? composerOpen : false}
-              onComposerOpenChange={isActive ? onComposerOpenChange : undefined}
-              agentHistoryOpen={isActive ? agentHistoryOpen : false}
-              onAgentHistoryOpenChange={onAgentHistoryOpenChange}
-              onOpenWorkspaceFile={onOpenWorkspaceFile}
-              zenMode={isActive ? zenMode : false}
-              onExitZenMode={onExitZenMode}
+              className={`pane-layout-cell ${isActive ? "is-active" : ""}`}
+              data-pane-id={layoutPane.pane_id}
+              style={{
+                left: `${rectPercent(rect.x, area.x, areaWidth)}%`,
+                top: `${rectPercent(rect.y, area.y, areaHeight)}%`,
+                width: `${(rect.width / areaWidth) * 100}%`,
+                height: `${(rect.height / areaHeight) * 100}%`,
+              }}
+              onPointerDownCapture={() => {
+                if (!isActive) void store.focusPane(layoutPane.pane_id);
+              }}
+            >
+              <TerminalView
+                key={mountKeyForPane(layoutPane.pane_id)}
+                paneId={layoutPane.pane_id}
+                terminalTheme={terminalTheme}
+                terminalFontFamily={terminalFontFamily}
+                terminalFontScale={terminalFontScale}
+                showMobileKeys={isActive}
+                mobileShortcuts={mobileShortcuts}
+                mobileSideShortcuts={mobileSideShortcuts}
+                visible={visible}
+                mobileInputTarget={mobileInputTarget}
+                onActivateTerminalSurface={onActivateTerminalSurface}
+                composerOpen={isActive ? composerOpen : false}
+                onComposerOpenChange={
+                  isActive ? onComposerOpenChange : undefined
+                }
+                agentHistoryOpen={isActive ? agentHistoryOpen : false}
+                onAgentHistoryOpenChange={onAgentHistoryOpenChange}
+                onOpenWorkspaceFile={onOpenWorkspaceFile}
+                zenMode={isActive ? zenMode : false}
+                onExitZenMode={onExitZenMode}
+              />
+            </div>
+          );
+        })}
+        {layout.splits.map((split) => {
+          const horizontal = split.direction === "right";
+          const boundary = splitBoundaryFromPaneRects(layout.panes, split);
+          return (
+            <div
+              key={split.id}
+              className={`pane-resize-handle ${horizontal ? "is-vertical" : "is-horizontal"}`}
+              style={
+                horizontal
+                  ? {
+                      left: `${rectPercent(boundary, area.x, areaWidth)}%`,
+                      top: `${rectPercent(split.rect.y, area.y, areaHeight)}%`,
+                      height: `${(split.rect.height / areaHeight) * 100}%`,
+                    }
+                  : {
+                      top: `${rectPercent(boundary, area.y, areaHeight)}%`,
+                      left: `${rectPercent(split.rect.x, area.x, areaWidth)}%`,
+                      width: `${(split.rect.width / areaWidth) * 100}%`,
+                    }
+              }
+              onPointerDown={(event) => startPaneResize(event, split)}
+              role="separator"
+              aria-orientation={horizontal ? "vertical" : "horizontal"}
             />
-          </div>
-        );
-      })}
-      {layout.splits.map((split) => {
-        const horizontal = split.direction === "right";
-        const boundary = splitBoundaryFromPaneRects(layout.panes, split);
-        return (
-          <div
-            key={split.id}
-            className={`pane-resize-handle ${horizontal ? "is-vertical" : "is-horizontal"}`}
-            style={
-              horizontal
-                ? {
-                    left: `${rectPercent(boundary, area.x, areaWidth)}%`,
-                    top: `${rectPercent(split.rect.y, area.y, areaHeight)}%`,
-                    height: `${(split.rect.height / areaHeight) * 100}%`,
-                  }
-                : {
-                    top: `${rectPercent(boundary, area.y, areaHeight)}%`,
-                    left: `${rectPercent(split.rect.x, area.x, areaWidth)}%`,
-                    width: `${(split.rect.width / areaWidth) * 100}%`,
-                  }
-            }
-            onPointerDown={(event) => startPaneResize(event, split)}
-            role="separator"
-            aria-orientation={horizontal ? "vertical" : "horizontal"}
-          />
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </PaneScopeContext.Provider>
+  );
+}
+
+/**
+ * The displayed workspace's overlay tab, laid out like any tab inside its
+ * floating frame. Mounted once shown, then kept mounted (only hidden) so its
+ * terminals stay attached and showing it again is instant.
+ */
+function OverlayTabHost({
+  sheet,
+  aboveReview = false,
+  mobileInputTarget,
+  onHide,
+  onActivateTerminalSurface,
+  terminalTheme,
+  terminalFontFamily,
+  terminalFontScale,
+  mobileShortcuts,
+  mobileSideShortcuts,
+  onOpenWorkspaceFile,
+}: {
+  sheet: boolean;
+  /** Shown from an open review: it floats above the review. */
+  aboveReview?: boolean;
+  mobileInputTarget: HTMLElement | null;
+  onHide: () => void;
+  onActivateTerminalSurface: () => void;
+  terminalTheme: ITheme;
+  terminalFontFamily: string;
+  terminalFontScale: number;
+  mobileShortcuts: MobileTerminalShortcutRows;
+  mobileSideShortcuts: MobileTerminalSideShortcuts;
+  onOpenWorkspaceFile: (request: TerminalWorkspaceFileRequest) => void;
+}) {
+  useShortcutPreferences();
+  const s = useStoreSelector(
+    (state) => ({
+      mounted: state.overlayMounted,
+      open: state.overlayOpen,
+      // The overlay's own pane the title bar's splits act on.
+      paneId:
+        state.overlaySelectedPaneId ?? state.overlayPanes[0]?.pane_id ?? null,
+      tab: overlayTabOf(
+        state.overlayTabs,
+        state.workspaces.find((workspace) => workspace.focused)?.workspace_id,
+      ),
+    }),
+    shallowEqual,
+  );
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [agentHistoryOpen, setAgentHistoryOpen] = useState(false);
+  if (!s.mounted || (!s.tab && !s.open)) return null;
+  const shortcut = shortcutLabel("overlay.toggle");
+  return (
+    <OverlayTabFrame
+      open={s.open}
+      sheet={sheet}
+      aboveReview={aboveReview}
+      title={s.tab ? tabName(s.tab) : OVERLAY_TAB_DEFAULT_LABEL}
+      shortcut={shortcut === "Unassigned" ? "" : shortcut}
+      onHide={onHide}
+      onBackToTabs={() => {
+        if (s.tab) void store.unmarkOverlayTab(s.tab.tab_id);
+      }}
+      onStop={() => {
+        if (s.tab) requestCloseTab(s.tab.tab_id);
+      }}
+      onSplit={
+        s.paneId
+          ? (direction) => void store.splitPane(s.paneId!, direction)
+          : undefined
+      }
+    >
+      {s.tab ? (
+        <TerminalPaneLayout
+          key={s.tab.tab_id}
+          scope="overlay"
+          visible={s.open}
+          mobileInputTarget={s.open ? mobileInputTarget : null}
+          onActivateTerminalSurface={onActivateTerminalSurface}
+          terminalTheme={terminalTheme}
+          terminalFontFamily={terminalFontFamily}
+          terminalFontScale={terminalFontScale}
+          mobileShortcuts={mobileShortcuts}
+          mobileSideShortcuts={mobileSideShortcuts}
+          composerOpen={composerOpen}
+          onComposerOpenChange={setComposerOpen}
+          agentHistoryOpen={agentHistoryOpen}
+          onAgentHistoryOpenChange={setAgentHistoryOpen}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+          zenMode={false}
+          onExitZenMode={() => {}}
+        />
+      ) : (
+        <TerminalLoadingFallback label="Starting a shell" />
+      )}
+    </OverlayTabFrame>
   );
 }
 
@@ -1523,6 +1641,16 @@ export default function App() {
       lastRefresh: state.lastRefresh,
       layout: state.layout,
       notice: state.notice,
+      overlayOpen: state.overlayOpen,
+      // The shown overlay's tab: a Space switch can show another one.
+      overlayShownTabId: state.overlayOpen
+        ? (overlayTabOf(
+            state.overlayTabs,
+            state.workspaces.find((workspace) => workspace.focused)
+              ?.workspace_id,
+          )?.tab_id ?? "")
+        : null,
+      overlayPanes: state.overlayPanes,
       panes: state.panes,
       pendingFocusWorkspaceId: state.pendingFocusWorkspaceId,
       recentPaneIds: state.recentPaneIds,
@@ -1541,7 +1669,8 @@ export default function App() {
     activateTerminalComposerDraftScope(
       s.activeConnectionId,
       s.connectionGeneration,
-      s.lastRefresh > 0 ? s.panes : undefined,
+      // Overlay panes keep their drafts too.
+      s.lastRefresh > 0 ? [...s.panes, ...s.overlayPanes] : undefined,
       s.connections.find(
         (connection) => connection.id === s.activeConnectionId,
       ),
@@ -1550,6 +1679,7 @@ export default function App() {
     s.activeConnectionId,
     s.connectionGeneration,
     s.panes,
+    s.overlayPanes,
     s.connections,
     s.lastRefresh,
   ]);
@@ -2277,6 +2407,64 @@ export default function App() {
       });
     }
   }, [mobile, updateInspectorState]);
+  // Shown from an open review, the overlay floats above it, and hiding it
+  // gives the keyboard back to the review. A review opened later goes on top.
+  const [overlayAboveReview, setOverlayAboveReview] = useState(false);
+  const focusBeforeOverlay = useRef<HTMLElement | null>(null);
+  // The overlay shortcut: show the Space's overlay tab, or hide it and give
+  // the keyboard back to the displayed tab's pane, or to the review it was
+  // shown over.
+  const hideOverlayTab = useCallback(() => {
+    void store.hideOverlay();
+    const before = focusBeforeOverlay.current;
+    focusBeforeOverlay.current = null;
+    if (!mobile)
+      requestAnimationFrame(() => {
+        overlayHideFocusTarget(
+          shownReviewOverlay(document),
+          before,
+          activeTerminalInput(document),
+        )?.focus({ preventScroll: true });
+      });
+  }, [mobile]);
+  const toggleOverlayTab = useCallback(() => {
+    if (store.get().overlayOpen) {
+      hideOverlayTab();
+      return;
+    }
+    if (mobile) {
+      setMobileMoreOpen(false);
+      setMobileTabSheetOpen(false);
+      setMobileView("session");
+    }
+    const review = mobile ? null : shownReviewOverlay(document);
+    const active = document.activeElement;
+    focusBeforeOverlay.current =
+      review && active instanceof HTMLElement && review.contains(active)
+        ? active
+        : null;
+    setOverlayAboveReview(!!review);
+    void store.showOverlay();
+  }, [hideOverlayTab, mobile]);
+  // The phone's Back puts the overlay sheet away.
+  useSystemBack(mobile && s.overlayOpen, hideOverlayTab, "panel");
+  // Every show, by the shortcut, a menu, a reload or a switch to a Space
+  // whose overlay is shown, puts the keyboard in the overlay's active pane
+  // once it can take it. Not on a phone, where focusing would raise the
+  // on-screen keyboard.
+  const overlayShownTabId = s.overlayShownTabId;
+  useEffect(() => {
+    if (overlayShownTabId === null || mobile) return;
+    return focusShownOverlay({
+      document,
+      frame: () => document.querySelector(".overlay-tab[data-open]"),
+      input: () => overlayPaneInput(document),
+      open: () => store.get().overlayOpen,
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (id) => cancelAnimationFrame(id),
+      now: () => performance.now(),
+    });
+  }, [overlayShownTabId, mobile]);
   // The phone's Back closes the tab sheet, then returns from Workspaces,
   // Files, Changes, Assistant or Annotations to the session.
   useSystemBack(
@@ -2625,6 +2813,8 @@ export default function App() {
   // On a phone only an agent chat's message box gets it back: a terminal
   // taking the focus would bring the keyboard up over it.
   useEffect(() => {
+    // A review opened over a shown overlay goes on top of it.
+    if (!reviewWasShown.current && reviewShown) setOverlayAboveReview(false);
     if (reviewWasShown.current && !reviewShown)
       requestAnimationFrame(() => {
         const chat = chatBeforeReview.current;
@@ -4076,21 +4266,22 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-      // The review has its own keys (Esc included); only its own toggles
-      // and the ways to another workspace reach the app's shortcuts from
-      // inside it. Those put the review away (it is kept) and go on.
+      // The review has its own keys (Esc included); see reviewKeyRoute for
+      // the app's shortcuts that reach past it.
       if (
         (e.target as HTMLElement | null)?.closest?.(
           ".review-overlay, .review-list-overlay",
-        ) &&
-        !shortcutMatches(e, "review.toggle") &&
-        !shortcutMatches(e, "reviews.list") &&
-        !shortcutMatches(e, "sidebar.toggle")
+        )
       ) {
-        if (!REVIEW_LEAVING_SHORTCUTS.some((id) => shortcutMatches(e, id)))
-          return;
-        setReviewSuspended(true);
-        setReviewListOpen(false);
+        const route = reviewKeyRoute(
+          (id) => shortcutMatches(e, id),
+          store.get().overlayOpen,
+        );
+        if (route === "review") return;
+        if (route === "leave") {
+          setReviewSuspended(true);
+          setReviewListOpen(false);
+        }
       }
       if (
         document.querySelector(
@@ -4262,6 +4453,24 @@ export default function App() {
           return;
         }
 
+        const overlayTab = current.overlayOpen
+          ? current.overlayTabs.find(
+              (tab) => tab.workspace_id === focusedWorkspace.workspace_id,
+            )
+          : undefined;
+        if (tabAction === "close" && overlayTab) {
+          // Closes the overlay's pane, or the overlay tab with its last.
+          const target = closeShortcutTarget(
+            overlayTab.tab_id,
+            current.overlayPanes,
+            overlayActivePaneId(current),
+          );
+          if (target?.type === "pane") requestClosePane(target.id);
+          else if (target?.type === "tab") requestCloseTab(target.id);
+          return;
+        }
+        // Moving to another tab puts the overlay away.
+        if (overlayTab) void store.hideOverlay();
         const tabs = current.tabs.filter(
           (tab) => tab.workspace_id === focusedWorkspace.workspace_id,
         );
@@ -4292,35 +4501,32 @@ export default function App() {
         store.focusTab(targetTabId);
         return;
       }
-      const pluginAction = pluginActionShortcut(e);
-      if (pluginAction) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Typing into the popup's own terminal never reaches here, since
-        // isEditableElement stops at the xterm textarea. An agent chat's
-        // message box lets it through, as it does the review's.
+      if (shortcutMatches(e, "overlay.fullscreen")) {
+        // Only while the overlay shows; otherwise the key is the shell's.
+        if (
+          store.get().overlayOpen &&
+          !blocksNavigationShortcuts(e.target) &&
+          !document.querySelector(".modal-backdrop")
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!e.repeat) requestOverlayFullscreenToggle();
+          return;
+        }
+      }
+      if (shortcutMatches(e, "overlay.toggle")) {
+        // Typing into a terminal reaches here, since isEditableElement
+        // stops at the xterm textarea; so the same key hides the overlay
+        // from its own shell.
         if (
           blocksNavigationShortcuts(e.target) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
         }
-        if (e.repeat) return;
-        const current = store.get();
-        const layoutActivePaneId = activePaneIdForSnapshot(current);
-        const activePane = current.panes.find(
-          (pane) => pane.pane_id === layoutActivePaneId,
-        );
-        // Hide-or-open is resolved against Herdr, not this client's popup
-        // state, which a Space switch can leave stale. See togglePluginPopup.
-        void store.togglePluginPopup(
-          pluginAction.pluginId,
-          pluginAction.actionId,
-          {
-            workspace_id: activePane?.workspace_id,
-            focused_pane_cwd: activePane?.foreground_cwd ?? activePane?.cwd,
-          },
-        );
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) toggleOverlayTab();
         return;
       }
       const paneAction = paneShortcutAction(e);
@@ -4341,10 +4547,17 @@ export default function App() {
           current.tabs.find(
             (tab) => tab.tab_id === focusedWorkspace?.active_tab_id,
           ) ?? current.tabs.find((tab) => tab.focused);
+        // The overlay, while shown, takes the pane keys for its own tab.
+        const overlayPaneId = overlayActivePaneId(current);
         // Resolve the selection only while it belongs to the visible layout,
         // then fall back to tab-local panes like the command menu does.
         const layoutActivePaneId = activePaneIdForSnapshot(current);
         const activePane =
+          (current.overlayOpen
+            ? current.overlayPanes.find(
+                (pane) => pane.pane_id === overlayPaneId,
+              )
+            : undefined) ??
           current.panes.find((pane) => pane.pane_id === layoutActivePaneId) ??
           current.panes.find(
             (pane) => pane.tab_id === activeTab?.tab_id && pane.focused,
@@ -4381,6 +4594,7 @@ export default function App() {
         if (!targetTab) return;
         e.preventDefault();
         e.stopPropagation();
+        if (current.overlayOpen) void store.hideOverlay();
         store.focusTab(targetTab.tab_id);
         return;
       }
@@ -4510,6 +4724,7 @@ export default function App() {
     toggleAssistant,
     toggleDiffViewer,
     toggleFileExplorer,
+    toggleOverlayTab,
     toggleSidebar,
     toggleWorkspaceInspector,
     toggleZenMode,
@@ -5192,6 +5407,22 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={s.overlayOpen ? "active" : ""}
+            title={shortcutTitle("Overlay tab", "overlay.toggle")}
+            aria-label={
+              s.overlayOpen ? "Hide the overlay tab" : "Show the overlay tab"
+            }
+            aria-pressed={s.overlayOpen}
+            onClick={() => {
+              setMobileMoreOpen(false);
+              toggleOverlayTab();
+            }}
+          >
+            <PictureInPicture2 size={16} />
+            <span className="mobile-nav-label">Overlay tab</span>
+          </button>
+          <button
+            type="button"
             title="Settings"
             aria-label="Settings"
             onClick={() => {
@@ -5683,7 +5914,9 @@ export default function App() {
               <div className="workspace-terminal-surface">
                 <TerminalPaneLayout
                   mobileInputTarget={
-                    historyInputPending || assistantVisible
+                    historyInputPending ||
+                    assistantVisible ||
+                    (mobile && s.overlayOpen)
                       ? null
                       : mobileInputTarget
                   }
@@ -5707,6 +5940,20 @@ export default function App() {
                   onExitZenMode={() => applyZenMode(false)}
                 />
               </div>
+              {mobile ? (
+                <OverlayTabHost
+                  sheet
+                  mobileInputTarget={mobileInputTarget}
+                  onHide={hideOverlayTab}
+                  onActivateTerminalSurface={activateTerminalSurface}
+                  terminalTheme={terminalTheme}
+                  terminalFontFamily={terminalFontFamily}
+                  terminalFontScale={terminalFontScale}
+                  mobileShortcuts={mobileTerminalShortcuts}
+                  mobileSideShortcuts={mobileTerminalSideShortcuts}
+                  onOpenWorkspaceFile={handleTerminalWorkspaceFile}
+                />
+              ) : null}
               {inspectorState?.open && !inspectorState.expanded ? (
                 <div
                   className="workspace-inspector-resizer"
@@ -5923,6 +6170,21 @@ export default function App() {
       ) : null}
       <GlobalTooltip />
       {viewportDebugEnabled ? <ViewportDebugOverlay /> : null}
+      {mobile ? null : (
+        <OverlayTabHost
+          sheet={false}
+          aboveReview={overlayAboveReview}
+          mobileInputTarget={mobileInputTarget}
+          onHide={hideOverlayTab}
+          onActivateTerminalSurface={activateTerminalSurface}
+          terminalTheme={terminalTheme}
+          terminalFontFamily={terminalFontFamily}
+          terminalFontScale={terminalFontScale}
+          mobileShortcuts={mobileTerminalShortcuts}
+          mobileSideShortcuts={mobileTerminalSideShortcuts}
+          onOpenWorkspaceFile={handleTerminalWorkspaceFile}
+        />
+      )}
       <PopupOverlay
         terminalTheme={terminalTheme}
         terminalFontFamily={terminalFontFamily}

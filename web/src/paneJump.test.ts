@@ -3,6 +3,8 @@ import type { ConnectionSummary } from "./api";
 import type { ConnectionSessionView } from "./connectionSessions";
 import {
   activePaneIdForSnapshot,
+  focusedPaneIdForSnapshot,
+  overlayActivePaneId,
   paneCanClose,
   paneJumpConnectionTarget,
   paneJumpDefaultIndex,
@@ -1043,5 +1045,45 @@ describe("what needs the user, and when they last looked", () => {
     // Without anything waiting, Done moves nothing.
     const quiet = entries.filter((entry) => entry.needsYou !== "blocked");
     expect(needsYouFirst([...quiet].reverse())).toEqual([...quiet].reverse());
+  });
+});
+
+describe("focusedPaneIdForSnapshot", () => {
+  const layout = (tabId: string, paneIds: string[], focused: string) => ({
+    panes: paneIds.map((pane_id) => ({
+      pane_id,
+      focused: pane_id === focused,
+      rect: { x: 0, y: 0, width: 1, height: 1 },
+    })),
+    focused_pane_id: focused,
+    tab_id: tabId,
+  });
+  const snapshot = {
+    selectedPaneId: "main-b",
+    layout: layout("main", ["main-a", "main-b"], "main-a"),
+    overlaySelectedPaneId: "float-b",
+    overlayLayout: layout("float", ["float-a", "float-b"], "float-a"),
+  };
+
+  test("is the displayed tab's pane while the overlay is hidden", () => {
+    expect(focusedPaneIdForSnapshot({ ...snapshot, overlayOpen: false })).toBe(
+      "main-b",
+    );
+    expect(overlayActivePaneId({ ...snapshot, overlayOpen: false })).toBe(
+      undefined,
+    );
+  });
+
+  test("is the overlay's selected pane while it is shown", () => {
+    expect(focusedPaneIdForSnapshot({ ...snapshot, overlayOpen: true })).toBe(
+      "float-b",
+    );
+    expect(
+      focusedPaneIdForSnapshot({
+        ...snapshot,
+        overlayOpen: true,
+        overlaySelectedPaneId: "gone",
+      }),
+    ).toBe("float-a");
   });
 });

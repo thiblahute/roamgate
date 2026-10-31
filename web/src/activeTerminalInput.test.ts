@@ -14,6 +14,28 @@ describe("activeTerminalInput", () => {
       await browser.happyDOM.close();
     }
   });
+  test.each([true, false])(
+    "routes to the overlay tab only while it is shown (shown: %p)",
+    async (shown) => {
+      const browser = new Window();
+      const doc = browser.document;
+      try {
+        doc.body.innerHTML = `<div class="workspace-terminal-surface">
+          <div class="pane-layout-cell is-active"><div class="terminal-shell" data-pane-id="main"><div class="terminal-view main"></div></div></div>
+        </div>
+        <section class="overlay-tab" ${shown ? "data-open" : ""}><div class="overlay-tab-surface">
+          <div class="pane-layout"><div class="pane-layout-cell is-active"><div class="terminal-shell" data-pane-id="float"><div class="terminal-view float"></div></div></div></div>
+        </div></section>`;
+        expect(activeTerminalInput(doc as unknown as Document)).toBe(
+          doc.querySelector(
+            shown ? ".terminal-view.float" : ".terminal-view.main",
+          ) as unknown as HTMLElement | null,
+        );
+      } finally {
+        await browser.happyDOM.close();
+      }
+    },
+  );
   test("routes to the message box of a pane shown as a chat", async () => {
     const browser = new Window();
     const doc = browser.document;

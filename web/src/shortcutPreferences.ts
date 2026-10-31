@@ -43,7 +43,7 @@ const LATE_SHORTCUT_IDS: ShortcutId[] = [
   "annotations.copy",
   "annotations.prefill",
   "panes.search",
-  "plugin.herdrFloat.toggle",
+  "overlay.toggle",
   "terminal.ctrlEnter",
   "pane.moveLeft",
   "pane.moveRight",
@@ -55,7 +55,25 @@ const LATE_SHORTCUT_IDS: ShortcutId[] = [
   "review.toggle",
   "reviews.list",
   "pane.tasks",
+  "overlay.fullscreen",
 ];
+/** Actions renamed since presets could be saved: old id -> new id. */
+const RENAMED_SHORTCUT_IDS: Record<string, ShortcutId> = {
+  // Herdr Float's popup became Roamgate's own overlay tab.
+  "plugin.herdrFloat.toggle": "overlay.toggle",
+};
+function migrateShortcutIds(
+  bindings: Record<string, unknown>,
+): Record<string, unknown> {
+  const migrated = { ...bindings };
+  for (const [from, to] of Object.entries(RENAMED_SHORTCUT_IDS)) {
+    if (!Object.prototype.hasOwnProperty.call(migrated, from)) continue;
+    if (!Object.prototype.hasOwnProperty.call(migrated, to))
+      migrated[to] = migrated[from];
+    delete migrated[from];
+  }
+  return migrated;
+}
 export function validateShortcutPreset(value: unknown): ShortcutPreset {
   if (!value || typeof value !== "object")
     throw new Error("Invalid shortcut preset.");
@@ -78,22 +96,21 @@ export function validateShortcutPreset(value: unknown): ShortcutPreset {
     Array.isArray(input.bindings)
   )
     throw new Error("Missing shortcut bindings.");
+  const stored = migrateShortcutIds(input.bindings);
   if (
-    Object.keys(input.bindings).some(
-      (id) => !SHORTCUT_IDS.includes(id as ShortcutId),
-    )
+    Object.keys(stored).some((id) => !SHORTCUT_IDS.includes(id as ShortcutId))
   )
     throw new Error("This preset contains unknown actions.");
   const bindings = defaultShortcutBindings(input.base);
   for (const id of SHORTCUT_IDS) {
-    if (Object.prototype.hasOwnProperty.call(input.bindings, id))
-      bindings[id] = validateShortcutKeys(id, input.bindings[id]);
+    if (Object.prototype.hasOwnProperty.call(stored, id))
+      bindings[id] = validateShortcutKeys(id, stored[id]);
   }
   // Presets saved before an action existed keep their explicit assignments.
   // Only add default keys for the newer action that do not conflict with them,
   // so a stored preset stays loadable instead of being discarded.
   for (const id of LATE_SHORTCUT_IDS) {
-    if (Object.prototype.hasOwnProperty.call(input.bindings, id)) continue;
+    if (Object.prototype.hasOwnProperty.call(stored, id)) continue;
     bindings[id] = bindings[id].filter(
       (key) => shortcutConflicts(id, [key], bindings).length === 0,
     );

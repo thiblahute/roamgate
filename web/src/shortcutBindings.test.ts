@@ -483,15 +483,52 @@ test("older presets gain panel shortcuts without replacing saved assignments", (
   }
 });
 
-test("older presets keep a key assigned before the popup shortcut existed", () => {
+test("older presets keep a key assigned before the overlay shortcut existed", () => {
   for (const base of ["mac", "windows", "linux"] as const) {
     const bindings: Partial<ShortcutBindings> = defaultShortcutBindings(base);
-    bindings["tab.close"] = bindings["plugin.herdrFloat.toggle"];
-    delete bindings["plugin.herdrFloat.toggle"];
+    bindings["tab.close"] = bindings["overlay.toggle"];
+    delete bindings["overlay.toggle"];
     const loaded = validateShortcutPreset({ ...preset(), base, bindings });
     expect(loaded.bindings["tab.close"]).toEqual(bindings["tab.close"]!);
-    expect(loaded.bindings["plugin.herdrFloat.toggle"]).toEqual([]);
+    expect(loaded.bindings["overlay.toggle"]).toEqual([]);
   }
+});
+
+test("the overlay tab shortcut defaults to Option-F or Alt-F everywhere", () => {
+  for (const base of ["mac", "windows", "linux"] as const) {
+    const bindings = defaultShortcutBindings(base);
+    expect(bindings["overlay.toggle"]).toEqual(["Alt+F"]);
+    expect(shortcutConflicts("overlay.toggle", ["Alt+F"], bindings)).toEqual(
+      [],
+    );
+  }
+});
+
+test("overlay fullscreen defaults to Option-Shift-F or Alt-Shift-F everywhere", () => {
+  for (const base of ["mac", "windows", "linux"] as const) {
+    const bindings = defaultShortcutBindings(base);
+    expect(bindings["overlay.fullscreen"]).toEqual(["Alt+Shift+F"]);
+    expect(
+      shortcutConflicts("overlay.fullscreen", ["Alt+Shift+F"], bindings),
+    ).toEqual([]);
+  }
+});
+
+test("presets saved with the Herdr Float shortcut keep its key for the overlay", () => {
+  const bindings: Record<string, unknown> = {
+    ...defaultShortcutBindings("mac"),
+  };
+  delete bindings["overlay.toggle"];
+  bindings["plugin.herdrFloat.toggle"] = ["Ctrl+Meta+F"];
+  const loaded = validateShortcutPreset({
+    ...preset(),
+    base: "mac",
+    bindings,
+  });
+  expect(loaded.bindings["overlay.toggle"]).toEqual(["Ctrl+Meta+F"]);
+  expect(Object.keys(loaded.bindings)).not.toContain(
+    "plugin.herdrFloat.toggle",
+  );
 });
 
 test("older presets gain the cheat sheet shortcut without replacing saved keys", () => {

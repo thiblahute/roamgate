@@ -98,6 +98,8 @@ export function TabBar({
       tabMoveSupported: state.tabMoveSupported,
       panes: state.panes,
       tabs: state.tabs,
+      overlayPanes: state.overlayPanes,
+      overlayTabs: state.overlayTabs,
       workspaces: state.workspaces,
     }),
     shallowEqual,
@@ -141,9 +143,12 @@ export function TabBar({
     activeTabId: tabs.find((tab) => tab.focused)?.tab_id,
     tabsKey: tabs.map((tab) => tab.tab_id).join(" "),
   });
-  const pendingCloseTab = s.tabs.find((t) => t.tab_id === pendingCloseTabId);
+  // The overlay tab closes through the same dialogs as strip tabs.
+  const pendingCloseTab =
+    s.tabs.find((t) => t.tab_id === pendingCloseTabId) ??
+    s.overlayTabs.find((t) => t.tab_id === pendingCloseTabId);
   const pendingCloseTabName = tabName(pendingCloseTab);
-  const pendingCloseTabPaneIds = s.panes
+  const pendingCloseTabPaneIds = [...s.panes, ...s.overlayPanes]
     .filter((pane) => pane.tab_id === pendingCloseTabId)
     .map((pane) => pane.pane_id);
   const pendingCloseDraftWarning = terminalComposerCloseWarning(
@@ -153,9 +158,9 @@ export function TabBar({
       pendingCloseTabPaneIds,
     ).length,
   );
-  const pendingClosePane = s.panes.find(
-    (pane) => pane.pane_id === pendingClosePaneId,
-  );
+  const pendingClosePane =
+    s.panes.find((pane) => pane.pane_id === pendingClosePaneId) ??
+    s.overlayPanes.find((pane) => pane.pane_id === pendingClosePaneId);
   const pendingClosePaneDraftWarning = terminalComposerCloseWarning(
     terminalComposerDraftPaneIds(
       s.activeConnectionId,
@@ -213,6 +218,7 @@ export function TabBar({
         onTogglePin={(tab, pinned) =>
           setTabPinned(s.activeConnectionId, tab.tab_id, pinned)
         }
+        onShowAsOverlay={(tab) => void store.markOverlayTab(tab.tab_id)}
         onCloseTab={(tab) => setPendingCloseTabId(tab.tab_id)}
         createReason={createReason}
         onCreateTab={() => {
@@ -505,6 +511,7 @@ function TabContextMenu({
   onFocus,
   onRename,
   onTogglePin,
+  onShowAsOverlay,
   onCloseTab,
   onCreateTab,
   createReason,
@@ -515,6 +522,7 @@ function TabContextMenu({
   onFocus: (tab: Tab) => void;
   onRename: (tab: Tab) => void;
   onTogglePin: (tab: Tab, pinned: boolean) => void;
+  onShowAsOverlay: (tab: Tab) => void;
   onCloseTab: (tab: Tab) => void;
   onCreateTab: () => void;
   createReason: string | null;
@@ -552,6 +560,14 @@ function TabContextMenu({
       label: pinned ? "Unpin tab" : "Pin tab",
       action: () => onTogglePin(state.tab, !pinned),
     },
+    {
+      label: "Show as overlay",
+      title: shortcutTitle(
+        "Float this tab above the others; one overlay tab per Space",
+        "overlay.toggle",
+      ),
+      action: () => onShowAsOverlay(state.tab),
+    },
     { label: "Create tab", action: onCreateTab, reason: createReason },
     {
       label: "Close tab",
@@ -581,7 +597,7 @@ function TabContextMenu({
         <button
           key={item.label}
           disabled={!!item.reason}
-          title={item.reason ?? undefined}
+          title={item.reason ?? item.title}
           className={`context-menu-item ${item.danger ? "is-danger" : ""}`}
           onClick={() => {
             onClose();

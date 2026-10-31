@@ -14,6 +14,7 @@ import {
   isAssistantMentionTarget,
 } from "../../../shared/assistant";
 import { isRecord } from "../agent/session-utils";
+import { overlayTabIds } from "../config/overlay-tabs";
 import { validateConnectionId } from "../connections/protocol";
 import type { LegacyConnectionRuntime } from "../connections/runtime";
 import { assertUnixHost } from "../connections/unix-only";
@@ -363,8 +364,13 @@ export function createAssistantContext(args: {
           );
           if (!Array.isArray(result?.panes))
             throw new Error("Invalid pane list");
+          // Overlay tabs stay out of Ranger's lists, as out of Roamgate's.
+          const hidden = await overlayTabIds(target.connection_id);
           const panes = records(result.panes).filter(
-            (pane) => pane.workspace_id === target.workspace_id && pane.agent,
+            (pane) =>
+              pane.workspace_id === target.workspace_id &&
+              pane.agent &&
+              !hidden.has(String(pane.tab_id)),
           );
           truncated ||= panes.length > 200;
           return panes.slice(0, 200).map((pane) => ({

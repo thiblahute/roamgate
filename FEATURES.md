@@ -52,6 +52,41 @@ older (legacy) connections share navigation. Pane focus, layout, and terminal
 sizes within a tab are always shared. See
 [compatibility](docs/DEPLOYMENT.md#herdr-compatibility).
 
+### Overlay Tab
+
+Each Space (Herdr workspace) can float one of its tabs above the others: press
+`Option+F` (`Alt+F` on Windows/Linux) to show it, and again to hide it. The
+first press in a Space without one creates a tab with a shell in the workspace
+root (the checkout Herdr reports, otherwise the focused pane's folder) and shows
+it. **Show as overlay** in a tab's menu or the command menu floats any other tab
+instead, which sends the previous one back to the tab strip; **Back to tabs**
+undoes it.
+
+The overlay is an ordinary tab: split, focus, resize, and close its panes as
+anywhere else, with the same paste, selection, image paste, and theme; its
+split buttons sit in its title bar, where they hide no terminal text. Its
+terminals stay attached while it is hidden, so showing it is instant. Showing
+it puts the keyboard in its focused pane, even from an agent chat's message box,
+and hiding it gives the keyboard back to the pane underneath. Drag its title bar
+to move it and its edges or corners to resize it (double-click the title bar to
+recentre it). Its maximise button, or `Option+Shift+F` (`Alt+Shift+F`) while
+it shows, fills the main area right of the sidebar and below the header, and
+restores its floating size and place the same way. Each browser remembers
+where it was, whether it was maximised, and whether it was shown in each Space:
+only hiding it (the shortcut, Hide, Back to tabs, or Stop) hides it, so
+switching Spaces shows each Space's overlay as it was left there, and a reload
+brings it back. Pressed in a review, `Option+F` shows the overlay above the
+review, and hiding it gives the keyboard back to the review. On a phone it
+opens as a sheet over the terminal from **⋮ > Overlay tab**, and Back hides
+it; a switch or a reload leaves it closed there.
+
+The overlay tab never appears in the tab strip, tab counts, the phone's tabs
+button, the pane switchers, workspace rows, or Ranger's lists. The choice of tab
+is kept on the Roamgate server, so every browser sees the same one, and it
+survives restarts of Herdr, Roamgate, and the machine. **Stop** in its title bar
+closes the tab and its shells; closing the workspace closes it too. Herdr's own
+TUI shows it as a regular tab.
+
 ### Recent Pane Switcher
 
 Switch between the 12 most recently focused panes across tabs and workspaces.
@@ -928,6 +963,8 @@ and is skipped, with a note, on a browser that does not match.
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |
 | Recent pane switcher                                                  | `Ctrl+Tab`              | `Ctrl+Alt+J`                            |
 | Search panes                                                          | `Alt+K`                 | `Alt+K`                                 |
+| Show / hide the Space's overlay tab                                   | `Option+F`              | `Alt+F`                                 |
+| Maximise / restore the overlay tab                                    | `Option+Shift+F`        | `Alt+Shift+F`                           |
 | Focus terminal input (desktop)                                        | ``Ctrl+` ``             | ``Ctrl+` ``                             |
 | Create / close tab or pane                                            | `Cmd+T` / `Cmd+W`       | `Ctrl+Alt+T` / `Ctrl+Alt+W`             |
 | Previous / next tab                                                   | `Cmd+Option+Left/Right` | `Alt+Shift+Left/Right`                  |

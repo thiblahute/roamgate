@@ -80,6 +80,47 @@ export function activePaneIdForSnapshot(
     : snapshot.layout?.focused_pane_id;
 }
 
+type FocusedPaneSnapshot = ActivePaneSnapshot & {
+  overlayOpen?: boolean;
+  overlaySelectedPaneId?: string | null;
+  overlayLayout?: Pick<PaneLayout, "panes" | "focused_pane_id"> | null;
+};
+
+/** The overlay tab's active pane, while the overlay is shown. */
+export function overlayActivePaneId(
+  snapshot: FocusedPaneSnapshot,
+): string | undefined {
+  if (!snapshot.overlayOpen || !snapshot.overlayLayout) return undefined;
+  return activePaneIdForSnapshot({
+    selectedPaneId: snapshot.overlaySelectedPaneId,
+    layout: snapshot.overlayLayout,
+  });
+}
+
+/**
+ * The pane keyboard actions and pasted files go to: the overlay's while it
+ * is shown, otherwise the displayed tab's.
+ */
+export function focusedPaneIdForSnapshot(
+  snapshot: FocusedPaneSnapshot,
+): string | undefined {
+  return snapshot.overlayOpen
+    ? overlayActivePaneId(snapshot)
+    : activePaneIdForSnapshot(snapshot);
+}
+
+/** A pane of the displayed connection, in the tab strip or the overlay. */
+export function paneInSnapshot(
+  snapshot: { panes: readonly Pane[]; overlayPanes?: readonly Pane[] },
+  paneId: string | null | undefined,
+): Pane | undefined {
+  if (!paneId) return undefined;
+  return (
+    snapshot.panes.find((pane) => pane.pane_id === paneId) ??
+    snapshot.overlayPanes?.find((pane) => pane.pane_id === paneId)
+  );
+}
+
 /** A pane can be closed inline only while a sibling keeps its tab alive. */
 export function paneCanClose(
   panes: readonly Pick<Pane, "pane_id" | "tab_id">[],

@@ -31,6 +31,7 @@ import {
   tabPinsFor,
 } from "./tabPins";
 import { moveTabInList } from "./tabReorder";
+import { activePaneIdForSnapshot } from "./paneJump";
 import {
   type EndpointAvailability,
   parseEndpointAdvertisement,
@@ -101,6 +102,22 @@ import {
 } from "./tabLayout";
 import type { GitDiffEntry, Pane, PaneLayout, Tab, Workspace } from "./types";
 import {
+  adoptOverlayTabs,
+  connectOverlayTabs,
+  disconnectOverlayTabs,
+  forgetVanishedOverlayTabs,
+  OVERLAY_TAB_DEFAULT_LABEL,
+  OVERLAY_TAB_SETTING_KEY,
+  overlayTabIdsFor,
+  overlayTabOf,
+  overlayWasShown,
+  rememberOverlayShown,
+  setOverlayTab,
+  splitOverlayTopology,
+  subscribeOverlayTabs,
+} from "./overlayTabs";
+import { isMobileLayout } from "./layoutPreferences";
+import {
   gitFileActionLabel,
   gitFileActionSuccessMessage,
   gitRepoActionSuccessMessage,
@@ -122,6 +139,13 @@ export interface ServerSessionState {
   layout: PaneLayout | null;
   selectedPaneId: string | null;
   recentPaneIds: string[];
+  /** Overlay tabs and their panes, kept out of `tabs` and `panes`. */
+  overlayTabs: Tab[];
+  overlayPanes: Pane[];
+  /** Layout of the displayed workspace's overlay tab, once it was shown. */
+  overlayLayout: PaneLayout | null;
+  /** The overlay tab's active pane, chosen in this browser. */
+  overlaySelectedPaneId: string | null;
   /** A plugin's session-modal floating pane (e.g. Herdr Float), if open. */
   popup: PopupInfo | null;
   /**
@@ -152,6 +176,13 @@ export interface ForwardListeners {
 export interface State extends ServerSessionState {
   status: ConnectionStatus;
   connectionPaused: boolean;
+  /** The displayed workspace's overlay tab is shown. */
+  overlayOpen: boolean;
+  /**
+   * The overlay was shown on this page: its panes stay attached while hidden
+   * so showing it again is instant.
+   */
+  overlayMounted: boolean;
   bridgeStatus: BridgeStatus | null;
   connections: ConnectionSummary[];
   defaultConnectionId: string;
@@ -321,6 +352,10 @@ export function emptyServerSessionState(
     layout: null,
     selectedPaneId: null,
     recentPaneIds: [],
+    overlayTabs: [],
+    overlayPanes: [],
+    overlayLayout: null,
+    overlaySelectedPaneId: null,
     popup: null,
     popupMoving: null,
     error: null,
@@ -427,6 +462,8 @@ export function healthMatchesUpdateVersion(
 const initialSession = emptyServerSessionState();
 const initial: State = {
   status: "disconnected",
+  overlayOpen: false,
+  overlayMounted: false,
   connectionPaused:
     typeof localStorage !== "undefined" &&
     roamgateLocalStorage.getItem("connectionPaused") === "true",
@@ -470,6 +507,10 @@ const SERVER_SESSION_KEYS: Array<keyof ServerSessionState> = [
   "layout",
   "selectedPaneId",
   "recentPaneIds",
+  "overlayTabs",
+  "overlayPanes",
+  "overlayLayout",
+  "overlaySelectedPaneId",
   "error",
   "pendingFocusWorkspaceId",
   "pendingFocusWorkspaceSeq",
@@ -491,6 +532,10 @@ function serverSessionFromState(snapshot: State): ServerSessionState {
     layout: snapshot.layout,
     selectedPaneId: snapshot.selectedPaneId,
     recentPaneIds: snapshot.recentPaneIds,
+    overlayTabs: snapshot.overlayTabs,
+    overlayPanes: snapshot.overlayPanes,
+    overlayLayout: snapshot.overlayLayout,
+    overlaySelectedPaneId: snapshot.overlaySelectedPaneId,
     popup: snapshot.popup,
     popupMoving: null,
     error: snapshot.error,
@@ -658,6 +703,7 @@ function set(patch: Partial<State>) {
   if (patch.notice) {
     patch = { ...patch, notice: { ...patch.notice, id: ++noticeSeq } };
   }
+  patch = withDisplayedOverlay(patch);
   if (
     patch.selectedPaneId !== undefined ||
     patch.panes !== undefined ||
@@ -1324,6 +1370,9 @@ const REFRESH_SLICE_KEYS = [
   "tabs",
   "panes",
   "layout",
+  "overlayTabs",
+  "overlayPanes",
+  "overlayLayout",
   "browserNavigation",
   "endpointAvailability",
 ] as const;
@@ -1334,6 +1383,7 @@ const REFRESH_SCALAR_KEYS = [
   "pendingFocusWorkspaceId",
   "pendingFocusWorkspaceSettledAt",
   "selectedPaneId",
+  "overlaySelectedPaneId",
 ] as const;
 
 /**
@@ -1428,12 +1478,15 @@ let uiSettingsPushVersion = 0;
 let latestShortcutPush: unknown;
 let vimKeysPushVersion = 0;
 let latestVimKeysPush: unknown;
+let overlayTabsPushVersion = 0;
+let latestOverlayTabsPush: unknown;
 async function hydrateUiSettings() {
   if (uiSettingsHydrated) return;
   uiSettingsHydrated = true;
   const epoch = uiSettingsEpoch;
   const pushVersion = uiSettingsPushVersion;
   const vimPushVersion = vimKeysPushVersion;
+  const overlayPushVersion = overlayTabsPushVersion;
   try {
     const result = await bridge.call("bridge.ui_settings.get");
     if (epoch !== uiSettingsEpoch) return;
@@ -1459,6 +1512,17 @@ async function hydrateUiSettings() {
       vimPushVersion === vimKeysPushVersion
         ? ui[VIM_KEYS_SETTING_KEY]
         : latestVimKeysPush,
+    );
+    connectOverlayTabs(
+      async (value) => {
+        await bridge.call("bridge.ui_settings.update", {
+          key: OVERLAY_TAB_SETTING_KEY,
+          value,
+        });
+      },
+      overlayPushVersion === overlayTabsPushVersion
+        ? ui[OVERLAY_TAB_SETTING_KEY]
+        : latestOverlayTabsPush,
     );
   } catch {
     // Either the call lost a race with connection setup, or this is an older
@@ -1535,10 +1599,10 @@ async function refreshNow(lease = captureConnectionLease()) {
       ]),
     );
     if (!leaseIsCurrent(lease)) return;
-    const workspaces: Workspace[] = wsRes?.workspaces ?? [];
-    const tabs: Tab[] = tabRes?.tabs ?? [];
-    const panes = withAgentActivity(paneRes?.panes ?? [], agentRes);
-    const liveTabIds = new Set(tabs.map((tab) => tab.tab_id));
+    const allWorkspaces: Workspace[] = wsRes?.workspaces ?? [];
+    const allTabs: Tab[] = tabRes?.tabs ?? [];
+    const allPanes = withAgentActivity(paneRes?.panes ?? [], agentRes);
+    const liveTabIds = new Set(allTabs.map((tab) => tab.tab_id));
     forgetTerminalRelayViewportsExcept(
       lease.connectionId,
       lease.generation,
@@ -1547,7 +1611,14 @@ async function refreshNow(lease = captureConnectionLease()) {
     forgetTabLayoutsExcept(lease.connectionId, lease.generation, liveTabIds);
     // Tabs closed elsewhere, such as in the Herdr TUI, leave stale pins.
     forgetClosedTabPins(lease.connectionId, liveTabIds);
-    const completedPanes = trackTaskCompletions(lease.connectionId, panes);
+    forgetVanishedOverlayTabs(lease.connectionId, allWorkspaces, allTabs);
+    const completedPanes = trackTaskCompletions(lease.connectionId, allPanes);
+    // Overlay tabs leave every list here, once, for all of Roamgate.
+    const { workspaces, tabs, panes, overlayTabs, overlayPanes } =
+      splitOverlayTopology(
+        { workspaces: allWorkspaces, tabs: allTabs, panes: allPanes },
+        overlayTabIdsFor(lease.connectionId),
+      );
 
     const navigationMode =
       wsRes?.navigation_mode === "browser-local" ? "browser-local" : "shared";
@@ -1560,6 +1631,8 @@ async function refreshNow(lease = captureConnectionLease()) {
       workspaces,
       tabs,
       panes,
+      overlayTabs,
+      overlayPanes,
       error: null,
       lastRefresh: Date.now(),
     };
@@ -1612,6 +1685,8 @@ async function refreshNow(lease = captureConnectionLease()) {
 
     // Fetch layout for the active tab (needs a pane_id in that tab).
     const merged = { ...state, ...next } as State;
+    // The overlay tab's layout comes alongside, once the overlay was shown.
+    const overlayLayoutRead = readOverlayLayout(lease, merged);
     const activeTabId = pickActiveTabId(merged);
     const aPane =
       panes.find((p) => p.tab_id === activeTabId && p.focused) ??
@@ -1656,6 +1731,12 @@ async function refreshNow(lease = captureConnectionLease()) {
     } else {
       next.layout = null;
     }
+    if (overlayLayoutRead instanceof Promise) {
+      Object.assign(next, await overlayLayoutRead);
+      if (!leaseIsCurrent(lease)) return;
+    } else {
+      Object.assign(next, overlayLayoutRead);
+    }
 
     // Never publish a layout fetched for an older browser navigation target.
     if (navigationAtEntry !== state.browserNavigation) {
@@ -1695,7 +1776,8 @@ async function refreshNow(lease = captureConnectionLease()) {
     } else if (!leaseIsCurrent(lease)) {
       return;
     }
-    notifyCompletedTasks(lease, completedPanes, workspaces, tabs);
+    reconcileOverlayOpen();
+    notifyCompletedTasks(lease, completedPanes, allWorkspaces, allTabs);
   } catch (error) {
     setForConnection(lease, { error: (error as Error).message });
   } finally {
@@ -1784,7 +1866,12 @@ async function refreshConnectionTopology(connectionId: string) {
     let error: string | null = null;
     let topology: Pick<
       ServerSessionState,
-      "navigationMode" | "workspaces" | "tabs" | "panes"
+      | "navigationMode"
+      | "workspaces"
+      | "tabs"
+      | "panes"
+      | "overlayTabs"
+      | "overlayPanes"
     > | null = null;
     try {
       const [wsRes, tabRes, paneRes, agentRes] = await Promise.all([
@@ -1799,9 +1886,14 @@ async function refreshConnectionTopology(connectionId: string) {
           wsRes?.navigation_mode === "browser-local"
             ? "browser-local"
             : "shared",
-        workspaces: wsRes?.workspaces ?? [],
-        tabs: tabRes?.tabs ?? [],
-        panes: withAgentActivity(paneRes?.panes ?? [], agentRes),
+        ...splitOverlayTopology(
+          {
+            workspaces: wsRes?.workspaces ?? [],
+            tabs: tabRes?.tabs ?? [],
+            panes: withAgentActivity(paneRes?.panes ?? [], agentRes),
+          },
+          overlayTabIdsFor(connectionId),
+        ),
       };
     } catch (readError) {
       error =
@@ -2537,6 +2629,7 @@ function handleBridgeStatus(s: ConnectionStatus) {
     uiSettingsHydrated = false;
     disconnectShortcutPreferences();
     disconnectVimKeys();
+    disconnectOverlayTabs();
     catalogReadyForConnection = false;
     terminalReattachPending = true;
     bridge.setConnectionRuntimeGenerations([]);
@@ -2843,6 +2936,297 @@ function adoptBrowserTarget(lease: StoreConnectionLease, result: unknown) {
   });
 }
 
+/** The workspace this browser displays (browser-local or Herdr focus). */
+function displayedWorkspaceId(snapshot: Pick<State, "workspaces">) {
+  return snapshot.workspaces.find((w) => w.focused)?.workspace_id ?? null;
+}
+
+/** The overlay's selection, kept while it still names one of its panes. */
+function overlaySelectionIn(
+  layout: PaneLayout | null,
+  paneId: string | null,
+): string | null {
+  if (!layout) return null;
+  return paneId && layout.panes.some((pane) => pane.pane_id === paneId)
+    ? paneId
+    : layout.focused_pane_id || layout.panes[0]?.pane_id || null;
+}
+
+/**
+ * Where the overlay is shown: the connection and workspace it was opened for,
+ * and the workspace whose overlay tab is still being created.
+ */
+let overlayTarget: { connectionId: string; workspaceId: string } | null = null;
+let pendingOverlayCreation: {
+  connectionId: string;
+  workspaceId: string;
+  /** Known once Herdr created it; cleared when a list read shows it. */
+  tabId?: string;
+} | null = null;
+
+/**
+ * Remembers in this browser whether the overlay is shown for its Space, so a
+ * reload brings it back.
+ */
+function rememberOverlayTarget(
+  target: { connectionId: string; workspaceId: string } | null,
+  shown: boolean,
+) {
+  if (target)
+    rememberOverlayShown(target.connectionId, target.workspaceId, shown);
+}
+
+/** Which Space's overlay would be on screen: connection, Space, overlay tab. */
+function overlaySpaceKey(
+  snapshot: Pick<State, "activeConnectionId" | "workspaces" | "overlayTabs">,
+) {
+  const workspaceId = displayedWorkspaceId(snapshot);
+  const tabId = overlayTabOf(snapshot.overlayTabs, workspaceId)?.tab_id ?? "";
+  return `${snapshot.activeConnectionId}\n${workspaceId ?? ""}\n${tabId}`;
+}
+
+/** The overlay tab's layout to show at once: the read one, else its last. */
+function overlayShowLayout(snapshot: State, tab: Tab) {
+  const layout =
+    snapshot.overlayLayout?.tab_id === tab.tab_id
+      ? snapshot.overlayLayout
+      : provisionalTabLayout(
+          tabLayoutFor(
+            snapshot.activeConnectionId,
+            snapshot.connectionGeneration,
+            tab.tab_id,
+          ),
+          snapshot.overlayPanes,
+          tab.tab_id,
+          snapshot.overlaySelectedPaneId,
+        );
+  const selected = overlaySelectionIn(layout, snapshot.overlaySelectedPaneId);
+  return {
+    overlayLayout: projectBrowserLayout(layout, selected),
+    overlaySelectedPaneId: selected,
+  };
+}
+
+/**
+ * One overlay per Space, shown or hidden by the user alone. Switching Space
+ * (or connection) only changes which overlay is on screen: the displayed
+ * Space's own, shown when this browser left it shown, once its overlay tab is
+ * known. That also brings it back after a reload. It never hides or forgets
+ * another Space's overlay, so a later step of the switch (a refresh started
+ * for the previous Space, a focus change) cannot hide the one just shown.
+ * On a phone the sheet only opens by a tap: the Back guard it needs can only
+ * be pushed by a user gesture, so a sheet opened by a switch or a reload
+ * would make Back leave the page.
+ */
+function withDisplayedOverlay(patch: Partial<State>): Partial<State> {
+  if (
+    patch.workspaces === undefined &&
+    patch.overlayTabs === undefined &&
+    patch.activeConnectionId === undefined
+  )
+    return patch;
+  const next = { ...state, ...patch } as State;
+  if (overlaySpaceKey(next) === overlaySpaceKey(state)) return patch;
+  const connectionId = next.activeConnectionId;
+  const workspaceId = displayedWorkspaceId(next);
+  const pending = pendingOverlayCreation;
+  if (
+    pending &&
+    pending.connectionId === connectionId &&
+    pending.workspaceId === workspaceId
+  ) {
+    overlayTarget = { connectionId, workspaceId };
+    return { ...patch, overlayOpen: true };
+  }
+  const tab = overlayTabOf(next.overlayTabs, workspaceId);
+  if (
+    !workspaceId ||
+    !tab ||
+    isMobileLayout() ||
+    !overlayWasShown(connectionId, workspaceId)
+  ) {
+    overlayTarget = null;
+    return next.overlayOpen ? { ...patch, overlayOpen: false } : patch;
+  }
+  overlayTarget = { connectionId, workspaceId };
+  // The first show on this page: the refresh that brought the tab read no
+  // layout for it, so read it now.
+  if (!next.overlayMounted) queueMicrotask(() => void refreshNow());
+  return {
+    ...patch,
+    overlayOpen: true,
+    overlayMounted: true,
+    ...overlayShowLayout(next, tab),
+  };
+}
+
+/**
+ * Reads the overlay tab's layout, once the overlay was shown on this page.
+ * Answers at once, without a call, when there is nothing to read.
+ */
+function readOverlayLayout(
+  lease: StoreConnectionLease,
+  snapshot: State,
+): Partial<State> | Promise<Partial<State>> {
+  const tab = overlayTabOf(
+    snapshot.overlayTabs,
+    displayedWorkspaceId(snapshot),
+  );
+  if (!tab || !state.overlayMounted) return { overlayLayout: null };
+  const tabPanes = snapshot.overlayPanes.filter(
+    (pane) => pane.tab_id === tab.tab_id,
+  );
+  const source =
+    tabPanes.find((pane) => pane.pane_id === state.overlaySelectedPaneId) ??
+    tabPanes.find((pane) => pane.focused) ??
+    tabPanes[0];
+  if (!source) return { overlayLayout: null };
+  return readOverlayTabLayout(lease, snapshot, tab, source);
+}
+
+async function readOverlayTabLayout(
+  lease: StoreConnectionLease,
+  snapshot: State,
+  tab: Tab,
+  source: Pane,
+): Promise<Partial<State>> {
+  try {
+    const result = await lease.client.call("pane.layout", {
+      pane_id: source.pane_id,
+    });
+    const layout = (result?.layout ?? null) as PaneLayout | null;
+    if (!layout || layout.tab_id !== tab.tab_id) return { overlayLayout: null };
+    rememberTabLayout(lease.connectionId, lease.generation, layout);
+    // Read the selection after the call: a click may have moved it.
+    const selected = overlaySelectionIn(layout, state.overlaySelectedPaneId);
+    return {
+      overlayLayout: projectBrowserLayout(layout, selected),
+      overlaySelectedPaneId: selected,
+    };
+  } catch {
+    return {
+      overlayLayout:
+        snapshot.overlayLayout?.tab_id === tab.tab_id
+          ? snapshot.overlayLayout
+          : null,
+    };
+  }
+}
+
+/**
+ * Hides the displayed Space's overlay once its tab is gone (closed, unmarked
+ * elsewhere, or never created), and forgets it was shown.
+ */
+function reconcileOverlayOpen() {
+  const pending = pendingOverlayCreation;
+  if (
+    pending?.tabId &&
+    state.overlayTabs.some((tab) => tab.tab_id === pending.tabId)
+  )
+    pendingOverlayCreation = null;
+  if (!state.overlayOpen) return;
+  const workspaceId = displayedWorkspaceId(state);
+  const creating =
+    !!pendingOverlayCreation &&
+    pendingOverlayCreation.connectionId === state.activeConnectionId &&
+    pendingOverlayCreation.workspaceId === workspaceId;
+  if (creating || overlayTabOf(state.overlayTabs, workspaceId)) return;
+  rememberOverlayTarget(overlayTarget, false);
+  overlayTarget = null;
+  set({ overlayOpen: false });
+}
+
+/** Shows an overlay tab Herdr already lists. */
+function showOverlayTab(tab: Tab) {
+  overlayTarget = {
+    connectionId: state.activeConnectionId,
+    workspaceId: tab.workspace_id,
+  };
+  rememberOverlayTarget(overlayTarget, true);
+  const fresh = state.overlayLayout?.tab_id === tab.tab_id;
+  set({
+    overlayOpen: true,
+    overlayMounted: true,
+    ...overlayShowLayout(state, tab),
+  });
+  return fresh ? Promise.resolve() : refreshNow();
+}
+
+/**
+ * Moves tabs between the tab strip and the overlay after a mark changed, so
+ * the change shows before the next list read confirms it.
+ */
+function resplitOverlayTabs() {
+  const split = splitOverlayTopology(
+    {
+      workspaces: [],
+      tabs: [...state.tabs, ...state.overlayTabs],
+      panes: [...state.panes, ...state.overlayPanes],
+    },
+    overlayTabIdsFor(state.activeConnectionId),
+  );
+  const patch: Partial<State> = {
+    tabs: split.tabs,
+    panes: split.panes,
+    overlayTabs: split.overlayTabs,
+    overlayPanes: split.overlayPanes,
+  };
+  if (state.navigationMode === "browser-local") {
+    const projected = projectBrowserNavigation(
+      state.browserNavigation,
+      state.workspaces,
+      split.tabs,
+      split.panes,
+    );
+    Object.assign(patch, projected);
+    const workspaceId = projected.browserNavigation.workspaceId;
+    const activeTabId = workspaceId
+      ? projected.browserNavigation.tabIds[workspaceId]
+      : undefined;
+    if (state.layout?.tab_id !== activeTabId)
+      patch.layout = projectBrowserLayout(
+        provisionalTabLayout(
+          tabLayoutFor(
+            state.activeConnectionId,
+            state.connectionGeneration,
+            activeTabId,
+          ),
+          split.panes,
+          activeTabId,
+          projected.selectedPaneId,
+        ),
+        projected.selectedPaneId,
+      );
+  }
+  set(patch);
+}
+
+function selectOverlayPane(paneId: string) {
+  set({
+    overlaySelectedPaneId: paneId,
+    overlayLayout: projectBrowserLayout(state.overlayLayout, paneId),
+  });
+}
+
+function isOverlayPane(paneId: string) {
+  return state.overlayPanes.some((pane) => pane.pane_id === paneId);
+}
+
+/** Tab and root pane ids from a `tab.create` result. */
+function createdTabTarget(
+  result: unknown,
+): { tabId: string; paneId: string | null } | null {
+  if (!result || typeof result !== "object") return null;
+  const target = result as {
+    tab?: { tab_id?: unknown };
+    root_pane?: { pane_id?: unknown; tab_id?: unknown };
+  };
+  const tabId = target.tab?.tab_id ?? target.root_pane?.tab_id;
+  if (typeof tabId !== "string" || !tabId) return null;
+  const paneId = target.root_pane?.pane_id;
+  return { tabId, paneId: typeof paneId === "string" ? paneId : null };
+}
+
 function notifyPinnedTabClose(reason: string) {
   set({
     notice: {
@@ -2982,6 +3366,19 @@ export const store = {
         latestVimKeysPush = push.value;
         adoptVimKeys(push.value);
       }
+      if (push.key === OVERLAY_TAB_SETTING_KEY) {
+        overlayTabsPushVersion += 1;
+        latestOverlayTabsPush = push.value;
+        adoptOverlayTabs(push.value);
+      }
+    });
+    // A tab marked or unmarked here or in another browser moves between the
+    // tab strip and the overlay at once; the next read confirms it.
+    subscribeOverlayTabs(() => {
+      resplitOverlayTabs();
+      reconcileOverlayOpen();
+      void refreshNow();
+      refreshConnectionTopologies();
     });
     bridge.onStatus(handleBridgeStatus);
     bridge.onEvent(handleHerdrEvent);
@@ -3117,6 +3514,7 @@ export const store = {
   },
 
   selectPane(paneId: string) {
+    if (isOverlayPane(paneId)) return store.focusPane(paneId);
     if (state.navigationMode === "browser-local")
       return store.focusPane(paneId);
     set({
@@ -4669,6 +5067,10 @@ export const store = {
   },
 
   focusPane(paneId: string): Promise<unknown> {
+    const overlayPane = state.overlayPanes.find(
+      (pane) => pane.pane_id === paneId,
+    );
+    if (overlayPane) return store.focusOverlayPane(overlayPane);
     const verdict = guardFocus(
       state.activeConnectionId,
       state.panes.find((pane) => pane.pane_id === paneId)?.workspace_id,
@@ -4708,6 +5110,27 @@ export const store = {
   },
 
   splitPane(paneId: string, direction: "right" | "down") {
+    if (isOverlayPane(paneId)) {
+      // A split inside the overlay selects the new pane there; it never
+      // becomes the browser's tab selection.
+      return action(
+        async (lease) => {
+          const result = await lease.client.call("pane.split", {
+            target_pane_id: paneId,
+            direction,
+            focus: false,
+          });
+          const nextPaneId =
+            typeof result?.pane?.pane_id === "string"
+              ? result.pane.pane_id
+              : null;
+          if (nextPaneId && leaseIsCurrent(lease))
+            set({ overlaySelectedPaneId: nextPaneId });
+          return result;
+        },
+        { refresh: "immediate" },
+      );
+    }
     const navigation = state.browserNavigation;
     return action(async (lease) => {
       const result = await lease.client.call("pane.split", {
@@ -4750,6 +5173,13 @@ export const store = {
             state.navigationMode === "browser-local"
               ? projectBrowserLayout(layout, state.selectedPaneId)
               : layout,
+        });
+      if (layout && state.overlayLayout?.tab_id === layout.tab_id)
+        setForConnection(lease, {
+          overlayLayout: projectBrowserLayout(
+            layout,
+            state.overlaySelectedPaneId,
+          ),
         });
       return result;
     });
@@ -4841,6 +5271,15 @@ export const store = {
     paneId: string,
     direction: "left" | "right" | "up" | "down",
   ) {
+    if (isOverlayPane(paneId)) {
+      const target = browserPaneInDirection(
+        state.overlayLayout,
+        paneId,
+        direction,
+      );
+      if (target) selectOverlayPane(target);
+      return Promise.resolve();
+    }
     if (state.navigationMode === "browser-local") {
       const target = browserPaneInDirection(state.layout, paneId, direction);
       return target ? store.focusPane(target) : Promise.resolve();
@@ -4936,6 +5375,144 @@ export const store = {
         });
       }),
     );
+  },
+
+  /** Shows the displayed workspace's overlay tab, or hides it when shown. */
+  toggleOverlay() {
+    return state.overlayOpen ? store.hideOverlay() : store.showOverlay();
+  },
+
+  /**
+   * Shows the displayed workspace's overlay tab. A workspace without one gets
+   * a new tab with a shell in the workspace's root folder, marked as its
+   * overlay tab.
+   */
+  showOverlay(): Promise<unknown> {
+    const workspaceId = displayedWorkspaceId(state);
+    if (!workspaceId) return Promise.resolve();
+    const tab = overlayTabOf(state.overlayTabs, workspaceId);
+    if (tab) return showOverlayTab(tab);
+    if (pendingOverlayCreation) return Promise.resolve();
+    const workspace = state.workspaces.find(
+      (each) => each.workspace_id === workspaceId,
+    );
+    // The workspace root as the file explorer has it: the checkout Herdr
+    // reports, otherwise the folder of the pane the user is in.
+    const focusedPane = state.panes.find(
+      (pane) => pane.pane_id === activePaneIdForSnapshot(state),
+    );
+    const cwd =
+      workspace?.worktree?.checkout_path ||
+      focusedPane?.foreground_cwd ||
+      focusedPane?.cwd ||
+      workspace?.cwd;
+    const connectionId = state.activeConnectionId;
+    pendingOverlayCreation = { connectionId, workspaceId };
+    overlayTarget = { connectionId, workspaceId };
+    rememberOverlayTarget(overlayTarget, true);
+    set({
+      overlayOpen: true,
+      overlayMounted: true,
+      overlayLayout: null,
+      overlaySelectedPaneId: null,
+    });
+    return action(
+      async (lease) => {
+        const reason = endpointCreationReason(state, "tab.create", workspaceId);
+        if (reason) throw new Error(reason);
+        const result: unknown = await lease.client.call("tab.create", {
+          workspace_id: workspaceId,
+          focus: false,
+          label: OVERLAY_TAB_DEFAULT_LABEL,
+          ...(cwd ? { cwd } : {}),
+          ...(state.navigationMode === "browser-local"
+            ? { browser_source: browserCreationSource(workspaceId) }
+            : {}),
+        });
+        const created = createdTabTarget(result);
+        if (!created) throw new Error("Herdr did not report the new tab.");
+        if (pendingOverlayCreation)
+          pendingOverlayCreation = {
+            ...pendingOverlayCreation,
+            tabId: created.tabId,
+          };
+        setOverlayTab(lease.connectionId, workspaceId, created.tabId);
+        if (created.paneId && leaseIsCurrent(lease))
+          set({ overlaySelectedPaneId: created.paneId });
+        // Older Herdr versions ignore the label on creation.
+        await lease.client
+          .call("tab.rename", {
+            tab_id: created.tabId,
+            label: OVERLAY_TAB_DEFAULT_LABEL,
+          })
+          .catch(() => null);
+        return result;
+      },
+      {
+        refresh: "immediate",
+        failureNotice: (error) => ({
+          kind: "error",
+          message: "Could not open the overlay tab",
+          detail: error.message,
+        }),
+      },
+    ).then((result) => {
+      // A failed creation hides the overlay; a successful one waits for the
+      // list read that shows the new tab (see reconcileOverlayOpen).
+      if (result === undefined || !pendingOverlayCreation?.tabId) {
+        pendingOverlayCreation = null;
+        // Even when the user moved on to another Space meanwhile.
+        if (result === undefined)
+          rememberOverlayShown(connectionId, workspaceId, false);
+      }
+      reconcileOverlayOpen();
+      return result;
+    });
+  },
+
+  /** Hides the overlay; its panes stay attached for the next show. */
+  hideOverlay() {
+    rememberOverlayTarget(overlayTarget, false);
+    overlayTarget = null;
+    pendingOverlayCreation = null;
+    if (state.overlayOpen) set({ overlayOpen: false });
+    return Promise.resolve();
+  },
+
+  /** Selects an overlay pane, showing the overlay (and its workspace). */
+  async focusOverlayPane(pane: Pane) {
+    if (displayedWorkspaceId(state) !== pane.workspace_id)
+      await store.focusWorkspace(pane.workspace_id);
+    const tab = overlayTabOf(state.overlayTabs, pane.workspace_id);
+    if (!tab) return;
+    selectOverlayPane(pane.pane_id);
+    return showOverlayTab(tab);
+  },
+
+  /**
+   * Shows a tab as its workspace's overlay. The workspace's previous overlay
+   * tab, if any, goes back to the tab strip.
+   */
+  markOverlayTab(tabId: string) {
+    const tab = state.tabs.find((each) => each.tab_id === tabId);
+    if (!tab) return Promise.resolve();
+    setOverlayTab(state.activeConnectionId, tab.workspace_id, tabId);
+    resplitOverlayTabs();
+    const marked = overlayTabOf(state.overlayTabs, tab.workspace_id);
+    if (!marked || displayedWorkspaceId(state) !== tab.workspace_id)
+      return Promise.resolve();
+    set({ overlayLayout: null, overlaySelectedPaneId: null });
+    return showOverlayTab(marked);
+  },
+
+  /** Puts an overlay tab back in the tab strip and shows it there. */
+  unmarkOverlayTab(tabId: string) {
+    const tab = state.overlayTabs.find((each) => each.tab_id === tabId);
+    if (!tab) return Promise.resolve();
+    void store.hideOverlay();
+    setOverlayTab(state.activeConnectionId, tab.workspace_id, null);
+    resplitOverlayTabs();
+    return store.focusTab(tabId);
   },
 
   closePane(paneId: string) {

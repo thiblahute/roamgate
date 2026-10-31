@@ -63,8 +63,14 @@ import {
   type MobileTerminalSideShortcuts,
   mobileTerminalShortcutOption,
 } from "../mobileTerminalShortcuts";
+import {
+  activePaneIdForSnapshot,
+  focusedPaneIdForSnapshot,
+  paneCanClose,
+  paneInSnapshot,
+} from "../paneJump";
 import { otherWriterPlaceIn } from "../otherWriter";
-import { activePaneIdForSnapshot, paneCanClose } from "../paneJump";
+import { scopedPaneState, usePaneScope } from "../paneScope";
 import { HerdrSetupCard } from "./HerdrSetupCard";
 import {
   shallowEqual,
@@ -419,17 +425,19 @@ export function TerminalView({
   onOpenWorkspaceFile?: (request: TerminalWorkspaceFileRequest) => void;
 }) {
   useRenderTrace("TerminalView");
+  const paneScope = usePaneScope();
+  const paneScopeRef = useRef(paneScope);
+  paneScopeRef.current = paneScope;
+  const ownsKeyboardRef = useRef(true);
   const s = useStoreSelector(
     (state) => ({
+      ...scopedPaneState(state, paneScope),
       activeConnectionId: state.activeConnectionId,
       defaultConnectionId: state.defaultConnectionId,
       connectionGeneration: state.connectionGeneration,
       connectionPaused: state.connectionPaused,
       connections: state.connections,
       forwards: state.forwards,
-      layout: state.layout,
-      panes: state.panes,
-      selectedPaneId: state.selectedPaneId,
       status: state.status,
       terminalAttachEpoch: state.terminalAttachEpoch,
       endpointAvailability: state.endpointAvailability,
@@ -438,6 +446,7 @@ export function TerminalView({
     }),
     shallowEqual,
   );
+  ownsKeyboardRef.current = s.ownsKeyboard;
   const terminalIdentity = useMemo<TerminalConnectionIdentity>(
     () => ({
       connectionId: s.activeConnectionId,
@@ -607,7 +616,8 @@ export function TerminalView({
   ]);
   const activePaneId =
     selectedPaneInLayout ?? s.layout?.focused_pane_id ?? null;
-  const isActivePane = !!pane && (!paneId || pane.pane_id === activePaneId);
+  const isActivePane =
+    s.shown && !!pane && (!paneId || pane.pane_id === activePaneId);
   // Between Claude's /exit and the holder's report (and between the
   // holder's exit and claude --resume), Herdr knows no agent in the pane:
   // it stays a Claude pane while a handover runs or conversation mode holds
@@ -1053,10 +1063,10 @@ export function TerminalView({
   useEffect(() => {
     const targetSnapshot = () => {
       const state = store.get();
-      const active = activePaneIdForSnapshot(state);
+      const active = focusedPaneIdForSnapshot(state);
       return JSON.stringify([
         active,
-        state.panes.find((p) => p.pane_id === active)?.terminal_id,
+        paneInSnapshot(state, active)?.terminal_id,
         state.activeConnectionId,
         state.connectionGeneration,
         state.status,
@@ -1111,9 +1121,9 @@ export function TerminalView({
           epoch !== pathInsertionEpochRef.current ||
           !connectionClient.isCurrent() ||
           !isActivePaneRef.current ||
-          activePaneIdForSnapshot(current) !== destinationPaneId ||
-          current.panes.find((p) => p.pane_id === destinationPaneId)
-            ?.terminal_id !== terminalId ||
+          focusedPaneIdForSnapshot(current) !== destinationPaneId ||
+          paneInSnapshot(current, destinationPaneId)?.terminal_id !==
+            terminalId ||
           (isMobileLayout() && composerModeRef.current !== "direct") ||
           terminalComposerSubmissionPending(key) ||
           !(await pasteUploadedPathRef.current?.(text, destinationPaneId))
@@ -1141,6 +1151,7 @@ export function TerminalView({
       if (
         chatShownRef.current ||
         !isActivePaneRef.current ||
+        !ownsKeyboardRef.current ||
         composerEditingRef.current ||
         touchSelectionRef.current?.active === true
       )
@@ -1151,6 +1162,7 @@ export function TerminalView({
           if (
             !connectionClient.isCurrent() ||
             !isActivePaneRef.current ||
+            !ownsKeyboardRef.current ||
             composerEditingRef.current ||
             touchSelectionRef.current?.active === true ||
             shouldAvoidVirtualKeyboard()
@@ -1197,12 +1209,18 @@ export function TerminalView({
     return () => observer.disconnect();
   }, []);
   const focusChatSoon = useCallback(() => {
-    if (!isActivePaneRef.current || shouldAvoidVirtualKeyboard()) return;
+    if (
+      !isActivePaneRef.current ||
+      !ownsKeyboardRef.current ||
+      shouldAvoidVirtualKeyboard()
+    )
+      return;
     let tries = 0;
     const attempt = () => {
       if (
         !connectionClient.isCurrent() ||
         !isActivePaneRef.current ||
+        !ownsKeyboardRef.current ||
         !chatShownRef.current
       )
         return;
@@ -1261,7 +1279,10 @@ export function TerminalView({
   }, [container]);
   const relayViewportFor = useCallback(
     (size: { cols: number; rows: number }) => {
-      if (!isActivePaneRef.current) return null;
+      // The relay sizes the displayed tab; the overlay floating above it
+      // must not reflow every pane underneath when it opens or resizes.
+      if (!isActivePaneRef.current || paneScopeRef.current === "overlay")
+        return null;
       const relaySize = terminalRelayViewportSize(
         size,
         paneLayoutRef.current,
@@ -1281,10 +1302,16 @@ export function TerminalView({
     [terminalIdentity],
   );
   useEffect(() => {
-    if (!isActivePane) return;
+    if (!isActivePane || !s.ownsKeyboard) return;
     if (chatShown) focusChatSoon();
     else focusTerminalSoon();
-  }, [focusChatSoon, focusTerminalSoon, isActivePane, chatShown]);
+  }, [
+    focusChatSoon,
+    focusTerminalSoon,
+    isActivePane,
+    chatShown,
+    s.ownsKeyboard,
+  ]);
   useEffect(() => watchTerminalOverlayPointer(document), []);
   useEffect(() => {
     if (!canShowAgentHistory && agentHistoryOpen) setAgentHistoryOpen(false);
@@ -3621,12 +3648,14 @@ export function TerminalView({
             // Attaching a split focuses it in Herdr, even in the background.
             // Restore the current selection after each completed attach; use
             // current state so a late response cannot revive an old selection.
+            // Herdr keeps one focus per tab: restore this pane's own tab.
             const current = store.get();
-            const selectedPaneId = activePaneIdForSnapshot(current);
+            const selectedPaneId = activePaneIdForSnapshot(
+              scopedPaneState(current, paneScopeRef.current),
+            );
             focusTerminalEndpoint(
               connectionClient,
-              current.panes.find((p) => p.pane_id === selectedPaneId)
-                ?.terminal_id,
+              paneInSnapshot(current, selectedPaneId)?.terminal_id,
             );
             focusTerminalSoon();
             // Resizes observed while the attach was in flight are dropped by
@@ -4585,26 +4614,31 @@ export function TerminalView({
           ) : null}
           {!paneZoomed ? (
             <>
-              <button
-                type="button"
-                className="terminal-pane-action"
-                title="Split pane right"
-                aria-label="Split pane right"
-                onPointerDown={preventPaneActionFocus}
-                onClick={() => store.splitPane(pane.pane_id, "right")}
-              >
-                <Columns2 size={14} />
-              </button>
-              <button
-                type="button"
-                className="terminal-pane-action"
-                title="Split pane down"
-                aria-label="Split pane down"
-                onPointerDown={preventPaneActionFocus}
-                onClick={() => store.splitPane(pane.pane_id, "down")}
-              >
-                <Rows2 size={14} />
-              </button>
+              {/* In the overlay, its title bar has the splits. */}
+              {paneScope === "overlay" ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="terminal-pane-action"
+                    title="Split pane right"
+                    aria-label="Split pane right"
+                    onPointerDown={preventPaneActionFocus}
+                    onClick={() => store.splitPane(pane.pane_id, "right")}
+                  >
+                    <Columns2 size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="terminal-pane-action"
+                    title="Split pane down"
+                    aria-label="Split pane down"
+                    onPointerDown={preventPaneActionFocus}
+                    onClick={() => store.splitPane(pane.pane_id, "down")}
+                  >
+                    <Rows2 size={14} />
+                  </button>
+                </>
+              )}
               <PaneMoveMenu
                 paneId={pane.pane_id}
                 layout={s.layout}
