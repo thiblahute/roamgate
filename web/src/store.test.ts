@@ -33,6 +33,13 @@ import { setShowAllConnections } from "./showAllConnections";
 import type { GitStatusSummary, Pane } from "./types";
 import { __resetTabPinsForTests, setTabPinned } from "./tabPins";
 import {
+  __resetOverlayTabsForTests,
+  overlayTabIdFor,
+  overlayWasShown,
+  rememberOverlayShown,
+  setOverlayTab,
+} from "./overlayTabs";
+import {
   activateTerminalComposerDraftScope,
   readTerminalComposerDraft,
   terminalComposerDraftKey,
@@ -511,6 +518,8 @@ function partitionState(): State {
   const beta = session("beta");
   return {
     ...alpha,
+    overlayOpen: false,
+    overlayMounted: false,
     forwards: [],
     listeners: null,
     listenersBusy: false,
@@ -3026,6 +3035,439 @@ describe("jumping to another connection while it changes again", () => {
     } finally {
       bridge.connection = previousConnection;
       __storeTesting.replaceState(previousState);
+    }
+  });
+});
+
+describe("overlay tab", () => {
+  const overlayTab = {
+    tab_id: "float-tab",
+    workspace_id: "same-workspace",
+    number: 2,
+    label: "Float terminal",
+    focused: false,
+    pane_count: 1,
+    agent_status: "unknown",
+  };
+  const overlayPane: Pane = {
+    pane_id: "float-pane",
+    terminal_id: "float-terminal",
+    workspace_id: "same-workspace",
+    tab_id: "float-tab",
+    focused: false,
+    cwd: "/work/root",
+    agent_status: "unknown",
+    revision: 1,
+  };
+  const overlayLayout = {
+    workspace_id: "same-workspace",
+    tab_id: "float-tab",
+    zoomed: false,
+    area: { x: 0, y: 0, width: 100, height: 40 },
+    focused_pane_id: "float-pane",
+    panes: [
+      {
+        pane_id: "float-pane",
+        focused: true,
+        rect: { x: 0, y: 0, width: 100, height: 40 },
+      },
+    ],
+    splits: [],
+  };
+
+  function fixture(options: { withOverlay: boolean; listed?: boolean }) {
+    const previousState = store.get();
+    const originalConnection = bridge.connection;
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    let created = false;
+    bridge.connection = ((connectionId = "alpha", runtimeGeneration = 1) => ({
+      connectionId,
+      generation: 10,
+      serverRuntimeGeneration: runtimeGeneration,
+      isCurrent: () => true,
+      acceptsServerGeneration: (value: unknown) => value === runtimeGeneration,
+      call: async (method: string, params: Record<string, unknown> = {}) => {
+        calls.push({ method, params });
+        const base = session("alpha");
+        const listed = options.withOverlay || options.listed || created;
+        if (method === "workspace.list")
+          return {
+            workspaces: base.workspaces.map((workspace) => ({
+              ...workspace,
+              tab_count: listed ? 2 : 1,
+              pane_count: listed ? 2 : 1,
+            })),
+          };
+        if (method === "tab.list")
+          return { tabs: [...base.tabs, ...(listed ? [overlayTab] : [])] };
+        if (method === "pane.list")
+          return { panes: [...base.panes, ...(listed ? [overlayPane] : [])] };
+        if (method === "pane.layout")
+          return params.pane_id === "float-pane"
+            ? { layout: overlayLayout }
+            : { layout: null };
+        if (method === "tab.create") {
+          created = true;
+          return {
+            type: "tab_created",
+            tab: overlayTab,
+            root_pane: overlayPane,
+          };
+        }
+        return {};
+      },
+    })) as typeof bridge.connection;
+    __resetOverlayTabsForTests();
+    if (options.withOverlay)
+      setOverlayTab("alpha", "same-workspace", "float-tab");
+    const state = partitionState();
+    __storeTesting.replaceState({
+      ...state,
+      overlayTabs: options.withOverlay ? [overlayTab] : [],
+      overlayPanes: options.withOverlay ? [overlayPane] : [],
+    });
+    return {
+      calls,
+      restore() {
+        bridge.connection = originalConnection;
+        __resetOverlayTabsForTests();
+        __storeTesting.replaceState(previousState);
+      },
+    };
+  }
+
+  test("shows and hides an existing overlay tab without creating one", async () => {
+    const f = fixture({ withOverlay: true });
+    try {
+      await store.toggleOverlay();
+      expect(store.get().overlayOpen).toBe(true);
+      expect(store.get().overlayMounted).toBe(true);
+      expect(store.get().overlayLayout?.tab_id).toBe("float-tab");
+      expect(store.get().overlaySelectedPaneId).toBe("float-pane");
+      await store.toggleOverlay();
+      expect(store.get().overlayOpen).toBe(false);
+      // Hidden, it stays mounted so its terminal stays attached.
+      expect(store.get().overlayMounted).toBe(true);
+      expect(f.calls.some((call) => call.method === "tab.create")).toBe(false);
+    } finally {
+      f.restore();
+    }
+  });
+
+  test("creates, marks and shows a shell tab in a Space without one", async () => {
+    const f = fixture({ withOverlay: false });
+    try {
+      await store.showOverlay();
+      const create = f.calls.find((call) => call.method === "tab.create");
+      expect(create?.params).toMatchObject({
+        workspace_id: "same-workspace",
+        focus: false,
+        label: "Float terminal",
+      });
+      expect(overlayTabIdFor("alpha", "same-workspace")).toBe("float-tab");
+      for (let i = 0; i < 20 && !store.get().overlayTabs.length; i++)
+        await Bun.sleep(5);
+      expect(store.get().overlayOpen).toBe(true);
+      expect(store.get().overlayTabs.map((tab) => tab.tab_id)).toEqual([
+        "float-tab",
+      ]);
+      // Never listed with the strip's tabs.
+      expect(store.get().tabs.map((tab) => tab.tab_id)).toEqual(["same-tab"]);
+      expect(store.get().workspaces[0]?.tab_count).toBe(1);
+    } finally {
+      f.restore();
+    }
+  });
+
+  test("an overlay pane takes focus inside the overlay, not as the tab", async () => {
+    const f = fixture({ withOverlay: true });
+    try {
+      await store.showOverlay();
+      const navigation = store.get().browserNavigation;
+      await store.focusPane("float-pane");
+      expect(store.get().overlaySelectedPaneId).toBe("float-pane");
+      expect(store.get().selectedPaneId).toBe("same-pane");
+      expect(store.get().browserNavigation).toBe(navigation);
+      expect(f.calls.some((call) => call.method === "pane.focus")).toBe(false);
+    } finally {
+      f.restore();
+    }
+  });
+
+  function withMemoryStorage<T>(run: () => Promise<T>) {
+    const previous = globalThis.localStorage;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        get length() {
+          return values.size;
+        },
+        key: (index: number) => [...values.keys()][index] ?? null,
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+        clear: () => values.clear(),
+      },
+    });
+    return run().finally(() =>
+      Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        value: previous,
+      }),
+    );
+  }
+
+  /** A reload: the page starts with nothing listed, then reads the lists. */
+  async function reload() {
+    __storeTesting.replaceState({
+      ...store.get(),
+      workspaces: [],
+      overlayOpen: false,
+      overlayMounted: false,
+      overlayLayout: null,
+    });
+    await store.refresh();
+  }
+
+  test("a reload shows the overlay again where this browser left it shown", () =>
+    withMemoryStorage(async () => {
+      const f = fixture({ withOverlay: true });
+      try {
+        await store.showOverlay();
+        expect(overlayWasShown("alpha", "same-workspace")).toBe(true);
+        // The page reloads: the overlay starts hidden and comes back.
+        await reload();
+        expect(store.get().overlayOpen).toBe(true);
+        expect(store.get().overlayLayout?.tab_id).toBe("float-tab");
+        // Hidden, a reload leaves it hidden.
+        await store.hideOverlay();
+        expect(overlayWasShown("alpha", "same-workspace")).toBe(false);
+        await reload();
+        expect(store.get().overlayOpen).toBe(false);
+      } finally {
+        f.restore();
+      }
+    }));
+
+  test("a reload opens no overlay for another Space than the one left shown", () =>
+    withMemoryStorage(async () => {
+      const f = fixture({ withOverlay: true });
+      try {
+        rememberOverlayShown("alpha", "other-workspace", true);
+        await reload();
+        expect(store.get().overlayOpen).toBe(false);
+      } finally {
+        f.restore();
+      }
+    }));
+
+  test("a reload waits for the server's mark of the overlay tab", () =>
+    withMemoryStorage(async () => {
+      // Herdr lists the tab; the mark is not known yet.
+      const f = fixture({ withOverlay: false, listed: true });
+      try {
+        rememberOverlayShown("alpha", "same-workspace", true);
+        await reload();
+        expect(store.get().overlayOpen).toBe(false);
+        // The mark arrives with the interface settings; the next list read
+        // moves the tab to the overlay.
+        setOverlayTab("alpha", "same-workspace", "float-tab");
+        await store.refresh();
+        expect(store.get().overlayOpen).toBe(true);
+        expect(store.get().overlayLayout?.tab_id).toBe("float-tab");
+      } finally {
+        f.restore();
+      }
+    }));
+
+  /** Two Spaces shown by this browser alone, each with its overlay tab. */
+  function spacesFixture() {
+    const previousState = store.get();
+    const originalConnection = bridge.connection;
+    const space = (id: string, number: number) => ({
+      workspace: {
+        workspace_id: id,
+        number,
+        label: id,
+        focused: false,
+        pane_count: 2,
+        tab_count: 2,
+        active_tab_id: `${id}-tab`,
+        agent_status: "idle",
+      },
+      tabs: [
+        {
+          tab_id: `${id}-tab`,
+          workspace_id: id,
+          number: 1,
+          label: "1",
+          focused: true,
+          pane_count: 1,
+          agent_status: "idle",
+        },
+        { ...overlayTab, tab_id: `${id}-float`, workspace_id: id },
+      ],
+      panes: [
+        {
+          ...overlayPane,
+          pane_id: `${id}-pane`,
+          terminal_id: `${id}-terminal`,
+          tab_id: `${id}-tab`,
+          workspace_id: id,
+        },
+        {
+          ...overlayPane,
+          pane_id: `${id}-float-pane`,
+          terminal_id: `${id}-float-terminal`,
+          tab_id: `${id}-float`,
+          workspace_id: id,
+        },
+      ],
+    });
+    const spaces = [space("space-a", 1), space("space-b", 2)];
+    bridge.connection = ((connectionId = "alpha", runtimeGeneration = 1) => ({
+      connectionId,
+      generation: 10,
+      serverRuntimeGeneration: runtimeGeneration,
+      isCurrent: () => true,
+      acceptsServerGeneration: (value: unknown) => value === runtimeGeneration,
+      call: async (method: string, params: Record<string, unknown> = {}) => {
+        // A host round trip: the switch shows before any answer.
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        if (method === "workspace.list")
+          return {
+            navigation_mode: "browser-local",
+            workspaces: spaces.map((each) => each.workspace),
+          };
+        if (method === "tab.list")
+          return { tabs: spaces.flatMap((each) => each.tabs) };
+        if (method === "pane.list")
+          return { panes: spaces.flatMap((each) => each.panes) };
+        if (method === "pane.layout") {
+          const pane = spaces
+            .flatMap((each) => each.panes)
+            .find((each) => each.pane_id === params.pane_id);
+          return pane
+            ? {
+                layout: {
+                  ...overlayLayout,
+                  workspace_id: pane.workspace_id,
+                  tab_id: pane.tab_id,
+                  focused_pane_id: pane.pane_id,
+                  panes: [
+                    { ...overlayLayout.panes[0]!, pane_id: pane.pane_id },
+                  ],
+                },
+              }
+            : { layout: null };
+        }
+        return {};
+      },
+    })) as typeof bridge.connection;
+    __resetOverlayTabsForTests();
+    setOverlayTab("alpha", "space-a", "space-a-float");
+    setOverlayTab("alpha", "space-b", "space-b-float");
+    __storeTesting.replaceState({
+      ...partitionState(),
+      navigationMode: "browser-local",
+    });
+    // What every emit put on screen: the displayed Space and its overlay.
+    const shown: { space: string | undefined; open: boolean }[] = [];
+    const unsubscribe = store.subscribe(() => {
+      const state = store.get();
+      shown.push({
+        space: state.workspaces.find((each) => each.focused)?.workspace_id,
+        open: state.overlayOpen,
+      });
+    });
+    return {
+      shown,
+      async settle() {
+        for (let i = 0; i < 5; i++) await store.refresh();
+      },
+      restore() {
+        unsubscribe();
+        bridge.connection = originalConnection;
+        __resetOverlayTabsForTests();
+        __storeTesting.replaceState(previousState);
+      },
+    };
+  }
+
+  test("a Space switch brings back that Space's own overlay and never hides it afterwards", () =>
+    withMemoryStorage(async () => {
+      const f = spacesFixture();
+      try {
+        await store.refresh();
+        await store.focusWorkspace("space-a");
+        await store.showOverlay();
+        await store.focusWorkspace("space-b");
+        await store.showOverlay();
+        await f.settle();
+        expect(store.get().overlayOpen).toBe(true);
+        // Back to A, whose overlay was left shown: it shows at once and stays
+        // shown through every later step of the switch.
+        f.shown.length = 0;
+        const switching = store.focusWorkspace("space-a");
+        expect(f.shown[0]).toEqual({ space: "space-a", open: true });
+        await switching;
+        await f.settle();
+        expect(
+          f.shown.filter((each) => each.space === "space-a" && !each.open),
+        ).toEqual([]);
+        expect(store.get().overlayOpen).toBe(true);
+        expect(store.get().overlayLayout?.tab_id).toBe("space-a-float");
+        expect(overlayWasShown("alpha", "space-a")).toBe(true);
+        expect(overlayWasShown("alpha", "space-b")).toBe(true);
+      } finally {
+        f.restore();
+      }
+    }));
+
+  test("a Space switch shows only the displayed Space's overlay, as it was left", () =>
+    withMemoryStorage(async () => {
+      const f = spacesFixture();
+      try {
+        await store.refresh();
+        await store.focusWorkspace("space-a");
+        await store.showOverlay();
+        // B's overlay was never shown: A's state does not carry over to it.
+        f.shown.length = 0;
+        const switching = store.focusWorkspace("space-b");
+        expect(f.shown[0]).toEqual({ space: "space-b", open: false });
+        await switching;
+        await f.settle();
+        expect(f.shown.some((each) => each.open)).toBe(false);
+        // The switch did not hide A's: it is back with A.
+        expect(overlayWasShown("alpha", "space-a")).toBe(true);
+        await store.focusWorkspace("space-a");
+        await f.settle();
+        expect(store.get().overlayOpen).toBe(true);
+        expect(store.get().overlayLayout?.tab_id).toBe("space-a-float");
+        // Only an explicit hide hides it, and for its Space alone.
+        await store.hideOverlay();
+        await store.focusWorkspace("space-b");
+        await store.focusWorkspace("space-a");
+        await f.settle();
+        expect(store.get().overlayOpen).toBe(false);
+      } finally {
+        f.restore();
+      }
+    }));
+
+  test("back to tabs unmarks the tab and hides the overlay", async () => {
+    const f = fixture({ withOverlay: true });
+    try {
+      await store.showOverlay();
+      await store.unmarkOverlayTab("float-tab");
+      expect(store.get().overlayOpen).toBe(false);
+      expect(overlayTabIdFor("alpha", "same-workspace")).toBeNull();
+      expect(store.get().tabs.some((tab) => tab.tab_id === "float-tab")).toBe(
+        true,
+      );
+    } finally {
+      f.restore();
     }
   });
 });

@@ -27,6 +27,7 @@ import {
   MoveRight,
   MoveUp,
   PanelTop,
+  PictureInPicture2,
   SplitSquareHorizontal,
   SplitSquareVertical,
   Waypoints,
@@ -147,6 +148,8 @@ export function CommandCombobox({
       panes: state.panes,
       selectedPaneId: state.selectedPaneId,
       tabs: state.tabs,
+      overlayTabs: state.overlayTabs,
+      overlayOpen: state.overlayOpen,
       workspaces: state.workspaces,
       endpointAvailability: state.endpointAvailability,
     }),
@@ -705,6 +708,58 @@ export function CommandCombobox({
         run: () => {
           if (store.guardTabClose(activeTab.tab_id))
             setPendingCloseTab(activeTab);
+        },
+      },
+    );
+  }
+  const overlayTab = focusedWorkspace
+    ? s.overlayTabs.find(
+        (tab) => tab.workspace_id === focusedWorkspace.workspace_id,
+      )
+    : undefined;
+  if (focusedWorkspace) {
+    tabActions.push({
+      key: "toggle-overlay-tab",
+      icon: <PictureInPicture2 size={15} />,
+      title: s.overlayOpen ? "Hide the overlay tab" : "Show the overlay tab",
+      detail: overlayTab
+        ? tabName(overlayTab)
+        : "Opens a shell in the workspace root",
+      shortcut: shortcutLabel("overlay.toggle"),
+      keywords: ["float", "floating terminal", "popup", "overlay", "scratch"],
+      run: () => void store.toggleOverlay(),
+    });
+  }
+  if (activeTab) {
+    tabActions.push({
+      key: "show-tab-as-overlay",
+      icon: <PictureInPicture2 size={15} />,
+      title: "Show tab as overlay",
+      detail: tabName(activeTab),
+      keywords: ["float", "floating", "overlay", "popup"],
+      run: () => void store.markOverlayTab(activeTab.tab_id),
+    });
+  }
+  if (overlayTab) {
+    tabActions.push(
+      {
+        key: "overlay-back-to-tabs",
+        icon: <PanelTop size={15} />,
+        title: "Back to tabs",
+        detail: tabName(overlayTab),
+        keywords: ["overlay", "float", "unfloat", "tab strip"],
+        run: () => void store.unmarkOverlayTab(overlayTab.tab_id),
+      },
+      {
+        key: "overlay-stop",
+        icon: <X size={15} />,
+        title: "Stop the overlay tab",
+        detail: tabName(overlayTab),
+        keywords: ["overlay", "float", "close", "kill", "shell"],
+        danger: true,
+        run: () => {
+          if (store.guardTabClose(overlayTab.tab_id))
+            setPendingCloseTab(overlayTab);
         },
       },
     );

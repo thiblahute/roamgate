@@ -177,6 +177,7 @@ if (process.env.ROAMGATE_APP_HISTORY_TEST !== "1") {
       TabBar: () => null,
       requestClosePane() {},
       requestCloseTab() {},
+      tabName: () => "",
     }));
     mock.module("./components/WorkspaceTree", () => ({
       WorkspaceTree: ({

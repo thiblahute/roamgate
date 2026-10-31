@@ -142,6 +142,37 @@ Only the first workspace in an empty session uses control-socket creation. A
 20-second admission deadline covers readiness and validation: expired requests
 never run, and dispatched timeouts are reported as uncertain.
 
+## Overlay tabs
+
+A Space's overlay tab is marked in the server's interface settings
+(`ui.overlayTabs`: connection id, then workspace id, then tab id), so every
+browser and Ranger agree on it. Herdr has no tab metadata to hold the mark, but
+it persists workspace and tab ids with its session, so the mark survives
+restarts. Marks of closed workspaces, and of tabs this page saw and then lost,
+are dropped after a full list read; an empty list never clears them.
+
+`splitOverlayTopology` is the single exclusion point: each list read moves the
+overlay tabs and their panes from `tabs`/`panes` to `overlayTabs`/`overlayPanes`
+and corrects workspace counts, so no list or count sees them. The overlay renders
+through the same pane layout and terminal views as the displayed tab, reading
+its own layout and selection through a pane scope; its selection stays in the
+browser and never becomes the tab selection. It does not drive the relay
+viewport, so showing or resizing it never reflows the panes underneath. Once
+shown it stays mounted and hidden with `visibility`, keeping its streams
+attached.
+
+Whether the overlay is shown is per browser, connection, and Space
+(`overlayShown.v1` in localStorage), and only an explicit show or hide writes
+it. The store derives `overlayOpen` from it in `set()` whenever the displayed
+Space, the connection, or the Space's overlay tab changes, so a switch shows
+the displayed Space's own overlay in the same update that displays the Space,
+and no later step of the switch (a refresh started for the previous Space)
+can hide it. The overlay is hidden and forgotten only when its tab is gone.
+
+Herdr plugin popups still render through the legacy direct-attach path; the
+popup observer is already event-driven (endpoint surface pushes), with one
+`terminal.watch_popup` read when a browser connects.
+
 ## Workspace resource ownership
 
 A **checkout** owns Files, Changes, and Commits. A workspace supplies routing, a

@@ -1,8 +1,13 @@
 import type { PointerEvent } from "react";
 
 export function activeTerminalInput(root: ParentNode): HTMLElement | null {
-  const shell = root.querySelector<HTMLElement>(
-    ".pane-layout-cell.is-active .terminal-shell, .workspace-terminal-surface > .terminal-shell",
+  // A shown overlay tab takes the keyboard; a hidden one never does.
+  const scope =
+    root.querySelector<HTMLElement>(".overlay-tab[data-open]") ??
+    root.querySelector<HTMLElement>(".workspace-terminal-surface") ??
+    root;
+  const shell = scope.querySelector<HTMLElement>(
+    ".pane-layout-cell.is-active .terminal-shell, .workspace-terminal-surface > .terminal-shell, .overlay-tab-surface > .terminal-shell",
   );
   if (!shell) return null;
   const editor = shell.dataset.paneId
