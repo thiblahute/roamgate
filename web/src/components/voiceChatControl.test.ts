@@ -101,3 +101,14 @@ test("a call goes on when its card comes back soon, not after a hang-up", () => 
   expect(voiceCallStartedAt(20_500)).toBe(20_500);
   voiceCallHungUp();
 });
+
+test("the call says which voice is speaking, with Surprise", () => {
+  const view = voiceControlView("speaking", false, 0, "Éloïse");
+  expect(view.label).toBe("Éloïse is speaking");
+  expect(view.ariaLabel).toBe("Éloïse is speaking");
+  expect(view.hint).toBe("Éloïse reads the answer");
+  expect(voiceControlView("speaking", false, 0).label).toBe("Speaking");
+  expect(voiceControlView("listening", false, 0, "Éloïse").label).toBe(
+    "Listening",
+  );
+});

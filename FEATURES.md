@@ -217,7 +217,7 @@ Inspector state is scoped to each checkout; see
   at a time, at the server's reading speed, and the sentence being read is
   highlighted; otherwise the browser's speech synthesis reads, with the voice
   and speaking rate saved for this browser (unavailable voices fall back to
-  the browser default). **Configuration > Behavior > Speech** says which
+  the browser default). **Configuration > Speech** says which
   engine reads and whether voice chat can listen, sets the browser voice and
   rate, and with the server engine its reading speed and whether this browser
   reads with its own voices instead. Both engines read the same text: code
@@ -358,6 +358,25 @@ Inspector state is scoped to each checkout; see
   Replies are read a little faster than the voice's own pace (1.2x); the
   speed button on the voice card steps through 1x, 1.1x, 1.2x, 1.3x and
   1.5x, from the sentence playing on, and every browser keeps it.
+  With the server engine, the same **Speech** section (in the menu, on
+  phones too) lists its voices
+  after the browser's settings: hear each voice, choose which one reads every
+  reply or only one language (French read in a French voice, say), rename or
+  delete them, and set the speed. **New voice** clones one, simple enough for
+  children: give it a name and a language, press the big button and read the
+  two short sentences shown aloud (a level meter follows the voice); the
+  recording stops by itself at the pause after the reading, or on stop, never
+  mid-sentence before its 30 s limit. Listen back or record again, then
+  **Make the voice**; a few seconds later it can be heard and chosen. When
+  only part of the text was read, or something else was said, the voice
+  learns from what the recording says, shows it, and offers to record again. A choice applies from the next sentence, without
+  restarting anything.
+  **Surprise** (in the Speech section) reads each
+  reply with one of your recorded voices at random, never the same one twice
+  in a row: a whole reply in one voice, whatever its language (a voice
+  recorded in French reads English with its own timbre). The voice call says
+  who speaks ("Éloïse is speaking"); choosing a voice with **Use** turns it
+  off. Every browser keeps it.
   The sentence being read is highlighted. What is said goes to the agent
   marked `[Voice]`, with the sentence it cut short when it interrupted the
   reading, so the agent knows it talks live and what was heard; the chat

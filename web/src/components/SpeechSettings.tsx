@@ -1,4 +1,10 @@
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   formatSpeechRate,
   SPEECH_RATE_STEPS,
@@ -39,7 +45,12 @@ export function speechEngineSummary({
   return reads + listens;
 }
 
-export function SpeechSettings() {
+export function SpeechSettings({
+  serverVoices,
+}: {
+  /** The server engine's voices and speed (VoiceSettings), when it has one. */
+  serverVoices?: ReactNode;
+} = {}) {
   const id = useId();
   const preferences = useSpeechPreferences();
   const speech = useSpeechEngine();
@@ -88,30 +99,35 @@ export function SpeechSettings() {
               This browser's voice
             </option>
           </select>
-          <label htmlFor={`${id}-server-rate`}>
-            Server reading speed: {formatSpeechRate(serverRate)}
-          </label>
-          <select
-            id={`${id}-server-rate`}
-            value={String(serverRate)}
-            onChange={(event) =>
-              saveSpeechRate(Number(event.target.value)).catch((error) =>
-                store.notify({
-                  kind: "error",
-                  message: "The reading speed was not kept",
-                  detail: (error as Error).message,
-                }),
-              )
-            }
-          >
-            {[...new Set<number>([...SPEECH_RATE_STEPS, serverRate])]
-              .sort((a, b) => a - b)
-              .map((rate) => (
-                <option key={rate} value={String(rate)}>
-                  {formatSpeechRate(rate)}
-                </option>
-              ))}
-          </select>
+          {/* The server's voices, when shown, have their own speed. */}
+          {serverVoices ? null : (
+            <>
+              <label htmlFor={`${id}-server-rate`}>
+                Server reading speed: {formatSpeechRate(serverRate)}
+              </label>
+              <select
+                id={`${id}-server-rate`}
+                value={String(serverRate)}
+                onChange={(event) =>
+                  saveSpeechRate(Number(event.target.value)).catch((error) =>
+                    store.notify({
+                      kind: "error",
+                      message: "The reading speed was not kept",
+                      detail: (error as Error).message,
+                    }),
+                  )
+                }
+              >
+                {[...new Set<number>([...SPEECH_RATE_STEPS, serverRate])]
+                  .sort((a, b) => a - b)
+                  .map((rate) => (
+                    <option key={rate} value={String(rate)}>
+                      {formatSpeechRate(rate)}
+                    </option>
+                  ))}
+              </select>
+            </>
+          )}
         </>
       ) : null}
       {!supported ? (
@@ -162,6 +178,9 @@ export function SpeechSettings() {
           />
         </>
       )}
+      {speech.server && serverVoices ? (
+        <div className="speech-settings-server">{serverVoices}</div>
+      ) : null}
     </fieldset>
   );
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { VoiceErrands } from "../voice/voice-errands";
 import type { VoiceHelper } from "../voice/voice-helper";
+import { VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import type { VoiceRouter } from "../voice/voice-router";
 import { createVoiceRoutes } from "./voice";
 
@@ -177,5 +178,277 @@ describe("questions for Ranger", () => {
       "/api/voice/route",
     );
     expect(await response!.json()).toEqual({ to: "ranger" });
+  });
+});
+
+describe("voices", () => {
+  const voice = { "x-roamgate-voice": "1" };
+  /** A library that records what it is asked; `fail` makes it refuse. */
+  function fakeLibrary(fail?: VoiceError) {
+    const calls: unknown[][] = [];
+    const library = {
+      state: () => ({
+        voices: [{ id: "lea", name: "Léa", languages: ["fr"] }],
+        assignments: { all: "lea", languages: {} },
+        kokoro: true,
+        can_clone: true,
+      }),
+      create: async (input: { audio: string }) => {
+        calls.push(["create", input, await Bun.file(input.audio).text()]);
+        if (fail) throw fail;
+        return { voice: { id: "tom" }, heard: "hi", kind: "shown" };
+      },
+      assign: async (...args: unknown[]) => {
+        calls.push(["assign", ...args]);
+        return { assigned: true };
+      },
+      rename: (...args: unknown[]) => {
+        calls.push(["rename", ...args]);
+        if (fail) throw fail;
+        return { id: "lea", name: args[1] };
+      },
+      delete: (...args: unknown[]) => {
+        calls.push(["delete", ...args]);
+        if (fail) throw fail;
+      },
+      sampleModels: (id: string) => [{ model: "qwen3-tts", voice: id }],
+    } as unknown as VoiceLibrary;
+    return { library, calls };
+  }
+  const spoken: unknown[][] = [];
+  const speaking = {
+    ...helper,
+    speak: async (...args: unknown[]) => {
+      spoken.push(args);
+      return {
+        audio: new TextEncoder().encode("ogg"),
+        language: String(args[1]),
+        nativeRate: 1,
+      };
+    },
+  } as unknown as VoiceHelper;
+  const routesWith = (library: VoiceLibrary) =>
+    createVoiceRoutes(
+      speaking,
+      () => null,
+      null,
+      () => undefined,
+      library,
+    );
+  const request = (
+    path: string,
+    method: string,
+    body?: BodyInit,
+    headers: Record<string, string> = voice,
+  ) => new Request(`http://roamgate.test${path}`, { method, body, headers });
+
+  test("are listed, and changed only with the voice header", async () => {
+    const { library, calls } = fakeLibrary();
+    const routes = routesWith(library);
+    const listed = await routes(
+      request("/api/voice/voices", "GET", undefined, {}),
+      "/api/voice/voices",
+    );
+    expect((await listed!.json()).voices[0].name).toBe("Léa");
+    const refused = await routes(
+      request("/api/voice/voices/lea", "DELETE", undefined, {}),
+      "/api/voice/voices/lea",
+    );
+    expect(refused!.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  test("a recording is uploaded, cloned, then removed", async () => {
+    const { library, calls } = fakeLibrary();
+    const form = new FormData();
+    form.set("name", "Tom");
+    form.set("language", "en");
+    form.set("text", "Once upon a time");
+    form.set("cut", "1");
+    form.set("audio", new Blob(["RIFF"], { type: "audio/wav" }), "rec.wav");
+    const response = await routesWith(library)(
+      request("/api/voice/voices", "POST", form),
+      "/api/voice/voices",
+    );
+    expect(response!.status).toBe(201);
+    expect(await response!.json()).toEqual({
+      voice: { id: "tom" },
+      heard: "hi",
+      kind: "shown",
+    });
+    const [[op, input, audio]] = calls as [
+      [string, Record<string, string>, string],
+    ];
+    expect(op).toBe("create");
+    expect(input).toMatchObject({
+      name: "Tom",
+      language: "en",
+      text: "Once upon a time",
+      cut: true,
+    });
+    expect(audio).toBe("RIFF");
+    expect(await Bun.file(input.audio!).exists()).toBe(false);
+    const empty = await routesWith(library)(
+      request("/api/voice/voices", "POST", new FormData()),
+      "/api/voice/voices",
+    );
+    expect(empty!.status).toBe(400);
+  });
+
+  test("a refused change says why, with its status", async () => {
+    const { library } = fakeLibrary(
+      new VoiceError(409, "Léa reads replies: choose another voice first."),
+    );
+    const response = await routesWith(library)(
+      request("/api/voice/voices/lea", "DELETE"),
+      "/api/voice/voices/lea",
+    );
+    expect(response!.status).toBe(409);
+    expect((await response!.json()).error).toContain("choose another voice");
+  });
+
+  test("choose, rename, delete and hear voices", async () => {
+    const { library, calls } = fakeLibrary();
+    const routes = routesWith(library);
+    const json = (body: unknown) => JSON.stringify(body);
+    await routes(
+      request(
+        "/api/voice/voices/assign",
+        "POST",
+        json({ voice: "lea", language: "fr" }),
+      ),
+      "/api/voice/voices/assign",
+    );
+    await routes(
+      request("/api/voice/voices/l%C3%A9a", "PATCH", json({ name: "Lou" })),
+      "/api/voice/voices/l%C3%A9a",
+    );
+    const deleted = await routes(
+      request("/api/voice/voices/lea", "DELETE"),
+      "/api/voice/voices/lea",
+    );
+    expect(deleted!.status).toBe(204);
+    expect(calls).toEqual([
+      ["assign", "lea", "fr"],
+      ["rename", "léa", "Lou"],
+      ["delete", "lea"],
+    ]);
+    const sample = await routes(
+      request("/api/voice/voices/sample", "POST", json({ voice: "lea" })),
+      "/api/voice/voices/sample",
+    );
+    expect(await sample!.text()).toBe("ogg");
+    expect(sample!.headers.get("x-voice-language")).toBe("fr");
+    // In the voice's own language, with its models.
+    expect(spoken.at(-1)).toEqual([
+      "Bonjour ! Voici ma voix. On part à l'aventure ensemble ?",
+      "fr",
+      [{ model: "qwen3-tts", voice: "lea" }],
+    ]);
+  });
+});
+
+describe("surprise voices", () => {
+  const voice = { "x-roamgate-voice": "1" };
+  const voices = [
+    { id: "elo", name: "Éloïse", languages: ["fr"] },
+    { id: "oli", name: "Oli", languages: ["fr"] },
+    { id: "tib2", name: "tib2", languages: ["en"] },
+  ];
+  function setup(on = true) {
+    let surprise = on;
+    const library = {
+      state: () => ({ voices, surprise }),
+      setSurprise: (next: boolean) => {
+        surprise = next;
+        return { voices, surprise };
+      },
+      surpriseVoices: () => (surprise ? voices : null),
+      sampleModels: (id: string) => [{ model: "qwen3-tts", voice: id }],
+    } as unknown as VoiceLibrary;
+    const spoken: unknown[][] = [];
+    const speaking = {
+      ...helper,
+      speak: async (...args: unknown[]) => {
+        spoken.push(args);
+        return {
+          audio: new TextEncoder().encode("ogg"),
+          language: "fr",
+          nativeRate: 1,
+        };
+      },
+    } as unknown as VoiceHelper;
+    const routes = createVoiceRoutes(
+      speaking,
+      () => null,
+      null,
+      () => undefined,
+      library,
+    );
+    const say = (text: string, reading?: string) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/speak", {
+          method: "POST",
+          headers: { ...voice, "content-type": "application/json" },
+          body: JSON.stringify({ text, ...(reading ? { reading } : {}) }),
+        }),
+        "/api/voice/speak",
+      );
+    return { routes, say, spoken };
+  }
+
+  test("is reported, and turned on and off with the voice header", async () => {
+    const { routes } = setup(false);
+    const status = await routes(
+      new Request("http://roamgate.test/api/voice"),
+      "/api/voice",
+    );
+    expect((await status!.json()).surprise).toBe(false);
+    const toggle = (body: unknown, headers: Record<string, string> = voice) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/voices/surprise", {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/voices/surprise",
+      );
+    expect((await toggle({ on: true }, {}))!.status).toBe(403);
+    expect((await toggle({ on: "yes" }))!.status).toBe(400);
+    expect((await (await toggle({ on: true }))!.json()).surprise).toBe(true);
+    const again = await routes(
+      new Request("http://roamgate.test/api/voice"),
+      "/api/voice",
+    );
+    expect((await again!.json()).surprise).toBe(true);
+  });
+
+  test("a reply is read by one voice, the next by another", async () => {
+    const { say, spoken } = setup();
+    const first = await say("Bonjour, je suis là.", "r1");
+    const name = decodeURIComponent(first!.headers.get("x-voice-name")!);
+    const id = voices.find((entry) => entry.name === name)!.id;
+    // Any of the voices, whatever the reply's language.
+    expect(voices.map((entry) => entry.id)).toContain(id);
+    expect(spoken[0]).toEqual([
+      "Bonjour, je suis là.",
+      undefined,
+      [{ model: "qwen3-tts", voice: id }],
+    ]);
+    const second = await say("Et la suite de la réponse.", "r1");
+    expect(second!.headers.get("x-voice-name")).toBe(
+      first!.headers.get("x-voice-name"),
+    );
+    const next = await say("Une autre réponse.", "r2");
+    expect(next!.headers.get("x-voice-name")).not.toBe(
+      first!.headers.get("x-voice-name"),
+    );
+  });
+
+  test("off, replies are read as voice.json says", async () => {
+    const { say, spoken } = setup(false);
+    const response = await say("Bonjour.", "r1");
+    expect(response!.headers.get("x-voice-name")).toBeNull();
+    expect(spoken[0]).toEqual(["Bonjour.", undefined, undefined]);
   });
 });

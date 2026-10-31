@@ -51,8 +51,9 @@ function useCallDuration(): string {
  * workspace), what it is doing, the call's length and the live microphone
  * level; a tap there sends what was said now, interrupts the reading, or
  * stops. On the right, round call buttons: mute, the reading speed, and the
- * red hang-up. Below, the words being heard (their last lines). Its size is
- * fixed, so it stays put while the user talks.
+ * red hang-up. Below, the words being heard (their last lines). Surprise
+ * and the voices live in Configuration's Speech section, not here. Its size
+ * is fixed, so it stays put while the user talks.
  */
 export function VoiceChatOverlay({
   state,
@@ -66,6 +67,7 @@ export function VoiceChatOverlay({
   onToggleMute,
   onEnd,
   onCycleSpeechRate,
+  reader = null,
   moveQuestion,
   onAnswerMove,
   notSent = null,
@@ -87,6 +89,8 @@ export function VoiceChatOverlay({
   /** Ends the voice conversation, whatever it is doing. */
   onEnd: () => void;
   onCycleSpeechRate?: () => void;
+  /** Who reads the reply, when the server says. */
+  reader?: string | null;
   /**
    * The question about moving to a workspace with no agent, answered here
    * by a tap as well as aloud.
@@ -100,7 +104,7 @@ export function VoiceChatOverlay({
   notSent?: string | null;
   onSendAnyway?: () => void;
 }) {
-  const view = voiceControlView(state, muted, level);
+  const view = voiceControlView(state, muted, level, reader);
   const name = voiceCallName(agent, place);
   const duration = useCallDuration();
   const rate =

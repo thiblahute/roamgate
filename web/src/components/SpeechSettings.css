@@ -12,22 +12,29 @@
   font-weight: 600;
 }
 
-.speech-settings p {
+.speech-settings > p {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
 }
 
-.speech-settings select,
-.speech-settings input {
+.speech-settings > select,
+.speech-settings > input {
   width: 100%;
   min-width: 0;
 }
 
-.speech-settings select {
+.speech-settings > select {
   padding: 8px;
   color: var(--text);
   background: var(--panel-2);
   border: 1px solid var(--border-soft);
   border-radius: 6px;
+}
+
+/* The server engine's voices keep their own look inside the section. */
+.speech-settings-server {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
 }

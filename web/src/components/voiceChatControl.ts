@@ -52,11 +52,16 @@ export function voiceControlView(
   state: ActiveVoiceState,
   muted: boolean,
   level: number,
+  /** Who reads the reply, when the server says (Surprise). */
+  reader?: string | null,
 ): VoiceControlView {
   const listening = state === "listening";
+  const speaker = state === "speaking" && reader ? reader : null;
+  const speaking = speaker ? `${speaker} is speaking` : null;
   return {
-    label: listening && muted ? "Muted" : VOICE_SHORT_LABELS[state],
-    ariaLabel: VOICE_LABELS[state],
+    label:
+      listening && muted ? "Muted" : (speaking ?? VOICE_SHORT_LABELS[state]),
+    ariaLabel: speaking ?? VOICE_LABELS[state],
     title: listening
       ? "Listening; tap to send now"
       : state === "speaking"
@@ -64,7 +69,12 @@ export function voiceControlView(
         : `${VOICE_LABELS[state]}; tap to stop`,
     icon: listening ? "listening" : state === "speaking" ? "speaking" : "busy",
     level: listening && !muted ? voiceMeterLevel(level) : null,
-    hint: listening && muted ? "Microphone muted" : VOICE_HINTS[state],
+    hint:
+      listening && muted
+        ? "Microphone muted"
+        : speaker
+          ? `${speaker} reads the answer`
+          : VOICE_HINTS[state],
   };
 }
 

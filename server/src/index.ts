@@ -130,6 +130,7 @@ import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import { readVoiceConfig, VoiceHelper } from "./voice/voice-helper";
+import { VoiceLibrary } from "./voice/voice-library";
 import {
   createUpdateHandlers,
   UPDATE_HTTP_IDLE_TIMEOUT_SECONDS,
@@ -295,6 +296,10 @@ const handleVoice = createVoiceRoutes(
     const config = readVoiceConfig();
     return "error" in config ? undefined : config.errand_folder;
   },
+  new VoiceLibrary({
+    clone: (request) => voiceHelper.cloneVoice(request),
+    applied: () => voiceHelper.applyTtsModels(),
+  }),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,

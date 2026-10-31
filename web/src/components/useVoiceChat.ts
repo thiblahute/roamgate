@@ -17,6 +17,11 @@ import type { HistoryEntry } from "./agentHistory";
 import { agentStateKind } from "./agentSession";
 import {
   getSpeechRate,
+  getVoiceReader,
+  getVoiceSurprise,
+  saveVoiceSurprise,
+  subscribeVoiceReader,
+  subscribeVoiceSurprise,
   type Heard,
   VoiceLink,
   holdAudioFocus,
@@ -146,6 +151,22 @@ export function useSpeechRate(onError: (message: string) => void) {
 }
 
 /**
+ * Surprise (each reply read by one of the voices at random; null when the
+ * server has no voices to pick from) and a toggle (kept), and who reads
+ * the sentence playing when the server says.
+ */
+export function useVoiceSurprise(onError: (message: string) => void) {
+  const on = useSyncExternalStore(subscribeVoiceSurprise, getVoiceSurprise);
+  const reader = useSyncExternalStore(subscribeVoiceReader, getVoiceReader);
+  const toggle = useCallback(() => {
+    saveVoiceSurprise(getVoiceSurprise() !== true).catch((error) =>
+      onError(`Surprise was not changed: ${(error as Error).message}`),
+    );
+  }, [onError]);
+  return { on, toggle, reader };
+}
+
+/**
  * Hands-free chat with an agent: listen, send what was said, wait for the
  * agent to answer, read the answer aloud, listen again. Saying nothing, or
  * `toggle()`, ends it.
@@ -181,6 +202,7 @@ export function useVoiceChat({
   const engine = useSpeechEngine();
   const available = engine.listen;
   const speechRate = useSpeechRate(onError);
+  const surprise = useVoiceSurprise(onError);
   const [state, setState] = useState<VoiceState>("off");
   const [level, setLevel] = useState(0);
   // What is being said, as the helper hears it.
@@ -669,10 +691,14 @@ export function useVoiceChat({
                 voice: {
                   // An ack or an update playing ends its few words before
                   // the answer; an update still on its way is dropped.
-                  prepare: async (text, stop) => {
+                  prepare: async (text, stop, options) => {
                     ack?.activity();
                     narration?.activity();
-                    const speech = await engineVoice.prepare(text, stop);
+                    const speech = await engineVoice.prepare(
+                      text,
+                      stop,
+                      options,
+                    );
                     await ack?.quiet();
                     await narration?.quiet();
                     return speech;
@@ -1619,6 +1645,9 @@ export function useVoiceChat({
     stop,
     speechRate: speechRate.rate,
     cycleSpeechRate: speechRate.cycle,
+    /** Each reply read by a voice at random; null: not offered. */
+    /** Who reads the sentence playing, when the server says. */
+    reader: surprise.reader,
     takeOver,
     /** A move to a workspace with no agent, held until answered. */
     moveQuestion,
