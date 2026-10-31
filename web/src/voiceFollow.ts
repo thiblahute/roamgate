@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { ServerSessionState } from "./store";
 import type { Pane, Workspace } from "./types";
-import { handOffVoice, voiceHandoffPending } from "./voiceRoute";
+import { handOffVoice, isRangerVoice, voiceHandoffPending } from "./voiceRoute";
 
 /**
  * Voice chat follows the user from workspace to workspace: the workspace
@@ -307,7 +307,8 @@ export function planVoiceFocus(
   voice: { connectionId: string; paneId: string } | null,
   request: { connectionId: string; workspaceId: string; paneId?: string },
 ): VoiceFocusPlan {
-  if (!voice) return { to: "free" };
+  // Ranger's voice chat stays with Ranger wherever the user goes.
+  if (!voice || isRangerVoice(voice)) return { to: "free" };
   const session =
     request.connectionId === state.activeConnectionId
       ? state

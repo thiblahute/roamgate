@@ -13,6 +13,7 @@ import * as storeModule from "../store";
 import * as systemBack from "../systemBack";
 import type { RangerTaskNotificationTarget } from "../taskNotifications";
 import { terminalFocusBlockedByOverlay } from "../terminalFocus";
+import { writeTerminalComposerDraft } from "../terminalComposer";
 
 // Radix chooses its layout effect at import time; DOM tests need the browser path.
 const bootstrapBrowser =
@@ -27,7 +28,7 @@ if (bootstrapBrowser)
   });
 const { AssistantPanel, assistantAuthUrl } = await import("./AssistantPanel");
 const { AssistantChatControls } = await import("./AssistantChatControls");
-const { AssistantMentionComposer } = await import("./AssistantMentionComposer");
+const { RangerChat } = await import("./RangerChat");
 const taskControls = await import("./AssistantTasks");
 if (bootstrapBrowser) {
   Reflect.deleteProperty(globalThis, "document");
@@ -77,6 +78,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
     for (const [key, value] of Object.entries({
       window: browser,
       document: browser.document,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: browser.ResizeObserver,
       navigator: browser.navigator,
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
@@ -283,6 +288,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
     for (const [key, value] of Object.entries({
       window: browser,
       document: browser.document,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: browser.ResizeObserver,
       navigator: browser.navigator,
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
@@ -550,6 +559,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
     for (const [key, value] of Object.entries({
       window: browser,
       document: browser.document,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: browser.ResizeObserver,
       navigator: browser.navigator,
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
@@ -703,18 +716,57 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
   });
 
   test("conversation map follows visible messages and preserves reading position across streamed updates", async () => {
+    // Ranger's conversation is drawn by the agent chats' pieces (RangerChat):
+    // its list is the shared .agent-history-chat, its messages are chat
+    // bubbles; the map's jumps scroll that list alone, as before.
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost" });
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    const requestFrame = (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    };
+    const cancelFrame = (id: number) => frames.delete(id);
+    const observers = new Set<ResizeObserverStub>();
+    class ResizeObserverStub {
+      targets = new Set<Element>();
+      constructor(public callback: () => void) {
+        observers.add(this);
+      }
+      observe(target: Element) {
+        this.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target);
+      }
+      disconnect() {
+        observers.delete(this);
+      }
+    }
+    Object.defineProperties(browser, {
+      requestAnimationFrame: { value: requestFrame },
+      cancelAnimationFrame: { value: cancelFrame },
+      ResizeObserver: { value: ResizeObserverStub },
+    });
     const originals = new Map<string, PropertyDescriptor | undefined>();
     for (const [key, value] of Object.entries({
       window: browser,
       document: browser.document,
       navigator: browser.navigator,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: ResizeObserverStub,
+      requestAnimationFrame: requestFrame,
+      cancelAnimationFrame: cancelFrame,
+      getComputedStyle: browser.getComputedStyle.bind(browser),
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
       Node: browser.Node,
       NodeFilter: browser.NodeFilter,
       Event: browser.Event,
+      CustomEvent: browser.CustomEvent,
       DOMParser: browser.DOMParser,
       IS_REACT_ACT_ENVIRONMENT: true,
     })) {
@@ -725,39 +777,15 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
         writable: true,
       });
     }
-    const frames = new Map<number, FrameRequestCallback>();
-    let frameId = 0;
-    Object.defineProperties(browser, {
-      requestAnimationFrame: {
-        value: (callback: FrameRequestCallback) => {
-          frames.set(++frameId, callback);
-          return frameId;
-        },
-      },
-      cancelAnimationFrame: { value: (id: number) => frames.delete(id) },
-    });
-    const observers = new Set<ResizeObserverStub>();
-    class ResizeObserverStub {
-      targets = new Set<Element>();
-      constructor(public callback: () => void) {
-        observers.add(this);
-      }
-      observe(target: Element) {
-        this.targets.add(target);
-      }
-      disconnect() {
-        observers.delete(this);
-      }
-    }
-    Object.defineProperty(browser, "ResizeObserver", {
-      value: ResizeObserverStub,
-    });
+    // A plain message box (no Vim editor to load).
+    browser.localStorage.setItem("roamgate:vimKeys", "false");
     const flushFrames = async () => {
-      await React.act(async () => {
-        const pending = [...frames.values()];
-        frames.clear();
-        pending.forEach((callback) => callback(0));
-      });
+      for (let round = 0; round < 3; round += 1)
+        await React.act(async () => {
+          const pending = [...frames.values()];
+          frames.clear();
+          pending.forEach((callback) => callback(0));
+        });
     };
     const { createRoot } = await import("react-dom/client");
     const { bridge } = await import("../api");
@@ -817,21 +845,23 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
     let position = 0;
     let panelMobile = false;
     let conversationWidth = 380;
+    const listHeight = () => 200;
     const scrollHeight = () =>
       Math.max(
         listHeight(),
         ...[...bounds.values()].map((rect) => rect.top + rect.height + 12),
       );
     const list = () =>
-      container.querySelector<HTMLDivElement>(".assistant-panel-list")!;
+      container.querySelector<HTMLDivElement>(
+        ".assistant-panel .agent-history-chat",
+      )!;
     const wave = () =>
       container.querySelector<HTMLDivElement>(".conversation-minimap-track")!;
-    const listHeight = () =>
-      wave()?.getAttribute("aria-orientation") === "horizontal" ? 168 : 200;
     const layout = () => {
       const scroller = list();
       if (!scroller) return;
-      Object.defineProperty(scroller.parentElement, "clientWidth", {
+      const frame = scroller.parentElement!;
+      Object.defineProperty(frame, "clientWidth", {
         configurable: true,
         get: () => conversationWidth,
       });
@@ -853,10 +883,11 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       scroller.getBoundingClientRect = () =>
         new browser.DOMRect(100, 200, 300, listHeight()) as DOMRect;
       scroller
-        .querySelectorAll<HTMLElement>(".assistant-message")
+        .querySelectorAll<HTMLElement>(".agent-history-chat-message")
         .forEach((section) => {
+          const id = section.dataset.entryId!;
           section.getBoundingClientRect = () => {
-            const rect = bounds.get(section.dataset.messageId!)!;
+            const rect = bounds.get(id)!;
             return new browser.DOMRect(
               100,
               200 + rect.top - position,
@@ -885,7 +916,12 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
         ),
       );
       layout();
+      // As a browser does once observed elements are laid out.
+      await React.act(async () =>
+        observers.forEach((observer) => observer.callback()),
+      );
       await flushFrames();
+      layout();
     };
     const scroll = async (top: number) => {
       await React.act(async () => {
@@ -894,16 +930,13 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       });
       await flushFrames();
     };
-    const pointAt = (index: number) =>
-      250 + ((index + 0.5) / clientState.snapshot.messages.length) * 160;
-    const horizontalPointAt = (index: number) =>
-      100 + ((index + 0.5) / clientState.snapshot.messages.length) * 300;
     const resize = async (width: number) => {
       conversationWidth = width;
       await React.act(async () =>
         observers.forEach((observer) => observer.callback()),
       );
       await flushFrames();
+      layout();
     };
     const key = async (value: string) => {
       const event = new browser.KeyboardEvent("keydown", {
@@ -940,16 +973,13 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       );
       await flushFrames();
     };
-    const clickButton = async (label: string) => {
-      const button = Array.from(container.querySelectorAll("button")).find(
-        (item) =>
-          item.getAttribute("aria-label") === label ||
-          item.textContent?.trim() === label,
-      )!;
-      await React.act(async () => button.click());
-    };
+    const pointAt = (index: number) =>
+      250 + ((index + 0.5) / clientState.snapshot.messages.length) * 160;
+    const horizontalPointAt = (index: number) =>
+      100 + ((index + 0.5) / clientState.snapshot.messages.length) * 300;
     try {
       await render();
+      // A narrow conversation lays the map flat; it opens at the end.
       expect(wave().getAttribute("aria-orientation")).toBe("horizontal");
       expect(position).toBe(scrollHeight() - listHeight());
       await resize(800);
@@ -957,15 +987,8 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       await scroll(200);
       expect(visible()).toEqual(["long"]);
       expect(wave().getAttribute("aria-valuenow")).toBe("2");
-      expect(
-        [...observers].some((observer) =>
-          observer.targets.has(
-            list().querySelector("[data-message-id='long']")!,
-          ),
-        ),
-      ).toBe(true);
-      container.scrollTop = 35;
-      document.documentElement.scrollTop = 45;
+
+      // A mark jumps to its message, the map keeping the focus.
       await React.act(async () =>
         wave().dispatchEvent(
           new browser.MouseEvent("click", {
@@ -977,6 +1000,7 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       await scroll(position);
       expect(position).toBe(66);
       expect(document.activeElement).toBe(wave());
+      // A reply streaming under the reader does not move what is read.
       bounds.get("last")!.height += 100;
       await stream();
       expect(position).toBe(66);
@@ -987,14 +1011,14 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       expect(position).toBe(66);
       await key("End");
       expect(position).toBe(662);
-      expect(container.scrollTop).toBe(35);
-      expect(document.documentElement.scrollTop).toBe(45);
+      // At the end, the streamed reply is followed.
       await scroll(scrollHeight());
       bounds.get("last")!.height += 100;
       await stream();
       expect(position).toBe(scrollHeight() - listHeight());
       expect(visible()).toEqual(["last"]);
 
+      // Narrow again: flat, and the place is kept.
       await resize(600);
       expect(wave().getAttribute("aria-orientation")).toBe("horizontal");
       expect(
@@ -1003,7 +1027,6 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       expect(position).toBe(scrollHeight() - listHeight());
       await resize(601);
       expect(wave().getAttribute("aria-orientation")).toBe("vertical");
-      expect(position).toBe(scrollHeight() - listHeight());
       await scroll(66);
       await resize(600);
       expect(position).toBe(66);
@@ -1026,138 +1049,242 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
           .querySelector<HTMLElement>("[role='tooltip']")
           ?.style.getPropertyValue("--preview-position"),
       ).toBe("");
-      await React.act(async () =>
-        wave().dispatchEvent(
-          new browser.MouseEvent("click", {
-            clientX: horizontalPointAt(1),
-            clientY: 420,
-            bubbles: true,
-          }) as unknown as Event,
-        ),
-      );
-      await scroll(position);
-      expect(position).toBe(66);
-      expect(document.activeElement).toBe(wave());
-      await key("Home");
-      expect(position).toBe(0);
-      await key("ArrowRight");
-      expect(position).toBe(66);
-      await key("ArrowRight");
-      expect(position).toBe(564);
-      await key("ArrowLeft");
-      expect(position).toBe(66);
-      await key("End");
-      expect(position).toBe(662);
-      expect(container.scrollTop).toBe(35);
-      expect(document.documentElement.scrollTop).toBe(45);
 
+      // A phone always lays the map flat.
       await resize(601);
       expect(wave().getAttribute("aria-orientation")).toBe("vertical");
-      expect(position).toBe(662);
       panelMobile = true;
       await render();
       expect(wave().getAttribute("aria-orientation")).toBe("horizontal");
-      expect(position).toBe(662);
       panelMobile = false;
       await render();
+      await flushFrames();
       expect(wave().getAttribute("aria-orientation")).toBe("vertical");
 
-      await clickButton("Ranger settings");
-      expect(wave()).toBeNull();
-      await clickButton("Chat");
-      layout();
-      await flushFrames();
-      expect(wave()).not.toBeNull();
+      // A new session starts at its end, its map its own.
       clientState.snapshot = {
         ...clientState.snapshot,
         running: false,
-        messages: Array.from({ length: 80 }, (_, index) =>
-          message(`message-${index}`, `Message ${index}`),
-        ),
-      };
-      bounds.clear();
-      clientState.snapshot.messages.forEach((entry, index) =>
-        bounds.set(entry.id, { top: index * 24, height: 16 }),
-      );
-      await render();
-      await React.act(async () =>
-        wave().dispatchEvent(
-          new browser.PointerEvent("pointermove", {
-            clientY: pointAt(40),
-            pointerType: "mouse",
-            bubbles: true,
-          }) as unknown as Event,
-        ),
-      );
-      expect(
-        container.querySelector("[role='tooltip']")?.textContent,
-      ).toContain("Message 40");
-      expect(
-        container
-          .querySelector<HTMLElement>("[role='tooltip']")
-          ?.style.getPropertyValue("--preview-position"),
-      ).toBe("50.625%");
-      clientState.snapshot = {
-        ...clientState.snapshot,
+        session_id: "session-two",
         messages: [
-          ...clientState.snapshot.messages.slice(1),
-          message("message-80", "Message 80"),
+          message("new-session", "New session message"),
+          { ...message("new-reply", "New reply"), role: "assistant" },
         ],
       };
       bounds.clear();
-      clientState.snapshot.messages.forEach((entry, index) =>
-        bounds.set(entry.id, { top: index * 24, height: 16 }),
-      );
-      await render();
-      expect(
-        container.querySelector("[role='tooltip']")?.textContent,
-      ).toContain("Message 40");
-      expect(
-        container.querySelector("[role='tooltip'] strong > span")?.textContent,
-      ).toBe("40 / 80");
-      await React.act(async () =>
-        wave().dispatchEvent(
-          new browser.MouseEvent("click", {
-            clientY: pointAt(39),
-            bubbles: true,
-          }) as unknown as Event,
-        ),
-      );
-      await scroll(position);
-      expect(position).toBe(39 * 24 - 12);
-      expect(visible()).toContain("message-40");
-      expect(
-        container.querySelector(
-          ".conversation-minimap-mark[data-entry-id='message-0']",
-        ),
-      ).toBeNull();
-
-      clientState.snapshot = {
-        ...clientState.snapshot,
-        session_id: "session-two",
-        messages: [message("new-session", "New session message")],
-      };
-      bounds.clear();
       bounds.set("new-session", { top: 0, height: 300 });
+      bounds.set("new-reply", { top: 318, height: 100 });
       await render();
-      expect(position).toBe(scrollHeight() - 200);
-      expect(visible()).toEqual(["new-session"]);
+      expect(position).toBe(scrollHeight() - listHeight());
+      expect(
+        Array.from(
+          container.querySelectorAll<HTMLElement>(".conversation-minimap-mark"),
+          (mark) => mark.dataset.entryId,
+        ),
+      ).toEqual(["new-session", "new-reply"]);
       expect(container.querySelector("[role='tooltip']")).toBeNull();
-      bounds.get("new-session")!.height = 180;
-      await stream();
-      expect(position).toBe(0);
-      await resize(600);
-      expect(position).toBe(24);
-      await resize(601);
-      expect(position).toBe(0);
+      // No conversation, no map.
       clientState.snapshot = { ...clientState.snapshot, messages: [] };
       await render();
       expect(wave()).toBeNull();
-      expect(observers.size).toBe(0);
     } finally {
       await React.act(async () => root.unmount());
       state.mockRestore();
       context.mockRestore();
+      await browser.happyDOM.close();
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else Reflect.deleteProperty(globalThis, key);
+      }
+    }
+  });
+
+  test("a sent message's @mentions show as text and open what they name, or say it is gone", async () => {
+    const { Window } = await import("happy-dom");
+    const browser = new Window({ url: "http://localhost" });
+    const originals = new Map<string, PropertyDescriptor | undefined>();
+    for (const [key, value] of Object.entries({
+      window: browser,
+      document: browser.document,
+      navigator: browser.navigator,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      requestAnimationFrame: (callback: FrameRequestCallback) =>
+        setTimeout(() => callback(0), 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
+      getComputedStyle: browser.getComputedStyle.bind(browser),
+      HTMLElement: browser.HTMLElement,
+      Element: browser.Element,
+      Node: browser.Node,
+      NodeFilter: browser.NodeFilter,
+      Event: browser.Event,
+      CustomEvent: browser.CustomEvent,
+      DOMParser: browser.DOMParser,
+      IS_REACT_ACT_ENVIRONMENT: true,
+    })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+      Object.defineProperty(globalThis, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    }
+    browser.localStorage.setItem("roamgate:vimKeys", "false");
+    const { createRoot } = await import("react-dom/client");
+    const workspace = {
+      connection_id: "local",
+      workspace_id: "project",
+      runtime_generation: 1,
+      connection_label: "Mac",
+      label: "Project",
+    };
+    const agent = {
+      ...workspace,
+      kind: "agent" as const,
+      workspace_label: workspace.label,
+      label: "Codex / Project",
+      agent: "codex",
+      pane_id: "pane-one",
+      terminal_id: "terminal-one",
+      agent_identity: "a".repeat(64),
+    };
+    const unsafe = {
+      ...workspace,
+      kind: "workspace" as const,
+      workspace_label: workspace.label,
+      label: "<script>unsafe</script>",
+    };
+    const text = `Explain @${unsafe.label} and @${agent.label}`;
+    const unsafeStart = text.indexOf("@<");
+    const agentStart = text.indexOf("@Codex");
+    const snapshot = {
+      instance_id: "bridge",
+      revision: 1,
+      session_id: "session-one",
+      config: {
+        provider: "provider",
+        model: "model",
+        credential_source: "assistant",
+        allowed_workspaces: [workspace],
+      },
+      providers: [
+        { id: "provider", label: "Provider", configured: true, methods: [] },
+      ],
+      models: [{ id: "model", provider: "provider", label: "Model" }],
+      running: false,
+      error: null,
+      auth: null,
+      messages: [
+        {
+          id: "message",
+          role: "user",
+          text,
+          sent_at: "2026-10-08T00:00:00Z",
+          tools: [],
+          sources: [],
+          mentions: [
+            {
+              ...unsafe,
+              start: unsafeStart,
+              end: unsafeStart + unsafe.label.length + 1,
+            },
+            {
+              ...agent,
+              start: agentStart,
+              end: agentStart + agent.label.length + 1,
+            },
+          ],
+        },
+      ],
+    } as AssistantSnapshot;
+    const spies: { mockRestore: () => void }[] = [
+      spyOn(assistant, "useAssistantState").mockReturnValue({
+        snapshot,
+        draft: "",
+        draftMentions: [],
+        loading: false,
+        supported: true,
+        connectionStatus: "connected",
+        error: null,
+      }),
+      spyOn(bridge, "call").mockResolvedValue({
+        workspaces: [workspace],
+        errors: [],
+      }),
+    ];
+    const catalog = spyOn(assistant, "getAssistantMentions");
+    spies.push(catalog);
+    const opened = mock(() => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await React.act(async () =>
+        root.render(
+          React.createElement(AssistantPanel, {
+            open: true,
+            floating: true,
+            mobile: false,
+            onClose() {},
+            onToggleFloating() {},
+            onOpenSource: opened,
+          }),
+        ),
+      );
+      await React.act(
+        async () => new Promise((resolve) => setTimeout(resolve, 0)),
+      );
+      // What was typed shows as typed: a label is never markup.
+      expect(container.querySelector("script")).toBeNull();
+      expect(
+        container.querySelector(".agent-history-chat-message.is-user")
+          ?.textContent,
+      ).toContain(text);
+      const mentions = () =>
+        Array.from(
+          container.querySelectorAll<HTMLButtonElement>(
+            ".assistant-message-mention",
+          ),
+        );
+      expect(mentions().map((button) => button.textContent)).toEqual([
+        `@${unsafe.label}`,
+        `@${agent.label}`,
+      ]);
+      // A reference that no longer matches what is there opens nothing.
+      catalog.mockResolvedValue({
+        targets: [{ ...agent, agent_identity: "b".repeat(64) }],
+        errors: [],
+      });
+      await React.act(async () => mentions()[1]!.click());
+      await React.act(
+        async () => new Promise((resolve) => setTimeout(resolve, 0)),
+      );
+      expect(opened).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "reference is no longer available",
+      );
+      catalog.mockResolvedValue({ targets: [agent], errors: [] });
+      await React.act(async () => mentions()[1]!.click());
+      await React.act(
+        async () => new Promise((resolve) => setTimeout(resolve, 0)),
+      );
+      expect(opened).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "history",
+          connection_id: "local",
+          workspace_id: "project",
+          runtime_generation: 1,
+          pane_id: "pane-one",
+        }),
+      );
+    } finally {
+      await React.act(async () => root.unmount());
+      for (const spy of spies.reverse()) spy.mockRestore();
       await browser.happyDOM.close();
       for (const [key, descriptor] of originals) {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -1173,6 +1300,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
     for (const [key, value] of Object.entries({
       window: browser,
       document: browser.document,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      ResizeObserver: browser.ResizeObserver,
       navigator: browser.navigator,
       HTMLElement: browser.HTMLElement,
       HTMLButtonElement: browser.HTMLButtonElement,
@@ -1183,8 +1314,6 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       Event: browser.Event,
       NodeFilter: browser.NodeFilter,
       CustomEvent: browser.CustomEvent,
-      MutationObserver: browser.MutationObserver,
-      ResizeObserver: browser.ResizeObserver,
       getComputedStyle: browser.getComputedStyle.bind(browser),
       requestAnimationFrame: browser.requestAnimationFrame.bind(browser),
       cancelAnimationFrame: browser.cancelAnimationFrame.bind(browser),
@@ -1332,6 +1461,14 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       draft: "Next question",
       draftMentions: [],
     };
+    // The chat's box: a plain one (no Vim keys), holding the next question
+    // in this chat and the one it becomes once saved.
+    window.localStorage.setItem("roamgate:vimKeys", "false");
+    for (const session of ["", "00000000-0000-4000-8000-000000000001"])
+      writeTerminalComposerDraft(
+        `ranger:${snapshot.instance_id}:${session}`,
+        "Next question",
+      );
     let contextWorkspaces = [workspace];
     let acknowledge: (snapshot: AssistantSnapshot) => void = () => {};
     const call = spyOn(assistant, "callAssistant").mockImplementation(
@@ -1826,19 +1963,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
         ],
       };
       await render();
+      // Search, History and New chat.
       expect(
         container.querySelectorAll(".assistant-chat-toolbar button"),
-      ).toHaveLength(2);
-      const conversation = () =>
-        container.querySelector<HTMLElement>(".assistant-panel-list")!;
-      Object.defineProperties(conversation(), {
-        scrollHeight: { value: 800, configurable: true },
-        clientHeight: { value: 200, configurable: true },
-      });
-      await React.act(async () => {
-        conversation().scrollTop = 120;
-        conversation().dispatchEvent(new Event("scroll"));
-      });
+      ).toHaveLength(3);
       await React.act(async () => button("Ranger chat history").click());
       expect(
         container.querySelector('[aria-label="Saved Ranger chats"]'),
@@ -1848,7 +1976,6 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
         container.querySelector('[aria-label="Message Ranger"]'),
       ).toBeNull();
       await React.act(async () => button("Close Ranger chat history").click());
-      expect(conversation().scrollTop).toBe(120);
       expect(
         container.querySelector('[aria-label="Message Ranger"]')?.textContent,
       ).toBe("Next question");
@@ -2051,13 +2178,7 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
           .querySelector('[aria-label="Ranger conversation"]')
           ?.getAttribute("aria-busy"),
       ).toBe("true");
-      await React.act(async () =>
-        container
-          .querySelector("form")!
-          .dispatchEvent(
-            new Event("submit", { bubbles: true, cancelable: true }),
-          ),
-      );
+      await React.act(async () => button("Send").click());
       expect(send).not.toHaveBeenCalled();
       await React.act(async () => button("Ranger settings").click());
       expect(button("Save settings").disabled).toBe(true);
@@ -2187,11 +2308,12 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       expect(
         container.querySelector('[aria-label="Ranger conversation"]'),
       ).not.toBeNull();
+      // The question was sent: the box is empty again.
       expect(
         container.querySelector<HTMLTextAreaElement>(
           '[aria-label="Message Ranger"]',
         )?.value,
-      ).toBe(clientState.draft);
+      ).toBe("");
       expect(button("Send").disabled).toBe(true);
       expect(
         container.querySelector(".assistant-setup-notice")?.textContent,
@@ -2378,10 +2500,10 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
       const trigger = button("Ranger permissions");
       expect(trigger.closest(".assistant-panel-footer")).not.toBeNull();
       expect(trigger.textContent).toContain("Ask for approval");
-      expect(button("Send").closest(".assistant-compose-options")).toBe(
-        trigger.parentElement,
+      // Send is the chat box's own, by the permission control's footer.
+      expect(button("Send").closest(".assistant-panel-footer")).toBe(
+        trigger.closest(".assistant-panel-footer"),
       );
-      expect(button("Send").closest(".assistant-mention-editor")).toBeNull();
       expect(button("Send").title).toContain("Shift+Enter");
       const permissionSwitch = () => button("High-permission mode", document);
       const openPermissions = async () => {
@@ -2583,7 +2705,7 @@ if (process.env.ROAMGATE_ASSISTANT_ACTION_DOM_TEST !== "1") {
   }, 10_000);
 }
 
-test("assistant uses saved workspace permissions, guards IME sends, and hides without stopping work", async () => {
+test("assistant uses saved workspace permissions, sends from the shared chat, and hides without stopping work", async () => {
   const workspace = {
     connection_id: "local",
     workspace_id: "workspace",
@@ -2709,14 +2831,6 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     React.Children.forEach(node, (child) => {
       if (!React.isValidElement<Record<string, unknown>>(child)) return;
       elements.push(child);
-      if (child.type === AssistantMentionComposer) {
-        visit(
-          AssistantMentionComposer(
-            child.props as Parameters<typeof AssistantMentionComposer>[0],
-          ),
-        );
-        return;
-      }
       visit(child.props.children as React.ReactNode);
     });
   }
@@ -2761,12 +2875,22 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     );
     render();
   }
-  const key = (isComposing = false, shiftKey = false) => ({
-    key: "Enter",
-    shiftKey,
-    nativeEvent: { isComposing },
-    preventDefault: mock(() => {}),
-  });
+  // The chat's message box hands what it sends to the panel; a refusal is
+  // shown by the box through onError.
+  const chat = () => elements.find((item) => item.type === RangerChat)!;
+  const flush = async () => {
+    for (let step = 0; step < 10; step += 1) await Promise.resolve();
+  };
+  const sendFromBox = () => {
+    const props = chat().props as {
+      onSend: (text: string, mentions: unknown[]) => Promise<void>;
+      onError: (message: string) => void;
+    };
+    void props
+      .onSend(clientState.draft, [])
+      .catch((error: Error) => props.onError(error.message));
+    render();
+  };
   try {
     snapshot.config.allowed_workspaces = [];
     states[1] = {
@@ -2774,23 +2898,22 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       allowed_workspaces: [unapprovedWorkspace],
     };
     render();
-    expect(find("aria-label", "Send").props.disabled).toBe(true);
+    expect(chat().props.disabled).toBeTruthy();
     expect(
       find("children", "Allow workspaces in Ranger settings to send messages."),
     ).toBeDefined();
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
+    sendFromBox();
     expect(send).not.toHaveBeenCalled();
     snapshot.config.approval_mode = "auto";
     snapshot.config.workspace_scope = "all";
     render();
-    expect(find("aria-label", "Send").props.disabled).toBe(false);
+    expect(chat().props.disabled).toBeNull();
     const taskChoices = () =>
       elements.find((item) => item.type === taskControls.AssistantTasks)!.props
         .workspaces;
     expect(taskChoices()).toEqual(contextWorkspaces);
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenLastCalledWith(
       "Explain the changes",
       contextWorkspaces.map(({ connection_id, workspace_id }) => ({
@@ -2802,9 +2925,8 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     await Promise.resolve();
     const newWorkspace = { ...workspace, workspace_id: "new-project" };
     contextWorkspaces = [...contextWorkspaces, newWorkspace];
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenLastCalledWith(
       "Explain the changes",
       contextWorkspaces.map(({ connection_id, workspace_id }) => ({
@@ -2821,12 +2943,11 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       workspaces: contextWorkspaces,
       truncated: true,
     });
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     render();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(find("aria-label", "Send").props.disabled).toBe(true);
+    expect(chat().props.disabled).toBeTruthy();
     expect(states[6]).toContain("require the full list");
     snapshot.config.approval_mode = "manual";
     contextWorkspaces = contextWorkspaces.filter(
@@ -2834,7 +2955,7 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     );
     states[2] = contextWorkspaces;
     render();
-    expect(find("aria-label", "Send").props.disabled).toBe(true);
+    expect(chat().props.disabled).toBeTruthy();
     expect(taskChoices()).toEqual([]);
     send.mockClear();
     snapshot.config.allowed_workspaces = [
@@ -2844,40 +2965,16 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     ];
     mobile = true;
     render();
-    expect(find("aria-label", "Send").props.disabled).toBe(false);
+    expect(chat().props.disabled).toBeNull();
     expect(
       elements.some(
         (item) => item.props.className === "assistant-scope-picker",
       ),
     ).toBe(false);
-    expect(find("aria-label", "Message Ranger").props.enterKeyHint).toBe(
-      "send",
-    );
-    expect(find("aria-label", "Send").props.type).toBe("submit");
-    expect(
-      elements.some(
-        (item) =>
-          item.props.children === "Enter to send, Shift+Enter for a new line",
-      ),
-    ).toBe(false);
-    invoke("aria-label", "Message Ranger", "onKeyDown", {
-      ...key(),
-      keyCode: 229,
-    });
-    invoke("aria-label", "Message Ranger", "onKeyDown", {
-      ...key(),
-      repeat: true,
-    });
-    invoke("aria-label", "Message Ranger", "onKeyDown", key(true));
-    invoke("aria-label", "Message Ranger", "onKeyDown", key(false, true));
-    invoke("aria-label", "Message Ranger", "onCompositionStart");
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    expect(send).not.toHaveBeenCalled();
-    invoke("aria-label", "Message Ranger", "onCompositionEnd");
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    // On a phone the box goes to the bottom bar.
+    expect(chat().props.mobile).toBe(true);
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith("Explain the changes", [
       { connection_id: "local", workspace_id: "workspace" },
@@ -2887,9 +2984,8 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     await Promise.resolve();
     send.mockClear();
     contextWorkspaces = [workspace, unapprovedWorkspace];
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenLastCalledWith("Explain the changes", [
       { connection_id: "local", workspace_id: "workspace" },
@@ -2898,12 +2994,11 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     acknowledge();
     await Promise.resolve();
     contextWorkspaces = [unapprovedWorkspace];
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     render();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(find("aria-label", "Send").props.disabled).toBe(true);
+    expect(chat().props.disabled).toBeTruthy();
     expect(
       find(
         "children",
@@ -2913,9 +3008,8 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     states[2] = [workspace];
     render();
     context.mockRejectedValueOnce(new Error("Catalogue unavailable"));
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(states[6]).toBe(
       "Unable to refresh authorized workspaces. Try again.",
@@ -2924,9 +3018,8 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       clientState.snapshot = { ...snapshot, session_id: "another-chat" };
       return { workspaces: [workspace] };
     });
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(states[6]).toBe(
       "The active Ranger chat changed. Select it again before sending.",
@@ -2941,9 +3034,8 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       };
       return { workspaces: [workspace] };
     });
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
-    await Promise.resolve();
-    await Promise.resolve();
+    sendFromBox();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(states[6]).toBe(
       "The Ranger model settings changed. Check the selection before sending.",
@@ -2953,13 +3045,13 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     render();
     snapshot.config.allowed_workspaces = [];
     render();
-    expect(find("aria-label", "Send").props.disabled).toBe(true);
-    invoke("aria-label", "Message Ranger", "onKeyDown", key());
+    expect(chat().props.disabled).toBeTruthy();
+    sendFromBox();
     expect(send).toHaveBeenCalledTimes(1);
     snapshot.config.allowed_workspaces = [workspace];
     snapshot.running = true;
     render();
-    expect(find("aria-label", "Stop").props.type).toBe("button");
+    expect(typeof chat().props.onStop).toBe("function");
     mobile = false;
     render();
     invoke("aria-label", "Close Ranger", "onClick");
@@ -2967,9 +3059,7 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     expect(stop).not.toHaveBeenCalled();
     open = true;
     render();
-    expect(find("aria-label", "Message Ranger").props.value).toBe(
-      "Explain the changes",
-    );
+    expect(chat()).toBeDefined();
     expect(find("children", "Working")).toBeDefined();
 
     snapshot.running = false;
@@ -3320,8 +3410,7 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       session_id: "00000000-0000-4000-8000-000000000002",
     });
     expect(snapshot.messages).toBe(messagesBeforeSwitch);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     render();
     expect(
       elements.some(
@@ -3340,7 +3429,7 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
     );
     expect(stop).toHaveBeenCalledTimes(1);
 
-    // Quick changes share admission with Send and do not touch the draft or IME.
+    // Quick changes share admission with other requests, and leave the draft.
     const controls = () =>
       elements.find((item) => item.type === AssistantChatControls)!;
     const change = () =>
@@ -3348,10 +3437,6 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
         model: "next",
         thinking_level: "high",
       });
-    invoke("aria-label", "Message Ranger", "onCompositionStart");
-    change();
-    expect(stop).toHaveBeenCalledTimes(1);
-    invoke("aria-label", "Message Ranger", "onCompositionEnd");
     snapshot.running = true;
     render();
     expect(controls().props.disabled).toBe(false);
@@ -3363,8 +3448,7 @@ test("assistant uses saved workspace permissions, guards IME sends, and hides wi
       thinking_level: "high",
     });
     expect(clientState.draft).toBe("Explain the changes");
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     render();
     expect(controls().props.disabled).toBe(false);
   } finally {

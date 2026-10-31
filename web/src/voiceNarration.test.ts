@@ -16,6 +16,25 @@ import {
 } from "./voiceNarration";
 
 describe("narrationLine", () => {
+  test("says what Ranger does with its tools", () => {
+    expect(narrationLine("workspace_status", {})).toBe(
+      "Looking at the workspaces.",
+    );
+    expect(narrationLine("workspace_tree_get", {})).toBe(
+      "Looking at the workspaces.",
+    );
+    expect(narrationLine("workspace_tree_move", {})).toBe(
+      "Arranging the workspaces.",
+    );
+    expect(narrationLine("propose_tab_create", {})).toBe(
+      "Preparing an action.",
+    );
+    expect(narrationLine("chat_thread_reply", {}, "fr")).toBe(
+      "Je réponds à ton commentaire.",
+    );
+    expect(narrationLine("show_in_roamgate", {})).toBeNull();
+  });
+
   test("says the description of commands, agents, workflows, monitors", () => {
     expect(
       narrationLine("Bash", {

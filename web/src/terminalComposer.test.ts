@@ -293,6 +293,18 @@ describe("terminal composer drafts", () => {
     clearTerminalComposerDraft(second);
   });
 
+  test("a box of no connection (Ranger's chat) keeps its draft across connections", () => {
+    const ranger = "ranger:bridge:chat-one";
+    activateTerminalComposerDraftScope("conn-a", 1);
+    writeTerminalComposerDraft(ranger, "What is running?");
+    expect(beginTerminalComposerSubmission(ranger)).toBe(true);
+    finishTerminalComposerSubmission(ranger);
+    activateTerminalComposerDraftScope("conn-b", 2);
+    expect(readTerminalComposerDraft(ranger)).toBe("What is running?");
+    clearTerminalComposerDraft(ranger);
+    expect(readTerminalComposerDraft(ranger)).toBe("");
+  });
+
   test("pane closure retires async work for that draft key", () => {
     const key = terminalComposerDraftKey("conn-b", 2, "closing-pane");
     writeTerminalComposerDraft(key, "draft");

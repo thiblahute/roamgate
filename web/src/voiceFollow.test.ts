@@ -1,3 +1,4 @@
+import { RANGER_VOICE_KEY } from "./voiceRoute";
 import { describe, expect, test } from "bun:test";
 import {
   answerMoveQuestion,
@@ -326,6 +327,15 @@ describe("voice across two connections", () => {
       sessionsByConnectionId: { local, desktop },
     }) as unknown as Parameters<typeof planVoiceFocus>[0];
   const onLocal = { connectionId: "local", paneId: "w2:p2" };
+
+  test("Ranger's voice chat stays with Ranger wherever the user goes", () => {
+    expect(
+      planVoiceFocus(state("local"), RANGER_VOICE_KEY, {
+        connectionId: "desktop",
+        workspaceId: "w1J",
+      }),
+    ).toEqual({ to: "free" });
+  });
 
   test("goes to the other connection's agent, not the shown shell", () => {
     expect(

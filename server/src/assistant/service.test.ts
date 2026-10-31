@@ -80,6 +80,10 @@ const services: ReturnType<typeof createAssistantService>[] = [];
 function setup(
   overrides: Partial<AssistantDriver> = {},
   childDriver?: () => AssistantDriver,
+  options: Pick<
+    Parameters<typeof createAssistantService>[0],
+    "chatThreads"
+  > = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "roamgate-assistant-"));
   temporary.push(directory);
@@ -131,6 +135,7 @@ function setup(
     createDriver: childDriver ? () => childDriver() : undefined,
     publish: (snapshot) => snapshots.push(snapshot),
     notify: (notification) => notifications.push(notification),
+    ...options,
   });
   services.push(service);
   return {
@@ -190,6 +195,90 @@ function permissionAction(
     execute,
   };
 }
+
+test("comments on a Ranger chat come as a message in it, answered in their threads", async () => {
+  const replies: { session: string; comment: string; text: string }[] = [];
+  let release: () => void = () => {};
+  let hold = false;
+  const f = setup(
+    {
+      run: async (input) => {
+        if (hold)
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        if (input.text.includes("[Roamgate review") && input.threads) {
+          const receipt = await input.threads({
+            comment_id: "abcd1234",
+            text: "The one in index.ts.",
+          });
+          input.message(`Answered. ${receipt.text}`);
+        } else input.message("Hello");
+        return [{ persisted: true }];
+      },
+    },
+    undefined,
+    {
+      chatThreads: async (session, params) => {
+        replies.push({
+          session,
+          comment: params.comment_id,
+          text: params.text,
+        });
+        return { text: "Answered in thread [abcd1234]." };
+      },
+    },
+  );
+  await f.service.handle("configure", { config: configured });
+  const session = f.service.peek().session_id!;
+  expect(session).toBeTruthy();
+  const comments =
+    '[Roamgate review "Chat with Ranger" (chat)]\nA comment from me on parts of your messages in this chat:\n\n- [abcd1234] on your message, about this part:\n  > It waits.\n  Which conflict?';
+  await f.service.deliverChatComments(session, comments);
+  await until(() => !f.service.peek().running);
+  const messages = f.service.peek().messages;
+  expect(messages.at(-2)).toMatchObject({ role: "user", text: comments });
+  expect(messages.at(-1)!.text).toBe(
+    "Answered. Answered in thread [abcd1234].",
+  );
+  expect(replies).toEqual([
+    { session, comment: "abcd1234", text: "The one in index.ts." },
+  ]);
+  // Another chat's comments wait until it shows: "busy" makes the review
+  // try again.
+  await expect(
+    f.service.deliverChatComments("another-chat", comments),
+  ).rejects.toThrow("busy");
+  // While Ranger answers, they wait in its queue for the next turn.
+  hold = true;
+  await f.service.handle("send", { text: "Status?", request_id: "slow" });
+  await until(() => f.service.peek().running);
+  await f.service.deliverChatComments(session, comments);
+  expect(f.service.peek().queue).toEqual([
+    expect.objectContaining({ mode: "follow_up", text: comments }),
+  ]);
+  hold = false;
+  release();
+  await until(
+    () => !f.service.peek().running && !f.service.peek().queue?.length,
+  );
+  expect(replies).toHaveLength(2);
+});
+
+test("a turn without chat threads offers Ranger no thread tool", async () => {
+  let offered: unknown = "unset";
+  const f = setup({
+    run: async (input) => {
+      offered = input.threads;
+      input.message("Hello");
+      return [{ persisted: true }];
+    },
+  });
+  await f.service.handle("configure", { config: configured });
+  await f.service.handle("send", { text: "Hi", request_id: "plain" });
+  await until(() => !f.service.peek().running);
+  expect(offered).toBeUndefined();
+});
 
 test("live tool details persist while repeated call IDs explicitly clear stale details", async () => {
   const pointer = [{ type: "ranger-durable", id: randomUUID() }];

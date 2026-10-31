@@ -1209,6 +1209,82 @@ test("a chat's threads: no diff, kept out of the reviews, sent with context", as
   ).rejects.toThrow("a chat part needs its message and quote");
 });
 
+test("a Ranger chat's threads go to Ranger, answered with its own tool", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const prompts: { pane: string; text: string }[] = [];
+  let busy = true;
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+    deliveryDelayMs: 10,
+    retryDelayMs: 20,
+    promptAgent: async (_connection, pane, text) => {
+      // Ranger shows another chat: the comments wait, and are tried again.
+      if (busy) throw new Error("Ranger is busy in another chat");
+      prompts.push({ pane, text });
+    },
+    chatReplyHow: (session) =>
+      session.target.kind === "chat" &&
+      session.target.chat.startsWith("ranger:")
+        ? "your `chat_thread_reply` tool"
+        : undefined,
+  });
+  services.push(service);
+  const chat = service.open({
+    connectionId: "local",
+    workspaceId: "ranger",
+    root: "/",
+    target: { kind: "chat", chat: "ranger:chat-one" },
+    agent: "Ranger",
+    paneId: "ranger:chat-one",
+  }).session;
+  const thread = await service.addThread({
+    sessionId: chat.id,
+    anchor: { chat: { entry: "reply-1", quote: "It waits for you." } },
+    text: "Which conflict?",
+  });
+  await Bun.sleep(25);
+  expect(prompts).toEqual([]);
+  expect(service.get({ sessionId: chat.id }).session.deliveryError).toContain(
+    "busy",
+  );
+  busy = false;
+  await Bun.sleep(60);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]!.pane).toBe("ranger:chat-one");
+  expect(prompts[0]!.text).toStartWith('[Roamgate review "');
+  expect(prompts[0]!.text).toContain(`[${thread.id.slice(0, 8)}]`);
+  expect(prompts[0]!.text).toContain(
+    "Answer each in its thread with your `chat_thread_reply` tool",
+  );
+  expect(prompts[0]!.text).not.toContain("roamgate-review");
+  // Its answer, by comment id prefix, lands in the thread.
+  const answered = service.replyInChat({
+    chat: "ranger:chat-one",
+    commentId: thread.id.slice(0, 8),
+    text: "The one in server/src/index.ts.",
+    author: "Ranger",
+  });
+  expect(answered.comments.map((comment) => comment.author)).toEqual([
+    "you",
+    "Ranger",
+  ]);
+  // Not the thread of another chat.
+  expect(() =>
+    service.replyInChat({
+      chat: "ranger:chat-two",
+      commentId: thread.id,
+      text: "Wrong chat",
+      author: "Ranger",
+    }),
+  ).toThrow("no such comment in this chat");
+  // Answered: nothing more goes to Ranger until the user writes again.
+  await Bun.sleep(40);
+  expect(prompts).toHaveLength(1);
+});
+
 test("attaching an agent delivers what was written; failures are reported", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);

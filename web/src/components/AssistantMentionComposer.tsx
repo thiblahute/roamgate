@@ -35,6 +35,7 @@ export function AssistantMentionComposer({
   onSubmit,
   onOpenMention,
   onCompositionChange,
+  onError,
 }: {
   value: string;
   mentions: AssistantMention[];
@@ -53,6 +54,8 @@ export function AssistantMentionComposer({
   onSubmit: (options?: { queue: boolean }) => void;
   onOpenMention: (target: AssistantMentionTarget) => void;
   onCompositionChange: (composing: boolean) => void;
+  /** Also told what could not be listed, beside the picker's own notice. */
+  onError?: (message: string) => void;
 }) {
   const [picker, setPicker] =
     useState<ReturnType<typeof assistantMentionQuery>>(null);
@@ -73,6 +76,8 @@ export function AssistantMentionComposer({
   const dismissed = useRef("");
   const caret = useRef<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const errorRef = useRef(onError);
+  errorRef.current = onError;
   const id = useId();
   const open = picker !== null;
   const mentionedWorkspaces = mentions.filter(
@@ -168,12 +173,16 @@ export function AssistantMentionComposer({
           ),
         ]);
         setErrors(catalog.errors);
+        if (catalog.errors.length)
+          errorRef.current?.(catalog.errors.join("\n"));
         setTruncated(catalog.truncated ?? false);
         setLoading(false);
       },
       (cause: unknown) => {
         if (cancelled) return;
-        setErrors([cause instanceof Error ? cause.message : String(cause)]);
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setErrors([message]);
+        errorRef.current?.(message);
         setLoading(false);
       },
     );

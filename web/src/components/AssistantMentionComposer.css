@@ -4,11 +4,13 @@
   gap: 8px;
 }
 
-.assistant-panel-footer .assistant-mention-editor textarea {
+:is(.assistant-panel-footer, .ranger-chat-input)
+  .assistant-mention-editor
+  textarea {
   padding-right: 38px;
 }
 
-.assistant-panel-footer .assistant-mention-trigger {
+:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-trigger {
   position: absolute;
   top: 5px;
   right: 5px;
@@ -49,9 +51,11 @@
   gap: 3px;
 }
 
-.assistant-panel-footer .assistant-mention-categories button,
-.assistant-panel-footer .assistant-mention-close,
-.assistant-panel-footer .assistant-mention-retry {
+:is(.assistant-panel-footer, .ranger-chat-input)
+  .assistant-mention-categories
+  button,
+:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-close,
+:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-retry {
   min-height: 26px;
   border: 0;
   background: transparent;
@@ -72,7 +76,9 @@
   padding: 4px;
 }
 
-.assistant-panel-footer .assistant-mention-options button {
+:is(.assistant-panel-footer, .ranger-chat-input)
+  .assistant-mention-options
+  button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -86,7 +92,7 @@
   color: var(--text);
 }
 
-.assistant-panel-footer
+:is(.assistant-panel-footer, .ranger-chat-input)
   .assistant-mention-options
   button[aria-selected="true"] {
   background: var(--accent-soft);
@@ -153,7 +159,9 @@
   border-radius: 6px;
 }
 
-.assistant-panel-footer .assistant-mention-chip button {
+:is(.assistant-panel-footer, .ranger-chat-input)
+  .assistant-mention-chip
+  button {
   display: inline-flex;
   gap: 4px;
   min-width: 0;
@@ -194,13 +202,18 @@
   overflow-wrap: anywhere;
 }
 
-.assistant-panel-footer.is-mobile .assistant-mention-categories button,
-.assistant-panel-footer.is-mobile .assistant-mention-close,
-.assistant-panel-footer.is-mobile .assistant-mention-chip button {
+:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
+  .assistant-mention-categories
+  button,
+:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
+  .assistant-mention-close,
+:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
+  .assistant-mention-chip
+  button {
   min-height: 44px;
 }
 
-.assistant-panel-footer.is-mobile
+:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
   .assistant-compose-input.assistant-mention-compose {
   display: grid;
 }

@@ -5,6 +5,7 @@ import {
   type AssistantNotificationInput,
   type AssistantSource,
 } from "../../../shared/assistant";
+import { RANGER_THREAD_TOOL } from "../../../shared/rangerChat";
 import { AssistantUserError, surfaceAssistantUserError } from "./errors";
 
 export const ASSISTANT_DEFAULT_TERMINAL_LINES = 120;
@@ -465,6 +466,59 @@ export async function callNotificationTool(
     surfaceAssistantUserError(
       error,
       "Notification unavailable or outside the authorized task.",
+    );
+  }
+}
+
+/**
+ * Answers a comment thread on a part of Ranger's own messages in this chat
+ * (shared/rangerChat.ts); bound to the chat the turn runs in.
+ */
+export type ThreadToolHandler = (
+  params: { comment_id: string; text: string },
+  signal?: AbortSignal,
+) => Promise<WorkspaceToolResult>;
+
+export const threadTools = [
+  {
+    name: RANGER_THREAD_TOOL,
+    kind: "reply",
+    label: "Reply in a chat thread",
+    description:
+      "Answer a comment thread the user left on a part of one of your messages in this chat. comment_id is the bracketed thread identifier the comment was delivered with (its first 8 characters are enough); text is your answer, in Markdown. The answer is shown in that thread, under the part of the message it is about. It changes nothing else and needs no confirmation.",
+    parameters: Type.Object(
+      {
+        comment_id: Type.String({ minLength: 1, maxLength: 200 }),
+        text: Type.String({ minLength: 1, maxLength: 16_000 }),
+      },
+      { additionalProperties: false },
+    ),
+  },
+] as const;
+
+/** The handler is bound to the turn's chat. */
+export async function callThreadTool(
+  name: string,
+  params: unknown,
+  reply: ThreadToolHandler,
+  signal?: AbortSignal,
+): Promise<WorkspaceToolResult> {
+  const tool = threadTools.find((entry) => entry.name === name);
+  if (!tool) throw new Error("Unknown thread tool.");
+  if (!Value.Check(tool.parameters, params))
+    throw new AssistantUserError("Invalid thread tool parameters.");
+  const input = params as Parameters<ThreadToolHandler>[0];
+  if (!input.text.trim())
+    throw new AssistantUserError("Invalid thread tool parameters.");
+  try {
+    signal?.throwIfAborted();
+    const result = await reply(input, signal);
+    signal?.throwIfAborted();
+    return result;
+  } catch (error) {
+    surfaceAssistantUserError(
+      error,
+      "That thread is not in this chat, or could not be answered.",
     );
   }
 }

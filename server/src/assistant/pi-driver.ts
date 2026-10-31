@@ -25,6 +25,7 @@ import type {
   ShowToolHandler,
   TaskToolHandler,
   WorkspaceToolReader,
+  ThreadToolHandler,
 } from "./tools";
 import { rangerSystemPrompt, rangerTools } from "./ranger-tools";
 import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
@@ -116,6 +117,8 @@ export type AssistantDriver = {
     show?: ShowToolHandler;
     /** Arranges the Workspaces sidebar; no confirmation needed. */
     arrange?: WorkspaceTreeToolHandler;
+    /** Answers comment threads on this chat's messages. */
+    threads?: ThreadToolHandler;
     delta(text: string): void;
     message(text: string): void;
     tool(

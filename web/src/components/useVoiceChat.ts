@@ -77,6 +77,7 @@ import {
 import {
   handOffVoice,
   parseVoiceSessionId,
+  RANGER_VOICE_SESSION,
   followErrand,
   plainText,
   routeSpeech,
@@ -450,6 +451,8 @@ export function useVoiceChat({
             return "nobody";
           }
           case "ranger": {
+            // Ranger's own chat: a question for Ranger is for it.
+            if (context.current === RANGER_VOICE_SESSION) return "here";
             showRouterNote(`Asked Ranger: ${words}`, "Ranger");
             // Ranger answers when it has read what it needs: voice chat
             // goes on meanwhile, and its answer is read when it comes.

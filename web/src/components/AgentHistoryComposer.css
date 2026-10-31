@@ -347,6 +347,12 @@
   flex: 1 1 auto;
 }
 
+/* A text input of the chat's own (Ranger's, with its mention picker). */
+.agent-history-composer-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .agent-history-composer-field.has-voice textarea,
 .agent-history-composer-field.has-voice .cm-content {
   padding-right: 36px;

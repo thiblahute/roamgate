@@ -45,6 +45,11 @@ type Phrases = {
   search: string;
   web: string;
   page: string;
+  /** Ranger's tools. */
+  workspaces: string;
+  arrange: string;
+  propose: string;
+  thread: string;
 };
 
 // `{}` is the description or the file's name.
@@ -63,6 +68,10 @@ const PHRASES: Record<AckLanguage, Phrases> = {
     search: "Searching the code.",
     web: "Searching the web.",
     page: "Reading a web page.",
+    workspaces: "Looking at the workspaces.",
+    arrange: "Arranging the workspaces.",
+    propose: "Preparing an action.",
+    thread: "Answering your comment.",
   },
   fr: {
     command: "Je lance une commande : {}.",
@@ -78,6 +87,10 @@ const PHRASES: Record<AckLanguage, Phrases> = {
     search: "Je cherche dans le code.",
     web: "Je cherche sur le web.",
     page: "Je lis une page web.",
+    workspaces: "Je regarde les espaces de travail.",
+    arrange: "J'organise les espaces de travail.",
+    propose: "Je prépare une action.",
+    thread: "Je réponds à ton commentaire.",
   },
   es: {
     command: "Ejecuto un comando: {}.",
@@ -93,6 +106,10 @@ const PHRASES: Record<AckLanguage, Phrases> = {
     search: "Busco en el código.",
     web: "Busco en la web.",
     page: "Leo una página web.",
+    workspaces: "Miro los espacios de trabajo.",
+    arrange: "Organizo los espacios de trabajo.",
+    propose: "Preparo una acción.",
+    thread: "Respondo a tu comentario.",
   },
 };
 
@@ -184,7 +201,17 @@ export function narrationLine(
       return phrases.web;
     case "WebFetch":
       return phrases.page;
+    case "chat_thread_reply":
+      return phrases.thread;
     default:
+      // Ranger's tools: reading workspaces, arranging them, proposing.
+      if (name.startsWith("workspace_tree_"))
+        return name === "workspace_tree_get"
+          ? phrases.workspaces
+          : phrases.arrange;
+      if (name.startsWith("workspace_") || name === "list_ranger_tasks")
+        return phrases.workspaces;
+      if (name.startsWith("propose_")) return phrases.propose;
       return null;
   }
 }

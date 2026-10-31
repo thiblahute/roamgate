@@ -54,7 +54,11 @@ import type { AssistantDriver } from "./pi-driver";
 import { createRangerDriver } from "./ranger-driver";
 import type { PreparedAssistantAction } from "./actions";
 import { AssistantUserError } from "./errors";
-import type { NotificationToolSender } from "./tools";
+import type {
+  NotificationToolSender,
+  ThreadToolHandler,
+  WorkspaceToolResult,
+} from "./tools";
 import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
 import {
   createAssistantTasks,
@@ -329,6 +333,12 @@ export type AssistantService = {
     params: Record<string, unknown>,
   ): Promise<AssistantSnapshot>;
   taskDetail(params: Record<string, unknown>): Promise<AssistantTaskDetail>;
+  /**
+   * Hands the user's comments on parts of chat `sessionId`'s messages to
+   * Ranger, as a message in that chat (queued behind a running turn).
+   * Throws "busy" while it cannot take them, so the review tries again.
+   */
+  deliverChatComments(sessionId: string, text: string): Promise<void>;
   dispose(): Promise<void>;
 };
 
@@ -352,6 +362,15 @@ export function createAssistantService(options: {
   globalApprovalMode?(): AssistantConfig["approval_mode"];
   /** Ranger's Workspaces arrangement tools (workspace-tree-tools.ts). */
   workspaceTree?: WorkspaceTreeToolHandler;
+  /**
+   * Answers a comment thread on the messages of Ranger chat `sessionId`
+   * (shared/rangerChat.ts): its `chat_thread_reply` tool.
+   */
+  chatThreads?: (
+    sessionId: string,
+    params: Parameters<ThreadToolHandler>[0],
+    signal?: AbortSignal,
+  ) => Promise<WorkspaceToolResult>;
 }): AssistantService {
   const directory = options.directory ?? assistantDirectory();
   const statePath = join(directory, "state.json");
@@ -1780,6 +1799,8 @@ export function createAssistantService(options: {
     // one a show_in_roamgate call switches.
     let draftRequest = pending.request_id;
     const drafts = [draft];
+    // The chat this turn answers in: its comment threads are its own.
+    const turnSession = state.session_id;
     activeScope = captured;
     /**
      * Workspaces join the turn after it started: one Ranger created in this
@@ -1994,6 +2015,19 @@ export function createAssistantService(options: {
                   text: "Shown in the user's Roamgate window.",
                 };
               },
+          // An answer in a comment thread of this chat: no confirmation.
+          threads:
+            options.chatThreads && !options.taskRun && turnSession
+              ? async (params, signal) => {
+                  const combined = signal
+                    ? AbortSignal.any([signal, controller.signal])
+                    : controller.signal;
+                  combined.throwIfAborted();
+                  if (disposed || activeRun !== pending || !state.running)
+                    throw new Error("This Ranger turn is no longer active.");
+                  return options.chatThreads!(turnSession, params, combined);
+                }
+              : undefined,
           // Reversible sidebar arrangement: runs at once, in any mode.
           arrange: options.workspaceTree
             ? async (kind, params, signal) => {
@@ -3621,6 +3655,39 @@ export function createAssistantService(options: {
           : current();
       } finally {
         // A request can end a settings change or review without publishing.
+        drainQueue();
+      }
+    },
+    async deliverChatComments(sessionId: string, text: string): Promise<void> {
+      if (disposed) throw new Error("Ranger unavailable");
+      if (options.taskRun) throw new Error("A task run has no chat");
+      // Another chat shows: these wait for this one to be open again.
+      if (state.session_id !== sessionId)
+        throw new Error(
+          "Ranger is busy in another chat; open this chat to send its comments",
+        );
+      // A preview the user has not confirmed would be cancelled by a new
+      // question: the comments wait for it.
+      if (
+        state.messages.some(
+          (message) =>
+            message.actions?.some((action) => action.status === "pending") ||
+            message.task_proposals?.some(
+              (proposal) => proposal.status === "pending",
+            ),
+        )
+      )
+        throw new Error(
+          "Ranger is busy: a preview waits for confirmation in this chat",
+        );
+      try {
+        await send({
+          text: text.slice(0, 20_000),
+          request_id: randomUUID(),
+          session_id: sessionId,
+          when_busy: "queue",
+        });
+      } finally {
         drainQueue();
       }
     },
