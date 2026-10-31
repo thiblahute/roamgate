@@ -19,6 +19,12 @@ import {
 } from "./config/auth-token";
 import type { ServerWebSocket } from "bun";
 import { createAssistantContext } from "./assistant/context";
+import {
+  RANGER_THREAD_AUTHOR,
+  RANGER_THREAD_TOOL,
+  rangerChatKey,
+  rangerChatSession,
+} from "../../shared/rangerChat";
 import { isHtmlPath } from "../../shared/filePreview";
 import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
 import { canRevealFiles } from "./workspace/file-manager";
@@ -769,6 +775,19 @@ function getAssistantService() {
       createAssistantService({
         context: assistantContext,
         workspaceTree: assistantWorkspaceTree,
+        // Ranger answers the comments on its chat's messages in their
+        // threads, as an agent does with roamgate-review reply.
+        chatThreads: async (sessionId, params) => {
+          const thread = getReviewService().replyInChat({
+            chat: rangerChatKey(sessionId),
+            commentId: params.comment_id,
+            text: params.text,
+            author: RANGER_THREAD_AUTHOR,
+          });
+          return {
+            text: `Answered in thread [${thread.id.slice(0, 8)}].`,
+          };
+        },
         publish: (snapshot) => {
           let payload: string | null = null;
           // A page that read the state with a stamp gets each change as a
@@ -963,6 +982,11 @@ function getReviewService(): ReviewService {
         return readMergeRequestDiff(context, mr);
       }
     },
+    chatReplyHow: (session) =>
+      session.target.kind === "chat" &&
+      rangerChatSession(session.target.chat) !== null
+        ? `your \`${RANGER_THREAD_TOOL}\` tool (comment_id: the bracketed ID, text: your answer)`
+        : undefined,
     onDeliveryError: (session, reason) =>
       logger.warn("review comments not delivered", {
         connection: session.connectionId,
@@ -970,6 +994,15 @@ function getReviewService(): ReviewService {
         error: reason,
       }),
     promptAgent: async (connectionId, paneId, text) => {
+      // A Ranger chat's threads go to Ranger, as a message in that chat.
+      const rangerChat = rangerChatSession(paneId);
+      if (rangerChat) {
+        await (await getAssistantService()).deliverChatComments(
+          rangerChat,
+          text,
+        );
+        return;
+      }
       const { runtime } = resolveReadyConnection(
         connectionManager,
         connectionId,
@@ -978,6 +1011,8 @@ function getReviewService(): ReviewService {
     },
     // The comments follow the agent's session to the pane it runs in now.
     sessionPane: async (connectionId, sessionId) => {
+      // A Ranger chat is in no pane: its threads go to the chat itself.
+      if (rangerChatSession(sessionId)) return sessionId;
       const { runtime } = resolveReadyConnection(
         connectionManager,
         connectionId,
@@ -985,6 +1020,7 @@ function getReviewService(): ReviewService {
       return runtime.agentSessions.sessionPane(sessionId);
     },
     paneSession: async (connectionId, paneId) => {
+      if (rangerChatSession(paneId)) return null;
       const { runtime } = resolveReadyConnection(
         connectionManager,
         connectionId,

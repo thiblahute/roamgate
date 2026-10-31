@@ -29,6 +29,27 @@ export type VoiceRoute =
   | { to: "errand"; pane: string; say: string; job?: string }
   | { to: "ask"; panes: string[]; question: string };
 
+/**
+ * Ranger's chat as voice chat knows it: the session on screen for the
+ * router (where a question for Ranger is for the one on screen), and the
+ * voice chat's key, which does not follow the user to a workspace's agent.
+ */
+export const RANGER_VOICE_SESSION = "ranger";
+export const RANGER_VOICE_KEY = {
+  connectionId: "@ranger",
+  paneId: "@ranger",
+} as const;
+
+/** Whether a voice chat's key is Ranger's chat. */
+export function isRangerVoice(
+  key: { connectionId: string; paneId: string } | null | undefined,
+): boolean {
+  return (
+    key?.connectionId === RANGER_VOICE_KEY.connectionId &&
+    key.paneId === RANGER_VOICE_KEY.paneId
+  );
+}
+
 export function voiceSessionId(connectionId: string, paneId: string) {
   return `${connectionId}/${paneId}`;
 }

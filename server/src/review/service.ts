@@ -372,6 +372,12 @@ export function createReviewService(args: {
   ) => Promise<string | null>;
   /** How often comments whose agent runs in no pane look for it again. */
   agentSearchMs?: number;
+  /**
+   * How the agent of a chat's threads answers in them, when not with the
+   * review client (Ranger, which has its own tool): said instead of the
+   * `roamgate-review reply` command.
+   */
+  chatReplyHow?: (session: ReviewSession) => string | undefined;
   gitlab?: {
     context: (session: ReviewSession) => GlabContext;
     /** The checkout's branch and what finding its merge request needs. */
@@ -2354,10 +2360,11 @@ export function createReviewService(args: {
       if (thread.kind === "draft")
         lines.push("  (A suggested change: apply it, then reply.)");
     }
+    const replyHow = chat ? args.chatReplyHow?.(target) : undefined;
     if (due.length && chat)
       lines.push(
         "",
-        `These are threads on our conversation, not on code. Answer each in its thread with \`${command} reply --comment ID -- TEXT\`, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,
+        `These are threads on our conversation, not on code. Answer each in its thread with ${replyHow ?? `\`${command} reply --comment ID -- TEXT\``}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,
       );
     else if (due.length)
       lines.push(
@@ -2783,6 +2790,44 @@ export function createReviewService(args: {
   }
 
   /** The review of the connection holding a comment or thread (id prefix ok). */
+  /**
+   * An answer in a thread of chat `chat`, found by its comment among that
+   * chat's reviews on every connection: what an agent without the review
+   * client (Ranger) writes through its own tool.
+   */
+  function replyInChat(params: {
+    chat: string;
+    commentId: string;
+    text: string;
+    author: string;
+  }): ReviewThread {
+    const owners = [...sessions.values()].filter((candidate) => {
+      if (
+        candidate.target.kind !== "chat" ||
+        candidate.target.chat !== params.chat
+      )
+        return false;
+      try {
+        locate(candidate.id, params.commentId);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (owners.length !== 1)
+      throw new ReviewError(
+        owners.length ? "ambiguous comment id" : "no such comment in this chat",
+        owners.length ? 400 : 404,
+      );
+    const target = owners[0]!;
+    assertAgentAllowed(target, author(params.author));
+    return replyHere(target, {
+      commentId: params.commentId,
+      text: params.text,
+      author: params.author,
+    });
+  }
+
   function sessionOfComment(params: Record<string, unknown>): string | null {
     const connectionId = text(params.connectionId, "connection", 200);
     const owners = [...sessions.values()].filter((candidate) => {
@@ -3095,6 +3140,7 @@ export function createReviewService(args: {
     remove,
     addThread,
     reply,
+    replyInChat,
     edit,
     deleteComment,
     resolve,

@@ -2,16 +2,19 @@ import { expect, test } from "bun:test";
 import { ASSISTANT_MAX_WORKSPACES } from "../../../shared/assistant";
 import { UnsupportedPlatformError } from "../connections/unix-only";
 import { AssistantUserError } from "./errors";
+import { rangerSystemPrompt, rangerTools } from "./ranger-tools";
 import {
   type ActionToolProposer,
   actionTools,
   callActionTool,
   callNotificationTool,
   callTaskTool,
+  callThreadTool,
   callWorkspaceTool,
   notificationTools,
   type TaskToolHandler,
   taskTools,
+  threadTools,
   type WorkspaceToolReader,
   type WorkspaceToolResult,
   workspaceTools,
@@ -915,4 +918,59 @@ test("Windows platform refusals reach the model instead of the generic mask", as
       [...workspaceTools, ...actionTools].find((tool) => tool.name === name)
         ?.description,
     ).toContain('remote_platform "windows"');
+});
+
+test("Ranger answers a chat thread with its own tool, only when the turn has one", async () => {
+  const calls: { comment_id: string; text: string }[] = [];
+  const reply = async (params: { comment_id: string; text: string }) => {
+    calls.push(params);
+    return { text: "Answered in thread [abcd1234]." };
+  };
+  expect(threadTools.map((tool) => tool.name)).toEqual(["chat_thread_reply"]);
+  expect(
+    await callThreadTool(
+      "chat_thread_reply",
+      { comment_id: "abcd1234", text: "The one in index.ts." },
+      reply,
+    ),
+  ).toEqual({ text: "Answered in thread [abcd1234]." });
+  expect(calls).toEqual([
+    { comment_id: "abcd1234", text: "The one in index.ts." },
+  ]);
+  for (const params of [
+    { comment_id: "abcd1234" },
+    { comment_id: "abcd1234", text: "   " },
+    { comment_id: "", text: "x" },
+    { comment_id: "abcd1234", text: "x", extra: true },
+  ])
+    await expect(
+      callThreadTool("chat_thread_reply", params, reply),
+    ).rejects.toThrow("Invalid thread tool parameters.");
+  // A failure that is not the user's says only that it failed.
+  await expect(
+    callThreadTool(
+      "chat_thread_reply",
+      { comment_id: "abcd1234", text: "x" },
+      async () => {
+        throw new Error("no such comment in this chat at /secret/path");
+      },
+    ),
+  ).rejects.toThrow(
+    "That thread is not in this chat, or could not be answered.",
+  );
+  calls.length = 0;
+  const read: WorkspaceToolReader = async () => ({ text: "" });
+  expect(
+    rangerTools({ read }, false).some(
+      (tool) => tool.name === "chat_thread_reply",
+    ),
+  ).toBe(false);
+  const tool = rangerTools({ read, threads: reply }, false).find(
+    (entry) => entry.name === "chat_thread_reply",
+  )!;
+  expect(tool.replay).toBe("unsafe");
+  expect(tool.sequential).toBe(false);
+  await tool.call({ comment_id: "abcd", text: "Done." });
+  expect(calls).toEqual([{ comment_id: "abcd", text: "Done." }]);
+  expect(rangerSystemPrompt(false)).toContain("chat_thread_reply");
 });

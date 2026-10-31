@@ -139,6 +139,80 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
   const button = (container: HTMLElement, label: string) =>
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 
+  test("a minimap jump scrolls the chat's own list, not the pane or page around it", async () => {
+    const { container, root } = mount();
+    const added = [
+      {
+        id: "m-jump-2",
+        role: "assistant",
+        kind: "message",
+        text: "The tests pass",
+        sent_at: "2026-01-01T00:00:01Z",
+      },
+      {
+        id: "m-jump-3",
+        role: "user",
+        kind: "message",
+        text: "Then ship it",
+        sent_at: "2026-01-01T00:00:02Z",
+      },
+    ];
+    transcript.push(...added);
+    revision += 1;
+    // What scrollIntoView would move: every scroller around the chat.
+    const intoView = mock(() => {});
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = intoView;
+    container.style.overflowY = "auto";
+    try {
+      await React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={{ ...pane, pane_id: "pane-jump", terminal_id: "term-jump" }}
+            open
+            embedded
+            paneChat={{
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(container.textContent).toContain("Then ship it");
+      const list = container.querySelector<HTMLElement>(".agent-history-chat")!;
+      const last = list.querySelector<HTMLElement>('[data-sequence="3"]')!;
+      const box = (top: number) => () =>
+        ({ top, bottom: top + 40, height: 40 }) as DOMRect;
+      list.getBoundingClientRect = box(100);
+      last.getBoundingClientRect = box(700);
+      list.scrollTop = 50;
+      container.scrollTop = 30;
+      const slider = container.querySelector<HTMLElement>('[role="slider"]')!;
+      await React.act(async () => {
+        slider.dispatchEvent(
+          new window.KeyboardEvent("keydown", {
+            key: "End",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(list.scrollTop).toBe(650);
+      expect(container.scrollTop).toBe(30);
+      expect(intoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      transcript.splice(transcript.length - added.length, added.length);
+      revision += 1;
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   test("a pane's chat has one slim row and says what the agent does", async () => {
     const { container, root } = mount();
     const terminalCalls = typedIntoPanes;

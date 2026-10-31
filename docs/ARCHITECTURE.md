@@ -369,6 +369,17 @@ state; sends are never replayed.
   ambiguous items and moves into a subtree with nothing written, and run
   directly in every approval mode, like `show_in_roamgate`: arranging is
   reversible and is never a proposal.
+- **Chat threads:** Ranger's panel renders its chat with the agent chats'
+  pieces (`web/src/chatSource.ts`, `RangerChat.tsx`). A Ranger chat's comment
+  threads are a review of target `chat` keyed `ranger:<chat id>`, whose agent
+  pane is the same key (`shared/rangerChat.ts`), so their delivery never looks
+  for a Herdr pane. The review service's delivery
+  hands them to `deliverChatComments`, a message in that chat (queued behind a
+  running turn; "busy", so retried, while another chat shows or a preview
+  waits), and Ranger answers with its `chat_thread_reply` tool, bound to the
+  turn's chat, which writes through `replyInChat` as author `Ranger`. For voice
+  chat, the panel turns snapshots into conversation-mode stream events
+  (`createRangerVoiceStream`).
 - **Scope:** no workspaces are allowed by default. Each turn captures concrete
   connection/workspace pairs (at most 512) and rechecks runtime leases around
   every read. Only the dedicated confirmation can enable high-permission mode

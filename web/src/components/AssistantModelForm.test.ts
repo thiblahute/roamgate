@@ -109,6 +109,8 @@ async function registerDomTests() {
     "KeyboardEvent",
     "MouseEvent",
     "PointerEvent",
+    "localStorage",
+    "sessionStorage",
   ] as const) {
     Object.defineProperty(globalThis, key, {
       value: key === "window" ? browser : browser[key],

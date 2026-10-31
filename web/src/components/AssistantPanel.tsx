@@ -2,10 +2,8 @@ import {
   ChevronDown,
   ChevronLeft,
   Compass,
-  CornerDownRight,
   ExternalLink,
   History,
-  ListPlus,
   LoaderCircle,
   Maximize2,
   Minimize2,
@@ -13,10 +11,9 @@ import {
   PinOff,
   Plus,
   RefreshCw,
-  Send,
+  Search,
   Settings,
   ShieldCheck,
-  Square,
   X,
 } from "lucide-react";
 import {
@@ -24,11 +21,9 @@ import {
   Fragment,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   ASSISTANT_MAX_CUSTOM_MODELS,
   ASSISTANT_MAX_WORKSPACES,
@@ -36,6 +31,7 @@ import {
   type AssistantAction,
   type AssistantAuthState,
   type AssistantConfig,
+  type AssistantMention,
   type AssistantMessage,
   type AssistantMentionTarget,
   type AssistantModelConnection,
@@ -61,13 +57,11 @@ import {
   readAssistantState,
   refreshAssistant,
   sendAssistant,
-  setAssistantDraft,
   useAssistantState,
 } from "../assistant";
 import { formatUiDateTime } from "../uiLocale";
 import { useStoreSelector } from "../store";
 import { useSystemBack } from "../systemBack";
-import { MarkdownPreview } from "./markdown";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ThemedSelect } from "./ThemedSelect";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -79,51 +73,19 @@ import {
   thinkingOptions,
 } from "../assistantModels";
 import { AssistantTasks, TaskProposalCard } from "./AssistantTasks";
-import { AssistantMentionComposer } from "./AssistantMentionComposer";
 import { AssistantThinking } from "./AssistantThinking";
-import { ConversationMinimap } from "./ConversationMinimap";
 import { AssistantQueue } from "./AssistantQueue";
 import { assistantMentionKey } from "../assistantMentions";
-import { detectShortcutPlatform } from "../shortcutBindings";
+import { rangerChatSource } from "../chatSource";
+import {
+  RangerChat,
+  recallRangerQueued,
+  type RangerMessageExtras,
+} from "./RangerChat";
 import "./AssistantPanel.css";
-
-const altEnter =
-  detectShortcutPlatform() === "mac" ? "Option+Enter" : "Alt+Enter";
 
 function workspaceKey(workspace: AssistantWorkspaceRef) {
   return JSON.stringify([workspace.connection_id, workspace.workspace_id]);
-}
-
-export function AssistantUserMessage({
-  message,
-  onOpenMention,
-}: {
-  message: AssistantMessage;
-  onOpenMention: (target: AssistantMentionTarget) => void;
-}) {
-  let end = 0;
-  return (
-    <p className="assistant-user-text">
-      {message.mentions?.map((mention) => {
-        const text = message.text.slice(end, mention.start);
-        end = mention.end;
-        return (
-          <Fragment key={`${mention.start}:${assistantMentionKey(mention)}`}>
-            {text}
-            <button
-              type="button"
-              className="assistant-message-mention"
-              title={`${mention.connection_label} / ${mention.workspace_label}`}
-              onClick={() => onOpenMention(mention)}
-            >
-              {message.text.slice(mention.start, mention.end)}
-            </button>
-          </Fragment>
-        );
-      })}
-      {message.text.slice(end)}
-    </p>
-  );
 }
 
 function includesWorkspace(
@@ -999,41 +961,15 @@ export function AssistantPanel({
     setHistoryOpen(false);
     setView("tasks");
   }, [requestedTask]);
-  const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const followingOutput = useRef(true);
-  const minimapEntries = useMemo(
-    () =>
-      (snapshot?.messages ?? []).map((message) => ({
-        id: message.id,
-        role: message.role,
-        label: message.role === "user" ? "You" : "Ranger",
-        text: message.text,
-      })),
-    [snapshot?.messages],
-  );
-  const pinMinimapLayout = useCallback(() => {
-    if (followingOutput.current && listRef.current)
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+  const [searchOpen, setSearchOpen] = useState(false);
+  // The chat's message box, focused when the chat shows.
+  const focusComposer = useCallback(() => {
+    panelRef.current
+      ?.querySelector<HTMLElement>(
+        ".agent-history-composer :is(textarea, [contenteditable='true'])",
+      )
+      ?.focus({ preventScroll: true });
   }, []);
-  const jumpToMinimapEntry = useCallback((index: number) => {
-    const list = listRef.current;
-    const sequence = String(index + 1);
-    const section = Array.from(list?.children ?? []).find(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement && child.dataset.sequence === sequence,
-    );
-    if (!list || !section) return;
-    followingOutput.current = false;
-    // Jump only this scroll container, in CSS pixels even when the UI is
-    // zoomed. An immediate jump also avoids re-enabling stream following
-    // mid-animation.
-    const viewport = list.getBoundingClientRect();
-    const scale = list.offsetHeight ? viewport.height / list.offsetHeight : 1;
-    list.scrollTop +=
-      (section.getBoundingClientRect().top - viewport.top) / (scale || 1) - 12;
-  }, []);
-  const composing = useRef(false);
   const pendingAction = useRef(false);
   const contextSequence = useRef(0);
   const savedWorkspaceGrants = JSON.stringify([
@@ -1056,7 +992,6 @@ export function AssistantPanel({
   const settingsHeadingRef = useRef<HTMLHeadingElement>(null);
   const settingsReturnTarget = useRef<"add" | "edit" | null>(null);
   const historyHeadingRef = useRef<HTMLHeadingElement>(null);
-  const chatScrollTop = useRef(0);
   const closeModelEditor = () => setModelEditor(null);
   const width = Math.min(panelWidth, maximumWidth);
   const resizePanel = (next: number) =>
@@ -1266,27 +1201,35 @@ export function AssistantPanel({
   }, [executing, snapshot?.running]);
 
   useEffect(() => {
-    followingOutput.current = true;
     setHistoryOpen(false);
     setConfirmNew(false);
-    if (listRef.current)
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+    setSearchOpen(false);
   }, [snapshot?.session_id]);
-
-  useEffect(() => {
-    if (!open || !listRef.current) return;
-    listRef.current.scrollTop = followingOutput.current
-      ? listRef.current.scrollHeight
-      : chatScrollTop.current;
-  }, [open, snapshot?.messages, showSettings, view, historyOpen]);
 
   useEffect(() => {
     setPermissionsOpen(false);
     setModelControlsOpen(false);
     if (!open || showSettings || view !== "chat") return;
     if (historyOpen) historyHeadingRef.current?.focus({ preventScroll: true });
-    else inputRef.current?.focus({ preventScroll: true });
-  }, [open, mobile, mobileInputTarget, showSettings, view, historyOpen]);
+    else {
+      focusComposer();
+      // A box with Vim keys loads its editor first: again once it is
+      // there, unless something else took the keys meanwhile.
+      const timer = setTimeout(() => {
+        if (!document.activeElement || document.activeElement === document.body)
+          focusComposer();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    open,
+    mobile,
+    mobileInputTarget,
+    showSettings,
+    view,
+    historyOpen,
+    focusComposer,
+  ]);
 
   const run = async (action: string, params: Record<string, unknown> = {}) => {
     if (
@@ -1318,85 +1261,63 @@ export function AssistantPanel({
     }
   };
 
-  /** While Ranger answers, Enter steers the turn and Alt+Enter queues. */
-  const submit = async (queueMessage = false) => {
-    const whenBusy = snapshot?.running
-      ? queueMessage
-        ? ("queue" as const)
-        : ("steer" as const)
-      : undefined;
+  /**
+   * Sends a message from the chat's box or voice chat: the authorized
+   * workspaces are read again first. While Ranger answers, it steers the
+   * turn or waits for it (`whenBusy`). Throws what went wrong, which the
+   * box shows and keeps the text for.
+   */
+  const sendRanger = async (
+    text: string,
+    mentions: AssistantMention[],
+    whenBusy?: "steer" | "queue",
+  ) => {
+    const current0 = readAssistantState().snapshot;
+    const busy = !!current0?.running;
+    if (!connected) throw new Error("Ranger is reconnecting. Try again.");
+    if (!ready) throw new Error("Connect a model to chat.");
+    if (authPending) throw new Error("Complete provider sign-in first.");
+    if (busy && !queueSupported)
+      throw new Error("Ranger is answering. Wait for it to finish.");
+    if (assistantActionExecuting(current0))
+      throw new Error("Ranger is executing an action. Try again after it.");
+    if (!text.trim()) return;
+    if (!scope.length) throw new Error(unavailableScopeMessage);
+    const available = await loadContext();
+    if (!available)
+      throw new Error("Unable to refresh authorized workspaces. Try again.");
+    const current = readAssistantState().snapshot;
     if (
-      pendingAction.current ||
-      !connected ||
-      !ready ||
-      authPending ||
-      (snapshot?.running && !queueSupported) ||
-      executing ||
-      !state.draft.trim() ||
-      !scope.length ||
-      composing.current
+      current?.instance_id !== snapshot?.instance_id ||
+      current?.session_id !== snapshot?.session_id
     )
-      return;
-    pendingAction.current = true;
-    setBusy(true);
+      throw new Error(
+        "The active Ranger chat changed. Select it again before sending.",
+      );
+    if (snapshot?.chat_selection && !sameAssistantSelection(current, snapshot))
+      throw new Error(
+        "The Ranger model settings changed. Check the selection before sending.",
+      );
+    if (
+      current?.config.approval_mode === "auto" &&
+      current.config.workspace_scope === "all" &&
+      available.truncated
+    )
+      throw new Error(truncatedScopeMessage);
+    const granted = authorizedScope(available.workspaces, current?.config);
+    if (!granted.length) throw new Error(unavailableScopeMessage);
     setError(null);
-    followingOutput.current = true;
-    try {
-      const available = await loadContext();
-      if (!available)
-        throw new Error("Unable to refresh authorized workspaces. Try again.");
-      const current = readAssistantState().snapshot;
-      if (
-        current?.instance_id !== snapshot?.instance_id ||
-        current?.session_id !== snapshot?.session_id
-      )
-        throw new Error(
-          "The active Ranger chat changed. Select it again before sending.",
-        );
-      if (
-        snapshot?.chat_selection &&
-        !sameAssistantSelection(current, snapshot)
-      )
-        throw new Error(
-          "The Ranger model settings changed. Check the selection before sending.",
-        );
-      if (
-        current?.config.approval_mode === "auto" &&
-        current.config.workspace_scope === "all" &&
-        available.truncated
-      )
-        throw new Error(truncatedScopeMessage);
-      const scope = authorizedScope(available.workspaces, current?.config);
-      if (!scope.length) throw new Error(unavailableScopeMessage);
-      if (state.draftMentions?.length || whenBusy)
-        await sendAssistant(
-          state.draft,
-          scope,
-          state.draftMentions ?? [],
-          whenBusy,
-        );
-      else await sendAssistant(state.draft, scope);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      pendingAction.current = false;
-      setBusy(false);
-    }
+    const mode = current?.running ? (whenBusy ?? "steer") : undefined;
+    if (mentions.length || mode)
+      await sendAssistant(text, granted, mentions, mode);
+    else await sendAssistant(text, granted);
   };
 
   const editQueued = async (item: AssistantQueuedMessage) => {
     if (!(await run("queue.remove", { id: item.id }))) return;
-    const { draft, draftMentions } = readAssistantState();
-    const prefix = draft.trim() ? `${draft.trimEnd()}\n\n` : "";
-    setAssistantDraft(`${prefix}${item.text}`, [
-      ...(prefix ? (draftMentions ?? []) : []),
-      ...(item.mentions ?? []).map((mention) => ({
-        ...mention,
-        start: mention.start + prefix.length,
-        end: mention.end + prefix.length,
-      })),
-    ]);
-    inputRef.current?.focus({ preventScroll: true });
+    // Back into the chat's box, after what it holds.
+    recallRangerQueued(rangerChatSource(snapshot, "").draftKey, item);
+    focusComposer();
   };
 
   const openMention = async (target: AssistantMentionTarget) => {
@@ -1515,23 +1436,88 @@ export function AssistantPanel({
       mobile={mobile}
       disabled={busy || !connected || !!authPending}
       onChange={(params) => {
-        if (!composing.current) void run("configure_chat", params);
+        void run("configure_chat", params);
       }}
       onSelectedClose={() => {
         setModelControlsOpen(false);
-        inputRef.current?.focus({ preventScroll: true });
+        focusComposer();
       }}
     />
   ) : null;
 
-  const composer = snapshot ? (
-    <form
-      className={`assistant-panel-footer${mobile ? " is-mobile" : ""}${mobile && mobileInputTarget ? " is-docked" : ""}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
+  // What Ranger's messages show around their bubbles in the shared chat:
+  // reasoning before, then its action and task cards and what it read.
+  const messageExtras = (message: AssistantMessage): RangerMessageExtras => {
+    if (!snapshot) return {};
+    const last = message === snapshot.messages[snapshot.messages.length - 1];
+    const running = snapshot.running && last;
+    if (message.role === "user")
+      return message.mentions?.length
+        ? {
+            after: (
+              <div className="ranger-chat-mentions">
+                {message.mentions.map((mention) => (
+                  <button
+                    key={`${mention.start}:${assistantMentionKey(mention)}`}
+                    type="button"
+                    className="assistant-message-mention"
+                    title={`${mention.connection_label} / ${mention.workspace_label}`}
+                    onClick={() => void openMention(mention)}
+                  >
+                    {message.text.slice(mention.start, mention.end)}
+                  </button>
+                ))}
+              </div>
+            ),
+          }
+        : {};
+    const cards = [
+      ...(message.actions ?? []).map((action) => (
+        <ActionCard
+          key={action.id}
+          action={action}
+          busy={operationBusy || !connected}
+          running={snapshot.running}
+          run={run}
+        />
+      )),
+      ...(message.task_proposals ?? []).map((proposal) => (
+        <TaskProposalCard
+          key={proposal.id}
+          proposal={proposal}
+          busy={busy || !connected}
+          run={run}
+        />
+      )),
+    ];
+    const activity =
+      message.tools.length || message.sources.length ? (
+        <AssistantMessageActivity
+          message={message}
+          running={running}
+          onOpenSource={onOpenSource}
+        />
+      ) : null;
+    return {
+      before: message.thinking?.length ? (
+        <AssistantThinking
+          message={message}
+          active={!message.text && running}
+        />
+      ) : undefined,
+      after:
+        cards.length || activity ? (
+          <>
+            {cards}
+            {activity}
+          </>
+        ) : undefined,
+    };
+  };
+
+  // Under the chat's box: Ranger's queue, model, effort and permission.
+  const composerControls = snapshot ? (
+    <>
       <AssistantQueue
         queue={snapshot.queue ?? []}
         running={snapshot.running}
@@ -1546,32 +1532,7 @@ export function AssistantPanel({
         disabled={operationBusy || !connected}
         onEdit={(item) => void editQueued(item)}
         onRemove={(item) => void run("queue.remove", { id: item.id })}
-        onResume={() => {
-          followingOutput.current = true;
-          void run("queue.resume");
-        }}
-      />
-      <AssistantMentionComposer
-        value={state.draft}
-        mentions={state.draftMentions ?? []}
-        workspaces={permittedWorkspaces}
-        currentWorkspace={
-          currentWorkspaceId
-            ? {
-                connection_id: currentConnectionId,
-                workspace_id: currentWorkspaceId,
-              }
-            : undefined
-        }
-        draftKey={`${snapshot.instance_id}:${snapshot.session_id ?? ""}`}
-        inputRef={inputRef}
-        mobile={mobile}
-        onChange={setAssistantDraft}
-        onSubmit={(options) => void submit(options?.queue)}
-        onCompositionChange={(value) => {
-          composing.current = value;
-        }}
-        onOpenMention={(target) => void openMention(target)}
+        onResume={() => void run("queue.resume")}
       />
       {!mobile ? chatControls : null}
       <div className="assistant-compose-options">
@@ -1595,7 +1556,7 @@ export function AssistantPanel({
               collisionPadding={8}
               onEscapeKeyDown={(event) => {
                 event.stopPropagation();
-                inputRef.current?.focus({ preventScroll: true });
+                focusComposer();
               }}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
@@ -1700,75 +1661,8 @@ export function AssistantPanel({
             ) : null}
           </PopoverContent>
         </Popover>
-        <div
-          className="assistant-compose-actions"
-          onMouseDown={mobile ? (event) => event.preventDefault() : undefined}
-        >
-          {snapshot.running && queueSupported ? (
-            <>
-              <button
-                type="button"
-                aria-label="Queue"
-                title={`Queue: send after Ranger finishes (${altEnter})`}
-                disabled={
-                  operationBusy ||
-                  !connected ||
-                  !state.draft.trim() ||
-                  !scope.length
-                }
-                onClick={() => void submit(true)}
-              >
-                <ListPlus size={13} />
-                <span>Queue</span>
-              </button>
-              <button
-                type="submit"
-                aria-label="Steer"
-                title="Steer: join the current answer after its next step (Enter)"
-                disabled={
-                  operationBusy ||
-                  !connected ||
-                  !state.draft.trim() ||
-                  !scope.length
-                }
-              >
-                <CornerDownRight size={13} />
-                <span>Steer</span>
-              </button>
-            </>
-          ) : null}
-          {snapshot.running ? (
-            <button
-              type="button"
-              aria-label="Stop"
-              title="Stop the model response; confirmed actions continue and waiting messages are kept"
-              disabled={busy || !connected}
-              onClick={() => void run("stop")}
-            >
-              <Square size={13} />
-              <span>Stop</span>
-            </button>
-          ) : (
-            <button
-              type="submit"
-              aria-label="Send"
-              title="Send message (Enter); Shift+Enter for a new line"
-              disabled={
-                operationBusy ||
-                !connected ||
-                !ready ||
-                authPending ||
-                !state.draft.trim() ||
-                !scope.length
-              }
-            >
-              <Send size={13} />
-              <span>Send</span>
-            </button>
-          )}
-        </div>
       </div>
-    </form>
+    </>
   ) : null;
 
   return (
@@ -1800,7 +1694,7 @@ export function AssistantPanel({
           }
           if (mobile && modelControlsOpen) {
             setModelControlsOpen(false);
-            inputRef.current?.focus({ preventScroll: true });
+            focusComposer();
           } else if (showSettings && modelEditor) {
             if (!operationBusy) closeModelEditor();
           } else if (!showSettings && view === "chat" && historyOpen) {
@@ -2662,6 +2556,17 @@ export function AssistantPanel({
                   {modelLabel}
                 </span>
               )}
+              <button
+                type="button"
+                className="assistant-icon-button"
+                aria-label="Search this chat"
+                aria-pressed={searchOpen}
+                title="Search"
+                disabled={!snapshot.messages.length}
+                onClick={() => setSearchOpen((shown) => !shown)}
+              >
+                <Search size={16} aria-hidden="true" />
+              </button>
               {historySupported ? (
                 <button
                   type="button"
@@ -2733,142 +2638,54 @@ export function AssistantPanel({
               </div>
             </details>
           ) : null}
-          <div className="assistant-conversation">
-            <div
-              ref={listRef}
-              className="assistant-panel-list"
-              aria-label="Ranger conversation"
-              aria-busy={snapshot.running || executing}
-              onScroll={(event) => {
-                const list = event.currentTarget;
-                chatScrollTop.current = list.scrollTop;
-                followingOutput.current =
-                  list.scrollHeight - list.scrollTop - list.clientHeight < 48;
-              }}
-            >
-              {!snapshot.messages.length ? (
-                <div className="assistant-panel-empty">
-                  <Compass size={24} aria-hidden="true" />
-                  <strong>What would you like to work on?</strong>
-                  <span>
-                    Ask about progress or changes, or ask Ranger to propose
-                    workspace and agent actions in your authorized workspaces.
-                  </span>
-                </div>
-              ) : (
-                snapshot.messages.map((message, index) => (
-                  <section
-                    key={message.id}
-                    data-message-id={message.id}
-                    data-sequence={index + 1}
-                    className={`assistant-message is-${message.role}`}
-                    aria-label={`${message.role === "user" ? "You" : "Ranger"} message`}
-                  >
-                    <div className="assistant-message-head">
-                      <strong>
-                        {message.role === "user" ? "You" : "Ranger"}
-                      </strong>
-                      <time dateTime={message.sent_at}>
-                        {formatUiDateTime(message.sent_at)}
-                      </time>
-                    </div>
-                    {message.role === "assistant" &&
-                    message.thinking?.length ? (
-                      <AssistantThinking
-                        message={message}
-                        active={
-                          !message.text &&
-                          snapshot.running &&
-                          message ===
-                            snapshot.messages[snapshot.messages.length - 1]
-                        }
-                      />
-                    ) : null}
-                    {message.role === "assistant" ? (
-                      message.text ? (
-                        <MarkdownPreview
-                          text={message.text}
-                          className="assistant-markdown"
-                          breaks
-                          imageUrlResolver={() => null}
-                        />
-                      ) : snapshot.running &&
-                        message ===
-                          snapshot.messages[snapshot.messages.length - 1] ? (
-                        // The open reasoning block already reports progress.
-                        message.thinking?.length ? null : (
-                          <span className="assistant-hint">Working...</span>
-                        )
-                      ) : (
-                        <span className="assistant-hint">
-                          No response text was received.
-                        </span>
-                      )
-                    ) : (
-                      <AssistantUserMessage
-                        message={message}
-                        onOpenMention={(target) => void openMention(target)}
-                      />
-                    )}
-                    {message.role === "assistant" &&
-                    message.text.length >= 32_000 ? (
-                      <span className="assistant-hint">
-                        Response text reached the display limit.
-                      </span>
-                    ) : null}
-                    {message.role === "assistant"
-                      ? message.actions?.map((action) => (
-                          <ActionCard
-                            key={action.id}
-                            action={action}
-                            busy={operationBusy || !connected}
-                            running={snapshot.running}
-                            run={run}
-                          />
-                        ))
-                      : null}
-                    {message.role === "assistant"
-                      ? message.task_proposals?.map((proposal) => (
-                          <TaskProposalCard
-                            key={proposal.id}
-                            proposal={proposal}
-                            busy={busy || !connected}
-                            run={run}
-                          />
-                        ))
-                      : null}
-                    {message.tools.length || message.sources.length ? (
-                      <AssistantMessageActivity
-                        message={message}
-                        running={
-                          snapshot.running &&
-                          message ===
-                            snapshot.messages[snapshot.messages.length - 1]
-                        }
-                        onOpenSource={onOpenSource}
-                      />
-                    ) : null}
-                  </section>
-                ))
-              )}
-            </div>
-            {snapshot.messages.length ? (
-              <ConversationMinimap
-                key={snapshot.session_id ?? snapshot.instance_id}
-                entries={minimapEntries}
-                scrollerRef={listRef}
-                itemsRef={listRef}
-                orientation={mobile ? "horizontal" : "auto"}
-                label="Ranger conversation navigation"
-                emptyText="No response text yet"
-                onLayout={pinMinimapLayout}
-                onSelect={jumpToMinimapEntry}
-              />
-            ) : null}
-          </div>
-          {mobile && mobileInputTarget
-            ? createPortal(composer, mobileInputTarget)
-            : composer}
+          <RangerChat
+            snapshot={snapshot}
+            connectionId={currentConnectionId}
+            mobile={mobile}
+            composerTarget={mobile ? mobileInputTarget : null}
+            searchOpen={searchOpen}
+            onSearchOpenChange={setSearchOpen}
+            workspaces={permittedWorkspaces}
+            currentWorkspace={
+              currentWorkspaceId
+                ? {
+                    connection_id: currentConnectionId,
+                    workspace_id: currentWorkspaceId,
+                  }
+                : undefined
+            }
+            onOpenMention={(target) => void openMention(target)}
+            disabled={
+              !connected
+                ? "Ranger is reconnecting."
+                : authPending
+                  ? "Complete provider sign-in to chat."
+                  : !ready
+                    ? "Connect a model to chat."
+                    : !scope.length && !contextLoading
+                      ? unavailableScopeMessage
+                      : null
+            }
+            blocked={operationBusy || (snapshot.running && !queueSupported)}
+            executing={executing}
+            extras={messageExtras}
+            empty={
+              <div className="assistant-panel-empty">
+                <Compass size={24} aria-hidden="true" />
+                <strong>What would you like to work on?</strong>
+                <span>
+                  Ask about progress or changes, or ask Ranger to propose
+                  workspace and agent actions in your authorized workspaces.
+                </span>
+              </div>
+            }
+            onSend={sendRanger}
+            onStop={() => void run("stop")}
+            onRemoveQueued={(id) => run("queue.remove", { id })}
+            onError={setError}
+          >
+            {composerControls}
+          </RangerChat>
         </>
       )}
       {snapshot ? (

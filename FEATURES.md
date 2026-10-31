@@ -629,18 +629,31 @@ or its shortcut.
   Code turns stop without automatic retry: review action receipts before
   sending a new question.
 - **Ask:** Ranger reads workspace status, agent history, diffs, and terminal
-  output, and cites its sources. Type **@** to point it at a workspace or agent.
+  output, and cites its sources. Type **@** (or use the **@** button) to point
+  it at a workspace or agent: the picker lists them, all or by kind, and a pick
+  becomes a chip under the message box, sent with the message as a reference.
   When the model shares its reasoning, a collapsible **Thinking** section shows
   it above the reply.
+- **Chat:** Ranger's conversation is an agent chat: Markdown replies with copy
+  and speak buttons, search, and the minimap, whose jumps scroll the
+  conversation alone. Select words of a reply and **Comment** to open a thread on them, as
+  in an agent's chat: Ranger gets the comment in that chat and answers in the
+  thread. A chat's comments wait while another chat shows. The microphone
+  starts a [voice chat](docs/DEPLOYMENT.md#voice-chat) with Ranger: what you
+  say goes to Ranger, its answer is read as it is written, with the acks, and
+  its tool use is narrated. Action and task cards show under the reply that
+  proposed them.
 - **Mobile:** Chat and Tasks share a compact header. History, new chat, and
   settings icons sit beside Close. Ranger uses the bottom Message input while
   open, keeping its draft separate from the terminal draft. Model and thinking
   options open above the input; the message box grows with your draft.
 - **Steer or queue:** while Ranger answers, **Enter** (or **Steer**) adds your
-  message to the current answer after its next step, and **Alt+Enter**
-  (**Option+Enter** on macOS, or **Queue**) sends it once the answer finishes.
-  Waiting messages show above the message box, where you can edit or remove
-  queued ones. After **Stop** they wait until you choose **Send next**.
+  message to the current answer after its next step (with Claude Code, once
+  the answer finishes), and **Alt+Enter** (**Option+Enter** on macOS, or
+  **Queue**) sends it once the answer finishes. Waiting messages show above the
+  message box, where you can edit or remove queued ones; **Up** in the empty
+  box takes the last one back to edit.
+  After **Stop** they wait until you choose **Send next**.
 - **Go to:** asked to go to or open a workspace or agent session, Ranger shows
   it in the browser you asked from, switching connection when needed.
 - **Arrange:** asked to group, nest or reorder workspaces in the Workspaces

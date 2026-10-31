@@ -8,11 +8,15 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
 import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import {
+  CornerDownRight,
   ImagePlus,
+  ListPlus,
   Mic,
   Route,
   Send,
@@ -23,6 +27,7 @@ import {
 } from "lucide-react";
 import { shellLine } from "../../../shared/bashMode";
 import { shortCwd } from "../shortCwd";
+import { detectShortcutPlatform } from "../shortcutBindings";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   shortcutLabel,
@@ -86,6 +91,18 @@ const ComposerVimEditor = lazyWithReload("composer-vim-editor", () =>
   })),
 );
 
+const altEnter =
+  detectShortcutPlatform() === "mac" ? "Option+Enter" : "Alt+Enter";
+
+/** What the box hands a text input of its own (`input`). */
+export type ComposerInput = {
+  value: string;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  onChange: (text: string) => void;
+  onSubmit: (options?: { queue: boolean }) => void;
+  onCompositionChange: (composing: boolean) => void;
+};
+
 // Grow with the draft up to this height, then scroll inside the textarea.
 const MAX_INPUT_HEIGHT_PX = 160;
 
@@ -115,8 +132,17 @@ export function AgentHistoryComposer({
   onRecallQueued,
   onStop,
   onSuspend,
+  placeholder: placeholderProp,
+  sendTo = "the agent's terminal",
+  sendBlocked = false,
+  onQueue,
+  stop: stopText = {
+    label: "Stop the agent",
+    title: "Stop the agent: Esc in its terminal",
+  },
   shell,
   nextPrompt,
+  input,
 }: {
   draftKey: string;
   agent?: string;
@@ -124,7 +150,8 @@ export function AgentHistoryComposer({
   // Herdr's agent state-change sequence; it advances on every transition.
   stateSeq?: number;
   onSend: (text: string) => Promise<void>;
-  onUploadImage: (file: File) => Promise<string>;
+  /** Without it, the box takes no images. */
+  onUploadImage?: (file: File) => Promise<string>;
   /** The agent's /commands, offered while one is being typed. */
   commands?: AgentCommand[];
   /** Vim keys in the box; the one Vim keys setting by default. */
@@ -137,6 +164,19 @@ export function AgentHistoryComposer({
   onRecallQueued?: () => void;
   /** While the agent works: stop it, beside Send. */
   onStop?: () => void;
+  /** The box's placeholder; "Message <agent>..." by default. */
+  placeholder?: string;
+  /** Where Send sends, for its title. */
+  sendTo?: string;
+  /** Nothing can be sent now, whatever the box holds. */
+  sendBlocked?: boolean;
+  /**
+   * While the agent answers: Send steers its turn, and this queues the
+   * message for after it, from a Queue button beside Send or Alt+Enter.
+   */
+  onQueue?: (text: string) => Promise<void>;
+  /** What the Stop button says. */
+  stop?: { label: string; title: string };
   /**
    * `:suspend` / `:stop` in the Vim box: the conversation stops as a job
    * of the pane's shell (the chat catches Ctrl+Z itself).
@@ -154,6 +194,12 @@ export function AgentHistoryComposer({
    * by itself; typing anything puts it away.
    */
   nextPrompt?: { key: string; text: string } | null;
+  /**
+   * The box's own text input in place of its textarea (Ranger's, with its
+   * mention picker): it shows the draft, writes it back, and sends through
+   * the box; Alt+Enter (`queue`) queues while the agent answers.
+   */
+  input?: (box: ComposerInput) => ReactNode;
   /**
    * Hands-free chat; `listen` false when the server has no voice engine:
    * the button then says why it cannot listen.
@@ -190,6 +236,8 @@ export function AgentHistoryComposer({
   );
   const compositionUploadsRef = useRef<Array<() => void>>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // An input of its own sizes and places its caret itself.
+  const ownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const vimHandleRef = useRef<ComposerVimHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Shell mode: the box starts with `!`, and Send runs it.
@@ -283,6 +331,7 @@ export function AgentHistoryComposer({
       for (const file of files) {
         if (file.type && !file.type.startsWith("image/"))
           throw new Error("Choose an image to attach.");
+        if (!onUploadImage) throw new Error("This chat takes no images.");
         const path = await onUploadImage(file);
         rememberComposerAttachment(path, file);
         paths.push(path);
@@ -320,7 +369,7 @@ export function AgentHistoryComposer({
     }
   };
 
-  const send = async (confirmed: boolean) => {
+  const send = async (confirmed: boolean, queue = false) => {
     const draft = text;
     if (
       !draft.trim() ||
@@ -333,8 +382,11 @@ export function AgentHistoryComposer({
       return;
     }
     try {
-      await submitTerminalComposerDraft(draftKey, draft, onSend, () =>
-        setConfirmation(null),
+      await submitTerminalComposerDraft(
+        draftKey,
+        draft,
+        queue && onQueue ? onQueue : onSend,
+        () => setConfirmation(null),
       );
     } catch (error) {
       onError(
@@ -362,9 +414,11 @@ export function AgentHistoryComposer({
       ? `Run on ${shellWhere} (${sendShortcut})`
       : `Run on ${shellWhere} (Enter); Shift+Enter for a new line`
     : enterAddsLine
-      ? `Send to the agent's terminal (${sendShortcut})`
-      : "Send to the agent's terminal (Enter); Shift+Enter for a new line";
+      ? `Send to ${sendTo} (${sendShortcut})`
+      : `Send to ${sendTo} (Enter); Shift+Enter for a new line`;
   const name = agent?.trim();
+  const placeholder =
+    placeholderProp ?? (name ? `Message ${name}...` : "Message...");
   const shown = attachmentDisplay(text);
   // A /command being typed: the matching commands, until Esc puts them away
   // for this draft.
@@ -646,17 +700,19 @@ export function AgentHistoryComposer({
         </div>
       ) : null}
       <div className="agent-history-composer-row">
-        <button
-          type="button"
-          className="agent-history-composer-attach"
-          aria-label="Add images"
-          title="Add images"
-          disabled={busy || composing}
-          onMouseDown={keepTextareaFocus}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <ImagePlus size={17} aria-hidden="true" />
-        </button>
+        {onUploadImage ? (
+          <button
+            type="button"
+            className="agent-history-composer-attach"
+            aria-label="Add images"
+            title="Add images"
+            disabled={busy || composing}
+            onMouseDown={keepTextareaFocus}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <ImagePlus size={17} aria-hidden="true" />
+          </button>
+        ) : null}
         {vimKeys && enterAddsLine ? (
           // Phone keyboards have no Esc key, and Vim needs one.
           <button
@@ -675,19 +731,75 @@ export function AgentHistoryComposer({
         <div
           className={`agent-history-composer-field${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
         >
-          {vimKeys ? (
+          {input ? (
+            <div
+              className="agent-history-composer-input"
+              onKeyDownCapture={(event) => {
+                if (
+                  event.key === "ArrowUp" &&
+                  !text &&
+                  onRecallQueued &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRecallQueued();
+                }
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.nativeEvent.isComposing ||
+                  composingRef.current ||
+                  event.keyCode === 229
+                )
+                  return;
+                if (
+                  event.key === "ArrowUp" &&
+                  event.altKey &&
+                  enterChatParts(event.currentTarget)
+                ) {
+                  event.preventDefault();
+                  return;
+                }
+                if (
+                  (event.key === "PageUp" || event.key === "PageDown") &&
+                  scrollChatPage(
+                    event.currentTarget,
+                    event.key === "PageUp" ? -1 : 1,
+                  )
+                ) {
+                  event.preventDefault();
+                  return;
+                }
+                if (event.key === "Escape" && confirming) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setConfirmation(null);
+                }
+              }}
+            >
+              {input({
+                value: text,
+                inputRef: ownInputRef,
+                onChange: (value) =>
+                  writeTerminalComposerDraft(draftKey, value),
+                onSubmit: (options) =>
+                  void send(false, !!options?.queue && !!onQueue),
+                onCompositionChange: (value) => {
+                  composingRef.current = value;
+                  setComposing(value);
+                  if (!value) resumeUploads();
+                },
+              })}
+            </div>
+          ) : vimKeys ? (
             <Suspense fallback={null}>
               <ComposerVimEditor
                 value={shown.text}
                 selection={shownSelection}
                 label={`Message ${name || "agent"}`}
-                placeholder={
-                  ghost
-                    ? ghost.text
-                    : name
-                      ? `Message ${name}...`
-                      : "Message..."
-                }
+                placeholder={ghost ? ghost.text : placeholder}
                 enterSends={!enterAddsLine}
                 onUpWhenEmpty={
                   onRecallQueued
@@ -718,7 +830,11 @@ export function AgentHistoryComposer({
                   );
                 }}
                 onSubmit={() => void send(false)}
-                onPasteImages={(files) => void uploadImages(files)}
+                onPasteImages={
+                  onUploadImage
+                    ? (files) => void uploadImages(files)
+                    : () => undefined
+                }
                 handleRef={vimHandleRef}
                 onSuspend={onSuspend}
                 onComposingChange={(composing) => {
@@ -736,9 +852,7 @@ export function AgentHistoryComposer({
               aria-label={
                 shellMode ? "Shell command" : `Message ${name || "agent"}`
               }
-              placeholder={
-                ghost ? ghost.text : name ? `Message ${name}...` : "Message..."
-              }
+              placeholder={ghost ? ghost.text : placeholder}
               aria-description={
                 ghost
                   ? "Tab or Right puts the suggestion in the box"
@@ -766,7 +880,7 @@ export function AgentHistoryComposer({
                         .map((item) => item.getAsFile())
                         .filter((file): file is File => file !== null)
                 ).filter((file) => file.type.startsWith("image/"));
-                if (images.length === 0) return;
+                if (images.length === 0 || !onUploadImage) return;
                 event.preventDefault();
                 void uploadImages(images);
               }}
@@ -846,6 +960,18 @@ export function AgentHistoryComposer({
                   setConfirmation(null);
                   return;
                 }
+                if (
+                  onQueue &&
+                  event.key === "Enter" &&
+                  event.altKey &&
+                  !event.shiftKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.preventDefault();
+                  if (!event.repeat) void send(false, true);
+                  return;
+                }
                 const plainEnter =
                   event.key === "Enter" &&
                   !event.shiftKey &&
@@ -900,12 +1026,26 @@ export function AgentHistoryComposer({
           <button
             type="button"
             className="agent-history-composer-stop"
-            aria-label="Stop the agent"
-            title="Stop the agent: Esc in its terminal"
+            aria-label={stopText.label}
+            title={stopText.title}
             onMouseDown={keepTextareaFocus}
             onClick={onStop}
           >
             <Square size={10} fill="currentColor" aria-hidden="true" />
+          </button>
+        ) : null}
+        {onQueue && !shellMode ? (
+          <button
+            type="button"
+            className="agent-history-composer-send agent-history-composer-queue"
+            aria-label="Queue"
+            title={`Queue: send after ${name || "the agent"} finishes (${altEnter})`}
+            disabled={sendDisabled || confirming || sendBlocked}
+            onMouseDown={keepTextareaFocus}
+            {...touchSubmit.buttonProps(() => void send(false, true))}
+          >
+            <ListPlus size={13} aria-hidden="true" />
+            Queue
           </button>
         ) : null}
         <button
@@ -914,15 +1054,23 @@ export function AgentHistoryComposer({
           aria-label={
             shellMode
               ? `Run the command on ${shellWhere}`
-              : "Send message to the agent"
+              : onQueue
+                ? "Steer"
+                : "Send message to the agent"
           }
-          title={sendTitle}
-          disabled={sendDisabled || confirming}
+          title={
+            onQueue && !shellMode
+              ? "Steer: join the current answer after its next step (Enter)"
+              : sendTitle
+          }
+          disabled={sendDisabled || confirming || sendBlocked}
           onMouseDown={keepTextareaFocus}
           {...touchSubmit.buttonProps(() => void send(false))}
         >
           {shellMode ? (
             <Terminal size={13} aria-hidden="true" />
+          ) : onQueue ? (
+            <CornerDownRight size={13} aria-hidden="true" />
           ) : (
             <Send size={13} aria-hidden="true" />
           )}
@@ -934,7 +1082,9 @@ export function AgentHistoryComposer({
                 : "Sending..."
               : shellMode
                 ? "Run"
-                : "Send"}
+                : onQueue
+                  ? "Steer"
+                  : "Send"}
         </button>
         <input
           ref={fileInputRef}

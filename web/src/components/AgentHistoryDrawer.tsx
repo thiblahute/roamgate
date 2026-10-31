@@ -142,6 +142,7 @@ import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { subscribeVoiceRecording } from "../voiceLibrary";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
+import { scrollChatTo } from "./chatPaging";
 import { ConversationMinimap } from "./ConversationMinimap";
 import {
   groupHistoryChatItems,
@@ -186,14 +187,10 @@ import {
   updateOutbox,
 } from "./chatOutbox";
 import { promptKeyInput } from "./promptKeys";
-import {
-  handOffVoice,
-  takeVoiceHandoff,
-  voiceSessionId,
-  voiceSessions,
-} from "../voiceRoute";
+import { handOffVoice, takeVoiceHandoff, voiceSessions } from "../voiceRoute";
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
+import { paneChatSource } from "../chatSource";
 import { ConfirmDialog } from "./ModalDialogs";
 import "./AgentHistoryDrawer.css";
 
@@ -1090,23 +1087,19 @@ export function AgentHistoryDrawer({
       const card = timelineRef.current?.querySelector(
         `[data-sequence="${sequence}"]`,
       );
-      if (!(card instanceof HTMLElement)) return;
+      const list = contentRef.current;
+      if (!(card instanceof HTMLElement) || !list) return;
+      // The conversation's own list scrolls, not the pane or page around it.
+      const behavior = prefersReducedMotion() ? "auto" : "smooth";
       if (masterDetail) {
         // Master-detail: the minimap selects the entry in the detail panel
         // and scrolls its row into view instead of flashing a highlight.
         const message = messageEntries[sequence - 1]?.message;
         if (message) setWideSelectedId(message.id);
-        card.scrollIntoView({
-          behavior: prefersReducedMotion() ? "auto" : "smooth",
-          block: "nearest",
-        });
+        scrollChatTo(list, card, { block: "nearest", behavior });
         return;
       }
-      const reduceMotion = prefersReducedMotion();
-      card.scrollIntoView({
-        behavior: reduceMotion ? "auto" : "smooth",
-        block: "start",
-      });
+      scrollChatTo(list, card, { behavior });
       if (highlightTimerRef.current !== null) {
         window.clearTimeout(highlightTimerRef.current);
       }
@@ -1756,6 +1749,19 @@ export function AgentHistoryDrawer({
     pane.pane_id,
     pane.terminal_id,
   );
+  // What the shared chat pieces read of this pane (chatSource.ts): its
+  // threads' review and its voice session, as Ranger's chat gives its own.
+  const chatSource = paneChatSource({
+    pane,
+    connectionId: activeConnectionId,
+    draftKey: composerDraftKey,
+    session: chatThreadsKey,
+    entries: messages,
+    status: pane.agent_status,
+    claimsVoice: !!paneChat,
+  });
+  const threadsTarget = chatSource.threads;
+  const voiceSession = chatSource.voiceSession;
   const conversationRef = useRef(conversation);
   conversationRef.current = conversation;
   const voiceStream = useMemo<VoiceStream | undefined>(() => {
@@ -1790,7 +1796,7 @@ export function AgentHistoryDrawer({
     onError: (detail) =>
       store.notify({ kind: "error", message: "Voice chat stopped", detail }),
     routeContext: () => ({
-      current: voiceSessionId(activeConnectionId, pane.pane_id),
+      current: voiceSession,
       sessions: voiceSessions(store.get()),
     }),
     onSwitch: (connectionId, paneId) => {
@@ -2888,17 +2894,9 @@ export function AgentHistoryDrawer({
       {(visibleOutbox.length || shellItems.length
         ? null
         : (paneWaiting ?? historyEmptyState)) ??
-        (paneChat && chatThreadsKey && activeConnectionId ? (
+        (paneChat && threadsTarget ? (
           // The chat's threads: comments on parts of the agent's messages.
-          <ChatThreadsProvider
-            connectionId={activeConnectionId}
-            workspaceId={pane.workspace_id}
-            chat={chatThreadsKey}
-            path={pane.foreground_cwd ?? pane.cwd ?? ""}
-            agent={pane.agent ?? "agent"}
-            paneId={pane.pane_id}
-            entries={messages}
-          >
+          <ChatThreadsProvider {...threadsTarget} entries={chatSource.entries}>
             <div className="agent-history-chat-frame">
               <AgentHistoryChat
                 items={chatItems}

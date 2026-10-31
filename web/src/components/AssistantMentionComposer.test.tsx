@@ -3,14 +3,11 @@ import * as React from "react";
 import type {
   AssistantMention,
   AssistantMentionTarget,
-  AssistantSnapshot,
   AssistantWorkspace,
 } from "../../../shared/assistant";
 import * as assistant from "../assistant";
 import { adjustAssistantMentions } from "../assistantMentions";
 import { AssistantMentionComposer } from "./AssistantMentionComposer";
-import { AssistantPanel, AssistantUserMessage } from "./AssistantPanel";
-import { bridge } from "../api";
 
 const workspace: AssistantWorkspace = {
   connection_id: "local",
@@ -272,112 +269,8 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       expect(input().getAttribute("rows")).toBe("3");
       expect(input().style.height).toBe("");
 
-      const unsafe = { ...target, label: "<script>unsafe</script>" };
-      const text = `Explain @${unsafe.label} please`;
-      await React.act(async () =>
-        root.render(
-          <AssistantUserMessage
-            message={{
-              id: "message",
-              role: "user",
-              text,
-              sent_at: "2026-10-08T00:00:00Z",
-              tools: [],
-              sources: [],
-              mentions: [{ ...unsafe, start: 8, end: 9 + unsafe.label.length }],
-            }}
-            onOpenMention={openMention}
-          />,
-        ),
-      );
-      expect(container.textContent).toBe(text);
-      expect(container.querySelector("script")).toBeNull();
-
-      const snapshot: AssistantSnapshot = {
-        instance_id: "bridge",
-        revision: 1,
-        config: {
-          provider: "provider",
-          model: "model",
-          credential_source: "assistant",
-          allowed_workspaces: [workspace],
-        },
-        providers: [
-          { id: "provider", label: "Provider", configured: true, methods: [] },
-        ],
-        models: [{ id: "model", provider: "provider", label: "Model" }],
-        running: false,
-        error: null,
-        auth: null,
-        messages: [
-          {
-            id: "message",
-            role: "user",
-            text: `@${agent.label}`,
-            sent_at: "2026-10-08T00:00:00Z",
-            tools: [],
-            sources: [],
-            mentions: [{ ...agent, start: 0, end: agent.label.length + 1 }],
-          },
-        ],
-      };
-      const state: ReturnType<typeof assistant.useAssistantState> = {
-        snapshot,
-        draft: "",
-        draftMentions: [],
-        loading: false,
-        supported: true,
-        connectionStatus: "connected",
-        error: null,
-      };
-      spies.push(spyOn(assistant, "useAssistantState").mockReturnValue(state));
-      spies.push(
-        spyOn(bridge, "call").mockResolvedValue({
-          workspaces: [workspace],
-          errors: [],
-        }),
-      );
-      const opened = mock(() => {});
-      await React.act(async () =>
-        root.render(
-          <AssistantPanel
-            open
-            floating
-            mobile={false}
-            onClose={() => {}}
-            onToggleFloating={() => {}}
-            onOpenSource={opened}
-          />,
-        ),
-      );
-      catalog.mockResolvedValue({
-        targets: [{ ...agent, agent_identity: "b".repeat(64) }],
-        errors: [],
-      });
-      await React.act(async () =>
-        container
-          .querySelector<HTMLButtonElement>(".assistant-message-mention")!
-          .click(),
-      );
-      expect(opened).not.toHaveBeenCalled();
-      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-        "reference is no longer available",
-      );
-      catalog.mockResolvedValue({ targets: [agent], errors: [] });
-      await React.act(async () =>
-        container
-          .querySelector<HTMLButtonElement>(".assistant-message-mention")!
-          .click(),
-      );
-      expect(opened).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: "history",
-          connection_id: "local",
-          workspace_id: "project",
-          runtime_generation: 1,
-          pane_id: "pane-one",
-        }),
-      );
+      // Ranger's sent messages are drawn by the agent chat now: their
+      // references are tested in AssistantPanel.test.ts.
     } finally {
       await React.act(async () => root.unmount());
       for (const spy of spies.reverse()) spy.mockRestore();

@@ -1,0 +1,83 @@
+/* Ranger's chat on the agent chats' pieces, in its panel. */
+.ranger-chat {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.ranger-chat-conversation {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.ranger-chat-conversation > .chat-threads-scope {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+/* Ranger's own cards between the bubbles: as wide as the messages. */
+.ranger-chat .agent-history-chat-custom {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ranger-chat-footer .agent-history-composer {
+  padding: 0;
+  border-top: 0;
+}
+
+.ranger-chat-disabled {
+  margin: 0;
+}
+
+.ranger-chat-mentions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.ranger-chat-mentions .assistant-message-mention {
+  padding: 1px 6px;
+  min-height: 0;
+  border: 1px solid var(--viewer-border);
+  border-radius: 4px;
+  color: var(--accent);
+  background: var(--panel-2);
+  font: inherit;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* The @ button beside the microphone, not under it. */
+.agent-history-composer-field.has-voice
+  .ranger-chat-input
+  .assistant-mention-editor
+  textarea {
+  padding-right: 66px;
+}
+
+.agent-history-composer-field.has-voice
+  .ranger-chat-input
+  .assistant-mention-trigger {
+  right: 36px;
+}
+
+.agent-history-composer-field.has-voice.has-mute
+  .ranger-chat-input
+  .assistant-mention-editor
+  textarea {
+  padding-right: 96px;
+}
+
+.agent-history-composer-field.has-voice.has-mute
+  .ranger-chat-input
+  .assistant-mention-trigger {
+  right: 66px;
+}

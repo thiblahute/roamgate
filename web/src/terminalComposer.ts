@@ -180,7 +180,11 @@ export function terminalComposerDraftKeyIsActive(key: string): boolean {
   synchronizeDraftLogout();
   return (
     !retiredDraftKeys.has(key) &&
-    (activeDraftScopePrefix === null || key.startsWith(activeDraftScopePrefix))
+    (activeDraftScopePrefix === null ||
+      key.startsWith(activeDraftScopePrefix) ||
+      // A box that belongs to no connection (Ranger's chat) stays usable
+      // whichever connection shows.
+      !key.startsWith("["))
   );
 }
 
