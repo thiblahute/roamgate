@@ -18,6 +18,9 @@ import {
   ChevronsUpDown,
   FileDiff,
   FileText,
+  Folder,
+  FolderInput,
+  FolderOutput,
   FolderPlus,
   FolderOpen,
   GitCommitHorizontal,
@@ -51,6 +54,15 @@ import { WorktreeLocationDialog } from "./WorktreeLocationDialog";
 import { WorktreeOpenDialog } from "./WorktreeOpenDialog";
 import { AgentIcon } from "./AgentIcon";
 import { requestAgentTasks } from "../agentTasksOpen";
+import {
+  findWorkspaceNode,
+  workspaceRefFor,
+} from "../../../shared/workspaceTree";
+import {
+  applyWorkspaceTreeOps,
+  requestWorkspaceArrange,
+  useWorkspaceTree,
+} from "../workspaceTreeStore";
 import {
   Command,
   CommandEmpty,
@@ -253,6 +265,7 @@ export function CommandCombobox({
   onShowShortcuts?: () => void;
 }) {
   useShortcutPreferences();
+  const workspaceTree = useWorkspaceTree();
   const s = useStoreSelector(
     (state) => ({
       activeConnectionId: state.activeConnectionId,
@@ -653,6 +666,12 @@ export function CommandCombobox({
         ]
       : [];
 
+  const focusedWorkspaceNode = focusedWorkspace
+    ? findWorkspaceNode(
+        workspaceTree,
+        workspaceRefFor(s.activeConnectionId, focusedWorkspace),
+      )
+    : undefined;
   const workspaceActions: ActionDefinition[] = [
     {
       key: "create-workspace",
@@ -662,8 +681,48 @@ export function CommandCombobox({
       keywords: ["new workspace", "add workspace", "open workspace"],
       run: onCreateWorkspace,
     },
+    {
+      key: "new-workspace-group",
+      icon: <Folder size={15} />,
+      title: "New workspace group",
+      detail: "A label to arrange workspaces under",
+      keywords: ["group workspaces", "folder", "arrange workspaces"],
+      run: () => requestWorkspaceArrange({ type: "new-group" }),
+    },
     ...(focusedWorkspace
       ? [
+          {
+            key: "move-workspace-into",
+            icon: <FolderInput size={15} />,
+            title: "Move workspace into…",
+            detail: workspaceName(focusedWorkspace),
+            keywords: ["nest workspace", "group workspace", "arrange"],
+            run: () =>
+              requestWorkspaceArrange({
+                type: "move-into",
+                connectionId: s.activeConnectionId,
+                workspace: focusedWorkspace,
+              }),
+          },
+          ...(focusedWorkspaceNode?.parent
+            ? [
+                {
+                  key: "move-workspace-out",
+                  icon: <FolderOutput size={15} />,
+                  title: "Move workspace out",
+                  detail: workspaceName(focusedWorkspace),
+                  keywords: ["unnest workspace", "usual place", "arrange"],
+                  run: () =>
+                    void applyWorkspaceTreeOps([
+                      {
+                        op: "move",
+                        subject: { node: focusedWorkspaceNode.id },
+                        parent: null,
+                      },
+                    ]),
+                },
+              ]
+            : []),
           {
             key: "rename-workspace",
             icon: <PanelTop size={15} />,

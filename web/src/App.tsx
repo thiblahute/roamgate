@@ -133,6 +133,11 @@ import {
   type ThemePreference,
 } from "./appearance";
 import { AgentIcon } from "./components/AgentIcon";
+import {
+  PaneJumpStatusDot,
+  PaneJumpStatusLabel,
+  usePaneJumpBackground,
+} from "./components/PaneJumpAgentStatus";
 import { agentStateKind, paneHasAgentHistory } from "./components/agentSession";
 import { CloseButton } from "./components/CloseButton";
 import { Toast } from "./components/Toast";
@@ -276,7 +281,6 @@ import {
   connectionClientScopeKey,
   useConnectionClient,
 } from "./useConnectionClient";
-import { agentClass } from "./utils";
 import {
   INSPECTOR_MIN_BOTTOM,
   INSPECTOR_MIN_RIGHT,
@@ -979,6 +983,7 @@ function PaneJumpOverlay({
 }) {
   const selectedItemRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const backgroundOf = usePaneJumpBackground();
   // Where the pointer rested when the switcher opened; rows only follow the
   // pointer once it has left that spot.
   const pointerOriginRef = useRef<PointerPosition | null>(null);
@@ -1079,8 +1084,9 @@ function PaneJumpOverlay({
               {entry.agent ? (
                 <span className="pane-jump-agent-identity">
                   <AgentIcon agent={entry.agent} compact />
-                  <span
-                    className={`pane-jump-status status-${entry.agentStatus ?? "unknown"}`}
+                  <PaneJumpStatusDot
+                    entry={entry}
+                    background={backgroundOf(entry)}
                   />
                 </span>
               ) : null}
@@ -1096,11 +1102,10 @@ function PaneJumpOverlay({
                     <span className="pane-jump-current-badge">Current</span>
                   ) : null}
                   {entry.agentStatus ? (
-                    <span
-                      className={`${agentClass(entry.agentStatus)} pane-jump-agent-status`}
-                    >
-                      {entry.agentStatus}
-                    </span>
+                    <PaneJumpStatusLabel
+                      entry={{ ...entry, agentStatus: entry.agentStatus }}
+                      background={backgroundOf(entry)}
+                    />
                   ) : null}
                 </span>
                 <span className="pane-jump-subtitle">
@@ -3822,6 +3827,8 @@ export default function App() {
   const [workspaceTreeShown, setWorkspaceTreeShown] = useState(
     readWorkspaceSheetAll,
   );
+  // Its agents idle while their side tasks run, as the tree read them.
+  const workspaceBackgroundOf = usePaneJumpBackground();
   // The phone's workspace list: what needs the user first, with what for.
   const workspaceAttention = useCallback(
     (entries: PaneJumpEntry[]) =>
@@ -5737,8 +5744,9 @@ export default function App() {
                       {entry.agent ? (
                         <span className="pane-jump-agent-identity">
                           <AgentIcon agent={entry.agent} compact />
-                          <span
-                            className={`pane-jump-status status-${entry.agentStatus ?? "unknown"}`}
+                          <PaneJumpStatusDot
+                            entry={entry}
+                            background={workspaceBackgroundOf(entry)}
                           />
                         </span>
                       ) : null}
@@ -5758,11 +5766,13 @@ export default function App() {
                             </span>
                           ) : null}
                           {entry.agentStatus ? (
-                            <span
-                              className={`${agentClass(entry.agentStatus)} pane-jump-agent-status`}
-                            >
-                              {entry.agentStatus}
-                            </span>
+                            <PaneJumpStatusLabel
+                              entry={{
+                                ...entry,
+                                agentStatus: entry.agentStatus,
+                              }}
+                              background={workspaceBackgroundOf(entry)}
+                            />
                           ) : null}
                         </span>
                         <span className="pane-jump-subtitle">
@@ -5794,7 +5804,9 @@ export default function App() {
                     ? layoutPreferences.mobileSidebarOrder
                     : layoutPreferences.desktopSidebarOrder) === "agents-first"
                 }
-                key={`${resourceUiKey}:workspaces`}
+                // One tree for every connection: it follows the active one
+                // instead of being rebuilt, and refetched, at each switch.
+                key="workspaces"
                 onSelect={(workspace) =>
                   keepInspectorForWorkspace(workspace.workspace_id)
                 }

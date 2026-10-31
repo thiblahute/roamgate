@@ -276,6 +276,19 @@ export function createReviewAgentServer(args: {
     text: string;
   }) => Promise<void>;
   /**
+   * Workspaces an agent makes or starts work in, placed under the agent's
+   * own workspace in the Workspaces list, or into a group of it
+   * (`place`, `worktree`, `workspace`; `groups` lists the groups).
+   */
+  workspaces?: (input: {
+    connectionId: string;
+    paneId: string;
+    /** The agent's workspace, as its pane's environment says. */
+    workspaceId: string;
+    command: "place" | "worktree" | "workspace" | "groups";
+    params: Record<string, string>;
+  }) => Promise<Record<string, unknown>>;
+  /**
    * Conversation mode's pane holder (roamgate-hold): `hold` waits until the
    * session goes back to the terminal (or a while passes), `handback` asks
    * for it now. Both answer `{action: "resume", session_id, cwd}` once the
@@ -589,6 +602,41 @@ export function createReviewAgentServer(args: {
         pane: paneId,
       });
       return { notified: true };
+    }
+    if (
+      command === "place" ||
+      command === "worktree" ||
+      command === "workspace" ||
+      command === "groups"
+    ) {
+      const paneId = form.get("pane") ?? "";
+      if (!paneId && command !== "groups")
+        throw new ReviewError(`${command} runs inside a Herdr pane`);
+      if (!args.workspaces)
+        throw new ReviewError("workspace placement is unavailable");
+      const params: Record<string, string> = {};
+      for (const key of [
+        "workspace_id",
+        "path",
+        "branch",
+        "repo",
+        "base",
+        "label",
+        "dir",
+        "cwd",
+        "group",
+        "create_group",
+      ]) {
+        const value = form.get(key);
+        if (value) params[key] = value.slice(0, 4096);
+      }
+      return args.workspaces({
+        connectionId: connection.id,
+        paneId,
+        workspaceId: form.get("workspace") ?? "",
+        command,
+        params,
+      });
     }
     const agent = agentName(form);
     const pane = form.get("pane") || undefined;

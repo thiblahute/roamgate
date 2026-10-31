@@ -1,3 +1,7 @@
+import {
+  parseWorkspaceTree,
+  type WorkspaceTree,
+} from "../../../shared/workspaceTree";
 import { normalizeTitleSuffix } from "../../../shared/instanceName";
 import {
   DEFAULT_IDLE_STOP_MINUTES,
@@ -84,6 +88,12 @@ export type GuiSettings = {
    * user carries the same interface across every browser they open.
    */
   ui: Record<string, unknown>;
+  /**
+   * The user's arrangement of the Workspaces list (shared/workspaceTree.ts),
+   * across every connection. Unlike `ui`, the server edits it too: it places
+   * the workspaces agents create under the workspace that asked.
+   */
+  workspace_tree?: WorkspaceTree;
 };
 
 /** Namespaces are addressed by RPC, so keep them to unmistakable identifiers. */
@@ -295,7 +305,15 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
             ),
           )
         : {},
+    ...workspaceTreeField(obj.workspace_tree),
   };
+}
+
+function workspaceTreeField(value: unknown): {
+  workspace_tree?: WorkspaceTree;
+} {
+  const tree = parseWorkspaceTree(value);
+  return tree.nodes.length ? { workspace_tree: tree } : {};
 }
 
 export async function readGuiSettings(): Promise<GuiSettings> {

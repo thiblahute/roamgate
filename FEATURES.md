@@ -194,14 +194,24 @@ Inspector state is scoped to each checkout; see
 - Sort **Separate** agents by **Recently opened**: blocked, done, and working
   agents stay first, and idle agents follow the last time this browser opened
   them. Open times stay in this browser's local storage.
-- Workspaces with several tabs show numbered tab chips colored by the most
-  urgent agent state (working, blocked, done). Click a chip to open that tab,
-  on any server. As the row narrows, extra tabs fold into a +N marker, down
-  to one chip.
+- A workspace row gives its name the whole line, cut at the end; a worktree
+  under its repository drops the name prefix it repeats (`gstreamer-ocio`
+  under `gstreamer` reads `ocio`). At the right sits one compact status: the
+  changes (Δ12), else commits ahead or behind (↑1, ↓4), and a dot in the most
+  urgent agent state of its tabs. Rows of a server other than the default
+  local one start with a dot in that server's colour, always the same, so
+  the list keeps its order, nesting, folds and colours whichever server is
+  displayed: only the selection moves. When the sidebar is wide enough, a muted second line
+  shows the branch (when it differs from the name), the PR or MR, and numbered
+  tab chips colored by agent state (click one to open that tab, on any
+  server; extra tabs fold into +N). Hovering a row on a desktop shows a card
+  with its full name, server, branch, path, changes, ahead and behind, and
+  panes.
 - Switch **Current / All servers** in the **Workspaces** heading in any agent
-  layout. **All servers** labels each workspace with its server, preserving
-  the existing worktree nesting and indentation. **Nested** also shows agents
-  under their workspace, **Compact** keeps workspace tab counts, and **Separate**
+  layout. **All servers** marks the other servers' workspaces with their dot,
+  preserving the existing worktree nesting and indentation. **Nested** also
+  shows agents under their workspace, **Compact** keeps them out of the list,
+  and **Separate**
   collects agents in their own panel. Selecting a workspace or agent opens its
   server. Disconnected servers and failed reads remain visible. Other servers'
   context menus offer navigation; switch to their server for workspace and pane
@@ -209,6 +219,51 @@ Inspector state is scoped to each checkout; see
   server in the dialog; choosing one switches the current server and checks the
   working directory there. The scope and creation server selectors are hidden
   when fewer than two servers are connected.
+- Arrange the **Workspaces** list your way: any workspace can hold others, from
+  any repository and any server, and plain label groups (the folder button in
+  the heading, or **New workspace group** in the command menu) nest at any
+  depth. **Move into…** in a row's context menu (long press on a phone, or the
+  menu key) and in the command menu opens a searchable list of groups and
+  workspaces, or makes a new group. **Move to top level** (also the first
+  choice in **Move into…**) takes a workspace out of anything, including the
+  repository the list would nest a worktree under, and keeps it at the top
+  level in the list's order; **Back to its usual place** undoes any placement.
+  Drag a row onto the middle of another to nest it, or into the gap between two
+  rows to make it a sibling at that level: between a deeper row and a
+  shallower one, the pointer's horizontal position picks the level, and the
+  drop line starts at that indentation. Dropping between two top-level rows
+  puts a workspace at the top level there, and the very top and bottom of the
+  list take a workspace or group above or below everything. Workspaces you
+  have not placed show as before. A worktree or workspace made for an agent lands under
+  the workspace that asked: from a workspace's **New worktree…** (when that is
+  not already where the list nests it), from Ranger, and from
+  `roamgate-review worktree`, `workspace` and `place`, which agents use; with
+  `--group gst/upstreaming` these put it in that group instead (names matched
+  case-insensitively, `--create-group` makes missing ones, and
+  `roamgate-review groups` lists the paths). The arrangement lives on the Roamgate server, so every browser and device shows
+  the same one. A parent row sums up everything below it in the agent status
+  colours: agents working, agents idle with work running in the background,
+  agents waiting on you (asking, or finished unseen), and subagents running;
+  collapsing keeps the sum, and the collapsed state of
+  a group is kept with the arrangement. A placed workspace whose server is
+  down, or that is no longer open, stays where it was, greyed, with a button to
+  remove it.
+- Under a Claude agent in the **Nested** layout, a collapsed line such as
+  "3 subagents · 1 running" opens onto its running subagents and workflows,
+  its teammates (idle ones stay: a message wakes them), and failures you have
+  not opened yet, each with its live elapsed time. Finished subagents leave
+  the list for the **Tasks** sheet, which keeps them all, as it keeps
+  background commands and monitors; "N done" opens it. One started in a
+  part of the session since rewound carries the same rewind arrow as in
+  the sheet. Clicking a subagent opens it in the Tasks sheet. The lists follow the agents' own state changes,
+  without polling, and whether a line is open is kept in this browser.
+- A Claude agent Herdr calls idle while its subagents, running teammates,
+  workflows, background commands or monitors still run shows a hollow,
+  breathing dot instead of the idle one, in the Workspaces list (its row,
+  its workspace's dot and hover card, which lists what runs), the pane
+  switcher and Find workspace, with "idle · 2 running" as its status. An
+  idle teammate waiting for a message does not count. This comes from the
+  tasks the list already reads; Herdr's own status is unchanged.
 - **Agent History** shows the latest 200 conversation entries with search, a
   minimap, and tool details. The **Chat view** toggle reads them as
   conversation bubbles with rendered replies and collapsible tool-call blocks
@@ -588,6 +643,10 @@ or its shortcut.
   queued ones. After **Stop** they wait until you choose **Send next**.
 - **Go to:** asked to go to or open a workspace or agent session, Ranger shows
   it in the browser you asked from, switching connection when needed.
+- **Arrange:** asked to group, nest or reorder workspaces in the Workspaces
+  list, Ranger reads the arrangement and changes it with the same moves as the
+  list itself, across every server, in one change and without asking you to
+  confirm, since it only moves rows and can be undone.
 - **Act:** Ranger can create workspaces, worktrees, tabs, and splits, and start,
   prompt, or close agents and panes. You confirm each action unless
   **High-permission mode** is on. Closing never deletes files or history.

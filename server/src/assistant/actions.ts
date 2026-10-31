@@ -38,6 +38,13 @@ export type AssistantActionLease = {
   generation: number;
   isCurrent(): boolean;
 };
+/** Ranger made a workspace from another one: the Workspaces list places it. */
+export type AssistantWorkspaceCreatedListener = (input: {
+  connectionId: string;
+  workspaceId: string;
+  sourceWorkspaceId: string;
+}) => Promise<void>;
+
 export type AssistantWorktreeCreator = (
   runtime: LegacyConnectionRuntime,
   params: Record<string, unknown>,
@@ -187,6 +194,7 @@ export async function prepareAssistantAction(args: {
   createWorktree?: AssistantWorktreeCreator;
   /** A prompt reached an agent, sent from this state of it. */
   onAgentPrompted?: AssistantPromptListener;
+  onWorkspaceCreated?: AssistantWorkspaceCreatedListener;
 }): Promise<PreparedAssistantAction> {
   const { kind, target, lease, signal } = args;
   const { runtime } = lease;
@@ -453,6 +461,13 @@ export async function prepareAssistantAction(args: {
           };
         const id = validateConnectionId(found[0]!.workspace_id);
         await workspace(id);
+        await args
+          .onWorkspaceCreated?.({
+            connectionId: target.connection_id,
+            workspaceId: id,
+            sourceWorkspaceId: target.workspace_id,
+          })
+          .catch(() => undefined);
         const panes = list(
           (await call("pane.list", { workspace_id: id }))?.panes,
         );

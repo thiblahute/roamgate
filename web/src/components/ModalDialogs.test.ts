@@ -481,15 +481,18 @@ async function registerDomTests() {
             container.querySelector(".ws-label .workspace-review"),
           ).toBeNull();
           const badge = container.querySelector(
-            ".tree-row > .workspace-review",
+            ".tree-row .ws-sub > .workspace-review",
           )!;
           expect(badge.textContent).toBe(github ? "#1" : "!1");
           expect(badge.getAttribute("aria-label")).toContain(label);
           expect(badge.getAttribute("title")).toContain("Merged feature");
           expect(badge.querySelector(`.lucide-${icon}`)).not.toBeNull();
-          expect(container.querySelector(".git-branch")).toBeNull();
-          expect(container.querySelector(".git-dirty")?.textContent).toBe("Δ1");
-          expect(container.querySelector(".git-ahead")?.textContent).toBe("↑2");
+          expect(container.querySelector(".ws-branch")).toBeNull();
+          // One change indicator on the line; ahead in the hover card.
+          expect(container.querySelector(".ws-change")?.textContent).toBe("Δ1");
+          expect(
+            container.querySelector<HTMLElement>(".tree-row")?.title,
+          ).toContain("Ahead 2");
           await openMenu();
           expect(requestAction()?.textContent).toBe(
             github ? "Open PR on GitHub" : "Open MR on GitLab",
@@ -511,7 +514,8 @@ async function registerDomTests() {
         "My review",
       );
       expect(
-        container.querySelector(".tree-row > .workspace-review")?.textContent,
+        container.querySelector(".tree-row .ws-sub > .workspace-review")
+          ?.textContent,
       ).toBe("!1");
       for (const state of [
         "select_remote",
@@ -540,7 +544,7 @@ async function registerDomTests() {
         status = { ...mergedStatus, ...partial };
         await render({ ...sidebarWorkspace, label: "My review" });
         expect(container.querySelector(".workspace-review")).toBeNull();
-        expect(container.querySelector(".git-branch")?.textContent).toBe(
+        expect(container.querySelector(".ws-branch")?.textContent).toBe(
           "topic-0",
         );
       }
@@ -1560,7 +1564,7 @@ async function registerDomTests() {
         root!.render(h(WorkspaceCreation));
       });
       const badge = () =>
-        container.querySelector(".tree-row > .workspace-review");
+        container.querySelector(".tree-row .ws-sub > .workspace-review");
       expect(badge()?.hasAttribute("data-stale")).toBe(false);
       fail = true;
       await act(async () => jest.advanceTimersByTime(60_000));

@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import "./GlobalTooltip.css";
 
-type TooltipPlacement = "top" | "bottom";
+type TooltipPlacement = "top" | "bottom" | "right";
 
 type TooltipState = {
   text: string;
   left: number;
   top: number;
   placement: TooltipPlacement;
+  /** A hover card: several lines, the first one its title. */
+  card: boolean;
 };
+
+const CARD_GAP = 8;
+const MAX_CARD_WIDTH = 360;
 
 const TOOLTIP_DELAY_MS = 260;
 const VIEWPORT_PADDING = 12;
@@ -64,6 +69,32 @@ function tooltipPosition(element: HTMLElement, text: string) {
   };
 }
 
+/** Beside the element when there is room on its right, else above or below. */
+function cardPosition(element: HTMLElement, text: string) {
+  const rect = element.getBoundingClientRect();
+  const scale =
+    Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--ui-scale"),
+    ) || 1;
+  if (
+    rect.right + CARD_GAP + MAX_CARD_WIDTH * scale <=
+    window.innerWidth - VIEWPORT_PADDING
+  ) {
+    const lines = text.split("\n").length;
+    const height = (lines * 17 + 16) * scale;
+    const top = Math.max(
+      VIEWPORT_PADDING,
+      Math.min(rect.top, window.innerHeight - VIEWPORT_PADDING - height),
+    );
+    return {
+      left: (rect.right + CARD_GAP) / scale,
+      top: top / scale,
+      placement: "right" as const,
+    };
+  }
+  return tooltipPosition(element, text);
+}
+
 export function GlobalTooltip() {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const activeElementRef = useRef<HTMLElement | null>(null);
@@ -107,9 +138,13 @@ export function GlobalTooltip() {
       element.removeAttribute("title");
       timerRef.current = window.setTimeout(() => {
         if (activeElementRef.current !== element) return;
+        const card = element.hasAttribute("data-tooltip-card");
         setTooltip({
           text,
-          ...tooltipPosition(element, text),
+          card,
+          ...(card
+            ? cardPosition(element, text)
+            : tooltipPosition(element, text)),
         });
       }, TOOLTIP_DELAY_MS);
     };
@@ -167,11 +202,20 @@ export function GlobalTooltip() {
 
   return (
     <div
-      className={`global-tooltip global-tooltip-${tooltip.placement}`}
+      className={`global-tooltip global-tooltip-${tooltip.placement}${
+        tooltip.card ? " global-tooltip-card" : ""
+      }`}
       style={{ left: tooltip.left, top: tooltip.top }}
       role="tooltip"
     >
-      {tooltip.text}
+      {tooltip.card ? (
+        <>
+          <strong>{tooltip.text.split("\n")[0]}</strong>
+          {tooltip.text.split("\n").slice(1).join("\n")}
+        </>
+      ) : (
+        tooltip.text
+      )}
     </div>
   );
 }

@@ -65,3 +65,24 @@
     filter: blur(0);
   }
 }
+
+/* A hover card (data-tooltip-card): a title, then one fact a line. */
+.global-tooltip-card {
+  font-weight: 500;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.global-tooltip-card > strong {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 700;
+}
+
+.global-tooltip-right {
+  transform: none;
+}
+
+.global-tooltip-right::after {
+  display: none;
+}

@@ -27,6 +27,7 @@ import type {
   WorkspaceToolReader,
 } from "./tools";
 import { rangerSystemPrompt, rangerTools } from "./ranger-tools";
+import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
 import { AssistantUserError, surfaceAssistantUserError } from "./errors";
 import {
   LEGACY_AZURE_PROVIDER,
@@ -113,6 +114,8 @@ export type AssistantDriver = {
     notify?: NotificationToolSender;
     /** Shows a workspace in the asking browser; absent without one. */
     show?: ShowToolHandler;
+    /** Arranges the Workspaces sidebar; no confirmation needed. */
+    arrange?: WorkspaceTreeToolHandler;
     delta(text: string): void;
     message(text: string): void;
     tool(

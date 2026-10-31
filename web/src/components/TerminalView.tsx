@@ -1375,15 +1375,22 @@ export function TerminalView({
   // What a Claude pane runs on the side: its chat opens its own list, and
   // over the terminal this one. The shortcut asks whichever shows.
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [tasksTaskId, setTasksTaskId] = useState<string | null>(null);
   const tasksPaneId = pane?.agent === "claude" ? pane.pane_id : null;
   useEffect(() => {
     if (!tasksPaneId || chatShown) {
       setTasksOpen(false);
       return;
     }
-    return onAgentTasksRequest(tasksPaneId, () =>
-      setTasksOpen((shown) => !shown),
-    );
+    return onAgentTasksRequest(tasksPaneId, (request) => {
+      if (request) {
+        setTasksTaskId(request.taskId);
+        setTasksOpen(true);
+        return;
+      }
+      setTasksTaskId(null);
+      setTasksOpen((shown) => !shown);
+    });
   }, [chatShown, tasksPaneId]);
   useEffect(() => {
     if (!isActivePane || !tasksPaneId) return;
@@ -4291,7 +4298,9 @@ export function TerminalView({
           />
           {tasksOpen && !chatShown && pane ? (
             <PaneAgentTasksSheet
+              key={tasksTaskId ?? ""}
               pane={pane}
+              initialTaskId={tasksTaskId}
               onClose={() => setTasksOpen(false)}
             />
           ) : null}

@@ -505,6 +505,7 @@ export class Bridge {
   >();
   private popupHandlers = new Set<(popup: PopupStatePush) => void>();
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
+  private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
   private forwardsHandlers = new Set<(forwards: ForwardRecord[]) => void>();
   private reviewHandlers = new Set<(push: ReviewPush) => void>();
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
@@ -1037,6 +1038,7 @@ export class Bridge {
     const hasTerminalClosed = owns("terminal_closed");
     const hasPopup = owns("popup");
     const hasUiSettings = owns("ui_settings");
+    const hasWorkspaceTree = owns("workspace_tree");
     const hasForwards = owns("forwards");
     const hasReview = owns("review");
     const hasControl = owns("control");
@@ -1051,6 +1053,7 @@ export class Bridge {
       hasTerminalClosed,
       hasPopup,
       hasUiSettings,
+      hasWorkspaceTree,
       hasForwards,
       hasReview,
       hasControl,
@@ -1314,6 +1317,14 @@ export class Bridge {
       return;
     }
 
+    if (hasWorkspaceTree) {
+      // Server-wide, like interface preferences: whichever connection shows.
+      this.workspaceTreeHandlers.forEach((handler) =>
+        handler(msg.workspace_tree),
+      );
+      return;
+    }
+
     if (hasUiSettings) {
       // Accepted regardless of the active Herdr connection: the preference
       // belongs to the Roamgate server that served this page.
@@ -1542,6 +1553,12 @@ export class Bridge {
   onForwards(cb: (forwards: ForwardRecord[]) => void): () => void {
     this.forwardsHandlers.add(cb);
     return () => this.forwardsHandlers.delete(cb);
+  }
+
+  /** The Workspaces arrangement changed (unvalidated: the reader parses it). */
+  onWorkspaceTree(cb: (tree: unknown) => void): () => void {
+    this.workspaceTreeHandlers.add(cb);
+    return () => this.workspaceTreeHandlers.delete(cb);
   }
 
   onUiSetting(cb: (push: UiSettingPush) => void): () => void {

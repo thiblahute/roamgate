@@ -102,6 +102,25 @@ import {
 } from "./connections/runtime";
 import { createShutdownController } from "./connections/shutdown";
 import { readConnectionAgentSessions } from "./connections/agent-sessions";
+import { readConnectionAgentTasks } from "./connections/agent-tasks";
+import {
+  createWorkspaceTreeToolHandler,
+  readWorkspaceTreeConnections,
+} from "./assistant/workspace-tree-tools";
+import {
+  agentGroupPaths,
+  agentGroupPlacementOps,
+  applyWorkspaceTreeOps,
+  onWorkspaceTreeChanged,
+  placeCreatedWorkspace,
+  readWorkspaceTree,
+} from "./config/workspace-tree";
+import {
+  parseWorkspaceTreeOp,
+  WorkspaceTreeError,
+  type WorkspaceTreeOp,
+  workspaceRefFor,
+} from "../../shared/workspaceTree";
 import { bindListenerBeforeConnectionStart } from "./connections/startup";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "./connections/types";
 import { unixOnlyMessage } from "./connections/unix-only";
@@ -347,6 +366,12 @@ interface WebSocketCleanupSnapshot {
   viewedTerminals: string[];
 }
 let nextClientId = 1;
+// The Workspaces arrangement is server-wide: every open browser follows it,
+// whichever connection it shows.
+onWorkspaceTreeChanged((tree) => {
+  const line = JSON.stringify({ workspace_tree: tree });
+  for (const ws of clients) safeSend(ws, line, "workspace-tree");
+});
 
 const rpcOutcomes = new Map<string, { status: "error"; detail?: string }>();
 
@@ -646,15 +671,40 @@ const assistantContext = createAssistantContext({
     if (!profile) throw new Error("Ranger connection is no longer configured");
     return connectionRecoveryFingerprint(profile);
   },
-  createWorktree: (runtime, params, isCurrent, beforeDispatch) =>
-    createWorkspaceWorktree(
+  createWorktree: async (runtime, params, isCurrent, beforeDispatch) => {
+    const result = await createWorkspaceWorktree(
       runtime,
       params,
       isCurrent,
       undefined,
       undefined,
       beforeDispatch,
-    ),
+    );
+    await placeCreatedWorkspaceUnder(
+      runtime.identity?.id ?? "",
+      (method, callParams) => runtime.herdr.call(method, callParams),
+      result,
+      typeof params.workspace_id === "string" ? params.workspace_id : undefined,
+    );
+    return result;
+  },
+  onWorkspaceCreated: ({ connectionId, workspaceId, sourceWorkspaceId }) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) return Promise.resolve();
+    return placeCreatedWorkspaceUnder(
+      connectionId,
+      (method, callParams) => runtime.herdr.call(method, callParams),
+      { workspace_id: workspaceId },
+      sourceWorkspaceId,
+    );
+  },
+});
+// Ranger arranges the Workspaces list through the same store and push as
+// the sidebar's bridge.workspace_tree.apply.
+const assistantWorkspaceTree = createWorkspaceTreeToolHandler({
+  connections: () => readWorkspaceTreeConnections(connectionManager),
+  read: () => readWorkspaceTree(),
+  apply: (ops) => applyWorkspaceTreeOps(ops),
 });
 let assistantServiceTask: Promise<
   Awaited<
@@ -666,6 +716,7 @@ function getAssistantService() {
     .then(({ createAssistantService }) =>
       createAssistantService({
         context: assistantContext,
+        workspaceTree: assistantWorkspaceTree,
         publish: (snapshot) => {
           const payload = JSON.stringify({ assistant: snapshot });
           for (const ws of clients)
@@ -948,6 +999,7 @@ function getReviewAgent(): ReviewAgentServer {
     service: getReviewService(),
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
+    workspaces: workspaceFromAgent,
     // Conversation mode's pane holders (roamgate-hold).
     holder: {
       hold: ({ connectionId, paneId, sessionId, signal, status, shell }) => {
@@ -1000,6 +1052,153 @@ function getReviewAgent(): ReviewAgentServer {
       }),
   });
   return reviewAgent;
+}
+
+/**
+ * An agent making a worktree or workspace, or naming one it started work
+ * in (`roamgate-review worktree|workspace|place`): the workspace goes under
+ * the agent's own in the Workspaces list, or into the group `--group`
+ * names (made first with `--create-group`). `groups` lists those paths.
+ */
+async function workspaceFromAgent(input: {
+  connectionId: string;
+  paneId: string;
+  workspaceId: string;
+  command: "place" | "worktree" | "workspace" | "groups";
+  params: Record<string, string>;
+}): Promise<Record<string, unknown>> {
+  const { connectionId, paneId, command, params } = input;
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime) throw new ReviewError("this connection is not ready", 503);
+  const call = (method: string, callParams: Record<string, unknown> = {}) =>
+    runtime.herdr.call(method, callParams);
+  let requester = input.workspaceId;
+  if (!requester && paneId) {
+    const pane = (await call("pane.get", { pane_id: paneId }))?.pane;
+    requester = typeof pane?.workspace_id === "string" ? pane.workspace_id : "";
+  }
+  if (!requester && command !== "groups")
+    throw new ReviewError("cannot tell which workspace you are in");
+  const listed = await runtime.worktreeParents.enrichWorkspaceList(
+    await call("workspace.list"),
+  );
+  const workspaces: any[] = Array.isArray(listed?.workspaces)
+    ? listed.workspaces
+    : [];
+  const parent = workspaces.find((each) => each?.workspace_id === requester);
+  if (!parent && command !== "groups")
+    throw new ReviewError("your workspace is not listed by Herdr");
+  const usualParent = workspaces.find(
+    (each) =>
+      parent?.worktree?.is_linked_worktree === true &&
+      typeof parent.worktree.parent_workspace_id === "string" &&
+      each?.workspace_id === parent.worktree.parent_workspace_id,
+  );
+  const asker = {
+    ...(parent ? { asker: workspaceRefFor(connectionId, parent) } : {}),
+    ...(usualParent
+      ? { askerUsualParent: workspaceRefFor(connectionId, usualParent) }
+      : {}),
+  };
+  if (command === "groups")
+    return agentGroupPaths(await readWorkspaceTree(), {
+      ref: asker.asker,
+      usualParent: asker.askerUsualParent,
+    });
+  const group = params.group?.trim();
+  const create = params.create_group === "1";
+  /** Into the group: refused (nothing made) when the path leads nowhere. */
+  const intoGroup = async (subject?: Record<string, unknown>) => {
+    try {
+      const placement = agentGroupPlacementOps(await readWorkspaceTree(), {
+        ...(subject
+          ? { subject: workspaceRefFor(connectionId, subject as any) }
+          : {}),
+        ...asker,
+        group: group!,
+        create,
+      });
+      if (subject) await applyWorkspaceTreeOps(placement.ops);
+      return placement;
+    } catch (error) {
+      if (error instanceof WorkspaceTreeError)
+        throw new ReviewError(error.message, 404);
+      throw error;
+    }
+  };
+  if (group) await intoGroup();
+  if (command === "place") {
+    const target = workspaces.find((each) =>
+      params.workspace_id
+        ? each?.workspace_id === params.workspace_id
+        : each?.worktree?.checkout_path === params.path ||
+          each?.cwd === params.path,
+    );
+    if (!target) throw new ReviewError("no workspace matches", 404);
+    if (group) {
+      const placement = await intoGroup(target);
+      return {
+        placed: target.workspace_id,
+        group: placement.path.join("/"),
+        ...(placement.created.length ? { created: placement.created } : {}),
+      };
+    }
+    if (target.workspace_id === requester)
+      throw new ReviewError("that is your own workspace");
+    // Asked for explicitly: placed even where the usual list would nest it.
+    await applyWorkspaceTreeOps([
+      {
+        op: "move",
+        subject: { workspace: workspaceRefFor(connectionId, target) },
+        parent: { workspace: workspaceRefFor(connectionId, parent) },
+      },
+    ]);
+    return { placed: target.workspace_id, under: requester };
+  }
+  const dir = params.repo || params.dir || params.cwd;
+  if (!dir?.startsWith("/"))
+    throw new ReviewError("the client did not send its directory");
+  const result =
+    command === "worktree"
+      ? await call("worktree.create", {
+          cwd: dir,
+          branch: params.branch,
+          ...(params.base ? { base: params.base } : {}),
+          ...(params.path ? { path: params.path } : {}),
+          ...(params.label ? { label: params.label } : {}),
+          focus: false,
+        })
+      : await call("workspace.create", {
+          cwd: dir,
+          ...(params.label ? { label: params.label } : {}),
+          source_workspace_id: requester,
+          focus: false,
+        });
+  const created = result?.workspace;
+  if (group && created?.workspace_id) {
+    // Named by its checkout as the list will see it.
+    const fresh = await runtime.worktreeParents.enrichWorkspaceList(
+      await call("workspace.list"),
+    );
+    const seen = (
+      Array.isArray(fresh?.workspaces) ? fresh.workspaces : []
+    ).find((each: any) => each?.workspace_id === created.workspace_id);
+    const placement = await intoGroup(seen ?? created);
+    return {
+      workspace_id: created.workspace_id,
+      label: created.label ?? null,
+      ...(result?.worktree?.path ? { path: result.worktree.path } : {}),
+      group: placement.path.join("/"),
+      ...(placement.created.length ? { created: placement.created } : {}),
+    };
+  }
+  await placeCreatedWorkspaceUnder(connectionId, call, result, requester);
+  return {
+    workspace_id: created?.workspace_id ?? null,
+    label: created?.label ?? null,
+    ...(result?.worktree?.path ? { path: result.worktree.path } : {}),
+    under: requester,
+  };
 }
 
 /**
@@ -1259,6 +1458,51 @@ const connectionProfiles = new ConnectionProfileService({
   createRuntime: runtimeFactoryForProfile,
 });
 
+/**
+ * Automatic placement in the Workspaces arrangement: the workspace a
+ * worktree or session was made for goes under the workspace that asked.
+ * Never fails the creation: the user can always place it by hand.
+ */
+async function placeCreatedWorkspaceUnder(
+  connectionId: string,
+  herdrCall: (method: string, params?: Record<string, unknown>) => Promise<any>,
+  created: unknown,
+  requesterWorkspaceId: string | undefined,
+) {
+  if (!connectionId || !requesterWorkspaceId) return;
+  try {
+    const record =
+      created && typeof created === "object"
+        ? (created as Record<string, any>)
+        : {};
+    const workspaceId =
+      record.workspace?.workspace_id ?? record.workspace_id ?? undefined;
+    if (typeof workspaceId !== "string" || workspaceId === requesterWorkspaceId)
+      return;
+    const list = (await herdrCall("workspace.list", {})) as {
+      workspaces?: any[];
+    };
+    const enriched = connectionManager.readyRuntime(connectionId)
+      ?.worktreeParents
+      ? await connectionManager
+          .readyRuntime(connectionId)!
+          .worktreeParents.enrichWorkspaceList(list)
+      : list;
+    const find = (id: string) =>
+      enriched?.workspaces?.find((each: any) => each?.workspace_id === id);
+    await placeCreatedWorkspace({
+      connectionId,
+      workspace: find(workspaceId) ?? record.workspace,
+      parent: find(requesterWorkspaceId),
+    });
+  } catch (error) {
+    logger.warn("unable to place a created workspace", {
+      connection: connectionId,
+      error: sanitizeConnectionError(error),
+    });
+  }
+}
+
 function notifyBrowserClientCount() {
   connectionManager.forEachCurrentRuntime((runtime) => {
     runtime.terminalBridge.browserClientCountChanged(clients.size);
@@ -1503,6 +1747,47 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "assistant-rpc");
     } catch (error) {
       sendError("assistant-rpc-error", error);
+    }
+    return;
+  }
+  if (method.startsWith("bridge.workspace_tree.")) {
+    // The Workspaces arrangement belongs to this Roamgate server and spans
+    // every connection, so it answers whichever connection is active.
+    try {
+      let result: unknown;
+      if (method === "bridge.workspace_tree.get") {
+        result = { tree: await readWorkspaceTree() };
+      } else if (method === "bridge.workspace_tree.apply") {
+        const raw = Array.isArray(params?.ops) ? params.ops : [];
+        const ops = raw.slice(0, 64).map(parseWorkspaceTreeOp);
+        if (!ops.length || ops.some((op: unknown) => !op))
+          throw new Error("bridge.workspace_tree.apply needs valid ops");
+        result = {
+          tree: await applyWorkspaceTreeOps(ops as WorkspaceTreeOp[]),
+        };
+      } else {
+        throw new Error(`unknown bridge-global method: ${method}`);
+      }
+      sendReply({ id, result }, "workspace-tree");
+    } catch (error) {
+      sendError("workspace-tree-error", error);
+    }
+    return;
+  }
+  if (method === "connections.agent_tasks") {
+    try {
+      sendReply(
+        {
+          id,
+          result: await readConnectionAgentTasks(
+            connectionManager,
+            params ?? {},
+          ),
+        },
+        "connections-agent-tasks",
+      );
+    } catch (error) {
+      sendError("connections-agent-tasks-error", error);
     }
     return;
   }
@@ -2072,6 +2357,14 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
             error: sanitizeConnectionError(error),
           });
         },
+      );
+      await placeCreatedWorkspaceUnder(
+        connectionId ?? "",
+        (method, callParams) => herdr.call(method, callParams),
+        result,
+        typeof params?.workspace_id === "string"
+          ? params.workspace_id
+          : undefined,
       );
       sendReply(
         {

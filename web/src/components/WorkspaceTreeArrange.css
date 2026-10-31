@@ -1,0 +1,206 @@
+/* ===== the user's arrangement of the Workspaces list ===== */
+.tree-row.drop-into {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.workspace-tree-group-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.workspace-tree-group > .ws-label {
+  font-weight: 600;
+}
+
+.workspace-tree-unavailable {
+  opacity: 0.55;
+}
+
+.workspace-tree-unavailable > .ws-label {
+  font-weight: 500;
+  font-style: italic;
+}
+
+.workspace-tree-unavailable-why {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.workspace-tree-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.workspace-tree-remove:hover {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--text);
+}
+
+.workspace-tree-summary {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.workspace-tree-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+
+.workspace-tree-summary > .is-working {
+  color: var(--yellow);
+}
+
+.workspace-tree-summary > .is-background {
+  color: var(--background-work);
+}
+
+.workspace-tree-summary > .is-blocked {
+  color: var(--red);
+}
+
+.workspace-tree-summary > .is-done {
+  color: var(--blue);
+}
+
+.workspace-tree-summary > .is-subagents {
+  color: var(--muted);
+}
+
+/* Subagent rows under an agent. */
+.agent-task-line,
+.agent-task-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agent-task-line:hover,
+.agent-task-row:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.agent-task-line:focus-visible,
+.agent-task-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.agent-task-line-label,
+.agent-task-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-task-line-done {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.agent-task-line-done:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.agent-task-row-state {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-task-row.is-running .agent-task-row-state {
+  color: var(--yellow);
+}
+
+.agent-task-row.is-failed {
+  color: var(--red);
+}
+
+/* Started in a rewound part of the conversation. */
+.agent-task-row-rewound {
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+
+/* "Move into…" */
+.workspace-move-subject {
+  margin: 0 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-move-search {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.workspace-move-list {
+  max-height: min(50vh, 360px);
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.workspace-move-list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-move-list button > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-move-list button.is-cursor {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}

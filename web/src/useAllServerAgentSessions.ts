@@ -109,6 +109,8 @@ export function allServerAgentPanes(
   });
 }
 
+let lastSnapshots: ConnectionAgentSessions[] | null = null;
+
 export function useAllServerAgentSessions(enabled: boolean) {
   const state = useStoreSelector(
     (snapshot) => ({
@@ -118,16 +120,28 @@ export function useAllServerAgentSessions(enabled: boolean) {
     }),
     shallowEqual,
   );
-  const [snapshots, setSnapshots] = useState<ConnectionAgentSessions[] | null>(
-    null,
-  );
+  // A view mounted afresh (a connection switch remounts some) starts from
+  // the last snapshots read, not from nothing: its rows do not vanish and
+  // come back.
+  const [snapshots, setSnapshotsState] = useState<
+    ConnectionAgentSessions[] | null
+  >(() => lastSnapshots);
+  const setSnapshots = (next: ConnectionAgentSessions[] | null) => {
+    if (next) lastSnapshots = next;
+    setSnapshotsState(next);
+  };
   const [error, setError] = useState<string | null>(null);
   const connected = state.status === "connected" && !state.paused;
 
   useEffect(() => {
-    setSnapshots(null);
-    setError(null);
-    if (!enabled || !connected) return;
+    if (!enabled) {
+      setSnapshots(null);
+      setError(null);
+      return;
+    }
+    // Reconnecting, or the catalog changed: the last snapshots stay shown
+    // until new ones come, so the lists do not empty and fill again.
+    if (!connected) return;
     let disposed = false;
     let running = false;
     let queued = false;
