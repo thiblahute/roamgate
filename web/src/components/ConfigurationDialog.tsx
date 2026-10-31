@@ -75,6 +75,11 @@ const TerminalThemeDialog = lazyWithReload("terminal-theme", () =>
     default: module.TerminalThemeDialog,
   })),
 );
+const VoiceSettings = lazyWithReload("voices", () =>
+  import("./VoiceSettings").then((module) => ({
+    default: module.VoiceSettings,
+  })),
+);
 const MobileLayoutDialog = lazyWithReload("mobile-layout", () =>
   import("./MobileLayoutDialog").then((module) => ({
     default: module.MobileLayoutDialog,
@@ -116,9 +121,10 @@ const tabs = [
   "Instance",
   "Connection",
   "Integrations",
+  "Speech",
 ] as const;
 export type ConfigurationTab = (typeof tabs)[number];
-type Detail = "terminal" | "layout" | "keyboard" | "mobile" | "sync";
+type Detail = "terminal" | "layout" | "keyboard" | "mobile" | "sync" | "voices";
 
 export function ConfigurationDialog({
   onClose,
@@ -150,6 +156,8 @@ export function ConfigurationDialog({
   const applePlatform = detectShortcutPlatform() === "mac";
   const connectionClient = useConnectionClient();
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
+  // Asked again on another tab while open.
+  useEffect(() => setTab(initialTab), [initialTab]);
   const paneJumpScope = usePaneJumpScope();
   const defaultPaneView = useDefaultPaneView();
   const vim = useVimKeys();
@@ -233,7 +241,8 @@ export function ConfigurationDialog({
             <div>
               <h2>Configuration</h2>
               <p>
-                Appearance, behavior, instance, connections, and integrations
+                Appearance, behavior, instance, connections, integrations, and
+                speech
               </p>
             </div>
             <CloseButton label="Close Configuration" onClick={onClose} />
@@ -486,7 +495,6 @@ export function ConfigurationDialog({
                 Preferences apply to this browser. Push delivery preferences
                 apply to this device.
               </p>
-              {tab === "Behavior" ? <SpeechSettings /> : null}
               <div className="config-preference-row">
                 <span className="config-item-icon">
                   <Download size={15} />
@@ -800,6 +808,24 @@ export function ConfigurationDialog({
                     sshDestination={s.sshDestination}
                   />
                 </>
+              ) : null}
+            </section>
+            <section
+              role="tabpanel"
+              id="configuration-panel-Speech"
+              aria-labelledby="configuration-tab-Speech"
+              hidden={tab !== "Speech"}
+            >
+              {tab === "Speech" ? (
+                <SpeechSettings
+                  serverVoices={
+                    <Suspense
+                      fallback={<p className="muted">Loading the voices...</p>}
+                    >
+                      <VoiceSettings />
+                    </Suspense>
+                  }
+                />
               ) : null}
             </section>
           </div>

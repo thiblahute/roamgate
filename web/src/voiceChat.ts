@@ -22,6 +22,11 @@ export type VoiceAvailability = {
   speech_rate?: number;
   /** The server decides who each thing said is for (voiceRoute.ts). */
   route?: boolean;
+  /**
+   * Whether each reply is read by one of the voices at random; absent
+   * without a voice library.
+   */
+  surprise?: boolean;
 };
 
 let tracing = false;
@@ -53,6 +58,8 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
     if (isSpeechRate(availability.speech_rate))
       setSpeechRate(availability.speech_rate);
     routing = availability.route === true;
+    if (typeof availability.surprise === "boolean")
+      setVoiceSurprise(availability.surprise, true);
     return availability;
   } catch (error) {
     return { available: false, detail: (error as Error).message };
@@ -566,15 +573,88 @@ export async function saveSpeechRate(rate: number): Promise<void> {
   if (!response.ok) throw new Error(response.statusText);
 }
 
+/**
+ * Surprise (each reply read by one of the voices at random), as the server
+ * keeps it; null until the server says it has voices to pick from.
+ */
+let voiceSurprise: boolean | null = null;
+const surpriseListeners = new Set<() => void>();
+
+export function getVoiceSurprise(): boolean | null {
+  return voiceSurprise;
+}
+
+export function subscribeVoiceSurprise(listener: () => void): () => void {
+  surpriseListeners.add(listener);
+  return () => surpriseListeners.delete(listener);
+}
+
+/**
+ * Surprise as the server has it now, such as after choosing a voice turned
+ * it off; only once the server said it has voices, unless `known`.
+ */
+export function setVoiceSurprise(on: boolean, known = false) {
+  if ((voiceSurprise === null && !known) || voiceSurprise === on) return;
+  voiceSurprise = on;
+  for (const listener of surpriseListeners) listener();
+}
+
+/** Turns Surprise on or off, for every page. */
+export async function saveVoiceSurprise(on: boolean): Promise<void> {
+  const response = await fetch("/api/voice/voices/surprise", {
+    method: "POST",
+    headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify({ on }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(body.error ?? response.statusText);
+  }
+  const state = (await response.json()) as { surprise?: boolean };
+  setVoiceSurprise(state.surprise === true, true);
+}
+
+/** Who reads the sentence playing, when the server said (Surprise). */
+let reader: string | null = null;
+const readerListeners = new Set<() => void>();
+/** Who reads each fetched speech, when the server said. */
+const readers = new WeakMap<Blob, string>();
+
+export function getVoiceReader(): string | null {
+  return reader;
+}
+
+export function subscribeVoiceReader(listener: () => void): () => void {
+  readerListeners.add(listener);
+  return () => readerListeners.delete(listener);
+}
+
+function setVoiceReader(name: string | null) {
+  if (name === reader) return;
+  reader = name;
+  for (const listener of readerListeners) listener();
+}
+
+/** A name for one reply read aloud: its sentences keep one voice. */
+function newReading(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function fetchSpeech(
   text: string,
   signal: AbortSignal,
-  language?: string,
+  { language, reading }: { language?: string; reading?: string } = {},
 ): Promise<Blob> {
   const response = await fetch("/api/voice/speak", {
     method: "POST",
     headers: { ...VOICE_HEADERS, "content-type": "application/json" },
-    body: JSON.stringify(language ? { text, language } : { text }),
+    body: JSON.stringify({
+      text,
+      ...(language ? { language } : {}),
+      ...(reading ? { reading } : {}),
+    }),
     signal,
   });
   if (!response.ok) {
@@ -586,6 +666,14 @@ export async function fetchSpeech(
   const audio = await response.blob();
   const native = Number(response.headers.get("x-voice-native-rate"));
   if (native > 0 && native !== 1) nativeRates.set(audio, native);
+  const name = response.headers.get("x-voice-name");
+  if (name) {
+    try {
+      readers.set(audio, decodeURIComponent(name));
+    } catch {
+      // Not a name.
+    }
+  }
   return audio;
 }
 
@@ -658,6 +746,7 @@ function play(audio: Blob, signal: AbortSignal): Promise<void> {
     // Faster without sounding higher; set after the load starts, which
     // resets playbackRate to defaultPlaybackRate.
     const native = nativeRates.get(audio) ?? 1;
+    setVoiceReader(readers.get(audio) ?? null);
     player.preservesPitch = true;
     player.defaultPlaybackRate = playbackRateFor(speechRate, native);
     player.playbackRate = player.defaultPlaybackRate;
@@ -694,13 +783,15 @@ function play(audio: Blob, signal: AbortSignal): Promise<void> {
 /**
  * How sentences become speech: the server's voices (serverVoice) or the
  * browser's (speechEngine.ts). `prepare` makes a sentence's speech while
- * the one before plays; `play` resolves when it is over or `signal` aborts.
+ * the one before plays (`reading` names the reply it is from, so its
+ * sentences keep one voice); `play` resolves when it is over or `signal`
+ * aborts.
  */
 export type SentenceVoice<Speech = unknown> = {
   prepare(
     text: string,
     signal: AbortSignal,
-    options?: { language?: string },
+    options?: { language?: string; reading?: string },
   ): Promise<Speech>;
   play(speech: Speech, signal: AbortSignal): Promise<void>;
   /** A reading starts (speakWith, speakStream). */
@@ -709,8 +800,7 @@ export type SentenceVoice<Speech = unknown> = {
 
 /** The server's voice engine: Ogg Opus from /api/voice/speak. */
 export const serverVoice: SentenceVoice<Blob> = {
-  prepare: (text, signal, options) =>
-    fetchSpeech(text, signal, options?.language),
+  prepare: (text, signal, options) => fetchSpeech(text, signal, options),
   play,
   // The speed may have changed elsewhere since this page asked.
   begin: () => void refreshSpeechRate(),
@@ -730,8 +820,11 @@ export async function speakWith(
   { skip = 0 }: { skip?: number } = {},
 ): Promise<void> {
   const parts = sentences(markdownToSpeech(text)).slice(skip);
+  const reading = newReading();
   if (parts.length) voice.begin?.();
-  let next = parts.length ? voice.prepare(parts[0]!, signal) : null;
+  let next = parts.length
+    ? voice.prepare(parts[0]!, signal, { reading })
+    : null;
   voiceTrace(`reading ${parts.length} sentences`);
   signal.addEventListener("abort", () => voiceTrace("reading stopped"), {
     once: true,
@@ -748,7 +841,7 @@ export async function speakWith(
     );
     next =
       index + 1 < parts.length
-        ? voice.prepare(parts[index + 1]!, signal)
+        ? voice.prepare(parts[index + 1]!, signal, { reading })
         : null;
     // A failed fetch ahead must not go unhandled while this one plays.
     next?.catch(() => {});
@@ -758,6 +851,7 @@ export async function speakWith(
     voiceTrace(`sentence ${index + 1} done`);
   }
   voiceTrace("reading over");
+  setVoiceReader(null);
   onSentence?.(null);
 }
 
@@ -898,6 +992,8 @@ export async function speakStream(
   const prefetch = Math.max(1, options.prefetch ?? 2);
   const { voice } = options;
   voice.begin?.();
+  // One reply: its sentences keep one voice.
+  const reply = newReading();
   const splitter = new SpeakableStream();
   const queue: { text: string; audio: Promise<unknown> }[] = [];
   const waiting: string[] = [];
@@ -912,7 +1008,7 @@ export async function speakStream(
   const fill = () => {
     while (waiting.length && queue.length < prefetch && !signal.aborted) {
       const text = waiting.shift()!;
-      const audio = voice.prepare(text, signal);
+      const audio = voice.prepare(text, signal, { reading: reply });
       // Failed ahead: reported when its turn comes.
       audio.catch(() => {});
       queue.push({ text, audio });
@@ -966,6 +1062,7 @@ export async function speakStream(
       await voice.play(audio, signal);
     }
   } finally {
+    setVoiceReader(null);
     onSentence?.(null);
   }
   if (!signal.aborted) await reading;

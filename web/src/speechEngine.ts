@@ -45,7 +45,8 @@ const notify = () => {
   for (const listener of listeners) listener();
 };
 
-function readWithNow(): ReadWith {
+/** Which engine this browser was set to read with. */
+export function readWithNow(): ReadWith {
   try {
     return roamgateLocalStorage.getItem(READ_WITH_KEY) === "browser"
       ? "browser"
