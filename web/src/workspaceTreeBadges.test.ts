@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { GitStatusSummary, Workspace } from "./types";
 import {
+  connectionDotColor,
+  shortWorkspaceName,
   showWorkspaceBranchBadge,
+  workspaceBranchLine,
+  workspaceChangeIndicator,
   workspaceDisplayName,
 } from "./workspaceTreeBadges";
 
@@ -83,5 +87,85 @@ describe("workspace tree badges", () => {
     const target = workspace({ label: "", branch: "w1" });
     expect(workspaceDisplayName(target)).toBe("w1");
     expect(showWorkspaceBranchBadge(target)).toBe(false);
+  });
+});
+
+describe("what a narrow row shows", () => {
+  test("a worktree drops the prefix it repeats from its parent", () => {
+    expect(shortWorkspaceName("gstreamer-ocio", "gstreamer")).toBe("ocio");
+    expect(shortWorkspaceName("gstreamer_up/color", "gstreamer")).toBe(
+      "up/color",
+    );
+    expect(shortWorkspaceName("Roamgate.tree", "roamgate")).toBe("tree");
+  });
+
+  test("anything else is shown whole", () => {
+    // Not at a separator: a different word.
+    expect(shortWorkspaceName("gstreamerocio", "gstreamer")).toBe(
+      "gstreamerocio",
+    );
+    expect(shortWorkspaceName("gst-ocio", "gstreamer")).toBe("gst-ocio");
+    expect(shortWorkspaceName("gstreamer", "gstreamer")).toBe("gstreamer");
+    // Nothing left after the separator.
+    expect(shortWorkspaceName("gstreamer--", "gstreamer")).toBe("gstreamer--");
+    expect(shortWorkspaceName("notes")).toBe("notes");
+    expect(shortWorkspaceName("notes", "  ")).toBe("notes");
+  });
+
+  test("the branch line appears only when it says something new", () => {
+    expect(
+      workspaceBranchLine(workspace({ label: "ocio", branch: "ocio" })),
+    ).toBe(null);
+    expect(
+      workspaceBranchLine(
+        workspace({ label: "gstreamer-ocio", branch: "ocio" }),
+        "ocio",
+      ),
+    ).toBe(null);
+    expect(
+      workspaceBranchLine(workspace({ label: "gstreamer", branch: "main" })),
+    ).toBe("main");
+    expect(workspaceBranchLine(workspace({ label: "notes" }))).toBe(null);
+  });
+
+  test("one change indicator: changes first, else ahead and behind", () => {
+    const status = (over: Partial<GitStatusSummary>): GitStatusSummary => ({
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      conflicted: 0,
+      dirty: false,
+      ...over,
+    });
+    expect(
+      workspaceChangeIndicator(status({ staged: 2, untracked: 10, ahead: 1 })),
+    ).toEqual({ text: "Δ12", kind: "dirty" });
+    expect(workspaceChangeIndicator(status({ ahead: 1 }))).toEqual({
+      text: "↑1",
+      kind: "ahead",
+    });
+    expect(workspaceChangeIndicator(status({ behind: 4 }))).toEqual({
+      text: "↓4",
+      kind: "behind",
+    });
+    expect(workspaceChangeIndicator(status({ ahead: 1, behind: 4 }))).toEqual({
+      text: "↑1↓4",
+      kind: "behind",
+    });
+    expect(workspaceChangeIndicator(status({}))).toBeNull();
+    expect(workspaceChangeIndicator(undefined)).toBeNull();
+    expect(workspaceChangeIndicator(status({ error: "boom" }))?.kind).toBe(
+      "error",
+    );
+  });
+
+  test("a connection keeps its dot colour", () => {
+    expect(connectionDotColor("desktop")).toBe(connectionDotColor("desktop"));
+    const colors = new Set(
+      ["desktop", "laptop", "win10", "server"].map(connectionDotColor),
+    );
+    expect(colors.size).toBeGreaterThan(1);
   });
 });

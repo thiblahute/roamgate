@@ -35,7 +35,7 @@ export interface ContextMenuState {
   source?: ServerSessionSource;
 }
 
-interface Item {
+export interface Item {
   label: string;
   danger?: boolean;
   action: () => void;
@@ -75,9 +75,12 @@ export function ContextMenu({
   onPinnedChange,
   onBrowseFiles,
   onReviewChanges,
+  arrangeItems = [],
   onClose,
 }: {
   state: ContextMenuState | null;
+  /** Placing it in the user's arrangement of the list. */
+  arrangeItems?: Item[];
   reviewStatus?: PullRequestSummary;
   pinnedWorkspaceKeys: ReadonlySet<string>;
   onPinnedChange: (workspace: Workspace, pinned: boolean) => void;
@@ -430,10 +433,12 @@ export function ContextMenu({
             },
           ],
         },
-      ]
+        { label: "Arrange", items: arrangeItems },
+      ].filter((group) => group.items.length > 0)
     : [
         { label: "Inspect", items: inspectItems },
         { label: "Organize", items: organizeItems },
+        { label: "Arrange", items: arrangeItems },
         { label: "Worktrees", items: worktreeItems },
         { label: "Source control", items: sourceControlItems },
         { label: "Close", items: closeItems, danger: true },
@@ -476,6 +481,11 @@ export function ContextMenu({
                 className={`context-menu-item ${item.danger ? "is-danger" : ""}`}
                 onClick={() => {
                   onClose();
+                  // Arranging touches no connection.
+                  if (group.label === "Arrange") {
+                    item.action();
+                    return;
+                  }
                   if (
                     state.source &&
                     (!isServerSourceAvailable(state.source) ||

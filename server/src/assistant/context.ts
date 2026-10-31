@@ -24,6 +24,7 @@ import {
   type AssistantPromptListener,
   readAssistantPaneOccupant,
   type AssistantWorktreeCreator,
+  type AssistantWorkspaceCreatedListener,
 } from "./actions";
 import { AssistantUserError } from "./errors";
 import {
@@ -161,6 +162,8 @@ export function createAssistantContext(args: {
   createWorktree?: AssistantWorktreeCreator;
   /** Ranger prompted an agent (actions.ts). */
   onAgentPrompted?: AssistantPromptListener;
+  /** Ranger made a workspace from another (actions.ts). */
+  onWorkspaceCreated?: AssistantWorkspaceCreatedListener;
 }) {
   // Keep each turn's original leases, including runtime identity, out of model data.
   const scopes = new WeakMap<AssistantWorkspace[], Map<string, RuntimeLease>>();
@@ -1210,6 +1213,7 @@ export function createAssistantContext(args: {
       signal,
       createWorktree: args.createWorktree,
       onAgentPrompted: args.onAgentPrompted,
+      onWorkspaceCreated: args.onWorkspaceCreated,
     });
     if (paneId) await assertMentionAgent(captured, target, paneId, signal);
     if (

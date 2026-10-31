@@ -1,3 +1,4 @@
+import { markTaskFailureSeen } from "../workspaceTreeTasks";
 import {
   Bot,
   Check,
@@ -250,6 +251,11 @@ export function AgentTasksSheet({
     openingPlace(place, taskIds, initialTaskId),
   );
   const open = tasks.find((task) => task.id === opening.taskId) ?? null;
+  // A failure opened here has been seen: the Workspaces list lets it go.
+  useEffect(() => {
+    if (open?.status === "failed")
+      markTaskFailureSeen(client.connectionId, pane.pane_id, open.id);
+  }, [client.connectionId, open?.id, open?.status, pane.pane_id]);
   const sheetRef = useRef<HTMLDivElement>(null);
   const viewKeys = useRef<ViewKeys | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -442,9 +448,11 @@ export function AgentTasksSheet({
 /** The sheet over a pane's terminal, which reads the tasks itself. */
 export function PaneAgentTasksSheet({
   pane,
+  initialTaskId = null,
   onClose,
 }: {
   pane: Pane;
+  initialTaskId?: string | null;
   onClose: () => void;
 }) {
   const { tasks, session, loaded } = useAgentTasks(pane, true);
@@ -455,6 +463,7 @@ export function PaneAgentTasksSheet({
       pane={pane}
       tasks={tasks}
       session={session}
+      initialTaskId={initialTaskId}
       onClose={onClose}
     />
   );

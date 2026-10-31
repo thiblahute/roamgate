@@ -9,6 +9,14 @@ import type { Pane, Tab } from "../types";
 import { agentClass, basename, shortId } from "../utils";
 import { shouldShowAgentStatusLabel } from "./agentSession";
 import { AgentStatusIcon } from "./AgentStatusIcon";
+import {
+  type BackgroundWork,
+  agentPresence,
+  backgroundCountLabel,
+  backgroundTooltip,
+  showsBackground,
+  statusWord,
+} from "../agentBackground";
 import { hasAgentIcon } from "./AgentIcon";
 import { observeClampedContextMenu } from "./contextMenuPosition";
 import { TREE_DEPTH_INDENT } from "./treeIndent";
@@ -104,6 +112,7 @@ export function AgentRow({
   onSelect,
   onOpenMenu,
   drag,
+  background,
 }: {
   pane: Pane;
   selected: boolean;
@@ -124,6 +133,8 @@ export function AgentRow({
     onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
     onDragEnd: () => void;
   };
+  /** What it still runs once its turn is over, from the list's task reads. */
+  background?: BackgroundWork;
 }) {
   const rawTabLabel = useStoreSelector(
     (state) =>
@@ -160,7 +171,12 @@ export function AgentRow({
       onSelect?.(pane);
     }
   };
-  const showStatus = shouldShowAgentStatusLabel(pane.agent_status);
+  const inBackground =
+    !!background && showsBackground(pane.agent_status, background);
+  const backgroundLabel =
+    inBackground && background ? backgroundCountLabel(background) : "";
+  const showStatus =
+    inBackground || shouldShowAgentStatusLabel(pane.agent_status);
   const nested = variant === "nested";
   const [primaryTitle, ...secondaryTitles] = nestedAgentTitle(
     pane,
@@ -169,7 +185,7 @@ export function AgentRow({
   const details = [
     `${pane.agent?.trim() || "Agent"} pane ${pane.pane_id}`,
     rawTabLabel ? `tab ${rawTabLabel}` : `tab ${pane.tab_id}`,
-    `status ${pane.agent_status}`,
+    `status ${pane.agent_status}${backgroundLabel ? `, ${backgroundLabel}` : ""}`,
     ...new Set([pane.foreground_cwd, pane.cwd].filter(Boolean)),
   ].join(", ");
 
@@ -279,11 +295,14 @@ export function AgentRow({
           : undefined
       }
       title={
-        nested
+        (nested
           ? details
           : [serverLabel, pane.pane_id, tabLabel, pane.cwd]
               .filter(Boolean)
-              .join(" · ")
+              .join(" · ")) +
+        (inBackground && background
+          ? `\n${backgroundTooltip(pane.agent_status, background)}`
+          : "")
       }
       aria-label={
         nested
@@ -291,7 +310,11 @@ export function AgentRow({
           : `${serverLabel ? `${serverLabel}, ` : ""}${pane.agent ?? "Agent"} pane${tabLabel ? `, tab ${tabLabel}` : ""}, status ${pane.agent_status}`
       }
     >
-      <AgentStatusIcon agent={pane.agent} status={pane.agent_status} />
+      <AgentStatusIcon
+        agent={pane.agent}
+        status={pane.agent_status}
+        background={inBackground}
+      />
       <div className="agent-info">
         <div className="agent-title">
           <span className="agent-title-label">
@@ -312,9 +335,16 @@ export function AgentRow({
           </span>
           {showStatus ? (
             <span
-              className={`${agentClass(pane.agent_status)} agent-row-status`}
+              className={`${
+                inBackground &&
+                agentPresence(pane.agent_status, background!) === "background"
+                  ? "badge badge-background"
+                  : agentClass(pane.agent_status)
+              } agent-row-status`}
             >
-              {pane.agent_status}
+              {inBackground
+                ? `${statusWord(pane.agent_status)} · ${background!.running} running`
+                : pane.agent_status}
             </span>
           ) : null}
         </div>

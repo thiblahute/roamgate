@@ -401,7 +401,12 @@ export function AgentHistoryDrawer({
   const chatPaneId = paneChat ? pane.pane_id : null;
   useEffect(() => {
     if (!chatPaneId) return;
-    return onAgentTasksRequest(chatPaneId, () => {
+    return onAgentTasksRequest(chatPaneId, (request) => {
+      if (request) {
+        setOpenTaskId(request.taskId);
+        setTasksOpen(true);
+        return;
+      }
       setOpenTaskId(null);
       setTasksOpen((shown) => !shown);
     });
@@ -3123,6 +3128,7 @@ export function AgentHistoryDrawer({
       {/* Once it is known which session's place to open on. */}
       {paneChat && tasksOpen && tasksLoaded ? (
         <AgentTasksSheet
+          key={openTaskId ?? ""}
           pane={pane}
           tasks={tasks}
           session={tasksSession}

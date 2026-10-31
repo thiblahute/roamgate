@@ -209,19 +209,20 @@ if (process.env.ROAMGATE_SERVER_TREE_DOM_TEST !== "1") {
         ),
       );
       expect(container.querySelector(".workspace-server-group")).toBeNull();
-      expect(
-        container.querySelectorAll(".workspace-server-badge"),
-      ).toHaveLength(6);
-      for (const id of ["alpha", "beta"]) {
-        for (const row of rows(id)) {
-          const badge = row.querySelector<HTMLElement>(
-            ".workspace-server-badge",
-          )!;
-          expect(badge.textContent).toBe(id);
-          expect(badge.title).toBe(id);
-          expect(badge.getAttribute("aria-label")).toBe(`Server: ${id}`);
-        }
+      // Another server's rows carry its coloured dot; the default local one's none.
+      expect(container.querySelectorAll(".workspace-host-dot")).toHaveLength(3);
+      for (const row of rows("alpha"))
+        expect(row.querySelector(".workspace-host-dot")).toBeNull();
+      const dotColors = new Set<string>();
+      for (const row of rows("beta")) {
+        const dot = row.querySelector<HTMLElement>(".workspace-host-dot")!;
+        expect(dot.title).toBe("beta");
+        expect(dot.getAttribute("aria-label")).toBe("Server: beta");
+        dotColors.add(dot.style.background);
+        // The hover card names the host.
+        expect(row.title).toContain("Host: beta");
       }
+      expect(dotColors.size).toBe(1);
       expect(
         container.querySelector('[data-connection-id="offline"]')?.textContent,
       ).toContain("offline: Disconnected");
@@ -229,14 +230,18 @@ if (process.env.ROAMGATE_SERVER_TREE_DOM_TEST !== "1") {
       expect(rows("alpha")).toHaveLength(3);
       expect(rows("beta")).toHaveLength(3);
       expect(
-        workspace("beta", "beta w1").querySelector(".git-branch")?.textContent,
+        workspace("beta", "beta w1").querySelector(".ws-branch")?.textContent,
       ).toBe("beta/main");
+      // One change indicator: the changes, with ahead and behind in the card.
       expect(
-        workspace("beta", "beta w1").querySelector(".git-dirty")?.textContent,
-      ).toBe("Δ2");
-      expect(
-        workspace("beta", "beta w1").querySelector(".git-ahead")?.textContent,
-      ).toBe("↑1");
+        [
+          ...workspace("beta", "beta w1").querySelectorAll(
+            ".ws-status > .ws-change",
+          ),
+        ].map((each) => each.textContent),
+      ).toEqual(["Δ2"]);
+      expect(workspace("beta", "beta w1").title).toContain("Ahead 1");
+      expect(workspace("beta", "beta w1").dataset.tooltipCard).toBe("");
       expect(workspace("beta", "beta w3").getAttribute("aria-level")).toBe("2");
       expect(workspace("beta", "beta w1").getAttribute("aria-level")).toBe("1");
       expect(workspace("beta", "beta w1").style.paddingLeft).toBe("6px");
@@ -282,20 +287,10 @@ if (process.env.ROAMGATE_SERVER_TREE_DOM_TEST !== "1") {
 
       await write(WORKSPACE_AGENT_LAYOUT_STORAGE_KEY, "compact");
       expect(rows("beta")).toHaveLength(3);
-      expect(
-        container.querySelectorAll(".workspace-server-badge"),
-      ).toHaveLength(6);
+      expect(container.querySelectorAll(".workspace-host-dot")).toHaveLength(3);
       expect(container.querySelector(".agent-row")).toBeNull();
-      expect(
-        workspace("beta", "beta w1").querySelector(".workspace-tab-count")
-          ?.textContent,
-      ).toBe("1");
-      // The count stays next to the name; the server badge keeps the right column.
-      expect(
-        workspace("beta", "beta w1").querySelector(
-          ".workspace-tab-count + .workspace-server-badge",
-        ),
-      ).not.toBeNull();
+      // The pane count is in the hover card, not on the line.
+      expect(workspace("beta", "beta w1").title).toContain("1 pane in 1 tab");
       expect(
         workspace("beta", "beta w1").querySelector(".workspace-tab-chip"),
       ).toBeNull();
@@ -304,9 +299,10 @@ if (process.env.ROAMGATE_SERVER_TREE_DOM_TEST !== "1") {
       );
       expect([...chips].map((chip) => chip.textContent)).toEqual(["1", "2"]);
       expect([...chips].every((chip) => chip.tabIndex === 0)).toBe(true);
+      // On the second line, which a wide sidebar shows.
       expect(
         workspace("beta", "beta w2").querySelector(
-          ".workspace-tab-chips + .workspace-server-badge",
+          ".ws-sub > .workspace-tab-chips",
         ),
       ).not.toBeNull();
       await act(async () => chips[1].click());

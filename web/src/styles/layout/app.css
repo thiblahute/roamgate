@@ -304,6 +304,14 @@
   background: var(--green);
 }
 
+.pane-jump-status.status-background {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 2px var(--background-work),
+    0 0 0 3px var(--border-soft);
+  animation: background-work-pulse 1.8s ease-in-out infinite;
+}
+
 .pane-jump-status.status-blocked,
 .pane-jump-status.status-error {
   background: var(--red);
@@ -399,6 +407,13 @@
   box-shadow: 0 0 0 2px var(--panel);
 }
 
+.pane-jump-agent-identity .pane-jump-status.status-background {
+  background: var(--panel);
+  box-shadow:
+    inset 0 0 0 1.5px var(--background-work),
+    0 0 0 2px var(--panel);
+}
+
 .pane-jump-agent-name {
   max-width: 25%;
   color: var(--text);
@@ -410,6 +425,10 @@
   margin-left: auto;
   font-size: 11px;
   text-transform: capitalize;
+}
+
+.pane-jump-agent-status.badge-background {
+  text-transform: none;
 }
 
 .pane-jump-server-badge {

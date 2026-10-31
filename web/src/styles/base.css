@@ -699,6 +699,33 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+.badge-background {
+  color: var(--background-work-text);
+  border-color: var(--background-work);
+  background: color-mix(in srgb, var(--panel) 88%, var(--background-work));
+}
+
+/* A hollow, breathing dot: an idle agent whose side tasks still run. */
+.background-work-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--background-work);
+  border-radius: 999px;
+  animation: background-work-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .background-work-dot,
+  .ws-agent-dot.is-background,
+  .agent-status-icon-dot.is-background,
+  .pane-jump-status.status-background {
+    animation: none;
+  }
+}
+
 .badge-idle {
   color: var(--info-text);
   border-color: var(--accent);

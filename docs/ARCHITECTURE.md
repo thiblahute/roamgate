@@ -207,6 +207,52 @@ edits or sending input. Unsent input may contain sensitive information and
 remains in this browser until cleared. If browser storage is unavailable, only
 in-memory reconnect recovery is available.
 
+### Workspace arrangement
+
+The user's arrangement of the Workspaces list is stored on the Roamgate server
+in `settings.json` as `workspace_tree` (absent while empty) and shared by every
+browser. `shared/workspaceTree.ts` defines it and the operations on it, used by
+both sides. It is a list of nodes in sibling order, each with an id and a parent
+id: label groups, and workspaces named by connection id and a reference. A
+workspace whose parent is null and that has no `root` stays in its usual place
+and only holds children. `root` marks an explicit top-level placement: `top`
+above the list, `list` in the list at Herdr's position but never nested under
+its repository, `bottom` below the list. A group whose parent is null shows at
+the top of the list, or below it with `root: "bottom"`. A move's parent is a
+node, a workspace, `{ root }` for the top level, or null for the usual place.
+
+A workspace reference is its checkout path on its host, else its label, plus
+Herdr's workspace id as a hint. `workspace.list` gives an id, a number, a
+label and, for Git checkouts, `worktree.checkout_path`. Ids and numbers are
+Herdr session state that a restored session may assign again, so they never
+identify a workspace alone; checkout paths survive Herdr restarts and host
+reboots; labels are the user's to change. Browsers match references to live
+workspaces by path, then by label, then by last id (a renamed workspace without
+a checkout), each live workspace once, and send the server what changed
+(`refresh`). A reference on a connection that is not ready resolves as
+offline and one that matches nothing as gone; both keep their place.
+
+Browsers change it through `bridge.workspace_tree.get` and
+`bridge.workspace_tree.apply` (up to 64 operations: move, create, rename,
+collapse or delete a group, remove a workspace, refresh), which apply in one
+settings write and refuse a move into its own subtree or a result over 512 KiB.
+Every change, whoever made it, is pushed to every socket as `workspace_tree`.
+The server places workspaces itself when it knows who asked: the `worktree.create`
+RPC and Ranger's worktree and workspace actions place the new workspace under
+the source workspace, and `roamgate-review worktree|workspace|place` under the
+calling pane's workspace, or with `--group PATH` into the group that path of
+names reaches (`shared/workspaceTree.ts` `resolveWorkspaceTreePath`:
+case-insensitive, from the top level, else from the caller's group upwards;
+`--create-group` adds `create_group` operations for the missing part, else the
+command is refused before anything is made; `roamgate-review groups` lists the
+paths). Automatic placement skips a workspace the usual list already
+nests there (a worktree made from its repository's main checkout) and one the
+user has placed, at the top level included.
+
+Subagent rows read `connections.agent_tasks`, a batch over any connection of
+what `agent_tasks.get` gives, trimmed to ids, kinds, titles, statuses and times.
+Browsers ask again only when an agent's state or activity changes.
+
 ### Worktree Git status
 
 `workspace.list` attaches each checkout's last known `worktree.git_status`
@@ -313,6 +359,16 @@ state; sends are never replayed.
   `callWorkspaceTool` against the turn's approved scope. Pi's built-in tools,
   extensions, skills, and project instructions are disabled, and workspace
   evidence is treated as untrusted.
+- **Arrangement tools** (`workspace-tree-tools.ts`): `workspace_tree_get`,
+  `workspace_tree_move` and `workspace_tree_group` read and change the
+  [workspace arrangement](#workspace-arrangement) with the operations of
+  `shared/workspaceTree.ts`, through `applyWorkspaceTreeOps`, so one call is one
+  settings write and one push. They list every workspace on every connection
+  (labels, paths, branches and placement, no content) whatever the turn's scope,
+  name a workspace by connection and id or checkout path, refuse unknown or
+  ambiguous items and moves into a subtree with nothing written, and run
+  directly in every approval mode, like `show_in_roamgate`: arranging is
+  reversible and is never a proposal.
 - **Scope:** no workspaces are allowed by default. Each turn captures concrete
   connection/workspace pairs (at most 512) and rechecks runtime leases around
   every read. Only the dedicated confirmation can enable high-permission mode

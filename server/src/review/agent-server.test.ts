@@ -49,6 +49,7 @@ type Setup = {
 };
 
 const notified: Record<string, unknown>[] = [];
+const placements: Record<string, unknown>[] = [];
 function setup(): Setup {
   const dir = temp("rg-rev-");
   const home = temp("rg-home-");
@@ -77,6 +78,10 @@ function setup(): Setup {
     ],
     notify: async (input) => {
       notified.push(input);
+    },
+    workspaces: async (input) => {
+      placements.push(input);
+      return { under: input.workspaceId };
     },
   });
   cleanups.push(() => {
@@ -712,4 +717,99 @@ test("an SSH connection named local has its own socket", async () => {
   // Stopping the Mac's socket leaves the desktop's link in place.
   agent.stop("local");
   expect(readlinkSync(link)).toBe(agent.socketPath(LOCAL_SOCKET_KEY)!);
+});
+
+test("an agent's worktrees and workspaces go under its own workspace", async () => {
+  const s = setup();
+  placements.length = 0;
+  const made = await run(s, [
+    "worktree",
+    "--branch",
+    "up-ocio",
+    "--repo",
+    s.other,
+  ]);
+  expect(made.json).toEqual({ under: "w1" });
+  const placed = await run(s, ["place", "--workspace-id", "w7"]);
+  expect(placed.json).toEqual({ under: "w1" });
+  const opened = await run(s, ["workspace", "--label", "notes"]);
+  expect(opened.code).toBe(0);
+  expect(placements).toEqual([
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      workspaceId: "w1",
+      command: "worktree",
+      params: { branch: "up-ocio", repo: s.other, cwd: s.cwd },
+    },
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      workspaceId: "w1",
+      command: "place",
+      params: { workspace_id: "w7", cwd: s.cwd },
+    },
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      workspaceId: "w1",
+      command: "workspace",
+      params: { label: "notes", cwd: s.cwd },
+    },
+  ]);
+  // place needs one of its targets, and all of them a pane.
+  expect((await run(s, ["place"])).code).not.toBe(0);
+  expect(
+    (
+      await run(s, ["place", "--path", s.other], undefined, {
+        HERDR_PANE_ID: "",
+      })
+    ).code,
+  ).not.toBe(0);
+  expect(placements).toHaveLength(3);
+});
+
+test("an agent can name a group of the Workspaces tree, and list them", async () => {
+  const s = setup();
+  placements.length = 0;
+  await run(s, [
+    "worktree",
+    "--branch",
+    "pc",
+    "--group",
+    "gst/upstreaming",
+    "--create-group",
+  ]);
+  await run(s, ["place", "--workspace-id", "w7", "--group", "gst > up"]);
+  // groups needs no pane.
+  const listed = await run(s, ["groups"], undefined, { HERDR_PANE_ID: "" });
+  expect(listed.code).toBe(0);
+  expect(placements).toEqual([
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      workspaceId: "w1",
+      command: "worktree",
+      params: {
+        branch: "pc",
+        group: "gst/upstreaming",
+        create_group: "1",
+        cwd: s.cwd,
+      },
+    },
+    {
+      connectionId: "local",
+      paneId: "w1:p2",
+      workspaceId: "w1",
+      command: "place",
+      params: { workspace_id: "w7", group: "gst > up", cwd: s.cwd },
+    },
+    {
+      connectionId: "local",
+      paneId: "",
+      workspaceId: "w1",
+      command: "groups",
+      params: { cwd: s.cwd },
+    },
+  ]);
 });

@@ -72,6 +72,10 @@ def real_repo(value):
     return os.path.realpath(value)
 
 
+def real_dir(value):
+    return os.path.realpath(os.path.expanduser(value))
+
+
 def common_options(target, default=None):
     target.add_argument(
         "--session",
@@ -173,6 +177,51 @@ def parser():
     )
     n.add_argument("--title", help="a few words (default: your agent and workspace)")
     n.add_argument("text", nargs="*", help="what the user needs to do, or - for standard input")
+
+    def group_args(command):
+        command.add_argument(
+            "--group",
+            help="put it in this group of the Workspaces tree instead of under yours: names from the top"
+            " (or from your own group) such as gst/upstreaming, case-insensitive; see groups",
+        )
+        command.add_argument(
+            "--create-group",
+            action="store_true",
+            help="make the groups of --group that do not exist",
+        )
+
+    pl = sub.add_parser(
+        "place",
+        help="put a workspace under yours in Roamgate's Workspaces list (one you started work in), or in --group",
+    )
+    placed = pl.add_mutually_exclusive_group(required=True)
+    placed.add_argument("--workspace-id", help="its Herdr workspace id")
+    placed.add_argument("--path", type=real_dir, help="its checkout or directory")
+    group_args(pl)
+
+    wt = sub.add_parser(
+        "worktree",
+        help="create a Git worktree workspace, listed under yours in Roamgate, or in --group",
+    )
+    wt.add_argument("--branch", required=True)
+    wt.add_argument("--repo", type=real_dir, help="the repository (default: here)")
+    wt.add_argument("--base", help="what to branch from (default: Herdr's)")
+    wt.add_argument("--path", help="the checkout's path (default: Herdr's)")
+    wt.add_argument("--label", help="the workspace's name")
+    group_args(wt)
+
+    ws = sub.add_parser(
+        "workspace",
+        help="create a workspace in a directory, listed under yours in Roamgate, or in --group",
+    )
+    ws.add_argument("--dir", type=real_dir, help="its directory (default: here)")
+    ws.add_argument("--label", help="its name")
+    group_args(ws)
+
+    sub.add_parser(
+        "groups",
+        help="the groups of Roamgate's Workspaces tree, as paths to give --group, and the one you are in",
+    )
 
     q = sub.add_parser(
         "permission",

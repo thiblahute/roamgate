@@ -16,6 +16,11 @@ import {
   type WorkspaceToolReader,
   workspaceTools,
 } from "./tools";
+import {
+  callWorkspaceTreeTool,
+  type WorkspaceTreeToolHandler,
+  workspaceTreeTools,
+} from "./workspace-tree-tools";
 
 /** A Ranger tool as a model driver exposes it, with what runs it. */
 export type RangerTool = {
@@ -46,6 +51,7 @@ State what you observed and distinguish it from inference. Idle or completed age
 If close tools are available, obtain exact target identifiers from fresh workspace_status. propose_workspace_close closes the workspace and its panes; propose_pane_close closes the selected pane; propose_agent_close closes the selected agent's pane and terminates its processes. Closing the last pane also closes its tab/workspace. Closing is not prompt interruption, saved-agent-history deletion or Git worktree removal. Make the scope and possible loss of unsaved terminal work clear. Never substitute a different target after a stale or failed close proposal.
 If task tools are available, use list_ranger_tasks to obtain task identifiers, the current time and timezone before interpreting relative dates. Use propose_ranger_task to create an exact schedule. Use propose_ranger_task_update to edit only the requested title, prompt, schedule or notification mode; it preserves scope, model and bound Agent identities, never increases approval permissions, and does not resume a paused task. Manually confirming an edit makes future runs require confirmation for workspace actions. propose_ranger_task_pause prevents future scheduled runs while letting an already-started run finish. propose_ranger_task_resume resumes a paused task. propose_ranger_task_cancel permanently disables the task and stops its active run while retaining history; cancelled tasks cannot be edited or resumed. propose_ranger_task_delete removes an already cancelled task and its private run history only after active or draining runs have stopped, and cannot be undone. Do not cancel a task merely to make a deletion possible unless the user requested that cancellation. Receipt details and tool errors can report incomplete active-run stopping or history cleanup; relay those limitations and never claim those effects completed. For requests to monitor an Agent, check back later or notify on a requested outcome, use notification_mode agent and a prompt that identifies what to watch and what counts as success, failure or needed user input. ${automatic ? "A confirmed tool receipt verifies the requested task operation; it does not mean every task was enabled. Inspect the returned task state. A pending receipt still requires confirmation." : "Return after proposing, and never claim a task was created, changed, paused, resumed, cancelled or deleted before the user confirms it."} Ask for clarification if the schedule or timezone is ambiguous.
 If send_user_notification is available, you are executing a confirmed task. Read fresh workspace_status and relevant workspace_history or workspace_terminal before judging its requested outcome; idle alone is not proof of success. Notify only for meaningful requested outcomes or required user input, and stay quiet while the monitored state is unchanged or non-actionable. Use your own concise title and body that explain the observed outcome and why the user should care. Consult prior notification receipts in task context, choose an event_key tied to the Agent session and outcome, and reuse that exact key for the same unchanged event across runs. Do not invent a new key to repeat a notification. Receipts record acceptance or deduplication, not device delivery; never claim the user received it. Task tools may be absent in scheduled runs: use the notification tool for their authorized notification instead of proposing another task. Do not include private credentials or authorization URLs in notifications.
+If workspace tree tools are available, the user's Workspaces sidebar in Roamgate is an arrangement of their own: any workspace can hold others from any repository or connection, label groups nest at any depth, and a workspace can be put at the top level or left in its usual place (a worktree under its repository's main checkout). When the user asks to group, nest, reorder, sort, tidy, collapse or move workspaces in the sidebar, read workspace_tree_get, then use workspace_tree_group (create a group with its children in one call) and workspace_tree_move, batching everything one request needs into one call so the user sees one change. These only arrange the sidebar, are reversible, and execute directly without confirmation, in every approval mode; they cover every workspace on every connection whatever this turn's scope, and read no workspace content. Report the changes the tool returns; on a refusal nothing changed.
 Read only the context needed to answer. Do not include credentials or authorization URLs in answers.`;
 }
 
@@ -61,6 +67,8 @@ export function rangerTools(
     task?: TaskToolHandler;
     notify?: NotificationToolSender;
     show?: ShowToolHandler;
+    /** The Workspaces arrangement; absent where there is none to change. */
+    arrange?: WorkspaceTreeToolHandler;
   },
   automatic: boolean,
 ): RangerTool[] {
@@ -68,6 +76,7 @@ export function rangerTools(
   const task = input.task;
   const notify = input.notify;
   const show = input.show;
+  const arrange = input.arrange;
   return [
     ...workspaceTools.map((tool) => ({
       ...tool,
@@ -118,10 +127,21 @@ export function rangerTools(
             callShowTool(tool.name, params, show, signal),
         }))
       : []),
+    // Arranging is reversible, like show_in_roamgate: never a proposal.
+    ...(arrange
+      ? workspaceTreeTools.map((tool) => ({
+          ...tool,
+          replay: tool.kind === "get" ? ("safe" as const) : ("unsafe" as const),
+          call: (params: unknown, signal?: AbortSignal) =>
+            callWorkspaceTreeTool(tool.name, params, arrange, signal),
+        }))
+      : []),
   ].map((tool) => ({
     ...tool,
     sequential:
       tool.name === "send_user_notification" ||
+      tool.name === "workspace_tree_move" ||
+      tool.name === "workspace_tree_group" ||
       (automatic && tool.name.startsWith("propose_")),
   }));
 }

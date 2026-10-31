@@ -10,6 +10,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Rows show their second line only when the sidebar has room for it. */
+  container: workspace-tree / inline-size;
 }
 
 .workspace-tree-panel > .panel-head h2,
@@ -32,20 +34,6 @@
 
 .workspace-server-message {
   overflow-wrap: anywhere;
-}
-
-.workspace-server-badge {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 84px;
-  overflow: hidden;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tree-row {
@@ -90,25 +78,8 @@
   background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
 }
 
-.tree-row > .git-status {
-  min-width: min-content;
-  flex: 0 1 auto;
-  display: inline-grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  gap: 2px;
-}
-
-.tree-row > .git-status:has(.git-branch:not([hidden])) {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .tree-row .git-badge {
   padding-inline: 2px;
-}
-
-.tree-row .git-branch {
-  min-width: 0;
 }
 
 .workspace-review {
@@ -137,7 +108,7 @@
   opacity: 0.65;
 }
 
-.tree-row.is-focused > .ws-label {
+.tree-row.is-focused .ws-label {
   color: var(--text-strong);
   font-weight: 700;
 }
@@ -175,20 +146,165 @@
   white-space: nowrap;
 }
 
-.tree-row.has-tab-count > .ws-label {
-  flex: 0 1 auto;
+/* A workspace row: the name gets the line, cut at its end; one compact
+   status sits at the right. The branch, review and tabs make a second line
+   that only a wide sidebar shows. Nesting shows by indentation. */
+.ws-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
-.workspace-tab-count {
-  flex: 1 0 auto;
-  color: color-mix(in srgb, var(--muted) 55%, transparent);
+.ws-text > .ws-label {
+  flex: none;
+  line-height: 18px;
+}
+
+.ws-sub {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+@container workspace-tree (min-width: 280px) {
+  .ws-sub {
+    display: flex;
+  }
+
+  /* Two lines: what sits beside the name lines up with the name. */
+  .workspace-row.has-sub-line {
+    align-items: flex-start;
+  }
+
+  .workspace-row.has-sub-line > .workspace-group-toggle,
+  .workspace-row.has-sub-line > .twisty {
+    height: 18px;
+  }
+
+  .workspace-row.has-sub-line > .workspace-host-dot {
+    margin-top: 6px;
+  }
+
+  .workspace-row.has-sub-line > .ws-status,
+  .workspace-row.has-sub-line > .workspace-tree-summary,
+  .workspace-row.has-sub-line > .workspace-pin {
+    margin-top: 3px;
+  }
+}
+
+.ws-branch {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ws-branch > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-branch > svg {
+  flex: 0 0 auto;
+}
+
+.ws-sub > .workspace-tab-chips {
+  flex: 1 1 0;
+  min-width: 40px;
+}
+
+.ws-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
-.tree-row.is-focused > .workspace-tab-count {
-  color: color-mix(in srgb, var(--muted) 85%, transparent);
+.ws-change {
+  color: var(--muted);
+}
+
+.ws-change.is-dirty {
+  color: var(--warning-text);
+}
+
+.ws-change.is-ahead,
+.ws-change.is-behind {
+  color: var(--info-text);
+}
+
+.ws-change.is-error {
+  color: var(--danger-text);
+}
+
+.ws-agent-dot,
+.workspace-host-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-agent-dot {
+  background: var(--muted);
+}
+
+.ws-agent-dot.is-working {
+  background: var(--yellow);
+}
+
+.ws-agent-dot.is-blocked {
+  background: var(--red);
+}
+
+.ws-agent-dot.is-done {
+  background: var(--blue);
+}
+
+.ws-agent-dot.is-background {
+  box-sizing: border-box;
+  border: 1.5px solid var(--background-work);
+  background: transparent;
+  animation: background-work-pulse 1.8s ease-in-out infinite;
+}
+
+.ws-agent-dot.is-idle {
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+}
+
+.workspace-host-dot {
+  margin-right: -2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--panel) 60%, transparent);
+}
+
+/* The very top and bottom of the list, while dragging: the top level. */
+.workspace-tree-drop-edge {
+  position: relative;
+  height: 10px;
+}
+
+.workspace-tree-drop-edge.is-target::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 
 .tree-row.is-child strong {
@@ -213,7 +329,8 @@
 .tree-row.drop-after::after {
   content: "";
   position: absolute;
-  left: 4px;
+  /* At the indentation of the level the drop lands at. */
+  left: var(--drop-indent, 4px);
   right: 4px;
   height: 2px;
   border-radius: 1px;
@@ -344,15 +461,4 @@
   min-width: 22px;
   color: color-mix(in srgb, var(--muted) 55%, transparent);
   font-size: 10px;
-}
-
-/* Clipped at the start, the end kept: "…ject-system-iga-184". The text
-   inside stays left to right. */
-.start-ellipsis {
-  direction: rtl;
-  text-align: left;
-}
-
-.start-ellipsis > span {
-  unicode-bidi: isolate;
 }

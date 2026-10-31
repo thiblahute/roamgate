@@ -55,6 +55,7 @@ import { createRangerDriver } from "./ranger-driver";
 import type { PreparedAssistantAction } from "./actions";
 import { AssistantUserError } from "./errors";
 import type { NotificationToolSender } from "./tools";
+import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
 import {
   createAssistantTasks,
   type PreparedTask,
@@ -349,6 +350,8 @@ export function createAssistantService(options: {
   globalWorkspaceAllowed?(ref: AssistantWorkspaceRef): boolean;
   refreshGlobalScope?(): Promise<unknown>;
   globalApprovalMode?(): AssistantConfig["approval_mode"];
+  /** Ranger's Workspaces arrangement tools (workspace-tree-tools.ts). */
+  workspaceTree?: WorkspaceTreeToolHandler;
 }): AssistantService {
   const directory = options.directory ?? assistantDirectory();
   const statePath = join(directory, "state.json");
@@ -1991,6 +1994,18 @@ export function createAssistantService(options: {
                   text: "Shown in the user's Roamgate window.",
                 };
               },
+          // Reversible sidebar arrangement: runs at once, in any mode.
+          arrange: options.workspaceTree
+            ? async (kind, params, signal) => {
+                const combined = signal
+                  ? AbortSignal.any([signal, controller.signal])
+                  : controller.signal;
+                combined.throwIfAborted();
+                if (disposed || activeRun !== pending || !state.running)
+                  throw new Error("This Ranger turn is no longer active.");
+                return options.workspaceTree!(kind, params, combined);
+              }
+            : undefined,
           notify:
             options.taskRun && options.sendNotification
               ? async (notification, signal) => {
@@ -2933,6 +2948,7 @@ export function createAssistantService(options: {
           globalWorkspaceAllowed: workspaceAllowed,
           refreshGlobalScope: workspaceCatalog,
           globalApprovalMode: () => state.config.approval_mode,
+          workspaceTree: options.workspaceTree,
           sendNotification: options.notify
             ? (notification, signal) =>
                 tasks!.notifyRun(

@@ -158,6 +158,11 @@
   text-transform: capitalize;
 }
 
+/* "Idle · 2 running": only its first word is capitalised. */
+.agent-row-status.badge-background {
+  text-transform: none;
+}
+
 .agent-row.is-nested .agent-row-status {
   padding: 0;
   border: 0;

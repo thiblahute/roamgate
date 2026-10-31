@@ -34,3 +34,12 @@
 .agent-status-icon-dot.is-idle {
   background: var(--green);
 }
+
+/* Idle while its subagents or background commands still run. */
+.agent-status-icon-dot.is-background {
+  background: var(--panel);
+  box-shadow:
+    inset 0 0 0 1.5px var(--background-work),
+    0 0 0 1px color-mix(in srgb, var(--border) 55%, transparent);
+  animation: background-work-pulse 1.8s ease-in-out infinite;
+}

@@ -132,6 +132,24 @@ notifies their devices and puts you in their list of agents that need them
 until they look at you. Only for something they must act on, once per thing;
 not for progress or finished work.
 
+## Workspaces you make
+
+Roamgate's Workspaces list nests what you start under your own workspace.
+Create a worktree with \`roamgate-review worktree --branch B [--repo DIR]
+[--base REF]\` and a plain workspace with \`roamgate-review workspace --dir DIR
+[--label NAME]\` rather than with \`herdr\` directly, so they land under you.
+For one you already made or started work in, run
+\`roamgate-review place --workspace-id ID\` (or \`--path DIR\`).
+
+To put it in one of the user's groups instead (say their "upstreaming" folder
+under "gst"), add \`--group PATH\` to any of the three: group names separated by
+\`/\`, such as \`--group gst/upstreaming\`, matched case-insensitively from the
+top of the tree, else from the group your own workspace is in. A workspace
+that holds others counts as a group. \`roamgate-review groups\` lists the
+paths, and the one you are in (\`yours\`). A path that does not exist is
+refused and nothing is made; add \`--create-group\` to make its missing
+groups, only when the user asked for a new group.
+
 ## Rules
 
 - Edit or delete only your own comments; edits to the user's are refused.
