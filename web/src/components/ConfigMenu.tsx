@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
+  ChartGantt,
   ChevronDown,
   ChevronRight,
   Download,
@@ -21,6 +22,7 @@ import {
   Wifi,
 } from "lucide-react";
 import packageJson from "../../package.json";
+import { openActivityTimeline } from "../activityTimelineOpen";
 import { logoutBrowserSession } from "../api";
 import { connectionHttpPath } from "../connectionHttp";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -235,6 +237,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     setConfigurationTab("Appearance");
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<ChartGantt size={15} />}
+                  label="Activity timeline"
+                  description="Attention and agent states, per day"
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openActivityTimeline();
                   }}
                 />
                 {layout.mobile ? null : (

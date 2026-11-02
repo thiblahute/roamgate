@@ -1,0 +1,486 @@
+.activity-timeline {
+  --activity-label: 132px;
+  --activity-working: var(--green);
+  --activity-blocked: var(--red);
+  --activity-gap: var(--red);
+  width: min(1180px, 100%);
+  max-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.activity-timeline .modal-head {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.activity-timeline .modal-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.activity-timeline-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.activity-timeline-nav-button,
+.activity-timeline-today {
+  min-width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.activity-timeline-nav-button {
+  padding: 0;
+}
+
+.activity-timeline-nav-button:disabled,
+.activity-timeline-today:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.activity-timeline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.activity-timeline-summary strong {
+  color: var(--text-strong);
+}
+
+.activity-timeline-body {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+.activity-timeline-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.activity-timeline-note.is-error {
+  color: var(--danger-text);
+}
+
+.activity-timeline-note.is-warning {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+:root[data-theme="light"] .activity-timeline-note.is-warning {
+  color: var(--text);
+}
+
+/* --- Chart ------------------------------------------------------------ */
+
+.activity-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-lane {
+  display: grid;
+  grid-template-columns: var(--activity-label) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 14px;
+}
+
+.activity-lane-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-lane-track {
+  position: relative;
+  height: 14px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+}
+
+.activity-axis .activity-lane-track {
+  height: 16px;
+  background: none;
+}
+
+.activity-axis .activity-lane-track span {
+  position: absolute;
+  top: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-you .activity-lane-track {
+  height: 28px;
+}
+
+.activity-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.activity-workspace-head .activity-lane-track {
+  height: 6px;
+  background: none;
+}
+
+.activity-agent .activity-lane-label {
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+.activity-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.activity-grid span {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--border-soft);
+}
+
+.activity-grid .activity-now {
+  z-index: 3;
+  width: 2px;
+  background: var(--accent);
+}
+
+.activity-workspace-name {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-workspace-name span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-workspace-name:hover:not(:disabled) span:last-child {
+  text-decoration: underline;
+}
+
+.activity-workspace-name:disabled {
+  cursor: default;
+}
+
+.activity-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+/* --- Bands ------------------------------------------------------------ */
+
+.activity-band,
+.activity-swatch {
+  --band: var(--accent);
+}
+
+.activity-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.activity-band.is-attention,
+.activity-swatch.is-attention {
+  z-index: 2;
+  background: var(--band);
+}
+
+.activity-band.is-herdr,
+.activity-swatch.is-herdr {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--band) 70%, transparent) 0 4px,
+    color-mix(in srgb, var(--band) 35%, transparent) 4px 8px
+  );
+}
+
+.activity-you .activity-band.is-herdr {
+  top: 6px;
+  bottom: 6px;
+}
+
+.activity-band.is-idle,
+.activity-swatch.is-idle {
+  z-index: 1;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--muted) 45%, transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+.activity-band.is-disconnected,
+.activity-band.is-unrecorded {
+  z-index: 2;
+  top: auto;
+  height: 4px;
+  background: var(--activity-gap);
+}
+
+.activity-band.is-unrecorded {
+  top: 0;
+  height: auto;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--activity-gap) 40%, transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+.activity-swatch.is-disconnected {
+  background: var(--activity-gap);
+}
+
+.activity-band.is-working,
+.activity-swatch.is-working {
+  background: var(--activity-working);
+}
+
+.activity-band.is-blocked,
+.activity-swatch.is-blocked {
+  background: var(--activity-blocked);
+}
+
+.activity-band.is-idle.is-agent {
+  top: 5px;
+  bottom: 5px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+}
+
+.activity-band.is-unknown {
+  top: 6px;
+  bottom: 6px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.activity-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+
+.activity-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-swatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.activity-legend .activity-swatch.is-attention {
+  --band: var(--accent);
+}
+
+/* --- Totals ----------------------------------------------------------- */
+
+.activity-totals {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-totals th,
+.activity-totals td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.activity-totals thead th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activity-totals th:first-child {
+  max-width: 0;
+  width: 40%;
+  padding-left: 0;
+  text-align: left;
+}
+
+.activity-totals tbody th .activity-workspace-name {
+  font-size: 13px;
+}
+
+.activity-totals td {
+  color: var(--text);
+}
+
+.activity-totals tfoot th,
+.activity-totals tfoot td {
+  border-bottom: 0;
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+/* --- Tooltip ---------------------------------------------------------- */
+
+.activity-timeline-tip {
+  position: fixed;
+  z-index: 5100;
+  max-width: min(320px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.activity-timeline-tip strong {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+/* --- Phone ------------------------------------------------------------ */
+
+:where(html[data-layout="mobile"]) {
+  .activity-timeline-backdrop {
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 0 0;
+  }
+
+  .activity-timeline {
+    --activity-label: 76px;
+    width: 100%;
+    height: min(100%, calc(94dvh / var(--ui-scale, 1)));
+    max-height: none;
+    margin: auto 0 0;
+    padding: 12px calc(16px + env(safe-area-inset-right, 0px))
+      calc(12px + env(safe-area-inset-bottom, 0px))
+      calc(16px + env(safe-area-inset-left, 0px));
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .activity-timeline-summary {
+    width: 100%;
+    margin: 4px 0 0;
+  }
+
+  .activity-lane {
+    gap: 6px;
+  }
+
+  .activity-lane-track {
+    height: 16px;
+  }
+
+  .activity-you .activity-lane-track {
+    height: 30px;
+  }
+
+  .activity-agent .activity-lane-label {
+    padding-left: 8px;
+  }
+
+  /* The workspace name gets the whole width, its strip below it. */
+  .activity-workspace-head {
+    row-gap: 2px;
+  }
+
+  .activity-workspace-head .activity-lane-label {
+    grid-column: 1 / -1;
+  }
+
+  .activity-workspace-head .activity-lane-track {
+    grid-column: 2;
+  }
+
+  .activity-totals th,
+  .activity-totals td {
+    padding: 8px 4px;
+  }
+
+  .activity-totals th:first-child {
+    width: 34%;
+  }
+}
+
+@media (max-width: 500px) {
+  :where(html:not([data-layout="mobile"])) .activity-timeline {
+    --activity-label: 84px;
+    padding: 16px;
+  }
+}

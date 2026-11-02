@@ -31,6 +31,14 @@ describe("command combobox search helpers", () => {
     expect(workspaceScore).toBeGreaterThan(0);
   });
 
+  test("finds the activity timeline by its words and keywords", () => {
+    const value = "Activity timeline Attention and agent states, per day";
+    const keywords = ["activity", "time", "attention", "report"];
+    expect(commandFilter(value, "timeline", keywords)).toBeGreaterThan(0);
+    expect(commandFilter(value, "report", keywords)).toBeGreaterThan(0);
+    expect(commandFilter(value, "agents time", keywords)).toBeGreaterThan(0);
+  });
+
   test("detects direct file path queries without treating words as paths", () => {
     expect(commandPathQuery("docs/guides/runtime.md")).toBe(
       "docs/guides/runtime.md",
