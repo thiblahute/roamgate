@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { blockLevel, encodeWav } from "./voiceLibrary";
+import {
+  blockLevel,
+  encodeWav,
+  nativeLanguageName,
+  previewLanguageFrom,
+} from "./voiceLibrary";
 
 describe("voice recordings", () => {
   test("are 16-bit mono WAV files", () => {
@@ -26,5 +31,20 @@ describe("voice recordings", () => {
     expect(quiet).toBeGreaterThan(0);
     expect(loud).toBeGreaterThan(quiet);
     expect(blockLevel(new Float32Array(128).fill(1))).toBe(1);
+  });
+});
+
+describe("hearing voices", () => {
+  test("in the browser's first language a voice speaks", () => {
+    expect(previewLanguageFrom(["fr-FR", "en-US"])).toBe("fr");
+    expect(previewLanguageFrom(["de-DE", "pt_BR"])).toBe("pt");
+    expect(previewLanguageFrom(["de"])).toBe("en");
+    expect(previewLanguageFrom([])).toBe("en");
+  });
+
+  test("a voice's own language is named in itself", () => {
+    expect(nativeLanguageName("fr")).toBe("Français");
+    expect(nativeLanguageName("ko")).toBe("한국어");
+    expect(nativeLanguageName("")).toBe("");
   });
 });

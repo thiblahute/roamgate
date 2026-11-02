@@ -50,12 +50,16 @@ import {
   createVoice,
   deleteVoice,
   fetchVoiceLibrary,
+  getPreviewLanguage,
   KOKORO,
+  nativeLanguageName,
   type NewVoice,
   playBlob,
   playVoiceSample,
   type Recording,
   renameVoice,
+  type StockVoice,
+  savePreviewLanguage,
   startRecording,
   type VoiceInfo,
   type VoiceLibraryState,
@@ -65,11 +69,18 @@ import "./VoiceSettings.css";
 
 const METER_BARS = [0.5, 0.8, 1, 0.8, 0.5];
 
+/** A voice of the list: recorded, a stock speaker, or Kokoro. */
+type Row = { id: string; voice?: VoiceInfo; stock?: StockVoice };
+
 /** The voice of `id` as named on screen. */
 function voiceName(state: VoiceLibraryState, id: string | null | undefined) {
   if (!id) return "None";
   if (id === KOKORO) return "Kokoro";
-  return state.voices.find((voice) => voice.id === id)?.name ?? id;
+  return (
+    state.voices.find((voice) => voice.id === id)?.name ??
+    state.stock?.find((voice) => voice.id === id)?.name ??
+    id
+  );
 }
 
 /** Whether any language is read with `id`. */
@@ -107,6 +118,9 @@ export function VoiceSettings() {
   const [playing, setPlaying] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // What voices say when heard, from the list.
+  const [previewLanguage, setPreviewLanguage] =
+    useState<VoiceLanguage>(getPreviewLanguage);
   const playback = useRef<AbortController | null>(null);
 
   const stopPlaying = useCallback(() => {
@@ -138,13 +152,13 @@ export function VoiceSettings() {
     }
   };
 
-  const hear = (id: string) => {
+  const hear = (id: string, language?: VoiceLanguage) => {
     if (playing === id) return stopPlaying();
     stopPlaying();
     const controller = new AbortController();
     playback.current = controller;
     setPlaying(id);
-    void playVoiceSample(id, controller.signal)
+    void playVoiceSample(id, controller.signal, language)
       .catch((failure: Error) => setError(failure.message))
       .finally(() => {
         if (playback.current === controller) {
@@ -160,10 +174,144 @@ export function VoiceSettings() {
     );
 
   const surprise = surpriseNow ?? state?.surprise === true;
-  const voiceRows: { id: string; voice?: VoiceInfo }[] = [
-    ...(state?.voices ?? []).map((voice) => ({ id: voice.id, voice })),
-    ...(state?.kokoro ? [{ id: KOKORO }] : []),
-  ];
+  // The voices by model: recorded (Qwen3-TTS Base), stock speakers
+  // (Qwen3-TTS CustomVoice), Kokoro.
+  const groups: { key: string; title: string; note?: string; rows: Row[] }[] = [
+    {
+      key: "recorded",
+      title: "Your voices",
+      note: "Recorded here, read by Qwen3-TTS",
+      rows: (state?.voices ?? []).map((voice) => ({ id: voice.id, voice })),
+    },
+    {
+      key: "stock",
+      title: "Qwen3-TTS voices",
+      note: "Each speaks every language, its own best",
+      rows: (state?.stock ?? []).map((stock) => ({ id: stock.id, stock })),
+    },
+    {
+      key: "kokoro",
+      title: "Kokoro",
+      rows: state?.kokoro ? [{ id: KOKORO }] : [],
+    },
+  ].filter((group) => group.rows.length);
+
+  const renderRow = (state: VoiceLibraryState, { id, voice, stock }: Row) => {
+    const reading = !surprise && !browserReads && state.assignments.all === id;
+    const languages = Object.entries(state.assignments.languages)
+      .filter(([, assigned]) => assigned === id)
+      .map(([code]) => voiceLanguageLabel(code));
+    return (
+      <li
+        key={id}
+        className={`voice-settings-voice${reading ? " is-reading" : ""}`}
+      >
+        <div className="voice-settings-voice-name">
+          {renaming === id && voice ? (
+            <RenameField
+              name={voice.name}
+              onDone={(name) => {
+                setRenaming(null);
+                if (name && name !== voice.name)
+                  void run(`rename:${id}`, async () => {
+                    await renameVoice(id, name);
+                    setState(await fetchVoiceLibrary());
+                  });
+              }}
+            />
+          ) : (
+            <>
+              <strong>{voice?.name ?? stock?.name ?? "Kokoro"}</strong>
+              <span>
+                {voice
+                  ? voice.languages.map(voiceLanguageLabel).join(", ") ||
+                    "Recorded voice"
+                  : stock
+                    ? [nativeLanguageName(stock.native), stock.description]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : "Built in, every language"}
+                {reading ? " · reads replies" : ""}
+                {languages.length ? ` · reads ${languages.join(", ")}` : ""}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="voice-settings-voice-actions">
+          <button
+            type="button"
+            className="voice-settings-icon"
+            aria-label={
+              playing === id ? "Stop" : `Hear ${voiceName(state, id)}`
+            }
+            title={playing === id ? "Stop" : "Hear it"}
+            onClick={() => hear(id, previewLanguage)}
+          >
+            {playing === id ? <Square size={16} /> : <Play size={16} />}
+          </button>
+          {voice ? (
+            <>
+              <button
+                type="button"
+                className="voice-settings-icon"
+                aria-label={`Rename ${voice.name}`}
+                title="Rename"
+                onClick={() => setRenaming(id)}
+              >
+                <Pencil size={15} />
+              </button>
+              <button
+                type="button"
+                className="voice-settings-icon"
+                aria-label={`Delete ${voice.name}`}
+                title={
+                  inUse(state, id)
+                    ? "It reads replies: choose another voice first"
+                    : "Delete"
+                }
+                disabled={inUse(state, id) || busy !== null}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      voice.owned
+                        ? `Delete ${voice.name}? Its recording goes too.`
+                        : `Remove ${voice.name} from the list? Its file stays.`,
+                    )
+                  )
+                    return;
+                  void run(`delete:${id}`, async () => {
+                    await deleteVoice(id);
+                    setState(await fetchVoiceLibrary());
+                  });
+                }}
+              >
+                <Trash2 size={15} />
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className={`voice-settings-use${reading ? " is-reading" : ""}`}
+            disabled={busy !== null}
+            aria-pressed={reading}
+            title={
+              reading ? "Reads every reply" : "Read every reply with this voice"
+            }
+            onClick={() => {
+              if (!reading || languages.length) void use(id);
+            }}
+          >
+            {busy === `use:${id}:null` ? (
+              <LoaderCircle size={15} className="is-spinning" />
+            ) : reading ? (
+              <Check size={15} />
+            ) : null}
+            {reading ? "Reading" : "Use"}
+          </button>
+        </div>
+      </li>
+    );
+  };
 
   return (
     <div className="voice-settings">
@@ -196,7 +344,7 @@ export function VoiceSettings() {
             setState(await assignVoice(id, null));
             setCreating(false);
           }}
-          onHear={hear}
+          onHear={(id) => hear(id)}
           playing={playing}
         />
       ) : (
@@ -227,130 +375,39 @@ export function VoiceSettings() {
               {surprise ? <Check size={18} /> : null}
             </button>
           ) : null}
-          <ul className="voice-settings-list">
-            {voiceRows.map(({ id, voice }) => {
-              const reading =
-                !surprise && !browserReads && state.assignments.all === id;
-              const languages = Object.entries(state.assignments.languages)
-                .filter(([, assigned]) => assigned === id)
-                .map(([code]) => voiceLanguageLabel(code));
-              return (
-                <li
-                  key={id}
-                  className={`voice-settings-voice${reading ? " is-reading" : ""}`}
-                >
-                  <div className="voice-settings-voice-name">
-                    {renaming === id && voice ? (
-                      <RenameField
-                        name={voice.name}
-                        onDone={(name) => {
-                          setRenaming(null);
-                          if (name && name !== voice.name)
-                            void run(`rename:${id}`, async () => {
-                              await renameVoice(id, name);
-                              setState(await fetchVoiceLibrary());
-                            });
-                        }}
-                      />
-                    ) : (
-                      <>
-                        <strong>{voice ? voice.name : "Kokoro"}</strong>
-                        <span>
-                          {voice
-                            ? voice.languages
-                                .map(voiceLanguageLabel)
-                                .join(", ") || "Recorded voice"
-                            : "Built in, every language"}
-                          {reading ? " · reads replies" : ""}
-                          {languages.length
-                            ? ` · reads ${languages.join(", ")}`
-                            : ""}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <div className="voice-settings-voice-actions">
-                    <button
-                      type="button"
-                      className="voice-settings-icon"
-                      aria-label={
-                        playing === id ? "Stop" : `Hear ${voiceName(state, id)}`
-                      }
-                      title={playing === id ? "Stop" : "Hear it"}
-                      onClick={() => hear(id)}
-                    >
-                      {playing === id ? (
-                        <Square size={16} />
-                      ) : (
-                        <Play size={16} />
-                      )}
-                    </button>
-                    {voice ? (
-                      <>
-                        <button
-                          type="button"
-                          className="voice-settings-icon"
-                          aria-label={`Rename ${voice.name}`}
-                          title="Rename"
-                          onClick={() => setRenaming(id)}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          className="voice-settings-icon"
-                          aria-label={`Delete ${voice.name}`}
-                          title={
-                            inUse(state, id)
-                              ? "It reads replies: choose another voice first"
-                              : "Delete"
-                          }
-                          disabled={inUse(state, id) || busy !== null}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                voice.owned
-                                  ? `Delete ${voice.name}? Its recording goes too.`
-                                  : `Remove ${voice.name} from the list? Its file stays.`,
-                              )
-                            )
-                              return;
-                            void run(`delete:${id}`, async () => {
-                              await deleteVoice(id);
-                              setState(await fetchVoiceLibrary());
-                            });
-                          }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={`voice-settings-use${reading ? " is-reading" : ""}`}
-                      disabled={busy !== null}
-                      aria-pressed={reading}
-                      title={
-                        reading
-                          ? "Reads every reply"
-                          : "Read every reply with this voice"
-                      }
-                      onClick={() => {
-                        if (!reading || languages.length) void use(id);
-                      }}
-                    >
-                      {busy === `use:${id}:null` ? (
-                        <LoaderCircle size={15} className="is-spinning" />
-                      ) : reading ? (
-                        <Check size={15} />
-                      ) : null}
-                      {reading ? "Reading" : "Use"}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="voice-settings-hear-in">
+            <label htmlFor="voice-settings-hear-in">Hear voices in</label>
+            <select
+              id="voice-settings-hear-in"
+              value={previewLanguage}
+              onChange={(event) => {
+                const language = event.currentTarget.value as VoiceLanguage;
+                setPreviewLanguage(language);
+                savePreviewLanguage(language);
+              }}
+            >
+              {VOICE_LANGUAGES.map(({ code, label }) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {groups.map((group) => (
+            <section
+              key={group.key}
+              className="voice-settings-group"
+              aria-label={group.title}
+            >
+              <h4>
+                {group.title}
+                {group.note ? <span>{group.note}</span> : null}
+              </h4>
+              <ul className="voice-settings-list">
+                {group.rows.map((row) => renderRow(state, row))}
+              </ul>
+            </section>
+          ))}
           <button
             type="button"
             className="voice-settings-new"
@@ -363,6 +420,9 @@ export function VoiceSettings() {
           >
             <Plus size={18} /> New voice
           </button>
+          {!state.stock?.length && state.stock_detail ? (
+            <p className="voice-settings-note">{state.stock_detail}</p>
+          ) : null}
           {!state.can_clone && state.clone_detail ? (
             <p className="voice-settings-note">{state.clone_detail}</p>
           ) : null}
@@ -439,7 +499,8 @@ function LanguageVoices({
   const free = VOICE_LANGUAGES.filter(
     ({ code }) => !(code in state.assignments.languages),
   );
-  if (!state.voices.length) return null;
+  const stock = state.stock ?? [];
+  if (!state.voices.length && !stock.length) return null;
   const select = (language: VoiceLanguage, value: string) => (
     <select
       aria-label={`Voice for ${voiceLanguageLabel(language)}`}
@@ -453,11 +514,24 @@ function LanguageVoices({
       }}
     >
       {value ? null : <option value="">Choose a voice</option>}
-      {state.voices.map((voice) => (
-        <option key={voice.id} value={voice.id}>
-          {voice.name}
-        </option>
-      ))}
+      {state.voices.length ? (
+        <optgroup label="Your voices">
+          {state.voices.map((voice) => (
+            <option key={voice.id} value={voice.id}>
+              {voice.name}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
+      {stock.length ? (
+        <optgroup label="Qwen3-TTS voices">
+          {stock.map((voice) => (
+            <option key={voice.id} value={voice.id}>
+              {voice.name}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
     </select>
   );
   return (
