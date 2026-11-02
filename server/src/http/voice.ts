@@ -37,8 +37,9 @@ const MAX_SPOKEN_CHARS = 4000;
  * ("errand") is sent to the session in `errand_folder` with `job`, which
  * GET /api/voice/errand?job= follows until its answer is in.
  *
- * Voices (voice-library.ts): GET /api/voice/voices lists them, says which
- * reads what (`assignments`) and whether new ones can be recorded;
+ * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
+ * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
+ * which reads what (`assignments`) and whether new ones can be recorded;
  * POST /api/voice/voices (form: name, language, text read, audio, and
  * cut=1 when it ended mid-speech) records
  * one; POST /api/voice/voices/assign `{voice, language?}` chooses who reads
@@ -288,12 +289,18 @@ async function handleVoices(
       if (typeof voice !== "string")
         return Response.json({ error: "Choose a voice." }, { status: 400 });
       const models = library.sampleModels(voice);
+      const known = () => {
+        const state = library.state();
+        return (
+          state.voices.find((entry) => entry.id === voice)?.languages[0] ??
+          state.stock.find((entry) => entry.id === voice)?.native
+        );
+      };
       const spoken = isVoiceLanguage(language)
         ? language
         : voice === KOKORO
           ? "en"
-          : (library.state().voices.find((entry) => entry.id === voice)
-              ?.languages[0] ?? "en");
+          : (known() ?? "en");
       const code = isVoiceLanguage(spoken) ? spoken : "en";
       return speechResponse(
         await helper.speak(SAMPLE_SENTENCES[code], code, models),

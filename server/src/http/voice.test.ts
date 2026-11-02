@@ -189,6 +189,9 @@ describe("voices", () => {
     const library = {
       state: () => ({
         voices: [{ id: "lea", name: "Léa", languages: ["fr"] }],
+        stock: [
+          { id: "qwen3-tts:ryan", speaker: "ryan", name: "Ryan", native: "en" },
+        ],
         assignments: { all: "lea", languages: {} },
         kokoro: true,
         can_clone: true,
@@ -345,6 +348,25 @@ describe("voices", () => {
       "fr",
       [{ model: "qwen3-tts", voice: "lea" }],
     ]);
+  });
+
+  test("a stock voice is heard in its own language, or the one asked", async () => {
+    const { library } = fakeLibrary();
+    const routes = routesWith(library);
+    const hear = (body: object) =>
+      routes(
+        request("/api/voice/voices/sample", "POST", JSON.stringify(body)),
+        "/api/voice/voices/sample",
+      );
+    await hear({ voice: "qwen3-tts:ryan" });
+    expect(spoken.at(-1)).toEqual([
+      "Hello! This is my voice. Shall we have an adventure together?",
+      "en",
+      [{ model: "qwen3-tts", voice: "qwen3-tts:ryan" }],
+    ]);
+    const french = await hear({ voice: "qwen3-tts:ryan", language: "fr" });
+    expect(french!.headers.get("x-voice-language")).toBe("fr");
+    expect(spoken.at(-1)?.[1]).toBe("fr");
   });
 });
 

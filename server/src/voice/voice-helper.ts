@@ -31,6 +31,9 @@ export type VoiceConfig = {
    * in order of preference: each sentence goes to the first one speaking its
    * language. `model` names it ("qwen3-tts", "kokoro", ...), the other fields
    * are the element's for it (path, voice, voice_embedding, speed, ...).
+   * A Qwen3-TTS CustomVoice entry names its stock speaker ("ryan") with
+   * `speaker` or the element's `voice`; a Base entry clones the voice of
+   * its `voice_embedding`.
    */
   tts_models?: Array<{ model: string } & Record<string, string | number>>;
   /** Speaker embeddings: only the first voice of a voice chat counts. */
@@ -79,6 +82,12 @@ export type VoiceConfig = {
    */
   clone_model?: string;
   /**
+   * The Qwen3-TTS CustomVoice model whose stock speakers (Ryan, Vivian...)
+   * can read replies (voice-stock.ts); by default the first CustomVoice
+   * model of `tts_models`, or one next to the Base model.
+   */
+  stock_model?: string;
+  /**
    * Surprise: each reply is read by one of the voices at random
    * (voice-surprise.ts), from the Voice tab or the voice card.
    */
@@ -121,6 +130,7 @@ export function readVoiceConfig(
     "claude_command",
     "voices_dir",
     "clone_model",
+    "stock_model",
   ])
     if (
       config[key] !== undefined &&
@@ -151,6 +161,14 @@ export function readVoiceConfig(
       return {
         error: `${path}: tts_models must be a list of objects with a model name`,
       };
+    for (const model of models as Record<string, unknown>[])
+      if (
+        model.speaker !== undefined &&
+        (typeof model.speaker !== "string" || !model.speaker)
+      )
+        return {
+          error: `${path}: the speaker of a ${String(model.model)} model must be a name`,
+        };
   } else if (
     config.kokoro_model === undefined ||
     config.kokoro_voices === undefined
@@ -218,14 +236,24 @@ export function nativeSpeechRate(config: VoiceConfig): number {
     : 1;
 }
 
-/** `tts_models` as the helper gets them: with the native rate's speed. */
+/**
+ * `tts_models` as the helper gets them: a stock `speaker` as the element's
+ * `voice`, and with the native rate's speed.
+ */
 export function helperTtsModels(
   config: VoiceConfig,
 ): VoiceConfig["tts_models"] {
   const rate = nativeSpeechRate(config);
-  return rate === 1
-    ? config.tts_models
-    : config.tts_models?.map((model) => ({ ...model, speed: rate }));
+  return config.tts_models?.map((entry) => {
+    const { speaker, ...model } = entry;
+    return {
+      ...model,
+      ...(speaker !== undefined && model.voice === undefined
+        ? { voice: speaker }
+        : {}),
+      ...(rate === 1 ? {} : { speed: rate }),
+    };
+  });
 }
 
 type Pending = {

@@ -657,6 +657,29 @@ describe("readVoiceConfig", () => {
     expect("error" in config).toBe(false);
   });
 
+  test("a Qwen3-TTS model can name a stock speaker", () => {
+    const stock = {
+      ...base,
+      stock_model: "/models/Qwen3-TTS-CustomVoice",
+      tts_models: [
+        { model: "qwen3-tts", path: "/models/cv", speaker: "ryan" },
+        { model: "qwen3-tts", path: "/models/cv", voice: "vivian" },
+      ],
+    };
+    expect("error" in read(stock)).toBe(false);
+    expect(
+      read({
+        ...base,
+        tts_models: [{ model: "qwen3-tts", path: "/models/cv", speaker: "" }],
+      }),
+    ).toEqual({
+      error: `${file}: the speaker of a qwen3-tts model must be a name`,
+    });
+    expect(read({ ...stock, stock_model: 3 })).toEqual({
+      error: `${file}: stock_model must be a string`,
+    });
+  });
+
   test("Kokoro's files are needed without them", () => {
     expect(read(base)).toEqual({
       error: `${file}: kokoro_model and kokoro_voices, or tts_models, are required`,
@@ -701,6 +724,37 @@ describe("native speech rate", () => {
     expect(nativeSpeechRate(own)).toBe(1);
     // kokorosynthesizer is given no speed.
     expect(nativeSpeechRate(CONFIG)).toBe(1);
+  });
+
+  test("a stock speaker goes to the helper as the element's voice", async () => {
+    const stock = { model: "qwen3-tts", path: "/models/cv", speaker: "ryan" };
+    const config = { ...CONFIG, tts_models: [stock, kokoro] };
+    expect(helperTtsModels(config)).toEqual([
+      { model: "qwen3-tts", path: "/models/cv", voice: "ryan" },
+      kokoro,
+    ]);
+    // The element's own name wins.
+    expect(
+      helperTtsModels({
+        ...CONFIG,
+        tts_models: [{ ...stock, voice: "aiden" }],
+      }),
+    ).toEqual([{ model: "qwen3-tts", path: "/models/cv", voice: "aiden" }]);
+    const fake = fakeHelper((request) =>
+      request.op === "speak"
+        ? [{ id: request.id, audio: "", language: "fr" }]
+        : [],
+    );
+    const helper = new VoiceHelper(() => config, fake.spawn);
+    await helper.speak("Bonjour.", "fr", [
+      { model: "qwen3-tts", path: "/models/cv", speaker: "serena" },
+    ]);
+    const speak = requests(fake.spawned[0]!.frames).find(
+      (request) => request.op === "speak",
+    );
+    expect(JSON.parse(speak.tts_models)).toEqual([
+      { model: "qwen3-tts", path: "/models/cv", voice: "serena" },
+    ]);
   });
 
   test("speech says the rate the running helper makes it at", async () => {
