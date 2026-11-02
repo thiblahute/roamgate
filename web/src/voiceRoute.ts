@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { voiceMessage } from "../../shared/voiceMessage";
 import type { State } from "./store";
 import type { Pane, Workspace } from "./types";
 
@@ -30,9 +31,18 @@ export type VoiceRoute = (
   | { to: "ask"; panes: string[]; question: string }
   /** The front answered it itself, in `reply`: nothing is sent. */
   | { to: "self" }
+  /** Read an agent's answer (the last, or `agent`'s) word for word. */
+  | { to: "read"; agent?: string }
+  /** Answers read whole from now on ("relay"), or told ("companion"). */
+  | { to: "mode"; mode: "companion" | "relay" }
 ) & {
   /** With a front (voiceFront.ts): what it says aloud now. */
   reply?: string;
+  /**
+   * Work for a session: what was said with only the session it addressed
+   * dropped (checked by the server), for the companion to give it.
+   */
+  words?: string;
 };
 
 /**
@@ -122,6 +132,12 @@ export async function routeSpeech(
   sessions: VoiceSessionInfo[],
   /** With a front: Roamgate's state beyond the sessions (voiceFront.ts). */
   context?: string,
+  /**
+   * How the words came: said (by default), with the sentence being read
+   * when the user cut in, or "typed". An errand gets words said marked
+   * `[Voice]` as voice chat sends them, words typed as typed.
+   */
+  how: { interruptedAt?: string | null } | "typed" = {},
 ): Promise<VoiceRoute> {
   try {
     const response = await fetch("/api/voice/route", {
@@ -132,6 +148,11 @@ export async function routeSpeech(
         current,
         sessions,
         ...(context ? { context } : {}),
+        ...(how === "typed"
+          ? { typed: true }
+          : how.interruptedAt
+            ? { interrupted_at: how.interruptedAt }
+            : {}),
       }),
     });
     if (!response.ok) return { to: "current" };
@@ -141,18 +162,23 @@ export async function routeSpeech(
   }
 }
 
-/** What the front tells of `event` now; "" to stay quiet. */
+/**
+ * What the front tells of `event` now; "" to stay quiet. `kind` "answer"
+ * gives it an agent's whole answer, "progress" what one wrote while it
+ * works; `agent` names who wrote it.
+ */
 export async function tellVoiceEvent(
   event: string,
   current: string,
   sessions: VoiceSessionInfo[],
   context: string,
+  about: { kind?: "event" | "answer" | "progress"; agent?: string } = {},
 ): Promise<string> {
   try {
     const response = await fetch("/api/voice/event", {
       method: "POST",
       headers: { ...VOICE_HEADERS, "content-type": "application/json" },
-      body: JSON.stringify({ event, current, sessions, context }),
+      body: JSON.stringify({ event, current, sessions, context, ...about }),
     });
     if (!response.ok) return "";
     const { reply } = (await response.json()) as { reply?: unknown };
@@ -160,6 +186,43 @@ export async function tellVoiceEvent(
   } catch {
     return "";
   }
+}
+
+/**
+ * Gives the words, as said, to a session for the voice companion: a job
+ * whose answer followErrand follows; null when it could not be sent. Words `spoken`
+ * go marked `[Voice]` as voice chat sends them, with the sentence the user
+ * cut off; words typed go as typed.
+ */
+export async function forwardWork(
+  pane: string,
+  words: string,
+  spoken?: { interruptedAt?: string | null },
+): Promise<{ job: string } | null> {
+  try {
+    const response = await fetch("/api/voice/forward", {
+      method: "POST",
+      headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+      body: JSON.stringify({
+        pane,
+        words: spoken ? voiceMessage(words, spoken.interruptedAt) : words,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      job?: unknown;
+    } | null;
+    if (!response.ok) return null;
+    return typeof body?.job === "string" ? { job: body.job } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the companion says when work could not start on a session. */
+export function forwardFailedLine(label: string, french: boolean): string {
+  return french
+    ? `Je n'ai pas pu lancer ça sur ${label}.`
+    : `I could not start that on ${label}.`;
 }
 
 export type ErrandState = {

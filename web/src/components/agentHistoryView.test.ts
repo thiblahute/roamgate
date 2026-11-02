@@ -49,6 +49,50 @@ test("consecutive tool entries collapse into one chat block", () => {
   expect(items[2]).toMatchObject({ type: "message", sequence: 2 });
 });
 
+test("the same slash command typed again and again is one chip with a count", () => {
+  const exit = (id: string, at: string) =>
+    entry(id, "user", {
+      text: "/exit",
+      sent_at: at,
+      command: { name: "/exit", args: "" },
+    });
+  const items = groupHistoryChatItems([
+    entry("1", "assistant"),
+    ...Array.from({ length: 11 }, (_, index) =>
+      exit(
+        `e${index}`,
+        `2026-11-03T14:${String(29 + Math.floor(index / 2)).padStart(2, "0")}:00Z`,
+      ),
+    ),
+    entry("2", "assistant"),
+    exit("x1", "2026-11-03T15:00:00Z"),
+    entry("3", "user", {
+      text: "/model opus",
+      command: { name: "/model", args: "opus" },
+    }),
+  ]);
+  expect(
+    items.map((item) =>
+      item.type === "message"
+        ? [item.entry.id, item.repeated ?? 1, item.sequence]
+        : item.id,
+    ),
+  ).toEqual([
+    ["1", 1, 1],
+    // Eleven in a row: one, under the first one's id, the last one's time.
+    ["e0", 11, 2],
+    ["2", 1, 3],
+    // Not in a row with them: its own chip.
+    ["x1", 1, 4],
+    // Another command (or the same with other arguments): its own.
+    ["3", 1, 5],
+  ]);
+  expect(items[1]).toMatchObject({
+    firstSentAt: "2026-11-03T14:29:00Z",
+    entry: { sent_at: "2026-11-03T14:34:00Z" },
+  });
+});
+
 test("tool block summaries count paired steps by tool, most used first", () => {
   expect(
     summarizeToolSteps(

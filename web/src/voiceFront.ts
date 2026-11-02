@@ -11,8 +11,25 @@ import type { VoiceEvent } from "./voiceEvents";
  * speaking up stops.
  */
 
-/** No word from the front by then: a canned ack says it was heard. */
-export const FRONT_SLOW_MS = 1500;
+/**
+ * No word from the front by then: a canned ack says it was heard. A front
+ * usually decides in 1 to 3 seconds, and its own words are the better ack:
+ * a canned one sooner would come first nearly every turn.
+ */
+export const FRONT_SLOW_MS = 3000;
+
+/**
+ * Whether the front's words are said for a route: an answer (it answered
+ * itself, a switch) always; words that only say what is done with what
+ * was said (passed on, asked Ranger) not once a canned ack said it was
+ * heard, so a turn is acknowledged once.
+ */
+export function frontReplySaid(to: string, slow: boolean): boolean {
+  return !(
+    slow &&
+    (to === "current" || to === "send" || to === "ranger" || to === "errand")
+  );
+}
 
 /**
  * Waits for the front's answer; past `slowMs` without it, `onSlow` runs
@@ -40,12 +57,26 @@ export async function awaitFront<T>(
  * speaking up stops it all.
  */
 export type FrontVoice = {
-  /** Says `text` (in its own language); resolves when it ends or stops. */
-  say(text: string, signal: AbortSignal): Promise<void>;
+  /**
+   * Says `text` (in its own language); resolves when it ends or stops.
+   * `onSentence` hears which of its sentences (spokenSentences, each made
+   * and played on its own) starts playing, then null once it is over.
+   */
+  say(text: string, signal: AbortSignal, options?: SayOptions): Promise<void>;
   /** Stops what it says now, and what waits to be said. */
   hush(): void;
   /** Whether it says something now (or is about to). */
   playing(): boolean;
+};
+
+/** What hears where a `say` is, as its sentences play. */
+export type SayOptions = {
+  onSentence?: (index: number | null, sentences: readonly string[]) => void;
+  /**
+   * An agent's answer read word for word: whose, and its chat entries, for
+   * whoever shows the reading (a companion call highlights it in its chat).
+   */
+  answer?: { agent: string; ids: readonly string[] };
 };
 
 export function createFrontVoice<Speech>(
@@ -57,20 +88,24 @@ export function createFrontVoice<Speech>(
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
   return {
-    say(text, signal) {
+    say(text, signal, options) {
       const stop = AbortSignal.any([hushed.signal, signal]);
       const language = ackLanguage(text);
       pending += 1;
       // Each sentence is made at once, the first playing as soon as it is
       // ready and what is said before it ends: a long answer starts early.
-      const audio = spokenSentences(text).map((sentence) => {
+      // Where the reading is shown (companionReading.ts) these same
+      // sentences mark it, one per piece of speech.
+      const sentences = spokenSentences(text);
+      let started = false;
+      const audio = sentences.map((sentence) => {
         const made = speech.fetchAudio(sentence, language, stop);
         made.catch(() => {});
         return made;
       });
       const said = chain.then(async () => {
         try {
-          for (const made of audio) {
+          for (const [index, made] of audio.entries()) {
             if (stop.aborted) return;
             const ready = await made;
             if (stop.aborted) return;
@@ -79,12 +114,15 @@ export function createFrontVoice<Speech>(
               once: true,
             });
             claim(owner);
+            started = true;
+            options?.onSentence?.(index, sentences);
             await speech.playAudio(ready, owner.signal);
           }
         } catch {
           // Unsaid: voice chat goes on.
         } finally {
           pending -= 1;
+          if (started) options?.onSentence?.(null, sentences);
         }
       });
       chain = said;
@@ -160,14 +198,18 @@ export function frontContext({
   tasks,
   requests,
   events,
+  answers = "",
   now = Date.now(),
 }: {
   tasks: readonly AssistantTask[];
   requests: readonly ForgeStatus[];
   events: readonly VoiceEvent[];
+  /** The agents' recent answers, shortened (voiceCompanion.ts). */
+  answers?: string;
   now?: number;
 }): string {
   const sections: string[] = [];
+  if (answers) sections.push(answers);
   const shownTasks = tasks.filter((task) => task.status !== "cancelled");
   if (shownTasks.length)
     sections.push(

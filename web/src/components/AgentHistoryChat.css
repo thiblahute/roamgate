@@ -572,6 +572,13 @@
   overflow-wrap: anywhere;
 }
 
+/* The same command typed again and again: one chip, "×11". */
+.agent-history-chat-command-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Sent while the agent works, still waiting in its queue. */
 .agent-history-chat-message.is-queued .agent-history-chat-bubble {
   border-style: dashed;

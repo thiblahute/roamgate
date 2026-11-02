@@ -1,3 +1,4 @@
+import { COMPANION_VOICE_KEY } from "./companionCall";
 import { RANGER_VOICE_KEY } from "./voiceRoute";
 import { describe, expect, test } from "bun:test";
 import {
@@ -331,6 +332,15 @@ describe("voice across two connections", () => {
   test("Ranger's voice chat stays with Ranger wherever the user goes", () => {
     expect(
       planVoiceFocus(state("local"), RANGER_VOICE_KEY, {
+        connectionId: "desktop",
+        workspaceId: "w1J",
+      }),
+    ).toEqual({ to: "free" });
+  });
+
+  test("a call with the companion stays with it wherever the user goes", () => {
+    expect(
+      planVoiceFocus(state("local"), COMPANION_VOICE_KEY, {
         connectionId: "desktop",
         workspaceId: "w1J",
       }),

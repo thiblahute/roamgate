@@ -7,6 +7,7 @@ import {
   isVoiceLanguage,
   SAMPLE_SENTENCES,
 } from "../../../shared/voiceLibrary";
+import { voiceMessage } from "../../../shared/voiceMessage";
 import type { VoiceErrands } from "../voice/voice-errands";
 import {
   type FrontReply,
@@ -252,8 +253,15 @@ export function createVoiceRoutes(
         said?: unknown;
         sessions?: unknown;
         context?: unknown;
+        interrupted_at?: unknown;
+        typed?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
+      // The sentence being read when the user cut in, for the voice note.
+      const interruptedAt =
+        typeof body?.interrupted_at === "string"
+          ? body.interrupted_at.trim().slice(0, 2000)
+          : "";
       const current = typeof body?.current === "string" ? body.current : "";
       const sessions = routeSessions(body?.sessions);
       if (!said || !current) return Response.json({ to: "current" });
@@ -280,7 +288,11 @@ export function createVoiceRoutes(
           if (!errands) throw new Error("no errands set up");
           route = {
             ...route,
-            job: await errands.start(route.pane, `[Voice] ${said}`),
+            job: await errands.start(
+              route.pane,
+              // Words typed go as typed; words said marked as such.
+              body?.typed === true ? said : voiceMessage(said, interruptedAt),
+            ),
           };
         } catch (error) {
           if (debug)

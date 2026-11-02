@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
+  PhoneCall,
   ChevronDown,
   ChevronRight,
   Download,
@@ -23,6 +24,8 @@ import {
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
+import { callCompanion } from "../companionCallOpen";
+import { voiceFronting } from "../voiceFrontFlag";
 import { logoutBrowserSession } from "../api";
 import { connectionHttpPath } from "../connectionHttp";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -348,6 +351,18 @@ export function ConfigMenu({
                     setConfigurationTab("Appearance");
                   }}
                 />
+                {voiceFronting() ? (
+                  <ConfigMenuItem
+                    icon={<PhoneCall size={15} />}
+                    label="Call the companion"
+                    description={`Talk with the one agent in charge of your sessions${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("companion.call")}`}`}
+                    className="config-menu-item-row"
+                    onClick={() => {
+                      setOpen(false);
+                      callCompanion();
+                    }}
+                  />
+                ) : null}
                 <ConfigMenuItem
                   icon={<ChartGantt size={15} />}
                   label={ACTIVITY_ENTRY.title}

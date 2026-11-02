@@ -1,4 +1,5 @@
 import { useRenderTrace } from "../renderTrace";
+import { voiceFronting } from "../voiceFrontFlag";
 import { enterChatParts, scrollChatPage } from "./chatPaging";
 import {
   Suspense,
@@ -1104,13 +1105,17 @@ export function AgentHistoryComposer({
                 className={`agent-history-composer-voice is-off${voice.listen ? "" : " is-unavailable"}`}
                 aria-label={
                   voice.listen
-                    ? "Talk to the agent"
+                    ? voiceFronting()
+                      ? "Call the companion"
+                      : "Talk to the agent"
                     : "Voice chat needs the server's voice engine"
                 }
                 aria-pressed={false}
                 title={
                   voice.listen
-                    ? "Talk to the agent"
+                    ? voiceFronting()
+                      ? "Call the companion: this session is where work goes by default"
+                      : "Talk to the agent"
                     : "Voice chat cannot listen: the server has no voice engine"
                 }
                 onMouseDown={keepTextareaFocus}

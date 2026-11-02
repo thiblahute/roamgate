@@ -185,6 +185,10 @@
   border-color: color-mix(in srgb, var(--green) 48%, var(--border));
 }
 
+.agent-history-status-short {
+  display: none;
+}
+
 /* Idle, with subagents or commands still running: opens the Tasks sheet. */
 .agent-history-status.has-background {
   display: inline-flex;
@@ -1179,5 +1183,34 @@
     width: 100%;
     opacity: 0.5;
     animation: none;
+  }
+}
+
+/* A phone's narrow chat header: the status chip says "Idle · 1 bg", the
+   mode line gives way, and the session's title keeps some room. */
+@media (max-width: 640px) {
+  .agent-chat-title {
+    flex: 1 1 auto;
+    min-width: 72px;
+  }
+
+  .agent-chat-owner {
+    max-width: 30%;
+  }
+
+  .agent-chat-owner small {
+    display: none;
+  }
+
+  .agent-history-status.has-background {
+    max-width: 96px;
+  }
+
+  .agent-history-status-long {
+    display: none;
+  }
+
+  .agent-history-status-short {
+    display: inline;
   }
 }

@@ -20,7 +20,18 @@ export function writeAgentHistoryView(view: AgentHistoryView) {
 }
 
 export type HistoryChatItem =
-  | { type: "message"; entry: HistoryEntry; sequence: number }
+  | {
+      type: "message";
+      entry: HistoryEntry;
+      sequence: number;
+      /**
+       * The same slash command typed this many times in a row ("/exit"
+       * eleven times): one chip with a count, the latest one's time.
+       */
+      repeated?: number;
+      /** When the first of them was typed. */
+      firstSentAt?: string;
+    }
   | { type: "tools"; id: string; entries: HistoryEntry[] };
 
 // Consecutive tool entries collapse into one block so the conversation reads
@@ -32,6 +43,21 @@ export function groupHistoryChatItems(
   const items: HistoryChatItem[] = [];
   let sequence = 0;
   for (const entry of entries) {
+    const previous = items[items.length - 1];
+    if (
+      entry.role === "user" &&
+      entry.command &&
+      previous?.type === "message" &&
+      previous.entry.role === "user" &&
+      previous.entry.command?.name === entry.command.name &&
+      previous.entry.command.args === entry.command.args
+    ) {
+      // Kept under the first one's id: the chip stays as more come.
+      previous.firstSentAt ??= previous.entry.sent_at;
+      previous.repeated = (previous.repeated ?? 1) + 1;
+      previous.entry = { ...entry, id: previous.entry.id };
+      continue;
+    }
     if (entry.role !== "tool") {
       sequence += 1;
       items.push({ type: "message", entry, sequence });

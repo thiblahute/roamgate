@@ -308,6 +308,11 @@ describe("the voice front", () => {
       await (await forward({ pane: "local/w2:p2", words }))!.json(),
     ).toEqual({ job: "job-1" });
     expect(started).toEqual([`local/w2:p2: ${words}`]);
+    // A terminal-mode session takes it as a conversation one does.
+    expect(
+      await (await forward({ pane: "local/w9:p9", words }))!.json(),
+    ).toEqual({ job: "job-1" });
+    expect(started).toEqual([`local/w2:p2: ${words}`, `local/w9:p9: ${words}`]);
     expect((await forward({ pane: "local", words }))!.status).toBe(400);
     expect((await forward({ pane: "local/w2:p2", words: " " }))!.status).toBe(
       400,
@@ -315,7 +320,7 @@ describe("the voice front", () => {
     expect(
       (await forward({ pane: "local/w2:p2", words }, {} as never))!.status,
     ).toBe(403);
-    expect(started).toHaveLength(1);
+    expect(started).toHaveLength(2);
   });
 
   test("keeps what the front does with answers, reported with it", async () => {
@@ -461,6 +466,66 @@ describe("errands", () => {
       answer: "Sunny.",
       stalled: false,
     });
+  });
+});
+
+describe("errands said over a reading", () => {
+  test("carry the sentence cut off in their voice note", async () => {
+    const router = {
+      warm: () => {},
+      route: async () => ({ to: "errand", pane: "local/wF:p5", say: "tasks" }),
+    } as unknown as VoiceRouter;
+    const started: string[] = [];
+    const errands = {
+      start: async (pane: string, text: string) => {
+        started.push(`${pane} ${text}`);
+        return "job-1";
+      },
+    } as unknown as VoiceErrands;
+    const routes = createVoiceRoutes(helper, () => router, errands);
+    await routes(
+      post(
+        {
+          current: "local/w2:p2",
+          said: "Weather tomorrow?",
+          sessions: [],
+          interrupted_at: "The build is green.",
+        },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect(started).toEqual([
+      'local/wF:p5 [Voice, interrupted you at: "The build is green."] Weather tomorrow?',
+    ]);
+  });
+
+  test("words typed to the companion go as typed", async () => {
+    const router = {
+      warm: () => {},
+      route: async () => ({ to: "errand", pane: "local/wF:p5", say: "tasks" }),
+    } as unknown as VoiceRouter;
+    const started: string[] = [];
+    const errands = {
+      start: async (pane: string, text: string) => {
+        started.push(`${pane} ${text}`);
+        return "job-1";
+      },
+    } as unknown as VoiceErrands;
+    const routes = createVoiceRoutes(helper, () => router, errands);
+    await routes(
+      post(
+        {
+          current: "local/w2:p2",
+          said: "Weather tomorrow?",
+          sessions: [],
+          typed: true,
+        },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect(started).toEqual(["local/wF:p5 Weather tomorrow?"]);
   });
 });
 

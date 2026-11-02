@@ -72,6 +72,7 @@ export function VoiceChatOverlay({
   onAnswerMove,
   notSent = null,
   onSendAnyway,
+  said = null,
 }: {
   state: ActiveVoiceState;
   level: number;
@@ -103,6 +104,11 @@ export function VoiceChatOverlay({
    */
   notSent?: string | null;
   onSendAnyway?: () => void;
+  /**
+   * What the one the call is with says now (the voice companion's line),
+   * shown in the card's text line rather than over the chat.
+   */
+  said?: string | null;
 }) {
   const view = voiceControlView(state, muted, level, reader);
   const name = voiceCallName(agent, place);
@@ -268,7 +274,13 @@ export function VoiceChatOverlay({
           </div>
         ) : (
           <div className="voice-chat-overlay-heard" aria-live="polite">
-            {heard ? <p>{heard}</p> : <p className="is-hint">{view.hint}</p>}
+            {heard ? (
+              <p>{heard}</p>
+            ) : said ? (
+              <p className="is-said">{said}</p>
+            ) : (
+              <p className="is-hint">{view.hint}</p>
+            )}
           </div>
         )}
       </div>

@@ -392,7 +392,8 @@ Inspector state is scoped to each checkout; see
   (Esc, or `d` on a permission card) puts either away unanswered: the agent
   is told the user dismissed it and goes on, and its chat shows the step as
   _Dismissed_. A conversation-mode pane shown as a terminal says when Claude
-  waits on a question, with **Show the question** and **Dismiss it**.
+  waits on a question, with **Show the question** and **Dismiss it**; on a
+  call, "dismiss it" (or "laisse tomber la question") does the same.
   With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the microphone
   beside the message box talks hands-free: speak, and what you said is sent
   once you pause; the agent's answer is read aloud by the engine Speak uses
@@ -454,11 +455,39 @@ Inspector state is scoped to each checkout; see
   in Ranger's chat or that session's.
   With a front set up, a fast model answers each thing said within a second
   or two, in your language, before any agent does: it says what it does
-  with the words ("OK, I'm passing that to the Roamgate session") and the
+  with the words ("Je lance ça sur la session roamgate") and the
   words go on exactly as said, or it answers what Roamgate already knows
   itself (what runs, which sessions wait on you, a Ranger task, a merge
   request's CI) and nothing is sent. It never works, approves or answers for
-  an agent; the agents' answers are read as they come. Between turns it
+  an agent. With a front, a call is with it: **Call the companion** in the
+  application menu or the command menu (`Cmd+Option+V`, `Ctrl+Alt+V`), or
+  an agent chat's voice button, whose session is then only where work goes
+  by default. The call lives in the top bar, wherever you go: the
+  companion's chip (Speech settings name it) says what it does (idle,
+  listening, thinking, speaking, jobs running) with the call's timer,
+  microphone and hang-up, and one line under the top bar shows what is
+  said now, pushing the page down rather than covering it. The chip opens
+  its own conversation: what it heard and said, and the work it started on
+  which session and how it went. Work for another session ("ask gst2 to
+  rebase") starts there and the call stays with it, the answer coming back
+  through it; the session gets your words with only its addressing
+  dropped ("rebase", not "ask gst2 to rebase"), a yes or an answer exactly
+  as said, marked `[Voice]` as in voice chat (with the sentence you cut
+  off), so its chat shows them as said by voice. It
+  answers what it already knows (recent answers, sessions, notifications)
+  and only starts work when a session must look or work. You talk with it
+  alone: the agents' answers are not
+  read as they come but given to it, and it tells you about them as the
+  conversation goes (a short summary naming the agent, the exact words when
+  they matter, or nothing yet while you are on something else). "Read me
+  the whole answer" ("lis-moi toute la réponse") reads one as written;
+  "read everything" ("lis tout") has every answer read for the rest of the
+  call, "just summarize" goes back. Speech settings' **Answers on calls**
+  keeps either as the default. When an agent asks you something (a
+  permission, a question with choices, its terminal's menu), the question
+  and every choice are read at once as written, and the choice you say
+  ("two", "yes", "release/1.2") answers it; everything still shows in the
+  chat. Between turns it
   tells you what happened elsewhere when it is worth it (a session done or
   waiting for input, a Ranger task run), never over you. Speaking up stops
   it. When it is slow, the usual "Got it, on it." says it heard you. While
@@ -1124,6 +1153,7 @@ and is skipped, with a note, on a browser that does not match.
 | Expand / restore Inspector (desktop)                                  | `Cmd+Option+Enter`      | `Ctrl+Alt+Shift+Enter`                  |
 | Annotations                                                           | `Cmd+Option+A`          | `Ctrl+Alt+A`                            |
 | Ranger                                                                | `Cmd+Option+Shift+A`    | `Ctrl+Alt+Shift+A`                      |
+| Call the voice companion                                              | `Cmd+Option+V`          | `Ctrl+Alt+V`                            |
 | Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |
 | Recent pane switcher                                                  | `Ctrl+Tab`              | `Ctrl+Alt+J`                            |
