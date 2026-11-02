@@ -75,7 +75,8 @@ const shellBangPlugin = ViewPlugin.fromClass(
  * The agent chat's message box with Vim keys (the one Vim keys setting).
  * It starts in insert mode; Esc goes to normal mode, `:w` sends, `:q`
  * leaves the box. Enter sends where the plain box sends on Enter and adds a
- * line elsewhere; Shift+Enter always adds one.
+ * line elsewhere, in insert mode (in normal mode it moves to the next line);
+ * Shift+Enter always adds one.
  */
 export function ComposerVimEditor({
   value,
@@ -246,8 +247,18 @@ export function ComposerVimEditor({
             // Without the default keymap nothing else adds a line.
             {
               key: "Enter",
-              run: (view) =>
-                handlers.current.enterSends ? submit() : insertNewline(view),
+              run: (view) => {
+                if (handlers.current.enterSends) return submit();
+                // Normal mode: Vim's Enter, to the next line, never a new
+                // one (a hardware keyboard on a touch screen, where Enter
+                // does not send).
+                const cm = getCM(view);
+                if (cm && !cm.state.vim?.insertMode) {
+                  Vim.handleKey(cm, "+", "user");
+                  return true;
+                }
+                return insertNewline(view);
+              },
             },
             { key: "Shift-Enter", run: insertNewline },
             // Start and end of the line.
