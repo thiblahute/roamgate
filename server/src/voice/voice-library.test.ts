@@ -387,7 +387,12 @@ describe("voice library", () => {
       languages: { fr: "a", es: "a" },
     });
     expect(
-      modelsFor(models, assignments, (id) => `/v/${id}.json`, "/base"),
+      modelsFor(
+        models,
+        assignments,
+        (id) => ({ voice_embedding: `/v/${id}.json` }),
+        "/base",
+      ),
     ).toEqual([
       {
         model: "qwen3-tts",
@@ -437,5 +442,126 @@ describe("surprise", () => {
       "No Qwen3-TTS model to read with.",
     );
     expect(t.library.setSurprise(false).surprise).toBe(false);
+  });
+});
+
+/** A Qwen3-TTS CustomVoice model with three stock speakers, next to `dir`. */
+function customVoice(dir: string, name = "Qwen3-TTS-CustomVoice") {
+  const path = join(dir, name);
+  mkdirSync(path, { recursive: true });
+  writeFileSync(
+    join(path, "config.json"),
+    JSON.stringify({
+      tts_model_type: "custom_voice",
+      talker_config: { spk_id: { vivian: 3065, Ryan: 3061, newbie: 1 } },
+    }),
+  );
+  return path;
+}
+
+describe("stock voices", () => {
+  test("are those of the CustomVoice model next to the Base one", () => {
+    const t = setup();
+    expect(t.library.state().stock).toEqual([]);
+    expect(t.library.state().stock_detail).toContain("CustomVoice");
+    const custom = customVoice(t.root);
+    const state = t.library.state();
+    expect(state.stock_detail).toBeUndefined();
+    expect(state.stock).toEqual([
+      {
+        id: "qwen3-tts:ryan",
+        speaker: "ryan",
+        name: "Ryan",
+        native: "en",
+        description: "Lively man, strong rhythm",
+      },
+      {
+        id: "qwen3-tts:vivian",
+        speaker: "vivian",
+        name: "Vivian",
+        native: "zh",
+        description: "Bright young woman, a little edgy",
+      },
+      {
+        id: "qwen3-tts:newbie",
+        speaker: "newbie",
+        name: "Newbie",
+        native: "",
+        description: "",
+      },
+    ]);
+    // A sample reads with the CustomVoice model and that speaker.
+    expect(t.library.sampleModels("qwen3-tts:ryan")).toEqual([
+      { model: "qwen3-tts", path: custom, voice: "ryan" },
+      { model: "kokoro", path: "/models/Kokoro-82M" },
+    ]);
+    expect(() => t.library.sampleModels("qwen3-tts:nobody")).toThrow(
+      "No such voice",
+    );
+  });
+
+  test("read every language, or one, and the cloned voices still can", async () => {
+    const t = setup();
+    const custom = customVoice(t.root);
+    let state = await t.library.assign("qwen3-tts:ryan", null);
+    expect(state.assignments).toEqual({ all: "qwen3-tts:ryan", languages: {} });
+    expect(t.readConfig().tts_models).toEqual([
+      { model: "qwen3-tts", path: custom, voice: "ryan" },
+      { model: "kokoro", path: "/models/Kokoro-82M" },
+    ]);
+    // The Base model is no longer read with: kept, to record voices with.
+    expect(t.readConfig().clone_model).toBe(t.base);
+    expect(t.library.state().can_clone).toBe(true);
+    // French in a cloned voice, the rest in Ryan's.
+    state = await t.library.assign("papa-fr", "fr");
+    expect(state.assignments).toEqual({
+      all: "qwen3-tts:ryan",
+      languages: { fr: "papa-fr" },
+    });
+    expect(t.readConfig().tts_models).toEqual([
+      {
+        model: "qwen3-tts",
+        path: t.base,
+        voice_embedding: join(t.elsewhere, "papa-fr.json"),
+        languages: "fr",
+      },
+      { model: "qwen3-tts", path: custom, voice: "ryan" },
+      { model: "kokoro", path: "/models/Kokoro-82M" },
+    ]);
+    // Back to a cloned voice for everything: the stock model stays known.
+    await t.library.assign("papa", null);
+    expect(t.readConfig().tts_models?.[0]).toEqual({
+      model: "qwen3-tts",
+      path: t.base,
+      voice_embedding: join(t.elsewhere, "papa.json"),
+    });
+    expect(t.readConfig().stock_model).toBe(custom);
+    expect(t.library.state().stock.length).toBe(3);
+    expect(t.library.assign("qwen3-tts:nobody", null)).rejects.toThrow(
+      "No such voice",
+    );
+  });
+
+  test("named with speaker or voice in voice.json", () => {
+    const t = setup([
+      { model: "qwen3-tts", path: "/cv", speaker: "Vivian", languages: "zh" },
+      { model: "qwen3-tts", path: "/cv", voice: "ryan" },
+      { model: "kokoro", path: "/k" },
+    ]);
+    expect(t.library.state().assignments).toEqual({
+      all: "qwen3-tts:ryan",
+      languages: { zh: "qwen3-tts:vivian" },
+    });
+  });
+
+  test("a stock_model that is not a CustomVoice model gives none", () => {
+    const t = setup();
+    customVoice(t.root);
+    const raw = JSON.parse(readFileSync(join(t.root, "voice.json"), "utf8"));
+    writeFileSync(
+      join(t.root, "voice.json"),
+      JSON.stringify({ ...raw, stock_model: t.base }),
+    );
+    expect(t.library.state().stock).toEqual([]);
   });
 });

@@ -652,9 +652,24 @@ language; `"model"` names each, the other fields are the element's for it:
 ```
 
 `path` is the model's directory from Hugging Face; Qwen3-TTS speaks with one
-of its named voices (`"voice"`, with a CustomVoice model) or a cloned one
-(`"voice_embedding"`, a Base model and a voice saved with any-tts). A model
-that fails to load is left out.
+of its stock speakers (`"speaker"` or the element's `"voice"`, such as
+`"ryan"`, with a CustomVoice model) or a cloned one (`"voice_embedding"`, a
+Base model and a voice saved with any-tts). A model that fails to load is
+left out.
+
+The stock speakers are listed and chosen from the Speech section of
+Configuration next to the cloned voices and Kokoro, when a Qwen3-TTS
+CustomVoice model is found: `"stock_model"`, else the first Qwen3-TTS model
+of `tts_models` that is one, else a `*CustomVoice*` directory next to them
+(`Qwen3-TTS-12Hz-1.7B-CustomVoice` beside the Base model). Its
+`config.json` names the speakers: Ryan and Aiden (English), Vivian, Serena,
+Uncle Fu, Dylan and Eric (Chinese), Ono Anna (Japanese) and Sohee (Korean)
+for Qwen's 0.6B and 1.7B models. Each speaks every language Qwen3-TTS does,
+most naturally its own. Choosing one writes a Qwen3-TTS entry with that
+model and `"voice"`; a voice cloned for one language and a stock speaker
+for the others load both models. The models no longer read with are kept
+as `"clone_model"` and `"stock_model"`, so voices can still be recorded and
+chosen again.
 
 Voices are cloned from the Speech section of Configuration with a Qwen3-TTS Base
 model (`"clone_model"`, or the first Qwen3-TTS model of `tts_models` that is

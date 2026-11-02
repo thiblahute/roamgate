@@ -22,6 +22,14 @@ import {
   type VoiceConfig,
   voiceConfigPath,
 } from "./voice-helper";
+import {
+  entrySpeaker,
+  isStockVoiceId,
+  type StockVoice,
+  stockModel,
+  stockVoiceId,
+  stockVoices,
+} from "./voice-stock";
 
 /**
  * The voices replies can be read with, and which reads what.
@@ -33,6 +41,9 @@ import {
  * with its name and languages, those made elsewhere included (the
  * `voice_embedding` files voice.json reads with are added the first time
  * they are seen, so they stay listed once no longer used).
+ *
+ * Qwen3-TTS's stock speakers (voice-stock.ts) read too, with its
+ * CustomVoice model: their ids are `qwen3-tts:<speaker>`.
  *
  * Which voice reads which language is voice.json's `tts_models`, the order
  * the helper picks from: a Qwen3-TTS entry per language with a voice of its
@@ -149,9 +160,13 @@ export function assignmentsFrom(
 ): VoiceAssignments {
   const assignments: VoiceAssignments = { all: null, languages: {} };
   for (const model of models) {
-    if (model.model !== QWEN || typeof model.voice_embedding !== "string")
-      continue;
-    const id = idOfPath(model.voice_embedding);
+    if (model.model !== QWEN) continue;
+    const speaker = entrySpeaker(model);
+    const id = speaker
+      ? stockVoiceId(speaker)
+      : typeof model.voice_embedding === "string"
+        ? idOfPath(model.voice_embedding)
+        : undefined;
     if (!id) continue;
     const languages =
       typeof model.languages === "string"
@@ -167,44 +182,59 @@ export function assignmentsFrom(
 }
 
 /**
- * `tts_models` reading as `assignments` says with the voices at
- * `pathOf(id)`: the Qwen3-TTS entries made again (keeping the other fields
- * of the one they replace, such as a temperature), the other models after
- * them as they were.
+ * What a Qwen3-TTS entry reads a voice with: a cloned voice's embedding (on
+ * the Base model), or a stock speaker and its CustomVoice model.
+ */
+export type VoiceReader =
+  | { voice_embedding: string }
+  | { path: string; voice: string };
+
+/**
+ * `tts_models` reading as `assignments` says with the voices `readerOf`
+ * gives: the Qwen3-TTS entries made again (keeping the other fields of the
+ * one they replace, such as a temperature), the other models after them as
+ * they were. Cloned voices read with the Base model at `qwenPath`.
  */
 export function modelsFor(
   models: TtsModel[],
   assignments: VoiceAssignments,
-  pathOf: (id: string) => string | undefined,
+  readerOf: (id: string) => VoiceReader | undefined,
   qwenPath: string,
 ): TtsModel[] {
   const qwen = models.filter((model) => model.model === QWEN);
   const others = models.filter((model) => model.model !== QWEN);
-  const base = (languages: string | undefined): TtsModel => {
+  const entry = (
+    languages: string | undefined,
+    reader: VoiceReader,
+  ): TtsModel => {
     const previous =
       qwen.find((model) => model.languages === languages) ??
       qwen.find((model) => model.languages === undefined) ??
       qwen[0];
-    const entry: TtsModel = { ...(previous ?? { model: QWEN }) };
-    delete entry.languages;
-    // Cloned voices need the Base model, whatever read before.
-    return { ...entry, model: QWEN, path: qwenPath || entry.path || "" };
+    const made: TtsModel = { ...(previous ?? { model: QWEN }) };
+    for (const key of ["languages", "voice_embedding", "voice", "speaker"])
+      delete made[key];
+    return "voice" in reader
+      ? { ...made, model: QWEN, path: reader.path, voice: reader.voice }
+      : {
+          ...made,
+          model: QWEN,
+          // Cloned voices need the Base model, whatever read before.
+          path: qwenPath || made.path || "",
+          voice_embedding: reader.voice_embedding,
+        };
   };
   const entries: TtsModel[] = [];
   for (const [language, id] of Object.entries(assignments.languages)) {
-    const path = pathOf(id);
-    if (!path) continue;
-    entries.push({
-      ...base(language),
-      voice_embedding: path,
-      languages: language,
-    });
+    const reader = readerOf(id);
+    if (!reader) continue;
+    entries.push({ ...entry(language, reader), languages: language });
   }
   const all =
     assignments.all && assignments.all !== KOKORO
-      ? pathOf(assignments.all)
+      ? readerOf(assignments.all)
       : undefined;
-  if (all) entries.push({ ...base(undefined), voice_embedding: all });
+  if (all) entries.push(entry(undefined, all));
   return [...entries, ...others];
 }
 
@@ -285,14 +315,26 @@ export class VoiceLibrary {
       .map((voice) => ({ ...voice, owned: this.owned(config, voice.path) }));
   }
 
-  /** The voices, which reads what, and whether new ones can be recorded. */
+  /**
+   * The voices, grouped by model: those recorded (Qwen3-TTS Base), the
+   * stock ones (Qwen3-TTS CustomVoice) and Kokoro; which reads what, and
+   * whether new ones can be recorded.
+   */
   state() {
     const config = this.config();
     const voices = this.list(config);
     const models = config.tts_models ?? [];
     const model = cloningModel(config);
+    const stock = stockVoices(stockModel(config));
     return {
       voices,
+      stock,
+      ...(stock.length
+        ? {}
+        : {
+            stock_detail:
+              "Stock voices need a Qwen3-TTS CustomVoice model (stock_model in voice.json).",
+          }),
       kokoro: models.some((entry) => entry.model === KOKORO),
       surprise: config.voice_surprise === true,
       assignments: assignmentsFrom(
@@ -443,6 +485,18 @@ export class VoiceLibrary {
     }
   }
 
+  /** The stock voice `id`, and how it reads; null when it is not one. */
+  private stock(
+    config: VoiceConfig,
+    id: string,
+  ): { voice: StockVoice; reader: VoiceReader } | null {
+    if (!isStockVoiceId(id)) return null;
+    const path = stockModel(config);
+    const voice = stockVoices(path).find((entry) => entry.id === id);
+    if (!path || !voice) throw new VoiceError(404, "No such voice.");
+    return { voice, reader: { path, voice: voice.speaker } };
+  }
+
   /** `tts_models` with the voice `id` reading everything, for a sample. */
   sampleModels(id: string): TtsModel[] {
     const config = this.config();
@@ -452,13 +506,21 @@ export class VoiceLibrary {
       if (!kokoro.length) throw new VoiceError(404, "No Kokoro voice.");
       return kokoro;
     }
+    const stock = this.stock(config, id);
+    if (stock)
+      return modelsFor(
+        models,
+        { all: id, languages: {} },
+        (wanted) => (wanted === id ? stock.reader : undefined),
+        "",
+      );
     const voice = this.find(config, id);
     const model = cloningModel(config);
     if (!model) throw new VoiceError(409, "No Qwen3-TTS model to read with.");
     return modelsFor(
       models,
       { all: id, languages: {} },
-      (wanted) => (wanted === id ? voice.path : undefined),
+      (wanted) => (wanted === id ? { voice_embedding: voice.path } : undefined),
       model,
     );
   }
@@ -482,7 +544,8 @@ export class VoiceLibrary {
         "Choosing voices needs any-tts models (tts_models in voice.json).",
       );
     const { voices, assignments, kokoro } = this.state();
-    if (
+    if (voice !== null && isStockVoiceId(voice)) this.stock(config, voice);
+    else if (
       voice !== null &&
       voice !== KOKORO &&
       !voices.some((v) => v.id === voice)
@@ -509,24 +572,43 @@ export class VoiceLibrary {
       next.all = voice;
       next.languages = {};
     }
+    const cloning = cloningModel(config);
     const qwen =
-      cloningModel(config) ??
-      config.tts_models.find((model) => model.model === QWEN)?.path;
-    if (
-      typeof qwen !== "string" &&
-      (next.all !== KOKORO || Object.keys(next.languages).length)
-    )
+      cloning ?? config.tts_models.find((model) => model.model === QWEN)?.path;
+    const cloned = [next.all, ...Object.values(next.languages)].some(
+      (id) => !!id && id !== KOKORO && !isStockVoiceId(id),
+    );
+    if (typeof qwen !== "string" && cloned)
       throw new VoiceError(409, "No Qwen3-TTS model to read with.");
     const models = modelsFor(
       config.tts_models,
       next,
-      (id) => voices.find((entry) => entry.id === id)?.path,
+      (id) => {
+        if (isStockVoiceId(id)) return this.stock(config, id)?.reader;
+        const path = voices.find((entry) => entry.id === id)?.path;
+        return path ? { voice_embedding: path } : undefined;
+      },
       String(qwen ?? ""),
     );
     if (!models.length)
       throw new VoiceError(409, "That would leave no voice to read with.");
     const raw = readJson(this.configPath()) as Record<string, unknown>;
     raw.tts_models = models;
+    // The models found in `tts_models` stay known once no longer read
+    // with: recording voices, and choosing them again, still work.
+    const reads = (list: TtsModel[], path: string | null) =>
+      !!path &&
+      list.some(
+        (model) =>
+          typeof model.path === "string" &&
+          resolve(model.path) === resolve(path),
+      );
+    const dropped = (path: string | null) =>
+      reads(config.tts_models ?? [], path) && !reads(models, path);
+    if (cloning && !config.clone_model && dropped(cloning))
+      raw.clone_model = cloning;
+    const stock = stockModel(config);
+    if (stock && !config.stock_model && dropped(stock)) raw.stock_model = stock;
     // A voice chosen reads, not one at random.
     if (voice !== null) delete raw.voice_surprise;
     writeJson(this.configPath(), raw);
