@@ -158,7 +158,9 @@ import {
 import {
   ALL_HISTORY_FILTERS,
   historyEntryLabel,
+  historyLoadError,
   mergeAgentHistory,
+  retryOnceOnTimeout,
   isToolContentPending,
   selectHistoryEntries,
   toolOverlayMatches,
@@ -478,11 +480,15 @@ export function AgentHistoryDrawer({
       agent: pane.agent,
     };
     Promise.allSettled([
-      connectionClient.call("agent_history.get", params),
-      connectionClient.call("agent_session.get", {
-        pane_id: pane.pane_id,
-        agent: pane.agent,
-      }),
+      retryOnceOnTimeout(() =>
+        connectionClient.call("agent_history.get", params),
+      ),
+      retryOnceOnTimeout(() =>
+        connectionClient.call("agent_session.get", {
+          pane_id: pane.pane_id,
+          agent: pane.agent,
+        }),
+      ),
     ])
       .then(([historyResult, sessionResult]) => {
         if (!connectionClient.isCurrent() || loadSeqRef.current !== seq) return;
@@ -551,7 +557,8 @@ export function AgentHistoryDrawer({
               : "",
           )
           .filter(Boolean);
-        setError(errors.join("\n"));
+        // A later read that succeeds clears it.
+        setError(historyLoadError(errors));
       })
       .finally(() => {
         if (inFlightRef.current === seq) inFlightRef.current = null;

@@ -46,6 +46,7 @@ import type { OutboxMessage } from "./chatOutbox";
 import {
   historyEntryLabel,
   isToolContentPending,
+  sameHistoryEntry,
   type HistoryEntry,
 } from "./agentHistory";
 import {
@@ -99,11 +100,13 @@ type BubbleProps = {
   imageUrl?: (path: string) => string;
   sentImageUrl?: SentImageUrl;
 };
+// Not its sequence either: a window that slides by one message renumbers
+// every bubble, so the list sets data-sequence on the bubbles itself
+// (AgentHistoryChat) and a bubble that only moved is not drawn again.
 function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
   const x = a.entry;
   const y = b.entry;
   return (
-    a.sequence === b.sequence &&
     a.highlighted === b.highlighted &&
     a.speech === b.speech &&
     a.onOpen === b.onOpen &&
@@ -168,7 +171,11 @@ const ChatBubble = memo(function ChatBubble({
   // one line, with the summary a tap away.
   if (entry.compact_summary)
     return (
-      <div className="agent-history-chat-compacted" data-sequence={sequence}>
+      <div
+        className="agent-history-chat-compacted"
+        data-sequence={sequence}
+        data-bubble-id={entry.id}
+      >
         <span>Conversation compacted</span>
         <button type="button" onClick={() => onOpen(entry)}>
           Show the summary
@@ -191,6 +198,7 @@ const ChatBubble = memo(function ChatBubble({
         cwd={entry.shell.cwd}
         sent
         sequence={sequence}
+        bubbleId={entry.id}
       />
     );
   // What Claude Code put in the user's turn (a subagent's report, another
@@ -215,6 +223,7 @@ const ChatBubble = memo(function ChatBubble({
       <div
         className="agent-history-chat-injected"
         data-sequence={sequence}
+        data-bubble-id={entry.id}
         data-entry-id={entry.id}
       >
         <div className="agent-history-chat-compacted">
@@ -258,7 +267,11 @@ const ChatBubble = memo(function ChatBubble({
       : null;
   if (delivery)
     return (
-      <div className="agent-history-chat-compacted" data-sequence={sequence}>
+      <div
+        className="agent-history-chat-compacted"
+        data-sequence={sequence}
+        data-bubble-id={entry.id}
+      >
         <span>
           {delivery.count
             ? `${delivery.count} review comment${delivery.count === 1 ? "" : "s"} sent to the agent`
@@ -295,6 +308,7 @@ const ChatBubble = memo(function ChatBubble({
     <article
       className={`agent-history-chat-message ${tone} ${highlighted ? "is-minimap-target" : ""}${entry.queued ? " is-queued" : ""}`}
       data-sequence={sequence}
+      data-bubble-id={entry.id}
       data-entry-id={entry.id}
       // The same reply block, streamed then saved: what voice reads is
       // found in either.
@@ -1224,14 +1238,7 @@ function ToolStepRow({
 
 // Collapsed by default; the block keeps its open state across polling
 // refreshes because its key follows the first entry's id.
-function ToolBlock({
-  entries,
-  loader,
-  onToggle,
-  onOpen,
-  tasks,
-  onOpenTask,
-}: {
+type ToolBlockProps = {
   entries: HistoryEntry[];
   loader: ToolContentLoader;
   // Called before the reader opens or closes part of the block.
@@ -1239,7 +1246,32 @@ function ToolBlock({
   onOpen: (entry: HistoryEntry) => void;
   tasks?: ReadonlyMap<string, AgentTask>;
   onOpenTask?: (id: string) => void;
-}) {
+};
+// Grouping builds a new entries list on every refresh: a block re-renders
+// only when one of its entries changed.
+function sameToolBlock(a: ToolBlockProps, b: ToolBlockProps): boolean {
+  return (
+    a.loader === b.loader &&
+    a.onToggle === b.onToggle &&
+    a.onOpen === b.onOpen &&
+    a.tasks === b.tasks &&
+    a.onOpenTask === b.onOpenTask &&
+    a.entries.length === b.entries.length &&
+    a.entries.every((entry, index) =>
+      sameHistoryEntry(entry, b.entries[index]!),
+    )
+  );
+}
+
+const ToolBlock = memo(function ToolBlock({
+  entries,
+  loader,
+  onToggle,
+  onOpen,
+  tasks,
+  onOpenTask,
+}: ToolBlockProps) {
+  useRenderTrace("ToolBlock");
   // The pages these calls published, the latest version of each.
   const artifacts = [
     ...new Map(
@@ -1398,7 +1430,7 @@ function ToolBlock({
       ) : null}
     </div>
   );
-}
+}, sameToolBlock);
 
 // The drawer owns the scroll and content refs so its minimap can track and
 // jump to bubbles through their data-sequence, as it does for timeline cards.
@@ -1546,6 +1578,24 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     if (list && followRef.current && !reading())
       list.scrollTop = list.scrollHeight;
   }, [items, listRef, reading]);
+
+  // Bubbles skip drawing when only their place in the window moved (see
+  // sameBubble): their data-sequence, which the minimap and its jumps go by,
+  // is kept current here.
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const sequences = new Map<string, number>();
+    for (const item of items)
+      if (item.type === "message") sequences.set(item.entry.id, item.sequence);
+    for (const bubble of content.querySelectorAll<HTMLElement>(
+      ":scope > [data-bubble-id]",
+    )) {
+      const sequence = sequences.get(bubble.dataset.bubbleId ?? "");
+      if (sequence !== undefined && bubble.dataset.sequence !== `${sequence}`)
+        bubble.dataset.sequence = `${sequence}`;
+    }
+  }, [items, contentRef]);
 
   // A message just sent is shown where the conversation goes on.
   const lastOutboxId = outbox[outbox.length - 1]?.id;
