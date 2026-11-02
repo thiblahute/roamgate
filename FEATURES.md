@@ -1030,6 +1030,10 @@ across a project and its subprojects. It works in panes on SSH hosts too.
 - An open page reloads itself when the server it reconnects to, or comes back
   to, serves another frontend build. It waits for editable fields to be cleared,
   dialogs to close, and pending uploads and message submissions to finish.
+- An opt-in [activity log](docs/activity.md) records which workspace had your
+  attention on each device, agent states, idle time and recording gaps, never
+  terminal contents. Turn it on in
+  [settings](docs/DEPLOYMENT.md#activity-log).
 - [Command-line tools](docs/DEPLOYMENT.md#command-line-management) such as
   `roamgate doctor`, `url --qr`, `config`, `auth`, and `connections`.
 

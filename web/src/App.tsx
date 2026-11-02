@@ -6,6 +6,7 @@ import { MobileBottomBar } from "./components/MobileBottomBar";
 import { withWaitsOn } from "./needsYou";
 import { usePaneJumpLanding } from "./paneJumpLanding";
 import { useMarkAgentsSeen } from "./agentSeen";
+import { useActivityPresence } from "./useActivityPresence";
 import { createPortal, flushSync } from "react-dom";
 import { bridge } from "./api";
 import {
@@ -1695,6 +1696,8 @@ export default function App() {
   const [mobileView, setMobileView] = useState<MobileView>("session");
   // The workspace on screen is seen: its agents are no longer Done anywhere.
   useMarkAgentsSeen(!mobile || mobileView === "session");
+  // Where the user's attention is, for the activity log (when recording).
+  useActivityPresence(!mobile || mobileView === "session");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMounted, setAssistantMounted] = useState(false);
   const [assistantTaskTarget, setAssistantTaskTarget] =

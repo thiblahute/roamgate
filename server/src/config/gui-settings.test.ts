@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_ACTIVITY_SETTINGS,
+  normalizeActivitySettings,
   normalizeWorktreeDirectory,
   normalizeWorktreeCommand,
   repoSettingsKey,
@@ -228,4 +230,85 @@ test("the removal command follows the same rule as creation's", () => {
       "local:/b",
     ),
   ).toBeUndefined();
+});
+
+test("activity settings default to off and keep each valid field", () => {
+  expect(normalizeActivitySettings(undefined)).toEqual(
+    DEFAULT_ACTIVITY_SETTINGS,
+  );
+  expect(DEFAULT_ACTIVITY_SETTINGS).toMatchObject({
+    enabled: false,
+    retention_days: 90,
+    idle_seconds: 300,
+    day_start: "00:00",
+    record_agent_titles: false,
+  });
+  expect(
+    normalizeActivitySettings({
+      enabled: true,
+      retention_days: 30,
+      idle_seconds: 600,
+      day_start: "05:30",
+      subject_roots: ["~/devel/clients", 3, ""],
+      record_agent_titles: true,
+      exclude: { connections: ["work"], subjects: ["private"] },
+    }),
+  ).toEqual({
+    enabled: true,
+    retention_days: 30,
+    idle_seconds: 600,
+    day_start: "05:30",
+    subject_roots: ["~/devel/clients"],
+    record_agent_titles: true,
+    exclude: { connections: ["work"], subjects: ["private"] },
+  });
+  expect(
+    normalizeActivitySettings({
+      enabled: "yes",
+      retention_days: 0,
+      idle_seconds: 1.5,
+      day_start: "24:00",
+      exclude: "all",
+    }),
+  ).toEqual(DEFAULT_ACTIVITY_SETTINGS);
+});
+
+test("activity settings survive other settings writes, and are not added", async () => {
+  const home = await mkdtemp(join(tmpdir(), "roamgate-settings-"));
+  const path = join(home, "settings.json");
+  const source = JSON.stringify(import.meta.resolve("./gui-settings"));
+  const update = async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `import { updateGuiSettings } from ${source}; await updateGuiSettings((s) => ({ ...s, title_suffix: "x" }));`,
+      ],
+      {
+        env: { ...process.env, HOME: home, ROAMGATE_SETTINGS_PATH: path },
+        stderr: "pipe",
+      },
+    );
+    expect(await new Response(child.stderr).text()).toBe("");
+    expect(await child.exited).toBe(0);
+    return JSON.parse(await readFile(path, "utf8"));
+  };
+  try {
+    await writeFile(path, JSON.stringify({ version: 1 }));
+    expect((await update()).activity).toBeUndefined();
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        activity: { enabled: true, subject_roots: ["~/devel/clients"] },
+      }),
+    );
+    expect((await update()).activity).toEqual({
+      ...DEFAULT_ACTIVITY_SETTINGS,
+      enabled: true,
+      subject_roots: ["~/devel/clients"],
+    });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });

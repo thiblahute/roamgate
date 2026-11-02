@@ -66,6 +66,95 @@ function normalizeConversationSettings(
   return isIdleStopMinutes(minutes) ? { idle_stop_minutes: minutes } : {};
 }
 
+/**
+ * The activity recorder (server/src/activity). Off unless `enabled`; read at
+ * startup. `subject_roots` and `exclude` are kept for the activity readers:
+ * the recorder records every connection, excluded or not.
+ */
+export type GuiActivitySettings = {
+  enabled: boolean;
+  retention_days: number;
+  idle_seconds: number;
+  /** Local time a day starts at, `HH:MM`. */
+  day_start: string;
+  subject_roots: string[];
+  record_agent_titles: boolean;
+  exclude: { connections: string[]; subjects: string[] };
+};
+
+export const DEFAULT_ACTIVITY_SETTINGS: GuiActivitySettings = {
+  enabled: false,
+  retention_days: 90,
+  idle_seconds: 300,
+  day_start: "00:00",
+  subject_roots: [],
+  record_agent_titles: false,
+  exclude: { connections: [], subjects: [] },
+};
+
+function boundedInteger(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= min &&
+    value <= max
+    ? value
+    : fallback;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      )
+    : [];
+}
+
+/** Fills defaults in and drops invalid values, field by field. */
+export function normalizeActivitySettings(raw: unknown): GuiActivitySettings {
+  const obj =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as any) : {};
+  const exclude =
+    obj.exclude && typeof obj.exclude === "object" ? obj.exclude : {};
+  const defaults = DEFAULT_ACTIVITY_SETTINGS;
+  return {
+    enabled: obj.enabled === true,
+    retention_days: boundedInteger(
+      obj.retention_days,
+      1,
+      3650,
+      defaults.retention_days,
+    ),
+    idle_seconds: boundedInteger(
+      obj.idle_seconds,
+      30,
+      86_400,
+      defaults.idle_seconds,
+    ),
+    day_start:
+      typeof obj.day_start === "string" &&
+      /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(obj.day_start)
+        ? obj.day_start
+        : defaults.day_start,
+    subject_roots: stringList(obj.subject_roots),
+    record_agent_titles: obj.record_agent_titles === true,
+    exclude: {
+      connections: stringList(exclude.connections),
+      subjects: stringList(exclude.subjects),
+    },
+  };
+}
+
+/** The activity settings in effect, defaults included. */
+export function activitySettings(settings: GuiSettings): GuiActivitySettings {
+  return settings.activity ?? normalizeActivitySettings(undefined);
+}
+
 export type GuiSettings = {
   version: 1;
   title_suffix?: string;
@@ -79,6 +168,8 @@ export type GuiSettings = {
   terminal_transport?: Record<string, { surface_codecs: boolean }>;
   /** Conversation mode (absent: its defaults, idle stop after 30 min). */
   conversation?: GuiConversationSettings;
+  /** Absent until set: written back only when the file has it. */
+  activity?: GuiActivitySettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -292,6 +383,10 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
       ),
     ),
     conversation: normalizeConversationSettings(obj.conversation),
+    activity:
+      obj.activity === undefined
+        ? undefined
+        : normalizeActivitySettings(obj.activity),
     custom:
       obj.custom && typeof obj.custom === "object"
         ? (obj.custom as Record<string, unknown>)
