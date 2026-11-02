@@ -145,9 +145,12 @@ import { createAuthHandlers, unauthenticatedLoginRedirect } from "./http/auth";
 import { serveStatic } from "./http/static-files";
 import { handleInstanceSettings } from "./http/instance-settings";
 import {
+  activitySettings,
   readGuiSettings,
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
+import { createActivityRecorder } from "./activity/recorder";
+import { dataRoot } from "./config/data-paths";
 import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
   terminalUploadRequestBodyLimit,
@@ -276,6 +279,17 @@ const cpuProfile = config.profile
 const agentSeen = createAgentSeenStore();
 // Seen marks hold for one Herdr server process: its boot id, per connection.
 const herdrBoots = createHerdrBootCache();
+// The activity log (activity/recorder.ts): opt-in, `activity` in settings.json.
+const activity = createActivityRecorder({
+  settings: async () => activitySettings(await readGuiSettings()),
+  directory: () => dataRoot(),
+  herdrCall: async (connectionId, method, params) => {
+    const lease = connectionManager.readyRuntimeLease(connectionId);
+    if (!lease) throw new Error(`connection not ready: ${connectionId}`);
+    return lease.runtime.herdr.call(method, params, 5000);
+  },
+  logger: logger.child("activity"),
+});
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
 });
@@ -696,6 +710,7 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
           error: sanitizeConnectionError(error),
         });
       }
+    activity.connectionStatus(status.id, status.state);
     const fields = {
       connection: status.id,
       state: status.state,
@@ -1543,8 +1558,13 @@ function runtimeFactoryForProfile(
             context.isCurrent,
           );
         },
+        onPaneList: (result, startedAt) => {
+          if (context.isCurrent())
+            activity.paneList(identity.id, result, startedAt);
+        },
         onEvent: (event, eventIdentity) => {
           if (!context.isCurrent()) return;
+          activity.herdrEvent(eventIdentity.id, event);
           logger.debug("Herdr event", {
             connection: eventIdentity.id,
             detail: summarizeHerdrEvent(event),
@@ -1685,6 +1705,7 @@ const webSocketCleanup = new WebSocketCleanupTracker<
     viewedTerminals,
   };
   clients.delete(ws);
+  activity.socketClosed(ws);
   notifyBrowserClientCount();
   return snapshot;
 });
@@ -2273,6 +2294,19 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       );
     } catch (e) {
       sendError("agent-list-error", e);
+    }
+    return;
+  }
+  if (method === "activity.presence") {
+    try {
+      const result = await activity.presence(
+        ws,
+        connection.identity.id,
+        params,
+      );
+      sendReply({ id, result }, method);
+    } catch (e) {
+      sendError("activity-presence-error", e);
     }
     return;
   }
@@ -3440,6 +3474,9 @@ function stopManagerOnce(): Promise<void> {
   stopNetworkWatch();
   connectionProfiles.stopSupervision();
   managerStopTask ??= (async () => {
+    // End the attention spans before the connections go: a shutdown is not
+    // a disconnect.
+    await activity.stop();
     // Pause the harness before taking away the runtimes its reads depend on.
     await assistantServiceTask
       ?.then((assistant) => assistant.dispose())
@@ -3470,6 +3507,7 @@ function scheduleManagedShutdown(): void {
 
 process.on("exit", () => {
   voiceHelper.stop();
+  activity.stopNow();
   void stopManagerOnce();
 });
 process.on("SIGINT", () => {

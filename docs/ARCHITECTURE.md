@@ -345,6 +345,30 @@ or stylesheet, 5 MiB per image/font, 64 resources and 10 MiB per preview
 1.5-second budget; missing data never hides an agent.
 [History synchronization](./HISTORY.md) covers transcript projection and caching.
 
+## Activity log
+
+With `activity.enabled`, `server/src/activity` records attention, agent states
+and recording gaps into `activity.sqlite` in the data directory; behavior and
+event shapes are in [the activity log](./activity.md).
+
+- **Storage:** `bun:sqlite` in WAL mode, `synchronous = NORMAL`, a 5-second
+  `busy_timeout`, `auto_vacuum = INCREMENTAL`, mode 0600 in a 0700 directory,
+  checked with `assertSafeDataPath` (no symlinks). `user_version` is 1; a
+  bridge refuses a database with another version. Tables: `events`
+  (append-only, ordered by an `AUTOINCREMENT` `seq` that is never reused; a
+  blur's `span` is its focus's `seq`), `workspaces` (keyed by the stable
+  workspace id), `recorder_sessions` (`last_alive` updated every 60 seconds)
+  and `connection_gaps` (`connection_id` null for the whole recorder,
+  `excluded` reserved for excluded connections). Times are epoch
+  milliseconds; readers render them in local time with the offset.
+- **Inputs:** connection status from `ConnectionManager`, Herdr events and
+  each agent-status `pane.list` from the connection runtime (current
+  generation only), and `activity.presence` RPCs keyed by WebSocket. One queue
+  applies them in arrival order, each stamped when it arrived; resolving a new
+  Herdr workspace id lists the connection's workspaces and panes first.
+- **Shutdown** ends spans and gaps before the connections stop, so a bridge
+  stop reads as `recorder_stop`, not `disconnect`.
+
 ## Agent integrations
 
 `integration.list` uses Herdr's RPC as the source of truth. Missing versions are

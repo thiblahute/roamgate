@@ -719,6 +719,38 @@ agent on screen.
 say) that questions and errands about none of the sessions go to; its answer
 is read aloud once it settles.
 
+## Activity log
+
+The [activity log](./activity.md) is off by default. Turn it on in
+`settings.json` and restart Roamgate; it is read at startup:
+
+```json
+"activity": {
+  "enabled": true,
+  "retention_days": 90,
+  "idle_seconds": 300,
+  "day_start": "00:00",
+  "subject_roots": [],
+  "record_agent_titles": false,
+  "exclude": { "connections": [], "subjects": [] }
+}
+```
+
+| Key                   | Default   | Meaning                                                                                    |
+| --------------------- | --------- | ------------------------------------------------------------------------------------------ |
+| `enabled`             | `false`   | Record activity into `activity.sqlite`.                                                    |
+| `retention_days`      | `90`      | Days kept (1 to 3650); older entries are deleted daily.                                    |
+| `idle_seconds`        | `300`     | No input for this long ends attention (30 to 86400). Reading counts until then.            |
+| `day_start`           | `"00:00"` | Local time a day starts at, `HH:MM`, for readers that group by day.                        |
+| `subject_roots`       | `[]`      | Directories whose subdirectories group workspaces, for readers.                            |
+| `record_agent_titles` | `false`   | Also record agent session titles (never output).                                           |
+| `exclude`             | empty     | Connections and subjects kept from what is handed to other tools. They are still recorded. |
+
+Only fields set to a valid value are used; the others take their default.
+With `enabled` false nothing is recorded and no file is created. Delete
+`activity.sqlite` (with its `-wal` and `-shm` files, Roamgate stopped) to erase
+the log.
+
 ## Worktree location
 
 By default Herdr chooses where a new worktree is created. Set a repository's

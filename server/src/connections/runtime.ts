@@ -153,6 +153,8 @@ export function createLegacyConnectionRuntime(args: {
   clientLabel: (ws: ServerWebSocket<unknown>) => string;
   markRpcError: MarkRpcError;
   onEvent: (event: unknown, identity: ConnectionIdentity) => void;
+  /** Each agent pane listing, with the time it was started (activity log). */
+  onPaneList?: (result: unknown, startedAt: number) => void;
   onTaskEvent?: (event: TaskEvent) => void;
   /** Defaults to `status`; the server entrypoint selects `herdr` by default. */
   taskNotificationSource?: TaskNotificationSource;
@@ -806,6 +808,7 @@ export function createLegacyConnectionRuntime(args: {
         })
       : null;
   let taskListRevision = 0;
+  let paneListStartedAt = 0;
   const agentStatusSubscriptions = createAgentStatusSubscriptionLoop({
     herdr,
     connectionId: identity.id,
@@ -819,12 +822,14 @@ export function createLegacyConnectionRuntime(args: {
         operation: "pane list",
       }),
     onPaneListStart: () => {
+      paneListStartedAt = Date.now();
       taskListRevision = taskEvents.beginPaneList();
       return lastStepTurns.beginPaneList();
     },
     onPaneList: (result, revision) => {
       taskEvents.reconcilePaneList(result, taskListRevision);
       lastStepTurns.reconcilePaneList(result, revision);
+      args.onPaneList?.(result, paneListStartedAt);
     },
     log: (message) => {
       agentStatusRecovery.recovered({ connection: identity.id });

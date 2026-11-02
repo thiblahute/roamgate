@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Roamgate activity protocol schemas",
+  "$defs": {
+    "Error": {
+      "type": "object",
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "EventKind": {
+      "type": "string",
+      "enum": [
+        "workspace.focus",
+        "workspace.blur",
+        "agent.state",
+        "session.idle",
+        "session.active",
+        "ui.visibility"
+      ],
+      "description": "workspace.focus / workspace.blur: a workspace (and pane) gained or lost\nattention. agent.state: an agent in a pane changed state.\nsession.idle / session.active: no input for the idle threshold, and\ninput resumed. ui.visibility: the Roamgate UI became visible or hidden.\n"
+    },
+    "AgentState": {
+      "type": "string",
+      "enum": ["working", "idle", "blocked", "unknown"],
+      "description": "Herdr's states. `done` (finished, not yet seen) maps to idle; `blocked` means the agent needs the user."
+    },
+    "Workspace": {
+      "type": "object",
+      "required": ["id", "connection_id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable key: connection plus checkout path. Herdr's own ids change across restarts, see herdr_workspace_id."
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": ["string", "null"],
+          "description": "Absolute path on the connection's host."
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null when the workspace belongs to no group."
+        },
+        "repo": {
+          "$ref": "#/$defs/Repo"
+        },
+        "herdr_workspace_id": {
+          "type": ["string", "null"],
+          "description": "Herdr's current id for the workspace, as a hint only."
+        }
+      }
+    },
+    "Repo": {
+      "type": ["object", "null"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Repository or worktree root path."
+        },
+        "remote_url": {
+          "type": ["string", "null"]
+        },
+        "branch": {
+          "type": ["string", "null"]
+        },
+        "is_worktree": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "required": ["id", "ts", "kind", "connection_id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Opaque and ordered by position in the log; use it, or the page cursor, to resume."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventKind"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "tab_id": {
+          "type": ["string", "null"]
+        },
+        "pane_id": {
+          "type": ["string", "null"]
+        },
+        "agent": {
+          "type": ["object", "null"],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "state": {
+              "$ref": "#/$defs/AgentState"
+            },
+            "task": {
+              "type": ["string", "null"],
+              "description": "Opt-in (activity.record_agent_titles, off by default): the agent session's title. Null otherwise. Never terminal output."
+            },
+            "session_id": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "visible": {
+          "type": ["boolean", "null"],
+          "description": "For ui.visibility."
+        },
+        "idle_after_seconds": {
+          "type": ["integer", "null"],
+          "description": "For session.idle."
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "switch",
+                "hidden",
+                "idle",
+                "disconnect",
+                "timeout",
+                "recorder_stop"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why a workspace.blur happened. Every workspace.focus gets a matching workspace.blur; no heartbeat events are logged."
+        },
+        "open": {
+          "type": ["boolean", "null"],
+          "description": "On a workspace.focus whose blur has not happened yet at query time."
+        },
+        "client": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["id", "kind"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["desktop", "phone"]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The browser that reported the attention. Several clients can look at once."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["browser", "herdr"],
+          "default": "browser",
+          "description": "herdr: the native TUI focus, a low-confidence signal."
+        }
+      }
+    },
+    "ActivityPage": {
+      "type": "object",
+      "required": ["events", "workspaces"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "description": "The workspaces referenced by `events`, so a page is self-contained.",
+          "items": {
+            "$ref": "#/$defs/Workspace"
+          }
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "Subject": {
+      "type": "object",
+      "required": ["id", "label", "source", "groups"],
+      "description": "The user's grouping of a workspace. `label` is the nearest group; `groups` is the whole chain from the top-level group to the nearest, so consumers can use either level. Ids survive renames.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["explicit", "directory"],
+          "description": "explicit: a group the user made. directory: derived from the path under a configured root."
+        },
+        "path": {
+          "type": ["string", "null"],
+          "description": "Directory of the nearest group, when it has one."
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
