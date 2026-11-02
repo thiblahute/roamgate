@@ -473,9 +473,12 @@ Inspector state is scoped to each checkout; see
   1.5x, from the sentence playing on, and every browser keeps it.
   With the server engine, the same **Speech** section (in the menu, on
   phones too) lists its voices
-  after the browser's settings: hear each voice, choose which one reads every
-  reply or only one language (French read in a French voice, say), rename or
-  delete them, and set the speed. **New voice** clones one, simple enough for
+  after the browser's settings, grouped by model: your recorded voices,
+  Qwen3-TTS's stock speakers (Ryan, Aiden, Vivian, Serena... with a
+  CustomVoice model) and Kokoro. Hear each voice say a short sentence in the
+  language chosen above the list (the browser's by default), choose which one
+  reads every reply or only one language (French read in a French voice,
+  say), rename or delete the recorded ones, and set the speed. **New voice** clones one, simple enough for
   children: give it a name and a language, press the big button and read the
   two short sentences shown aloud (a level meter follows the voice); the
   recording stops by itself at the pause after the reading, or on stop, never

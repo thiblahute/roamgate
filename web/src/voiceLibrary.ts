@@ -1,5 +1,9 @@
 import { playbackRateFor } from "../../shared/speechRate";
-import type { VoiceLanguage } from "../../shared/voiceLibrary";
+import {
+  isVoiceLanguage,
+  type VoiceLanguage,
+  voiceLanguageLabel,
+} from "../../shared/voiceLibrary";
 import { setReadWith } from "./speechEngine";
 import { getSpeechRate } from "./voiceChat";
 
@@ -18,13 +22,28 @@ export type VoiceInfo = {
   created?: string;
 };
 
+/** One of Qwen3-TTS's stock speakers (CustomVoice model). */
+export type StockVoice = {
+  /** `qwen3-tts:<speaker>`. */
+  id: string;
+  speaker: string;
+  name: string;
+  /** The language it sounds most natural in. */
+  native: string;
+  description: string;
+};
+
 export type VoiceAssignments = {
   all: string | null;
   languages: Partial<Record<VoiceLanguage, string>>;
 };
 
 export type VoiceLibraryState = {
+  /** Recorded voices (Qwen3-TTS Base). */
   voices: VoiceInfo[];
+  /** Qwen3-TTS's stock speakers; none without a CustomVoice model. */
+  stock?: StockVoice[];
+  stock_detail?: string;
   kokoro: boolean;
   /** Each reply read by one of the voices at random. */
   surprise: boolean;
@@ -35,6 +54,56 @@ export type VoiceLibraryState = {
 
 /** Kokoro's built-in voices, as a voice id. */
 export const KOKORO = "kokoro";
+
+/** The name of the language `code` in itself: "Français", "한국어". */
+export function nativeLanguageName(code: string): string {
+  if (!code) return "";
+  const label = voiceLanguageLabel(code);
+  if (label !== code) return label;
+  try {
+    return new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+const PREVIEW_LANGUAGE_KEY = "roamgate.voicePreviewLanguage";
+
+/** The first of the browser's `languages` a voice can be heard in. */
+export function previewLanguageFrom(
+  languages: readonly string[],
+): VoiceLanguage {
+  for (const tag of languages) {
+    const code = tag.toLowerCase().split(/[-_]/)[0];
+    if (isVoiceLanguage(code)) return code;
+  }
+  return "en";
+}
+
+/** What voices are heard speaking: as last chosen, or the browser's. */
+export function getPreviewLanguage(): VoiceLanguage {
+  try {
+    const saved = localStorage.getItem(PREVIEW_LANGUAGE_KEY);
+    if (isVoiceLanguage(saved)) return saved;
+  } catch {
+    // No storage: the browser's language.
+  }
+  return previewLanguageFrom(
+    typeof navigator === "undefined"
+      ? []
+      : navigator.languages?.length
+        ? navigator.languages
+        : [navigator.language],
+  );
+}
+
+export function savePreviewLanguage(language: VoiceLanguage) {
+  try {
+    localStorage.setItem(PREVIEW_LANGUAGE_KEY, language);
+  } catch {
+    // Kept for this visit only.
+  }
+}
 
 async function answer<T>(response: Response): Promise<T> {
   if (!response.ok) {

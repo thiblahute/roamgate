@@ -87,6 +87,39 @@
   list-style: none;
 }
 
+/* What voices say when heard: a language, above the voices. */
+.voice-settings-hear-in {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* The voices by model: recorded, Qwen3-TTS's stock speakers, Kokoro. */
+.voice-settings-group + .voice-settings-group {
+  margin-top: 14px;
+}
+
+.voice-settings-group h4 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0 0 6px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.voice-settings-group h4 span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .voice-settings-voice {
   display: flex;
   align-items: center;
@@ -164,7 +197,8 @@
 
 .voice-settings-rename input,
 .voice-new-field input,
-.voice-settings-language select {
+.voice-settings-language select,
+.voice-settings-hear-in select {
   min-width: 0;
   padding: 7px 10px;
   border: 1px solid var(--border);
