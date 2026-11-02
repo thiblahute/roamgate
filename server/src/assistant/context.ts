@@ -53,6 +53,14 @@ export type RecoveryTarget = AssistantWorkspaceRef & {
 
 export class AssistantRecoveryNotReadyError extends Error {}
 
+/** A connection's state as the connection manager publishes it. */
+export type AssistantConnectionState = {
+  label: string;
+  state: string;
+  /** Sanitized by the connection manager. */
+  error?: string;
+};
+
 /**
  * A connection's Herdr restarted (its boot identity changed) since a task's
  * workspaces were checked: what was checked then may not hold any more, so
@@ -159,6 +167,10 @@ export function createAssistantContext(args: {
   lease(connectionId: string): RuntimeLease | null;
   /** SHA-256 of the configured endpoint, excluding labels and transient tunnels. */
   recoveryFingerprint?(connectionId: string): string;
+  /** A connection's state now, or nothing for one no longer configured. */
+  connectionStatus?(connectionId: string): AssistantConnectionState | undefined;
+  /** Calls the listener on each connection state change until unsubscribed. */
+  watchConnections?(listener: () => void): () => void;
   createWorktree?: AssistantWorktreeCreator;
   /** Ranger prompted an agent (actions.ts). */
   onAgentPrompted?: AssistantPromptListener;
@@ -638,7 +650,9 @@ export function createAssistantContext(args: {
           expected &&
           fingerprint(connectionId) !== expected.endpoint_fingerprint
         )
-          throw new Error("Ranger recovery endpoint changed");
+          throw new Error(
+            `Ranger recovery endpoint changed: connection ${limitedText(connection.label) || connectionId} now points elsewhere`,
+          );
         const lease = leases.get(connectionId) ?? args.lease(connectionId);
         if (!lease) {
           if (recoveryTargets)
@@ -1242,6 +1256,10 @@ export function createAssistantContext(args: {
 
   return {
     catalog,
+    connectionState: (connectionId: string) =>
+      args.connectionStatus?.(connectionId),
+    watchConnections: (listener: () => void) =>
+      args.watchConnections?.(listener) ?? (() => {}),
     captureScope,
     extendScope,
     recoveryScope,
@@ -1255,6 +1273,8 @@ export function createAssistantContext(args: {
 
 export type AssistantContext = Omit<
   ReturnType<typeof createAssistantContext>,
+  | "connectionState"
+  | "watchConnections"
   | "extendScope"
   | "prepareAction"
   | "recoveryScope"
@@ -1265,6 +1285,8 @@ export type AssistantContext = Omit<
   Partial<
     Pick<
       ReturnType<typeof createAssistantContext>,
+      | "connectionState"
+      | "watchConnections"
       | "extendScope"
       | "prepareAction"
       | "recoveryScope"
