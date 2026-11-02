@@ -1181,9 +1181,18 @@ export function AgentHistoryDrawer({
         requestAnimationFrame(() =>
           promptRef.current?.focus({ preventScroll: true }),
         );
-    } else if (!active || active === document.body)
+    } else if ((!active || active === document.body) && !mobile)
+      // Not on a phone: the box's focus brings its keyboard up over the
+      // chat, after an answer tapped on the card.
       requestAnimationFrame(focusChatBox);
-  }, [promptShown, promptTyping, composerDraftKey, focusChatBox, paneActive]);
+  }, [
+    promptShown,
+    promptTyping,
+    composerDraftKey,
+    focusChatBox,
+    paneActive,
+    mobile,
+  ]);
   // With nothing focused (the hidden box had the keys, say), they still go
   // to the question.
   const onPromptKeyRef = useRef(onPromptKey);
