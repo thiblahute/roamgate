@@ -657,6 +657,84 @@ async function registerDomTests() {
     }
   });
 
+  test("sidebar badges ask again only when what they say can have changed", async () => {
+    let calls = 0;
+    let reply: PullRequestStatus = mergedStatus;
+    const reviewClient = {
+      ...client,
+      call: async () => {
+        calls++;
+        return { ...reply, refreshedAt: new Date().toISOString() };
+      },
+    };
+    function Reviews() {
+      return h(
+        "pre",
+        null,
+        JSON.stringify(
+          useWorkspacePullRequests(reviewClient, [sidebarWorkspace]),
+        ),
+      );
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    jest.useFakeTimers();
+    try {
+      await act(async () => root!.render(h(Reviews)));
+      expect(calls).toBe(1);
+      // Merged: the 60 s polls do not ask for half an hour.
+      for (let minute = 0; minute < 25; minute++)
+        await act(async () => jest.advanceTimersByTime(60_000));
+      expect(calls).toBe(1);
+      for (let minute = 0; minute < 6; minute++)
+        await act(async () => jest.advanceTimersByTime(60_000));
+      expect(calls).toBe(2);
+      // Open: every three minutes.
+      reply = {
+        ...mergedStatus,
+        request: { ...mergedStatus.request!, state: "open" },
+      };
+      for (let minute = 0; minute < 31; minute++)
+        await act(async () => jest.advanceTimersByTime(60_000));
+      const open = calls;
+      for (let minute = 0; minute < 9; minute++)
+        await act(async () => jest.advanceTimersByTime(60_000));
+      expect(calls - open).toBe(3);
+      // A remount (a workspace or connection switch) asks nothing new.
+      await act(async () => root!.unmount());
+      root = createRoot(container);
+      const before = calls;
+      await act(async () => root!.render(h(Reviews)));
+      expect(calls).toBe(before);
+      // Hidden, nothing is asked; shown again, what is due is.
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+      for (let minute = 0; minute < 10; minute++)
+        await act(async () => jest.advanceTimersByTime(60_000));
+      expect(calls).toBe(before);
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(calls).toBe(before + 1);
+    } finally {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
+      await act(async () => root!.unmount());
+      root = null;
+      jest.useRealTimers();
+      roamgateLocalStorage.removeItem(PULL_REQUEST_CACHE_KEY);
+    }
+  });
+
   test.each(["workspace", "worktree"] as const)(
     "%s reviews recover when the same client becomes ready after reconnect",
     async (kind) => {

@@ -951,6 +951,128 @@ describe("PR/MR status", () => {
       expect(result.provider).toBe("gitlab");
     });
   });
+  describe("the sidebar's GitLab summaries", () => {
+    /** Workspaces in /repo/<branch>, all forks of team/project. */
+    function workspaces(graphql: (query: string) => ReturnType<typeof ok>) {
+      const commands: string[] = [];
+      const run: typeof runProcessWithCodeTimeout = async (
+        argv,
+        _t,
+        options,
+      ) => {
+        const command = argv.map(shQuote).join(" ");
+        commands.push(command);
+        const branch = String(options?.cwd ?? "").replace("/repo/", "");
+        if (command.includes("'symbolic-ref'")) return ok(`${branch}\n`);
+        if (command.includes("'for-each-ref'"))
+          return ok(`refs/heads/${branch}\0\0\0\n`);
+        if (command.includes("'config' '--get-regexp'"))
+          return { code: 1, stdout: "", stderr: "" };
+        if (command.includes("'git' 'remote'"))
+          return ok("origin\tgit@gitlab.com:alice/project.git (fetch)\n");
+        if (command.includes("'--version'")) return ok("glab 1");
+        if (command.includes("'auth' 'status'")) return ok("");
+        if (command.includes("'projects/alice%2Fproject'"))
+          return ok({
+            id: 1,
+            path_with_namespace: "alice/project",
+            forked_from_project: { id: 2, path_with_namespace: "team/project" },
+          });
+        if (command.includes("'graphql'")) return graphql(command);
+        throw new Error(`Unexpected command: ${command}`);
+      };
+      return {
+        commands,
+        forge: () =>
+          commands.filter(
+            (command) =>
+              command.includes("'api'") || command.includes("'auth'"),
+          ),
+        read: (branch: string) =>
+          readPullRequestStatus(
+            {
+              root: `/repo/${branch}`,
+              shQuote,
+              runProcessWithCodeTimeout: run,
+            },
+            { summary: true, latest: true, branch },
+          ),
+      };
+    }
+    const node = (branch: string, iid: number, state = "opened") => ({
+      iid: String(iid),
+      title: `On ${branch}`,
+      state,
+      draft: false,
+      webUrl: `https://gitlab.com/team/project/-/merge_requests/${iid}`,
+      createdAt: "2026-10-01T00:00:00Z",
+      sourceBranch: branch,
+      targetBranch: "main",
+      sourceProjectId: 1,
+      targetProjectId: 2,
+      author: { username: "alice" },
+    });
+    const answer = (nodes: Record<string, unknown[]>) => (query: string) => {
+      const data: Record<string, unknown> = {};
+      for (const [, alias, path] of query.matchAll(
+        /(p\d+): project\(fullPath: \\?"([^"\\]+)\\?"\)/g,
+      ))
+        data[alias!] = {
+          mergeRequests: {
+            pageInfo: { hasNextPage: false },
+            nodes: nodes[path!] ?? [],
+          },
+        };
+      return ok({ data });
+    };
+
+    test("ask one GraphQL query for every branch of the fork and its parent", async () => {
+      const w = workspaces(
+        answer({ "team/project": [node("one", 7), node("two", 8, "merged")] }),
+      );
+      const [one, two] = await Promise.all([w.read("one"), w.read("two")]);
+      expect(one.request?.number).toBe(7);
+      expect(two.request?.number).toBe(8);
+      expect(two.request?.state).toBe("merged");
+      const queries = w.commands.filter((command) =>
+        command.includes("'graphql'"),
+      );
+      expect(queries).toHaveLength(1);
+      expect(queries[0]).toContain('"alice/project"');
+      expect(queries[0]).toContain('"team/project"');
+      expect(queries[0]).toContain('["one","two"]');
+      // No REST request lists.
+      expect(w.commands.some((c) => c.includes("merge_requests?"))).toBe(false);
+    });
+
+    test("answers again from what is known, and other branches ride along", async () => {
+      const w = workspaces(answer({ "team/project": [node("one", 7)] }));
+      await w.read("one");
+      const asked = w.forge().length;
+      // Open: known for two minutes, CLIs and logins for ten.
+      const again = await w.read("one");
+      expect(again.request?.number).toBe(7);
+      expect(w.forge()).toHaveLength(asked);
+      // A new branch asks, and the query refreshes "one" with it.
+      await w.read("three");
+      const queries = w.commands.filter((c) => c.includes("'graphql'"));
+      expect(queries).toHaveLength(2);
+      expect(queries[1]).toContain('"three"');
+      expect(queries[1]).toContain('"one"');
+      expect(w.forge().filter((c) => c.includes("'auth'"))).toHaveLength(1);
+      expect(
+        w.forge().filter((c) => c.includes("'projects/alice%2Fproject'")),
+      ).toHaveLength(1);
+    });
+
+    test("a failed GraphQL query falls back to the REST lists", async () => {
+      const w = workspaces(() => ({ code: 1, stdout: "", stderr: "HTTP 500" }));
+      const result = await w.read("one");
+      // The REST list is not mocked: the lookup names that step.
+      expect(result.state).toBe("error");
+      expect(result.message).toContain("merge_requests?");
+    });
+  });
   test("errors name the step that failed without quoting CLI output", async () => {
     const notFound = await fixture("gitlab", {
       override: (command) =>

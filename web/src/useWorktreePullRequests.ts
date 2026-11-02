@@ -33,6 +33,38 @@ type SummaryTarget = {
  * on the scale of minutes; the 60 s poll stays the refresh.
  */
 export const PULL_REQUEST_FRESH_MS = 50_000;
+/** An open request: a merge or a new draft state shows within this. */
+export const PULL_REQUEST_OPEN_MS = 3 * 60_000;
+/** No request for the branch yet. */
+export const PULL_REQUEST_NONE_MS = 5 * 60_000;
+/** Merged or closed: next to nothing changes. */
+export const PULL_REQUEST_SETTLED_MS = 30 * 60_000;
+/** No CLI, no login, an unsupported host: until the user fixes it. */
+export const PULL_REQUEST_UNAVAILABLE_MS = 10 * 60_000;
+
+/**
+ * How long a summary stands before the sidebar asks again: the 60 s poll
+ * only asks the badges that are due, so forges are not asked every minute
+ * about requests that cannot have changed.
+ */
+export function pullRequestRefreshMs(status: PullRequestSummary): number {
+  if (status.retryable || status.state === "error")
+    return PULL_REQUEST_FRESH_MS;
+  switch (status.state) {
+    case "ready":
+      return status.request &&
+        ["open", "opened", "locked"].includes(status.request.state)
+        ? PULL_REQUEST_OPEN_MS
+        : PULL_REQUEST_SETTLED_MS;
+    case "no_match":
+      return PULL_REQUEST_NONE_MS;
+    case "select_match":
+    case "select_remote":
+      return PULL_REQUEST_OPEN_MS;
+    default:
+      return PULL_REQUEST_UNAVAILABLE_MS;
+  }
+}
 const freshLookups = new Map<
   string,
   { at: number; status: PullRequestSummary }
@@ -270,51 +302,74 @@ function usePullRequestSummaries(
           requested.current.set(target.id, request);
           const question = lookupQuestion(target);
           const freshKey = JSON.stringify([epoch, question]);
+          // A target that changed (another branch) asks again. The
+          // sidebar's polls and mounts reuse an answer (or a remembered
+          // badge) while it is younger than what it says allows, and the
+          // same rows shown again after another connection a recent one.
+          const remembered = target.persistent
+            ? readPullRequestCache().get(target.identity)
+            : undefined;
+          const known =
+            freshLookups.get(freshKey) ??
+            (remembered &&
+            remembered.branch === target.branch &&
+            !last &&
+            Number.isFinite(Date.parse(remembered.status.refreshedAt))
+              ? {
+                  at: Date.parse(remembered.status.refreshedAt),
+                  status: remembered.status,
+                }
+              : undefined);
           const askedKey = `${client.connectionId}\u0000${target.id}`;
           const askedBefore = asked.current.get(askedKey);
           asked.current.set(askedKey, question);
-          // The sidebar's polls, a mount and a target that changed (another
-          // branch) ask again; the same rows shown again after another
-          // connection reuse a recent answer.
-          const fresh =
-            poll &&
+          const shownAgain =
             last?.association !== target.association &&
-            askedBefore === question
-              ? freshLookups.get(freshKey)
-              : undefined;
+            askedBefore === question &&
+            !!known &&
+            Date.now() - known.at < PULL_REQUEST_FRESH_MS;
+          // Its age is the older of when it came and what it says.
+          const young =
+            !!known &&
+            Date.now() -
+              Math.min(
+                known.at,
+                Date.parse(known.status.refreshedAt) || known.at,
+              ) <
+              pullRequestRefreshMs(known.status);
+          // Only the sidebar's badges wait; a dialog asks when it opens.
+          const fresh = poll && (shownAgain || young) ? known : undefined;
           // Badges are background work: the host answers what the user is
           // doing first, and identical lookups in flight are shared.
-          const status: PullRequestSummary =
-            fresh && Date.now() - fresh.at < PULL_REQUEST_FRESH_MS
-              ? fresh.status
-              : await client
-                  .call(
-                    "git.pull_request",
-                    {
-                      ...target.params,
-                      summary: true,
-                    },
-                    65_000,
-                    { lane: "background" },
-                  )
-                  .then((status: PullRequestSummary) => {
-                    if (!pullRequestUnavailable(status)) {
-                      freshLookups.delete(freshKey);
-                      freshLookups.set(freshKey, { at: Date.now(), status });
-                      if (freshLookups.size > FRESH_LOOKUPS_KEPT)
-                        freshLookups.delete(
-                          freshLookups.keys().next().value as string,
-                        );
-                    }
-                    return status;
-                  })
-                  .catch(() => ({
-                    state: "error",
-                    message:
-                      "PR/MR status request failed. Check the connection.",
-                    retryable: true,
-                    refreshedAt: new Date().toISOString(),
-                  }));
+          const status: PullRequestSummary = fresh
+            ? fresh.status
+            : await client
+                .call(
+                  "git.pull_request",
+                  {
+                    ...target.params,
+                    summary: true,
+                  },
+                  65_000,
+                  { lane: "background" },
+                )
+                .then((status: PullRequestSummary) => {
+                  if (!pullRequestUnavailable(status)) {
+                    freshLookups.delete(freshKey);
+                    freshLookups.set(freshKey, { at: Date.now(), status });
+                    if (freshLookups.size > FRESH_LOOKUPS_KEPT)
+                      freshLookups.delete(
+                        freshLookups.keys().next().value as string,
+                      );
+                  }
+                  return status;
+                })
+                .catch(() => ({
+                  state: "error",
+                  message: "PR/MR status request failed. Check the connection.",
+                  retryable: true,
+                  refreshedAt: new Date().toISOString(),
+                }));
           // A reply stays valid for its association even after this effect
           // re-ran; it must never land on a newer association or connection.
           if (!current(target)) {

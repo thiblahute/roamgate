@@ -7,7 +7,53 @@ import type {
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { sshCommandArgv } from "../bridge/ssh-command";
+import {
+  type ForgeCall,
+  ForgeBusyError,
+  type ProcessOutput,
+  forgeGate,
+} from "./forge-calls";
 import type { GitActionContext } from "./git-actions";
+
+/** What the CLIs say of their hosts and logins: rarely changes. */
+const HOSTS_REUSE_MS = 10 * 60_000;
+/** A project's id and fork parent. */
+const PROJECT_REUSE_MS = 30 * 60_000;
+/** A branch's request list, for the sidebar's summaries. */
+const LIST_REUSE_MS = 2 * 60_000;
+/** A request's pipeline and approvals, for the card. */
+const DETAIL_REUSE_MS = 15_000;
+
+/** Local answers (CLI versions, glab's configured logins), by runner. */
+const localFacts = new WeakMap<
+  object,
+  Map<string, { until: number; value: Promise<ProcessOutput> }>
+>();
+function rememberLocal(
+  owner: object,
+  key: string,
+  load: () => Promise<ProcessOutput>,
+): Promise<ProcessOutput> {
+  let facts = localFacts.get(owner);
+  if (!facts) {
+    facts = new Map();
+    localFacts.set(owner, facts);
+  }
+  const known = facts.get(key);
+  if (known && known.until > Date.now()) return known.value;
+  const entry = { until: Number.POSITIVE_INFINITY, value: load() };
+  facts.set(key, entry);
+  entry.value.then(
+    (output) => {
+      // A missing CLI may be installed any time; a present one stays.
+      entry.until = Date.now() + (output.code === 0 ? HOSTS_REUSE_MS : 60_000);
+    },
+    () => {
+      if (facts.get(key) === entry) facts.delete(key);
+    },
+  );
+  return entry.value;
+}
 
 // Remote URLs and CLI diagnostics can contain credentials. Only project identity
 // and explicitly selected provider fields may cross the browser boundary.
@@ -130,6 +176,191 @@ export function gitlabApprovals(value: unknown): string {
   return `${data.approved ? "Approved" : "Not approved"} (provider-reported)${count === null ? "" : `; ${count} approver(s)`}`;
 }
 
+/** A branch with an open request: a push, review or merge shows soon. */
+export const BATCH_OPEN_MS = 2 * 60_000;
+/** No request yet: one being opened shows within this. */
+export const BATCH_NONE_MS = 3 * 60_000;
+/** Only merged or closed requests. */
+export const BATCH_SETTLED_MS = 30 * 60_000;
+/** How long summaries asked together wait for each other. */
+export const BATCH_WINDOW_MS = 100;
+/** A branch asked about this recently is refreshed with the others. */
+const INTEREST_MS = 15 * 60_000;
+const BATCH_BRANCHES = 50;
+
+type BranchRequests = Record<string, any>[] | "overflow";
+type MergeRequestBatch = {
+  /** Branches asked about, by project path, with when. */
+  interest: Map<string, Map<string, number>>;
+  answers: Map<string, { until: number; requests: BranchRequests }>;
+  waiting: {
+    project: string;
+    branch: string;
+    resolve: (requests: BranchRequests) => void;
+    reject: (error: unknown) => void;
+  }[];
+  timer: ReturnType<typeof setTimeout> | null;
+  ask: (query: string) => Promise<unknown>;
+};
+const batches = new WeakMap<object, Map<string, MergeRequestBatch>>();
+
+function validPath(path: string): boolean {
+  return (
+    /^[\w.-]+(?:\/[\w.-]+)+$/.test(path) &&
+    !path.split("/").some((part) => part === "." || part === "..")
+  );
+}
+
+const REQUEST_FIELDS =
+  "iid title state draft webUrl createdAt sourceBranch targetBranch sourceProjectId targetProjectId author { username }";
+
+/**
+ * One GraphQL query for the requests of several branches of several
+ * projects. Strings are JSON literals, which GraphQL reads as its own.
+ */
+export function gitlabBranchesQuery(projects: [string, string[]][]): string {
+  const parts = projects.map(
+    ([path, branches], index) =>
+      `p${index}: project(fullPath: ${JSON.stringify(path)}) { mergeRequests(sourceBranches: ${JSON.stringify(branches)}, first: 100) { pageInfo { hasNextPage } nodes { ${REQUEST_FIELDS} } } }`,
+  );
+  return `query { ${parts.join(" ")} }`;
+}
+
+/** A GraphQL merge request in the REST shape the lookup reads. */
+function restShape(node: Record<string, any>): Record<string, any> {
+  return {
+    iid: Number(node.iid),
+    title: node.title,
+    author: { username: node.author?.username },
+    source_branch: node.sourceBranch,
+    target_branch: node.targetBranch,
+    source_project_id: node.sourceProjectId,
+    target_project_id: node.targetProjectId,
+    state: node.state,
+    draft: node.draft,
+    web_url: node.webUrl,
+    created_at: node.createdAt,
+  };
+}
+
+function answerTtl(requests: BranchRequests): number {
+  if (requests === "overflow") return 0;
+  if (!requests.length) return BATCH_NONE_MS;
+  return requests.some((mr) => mr.state === "opened" || mr.state === "locked")
+    ? BATCH_OPEN_MS
+    : BATCH_SETTLED_MS;
+}
+
+async function flushBatch(batch: MergeRequestBatch) {
+  batch.timer = null;
+  const waiting = batch.waiting.splice(0);
+  if (!waiting.length) return;
+  const at = Date.now();
+  const projects = new Map<string, string[]>();
+  for (const { project, branch } of waiting) {
+    const branches = projects.get(project) ?? [];
+    if (!branches.includes(branch)) branches.push(branch);
+    projects.set(project, branches);
+  }
+  // The other branches asked about lately ride along for free.
+  for (const [project, branches] of projects) {
+    const asked = batch.interest.get(project);
+    if (!asked) continue;
+    for (const [branch, when] of [...asked].sort((a, b) => b[1] - a[1])) {
+      if (when <= at - INTEREST_MS) asked.delete(branch);
+      else if (branches.length < BATCH_BRANCHES && !branches.includes(branch))
+        branches.push(branch);
+    }
+  }
+  const list = [...projects];
+  try {
+    const answer = (await batch.ask(gitlabBranchesQuery(list))) as Record<
+      string,
+      any
+    > | null;
+    const data = answer?.data;
+    if (!data || typeof data !== "object")
+      throw new StatusError("GitLab GraphQL returned no data");
+    const done = Date.now();
+    list.forEach(([project, branches], index) => {
+      const found = data[`p${index}`]?.mergeRequests;
+      if (!found || !Array.isArray(found.nodes)) return;
+      const overflow = found.pageInfo?.hasNextPage === true;
+      for (const branch of branches) {
+        const requests: BranchRequests = overflow
+          ? "overflow"
+          : found.nodes
+              .filter(
+                (node: unknown) =>
+                  !!node &&
+                  typeof node === "object" &&
+                  (node as Record<string, unknown>).sourceBranch === branch,
+              )
+              .map(restShape);
+        batch.answers.set(`${project}\0${branch}`, {
+          until: done + answerTtl(requests),
+          requests,
+        });
+      }
+    });
+    for (const waiter of waiting) {
+      const known = batch.answers.get(`${waiter.project}\0${waiter.branch}`);
+      if (known) waiter.resolve(known.requests);
+      else waiter.reject(new StatusError("GitLab GraphQL had no such project"));
+    }
+  } catch (error) {
+    for (const waiter of waiting) waiter.reject(error);
+  }
+  // Old answers go; the map stays small.
+  if (batch.answers.size > 500)
+    for (const [key, answer] of batch.answers)
+      if (answer.until <= Date.now()) batch.answers.delete(key);
+}
+
+/**
+ * The merge requests of a branch in a project, from one GraphQL query
+ * per forge host for every branch asked about together (and those asked
+ * lately), remembered for as long as what they say can wait.
+ */
+function branchRequests(
+  owner: object,
+  key: string,
+  project: string,
+  branch: string,
+  ask: (query: string) => Promise<unknown>,
+): Promise<BranchRequests> {
+  let byHost = batches.get(owner);
+  if (!byHost) {
+    byHost = new Map();
+    batches.set(owner, byHost);
+  }
+  let batch = byHost.get(key);
+  if (!batch) {
+    batch = {
+      interest: new Map(),
+      answers: new Map(),
+      waiting: [],
+      timer: null,
+      ask,
+    };
+    byHost.set(key, batch);
+  }
+  const asked = batch.interest.get(project) ?? new Map<string, number>();
+  asked.set(branch, Date.now());
+  batch.interest.set(project, asked);
+  const known = batch.answers.get(`${project}\0${branch}`);
+  if (known && known.until > Date.now()) return Promise.resolve(known.requests);
+  const current = batch;
+  current.ask = ask;
+  return new Promise((resolve, reject) => {
+    current.waiting.push({ project, branch, resolve, reject });
+    current.timer ??= setTimeout(
+      () => void flushBatch(current),
+      BATCH_WINDOW_MS,
+    );
+  });
+}
+
 export async function readPullRequestStatus(
   context: GitActionContext,
   params: Record<string, unknown>,
@@ -151,7 +382,7 @@ export async function readPullRequestStatus(
       if (context.host) {
         const command = `cd ${context.shQuote(context.root)} && GH_PROMPT_DISABLED=1 GIT_TERMINAL_PROMPT=0 NO_COLOR=1 ${argv.map(context.shQuote).join(" ")}`;
         return await context.runProcessWithCodeTimeout(
-          sshCommandArgv(context.host, command),
+          sshCommandArgv(context.host, command, [], "git.pull_request"),
           timeout,
         );
       }
@@ -175,12 +406,45 @@ export async function readPullRequestStatus(
       );
     }
   }
-  async function json(argv: string[]) {
+  const checkout = context.host ?? "";
+  const owner = context.runProcessWithCodeTimeout;
+  const feature = params.summary === true ? "badge" : "card";
+  // A network call to a forge: budgeted per host, shared, logged.
+  async function forgeCall(
+    call: Pick<
+      ForgeCall,
+      "host" | "kind" | "conditional" | "include" | "reuseMs"
+    >,
+    argv: string[],
+  ): Promise<ProcessOutput & { status?: number }> {
+    try {
+      return await forgeGate.run(
+        owner,
+        { checkout, feature, deadline, ...call },
+        argv,
+        run,
+      );
+    } catch (error) {
+      if (error instanceof ForgeBusyError)
+        throw new StatusError(
+          `${describeStep(argv)} waited too long: ${call.host} is busy or rate limited`,
+        );
+      throw error;
+    }
+  }
+  async function json(
+    argv: string[],
+    answer?: Promise<ProcessOutput & { status?: number }>,
+  ) {
     const step = describeStep(argv);
-    const output = await run(argv);
+    const output: ProcessOutput & { status?: number } = await (answer ??
+      run(argv));
     if (output.code !== 0) {
       // Only the HTTP status is taken from the CLI's diagnostics.
-      const status = /\(HTTP (\d{3})\)/.exec(output.stderr)?.[1];
+      const status =
+        output.status !== undefined && output.status >= 400
+          ? String(output.status)
+          : /\(HTTP (\d{3})\)/.exec(output.stderr)?.[1];
       throw new StatusError(
         status
           ? `${step} returned HTTP ${status}`
@@ -324,15 +588,10 @@ export async function readPullRequestStatus(
         ));
     };
     const ghHosts = listing(async () => {
-      const output = await run([
-        "gh",
-        "auth",
-        "status",
-        "--json",
-        "hosts",
-        "--jq",
-        ".hosts | keys[]",
-      ]);
+      const output = await forgeCall(
+        { host: "*", kind: "auth-hosts", reuseMs: HOSTS_REUSE_MS },
+        ["gh", "auth", "status", "--json", "hosts", "--jq", ".hosts | keys[]"],
+      );
       return hostLines(output.stdout);
     });
     // `glab auth status` calls every configured instance's API, which can
@@ -346,7 +605,9 @@ export async function readPullRequestStatus(
         // which a made-up host gets) is not a login for this host. Only the
         // host is printed, never the token.
         const script = `token() { (unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN; GLAB_NO_PROMPT=1 glab config get token --host "$1" 2>/dev/null); }; t=$(token "$1"); [ -n "$t" ] && [ "$t" != "$(token roamgate.invalid)" ] && printf '%s\\n' "$1"; exit 0`;
-        login = run(["sh", "-c", script, "sh", host]).then(
+        login = rememberLocal(owner, `${checkout}\nglab-login\n${host}`, () =>
+          run(["sh", "-c", script, "sh", host]),
+        ).then(
           (output) => output.code === 0 && output.stdout.trim() === host,
           () => false,
         );
@@ -355,14 +616,15 @@ export async function readPullRequestStatus(
       return login;
     };
     const glabHosts = listing(async () => {
-      let output = await run(["glab", "auth", "status", "--all"]);
+      const hosts = { host: "*", kind: "auth-hosts", reuseMs: HOSTS_REUSE_MS };
+      let output = await forgeCall(hosts, ["glab", "auth", "status", "--all"]);
       // Older glab (1.67, for one) has no --all and lists every host
       // without it.
       if (
         output.code !== 0 &&
         /unknown flag:? '?--all/i.test(`${output.stdout}\n${output.stderr}`)
       )
-        output = await run(["glab", "auth", "status"]);
+        output = await forgeCall(hosts, ["glab", "auth", "status"]);
       return hostLines(`${output.stdout}\n${output.stderr}`);
     });
     type Forge = { provider: ReviewProvider; apiHost: string };
@@ -530,21 +792,28 @@ export async function readPullRequestStatus(
         trackedTarget = tracked.repository;
     }
     const cli = provider === "github" ? "gh" : "glab";
-    const version = await run([cli, "--version"]);
+    const version = await rememberLocal(
+      owner,
+      `${checkout}\nversion\n${cli}`,
+      () => run([cli, "--version"]),
+    );
     if (version.code === 127)
       return finish("missing_cli", `Install ${cli} on the checkout host.`);
     if (version.code !== 0)
       throw new StatusError(
         `${cli} --version failed with exit code ${version.code}`,
       );
-    const auth = await run([
-      cli,
-      "auth",
-      "status",
-      "--hostname",
-      apiHost,
-      ...(provider === "github" ? ["--active"] : []),
-    ]);
+    const auth = await forgeCall(
+      { host: apiHost, kind: "auth", reuseMs: HOSTS_REUSE_MS },
+      [
+        cli,
+        "auth",
+        "status",
+        "--hostname",
+        apiHost,
+        ...(provider === "github" ? ["--active"] : []),
+      ],
+    );
     if (auth.code !== 0)
       return finish(
         "unauthenticated",
@@ -559,13 +828,29 @@ export async function readPullRequestStatus(
       "GET",
       path,
     ];
-    const api = (path: string) => json(apiArgv(path));
+    const api = (path: string, kind: string, reuseMs?: number) =>
+      json(
+        apiArgv(path),
+        forgeCall(
+          { host: apiHost, kind, conditional: true, reuseMs },
+          apiArgv(path),
+        ),
+      );
     const apiList = async (path: string) =>
-      list(await api(path), describeStep(apiArgv(path)));
+      list(
+        await api(
+          path,
+          "request-list",
+          params.summary === true ? LIST_REUSE_MS : undefined,
+        ),
+        describeStep(apiArgv(path)),
+      );
     const matches: PullRequest[] = [];
     const createdAt = new Map<string, number>();
     if (provider === "github") {
-      const repo = object(await api(`repos/${selected.repository}`));
+      const repo = object(
+        await api(`repos/${selected.repository}`, "project", PROJECT_REUSE_MS),
+      );
       // GitHub redirects renamed/transferred repositories; compare canonical
       // identity rather than the old name still present in the Git remote.
       const sourceRepository = text(repo.full_name, selected.repository);
@@ -611,12 +896,32 @@ export async function readPullRequestStatus(
       }
     } else {
       const repo = object(
-        await api(`projects/${encodeURIComponent(selected.repository)}`),
+        await api(
+          `projects/${encodeURIComponent(selected.repository)}`,
+          "project",
+          PROJECT_REUSE_MS,
+        ),
       );
       const sourceId = number(repo.id);
-      const projects = [String(sourceId)];
+      // REST names a project by id; GraphQL by path.
+      const projects: { rest: string; path?: string }[] = [
+        {
+          rest: String(sourceId),
+          path:
+            typeof repo.path_with_namespace === "string"
+              ? repo.path_with_namespace
+              : selected.repository,
+        },
+      ];
       const parent = repo.forked_from_project;
-      if (parent?.id) projects.push(String(number(parent.id)));
+      if (parent?.id)
+        projects.push({
+          rest: String(number(parent.id)),
+          path:
+            typeof parent.path_with_namespace === "string"
+              ? parent.path_with_namespace
+              : undefined,
+        });
       // The fork's parent already covers the tracked project.
       const covered = [
         selected.repository,
@@ -626,17 +931,58 @@ export async function readPullRequestStatus(
         .filter((path) => typeof path === "string")
         .map((path: string) => path.toLowerCase());
       if (trackedTarget && !covered.includes(trackedTarget.toLowerCase()))
-        projects.push(encodeURIComponent(trackedTarget));
-      for (const project of new Set(projects)) {
+        projects.push({
+          rest: encodeURIComponent(trackedTarget),
+          path: trackedTarget,
+        });
+      const seen = new Set<string>();
+      const graphqlArgv = (query: string) => [
+        "glab",
+        "api",
+        "--hostname",
+        apiHost,
+        "graphql",
+        "-f",
+        `query=${query}`,
+      ];
+      // The sidebar's summaries of every branch of a project share one
+      // GraphQL query; the card (and a failed query) asks REST.
+      const listed = async (project: { rest: string; path?: string }) => {
+        if (params.summary === true && project.path && validPath(project.path))
+          try {
+            const requests = await branchRequests(
+              owner,
+              `${checkout}\n${apiHost}`,
+              project.path,
+              sourceBranch,
+              async (query) =>
+                json(
+                  graphqlArgv(query),
+                  forgeCall(
+                    { host: apiHost, kind: "mr-batch", include: true },
+                    graphqlArgv(query),
+                  ),
+                ),
+            );
+            if (requests !== "overflow") return requests;
+          } catch {
+            // REST below says what is wrong, if anything.
+          }
         const query = new URLSearchParams({
           scope: "all",
           state: "all",
           source_branch: sourceBranch,
           per_page: "100",
         });
-        for (const raw of await apiList(
-          `projects/${project}/merge_requests?${query}`,
-        )) {
+        return apiList(`projects/${project.rest}/merge_requests?${query}`);
+      };
+      const unique = projects.filter(
+        (project) => !seen.has(project.rest) && !!seen.add(project.rest),
+      );
+      // Asked together: one GraphQL query covers them all.
+      const lists = await Promise.all(unique.map(listed));
+      for (const found of lists) {
+        for (const raw of found) {
           const mr = object(raw);
           if (
             mr.source_project_id !== sourceId ||
@@ -698,8 +1044,8 @@ export async function readPullRequestStatus(
     result.request = request;
     const [repository, id] = request.id.split("#");
     if (params.summary !== true && provider === "github") {
-      const readField = (field: string) =>
-        json([
+      const readField = (field: string) => {
+        const argv = [
           "gh",
           "pr",
           "view",
@@ -708,7 +1054,15 @@ export async function readPullRequestStatus(
           `${apiHost}/${repository}`,
           "--json",
           field,
-        ]);
+        ];
+        return json(
+          argv,
+          forgeCall(
+            { host: apiHost, kind: "pr-view", reuseMs: DETAIL_REUSE_MS },
+            argv,
+          ),
+        );
+      };
       const [ci, review] = await Promise.allSettled([
         readField("statusCheckRollup").then((data) =>
           githubChecks(object(data).statusCheckRollup),
@@ -728,13 +1082,15 @@ export async function readPullRequestStatus(
     } else if (params.summary !== true) {
       const path = `projects/${repository}/merge_requests/${id}`;
       const [ci, review] = await Promise.allSettled([
-        api(path).then((data) => {
+        api(path, "request", DETAIL_REUSE_MS).then((data) => {
           const pipeline = object(data).head_pipeline;
           return pipeline === null
             ? "No pipeline reported"
             : text(pipeline?.status, "Unavailable");
         }),
-        api(`${path}/approvals`).then(gitlabApprovals),
+        api(`${path}/approvals`, "approvals", DETAIL_REUSE_MS).then(
+          gitlabApprovals,
+        ),
       ]);
       result.ci =
         ci.status === "fulfilled"
