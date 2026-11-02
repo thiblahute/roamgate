@@ -1146,7 +1146,13 @@ export function AgentHistoryDrawer({
     event.preventDefault();
     event.stopPropagation();
     if (input === "box") focusChatBox();
-    else paneChat.onKeys(input);
+    else
+      paneChat.onKeys(
+        // A number answers as its choice does: on an editable rule, the
+        // arrows and Enter rather than the digit itself.
+        paneChat.prompt?.options.find((option) => option.key === input)
+          ?.input ?? input,
+      );
   };
   // The message box is hidden while a question only takes a choice; an
   // answer of one's own ("Type something.") is written in it.
