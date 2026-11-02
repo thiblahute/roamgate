@@ -9,7 +9,9 @@ no input, no keystrokes. Recording is off by default; see
 The log is a local file, `activity.sqlite` in Roamgate's data directory
 (`~/.config/roamgate`, `%APPDATA%\roamgate` on Windows). Events read back in the
 shapes of [`activity.schema.json`](./activity.schema.json) (`$defs`: `Event`,
-`EventKind`, `Workspace`, `Repo`, `AgentState`, `ActivityPage`).
+`EventKind`, `Workspace`, `Repo`, `AgentState`, `ActivityPage`,
+`RecordingGap`, `Status`). Read it with the [timeline](#timeline) in the web
+UI or with [`roamgate activity`](#command-line).
 
 ## What is recorded
 
@@ -33,13 +35,14 @@ shapes of [`activity.schema.json`](./activity.schema.json) (`$defs`: `Event`,
   - `timeout`: no presence report for 150 seconds;
   - `recorder_stop`: the bridge stopped, or died (see below).
 
-  A span still open when read has `open: true`. Spans from browsers carry
-  `source: "browser"` and the `client`. Herdr's own TUI focus is recorded too,
+  A span still open when read has `open: true`. Only focus and blur events
+  carry a `source`. Spans from browsers carry `source: "browser"` and the
+  `client`. Herdr's own TUI focus is recorded too,
   as spans with `source: "herdr"` and no client: a low-confidence signal, since
   Herdr cannot tell whether anyone looks at its TUI. These change only with the
   focused workspace.
 - **The UI in front of the user** (`ui.visibility`): `visible` is true while a
-  page is visible and has the focus, per client.
+  page is visible and has the focus (visible AND focused), per client.
 - **Idle and back** (`session.idle`, `session.active`), per client.
   `session.idle` is dated at the threshold and carries `idle_after_seconds`.
 - **Gaps**: the periods a connection was not ready, and those the recorder was
@@ -47,6 +50,19 @@ shapes of [`activity.schema.json`](./activity.schema.json) (`$defs`: `Event`,
   recorded".
 
 No heartbeat events are stored.
+
+## Ids and ordering
+
+Event ids are a zero-padded sequence, never reused: they are the order of the
+log, and resume cursors are ids, never times. A `ts` is not monotonic in id
+order: a `timeout` blur is dated at the last presence report, and an `idle`
+blur and `session.idle` at the last input plus `idle_seconds`, so a later id
+can carry an earlier `ts`. Place spans by `ts`; use ids for order and ties.
+
+Gaps read back as `RecordingGap`: `connection_id` null when the whole recorder
+was down, `end` null while the gap is open. `excluded` is never set in the log,
+which records excluded connections as usual; it is for exports to other
+tools.
 
 ## Presence
 
@@ -99,3 +115,72 @@ stamp, and the time since the previous run ended is recorded as a recorder gap.
 Once a day the bridge deletes events, gaps, sessions and unreferenced
 workspaces older than `retention_days`, then returns freed space to the file
 system a bounded amount at a time.
+
+## Timeline
+
+The bridge-global RPC `bridge.activity.timeline` (`{"from": "YYYY-MM-DD",
+"to": "YYYY-MM-DD"}`, both included, at most 92 days; either alone means that
+day, neither means today) returns `{"recording": false}` while the bridge does
+not record, else the days of the range. A day runs from `day_start` to
+`day_start` the next day, in the bridge's local time. Times are ISO 8601 with
+the offset; durations are milliseconds. Each day has:
+
+- `focus`: the attention spans clipped to the day, with `workspace_id`,
+  `connection_id`, `pane_id`, `source` (`browser`, `phone` or `herdr`),
+  `client_id` and the blur `reason` (null while `open`). A span still open ends
+  now (`open: true`), or at the recorder's last alive stamp when the recorder
+  is not running.
+- `attention`: who had the attention, without overlaps. At each instant the
+  most recently started browser or phone span wins; Herdr's TUI spans only
+  fill the time no browser or phone span covers, since they run whether or not
+  anyone looks.
+- `idle`: per client, from `session.idle` to the client's next sign of life
+  (`session.active`, a visibility change, or a new focus).
+- `agents`: lanes per pane and agent, with the `working`, `blocked`, `idle` and
+  `unknown` stretches between consecutive `agent.state` events. A lane starts
+  from the last state before the range; connection and recorder gaps cut it;
+  an agent's last `unknown` (its pane closed) ends the lane.
+- `gaps`: `RecordingGap`s clipped to the day, including, while the recorder is
+  not running, one from its last stamp (`reason: "recorder"`, `end: null`).
+- `totals`: `attended_ms` (the `attention` segments), `idle_ms`,
+  `unrecorded_ms` (recorder gaps), and per workspace `attended_ms` split into
+  `browser_ms`, `phone_ms` and `herdr_ms`, plus `working_ms` and `blocked_ms`:
+  the time at least one of its agents was in that state.
+
+`workspaces` lists the workspaces the days refer to, with name, connection,
+path and Herdr's current id, and `recorder_running` says whether open spans
+end now.
+
+## Command line
+
+`roamgate activity` reads `activity.sqlite` read-only, so it works without the
+server running:
+
+```sh
+roamgate activity today [--json]
+roamgate activity day 2026-11-02 [--json]
+roamgate activity range 2026-10-26 2026-11-01 [--json]
+roamgate activity events [--after ID] [--from T] [--to T] [--connection ID]
+                         [--workspace ID] [--kind K[,K...]] [--limit N]
+                         [--json | --ndjson]
+roamgate activity workspaces [--from T] [--to T] [--connection ID] [--json]
+roamgate activity status [--json]
+```
+
+- `today`, `day` and `range` print attended time (and how much of it came from
+  Herdr's TUI) and agent working and blocked time per workspace; `--json`
+  prints the [timeline](#timeline).
+- `events` prints events in id order. `--json` prints an `ActivityPage`; when
+  more events match, `next_cursor` is the last id, to pass to `--after`.
+  `--ndjson` prints one `Event` per line. `--from` and `--to` take dates (day
+  boundaries per `day_start`) or ISO 8601 times. `--limit` defaults to 1000, at
+  most 5000.
+- `workspaces` prints `{"workspaces": [Workspace]}` with `--json`: those with
+  events in the range.
+- `status` prints a `Status`: whether the log is recording (enabled and the
+  recorder stamped alive in the last 150 seconds), the last alive stamp, each
+  connection's state, and today's `RecordingGap`s.
+
+Connections in `exclude.connections` are left out of everything but `status`.
+Exit codes: 0 on success, 2 for invalid arguments, 1 otherwise. With `--json`
+or `--ndjson`, errors are printed on stderr as `{"error": "message"}`.

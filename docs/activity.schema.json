@@ -90,11 +90,12 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Opaque and ordered by position in the log; use it, or the page cursor, to resume."
+          "description": "Opaque, ordered by position in the log (a zero-padded sequence, never reused). Resume cursors are based on the id, never on ts."
         },
         "ts": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "Local ISO time with offset. Not monotonic in id order: a `timeout` blur is dated at the last presence report, and an `idle` blur and session.idle are dated at the last input plus idle_seconds, so a later id can carry an earlier ts."
         },
         "kind": {
           "$ref": "#/$defs/EventKind"
@@ -131,7 +132,7 @@
         },
         "visible": {
           "type": ["boolean", "null"],
-          "description": "For ui.visibility."
+          "description": "For ui.visibility: true means the UI is visible AND focused."
         },
         "idle_after_seconds": {
           "type": ["integer", "null"],
@@ -182,10 +183,16 @@
           "description": "The browser that reported the attention. Several clients can look at once."
         },
         "source": {
-          "type": "string",
-          "enum": ["browser", "herdr"],
-          "default": "browser",
-          "description": "herdr: the native TUI focus, a low-confidence signal."
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["browser", "herdr"]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only on workspace.focus and workspace.blur, and only emitted there. browser: reported by a Roamgate client. herdr: the native TUI focus, a low-confidence fill-in that runs whether or not anyone is attached and can duplicate browser spans."
         }
       }
     },
@@ -242,6 +249,78 @@
               },
               "label": {
                 "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "RecordingGap": {
+      "type": "object",
+      "required": ["start", "excluded"],
+      "description": "A period that was not recorded, or was left out on purpose.",
+      "properties": {
+        "connection_id": {
+          "type": ["string", "null"],
+          "description": "Null when the whole recorder was down."
+        },
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Null while the gap is still open."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "For example disconnected, recorder_stop, crash."
+        },
+        "excluded": {
+          "type": "boolean",
+          "description": "True when the time was left out on purpose (an excluded connection or subject). Only ever set on export to a provider; the log itself records excluded connections."
+        }
+      }
+    },
+    "Status": {
+      "type": "object",
+      "required": ["recording", "gaps", "connections"],
+      "description": "Output of `roamgate activity status`.",
+      "properties": {
+        "recording": {
+          "type": "boolean"
+        },
+        "retention_days": {
+          "type": "integer"
+        },
+        "last_alive": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Last stamp of the recorder; tells whether it is running."
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecordingGap"
+          }
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "state"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["ready", "disconnected"]
+              },
+              "recording_since": {
+                "type": ["string", "null"],
+                "format": "date-time"
               }
             }
           }

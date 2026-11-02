@@ -5,6 +5,7 @@ import {
   SERVICE_COMMAND_CONTINUE,
 } from "../config/service-manager";
 import { runHerdrCommand } from "../herdr/cli";
+import { createActivityCommand } from "./activity";
 import { authCommand } from "./auth";
 import {
   type CliCommand,
@@ -100,6 +101,7 @@ export function cliCommands(): CliCommand[] {
     authCommand,
     createConnectionsCommand(),
     createPushCommand(),
+    createActivityCommand(),
     createUpdateCommand(),
     rollbackCommand,
     pluginCommand,

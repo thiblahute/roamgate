@@ -62,13 +62,37 @@ export type ActivityWorkspace = {
   herdr_workspace_id: string | null;
 };
 
+/** The schema's RecordingGap. */
 export type ActivityGap = {
   /** Null: the whole recorder was not running. */
   connection_id: string | null;
   start: string;
+  /** Null while the gap is still open. */
   end: string | null;
-  reason: string;
+  reason: string | null;
+  /** Never set in the log; only on export to a provider. */
   excluded: boolean;
+};
+
+export type RecordingGap = ActivityGap;
+
+export type ActivityPage = {
+  events: ActivityEvent[];
+  workspaces: ActivityWorkspace[];
+  next_cursor: string | null;
+};
+
+/** The schema's Status: `roamgate activity status`. */
+export type ActivityStatus = {
+  recording: boolean;
+  retention_days: number;
+  last_alive: string | null;
+  gaps: RecordingGap[];
+  connections: {
+    id: string;
+    state: "ready" | "disconnected";
+    recording_since: string | null;
+  }[];
 };
 
 /** Herdr's `done` (finished, not yet seen) is reported as idle. */
