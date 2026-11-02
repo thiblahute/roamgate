@@ -4,6 +4,7 @@ import {
   connectionClientScopeKey,
   useConnectionClient,
 } from "./useConnectionClient";
+import { isPartialRead, PARTIAL_RETRY_MS } from "./partialRead";
 
 /** The title can change as the session goes on: read it again this often. */
 const REFRESH_MS = 30_000;
@@ -32,6 +33,7 @@ export function useAgentSessionTitle(
     let live = true;
     let timer: number | undefined;
     const load = async () => {
+      let partial = false;
       try {
         // A title: background work, behind what the user is doing.
         const result = (await client.call(
@@ -44,13 +46,21 @@ export function useAgentSessionTitle(
           },
           undefined,
           { lane: "background" },
-        )) as { title?: string | null };
-        knownTitles.set(key, result.title ?? null);
-        if (live) setTitle(result.title ?? null);
+        )) as { title?: string | null; partial?: boolean };
+        partial = isPartialRead(result);
+        // Read from part of the session: a title known already stays.
+        if (!partial || result.title || !knownTitles.has(key)) {
+          knownTitles.set(key, result.title ?? null);
+          if (live) setTitle(result.title ?? null);
+        }
       } catch {
         // Not readable now: no title shows.
       }
-      if (live) timer = window.setTimeout(load, REFRESH_MS);
+      if (live)
+        timer = window.setTimeout(
+          load,
+          partial ? PARTIAL_RETRY_MS : REFRESH_MS,
+        );
     };
     void load();
     return () => {

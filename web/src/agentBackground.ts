@@ -13,10 +13,11 @@ import { formatDuration } from "./agentTasksView";
 export type BackgroundTaskLike = Pick<
   AgentTask,
   "kind" | "status" | "title" | "name" | "startedAt"
-> & {
-  /** Started in a part of the conversation since rewound. */
-  rewound?: boolean;
-};
+> &
+  Partial<Pick<AgentTask, "resumedAt">> & {
+    /** Started in a part of the conversation since rewound. */
+    rewound?: boolean;
+  };
 
 export type BackgroundWork<T extends BackgroundTaskLike = BackgroundTaskLike> =
   {
@@ -127,7 +128,9 @@ export function backgroundTaskLines(
   now = Date.now(),
 ): string[] {
   return work.tasks.map((task) => {
-    const started = task.startedAt ? Date.parse(task.startedAt) : Number.NaN;
+    // A subagent resumed by a message: how long since then.
+    const since = task.resumedAt ?? task.startedAt;
+    const started = since ? Date.parse(since) : Number.NaN;
     const elapsed = Number.isFinite(started)
       ? ` (${formatDuration(now - started)})`
       : "";

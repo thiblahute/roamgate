@@ -6,6 +6,7 @@ import type {
 import { formatDuration } from "./agentTasksView";
 import type { Pane } from "./types";
 import { useConnectionClient } from "./useConnectionClient";
+import { isPartialRead } from "./partialRead";
 
 export type { AgentTask, WorkflowView };
 
@@ -50,13 +51,18 @@ export function useAgentTasks(pane: Pane, enabled: boolean): AgentTasksState {
           },
           undefined,
           { lane: "background" },
-        )) as { tasks?: AgentTask[]; session?: string };
+        )) as { tasks?: AgentTask[]; session?: string; partial?: boolean };
+        // Read from part of the session: the tasks shown already stay.
         if (live)
-          setState({
-            tasks: result.tasks ?? [],
-            session: result.session ?? null,
-            loaded: true,
-          });
+          setState((current) =>
+            isPartialRead(result) && current.loaded && current.tasks.length
+              ? current
+              : {
+                  tasks: result.tasks ?? [],
+                  session: result.session ?? null,
+                  loaded: true,
+                },
+          );
       } catch {
         // Not readable now (a reconnect): the next poll tries again.
         if (live)

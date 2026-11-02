@@ -14,6 +14,7 @@ export type AgentTaskSummary = Pick<
   | "status"
   | "name"
   | "startedAt"
+  | "resumedAt"
   | "endedAt"
   | "rewound"
 >;
@@ -26,6 +27,7 @@ function summary(task: AgentTask): AgentTaskSummary {
     status: task.status,
     ...(task.name ? { name: task.name } : {}),
     ...(task.startedAt ? { startedAt: task.startedAt } : {}),
+    ...(task.resumedAt ? { resumedAt: task.resumedAt } : {}),
     ...(task.endedAt ? { endedAt: task.endedAt } : {}),
     ...(task.rewound ? { rewound: true } : {}),
   };
@@ -83,11 +85,17 @@ export async function readConnectionAgentTasks<
               READ_TIMEOUT_MS,
             );
           }),
-        ])) as { tasks?: AgentTask[]; session?: string | null };
+        ])) as {
+          tasks?: AgentTask[];
+          session?: string | null;
+          partial?: boolean;
+        };
         return {
           ...identity,
           session: result?.session ?? null,
           tasks: (result?.tasks ?? []).map(summary),
+          // Read from part of the session: ask again shortly.
+          ...(result?.partial ? { partial: true } : {}),
         };
       } catch (error) {
         return {

@@ -108,14 +108,14 @@ export type RewindContext = {
     kind: string,
     params: Record<string, unknown>,
   ): Promise<ControlAnswer>;
-  readTranscript?: () => Promise<string | null>;
+  readTranscript?: () => Promise<string | Record<string, unknown>[] | null>;
   log(message: string, fields?: Record<string, unknown>): void;
 };
 
 export type RewindDriver = {
-  /** What a transcript says of a rewind to before `uuid`. */
+  /** What a transcript (text or records) says of a rewind to before `uuid`. */
   checkTranscript(
-    transcript: string | null,
+    transcript: string | Record<string, unknown>[] | null,
     uuid: string,
   ): AgentChatRewindCheck;
   /** What a rewind to before `uuid` would do to the code; starts nothing. */
