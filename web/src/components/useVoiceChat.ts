@@ -38,6 +38,7 @@ import {
   stopSpeaker,
   subscribeSpeechRate,
   voiceMessage,
+  voiceFronting,
   voiceRouting,
   voiceTrace,
   speakStream,
@@ -56,7 +57,20 @@ import {
   updateSpeechPreferences,
   useSpeechPreferences,
 } from "../speechPreferences";
-import { startTurnAck, type TurnAck } from "../voiceAck";
+import { readAssistantState } from "../assistant";
+import { forgeStore } from "../forgeStore";
+import { cannedAck, startTurnAck, type TurnAck } from "../voiceAck";
+import {
+  onVoiceEvent,
+  recentVoiceEvents,
+  type VoiceEvent,
+} from "../voiceEvents";
+import {
+  awaitFront,
+  createFrontVoice,
+  eventForFront,
+  frontContext,
+} from "../voiceFront";
 import { createNotForMeNotice } from "../voiceNotForMe";
 import { startTurnNarration, type TurnNarration } from "../voiceNarration";
 import {
@@ -82,7 +96,9 @@ import {
   plainText,
   routeSpeech,
   showRouterNote,
+  tellVoiceEvent,
   type VoiceResume,
+  type VoiceRoute,
   type VoiceSessionInfo,
 } from "../voiceRoute";
 import {
@@ -127,6 +143,8 @@ export type VoiceState =
 const REPLY_SETTLED_MS = 1200;
 const REPLY_POLL_MS = 300;
 const REPLY_TIMEOUT_MS = 30 * 60_000;
+/** Something that happened, not told by then, is not told. */
+const EVENT_STALE_MS = 2 * 60_000;
 /** How long the answer to "do you still want to move?" is waited for. */
 const MOVE_ANSWER_MS = 20_000;
 
@@ -210,6 +228,8 @@ export function useVoiceChat({
   const [level, setLevel] = useState(0);
   // What is being said, as the helper hears it.
   const [heard, setHeard] = useState("");
+  const heardRef = useRef(heard);
+  heardRef.current = heard;
   // What was said to someone else, by the cleaner's reading: not sent
   // unless asked.
   // Each with its pane: it stays there when voice chat moves on.
@@ -389,6 +409,38 @@ export function useVoiceChat({
        * send ("nobody": the router's question asked, an errand), or another
        * session, which now has the voice chat ("left").
        */
+      // The front (voiceFront.ts): it says at once what it does with what
+      // was said, or answers it. Off, voice chat goes as it always did.
+      const front = voiceFronting()
+        ? createFrontVoice(ackSpeech, claimSpeaker)
+        : null;
+      signal.addEventListener("abort", () => front?.hush(), { once: true });
+      // What the front said it does with words routed "here": the turn's
+      // first ack, said at once; or that a canned ack said it already.
+      let opening: { text: string } | { acked: true } | null = null;
+      const takeOpening = (): { opening?: string; acked?: boolean } => {
+        const taken = opening;
+        opening = null;
+        return !taken
+          ? {}
+          : "text" in taken
+            ? { opening: taken.text }
+            : { acked: true };
+      };
+      // Words sent while a turn's acks are over: its opening is said now.
+      const sayOpening = () => {
+        const taken = opening;
+        opening = null;
+        if (front && taken && "text" in taken)
+          void front.say(taken.text, signal);
+      };
+      /** Roamgate's state beyond the sessions, for the front. */
+      const stateForFront = () =>
+        frontContext({
+          tasks: readAssistantState().snapshot?.tasks ?? [],
+          requests: forgeStore.known(),
+          events: recentVoiceEvents(),
+        });
       const routed = async (
         heard: Heard,
       ): Promise<"here" | "held" | "nobody" | "left"> => {
@@ -396,17 +448,40 @@ export function useVoiceChat({
         if (!context || !voiceRouting()) return "here";
         setNotSent(null);
         setState("routing");
-        const route = await routeSpeech(
+        opening = null;
+        const asking = routeSpeech(
           heard.text,
           context.current,
           context.sessions,
+          front ? stateForFront() : undefined,
         );
+        let route: VoiceRoute;
+        // The front slow to answer: a canned ack says it was heard.
+        let slow = false;
+        if (front) {
+          ({ value: route, slow } = await awaitFront(asking, {
+            onSlow: () => {
+              const canned = cannedAck(heard.text);
+              voiceTrace(`the front is slow, said: ${canned.text}`);
+              void front.say(canned.text, signal);
+            },
+          }));
+        } else route = await asking;
         voiceTrace(`routed ${JSON.stringify(route)}: ${heard.text}`);
+        const reply = front && route.reply ? route.reply : null;
         const words = asked ?? heard.text;
         asked = null;
         switch (route.to) {
           case "current":
+            if (front)
+              opening = slow ? { acked: true } : reply ? { text: reply } : null;
             return "here";
+          case "self":
+            // The front answered it: nothing is sent.
+            if (!front || !reply) return "here";
+            showRouterNote(reply);
+            void front.say(reply, signal);
+            return "nobody";
           case "nobody": {
             hold(heard);
             setNotSent(heard);
@@ -431,6 +506,7 @@ export function useVoiceChat({
             const name = route.say || "the errands session";
             if (!route.job) return "nobody";
             showRouterNote(`Asked ${name}: ${words}`);
+            if (front && reply && !slow) void front.say(reply, signal);
             // Its answer comes when it comes: voice chat goes on meanwhile.
             void followErrand(route.job, (state) =>
               showRouterNote(
@@ -456,6 +532,7 @@ export function useVoiceChat({
             // Ranger's own chat: a question for Ranger is for it.
             if (context.current === RANGER_VOICE_SESSION) return "here";
             showRouterNote(`Asked Ranger: ${words}`, "Ranger");
+            if (front && reply && !slow) void front.say(reply, signal);
             // Ranger answers when it has read what it needs: voice chat
             // goes on meanwhile, and its answer is read when it comes.
             void askRanger(words).then(
@@ -476,9 +553,17 @@ export function useVoiceChat({
           default: {
             const target = parseVoiceSessionId(route.pane);
             if (!target) return "here";
-            if (route.pane === context.current)
+            if (route.pane === context.current) {
+              if (route.to === "send" && front)
+                opening = slow
+                  ? { acked: true }
+                  : reply
+                    ? { text: reply }
+                    : null;
               return route.to === "send" ? "here" : "nobody";
-            const switched = `Switched to ${route.say || "that session"}.`;
+            }
+            const switched =
+              reply || `Switched to ${route.say || "that session"}.`;
             showRouterNote(switched);
             await speak(switched, signal).catch(() => {});
             handOffVoice({
@@ -567,6 +652,53 @@ export function useVoiceChat({
             { once: true },
           );
         });
+      // What happened elsewhere (an agent done or waiting, a Ranger task
+      // run): the front tells what is worth it, never over the user nor
+      // over what is read.
+      if (front) {
+        const told: VoiceEvent[] = [];
+        let telling = false;
+        const quiet = () =>
+          (stateRef.current === "listening" ||
+            stateRef.current === "waiting") &&
+          !heardRef.current &&
+          !front.playing();
+        const tell = async () => {
+          if (telling) return;
+          telling = true;
+          try {
+            while (told.length && !signal.aborted) {
+              if (!quiet()) {
+                await pause(1000);
+                // Old news by then.
+                if (Date.now() - told[0]!.at > EVENT_STALE_MS) told.shift();
+                continue;
+              }
+              const event = told.shift()!;
+              const context = routeContextRef.current?.();
+              const reply = await tellVoiceEvent(
+                event.text,
+                context?.current ?? "",
+                context?.sessions ?? [],
+                stateForFront(),
+              );
+              voiceTrace(`the front heard "${event.text}", said: ${reply}`);
+              if (reply && !signal.aborted && quiet()) {
+                showRouterNote(reply);
+                await front.say(reply, signal);
+              }
+            }
+          } finally {
+            telling = false;
+          }
+        };
+        const stopTelling = onVoiceEvent((event) => {
+          if (!eventForFront(event, voiceKeyRef.current)) return;
+          told.push(event);
+          void tell();
+        });
+        signal.addEventListener("abort", stopTelling, { once: true });
+      }
       // Only the person ends voice chat: a lost connection or a failing
       // helper is retried, more slowly each time, and said once.
       let failures = 0;
@@ -642,6 +774,7 @@ export function useVoiceChat({
                     !!narration?.playing(),
                   working: () => live.busy(),
                   speech: ackSpeech,
+                  ...takeOpening(),
                 });
           narration =
             acked === null
@@ -1034,6 +1167,11 @@ export function useVoiceChat({
           try {
             link ??= await VoiceLink.open();
             const voice = link;
+            if (front) {
+              // Speaking up stops the front, as it stops a reply.
+              voice.onAnySpeech = () => front.hush();
+              voice.alsoHolding = () => front.playing();
+            }
             // The user went for a workspace with no agent: asked first.
             if (moveRef.current && forwarded === null) {
               await next?.catch(() => null);
@@ -1197,6 +1335,7 @@ export function useVoiceChat({
             // again, from the sentence they were cut at.
             const skipped = new Map<string, number>();
             turnAck = startTurnAck({
+              ...takeOpening(),
               said: text,
               // Shown again with its answer awaited: it was heard long ago.
               signal: back ? AbortSignal.abort() : signal,
@@ -1407,6 +1546,7 @@ export function useVoiceChat({
                 sent = voiceMessage(heard.text, interruptedAt);
                 interruptedAt = null;
                 await onSend(sent);
+                sayOpening();
                 if (heard.raw) rememberHeardAs(heard.text, heard.raw);
                 setHeard("");
               } finally {

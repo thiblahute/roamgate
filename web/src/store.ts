@@ -116,6 +116,7 @@ import {
   splitOverlayTopology,
   subscribeOverlayTabs,
 } from "./overlayTabs";
+import { noteVoiceEvent } from "./voiceEvents";
 import { isMobileLayout } from "./layoutPreferences";
 import {
   gitFileActionLabel,
@@ -1122,6 +1123,12 @@ export function taskNotificationTargetFromNotice(
 
 function notifyTaskCompleted(pane: Pane, workspaces: Workspace[], tabs: Tab[]) {
   const blocked = pane.agent_status === "blocked";
+  // Voice chat's front may tell it, whatever the preferences.
+  noteVoiceEvent({
+    text: `${[pane.terminal_title_stripped, taskNotificationBody(pane, workspaces, tabs)].filter(Boolean).join(", ")}: ${blocked ? "needs input" : "finished its turn"}`,
+    connectionId: state.activeConnectionId,
+    paneId: pane.pane_id,
+  });
   if (
     !state.taskNotificationsEnabled ||
     !state.taskNotificationPreferences[blocked ? "blocked" : "completed"]
@@ -1205,6 +1212,11 @@ function notifyHerdrTask(
   connectionId: string,
   notification: HerdrTaskNotification,
 ) {
+  noteVoiceEvent({
+    text: `${notification.agent}: ${notification.title}${notification.body ? `: ${notification.body}` : ""}`,
+    connectionId,
+    ...(notification.paneId ? { paneId: notification.paneId } : {}),
+  });
   if (
     !state.taskNotificationsEnabled ||
     !state.taskNotificationPreferences[notification.kind]
@@ -1264,6 +1276,9 @@ function notifyHerdrTask(
 }
 
 function notifyRangerTask(notification: AssistantTaskNotification) {
+  noteVoiceEvent({
+    text: `Ranger task ${notification.status}: ${notification.title}: ${notification.body}`,
+  });
   const kind = notification.status === "succeeded" ? "completed" : "blocked";
   if (
     !state.taskNotificationsEnabled ||

@@ -22,6 +22,8 @@ export type VoiceAvailability = {
   speech_rate?: number;
   /** The server decides who each thing said is for (voiceRoute.ts). */
   route?: boolean;
+  /** A front answers what is said first, in that decision (voiceFront.ts). */
+  front?: boolean;
   /**
    * Whether each reply is read by one of the voices at random; absent
    * without a voice library.
@@ -31,10 +33,16 @@ export type VoiceAvailability = {
 
 let tracing = false;
 let routing = false;
+let fronting = false;
 
 /** Whether what is said goes through the server's router first. */
 export function voiceRouting() {
   return routing;
+}
+
+/** Whether a front answers what is said first (voiceFront.ts). */
+export function voiceFronting() {
+  return fronting;
 }
 const traceStart = performance.now();
 
@@ -58,6 +66,7 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
     if (isSpeechRate(availability.speech_rate))
       setSpeechRate(availability.speech_rate);
     routing = availability.route === true;
+    fronting = availability.front === true;
     if (typeof availability.surprise === "boolean")
       setVoiceSurprise(availability.surprise, true);
     return availability;
@@ -207,6 +216,13 @@ export class VoiceLink {
   private closed: Error | null = null;
   // The first listening of a voice chat picks whose voice is kept.
   private listened = false;
+  /**
+   * Told whenever speech starts, whoever listens: speaking up stops the
+   * front's voice (voiceFront.ts) as it stops a reply.
+   */
+  onAnySpeech: (() => void) | null = null;
+  /** Something else plays (the front's voice): only a louder voice counts. */
+  alsoHolding: () => boolean = () => false;
 
   private constructor(private readonly socket: WebSocket) {
     socket.binaryType = "arraybuffer";
@@ -305,7 +321,8 @@ export class VoiceLink {
       context.createMediaStreamSource(stream).connect(tap);
       tap.connect(mute).connect(context.destination);
 
-      let held = holding?.() ?? false;
+      const holds = () => (holding?.() ?? false) || this.alsoHolding();
+      let held = holds();
       let session: number | null = null;
       let heard = false;
       let heardSoFar: HeardSoFar = { text: "", whole: false };
@@ -340,6 +357,7 @@ export class VoiceLink {
           if (session === null || event.session !== session) return;
           if (event.event === "speech_start") {
             heard = true;
+            this.onAnySpeech?.();
             onSpeech?.();
           } else if (event.event === "speech_end") {
             onSpeechEnd?.();
@@ -386,7 +404,7 @@ export class VoiceLink {
             this.send(Int16Array.from(chunk));
             chunk = [];
           }
-          if (held && !(holding?.() ?? false)) {
+          if (held && !holds()) {
             held = false;
             this.send({ op: "release" });
           }

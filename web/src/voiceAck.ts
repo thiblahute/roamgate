@@ -3,7 +3,8 @@
  * a few words say the message was heard ("Got it, on it."), in the language
  * it was said in, never the same twice in a row, once per turn; and once,
  * on a long turn with nothing read for a while, that it is still going.
- * Only played: never sent, never shown.
+ * Only played: never sent, never shown. With a front, only its own words
+ * are said: no canned ack, and no "still working" once it said something.
  */
 
 export type AckLanguage = "en" | "fr" | "es";
@@ -108,6 +109,20 @@ export function pickPhrase(
   return choices[index]!;
 }
 
+/**
+ * A canned ack for `said`, in its language, never the one said last: the
+ * front's stand-in when it is slow (voiceFront.ts).
+ */
+export function cannedAck(
+  said: string,
+  random: () => number = Math.random,
+): { text: string; language: AckLanguage } {
+  const language = ackLanguage(said);
+  const text = pickPhrase(ACK_PHRASES[language], lastPhrase, random);
+  lastPhrase = text;
+  return { text, language };
+}
+
 export type AckDue = "ack" | "still" | null;
 
 /** Whether an ack is to be said now, and which. */
@@ -124,12 +139,14 @@ export function ackDue(state: {
   working: boolean;
   acked: boolean;
   stillSaid: boolean;
+  /** How long after the message the ack is due; ACK_DELAY_MS by default. */
+  delay?: number;
 }): AckDue {
   if (state.busy) return null;
   if (
     !state.acked &&
     !state.started &&
-    state.sinceSent >= ACK_DELAY_MS &&
+    state.sinceSent >= (state.delay ?? ACK_DELAY_MS) &&
     state.sinceSent < ACK_LATEST_MS
   )
     return "ack";
@@ -179,6 +196,9 @@ export function startTurnAck<Speech>({
   busy,
   working = () => false,
   speech,
+  opening,
+  acked: ackedAlready = false,
+  fronted = false,
   now = () => performance.now(),
   random = Math.random,
 }: {
@@ -190,14 +210,27 @@ export function startTurnAck<Speech>({
   busy: () => boolean;
   working?: () => boolean;
   speech: AckSpeech<Speech>;
+  /**
+   * What the front said it does with the message (voiceFront.ts): said at
+   * once, in place of the first ack.
+   */
+  opening?: string | null;
+  /** The message was acked already (by the front's stand-in): no first ack. */
+  acked?: boolean;
+  /**
+   * A front is in use (front_model): only its words are said, never a
+   * canned ack; "still working" only when it said nothing this turn.
+   */
+  fronted?: boolean;
   now?: () => number;
   random?: () => number;
 }): TurnAck {
-  const language = ackLanguage(said);
+  const language = ackLanguage(opening || said);
   const sentAt = now();
   let activityAt = sentAt;
-  let acked = false;
-  let stillSaid = false;
+  let acked = ackedAlready || (fronted && !opening);
+  // The front's own words said this turn: no "still working" after them.
+  let stillSaid = fronted && !!opening;
   let ended = signal.aborted;
   const life = new AbortController();
   const stopLife = () => life.abort();
@@ -210,12 +243,14 @@ export function startTurnAck<Speech>({
     audio: Promise<Speech>;
     fetching: AbortController;
   };
-  const choose = (kind: "ack" | "still"): Chosen => {
-    const text = pickPhrase(
-      (kind === "ack" ? ACK_PHRASES : STILL_PHRASES)[language],
-      lastPhrase,
-      random,
-    );
+  const choose = (kind: "ack" | "still", given?: string): Chosen => {
+    const text =
+      given ||
+      pickPhrase(
+        (kind === "ack" ? ACK_PHRASES : STILL_PHRASES)[language],
+        lastPhrase,
+        random,
+      );
     const fetching = new AbortController();
     const audio = speech.fetchAudio(
       text,
@@ -226,7 +261,8 @@ export function startTurnAck<Speech>({
     return { text, audio, fetching };
   };
   // The first ack, fetched now to play the moment it is due.
-  let ready: Chosen | null = ended ? null : choose("ack");
+  let ready: Chosen | null =
+    ended || acked ? null : choose("ack", opening ?? undefined);
   // The answer came first: the first ack is not needed.
   const dropReady = () => {
     ready?.fetching.abort();
@@ -269,6 +305,7 @@ export function startTurnAck<Speech>({
           working: working(),
           acked,
           stillSaid,
+          ...(opening ? { delay: 0 } : {}),
         });
     if (due === "ack") {
       acked = true;

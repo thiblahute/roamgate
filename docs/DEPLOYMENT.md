@@ -734,6 +734,19 @@ agent on screen.
 say) that questions and errands about none of the sessions go to; its answer
 is read aloud once it settles.
 
+With `"front_model"` (a Claude model, such as `"opus"` or `"haiku"`), a
+front decides in the router's place and in the same call says something
+aloud at once: what it does with the words, or the answer to what Roamgate's
+state answers. One background Claude Code session is kept running for it,
+as for the router (`--safe-mode`, no tools, no Herdr pane variables). Each
+request gives it the agent sessions plus Ranger's tasks, the merge and pull
+requests the page knows and the notifications of the last half hour; it
+never sees files or terminals. The words go on to the agents as said. A
+front that has said nothing after 1.5 seconds is covered by a canned
+acknowledgement; one that fails or takes over 8 seconds leaves the words
+to the agent on screen, unsaid. Without `"front_model"`, voice chat works
+as before (with `"route_model"`, if set).
+
 ## Activity log
 
 The [activity log](./activity.md) is off by default. Turn it on in

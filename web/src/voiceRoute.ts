@@ -19,7 +19,7 @@ export type VoiceSessionInfo = {
   active?: number;
 };
 
-export type VoiceRoute =
+export type VoiceRoute = (
   | { to: "current" }
   | { to: "nobody" }
   | { to: "open" | "send"; pane: string; say: string }
@@ -27,7 +27,13 @@ export type VoiceRoute =
   | { to: "ranger" }
   /** An errand handed to the errands session, followed by `job`. */
   | { to: "errand"; pane: string; say: string; job?: string }
-  | { to: "ask"; panes: string[]; question: string };
+  | { to: "ask"; panes: string[]; question: string }
+  /** The front answered it itself, in `reply`: nothing is sent. */
+  | { to: "self" }
+) & {
+  /** With a front (voiceFront.ts): what it says aloud now. */
+  reply?: string;
+};
 
 /**
  * Ranger's chat as voice chat knows it: the session on screen for the
@@ -114,17 +120,45 @@ export async function routeSpeech(
   said: string,
   current: string,
   sessions: VoiceSessionInfo[],
+  /** With a front: Roamgate's state beyond the sessions (voiceFront.ts). */
+  context?: string,
 ): Promise<VoiceRoute> {
   try {
     const response = await fetch("/api/voice/route", {
       method: "POST",
       headers: { ...VOICE_HEADERS, "content-type": "application/json" },
-      body: JSON.stringify({ said, current, sessions }),
+      body: JSON.stringify({
+        said,
+        current,
+        sessions,
+        ...(context ? { context } : {}),
+      }),
     });
     if (!response.ok) return { to: "current" };
     return (await response.json()) as VoiceRoute;
   } catch {
     return { to: "current" };
+  }
+}
+
+/** What the front tells of `event` now; "" to stay quiet. */
+export async function tellVoiceEvent(
+  event: string,
+  current: string,
+  sessions: VoiceSessionInfo[],
+  context: string,
+): Promise<string> {
+  try {
+    const response = await fetch("/api/voice/event", {
+      method: "POST",
+      headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+      body: JSON.stringify({ event, current, sessions, context }),
+    });
+    if (!response.ok) return "";
+    const { reply } = (await response.json()) as { reply?: unknown };
+    return typeof reply === "string" ? reply : "";
+  } catch {
+    return "";
   }
 }
 
