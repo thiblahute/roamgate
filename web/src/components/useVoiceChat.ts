@@ -24,6 +24,9 @@ import {
   subscribeVoiceSurprise,
   type Heard,
   VoiceLink,
+  parkVoiceLink,
+  playReconnectCue,
+  takeParkedVoiceLink,
   holdAudioFocus,
   replyAfter,
   claimSpeaker,
@@ -136,6 +139,7 @@ import {
   isMoveYes,
   type MoveQuestion,
 } from "../voiceFollow";
+import { setVoiceCallPhase } from "../voiceCallReload";
 import { installVoiceFollow } from "../voiceFollowGuard";
 
 /** A reply cut short by speaking up, and where. */
@@ -182,12 +186,12 @@ const PROGRESS_TOLD_MS = 90_000;
 const MOVE_ANSWER_MS = 20_000;
 
 /**
- * How fast replies are read, and a step to the next speed (kept): the
- * server's `speech_rate` with its engine, this browser's rate (Speech
- * settings) with the browser's voices.
+ * How fast a call's replies are read, and a step to the next speed (kept):
+ * the server's `speech_rate` with its engine, this browser's rate (Speech
+ * settings) with the browser's voices, when they read in calls here.
  */
 export function useSpeechRate(onError: (message: string) => void) {
-  const browser = useSpeechEngine().engine === "browser";
+  const browser = useSpeechEngine().callEngine === "browser";
   const serverRate = useSyncExternalStore(subscribeSpeechRate, getSpeechRate);
   const browserRate = useSpeechPreferences().rate;
   const cycle = useCallback(() => {
@@ -380,9 +384,20 @@ export function useVoiceChat({
     [agentName],
   );
 
+  // The voice link of the voice chat running, for keeping what it is
+  // listening to when the chat is rebuilt.
+  const linkRef = useRef<VoiceLink | null>(null);
   useEffect(
     () => () => {
-      if (controllerRef.current) voiceTrace("voice chat ends: unmounted");
+      if (controllerRef.current) {
+        // Rebuilt for the same pane (a reconnect of the page's connection
+        // does it): the listening goes on, for the chat built next.
+        const key = voiceKeyRef.current;
+        const link = linkRef.current;
+        if (key && link)
+          parkVoiceLink(`${key.connectionId}/${key.paneId}`, link);
+        voiceTrace("voice chat ends: unmounted");
+      }
       controllerRef.current?.abort();
     },
     [],
@@ -1664,8 +1679,37 @@ export function useVoiceChat({
         };
         while (!signal.aborted) {
           try {
+            if (!link) {
+              // The listening of this pane's chat before it was rebuilt:
+              // what is being said goes on, never cut.
+              const key = voiceKeyRef.current;
+              const kept = key
+                ? takeParkedVoiceLink(`${key.connectionId}/${key.paneId}`)
+                : null;
+              if (kept) {
+                link = kept;
+                const finish = new AbortController();
+                finishRef.current = finish;
+                const adopted = kept.adopt(listening(), {
+                  finish: finish.signal,
+                  onLevel: setLevel,
+                  onSpeechEnd: () => setState("transcribing"),
+                  onHeard: setHeard,
+                });
+                voiceTrace(
+                  `voice chat goes on after the chat was rebuilt${adopted ? ", still listening" : ""}`,
+                );
+                playReconnectCue();
+                if (adopted) {
+                  setState("listening");
+                  next = adopted;
+                }
+              }
+            }
             link ??= await VoiceLink.open();
             const voice = link;
+            if (controllerRef.current === controller) linkRef.current = voice;
+            voice.onReconnected = () => playReconnectCue();
             if (front) {
               // Speaking up stops the front, as it stops a reply.
               voice.onAnySpeech = () => front.hush();
@@ -2146,6 +2190,12 @@ export function useVoiceChat({
             interruptRef.current = null;
             highlightReading([], null);
             setLevel(0);
+            // What was heard and not sent stays, to send by hand.
+            const unsent = heardRef.current.trim();
+            if (unsent) {
+              voiceTrace(`kept as a draft, the voice link failed: ${unsent}`);
+              hold({ text: unsent, speechMs: 0 });
+            }
             setHeard("");
             await pause(Math.min(10_000, 1000 * 2 ** (failures - 1)));
           }
@@ -2156,6 +2206,7 @@ export function useVoiceChat({
         void turnAck?.end();
         if (controllerRef.current === controller) awaitingRef.current = null;
         link?.close();
+        if (linkRef.current === link) linkRef.current = null;
         highlightReading([], null);
         setHeard("");
         if (controllerRef.current === controller) {
@@ -2258,6 +2309,27 @@ export function useVoiceChat({
     }
   }, []);
 
+  // A newer build reloads the page between turns only (voiceCallReload.ts).
+  const callConnection = voiceKey?.connectionId;
+  const callPane = voiceKey?.paneId;
+  useEffect(() => {
+    if (!callConnection || !callPane) return;
+    const pane = { connectionId: callConnection, paneId: callPane };
+    setVoiceCallPhase(
+      pane,
+      state === "off"
+        ? null
+        : state === "listening" && !heard
+          ? "safe"
+          : "busy",
+    );
+  }, [state, heard, callConnection, callPane]);
+  useEffect(() => {
+    if (!callConnection || !callPane) return;
+    const pane = { connectionId: callConnection, paneId: callPane };
+    return () => setVoiceCallPhase(pane, null);
+  }, [callConnection, callPane]);
+
   // A new voice chat starts with the microphone on.
   useEffect(() => {
     if (state !== "off" || !mutedRef.current) return;
@@ -2298,8 +2370,11 @@ export function useVoiceChat({
 
   return {
     available,
-    /** The server said it has no voice engine: voice chat cannot listen. */
-    unavailable: engine.server === false,
+    /**
+     * The server said it has no voice engine, or did not answer: voice chat
+     * cannot listen, and a tap asks again (listenOrSayWhy).
+     */
+    unavailable: engine.server === false || engine.unreachable,
     state,
     level,
     muted,

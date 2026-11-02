@@ -620,11 +620,16 @@ reference recordings`, or `a new speaker: the first voice heard is taken as
 theirs`, and with `ROAMGATE_VOICE_DEBUG` the first words heard from it. With `"turn_model"` (Pipecat's
 `smart-turn-v3.2-cpu.onnx`), a pause ends speech only when the model hears
 a finished turn: thinking pauses rarely cut a message, and 5 s of silence
-ends one anyway. With Parakeet, `"text_turn_model"` (the directory of
+ends one anyway (with `"text_turn_model"`, see below). With Parakeet, `"text_turn_model"` (the directory of
 onnx-community/Qwen3-0.6B-ONNX: `onnx/model_int8.onnx`, `tokenizer.json`,
 `config.json`) also reads what was said at each pause: words that are
 clearly unfinished ("I think we should find a way to") keep the turn open,
-clearly finished ones end it sooner. Whisper models are
+clearly finished ones end it sooner. When the voice sounds finished but the
+words keep the turn open, a pause of `"max_pause_ms"` (8000 by default, 2000
+to 15000; "Longest pause before your turn ends" in Speech settings) ends it.
+A pause whose voice does not sound finished, such as one to look for a word,
+or one after "um" or "euh" (said, or heard as a short sound that added no
+word), lasts up to 15 s, and any voice starts the count again. Whisper models are
 whisper.cpp's ggml files; the Kokoro model and voices are
 the v1.0 files of kokoro-onnx's releases. A helper built against an installed
 GStreamer instead finds its plugins in `gst_prefix`, when given. The helper
@@ -698,9 +703,9 @@ voice of the reply before when another may read) and has the helper read that re
 is read: the helper switches voices once per reply, keeping its models
 loaded. Choosing a voice turns it off.
 Only Kokoro takes a speed: when every model is Kokoro and none sets its own
-`"speed"`, they are given `speech_rate` and the browser plays their speech as
-made; otherwise the models speak at their own pace and the browser plays it
-faster (Qwen3-TTS has no speed control).
+`"speed"`, they are given `speech_rate`; otherwise the models speak at their
+own pace (Qwen3-TTS has no speed control) and the helper makes their speech
+faster with GStreamer's soundtouch `pitch` element, keeping the pitch.
 Browsers only
 give the microphone to secure pages: reach Roamgate over HTTPS or localhost.
 
@@ -717,9 +722,11 @@ as heard.
 `"speech_rate"` (0.5 to 2, 1.2 by default) is how fast replies are read, as
 a multiple of the voice's own pace; the voice card's speed button and
 **Configuration > Speech** change it and write it back to
-`voice.json`, for every browser. Speech comes with the
-rate it was made at (`X-Voice-Native-Rate`, 1 for the voice's own pace) and
-the browser plays it faster by the rest, keeping its pitch.
+`voice.json`, for every browser. A page asks for each sentence at its
+reading speed and the server makes it at that speed, keeping its pitch;
+speech comes with the rate it was made at (`X-Voice-Native-Rate`, 1 for
+the voice's own pace), and a helper without soundtouch leaves the rest
+to the browser outside a call.
 
 With `"route_model"` (a Claude model, such as `"haiku"`), each thing said
 goes first to one background Claude Code session that decides who it is for:
@@ -764,6 +771,38 @@ the session as a job (`POST /api/voice/forward`; the words as said, only
 the session they address dropped when the front gives them so and the
 server finds the rest word for word but for verb forms, else whole; the
 whole answer followed as an errand's) and comes back through it.
+
+### Voice calls on the move
+
+A call is meant to survive a phone changing networks. The listening session
+outlives its socket on the server for 20 s: the page opens a new socket,
+resumes the session and sends again the audio the server did not get, so a
+sentence cut by the network is heard whole. A socket that stops passing
+audio (a phone that changed networks keeps the old one open) is replaced
+the same way, and a session nobody resumes ends its utterance with what
+was heard. When the page's own connection drops, the chat is rebuilt; the
+listening in progress is kept across that and the call goes on. Two short
+tones say it had to reconnect. Words heard but never sent stay above the
+chat's message box, to send by hand. A page in a call takes a newer build between turns only,
+and the call goes on in the reloaded page.
+
+During a call, replies play through the AudioContext the microphone
+streams through, at any reading speed, not as media: Android's media
+session has nothing to pause and a car's media controls nothing to control
+(they are logged and ignored), and no media element of the page competes
+for the audio focus (other apps' music is not paused then). Echo cancellation is the platform's, on the microphone, so
+speaking over a reply still interrupts it. Speech settings' **Voice chat
+replies play** (per device) can bring back media elements ("As media"), or
+try WebRTC call audio ("As a call": each sentence goes through a WebRTC
+connection of the page to itself, which Chrome on Android plays on the
+voice-call stream beside the microphone). As media, a silent loop holds
+the audio focus between replies (other apps' music pauses) and goes quiet
+while a sentence plays, so the two never take the focus from each other; a
+pause from elsewhere (Android taking the audio focus, a car switching
+profiles) plays on, then retries from the sentence's start, then skips the
+sentence after four tries in all, and a pause from a car's or headset's
+controls is honoured until play. With `ROAMGATE_VOICE_DEBUG`,
+the page's trace says which output plays and what paused it.
 
 ## Activity log
 

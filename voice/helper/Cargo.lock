@@ -2103,7 +2103,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-anytts"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "any-tts",
  "gst-plugin-version-helper",
@@ -2115,7 +2115,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-audiofx"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "anyhow",
  "atomic_refcell",
@@ -2137,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-kokoro"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "gst-plugin-version-helper",
  "gstreamer",
@@ -2150,7 +2150,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-parakeet"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "gst-plugin-version-helper",
  "gstreamer",
@@ -2161,7 +2161,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-speechgate"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "gst-plugin-version-helper",
  "gstreamer",
@@ -2175,7 +2175,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-version-helper"
 version = "0.8.4"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "chrono",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -2184,7 +2184,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-whisper"
 version = "0.16.0-alpha"
-source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#4d9d35cf6dcbd9c09b70cafd0f66b324960970cc"
+source = "git+https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs?branch=roamgate-voice#cf1e6dbde63d38d13008253dbeba8ab61e8d6064"
 dependencies = [
  "byte-slice-cast",
  "gst-plugin-version-helper",

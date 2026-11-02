@@ -138,11 +138,21 @@ export class SpeechPlayback {
 }
 export const speechPlayback = new SpeechPlayback();
 
+/** What a reading with the browser's voice hears of its utterances. */
+export type BrowserSpeechEvents = {
+  /** An utterance started playing (its `start` event). */
+  start?(text: string): void;
+  end?(text: string): void;
+  /** An utterance failed: `reason` is its error, such as "not-allowed". */
+  error?(text: string, reason: string): void;
+};
+
 /**
  * Speaks `text` with the browser's speech synthesis and `preferences`, in
  * bounded chunks; resolves when it is over or `signal` aborts. Without a
  * chosen voice, or when the chosen one does not speak `language`, a voice
- * of `language` reads it. Voice chat reads a sentence at a time with it.
+ * of `language` reads it. Voice chat reads a sentence at a time with it;
+ * `events` hears its utterances start, end and fail.
  */
 export function speakWithBrowser(
   text: string,
@@ -150,6 +160,7 @@ export function speakWithBrowser(
   preferences: SpeechPreferences,
   language?: string,
   getRuntime = browserSpeechRuntime,
+  events: BrowserSpeechEvents = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return resolve();
@@ -174,6 +185,7 @@ export function speakWithBrowser(
     const finish = (error?: Error) => {
       signal.removeEventListener("abort", stop);
       if (current) {
+        current.onstart = null;
         current.onend = null;
         current.onerror = null;
       }
@@ -202,14 +214,21 @@ export function speakWithBrowser(
           utterance.voice = voice;
           utterance.lang = voice.lang;
         } else if (language) utterance.lang = language;
+        const said = chunks[index - 1]!;
+        utterance.onstart = () => {
+          if (current === utterance) events.start?.(said);
+        };
         utterance.onend = () => {
-          if (current === utterance) next();
+          if (current !== utterance) return;
+          events.end?.(said);
+          next();
         };
         utterance.onerror = (event) => {
           if (current !== utterance) return;
           // Cancelled by another reading: over, not failed.
           const reason = (event as SpeechSynthesisErrorEvent | undefined)
             ?.error;
+          events.error?.(said, reason ?? "unknown");
           if (reason === "interrupted" || reason === "canceled") finish();
           else finish(new Error("Speech playback failed."));
         };

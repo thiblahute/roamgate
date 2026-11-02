@@ -69,6 +69,26 @@ if (process.env.ROAMGATE_SPEECH_SETTINGS_DOM_TEST !== "1") {
       await React.act(async () => setReadWith("browser"));
       expect(container.textContent).toContain("Browser speaking rate: 1.0x");
       expect(container.querySelector('input[type="range"]')).not.toBeNull();
+      // Heard in calls here: nothing said of calls.
+      expect(container.textContent).not.toContain("voice call");
+      // It failed in a call here: said, with a way to try it again.
+      localStorage.setItem(
+        "roamgate:browserVoiceSilentInCalls",
+        "it did not start in 4 s",
+      );
+      await React.act(async () => setReadWith("browser"));
+      expect(container.textContent).toContain(
+        "This browser's voice did not play in a voice call on this device, so calls read with Roamgate's voice engine.",
+      );
+      const retry = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Try it in calls again",
+      );
+      expect(retry).toBeDefined();
+      await React.act(async () => retry?.click());
+      expect(container.textContent).not.toContain("voice call");
+      expect(
+        localStorage.getItem("roamgate:browserVoiceSilentInCalls"),
+      ).toBeNull();
     } finally {
       await React.act(async () => root.unmount());
       await browser.happyDOM.close();

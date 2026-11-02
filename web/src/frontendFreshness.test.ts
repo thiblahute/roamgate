@@ -44,7 +44,14 @@ afterEach(() => {
   });
 });
 
-function page(entry: string | null) {
+function page(
+  entry: string | null,
+  options: {
+    voiceCall?: () => "none" | "safe" | "busy";
+    trace?: (line: string) => void;
+    resumeCompanion?: () => void;
+  } = {},
+) {
   const browser = new BrowserWindow({ url: "http://localhost:8787/" });
   for (const key of globalsUsed)
     Object.defineProperty(globalThis, key, {
@@ -74,6 +81,8 @@ function page(entry: string | null) {
       reload: () => {
         reloads += 1;
       },
+      trace: () => {},
+      ...options,
     }),
   );
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -223,3 +232,79 @@ test("cleanup prevents an in-flight check from reloading", async () => {
   await Promise.resolve();
   expect(reloads).toBe(0);
 });
+
+test("a page in a voice call reloads between turns only, and says why it waits", async () => {
+  jest.useFakeTimers();
+  try {
+    let phase: "none" | "safe" | "busy" = "busy";
+    const trace: string[] = [];
+    const tab = page("/assets/index-old.js", {
+      voiceCall: () => phase,
+      trace: (line) => trace.push(line),
+    });
+    tab.serve("/assets/index-new.js");
+    connectedNow(tab);
+    await flushAll();
+    expect(tab.reloads()).toBe(0);
+    expect(trace).toEqual([
+      "a newer build is available: the reload waits for a pause in the voice call",
+    ]);
+    jest.advanceTimersByTime(5000);
+    expect(tab.reloads()).toBe(0);
+    phase = "safe";
+    jest.advanceTimersByTime(1000);
+    expect(tab.reloads()).toBe(1);
+    expect(trace[trace.length - 1]).toBe(
+      "a newer build is available: reloading between turns",
+    );
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("a call with the companion goes on after a newer build's reload", () => {
+  const kept = new Map<string, string>([
+    [
+      "roamgate.voiceCallReload",
+      JSON.stringify({
+        connectionId: "@companion",
+        paneId: "@companion",
+        at: Date.now(),
+      }),
+    ],
+  ]);
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => kept.set(key, value),
+      removeItem: (key: string) => kept.delete(key),
+    },
+  });
+  try {
+    const trace: string[] = [];
+    let resumed = 0;
+    page("/assets/index-new.js", {
+      trace: (line) => trace.push(line),
+      resumeCompanion: () => {
+        resumed += 1;
+      },
+    });
+    expect(resumed).toBe(1);
+    expect(trace).toEqual([
+      "a newer build: the call with the companion goes on",
+    ]);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "sessionStorage", saved);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  }
+});
+
+function connectedNow(tab: ReturnType<typeof page>) {
+  void tab.reconnect();
+}
+
+async function flushAll() {
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+}

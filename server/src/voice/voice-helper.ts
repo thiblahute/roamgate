@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isSpeechRate, speechRateOr } from "../../../shared/speechRate";
+import {
+  isSpeechRate,
+  playbackRateFor,
+  speechRateOr,
+} from "../../../shared/speechRate";
 import { dataRoot } from "../config/data-paths";
 
 /**
@@ -48,6 +52,14 @@ export type VoiceConfig = {
   turn_model?: string;
   /** Qwen3 0.6B ONNX: with Parakeet, unfinished words keep a turn open. */
   text_turn_model?: string;
+  /**
+   * With Parakeet and the turn models, the longest pause, in ms, before a
+   * turn whose voice sounded finished ends, when its words do not read
+   * finished (voice-socket.ts): MAX_PAUSE_MS by default, MIN_PAUSE_MS to
+   * LONGEST_PAUSE_MS. A pause that does not sound finished, or that follows
+   * "euh", goes to LONGEST_PAUSE_MS. Speech settings change it.
+   */
+  max_pause_ms?: number;
   /**
    * A Claude model ("haiku") that cleans what was said and tells whether
    * it was said to the agent (voice-cleaner.ts), through Claude Code.
@@ -107,6 +119,31 @@ export type VoiceConfig = {
    */
   voice_surprise?: boolean;
 };
+
+/**
+ * A pause this long, in audio, ends the utterance when the voice sounded
+ * finished (voice-socket.ts's TURN_SOUNDS_FINISHED) and only the words kept the turn open;
+ * voice.json's `max_pause_ms` changes it, from MIN_PAUSE_MS to
+ * LONGEST_PAUSE_MS (voice-socket.ts). Well past speechgate's own checks (1.5 to 3.5 s), so it
+ * only matters when the words model keeps vetoing a finished sentence.
+ */
+export const MAX_PAUSE_MS = 8_000;
+export const MIN_PAUSE_MS = 2_000;
+/**
+ * Any pause this long ends the utterance: the voice did not sound finished,
+ * or the speaker said "euh" before it. speechgate gives up at the same
+ * length (`--turn-give-up-ms`).
+ */
+export const LONGEST_PAUSE_MS = 15_000;
+/** `max_pause_ms` as voice.json may give it: MAX_PAUSE_MS when unusable. */
+export function maxPauseMs(value: unknown): number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= MIN_PAUSE_MS &&
+    value <= LONGEST_PAUSE_MS
+    ? Math.round(value)
+    : MAX_PAUSE_MS;
+}
 
 export type FrontMode = "companion" | "relay";
 
@@ -242,6 +279,15 @@ export function writeSpeechRate(rate: number, path = voiceConfigPath()) {
   writeVoiceSetting("speech_rate", rate, path);
 }
 
+/** Keeps `ms` as `max_pause_ms` in voice.json, as writeSpeechRate does. */
+export function writeMaxPause(ms: number, path = voiceConfigPath()) {
+  if (maxPauseMs(ms) !== ms)
+    throw new Error(
+      `max_pause_ms must be ${MIN_PAUSE_MS} to ${LONGEST_PAUSE_MS} ms`,
+    );
+  writeVoiceSetting("max_pause_ms", ms, path);
+}
+
 /** Keeps `mode` as `front_mode` in voice.json, as writeSpeechRate does. */
 export function writeFrontMode(mode: FrontMode, path = voiceConfigPath()) {
   if (!isFrontMode(mode))
@@ -261,12 +307,12 @@ function writeVoiceSetting(key: string, value: unknown, path: string) {
 }
 
 /**
- * The rate the helper's voice speaks at by itself, which the browser's
- * playback makes up the rest of. Only Kokoro takes a speed (Qwen3-TTS and
+ * The rate the helper's voice model speaks at by itself; the helper's
+ * tempo (speak's `rate`) makes up the rest. Only Kokoro takes a speed (Qwen3-TTS and
  * the other any-tts models refuse one), and which model reads a sentence is
  * the element's choice: `speech_rate` goes to the models only when all of
  * them are Kokoro and none sets its own `speed`, else they speak at their
- * own pace (1) and the browser does it all.
+ * own pace (1) and the tempo does it all.
  */
 export function nativeSpeechRate(config: VoiceConfig): number {
   const models = config.tts_models;
@@ -471,6 +517,11 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
       ...(config.text_turn_model
         ? ["--text-turn-model", config.text_turn_model]
         : []),
+      // The page's cap (voice-socket.ts) ends finished-sounding pauses
+      // sooner; speechgate's own 5 s would cut a search for a word short.
+      ...(config.text_turn_model && config.parakeet_model
+        ? ["--turn-give-up-ms", String(LONGEST_PAUSE_MS)]
+        : []),
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "inherit", env },
   );
@@ -501,6 +552,15 @@ export type VoiceEvent = {
   error?: string;
   /** On a partial: the words at a pause, which may end the utterance. */
   pause?: boolean;
+  /**
+   * On a partial at a pause: how far into it the words were read, whether
+   * the speaker sounds to be thinking ("euh"), and at speechgate's checks,
+   * how finished the voice (`turn`) and the words (`words`) sound, 0 to 1.
+   */
+  pause_ms?: number;
+  thinking?: boolean;
+  turn?: number;
+  words?: number;
   /** On a cleaned final: the words as heard, and whether to the agent. */
   raw?: string;
   for_agent?: boolean;
@@ -557,7 +617,22 @@ export class VoiceHelper {
     ) => VoiceHelperProcess = spawnVoiceHelper,
     private readonly saveSpeechRate: (rate: number) => void = (rate) =>
       writeSpeechRate(rate),
+    private readonly saveMaxPause: (ms: number) => void = (ms) =>
+      writeMaxPause(ms),
   ) {}
+
+  /**
+   * The longest pause before a turn that sounded finished ends
+   * (`max_pause_ms`), read by each listening session as it starts.
+   */
+  maxPauseMs(): number {
+    const config = this.config();
+    return maxPauseMs("error" in config ? undefined : config.max_pause_ms);
+  }
+
+  setMaxPauseMs(ms: number) {
+    this.saveMaxPause(ms);
+  }
 
   /** How fast replies are read (`speech_rate`). */
   speechRate(): number {
@@ -723,12 +798,16 @@ export class VoiceHelper {
 
   /**
    * Speaks `text`, with `models` (`tts_models`) for this once when given,
-   * such as a voice to hear before choosing it.
+   * such as a voice to hear before choosing it. With a `rate`, the helper
+   * makes it that fast (soundtouch, keeping the pitch) beyond what the
+   * voice's model does itself; `nativeRate` says what it came out at (a
+   * helper without soundtouch leaves it at the model's).
    */
   async speak(
     text: string,
     language?: string,
     models?: VoiceConfig["tts_models"],
+    rate?: number,
   ): Promise<{
     audio: Uint8Array<ArrayBuffer>;
     language: string;
@@ -748,16 +827,21 @@ export class VoiceHelper {
       nativeRate = nativeSpeechRate(own);
       override = helperTtsModels(own);
     }
+    // What the model does not do, the helper's tempo does.
+    const tempo = rate === undefined ? 1 : playbackRateFor(rate, nativeRate);
     const reply = await this.request({
       op: "speak",
       text,
       ...(language ? { language } : {}),
       ...(override ? { tts_models: JSON.stringify(override) } : {}),
+      ...(tempo === 1 ? {} : { rate: tempo }),
     });
+    const made =
+      typeof reply.rate === "number" && reply.rate > 0 ? reply.rate : 1;
     return {
       audio: Buffer.from(String(reply.audio ?? ""), "base64"),
       language: String(reply.language ?? ""),
-      nativeRate,
+      nativeRate: Math.round(nativeRate * made * 1000) / 1000,
     };
   }
 

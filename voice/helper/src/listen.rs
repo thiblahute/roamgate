@@ -28,7 +28,11 @@
 //!
 //! parakeettranscriber also posts what it heard so far as the speaker goes
 //! on, and gives speechgate the words during a pause; whispertranscriber
-//! can take its place, without either.
+//! can take its place, without either. It keeps the words two of those
+//! readings agree on and reads only what follows: read whole each time, a
+//! long utterance was written, erased and written again, as the model
+//! followed a voice in the background (music with singing) in some
+//! readings, and the final text could be a short phrase of its words.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -226,18 +230,30 @@ struct State {
 }
 
 impl State {
-    /// What the utterance in progress says so far, if still wanted.
-    fn partial(&self, id: u32, text: &str, pause: bool) {
+    /// What the utterance in progress says so far, if still wanted; at a
+    /// pause, what the gate made of it (`speechgate-words`).
+    fn partial(&self, id: u32, text: &str, pause: Option<&gst::StructureRef>) {
         if self
             .pending
             .back()
             .is_some_and(|pending| pending.id == id && !pending.cancelled)
         {
-            (self.emit)(if pause {
-                json!({"event": "partial", "session": id, "text": text.trim(), "pause": true})
-            } else {
-                json!({"event": "partial", "session": id, "text": text.trim()})
-            });
+            let mut event = json!({"event": "partial", "session": id, "text": text.trim()});
+            if let Some(words) = pause {
+                event["pause"] = json!(true);
+                if let Ok(ms) = words.get::<u64>("pause-ms") {
+                    event["pause_ms"] = json!(ms);
+                }
+                if let Ok(thinking) = words.get::<bool>("thinking") {
+                    event["thinking"] = json!(thinking);
+                }
+                for (field, key) in [("turn", "turn"), ("words", "words")] {
+                    if let Ok(score) = words.get::<f64>(field) {
+                        event[key] = json!((score * 1000.0).round() / 1000.0);
+                    }
+                }
+            }
+            (self.emit)(event);
         }
     }
 
@@ -306,7 +322,7 @@ impl State {
             }
             "speechgate-words" => {
                 if let (Some(id), Ok(text)) = (session, structure.get::<String>("text")) {
-                    self.partial(id, &text, true);
+                    self.partial(id, &text, Some(structure));
                 }
             }
             "speechgate-speech-end" => {
@@ -342,7 +358,7 @@ impl State {
                     structure.get::<String>("text"),
                     self.pending.back().map(|pending| pending.id),
                 ) {
-                    self.partial(id, &text, false);
+                    self.partial(id, &text, None);
                 }
             }
             _ => return false,
@@ -420,12 +436,15 @@ pub struct Listener {
 
 impl Listener {
     /// With `speaker_model`, only the voice of whoever speaks first counts.
+    /// With a turn model, a pause of `give_up_ms` ends the utterance
+    /// whatever the models say (speechgate's own 5 s without it).
     pub fn new(
         model: Model,
         speaker_model: Option<&str>,
         turn_model: Option<&str>,
         text_turn_model: Option<&str>,
         reference: Option<Vec<u8>>,
+        give_up_ms: Option<u64>,
         reread: Option<Arc<crate::reread::Reread>>,
         emit: Emit,
     ) -> Result<Self, String> {
@@ -513,6 +532,18 @@ impl Listener {
                     gst::PadProbeReturn::Ok
                 },
             );
+        }
+        // A speechgate without it keeps its own 5 s.
+        if let Some(ms) = give_up_ms
+            && gate.find_property("give-up").is_some()
+        {
+            gate.set_property("give-up", ms);
+        }
+        // A parakeettranscriber without it reads the utterance whole.
+        if let Some(transcriber) = pipeline.by_name("transcriber")
+            && transcriber.find_property("keep-agreed").is_some()
+        {
+            transcriber.set_property("keep-agreed", true);
         }
         let state = Arc::new(Mutex::new(State {
             emit,

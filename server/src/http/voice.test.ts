@@ -9,6 +9,7 @@ import { createVoiceRoutes } from "./voice";
 const helper = {
   status: () => ({ available: true }),
   speechRate: () => 1.2,
+  maxPauseMs: () => 8000,
 } as unknown as VoiceHelper;
 
 function post(body: unknown, headers: Record<string, string> = {}) {
@@ -41,6 +42,7 @@ describe("voice routes", () => {
       available: true,
       route: true,
       speech_rate: 1.2,
+      max_pause_ms: 8000,
     });
     expect(warmed).toBe(1);
     const session = {
@@ -138,6 +140,7 @@ describe("the voice front", () => {
       front: true,
       front_mode: "companion",
       speech_rate: 1.2,
+      max_pause_ms: 8000,
     });
     expect(warmed).toBe(1);
     const routed = await routes(
@@ -363,6 +366,40 @@ describe("the voice front", () => {
     );
   });
 
+  test("keeps the longest pause, reported with the rest", async () => {
+    const saved: number[] = [];
+    const routes = createVoiceRoutes({
+      ...helper,
+      maxPauseMs: () => saved.at(-1) ?? 8000,
+      setMaxPauseMs: (ms: number) => saved.push(ms),
+    } as unknown as VoiceHelper);
+    const settings = (body: unknown) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/settings", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-roamgate-voice": "1",
+          },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/settings",
+      );
+    expect((await settings({ max_pause_ms: 100 }))!.status).toBe(400);
+    expect((await settings({ max_pause_ms: "long" }))!.status).toBe(400);
+    expect(await (await settings({ max_pause_ms: 12_000 }))!.json()).toEqual({
+      max_pause_ms: 12_000,
+    });
+    expect(saved).toEqual([12_000]);
+    const status = await routes(
+      new Request("http://roamgate.test/api/voice"),
+      "/api/voice",
+    );
+    expect(
+      ((await status!.json()) as { max_pause_ms?: number }).max_pause_ms,
+    ).toBe(12_000);
+  });
+
   test("off, the router decides as it always did", async () => {
     const router = {
       warm: () => {},
@@ -381,7 +418,12 @@ describe("the voice front", () => {
         new Request("http://roamgate.test/api/voice"),
         "/api/voice",
       ))!.json(),
-    ).toEqual({ available: true, route: true, speech_rate: 1.2 });
+    ).toEqual({
+      available: true,
+      route: true,
+      speech_rate: 1.2,
+      max_pause_ms: 8000,
+    });
     expect(
       await (await routes(
         post(
@@ -822,6 +864,7 @@ describe("surprise voices", () => {
       "Bonjour, je suis là.",
       undefined,
       [{ model: "qwen3-tts", voice: id }],
+      1.2,
     ]);
     const second = await say("Et la suite de la réponse.", "r1");
     expect(second!.headers.get("x-voice-name")).toBe(
@@ -837,6 +880,22 @@ describe("surprise voices", () => {
     const { say, spoken } = setup(false);
     const response = await say("Bonjour.", "r1");
     expect(response!.headers.get("x-voice-name")).toBeNull();
-    expect(spoken[0]).toEqual(["Bonjour.", undefined, undefined]);
+    expect(spoken[0]).toEqual(["Bonjour.", undefined, undefined, 1.2]);
+  });
+
+  test("speech is made at the page's rate, else voice.json's", async () => {
+    const { routes, spoken } = setup(false);
+    const say = (body: unknown) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/speak", {
+          method: "POST",
+          headers: { ...voice, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/speak",
+      );
+    await say({ text: "Vite.", rate: 1.5 });
+    await say({ text: "Trop vite.", rate: 9 });
+    expect(spoken.map((args) => args[3])).toEqual([1.5, 1.2]);
   });
 });

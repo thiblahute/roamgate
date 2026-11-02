@@ -403,6 +403,10 @@ const handleVoice = createVoiceRoutes(
 const voiceSocket = createVoiceSocket(
   voiceHelper,
   configuredCleaner(() => readVoiceConfig()),
+  () => {
+    const config = readVoiceConfig();
+    return "error" in config ? undefined : config.max_pause_ms;
+  },
 );
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {

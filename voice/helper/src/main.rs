@@ -27,6 +27,11 @@
 //! reads it, or with `--tts-models` the first of those any-tts models that
 //! speaks its language.
 //!
+//! A speak request may carry a `rate` (0.5 to 2, 1 by default): the speech
+//! is made that much faster, keeping its pitch (soundtouch's `pitch`), and
+//! the answer says the `rate` it was made at (1 when it could not be
+//! changed), for the page to play it as it is.
+//!
 //! A speak request may carry its own `tts_models` (the `--tts-models` JSON)
 //! to read that sentence with, such as a voice to hear before choosing it;
 //! `{"op": "set_tts_models", "tts_models": "[...]"}` changes the models every
@@ -91,6 +96,9 @@ struct Request {
     /// The models to read with (`--tts-models`' JSON).
     #[serde(default)]
     tts_models: Option<String>,
+    /// speak: how much faster than the voice's own pace.
+    #[serde(default)]
+    rate: Option<f64>,
     /// clone_voice: the recording, the Base model, where to keep the
     /// reference.
     #[serde(default)]
@@ -115,6 +123,8 @@ struct Config {
     /// Recordings of the speaker's voice (a JSON array of paths), its new
     /// voice taken from them rather than from the first sound heard.
     speaker_reference: Option<String>,
+    /// With a turn model, the longest pause before the utterance ends.
+    turn_give_up_ms: Option<u64>,
     kokoro_model: Option<String>,
     kokoro_voices: Option<String>,
     /// any-tts models reading in place of Kokoro, in order of preference: a
@@ -169,8 +179,15 @@ fn arg(name: &str) -> Option<String> {
     None
 }
 
+/// The fastest and slowest a sentence is made.
+const MIN_RATE: f64 = 0.5;
+const MAX_RATE: f64 = 2.0;
+
 /// Text to speech: one pipeline kept playing, from a synthesizer to Ogg
-/// Opus (small enough for a phone on the go), a sentence at a time. Each
+/// Opus (small enough for a phone on the go), a sentence at a time. A
+/// sentence asked faster goes through soundtouch's `pitch` at that
+/// tempo, which keeps the voice's pitch; the page then plays it as it is, in the
+/// call's audio, with no media element. Each
 /// sentence ends with EOS, so oggmux finishes a file the browser can play
 /// on its own, then a flush readies the pipeline for the next one, which
 /// starts a new file from zero.
@@ -180,6 +197,10 @@ struct Speaker {
     sink: gst_app::AppSink,
     /// anyttssynthesizer, whose models can change; None for Kokoro's.
     anytts: Option<gst::Element>,
+    /// soundtouch's `pitch`, whose `tempo` is the next sentence's rate;
+    /// None when this GStreamer has no soundtouch (speech is then made
+    /// at 1).
+    tempo: Option<gst::Element>,
 }
 
 /// Why `pipeline` failed to change state, from its bus.
@@ -216,9 +237,11 @@ impl Speaker {
             }
             (None, None) => return Err("--tts-models or --kokoro-model is required".into()),
         };
+        // 64 kb/s: at 32 the voice came out audibly coarser (half the
+        // waveform SNR), for a few more kilobytes a sentence.
         let pipeline = gst::parse::launch(
             "appsrc name=src format=time caps=text/x-raw,format=utf8 ! \
-             audioconvert name=convert ! audioresample ! opusenc bitrate=32000 ! oggmux ! \
+             audioconvert name=convert ! audioresample ! opusenc bitrate=64000 ! oggmux ! \
              appsink name=sink sync=false",
         )
         .map_err(|e| e.to_string())?
@@ -229,8 +252,29 @@ impl Speaker {
         let convert = pipeline.by_name("convert").unwrap();
         src_element.unlink(&convert);
         pipeline.add(&synthesizer).unwrap();
-        gst::Element::link_many([&src_element, &synthesizer, &convert])
-            .map_err(|e| e.to_string())?;
+        // synthesizer ! audioconvert ! pitch ! audioconvert. soundtouch's
+        // pitch makes a sentence `tempo` times faster keeping its pitch;
+        // speak() sets it before each sentence. At EOS it drains what
+        // soundtouch still holds, so a sentence's end is not cut; the
+        // flush after it empties it for the next one.
+        let pitch = gst::ElementFactory::make("pitch").build().ok();
+        let tempo = match pitch {
+            Some(pitch) => {
+                let before = gst::ElementFactory::make("audioconvert")
+                    .build()
+                    .map_err(|e| e.to_string())?;
+                pipeline.add_many([&before, &pitch]).unwrap();
+                gst::Element::link_many([&src_element, &synthesizer, &before, &pitch, &convert])
+                    .map_err(|e| e.to_string())?;
+                Some(pitch)
+            }
+            None => {
+                eprintln!("no soundtouch: speech is made at the voice's own pace");
+                gst::Element::link_many([&src_element, &synthesizer, &convert])
+                    .map_err(|e| e.to_string())?;
+                None
+            }
+        };
         let src = pipeline
             .by_name("src")
             .unwrap()
@@ -256,6 +300,7 @@ impl Speaker {
             src,
             sink,
             anytts: (name == "any-tts").then_some(synthesizer),
+            tempo,
         })
     }
 
@@ -279,7 +324,22 @@ impl Speaker {
         Ok(())
     }
 
-    fn speak(&self, text: &str, language: &str) -> Result<Vec<u8>, String> {
+    /// Speaks `text` in `language`, `rate` times faster than the voice's
+    /// own pace; answers the speech and the rate it was made at.
+    fn speak(&self, text: &str, language: &str, rate: f64) -> Result<(Vec<u8>, f64), String> {
+        let rate = match &self.tempo {
+            Some(tempo) => {
+                let rate = if rate.is_finite() {
+                    rate.clamp(MIN_RATE, MAX_RATE)
+                } else {
+                    1.0
+                };
+                // Between sentences: the last one ended and was flushed.
+                tempo.set_property("tempo", rate as f32);
+                rate
+            }
+            None => 1.0,
+        };
         let mut tags = gst::TagList::new();
         tags.get_mut()
             .unwrap()
@@ -318,7 +378,7 @@ impl Speaker {
         dump_dot(&self.pipeline, "roamgate-voice-speak");
         self.src.send_event(gst::event::FlushStart::new());
         self.src.send_event(gst::event::FlushStop::new(true));
-        result
+        result.map(|speech| (speech, rate))
     }
 }
 
@@ -442,6 +502,7 @@ fn main() {
         turn_model: arg("--turn-model"),
         text_turn_model: arg("--text-turn-model"),
         speaker_reference: arg("--speaker-reference"),
+        turn_give_up_ms: arg("--turn-give-up-ms").and_then(|ms| ms.parse().ok()),
         kokoro_model: arg("--kokoro-model"),
         kokoro_voices: arg("--kokoro-voices"),
         tts_models: arg("--tts-models"),
@@ -512,6 +573,7 @@ fn main() {
                         config.turn_model.as_deref(),
                         config.text_turn_model.as_deref(),
                         reference,
+                        config.turn_give_up_ms,
                         reread.clone(),
                         emit.clone(),
                     ) {
@@ -585,7 +647,7 @@ fn main() {
                 let result = match (&speaker, switched) {
                     (_, Err(err)) => Err(err),
                     (Ok(speaker), _) if language::has_words(&text) => {
-                        speaker.speak(&text, &language)
+                        speaker.speak(&text, &language, request.rate.unwrap_or(1.0))
                     }
                     (Ok(_), _) => Err("nothing to say".to_string()),
                     (Err(err), _) => Err(err.clone()),
@@ -593,10 +655,11 @@ fn main() {
                 reply(
                     &output,
                     match result {
-                        Ok(audio) => json!({
+                        Ok((audio, rate)) => json!({
                             "id": request.id,
                             "audio": BASE64.encode(audio),
                             "language": language,
+                            "rate": rate,
                         }),
                         Err(error) => json!({"id": request.id, "error": error}),
                     },

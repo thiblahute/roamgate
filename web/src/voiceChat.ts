@@ -11,6 +11,25 @@ import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
 import { setVoiceFronting, voiceFronting } from "./voiceFrontFlag";
+import { VoiceChannel } from "./voiceChannel";
+import {
+  guardPlayback,
+  mediaControlPause,
+  mediaControlPlay,
+  noteOwnPlay,
+  readingPlays,
+  resetMediaControls,
+  subscribeReadings,
+} from "./playbackGuard";
+import {
+  holdVoiceContext,
+  playInContext,
+  routeThroughCall,
+  tapsLoaded,
+  voiceContext,
+  voiceContextHeld,
+  voiceOutputMode,
+} from "./voiceOutput";
 
 export { parseVoiceMessage, voiceMessage } from "../../shared/voiceMessage";
 
@@ -20,10 +39,20 @@ const VOICE_HEADERS = { "x-roamgate-voice": "1" };
 export type VoiceAvailability = {
   available: boolean;
   detail?: string;
+  /**
+   * The server did not answer (a network error, or an error status such as
+   * a 502 while it restarts): `available` says nothing of its voice engine.
+   */
+  unreachable?: true;
   /** The server logs what pages report of their reading (voiceTrace). */
   debug?: boolean;
   /** How fast replies are read (shared/speechRate.ts). */
   speech_rate?: number;
+  /**
+   * The longest pause, in ms, before a turn that sounded finished ends
+   * (server/src/http/voice-socket.ts).
+   */
+  max_pause_ms?: number;
   /** The server decides who each thing said is for (voiceRoute.ts). */
   route?: boolean;
   /** A front answers what is said first, in that decision (voiceFront.ts). */
@@ -101,11 +130,18 @@ export function voiceTrace(line: string) {
 export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
   try {
     const response = await fetch("/api/voice");
-    if (!response.ok) return { available: false, detail: response.statusText };
+    if (!response.ok)
+      return {
+        available: false,
+        detail: response.statusText,
+        unreachable: true,
+      };
     const availability = (await response.json()) as VoiceAvailability;
     tracing = availability.debug === true;
     if (isSpeechRate(availability.speech_rate))
       setSpeechRate(availability.speech_rate);
+    if (typeof availability.max_pause_ms === "number")
+      setMaxPause(availability.max_pause_ms);
     routing = availability.route === true;
     setVoiceFronting(availability.front === true);
     if (
@@ -117,7 +153,11 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
       setVoiceSurprise(availability.surprise, true);
     return availability;
   } catch (error) {
-    return { available: false, detail: (error as Error).message };
+    return {
+      available: false,
+      detail: (error as Error).message,
+      unreachable: true,
+    };
   }
 }
 
@@ -241,27 +281,51 @@ export type Heard = {
   forAgent?: boolean;
 };
 
-type VoiceEvent = {
-  event: string;
-  session?: number;
-  text?: string;
-  speech_ms?: number;
-  error?: string;
-  raw?: string;
-  for_agent?: boolean;
-  /** On a session's error: the helper stopped under it, nothing else. */
-  recoverable?: boolean;
+/** What a listening tells its owner, as it goes. */
+export type ListenHooks = {
+  onLevel?: (level: number) => void;
+  holding?: () => boolean;
+  onSpeech?: () => void;
+  /** The helper heard the pause: the text comes next. */
+  onSpeechEnd?: () => void;
+  /** What was heard so far, while it is said. */
+  onHeard?: (text: string) => void;
 };
+
+/** Whoever waits for a listening's result now. */
+type ListenOwner = {
+  resolve: (heard: Heard | null) => void;
+  reject: (error: unknown) => void;
+};
+
+/** A listening in progress: the microphone streaming, what it heard. */
+type Live = {
+  hooks: ListenHooks;
+  owner: ListenOwner | null;
+  heard: HeardSoFar;
+  ended: boolean;
+  result: Promise<Heard | null>;
+  /** Drops it: nothing is sent. */
+  stop: () => void;
+};
+
+/** A parked listening not taken by then is dropped (voice chat ended). */
+const PARK_MS = 10_000;
 
 /**
  * The voice socket of a voice chat: the microphone streams to the voice
- * helper, which says when speech starts and what was said.
+ * helper, which says when speech starts and what was said. Its socket
+ * comes back by itself after a network change (voiceChannel.ts), the
+ * session going on; and a listening in progress can be parked when the
+ * chat showing it is rebuilt (a reconnect of the page's own connection
+ * does it) and adopted by the one built next, the microphone never
+ * stopping (parkVoiceLink).
  */
 export class VoiceLink {
-  private listeners = new Set<(event: VoiceEvent) => void>();
-  private closed: Error | null = null;
   // The first listening of a voice chat picks whose voice is kept.
   private listened = false;
+  private live: Live | null = null;
+  private parked = false;
   /**
    * Told whenever speech starts, whoever listens: speaking up stops the
    * front's voice (voiceFront.ts) as it stops a reply.
@@ -269,46 +333,105 @@ export class VoiceLink {
   onAnySpeech: (() => void) | null = null;
   /** Something else plays (the front's voice): only a louder voice counts. */
   alsoHolding: () => boolean = () => false;
+  /** The socket came back after it was lost. */
+  onReconnected: ((resumed: boolean) => void) | null = null;
 
-  private constructor(private readonly socket: WebSocket) {
-    socket.binaryType = "arraybuffer";
-    socket.onmessage = (message) => {
-      if (typeof message.data !== "string") return;
-      let event: VoiceEvent;
-      try {
-        event = JSON.parse(message.data);
-      } catch {
-        return;
-      }
-      for (const listener of [...this.listeners]) listener(event);
-    };
-    socket.onclose = () => {
-      this.closed = new Error("The voice connection closed");
-      for (const listener of [...this.listeners])
-        listener({ event: "error", error: this.closed.message });
-    };
-  }
+  private constructor(private readonly channel: VoiceChannel) {}
 
-  static open(): Promise<VoiceLink> {
+  static async open(): Promise<VoiceLink> {
     const url = new URL("/api/voice/ws", location.href);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(url);
-    return new Promise((resolve, reject) => {
-      socket.onopen = () => resolve(new VoiceLink(socket));
-      socket.onerror = () => reject(new Error("The voice connection failed"));
+    const holder: { link: VoiceLink | null } = { link: null };
+    const channel = await VoiceChannel.open({
+      connect: () => new WebSocket(url),
+      onReconnected: (resumed) => holder.link?.onReconnected?.(resumed),
+      trace: voiceTrace,
     });
+    holder.link = new VoiceLink(channel);
+    return holder.link;
+  }
+
+  /** Whether a listening is in progress. */
+  get listening() {
+    return this.live !== null;
   }
 
   close() {
-    this.socket.onclose = null;
-    this.socket.close();
+    // Parked: whoever adopts it closes it.
+    if (this.parked) return;
+    this.channel.close();
   }
 
-  private send(message: object | Int16Array<ArrayBuffer>) {
-    if (this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(
-      message instanceof Int16Array ? message : JSON.stringify(message),
-    );
+  /**
+   * The listening in progress goes on with no owner: its owner's wait ends
+   * with null, and aborting its signal no longer stops it. False when none
+   * is in progress.
+   */
+  park(): boolean {
+    const live = this.live;
+    if (!live) return false;
+    this.parked = true;
+    const owner = live.owner;
+    live.owner = null;
+    live.hooks = {};
+    owner?.resolve(null);
+    return true;
+  }
+
+  /**
+   * Takes over the parked listening, if any: resolves as `listen` does.
+   * What it heard meanwhile is told to `onHeard` at once.
+   */
+  adopt(
+    signal: AbortSignal,
+    hooks: ListenHooks & { finish?: AbortSignal },
+  ): Promise<Heard | null> | null {
+    this.parked = false;
+    const live = this.live;
+    if (!live) return null;
+    live.hooks = hooks;
+    if (live.heard.text) hooks.onHeard?.(live.heard.text);
+    if (live.ended) hooks.onSpeechEnd?.();
+    return this.own(live, signal, hooks.finish);
+  }
+
+  /** Stops a parked listening nobody took, and the socket. */
+  dispose() {
+    this.parked = false;
+    this.live?.stop();
+    this.channel.close();
+  }
+
+  /** `live`'s result for a new owner, ended by `signal` and `finish`. */
+  private own(
+    live: Live,
+    signal: AbortSignal,
+    finish?: AbortSignal,
+  ): Promise<Heard | null> {
+    return new Promise<Heard | null>((resolve, reject) => {
+      const owner: ListenOwner = { resolve, reject };
+      live.owner = owner;
+      live.result.then(
+        (heard) => {
+          if (live.owner === owner) resolve(heard);
+        },
+        (error) => {
+          if (live.owner === owner) reject(error);
+        },
+      );
+      const stop = () => {
+        if (live.owner === owner) live.stop();
+      };
+      if (signal.aborted) return stop();
+      signal.addEventListener("abort", stop, { once: true });
+      finish?.addEventListener(
+        "abort",
+        () => {
+          if (live.owner === owner) this.channel.send({ op: "finish" });
+        },
+        { once: true },
+      );
+    });
   }
 
   /**
@@ -322,28 +445,52 @@ export class VoiceLink {
     signal: AbortSignal,
     {
       finish,
-      onLevel,
-      holding,
-      onSpeech,
-      onSpeechEnd,
-      onHeard,
       language,
       conversation,
-    }: {
+      ...hooks
+    }: ListenHooks & {
       finish?: AbortSignal;
-      onLevel?: (level: number) => void;
-      holding?: () => boolean;
-      onSpeech?: () => void;
-      /** The helper heard the pause: the text comes next. */
-      onSpeechEnd?: () => void;
-      /** What was heard so far, while it is said. */
-      onHeard?: (text: string) => void;
       language?: string | null;
       /** The conversation's end, for cleaning what is said. */
       conversation?: string;
     } = {},
   ): Promise<Heard | null> {
-    if (this.closed) throw this.closed;
+    if (this.channel.closed) throw this.channel.closed;
+    // A new listening replaces one left over.
+    this.live?.stop();
+    const live: Live = {
+      hooks,
+      owner: null,
+      heard: { text: "", whole: false },
+      ended: false,
+      result: Promise.resolve(null),
+      stop: () => {},
+    };
+    live.result = this.run(live, { language, conversation });
+    this.live = live;
+    void live.result
+      .catch(() => null)
+      .finally(() => {
+        if (this.live === live) this.live = null;
+      });
+    return this.own(live, signal, finish);
+  }
+
+  private async run(
+    live: Live,
+    {
+      language,
+      conversation,
+    }: { language?: string | null; conversation?: string },
+  ): Promise<Heard | null> {
+    let stopped = false;
+    let resolveStopped: (() => void) | null = null;
+    live.stop = () => {
+      if (stopped) return;
+      stopped = true;
+      this.channel.send({ op: "stop" });
+      resolveStopped?.();
+    };
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -351,34 +498,44 @@ export class VoiceLink {
         autoGainControl: true,
       },
     });
-    const context = new AudioContext();
-    let listener: ((event: VoiceEvent) => void) | null = null;
+    // The call's context: the replies play through it too (voiceOutput.ts).
+    const context = voiceContext();
+    let unlisten: (() => void) | null = null;
+    const nodes: AudioNode[] = [];
     try {
+      if (stopped) return null;
       // A context made after the tap's await may start suspended, hearing
       // nothing.
       await context.resume();
       tapUrl ??= URL.createObjectURL(
         new Blob([TAP_WORKLET], { type: "text/javascript" }),
       );
-      await context.audioWorklet.addModule(tapUrl);
+      if (!tapsLoaded.has(context)) {
+        await context.audioWorklet.addModule(tapUrl);
+        tapsLoaded.add(context);
+      }
+      if (stopped) return null;
       const tap = new AudioWorkletNode(context, "roamgate-tap");
       const mute = context.createGain();
       mute.gain.value = 0;
-      context.createMediaStreamSource(stream).connect(tap);
+      const microphone = context.createMediaStreamSource(stream);
+      nodes.push(microphone, tap, mute);
+      microphone.connect(tap);
       tap.connect(mute).connect(context.destination);
 
-      const holds = () => (holding?.() ?? false) || this.alsoHolding();
+      const holds = () =>
+        (live.hooks.holding?.() ?? false) || this.alsoHolding();
       let held = holds();
       let session: number | null = null;
       let heard = false;
-      let heardSoFar: HeardSoFar = { text: "", whole: false };
       let level = 0;
       const downsampler = new Downsampler(context.sampleRate);
       let chunk: number[] = [];
       const chunkSamples = (STREAM_RATE * CHUNK_MS) / 1000;
 
       const result = new Promise<Heard | null>((resolve, reject) => {
-        listener = (event) => {
+        resolveStopped = () => resolve(null);
+        unlisten = this.channel.listen((event) => {
           if (event.event === "listening") {
             session = event.session ?? null;
             return;
@@ -390,7 +547,7 @@ export class VoiceLink {
             // The helper stopped under it, and starts again: it ends with
             // what was heard, and the link goes on.
             if (event.recoverable === true) {
-              const text = heardSoFar.text.trim();
+              const text = live.heard.text.trim();
               voiceTrace(
                 `the voice helper stopped: the utterance ends${text ? ` with what was heard: ${text}` : ""}`,
               );
@@ -404,12 +561,13 @@ export class VoiceLink {
           if (event.event === "speech_start") {
             heard = true;
             this.onAnySpeech?.();
-            onSpeech?.();
+            live.hooks.onSpeech?.();
           } else if (event.event === "speech_end") {
-            onSpeechEnd?.();
+            live.ended = true;
+            live.hooks.onSpeechEnd?.();
           } else if (event.event === "partial" || event.event === "text") {
-            heardSoFar = nextHeard(heardSoFar, event.event, event.text ?? "");
-            onHeard?.(heardSoFar.text);
+            live.heard = nextHeard(live.heard, event.event, event.text ?? "");
+            live.hooks.onHeard?.(live.heard.text);
           } else if (event.event === "final") {
             // Speech that came to no text is still speech; no speech is null.
             const text = (event.text ?? "").trim();
@@ -425,16 +583,6 @@ export class VoiceLink {
                 : null,
             );
           }
-        };
-        this.listeners.add(listener);
-        const stop = () => {
-          this.send({ op: "stop" });
-          resolve(null);
-        };
-        if (signal.aborted) return stop();
-        signal.addEventListener("abort", stop, { once: true });
-        finish?.addEventListener("abort", () => this.send({ op: "finish" }), {
-          once: true,
         });
         tap.port.onmessage = (event: MessageEvent<Float32Array>) => {
           const block = event.data;
@@ -447,16 +595,16 @@ export class VoiceLink {
           level += (Math.sqrt(sum / block.length) - level) * weight;
           for (const sample of downsampler.push(block)) chunk.push(sample);
           if (chunk.length >= chunkSamples) {
-            this.send(Int16Array.from(chunk));
+            this.channel.audio(Int16Array.from(chunk));
             chunk = [];
           }
           if (held && !holds()) {
             held = false;
-            this.send({ op: "release" });
+            this.channel.send({ op: "release" });
           }
         };
       });
-      this.send({
+      this.channel.send({
         op: "listen",
         new_speaker: !this.listened,
         hold: held,
@@ -469,7 +617,7 @@ export class VoiceLink {
       let shown = true;
       const show = () => {
         if (!shown) return;
-        onLevel?.(level);
+        live.hooks.onLevel?.(level);
         requestAnimationFrame(show);
       };
       show();
@@ -480,10 +628,77 @@ export class VoiceLink {
         tap.port.onmessage = null;
       }
     } finally {
-      if (listener) this.listeners.delete(listener);
+      (unlisten as (() => void) | null)?.();
       for (const track of stream.getTracks()) track.stop();
-      void context.close();
+      for (const node of nodes) node.disconnect();
     }
+  }
+}
+
+let parked: {
+  key: string;
+  link: VoiceLink;
+  timer: ReturnType<typeof setTimeout>;
+} | null = null;
+
+/**
+ * Keeps `link`'s listening going for the voice chat of `key` (a pane) to
+ * adopt once it is built again (takeParkedVoiceLink). False when it was
+ * not listening: nothing to keep.
+ */
+export function parkVoiceLink(key: string, link: VoiceLink): boolean {
+  if (!link.park()) return false;
+  if (parked) {
+    clearTimeout(parked.timer);
+    parked.link.dispose();
+  }
+  const timer = setTimeout(() => {
+    if (parked?.link !== link) return;
+    parked = null;
+    voiceTrace("the listening kept over a rebuild was not taken: stopped");
+    link.dispose();
+  }, PARK_MS);
+  parked = { key, link, timer };
+  voiceTrace("listening kept while the chat is rebuilt");
+  return true;
+}
+
+/** The link parked for `key`, once. */
+export function takeParkedVoiceLink(key: string): VoiceLink | null {
+  if (!parked || parked.key !== key) return null;
+  clearTimeout(parked.timer);
+  const { link } = parked;
+  parked = null;
+  return link;
+}
+
+/**
+ * Two short rising notes, quiet: the voice connection had to come back
+ * and the call goes on. Tones, not words: the person may be speaking, and
+ * the gate takes no tone for a voice.
+ */
+export function playReconnectCue() {
+  voiceTrace("reconnected: the cue plays");
+  try {
+    const context = new AudioContext();
+    const gain = context.createGain();
+    gain.connect(context.destination);
+    const start = context.currentTime + 0.02;
+    for (const [index, frequency] of [660, 990].entries()) {
+      const tone = context.createOscillator();
+      tone.type = "sine";
+      tone.frequency.value = frequency;
+      const at = start + index * 0.14;
+      gain.gain.setValueAtTime(0, at);
+      gain.gain.linearRampToValueAtTime(0.12, at + 0.02);
+      gain.gain.linearRampToValueAtTime(0, at + 0.11);
+      tone.connect(gain);
+      tone.start(at);
+      tone.stop(at + 0.12);
+    }
+    setTimeout(() => void context.close(), 800);
+  } catch {
+    // No sound: the call goes on anyway.
   }
 }
 
@@ -637,6 +852,45 @@ export async function saveSpeechRate(rate: number): Promise<void> {
   if (!response.ok) throw new Error(response.statusText);
 }
 
+/** The pauses Speech settings offer before a turn ends, in ms. */
+export const MAX_PAUSE_STEPS = [4000, 6000, 8000, 10_000, 12_000, 15_000];
+let maxPause = 8000;
+const maxPauseListeners = new Set<() => void>();
+
+/** The longest pause before a turn that sounded finished ends, in ms. */
+export function getMaxPause(): number {
+  return maxPause;
+}
+
+export function subscribeMaxPause(listener: () => void): () => void {
+  maxPauseListeners.add(listener);
+  return () => maxPauseListeners.delete(listener);
+}
+
+function setMaxPause(ms: number) {
+  if (ms === maxPause) return;
+  maxPause = ms;
+  for (const listener of [...maxPauseListeners]) listener();
+}
+
+/** Keeps the longest pause in voice.json, for the next listening session. */
+export async function saveMaxPause(ms: number): Promise<void> {
+  const before = maxPause;
+  setMaxPause(ms);
+  const response = await fetch("/api/voice/settings", {
+    method: "POST",
+    headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify({ max_pause_ms: ms }),
+  });
+  if (!response.ok) {
+    setMaxPause(before);
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(body?.error ?? response.statusText);
+  }
+}
+
 /**
  * Surprise (each reply read by one of the voices at random), as the server
  * keeps it; null until the server says it has voices to pick from.
@@ -706,6 +960,10 @@ function newReading(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * A sentence's speech, made at this page's reading speed (the server keeps
+ * the pitch): played as it comes, nothing to speed up here.
+ */
 export async function fetchSpeech(
   text: string,
   signal: AbortSignal,
@@ -718,6 +976,7 @@ export async function fetchSpeech(
       text,
       ...(language ? { language } : {}),
       ...(reading ? { reading } : {}),
+      rate: speechRate,
     }),
     signal,
   });
@@ -744,17 +1003,99 @@ export async function fetchSpeech(
 /** Seconds of the silence that holds the audio focus. */
 const FOCUS_SECONDS = 30;
 
+/** How long the focus holder waits after a reading before it plays again. */
+export const HOLDER_RESUME_MS = 1500;
+
 /**
- * Pauses other apps' audio (music, podcasts) until `signal` aborts: phones
- * give the audio focus to the page while its media plays, and for good
- * only to media longer than 5 seconds that is announced as playing, so
- * near silence loops the whole time: an offset of one in 8 bits, which
- * Chrome measures as sound (all zeros may count as nothing playing) but a
- * steady level makes no click, and speakers do not play it. Must start from
- * a tap.
+ * The voice call's media session and output until `signal` aborts.
+ *
+ * Replies play through the call's AudioContext (the "context" default, at
+ * any speed: the server makes the speech at the reading speed): no media
+ * element plays, so Android's audio focus and the car see nothing to pause,
+ * and nothing else of the page's competes with it.
+ *
+ * Only with replies "As media" (voiceOutput.ts "element"), a silent loop
+ * holds the audio focus between replies, pausing other apps' audio (music,
+ * podcasts): phones give the focus to the page while its media plays, and
+ * for good only to media longer than 5 seconds that is announced as
+ * playing, so near silence loops: an offset of one in 8 bits, which Chrome
+ * measures as sound (all zeros may count as nothing playing) but a steady
+ * level makes no click, and speakers do not play it. It never plays with a
+ * reply's element: Android gives the focus to whichever played last and
+ * pauses the other, so the two took turns every few hundred ms. It goes
+ * quiet as a sentence starts, and plays again HOLDER_RESUME_MS after the
+ * last one. Must start from a tap.
  */
 export function holdAudioFocus(signal: AbortSignal): void {
   if (signal.aborted) return;
+  const mode = voiceOutputMode();
+  if (mode === "element") focusHolder(signal);
+  resetMediaControls();
+  const session = "mediaSession" in navigator ? navigator.mediaSession : null;
+  // The media controls (the car's, a headset's, the lock screen's) reach
+  // the page through these: without them Chrome pauses the page's media
+  // itself, and a pause from them looks like any other.
+  // Played through the call's context ("context", "call"), nothing is
+  // media for them to pause: each is told and left. As elements, a pause
+  // from them is honoured until play.
+  const told = (action: string) => () =>
+    voiceTrace(
+      `media control "${action}" (car or headset): ignored, ${mode} output`,
+    );
+  const actions: [MediaSessionAction, () => void][] =
+    mode === "element"
+      ? [
+          ["pause", () => mediaControlPause(voiceTrace)],
+          ["stop", () => mediaControlPause(voiceTrace)],
+          ["play", () => mediaControlPlay(voiceTrace)],
+          ["nexttrack", told("nexttrack")],
+          ["previoustrack", told("previoustrack")],
+        ]
+      : (["pause", "stop", "play", "nexttrack", "previoustrack"] as const).map(
+          (action) => [action, told(action)],
+        );
+  holdVoiceContext(signal, voiceTrace);
+  voiceTrace(`voice output: ${mode}`);
+  if (session) {
+    session.metadata = new MediaMetadata({
+      title: "Voice chat",
+      artist: "Roamgate",
+    });
+    session.playbackState = "playing";
+    for (const [action, handler] of actions) {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // Not supported here.
+      }
+    }
+  }
+  signal.addEventListener(
+    "abort",
+    () => {
+      resetMediaControls();
+      if (session) {
+        session.metadata = null;
+        session.playbackState = "none";
+        for (const [action] of actions) {
+          try {
+            session.setActionHandler(action, null);
+          } catch {
+            // Not supported here.
+          }
+        }
+      }
+    },
+    { once: true },
+  );
+}
+
+/**
+ * The silent loop holding the audio focus ("element" output) until
+ * `signal` aborts, quiet while a sentence plays as an element
+ * (holdAudioFocus).
+ */
+function focusHolder(signal: AbortSignal): void {
   // An 8 kHz, 8-bit mono WAV of silence (128 is the 8-bit zero).
   const rate = 8000;
   const samples = rate * FOCUS_SECONDS;
@@ -779,29 +1120,89 @@ export function holdAudioFocus(signal: AbortSignal): void {
   const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
   const silence = new Audio(url);
   silence.loop = true;
-  silence.play().catch(() => {});
-  if ("mediaSession" in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: "Voice chat",
-      artist: "Roamgate",
-    });
-    navigator.mediaSession.playbackState = "playing";
-  }
+  // Paused by the page itself: not a pause to undo.
+  let quiet = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  const start = (why: string) => {
+    clear();
+    if (signal.aborted || readingPlays() || !silence.paused) return;
+    quiet = false;
+    noteOwnPlay(silence, hush);
+    silence
+      .play()
+      .then(() => voiceTrace(`the focus holder plays ${why}`))
+      .catch((error) => voiceTrace(`the focus holder: ${error}`));
+  };
+  // A sentence plays: the holder must not take the focus from it.
+  const hush = () => {
+    clear();
+    if (quiet && silence.paused) return;
+    quiet = true;
+    if (!silence.paused) {
+      voiceTrace("the focus holder goes quiet while a sentence plays");
+      silence.pause();
+    }
+  };
+  const readingsChange = () => {
+    if (signal.aborted) return;
+    if (readingPlays()) hush();
+    else {
+      clear();
+      timer = setTimeout(
+        () => start("again after the reading"),
+        HOLDER_RESUME_MS,
+      );
+    }
+  };
+  const stopListening = subscribeReadings(readingsChange);
+  if (readingPlays()) quiet = true;
+  else start("to hold the audio focus");
+  // Paused by the system (the focus taken away): it holds nothing then,
+  // so it plays again once it can, unless a sentence plays.
+  silence.addEventListener("pause", () => {
+    if (signal.aborted || quiet) return;
+    voiceTrace("the focus holder was paused from outside the page");
+    clear();
+    timer = setTimeout(() => start("again"), 1000);
+  });
   signal.addEventListener(
     "abort",
     () => {
+      clear();
+      stopListening();
+      quiet = true;
       silence.pause();
       URL.revokeObjectURL(url);
-      if ("mediaSession" in navigator) {
-        navigator.mediaSession.metadata = null;
-        navigator.mediaSession.playbackState = "none";
-      }
     },
     { once: true },
   );
 }
 
 function play(audio: Blob, signal: AbortSignal): Promise<void> {
+  const mode = voiceOutputMode();
+  // In a call, always through its context, at any speed: the server made
+  // it at the reading speed, keeping the pitch. A speed changed since it
+  // was fetched applies from the next sentence: no media element, ever,
+  // for Android to pause or to compete with.
+  if (mode === "context" && voiceContextHeld()) {
+    setVoiceReader(readers.get(audio) ?? null);
+    return playInContext(audio, signal).catch((error) => {
+      voiceTrace(`the sentence could not play in the voice context: ${error}`);
+      throw new Error("The speech could not be played");
+    });
+  }
+  return playElement(audio, signal, mode);
+}
+
+function playElement(
+  audio: Blob,
+  signal: AbortSignal,
+  mode: ReturnType<typeof voiceOutputMode>,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     // Stopped while it downloaded: an abort listener added now never runs.
     if (signal.aborted) return resolve();
@@ -821,13 +1222,25 @@ function play(audio: Blob, signal: AbortSignal): Promise<void> {
           `${event} at ${player.currentTime.toFixed(2)}/${player.duration.toFixed(2)}`,
         ),
       );
+    let finished = false;
     const done = () => {
+      if (finished) return;
+      finished = true;
+      guard.release();
+      callRoute?.release();
       signal.removeEventListener("abort", stop);
       playing.delete(player);
       player.pause();
       URL.revokeObjectURL(url);
       resolve();
     };
+    // Paused from outside the page (the audio focus, the car): played on.
+    const guard = guardPlayback(player, {
+      trace: voiceTrace,
+      onGiveUp: () => done(),
+    });
+    // Through the call's call to itself (voiceOutput.ts).
+    const callRoute = mode === "call" ? routeThroughCall(player) : null;
     const stop = () => done();
     signal.addEventListener("abort", stop, { once: true });
     player.onended = done;
@@ -836,10 +1249,14 @@ function play(audio: Blob, signal: AbortSignal): Promise<void> {
       done();
       reject(new Error("The speech could not be played"));
     };
-    player.play().catch((error) => {
-      voiceTrace(`play refused: ${error}`);
-      done();
-      reject(error);
+    void (callRoute?.ready ?? Promise.resolve()).then(() => {
+      if (finished) return;
+      noteOwnPlay(player);
+      player.play().catch((error) => {
+        voiceTrace(`play refused: ${error}`);
+        done();
+        reject(error);
+      });
     });
   });
 }

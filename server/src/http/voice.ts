@@ -17,6 +17,9 @@ import {
 import {
   type FrontMode,
   isFrontMode,
+  LONGEST_PAUSE_MS,
+  MIN_PAUSE_MS,
+  maxPauseMs,
   type VoiceHelper,
 } from "../voice/voice-helper";
 import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
@@ -36,14 +39,17 @@ const MAX_ANSWER_CHARS = 12000;
  * GET /api/voice: whether voice chat is set up, and how fast replies are
  * read (`speech_rate`).
  * Listening goes over /api/voice/ws (see voice-socket).
- * POST /api/voice/speak: `{text, language?, reading?}` in, Ogg Opus speech
- * out, its language in X-Voice-Language and the rate it was made at in
- * X-Voice-Native-Rate (1: the voice's own pace), for the page to play it at
- * `speech_rate`. With Surprise on, `reading` names the reply the sentence
+ * POST /api/voice/speak: `{text, language?, reading?, rate?}` in, Ogg Opus
+ * speech out, made at `rate` (the page's reading speed, else
+ * `speech_rate`) keeping its pitch, its language in X-Voice-Language and
+ * the rate it was made at in X-Voice-Native-Rate (1: the voice's own
+ * pace), so the page plays it as it is. With Surprise on, `reading` names the reply the sentence
  * is from: its first sentence picks one of the voices at random
  * (voice-surprise.ts), its others keep it; X-Voice-Name says who (URI
  * encoded). GET /api/voice reports `surprise` with a voice library.
- * POST /api/voice/settings: `{speech_rate}` kept in voice.json.
+ * POST /api/voice/settings: `{speech_rate}` kept in voice.json; so is
+ * `{max_pause_ms}`, the longest pause before a turn that sounded finished
+ * ends (voice-socket.ts), which GET /api/voice reports too.
  * POST /api/voice/trace: `{line}` from a page reading aloud, logged with
  * ROAMGATE_VOICE_DEBUG set (which GET /api/voice reports as `debug`).
  * POST /api/voice/route: `{current, said, sessions}` in, who it was said to
@@ -117,6 +123,7 @@ export function createVoiceRoutes(
         ...(routing || fronting ? { route: true } : {}),
         ...(fronting ? { front: true, front_mode: mode() ?? "companion" } : {}),
         speech_rate: helper.speechRate(),
+        max_pause_ms: helper.maxPauseMs(),
         ...surpriseStatus(library),
         ...(debug ? { debug } : {}),
       });
@@ -130,7 +137,30 @@ export function createVoiceRoutes(
       const body = (await req.json().catch(() => null)) as {
         speech_rate?: unknown;
         front_mode?: unknown;
+        max_pause_ms?: unknown;
       } | null;
+      if (body?.max_pause_ms !== undefined) {
+        if (
+          typeof body.max_pause_ms !== "number" ||
+          maxPauseMs(body.max_pause_ms) !== body.max_pause_ms
+        )
+          return Response.json(
+            {
+              error: `max_pause_ms must be ${MIN_PAUSE_MS} to ${LONGEST_PAUSE_MS} ms.`,
+            },
+            { status: 400 },
+          );
+        try {
+          helper.setMaxPauseMs(body.max_pause_ms);
+        } catch (error) {
+          return Response.json(
+            { error: (error as Error).message },
+            { status: 500 },
+          );
+        }
+        if (body.speech_rate === undefined && body.front_mode === undefined)
+          return Response.json({ max_pause_ms: helper.maxPauseMs() });
+      }
       if (body?.front_mode !== undefined) {
         if (!isFrontMode(body.front_mode))
           return Response.json(
@@ -330,6 +360,7 @@ export function createVoiceRoutes(
         text?: unknown;
         language?: unknown;
         reading?: unknown;
+        rate?: unknown;
       } | null;
       const text = typeof body?.text === "string" ? body.text.trim() : "";
       if (!text) return Response.json({ error: "No text." }, { status: 400 });
@@ -343,7 +374,8 @@ export function createVoiceRoutes(
           ? body.reading
           : undefined;
       const reader = surpriseReader(library, surprise, reading);
-      const speech = await helper.speak(spoken, language, reader?.models);
+      const rate = isSpeechRate(body?.rate) ? body.rate : helper.speechRate();
+      const speech = await helper.speak(spoken, language, reader?.models, rate);
       return speechResponse(speech, reader?.name);
     } catch (error) {
       return Response.json(
