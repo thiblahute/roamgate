@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, jest } from "bun:test";
+import { currentSshLane } from "../bridge/ssh-sessions";
 import {
   createTabAutoRenamer,
   isGenericTerminalTitle,
@@ -260,6 +261,36 @@ describe("createTabAutoRenamer", () => {
     renamers.push(renamer);
     await renamer.triggerEvaluation();
     expect(receivedPane).toEqual(panes[0]);
+  });
+
+  test("reads titles in the background SSH lane, behind what the user waits on", async () => {
+    const lanes: string[] = [];
+    const renamer = createTabAutoRenamer({
+      herdr: {
+        async call(method: string) {
+          if (method === "tab.list")
+            return { tabs: [{ tab_id: "t1", label: "Tab 1", number: 1 }] };
+          if (method === "pane.list")
+            return {
+              panes: [
+                { pane_id: "p1", tab_id: "t1", focused: true, agent: "claude" },
+              ],
+            };
+          return {};
+        },
+      },
+      getAgentTitleForPane: async () => {
+        lanes.push(currentSshLane());
+        return "Fix the build";
+      },
+      debounceMs: 0,
+    });
+    renamers.push(renamer);
+    await renamer.triggerEvaluation();
+    expect(lanes.length).toBeGreaterThan(0);
+    expect(new Set(lanes)).toEqual(new Set(["background"]));
+    // What the user asks for meanwhile stays interactive.
+    expect(currentSshLane()).toBe("interactive");
   });
 });
 
