@@ -253,6 +253,31 @@ or stylesheet, 5 MiB per image/font, 64 resources and 10 MiB per preview
 1.5-second budget; missing data never hides an agent.
 [History synchronization](./HISTORY.md) covers transcript projection and caching.
 
+## Merge and pull requests in chats
+
+Agent chats show merge and pull requests through two connection-scoped,
+read-only methods, called in the background lane against the workspace's
+checkout. `forge.status` reads one request (`{provider, host, project,
+number}`, checked before anything runs). GitLab goes through `glab api` on
+the checkout's host: a token goes only to glab's default host or to a host
+glab has a login of its own for (with the environment's tokens removed); any
+other host is refused before glab runs and answered `not_signed_in`. GitHub
+goes through gh's own login for each host (`gh auth status --hostname`, then
+one GraphQL query). Only the request's own https page is linked: a `web_url`
+on another host, without https, or naming another request shows nothing.
+`forge.session` gives the workspace's branch's request (the PR/MR badge's
+lookup) and what `!N` and `#N` mean there. The server shares answers across
+browsers (one request in flight per checkout host and request, kept 15 s;
+sessions 60 s). Browsers keep one cache entry per request and connection, ask
+only while a chip, row or header showing it is on screen and the page is
+visible, and refresh every 20 s while a pipeline runs, two minutes while
+open, thirty minutes once merged or closed, five minutes when not signed in,
+with errors backing off from 30 s to ten minutes. Chips are drawn into slots
+put in the sanitized Markdown after it renders (never in code); what the
+forge says is not selectable message text and never goes to an agent. The
+history marks a `glab mr create` or `gh pr create` result with the URL it
+printed (`created_request`), kept when the payload is redacted.
+
 ## Agent integrations
 
 `integration.list` uses Herdr's RPC as the source of truth. Missing versions are
