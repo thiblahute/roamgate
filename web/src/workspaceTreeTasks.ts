@@ -4,6 +4,7 @@ import { bridge } from "./api";
 import { roamgateLocalStorage } from "./browserStorage";
 import type { Pane } from "./types";
 import type { AgentTaskSummary } from "./workspaceTreeView";
+import { PARTIAL_RETRY_MS } from "./partialRead";
 
 /**
  * The side tasks (subagents, teammates, workflows) of the agents the
@@ -104,6 +105,7 @@ async function flush() {
       connection_id: string;
       pane_id: string;
       tasks?: AgentTaskSummary[];
+      partial?: boolean;
     }[] = Array.isArray(result?.results) ? result.results : [];
     for (const [key, request] of batch) {
       const found = results.find(
@@ -111,6 +113,13 @@ async function flush() {
       );
       // An error keeps what was known; the next change asks again.
       const at = Date.now();
+      // Read from part of the session (a restart): asked again shortly,
+      // what showed already staying meanwhile.
+      if (found?.partial) {
+        if (!pending.has(key))
+          pending.set(key, { ...request, due: at + PARTIAL_RETRY_MS });
+        if (entries.get(key)?.tasks.length) continue;
+      }
       if (found && Array.isArray(found.tasks))
         entries.set(key, { version: request.version, tasks: found.tasks, at });
       else if (!entries.has(key))

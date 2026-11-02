@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentSessionFileAccess } from "./session-file-access";
-import { readSessionProjection } from "./session-projection-cache";
+import {
+  readSessionProjection,
+  readTailProjection,
+} from "./session-projection-cache";
 import { rewoundAfterQueuedRecords } from "./session-rewind.fixture";
 import {
   keptRecords,
@@ -113,6 +116,14 @@ describe("a rewind past messages sent through Claude Code's queue", () => {
       ["user", "task", 'Agent "Vet Spotify MCP servers" finished'],
       ["user", "rewound", "I think you should check out his last me"],
     ]);
+  });
+
+  test("a large transcript read by its end shows the same", async () => {
+    const { file, files } = access(jsonl(rewoundAfterQueuedRecords));
+    const tail = await readTailProjection(file, files);
+    expect(shown(tail.entries)).toEqual(
+      shown((await readSessionProjection("claude", file, files)).entries),
+    );
   });
 
   test("a rewind empties what the history still counted as queued", async () => {

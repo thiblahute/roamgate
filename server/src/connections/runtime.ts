@@ -38,6 +38,7 @@ import { exitSentAsMessage } from "../conversation/handover";
 import { createImageReader } from "../conversation/images";
 import { createShellRunner } from "../conversation/shell";
 import { createLeaseStore } from "../conversation/lease";
+import { createSessionIndexStore } from "../agent/session-index-store";
 import {
   type ConversationService,
   createConversationService,
@@ -217,6 +218,11 @@ export function createLegacyConnectionRuntime(args: {
    * them in memory only.
    */
   conversationLeaseFile?: string | null;
+  /**
+   * Where large sessions' indexes are kept across restarts; none given
+   * keeps them in memory only.
+   */
+  sessionIndexDir?: string | null;
   /** Conversation mode's permission and question prompts, to the browser. */
   askAgentPrompt?: (
     input: ConversationPrompt & { connectionId: string; paneId: string },
@@ -275,6 +281,10 @@ export function createLegacyConnectionRuntime(args: {
         () => conversation?.ownedPanes() ?? [],
       ),
       files: agentSessionFiles,
+      indexStore: createSessionIndexStore({
+        dir: args.sessionIndexDir ?? null,
+        scope: identity.id,
+      }),
     }),
   );
   const sendConnectionEvent = (
@@ -367,10 +377,8 @@ export function createLegacyConnectionRuntime(args: {
       run: (argv, timeoutMs) => runProcessWithCodeTimeout(argv, timeoutMs),
       shQuote,
     }),
-    readTranscript: async (paneId) => {
-      const path = await agentSessions.resolvePath({ pane_id: paneId });
-      return path ? agentSessionFiles.readText(path) : null;
-    },
+    // A large transcript's records come from its slim index, never read whole.
+    readTranscript: (paneId) => agentSessions.readRecords({ pane_id: paneId }),
     // Only asked of a turn that has been silent a long while.
     transcriptStat: async (paneId) => {
       const path = await agentSessions.resolvePath({ pane_id: paneId });

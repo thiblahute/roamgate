@@ -1,9 +1,16 @@
 import { isRecord } from "./session-utils";
 import { SessionImageGoneError, sessionImage } from "./session-images";
-import type { WorkflowAgentView, WorkflowView } from "./session-tasks";
+import {
+  type AgentTask,
+  subagentsToWatch,
+  type WorkflowAgentView,
+  type WorkflowView,
+  withSubagentActivity,
+} from "./session-tasks";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { enrichAgentActivity } from "./agent-activity";
+import { findLineFromEnd } from "./session-tail";
 import type { HerdrCall, SessionFile } from "./session-types";
 import {
   claudeSuccessorId,
@@ -16,14 +23,18 @@ import {
   type AgentSessionFileAccess,
 } from "./session-file-access";
 import { readAntigravitySessionRecords } from "./antigravity-session";
+import type { SessionIndexStore } from "./session-index-store";
 import {
   createSessionProjectionCache,
   readSessionProjection,
+  readsByTail,
+  readTailProjection,
   type SessionProjectionCache,
 } from "./session-projection-cache";
 import {
   HISTORY_WINDOW_LIMIT,
   historyTextHash,
+  redactHistoryEntry,
   redactHistoryUpdate,
 } from "./session-history";
 
@@ -31,6 +42,46 @@ const MAX_MESSAGES_PER_AGENT = 200;
 /** How much of a task the browser gets: an output's end, a subagent's last. */
 const TASK_OUTPUT_BYTES = 32 * 1024;
 const TASK_ENTRIES = 200;
+/** How long a subagent's conversation file, once looked at, is taken as is. */
+const SUBAGENT_STAT_MS = 5000;
+
+/**
+ * What the session's subagents' own conversations say of their tasks
+ * (session-tasks.ts `withSubagentActivity`): only those that may say more
+ * than the transcript are looked at, each at most every few seconds, as
+ * the Tasks sheet and the Workspaces list poll.
+ */
+function createSubagentWatcher(files: AgentSessionFileAccess) {
+  const seen = new Map<
+    string,
+    { at: number; file: { mtimeMs: number } | null }
+  >();
+  return async (
+    sessionPath: string,
+    tasks: AgentTask[],
+  ): Promise<AgentTask[]> => {
+    const now = Date.now();
+    const ids = subagentsToWatch(tasks, now);
+    if (!ids.length) return tasks;
+    const dir = `${sessionPath.replace(/\.jsonl$/, "")}/subagents`;
+    for (const [path, entry] of seen)
+      if (now - entry.at >= SUBAGENT_STAT_MS) seen.delete(path);
+    const activity = new Map<string, { mtimeMs: number } | null>();
+    await Promise.all(
+      ids.map(async (id) => {
+        const path = `${dir}/agent-${id}.jsonl`;
+        let entry = seen.get(path);
+        if (!entry) {
+          const file = await files.statFile(path).catch(() => null);
+          entry = { at: now, file: file ? { mtimeMs: file.mtimeMs } : null };
+          seen.set(path, entry);
+        }
+        activity.set(id, entry.file);
+      }),
+    );
+    return withSubagentActivity(tasks, activity, now);
+  };
+}
 const TASK_ENTRY_CHARS = 4000;
 
 /** The session Herdr reports for an agent. */
@@ -227,9 +278,14 @@ export function withOwnedSessions(
 export function createAgentSessionHandlers(args: {
   herdrCall: HerdrCall;
   files: AgentSessionFileAccess;
+  /** Where large sessions' indexes are kept across restarts. */
+  indexStore?: SessionIndexStore | null;
 }) {
   const resolverContext = createAgentSessionResolverContext();
-  const cache = createSessionProjectionCache(args.files);
+  const cache = createSessionProjectionCache(args.files, undefined, {
+    store: args.indexStore ?? null,
+  });
+  const subagentActivity = createSubagentWatcher(args.files);
   return {
     /** The pane's session file now, for the history watcher. */
     resolvePath: async (params: Record<string, unknown>) =>
@@ -324,6 +380,42 @@ export function createAgentSessionHandlers(args: {
         ...redactHistoryUpdate(update),
       };
     },
+    /** The pane's transcript records for a rewind's scan; null: none. */
+    readRecords: async (params: Record<string, unknown>) => {
+      const resolved = await resolveAgentSession(
+        params,
+        args.herdrCall,
+        args.files,
+        resolverContext,
+      );
+      return resolved.file ? cache.records(resolved) : null;
+    },
+    /** Entries before one the history shows: a page, as the user scrolls up. */
+    readOlder: async (params: Record<string, unknown>) => {
+      const beforeId =
+        typeof params.before_id === "string" ? params.before_id : "";
+      if (!beforeId) throw new Error("before_id is required");
+      const resolved = await resolveAgentSession(
+        params,
+        args.herdrCall,
+        args.files,
+        resolverContext,
+      );
+      if (!resolved.file) {
+        cache.invalidate(resolved);
+        throw new Error(resolved.detail || "Agent session is unavailable");
+      }
+      const page = await cache.older(
+        resolved,
+        beforeId,
+        Number(params.limit) || 50,
+      );
+      return {
+        ...resolved,
+        entries: page.entries.map(redactHistoryEntry),
+        has_more: page.has_more,
+      };
+    },
     readEntry: async (params: Record<string, unknown>) => {
       const resolved = await resolveAgentSession(
         params,
@@ -335,12 +427,10 @@ export function createAgentSessionHandlers(args: {
         cache.invalidate(resolved);
         throw new Error(resolved.detail || "Agent session is unavailable");
       }
-      const projection = await cache.get(resolved);
+      const entries = await cache.entries(resolved);
       const entryId =
         typeof params.entry_id === "string" ? params.entry_id : "";
-      const entry = projection.entries.find(
-        (candidate) => candidate.id === entryId,
-      );
+      const entry = entries.find((candidate) => candidate.id === entryId);
       if (!entry) {
         throw new Error(
           "That history entry is no longer available; refresh the history and try again",
@@ -366,11 +456,20 @@ export function createAgentSessionHandlers(args: {
       );
       if (!resolved.file)
         throw new Error(resolved.detail || "Agent session is unavailable");
-      const image = sessionImage(
-        await args.files.readText(resolved.file.path),
-        uuid,
-        index,
-      );
+      // A large transcript is searched from its end for that record's line.
+      const image = readsByTail(resolved.agent, resolved.file, args.files)
+        ? await findLineFromEnd(
+            args.files.readRange!.bind(args.files),
+            resolved.file.path,
+            resolved.file.size ?? 0,
+            JSON.stringify(uuid),
+            (line) => sessionImage(line, uuid, index),
+          )
+        : sessionImage(
+            await args.files.readText(resolved.file.path),
+            uuid,
+            index,
+          );
       if (!image)
         throw new SessionImageGoneError("That image is not in the session");
       return image;
@@ -384,8 +483,11 @@ export function createAgentSessionHandlers(args: {
         resolverContext,
       );
       if (!resolved.file) return { commands: [] };
-      const projection = await cache.get(resolved);
-      return { commands: projection.commands };
+      const projection = await cache.aggregates(resolved);
+      return {
+        commands: projection.commands,
+        ...(isPartial(projection) ? { partial: true } : {}),
+      };
     },
     readArtifacts: async (params: Record<string, unknown>) => {
       const resolved = await resolveAgentSession(
@@ -395,8 +497,11 @@ export function createAgentSessionHandlers(args: {
         resolverContext,
       );
       if (!resolved.file) return { artifacts: [] };
-      const projection = await cache.get(resolved);
-      return { artifacts: projection.artifacts };
+      const projection = await cache.aggregates(resolved);
+      return {
+        artifacts: projection.artifacts,
+        ...(isPartial(projection) ? { partial: true } : {}),
+      };
     },
     /** What the session ran on the side: background commands, subagents. */
     readTasks: async (params: Record<string, unknown>) => {
@@ -407,11 +512,12 @@ export function createAgentSessionHandlers(args: {
         resolverContext,
       );
       if (!resolved.file) return { tasks: [] };
-      const projection = await cache.get(resolved);
+      const projection = await cache.aggregates(resolved);
       // The session they belong to: its transcript's name, its id for Claude.
       return {
-        tasks: projection.tasks,
+        tasks: await subagentActivity(resolved.file.path, projection.tasks),
         session: basename(resolved.file.path).replace(/\.jsonl$/, ""),
+        ...(isPartial(projection) ? { partial: true } : {}),
       };
     },
     /**
@@ -426,8 +532,15 @@ export function createAgentSessionHandlers(args: {
         resolverContext,
       );
       if (!resolved.file) throw new Error("Agent session is unavailable");
-      const projection = await cache.get(resolved);
-      const task = projection.tasks.find((each) => each.id === params.task_id);
+      let projection = await cache.get(resolved);
+      let task = projection.tasks.find((each) => each.id === params.task_id);
+      // Read from part of the session: the whole of it may have it.
+      if (!task && isPartial(projection)) {
+        projection = await cache.get(resolved, { wait: true });
+        task = projection.tasks.find((each) => each.id === params.task_id);
+      }
+      if (!task) throw new Error("That task is no longer in the session");
+      [task] = await subagentActivity(resolved.file.path, [task]);
       if (!task) throw new Error("That task is no longer in the session");
       const sessionDir = resolved.file.path.replace(/\.jsonl$/, "");
       // A conversation beside the session: a subagent's, a teammate's, or
@@ -435,11 +548,10 @@ export function createAgentSessionHandlers(args: {
       const conversation = async (path: string) => {
         const file = await args.files.statFile(path);
         if (!file) return [];
-        const projected = await readSessionProjection(
-          "claude",
-          file,
-          args.files,
-        );
+        // A long one is read from its end: only that much is shown.
+        const projected = readsByTail("claude", file, args.files)
+          ? await readTailProjection(file, args.files)
+          : await readSessionProjection("claude", file, args.files);
         return projected.entries.slice(-TASK_ENTRIES).map((entry) => ({
           ...entry,
           text: entry.text.slice(0, TASK_ENTRY_CHARS),
@@ -697,7 +809,7 @@ export async function readAgentMessageHistory(
     };
   }
   const projected = cache
-    ? await cache.get(resolved)
+    ? await cache.recent(resolved)
     : await readSessionProjection(resolved.agent, resolved.file, files);
   const messages = projected.messages.slice(-MAX_MESSAGES_PER_AGENT);
   return {
@@ -733,7 +845,7 @@ export async function readAgentSessionSummary(
     };
   }
   const projected = cache
-    ? await cache.get(resolved)
+    ? await cache.aggregates(resolved)
     : await readSessionProjection(resolved.agent, resolved.file, files);
   const stats = projected.stats;
   const includeText = rawParams.include_text === true;
@@ -778,7 +890,14 @@ export async function readAgentSessionSummary(
     text,
     truncated,
     trajectory,
+    // A large session's index is not ready yet: asked again, it will be.
+    ...(isPartial(projected) ? { partial: true } : {}),
   };
+}
+
+/** Aggregates from part of a large session (its index not ready yet). */
+function isPartial(projected: object): boolean {
+  return (projected as { partial?: unknown }).partial === true;
 }
 
 function contentDispositionFilename(path: string) {
@@ -849,7 +968,7 @@ export async function downloadAgentSessionAtif(
     });
   }
   const trajectory = cache
-    ? await cache.trajectory(resolved)
+    ? await cache.trajectory(resolved, { whole: true })
     : (await readSessionProjection(resolved.agent, resolved.file, files))
         .trajectory;
   return new Response(`${JSON.stringify(trajectory, null, 2)}\n`, {

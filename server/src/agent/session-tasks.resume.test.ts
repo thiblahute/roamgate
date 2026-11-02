@@ -1,5 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { parseSessionTasks } from "./session-tasks";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { createAgentSessionHandlers } from "./agent-sessions";
+import type { AgentSessionFileAccess } from "./session-file-access";
+import {
+  type AgentTask,
+  parseSessionTasks,
+  SUBAGENT_STALE_MS,
+  subagentsToWatch,
+  withSubagentActivity,
+} from "./session-tasks";
+import type { SessionFile } from "./session-types";
 
 // Claude Code's own records (2.1, 2026-11-04), trimmed: a background agent
 // started, it finished, a SendMessage resumed it under the same id (no new
@@ -222,5 +231,166 @@ describe("a subagent resumed by a message", () => {
       },
     ]);
     expect(task?.status).toBe("lost");
+  });
+});
+
+describe("what its own conversation says", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const completed = parseSessionTasks(finished);
+  const running = parseSessionTasks([...finished, ...resume]);
+
+  test("one that grew after its end notice runs again", () => {
+    const now = at("2026-11-04T20:26:00.000Z");
+    expect(subagentsToWatch(completed, now)).toEqual([AGENT]);
+    const [task] = withSubagentActivity(
+      completed,
+      new Map([[AGENT, { mtimeMs: at("2026-11-04T20:19:13.000Z") }]]),
+      now,
+    );
+    expect(task).toMatchObject({
+      status: "running",
+      resumedAt: "2026-11-04T19:32:47.188Z",
+    });
+    expect(task?.endedAt).toBeUndefined();
+    // Its last record comes just before the notice: not grown.
+    const [same] = withSubagentActivity(
+      completed,
+      new Map([[AGENT, { mtimeMs: at("2026-11-04T19:32:47.100Z") }]]),
+      now,
+    );
+    expect(same?.status).toBe("completed");
+    // Given copies: the projection's tasks stay as they were.
+    expect(completed[0]?.status).toBe("completed");
+  });
+
+  test("a resumed one silent for a while is taken as done", () => {
+    const last = at("2026-11-04T20:19:13.000Z");
+    expect(subagentsToWatch(running, last)).toEqual([AGENT]);
+    const activity = new Map([[AGENT, { mtimeMs: last }]]);
+    const before = withSubagentActivity(
+      running,
+      activity,
+      last + SUBAGENT_STALE_MS - 1,
+    )[0];
+    expect(before?.status).toBe("running");
+    const after = withSubagentActivity(
+      running,
+      activity,
+      last + SUBAGENT_STALE_MS,
+    )[0];
+    expect(after).toMatchObject({
+      status: "completed",
+      endedAt: "2026-11-04T20:19:13.000Z",
+    });
+    // An old growth does not bring a finished one back.
+    const [old] = withSubagentActivity(
+      completed,
+      activity,
+      last + SUBAGENT_STALE_MS,
+    );
+    expect(old?.status).toBe("completed");
+  });
+
+  test("only subagents that may say more are looked at", () => {
+    const now = at("2026-11-04T20:26:00.000Z");
+    const task = (over: Partial<AgentTask>): AgentTask => ({
+      id: over.agentId ?? "x",
+      kind: "agent",
+      title: "t",
+      status: "completed",
+      ...over,
+    });
+    const ids = subagentsToWatch(
+      [
+        // Running from its start: its notice will tell.
+        task({ agentId: "a1", status: "running" }),
+        task({ agentId: "a2", endedAt: "2026-11-04T20:00:00.000Z" }),
+        // Ended over a day ago.
+        task({ agentId: "a3", endedAt: "2026-11-02T20:00:00.000Z" }),
+        task({ agentId: "../a4", endedAt: "2026-11-04T20:00:00.000Z" }),
+        task({
+          agentId: "a5",
+          status: "running",
+          resumedAt: "2026-11-04T20:10:00.000Z",
+        }),
+        task({
+          agentId: "a6",
+          kind: "command",
+          endedAt: "2026-11-04T20:00:00.000Z",
+        }),
+      ],
+      now,
+    );
+    expect(ids).toEqual(["a5", "a2"]);
+  });
+});
+
+describe("the session's tasks, as the Tasks sheet reads them", () => {
+  afterEach(() => setSystemTime());
+
+  test("follow the subagent's conversation file", async () => {
+    const path = "/tmp/rg-resume/362be254.jsonl";
+    const subagent = `/tmp/rg-resume/362be254/subagents/agent-${AGENT}.jsonl`;
+    const bytes = Buffer.from(
+      `${finished.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    );
+    let subagentMtime = Date.parse("2026-11-04T19:32:47.100Z");
+    let stats = 0;
+    const file = (at: string, mtimeMs: number, size = 1): SessionFile => ({
+      path: at,
+      mtimeMs,
+      size,
+      identity: at,
+      changeToken: String(mtimeMs),
+    });
+    const files: AgentSessionFileAccess = {
+      remote: false,
+      async statFile(at) {
+        if (at === subagent) {
+          stats += 1;
+          return file(at, subagentMtime);
+        }
+        return at === path ? file(at, 1000, bytes.length) : null;
+      },
+      readText: async () => bytes.toString("utf8"),
+      readPrefix: async (_path, limit) => bytes.subarray(0, limit),
+      readTail: async (_path, limit) =>
+        bytes.subarray(Math.max(0, bytes.length - limit)),
+      readDownloadBody: async () => new Uint8Array(bytes),
+      findPiSessionForCwd: async () => null,
+      findPiSessionById: async () => null,
+      findClaudeSessionById: async () => null,
+      findClaudeSuccessor: async () => null,
+      findCodexSessionById: async () => null,
+    };
+    const handlers = createAgentSessionHandlers({
+      files,
+      herdrCall: async () => ({
+        agent: {
+          agent: "claude",
+          agent_session: { kind: "path", value: path },
+        },
+      }),
+    });
+    const status = async () =>
+      (
+        (await handlers.readTasks({ pane_id: "p", agent: "claude" })) as {
+          tasks: AgentTask[];
+        }
+      ).tasks[0]?.status;
+
+    setSystemTime(new Date("2026-11-04T20:00:00.000Z"));
+    expect(await status()).toBe("completed");
+    // Resumed without the transcript saying so yet: its file grows.
+    subagentMtime = Date.parse("2026-11-04T20:00:00.000Z");
+    // Looked at again only a few seconds on.
+    expect(await status()).toBe("completed");
+    expect(stats).toBe(1);
+    setSystemTime(new Date("2026-11-04T20:00:06.000Z"));
+    expect(await status()).toBe("running");
+    expect(stats).toBe(2);
+    // Then silent for the stale time: done, should its notice never come.
+    setSystemTime(new Date(subagentMtime + SUBAGENT_STALE_MS));
+    expect(await status()).toBe("completed");
   });
 });

@@ -107,6 +107,22 @@ export function historyEntriesFromTrajectory(
   file: SessionFile,
   trajectory: AtifTrajectory,
 ): HistoryEntry[] {
+  return historyWindowEntries(
+    allHistoryEntries(file, trajectory),
+    HISTORY_WINDOW_LIMIT,
+  );
+}
+
+/**
+ * Every entry of a trajectory. `byRecord`: a message's identity is its
+ * record's (uuid and block) when it has one, so it stays the same whatever
+ * part of the transcript was read, as with a large one read from its end.
+ */
+export function allHistoryEntries(
+  file: SessionFile,
+  trajectory: AtifTrajectory,
+  options: { byRecord?: boolean } = {},
+): HistoryEntry[] {
   const entries: HistoryEntry[] = [];
   const occurrences = new Map<string, number>();
   const names = new Map<string, string>();
@@ -126,7 +142,9 @@ export function historyEntriesFromTrajectory(
     // occurrence suffixes; revisions, not these IDs, define synchronization.
     const identity = entry.source_call_id
       ? [entry.kind, entry.source_call_id]
-      : [entry.kind, entry.role, entry.text];
+      : options.byRecord && entry.uuid
+        ? [entry.kind, entry.role, entry.uuid, entry.block_index ?? 0]
+        : [entry.kind, entry.role, entry.text];
     const hash = createHash("sha256")
       .update(JSON.stringify(identity))
       .digest("hex")
@@ -220,7 +238,7 @@ export function historyEntriesFromTrajectory(
       });
     }
   }
-  return historyWindowEntries(entries, HISTORY_WINDOW_LIMIT);
+  return entries;
 }
 
 function shellField(value: unknown): Pick<HistoryEntry, "shell"> {
@@ -317,7 +335,7 @@ export function historyTextHash(text: string) {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
-function redactHistoryEntry(entry: HistoryEntry): HistoryEntry {
+export function redactHistoryEntry(entry: HistoryEntry): HistoryEntry {
   if (entry.role !== "tool" || entry.text.length === 0) return entry;
   return {
     ...entry,

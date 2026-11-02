@@ -5,6 +5,7 @@ import {
   useConnectionClient,
   connectionClientScopeKey,
 } from "./useConnectionClient";
+import { isPartialRead, PARTIAL_RETRY_MS } from "./partialRead";
 
 export type { SessionArtifact };
 
@@ -36,19 +37,27 @@ export function useAgentArtifacts(
     let live = true;
     let timer: number | undefined;
     const load = async () => {
+      let partial = false;
       try {
         const result = (await client.call("agent_artifacts.get", {
           pane_id: pane.pane_id,
           workspace_id: pane.workspace_id,
           tab_id: pane.tab_id,
           agent: pane.agent,
-        })) as { artifacts?: SessionArtifact[] };
+        })) as { artifacts?: SessionArtifact[]; partial?: boolean };
+        partial = isPartialRead(result);
+        // Read from part of the session: what showed already stays.
         if (live && client.isCurrent())
-          setArtifacts({ scope, values: result.artifacts ?? [] });
+          setArtifacts((current) =>
+            partial && current?.scope === scope
+              ? current
+              : { scope, values: result.artifacts ?? [] },
+          );
       } catch {
         // Not readable now (a reconnect): the next poll tries again.
       }
-      if (live) timer = window.setTimeout(load, POLL_MS);
+      if (live)
+        timer = window.setTimeout(load, partial ? PARTIAL_RETRY_MS : POLL_MS);
     };
     void load();
     return () => {

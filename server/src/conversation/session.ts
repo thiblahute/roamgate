@@ -100,7 +100,7 @@ export type ConversationSessionOptions = {
    * The session's transcript, for what a rewind would restore of the code;
    * null (or none given) when it cannot be read.
    */
-  readTranscript?: () => Promise<string | null>;
+  readTranscript?: () => Promise<string | Record<string, unknown>[] | null>;
   /** The agent's protocol; claude when none is given. */
   driver?: ProtocolDriver;
 };

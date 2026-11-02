@@ -45,6 +45,50 @@ triggers up to three retries. Incomplete JSONL lines wait for the next change.
 This is not a filesystem transaction: same-size in-place rewrites may be missed
 until the next change.
 
+### Large transcripts
+
+A Claude transcript of 4 MiB or more is never read whole (`session-tail.ts`).
+A history load reads the file backwards from its end, in doubling chunks, until
+it covers the window and 20 more conversation entries, then reads only the
+bytes appended since. Much appended at once (over 16 MiB), or a kept tail grown
+past four times its first read, reads the end again; entry IDs then hold, as a
+large transcript's message entries are identified by their record.
+
+What needs the whole session (tasks, artifacts, title, commands, token usage,
+turn count, a rewind's scan) comes from a slim index: built once by streaming
+the file in 4 MiB chunks, then advanced by the appended bytes. It keeps what
+those readers use of each record, long texts cut to their ends, and drops the
+API request records nothing reads. Parsing yields to the event loop every few
+milliseconds, so one large session does not stall the bridge's other calls.
+At most eight large sessions are kept per connection, apart from the byte
+budget above, and the last aggregates of 256 more: one unchanged since is
+answered from them without reading its end again. ATIF exports still read the whole file, in chunks.
+
+The index is kept on disk (`session-index-store.ts`, under
+`~/.cache/roamgate/session-index`, per connection and path): its records,
+appended to as it grows, and what they cover (the file's device and inode,
+where the last indexed line ends, a hash of the 4 KiB before that end) with
+the aggregates last computed. After a restart it is taken from there, and
+only what was appended since is read; a file replaced, cut short or
+rewritten in place is indexed again from its start. A session with nothing
+appended since its index was saved is answered from the saved aggregates
+without loading the index, or even reading its end, at all. An index is
+made ready even when its session left the cache meanwhile, so a partial
+answer is never asked again for long. A request never waits
+for an index that is not ready: indexes are made ready in the background,
+one at a time for the whole bridge, and meanwhile `agent_session.get`,
+`agent_tasks.get`, `agent_commands.get`, `agent_artifacts.get` and
+`connections.agent_tasks` answer from the aggregates saved with the index
+(or, with none, from the end read for the history), with `partial: true`.
+The browser asks such an answer again after two seconds and keeps what it
+showed before meanwhile. A single task's details and a rewind's scan wait
+for the whole index.
+
+`agent_history.older` with a `before_id` returns up to `limit` (default 50,
+at most 200) conversation entries before that entry, with their tool entries,
+and `has_more`; a large transcript reads further back only as far as the page
+needs.
+
 ## Version 2 protocol
 
 Send `history_version: 2` to `agent_history.get`, optionally with the last
@@ -91,5 +135,6 @@ with the type filters. It never fetches older messages or hidden tool payloads.
 
 ## Resource limits
 
-Changed files are re-read and re-projected in full: there is no incremental
-parser or database. Raw previews and ATIF exports can be large.
+Smaller transcripts are re-read and re-projected in full when they change; large
+ones are read by their end and an index (above). Raw previews and ATIF exports
+can be large.

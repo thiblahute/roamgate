@@ -57,6 +57,11 @@ export type AgentSessionFileAccess = {
   readPrefix(path: string, byteLimit: number): Promise<Uint8Array>;
   /** The end of a file, at most byteLimit bytes of it. */
   readTail(path: string, byteLimit: number): Promise<Uint8Array>;
+  /**
+   * Bytes [start, end) of a file, fewer at its end: how large transcripts
+   * are read (session-tail.ts). Without it, a transcript is read whole.
+   */
+  readRange?(path: string, start: number, end: number): Promise<Uint8Array>;
   readDownloadBody(path: string): Promise<BodyInit>;
   findPiSessionById(id: string): Promise<SessionFile | null>;
   /**
@@ -179,6 +184,10 @@ export const localAgentSessionFiles: AgentSessionFileAccess = {
     return new Uint8Array(
       await Bun.file(path).slice(0, byteLimit).arrayBuffer(),
     );
+  },
+  async readRange(path, start, end) {
+    if (end <= start) return new Uint8Array(0);
+    return new Uint8Array(await Bun.file(path).slice(start, end).arrayBuffer());
   },
   async readDownloadBody(path) {
     return Bun.file(path);
@@ -508,6 +517,15 @@ if matches:
     async readTail(path, byteLimit) {
       return runRemote(
         `set -eu\ntail -c ${Math.max(1, Math.floor(byteLimit))} ${args.shQuote(path)}`,
+      );
+    },
+    async readRange(path, start, end) {
+      const from = Math.max(0, Math.floor(start));
+      const length = Math.floor(end) - from;
+      if (length <= 0) return new Uint8Array(0);
+      return runRemote(
+        `set -eu\ntail -c +${from + 1} ${args.shQuote(path)} | head -c ${length}`,
+        SESSION_READ_TIMEOUT_MS,
       );
     },
     async readDownloadBody(path) {

@@ -5,6 +5,7 @@ import {
   useConnectionClient,
   connectionClientScopeKey,
 } from "./useConnectionClient";
+import { isPartialRead, PARTIAL_RETRY_MS } from "./partialRead";
 
 export type { AgentCommand };
 
@@ -73,19 +74,30 @@ export function useAgentCommands(pane: Pane, enabled: boolean): AgentCommand[] {
     let live = true;
     let timer: number | undefined;
     const load = async () => {
+      let partial = false;
       try {
         const result = (await client.call("agent_commands.get", {
           pane_id: pane.pane_id,
           workspace_id: pane.workspace_id,
           tab_id: pane.tab_id,
           agent: pane.agent,
-        })) as { commands?: AgentCommand[] };
+        })) as { commands?: AgentCommand[]; partial?: boolean };
+        partial = isPartialRead(result);
+        // Read from part of the session: what showed already stays.
         if (live && client.isCurrent())
-          setSession({ scope, values: result.commands ?? [] });
+          setSession((current) =>
+            partial && current?.scope === scope
+              ? current
+              : { scope, values: result.commands ?? [] },
+          );
       } catch {
         // Not readable now: the built-in commands still show.
       }
-      if (live) timer = window.setTimeout(load, REFRESH_MS);
+      if (live)
+        timer = window.setTimeout(
+          load,
+          partial ? PARTIAL_RETRY_MS : REFRESH_MS,
+        );
     };
     void load();
     return () => {

@@ -17,17 +17,26 @@ export type RewindScan = {
   checkpoint: boolean;
 };
 
-export function scanRewind(transcript: string, uuid: string): RewindScan {
-  const records: Record<string, unknown>[] = [];
-  for (const line of transcript.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const record: unknown = JSON.parse(line);
-      if (isRecord(record)) records.push(record);
-    } catch {
-      // A line being written, or not JSON: skipped.
+/**
+ * `transcript`: its text, or its records (a large one's from its slim
+ * index, session-tail.ts, which keeps what this reads).
+ */
+export function scanRewind(
+  transcript: string | Record<string, unknown>[],
+  uuid: string,
+): RewindScan {
+  const records: Record<string, unknown>[] =
+    typeof transcript === "string" ? [] : transcript;
+  if (typeof transcript === "string")
+    for (const line of transcript.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const record: unknown = JSON.parse(line);
+        if (isRecord(record)) records.push(record);
+      } catch {
+        // A line being written, or not JSON: skipped.
+      }
     }
-  }
   const checkpoint = records.some(
     (record) =>
       record.type === "file-history-snapshot" && record.messageId === uuid,

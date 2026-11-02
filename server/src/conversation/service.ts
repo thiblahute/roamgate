@@ -64,7 +64,9 @@ export type ConversationServiceOptions<Ws> = {
    * The transcript of the pane's Claude session (null: unknown), for what
    * a rewind would restore of the code.
    */
-  readTranscript?: (paneId: string) => Promise<string | null>;
+  readTranscript?: (
+    paneId: string,
+  ) => Promise<string | Record<string, unknown>[] | null>;
   /** Sends one event to one subscribed browser. */
   send: (ws: Ws, envelope: AgentChatEventEnvelope) => void;
   holderCommand: (sessionId: string) => string;

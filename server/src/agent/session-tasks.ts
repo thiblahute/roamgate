@@ -458,3 +458,94 @@ export function withCommandActivity(
     };
   });
 }
+
+/**
+ * A subagent taken as running again (resumed by a message, or its
+ * conversation growing after it had finished) is taken as stopped once its
+ * conversation has not changed for this long, should its end notice never
+ * come. Longer than the longest single tool call (a Bash command may run 10
+ * minutes) plus a long model turn; short enough that one that died with its
+ * notice lost leaves the running count within half an hour.
+ */
+export const SUBAGENT_STALE_MS = 30 * 60 * 1000;
+/**
+ * A subagent's conversation written this long after its end notice: more
+ * than the few milliseconds between its last record and the notice.
+ */
+const GREW_AFTER_END_MS = 2000;
+
+/**
+ * A subagent's own conversation file, as last seen: `null` when it has none.
+ * Only the subagents `subagentsToWatch` names are asked about.
+ */
+export type SubagentActivity = ReadonlyMap<string, { mtimeMs: number } | null>;
+
+/**
+ * The subagents whose conversation tells more than the transcript does:
+ * one taken as running again since it was resumed, whose end notice may
+ * never come, and the few that ended most recently, which a message may
+ * have resumed without the session's transcript saying so yet.
+ */
+export function subagentsToWatch(
+  tasks: readonly AgentTask[],
+  now: number,
+  limit = 8,
+): string[] {
+  const ids: string[] = [];
+  const ended: { id: string; at: number }[] = [];
+  for (const task of tasks) {
+    if (task.kind !== "agent" && task.kind !== "teammate") continue;
+    if (!task.agentId || !/^[\w-]+$/.test(task.agentId)) continue;
+    if (task.status === "running") {
+      if (task.resumedAt) ids.push(task.agentId);
+      continue;
+    }
+    const at = Date.parse(task.endedAt ?? task.startedAt ?? "");
+    if (Number.isFinite(at) && now - at < LOST_AFTER_MS)
+      ended.push({ id: task.agentId, at });
+  }
+  ended.sort((a, b) => b.at - a.at);
+  return [...ids, ...ended.slice(0, limit).map((each) => each.id)];
+}
+
+/**
+ * The tasks with what their subagents' conversations say: one that ended
+ * and whose conversation has grown since runs again; one taken as running
+ * again whose conversation has not changed for `SUBAGENT_STALE_MS` is taken
+ * as stopped. Copies, never the tasks given.
+ */
+export function withSubagentActivity(
+  tasks: readonly AgentTask[],
+  activity: SubagentActivity,
+  now: number,
+): AgentTask[] {
+  return tasks.map((task) => {
+    const file = task.agentId ? activity.get(task.agentId) : undefined;
+    if (!file || !Number.isFinite(file.mtimeMs)) return task;
+    const fresh = now - file.mtimeMs < SUBAGENT_STALE_MS;
+    if (task.status === "running") {
+      if (!task.resumedAt) return task;
+      const resumed = Date.parse(task.resumedAt);
+      const last = Math.max(file.mtimeMs, resumed);
+      if (!Number.isFinite(last) || now - last < SUBAGENT_STALE_MS) return task;
+      return {
+        ...task,
+        status: "completed",
+        endedAt: new Date(last).toISOString(),
+        summary: `No activity for ${SUBAGENT_STALE_MS / 60_000} minutes after it was resumed: taken as done.`,
+      };
+    }
+    const ended = Date.parse(task.endedAt ?? "");
+    const grew =
+      Number.isFinite(ended) && file.mtimeMs > ended + GREW_AFTER_END_MS;
+    if (!grew || !fresh) return task;
+    const next: AgentTask = {
+      ...task,
+      status: "running",
+      resumedAt: task.endedAt,
+    };
+    delete next.endedAt;
+    delete next.exitCode;
+    return next;
+  });
+}

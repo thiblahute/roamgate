@@ -18,7 +18,9 @@ export function createServiceRewind(deps: {
   sessionFor: (paneId: string) => ConversationSession;
   driverOf: (paneId: string) => ReturnType<typeof conversationDriver>;
   /** The pane session's transcript (null: unknown); none: never read. */
-  readTranscript?: (paneId: string) => Promise<string | null>;
+  readTranscript?: (
+    paneId: string,
+  ) => Promise<string | Record<string, unknown>[] | null>;
   /** The notice of a turn cut short goes. */
   clearInterrupted: (paneId: string) => void;
   closed: () => boolean;

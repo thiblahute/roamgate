@@ -1,3 +1,4 @@
+import { defaultSessionIndexDir } from "./agent/session-index-store";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
 import { sshReadCommandArgv } from "./bridge/ssh-command";
@@ -448,6 +449,7 @@ const IMPORTANT_RPC_METHODS = new Set([
   "bridge.pause_others",
   "agent_history.get",
   "agent_history.entry",
+  "agent_history.older",
   "agent_session.get",
   ...AGENT_CHAT_METHODS.filter(
     (method) =>
@@ -1571,6 +1573,7 @@ function runtimeFactoryForProfile(
         taskNotificationSource: config.taskNotificationSource,
         conversationLeaseFile: defaultLeaseFile(),
         conversationKeepAwake,
+        sessionIndexDir: defaultSessionIndexDir(),
         // No terminal to fall back on: the prompt waits for a browser, and
         // its timeout denies.
         askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
@@ -2283,6 +2286,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     readHistory: readAgentMessageHistory,
     readSummary: readAgentSessionSummary,
     readEntry: readAgentHistoryEntry,
+    readOlder: readAgentHistoryOlder,
     readImage: readAgentHistoryImage,
     readCommands: readAgentCommands,
     readArtifacts: readAgentArtifacts,
@@ -2453,6 +2457,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, method);
     } catch (e) {
       sendError(`${method}-error`, e);
+    }
+    return;
+  }
+  if (method === "agent_history.older") {
+    try {
+      const result = await readAgentHistoryOlder(params ?? {});
+      sendReply({ id, result }, "agent-history-older");
+    } catch (e) {
+      sendError("agent-history-older-error", e);
     }
     return;
   }
