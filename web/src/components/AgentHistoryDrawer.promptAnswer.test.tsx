@@ -19,7 +19,7 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
-  test("a number answers its choice in a pane's chat", async () => {
+  test("a question answered in a pane's chat", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });
     for (const [key, value] of Object.entries({
@@ -27,6 +27,8 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
       document: browser.document,
       navigator: browser.navigator,
       localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
       HTMLElement: browser.HTMLElement,
       Element: browser.Element,
       Node: browser.Node,
@@ -81,10 +83,11 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
       useConnectionReady: () => true,
       connectionClientScopeKey: () => "test",
     }));
-    const { initializeLayoutPreferences } = await import(
-      "../layoutPreferences"
-    );
+    const { initializeLayoutPreferences, updateLayoutPreferences } =
+      await import("../layoutPreferences");
     initializeLayoutPreferences();
+    // A plain message box: Vim keys (CodeMirror) are the review's setting.
+    browser.localStorage.setItem("reviewPrefs", JSON.stringify({ vim: false }));
     const { parseAgentPrompt } = await import("../agentPrompt");
     const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
     const { createRoot } = await import("react-dom/client");
@@ -109,7 +112,13 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
             pane={{ ...pane, agent_status: prompt ? "blocked" : "working" }}
             open
             embedded
-            paneChat={{ prompt, active: true, onKeys, onShowTerminal() {} }}
+            paneChat={{
+              prompt,
+              active: true,
+              onKeys,
+              onShowTerminal() {},
+              readScreen: () => [],
+            }}
             onOpenChange={() => {}}
           />,
         );
@@ -127,6 +136,17 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
       `${cursor === 2 ? " ❯" : "  "} 2. Yes, and don't ask again for: curl *`,
       `${cursor === 3 ? " ❯" : "  "} 3. No, and tell Claude what to do differently (esc)`,
     ];
+    const tapYes = async () => {
+      const yes = Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          ".agent-chat-prompt-actions button",
+        ),
+      ).find((each) => each.textContent?.includes("Yes"))!;
+      // A tap moves the focus to the choice, which goes with the card.
+      yes.focus();
+      await React.act(async () => yes.click());
+    };
+    const box = () => container.querySelector("textarea");
     try {
       // With the cursor on the editable rule, a number goes to its choice
       // with the arrows: typed into the rule, it would change it.
@@ -148,6 +168,23 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
         );
       });
       expect(onKeys.mock.calls).toEqual([["\x1b[A\r"], ["3"]]);
+
+      // On a desktop, the message box gets the keys back once answered.
+      await tapYes();
+      await render(null);
+      await settle();
+      expect(box()).not.toBeNull();
+      expect(document.activeElement).toBe(box());
+
+      // On a phone, it does not: its keyboard would come up over the chat.
+      await React.act(async () => updateLayoutPreferences({ mode: "mobile" }));
+      await render(parseAgentPrompt(screen(1)));
+      await settle();
+      await tapYes();
+      await render(null);
+      await settle();
+      expect(box()).not.toBeNull();
+      expect(document.activeElement).not.toBe(box());
     } finally {
       await React.act(async () => root.unmount());
       await browser.happyDOM.close();
