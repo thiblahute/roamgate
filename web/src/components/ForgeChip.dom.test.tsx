@@ -34,6 +34,7 @@ if (process.env.ROAMGATE_FORGE_CHIP_DOM_TEST !== "1") {
     sessionStorage: browser.sessionStorage,
     Event: browser.Event,
     MouseEvent: browser.MouseEvent,
+    MutationObserver: browser.MutationObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   }))
     Object.defineProperty(globalThis, key, {
@@ -46,6 +47,7 @@ if (process.env.ROAMGATE_FORGE_CHIP_DOM_TEST !== "1") {
   const { MarkdownPreview } = await import("./markdown");
   const { UserMessageText } = await import("./AgentHistoryChat");
   const { forgeStore } = await import("../forgeStore");
+  const { ForgeStreamingContext } = await import("../forgeSlots");
   const { createRoot } = await import("react-dom/client");
   type ForgeStatus = import("../../../shared/forge").ForgeStatus;
   type ForgeRef = import("../../../shared/forge").ForgeRef;
@@ -185,6 +187,88 @@ if (process.env.ROAMGATE_FORGE_CHIP_DOM_TEST !== "1") {
         "Opened !42",
       );
     } finally {
+      await React.act(async () => root.unmount());
+    }
+  });
+
+  test("a streamed message keeps its chips as it grows", async () => {
+    const { root, container, render, calls } = setup((ref) => ready(ref));
+    const message = [
+      "Two requests, !562 and !566, are up.",
+      "",
+      "| # | Request | Title |",
+      "|---|---------|-------|",
+      "| 1. | !562 | Find a branch's merge or pull request on the fork it is pushed to |",
+      "| 2. | !566 | the badge fix |",
+      "| 3. | !571 | the rest |",
+      "",
+      "1. first, after !562",
+      "2. second, see gst/cerbero!7",
+      "3. done",
+    ].join("\n");
+    // Every chip element ever drawn, and those taken out of the page.
+    const removed: Element[] = [];
+    const observer = new window.MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.removedNodes)
+          if (node instanceof window.Element)
+            removed.push(
+              ...(node.matches(".forge-chip") ? [node] : []),
+              ...node.querySelectorAll(".forge-chip"),
+            );
+    });
+    try {
+      const seen = new Map<string, Element>();
+      let loadingAfterAnswer = 0;
+      // Streamed in pieces, as a live turn's text grows.
+      for (let end = 40; end < message.length + 40; end += 23) {
+        await render(
+          <ForgeStreamingContext.Provider value>
+            <MarkdownPreview text={message.slice(0, end)} breaks />
+          </ForgeStreamingContext.Provider>,
+        );
+        if (end === 40)
+          observer.observe(container, { childList: true, subtree: true });
+        for (const chip of container.querySelectorAll(".forge-chip")) {
+          const key = `${chip.getAttribute("data-forge-ref")} ${[
+            ...container.querySelectorAll(
+              `.forge-chip[data-forge-ref="${chip.getAttribute("data-forge-ref")}"]`,
+            ),
+          ].indexOf(chip)}`;
+          const known = seen.get(key);
+          // The same chip, not a new one in its place.
+          if (known) expect(chip).toBe(known);
+          else seen.set(key, chip);
+          if (known && chip.querySelector(".forge-chip-loading"))
+            loadingAfterAnswer++;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      observer.disconnect();
+      expect(removed).toEqual([]);
+      expect(loadingAfterAnswer).toBe(0);
+      expect(container.querySelectorAll(".forge-chip").length).toBe(7);
+      // Each request asked once, however often the text grew, and never
+      // a number cut short (`!56` of `!562`).
+      expect(calls.map((ref) => ref.number).sort()).toEqual([562, 566, 571, 7]);
+      // A streamed message's last reference waits until it is whole.
+      await render(
+        <ForgeStreamingContext.Provider value>
+          <MarkdownPreview text="Merged !57" breaks />
+        </ForgeStreamingContext.Provider>,
+      );
+      expect(container.querySelectorAll(".forge-chip").length).toBe(0);
+      await render(
+        <ForgeStreamingContext.Provider value>
+          <MarkdownPreview text="Merged !571 and" breaks />
+        </ForgeStreamingContext.Provider>,
+      );
+      expect(container.querySelectorAll(".forge-chip").length).toBe(1);
+      await render(<MarkdownPreview text="Merged !566" breaks />);
+      expect(container.querySelectorAll(".forge-chip").length).toBe(1);
+      expect(calls.some((ref) => ref.number === 57)).toBe(false);
+    } finally {
+      observer.disconnect();
       await React.act(async () => root.unmount());
     }
   });

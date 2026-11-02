@@ -31,13 +31,18 @@ import {
   type ForgeRef,
   type ForgeStatus,
   forgeKind,
+  forgeRefKey,
   forgeRefLabel,
   parseForgeUrl,
 } from "../../../shared/forge";
 import type { ReviewSnapshot } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import { findForgeMentions, resolveForgeMention } from "../forgeRefs";
-import { type ForgeSlots, ForgeSlotsContext } from "../forgeSlots";
+import {
+  type ForgeSlots,
+  ForgeSlotsContext,
+  type ForgeSlotTarget,
+} from "../forgeSlots";
 import { type ForgeEntry, useForgeStatus } from "../forgeStore";
 import { lazyWithReload } from "../lazyWithReload";
 import {
@@ -84,30 +89,47 @@ export function markForgeReferences(
   root: HTMLElement,
   defaultProject: ForgeProject | null,
   chip: (ref: ForgeRef, written: string, url?: string) => ReactNode,
+  options: Parameters<ForgeSlots["mark"]>[1] = {},
 ): ReturnType<ForgeSlots["mark"]> {
   const scopes = root.hasAttribute("data-forge-scan")
     ? [root]
     : [...root.querySelectorAll<HTMLElement>("[data-forge-scan]")];
   const doc = root.ownerDocument;
   const changes: { original: Node; inserted: Node[] }[] = [];
-  const targets: { element: HTMLElement; node: ReactNode }[] = [];
+  const targets: ForgeSlotTarget[] = [];
+  // The slots drawn before, by reference: a redraw reuses them in order.
+  const reusable = new Map<string, HTMLElement[]>();
+  for (const target of options.reuse ?? []) {
+    const known = reusable.get(target.key);
+    if (known) known.push(target.element);
+    else reusable.set(target.key, [target.element]);
+  }
   const slot = (ref: ForgeRef, written: string, url?: string) => {
-    const element = doc.createElement("span");
-    element.className = "forge-slot";
-    targets.push({ element, node: chip(ref, written, url) });
+    const key = `${forgeRefKey(ref)}\u0000${written}\u0000${url ?? ""}`;
+    let element = reusable.get(key)?.shift();
+    if (!element) {
+      element = doc.createElement("span");
+      element.className = "forge-slot";
+    }
+    targets.push({ element, node: chip(ref, written, url), key });
     return element;
   };
   for (const scope of scopes) {
     const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+    // Where a streamed message ends: a reference touching it may still
+    // grow (`!5` of `!562`, a URL cut short).
+    let tail: Text | null = null;
+    if (options.streaming)
+      for (const node of nodes) if (node.data.trim()) tail = node;
     const anchors = new Set<Element>();
     for (const node of nodes) {
       const parent = node.parentElement;
       if (
         !parent ||
         parent.closest(
-          "code, pre, kbd, samp, .forge-slot, .markdown-mermaid-slot, .mermaid-diagram",
+          "code, pre, kbd, samp, .forge-slot, .markdown-diagram-slot, .diagram-block, .mermaid-diagram",
         )
       )
         continue;
@@ -117,6 +139,7 @@ export function markForgeReferences(
         // named stays theirs.
         if (anchors.has(anchor)) continue;
         anchors.add(anchor);
+        if (tail && anchor.contains(tail)) continue;
         const href = anchor.getAttribute("href") ?? "";
         const ref = parseForgeUrl(href);
         const label = (anchor.textContent ?? "").trim();
@@ -133,7 +156,10 @@ export function markForgeReferences(
           match,
           ref: resolveForgeMention(match.mention, defaultProject),
         }))
-        .filter((found) => found.ref);
+        .filter(
+          (found) =>
+            found.ref && !(node === tail && found.match.end >= text.length),
+        );
       if (!matches.length) continue;
       const inserted: Node[] = [];
       let at = 0;
@@ -210,17 +236,22 @@ export function ForgeChatProvider({
     () =>
       chat
         ? {
-            mark: (root) =>
-              markForgeReferences(root, defaultProject, (ref, written, url) => (
-                // The slot sits in a chat message: the chat's context.
-                <ForgeChatContext.Provider value={chat}>
-                  <ForgeChip
-                    forgeRef={ref}
-                    written={written}
-                    writtenUrl={url}
-                  />
-                </ForgeChatContext.Provider>
-              )),
+            mark: (root, options) =>
+              markForgeReferences(
+                root,
+                defaultProject,
+                (ref, written, url) => (
+                  // The slot sits in a chat message: the chat's context.
+                  <ForgeChatContext.Provider value={chat}>
+                    <ForgeChip
+                      forgeRef={ref}
+                      written={written}
+                      writtenUrl={url}
+                    />
+                  </ForgeChatContext.Provider>
+                ),
+                options,
+              ),
             renderText: (text) => forgeText(text, defaultProject),
           }
         : null,

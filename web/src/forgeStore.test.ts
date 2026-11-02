@@ -249,6 +249,46 @@ describe("the request cache", () => {
     store.clear();
   });
 
+  test("a chip drawn again keeps what it showed and asks nothing", async () => {
+    jest.useFakeTimers();
+    const store = createForgeStore({ pageVisible: () => true });
+    let answer: (status: ForgeStatus) => void = () => {};
+    const { client, calls } = fakeClient([
+      () => new Promise<ForgeStatus>((resolve) => (answer = resolve)),
+    ]);
+    const first = store.hold(client, ref);
+    first.setVisible(true);
+    await settle();
+    expect(calls).toHaveLength(1);
+    // Redrawn while the answer is on its way: no second question.
+    first.release();
+    const second = store.hold(client, ref);
+    second.setVisible(true);
+    await settle();
+    expect(calls).toHaveLength(1);
+    answer(ready("open", "running"));
+    await settle();
+    const known = store.get(client, ref);
+    expect(known.status?.request?.state).toBe("open");
+    // Redrawn once answered: the same entry, nothing asked, no loading.
+    second.release();
+    const third = store.hold(client, ref);
+    third.setVisible(true);
+    await settle();
+    expect(calls).toHaveLength(1);
+    expect(store.get(client, ref)).toBe(known);
+    // A refresh in flight keeps the status it had.
+    jest.advanceTimersByTime(FORGE_RUNNING_MS);
+    expect(calls).toHaveLength(2);
+    expect(store.get(client, ref).loading).toBe(true);
+    expect(store.get(client, ref).status).toBe(known.status);
+    answer(ready("merged", null));
+    await settle();
+    expect(store.get(client, ref).status?.request?.state).toBe("merged");
+    third.release();
+    store.clear();
+  });
+
   test("nothing is asked while off screen, or while the page is hidden", async () => {
     jest.useFakeTimers();
     let visible = false;
