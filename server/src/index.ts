@@ -145,6 +145,7 @@ import {
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
 import { createActivityRecorder } from "./activity/recorder";
+import { readActivityTimeline } from "./activity/timeline-rpc";
 import { dataRoot } from "./config/data-paths";
 import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
@@ -1797,6 +1798,22 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "ui-settings");
     } catch (error) {
       sendError("ui-settings-error", error);
+    }
+    return;
+  }
+  if (method === "bridge.activity.timeline") {
+    try {
+      const result = await readActivityTimeline(
+        {
+          settings: async () => activitySettings(await readGuiSettings()),
+          recording: () => activity.ready(),
+          directory: () => dataRoot(),
+        },
+        params,
+      );
+      sendReply({ id, result }, "activity-timeline");
+    } catch (error) {
+      sendError("activity-timeline-error", error);
     }
     return;
   }

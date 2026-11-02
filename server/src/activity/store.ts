@@ -133,7 +133,7 @@ export type GapRow = {
   reason: string;
 };
 
-type EventRow = {
+export type EventRow = {
   seq: number;
   ts: number;
   kind: EventKind;
@@ -155,7 +155,7 @@ type EventRow = {
   open: number;
 };
 
-type WorkspaceDbRow = {
+export type WorkspaceDbRow = {
   id: string;
   connection_id: string;
   name: string;
@@ -203,6 +203,60 @@ const schema = `
   ) STRICT;
   CREATE INDEX connection_gaps_start ON connection_gaps(start_ts);
 `;
+
+/** An events row as the protocol's Event (`open` computed by the query). */
+export function eventFromRow(row: EventRow): ActivityEvent {
+  const event: ActivityEvent = {
+    id: eventId(row.seq),
+    ts: isoTime(row.ts),
+    kind: row.kind,
+    connection_id: row.connection_id,
+    workspace_id: row.workspace_id,
+    tab_id: row.tab_id,
+    pane_id: row.pane_id,
+  };
+  if (row.kind === "agent.state" && row.agent_name && row.agent_state)
+    event.agent = {
+      name: row.agent_name,
+      state: row.agent_state,
+      task: row.agent_task,
+      session_id: row.agent_session_id,
+    };
+  if (row.kind === "ui.visibility") event.visible = row.visible === 1;
+  if (row.kind === "session.idle")
+    event.idle_after_seconds = row.idle_after_seconds;
+  if (row.kind === "workspace.blur") event.reason = row.reason;
+  if (row.kind === "workspace.focus") event.open = row.open === 1;
+  if (row.client_id && row.client_kind)
+    event.client = { id: row.client_id, kind: row.client_kind };
+  else if (row.kind !== "agent.state") event.client = null;
+  // Only attention spans carry a source.
+  if (
+    row.source &&
+    (row.kind === "workspace.focus" || row.kind === "workspace.blur")
+  )
+    event.source = row.source;
+  return event;
+}
+
+export function workspaceFromRow(row: WorkspaceDbRow): ActivityWorkspace {
+  return {
+    id: row.id,
+    connection_id: row.connection_id,
+    name: row.name,
+    path: row.path,
+    subject: null,
+    repo: row.repo_root
+      ? {
+          root: row.repo_root,
+          remote_url: null,
+          branch: null,
+          is_worktree: row.repo_is_worktree === 1,
+        }
+      : null,
+    herdr_workspace_id: row.herdr_workspace_id,
+  };
+}
 
 /** At most this many free pages are returned per vacuum. */
 const VACUUM_PAGES = 4096;
@@ -282,6 +336,9 @@ export function openActivityStore(directory: string): ActivityStore {
     } else if (version !== SCHEMA_VERSION) {
       throw new Error("Unsupported activity database");
     }
+    // For the readers (reader.ts): states and presence by kind. Added after
+    // version 1 shipped, so created on open rather than with the schema.
+    db.exec("CREATE INDEX IF NOT EXISTS events_kind ON events(kind, ts)");
     protect();
   } catch (error) {
     close();
@@ -385,35 +442,6 @@ export function openActivityStore(directory: string): ActivityStore {
     "SELECT connection_id, start_ts, end_ts, reason, excluded FROM connection_gaps ORDER BY start_ts, id",
   );
 
-  function toEvent(row: EventRow): ActivityEvent {
-    const event: ActivityEvent = {
-      id: eventId(row.seq),
-      ts: isoTime(row.ts),
-      kind: row.kind,
-      connection_id: row.connection_id,
-      workspace_id: row.workspace_id,
-      tab_id: row.tab_id,
-      pane_id: row.pane_id,
-    };
-    if (row.kind === "agent.state" && row.agent_name && row.agent_state)
-      event.agent = {
-        name: row.agent_name,
-        state: row.agent_state,
-        task: row.agent_task,
-        session_id: row.agent_session_id,
-      };
-    if (row.kind === "ui.visibility") event.visible = row.visible === 1;
-    if (row.kind === "session.idle")
-      event.idle_after_seconds = row.idle_after_seconds;
-    if (row.kind === "workspace.blur") event.reason = row.reason;
-    if (row.kind === "workspace.focus") event.open = row.open === 1;
-    if (row.client_id && row.client_kind)
-      event.client = { id: row.client_id, kind: row.client_kind };
-    else if (row.kind !== "agent.state") event.client = null;
-    if (row.source) event.source = row.source;
-    return event;
-  }
-
   return {
     append(event) {
       const result = insertEvent.run(
@@ -503,25 +531,10 @@ export function openActivityStore(directory: string): ActivityStore {
     readEvents(range = {}) {
       return selectEvents
         .all(range.from ?? 0, range.to ?? Number.MAX_SAFE_INTEGER)
-        .map(toEvent);
+        .map(eventFromRow);
     },
     readWorkspaces() {
-      return selectWorkspaces.all().map((row) => ({
-        id: row.id,
-        connection_id: row.connection_id,
-        name: row.name,
-        path: row.path,
-        subject: null,
-        repo: row.repo_root
-          ? {
-              root: row.repo_root,
-              remote_url: null,
-              branch: null,
-              is_worktree: row.repo_is_worktree === 1,
-            }
-          : null,
-        herdr_workspace_id: row.herdr_workspace_id,
-      }));
+      return selectWorkspaces.all().map(workspaceFromRow);
     },
     readGaps() {
       return selectGaps.all().map((row) => ({

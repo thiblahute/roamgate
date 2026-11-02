@@ -368,6 +368,11 @@ event shapes are in [the activity log](./activity.md).
   Herdr workspace id lists the connection's workspaces and panes first.
 - **Shutdown** ends spans and gaps before the connections stop, so a bridge
   stop reads as `recorder_stop`, not `disconnect`.
+- **Readers:** `reader.ts` opens its own read-only connection (or, when the
+  recorder left no shared-memory file, one with `query_only`), for the
+  `bridge.activity.timeline` RPC and `roamgate activity`. `timeline.ts` turns
+  rows into day spans and totals and is pure. An `events(kind, ts)` index is
+  created on open for the readers.
 
 ## Agent integrations
 
