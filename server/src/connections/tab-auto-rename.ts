@@ -1,4 +1,5 @@
 import type { HerdrCall } from "../agent/session-types";
+import { runInSshLane } from "../bridge/ssh-sessions";
 import { isRecord, stringValue } from "../agent/session-utils";
 import { herdrEventName } from "../utils/herdr-events";
 
@@ -139,14 +140,17 @@ export function createTabAutoRenamer(options: TabAutoRenamerOptions) {
     if (disposed) return Promise.resolve();
     queued = true;
     if (work) return work;
-    work = (async () => {
+    // Titles are read again every poll and on every tab or pane event,
+    // over SSH for a remote connection: background work, behind what the
+    // user is waiting on.
+    work = runInSshLane("background", async () => {
       while (queued && !disposed) {
         queued = false;
         await evaluate().catch((error) =>
           options.log?.(`Tab auto-renamer: ${error}`),
         );
       }
-    })().finally(() => {
+    }).finally(() => {
       work = null;
     });
     return work;
