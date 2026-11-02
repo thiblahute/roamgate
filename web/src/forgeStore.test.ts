@@ -167,18 +167,18 @@ describe("the request cache", () => {
     expect(store.get(client, ref).status?.request?.pipeline?.status).toBe(
       "success",
     );
-    // Passed: next in two minutes, not twenty seconds.
-    jest.advanceTimersByTime(FORGE_RUNNING_MS * 3);
+    // Passed: next in three minutes, not one.
+    jest.advanceTimersByTime(FORGE_OPEN_MS - 1000);
     await settle();
     expect(calls).toHaveLength(3);
-    jest.advanceTimersByTime(FORGE_OPEN_MS);
+    jest.advanceTimersByTime(1000);
     await settle();
     expect(calls).toHaveLength(4);
     held.release();
     store.clear();
   });
 
-  test("a merged request is left alone for half an hour", async () => {
+  test("a merged request is left alone for six hours", async () => {
     jest.useFakeTimers();
     const store = createForgeStore({ pageVisible: () => true });
     const { client, calls } = fakeClient([async () => ready("merged", null)]);
@@ -191,6 +191,25 @@ describe("the request cache", () => {
     jest.advanceTimersByTime(1000);
     await settle();
     expect(calls).toHaveLength(2);
+    held.release();
+    store.clear();
+  });
+
+  test("a click on refresh asks the server not to answer from what it knows", async () => {
+    jest.useFakeTimers();
+    const store = createForgeStore({ pageVisible: () => true });
+    const { client, calls } = fakeClient([
+      async () => ready("open", "success"),
+      async () => ready("open", "success"),
+    ]);
+    const held = store.hold(client, ref);
+    held.setVisible(true);
+    await settle();
+    store.refresh(client, ref);
+    await settle();
+    expect(
+      calls.map((call) => (call.params as { fresh?: boolean }).fresh),
+    ).toEqual([undefined, true]);
     held.release();
     store.clear();
   });

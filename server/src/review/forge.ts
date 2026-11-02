@@ -16,6 +16,7 @@ import {
   validProject,
 } from "../../../shared/forge";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
+import { forgeGate } from "../workspace/forge-calls";
 import { gitShellCommandArgv } from "../workspace/git-shell";
 import { readPullRequestStatus } from "../workspace/pull-request";
 import { enterCheckout, scanReviewRepos } from "../workspace/review-patch";
@@ -44,7 +45,24 @@ const TIMEOUT_MS = 30_000;
 /** How long an answer is shared by every chip and browser asking it. */
 export const FORGE_STATUS_TTL_MS = 15_000;
 /** A session's repositories and their branches' requests. */
-export const FORGE_SESSION_TTL_MS = 60_000;
+export const FORGE_SESSION_TTL_MS = 5 * 60_000;
+/** How long chips asked together wait for each other. */
+export const FORGE_BATCH_WINDOW_MS = 100;
+/** A request asked about this recently is read again with the others. */
+const FORGE_INTEREST_MS = 5 * 60_000;
+const FORGE_BATCH_SIZE = 50;
+
+/**
+ * How long a batch's answer stands for a chip that asks again (a little
+ * less than the browser waits for it, so that a due chip gets news).
+ */
+export function forgeAnswerTtl(status: ForgeStatus): number {
+  if (status.state !== "ready" || !status.request)
+    return status.state === "not_found" ? 5 * 60_000 : 0;
+  if (status.request.state !== "open") return 30 * 60_000;
+  const pipeline = status.request.pipeline?.status;
+  return pipeline === "running" || pipeline === "pending" ? 45_000 : 150_000;
+}
 /** What `!N` and `#N` mean in a checkout (its project, or its fork's parent). */
 const DEFAULT_PROJECT_TTL_MS = 30 * 60_000;
 /** Repositories of one session whose branch's request is looked up. */
@@ -157,10 +175,10 @@ export async function readGitlabStatus(
   const path = `projects/${encodeURIComponent(ref.project)}/merge_requests/${ref.number}`;
   let mr: Record<string, any>;
   try {
-    mr = (await glab(context, host, "GET", path, [], false)) as Record<
-      string,
-      any
-    >;
+    mr = (await glab(context, host, "GET", path, [], false, {
+      feature: "chip",
+      kind: "request",
+    })) as Record<string, any>;
   } catch (error) {
     const reason = message(error);
     return /404|not found/i.test(reason)
@@ -184,17 +202,15 @@ export async function readGitlabStatus(
       message: "Unexpected answer",
       fetchedAt: now(),
     };
-  const url = ownRequestUrl(ref, mr.web_url);
-  const project = url ? parseForgeUrl(url)?.project : undefined;
-  const full = text(mr.references?.full).replace(/!\d+$/, "");
-  // Fail closed: a project GitLab does not name, or one named security
-  // anywhere, shows nothing.
-  if (!url || !project) return { ref, state: "security", fetchedAt: now() };
-  if (isSecurityProject(project) || (full && isSecurityProject(full)))
-    return { ref, state: "security", fetchedAt: now() };
+  const guarded = guardedUrl(ref, mr.web_url, mr.references?.full);
+  if (!guarded) return { ref, state: "security", fetchedAt: now() };
+  const project = guarded.project;
   const pipeline = mr.head_pipeline ?? mr.pipeline ?? null;
   const [approvals, threads, jobs] = await Promise.allSettled([
-    glab(context, host, "GET", `${path}/approvals`, [], false),
+    glab(context, host, "GET", `${path}/approvals`, [], false, {
+      feature: "chip",
+      kind: "approvals",
+    }),
     glab(
       context,
       host,
@@ -210,6 +226,7 @@ export async function readGitlabStatus(
         ["i", String(ref.number), "raw"],
       ],
       false,
+      { feature: "chip", kind: "graphql" },
     ),
     pipeline?.status === "failed" &&
     Number.isSafeInteger(pipeline.id) &&
@@ -221,6 +238,7 @@ export async function readGitlabStatus(
           `projects/${pipeline.project_id}/pipelines/${pipeline.id}/jobs?scope[]=failed&per_page=50`,
           [],
           false,
+          { feature: "chip", kind: "jobs" },
         )
       : Promise.resolve([]),
   ]);
@@ -232,25 +250,73 @@ export async function readGitlabStatus(
     threads.status === "fulfilled"
       ? (threads.value as any)?.data?.project?.mergeRequest
       : null;
-  const resolvable = counts?.resolvableDiscussionsCount;
-  const resolved = counts?.resolvedDiscussionsCount;
-  const failed =
-    jobs.status === "fulfilled" && Array.isArray(jobs.value)
-      ? (jobs.value as Record<string, any>[])
-          .slice(0, FAILED_JOBS_SHOWN)
-          .map((job) => ({
-            name: text(job.name, 200),
-            stage: text(job.stage, 100) || undefined,
+  return gitlabStatusOf(ref, {
+    mr,
+    pipeline: pipeline ? text(pipeline.status, 40) : null,
+    failed:
+      jobs.status === "fulfilled" && Array.isArray(jobs.value)
+        ? (jobs.value as Record<string, any>[]).map((job) => ({
+            name: job.name,
+            stage: job.stage,
             allowFailure: job.allow_failure === true,
           }))
-      : [];
+        : [],
+    approvals: approved
+      ? {
+          approved:
+            typeof approved.approved === "boolean" ? approved.approved : null,
+          count: Array.isArray(approved.approved_by)
+            ? approved.approved_by.length
+            : 0,
+        }
+      : null,
+    resolvable: counts?.resolvableDiscussionsCount,
+    resolved: counts?.resolvedDiscussionsCount,
+  });
+}
+
+/**
+ * The request's own page, when GitLab names a project that is not a
+ * security one anywhere (fail closed otherwise).
+ */
+function guardedUrl(
+  ref: ForgeRef,
+  webUrl: unknown,
+  reference: unknown,
+): { url: string; project: string } | null {
+  const url = ownRequestUrl(ref, webUrl);
+  const project = url ? parseForgeUrl(url)?.project : undefined;
+  const full = text(reference).replace(/!\d+$/, "");
+  if (!url || !project) return null;
+  if (isSecurityProject(project) || (full && isSecurityProject(full)))
+    return null;
+  return { url, project };
+}
+
+/** What a merge request says, from REST or GraphQL. */
+type GitlabFacts = {
+  /** REST-shaped: web_url, references.full, title, state, draft... */
+  mr: Record<string, any>;
+  /** The head pipeline's status (REST's lower case), null for none. */
+  pipeline: string | null;
+  failed: { name: unknown; stage: unknown; allowFailure: boolean }[];
+  approvals: { approved: boolean | null; count: number } | null;
+  resolvable: unknown;
+  resolved: unknown;
+};
+
+function gitlabStatusOf(ref: ForgeRef, facts: GitlabFacts): ForgeStatus {
+  const { mr } = facts;
+  const guarded = guardedUrl(ref, mr.web_url, mr.references?.full);
+  if (!guarded) return { ref, state: "security", fetchedAt: now() };
+  const { resolvable, resolved } = facts;
   return {
     ref,
     state: "ready",
     fetchedAt: now(),
     request: {
-      url,
-      project,
+      url: guarded.url,
+      project: guarded.project,
       title: text(mr.title, 300),
       state: gitlabState(mr.state),
       draft: mr.draft === true || mr.work_in_progress === true,
@@ -258,37 +324,174 @@ export async function readGitlabStatus(
       sourceBranch: text(mr.source_branch, 300),
       targetBranch: text(mr.target_branch, 300),
       updatedAt: text(mr.updated_at, 40),
-      pipeline: pipeline
-        ? { status: gitlabPipelineStatus(pipeline.status), failed }
-        : null,
-      approvals: approved
-        ? {
-            approved:
-              typeof approved.approved === "boolean" ? approved.approved : null,
-            count: Array.isArray(approved.approved_by)
-              ? approved.approved_by.length
-              : 0,
-          }
-        : null,
+      pipeline:
+        facts.pipeline === null
+          ? null
+          : {
+              status: gitlabPipelineStatus(facts.pipeline),
+              failed: facts.failed.slice(0, FAILED_JOBS_SHOWN).map((job) => ({
+                name: text(job.name, 200),
+                stage: text(job.stage, 100) || undefined,
+                allowFailure: job.allowFailure,
+              })),
+            },
+      approvals: facts.approvals,
       unresolved:
         Number.isSafeInteger(resolvable) && Number.isSafeInteger(resolved)
-          ? Math.max(0, resolvable - resolved)
+          ? Math.max(0, (resolvable as number) - (resolved as number))
           : null,
     },
   };
+}
+
+const GITLAB_REQUEST_FIELDS =
+  "iid webUrl reference(full: true) title state draft updatedAt sourceBranch targetBranch author { username } approved approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status jobs(statuses: [FAILED], first: 8) { nodes { name allowFailure stage { name } } } }";
+
+/**
+ * One GraphQL query for several merge requests of several projects.
+ * Strings are JSON literals, which GraphQL reads as its own.
+ */
+export function gitlabStatusesQuery(projects: [string, number[]][]): string {
+  return `query { ${projects
+    .map(
+      ([project, numbers], index) =>
+        `p${index}: project(fullPath: ${JSON.stringify(project)}) { mergeRequests(iids: ${JSON.stringify(numbers.map(String))}, first: 100) { nodes { ${GITLAB_REQUEST_FIELDS} } } }`,
+    )
+    .join(" ")} }`;
+}
+
+/** Projects by path (as GitLab compares them), with their refs. */
+function byProject(refs: ForgeRef[]): Map<string, ForgeRef[]> {
+  const projects = new Map<string, ForgeRef[]>();
+  for (const ref of refs) {
+    const key = ref.project.toLowerCase();
+    projects.set(key, [...(projects.get(key) ?? []), ref]);
+  }
+  return projects;
+}
+
+/**
+ * Several GitLab merge requests of one host in one GraphQL query. Throws
+ * when GitLab answers no data at all (the caller reads them one by one).
+ */
+export async function readGitlabStatuses(
+  context: ForgeContext,
+  host: { host: string; ownLogin: boolean },
+  refs: ForgeRef[],
+): Promise<Map<string, ForgeStatus>> {
+  const projects = [...byProject(refs).values()];
+  const answer = (await glab(
+    context,
+    host,
+    "POST",
+    "graphql",
+    [
+      [
+        "query",
+        gitlabStatusesQuery(
+          projects.map((group) => [
+            group[0]!.project,
+            group.map((ref) => ref.number),
+          ]),
+        ),
+        "raw",
+      ],
+    ],
+    false,
+    { feature: "chip", kind: "mr-batch" },
+  )) as Record<string, any> | null;
+  const data = answer?.data;
+  if (!data || typeof data !== "object")
+    throw new Error("GitLab: no data in the GraphQL answer");
+  const statuses = new Map<string, ForgeStatus>();
+  // A project GitLab cannot show is null; an answer without it is not one.
+  if (projects.some((_, index) => !(`p${index}` in data)))
+    throw new Error("GitLab: unexpected GraphQL answer");
+  projects.forEach((group, index) => {
+    const nodes: Record<string, any>[] = Array.isArray(
+      data[`p${index}`]?.mergeRequests?.nodes,
+    )
+      ? data[`p${index}`].mergeRequests.nodes
+      : [];
+    for (const ref of group) {
+      const node = nodes.find((entry) => Number(entry?.iid) === ref.number);
+      statuses.set(
+        forgeRefKey(ref),
+        node
+          ? gitlabStatusOf(ref, {
+              mr: {
+                web_url: node.webUrl,
+                references: { full: node.reference },
+                title: node.title,
+                state: node.state,
+                draft: node.draft,
+                author: node.author,
+                source_branch: node.sourceBranch,
+                target_branch: node.targetBranch,
+                updated_at: node.updatedAt,
+              },
+              pipeline: node.headPipeline
+                ? text(node.headPipeline.status, 40).toLowerCase()
+                : null,
+              failed: Array.isArray(node.headPipeline?.jobs?.nodes)
+                ? node.headPipeline.jobs.nodes.map((job: any) => ({
+                    name: job?.name,
+                    stage: job?.stage?.name,
+                    allowFailure: job?.allowFailure === true,
+                  }))
+                : [],
+              approvals:
+                typeof node.approved === "boolean" ||
+                Array.isArray(node.approvedBy?.nodes)
+                  ? {
+                      approved:
+                        typeof node.approved === "boolean"
+                          ? node.approved
+                          : null,
+                      count: Array.isArray(node.approvedBy?.nodes)
+                        ? node.approvedBy.nodes.length
+                        : 0,
+                    }
+                  : null,
+              resolvable: node.resolvableDiscussionsCount,
+              resolved: node.resolvedDiscussionsCount,
+            })
+          : {
+              ref,
+              state: "not_found",
+              message: "No such merge request",
+              fetchedAt: now(),
+            },
+      );
+    }
+  });
+  return statuses;
 }
 
 /** gh on the checkout's host; its own login answers for each host. */
 async function gh(
   context: ForgeContext,
   argv: string[],
+  /** For the forge gate: the host asked, what, and how it may be shared. */
+  call: { host: string; kind: string; include?: boolean; reuseMs?: number },
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return forgeGate.run(
+    context.runProcessWithCodeTimeout,
+    { checkout: context.host ?? "", feature: "chip", ...call },
+    ["gh", ...argv],
+    (full) => spawnGh(context, full),
+  );
+}
+
+async function spawnGh(
+  context: ForgeContext,
+  full: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const env = {
     GH_PROMPT_DISABLED: "1",
     GIT_TERMINAL_PROMPT: "0",
     NO_COLOR: "1",
   };
-  const full = ["gh", ...argv];
   if (context.host) {
     const command = `{ cd ${context.shQuote(context.root)} 2>/dev/null || cd; } && ${Object.entries(
       env,
@@ -328,9 +531,10 @@ export function ghHostLogin(context: ForgeContext, host: string) {
   const key = `${context.host ?? ""}\n${host}`;
   const entry = known.get(key);
   if (entry && entry.until > Date.now()) return entry.answer;
-  const answer = gh(context, ["auth", "status", "--hostname", host]).then(
-    (result) => result.code,
-  );
+  const answer = gh(context, ["auth", "status", "--hostname", host], {
+    host,
+    kind: "auth",
+  }).then((result) => result.code);
   const next = { until: Date.now() + 5 * 60_000, answer };
   known.set(key, next);
   answer.catch(() => known.delete(key));
@@ -364,20 +568,24 @@ export async function readGithubStatus(
     };
   let data: any;
   try {
-    const result = await gh(context, [
-      "api",
-      "--hostname",
-      ref.host,
-      "graphql",
-      "-f",
-      `query=${GITHUB_QUERY}`,
-      "-f",
-      `o=${owner}`,
-      "-f",
-      `r=${repo}`,
-      "-F",
-      `n=${ref.number}`,
-    ]);
+    const result = await gh(
+      context,
+      [
+        "api",
+        "--hostname",
+        ref.host,
+        "graphql",
+        "-f",
+        `query=${GITHUB_QUERY}`,
+        "-f",
+        `o=${owner}`,
+        "-f",
+        `r=${repo}`,
+        "-F",
+        `n=${ref.number}`,
+      ],
+      { host: ref.host, kind: "graphql", include: true },
+    );
     if (result.code !== 0)
       return {
         ref,
@@ -398,7 +606,19 @@ export async function readGithubStatus(
       fetchedAt: now(),
     };
   }
-  const pr = data?.data?.repository?.pullRequest;
+  return githubStatusOf(
+    ref,
+    data?.data?.repository?.nameWithOwner,
+    data?.data?.repository?.pullRequest,
+  );
+}
+
+/** What GraphQL says of a pull request, as a chip shows it. */
+function githubStatusOf(
+  ref: ForgeRef,
+  nameWithOwner: unknown,
+  pr: any,
+): ForgeStatus {
   const url = pr ? ownRequestUrl(ref, pr.url) : null;
   if (!pr || !url) return { ref, state: "not_found", fetchedAt: now() };
   const rollup = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup ?? null;
@@ -427,7 +647,7 @@ export async function readGithubStatus(
     fetchedAt: now(),
     request: {
       url,
-      project: text(data.data.repository.nameWithOwner, 300) || ref.project,
+      project: text(nameWithOwner, 300) || ref.project,
       title: text(pr.title, 300),
       state:
         pr.state === "MERGED"
@@ -458,6 +678,84 @@ export async function readGithubStatus(
         .length,
     },
   };
+}
+
+const GITHUB_REQUEST_FIELDS =
+  /^.*pullRequest\(number: \$n\) \{ (.*) \} \} \}$/.exec(GITHUB_QUERY)![1]!;
+
+/** One GraphQL query for several pull requests of several repositories. */
+export function githubStatusesQuery(repos: [string, number[]][]): string {
+  return `query { ${repos
+    .map(([project, numbers], index) => {
+      const [owner, name] = project.split("/");
+      return `r${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { nameWithOwner ${numbers
+        .map(
+          (number) =>
+            `n${number}: pullRequest(number: ${number}) { ${GITHUB_REQUEST_FIELDS} }`,
+        )
+        .join(" ")} }`;
+    })
+    .join(" ")} }`;
+}
+
+/**
+ * Several GitHub pull requests of one host in one GraphQL query; one that
+ * does not exist is not found, the others are read. Throws when GitHub
+ * answers no data at all.
+ */
+export async function readGithubStatuses(
+  context: ForgeContext,
+  host: string,
+  refs: ForgeRef[],
+): Promise<Map<string, ForgeStatus>> {
+  const repos = [...byProject(refs).values()].filter((group) => {
+    const [owner, name, ...rest] = group[0]!.project.split("/");
+    return owner && name && !rest.length;
+  });
+  const result = await gh(
+    context,
+    [
+      "api",
+      "--hostname",
+      host,
+      "graphql",
+      "-f",
+      `query=${githubStatusesQuery(
+        repos.map((group) => [
+          group[0]!.project,
+          [...new Set(group.map((ref) => ref.number))],
+        ]),
+      )}`,
+    ],
+    { host, kind: "pr-batch", include: true },
+  );
+  // A missing pull request is an error beside the others' data.
+  let data: any;
+  try {
+    data = JSON.parse(result.stdout)?.data;
+  } catch {}
+  if (!data || typeof data !== "object")
+    throw new Error(
+      (result.stderr || "GitHub request failed").trim().slice(0, 300),
+    );
+  const statuses = new Map<string, ForgeStatus>();
+  for (const ref of refs)
+    statuses.set(forgeRefKey(ref), {
+      ref,
+      state: "not_found",
+      fetchedAt: now(),
+    });
+  if (repos.some((_, index) => !(`r${index}` in data)))
+    throw new Error("GitHub: unexpected GraphQL answer");
+  repos.forEach((group, index) => {
+    const repo = data[`r${index}`];
+    for (const ref of group)
+      statuses.set(
+        forgeRefKey(ref),
+        githubStatusOf(ref, repo?.nameWithOwner, repo?.[`n${ref.number}`]),
+      );
+  });
+  return statuses;
 }
 
 type Cached<T> = { until: number; value: Promise<T> };
@@ -499,16 +797,152 @@ export function createForgeCache(clock: () => number = Date.now) {
     );
     return entry.value;
   }
+  // Chips of one forge host asked together, and those asked lately, are
+  // read with one GraphQL query; each answer stands as long as it can.
+  type Waiter = {
+    ref: ForgeRef;
+    resolve: (status: ForgeStatus) => void;
+    reject: (error: unknown) => void;
+  };
+  type Group = {
+    interest: Map<string, { ref: ForgeRef; at: number }>;
+    answers: Map<string, { until: number; status: ForgeStatus }>;
+    waiting: Waiter[];
+    timer: ReturnType<typeof setTimeout> | null;
+    read: (refs: ForgeRef[]) => Promise<Map<string, ForgeStatus>>;
+  };
+  const groups = new Map<string, Group>();
+  async function flush(group: Group) {
+    group.timer = null;
+    const waiting = group.waiting.splice(0);
+    if (!waiting.length) return;
+    const refs = new Map<string, ForgeRef>();
+    for (const { ref } of waiting) refs.set(forgeRefKey(ref), ref);
+    for (const [key, { ref, at }] of [...group.interest].sort(
+      (a, b) => b[1].at - a[1].at,
+    )) {
+      if (at <= clock() - FORGE_INTEREST_MS) group.interest.delete(key);
+      else if (refs.size < FORGE_BATCH_SIZE) refs.set(key, ref);
+    }
+    try {
+      const read = await group.read([...refs.values()]);
+      for (const [key, status] of read) {
+        const ttl = forgeAnswerTtl(status);
+        if (ttl > 0) group.answers.set(key, { until: clock() + ttl, status });
+        else group.answers.delete(key);
+      }
+      for (const waiter of waiting) {
+        const status = read.get(forgeRefKey(waiter.ref));
+        if (status) waiter.resolve({ ...status, ref: waiter.ref });
+        else waiter.reject(new Error("not in the batch's answer"));
+      }
+    } catch (error) {
+      for (const waiter of waiting) waiter.reject(error);
+    }
+    if (group.answers.size > 500)
+      for (const [key, answer] of group.answers)
+        if (answer.until <= clock()) group.answers.delete(key);
+  }
+  function batched(
+    key: string,
+    ref: ForgeRef,
+    fresh: boolean,
+    read: Group["read"],
+  ): Promise<ForgeStatus> {
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        interest: new Map(),
+        answers: new Map(),
+        waiting: [],
+        timer: null,
+        read,
+      };
+      groups.set(key, group);
+    }
+    const refKey = forgeRefKey(ref);
+    group.interest.set(refKey, { ref, at: clock() });
+    const known = group.answers.get(refKey);
+    if (!fresh && known && known.until > clock())
+      return Promise.resolve({ ...known.status, ref });
+    const current = group;
+    current.read = read;
+    return new Promise((resolve, reject) => {
+      current.waiting.push({ ref, resolve, reject });
+      current.timer ??= setTimeout(
+        () => void flush(current),
+        FORGE_BATCH_WINDOW_MS,
+      );
+    });
+  }
+  async function gitlabStatus(
+    context: ForgeContext,
+    ref: ForgeRef,
+    fresh: boolean,
+  ): Promise<ForgeStatus> {
+    // Confidential security work never leaves GitLab: not even its title.
+    if (isSecurityProject(ref.project))
+      return { ref, state: "security", fetchedAt: now() };
+    let access: { ownLogin: boolean };
+    try {
+      access = await glabHostAccess(context, ref.host);
+    } catch (error) {
+      return classifyAccess(ref, error);
+    }
+    const host = { host: ref.host, ownLogin: access.ownLogin };
+    try {
+      return await batched(
+        `gitlab\n${context.host ?? ""}\n${ref.host}\n${access.ownLogin}`,
+        ref,
+        fresh,
+        (refs) => readGitlabStatuses(context, host, refs),
+      );
+    } catch {
+      // An older GitLab, or no answer: one by one, through REST.
+      return readGitlabStatus(context, ref);
+    }
+  }
+  async function githubStatus(
+    context: ForgeContext,
+    ref: ForgeRef,
+    fresh: boolean,
+  ): Promise<ForgeStatus> {
+    const [owner, repo, ...rest] = ref.project.split("/");
+    if (!owner || !repo || rest.length)
+      return { ref, state: "not_found", fetchedAt: now() };
+    const login = await ghHostLogin(context, ref.host).catch(() => -1);
+    if (login !== 0) return readGithubStatus(context, ref);
+    try {
+      return await batched(
+        `github\n${context.host ?? ""}\n${ref.host}`,
+        ref,
+        fresh,
+        (refs) => readGithubStatuses(context, ref.host, refs),
+      );
+    } catch (error) {
+      return {
+        ref,
+        state: "error",
+        message: message(error).slice(0, 300),
+        fetchedAt: now(),
+      };
+    }
+  }
   return {
-    status(context: ForgeContext, ref: ForgeRef): Promise<ForgeStatus> {
-      return remember(
-        statuses,
-        `${context.host ?? ""}\n${forgeRefKey(ref)}`,
-        FORGE_STATUS_TTL_MS,
-        () =>
-          ref.provider === "gitlab"
-            ? readGitlabStatus(context, ref)
-            : readGithubStatus(context, ref),
+    /** `fresh`: a click on refresh, not answered from what is known. */
+    status(
+      context: ForgeContext,
+      ref: ForgeRef,
+      options: { fresh?: boolean } = {},
+    ): Promise<ForgeStatus> {
+      const key = `${context.host ?? ""}\n${forgeRefKey(ref)}`;
+      const fresh = options.fresh === true;
+      if (fresh && statuses.get(key)?.until !== Number.POSITIVE_INFINITY)
+        statuses.delete(key);
+      return remember(statuses, key, FORGE_STATUS_TTL_MS, () =>
+        ref.provider === "gitlab"
+          ? gitlabStatus(context, ref, fresh)
+          : githubStatus(context, ref, fresh),
       );
     },
     session(
@@ -607,12 +1041,11 @@ export async function readDefaultProject(
   if (github) {
     // The fork's parent, where its pull requests go.
     if (name !== "upstream") {
-      const repo = await gh(context, [
-        "api",
-        "--hostname",
-        host,
-        `repos/${remote.project}`,
-      ]).catch(() => null);
+      const repo = await gh(
+        context,
+        ["api", "--hostname", host, `repos/${remote.project}`],
+        { host, kind: "project", include: true, reuseMs: 30 * 60_000 },
+      ).catch(() => null);
       try {
         const parent =
           repo?.code === 0 ? JSON.parse(repo.stdout)?.parent : null;
@@ -640,6 +1073,7 @@ export async function readDefaultProject(
       `projects/${encodeURIComponent(remote.project)}`,
       [],
       false,
+      { feature: "chip", kind: "project", reuseMs: 30 * 60_000 },
     )) as Record<string, any> | null;
     const parent = answer?.forked_from_project?.path_with_namespace;
     if (typeof parent === "string" && validProject(parent))

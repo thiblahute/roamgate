@@ -516,11 +516,17 @@ pane's session works in with the review pane's repository scan (its checkout,
 in), each branch's request (`findBranchMergeRequest` for GitLab, the PR
 card's lookup for GitHub) and what `!N` and `#N` mean there. The server
 shares answers across browsers (one request in flight per checkout host and
-request, kept 15 s; sessions 60 s). Browsers keep one cache entry per request
+request, kept 15 s; sessions 5 minutes) and reads the requests of one forge
+host asked within 100 ms of each other, with those asked in the last 5
+minutes, in one GraphQL query (aliases per project and request; the REST
+reads when GitLab answers no data), keeping each answer 45 s while a
+pipeline runs, 2.5 minutes while open and 30 minutes once merged or closed;
+a refresh click (`fresh`) asks anyway. Every glab and gh call goes through
+the forge gate described above. Browsers keep one cache entry per request
 and connection, ask only while a chip, row or header showing it is on screen
-and the page is visible, and refresh every 20 s while a pipeline runs, two
-minutes while open, thirty minutes once merged or closed, five minutes when
-not signed in, with errors backing off from 30 s to ten minutes. Chips are
+and the page is visible, and refresh every 60 s while a pipeline runs, three
+minutes while open, six hours once merged or closed, ten minutes when not
+signed in, with errors backing off from 30 s to ten minutes. Chips are
 drawn into slots put in the sanitized Markdown after it renders (never in
 code); what the forge says is not selectable message text and never goes to
 an agent. The history marks a `glab mr create` or `gh pr create` result with

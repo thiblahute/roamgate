@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ForgeRef } from "../../../shared/forge";
+import { withoutGateFlags } from "../workspace/forge-calls";
 import { createdRequestField, createsRequest } from "../agent/session-history";
 import {
   createForgeCache,
@@ -45,7 +46,8 @@ function fakeGlab(
     root: "/repo",
     ...(options.host ? { host: options.host } : {}),
     shQuote: (value) => `'${value}'`,
-    runProcessWithCodeTimeout: async (argv, _timeout, runOptions) => {
+    runProcessWithCodeTimeout: async (raw, _timeout, runOptions) => {
+      const argv = withoutGateFlags(raw);
       if (argv.some((arg) => arg.includes("glab config get host"))) {
         const login = logins.some((host) =>
           argv.some((arg) => arg.includes(`token '${host}'`)),
@@ -238,7 +240,8 @@ describe("GitHub pull request status", () => {
     const context: ForgeContext = {
       root: "/repo",
       shQuote: (value) => `'${value}'`,
-      runProcessWithCodeTimeout: async (argv) => {
+      runProcessWithCodeTimeout: async (raw) => {
+        const argv = withoutGateFlags(raw);
         calls.push(argv);
         if (argv[1] === "auth")
           return { code: loggedIn ? 0 : 1, stdout: "", stderr: "" };
@@ -351,6 +354,153 @@ describe("the shared cache", () => {
     now += 10_000;
     await cache.status(context, gitlabRef);
     expect(count()).toBe(2);
+  });
+});
+
+describe("chips asked together", () => {
+  const node = (iid: number, extra: Record<string, unknown> = {}) => ({
+    iid: String(iid),
+    webUrl: `https://gitlab.example/gst/gstreamer/-/merge_requests/${iid}`,
+    reference: `gst/gstreamer!${iid}`,
+    title: `MR ${iid}`,
+    state: "opened",
+    draft: false,
+    updatedAt: "2026-11-02T10:00:00Z",
+    sourceBranch: "b",
+    targetBranch: "main",
+    author: { username: "me" },
+    approved: true,
+    approvedBy: { nodes: [{ username: "a" }] },
+    resolvableDiscussionsCount: 4,
+    resolvedDiscussionsCount: 1,
+    headPipeline: {
+      status: "FAILED",
+      jobs: {
+        nodes: [{ name: "build", allowFailure: false, stage: { name: "b" } }],
+      },
+    },
+    ...extra,
+  });
+  /** glab whose GraphQL answers each project alias with these nodes. */
+  function batchGlab(nodes: Record<string, unknown[]>) {
+    const queries: string[] = [];
+    const { context, calls } = fakeGlab({});
+    const run = context.runProcessWithCodeTimeout;
+    context.runProcessWithCodeTimeout = async (raw, timeout, options) => {
+      const argv = withoutGateFlags(raw);
+      const query = argv.find((arg) => arg.startsWith("query="));
+      if (!query) return run(raw, timeout, options);
+      queries.push(query);
+      const data: Record<string, unknown> = {};
+      for (const [, alias, path] of query.matchAll(
+        /(p\d+): project\(fullPath: "([^"]+)"\)/g,
+      ))
+        data[alias!] = { mergeRequests: { nodes: nodes[path!] ?? [] } };
+      return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
+    };
+    return { context, calls, queries };
+  }
+
+  test("one GraphQL query reads every request of a host on screen", async () => {
+    const cache = createForgeCache();
+    const { context, queries, calls } = batchGlab({
+      "gst/gstreamer": [
+        node(42),
+        node(43, { state: "merged", headPipeline: null }),
+      ],
+      "gst/gst-plugins-rs": [],
+    });
+    const [a, b, c] = await Promise.all([
+      cache.status(context, gitlabRef),
+      cache.status(context, { ...gitlabRef, number: 43 }),
+      cache.status(context, {
+        ...gitlabRef,
+        project: "gst/gst-plugins-rs",
+        number: 7,
+      }),
+    ]);
+    expect(queries).toHaveLength(1);
+    // Nothing else: no REST reads.
+    expect(calls).toHaveLength(0);
+    expect(a.request).toMatchObject({
+      state: "open",
+      pipeline: {
+        status: "failed",
+        failed: [{ name: "build", stage: "b", allowFailure: false }],
+      },
+      approvals: { approved: true, count: 1 },
+      unresolved: 3,
+    });
+    expect(b.request?.state).toBe("merged");
+    expect(b.request?.pipeline).toBeNull();
+    expect(c.state).toBe("not_found");
+  });
+
+  test("a chip asked later brings the others along, and answers stand", async () => {
+    let now = 0;
+    const cache = createForgeCache(() => now);
+    const { context, queries } = batchGlab({
+      "gst/gstreamer": [node(42), node(44)],
+    });
+    await cache.status(context, gitlabRef);
+    now += 20_000;
+    await cache.status(context, { ...gitlabRef, number: 44 });
+    expect(queries).toHaveLength(2);
+    expect(queries[1]).toContain('["44","42"]');
+    // 42 was read with 44: asked again past the shared 15 s, no call.
+    now += 20_000;
+    await cache.status(context, gitlabRef);
+    expect(queries).toHaveLength(2);
+    // A click on refresh asks anyway.
+    await cache.status(context, gitlabRef, { fresh: true });
+    expect(queries).toHaveLength(3);
+  });
+
+  test("GitHub pull requests of a repository share one query", async () => {
+    const cache = createForgeCache();
+    const calls: string[][] = [];
+    const pr = (number: number) => ({
+      number,
+      title: `PR ${number}`,
+      url: `https://github.com/cli/cli/pull/${number}`,
+      state: "OPEN",
+      isDraft: false,
+      reviewThreads: { nodes: [] },
+    });
+    const context: ForgeContext = {
+      root: "/repo",
+      shQuote: (value) => `'${value}'`,
+      runProcessWithCodeTimeout: async (raw) => {
+        const argv = withoutGateFlags(raw);
+        calls.push(argv);
+        if (argv[1] === "auth") return { code: 0, stdout: "", stderr: "" };
+        // A missing one is an error beside the others' data.
+        return {
+          code: 1,
+          stdout: JSON.stringify({
+            data: { r0: { nameWithOwner: "cli/cli", n7: pr(7), n9: null } },
+            errors: [{ type: "NOT_FOUND" }],
+          }),
+          stderr: "gh: Could not resolve to a PullRequest",
+        };
+      },
+    };
+    const ref: ForgeRef = {
+      provider: "github",
+      host: "github.com",
+      project: "cli/cli",
+      number: 7,
+    };
+    const [seven, nine] = await Promise.all([
+      cache.status(context, ref),
+      cache.status(context, { ...ref, number: 9 }),
+    ]);
+    expect(calls.filter((argv) => argv[1] === "api")).toHaveLength(1);
+    expect(calls.find((argv) => argv[1] === "api")!.at(-1)).toContain(
+      "n7: pullRequest(number: 7)",
+    );
+    expect(seven.request?.url).toBe("https://github.com/cli/cli/pull/7");
+    expect(nine.state).toBe("not_found");
   });
 });
 
