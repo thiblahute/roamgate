@@ -30,6 +30,21 @@ shares an identical call already in flight, and sends interactive calls at once
 whatever the background queue holds. The bridge runs a background request's SSH
 commands in the background lane (see [SSH transport](#ssh-transport)).
 
+Every network call to a forge (`glab`, `gh`) goes through one gate per
+checkout host and forge host (`server/src/workspace/forge-calls.ts`): at most
+60 calls a minute and four at once, queued in order and given up past the
+caller's deadline; a 429, `Retry-After` or `RateLimit-Remaining: 0` pauses the
+host until the forge allows; identical calls share one answer in flight and
+for a while after; GETs are sent with `If-None-Match`, and a 304 answers with
+the remembered body. Each call logs one `forge call` debug line (feature,
+kind, host). PR/MR badges ask the forge for one GraphQL query per GitLab
+host covering every branch asked about together (and those asked in the last
+15 minutes), kept 2 minutes for an open request, 3 without one and 30 for
+merged or closed ones; CLI logins and project ids are kept 10 and 30 minutes.
+The sidebar asks a badge again only when its age passes 3 minutes (open), 5
+(no request), 30 (merged or closed) or 10 (no CLI or login), whichever
+connection or workspace is shown, and nothing while the page is hidden.
+
 ## Connection isolation
 
 `ConnectionManager` owns the shared profiles and one `ConnectionRuntime` per
