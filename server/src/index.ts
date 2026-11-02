@@ -2339,7 +2339,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       if (method === "forge.status") {
         const ref = parseForgeRefParam(raw.ref);
         if (!ref) throw new Error("invalid merge request reference");
-        result = await forgeCache.status(context(path), ref);
+        result = await forgeCache.status(context(path), ref, {
+          fresh: raw.fresh === true,
+        });
       } else {
         const root =
           path ||

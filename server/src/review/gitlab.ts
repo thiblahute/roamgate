@@ -2,6 +2,7 @@ import { sshCommandArgv, sshReadCommandArgv } from "../bridge/ssh-command";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { forgeGate } from "../workspace/forge-calls";
 import { gitShellCommandArgv } from "../workspace/git-shell";
 import { enterCheckout, reviewScriptError } from "../workspace/review-patch";
 import type {
@@ -232,9 +233,17 @@ export async function glab(
   path: string,
   fields: [string, string, "raw" | "typed"][] = [],
   paginate = method === "GET",
+  /**
+   * Who asks and what, for the forge gate's log; reuseMs shares an
+   * identical read's answer that long.
+   */
+  call: { feature?: string; kind?: string; reuseMs?: number } = {},
 ): Promise<unknown> {
   if (ref.ownLogin === undefined)
     ref = { host: ref.host, ...(await glabHostAccess(context, ref.host)) };
+  const ownLogin = ref.ownLogin;
+  const host = ref.host;
+  const read = method === "GET" || path === "graphql";
   const argv = [
     "glab",
     "api",
@@ -250,49 +259,70 @@ export async function glab(
     ]),
   ];
   const env = { GLAB_NO_PROMPT: "1", GIT_TERMINAL_PROMPT: "0", NO_COLOR: "1" };
-  let result: { code: number; stdout: string; stderr: string };
-  if (context.host) {
-    const unset = ref.ownLogin
-      ? `env ${TOKEN_VARIABLES.map((name) => `-u ${name}`).join(" ")} `
-      : "";
-    // `glab api` names its project: a removed checkout runs it from home.
-    const command = `{ cd ${context.shQuote(context.root)} 2>/dev/null || cd; } && ${unset}${Object.entries(
-      env,
-    )
-      .map(([key, value]) => `${key}=${value}`)
-      .join(" ")} ${argv.map(context.shQuote).join(" ")}`;
-    result = await context.runProcessWithCodeTimeout(
-      method === "GET"
-        ? sshReadCommandArgv(context.host, command, [], "review.gitlab")
-        : sshCommandArgv(context.host, command, [], "review.gitlab"),
-      TIMEOUT_MS,
-    );
-  } else {
-    // A missing cwd fails the spawn with ENOENT too, as a missing glab
-    // would: a removed checkout runs it from home instead.
-    const cwd = existsSync(context.root) ? context.root : homedir();
-    try {
-      result = await context.runProcessWithCodeTimeout(argv, TIMEOUT_MS, {
-        cwd,
-        env: ref.ownLogin
-          ? {
-              ...Object.fromEntries(
-                Object.entries(process.env).filter(
-                  ([name]) => !TOKEN_VARIABLES.includes(name),
+  const spawn = async (argv: string[]) => {
+    let result: { code: number; stdout: string; stderr: string };
+    if (context.host) {
+      const unset = ownLogin
+        ? `env ${TOKEN_VARIABLES.map((name) => `-u ${name}`).join(" ")} `
+        : "";
+      // `glab api` names its project: a removed checkout runs it from home.
+      const command = `{ cd ${context.shQuote(context.root)} 2>/dev/null || cd; } && ${unset}${Object.entries(
+        env,
+      )
+        .map(([key, value]) => `${key}=${value}`)
+        .join(" ")} ${argv.map(context.shQuote).join(" ")}`;
+      result = await context.runProcessWithCodeTimeout(
+        method === "GET"
+          ? sshReadCommandArgv(context.host, command, [], "review.gitlab")
+          : sshCommandArgv(context.host, command, [], "review.gitlab"),
+        TIMEOUT_MS,
+      );
+    } else {
+      // A missing cwd fails the spawn with ENOENT too, as a missing glab
+      // would: a removed checkout runs it from home instead.
+      const cwd = existsSync(context.root) ? context.root : homedir();
+      try {
+        result = await context.runProcessWithCodeTimeout(argv, TIMEOUT_MS, {
+          cwd,
+          env: ownLogin
+            ? {
+                ...Object.fromEntries(
+                  Object.entries(process.env).filter(
+                    ([name]) => !TOKEN_VARIABLES.includes(name),
+                  ),
                 ),
-              ),
-              ...env,
-            }
-          : { ...process.env, ...env },
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        throw new Error("glab is not installed on this host", {
-          cause: error,
+                ...env,
+              }
+            : { ...process.env, ...env },
         });
-      throw error;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error("glab is not installed on this host", {
+            cause: error,
+          });
+        throw error;
+      }
     }
-  }
+    return result;
+  };
+  // Reads go through the forge gate's budget, sharing and If-None-Match;
+  // writes only through its budget.
+  const result = await forgeGate.run(
+    context.runProcessWithCodeTimeout,
+    {
+      checkout: context.host ?? "",
+      host,
+      feature: call.feature ?? "review",
+      kind:
+        call.kind ??
+        (path === "graphql" ? "graphql" : read ? "read" : method.toLowerCase()),
+      include: read && !paginate,
+      conditional: method === "GET" && !paginate,
+      ...(read && call.reuseMs !== undefined ? { reuseMs: call.reuseMs } : {}),
+    },
+    argv,
+    spawn,
+  );
   if (result.code === 127)
     throw new Error("glab is not installed on this host");
   if (result.code !== 0) {
@@ -1114,6 +1144,9 @@ export async function findBranchMergeRequest(
       ref,
       "GET",
       `projects/${encodeURIComponent(remote.project)}`,
+      [],
+      false,
+      { feature: "branch-request", kind: "project", reuseMs: 30 * 60_000 },
     )) as { id?: unknown } | null;
     if (typeof project?.id !== "number")
       throw new Error(`GitLab: no project ${remote.project}`);
@@ -1129,6 +1162,7 @@ export async function findBranchMergeRequest(
         `merge_requests?scope=${scope}&state=opened&source_branch=${encodeURIComponent(source.branch)}&per_page=${MR_PAGE_SIZE}&page=${page}`,
         [],
         false,
+        { feature: "branch-request", kind: "mr-search" },
       );
       const match = pickMergeRequest(list, id, orTarget);
       if (match) return { ...match, branch: checkout.branch ?? "" };

@@ -15,13 +15,13 @@ import type { ConnectionClient } from "./api";
  */
 
 /** A running or pending pipeline: it may finish any time. */
-export const FORGE_RUNNING_MS = 20_000;
+export const FORGE_RUNNING_MS = 60_000;
 /** An open request: titles, approvals and threads move slowly. */
-export const FORGE_OPEN_MS = 2 * 60_000;
+export const FORGE_OPEN_MS = 3 * 60_000;
 /** Merged, closed, gone or security: next to nothing changes. */
-export const FORGE_SETTLED_MS = 30 * 60_000;
+export const FORGE_SETTLED_MS = 6 * 60 * 60_000;
 /** Not signed in, or no glab/gh: until the user fixes it. */
-export const FORGE_UNAVAILABLE_MS = 5 * 60_000;
+export const FORGE_UNAVAILABLE_MS = 10 * 60_000;
 /** After a failure: doubling from this, up to FORGE_ERROR_MAX_MS. */
 export const FORGE_ERROR_MS = 30_000;
 export const FORGE_ERROR_MAX_MS = 10 * 60_000;
@@ -110,14 +110,18 @@ export function createForgeStore(
     }, due);
   }
 
-  async function ask(slot: Slot) {
+  async function ask(slot: Slot, fresh = false) {
     slot.askedAt = now();
     publish(slot, { ...slot.entry, loading: true });
     let status: ForgeStatus | null;
     try {
       status = (await slot.client.call(
         "forge.status",
-        { ref: slot.ref, ...(slot.path ? { path: slot.path } : {}) },
+        {
+          ref: slot.ref,
+          ...(slot.path ? { path: slot.path } : {}),
+          ...(fresh ? { fresh: true } : {}),
+        },
         REQUEST_TIMEOUT_MS,
         { lane: "background" },
       )) as ForgeStatus;
@@ -221,7 +225,7 @@ export function createForgeStore(
     refresh(client: ConnectionClient, ref: ForgeRef) {
       const slot = slots.get(slotKey(client, ref));
       if (!slot || slot.entry.loading) return;
-      void ask(slot);
+      void ask(slot, true);
     },
     clear() {
       for (const slot of slots.values())
@@ -326,7 +330,7 @@ export function useForgeHolds(
 }
 
 /** A session's repositories and their branches' requests, per pane. */
-const SESSION_MS = 2 * 60_000;
+const SESSION_MS = 5 * 60_000;
 const sessions = new Map<string, { at: number; session: ForgeSession }>();
 const sessionListeners = new Map<string, Set<() => void>>();
 const sessionAsks = new Map<string, Promise<void>>();
@@ -378,7 +382,7 @@ function askSession(
 
 /**
  * The repositories a pane's session works in and their branches'
- * requests: asked when shown, then every two minutes while the page is
+ * requests: asked when shown, then every five minutes while the page is
  * visible.
  */
 export function useForgeSession(

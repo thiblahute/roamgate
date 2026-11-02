@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { withoutGateFlags } from "../workspace/forge-calls";
 import {
   chmodSync,
   mkdirSync,
@@ -52,7 +53,8 @@ function fakeGlab(responses: Record<string, unknown>) {
   const context: GlabContext = {
     root: "/repo",
     shQuote: (value) => `'${value}'`,
-    runProcessWithCodeTimeout: async (argv) => {
+    runProcessWithCodeTimeout: async (raw) => {
+      const argv = withoutGateFlags(raw);
       const probe = hostProbe(argv);
       if (probe) return probe;
       calls.push(argv);
@@ -366,7 +368,8 @@ test("a branch's merge request: the open ones of its name, from its project", as
   const context: GlabContext = {
     root: "/repo",
     shQuote: (value) => `'${value}'`,
-    runProcessWithCodeTimeout: async (argv) => {
+    runProcessWithCodeTimeout: async (raw) => {
+      const argv = withoutGateFlags(raw);
       calls.push(argv);
       const path = argv.at(-1)!;
       const body = path.startsWith("projects/")
@@ -449,7 +452,8 @@ test("a remote on another host glab is logged in to is asked there", async () =>
   const context: GlabContext = {
     root: "/repo",
     shQuote: (value) => `'${value}'`,
-    runProcessWithCodeTimeout: async (argv, _timeout, options) => {
+    runProcessWithCodeTimeout: async (raw, _timeout, options) => {
+      const argv = withoutGateFlags(raw);
       calls.push(argv);
       tokens.push(options?.env?.GITLAB_TOKEN);
       const body = argv.at(-1)!.startsWith("projects/")
@@ -501,7 +505,8 @@ test("the merge request list is read a page at a time, up to a few", async () =>
   const context: GlabContext = {
     root: "/repo",
     shQuote: (value) => `'${value}'`,
-    runProcessWithCodeTimeout: async (argv) => {
+    runProcessWithCodeTimeout: async (raw) => {
+      const argv = withoutGateFlags(raw);
       const path = argv.at(-1)!;
       paths.push(path);
       expect(argv).not.toContain("--paginate");
