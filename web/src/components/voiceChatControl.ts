@@ -7,6 +7,7 @@ export type ActiveVoiceState = Exclude<VoiceState, "off">;
 export const VOICE_LABELS: Record<ActiveVoiceState, string> = {
   listening: "Listening",
   transcribing: "Writing down what you said",
+  routing: "Choosing who it's for",
   waiting: "Waiting for the agent",
   speaking: "Reading the answer",
 };
@@ -15,6 +16,7 @@ export const VOICE_LABELS: Record<ActiveVoiceState, string> = {
 const VOICE_SHORT_LABELS: Record<ActiveVoiceState, string> = {
   listening: "Listening",
   transcribing: "Transcribing",
+  routing: "Choosing",
   waiting: "Thinking",
   speaking: "Speaking",
 };
@@ -34,6 +36,7 @@ export type VoiceControlView = {
 const VOICE_HINTS: Record<ActiveVoiceState, string> = {
   listening: "Go ahead, I am listening",
   transcribing: "Writing down what you said",
+  routing: "Choosing who it's for",
   waiting: "Waiting for the agent to answer",
   speaking: "Reading the answer",
 };

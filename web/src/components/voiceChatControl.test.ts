@@ -39,6 +39,11 @@ test("the other states use short words and stop on a tap", () => {
     level: null,
     hint: "Writing down what you said",
   });
+  const routing = voiceControlView("routing", false, 0);
+  expect(routing.label).toBe("Choosing");
+  expect(routing.ariaLabel).toBe("Choosing who it's for");
+  expect(routing.hint).toBe("Choosing who it's for");
+  expect(routing.icon).toBe("busy");
   const waiting = voiceControlView("waiting", true, 0);
   expect(waiting.label).toBe("Thinking");
   expect(waiting.title).toBe("Waiting for the agent; tap to stop");
