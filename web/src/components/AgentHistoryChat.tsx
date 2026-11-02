@@ -61,7 +61,7 @@ import {
 } from "./agentHistoryView";
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
-import { useForgeSlotsContext } from "../forgeSlots";
+import { ForgeStreamingContext, useForgeSlotsContext } from "../forgeSlots";
 import { reviewDelivery, useChatParts } from "./ChatThreads";
 import { NoteBody } from "./ReviewNoteBody";
 import { messageImagePieces } from "../chatImages";
@@ -365,11 +365,15 @@ const ChatBubble = memo(function ChatBubble({
             <NoteBody text={preview} parts={parts} />
           </div>
         ) : (
-          <MarkdownPreview
-            text={preview}
-            className="agent-history-chat-markdown"
-            breaks
-          />
+          // A live turn's text is still being written: its last reference
+          // may be cut short.
+          <ForgeStreamingContext.Provider value={entry.id.startsWith("live:")}>
+            <MarkdownPreview
+              text={preview}
+              className="agent-history-chat-markdown"
+              breaks
+            />
+          </ForgeStreamingContext.Provider>
         )}
         {truncated ? (
           <button
