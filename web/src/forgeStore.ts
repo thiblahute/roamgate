@@ -217,6 +217,12 @@ export function createForgeStore(
         },
       };
     },
+    /** Every request status known now, as last answered. */
+    known(): ForgeStatus[] {
+      return [...slots.values()].flatMap((slot) =>
+        slot.entry.status ? [slot.entry.status] : [],
+      );
+    },
     /** The page came back into view: what is due is asked. */
     wake() {
       for (const slot of slots.values()) schedule(slot);

@@ -452,6 +452,17 @@ Inspector state is scoped to each checkout; see
   never in the conversation with the agent. An answer from Ranger or the
   errands session is read aloud, and that line's **Open** shows it in full,
   in Ranger's chat or that session's.
+  With a front set up, a fast model answers each thing said within a second
+  or two, in your language, before any agent does: it says what it does
+  with the words ("OK, I'm passing that to the Roamgate session") and the
+  words go on exactly as said, or it answers what Roamgate already knows
+  itself (what runs, which sessions wait on you, a Ranger task, a merge
+  request's CI) and nothing is sent. It never works, approves or answers for
+  an agent; the agents' answers are read as they come. Between turns it
+  tells you what happened elsewhere when it is worth it (a session done or
+  waiting for input, a Ranger task run), never over you. Speaking up stops
+  it. When it is slow, the usual "Got it, on it." says it heard you. While
+  it or the router decides, the call bar says "Choosing who it's for".
   Voice chat follows you between workspaces (sidebar, Find workspace,
   shortcuts, the phone's switcher): the workspace you go to shows its agent's
   chat (the pane on screen when it is an agent, else its most recently used

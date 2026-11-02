@@ -3,6 +3,7 @@ import {
   ACK_CUT_MS,
   ACK_DELAY_MS,
   ACK_LATEST_MS,
+  cannedAck,
   ACK_PHRASES,
   STILL_PHRASES,
   STILL_WORKING_MS,
@@ -94,7 +95,13 @@ describe("ackDue", () => {
 /** A turn's acks with fake time, recording what is fetched and played. */
 function turn(
   said: string,
-  options: { started?: () => boolean; synthesized?: Promise<void> } = {},
+  options: {
+    started?: () => boolean;
+    synthesized?: Promise<void>;
+    opening?: string;
+    acked?: boolean;
+    fronted?: boolean;
+  } = {},
 ) {
   let clock = 0;
   const fetched: string[] = [];
@@ -109,6 +116,9 @@ function turn(
     busy: () => ending !== null,
     working: () => true,
     now: () => clock,
+    ...(options.opening ? { opening: options.opening } : {}),
+    ...(options.acked ? { acked: true } : {}),
+    ...(options.fronted ? { fronted: true } : {}),
     speech: {
       fetchAudio: async (text, language) => {
         fetched.push(`${language}:${text}`);
@@ -289,5 +299,102 @@ describe("startTurnAck", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  test("the front's words are said at once, in place of a canned ack", async () => {
+    jest.useFakeTimers();
+    try {
+      const t = turn("rebase sur main", {
+        opening: "OK, je transmets à la session Roamgate.",
+      });
+      expect(t.fetched).toEqual(["fr:OK, je transmets à la session Roamgate."]);
+      await t.advance(300);
+      expect(t.played).toEqual(["OK, je transmets à la session Roamgate."]);
+      await t.finishPlaying();
+      await t.advance(ACK_LATEST_MS);
+      expect(t.played).toHaveLength(1);
+      await t.ack.end();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("with a front and no words of its own, no canned ack is said", async () => {
+    jest.useFakeTimers();
+    try {
+      const t = turn("Ok vas-y lance les tests", { fronted: true });
+      expect(t.fetched).toHaveLength(0);
+      await t.advance(ACK_LATEST_MS + 1000);
+      expect(t.played).toHaveLength(0);
+      await t.ack.end();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("with a front, its words are said and never a canned ack after them", async () => {
+    jest.useFakeTimers();
+    try {
+      const t = turn("lance les tests", {
+        fronted: true,
+        opening: "Je lance les tests de voice-front.",
+      });
+      await t.advance(300);
+      expect(t.played).toEqual(["Je lance les tests de voice-front."]);
+      await t.finishPlaying();
+      await t.advance(ACK_LATEST_MS);
+      expect(t.played).toHaveLength(1);
+      await t.ack.end();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("with a front, still working only when it said nothing", async () => {
+    jest.useFakeTimers();
+    try {
+      const silent = turn("fix the build", { fronted: true });
+      await silent.advance(STILL_WORKING_MS + 400);
+      expect(silent.played).toHaveLength(1);
+      expect(STILL_PHRASES.en).toContain(silent.played[0]!);
+      await silent.finishPlaying();
+      await silent.ack.end();
+
+      const spoke = turn("fix the build", {
+        fronted: true,
+        opening: "I'm asking roamgate to fix the build.",
+      });
+      await spoke.advance(300);
+      await spoke.finishPlaying();
+      await spoke.advance(STILL_WORKING_MS * 2);
+      expect(spoke.played).toEqual(["I'm asking roamgate to fix the build."]);
+      await spoke.ack.end();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("acked already by the front's stand-in: no first ack", async () => {
+    jest.useFakeTimers();
+    try {
+      const t = turn("fix the build", { acked: true });
+      expect(t.fetched).toHaveLength(0);
+      await t.advance(ACK_LATEST_MS);
+      expect(t.played).toHaveLength(0);
+      await t.ack.end();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("cannedAck", () => {
+  test("is in the language said, and differs from the one before", () => {
+    const first = cannedAck("Est-ce que tu peux regarder le build", () => 0);
+    expect(first.language).toBe("fr");
+    expect(ACK_PHRASES.fr).toContain(first.text);
+    expect(cannedAck("Est-ce que tu peux regarder", () => 0).text).not.toBe(
+      first.text,
+    );
   });
 });
