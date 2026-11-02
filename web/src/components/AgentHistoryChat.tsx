@@ -61,6 +61,7 @@ import {
 } from "./agentHistoryView";
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
+import { useForgeSlotsContext } from "../forgeSlots";
 import { reviewDelivery, useChatParts } from "./ChatThreads";
 import { NoteBody } from "./ReviewNoteBody";
 import { messageImagePieces } from "../chatImages";
@@ -522,7 +523,8 @@ const ChatBubble = memo(function ChatBubble({
  * sanitised the same way.
  */
 export function UserMessageText({ text }: { text: string }) {
-  if (!looksLikeMarkdown(text)) return <p>{text}</p>;
+  const forge = useForgeSlotsContext();
+  if (!looksLikeMarkdown(text)) return <p>{forge?.renderText(text) ?? text}</p>;
   return (
     <MarkdownPreview
       text={text}

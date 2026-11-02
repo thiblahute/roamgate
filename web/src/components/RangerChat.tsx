@@ -33,6 +33,8 @@ import { subscribeVoiceRecording } from "../voiceLibrary";
 import { voiceSessions } from "../voiceRoute";
 import { setPaneView } from "../paneView";
 import { AgentHistoryChat, type ChatItem } from "./AgentHistoryChat";
+import { type ForgeChat, ForgeChatProvider } from "./ForgeChip";
+import { useConnectionClient } from "../useConnectionClient";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import type { HistoryEntry } from "./agentHistory";
 import { AgentMessageDialog } from "./AgentMessageDialog";
@@ -374,17 +376,26 @@ export function RangerChat({
     });
   }, [voiceToggleMute]);
 
+  // Ranger names requests of any repository: full references and URLs
+  // become chips (`!12` names none here), asked on the connection shown.
+  const forgeClient = useConnectionClient();
+  const forgeChat = useMemo<ForgeChat>(
+    () => ({ client: forgeClient, defaultProject: null }),
+    [forgeClient],
+  );
   const frame = (
     <div className="agent-history-chat-frame">
-      <AgentHistoryChat
-        items={items}
-        listRef={listRef}
-        contentRef={contentRef}
-        highlightedSequence={highlighted}
-        followKey={`${snapshot.session_id ?? ""}:${query}`}
-        speechScopeKey={draftKey}
-        onOpen={setOpened}
-      />
+      <ForgeChatProvider chat={forgeChat}>
+        <AgentHistoryChat
+          items={items}
+          listRef={listRef}
+          contentRef={contentRef}
+          highlightedSequence={highlighted}
+          followKey={`${snapshot.session_id ?? ""}:${query}`}
+          speechScopeKey={draftKey}
+          onOpen={setOpened}
+        />
+      </ForgeChatProvider>
       {minimap.length > 1 ? (
         <ConversationMinimap
           key={snapshot.session_id ?? snapshot.instance_id}

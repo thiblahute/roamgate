@@ -108,6 +108,10 @@ import { AgentPermissionCard } from "./AgentPermissionCard";
 import { AgentTasksSheet } from "./AgentTasksSheet";
 import { AgentStatusChip } from "./AgentStatusChip";
 import { AgentChatOwnerChip } from "./AgentChatOwnerChip";
+import { branchRequests, conversationRequests } from "../forgeRefs";
+import { useForgeSession } from "../forgeStore";
+import { type ForgeChat, ForgeChatProvider } from "./ForgeChip";
+import { ForgeHeaderChips, ForgeRequestsMenu } from "./ForgeRequests";
 import { useAgentTasks } from "../agentTasks";
 import { isTasksCommand, onAgentTasksRequest } from "../agentTasksOpen";
 import { shortcutTitle } from "../shortcutPreferences";
@@ -772,6 +776,40 @@ export function AgentHistoryDrawer({
   // Taken out of the queue, not replayed yet: still shown as queued.
   const departing = owns ? conversation?.departing : undefined;
   const historyUuids = useMemo(() => historyUserUuids(messages), [messages]);
+  // Merge and pull requests: the repositories the session works in and
+  // their branches' requests (the header), every request the conversation
+  // names or created (the list), and chips in its messages.
+  const forgePath = pane.foreground_cwd ?? pane.cwd ?? "";
+  const forgeSession = useForgeSession(
+    connectionClient,
+    {
+      workspaceId: pane.workspace_id,
+      path: forgePath,
+      agentPath: pane.cwd,
+    },
+    open,
+  );
+  const forgeDefault = forgeSession?.defaultProject ?? null;
+  const forgeDefaultKey = forgeDefault ? JSON.stringify(forgeDefault) : "";
+  const forgeChat = useMemo<ForgeChat>(
+    () => ({
+      client: connectionClient,
+      workspaceId: pane.workspace_id,
+      path: forgePath,
+      defaultProject: forgeDefault,
+    }),
+    // Keyed by its value: a refreshed session does not redraw every chip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connectionClient, pane.workspace_id, forgePath, forgeDefaultKey],
+  );
+  const forgeGroups = useMemo(
+    () => conversationRequests(messages, forgeSession),
+    [messages, forgeSession],
+  );
+  const forgeBranches = useMemo(
+    () => branchRequests(forgeSession),
+    [forgeSession],
+  );
   // The live entries, and the uuids of every conversation-mode message the
   // chat shows (transcript, live turn, queue): the outbox hides those in
   // the same render, so no message is ever missing for a frame.
@@ -3113,8 +3151,10 @@ export function AgentHistoryDrawer({
     </div>
   );
 
+  // The chat's chips, its header's and its list of requests share one
+  // context: where to ask, and what `!12` means here.
   return (
-    <>
+    <ForgeChatProvider chat={forgeChat}>
       {paneChat && rewindOpen ? (
         <AgentRewindSheet
           entries={messages}
@@ -3238,6 +3278,7 @@ export function AgentHistoryDrawer({
             </div>
           )}
           {ownerChip}
+          <ForgeHeaderChips branches={forgeBranches} />
           <AgentStatusChip
             status={paneChat ? chatAgentStatus : pane.agent_status}
             tasks={tasks}
@@ -3247,6 +3288,7 @@ export function AgentHistoryDrawer({
             {paneChat ? (
               <>
                 <AgentArtifactsMenu artifacts={artifacts} />
+                <ForgeRequestsMenu groups={forgeGroups} />
                 {tasks.length ? (
                   <button
                     type="button"
@@ -3314,6 +3356,7 @@ export function AgentHistoryDrawer({
             ) : (
               <>
                 {!mobile ? chatViewToggle : null}
+                <ForgeRequestsMenu groups={forgeGroups} />
                 <button
                   type="button"
                   className="agent-history-icon"
@@ -3512,7 +3555,7 @@ export function AgentHistoryDrawer({
         error={previewError}
         onClose={closeSessionPreview}
       />
-    </>
+    </ForgeChatProvider>
   );
 }
 

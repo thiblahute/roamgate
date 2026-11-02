@@ -181,7 +181,8 @@ import {
 } from "./review/service";
 import { pruneReviewImages, reviewImageFile } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
-import { ReviewGoneError } from "./workspace/review-patch";
+import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
+import { createForgeCache, parseForgeRefParam } from "./review/forge";
 import { SessionImageGoneError } from "./agent/session-images";
 import {
   type GlabContext,
@@ -781,6 +782,9 @@ function getAssistantService() {
     });
   return assistantServiceTask;
 }
+
+/** Merge and pull requests the chats show, shared by every browser. */
+const forgeCache = createForgeCache();
 
 /** GitLab project ids by host and path, for finding branches' merge requests. */
 const reviewProjectIds = new Map<string, number>();
@@ -1977,7 +1981,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const connection = route.runtime;
   if (
     connection.remotePlatform === "windows" &&
-    /^(?:file\.|git\.|worktree\.|agent_chat\.|agent_history\.|agent_session\.|agent_commands\.|agent_artifacts\.|agent_tasks?\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
+    /^(?:file\.|git\.|forge\.|worktree\.|agent_chat\.|agent_history\.|agent_session\.|agent_tasks?\.|agent_commands\.|agent_artifacts\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
       method,
     )
   ) {
@@ -2315,6 +2319,44 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "git-diff-summary");
     } catch (e) {
       sendError("git-diff-summary-error", e);
+    }
+    return;
+  }
+  if (method === "forge.status" || method === "forge.session") {
+    // Read only, in the background lane: chips, the chat's header and its
+    // list of requests. What they say never goes to an agent.
+    try {
+      const raw = params ?? {};
+      const path =
+        typeof raw.path === "string" && isHostPath(raw.path) ? raw.path : "";
+      const context = (root: string) => ({
+        root,
+        host: connection.sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      });
+      let result: unknown;
+      if (method === "forge.status") {
+        const ref = parseForgeRefParam(raw.ref);
+        if (!ref) throw new Error("invalid merge request reference");
+        result = await forgeCache.status(context(path), ref);
+      } else {
+        const root =
+          path ||
+          (
+            await connection.files.resolveWorkspaceGitRoot({
+              workspace_id: raw.workspace_id,
+            })
+          ).root;
+        const agentPath =
+          typeof raw.agent_path === "string" && isHostPath(raw.agent_path)
+            ? raw.agent_path
+            : undefined;
+        result = await forgeCache.session(context(root), agentPath);
+      }
+      sendReply({ id, result }, "forge");
+    } catch (e) {
+      sendError("forge-error", e);
     }
     return;
   }
