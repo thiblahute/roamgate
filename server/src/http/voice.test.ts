@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { VoiceErrands } from "../voice/voice-errands";
 import type { VoiceHelper } from "../voice/voice-helper";
 import { VoiceError, type VoiceLibrary } from "../voice/voice-library";
+import type { VoiceFront } from "../voice/voice-front";
 import type { VoiceRouter } from "../voice/voice-router";
 import { createVoiceRoutes } from "./voice";
 
@@ -85,6 +86,151 @@ describe("voice routes", () => {
     expect(
       await (await headerless(post(body), "/api/voice/route"))!.json(),
     ).toEqual({ to: "current" });
+  });
+});
+
+describe("the voice front", () => {
+  const session = {
+    id: "local/w2:p2",
+    machine: "Mac",
+    workspace: "roamgate",
+    title: "roamgate",
+    folder: "/src",
+    agent: "claude",
+    status: "working",
+  };
+  const unused = {
+    warm: () => {
+      throw new Error("the router is not used with a front");
+    },
+    route: async () => {
+      throw new Error("the router is not used with a front");
+    },
+  } as unknown as VoiceRouter;
+
+  test("decides in the router's place, and says what it does", async () => {
+    const turns: unknown[] = [];
+    let warmed = 0;
+    const front = {
+      warm: () => {
+        warmed += 1;
+      },
+      turn: async (request: unknown) => {
+        turns.push(request);
+        return { to: "current", reply: "Je transmets." };
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const status = await routes(
+      new Request("http://roamgate.test/api/voice"),
+      "/api/voice",
+    );
+    expect(await status!.json()).toEqual({
+      available: true,
+      route: true,
+      front: true,
+      speech_rate: 1.2,
+    });
+    expect(warmed).toBe(1);
+    const routed = await routes(
+      post(
+        {
+          current: "local/w2:p2",
+          said: " Rebase it, yes, push. ",
+          sessions: [session],
+          context: "Ranger tasks:\n- Nightly: active",
+        },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect(await routed!.json()).toEqual({
+      to: "current",
+      reply: "Je transmets.",
+    });
+    expect(turns).toEqual([
+      {
+        current: "local/w2:p2",
+        said: "Rebase it, yes, push.",
+        sessions: [session],
+        context: "Ranger tasks:\n- Nightly: active",
+      },
+    ]);
+  });
+
+  test("tells an event, and stays quiet without a front", async () => {
+    const front = {
+      event: async ({ event }: { event: { text: string } }) =>
+        `Heard: ${event.text}`,
+    } as unknown as VoiceFront;
+    const event = (routes: ReturnType<typeof createVoiceRoutes>) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/event", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-roamgate-voice": "1",
+          },
+          body: JSON.stringify({
+            current: "local/w2:p2",
+            sessions: [session],
+            event: "IGA-184 needs input",
+          }),
+        }),
+        "/api/voice/event",
+      );
+    expect(
+      await (await event(
+        createVoiceRoutes(
+          helper,
+          () => null,
+          null,
+          () => undefined,
+          null,
+          () => front,
+        ),
+      ))!.json(),
+    ).toEqual({ reply: "Heard: IGA-184 needs input" });
+    expect(await (await event(createVoiceRoutes(helper)))!.json()).toEqual({
+      reply: "",
+    });
+  });
+
+  test("off, the router decides as it always did", async () => {
+    const router = {
+      warm: () => {},
+      route: async () => ({ to: "nobody" }),
+    } as unknown as VoiceRouter;
+    const routes = createVoiceRoutes(
+      helper,
+      () => router,
+      null,
+      () => undefined,
+      null,
+      () => null,
+    );
+    expect(
+      await (await routes(
+        new Request("http://roamgate.test/api/voice"),
+        "/api/voice",
+      ))!.json(),
+    ).toEqual({ available: true, route: true, speech_rate: 1.2 });
+    expect(
+      await (await routes(
+        post(
+          { current: "local/w2:p2", said: "Hi", sessions: [] },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      ))!.json(),
+    ).toEqual({ to: "nobody" });
   });
 });
 

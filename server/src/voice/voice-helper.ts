@@ -59,6 +59,13 @@ export type VoiceConfig = {
    */
   route_model?: string;
   /**
+   * A Claude model ("opus", "haiku") that hears each thing said first and
+   * answers at once, aloud (voice-front.ts): it routes as `route_model`
+   * does, in its place, and says what it does with the words or answers
+   * what Roamgate's state answers. Off without it.
+   */
+  front_model?: string;
+  /**
    * The folder of the agent session that general questions and errands go
    * to (a tasks repository), when the router has one.
    */
@@ -126,6 +133,7 @@ export function readVoiceConfig(
   for (const key of [
     "clean_model",
     "route_model",
+    "front_model",
     "errand_folder",
     "claude_command",
     "voices_dir",

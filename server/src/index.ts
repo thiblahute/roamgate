@@ -163,6 +163,7 @@ import {
 import { createVoiceRoutes } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
+import { configuredFront } from "./voice/voice-front";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import { readVoiceConfig, VoiceHelper } from "./voice/voice-helper";
@@ -383,6 +384,7 @@ const handleVoice = createVoiceRoutes(
     clone: (request) => voiceHelper.cloneVoice(request),
     applied: () => voiceHelper.applyTtsModels(),
   }),
+  configuredFront(() => readVoiceConfig()),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,
