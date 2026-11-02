@@ -10,6 +10,10 @@ export type ErrandEntry = {
 
 export type ErrandDeps = {
   read: (connectionId: string, paneId: string) => Promise<ErrandEntry[]>;
+  /**
+   * Sends the text to the session, in whichever mode it runs: a terminal
+   * session takes it once idle.
+   */
   prompt: (connectionId: string, paneId: string, text: string) => Promise<void>;
 };
 

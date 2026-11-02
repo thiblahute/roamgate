@@ -31,7 +31,14 @@ import {
   type ReviewAnnotation,
 } from "./annotations";
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
+import { callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
+import {
+  CompanionChip,
+  CompanionStrip,
+  useCompanionCallOpen,
+} from "./components/CompanionChip";
+import { voiceFronting } from "./voiceFrontFlag";
 import { passwordManagerIgnore } from "./passwordManagerIgnore";
 import {
   getReviewSnapshot,
@@ -1769,6 +1776,7 @@ export default function App() {
     ],
   );
   const [zenMode, setZenMode] = useState(loadZenMode);
+  const companionCallOpen = useCompanionCallOpen();
   const [shortcutCheatSheetOpen, setShortcutCheatSheetOpen] = useState(false);
   const openShortcutCheatSheet = useCallback(
     () => setShortcutCheatSheetOpen(true),
@@ -4423,6 +4431,13 @@ export default function App() {
         handleActivityShortcut(e);
         return;
       }
+      if (shortcutMatches(e, "companion.call")) {
+        if (!voiceFronting()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) callCompanion();
+        return;
+      }
       if (shortcutMatches(e, "shortcuts.show")) {
         if (mobile) return;
         e.preventDefault();
@@ -5216,6 +5231,7 @@ export default function App() {
       ) : null}
     </button>
   );
+  const zenIsland = <ZenIsland onExit={() => applyZenMode(false)} />;
   return (
     <div
       className={`app ${sidebarHidden && !mobile ? "sidebar-hidden" : ""} ${
@@ -5269,6 +5285,7 @@ export default function App() {
             </div>
           )}
           <div className="topbar-command-group">
+            <CompanionChip />
             {!mobile ? assistantEntry : null}
             <CommandCombobox
               key={`${resourceUiKey}:commands`}
@@ -5316,10 +5333,13 @@ export default function App() {
           </div>
         </div>
       </header>
+      {/* Zen hides the top bar: the call's chip, and Zen's way out, join
+          the strip so the call stays on screen without covering anything. */}
+      <CompanionStrip control={zenMode}>
+        {zenMode && !mobile ? zenIsland : null}
+      </CompanionStrip>
 
-      {zenMode && !mobile ? (
-        <ZenIsland onExit={() => applyZenMode(false)} />
-      ) : null}
+      {zenMode && !mobile && !companionCallOpen ? zenIsland : null}
 
       {mobile && mobileTabSheetOpen ? (
         <Suspense fallback={null}>

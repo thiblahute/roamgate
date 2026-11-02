@@ -102,6 +102,16 @@ describe("parseFrontReply", () => {
     // A remark to the voice itself is answered by it, not forwarded.
     expect(FRONT_SYSTEM_PROMPT).toContain('"tu me réponds vite"');
   });
+
+  test("the prompt knows the words said reach the sessions marked [Voice]", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      'they reach the session starting with "[Voice] "',
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain("[Voice, interrupted you at:");
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "words the user types reach it unmarked",
+    );
+  });
 });
 
 const sessions: VoiceSessionInfo[] = [

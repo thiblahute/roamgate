@@ -61,7 +61,29 @@ let reading: {
   ids: readonly string[];
   sentence: string;
   scrolled: boolean;
+  anywhere: boolean;
 } | null = null;
+/**
+ * The bubble a reading of no known entries was last found in: its next
+ * sentences are looked for there first.
+ */
+let anchor: Element | null = null;
+/** Fewer words match too easily in some other message. */
+const ANYWHERE_MIN_WORDS = 3;
+
+/**
+ * The bubbles on screen that may show a reading of no known entries (an
+ * answer a session gave a call's companion): the one it was last found
+ * in, then the newest first.
+ */
+function bubblesAnywhere(): Element[] {
+  const all = [
+    ...document.querySelectorAll(".agent-history-chat-bubble"),
+  ].reverse();
+  return anchor?.isConnected
+    ? [anchor, ...all.filter((bubble) => bubble !== anchor)]
+    : all;
+}
 let observer: MutationObserver | null = null;
 let pending = 0;
 
@@ -69,10 +91,16 @@ function apply(): boolean {
   const registry = globalThis.CSS?.highlights;
   if (!registry || typeof Highlight === "undefined" || !reading) return false;
   registry.delete(HIGHLIGHT);
-  for (const id of reading.ids) {
-    const bubble = bubbleOf(id);
+  const bubbles = reading.ids.map(bubbleOf);
+  if (
+    reading.anywhere &&
+    reading.sentence.split(/\s+/).filter(Boolean).length >= ANYWHERE_MIN_WORDS
+  )
+    bubbles.push(...bubblesAnywhere());
+  for (const bubble of bubbles) {
     const range = bubble && findSentence(bubble, reading.sentence);
     if (!range) continue;
+    if (reading.anywhere) anchor = bubble;
     registry.set(HIGHLIGHT, new Highlight(range));
     // Brought into view once per sentence, not on every redraw.
     if (!reading.scrolled) {
@@ -94,21 +122,27 @@ function apply(): boolean {
  * scrolling it into view; null clears the highlight. While it is read, a
  * redraw of the chat (a reply still streaming in, its saved copy taking the
  * streamed one's place) puts it back.
+ *
+ * `anywhere`: an answer read whose entries are not known here (a session's
+ * answer to a call's companion) is looked for in any chat on screen, in
+ * the message its sentences were last found in first, then the newest.
  */
 export function highlightReading(
   ids: readonly string[],
   sentence: string | null,
+  { anywhere = false }: { anywhere?: boolean } = {},
 ) {
   const registry = globalThis.CSS?.highlights;
   if (!registry || typeof Highlight === "undefined") return;
   if (!sentence) {
     reading = null;
+    anchor = null;
     registry.delete(HIGHLIGHT);
     observer?.disconnect();
     observer = null;
     return;
   }
-  reading = { ids: [...ids], sentence, scrolled: false };
+  reading = { ids: [...ids], sentence, scrolled: false, anywhere };
   apply();
   if (!observer && typeof MutationObserver !== "undefined") {
     observer = new MutationObserver(() => {

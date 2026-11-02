@@ -141,7 +141,7 @@ import {
 } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { withShellOutcomes } from "../shellOutcomes";
-import { noteRewind, voiceTrace } from "../voiceChat";
+import { noteRewind, voiceFronting, voiceTrace } from "../voiceChat";
 import { agentStateKind } from "./agentSession";
 import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
 import { VoiceChatOverlay } from "./VoiceChatOverlay";
@@ -207,6 +207,15 @@ import {
 } from "./chatOutbox";
 import { promptKeyInput } from "./promptKeys";
 import { handOffVoice, takeVoiceHandoff, voiceSessions } from "../voiceRoute";
+import { callCompanion } from "../companionCallOpen";
+import { answerAgentPrompt } from "../review";
+import {
+  answerPromptByVoice,
+  questionFromPermission,
+  questionFromPrompt,
+  type QuestionAnswer,
+  type VoiceQuestion,
+} from "../voiceCompanion";
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
 import { paneChatSource } from "../chatSource";
@@ -2061,7 +2070,43 @@ export function AgentHistoryDrawer({
         ).action,
     };
   }, [activeConnectionId, connectionClient, pane.agent, pane.pane_id]);
+  // What the agent asks, for the voice companion to relay and answer.
+  const paneChatRef = useRef(paneChat);
+  paneChatRef.current = paneChat;
+  const voiceQuestion = useCallback((agent: string): VoiceQuestion | null => {
+    const chat = paneChatRef.current;
+    if (chat?.permission) return questionFromPermission(chat.permission, agent);
+    if (chat?.prompt) return questionFromPrompt(chat.prompt, agent);
+    return null;
+  }, []);
+  const answerVoiceQuestion = useCallback(
+    async (question: VoiceQuestion, answer: QuestionAnswer) => {
+      const chat = paneChatRef.current;
+      const permission = chat?.permission;
+      if (permission && question.key === `permission:${permission.id}`)
+        return answerPromptByVoice(
+          permission,
+          question,
+          answer,
+          answerAgentPrompt,
+        );
+      // A question on the terminal's screen: Esc puts it away there.
+      if (chat?.prompt && "dismiss" in answer) {
+        chat.onKeys("\x1b");
+        return true;
+      }
+      if (!chat?.prompt || !("option" in answer)) return false;
+      const label = question.options[answer.option]?.label;
+      const option = chat.prompt.options.find((entry) => entry.label === label);
+      if (!option) return false;
+      chat.onKeys(option.input);
+      return true;
+    },
+    [],
+  );
   const voice = useVoiceChat({
+    question: voiceQuestion,
+    answerQuestion: answerVoiceQuestion,
     entries: messages,
     agentStatus: inConversation
       ? conversationAgentStatus(conversationState!.status)
@@ -2769,7 +2814,18 @@ export function AgentHistoryDrawer({
               onSendHeld: voice.sendHeld,
               onDropHeld: voice.dropHeld,
               onToggle: voice.available
-                ? voice.toggle
+                ? () => {
+                    // With a front, the call is with the companion, above
+                    // any pane (switching workspace never cuts it): this
+                    // session is only where work goes by default.
+                    if (
+                      voice.state === "off" &&
+                      voiceFronting() &&
+                      activeConnectionId
+                    )
+                      callCompanion(voiceSession);
+                    else voice.toggle();
+                  }
                 : () =>
                     store.notify({
                       kind: "info",

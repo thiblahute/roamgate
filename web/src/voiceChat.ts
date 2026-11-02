@@ -1,4 +1,5 @@
 import type { HistoryEntry } from "./components/agentHistory";
+import { parseVoiceMessage } from "../../shared/voiceMessage";
 import { roamgateLocalStorage } from "./browserStorage";
 import {
   DEFAULT_SPEECH_RATE,
@@ -9,6 +10,9 @@ import { marked, type Token, type Tokens } from "marked";
 import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
+import { setVoiceFronting, voiceFronting } from "./voiceFrontFlag";
+
+export { parseVoiceMessage, voiceMessage } from "../../shared/voiceMessage";
 
 /** Sent with voice requests; the server refuses them without it. */
 const VOICE_HEADERS = { "x-roamgate-voice": "1" };
@@ -25,6 +29,11 @@ export type VoiceAvailability = {
   /** A front answers what is said first, in that decision (voiceFront.ts). */
   front?: boolean;
   /**
+   * With a front, what it does with the agents' answers (voiceCompanion.ts):
+   * tells them ("companion") or has them read whole ("relay").
+   */
+  front_mode?: "companion" | "relay";
+  /**
    * Whether each reply is read by one of the voices at random; absent
    * without a voice library.
    */
@@ -33,7 +42,8 @@ export type VoiceAvailability = {
 
 let tracing = false;
 let routing = false;
-let fronting = false;
+let frontModeSetting: "companion" | "relay" = "companion";
+const frontModeListeners = new Set<() => void>();
 
 /** Whether what is said goes through the server's router first. */
 export function voiceRouting() {
@@ -41,8 +51,39 @@ export function voiceRouting() {
 }
 
 /** Whether a front answers what is said first (voiceFront.ts). */
-export function voiceFronting() {
-  return fronting;
+export { voiceFronting };
+
+/** What the front does with answers (voiceCompanion.ts); null without one. */
+export function voiceFrontMode(): "companion" | "relay" | null {
+  return voiceFronting() ? frontModeSetting : null;
+}
+
+export function subscribeFrontMode(listener: () => void): () => void {
+  frontModeListeners.add(listener);
+  return () => {
+    frontModeListeners.delete(listener);
+  };
+}
+
+function setFrontMode(mode: "companion" | "relay") {
+  frontModeSetting = mode;
+  for (const listener of [...frontModeListeners]) listener();
+}
+
+/** Keeps what the front does with answers in voice.json. */
+export async function saveFrontMode(mode: "companion" | "relay") {
+  const response = await fetch("/api/voice/settings", {
+    method: "POST",
+    headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify({ front_mode: mode }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(body?.error ?? response.statusText);
+  }
+  setFrontMode(mode);
 }
 const traceStart = performance.now();
 
@@ -66,7 +107,12 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
     if (isSpeechRate(availability.speech_rate))
       setSpeechRate(availability.speech_rate);
     routing = availability.route === true;
-    fronting = availability.front === true;
+    setVoiceFronting(availability.front === true);
+    if (
+      availability.front_mode === "companion" ||
+      availability.front_mode === "relay"
+    )
+      setFrontMode(availability.front_mode);
     if (typeof availability.surprise === "boolean")
       setVoiceSurprise(availability.surprise, true);
     return availability;
@@ -1221,20 +1267,6 @@ export function toggleReading(
     });
 }
 
-// A message sent by voice says so, and where the reading was cut short, so
-// the agent knows it talks live and what was heard: `[Voice] text`, or
-// `[Voice, interrupted you at: "sentence"] text`.
-const VOICE_NOTE = /^\[Voice(?:, interrupted you at: ("(?:[^"\\]|\\.)*"))?\] /;
-
-export function voiceMessage(
-  text: string,
-  interruptedAt?: string | null,
-): string {
-  return interruptedAt
-    ? `[Voice, interrupted you at: ${JSON.stringify(interruptedAt)}] ${text}`
-    : `[Voice] ${text}`;
-}
-
 /** How much of the conversation's end goes with what is said. */
 const CONTEXT_CHARS = 3000;
 
@@ -1289,23 +1321,6 @@ export function heardAs(text: string): string | null {
   } catch {
     return null;
   }
-}
-
-/** A message's text without its voice note, and what the note said. */
-export function parseVoiceMessage(text: string): {
-  text: string;
-  voice: boolean;
-  interruptedAt: string | null;
-} {
-  const match = VOICE_NOTE.exec(text);
-  if (!match) return { text, voice: false, interruptedAt: null };
-  let interruptedAt: string | null;
-  try {
-    interruptedAt = match[1] ? (JSON.parse(match[1]) as string) : null;
-  } catch {
-    interruptedAt = null;
-  }
-  return { text: text.slice(match[0].length), voice: true, interruptedAt };
 }
 
 // Saying only this ends voice chat, as its button does.

@@ -1,3 +1,4 @@
+import { CompanionStrip } from "./CompanionChip";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
@@ -6039,6 +6040,9 @@ export function ReviewOverlay({
       ref={rootRef}
       onKeyDown={onKeyDown}
     >
+      {/* The review covers the app and its top bar: a call keeps its line
+          and its chip here. */}
+      <CompanionStrip control covering={!hidden} />
       {partSelection ? (
         <button
           type="button"

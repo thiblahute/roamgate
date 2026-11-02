@@ -12,6 +12,7 @@ import {
   createFrontVoice,
   eventForFront,
   FRONT_SLOW_MS,
+  frontReplySaid,
   frontContext,
   spokenSentences,
 } from "./voiceFront";
@@ -146,6 +147,75 @@ describe("createFrontVoice", () => {
     void speech.voice.say("Okay.", signal);
     await flush();
     expect(speech.played).toHaveLength(2);
+  });
+});
+
+describe("where a say is", () => {
+  test("each sentence is told as it starts playing, the very ones made", async () => {
+    const fetched: string[] = [];
+    const played: string[] = [];
+    let finish = () => {};
+    const voice = createFrontVoice({
+      fetchAudio: async (text, language) => {
+        fetched.push(text);
+        return `${language}:${text}`;
+      },
+      playAudio: (audio) => {
+        played.push(audio);
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      },
+    });
+    const heard: (number | null)[] = [];
+    let told: readonly string[] = [];
+    const said = voice.say(
+      "Claude : the build passed. Two tests: flaky; rerun them!",
+      new AbortController().signal,
+      {
+        onSentence: (index, sentences) => {
+          heard.push(index);
+          told = sentences;
+        },
+      },
+    );
+    await flush();
+    // Nothing told before it plays; then the first, then each in turn.
+    expect(heard).toEqual([0]);
+    expect(told).toEqual(fetched);
+    expect(told).toEqual(
+      spokenSentences(
+        "Claude : the build passed. Two tests: flaky; rerun them!",
+      ),
+    );
+    for (let at = 1; at < told.length; at += 1) {
+      finish();
+      await flush();
+      expect(heard[heard.length - 1]).toBe(at);
+      expect(played[at]).toBe(`en:${told[at]}`);
+    }
+    finish();
+    await said;
+    expect(heard).toEqual([0, 1, 2, 3, 4, null]);
+  });
+
+  test("stopped, it ends there; never started, nothing is told", async () => {
+    const speech = fakeSpeech();
+    const signal = new AbortController().signal;
+    const heard: (number | null)[] = [];
+    const first = speech.voice.say("One. Two. Three.", signal, {
+      onSentence: (index) => heard.push(index),
+    });
+    const queued: (number | null)[] = [];
+    const second = speech.voice.say("Never said.", signal, {
+      onSentence: (index) => queued.push(index),
+    });
+    await flush();
+    speech.voice.hush();
+    await first;
+    await second;
+    expect(heard).toEqual([0, null]);
+    expect(queued).toEqual([]);
   });
 });
 
@@ -296,5 +366,20 @@ describe("routeSpeech", () => {
     // Without a front, no state goes: as it always did.
     await routeSpeech(said, "local/p1", []);
     expect(bodies[1]).toEqual({ said, current: "local/p1", sessions: [] });
+  });
+});
+
+describe("a turn is acknowledged once", () => {
+  test("the front's words are its ack, the canned one only when it is slow", () => {
+    expect(FRONT_SLOW_MS).toBeGreaterThanOrEqual(3000);
+    for (const to of ["current", "send", "ranger", "errand"]) {
+      expect(frontReplySaid(to, false)).toBe(true);
+      // The canned ack said it already: "Je transmets" is not said again.
+      expect(frontReplySaid(to, true)).toBe(false);
+    }
+    // An answer of its own, or a switch, is said however slow.
+    expect(frontReplySaid("self", true)).toBe(true);
+    expect(frontReplySaid("open", true)).toBe(true);
+    expect(frontReplySaid("mode", true)).toBe(true);
   });
 });

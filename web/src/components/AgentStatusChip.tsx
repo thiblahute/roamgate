@@ -39,7 +39,11 @@ export function AgentStatusChip({
       onClick={onOpenTasks}
     >
       <span className="agent-history-status-pulse" aria-hidden="true" />
-      {label}
+      <span className="agent-history-status-long">{label}</span>
+      {/* A phone's narrow header: "Idle · 1 bg", the title keeps its room. */}
+      <span className="agent-history-status-short" aria-hidden="true">
+        {statusWord(status)} · {work.running} bg
+      </span>
     </button>
   );
 }

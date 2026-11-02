@@ -162,7 +162,10 @@ import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
 import { configuredRouter } from "./voice/voice-router";
-import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
+import {
+  type ErrandEntry,
+  VoiceErrands,
+} from "./voice/voice-errands";
 import {
   frontMode,
   readVoiceConfig,
@@ -358,8 +361,8 @@ const voiceErrands = new VoiceErrands({
   prompt: async (connectionId, paneId, text) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) throw new Error(`${connectionId} is not connected`);
-    if (!(await runtime.conversation.prompt(paneId, text)))
-      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+    if (await runtime.conversation.prompt(paneId, text)) return;
+    await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
   },
 });
 // Voice sockets open, and when one was last used: a call keeps the

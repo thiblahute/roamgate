@@ -1,0 +1,105 @@
+/* What the companion reads on a call, under the strip's line and in the
+   page's flow: the sentence said in full, the ones around it dimmed. */
+.companion-reading {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin: 2px 0 3px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+}
+
+.companion-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.companion-reading p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.companion-reading-now {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 550;
+  color: var(--text-strong, var(--text));
+}
+
+.companion-reading-before,
+.companion-reading-after {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.companion-reading .companion-reading-before {
+  margin-bottom: 2px;
+}
+
+.companion-reading .companion-reading-after {
+  margin-top: 2px;
+}
+
+/* Said to its end: it stays until the next thing said, quieter. */
+.companion-reading.is-done {
+  border-left-color: var(--border);
+}
+
+.companion-reading.is-done .companion-reading-now {
+  font-weight: 450;
+  color: var(--muted);
+}
+
+/* The whole text, scrolled in its own box to the sentence said. */
+.companion-reading-whole {
+  position: relative;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.companion-reading-whole .is-said,
+.companion-reading-whole .is-ahead {
+  color: var(--muted);
+}
+
+.companion-reading-whole .is-now {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-strong, var(--text));
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* The phone, where calls mostly happen: large, readable text. */
+@media (max-width: 640px) {
+  .companion-reading {
+    padding: 8px 10px;
+  }
+
+  .companion-reading-now {
+    font-size: 19px;
+    line-height: 1.38;
+  }
+
+  .companion-reading-before,
+  .companion-reading-after {
+    font-size: 15px;
+  }
+
+  .companion-reading-whole {
+    max-height: 45vh;
+    font-size: 18px;
+    line-height: 1.45;
+  }
+}

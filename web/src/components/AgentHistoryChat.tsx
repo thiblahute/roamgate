@@ -84,6 +84,9 @@ const NO_OUTBOX: readonly OutboxMessage[] = [];
 type BubbleProps = {
   entry: HistoryEntry;
   sequence: number;
+  /** A slash command typed this many times in a row: "/exit ×11". */
+  repeated?: number;
+  firstSentAt?: string;
   highlighted: boolean;
   speech: ReturnType<typeof useChatSpeech>;
   onOpen: (entry: HistoryEntry) => void;
@@ -108,6 +111,8 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
   const y = b.entry;
   return (
     a.highlighted === b.highlighted &&
+    a.repeated === b.repeated &&
+    a.firstSentAt === b.firstSentAt &&
     a.speech === b.speech &&
     a.onOpen === b.onOpen &&
     a.imageUrl === b.imageUrl &&
@@ -145,6 +150,8 @@ function sameBubble(a: BubbleProps, b: BubbleProps): boolean {
 const ChatBubble = memo(function ChatBubble({
   entry,
   sequence,
+  repeated,
+  firstSentAt,
   highlighted,
   speech,
   onOpen,
@@ -356,6 +363,16 @@ const ChatBubble = memo(function ChatBubble({
             {entry.command.args ? (
               <span className="agent-history-chat-command-args">
                 {entry.command.args}
+              </span>
+            ) : null}
+            {repeated && repeated > 1 ? (
+              <span
+                className="agent-history-chat-command-count"
+                title={`${repeated} times in a row${
+                  firstSentAt ? `, from ${formatUiDateTime(firstSentAt)}` : ""
+                }`}
+              >
+                ×{repeated}
               </span>
             ) : null}
           </span>
@@ -1647,6 +1664,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               key={item.entry.id}
               entry={item.entry}
               sequence={item.sequence}
+              repeated={item.repeated}
+              firstSentAt={item.firstSentAt}
               highlighted={highlightedSequence === item.sequence}
               speech={speech}
               onOpen={onOpen}

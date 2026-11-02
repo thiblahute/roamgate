@@ -13,6 +13,8 @@ import {
   activityViewForSearch,
   openActivityTimeline,
 } from "../activityTimelineOpen";
+import { callCompanion } from "../companionCallOpen";
+import { voiceFronting } from "../voiceFrontFlag";
 import { endpointCreationReason } from "../store";
 import { normalizeSearchText } from "../searchText";
 import { useEffect, useMemo, useState } from "react";
@@ -34,6 +36,7 @@ import {
   Keyboard,
   ListChecks,
   ChartGantt,
+  PhoneCall,
   Maximize2,
   MoveDown,
   MoveLeft,
@@ -1180,6 +1183,19 @@ export function CommandCombobox({
     : [];
 
   const activityActions: ActionDefinition[] = [
+    ...(voiceFronting()
+      ? [
+          {
+            key: "companion-call",
+            icon: <PhoneCall size={15} />,
+            title: "Call the companion",
+            detail: "Talk with the one agent in charge of your sessions",
+            shortcut: shortcutLabel("companion.call"),
+            keywords: ["voice", "call", "companion", "talk", "phone"],
+            run: () => callCompanion(),
+          },
+        ]
+      : []),
     {
       key: "activity-timeline",
       icon: <ChartGantt size={15} />,

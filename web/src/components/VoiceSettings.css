@@ -282,6 +282,23 @@
   color: var(--text-strong);
 }
 
+.voice-settings-companion-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.voice-settings-companion-name > span {
+  font-weight: 650;
+}
+
+.voice-settings-companion-name input {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
 /* ===== a new voice ===== */
 .voice-new {
   display: flex;

@@ -37,13 +37,21 @@ import {
   wordErrorRate,
 } from "../../../shared/voiceLibrary";
 import {
+  companionName,
+  DEFAULT_COMPANION_NAME,
+  setCompanionName,
+} from "../companionCall";
+import {
   getSpeechRate,
   getVoiceSurprise,
+  saveFrontMode,
   saveSpeechRate,
   saveVoiceSurprise,
   setVoiceSurprise,
+  subscribeFrontMode,
   subscribeSpeechRate,
   subscribeVoiceSurprise,
+  voiceFrontMode,
 } from "../voiceChat";
 import {
   assignVoice,
@@ -437,6 +445,7 @@ export function VoiceSettings() {
             }
           />
           <ReadingSpeed onError={setError} />
+          <CallAnswers onError={setError} />
         </>
       )}
     </div>
@@ -577,6 +586,56 @@ function LanguageVoices({
         </div>
       ) : null}
     </details>
+  );
+}
+
+/**
+ * With a voice front on the server: on calls, whether it tells the agents'
+ * answers as the conversation goes (the companion) or has each read whole.
+ * Said aloud on a call ("read everything", "lis tout") it changes for that
+ * call only.
+ */
+function CallAnswers({ onError }: { onError: (message: string) => void }) {
+  const mode = useSyncExternalStore(subscribeFrontMode, voiceFrontMode);
+  if (!mode) return null;
+  const choices = [
+    { mode: "companion", label: "Companion tells them" },
+    { mode: "relay", label: "Read every answer" },
+  ] as const;
+  return (
+    <>
+      <div
+        className="voice-settings-speed"
+        role="group"
+        aria-label="Answers on calls"
+      >
+        <span>Answers on calls</span>
+        {choices.map((choice) => (
+          <button
+            key={choice.mode}
+            type="button"
+            aria-pressed={mode === choice.mode}
+            onClick={() =>
+              saveFrontMode(choice.mode).catch((failure: Error) =>
+                onError(`The choice was not kept: ${failure.message}`),
+              )
+            }
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+      <label className="voice-settings-companion-name">
+        <span>The companion's name</span>
+        <input
+          type="text"
+          maxLength={40}
+          defaultValue={companionName()}
+          placeholder={DEFAULT_COMPANION_NAME}
+          onBlur={(event) => setCompanionName(event.currentTarget.value)}
+        />
+      </label>
+    </>
   );
 }
 

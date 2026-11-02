@@ -1,0 +1,162 @@
+.companion-panel {
+  width: min(640px, 100%);
+  max-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.companion-panel .modal-head {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.companion-panel .modal-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.companion-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.companion-panel-actions .secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.companion-panel-log {
+  min-height: 0;
+  margin: 0;
+  padding: 0 2px 4px;
+  overflow: auto;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.companion-panel-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.companion-panel-line {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 13px;
+}
+
+.companion-panel-line p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.companion-panel-line.is-heard p {
+  color: var(--muted);
+}
+
+/* The line being said now, at the sentence heard. */
+.companion-panel-line.is-saying {
+  margin: 0 -8px;
+  padding: 4px 8px 4px 5px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.companion-panel-line.is-saying p {
+  color: var(--muted);
+}
+
+.companion-panel-now {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-strong, var(--text));
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.companion-panel-time {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.companion-panel-who {
+  font-weight: 650;
+  color: var(--text-strong, var(--text));
+}
+
+.companion-panel-job {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.companion-panel-job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.companion-panel-session {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.companion-panel-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.companion-panel-job.is-answered .companion-panel-status {
+  color: var(--green);
+}
+
+.companion-panel-job.is-no-answer .companion-panel-status,
+.companion-panel-job.is-not-started .companion-panel-status {
+  color: var(--red);
+}
+
+.companion-panel-words,
+.companion-panel-answer {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.companion-panel-said {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.companion-panel-said span {
+  font-weight: 650;
+}
+
+.companion-panel-answer {
+  max-height: 9em;
+  overflow: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
