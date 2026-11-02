@@ -108,7 +108,8 @@ function checked(reply: Record<string, unknown>, ids: Set<string>): VoiceRoute {
   }
 }
 
-function sessionLine(session: VoiceSessionInfo) {
+/** A session as the router and the front read it, on one line. */
+export function voiceSessionLine(session: VoiceSessionInfo) {
   return [
     session.id,
     session.machine,
@@ -174,7 +175,7 @@ export class VoiceRouter {
     sessions: VoiceSessionInfo[];
   }): Promise<VoiceRoute> {
     const ids = new Set(sessions.map((session) => session.id));
-    const list = sessions.map(sessionLine).join("\n");
+    const list = sessions.map(voiceSessionLine).join("\n");
     const request = `Current: ${current}\nSaid: ${JSON.stringify(said)}`;
     const send = async (withList: boolean) => {
       const generation = this.worker.generation;

@@ -8,6 +8,7 @@ import {
   SAMPLE_SENTENCES,
 } from "../../../shared/voiceLibrary";
 import type { VoiceErrands } from "../voice/voice-errands";
+import type { FrontReply, VoiceFront } from "../voice/voice-front";
 import type { VoiceHelper } from "../voice/voice-helper";
 import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
@@ -16,6 +17,8 @@ import { SurprisePicker } from "../voice/voice-surprise";
 /** Sent with voice requests: a page from elsewhere cannot add it. */
 export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
 const MAX_SPOKEN_CHARS = 4000;
+/** The state a page gives the front beyond the sessions (voice-front.ts). */
+const MAX_CONTEXT_CHARS = 8000;
 
 /**
  * GET /api/voice: whether voice chat is set up, and how fast replies are
@@ -36,6 +39,12 @@ const MAX_SPOKEN_CHARS = 4000;
  * A question for Ranger ("ranger") is the page's to send. An errand
  * ("errand") is sent to the session in `errand_folder` with `job`, which
  * GET /api/voice/errand?job= follows until its answer is in.
+ * With a front (`front_model`, voice-front.ts), it decides in the router's
+ * place, from `context` too (Ranger tasks, merge requests, what happened),
+ * and the route carries `reply`: what to say aloud at once; "self" is
+ * answered by `reply` alone. GET /api/voice reports `front`.
+ * POST /api/voice/event: `{current, sessions, context, event}` in,
+ * `{reply}` out: what the front tells of it now ("" to stay quiet).
  *
  * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
  * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
@@ -55,19 +64,35 @@ export function createVoiceRoutes(
   errands: VoiceErrands | null = null,
   errandFolder: () => string | undefined = () => undefined,
   library: VoiceLibrary | null = null,
+  front: () => VoiceFront | null = () => null,
 ) {
   const surprise = new SurprisePicker();
+  /** The sessions a page lists, those of the errands folder marked. */
+  const routeSessions = (value: unknown): VoiceSessionInfo[] => {
+    const folder = errandFolder()?.replace(/\/+$/, "");
+    return (
+      Array.isArray(value) ? value.filter(isSessionInfo).slice(0, 200) : []
+    ).map((session) =>
+      folder &&
+      (session.folder === folder || session.folder.startsWith(`${folder}/`))
+        ? { ...session, errands: true }
+        : session,
+    );
+  };
   return async (req: Request, pathname: string): Promise<Response | null> => {
     const debug = Boolean(process.env.ROAMGATE_VOICE_DEBUG);
     if (pathname.startsWith("/api/voice/voices"))
       return handleVoices(req, pathname, helper, library);
     if (pathname === "/api/voice" && req.method === "GET") {
-      const routing = router();
+      const fronting = front();
+      const routing = fronting ? null : router();
       // Started now, so the first thing said does not wait for it.
+      fronting?.warm();
       routing?.warm();
       return Response.json({
         ...helper.status(),
-        ...(routing ? { route: true } : {}),
+        ...(routing || fronting ? { route: true } : {}),
+        ...(fronting ? { front: true } : {}),
         speech_rate: helper.speechRate(),
         ...surpriseStatus(library),
         ...(debug ? { debug } : {}),
@@ -105,31 +130,60 @@ export function createVoiceRoutes(
         ? Response.json(state)
         : Response.json({ error: "No such errand." }, { status: 404 });
     }
+    if (pathname === "/api/voice/event" && req.method === "POST") {
+      const fronting = front();
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1" || !fronting)
+        return Response.json({ reply: "" });
+      const body = (await req.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      const event =
+        typeof body?.event === "string" ? body.event.trim().slice(0, 1000) : "";
+      const current = typeof body?.current === "string" ? body.current : "";
+      if (!event) return Response.json({ reply: "" });
+      const started = performance.now();
+      const reply = await fronting.event({
+        current,
+        event: { text: event },
+        sessions: routeSessions(body?.sessions),
+        context: contextOf(body?.context),
+      });
+      if (debug)
+        console.error(
+          `[voice] front told in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${event.slice(0, 200)}`,
+        );
+      return Response.json({ reply });
+    }
     if (pathname === "/api/voice/route" && req.method === "POST") {
-      const routing = router();
-      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1" || !routing)
+      const fronting = front();
+      const routing = fronting ? null : router();
+      if (
+        req.headers.get(VOICE_REQUEST_HEADER) !== "1" ||
+        !(routing || fronting)
+      )
         return Response.json({ to: "current" });
       const body = (await req.json().catch(() => null)) as {
         current?: unknown;
         said?: unknown;
         sessions?: unknown;
+        context?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
       const current = typeof body?.current === "string" ? body.current : "";
-      const folder = errandFolder()?.replace(/\/+$/, "");
-      const sessions = (
-        Array.isArray(body?.sessions)
-          ? body.sessions.filter(isSessionInfo).slice(0, 200)
-          : []
-      ).map((session) =>
-        folder &&
-        (session.folder === folder || session.folder.startsWith(`${folder}/`))
-          ? { ...session, errands: true }
-          : session,
-      );
+      const sessions = routeSessions(body?.sessions);
       if (!said || !current) return Response.json({ to: "current" });
       const started = performance.now();
-      let route = await routing.route({ current, said, sessions });
+      let route: FrontReply = fronting
+        ? await fronting.turn({
+            current,
+            said,
+            sessions,
+            context: contextOf(body?.context),
+          })
+        : routing
+          ? await routing.route({ current, said, sessions })
+          : { to: "current" };
       if (route.to === "errand") {
         try {
           if (!errands) throw new Error("no errands set up");
@@ -370,4 +424,8 @@ function isSessionInfo(value: unknown): value is VoiceSessionInfo {
     (key) =>
       typeof session[key] === "string" && (session[key] as string).length < 500,
   );
+}
+
+function contextOf(value: unknown): string {
+  return typeof value === "string" ? value.slice(0, MAX_CONTEXT_CHARS) : "";
 }
