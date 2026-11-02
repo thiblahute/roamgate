@@ -193,14 +193,19 @@ export function historyEntryLabel(entry: HistoryEntry) {
 /**
  * A history read that timed out is asked once more before it counts as
  * failed: a bridge busy for a while (a restart, a big transcript) still
- * answers, and the chat keeps what it shows meanwhile.
+ * answers, and the chat keeps what it shows meanwhile. `onTimeout` hears of
+ * the first timeout, before the second ask.
  */
-export async function retryOnceOnTimeout<T>(call: () => Promise<T>) {
+export async function retryOnceOnTimeout<T>(
+  call: () => Promise<T>,
+  onTimeout?: () => void,
+) {
   try {
     return await call();
   } catch (error) {
     if (!(error instanceof Error) || !error.message.startsWith("timeout: "))
       throw error;
+    onTimeout?.();
     return call();
   }
 }
@@ -217,4 +222,124 @@ export function historyLoadError(messages: readonly string[]): string {
       : []),
     ...other,
   ].join("\n");
+}
+
+/**
+ * Entries read before the live window (agent_history.older), a page at a
+ * time as the reader scrolls up. They belong to one epoch of the history:
+ * a reset starts over.
+ */
+export type OlderHistory = {
+  epoch: string;
+  /** Oldest first, all before the window's first entry. */
+  entries: HistoryEntry[];
+  /** Whether the server has more before `entries`. */
+  hasMore: boolean;
+};
+export type OlderHistoryPage = { entries: HistoryEntry[]; has_more: boolean };
+
+/** The entry `agent_history.older` reads before: the oldest one shown. */
+export function oldestShownEntry(
+  older: OlderHistory | null,
+  window: AgentHistory | null,
+): HistoryEntry | undefined {
+  if (!window) return undefined;
+  return (
+    (older?.epoch === window.cursor.epoch ? older.entries[0] : undefined) ??
+    window.messages[0]
+  );
+}
+
+/** Whether scrolling up can still bring older entries. */
+export function canLoadOlder(
+  older: OlderHistory | null,
+  window: AgentHistory | null,
+) {
+  if (!window?.messages.length) return false;
+  return older?.epoch !== window.cursor.epoch || older.hasMore;
+}
+
+/** A page read before what is shown, put in front of it. */
+export function addOlderPage(
+  older: OlderHistory | null,
+  epoch: string,
+  page: OlderHistoryPage,
+  window: readonly HistoryEntry[],
+): OlderHistory {
+  const kept = older?.epoch === epoch ? older.entries : [];
+  const shown = new Set([...kept, ...window].map((entry) => entry.id));
+  const fresh = page.entries.filter((entry) => {
+    if (shown.has(entry.id)) return false;
+    shown.add(entry.id);
+    return true;
+  });
+  return { epoch, entries: [...fresh, ...kept], hasMore: page.has_more };
+}
+
+/** Nothing older to read for now (the entry read before is gone). */
+export function endOlder(
+  older: OlderHistory | null,
+  epoch: string,
+): OlderHistory {
+  return {
+    epoch,
+    entries: older?.epoch === epoch ? older.entries : [],
+    hasMore: false,
+  };
+}
+
+/**
+ * The older entries once the window changed: none after a reset (another
+ * epoch), and the entries the window let go of at its start kept in front
+ * of it, so the conversation stays whole while the reader has older ones.
+ * Entries the window now holds again are dropped from them.
+ */
+export function slideOlder(
+  older: OlderHistory | null,
+  previous: AgentHistory | null,
+  next: AgentHistory | null,
+): OlderHistory | null {
+  if (!older) return null;
+  if (!next || next.cursor.epoch !== older.epoch) return null;
+  const inWindow = new Set(next.messages.map((entry) => entry.id));
+  let carried: HistoryEntry[] = [];
+  if (previous && previous.cursor.epoch === older.epoch) {
+    // What came before the first entry both windows hold left the window by
+    // its start (all of it when the window moved past it whole); an entry
+    // gone from the middle was removed, not carried.
+    const start = previous.messages.findIndex((entry) =>
+      inWindow.has(entry.id),
+    );
+    carried = previous.messages.slice(
+      0,
+      start < 0 ? previous.messages.length : start,
+    );
+  }
+  const seen = new Set<string>();
+  const entries = [...older.entries, ...carried].filter((entry) => {
+    if (inWindow.has(entry.id) || seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
+  if (
+    entries.length === older.entries.length &&
+    entries.every((entry, index) => entry === older.entries[index])
+  )
+    return older;
+  return { ...older, entries };
+}
+
+/** The older entries in front of the window, as one list. */
+export function withOlderEntries(
+  older: OlderHistory | null,
+  window: AgentHistory | null,
+): HistoryEntry[] {
+  const messages = window?.messages ?? [];
+  if (!older?.entries.length || older.epoch !== window?.cursor.epoch)
+    return messages;
+  const inWindow = new Set(messages.map((entry) => entry.id));
+  return [
+    ...older.entries.filter((entry) => !inWindow.has(entry.id)),
+    ...messages,
+  ];
 }

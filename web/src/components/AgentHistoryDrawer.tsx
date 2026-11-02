@@ -10,6 +10,7 @@ import {
   useEffect,
   useMemo,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -158,9 +159,17 @@ import {
 import {
   ALL_HISTORY_FILTERS,
   historyEntryLabel,
+  addOlderPage,
+  canLoadOlder,
+  endOlder,
   historyLoadError,
   mergeAgentHistory,
+  oldestShownEntry,
   retryOnceOnTimeout,
+  slideOlder,
+  withOlderEntries,
+  type OlderHistory,
+  type OlderHistoryPage,
   isToolContentPending,
   selectHistoryEntries,
   toolOverlayMatches,
@@ -170,6 +179,10 @@ import {
   type AgentHistoryResponse,
   type HistoryEntry as AgentHistoryEntry,
 } from "./agentHistory";
+import {
+  createHistoryRefreshGate,
+  type HistoryRefreshGate,
+} from "./historyRefresh";
 import { AgentSessionPreviewDialog } from "./AgentSessionPreviewDialog";
 import {
   type AgentSessionSummary,
@@ -232,6 +245,10 @@ const UNAVAILABLE_QUIET_MS = 20_000;
 const PUSHED_POLL_MS = 30_000;
 /** And while it cannot. */
 const POLL_MS = 4000;
+// How many entries scrolling to the top reads before what is shown.
+const OLDER_PAGE_SIZE = 50;
+// How close to the top of the list counts as scrolled to it.
+const OLDER_TRIGGER_PX = 48;
 
 export function AgentHistoryDrawer({
   pane,
@@ -448,28 +465,45 @@ export function AgentHistoryDrawer({
   const loadSeqRef = useRef(0);
   const previewSeqRef = useRef(0);
   const historyRef = useRef<AgentHistory | null>(history);
+  // What scrolling up read before the window (agent_history.older).
+  const [older, setOlder] = useState<OlderHistory | null>(null);
+  const olderRef = useRef<OlderHistory | null>(null);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const olderLoadingRef = useRef(false);
+  const olderSeqRef = useRef(0);
+  // The first entry in view when older ones were asked for, and where it
+  // was: it stays there once they are put in front of it.
+  const olderAnchorRef = useRef<{ element: Element; top: number } | null>(null);
   const sessionRef = useRef<AgentSessionSummary | null>(session);
-  const inFlightRef = useRef<number | null>(null);
-  // A change was pushed while a read was in flight: read again after it.
-  const reloadRef = useRef(false);
-  const loadHistoryRef = useRef<() => void>(() => {});
+  // One read at a time; pushes, polls and sends meanwhile fold into a single
+  // read after it, a short pause later.
+  const refreshGateRef = useRef<HistoryRefreshGate | null>(null);
+  refreshGateRef.current ??= createHistoryRefreshGate();
+  const refreshGate = refreshGateRef.current;
+  const sessionReadRef = useRef<Promise<unknown> | null>(null);
   const paneIdRef = useRef(pane.pane_id);
   paneIdRef.current = pane.pane_id;
   // Entries whose content fetch failed; suppresses auto-refetch loops while
   // keeping the card's manual Load button usable.
   const toolEntryFailedRef = useRef<Set<string>>(new Set());
 
-  const loadHistory = useCallback(() => {
-    if (!pane.agent || !connectionClient.isCurrent()) return;
-    if (inFlightRef.current !== null) {
-      reloadRef.current = true;
-      return;
-    }
-    reloadRef.current = false;
+  const readHistory = useCallback(() => {
     const seq = loadSeqRef.current + 1;
     loadSeqRef.current = seq;
-    inFlightRef.current = seq;
     setLoading(!historyRef.current);
+    const isCurrentRead = () =>
+      connectionClient.isCurrent() && loadSeqRef.current === seq;
+    // The chat stops saying it catches up once the history answers, or is
+    // first slow to: what it shows stays, and the session summary and a
+    // retry carry on unseen.
+    const slow = () => {
+      if (isCurrentRead()) setCaughtUp(true);
+    };
+    const settled = () => {
+      if (!isCurrentRead()) return;
+      setLoading(false);
+      setCaughtUp(true);
+    };
     const requested = historyRef.current?.cursor ?? null;
     const params = {
       history_version: 2,
@@ -479,74 +513,99 @@ export function AgentHistoryDrawer({
       tab_id: pane.tab_id,
       agent: pane.agent,
     };
-    Promise.allSettled([
-      retryOnceOnTimeout(() =>
-        connectionClient.call("agent_history.get", params),
-      ),
-      retryOnceOnTimeout(() =>
+    const historyRead = retryOnceOnTimeout(
+      () => connectionClient.call("agent_history.get", params),
+      slow,
+    );
+    // A summary still being read is waited for, not asked again.
+    let sessionRead = sessionReadRef.current;
+    if (!sessionRead) {
+      const read = retryOnceOnTimeout(() =>
         connectionClient.call("agent_session.get", {
           pane_id: pane.pane_id,
           agent: pane.agent,
         }),
-      ),
-    ])
-      .then(([historyResult, sessionResult]) => {
-        if (!connectionClient.isCurrent() || loadSeqRef.current !== seq) return;
-        if (historyResult.status === "fulfilled") {
-          const merged = mergeAgentHistory(
-            historyRef.current,
-            historyResult.value as AgentHistoryResponse,
-            requested,
-          );
-          historyRef.current = merged;
-          setHistory(merged);
-          rememberAgentHistory(recentKeyRef.current, {
-            history: merged,
-            session: sessionRef.current,
-          });
-          if (merged) {
-            // Drop on-demand texts for entries that left the window or whose
-            // content changed under the same id (hash or byte-length mismatch).
-            setToolEntryTexts((current) => {
-              if (current.size === 0) return current;
-              const kept = new Map<string, ToolTextOverlay>();
-              for (const message of merged.messages) {
-                const overlay = current.get(message.id);
-                if (
-                  overlay !== undefined &&
-                  toolOverlayMatches(overlay, message)
-                ) {
-                  kept.set(message.id, overlay);
-                }
+      );
+      sessionRead = read;
+      sessionReadRef.current = read;
+      const done = () => {
+        if (sessionReadRef.current === read) sessionReadRef.current = null;
+      };
+      read.then(done, done);
+    }
+    // Each answer shows when it comes: a slow session summary holds back
+    // neither the messages nor the end of the catching up.
+    const historyShown = historyRead
+      .then((value) => {
+        if (!isCurrentRead()) return;
+        const previous = historyRef.current;
+        const merged = mergeAgentHistory(
+          previous,
+          value as AgentHistoryResponse,
+          requested,
+        );
+        historyRef.current = merged;
+        setHistory(merged);
+        // Older entries read by scrolling up stay in front of the window:
+        // what it let go of joins them, a reset drops them.
+        const older = slideOlder(olderRef.current, previous, merged);
+        if (older !== olderRef.current) {
+          olderRef.current = older;
+          setOlder(older);
+        }
+        const shown = withOlderEntries(older, merged);
+        rememberAgentHistory(recentKeyRef.current, {
+          history: merged,
+          session: sessionRef.current,
+        });
+        if (merged) {
+          // Drop on-demand texts for entries that left the window or whose
+          // content changed under the same id (hash or byte-length mismatch).
+          setToolEntryTexts((current) => {
+            if (current.size === 0) return current;
+            const kept = new Map<string, ToolTextOverlay>();
+            for (const message of shown) {
+              const overlay = current.get(message.id);
+              if (
+                overlay !== undefined &&
+                toolOverlayMatches(overlay, message)
+              ) {
+                kept.set(message.id, overlay);
               }
-              return kept.size === current.size ? current : kept;
-            });
-            // Failure marks for entries that left the window are dead weight;
-            // drop them so the set cannot grow across refreshes. An entry
-            // reappearing later may retry the fetch once.
-            const windowedIds = new Set(
-              merged.messages.map((message) => message.id),
-            );
-            for (const id of toolEntryFailedRef.current) {
-              if (!windowedIds.has(id)) toolEntryFailedRef.current.delete(id);
             }
-          }
-          setExpandedMessage((entry) =>
-            entry
-              ? (merged?.messages.find((message) => message.id === entry.id) ??
-                null)
-              : null,
-          );
-        }
-        if (sessionResult.status === "fulfilled") {
-          const summary = sessionResult.value as AgentSessionSummary;
-          sessionRef.current = summary;
-          setSession(summary);
-          rememberAgentHistory(recentKeyRef.current, {
-            history: historyRef.current,
-            session: summary,
+            return kept.size === current.size ? current : kept;
           });
+          // Failure marks for entries that left the window are dead weight;
+          // drop them so the set cannot grow across refreshes. An entry
+          // reappearing later may retry the fetch once.
+          const windowedIds = new Set(shown.map((message) => message.id));
+          for (const id of toolEntryFailedRef.current) {
+            if (!windowedIds.has(id)) toolEntryFailedRef.current.delete(id);
+          }
         }
+        setExpandedMessage((entry) =>
+          entry
+            ? (shown.find((message) => message.id === entry.id) ?? null)
+            : null,
+        );
+      })
+      .catch(() => {})
+      .finally(settled);
+    void sessionRead
+      .then((value) => {
+        if (!isCurrentRead()) return;
+        const summary = value as AgentSessionSummary;
+        sessionRef.current = summary;
+        setSession(summary);
+        rememberAgentHistory(recentKeyRef.current, {
+          history: historyRef.current,
+          session: summary,
+        });
+      })
+      .catch(() => {});
+    void Promise.allSettled([historyRead, sessionRead]).then(
+      ([historyResult, sessionResult]) => {
+        if (!isCurrentRead()) return;
         const errors = [historyResult, sessionResult]
           .filter((result) => result.status === "rejected")
           .map((result) =>
@@ -559,14 +618,92 @@ export function AgentHistoryDrawer({
           .filter(Boolean);
         // A later read that succeeds clears it.
         setError(historyLoadError(errors));
+      },
+    );
+    // The next read waits for this one's history, not for the summary.
+    return historyShown;
+  }, [
+    connectionClient,
+    pane.agent,
+    pane.pane_id,
+    pane.tab_id,
+    pane.workspace_id,
+  ]);
+  // Pushes and polls wait out the pause after a read; what the reader asks
+  // for (`urgent`: a refresh, a send, a rewind) does not.
+  const loadHistory = useCallback(
+    (urgent = false) => {
+      if (!pane.agent || !connectionClient.isCurrent()) return;
+      refreshGate.request(readHistory, urgent);
+    },
+    [connectionClient, pane.agent, readHistory, refreshGate],
+  );
+
+  // Scrolled to the top: one page of what came before, put in front.
+  const loadOlder = useCallback(() => {
+    const live = historyRef.current;
+    if (
+      !pane.agent ||
+      !connectionClient.isCurrent() ||
+      olderLoadingRef.current ||
+      !canLoadOlder(olderRef.current, live)
+    )
+      return;
+    const before = oldestShownEntry(olderRef.current, live);
+    if (!live || !before) return;
+    const scroller = contentRef.current;
+    const items = timelineRef.current;
+    if (scroller && items) {
+      const top = scroller.getBoundingClientRect().top;
+      const first = [...items.children].find(
+        (child) => child.getBoundingClientRect().bottom > top,
+      );
+      if (first)
+        olderAnchorRef.current = {
+          element: first,
+          top: first.getBoundingClientRect().top,
+        };
+    }
+    const epoch = live.cursor.epoch;
+    const seq = olderSeqRef.current + 1;
+    olderSeqRef.current = seq;
+    olderLoadingRef.current = true;
+    setOlderLoading(true);
+    const current = () =>
+      olderSeqRef.current === seq && connectionClient.isCurrent();
+    connectionClient
+      .call("agent_history.older", {
+        pane_id: pane.pane_id,
+        workspace_id: pane.workspace_id,
+        tab_id: pane.tab_id,
+        agent: pane.agent,
+        before_id: before.id,
+        limit: OLDER_PAGE_SIZE,
+      })
+      .then((page) => {
+        if (!current()) return;
+        const next = addOlderPage(
+          olderRef.current,
+          epoch,
+          page as OlderHistoryPage,
+          historyRef.current?.messages ?? [],
+        );
+        olderRef.current = next;
+        setOlder(next);
+      })
+      .catch((error: unknown) => {
+        if (!current()) return;
+        // Gone from the history (a reset): nothing older for now.
+        if (String(error).includes("no longer in the history")) {
+          const next = endOlder(olderRef.current, epoch);
+          olderRef.current = next;
+          setOlder(next);
+        }
       })
       .finally(() => {
-        if (inFlightRef.current === seq) inFlightRef.current = null;
-        if (connectionClient.isCurrent() && loadSeqRef.current === seq) {
-          setLoading(false);
-          setCaughtUp(true);
-          if (reloadRef.current) loadHistoryRef.current();
-        }
+        if (olderSeqRef.current !== seq) return;
+        olderLoadingRef.current = false;
+        setOlderLoading(false);
       });
   }, [
     connectionClient,
@@ -575,14 +712,16 @@ export function AgentHistoryDrawer({
     pane.tab_id,
     pane.workspace_id,
   ]);
-  loadHistoryRef.current = loadHistory;
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
 
   useEffect(() => {
     // Resource-derived state belongs to one pane and one connection lease.
     // Invalidate old continuations before loading a colliding pane ID from a
     // switched connection or replacement runtime.
     loadSeqRef.current += 1;
-    inFlightRef.current = null;
+    refreshGate.reset();
+    sessionReadRef.current = null;
     // What this pane showed last comes back at once; the poll refreshes it.
     const recent = cachedAgentHistory(recentKeyRef.current);
     historyRef.current = recent?.history ?? null;
@@ -596,6 +735,12 @@ export function AgentHistoryDrawer({
     setWideSelectedId(null);
     setWideListRatio(DEFAULT_INSPECTOR_NAVIGATION_RATIO);
     setHistory(historyRef.current);
+    olderRef.current = null;
+    olderSeqRef.current += 1;
+    olderAnchorRef.current = null;
+    olderLoadingRef.current = false;
+    setOlder(null);
+    setOlderLoading(false);
     setQuery("");
     setHeaderExpanded(false);
     setSearchOpen(false);
@@ -618,6 +763,7 @@ export function AgentHistoryDrawer({
     pane.pane_id,
     pane.workspace_id,
     pane.tab_id,
+    refreshGate,
   ]);
 
   // Right after a reload the saved histories are still being read: show this
@@ -637,13 +783,13 @@ export function AgentHistoryDrawer({
       // A read in flight asked from no cursor and would be dropped against
       // the saved one: ask again from it.
       loadSeqRef.current += 1;
-      inFlightRef.current = null;
-      loadHistory();
+      refreshGate.reset();
+      loadHistory(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [loadHistory, recentKey]);
+  }, [loadHistory, recentKey, refreshGate]);
 
   const loadToolEntry = useCallback(
     (entry: AgentHistoryEntry) => {
@@ -708,7 +854,7 @@ export function AgentHistoryDrawer({
     sent_at: string;
   } | null>(null);
   const messages = useMemo(() => {
-    const all = history?.messages ?? [];
+    const all = withOlderEntries(older, history);
     const cut = rewound
       ? all.findIndex(
           (entry) =>
@@ -716,7 +862,57 @@ export function AgentHistoryDrawer({
         )
       : -1;
     return cut < 0 ? all : all.slice(0, cut);
-  }, [history?.messages, rewound]);
+  }, [history, older, rewound]);
+  // Older entries put in front: the entry that was first in view stays
+  // where it was, the reader reading on from it.
+  // The loading row coming and going moves nothing either.
+  useLayoutEffect(() => {
+    const anchor = olderAnchorRef.current;
+    if (!anchor) return;
+    const scroller = contentRef.current;
+    if (scroller && anchor.element.isConnected) {
+      scroller.scrollTop +=
+        anchor.element.getBoundingClientRect().top - anchor.top;
+      anchor.top = anchor.element.getBoundingClientRect().top;
+    }
+    if (!olderLoading) olderAnchorRef.current = null;
+  }, [older, olderLoading]);
+  // Scrolling to the top of the list (chat or timeline) reads one page more;
+  // nothing is read before the reader goes there.
+  // The list element changes with the view (chat, timeline), so it is
+  // checked after every render.
+  const olderSkipScrollRef = useRef(false);
+  const olderScrollerRef = useRef<{
+    element: HTMLElement;
+    stop: () => void;
+  } | null>(null);
+  useEffect(() => {
+    const scroller = contentRef.current;
+    if (olderScrollerRef.current?.element === scroller) return;
+    olderScrollerRef.current?.stop();
+    olderScrollerRef.current = null;
+    if (!scroller) return;
+    const onScroll = () => {
+      if (olderSkipScrollRef.current) {
+        olderSkipScrollRef.current = false;
+        return;
+      }
+      if (scroller.clientHeight > 0 && scroller.scrollTop <= OLDER_TRIGGER_PX)
+        loadOlderRef.current();
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    olderScrollerRef.current = {
+      element: scroller,
+      stop: () => scroller.removeEventListener("scroll", onScroll),
+    };
+  });
+  useEffect(
+    () => () => {
+      olderScrollerRef.current?.stop();
+      olderScrollerRef.current = null;
+    },
+    [],
+  );
   // Substitute fetched tool payloads only while they still match the entry.
   const hydrateEntry = useCallback(
     (entry: AgentHistoryEntry): AgentHistoryEntry => {
@@ -899,6 +1095,32 @@ export function AgentHistoryDrawer({
     () => withShellOutcomes(visibleMessages, sentShells, connectionLabel),
     [connectionLabel, sentShells, visibleMessages],
   );
+  // Above the oldest entry shown: older ones loading, or none left.
+  const olderEnd =
+    !!history && older?.epoch === history.cursor.epoch && !older.hasMore;
+  // Older messages, read to go to a comment on one of them (ChatThreads).
+  const olderMessages = useMemo(
+    () => ({
+      load: loadOlder,
+      loading: olderLoading,
+      more: canLoadOlder(older, history),
+    }),
+    [loadOlder, olderLoading, older, history],
+  );
+  const olderRow = useMemo(
+    () =>
+      olderLoading ? (
+        <div className="agent-history-older" role="status">
+          <span className="terminal-loading-dot" />
+          Loading older messages
+        </div>
+      ) : olderEnd ? (
+        <div className="agent-history-older is-end">
+          Beginning of the conversation
+        </div>
+      ) : null,
+    [olderEnd, olderLoading],
+  );
   const chatItems = useMemo((): ChatItem[] => {
     if (!chatView) return [];
     const items: ChatItem[] = groupHistoryChatItems(
@@ -906,10 +1128,12 @@ export function AgentHistoryDrawer({
         ? [...shownMessages, ...liveEntries]
         : shownMessages,
     );
+    if (olderRow)
+      items.unshift({ type: "custom", id: "older", node: olderRow });
     return query.trim() || !shellItems.length
       ? items
       : [...items, ...shellItems];
-  }, [chatView, liveEntries, query, shellItems, shownMessages]);
+  }, [chatView, liveEntries, olderRow, query, shellItems, shownMessages]);
   // The chat view reads full messages in the modal dialog at any width; only
   // the wide timeline uses the inline master-detail reader.
   const masterDetail = wide && !chatView;
@@ -994,8 +1218,7 @@ export function AgentHistoryDrawer({
         sentRefreshTimerRef.current = null;
       }
       loadSeqRef.current += 1;
-      inFlightRef.current = null;
-      reloadRef.current = false;
+      refreshGate.reset();
     };
   }, [
     connectionClient,
@@ -1005,6 +1228,7 @@ export function AgentHistoryDrawer({
     pane.pane_id,
     pane.tab_id,
     pane.workspace_id,
+    refreshGate,
   ]);
 
   // Herdr saw the agent change state (a turn, /clear, a new session in the
@@ -1103,7 +1327,11 @@ export function AgentHistoryDrawer({
     }
     setHighlightedSequence(null);
     // The chat jumps back to its newest message itself (followKey).
-    if (!chatView && contentRef.current) contentRef.current.scrollTop = 0;
+    if (!chatView && contentRef.current) {
+      // Not the reader scrolling up: it reads nothing older.
+      olderSkipScrollRef.current = contentRef.current.scrollTop !== 0;
+      contentRef.current.scrollTop = 0;
+    }
   };
 
   // Stable identity so the message dialog's focus effect only re-runs when the
@@ -1349,6 +1577,7 @@ export function AgentHistoryDrawer({
     ) : null;
   const historyCards = (
     <div className="agent-history-timeline" ref={timelineRef}>
+      {olderRow}
       {messageEntries.map(({ message, sequence }) => (
         <AgentHistoryCard
           entry={message}
@@ -1457,8 +1686,8 @@ export function AgentHistoryDrawer({
           window.clearTimeout(sentRefreshTimerRef.current);
         sentRefreshTimerRef.current = window.setTimeout(() => {
           sentRefreshTimerRef.current = null;
-          if (inFlightRef.current !== null) refresh(500);
-          else loadHistory();
+          // One still running is followed by this one, at once.
+          loadHistory(true);
         }, delay);
       };
       refresh(1000);
@@ -1964,7 +2193,7 @@ export function AgentHistoryDrawer({
       Date.now() < deadline &&
       messagesRef.current.some((entry) => entry.queued && ids.has(entry.id))
     ) {
-      loadHistory();
+      loadHistory(true);
       await sleep(250);
     }
     await sleep(200);
@@ -2012,7 +2241,7 @@ export function AgentHistoryDrawer({
             draft ? `${text}\n${draft}` : text,
           );
         }
-        loadHistory();
+        loadHistory(true);
       } catch (error) {
         notifyComposerError(
           error instanceof Error ? error.message : String(error),
@@ -2364,7 +2593,7 @@ export function AgentHistoryDrawer({
                   : "No file needed changing.",
               },
         );
-      loadHistory();
+      loadHistory(true);
     },
     [connectionClient, loadHistory, pane.pane_id, restoreDraft],
   );
@@ -2433,7 +2662,7 @@ export function AgentHistoryDrawer({
             await store.sendText(pane.pane_id, "\x7f\x1b[3~".repeat(4));
           restoreDraft(entry.text);
         }
-        loadHistory();
+        loadHistory(true);
       } catch (error) {
         store.notify({
           kind: "error",
@@ -2957,7 +3186,11 @@ export function AgentHistoryDrawer({
         : (paneWaiting ?? historyEmptyState)) ??
         (paneChat && threadsTarget ? (
           // The chat's threads: comments on parts of the agent's messages.
-          <ChatThreadsProvider {...threadsTarget} entries={chatSource.entries}>
+          <ChatThreadsProvider
+            {...threadsTarget}
+            entries={chatSource.entries}
+            older={olderMessages}
+          >
             <div className="agent-history-chat-frame">
               <AgentHistoryChat
                 items={chatItems}
@@ -3397,7 +3630,7 @@ export function AgentHistoryDrawer({
             <button
               type="button"
               className={`agent-history-icon ${loading ? "is-loading" : ""}`}
-              onClick={loadHistory}
+              onClick={() => loadHistory(true)}
               aria-label="Refresh session"
               title="Refresh"
               disabled={loading}
@@ -3442,7 +3675,7 @@ export function AgentHistoryDrawer({
             <button
               type="button"
               className="secondary-btn"
-              onClick={loadHistory}
+              onClick={() => loadHistory(true)}
             >
               <RefreshCw size={13} />
               Retry

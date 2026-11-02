@@ -1,4 +1,5 @@
 import { bridge, type ConnectionClient, type HerdrEventMsg } from "./api";
+import { retryOnceOnTimeout } from "./components/agentHistory";
 
 /**
  * `agent_history.changed`: the bridge watches a pane's session file and
@@ -80,8 +81,15 @@ export function watchAgentHistory(
       paneId: params.pane_id,
       params,
       listeners: new Set(),
+      // A bridge slow to answer (just restarted, a big transcript) still
+      // pushes: asked again, its answer is quick, as it already follows the
+      // pane. Taken as no push, the chat would poll every few seconds.
       pushed: Promise.resolve()
-        .then(() => client.call("agent_history.subscribe", params))
+        .then(() =>
+          retryOnceOnTimeout(() =>
+            client.call("agent_history.subscribe", params),
+          ),
+        )
         .then(
           () => true,
           () => false,

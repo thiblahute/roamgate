@@ -850,7 +850,8 @@ again, and comments follow their code or show as outdated.
   message comes back with another id (a long transcript read from its
   end): it is found by its time and the words it quotes. Open threads on
   messages not shown are counted beside the chip ("2 on messages not
-  shown") and listed in the panel.
+  shown") and listed in the panel, where Go to it reads older messages
+  until it is there.
   Comments are Markdown; paste or drop a screenshot into one and it is
   kept with the review, shown in the comment, and given to the agent as
   a file path it can read. Comments follow their code through rebases and
