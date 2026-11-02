@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
 import {
+  addOlderPage,
+  canLoadOlder,
+  endOlder,
+  oldestShownEntry,
+  slideOlder,
+  withOlderEntries,
   historyLoadError,
   mergeAgentHistory,
   retryOnceOnTimeout,
@@ -257,6 +263,21 @@ test("a read that timed out is asked once more", async () => {
   expect(calls).toBe(1);
 });
 
+test("a read that timed out says so before it is asked again", async () => {
+  const seen: string[] = [];
+  let calls = 0;
+  await retryOnceOnTimeout(
+    async () => {
+      calls += 1;
+      seen.push(`call ${calls}`);
+      if (calls === 1) throw new Error("timeout: agent_history.get");
+      return "ok";
+    },
+    () => seen.push("timed out"),
+  );
+  expect(seen).toEqual(["call 1", "timed out", "call 2"]);
+});
+
 test("timeouts read as a slow bridge, other errors as they are", () => {
   expect(historyLoadError([])).toBe("");
   const text = historyLoadError([
@@ -268,4 +289,106 @@ test("timeouts read as a slow bridge, other errors as they are", () => {
   expect(text).toContain("slow to answer");
   expect(text.split("\n")).toHaveLength(2);
   expect(text).toContain("Agent session is unavailable");
+});
+
+test("older pages go in front of the window, deduplicated", () => {
+  const live = mergeAgentHistory(
+    null,
+    response([entry("5"), entry("6")]),
+    null,
+  )!;
+  expect(canLoadOlder(null, live)).toBe(true);
+  expect(oldestShownEntry(null, live)!.id).toBe("5");
+  let older = addOlderPage(
+    null,
+    "a",
+    { entries: [entry("3"), entry("4"), entry("5")], has_more: true },
+    live.messages,
+  );
+  // The window's own entry is not repeated.
+  expect(older.entries.map((each) => each.id)).toEqual(["3", "4"]);
+  expect(oldestShownEntry(older, live)!.id).toBe("3");
+  older = addOlderPage(
+    older,
+    "a",
+    { entries: [entry("1"), entry("2"), entry("3")], has_more: false },
+    live.messages,
+  );
+  expect(withOlderEntries(older, live).map((each) => each.id)).toEqual([
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+  ]);
+  expect(canLoadOlder(older, live)).toBe(false);
+  // A page of another epoch starts over.
+  expect(
+    addOlderPage(
+      older,
+      "b",
+      { entries: [entry("9")], has_more: true },
+      live.messages,
+    ).entries.map((each) => each.id),
+  ).toEqual(["9"]);
+  // Gone from the history: nothing older for now, what was read stays.
+  const ended = endOlder(older, "a");
+  expect(ended.hasMore).toBe(false);
+  expect(ended.entries).toBe(older.entries);
+  expect(endOlder(older, "b").entries).toEqual([]);
+});
+
+test("a sliding window hands what it lets go of to the older entries", () => {
+  const first = mergeAgentHistory(
+    null,
+    response([entry("3"), entry("4"), entry("5")]),
+    null,
+  )!;
+  const older = addOlderPage(
+    null,
+    "a",
+    { entries: [entry("1"), entry("2")], has_more: false },
+    first.messages,
+  );
+  // 3 leaves the window by its start, 6 arrives; 4 is removed meanwhile.
+  const next = mergeAgentHistory(
+    first,
+    response([entry("5"), entry("6")], 2),
+    first.cursor,
+  )!;
+  const slid = slideOlder(older, first, next)!;
+  expect(slid.entries.map((each) => each.id)).toEqual(["1", "2", "3", "4"]);
+  expect(slid.entries[2]).toBe(first.messages[0]!);
+  expect(withOlderEntries(slid, next).map((each) => each.id)).toEqual([
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+  ]);
+  // Nothing changed: the same state, so nothing re-renders.
+  expect(slideOlder(slid, next, next)).toBe(slid);
+  // An entry the window holds again leaves the older ones.
+  const back = mergeAgentHistory(
+    next,
+    response([entry("2"), entry("5"), entry("6")], 3),
+    next.cursor,
+  )!;
+  expect(slideOlder(slid, next, back)!.entries.map((each) => each.id)).toEqual([
+    "1",
+    "3",
+    "4",
+  ]);
+  // A reset (another epoch) or no history drops them.
+  const reset = mergeAgentHistory(
+    next,
+    response([entry("7")], 1, "b"),
+    next.cursor,
+  )!;
+  expect(reset.cursor.epoch).toBe("b");
+  expect(slideOlder(slid, next, reset)).toBeNull();
+  expect(slideOlder(slid, next, null)).toBeNull();
+  expect(slideOlder(null, first, next)).toBeNull();
 });

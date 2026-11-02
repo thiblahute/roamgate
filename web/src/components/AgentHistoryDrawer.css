@@ -327,6 +327,21 @@
   border-radius: 8px;
 }
 
+/* Above the oldest entry shown: older ones loading, or the first one. */
+.agent-history-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-history-older.is-end {
+  opacity: 0.8;
+}
+
 .agent-history-state {
   display: flex;
   flex-direction: column;
