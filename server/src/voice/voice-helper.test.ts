@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createVoiceRoutes, VOICE_REQUEST_HEADER } from "../http/voice";
-import { createVoiceSocket } from "../http/voice-socket";
+import { createVoiceSocket, DETACHED_MS, KEPT_MS } from "../http/voice-socket";
 import {
   encodeFrame,
   escapeBytes,
@@ -22,6 +22,7 @@ import {
   VoiceHelper,
   type VoiceHelperProcess,
   writeFrontMode,
+  writeMaxPause,
   writeSpeechRate,
 } from "./voice-helper";
 
@@ -202,6 +203,47 @@ describe("voice helper", () => {
     expect(speech.nativeRate).toBe(1);
     await helper.speak("Encore.");
     expect(fake.spawned).toHaveLength(1);
+  });
+
+  test("asks the helper's tempo for the rate the model does not make", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "speak"
+        ? [
+            {
+              id: request.id,
+              audio: Buffer.from("ogg").toString("base64"),
+              language: "en",
+              // An old helper, from before rates, answers no rate.
+              ...(request.text === "Old." ? {} : { rate: request.rate ?? 1 }),
+            },
+          ]
+        : [],
+    );
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    expect((await helper.speak("Fast.", "en", undefined, 1.5)).nativeRate).toBe(
+      1.5,
+    );
+    expect((await helper.speak("Plain.", "en", undefined, 1)).nativeRate).toBe(
+      1,
+    );
+    expect((await helper.speak("Old.", "en", undefined, 1.5)).nativeRate).toBe(
+      1,
+    );
+    const asked = requests(fake.spawned[0]!.frames);
+    expect(asked.map((request) => request.rate)).toEqual([1.5, undefined, 1.5]);
+    // Kokoro made at the rate already: nothing left for the tempo.
+    const kokoro = new VoiceHelper(
+      () => ({
+        ...CONFIG,
+        speech_rate: 1.5,
+        tts_models: [{ model: "kokoro", path: "/k" }],
+      }),
+      fake.spawn,
+    );
+    expect((await kokoro.speak("Hi.", "en", undefined, 1.5)).nativeRate).toBe(
+      1.5,
+    );
+    expect(requests(fake.spawned[1]!.frames)[0]).not.toHaveProperty("rate");
   });
 
   test("a session's audio and events stay its own", async () => {
@@ -483,6 +525,30 @@ describe("speech rate", () => {
   });
 });
 
+describe("longest pause", () => {
+  test("is 8 s by default, what voice.json says, and kept there", () => {
+    expect(new VoiceHelper(() => CONFIG).maxPauseMs()).toBe(8000);
+    expect(
+      new VoiceHelper(() => ({ ...CONFIG, max_pause_ms: 12_000 })).maxPauseMs(),
+    ).toBe(12_000);
+    // Out of range: the default.
+    expect(
+      new VoiceHelper(() => ({ ...CONFIG, max_pause_ms: 500 })).maxPauseMs(),
+    ).toBe(8000);
+    const path = join(
+      mkdtempSync(join(tmpdir(), "voice-pause-")),
+      "voice.json",
+    );
+    writeFileSync(path, JSON.stringify({ helper: "/bin/sh" }));
+    writeMaxPause(10_000, path);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      helper: "/bin/sh",
+      max_pause_ms: 10_000,
+    });
+    expect(() => writeMaxPause(60_000, path)).toThrow();
+  });
+});
+
 describe("voice socket", () => {
   test("streams a browser's microphone and forwards what was heard", async () => {
     const fake = fakeHelper();
@@ -491,7 +557,11 @@ describe("voice socket", () => {
     const ws = { send: (m: string) => sent.push(JSON.parse(m)) };
     socket.message(ws, JSON.stringify({ op: "listen", end_silence_ms: 800 }));
     const id = sent[0]!.session as number;
-    expect(sent[0]).toEqual({ event: "listening", session: id });
+    expect(sent[0]).toEqual({
+      event: "listening",
+      session: id,
+      resume: expect.any(String),
+    });
     socket.message(ws, new Uint8Array([1, 0]));
     socket.message(ws, JSON.stringify({ op: "finish" }));
     const child = fake.spawned[0]!;
@@ -502,39 +572,58 @@ describe("voice socket", () => {
     child.say({ event: "final", session: id, text: "done" });
     await Bun.sleep(1);
     expect(sent.at(-1)).toEqual({ event: "final", session: id, text: "done" });
-    // A new session ends the one before; closing ends the last.
+    // A new session ends the one before; closing keeps the last for a
+    // resume (voice-socket.ts).
     socket.message(ws, JSON.stringify({ op: "listen" }));
     socket.close(ws);
     expect(
       requests(child.frames).filter((r) => r.op === "listen_stop"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   test("a helper exit ends each listening on its own session and keeps the link", async () => {
-    const fake = fakeHelper();
-    const socket = createVoiceSocket(new VoiceHelper(() => CONFIG, fake.spawn));
-    const sent: Record<string, unknown>[] = [];
-    const ws = { send: (m: string) => sent.push(JSON.parse(m)) };
-    socket.message(ws, JSON.stringify({ op: "listen" }));
-    const id = sent[0]!.session as number;
-    fake.spawned[0]!.exit();
-    await Bun.sleep(1);
-    expect(sent.at(-1)).toEqual({
-      event: "error",
-      session: id,
-      error: "The voice helper stopped",
-      recoverable: true,
-    });
-    // Over: the page's finish sends nothing, to the dead helper or a new one.
-    socket.message(ws, JSON.stringify({ op: "finish" }));
-    expect(fake.spawned).toHaveLength(1);
-    expect(
-      requests(fake.spawned[0]!.frames).filter((r) => r.op === "listen_finish"),
-    ).toEqual([]);
-    // The socket listens again, in a new helper.
-    socket.message(ws, JSON.stringify({ op: "listen" }));
-    expect(fake.spawned).toHaveLength(2);
-    expect(sent.at(-1)).toMatchObject({ event: "listening" });
+    jest.useFakeTimers();
+    try {
+      const fake = fakeHelper();
+      const socket = createVoiceSocket(
+        new VoiceHelper(() => CONFIG, fake.spawn),
+      );
+      const sent: Record<string, unknown>[] = [];
+      const ws = { send: (m: string) => sent.push(JSON.parse(m)) };
+      socket.message(ws, JSON.stringify({ op: "listen" }));
+      const id = sent[0]!.session as number;
+      const resume = sent[0]!.resume;
+      fake.spawned[0]!.exit();
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      expect(sent.at(-1)).toEqual({
+        event: "error",
+        session: id,
+        error: "The voice helper stopped",
+        recoverable: true,
+      });
+      // Over: neither the page's finish nor time sends a finish for it,
+      // to the dead helper or a new one.
+      socket.message(ws, JSON.stringify({ op: "finish" }));
+      jest.advanceTimersByTime(DETACHED_MS + KEPT_MS);
+      expect(fake.spawned).toHaveLength(1);
+      expect(
+        requests(fake.spawned[0]!.frames).filter(
+          (r) => r.op === "listen_finish",
+        ),
+      ).toEqual([]);
+      // Nothing to resume; the socket listens again, in a new helper.
+      const other = { send: (m: string) => sent.push(JSON.parse(m)) };
+      socket.message(
+        other,
+        JSON.stringify({ op: "resume", session: id, resume }),
+      );
+      expect(sent.at(-1)).toEqual({ event: "resume_failed", session: id });
+      socket.message(ws, JSON.stringify({ op: "listen" }));
+      expect(fake.spawned).toHaveLength(2);
+      expect(sent.at(-1)).toMatchObject({ event: "listening" });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
@@ -578,6 +667,7 @@ describe("voice routes", () => {
     expect(await response!.json()).toEqual({
       available: true,
       speech_rate: 1.2,
+      max_pause_ms: 8000,
     });
   });
 
@@ -597,6 +687,7 @@ describe("voice routes", () => {
     expect(await status!.json()).toEqual({
       available: true,
       speech_rate: 1.5,
+      max_pause_ms: 8000,
     });
     config = { ...CONFIG };
   });

@@ -24,6 +24,7 @@ import {
   rangerReplyRunning,
 } from "../rangerChat";
 import { store } from "../store";
+import { listenOrSayWhy } from "../speechEngine";
 import {
   readTerminalComposerDraft,
   writeTerminalComposerDraft,
@@ -462,13 +463,7 @@ export function RangerChat({
               onDropHeld: voice.dropHeld,
               onToggle: voice.available
                 ? voice.toggle
-                : () =>
-                    store.notify({
-                      kind: "info",
-                      message: "Voice chat cannot listen here",
-                      detail:
-                        "Listening needs Roamgate's voice engine on the server (docs/DEPLOYMENT.md, Voice chat). Speak still reads replies aloud with this browser's voice.",
-                    }),
+                : () => void listenOrSayWhy(voice.toggle),
               onToggleMute: voice.toggleMute,
             }
           : undefined

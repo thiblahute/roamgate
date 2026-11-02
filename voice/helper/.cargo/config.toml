@@ -1,0 +1,13 @@
+# The soundtouch plugin (`pitch`, in Cargo.toml's gstreamer-plugins) is
+# C++: libSoundTouch.a and gstbpmdetect need the C++ runtime. The prebuilt
+# GStreamer bundle's soundtouch.pc and gstsoundtouch.pc do not list it, so
+# `pkg-config --static` leaves it out and every link that takes in
+# gstreamer-sys fails (this binary, and the gst-plugins-rs cdylibs built
+# along with it). A build script would only reach this crate's binary,
+# hence a link argument for every crate. Remove this once the bundle's
+# .pc files carry the C++ runtime.
+[target.'cfg(target_vendor = "apple")']
+rustflags = ["-C", "link-arg=-lc++"]
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))']
+rustflags = ["-C", "link-arg=-lstdc++"]

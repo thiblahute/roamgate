@@ -141,6 +141,7 @@ import {
 } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { withShellOutcomes } from "../shellOutcomes";
+import { listenOrSayWhy } from "../speechEngine";
 import { noteRewind, voiceFronting, voiceTrace } from "../voiceChat";
 import { agentStateKind } from "./agentSession";
 import { useVoiceChat, type VoiceStream } from "./useVoiceChat";
@@ -2813,26 +2814,23 @@ export function AgentHistoryDrawer({
               held: voice.held,
               onSendHeld: voice.sendHeld,
               onDropHeld: voice.dropHeld,
-              onToggle: voice.available
-                ? () => {
-                    // With a front, the call is with the companion, above
-                    // any pane (switching workspace never cuts it): this
-                    // session is only where work goes by default.
-                    if (
-                      voice.state === "off" &&
-                      voiceFronting() &&
-                      activeConnectionId
-                    )
-                      callCompanion(voiceSession);
-                    else voice.toggle();
-                  }
-                : () =>
-                    store.notify({
-                      kind: "info",
-                      message: "Voice chat cannot listen here",
-                      detail:
-                        "Listening needs Roamgate's voice engine on the server (docs/DEPLOYMENT.md, Voice chat). Speak still reads replies aloud with this browser's voice.",
-                    }),
+              onToggle: () => {
+                const toggle = () => {
+                  // With a front, the call is with the companion, above
+                  // any pane (switching workspace never cuts it): this
+                  // session is only where work goes by default.
+                  if (
+                    voice.state === "off" &&
+                    voiceFronting() &&
+                    activeConnectionId
+                  )
+                    callCompanion(voiceSession);
+                  else voice.toggle();
+                };
+                // Unavailable may be a failure to ask: the tap asks again.
+                if (voice.available) toggle();
+                else void listenOrSayWhy(toggle);
+              },
               onToggleMute: voice.toggleMute,
             }
           : undefined

@@ -1,5 +1,14 @@
 import { bridge } from "./api";
+import { isCompanionVoice } from "./companionCall";
+import { callCompanion } from "./companionCallOpen";
 import { terminalComposerBusy } from "./terminalComposer";
+import {
+  rememberCallForReload,
+  takeCallAfterReload,
+  voiceCallReloadState,
+} from "./voiceCallReload";
+import { voiceTrace } from "./voiceChat";
+import { handOffVoice } from "./voiceRoute";
 
 /** The hashed entry script an index page loads, e.g. `/assets/index-Ab12.js`. */
 export function entryScript(html: string): string | null {
@@ -12,6 +21,11 @@ type FreshnessOptions = {
   /** The index page the server serves now. */
   fetchIndex?: () => Promise<string | null>;
   reload?: () => void;
+  /** The page's voice call: a reload waits for a moment between turns. */
+  voiceCall?: () => "none" | "safe" | "busy";
+  trace?: (line: string) => void;
+  /** Starts a call with the companion again (companionCallOpen.ts). */
+  resumeCompanion?: () => void;
 };
 
 async function fetchServedIndex() {
@@ -22,12 +36,15 @@ async function fetchServedIndex() {
   return response.ok ? response.text() : null;
 }
 
-/** Blurring a field does not save its contents. */
-function writing() {
-  if (terminalComposerBusy()) return true;
+/**
+ * Why a reload would lose something now, or null. Blurring a field does
+ * not save its contents.
+ */
+function writing(): string | null {
+  if (terminalComposerBusy()) return "the composer is sending";
   if (document.querySelector('[role="dialog"], [role="alertdialog"]'))
-    return true;
-  return [
+    return "a dialog is open";
+  const field = [
     ...document.querySelectorAll("input, textarea, [contenteditable]"),
   ].some((field) => {
     if (
@@ -48,6 +65,7 @@ function writing() {
       field.getAttribute("contenteditable") !== "false" && !!field.textContent
     );
   });
+  return field ? "a field holds text" : null;
 }
 
 /**
@@ -58,7 +76,9 @@ function writing() {
  * reconnects (a restart drops it) and when the page comes back to the
  * foreground (a phone reopening its installed app restores the page without
  * reloading it). A field holding unsent text delays the reload until it is
- * emptied or saved. Uploads and submissions must also finish first.
+ * emptied or saved. Uploads and submissions must also finish first. A page
+ * in a voice call reloads between turns only, and the call goes on in the
+ * reloaded page (voiceCallReload.ts).
  */
 export function startFrontendFreshness({
   onConnected = (callback) =>
@@ -67,7 +87,20 @@ export function startFrontendFreshness({
     }),
   fetchIndex = fetchServedIndex,
   reload = () => window.location.reload(),
+  voiceCall = voiceCallReloadState,
+  trace = voiceTrace,
+  resumeCompanion = callCompanion,
 }: FreshnessOptions = {}): () => void {
+  // A call cut by the last reload goes on, once its pane shows.
+  const back = takeCallAfterReload();
+  if (back && isCompanionVoice(back)) {
+    // A call with the companion belongs to no pane: it starts again.
+    trace("a newer build: the call with the companion goes on");
+    resumeCompanion();
+  } else if (back) {
+    trace(`a newer build: the voice call goes on in ${back.paneId}`);
+    handOffVoice({ ...back, message: null });
+  }
   const running = entryScript(
     document.querySelector<HTMLScriptElement>(
       'script[type="module"][src*="/assets/index-"]',
@@ -80,15 +113,25 @@ export function startFrontendFreshness({
   let reloading = false;
   let disposed = false;
   let retry: ReturnType<typeof setInterval> | undefined;
+  let waitingFor: string | null = null;
   const reloadWhenFree = () => {
     if (disposed || reloading) return;
-    if (writing()) {
+    const call = voiceCall();
+    const reason = call === "busy" ? "a pause in the voice call" : writing();
+    if (reason) {
+      if (reason !== waitingFor)
+        trace(`a newer build is available: the reload waits for ${reason}`);
+      waitingFor = reason;
       stale = true;
       retry ??= setInterval(reloadWhenFree, 1000);
       return;
     }
     clearInterval(retry);
     reloading = true;
+    if (call === "safe") {
+      rememberCallForReload();
+      trace("a newer build is available: reloading between turns");
+    } else trace("a newer build is available: reloading");
     reload();
   };
   const onWritingEnds = () => {

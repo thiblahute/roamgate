@@ -414,8 +414,9 @@ Inspector state is scoped to each checkout; see
   listens. It keeps listening through silence,
   waits while the agent asks something on screen, and reconnects on its
   own; when the voice helper on the Mac restarts, what was being said is
-  sent and it listens again. Only one thing reads aloud at a time, and on a phone other apps'
-  music or podcasts pause while voice chat is on.
+  sent and it listens again. Only one thing reads aloud at a time. Replies play with the
+  microphone's audio; with replies played as media (Speech settings),
+  other apps' music or podcasts on a phone pause while voice chat is on.
   Its mute button, on the call bar, stops listening without
   ending it: replies are still read, and what was being said when it was
   pressed is sent, as a tap would.
@@ -510,7 +511,9 @@ Inspector state is scoped to each checkout; see
   when it was said in it.
   Replies are read a little faster than the voice's own pace (1.2x); the
   speed button on the voice card steps through 1x, 1.1x, 1.2x, 1.3x and
-  1.5x, from the sentence playing on, and every browser keeps it.
+  1.5x, from the next sentence on in a call (the sentence playing on
+  otherwise), and every browser keeps it; the server makes the speech at
+  that speed, keeping the voice's pitch.
   With the server engine, the same **Speech** section (in the menu, on
   phones too) lists its voices
   after the browser's settings, grouped by model: your recorded voices,

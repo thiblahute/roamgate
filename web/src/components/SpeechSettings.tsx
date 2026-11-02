@@ -9,15 +9,30 @@ import {
   formatSpeechRate,
   SPEECH_RATE_STEPS,
 } from "../../../shared/speechRate";
-import { setReadWith, useSpeechEngine } from "../speechEngine";
+import {
+  setVoiceOutputMode,
+  subscribeVoiceOutputMode,
+  type VoiceOutputMode,
+  voiceOutputMode,
+} from "../voiceOutput";
+import {
+  type BrowserCallBlock,
+  retryBrowserVoiceInCalls,
+  setReadWith,
+  useSpeechEngine,
+} from "../speechEngine";
 import {
   updateSpeechPreferences,
   useSpeechPreferences,
 } from "../speechPreferences";
 import { store } from "../store";
 import {
+  getMaxPause,
   getSpeechRate,
+  MAX_PAUSE_STEPS,
+  saveMaxPause,
   saveSpeechRate,
+  subscribeMaxPause,
   subscribeSpeechRate,
 } from "../voiceChat";
 import "./SpeechSettings.css";
@@ -45,6 +60,16 @@ export function speechEngineSummary({
   return reads + listens;
 }
 
+/**
+ * What Speech settings say when this browser's voice reads but not in
+ * voice calls here (speechEngine.ts browserCallBlock).
+ */
+export function browserCallNote(block: BrowserCallBlock): string {
+  return block === "android"
+    ? "This browser's voice can't play during voice calls on Android: the microphone opens as a phone call, and the browser's speech is cut off or not heard beside it. Calls read with Roamgate's voice engine."
+    : "This browser's voice did not play in a voice call on this device, so calls read with Roamgate's voice engine.";
+}
+
 export function SpeechSettings({
   serverVoices,
 }: {
@@ -55,6 +80,11 @@ export function SpeechSettings({
   const preferences = useSpeechPreferences();
   const speech = useSpeechEngine();
   const serverRate = useSyncExternalStore(subscribeSpeechRate, getSpeechRate);
+  const maxPause = useSyncExternalStore(subscribeMaxPause, getMaxPause);
+  const output = useSyncExternalStore(
+    subscribeVoiceOutputMode,
+    voiceOutputMode,
+  );
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const synthesis =
     typeof window === "undefined" ? null : window.speechSynthesis;
@@ -99,6 +129,48 @@ export function SpeechSettings({
               This browser's voice
             </option>
           </select>
+          {speech.engine === "browser" && speech.callBlock ? (
+            <p role="status" className="speech-settings-call-note">
+              {browserCallNote(speech.callBlock)}
+              {speech.callBlock === "failed" ? (
+                <>
+                  {" "}
+                  <button type="button" onClick={retryBrowserVoiceInCalls}>
+                    Try it in calls again
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          <label htmlFor={`${id}-max-pause`}>
+            Longest pause before your turn ends
+          </label>
+          <select
+            id={`${id}-max-pause`}
+            aria-describedby={`${id}-max-pause-help`}
+            value={String(maxPause)}
+            onChange={(event) =>
+              saveMaxPause(Number(event.target.value)).catch((error) =>
+                store.notify({
+                  kind: "error",
+                  message: "The longest pause was not kept",
+                  detail: (error as Error).message,
+                }),
+              )
+            }
+          >
+            {[...new Set<number>([...MAX_PAUSE_STEPS, maxPause])]
+              .sort((a, b) => a - b)
+              .map((ms) => (
+                <option key={ms} value={String(ms)}>
+                  {`${ms / 1000} s`}
+                </option>
+              ))}
+          </select>
+          <p id={`${id}-max-pause-help`}>
+            When your voice sounds finished but your words do not. A pause that
+            sounds unfinished, or after "um" or "euh", waits up to 15 s.
+          </p>
           {/* The server's voices, when shown, have their own speed. */}
           {serverVoices ? null : (
             <>
@@ -178,6 +250,28 @@ export function SpeechSettings({
           />
         </>
       )}
+      {speech.server ? (
+        <>
+          <label htmlFor={`${id}-output`}>
+            Voice chat replies play (this device)
+          </label>
+          <select
+            id={`${id}-output`}
+            value={output}
+            onChange={(event) =>
+              setVoiceOutputMode(event.target.value as VoiceOutputMode)
+            }
+          >
+            <option value="context">With the microphone's audio</option>
+            <option value="element">As media (previous way)</option>
+            <option value="call">As a call (experimental)</option>
+          </select>
+          <p>
+            Cars and headsets may pause or cut replies played as media during a
+            call.
+          </p>
+        </>
+      ) : null}
       {speech.server && serverVoices ? (
         <div className="speech-settings-server">{serverVoices}</div>
       ) : null}
