@@ -86,6 +86,34 @@ export function selectHistoryEntries(
   return { visible, counts };
 }
 
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether two versions of an entry hold the same thing. */
+export function sameHistoryEntry(a: HistoryEntry, b: HistoryEntry): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a) as (keyof HistoryEntry)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => sameValue(a[key], b[key]));
+}
+
+// A refresh hands over new objects even for entries that did not change:
+// keep the ones already shown, so memoized bubbles and blocks skip them.
+function keepUnchangedEntries(
+  previous: readonly HistoryEntry[],
+  next: HistoryEntry[],
+): HistoryEntry[] {
+  if (!previous.length) return next;
+  const known = new Map(previous.map((entry) => [entry.id, entry]));
+  return next.map((entry) => {
+    const old = known.get(entry.id);
+    return old && sameHistoryEntry(old, entry) ? old : entry;
+  });
+}
+
 // The request cursor is required even for snapshots: an older reset response
 // must not replace a newer epoch. Connection/pane leases are checked by the caller.
 export function mergeAgentHistory(
@@ -129,6 +157,7 @@ export function mergeAgentHistory(
       return current;
     messages = order.map((id) => entries.get(id)!);
   }
+  messages = keepUnchangedEntries(current?.messages ?? [], messages);
   const limit = Math.max(1, Math.min(response.window_limit, 200));
   if (
     !Number.isInteger(limit) ||
@@ -159,4 +188,33 @@ export function historyEntryLabel(entry: HistoryEntry) {
     return `${entry.is_error ? "Tool error" : "Tool output"}: ${entry.tool_name ?? "tool"}`;
   if (entry.kind === "error") return "Assistant error";
   return entry.role === "assistant" ? "Assistant" : "You";
+}
+
+/**
+ * A history read that timed out is asked once more before it counts as
+ * failed: a bridge busy for a while (a restart, a big transcript) still
+ * answers, and the chat keeps what it shows meanwhile.
+ */
+export async function retryOnceOnTimeout<T>(call: () => Promise<T>) {
+  try {
+    return await call();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith("timeout: "))
+      throw error;
+    return call();
+  }
+}
+
+/** What the chat says of reads that failed, timeouts in plain words. */
+export function historyLoadError(messages: readonly string[]): string {
+  const slow = messages.filter((message) => message.startsWith("timeout: "));
+  const other = messages.filter((message) => !message.startsWith("timeout: "));
+  return [
+    ...(slow.length
+      ? [
+          "The bridge is slow to answer; the chat shows what it had and tries again on the next change.",
+        ]
+      : []),
+    ...other,
+  ].join("\n");
 }

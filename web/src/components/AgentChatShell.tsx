@@ -57,6 +57,7 @@ export function ShellCommandBlock({
   finishedAt,
   onStop,
   sequence,
+  bubbleId,
 }: {
   command: string;
   stdout?: string;
@@ -77,6 +78,8 @@ export function ShellCommandBlock({
   finishedAt?: string;
   onStop?: () => void;
   sequence?: number;
+  /** The entry it shows, in a chat that numbers its bubbles itself. */
+  bubbleId?: string;
 }) {
   const running = status === "running";
   const elapsed = useElapsed(startedAt, running);
@@ -124,6 +127,7 @@ export function ShellCommandBlock({
       className="agent-chat-shell"
       data-status={status ?? "recorded"}
       data-sequence={sequence}
+      data-bubble-id={bubbleId}
       role="group"
       aria-label={`You ran: ${shownCommand}${where ? `, on ${where}` : ""}${outcome}`}
     >
