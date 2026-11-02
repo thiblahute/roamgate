@@ -118,6 +118,8 @@ export type VoiceState =
   | "off"
   | "listening"
   | "transcribing"
+  /** The router (or the front) decides who it was said to. */
+  | "routing"
   | "waiting"
   | "speaking";
 
@@ -393,7 +395,7 @@ export function useVoiceChat({
         const context = routeContextRef.current?.();
         if (!context || !voiceRouting()) return "here";
         setNotSent(null);
-        setState("transcribing");
+        setState("routing");
         const route = await routeSpeech(
           heard.text,
           context.current,

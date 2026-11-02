@@ -214,7 +214,7 @@
   }
 }
 
-.voice-chat-overlay:is(.is-transcribing, .is-waiting)
+.voice-chat-overlay:is(.is-transcribing, .is-routing, .is-waiting)
   .voice-chat-overlay-icon
   svg {
   animation: voice-chat-overlay-spin 1s linear infinite;
