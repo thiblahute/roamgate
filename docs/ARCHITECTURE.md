@@ -486,6 +486,31 @@ visible (not again within 30 s when shown again); a poll reads the merge
 request alone and keeps its threads while its `updated_at` and head are
 unchanged, reading them again at least every 5 minutes.
 
+Agent chats show merge and pull requests through two connection-scoped,
+read-only methods, called in the background lane. `forge.status` reads one
+request (`{provider, host, project, number}`, checked before anything runs)
+with the review's GitLab plumbing: the same host rule (tokens only to glab's
+default host or a host with its own login, any other host refused before
+glab runs and answered `not_signed_in`), and the same fail-closed security
+guard (a security project, a `web_url` not on the asked host, without https,
+or naming another request shows nothing). GitHub goes through gh's own login
+for each host (`gh auth status --hostname`, then one GraphQL query). Only the
+request's own https page is linked. `forge.session` finds the repositories a
+pane's session works in with the review pane's repository scan (its checkout,
+`subprojects/` on a branch, repositories its agent's record shows it worked
+in), each branch's request (`findBranchMergeRequest` for GitLab, the PR
+card's lookup for GitHub) and what `!N` and `#N` mean there. The server
+shares answers across browsers (one request in flight per checkout host and
+request, kept 15 s; sessions 60 s). Browsers keep one cache entry per request
+and connection, ask only while a chip, row or header showing it is on screen
+and the page is visible, and refresh every 20 s while a pipeline runs, two
+minutes while open, thirty minutes once merged or closed, five minutes when
+not signed in, with errors backing off from 30 s to ten minutes. Chips are
+drawn into slots put in the sanitized Markdown after it renders (never in
+code); what the forge says is not selectable message text and never goes to
+an agent. The history marks a `glab mr create` or `gh pr create` result with
+the URL it printed (`created_request`), kept when the payload is redacted.
+
 Review diffs run git with the settings that change a patch's shape pinned
 (`core.quotePath`, `diff.noprefix`, `diff.mnemonicPrefix`,
 `diff.suppressBlankEmpty`, external diff and textconv drivers off), Git Bash

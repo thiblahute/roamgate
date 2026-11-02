@@ -264,6 +264,24 @@ Inspector state is scoped to each checkout; see
   switcher and Find workspace, with "idle · 2 running" as its status. An
   idle teammate waiting for a message does not count. This comes from the
   tasks the list already reads; Herdr's own status is unchanged.
+- In agent chats (and Ranger's), GitLab merge requests and GitHub pull
+  requests become live chips: `!123` and `#123` (read against the pane's
+  repository: its `upstream` remote, else `origin`, or the parent of a fork),
+  `group/project!123`, `owner/repo#123`, and their web URLs, in your messages
+  and the agent's, never inside code. A chip shows the number, state (open,
+  draft, merged, closed), pipeline or checks, approvals and unresolved
+  threads; hovering it shows the title, author, branches, failed jobs and when
+  it last changed. A click opens its page; **Review** opens a GitLab merge
+  request in the review overlay. The chat's header shows the request of each
+  repository the session works on (the pane's checkout, its `subprojects/` on
+  a branch, and repositories the agent worked in), folded into one "3 MRs"
+  chip listing them when there are several. The request button next to it
+  lists every request of the conversation by repository: its branches', those
+  it created (`glab mr create`, `gh pr create`) and those it named. Statuses
+  are read through glab and gh on the checkout's host, only while shown, and
+  a running pipeline is followed until it ends. A host glab or gh is not
+  signed in to shows "not signed in"; confidential security projects show no
+  content.
 - **Agent History** shows the latest 200 conversation entries with search, a
   minimap, and tool details. The **Chat view** toggle reads them as
   conversation bubbles with rendered replies and collapsible tool-call blocks

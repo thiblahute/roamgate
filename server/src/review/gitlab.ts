@@ -221,7 +221,7 @@ async function checkGlabHost(
   );
 }
 
-async function glab(
+export async function glab(
   context: GlabContext,
   /**
    * ownLogin: a host other than glab's default, asked with its own login.

@@ -2,6 +2,7 @@ import { resolveWorkspaceMarkdownLink } from "../workspaceFileUrl";
 import { useEffect, useMemo, useRef } from "react";
 import { marked } from "marked";
 import { diagramMarkdown, endsInOpenFence } from "../diagramSource";
+import { useForgeSlots } from "../forgeSlots";
 import { useDiagramSlots } from "./DiagramSlots";
 import "./markdown.css";
 
@@ -332,6 +333,9 @@ export function MarkdownPreview({
   const openAtEnd = useMemo(() => endsInOpenFence(source), [source]);
   const diagrams = useDiagramSlots(articleRef, html, openAtEnd);
 
+  // A chat's merge and pull request references, as chips.
+  const forgeChips = useForgeSlots(articleRef, html);
+
   useEffect(() => {
     if (!onSelectionChange) return;
     let frame = 0;
@@ -358,6 +362,7 @@ export function MarkdownPreview({
           if (event.button === 1) openLink(event);
         }}
         className={`file-preview-markdown ${className}`.trim()}
+        data-forge-scan=""
         onPointerDown={() => onSelectionChange?.(null)}
         onPointerUp={() => {
           requestAnimationFrame(() => {
@@ -372,6 +377,7 @@ export function MarkdownPreview({
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {diagrams}
+      {forgeChips}
     </>
   );
 }

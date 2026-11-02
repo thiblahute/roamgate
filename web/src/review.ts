@@ -124,6 +124,11 @@ export function acceptReviewPush(push: ReviewPush) {
   }
 }
 
+/** Shows a review the browser opened itself (a chat's merge request). */
+export function requestReviewShown(connectionId: string, sessionId: string) {
+  publish({ openRequest: { sessionId, connectionId } });
+}
+
 export function clearReviewOpenRequest() {
   publish({ openRequest: null });
 }

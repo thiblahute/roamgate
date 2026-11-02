@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { endsInOpenFence } from "../diagramSource";
+import { useForgeSlots } from "../forgeSlots";
 import {
   looseText,
   type MessageBlock,
@@ -482,6 +483,8 @@ export function NoteBody({
     html.join("\u0000"),
     last?.kind === "markdown" && endsInOpenFence(last.source),
   );
+  // A chat's merge and pull request references, as chips.
+  const forgeChips = useForgeSlots(rootRef, html.join("\u0000"));
   const notesByPart = useMemo(() => {
     const byPart = new Map<number, ReactNode[]>();
     for (const note of parts?.notes ?? []) {
@@ -558,6 +561,7 @@ export function NoteBody({
           <Diagram lang={block.lang} code={block.code} />
         ) : (
           <div
+            data-forge-scan=""
             // renderMarkdown sanitises the HTML it produces.
             // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised
             dangerouslySetInnerHTML={{ __html: html[position]! }}
@@ -571,6 +575,7 @@ export function NoteBody({
     <div ref={rootRef} className="rc-text rich">
       {out}
       {diagrams}
+      {forgeChips}
     </div>
   );
 }
