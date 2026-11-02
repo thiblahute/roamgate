@@ -8,8 +8,16 @@ import {
   SAMPLE_SENTENCES,
 } from "../../../shared/voiceLibrary";
 import type { VoiceErrands } from "../voice/voice-errands";
-import type { FrontReply, VoiceFront } from "../voice/voice-front";
-import type { VoiceHelper } from "../voice/voice-helper";
+import {
+  type FrontReply,
+  forwardedWords,
+  type VoiceFront,
+} from "../voice/voice-front";
+import {
+  type FrontMode,
+  isFrontMode,
+  type VoiceHelper,
+} from "../voice/voice-helper";
 import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
 import { SurprisePicker } from "../voice/voice-surprise";
@@ -18,7 +26,10 @@ import { SurprisePicker } from "../voice/voice-surprise";
 export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
 const MAX_SPOKEN_CHARS = 4000;
 /** The state a page gives the front beyond the sessions (voice-front.ts). */
-const MAX_CONTEXT_CHARS = 8000;
+const MAX_CONTEXT_CHARS = 12000;
+/** An event's words; an agent's answer is given whole, up to this. */
+const MAX_EVENT_CHARS = 1000;
+const MAX_ANSWER_CHARS = 12000;
 
 /**
  * GET /api/voice: whether voice chat is set up, and how fast replies are
@@ -43,8 +54,16 @@ const MAX_CONTEXT_CHARS = 8000;
  * place, from `context` too (Ranger tasks, merge requests, what happened),
  * and the route carries `reply`: what to say aloud at once; "self" is
  * answered by `reply` alone. GET /api/voice reports `front`.
- * POST /api/voice/event: `{current, sessions, context, event}` in,
- * `{reply}` out: what the front tells of it now ("" to stay quiet).
+ * POST /api/voice/forward: `{pane, words}` in, `{job}` out: the voice
+ * companion's call gives the words, as said, to that session, and follows
+ * its answer as an errand's (GET /api/voice/errand?job=).
+ * POST /api/voice/event: `{current, sessions, context, event, kind?,
+ * agent?}` in, `{reply}` out: what the front tells of it now ("" to stay
+ * quiet); `kind` "answer" gives it an agent's whole answer, "progress"
+ * what one wrote while it works, `agent` who. GET /api/voice reports
+ * `front_mode`: "companion" (answers told by the front, the default) or
+ * "relay" (every answer read), which POST /api/voice/settings
+ * `{front_mode}` keeps in voice.json.
  *
  * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
  * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
@@ -65,6 +84,9 @@ export function createVoiceRoutes(
   errandFolder: () => string | undefined = () => undefined,
   library: VoiceLibrary | null = null,
   front: () => VoiceFront | null = () => null,
+  /** What the front does with answers (voice-helper.ts frontMode). */
+  mode: () => FrontMode | null = () => null,
+  saveMode: (mode: FrontMode) => void = () => {},
 ) {
   const surprise = new SurprisePicker();
   /** The sessions a page lists, those of the errands folder marked. */
@@ -92,7 +114,7 @@ export function createVoiceRoutes(
       return Response.json({
         ...helper.status(),
         ...(routing || fronting ? { route: true } : {}),
-        ...(fronting ? { front: true } : {}),
+        ...(fronting ? { front: true, front_mode: mode() ?? "companion" } : {}),
         speech_rate: helper.speechRate(),
         ...surpriseStatus(library),
         ...(debug ? { debug } : {}),
@@ -106,7 +128,25 @@ export function createVoiceRoutes(
         );
       const body = (await req.json().catch(() => null)) as {
         speech_rate?: unknown;
+        front_mode?: unknown;
       } | null;
+      if (body?.front_mode !== undefined) {
+        if (!isFrontMode(body.front_mode))
+          return Response.json(
+            { error: 'front_mode must be "companion" or "relay".' },
+            { status: 400 },
+          );
+        try {
+          saveMode(body.front_mode);
+        } catch (error) {
+          return Response.json(
+            { error: (error as Error).message },
+            { status: 500 },
+          );
+        }
+        if (body.speech_rate === undefined)
+          return Response.json({ front_mode: mode() ?? body.front_mode });
+      }
       const rate = body?.speech_rate;
       if (!isSpeechRate(rate))
         return Response.json(
@@ -123,6 +163,40 @@ export function createVoiceRoutes(
       }
       return Response.json({ speech_rate: helper.speechRate() });
     }
+    if (pathname === "/api/voice/forward" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      const body = (await req.json().catch(() => null)) as {
+        pane?: unknown;
+        words?: unknown;
+      } | null;
+      const pane = typeof body?.pane === "string" ? body.pane : "";
+      const words =
+        typeof body?.words === "string" ? body.words.trim().slice(0, 8000) : "";
+      if (!/^[^/]+\/[^/]+$/.test(pane) || !words)
+        return Response.json(
+          { error: "A session and words are needed." },
+          { status: 400 },
+        );
+      if (!errands)
+        return Response.json({ error: "No jobs here." }, { status: 404 });
+      try {
+        const job = await errands.start(pane, words);
+        if (debug)
+          console.error(
+            `[voice] companion job ${job} on ${pane}: ${words.slice(0, 200)}`,
+          );
+        return Response.json({ job });
+      } catch (error) {
+        return Response.json(
+          { error: (error as Error).message },
+          { status: 502 },
+        );
+      }
+    }
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
@@ -138,20 +212,30 @@ export function createVoiceRoutes(
         string,
         unknown
       > | null;
+      const kind =
+        body?.kind === "answer" || body?.kind === "progress"
+          ? body.kind
+          : "event";
       const event =
-        typeof body?.event === "string" ? body.event.trim().slice(0, 1000) : "";
+        typeof body?.event === "string"
+          ? body.event
+              .trim()
+              .slice(0, kind === "event" ? MAX_EVENT_CHARS : MAX_ANSWER_CHARS)
+          : "";
+      const agent =
+        typeof body?.agent === "string" ? body.agent.trim().slice(0, 80) : "";
       const current = typeof body?.current === "string" ? body.current : "";
       if (!event) return Response.json({ reply: "" });
       const started = performance.now();
       const reply = await fronting.event({
         current,
-        event: { text: event },
+        event: { text: event, kind, ...(agent ? { agent } : {}) },
         sessions: routeSessions(body?.sessions),
         context: contextOf(body?.context),
       });
       if (debug)
         console.error(
-          `[voice] front told in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${event.slice(0, 200)}`,
+          `[voice] front told ${kind} in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${event.slice(0, 200)}`,
         );
       return Response.json({ reply });
     }
@@ -184,6 +268,13 @@ export function createVoiceRoutes(
         : routing
           ? await routing.route({ current, said, sessions })
           : { to: "current" };
+      // Only the addressing is dropped, and only when what is left is what
+      // was said: otherwise the words go whole.
+      if ("words" in route && route.words !== undefined) {
+        const words = forwardedWords(said, route.words);
+        route = { ...route, words };
+        if (words === said) delete route.words;
+      }
       if (route.to === "errand") {
         try {
           if (!errands) throw new Error("no errands set up");

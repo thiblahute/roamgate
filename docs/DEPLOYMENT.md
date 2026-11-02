@@ -742,10 +742,28 @@ as for the router (`--safe-mode`, no tools, no Herdr pane variables). Each
 request gives it the agent sessions plus Ranger's tasks, the merge and pull
 requests the page knows and the notifications of the last half hour; it
 never sees files or terminals. The words go on to the agents as said. A
-front that has said nothing after 1.5 seconds is covered by a canned
-acknowledgement; one that fails or takes over 8 seconds leaves the words
+front that has said nothing after 3 seconds is covered by a canned
+acknowledgement (its own words of passing the words on are then not said,
+so a turn is acknowledged once); one that fails or takes over 15 seconds leaves the words
 to the agent on screen, unsaid. Without `"front_model"`, voice chat works
 as before (with `"route_model"`, if set).
+
+`"front_mode"` says what the front does with the agents' answers on a call:
+`"companion"` (the default) gives each finished answer to the front, whole,
+with the agent's name, and the front says what is worth saying from its
+words only; an answer it has not told within 15 seconds is said to be in,
+and a closing question with its choices is always said as written. The
+last answers stay in its state, so it can be asked about them later in the
+call; reading one whole is never left to it. `"relay"` reads every answer,
+as without a front. Speech settings' **Answers on calls** writes it; said on
+a call, it changes for that call only.
+
+With a front, a call can be with the companion itself rather than a pane
+(the application menu's **Call the companion**): work it is given goes to
+the session as a job (`POST /api/voice/forward`; the words as said, only
+the session they address dropped when the front gives them so and the
+server finds the rest word for word but for verb forms, else whole; the
+whole answer followed as an errand's) and comes back through it.
 
 ## Activity log
 

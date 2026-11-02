@@ -136,6 +136,7 @@ describe("the voice front", () => {
       available: true,
       route: true,
       front: true,
+      front_mode: "companion",
       speech_rate: 1.2,
     });
     expect(warmed).toBe(1);
@@ -163,6 +164,48 @@ describe("the voice front", () => {
         context: "Ranger tasks:\n- Nightly: active",
       },
     ]);
+  });
+
+  test("keeps the words the front gives a session only when they are what was said", async () => {
+    let answer: unknown = {};
+    const front = {
+      turn: async () => answer,
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => null,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const route = async (said: string) =>
+      (await routes(
+        post(
+          { current: "local/w2:p2", said, sessions: [session] },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      ))!.json();
+    answer = {
+      to: "current",
+      reply: "Je lance ça.",
+      words: "rebase sur main.",
+    };
+    expect(await route("Demande à roamgate de rebaser sur main.")).toEqual({
+      to: "current",
+      reply: "Je lance ça.",
+      words: "rebase sur main.",
+    });
+    // Reworded: the words said go whole (no words given).
+    answer = { to: "current", reply: "Je lance ça.", words: "update main" };
+    expect(await route("Demande à roamgate de rebaser sur main.")).toEqual({
+      to: "current",
+      reply: "Je lance ça.",
+    });
+    // An approval: as said.
+    answer = { to: "current", words: "vas-y" };
+    expect(await route("Oui, vas-y.")).toEqual({ to: "current" });
   });
 
   test("tells an event, and stays quiet without a front", async () => {
@@ -201,6 +244,118 @@ describe("the voice front", () => {
     expect(await (await event(createVoiceRoutes(helper)))!.json()).toEqual({
       reply: "",
     });
+  });
+
+  test("gives the front an agent's whole answer, and who wrote it", async () => {
+    const told: unknown[] = [];
+    const front = {
+      event: async (request: { event: unknown }) => {
+        told.push(request.event);
+        return "Roamgate a fini.";
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => null,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const answer = `Done.\n\n${"x".repeat(3000)}`;
+    const response = await routes(
+      new Request("http://roamgate.test/api/voice/event", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-roamgate-voice": "1",
+        },
+        body: JSON.stringify({
+          current: "local/w2:p2",
+          sessions: [session],
+          event: answer,
+          kind: "answer",
+          agent: "Roamgate",
+        }),
+      }),
+      "/api/voice/event",
+    );
+    expect(await response!.json()).toEqual({ reply: "Roamgate a fini." });
+    // An answer is not cut to an event's thousand characters.
+    expect(told).toEqual([{ text: answer, kind: "answer", agent: "Roamgate" }]);
+  });
+
+  test("starts the companion's work on a session, its words as said", async () => {
+    const started: string[] = [];
+    const errands = {
+      start: async (pane: string, text: string) => {
+        started.push(`${pane}: ${text}`);
+        return "job-1";
+      },
+    } as unknown as VoiceErrands;
+    const routes = createVoiceRoutes(helper, () => null, errands);
+    const forward = (body: unknown, headers = { "x-roamgate-voice": "1" }) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/forward", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/forward",
+      );
+    const words = "Lance les tests du serveur, et dis-moi.";
+    expect(
+      await (await forward({ pane: "local/w2:p2", words }))!.json(),
+    ).toEqual({ job: "job-1" });
+    expect(started).toEqual([`local/w2:p2: ${words}`]);
+    expect((await forward({ pane: "local", words }))!.status).toBe(400);
+    expect((await forward({ pane: "local/w2:p2", words: " " }))!.status).toBe(
+      400,
+    );
+    expect(
+      (await forward({ pane: "local/w2:p2", words }, {} as never))!.status,
+    ).toBe(403);
+    expect(started).toHaveLength(1);
+  });
+
+  test("keeps what the front does with answers, reported with it", async () => {
+    let mode: "companion" | "relay" = "companion";
+    const front = { warm: () => {} } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => null,
+      null,
+      () => undefined,
+      null,
+      () => front,
+      () => mode,
+      (next) => {
+        mode = next;
+      },
+    );
+    const settings = (body: unknown) =>
+      routes(
+        new Request("http://roamgate.test/api/voice/settings", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-roamgate-voice": "1",
+          },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/settings",
+      );
+    expect((await settings({ front_mode: "aloud" }))!.status).toBe(400);
+    expect(await (await settings({ front_mode: "relay" }))!.json()).toEqual({
+      front_mode: "relay",
+    });
+    const status = await routes(
+      new Request("http://roamgate.test/api/voice"),
+      "/api/voice",
+    );
+    expect(((await status!.json()) as { front_mode?: string }).front_mode).toBe(
+      "relay",
+    );
   });
 
   test("off, the router decides as it always did", async () => {

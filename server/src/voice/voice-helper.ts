@@ -66,6 +66,13 @@ export type VoiceConfig = {
    */
   front_model?: string;
   /**
+   * What a front does with the agents' answers on a call (voice-front.ts):
+   * "companion" (the default with `front_model`) tells them as the
+   * conversation goes, in its own words or theirs, and reads one whole when
+   * asked; "relay" reads every answer aloud, as without a front.
+   */
+  front_mode?: FrontMode;
+  /**
    * The folder of the agent session that general questions and errands go
    * to (a tasks repository), when the router has one.
    */
@@ -100,6 +107,18 @@ export type VoiceConfig = {
    */
   voice_surprise?: boolean;
 };
+
+export type FrontMode = "companion" | "relay";
+
+export function isFrontMode(value: unknown): value is FrontMode {
+  return value === "companion" || value === "relay";
+}
+
+/** What the front does with the answers; null without a front. */
+export function frontMode(config: VoiceConfig): FrontMode | null {
+  if (!config.front_model) return null;
+  return config.front_mode ?? "companion";
+}
 
 export type VoiceStatus =
   | { available: true }
@@ -150,6 +169,8 @@ export function readVoiceConfig(
     typeof config.voice_surprise !== "boolean"
   )
     return { error: `${path}: voice_surprise must be true or false` };
+  if (config.front_mode !== undefined && !isFrontMode(config.front_mode))
+    return { error: `${path}: front_mode must be "companion" or "relay"` };
   if (config.speech_rate !== undefined && !isSpeechRate(config.speech_rate))
     return { error: `${path}: speech_rate must be a number from 0.5 to 2` };
   if (config.whisper_model === undefined && config.parakeet_model === undefined)
@@ -218,11 +239,22 @@ export function readVoiceConfig(
  */
 export function writeSpeechRate(rate: number, path = voiceConfigPath()) {
   if (!isSpeechRate(rate)) throw new Error("speech_rate must be 0.5 to 2");
+  writeVoiceSetting("speech_rate", rate, path);
+}
+
+/** Keeps `mode` as `front_mode` in voice.json, as writeSpeechRate does. */
+export function writeFrontMode(mode: FrontMode, path = voiceConfigPath()) {
+  if (!isFrontMode(mode))
+    throw new Error('front_mode must be "companion" or "relay"');
+  writeVoiceSetting("front_mode", mode, path);
+}
+
+function writeVoiceSetting(key: string, value: unknown, path: string) {
   const config = JSON.parse(readFileSync(path, "utf8")) as Record<
     string,
     unknown
   >;
-  config.speech_rate = rate;
+  config[key] = value;
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`);
   renameSync(temporary, path);

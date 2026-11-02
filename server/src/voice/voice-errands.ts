@@ -15,7 +15,7 @@ export type ErrandDeps = {
 
 export type ErrandState = {
   done: boolean;
-  /** The session's last message after the errand, once it is done. */
+  /** The session's messages after the errand, once it is done. */
   answer: string | null;
   /** Nothing has moved for a while, and its last step is not an answer. */
   stalled: boolean;
@@ -40,8 +40,10 @@ function isAnswer(entry: ErrandEntry | undefined) {
 }
 
 /**
- * Errands said by voice: each is sent to the errands session as a prompt,
- * then its history is watched until the answer settles.
+ * Work said by voice: an errand for the errands session, or a job the voice
+ * companion starts on any session (POST /api/voice/forward). Each is sent
+ * as a prompt, then the session's history is watched until its answer
+ * settles; the answer is everything it wrote meanwhile.
  */
 export class VoiceErrands {
   private jobs = new Map<string, ErrandState>();
@@ -118,7 +120,11 @@ export class VoiceErrands {
       }
       const quiet = Date.now() - since;
       if (isAnswer(last) && quiet >= this.timing.settled) {
-        state.answer = (last!.text as string).trim();
+        // The whole answer: every message it wrote since, in order.
+        state.answer = fresh
+          .filter(isAnswer)
+          .map((entry) => (entry.text as string).trim())
+          .join("\n\n");
         state.done = true;
         return;
       }

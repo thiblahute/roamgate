@@ -168,7 +168,12 @@ import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
-import { readVoiceConfig, VoiceHelper } from "./voice/voice-helper";
+import {
+  frontMode,
+  readVoiceConfig,
+  VoiceHelper,
+  writeFrontMode,
+} from "./voice/voice-helper";
 import { VoiceLibrary } from "./voice/voice-library";
 import {
   createUpdateHandlers,
@@ -391,6 +396,11 @@ const handleVoice = createVoiceRoutes(
     applied: () => voiceHelper.applyTtsModels(),
   }),
   configuredFront(() => readVoiceConfig()),
+  () => {
+    const config = readVoiceConfig();
+    return "error" in config ? null : frontMode(config);
+  },
+  (mode) => writeFrontMode(mode),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,

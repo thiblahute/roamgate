@@ -1,8 +1,12 @@
 import { describe, expect, jest, test } from "bun:test";
 import type { ClaudeProcess } from "./voice-cleaner";
 import {
+  closingQuestion,
+  companionReply,
   configuredFront,
   FRONT_SYSTEM_PROMPT,
+  forwardedWords,
+  isApproval,
   parseFrontReply,
   VoiceFront,
 } from "./voice-front";
@@ -66,10 +70,37 @@ describe("parseFrontReply", () => {
     ).toEqual({ to: "current", reply: "x" });
   });
 
+  test("reading an answer whole, and the call's mode, are understood", () => {
+    expect(parseFrontReply('{"to": "read", "reply": ""}', ids)).toEqual({
+      to: "read",
+    });
+    expect(parseFrontReply('{"to": "read", "agent": "IGA-184"}', ids)).toEqual({
+      to: "read",
+      agent: "IGA-184",
+    });
+    expect(
+      parseFrontReply(
+        '{"to": "mode", "mode": "relay", "reply": "Je lis tout."}',
+        ids,
+      ),
+    ).toEqual({ to: "mode", mode: "relay", reply: "Je lis tout." });
+    expect(parseFrontReply('{"to": "mode", "mode": "loud"}', ids)).toEqual({
+      to: "current",
+    });
+  });
+
   test("the prompt keeps the front from working or approving", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain("You never do the work");
     expect(FRONT_SYSTEM_PROMPT).toContain("never through you");
     expect(FRONT_SYSTEM_PROMPT).toContain("never for you: route it");
+    // The one in charge: first person, never handing the user over.
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "Je lance ça sur la session roamgate.",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain('never "passing that to"');
+    expect(FRONT_SYSTEM_PROMPT).toContain("Recent answers above all");
+    // A remark to the voice itself is answered by it, not forwarded.
+    expect(FRONT_SYSTEM_PROMPT).toContain('"tu me réponds vite"');
   });
 });
 
@@ -127,6 +158,96 @@ function fakeClaude(answer: (content: string) => string | null) {
   return { spawn, started };
 }
 
+describe("the words given to a session", () => {
+  test("lose only the session they address, French and English", () => {
+    const cases: [string, string, string][] = [
+      [
+        "Demande à la session fvcomp de lire le README et de me dire en une phrase de quoi parle le projet.",
+        "lis le README et dis-moi en une phrase de quoi parle le projet",
+        "lis le README et dis-moi en une phrase de quoi parle le projet",
+      ],
+      [
+        "Dis à gst2 que la CI passe maintenant.",
+        "la CI passe maintenant.",
+        "la CI passe maintenant.",
+      ],
+      [
+        "Demande à gst2 de rebaser sur main.",
+        "rebase sur main.",
+        "rebase sur main.",
+      ],
+      [
+        "Ask roamgate to rebase the branch on main.",
+        "rebase the branch on main.",
+        "rebase the branch on main.",
+      ],
+      [
+        "Tell the gst2 session the build is fixed.",
+        "the build is fixed.",
+        "the build is fixed.",
+      ],
+    ];
+    for (const [said, stripped, given] of cases)
+      expect(forwardedWords(said, stripped)).toBe(given);
+  });
+
+  test("are what was said, whole, when the front did more than drop it", () => {
+    const said = "Ask roamgate to rebase the branch on main.";
+    // Words added, or reworded, or translated: what was said goes.
+    expect(
+      forwardedWords(said, "rebase the feature branch on main carefully."),
+    ).toBe(said);
+    expect(forwardedWords(said, "please update the branch")).toBe(said);
+    expect(
+      forwardedWords(
+        "Demande à roamgate de lancer les tests du serveur.",
+        "Run the server tests.",
+      ),
+    ).toBe("Demande à roamgate de lancer les tests du serveur.");
+    // Something left out besides the addressing.
+    expect(
+      forwardedWords(
+        "Demande à gst2 de rebaser sur main et de pousser.",
+        "rebase sur main.",
+      ),
+    ).toBe("Demande à gst2 de rebaser sur main et de pousser.");
+    // Nothing given, or nothing dropped.
+    expect(forwardedWords(said, undefined)).toBe(said);
+    expect(forwardedWords(said, said)).toBe(said);
+  });
+
+  test("an approval or an answer goes exactly as said", () => {
+    for (const said of ["Oui, vas-y.", "Yes.", "Non.", "OK, go ahead", "2"])
+      expect(isApproval(said)).toBe(true);
+    expect(forwardedWords("Oui, vas-y.", "vas-y")).toBe("Oui, vas-y.");
+    expect(forwardedWords("Yes, allow it.", "allow it.")).toBe(
+      "Yes, allow it.",
+    );
+    expect(isApproval("Ask roamgate to rebase the branch on main.")).toBe(
+      false,
+    );
+  });
+
+  test("the front gives them next to its route", () => {
+    expect(
+      parseFrontReply(
+        '{"to": "send", "pane": "desktop/w1J:p1", "say": "IGA", "reply": "Je demande à IGA.", "words": "rebase sur main"}',
+        ids,
+      ),
+    ).toEqual({
+      to: "send",
+      pane: "desktop/w1J:p1",
+      say: "IGA",
+      reply: "Je demande à IGA.",
+      words: "rebase sur main",
+    });
+    // Only for work: an answer of its own carries none.
+    expect(
+      parseFrontReply('{"to": "self", "reply": "Oui.", "words": "x y"}', ids),
+    ).toEqual({ to: "self", reply: "Oui." });
+  });
+});
+
 describe("VoiceFront", () => {
   test("the words said reach the model exactly, the state once", async () => {
     const claude = fakeClaude(
@@ -165,6 +286,92 @@ describe("VoiceFront", () => {
     );
     expect(await event("roamgate finished")).toBe("");
     expect(claude.started[0]!.written[1]).toStartWith("EVENT\n");
+  });
+
+  test("an answer is given whole, marked, with who wrote it", async () => {
+    const claude = fakeClaude(
+      () => '{"reply": "Roamgate a fini le déploiement."}',
+    );
+    const front = new VoiceFront(claude.spawn);
+    const told = await front.event({
+      current: "local/w2:p2",
+      event: {
+        text: "Deployed 1.2.3; all tests pass.",
+        kind: "answer",
+        agent: "Roamgate",
+      },
+      sessions,
+    });
+    expect(told).toBe("Roamgate a fini le déploiement.");
+    expect(claude.started[0]!.written[0]).toContain(
+      "ANSWER\nCurrent: local/w2:p2\nAgent: Roamgate\nAnswer:\nDeployed 1.2.3; all tests pass.",
+    );
+  });
+
+  test("an answer's question and its choices are said as written", async () => {
+    const answer =
+      "I can fix it two ways.\n\nWhich one do you want?\n- Rebase on main\n- Merge main in";
+    expect(closingQuestion(answer)).toBe(
+      "Which one do you want?\n- Rebase on main\n- Merge main in",
+    );
+    expect(closingQuestion("All done. Tests pass.")).toBe("");
+    expect(closingQuestion("Done.\n\nShould I push?\n\n1. Yes\n2. No")).toBe(
+      "Should I push?\n1. Yes\n2. No",
+    );
+    // Reworded by the front: the agent's own words are added.
+    const front = new VoiceFront(
+      fakeClaude(() => '{"reply": "Roamgate wants to know how to fix it."}')
+        .spawn,
+    );
+    const told = await front.event({
+      current: "local/w2:p2",
+      event: { text: answer, kind: "answer", agent: "Roamgate" },
+      sessions,
+    });
+    expect(told).toBe(
+      "Roamgate wants to know how to fix it. Roamgate asks: Which one do you want?\nRebase on main\nMerge main in",
+    );
+    // Its question and choices quoted, in another order of words: left.
+    const quoted =
+      "Roamgate demande : « Which one do you want? » Choix : « Rebase on main » ou « Merge main in ».";
+    expect(
+      companionReply(
+        { text: answer, kind: "answer", agent: "Roamgate" },
+        quoted,
+      ),
+    ).toBe(quoted);
+    // Said as written: left alone.
+    const kept =
+      "Roamgate asks: Which one do you want? Rebase on main, or merge main in?";
+    expect(
+      companionReply(
+        { text: "Which one do you want?", kind: "answer", agent: "Roamgate" },
+        kept,
+      ),
+    ).toBe(kept);
+    // Said without naming who wrote it: named.
+    expect(
+      companionReply(
+        { text: "Tests pass.", kind: "answer", agent: "IGA-184" },
+        "Tests pass.",
+      ),
+    ).toBe("IGA-184: Tests pass.");
+  });
+
+  test("an answer the front is too slow to tell is said to be in", async () => {
+    jest.useFakeTimers();
+    try {
+      const front = new VoiceFront(fakeClaude(() => null).spawn);
+      const told = front.event({
+        current: "local/w2:p2",
+        event: { text: "Done, all good.", kind: "answer", agent: "Roamgate" },
+        sessions,
+      });
+      jest.advanceTimersByTime(15000);
+      expect(await told).toBe("Roamgate answered.");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("a front too slow leaves the words to the agent on screen, unsaid", async () => {
