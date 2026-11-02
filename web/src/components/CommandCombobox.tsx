@@ -7,6 +7,7 @@ import {
   getShortcutSnapshot,
 } from "../shortcutPreferences";
 import { SHORTCUT_NUMBERS, type ShortcutNumber } from "../shortcutBindings";
+import { openActivityTimeline } from "../activityTimelineOpen";
 import { endpointCreationReason } from "../store";
 import { normalizeSearchText } from "../searchText";
 import { useEffect, useMemo, useState } from "react";
@@ -27,6 +28,7 @@ import {
   GitBranch,
   Keyboard,
   ListChecks,
+  ChartGantt,
   Maximize2,
   MoveDown,
   MoveLeft,
@@ -1169,6 +1171,17 @@ export function CommandCombobox({
       ]
     : [];
 
+  const activityActions: ActionDefinition[] = [
+    {
+      key: "activity-timeline",
+      icon: <ChartGantt size={15} />,
+      title: "Activity timeline",
+      detail: "Attention and agent states, per day",
+      keywords: ["activity", "time", "attention", "report"],
+      run: openActivityTimeline,
+    },
+  ];
+
   const actionGroups: ActionGroupDefinition[] = [
     { heading: "Current", actions: currentActions },
     { heading: "Files", actions: fileActions },
@@ -1178,6 +1191,7 @@ export function CommandCombobox({
     { heading: "Panes", actions: paneActions },
     { heading: "Ports", actions: forwardActions },
     { heading: "Agents", actions: agentActions },
+    { heading: "Activity", actions: activityActions },
     { heading: "Help", actions: helpActions },
   ].filter((group) => group.actions.length > 0);
 

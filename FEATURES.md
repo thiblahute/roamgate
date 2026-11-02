@@ -1034,6 +1034,16 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   attention on each device, agent states, idle time and recording gaps, never
   terminal contents. Turn it on in
   [settings](docs/DEPLOYMENT.md#activity-log).
+- **Activity timeline** (command menu, or the application menu) shows a day of
+  that log: a lane for you, coloured per workspace (Herdr's TUI focus hatched,
+  only where no browser or phone had your attention), idle time hatched grey
+  and disconnects in red, then a lane per workspace with its agents' working
+  (green) and blocked (red) stretches. Hover or tap a band for the workspace,
+  times, duration and source. Below, a table totals attended, working and
+  blocked time per workspace; click a workspace to go to it. Step through days
+  with the arrows or **Today**; today refreshes every minute.
+  `roamgate activity` prints the same totals in a terminal
+  ([command line](docs/activity.md#command-line)).
 - [Command-line tools](docs/DEPLOYMENT.md#command-line-management) such as
   `roamgate doctor`, `url --qr`, `config`, `auth`, and `connections`.
 
