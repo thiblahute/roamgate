@@ -215,6 +215,22 @@ export type ClaudeProcess = {
   exited: Promise<unknown>;
 };
 
+/**
+ * The environment of a background Claude Code session: without the Herdr
+ * pane variables of a bridge started from a pane, whose hooks would
+ * otherwise re-point that pane's agent session at this one, nor Claude
+ * Code's own marker of running inside it.
+ */
+export function backgroundClaudeEnv(
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name]) => !name.startsWith("HERDR_") && name !== "CLAUDECODE",
+    ),
+  );
+}
+
 export function spawnClaude(
   model: string,
   command = "claude",
@@ -246,6 +262,7 @@ export function spawnClaude(
     ],
     {
       cwd: tmpdir(),
+      env: backgroundClaudeEnv(),
       stdin: "pipe",
       stdout: "pipe",
       stderr: "ignore",
@@ -278,7 +295,6 @@ export function spawnClaude(
 /** Requests on one session make its context grow: past this, a new one. */
 const REQUESTS_PER_PROCESS = 40;
 
-/** One background Claude Code session, answering one request at a time. */
 /** One background Claude Code session, answering one request at a time. */
 export class Worker {
   private process: ClaudeProcess | null = null;

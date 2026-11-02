@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  backgroundClaudeEnv,
   type CleanerAsk,
   type CleanerReply,
   type ClaudeProcess,
@@ -222,5 +223,21 @@ describe("VoiceCleaner", () => {
     await first;
     await expect(second).rejects.toThrow("No longer needed");
     expect(claude.written).toHaveLength(1);
+  });
+});
+
+describe("backgroundClaudeEnv", () => {
+  test("drops the Herdr pane and Claude Code variables, keeps the rest", () => {
+    expect(
+      backgroundClaudeEnv({
+        HOME: "/home/me",
+        PATH: "/bin",
+        HERDR_ENV: "1",
+        HERDR_PANE_ID: "p1",
+        HERDR_SOCKET_PATH: "/tmp/herdr.sock",
+        HERDR_WORKSPACE_ID: "w1",
+        CLAUDECODE: "1",
+      }),
+    ).toEqual({ HOME: "/home/me", PATH: "/bin" });
   });
 });
