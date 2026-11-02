@@ -26,6 +26,7 @@ describe("VoiceErrands", () => {
           setTimeout(() => {
             entries = [
               ...entries,
+              { id: "m", role: "assistant", kind: "message", text: "Looking." },
               { id: "a", role: "assistant", kind: "message", text: "2 to 1." },
             ];
           }, 30);
@@ -43,7 +44,8 @@ describe("VoiceErrands", () => {
     await until(() => errands.state(job)!.done);
     expect(errands.state(job)).toEqual({
       done: true,
-      answer: "2 to 1.",
+      // The whole answer, not only its last message.
+      answer: "Looking.\n\n2 to 1.",
       stalled: false,
     });
   });

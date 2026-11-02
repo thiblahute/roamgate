@@ -12,6 +12,7 @@ import {
   type Frame,
   FrameError,
   FrameReader,
+  frontMode,
   MAX_FRAME,
   helperTtsModels,
   nativeSpeechRate,
@@ -20,6 +21,7 @@ import {
   type VoiceConfig,
   VoiceHelper,
   type VoiceHelperProcess,
+  writeFrontMode,
   writeSpeechRate,
 } from "./voice-helper";
 
@@ -624,6 +626,47 @@ describe("voice routes", () => {
     expect(
       await routes(new Request("http://roamgate/api/other"), "/api/other"),
     ).toBeNull();
+  });
+});
+
+describe("front mode", () => {
+  const configFile = (config: object) => {
+    const path = join(mkdtempSync(join(tmpdir(), "voice-mode-")), "voice.json");
+    writeFileSync(path, JSON.stringify(config));
+    return path;
+  };
+  const real = {
+    helper: "/bin/sh",
+    whisper_model: "/bin/sh",
+    kokoro_model: "/bin/sh",
+    kokoro_voices: "/bin/sh",
+  };
+
+  test("a front is a companion unless voice.json says relay", () => {
+    expect(frontMode(CONFIG)).toBeNull();
+    expect(frontMode({ ...CONFIG, front_model: "opus" })).toBe("companion");
+    expect(
+      frontMode({ ...CONFIG, front_model: "opus", front_mode: "relay" }),
+    ).toBe("relay");
+    // Without a front, answers are read whatever it says.
+    expect(frontMode({ ...CONFIG, front_mode: "companion" })).toBeNull();
+  });
+
+  test("voice.json refuses another mode, and keeps one with the rest", () => {
+    expect(
+      readVoiceConfig(configFile({ ...real, front_mode: "relay" })),
+    ).toEqual({ ...real, front_mode: "relay" });
+    expect(
+      readVoiceConfig(configFile({ ...real, front_mode: "loud" })),
+    ).toHaveProperty("error");
+    const path = configFile({ ...real, front_model: "opus" });
+    writeFrontMode("relay", path);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      ...real,
+      front_model: "opus",
+      front_mode: "relay",
+    });
+    expect(() => writeFrontMode("loud" as "relay", path)).toThrow();
   });
 });
 
