@@ -2,6 +2,7 @@ import { defaultSessionIndexDir } from "./agent/session-index-store";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
 import { sshReadCommandArgv } from "./bridge/ssh-command";
+import { watchLoopStalls } from "./utils/loop-stall";
 import { loadOrCreateSessionSecret } from "./config/session-secret";
 import { removeLeftoverDataTemporaries } from "./config/data-paths";
 import {
@@ -282,6 +283,10 @@ const cpuProfile = config.profile
       logger,
     )
   : undefined;
+// A busy event loop delays every call: say when, and for how long.
+watchLoopStalls({
+  report: (fields) => logger.debug("event loop stalled", fields),
+});
 // Which agents' finished turns the user saw in Roamgate (agent-seen.ts).
 const agentSeen = createAgentSeenStore();
 // Seen marks hold for one Herdr server process: its boot id, per connection.
