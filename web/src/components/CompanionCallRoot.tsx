@@ -1,5 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import { startCompanionCall } from "../companionCall";
+import { showCompanionCallOnPhone } from "../companionPhoneCall";
+import { isMobileLayout } from "../layoutPreferences";
 import { CompanionCall } from "./CompanionCall";
 import { CompanionPanel } from "./CompanionPanel";
 
@@ -14,6 +16,12 @@ function mount() {
   document.body.append(host);
   root = createRoot(host);
   root.render(<CompanionCall />);
+  showCompanionCallOnPhone({
+    phone: isMobileLayout,
+    shown: () => panel !== null,
+    show: showCompanionPanel,
+    hide: closePanel,
+  });
 }
 
 /**

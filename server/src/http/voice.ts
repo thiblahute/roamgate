@@ -23,6 +23,7 @@ import {
   type VoiceHelper,
 } from "../voice/voice-helper";
 import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
+import { researchContext, type VoiceResearch } from "../voice/voice-research";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
 import { SurprisePicker } from "../voice/voice-surprise";
 
@@ -74,6 +75,13 @@ const MAX_ANSWER_CHARS = 12000;
  * `front_mode`: "companion" (answers told by the front, the default) or
  * "relay" (every answer read), which POST /api/voice/settings
  * `{front_mode}` keeps in voice.json.
+ * Web searches (voice-research.ts): a front's "web" route starts one in
+ * the background and carries its `job`, its `reply` saying at once that
+ * it looks; "web_cancel" stops one and comes back as "self". The front is
+ * given the searches with the state. GET /api/voice/research lists them
+ * (`jobs`), ?job= gives one; POST /api/voice/research/cancel `{job?}`
+ * stops one, or all those running. What a search found is only shown and
+ * said: nothing here routes, forwards or sends because of it.
  *
  * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
  * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
@@ -109,6 +117,11 @@ export function legacyRoute(route: FrontReply, routes: unknown): FrontReply {
     ? new Set(routes.filter((each) => typeof each === "string"))
     : LEGACY_ROUTES;
   if (known.has(route.to)) return route;
+  // A search it cannot follow: what the front said of it, at least.
+  if (route.to === "web")
+    return known.has("self") && route.reply
+      ? { to: "self", reply: route.reply }
+      : { to: "nobody" };
   return route.to === "self" ? { to: "nobody" } : { to: "current" };
 }
 
@@ -122,6 +135,8 @@ export function createVoiceRoutes(
   /** What the front does with answers (voice-helper.ts frontMode). */
   mode: () => FrontMode | null = () => null,
   saveMode: (mode: FrontMode) => void = () => {},
+  /** The front's web searches (voice-research.ts), with a front. */
+  research: () => VoiceResearch | null = () => null,
 ) {
   const surprise = new SurprisePicker();
   /** The sessions a page lists, those of the errands folder marked. */
@@ -256,6 +271,35 @@ export function createVoiceRoutes(
         );
       }
     }
+    if (pathname === "/api/voice/research" && req.method === "GET") {
+      const researching = research();
+      const job = new URL(req.url).searchParams.get("job");
+      if (job === null)
+        return Response.json({ jobs: researching?.list() ?? [] });
+      const state = researching?.state(job);
+      return state
+        ? Response.json(state)
+        : Response.json({ error: "No such search." }, { status: 404 });
+    }
+    if (pathname === "/api/voice/research/cancel" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      const body = (await req.json().catch(() => null)) as {
+        job?: unknown;
+      } | null;
+      const researching = research();
+      const cancelled = !researching
+        ? []
+        : typeof body?.job === "string"
+          ? researching.cancel(body.job)
+            ? [body.job]
+            : []
+          : researching.cancelAll();
+      return Response.json({ cancelled });
+    }
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
@@ -290,7 +334,7 @@ export function createVoiceRoutes(
         current,
         event: { text: event, kind, ...(agent ? { agent } : {}) },
         sessions: routeSessions(body?.sessions),
-        context: contextOf(body?.context),
+        context: withSearches(contextOf(body?.context), research()),
       });
       if (debug)
         console.error(
@@ -325,12 +369,13 @@ export function createVoiceRoutes(
       const sessions = routeSessions(body?.sessions);
       if (!said || !current) return Response.json({ to: "current" });
       const started = performance.now();
+      const researching = fronting ? research() : null;
       let route: FrontReply = fronting
         ? await fronting.turn({
             current,
             said,
             sessions,
-            context: contextOf(body?.context),
+            context: withSearches(contextOf(body?.context), researching),
           })
         : routing
           ? await routing.route({ current, said, sessions })
@@ -342,6 +387,8 @@ export function createVoiceRoutes(
         route = { ...route, words };
         if (words === said) delete route.words;
       }
+      if (route.to === "web" || route.to === "web_cancel")
+        route = webRoute(route, said, researching);
       if (route.to === "errand") {
         try {
           if (!errands) throw new Error("no errands set up");
@@ -588,6 +635,72 @@ function isSessionInfo(value: unknown): value is VoiceSessionInfo {
     (key) =>
       typeof session[key] === "string" && (session[key] as string).length < 500,
   );
+}
+
+/** The state a page gave the front, and its web searches. */
+function withSearches(context: string, research: VoiceResearch | null) {
+  const searches = research ? researchContext(research.list()) : "";
+  return [context, searches].filter(Boolean).join("\n\n");
+}
+
+const looksFrench = (text: string) =>
+  /\b(le|la|les|est|une|des|du|pour|avec|dans|quel|quelle|quels|c'est|qu'est|horaires|demain|aujourd'hui)\b|[çèêàù]/i.test(
+    text,
+  );
+
+/**
+ * A front's "web" route with its search started (`job`), and what is said
+ * at once; "web_cancel" done, said as "self". Without searches here, it is
+ * said that it cannot look.
+ */
+export function webRoute(
+  route: Extract<FrontReply, { to: "web" | "web_cancel" }>,
+  said: string,
+  research: VoiceResearch | null,
+): FrontReply {
+  const french = looksFrench(said);
+  if (route.to === "web_cancel") {
+    const cancelled = !research
+      ? []
+      : route.search
+        ? research.cancel(route.search)
+          ? [route.search]
+          : []
+        : research.cancelAll();
+    const reply =
+      route.reply ||
+      (cancelled.length
+        ? french
+          ? "C'est arrêté."
+          : "Stopped."
+        : french
+          ? "Il n'y a pas de recherche en cours."
+          : "No search is running.");
+    return { to: "self", reply };
+  }
+  const query = route.query.trim() || said;
+  const job = research?.start(query);
+  if (!job || job.status !== "searching")
+    return {
+      to: "self",
+      reply: !research
+        ? french
+          ? "Je ne peux pas chercher sur le web d'ici."
+          : "I can't search the web from here."
+        : french
+          ? "Je n'arrive pas à lancer la recherche pour l'instant."
+          : "I can't start that search right now.",
+    };
+  return {
+    to: "web",
+    query,
+    job: job.id,
+    reply:
+      route.reply ||
+      (french
+        ? "Je regarde ça sur le web, je te redis."
+        : "Let me look that up, I'll tell you."),
+  };
 }
 
 function contextOf(value: unknown): string {

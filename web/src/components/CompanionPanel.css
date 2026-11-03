@@ -33,7 +33,17 @@
   white-space: nowrap;
 }
 
+/* The log and its way back to the newest, which floats over its end. */
+.companion-panel-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .companion-panel-log {
+  flex: 1 1 auto;
   min-height: 0;
   margin: 0;
   padding: 0 2px 4px;
@@ -66,6 +76,59 @@
 
 .companion-panel-line.is-heard p {
   color: var(--muted);
+}
+
+/* What the user says now, written as it is heard: a caption under the
+   last line, not a message yet. */
+.companion-panel-hearing {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.companion-panel-hearing > svg {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--green);
+  animation: companion-panel-hearing 1.4s ease-in-out infinite;
+}
+
+.companion-panel-hearing > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sends the words so far, without waiting for the pause. */
+.companion-panel-send-now {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+@keyframes companion-panel-hearing {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-panel-hearing > svg {
+    animation: none;
+  }
 }
 
 /* The line being said now, at the sentence heard. */
@@ -162,4 +225,136 @@
   border-top: 1px solid var(--border);
   color: var(--muted);
   white-space: pre-wrap;
+}
+
+.companion-panel-web-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.companion-panel-web.is-done .companion-panel-status {
+  color: var(--green);
+}
+
+.companion-panel-web.is-failed .companion-panel-status {
+  color: var(--red);
+}
+
+.companion-panel-cancel {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.companion-panel-web .companion-panel-answer {
+  max-height: 14em;
+}
+
+.companion-panel-answer a,
+.companion-panel-sources a {
+  color: var(--accent);
+}
+
+.companion-panel-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.companion-panel-composer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.companion-panel-composer input {
+  flex: 1;
+  min-width: 0;
+}
+
+.companion-panel-composer .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.companion-panel-mute.is-muted {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+
+.companion-panel-latest {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  cursor: pointer;
+}
+
+/* On a phone the conversation takes the whole screen: a call shows it
+   (companionPhoneCall.ts), so what is said reads at full size. */
+:where(html[data-layout="mobile"]) {
+  .companion-panel-backdrop {
+    padding: 0;
+  }
+
+  .companion-panel {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: calc(12px + env(safe-area-inset-top, 0px))
+      calc(12px + env(safe-area-inset-right, 0px))
+      calc(12px + env(safe-area-inset-bottom, 0px))
+      calc(12px + env(safe-area-inset-left, 0px));
+    border: 0;
+    border-radius: 0;
+  }
+
+  .companion-panel .modal-head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .companion-panel-actions .secondary-btn {
+    min-height: 40px;
+  }
+
+  .companion-panel-line,
+  .companion-panel-job {
+    font-size: 15px;
+  }
+
+  .companion-panel-hearing {
+    font-size: 13px;
+  }
+
+  .companion-panel-send-now {
+    width: 40px;
+    height: 40px;
+  }
 }

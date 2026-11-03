@@ -8,10 +8,10 @@ import {
   setCompanionVoice,
   subscribeCompanionCall,
 } from "../companionCall";
-import { focusedPaneIdForSnapshot } from "../paneJump";
 import { answerAgentPrompt, useReviewState } from "../review";
 import { setPaneView } from "../paneView";
-import { type State, store } from "../store";
+import { store } from "../store";
+import { shownSession } from "../companionText";
 import {
   answerPromptByVoice,
   questionFromPermission,
@@ -24,23 +24,12 @@ import {
   voiceSessions,
   type VoiceSessionInfo,
 } from "../voiceRoute";
+
+export { shownSession };
 import type { HistoryEntry } from "./agentHistory";
 import { useVoiceChat } from "./useVoiceChat";
 
 const NO_ENTRIES: readonly HistoryEntry[] = [];
-
-/** The agent session on screen, else the last one used: work's default. */
-export function shownSession(state: State): string | null {
-  const agentPane = (paneId: string | undefined) =>
-    paneId
-      ? state.panes.find((pane) => pane.pane_id === paneId && pane.agent)
-      : undefined;
-  const pane =
-    agentPane(focusedPaneIdForSnapshot(state)) ??
-    state.recentPaneIds.map(agentPane).find(Boolean) ??
-    state.panes.find((pane) => pane.agent);
-  return pane ? voiceSessionId(state.activeConnectionId, pane.pane_id) : null;
-}
 
 /**
  * The call with the voice companion itself (companionCall.ts), floating
@@ -147,7 +136,7 @@ export function CompanionCall() {
   }, [call.open, heard, state]);
   // Its state and controls go to the top bar (CompanionChip): the call
   // takes no room over the app's content.
-  const { muted, toggleMute } = voice;
+  const { muted, toggleMute, sendNow } = voice;
   const sinceRef = useRef<number | null>(null);
   if (state === "off") sinceRef.current = null;
   else sinceRef.current ??= Date.now();
@@ -155,8 +144,8 @@ export function CompanionCall() {
     setCompanionVoice({ heard, muted, since: sinceRef.current });
   });
   useEffect(() => {
-    setCompanionControls({ toggleMute, tap: toggle });
+    setCompanionControls({ toggleMute, tap: toggle, sendNow });
     return () => setCompanionControls(null);
-  }, [toggle, toggleMute]);
+  }, [sendNow, toggle, toggleMute]);
   return null;
 }

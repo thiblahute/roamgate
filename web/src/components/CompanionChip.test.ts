@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { stripLine } from "./CompanionChip";
+import { hearingNow, stripLine } from "./CompanionChip";
 
 const call = {
   heard: "",
@@ -34,4 +34,20 @@ test("the strip says who speaks: the companion's own words are never the user's"
     "Companion",
     "Muted: it still speaks.",
   ]);
+});
+
+test("what the user says now: not while muted, while it speaks, or its echo", () => {
+  const call = {
+    heard: "  Quel temps fait-il ",
+    line: null,
+    presence: "hearing" as const,
+    muted: false,
+  };
+  expect(hearingNow(call)).toBe("Quel temps fait-il");
+  expect(hearingNow({ ...call, heard: " " })).toBeNull();
+  expect(hearingNow({ ...call, muted: true })).toBeNull();
+  expect(hearingNow({ ...call, presence: "speaking" })).toBeNull();
+  expect(
+    hearingNow({ ...call, line: "Il fait beau.", heard: "il fait beau" }),
+  ).toBeNull();
 });

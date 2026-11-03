@@ -35,6 +35,11 @@ export type VoiceRoute = (
   | { to: "read"; agent?: string }
   /** Answers read whole from now on ("relay"), or told ("companion"). */
   | { to: "mode"; mode: "companion" | "relay" }
+  /**
+   * Looked up on the web in the background (server voice-research.ts):
+   * `query`, followed by `job` (followResearch).
+   */
+  | { to: "web"; query: string; job?: string }
 ) & {
   /** With a front (voiceFront.ts): what it says aloud now. */
   reply?: string;
@@ -60,6 +65,7 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
   "self",
   "read",
   "mode",
+  "web",
 ];
 
 /**
@@ -278,6 +284,52 @@ export async function followErrand(
       stalled = state.stalled;
       onState(state);
     }
+  }
+}
+
+/** A web search the companion started (server voice-research.ts). */
+export type ResearchJob = {
+  id: string;
+  question: string;
+  status: "searching" | "done" | "failed" | "cancelled";
+  /** What it did so far: "Searching: ...", "Reading example.org". */
+  steps: string[];
+  started: number;
+  finished?: number;
+  /** What is said of it. */
+  spoken?: string;
+  /** The whole answer, Markdown with links. */
+  answer?: string;
+  sources?: { title: string; url: string }[];
+  error?: string;
+};
+
+/** A web search as it is now; null when it is gone or unreachable. */
+export async function researchState(job: string): Promise<ResearchJob | null> {
+  try {
+    const response = await fetch(
+      `/api/voice/research?job=${encodeURIComponent(job)}`,
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as ResearchJob;
+  } catch {
+    return null;
+  }
+}
+
+/** Stops a web search, or all those running; whether any was. */
+export async function cancelResearch(job?: string): Promise<boolean> {
+  try {
+    const response = await fetch("/api/voice/research/cancel", {
+      method: "POST",
+      headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+      body: JSON.stringify(job ? { job } : {}),
+    });
+    if (!response.ok) return false;
+    const { cancelled } = (await response.json()) as { cancelled?: unknown };
+    return Array.isArray(cancelled) && cancelled.length > 0;
+  } catch {
+    return false;
   }
 }
 

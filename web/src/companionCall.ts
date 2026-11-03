@@ -57,7 +57,28 @@ export type CompanionLogEntry =
       said?: string;
       status: "running" | "answered" | "no answer" | "not started";
       answer?: string;
+    }
+  | {
+      id: number;
+      at: number;
+      /** A web search it started (voiceRoute.ts ResearchJob). */
+      kind: "web";
+      job: string;
+      question: string;
+      status: "searching" | "done" | "failed" | "cancelled";
+      steps: readonly string[];
+      /** What it said of it, the whole answer and where it comes from. */
+      spoken?: string;
+      answer?: string;
+      sources?: readonly { title: string; url: string }[];
+      error?: string;
     };
+
+/** A web search's entry, as logCompanion takes it. */
+export type CompanionWebEntry = Omit<
+  Extract<CompanionLogEntry, { kind: "web" }>,
+  "id" | "at"
+>;
 
 type CompanionCallState = {
   open: boolean;
@@ -135,7 +156,11 @@ export function setCompanionVoice(voice: {
     publish(voice);
 }
 
-type CompanionControls = { toggleMute: () => void; tap: () => void };
+type CompanionControls = {
+  toggleMute: () => void;
+  tap: () => void;
+  sendNow?: () => void;
+};
 let controls: CompanionControls | null = null;
 
 /** The host's controls: the top bar's mute and its tap on the call. */
@@ -146,6 +171,14 @@ export function setCompanionControls(next: CompanionControls | null) {
 /** Mutes or unmutes the call's microphone. */
 export function toggleCompanionMute() {
   controls?.toggleMute();
+}
+
+/**
+ * Sends what the user is saying now (the transcript so far), without
+ * waiting for the pause that ends it.
+ */
+export function sendCompanionHeard() {
+  controls?.sendNow?.();
 }
 
 /** A tap on the call: stops what it reads and listens, as speaking up does. */
@@ -180,7 +213,8 @@ export function setCompanionLine(line: string | null) {
 export function logCompanion(
   entry:
     | { kind: "heard" | "said"; text: string }
-    | Omit<Extract<CompanionLogEntry, { kind: "job" }>, "id" | "at">,
+    | Omit<Extract<CompanionLogEntry, { kind: "job" }>, "id" | "at">
+    | CompanionWebEntry,
   at = Date.now(),
 ): number {
   const id = nextLogId++;
@@ -206,6 +240,39 @@ export function updateCompanionJob(
   });
 }
 
+/** How a web search it started goes. */
+export function updateCompanionWeb(
+  id: number,
+  update: Partial<Omit<CompanionWebEntry, "kind" | "job" | "question">>,
+) {
+  publish({
+    log: state.log.map((entry) =>
+      entry.id === id && entry.kind === "web" ? { ...entry, ...update } : entry,
+    ),
+  });
+}
+
+/**
+ * Who says a web search's result aloud: the voice chat with a front that
+ * runs now (useVoiceChat), once the user is not talking. Without one, the
+ * result is only written in the conversation view.
+ */
+type CompanionTeller = (text: string) => void;
+let teller: CompanionTeller | null = null;
+
+/** Sets who tells results now; the function that unsets it, if still it. */
+export function setCompanionTeller(next: CompanionTeller): () => void {
+  teller = next;
+  return () => {
+    if (teller === next) teller = null;
+  };
+}
+
+/** The voice that tells results now, if any. */
+export function companionTeller(): CompanionTeller | null {
+  return teller;
+}
+
 /** Where work goes by default; the session last given work. */
 export function setCompanionTarget(target: string) {
   if (state.target !== target) publish({ target });
@@ -229,5 +296,6 @@ export function setCompanionName(name: string) {
 export function __resetCompanionCallForTests() {
   state = EMPTY;
   nextLogId = 1;
+  teller = null;
   listeners.clear();
 }

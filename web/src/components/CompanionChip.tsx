@@ -67,7 +67,9 @@ export function CompanionChip() {
   const timer = useCallTimer(call.open ? call.since : null);
   if (!fronting && !call.open) return null;
   const running = call.log.filter(
-    (entry) => entry.kind === "job" && entry.status === "running",
+    (entry) =>
+      (entry.kind === "job" && entry.status === "running") ||
+      (entry.kind === "web" && entry.status === "searching"),
   ).length;
   const text = companionChipText(call.presence, running);
   const name = companionName();
@@ -159,6 +161,25 @@ const plain = (text: string) =>
     .trim();
 
 /**
+ * What the user says now, as the transcriber hears it so far: none while
+ * muted, while the companion speaks, or when it is only its own words
+ * heard back through the speaker.
+ */
+export function hearingNow(call: {
+  heard: string;
+  line: string | null;
+  presence: CompanionPresence;
+  muted: boolean;
+}): string | null {
+  const heard = call.heard.trim();
+  if (!heard || call.muted || call.presence === "speaking") return null;
+  const line = call.line?.trim() ?? "";
+  // Its own words, heard back through the speaker.
+  if (line && plain(line).includes(plain(heard).slice(0, 40))) return null;
+  return heard;
+}
+
+/**
  * Who says what the strip shows: the companion while it speaks (what the
  * microphone picks up of its own voice then is not the user's), the user
  * while they speak, else the companion's last line.
@@ -172,12 +193,9 @@ export function stripLine(
   },
   name: string,
 ): [string, string] {
-  const heard = call.heard.trim();
+  const heard = hearingNow(call);
+  if (heard) return ["You", heard];
   const line = call.line?.trim() ?? "";
-  // Its own words, heard back through the speaker.
-  const echo =
-    !!heard && !!line && plain(line).includes(plain(heard).slice(0, 40));
-  if (heard && call.presence !== "speaking" && !echo) return ["You", heard];
   if (line) return [name, line];
   return [name, call.muted ? "Muted: it still speaks." : "Listening."];
 }
