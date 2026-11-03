@@ -284,6 +284,10 @@ const activity = createActivityRecorder({
     if (!lease) throw new Error(`connection not ready: ${connectionId}`);
     return lease.runtime.herdr.call(method, params, 5000);
   },
+  // Conversation mode's claude: Herdr's state for its pane is not its own.
+  ownedAgents: (connectionId) =>
+    connectionManager.readyRuntime(connectionId)?.conversation.ownedPanes() ??
+    [],
   logger: logger.child("activity"),
 });
 const webPush = createWebPushService({
@@ -1473,6 +1477,10 @@ function runtimeFactoryForProfile(
         onPaneList: (result, startedAt) => {
           if (context.isCurrent())
             activity.paneList(identity.id, result, startedAt);
+        },
+        onOwnedAgentStatus: (paneId) => {
+          if (context.isCurrent())
+            activity.ownedAgentChanged(identity.id, paneId);
         },
         onEvent: (event, eventIdentity) => {
           if (!context.isCurrent()) return;

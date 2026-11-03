@@ -24,7 +24,11 @@ UI or with [`roamgate activity`](#command-line).
   known state is not recorded. After a connection gap every agent's state is recorded
   again. `agent.session_id` is Herdr's session id (a session file's name for
   agents that keep sessions as files). `agent.task` is the session title, and
-  only with `record_agent_titles`.
+  only with `record_agent_titles`. A Claude that conversation mode runs in a
+  pane is recorded in the state conversation mode knows (working only while
+  a turn runs; background tasks alone leave it idle), never Herdr's: Herdr's
+  Claude integration claims the pane when the headless claude starts, and
+  Herdr's state for it no longer follows.
 - **Attention spans** (`workspace.focus` and `workspace.blur`). Every focus
   gets a blur with a `reason`:
   - `switch`: another workspace or pane, another connection, or none;
@@ -40,7 +44,7 @@ UI or with [`roamgate activity`](#command-line).
   `client`. Herdr's own TUI focus is recorded too,
   as spans with `source: "herdr"` and no client: a low-confidence signal, since
   Herdr cannot tell whether anyone looks at its TUI. These change only with the
-  focused workspace.
+  focused workspace, and run whether or not anyone is attached.
 - **The UI in front of the user** (`ui.visibility`): `visible` is true while a
   page is visible and has the focus (visible AND focused), per client.
 - **Idle and back** (`session.idle`, `session.active`), per client.
