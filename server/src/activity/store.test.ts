@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eventId, isoTime } from "./protocol";
+import { openActivityReader } from "./reader";
 import { type ActivityStore, openActivityStore } from "./store";
 
 const directories: string[] = [];
@@ -149,4 +150,64 @@ test("times read back in local time with their offset", () => {
   const text = isoTime(ms);
   expect(text).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.250[+-]\d\d:\d\d$/);
   expect(Date.parse(text)).toBe(ms);
+});
+
+test("a log from before the git columns gains them, and readers cope", () => {
+  const path = directory();
+  const store = open(path);
+  store.upsertWorkspace({
+    id: "ws",
+    connectionId: "local",
+    name: "w",
+    path: "/w",
+    herdrWorkspaceId: "w1",
+    repoRoot: "/w",
+    repoIsWorktree: false,
+    seenAt: 1,
+  });
+  store.close();
+  // As version 1 shipped: no branch nor remote columns.
+  const db = new Database(join(path, "activity.sqlite"));
+  db.exec("ALTER TABLE workspaces DROP COLUMN repo_branch");
+  db.exec("ALTER TABLE workspaces DROP COLUMN repo_remote_url");
+  db.close();
+  const reader = openActivityReader(path);
+  expect(reader!.workspaces({})).toEqual([]);
+  reader!.close();
+  const again = open(path);
+  again.setRepo("ws", {
+    root: "/r",
+    branch: "main",
+    remoteUrl: "https://example.com/r.git",
+    isWorktree: true,
+  });
+  expect(again.readWorkspaces()[0]!.repo).toEqual({
+    root: "/r",
+    remote_url: "https://example.com/r.git",
+    branch: "main",
+    is_worktree: true,
+  });
+  // Herdr's listing without a root keeps git's.
+  again.upsertWorkspace({
+    id: "ws",
+    connectionId: "local",
+    name: "w",
+    path: "/w",
+    herdrWorkspaceId: "w1",
+    repoRoot: null,
+    repoIsWorktree: null,
+    seenAt: 2,
+  });
+  expect(again.readWorkspaces()[0]!.repo?.root).toBe("/r");
+  // git that cannot tell the root keeps the one known.
+  again.setRepo("ws", {
+    root: null,
+    branch: "b",
+    remoteUrl: null,
+    isWorktree: true,
+  });
+  expect(again.readWorkspaces()[0]!.repo).toMatchObject({
+    root: "/r",
+    branch: "b",
+  });
 });

@@ -13,9 +13,12 @@ import {
   activityStoragePath,
   type EventRow,
   eventFromRow,
+  hasAddedColumns,
+  WORKSPACE_COLUMNS,
   type WorkspaceDbRow,
   workspaceFromRow,
 } from "./store";
+import { type SubjectOf, withSubjects } from "./subjects";
 import {
   type AgentRow,
   buildTimeline,
@@ -119,6 +122,7 @@ function openReadOnly(path: string): Database {
 export function openActivityReader(
   directory: string,
   now: () => number = Date.now,
+  options: { subjectOf?: SubjectOf } = {},
 ): ActivityReader | null {
   const path = activityStoragePath(directory);
   assertSafeDataPath(path);
@@ -180,10 +184,16 @@ export function openActivityReader(
     "SELECT id, started_at, last_alive, stopped_at FROM recorder_sessions ORDER BY id",
   );
   const selectWorkspaces = db.query<WorkspaceDbRow, []>(
-    "SELECT id, connection_id, name, path, herdr_workspace_id, repo_root, repo_is_worktree FROM workspaces ORDER BY id",
+    hasAddedColumns(db)
+      ? `SELECT ${WORKSPACE_COLUMNS} FROM workspaces ORDER BY id`
+      : "SELECT id, connection_id, name, path, herdr_workspace_id, repo_root, repo_is_worktree FROM workspaces ORDER BY id",
   );
 
-  const allWorkspaces = () => selectWorkspaces.all().map(workspaceFromRow);
+  const allWorkspaces = () =>
+    withSubjects(
+      selectWorkspaces.all().map(workspaceFromRow),
+      options.subjectOf,
+    );
 
   function gapsBetween(from: number, to: number): RecordingGap[] {
     return selectGaps.all(to, from).map((gap) => ({

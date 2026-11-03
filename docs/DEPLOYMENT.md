@@ -742,7 +742,7 @@ The [activity log](./activity.md) is off by default. Turn it on in
 | `retention_days`      | `90`      | Days kept (1 to 3650); older entries are deleted daily.                                    |
 | `idle_seconds`        | `300`     | No input for this long ends attention (30 to 86400). Reading counts until then.            |
 | `day_start`           | `"00:00"` | Local time a day starts at, `HH:MM`, for readers that group by day.                        |
-| `subject_roots`       | `[]`      | Directories whose subdirectories group workspaces, for readers.                            |
+| `subject_roots`       | `[]`      | Directories whose subdirectories are [subjects](./activity.md#subjects) (`~/` any home).   |
 | `record_agent_titles` | `false`   | Also record agent session titles (never output).                                           |
 | `exclude`             | empty     | Connections and subjects kept from what is handed to other tools. They are still recorded. |
 
@@ -750,6 +750,9 @@ Only fields set to a valid value are used; the others take their default.
 With `enabled` false nothing is recorded and no file is created. Delete
 `activity.sqlite` (with its `-wal` and `-shm` files, Roamgate stopped) to erase
 the log.
+
+To report the logged time somewhere, configure a
+[time-report provider](./time-report.md) (`time_report.command`).
 
 ## Worktree location
 

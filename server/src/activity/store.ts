@@ -24,6 +24,7 @@ import {
   eventId,
   isoTime,
 } from "./protocol";
+import type { RepoInfo } from "./repo-info";
 
 /**
  * The activity log: coarse, timestamped attention and agent-state events per
@@ -34,6 +35,8 @@ import {
 export type ActivityStore = {
   append(event: NewEvent): number;
   upsertWorkspace(workspace: WorkspaceRow): void;
+  /** What git says of a workspace's repository (repo-info.ts). */
+  setRepo(id: string, repo: RepoInfo | null): void;
   startSession(now: number): number;
   alive(session: number, now: number): void;
   stopSession(session: number, at: number, clean: boolean): void;
@@ -163,7 +166,32 @@ export type WorkspaceDbRow = {
   herdr_workspace_id: string | null;
   repo_root: string | null;
   repo_is_worktree: number | null;
+  repo_branch?: string | null;
+  repo_remote_url?: string | null;
 };
+
+/** The workspaces columns readers select; older logs lack the git ones. */
+export const WORKSPACE_COLUMNS =
+  "id, connection_id, name, path, herdr_workspace_id, repo_root, repo_is_worktree, repo_branch, repo_remote_url";
+
+/**
+ * Columns added after version 1 shipped: created on open, so a reader of an
+ * older log (opened read-only) has to check for them.
+ */
+const ADDED_COLUMNS = [
+  ["workspaces", "repo_branch", "TEXT"],
+  ["workspaces", "repo_remote_url", "TEXT"],
+] as const;
+
+export function hasAddedColumns(db: Database): boolean {
+  const columns = new Set(
+    db
+      .query<{ name: string }, []>("PRAGMA table_info(workspaces)")
+      .all()
+      .map((row) => row.name),
+  );
+  return ADDED_COLUMNS.every(([, column]) => columns.has(column));
+}
 
 const SCHEMA_VERSION = 1;
 const KINDS =
@@ -249,8 +277,8 @@ export function workspaceFromRow(row: WorkspaceDbRow): ActivityWorkspace {
     repo: row.repo_root
       ? {
           root: row.repo_root,
-          remote_url: null,
-          branch: null,
+          remote_url: row.repo_remote_url ?? null,
+          branch: row.repo_branch ?? null,
           is_worktree: row.repo_is_worktree === 1,
         }
       : null,
@@ -339,6 +367,17 @@ export function openActivityStore(directory: string): ActivityStore {
     // For the readers (reader.ts): states and presence by kind. Added after
     // version 1 shipped, so created on open rather than with the schema.
     db.exec("CREATE INDEX IF NOT EXISTS events_kind ON events(kind, ts)");
+    if (!hasAddedColumns(db))
+      db.transaction(() => {
+        for (const [table, column, type] of ADDED_COLUMNS) {
+          const present = db
+            .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+            .all()
+            .some((row) => row.name === column);
+          if (!present)
+            db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        }
+      }).immediate();
     protect();
   } catch (error) {
     close();
@@ -360,9 +399,13 @@ export function openActivityStore(directory: string): ActivityStore {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, path = excluded.path,
       herdr_workspace_id = excluded.herdr_workspace_id,
-      repo_root = excluded.repo_root,
-      repo_is_worktree = excluded.repo_is_worktree,
+      repo_root = COALESCE(excluded.repo_root, repo_root),
+      repo_is_worktree = COALESCE(excluded.repo_is_worktree, repo_is_worktree),
       last_seen = MAX(last_seen, excluded.last_seen)`,
+  );
+  const updateRepo = db.query(
+    `UPDATE workspaces SET repo_root = COALESCE(?, repo_root), repo_is_worktree = ?,
+       repo_branch = ?, repo_remote_url = ? WHERE id = ?`,
   );
   const insertSession = db.query<{ id: number }, [number, number]>(
     "INSERT INTO recorder_sessions (started_at, last_alive) VALUES (?, ?) RETURNING id",
@@ -427,7 +470,7 @@ export function openActivityStore(directory: string): ActivityStore {
      FROM events e WHERE e.ts >= ? AND e.ts < ? ORDER BY e.ts, e.seq`,
   );
   const selectWorkspaces = db.query<WorkspaceDbRow, []>(
-    "SELECT id, connection_id, name, path, herdr_workspace_id, repo_root, repo_is_worktree FROM workspaces ORDER BY id",
+    `SELECT ${WORKSPACE_COLUMNS} FROM workspaces ORDER BY id`,
   );
   const selectGaps = db.query<
     {
@@ -485,6 +528,15 @@ export function openActivityStore(directory: string): ActivityStore {
             : 0,
         workspace.seenAt,
         workspace.seenAt,
+      );
+    },
+    setRepo(id, repo) {
+      updateRepo.run(
+        repo?.root ?? null,
+        repo ? (repo.isWorktree ? 1 : 0) : null,
+        repo?.branch ?? null,
+        repo?.remoteUrl ?? null,
+        id,
       );
     },
     startSession(now) {

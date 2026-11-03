@@ -372,7 +372,22 @@ event shapes are in [the activity log](./activity.md).
   recorder left no shared-memory file, one with `query_only`), for the
   `bridge.activity.timeline` RPC and `roamgate activity`. `timeline.ts` turns
   rows into day spans and totals and is pure. An `events(kind, ts)` index is
-  created on open for the readers.
+  created on open for the readers. Subjects (`subjects.ts`) are derived at
+  read time from the Workspaces tree and `subject_roots`, never stored.
+- **Repositories:** `repo-info.ts` reads branch, remote and roots with one
+  read-only shell script per connection (SSH background lane), off the signal
+  queue; the `repo_branch` and `repo_remote_url` columns are added on open.
+
+## Time-report provider
+
+`server/src/time-report` runs the [time-report provider](./time-report.md)
+for `bridge.time_report`: the configured command plus the operation, a JSON
+body on stdin, from a fresh empty directory, in its own process group killed
+at `timeout_seconds`. Day operations are serialized per day. `day` and
+`refresh` get a `DayInput` built from the activity log (`day-input.ts`), with
+excluded connections and subjects turned into anonymous excluded gaps.
+`submit` is forwarded only with `confirmed: true` and a `confirm_token` from a
+`submit-preview` this bridge ran for the same day in the last 15 minutes, once.
 
 ## Agent integrations
 

@@ -484,3 +484,347 @@
     padding: 16px;
   }
 }
+
+/* --- Subjects --------------------------------------------------------- */
+
+.activity-timeline-group {
+  display: inline-flex;
+  margin: 0 0 0 4px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.activity-timeline-group label {
+  position: relative;
+  display: inline-flex;
+}
+
+.activity-timeline-group input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.activity-timeline-group span {
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.activity-timeline-group input:checked + span {
+  background: var(--panel);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.activity-timeline-group input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.activity-subject-chip {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.activity-subject {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.activity-subject-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.activity-subject.is-none .activity-subject-name {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.activity-subject-name
+  > span:not(.activity-dot):not(.activity-subject-total-time) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-subject-total-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.activity-subject .activity-workspace-head .activity-lane-label {
+  padding-left: 10px;
+}
+
+.activity-totals .activity-subject-total th,
+.activity-totals .activity-subject-total td {
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.activity-totals tr.is-nested th .activity-workspace-name {
+  padding-left: 14px;
+  font-weight: 500;
+}
+
+/* --- Projects (time-report provider mappings) ------------------------- */
+
+.activity-project {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.activity-project.is-unset {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.activity-project.is-inherited {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.project-mapping-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--modal-backdrop);
+}
+
+.project-mapping {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+}
+
+.project-mapping h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.project-mapping-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 13px;
+}
+
+.project-mapping-scope legend {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-mapping-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.project-mapping-field select {
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.project-mapping-remember {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.project-mapping-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 13px;
+}
+
+.project-mapping-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.project-mapping-actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.project-mapping-actions button.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.project-mapping-actions .project-mapping-forget {
+  margin-right: auto;
+  color: var(--red);
+}
+
+.project-mapping-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* On a phone the project goes under the name: the table stays narrow. */
+.activity-project-inline {
+  display: none;
+}
+
+:where(html[data-layout="mobile"]) .activity-totals .activity-project-cell {
+  display: none;
+}
+
+:where(html[data-layout="mobile"]) .activity-project-inline {
+  display: block;
+  margin: 2px 0 0 15px;
+}
+
+.project-mapping-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-mapping-share {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.project-mapping-shares .project-mapping-share + .project-mapping-share {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.project-mapping-share-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.project-mapping-share-row > .project-mapping-field:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-mapping-percent-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-mapping-percent input {
+  width: 64px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+
+.project-mapping-remove {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.project-mapping-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.project-mapping-split button {
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-mapping-split .is-ok {
+  color: var(--muted);
+}
+
+.project-mapping-split .is-off {
+  color: var(--red);
+}

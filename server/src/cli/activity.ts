@@ -16,6 +16,8 @@ import {
   timelineRange,
 } from "../activity/timeline";
 import { roamgateEnv } from "../config/environment";
+import { subjectsFromSettings } from "../activity/subject-settings";
+import type { SubjectOf } from "../activity/subjects";
 import {
   type GuiActivitySettings,
   normalizeActivitySettings,
@@ -46,9 +48,9 @@ function activityHelp(): string {
   return `Read the activity log (docs/activity.md), without the server.
 
 Usage:
-  roamgate activity today [--json]
-  roamgate activity day <YYYY-MM-DD> [--json]
-  roamgate activity range <from> <to> [--json]
+  roamgate activity today [--by workspace|subject] [--json]
+  roamgate activity day <YYYY-MM-DD> [--by workspace|subject] [--json]
+  roamgate activity range <from> <to> [--by workspace|subject] [--json]
   roamgate activity events [--after ID] [--from T] [--to T]
                            [--connection ID] [--workspace ID]
                            [--kind K[,K...]] [--limit N] [--json | --ndjson]
@@ -56,7 +58,10 @@ Usage:
   roamgate activity status [--json]
 
 today, day and range print attended time and agent working and blocked
-time per workspace; with --json, the timeline (days of spans and totals).
+time per workspace, or per subject with --by subject; with --json, the
+timeline (days of spans and totals per workspace and per subject).
+A subject is a group of the Workspaces tree, else the first folder under an
+activity.subject_roots entry.
 Days start at the activity.day_start setting, in local time.
 
 events prints events in log (id) order. --after resumes after an event id
@@ -74,7 +79,23 @@ everything but status. The log is opened read-only.
 
 type Format = "text" | "json" | "ndjson";
 
-function activitySettingsFor(context: CliContext): GuiActivitySettings {
+/** settings.json as the server reads it: the activity settings and subjects. */
+function activitySettingsFor(context: CliContext): {
+  settings: GuiActivitySettings;
+  subjectOf: SubjectOf;
+} {
+  const raw = settingsFileFor(context);
+  return {
+    settings: normalizeActivitySettings(
+      raw && typeof raw === "object"
+        ? (raw as { activity?: unknown }).activity
+        : undefined,
+    ),
+    subjectOf: subjectsFromSettings(raw),
+  };
+}
+
+function settingsFileFor(context: CliContext): unknown {
   let path: string | undefined;
   try {
     path = roamgateEnv("SETTINGS_PATH", readServiceSetup(context.runtime).env);
@@ -85,11 +106,10 @@ function activitySettingsFor(context: CliContext): GuiActivitySettings {
     roamgateEnv("SETTINGS_PATH", context.runtime.env) ??
     join(runtimeDataRoot(context.runtime), "settings.json");
   try {
-    if (!existsSync(path)) return normalizeActivitySettings(undefined);
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return normalizeActivitySettings(parsed?.activity);
+    if (!existsSync(path)) return undefined;
+    return JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return normalizeActivitySettings(undefined);
+    return undefined;
   }
 }
 
@@ -120,10 +140,19 @@ export function formatDuration(ms: number): string {
 }
 
 /** Totals summed over the timeline's days, one line per workspace. */
-export function timelineSummary(timeline: Timeline): string {
-  const names = new Map(
+export function timelineSummary(
+  timeline: Timeline,
+  by: "workspace" | "subject" = "workspace",
+): string {
+  const names = new Map<string, string>(
     timeline.workspaces.map((workspace) => [workspace.id, workspace.name]),
   );
+  if (by === "subject") {
+    names.clear();
+    for (const day of timeline.days)
+      for (const entry of day.totals.subjects)
+        names.set(entry.subject_id ?? "", entry.label ?? "(no subject)");
+  }
   const rows = new Map<
     string,
     { attended: number; herdr: number; working: number; blocked: number }
@@ -135,8 +164,18 @@ export function timelineSummary(timeline: Timeline): string {
     attended += day.totals.attended_ms;
     idle += day.totals.idle_ms;
     unrecorded += day.totals.unrecorded_ms;
-    for (const entry of day.totals.workspaces) {
-      const row = rows.get(entry.workspace_id) ?? {
+    const entries =
+      by === "subject"
+        ? day.totals.subjects.map((entry) => ({
+            ...entry,
+            key: entry.subject_id ?? "",
+          }))
+        : day.totals.workspaces.map((entry) => ({
+            ...entry,
+            key: entry.workspace_id,
+          }));
+    for (const entry of entries) {
+      const row = rows.get(entry.key) ?? {
         attended: 0,
         herdr: 0,
         working: 0,
@@ -146,7 +185,7 @@ export function timelineSummary(timeline: Timeline): string {
       row.herdr += entry.herdr_ms;
       row.working += entry.working_ms;
       row.blocked += entry.blocked_ms;
-      rows.set(entry.workspace_id, row);
+      rows.set(entry.key, row);
     }
   }
   const first = timeline.days[0]?.date ?? "";
@@ -163,13 +202,10 @@ export function timelineSummary(timeline: Timeline): string {
     (a, b) => b[1].attended - a[1].attended || b[1].working - a[1].working,
   );
   const label = (id: string) => names.get(id) ?? id;
-  const width = Math.max(
-    "workspace".length,
-    ...sorted.map(([id]) => label(id).length),
-  );
+  const width = Math.max(by.length, ...sorted.map(([id]) => label(id).length));
   const cell = (ms: number) => (ms ? formatDuration(ms) : "-").padStart(8);
   lines.push(
-    `  ${"workspace".padEnd(width)}  ${"attended".padStart(8)}  ${"of herdr".padStart(8)}  ${"working".padStart(8)}  ${"blocked".padStart(8)}`,
+    `  ${by.padEnd(width)}  ${"attended".padStart(8)}  ${"of herdr".padStart(8)}  ${"working".padStart(8)}  ${"blocked".padStart(8)}`,
   );
   for (const [id, row] of sorted)
     lines.push(
@@ -202,6 +238,7 @@ export function createActivityCommand(
       "--workspace",
       "--kind",
       "--limit",
+      "--by",
     ],
     help: activityHelp,
     async run(args, context) {
@@ -223,11 +260,11 @@ export function createActivityCommand(
   };
 
   function run(action: string, rest: string[], context: CliContext): number {
-    const settings = activitySettingsFor(context);
+    const { settings, subjectOf } = activitySettingsFor(context);
     const directory = runtimeDataRoot(context.runtime);
     const excluded = settings.exclude.connections;
     const withReader = (use: (reader: ActivityReader) => number) => {
-      const reader = openActivityReader(directory, now);
+      const reader = openActivityReader(directory, now, { subjectOf });
       if (!reader)
         throw new Error(
           `no activity log at ${displayPath(activityStoragePath(directory), context.runtime)}; set activity.enabled in settings.json`,
@@ -246,9 +283,12 @@ export function createActivityCommand(
       const count = { today: 0, day: 1, range: 2 }[action];
       const { values, positionals } = parseCommandArgs(
         rest,
-        { json: { type: "boolean" } },
+        { json: { type: "boolean" }, by: { type: "string" } },
         count,
       );
+      const by = values.by ?? "workspace";
+      if (by !== "workspace" && by !== "subject")
+        throw new UsageError("--by must be workspace or subject");
       if (positionals.length !== count)
         throw new UsageError(
           action === "day"
@@ -272,7 +312,9 @@ export function createActivityCommand(
           excluded,
           settings.idle_seconds,
         );
-        print(formatFlag(values), timeline, () => timelineSummary(timeline));
+        print(formatFlag(values), timeline, () =>
+          timelineSummary(timeline, by),
+        );
         return EXIT_OK;
       });
     }
@@ -377,7 +419,7 @@ export function createActivityCommand(
             ? workspaces
                 .map(
                   (workspace) =>
-                    `${workspace.name}  ${workspace.connection_id}  ${workspace.path ?? "-"}`,
+                    `${workspace.name}  ${workspace.connection_id}  ${workspace.subject?.label ?? "-"}  ${workspace.path ?? "-"}`,
                 )
                 .join("\n")
             : "no workspaces",
@@ -390,7 +432,7 @@ export function createActivityCommand(
       const { values } = parseCommandArgs(rest, { json: { type: "boolean" } });
       const at = now();
       const range = timelineRange({}, at, settings.day_start);
-      const reader = openActivityReader(directory, now);
+      const reader = openActivityReader(directory, now, { subjectOf });
       const status = reader
         ? (() => {
             try {

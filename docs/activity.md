@@ -106,8 +106,34 @@ workspace's checkout path, so it survives Herdr restarts (Herdr's ids do not).
 The path is Herdr's worktree checkout, else the directory of the workspace's
 first pane when first seen; a workspace with neither is keyed by its name.
 Workspaces sharing a path share the key. Each workspace keeps its name, path,
-repository root, whether it is a linked worktree, and Herdr's current id as
-`herdr_workspace_id`.
+repository, and Herdr's current id as `herdr_workspace_id`. The repository
+(`repo`) is read with git on the connection's host, read-only, when the
+workspace is listed and again every 10 minutes: `root` (a linked worktree's
+main checkout), `is_worktree`, the `branch` checked out (null when detached) and
+`remote_url`, the URL of the branch's remote (else `origin`, else the first
+remote) with any user name and password of an http(s) URL left out.
+
+## Subjects
+
+A workspace's `subject` is the user's grouping of it, by folder only, never by
+repository (a worktree is not grouped with its main checkout):
+
+1. **A group of the Workspaces tree** (`source: "explicit"`): the group nodes
+   above the workspace's node, top first. A workspace nested under another
+   workspace is not in a group by that. Ids are `tree:` and the group node's id,
+   so they survive renames.
+2. **Else a folder under a root** (`source: "directory"`): the first directory
+   level under an `activity.subject_roots` entry, so with the root
+   `~/devel/clients`, `~/devel/clients/sequence/cps-184` belongs to `sequence`,
+   with the groups `clients` and `sequence`. A root under `~` matches that
+   folder in any user's home, on every connection. The deepest root wins. Ids
+   are `dir:`, the root as configured, `/` and the folder.
+
+`label` is the nearest group and `groups` the chain from the top-level one.
+Subjects are computed when the log is read, so a new root or group applies to
+past days too. Roamgate keeps no other mapping: where a workspace's time is
+reported is the [time-report provider](./time-report.md)'s, corrected from the
+timeline.
 
 ## Recorder sessions and retention
 
@@ -159,9 +185,14 @@ the offset; durations are milliseconds. Each day has:
   above), plus `working_ms` and `blocked_ms`:
   the time at least one of its agents was in that state.
 
+  `subjects` totals the same per subject (`subject_id` and `label` null for
+  the workspaces with none), with `workspace_ids`; its `working_ms` and
+  `blocked_ms` count an instant once however many of its workspaces' agents
+  were in that state.
+
 `workspaces` lists the workspaces the days refer to, with name, connection,
-path and Herdr's current id, and `recorder_running` says whether open spans
-end now.
+path, Herdr's current id and `subject`, and `recorder_running` says whether
+open spans end now.
 
 ## Command line
 
@@ -169,9 +200,9 @@ end now.
 server running:
 
 ```sh
-roamgate activity today [--json]
-roamgate activity day 2026-11-02 [--json]
-roamgate activity range 2026-10-26 2026-11-01 [--json]
+roamgate activity today [--by workspace|subject] [--json]
+roamgate activity day 2026-11-02 [--by workspace|subject] [--json]
+roamgate activity range 2026-10-26 2026-11-01 [--by workspace|subject] [--json]
 roamgate activity events [--after ID] [--from T] [--to T] [--connection ID]
                          [--workspace ID] [--kind K[,K...]] [--limit N]
                          [--json | --ndjson]
@@ -180,15 +211,16 @@ roamgate activity status [--json]
 ```
 
 - `today`, `day` and `range` print attended time (and how much of it came from
-  Herdr's TUI) and agent working and blocked time per workspace; `--json`
-  prints the [timeline](#timeline).
+  Herdr's TUI) and agent working and blocked time per workspace, or per
+  [subject](#subjects) with `--by subject`; `--json` prints the
+  [timeline](#timeline), with both.
 - `events` prints events in id order. `--json` prints an `ActivityPage`; when
   more events match, `next_cursor` is the last id, to pass to `--after`.
   `--ndjson` prints one `Event` per line. `--from` and `--to` take dates (day
   boundaries per `day_start`) or ISO 8601 times. `--limit` defaults to 1000, at
   most 5000.
 - `workspaces` prints `{"workspaces": [Workspace]}` with `--json`: those with
-  events in the range.
+  events in the range, with their subjects.
 - `status` prints a `Status`: whether the log is recording (enabled and the
   recorder stamped alive in the last 150 seconds), the last alive stamp, each
   connection's state, and today's `RecordingGap`s.

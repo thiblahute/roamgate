@@ -47,12 +47,26 @@ export type ActivityEvent = {
   source?: EventSource;
 };
 
+export type SubjectGroup = { id: string; label: string };
+
+/** The schema's Subject: the user's grouping of a workspace. */
+export type Subject = {
+  id: string;
+  /** The nearest group. */
+  label: string;
+  source: "explicit" | "directory";
+  /** Directory of the nearest group, when it has one. */
+  path: string | null;
+  /** From the top-level group to the nearest. */
+  groups: SubjectGroup[];
+};
+
 export type ActivityWorkspace = {
   id: string;
   connection_id: string;
   name: string;
   path: string | null;
-  subject: null;
+  subject: Subject | null;
   repo: {
     root: string;
     remote_url: string | null;

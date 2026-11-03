@@ -150,6 +150,47 @@ export function normalizeActivitySettings(raw: unknown): GuiActivitySettings {
   };
 }
 
+/**
+ * The Hours view's provider (docs/time-report.md): a command Roamgate runs
+ * once per operation. Off while absent.
+ */
+export type GuiTimeReportSettings = {
+  command: string[];
+  timeout_seconds: number;
+};
+
+export const DEFAULT_TIME_REPORT_TIMEOUT_SECONDS = 60;
+
+/** Null when the value names no runnable command. */
+export function normalizeTimeReportSettings(
+  raw: unknown,
+): GuiTimeReportSettings | null {
+  const obj =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as any) : {};
+  const command = Array.isArray(obj.command)
+    ? obj.command.filter(
+        (entry: unknown): entry is string =>
+          typeof entry === "string" && entry.length > 0 && entry.length < 4096,
+      )
+    : [];
+  if (
+    command.length === 0 ||
+    command.length !== obj.command.length ||
+    command.length > 64 ||
+    !command[0]!.trim()
+  )
+    return null;
+  return {
+    command,
+    timeout_seconds: boundedInteger(
+      obj.timeout_seconds,
+      5,
+      600,
+      DEFAULT_TIME_REPORT_TIMEOUT_SECONDS,
+    ),
+  };
+}
+
 /** The activity settings in effect, defaults included. */
 export function activitySettings(settings: GuiSettings): GuiActivitySettings {
   return settings.activity ?? normalizeActivitySettings(undefined);
@@ -170,6 +211,8 @@ export type GuiSettings = {
   conversation?: GuiConversationSettings;
   /** Absent until set: written back only when the file has it. */
   activity?: GuiActivitySettings;
+  /** Absent: no Hours view. */
+  time_report?: GuiTimeReportSettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -387,6 +430,7 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
       obj.activity === undefined
         ? undefined
         : normalizeActivitySettings(obj.activity),
+    time_report: normalizeTimeReportSettings(obj.time_report) ?? undefined,
     custom:
       obj.custom && typeof obj.custom === "object"
         ? (obj.custom as Record<string, unknown>)

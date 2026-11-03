@@ -1,0 +1,691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Roamgate time-report provider protocol schemas",
+  "$defs": {
+    "Error": {
+      "type": "object",
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "Health": {
+      "type": "object",
+      "required": ["ok", "provider"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Human readable name, for example the target system."
+        },
+        "version": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "clock_times",
+              "split",
+              "explain",
+              "answer",
+              "refresh",
+              "mapping"
+            ]
+          }
+        },
+        "ai": {
+          "type": "object",
+          "description": "What the classifier is configured to use, for display only.",
+          "properties": {
+            "backend": {
+              "type": "string"
+            },
+            "deferred": {
+              "type": "boolean",
+              "description": "True when classification could not run (window exhausted, preflight failed)."
+            }
+          }
+        }
+      }
+    },
+    "DayStatus": {
+      "type": "string",
+      "enum": ["empty", "needs_input", "proposed", "accepted", "submitted"]
+    },
+    "DaySummary": {
+      "type": "object",
+      "required": ["date", "status", "tracked_minutes"],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "status": {
+          "$ref": "#/$defs/DayStatus"
+        },
+        "tracked_minutes": {
+          "type": "integer"
+        },
+        "expected_minutes": {
+          "type": ["integer", "null"]
+        },
+        "open_questions": {
+          "type": "integer"
+        },
+        "blocks": {
+          "type": "integer"
+        }
+      }
+    },
+    "Day": {
+      "type": "object",
+      "required": ["date", "status", "blocks", "gaps"],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "status": {
+          "$ref": "#/$defs/DayStatus"
+        },
+        "tracked_minutes": {
+          "type": "integer"
+        },
+        "expected_minutes": {
+          "type": ["integer", "null"]
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "description": "Unexplained time between blocks, claimable with `block-create`.",
+          "items": {
+            "$ref": "#/$defs/Gap"
+          }
+        },
+        "deferred": {
+          "type": "boolean",
+          "description": "Classification could not run, so blocks are unclassified and only questions are offered."
+        },
+        "refreshing": {
+          "type": "boolean",
+          "description": "A refresh is still running; call `day` again later."
+        },
+        "timeline": {
+          "type": "array",
+          "description": "The cleaned and enriched timeline for the day: the input events turned into segments, with noise merged or dropped and the provider's own additions (calendar, commits). Roamgate draws this in place of its raw timeline.",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "input_hash": {
+          "type": "string",
+          "description": "Hash of the DayInput this result was computed from. A provider may return a cached result when the hash is unchanged."
+        }
+      }
+    },
+    "Gap": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hint": {
+          "type": ["string", "null"],
+          "description": "What the evidence says happened, if anything."
+        }
+      }
+    },
+    "BlockStatus": {
+      "type": "string",
+      "enum": ["needs_input", "proposed", "accepted", "submitted", "skipped"],
+      "description": "skipped means \"do not log\"; it is kept so it is not proposed again."
+    },
+    "BlockSource": {
+      "type": "string",
+      "enum": ["ai", "pin", "history", "manual", "answer"]
+    },
+    "Target": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "group": {
+          "type": ["string", "null"],
+          "description": "For example the customer."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "TaskType": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["kind", "title"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "commit, mr, issue, workspace, calendar, agent_session, answer, history"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "ts": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "minutes": {
+          "type": ["integer", "null"],
+          "description": "Time attributed to this evidence, when it is an activity interval."
+        }
+      }
+    },
+    "QuestionOption": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["target", "skip", "split", "other"]
+        }
+      }
+    },
+    "Question": {
+      "type": "object",
+      "required": ["prompt", "options"],
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuestionOption"
+          }
+        }
+      }
+    },
+    "Block": {
+      "type": "object",
+      "required": ["id", "start", "end", "minutes", "status", "source"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Target"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_type": {
+          "type": ["string", "null"]
+        },
+        "description": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "status": {
+          "$ref": "#/$defs/BlockStatus"
+        },
+        "source": {
+          "$ref": "#/$defs/BlockSource"
+        },
+        "subject": {
+          "type": ["string", "null"],
+          "description": "The workspace subject that drove the attribution, if any."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "question": {
+          "description": "Present when status is needs_input.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Question"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "BlockCreate": {
+      "type": "object",
+      "required": ["start", "end", "target"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target id."
+        },
+        "task_type": {
+          "type": ["string", "null"]
+        },
+        "description": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "BlockPatch": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target id."
+        },
+        "task_type": {
+          "type": ["string", "null"]
+        },
+        "description": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "Explanation": {
+      "type": "object",
+      "required": ["block_id"],
+      "properties": {
+        "block_id": {
+          "type": "string"
+        },
+        "reasoning": {
+          "type": ["string", "null"]
+        },
+        "inputs": {
+          "type": "array",
+          "description": "The evidence and memory the decision used, as shown to the model after redaction.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "decided_by": {
+          "type": "string",
+          "description": "Backend name and model version, or pin/answer/history."
+        },
+        "decided_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Change": {
+      "type": "object",
+      "required": ["action", "entry"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["create", "update", "delete"]
+        },
+        "block_id": {
+          "type": ["string", "null"]
+        },
+        "existing_id": {
+          "type": ["string", "null"],
+          "description": "Id in the external system for update and delete."
+        },
+        "entry": {
+          "type": "object",
+          "description": "The exact record that would be written, in the provider's own terms.",
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": "string",
+          "description": "One line for the confirmation dialog."
+        }
+      }
+    },
+    "Preview": {
+      "type": "object",
+      "required": ["changes", "total_minutes", "confirm_token", "expires_at"],
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Change"
+          }
+        },
+        "total_minutes": {
+          "type": "integer"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm_token": {
+          "type": "string",
+          "description": "One time, bound to exactly these changes and the current day state."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ChangeResult": {
+      "type": "object",
+      "required": ["block_id", "ok"],
+      "properties": {
+        "block_id": {
+          "type": ["string", "null"]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "external_id": {
+          "type": ["string", "null"]
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "SubmitResult": {
+      "type": "object",
+      "required": ["results"],
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeResult"
+          }
+        }
+      }
+    },
+    "Segment": {
+      "type": "object",
+      "required": ["start", "end", "kind", "origin"],
+      "description": "One stretch of the cleaned timeline. Roamgate draws the segments it gets back as the timeline of the day.",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["focus", "agent", "idle", "meeting", "other"],
+          "description": "focus: attention on a workspace. agent: an agent working. idle: nothing happening. meeting: a calendar event. other: anything else the provider adds."
+        },
+        "origin": {
+          "type": "string",
+          "enum": ["activity", "provider"],
+          "description": "activity: derived from the input events (possibly cleaned). provider: added by the provider from its own sources."
+        },
+        "label": {
+          "type": ["string", "null"]
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "subject": {
+          "type": ["string", "null"]
+        },
+        "url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "description": "Why the provider changed or added this, for example 'merged 3 short focus changes' or 'dropped, screen locked'."
+        }
+      }
+    },
+    "DayInput": {
+      "type": "object",
+      "required": ["date", "timezone", "events", "workspaces"],
+      "description": "What Roamgate passes to the provider on stdin for `day` and `refresh`: everything it recorded for the day. Roamgate decides what leaves it; the provider never has to call back.",
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA name of the zone the day is computed in. Required."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "activity.schema.json#/$defs/Event"
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "activity.schema.json#/$defs/Workspace"
+          }
+        },
+        "recording_gaps": {
+          "type": "array",
+          "description": "Periods Roamgate was not recording, so the provider can tell 'nothing happened' from 'not recorded'. Time of excluded connections and subjects is included with excluded: true and no other information.",
+          "items": {
+            "$ref": "activity.schema.json#/$defs/RecordingGap"
+          }
+        },
+        "day_start": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "default": "00:00",
+          "description": "Local time at which the day begins (activity.day_start, default midnight). The day is [date day_start, next date day_start)."
+        },
+        "idle_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 300,
+          "description": "How long a sign of a person lasts (activity.idle_seconds). The Herdr TUI focus counts as attention only within this long of a sign of a person."
+        }
+      }
+    },
+    "MappingSet": {
+      "type": "object",
+      "description": "Where a workspace's time goes, or where every workspace of a subject goes. The percents of allocations add up to 100; several allocations split each block's time between projects. remember false records the correction as evidence for the model only; true makes it a standing mapping.",
+      "required": ["workspace_id", "workspace_name", "allocations"],
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace_name": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "activity.schema.json#/$defs/Subject",
+          "description": "When given, the mapping covers the whole subject, keyed by its label."
+        },
+        "allocations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Allocation"
+          }
+        },
+        "remember": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "Mapping": {
+      "type": "object",
+      "description": "A standing mapping. scope subject: the key is subject_label; scope workspace: the key is workspace_id.",
+      "required": [
+        "scope",
+        "workspace_id",
+        "workspace_name",
+        "allocations",
+        "remembered_at"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["subject", "workspace"]
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "workspace_name": {
+          "type": "string"
+        },
+        "subject_label": {
+          "type": "string"
+        },
+        "allocations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Allocation"
+          }
+        },
+        "remembered_at": {
+          "type": "string"
+        }
+      }
+    },
+    "Mappings": {
+      "type": "object",
+      "required": ["mappings"],
+      "properties": {
+        "mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mapping"
+          }
+        }
+      }
+    },
+    "MappingDelete": {
+      "type": "object",
+      "description": "Exactly one of workspace_id and subject.",
+      "properties": {
+        "workspace_id": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string",
+          "description": "The subject label."
+        }
+      }
+    },
+    "Allocation": {
+      "type": "object",
+      "required": ["target", "percent"],
+      "properties": {
+        "target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Target"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null: this share is not logged."
+        },
+        "task_type": {
+          "type": ["string", "null"]
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    }
+  }
+}
