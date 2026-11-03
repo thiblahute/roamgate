@@ -22,6 +22,7 @@ import {
   type FocusRow,
   type GapInputRow,
   type PresenceRow,
+  DEFAULT_IDLE_MS,
   RECORDER_STALE_MS,
   type SessionInputRow,
   type Timeline,
@@ -33,11 +34,15 @@ import {
  * (WAL lets readers in), or not running at all.
  */
 export type ActivityReader = {
-  /** `excludeConnections` leaves those connections out entirely. */
+  /**
+   * `excludeConnections` leaves those connections out entirely;
+   * `idleSeconds` is the setting (see TimelineInput.idleMs).
+   */
   timeline(
     range: { from: number; to: number },
     dayStart: string,
     excludeConnections?: string[],
+    idleSeconds?: number,
   ): Timeline;
   /** Events in id order after `after`, within `[from, to)` by `ts`. */
   page(query: PageQuery): ActivityPage;
@@ -191,8 +196,10 @@ export function openActivityReader(
   }
 
   return {
-    timeline(range, dayStart, excludeConnections = []) {
+    timeline(range, dayStart, excludeConnections = [], idleSeconds) {
       const at = now();
+      const idleMs =
+        idleSeconds === undefined ? DEFAULT_IDLE_MS : idleSeconds * 1000;
       const excluded = new Set(excludeConnections);
       const kept = <T extends { connection_id: string | null }>(rows: T[]) =>
         excluded.size === 0
@@ -208,10 +215,14 @@ export function openActivityReader(
             to: range.to,
             now: at,
             dayStart,
-            focus: kept(selectFocus.all(range.to, range.from)).map((row) => ({
-              ...row,
-              reason: row.end === null ? null : row.reason,
-            })),
+            // Spans ended shortly before the range still show a person
+            // was there at its start.
+            focus: kept(selectFocus.all(range.to, range.from - idleMs)).map(
+              (row) => ({
+                ...row,
+                reason: row.end === null ? null : row.reason,
+              }),
+            ),
             presence: kept(selectPresence.all(range.from, range.to)).map(
               (row) => ({
                 ...row,
@@ -222,6 +233,7 @@ export function openActivityReader(
             gaps: kept(selectGaps.all(range.to, range.from)),
             sessions: selectSessions.all(),
             workspaces: kept(allWorkspaces()),
+            idleMs,
           }),
         )
         .deferred();

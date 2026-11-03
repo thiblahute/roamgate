@@ -16,6 +16,9 @@ import { isoTime } from "./protocol";
 /** A recorder whose last alive stamp is older than this is not running. */
 export const RECORDER_STALE_MS = 150_000;
 
+/** `idle_seconds`' default: how long a sign of a person lasts. */
+export const DEFAULT_IDLE_MS = 300_000;
+
 /** A focus event and the blur that ended it, if any. */
 export type FocusRow = {
   seq: number;
@@ -86,6 +89,12 @@ export type TimelineInput = {
   gaps: GapInputRow[];
   sessions: SessionInputRow[];
   workspaces: ActivityWorkspace[];
+  /**
+   * `idle_seconds` in milliseconds: how long after a sign of a person
+   * (input in a browser or phone, a focus change in Herdr's TUI) Herdr's
+   * TUI focus still counts as attention.
+   */
+  idleMs?: number;
 };
 
 /** browser and phone are Roamgate clients; herdr is Herdr's TUI focus. */
@@ -144,7 +153,10 @@ export type WorkspaceTotals = {
   attended_ms: number;
   browser_ms: number;
   phone_ms: number;
-  /** Herdr's TUI focus, only where no browser or phone had attention. */
+  /**
+   * Herdr's TUI focus, only where no browser or phone had attention and
+   * within `idle_seconds` of a sign of a person.
+   */
   herdr_ms: number;
   /** Time at least one of the workspace's agents was working. */
   working_ms: number;
@@ -312,6 +324,13 @@ function clip<T extends Interval>(span: T, range: Interval): T | null {
   return end > start ? { ...span, start, end } : null;
 }
 
+/** The parts of `span` inside the (merged) `windows`. */
+function within<T extends Interval>(span: T, windows: Interval[]): T[] {
+  return windows
+    .map((window) => clip(span, window))
+    .filter((part): part is T => part !== null);
+}
+
 // --- Building -----------------------------------------------------------
 
 type Resolved = {
@@ -369,8 +388,49 @@ function latest<T extends { start: number; seq: number }>(
 }
 
 /**
+ * When a person was there: Herdr cannot say whether anyone looks at its TUI
+ * (no attached client count, no input time; its output events cannot tell
+ * typing from a program writing), and its focus spans run all night. So its
+ * TUI time counts only within `idleMs` of a sign of a person:
+ *
+ * - a browser or phone span, while it runs (it ends `idleMs` after the last
+ *   input at the latest) and `idleMs` after it ends, unless it ended as idle
+ *   (dated at the last input plus `idleMs` already): the page was hidden,
+ *   say, to type in the terminal;
+ * - input after idle (`session.active`) or a page brought to the front;
+ * - a focus change in Herdr's TUI, a Herdr span that ended with `switch`.
+ *   A span opened when the recorder or the connection starts is no sign.
+ */
+function personWindows(
+  focus: ResolvedFocus[],
+  presence: PresenceRow[],
+  idleMs: number,
+): Interval[] {
+  const windows: Interval[] = [];
+  for (const entry of focus) {
+    if (entry.source === "herdr") {
+      if (entry.row.end !== null && entry.row.reason === "switch")
+        windows.push({ start: entry.row.end, end: entry.row.end + idleMs });
+      continue;
+    }
+    windows.push({
+      start: entry.start,
+      end: entry.end + (entry.row.reason === "idle" ? 0 : idleMs),
+    });
+  }
+  for (const row of presence)
+    if (
+      row.kind === "session.active" ||
+      (row.kind === "ui.visibility" && row.visible)
+    )
+      windows.push({ start: row.ts, end: row.ts + idleMs });
+  return union(windows);
+}
+
+/**
  * Non-overlapping attention for a day: at each instant the most recently
- * started browser or phone span; Herdr spans only where none is running.
+ * started browser or phone span; Herdr spans only where none is running,
+ * and only within the person windows (see personWindows).
  */
 function attentionSegments(focus: ResolvedFocus[], day: Interval) {
   const spans = focus
@@ -587,6 +647,12 @@ export function buildTimeline(input: TimelineInput): Timeline {
       open,
     };
   });
+  const idleMs = input.idleMs ?? DEFAULT_IDLE_MS;
+  const windows = personWindows(focus, input.presence, idleMs);
+  // Herdr's TUI time with no sign of a person is no attention.
+  const attended = focus.flatMap((entry) =>
+    entry.source === "herdr" ? within(entry, windows) : [entry],
+  );
   const idle = idleSpans(input.presence, input.focus, ends, limit);
   const lanes = agentLanes(input.agents, ends, gapsFor, limit);
 
@@ -604,7 +670,7 @@ export function buildTimeline(input: TimelineInput): Timeline {
       .map((entry) => clip(entry, day))
       .filter((entry): entry is ResolvedFocus => entry !== null)
       .sort((a, b) => a.start - b.start || a.row.seq - b.row.seq);
-    const attention = attentionSegments(focus, day);
+    const attention = attentionSegments(attended, day);
     const dayIdle = idle
       .map((entry) => clip(entry, day))
       .filter((entry) => entry !== null);
