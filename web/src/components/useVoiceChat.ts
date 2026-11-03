@@ -140,6 +140,7 @@ import {
   type MoveQuestion,
 } from "../voiceFollow";
 import { setVoiceCallPhase } from "../voiceCallReload";
+import { checkFrontendFreshness } from "../frontendFreshness";
 import { installVoiceFollow } from "../voiceFollowGuard";
 import { useAllServerAgentSessions } from "../useAllServerAgentSessions";
 
@@ -2180,6 +2181,9 @@ export function useVoiceChat({
             failures = 0;
           } catch (error) {
             if (signal.aborted) break;
+            // Old code against a newer server fails this way too: the
+            // page then takes the newer build, between turns.
+            checkFrontendFreshness();
             if (failures === 0)
               onError(
                 `${error instanceof Error ? error.message : String(error)}; retrying`,

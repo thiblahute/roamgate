@@ -95,3 +95,36 @@ describe("the companion's jobs", () => {
     expect(bodies[2]).not.toHaveProperty("interrupted_at");
   });
 });
+
+test("a route without a session is no session", async () => {
+  const { parseVoiceSessionId } = await import("./voiceRoute");
+  expect(parseVoiceSessionId(undefined)).toBeNull();
+  expect(parseVoiceSessionId("local/w2:p2")).toEqual({
+    connectionId: "local",
+    paneId: "w2:p2",
+  });
+});
+
+test("the page says which routes it knows, and takes an unknown one for the agent on screen", async () => {
+  const { KNOWN_ROUTES, routeSpeech } = await import("./voiceRoute");
+  const realFetch = globalThis.fetch;
+  const sent: unknown[] = [];
+  let answer: unknown = { to: "later-kind", pane: undefined };
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)));
+    return Response.json(answer);
+  }) as unknown as typeof fetch;
+  try {
+    expect(await routeSpeech("hi", "local/w2:p2", [])).toEqual({
+      to: "current",
+    });
+    expect((sent[0] as { routes: string[] }).routes).toEqual([...KNOWN_ROUTES]);
+    answer = { to: "self", reply: "I'm here." };
+    expect(await routeSpeech("you there?", "local/w2:p2", [])).toEqual({
+      to: "self",
+      reply: "I'm here.",
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -57,7 +57,12 @@ import {
 import { takeVoiceArrival } from "./voiceArrival";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
 import { useSystemBack } from "./systemBack";
-import { startFrontendFreshness } from "./frontendFreshness";
+import {
+  frontendFreshnessState,
+  reloadForNewerBuild,
+  startFrontendFreshness,
+  subscribeFrontendFreshness,
+} from "./frontendFreshness";
 import {
   defaultPaneView,
   paneView,
@@ -121,6 +126,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ITheme } from "@xterm/xterm";
 import packageJson from "../package.json";
@@ -1644,6 +1650,9 @@ function OverlayTabHost({
     </OverlayTabFrame>
   );
 }
+
+/** How long a dismissed new version notice stays hidden. */
+const FRESHNESS_NOTICE_SNOOZE_MS = 10 * 60_000;
 
 export default function App() {
   // Ranger showing a workspace or session switches this browser to it.
@@ -4063,6 +4072,27 @@ export default function App() {
     store.init();
   }, []);
   useEffect(() => startFrontendFreshness(), []);
+  const freshness = useSyncExternalStore(
+    subscribeFrontendFreshness,
+    frontendFreshnessState,
+  );
+  // Dismissed, the notice comes back after a while: the page still runs
+  // the old build.
+  const [freshnessHiddenUntil, setFreshnessHiddenUntil] = useState(0);
+  useEffect(() => {
+    if (!freshnessHiddenUntil) return;
+    const timer = window.setTimeout(
+      () => setFreshnessHiddenUntil(0),
+      Math.max(0, freshnessHiddenUntil - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [freshnessHiddenUntil]);
+  const freshnessNotice =
+    freshness.stale && freshness.notice && !freshnessHiddenUntil
+      ? freshness.notice
+      : null;
+  const hideFreshnessNotice = () =>
+    setFreshnessHiddenUntil(Date.now() + FRESHNESS_NOTICE_SNOOZE_MS);
   useEffect(() => {
     if (!mobile) return;
     const current = inspectorStateRef.current;
@@ -5601,9 +5631,40 @@ export default function App() {
         </div>
       </div>
 
-      {s.updateInfo?.update_available || s.notice
+      {s.updateInfo?.update_available || s.notice || freshnessNotice
         ? createPortal(
             <div className="toast-viewport" aria-live="polite">
+              {freshnessNotice ? (
+                <Toast
+                  className="toast toast-info"
+                  role="status"
+                  onDismiss={hideFreshnessNotice}
+                  notificationKey="frontend-freshness"
+                >
+                  <ToastMark kind="info" />
+                  <div className="toast-content">
+                    <strong>A new version of Roamgate is available</strong>
+                    <p>
+                      This page reloads once it can: it waits for{" "}
+                      {freshnessNotice}. Drafts in message boxes are kept.
+                    </p>
+                    <div className="toast-actions">
+                      <button
+                        type="button"
+                        className="toast-action primary"
+                        onClick={() => reloadForNewerBuild()}
+                      >
+                        Reload now
+                      </button>
+                    </div>
+                  </div>
+                  <CloseButton
+                    variant="toast"
+                    label="Hide the new version notice for now"
+                    onClick={hideFreshnessNotice}
+                  />
+                </Toast>
+              ) : null}
               {s.updateInfo?.update_available ? (
                 <Toast
                   className={`toast toast-info ${

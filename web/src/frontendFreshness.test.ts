@@ -1,6 +1,19 @@
 import { afterEach, expect, test, jest } from "bun:test";
 import { Window as BrowserWindow, Event as BrowserEvent } from "happy-dom";
-import { entryScript, startFrontendFreshness } from "./frontendFreshness";
+import {
+  checkFrontendFreshness,
+  editableText,
+  entryScript,
+  frontendFreshnessState,
+  IDLE_RELOAD_MS,
+  NOTICE_AFTER_MS,
+  POLL_MS,
+  reloadForNewerBuild,
+  reloadHold,
+  type ReloadSituation,
+  startFrontendFreshness,
+  TYPING_QUIET_MS,
+} from "./frontendFreshness";
 import { reviewDialogRole } from "./reviewDialog";
 
 test("the entry script is the hashed index chunk", () => {
@@ -50,6 +63,7 @@ function page(
     voiceCall?: () => "none" | "safe" | "busy";
     trace?: (line: string) => void;
     resumeCompanion?: () => void;
+    now?: () => number;
   } = {},
 ) {
   const browser = new BrowserWindow({ url: "http://localhost:8787/" });
@@ -114,6 +128,7 @@ test("a reconnect to a server with another build reloads the page", async () => 
 test("unsent text delays the reload after blur until cleared", async () => {
   const tab = page("/assets/index-old.js");
   tab.box.value = "half a sentence";
+  tab.box.dispatchEvent(new BrowserEvent("input", { bubbles: true }));
   tab.box.focus();
   tab.serve("/assets/index-new.js");
   await tab.reconnect();
@@ -144,6 +159,7 @@ test("an unfocused API key survives a stale build until its dialog closes", asyn
   key.value = "unsaved-key";
   dialog.append(key);
   document.body.append(dialog);
+  fire(key, "input");
   tab.serve("/assets/index-new.js");
   await tab.reconnect();
   key.focus();
@@ -247,6 +263,7 @@ test("a page in a voice call reloads between turns only, and says why it waits",
     await flushAll();
     expect(tab.reloads()).toBe(0);
     expect(trace).toEqual([
+      "a newer build is served: /assets/index-new.js; this page runs /assets/index-old.js",
       "a newer build is available: the reload waits for a pause in the voice call",
     ]);
     jest.advanceTimersByTime(5000);
@@ -301,6 +318,13 @@ test("a call with the companion goes on after a newer build's reload", () => {
   }
 });
 
+/** A DOM event on an element of the page's (happy-dom's) document. */
+function fire(target: EventTarget, type: string) {
+  target.dispatchEvent(
+    new BrowserEvent(type, { bubbles: true }) as unknown as Event,
+  );
+}
+
 function connectedNow(tab: ReturnType<typeof page>) {
   void tab.reconnect();
 }
@@ -308,3 +332,200 @@ function connectedNow(tab: ReturnType<typeof page>) {
 async function flushAll() {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
+
+test("what holds a reload back, and until when", () => {
+  const free: ReloadSituation = {
+    call: "none",
+    sending: false,
+    unsaved: false,
+    typing: false,
+    dialog: false,
+  };
+  expect(reloadHold(free)).toBeNull();
+  expect(reloadHold({ ...free, call: "safe" })).toBeNull();
+  expect(reloadHold({ ...free, call: "busy" })?.until).toBe("wait");
+  expect(reloadHold({ ...free, sending: true })?.until).toBe("wait");
+  expect(reloadHold({ ...free, typing: true })?.until).toBe("wait");
+  expect(reloadHold({ ...free, dialog: true })?.until).toBe("idle");
+  expect(reloadHold({ ...free, unsaved: true, dialog: true })?.until).toBe(
+    "ask",
+  );
+  // A call speaking comes first: its pause is close, whatever else waits.
+  expect(reloadHold({ ...free, call: "busy", unsaved: true })?.reason).toBe(
+    "a pause in the voice call",
+  );
+});
+
+/** CodeMirror's empty editor: its placeholder is not text. */
+function codeMirror(text: string) {
+  const content = document.createElement("div");
+  content.className = "cm-content";
+  content.setAttribute("contenteditable", "true");
+  const line = document.createElement("div");
+  line.className = "cm-line";
+  if (text) line.textContent = text;
+  else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "cm-placeholder";
+    placeholder.setAttribute("contenteditable", "false");
+    placeholder.setAttribute("aria-hidden", "true");
+    placeholder.textContent = "Message claude...";
+    line.append(placeholder, document.createElement("br"));
+  }
+  content.append(line);
+  return content;
+}
+
+test("an editor's placeholder is not text", () => {
+  page("/assets/index-old.js");
+  expect(editableText(codeMirror(""))).toBe("");
+  expect(editableText(codeMirror("hello"))).toBe("hello");
+});
+
+test("an empty chat box shown with its placeholder does not hold the reload", async () => {
+  const tab = page("/assets/index-old.js");
+  const box = codeMirror("");
+  document.body.append(box);
+  // Clicked and typed in, then emptied: still only its placeholder.
+  fire(box, "input");
+  tab.serve("/assets/index-new.js");
+  await tab.reconnect();
+  expect(tab.reloads()).toBe(1);
+});
+
+test("a composer's draft is kept by the browser and does not hold the reload", async () => {
+  const tab = page("/assets/index-old.js");
+  const composer = document.createElement("div");
+  composer.setAttribute("data-draft-saved", "true");
+  const box = codeMirror("[Image #1] what is this?");
+  composer.append(box);
+  document.body.append(composer);
+  fire(box, "input");
+  tab.serve("/assets/index-new.js");
+  await tab.reconnect();
+  expect(tab.reloads()).toBe(1);
+});
+
+test("a page filled-in field does not hold the reload, a typed one does", async () => {
+  const tab = page("/assets/index-old.js");
+  // Set by the page (a setting's current value): nothing to lose.
+  tab.box.value = "8000";
+  tab.serve("/assets/index-new.js");
+  await tab.reconnect();
+  expect(tab.reloads()).toBe(1);
+});
+
+test("typing holds the reload until a pause", async () => {
+  let clock = 1_000_000;
+  const tab = page("/assets/index-old.js", { now: () => clock });
+  jest.useFakeTimers();
+  try {
+    fire(document.body, "keydown");
+    tab.serve("/assets/index-new.js");
+    void tab.reconnect();
+    await flushAll();
+    expect(tab.reloads()).toBe(0);
+    clock += TYPING_QUIET_MS;
+    jest.advanceTimersByTime(1000);
+    expect(tab.reloads()).toBe(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("an open dialog is closed by the reload once the page is left alone", async () => {
+  let clock = 1_000_000;
+  const tab = page("/assets/index-old.js", { now: () => clock });
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  jest.useFakeTimers();
+  try {
+    tab.serve("/assets/index-new.js");
+    void tab.reconnect();
+    await flushAll();
+    expect(tab.reloads()).toBe(0);
+    // Said at once: this waits for the user.
+    expect(frontendFreshnessState()).toEqual({
+      stale: true,
+      notice: "the dialog to close",
+    });
+    clock += IDLE_RELOAD_MS / 2;
+    fire(document.body, "pointerdown");
+    clock += IDLE_RELOAD_MS / 2;
+    jest.advanceTimersByTime(1000);
+    expect(tab.reloads()).toBe(0);
+    clock += IDLE_RELOAD_MS / 2;
+    jest.advanceTimersByTime(1000);
+    expect(tab.reloads()).toBe(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("typed text never reloads by itself, but the notice's button does", async () => {
+  let clock = 1_000_000;
+  const tab = page("/assets/index-old.js", { now: () => clock });
+  tab.box.value = "a comment not sent";
+  tab.box.dispatchEvent(new BrowserEvent("input", { bubbles: true }));
+  jest.useFakeTimers();
+  try {
+    tab.serve("/assets/index-new.js");
+    void tab.reconnect();
+    await flushAll();
+    expect(frontendFreshnessState()).toEqual({
+      stale: true,
+      notice: "unsaved text to be sent or cleared",
+    });
+    clock += 10 * IDLE_RELOAD_MS;
+    jest.advanceTimersByTime(5000);
+    expect(tab.reloads()).toBe(0);
+    reloadForNewerBuild();
+    expect(tab.reloads()).toBe(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("a short wait shows no notice, a long one does", async () => {
+  let clock = 1_000_000;
+  let phase: "none" | "safe" | "busy" = "busy";
+  const tab = page("/assets/index-old.js", {
+    now: () => clock,
+    voiceCall: () => phase,
+  });
+  jest.useFakeTimers();
+  try {
+    tab.serve("/assets/index-new.js");
+    void tab.reconnect();
+    await flushAll();
+    expect(frontendFreshnessState()).toEqual({ stale: true, notice: null });
+    clock += NOTICE_AFTER_MS;
+    jest.advanceTimersByTime(1000);
+    expect(frontendFreshnessState().notice).toBe("a pause in the voice call");
+    phase = "safe";
+    jest.advanceTimersByTime(1000);
+    expect(tab.reloads()).toBe(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("the page checks by itself now and then, and when something fails", async () => {
+  jest.useFakeTimers();
+  try {
+    const tab = page("/assets/index-old.js");
+    tab.serve("/assets/index-new.js");
+    jest.advanceTimersByTime(POLL_MS);
+    await flushAll();
+    expect(tab.reloads()).toBe(1);
+  } finally {
+    jest.useRealTimers();
+  }
+  for (const stop of stops.splice(0)) stop();
+  const tab = page("/assets/index-old.js");
+  tab.serve("/assets/index-new.js");
+  checkFrontendFreshness();
+  await flushAll();
+  expect(tab.reloads()).toBe(1);
+});
