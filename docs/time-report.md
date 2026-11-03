@@ -108,6 +108,18 @@ A provider must reject a missing, reused, expired or mismatched token, never
 submit a `needs_input` block, and diff against what already exists so that a
 repeated preview cannot duplicate entries.
 
+## The Hours view
+
+The activity timeline's **Hours** tab (also in the command menu and the
+application menu) shows the provider's day: `day` when a date is shown, polled
+every few seconds (2 s up to 15 s) while the day says `refreshing`; **Refresh**
+runs `refresh`. After every block operation the day is read again, since a
+block's id can change. Questions are answered with `block-answer` (the
+**Remember** box is `remember`). **Preview submit** is off while a block is
+`needs_input`; it runs `submit-preview`, then a confirmation step whose
+**I checked these entries** box enables **Submit**, which sends the token with
+`confirmed: true`. A failed submit shows what was written.
+
 ## In the bridge
 
 The browser calls `bridge.time_report` with `{"op": "...", ...}`: `date`,

@@ -7,7 +7,7 @@ import {
   getShortcutSnapshot,
 } from "../shortcutPreferences";
 import { SHORTCUT_NUMBERS, type ShortcutNumber } from "../shortcutBindings";
-import { openActivityTimeline } from "../activityTimelineOpen";
+import { openActivityTimeline, openHours } from "../activityTimelineOpen";
 import { endpointCreationReason } from "../store";
 import { normalizeSearchText } from "../searchText";
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +29,7 @@ import {
   Keyboard,
   ListChecks,
   ChartGantt,
+  Clock,
   Maximize2,
   MoveDown,
   MoveLeft,
@@ -1178,7 +1179,15 @@ export function CommandCombobox({
       title: "Activity timeline",
       detail: "Attention and agent states, per day",
       keywords: ["activity", "time", "attention", "report"],
-      run: openActivityTimeline,
+      run: () => openActivityTimeline(),
+    },
+    {
+      key: "activity-hours",
+      icon: <Clock size={15} />,
+      title: "Hours",
+      detail: "Time to report, from the activity log",
+      keywords: ["hours", "time", "report", "timesheet", "olmo", "submit"],
+      run: openHours,
     },
   ];
 

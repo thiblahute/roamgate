@@ -1047,6 +1047,15 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   and colours them per subject. With a
   [time-report provider](docs/time-report.md), the table's **Project** column
   says where each workspace's (or subject's) time goes, split between several projects if need be; click it to correct.
+- **Hours** (command menu, the application menu, or the timeline's **Hours**
+  tab, with a [time-report provider](docs/time-report.md)) shows a day's time
+  to report: tracked against expected time, the provider's cleaned timeline
+  with its blocks over it, questions answered in place (the model's guess
+  first; every answer is recorded, **Remember** makes it stick), blocks to
+  accept, edit, split, delete or explain, and gaps to claim. Submitting is a
+  click only: **Preview submit** (off while questions are open) shows exactly
+  what would be written, then a confirmation with **I checked these entries**
+  sends it. The full view works on a phone.
   `roamgate activity` prints the same totals in a terminal
   ([command line](docs/activity.md#command-line)).
 - [Command-line tools](docs/DEPLOYMENT.md#command-line-management) such as

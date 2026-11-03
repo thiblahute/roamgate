@@ -1,5 +1,5 @@
 import { createRoot, type Root } from "react-dom/client";
-import { ActivityTimeline } from "./ActivityTimeline";
+import { ActivityTimeline, type TimelineView } from "./ActivityTimeline";
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
@@ -20,12 +20,20 @@ function close() {
  * phone app context, and loaded only when asked for. It needs no context
  * from the app: the bridge and the store are module singletons.
  */
-export function showActivityTimeline() {
-  if (root) return;
+export function showActivityTimeline(view: TimelineView = "timeline") {
+  if (root) {
+    // Already open: show the view asked for.
+    root.render(
+      <ActivityTimeline key={view} onClose={close} initialView={view} />,
+    );
+    return;
+  }
   previousFocus = document.activeElement;
   host = document.createElement("div");
   host.className = "activity-timeline-root";
   document.body.append(host);
   root = createRoot(host);
-  root.render(<ActivityTimeline onClose={close} />);
+  root.render(
+    <ActivityTimeline key={view} onClose={close} initialView={view} />,
+  );
 }
