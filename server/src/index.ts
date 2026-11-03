@@ -166,6 +166,7 @@ import { createVoiceRoutes } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
+import { configuredResearch } from "./voice/voice-research";
 import { configuredRouter } from "./voice/voice-router";
 import {
   type ErrandEntry,
@@ -404,6 +405,7 @@ const handleVoice = createVoiceRoutes(
     return "error" in config ? null : frontMode(config);
   },
   (mode) => writeFrontMode(mode),
+  configuredResearch(() => readVoiceConfig()),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,

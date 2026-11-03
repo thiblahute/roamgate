@@ -772,6 +772,29 @@ the session they address dropped when the front gives them so and the
 server finds the rest word for word but for verb forms, else whole; the
 whole answer followed as an errand's) and comes back through it.
 
+A front also answers general questions itself, and looks up on the web what
+needs fresh or checked information: its `"web"` route starts a search in the
+background (`server/src/voice/voice-research.ts`) and says at once that it
+looks. Each search is its own headless Claude Code (`claude -p`) with only
+`WebSearch` and `WebFetch`, allowed without asking, and nothing else
+(`--restricted`, `--safe-mode`, no MCP servers, no session kept, no Herdr
+pane variables): it cannot run, write or send anything. Its prompt treats
+what pages say as untrusted data, never instructions. The result (short
+words to say, the whole answer with its links, the sources) is told on the
+call once the user is not talking, as written, without going through the
+front, and shows in the companion's conversation; it is never routed,
+forwarded or sent anywhere. The front is given the searches with its state,
+what they found marked as web data, so "where is that search?" and "cancel
+it" work. Up to 4 searches run at once, more wait their turn (8 at most), each for at
+most 3 minutes.
+`"research_model"` names their model (`"opus"`, at low effort, by default:
+in measurements on news, opening hours, a release, a forecast and a
+definition it was as fast as Haiku, about 20 s, since the web tools take
+most of the time, and more accurate; Sonnet and Opus at default effort
+searched more and took 30 to 120 s). `GET /api/voice/research` lists the
+searches, `?job=` gives one, `POST /api/voice/research/cancel` `{job?}`
+stops one or all.
+
 ### Voice calls on the move
 
 A call is meant to survive a phone changing networks. The listening session

@@ -74,8 +74,10 @@ import {
   companionName,
   logCompanion,
   setCompanionTarget,
+  setCompanionTeller,
   updateCompanionJob,
 } from "../companionCall";
+import { followCompanionWeb, webAck } from "../companionWeb";
 import {
   answerDelivery,
   answersContext,
@@ -938,6 +940,19 @@ export function useVoiceChat({
             });
             return "nobody";
           }
+          case "web": {
+            // Looked up in the background: said at once, its result told
+            // when it comes (tellFront through the companion's teller).
+            if (!front) return "nobody";
+            const line = webAck(route.reply, heard.text);
+            if (frontReplySaid(route.to, slow)) {
+              note(line);
+              void front.say(line, signal);
+            }
+            if (route.job)
+              void followCompanionWeb(route.job, route.query || words);
+            return "nobody";
+          }
           case "ranger": {
             // Ranger's own chat: a question for Ranger is for it.
             if (context.current === RANGER_VOICE_SESSION) return "here";
@@ -1141,10 +1156,26 @@ export function useVoiceChat({
         };
         tellFront = (item) => {
           // An agent's question goes before what waits.
-          if (item.verbatim) told.unshift(item);
+          if (item.verbatim && item.kind === "event") told.unshift(item);
           else told.push(item);
           void tell();
         };
+        // A web search's result, said as it was written for the voice
+        // (server voice-research.ts), once the user is not talking. It is
+        // web data: told, never routed.
+        signal.addEventListener(
+          "abort",
+          setCompanionTeller((text) =>
+            tellFront({
+              text,
+              at: Date.now(),
+              kind: "answer",
+              agent: "Web",
+              verbatim: true,
+            }),
+          ),
+          { once: true },
+        );
         const stopTelling = onVoiceEvent((event) => {
           if (!eventForFront(event, voiceKeyRef.current)) return;
           // A session given work on this call: its answer is told instead.
@@ -2299,6 +2330,15 @@ export function useVoiceChat({
     void run(controller, carried);
   }, [run]);
 
+  /**
+   * Sends what is being said now, without waiting for the pause that ends
+   * it; nothing else (no stop, no tap) when not listening to anything.
+   */
+  const sendNow = useCallback(() => {
+    if (stateRef.current === "listening" && finishRef.current)
+      finishRef.current.abort();
+  }, []);
+
   const stop = useCallback(() => {
     if (controllerRef.current) voiceTrace("voice chat ends: stopped");
     controllerRef.current?.abort();
@@ -2395,6 +2435,7 @@ export function useVoiceChat({
     dropHeld,
     toggle,
     toggleMute,
+    sendNow,
     stop,
     speechRate: speechRate.rate,
     cycleSpeechRate: speechRate.cycle,

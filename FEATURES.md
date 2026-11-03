@@ -469,7 +469,15 @@ Inspector state is scoped to each checkout; see
   microphone and hang-up, and one line under the top bar shows what is
   said now, pushing the page down rather than covering it. The chip opens
   its own conversation: what it heard and said, and the work it started on
-  which session and how it went. Work for another session ("ask gst2 to
+  which session and how it went. On a phone a call shows that conversation
+  on the whole screen, with **Mute** (the microphone is closed until you
+  unmute; it still speaks) and **Hang up**; hanging up goes back to where
+  you were. The conversation keeps the newest in view as it comes, unless
+  you scrolled up to read: then it stays put and **Jump to latest** brings
+  you back. While you speak, what the transcriber hears so far is written
+  as a caption under the last line, and becomes your line once you pause;
+  its send button (`Cmd+Enter` / `Ctrl+Enter`) sends it at once, without
+  waiting for the pause. Work for another session ("ask gst2 to
   rebase") starts there and the call stays with it, the answer coming back
   through it; the session gets your words with only its addressing
   dropped ("rebase", not "ask gst2 to rebase"), a yes or an answer exactly
@@ -488,7 +496,18 @@ Inspector state is scoped to each checkout; see
   permission, a question with choices, its terminal's menu), the question
   and every choice are read at once as written, and the choice you say
   ("two", "yes", "release/1.2") answers it; everything still shows in the
-  chat. Between turns it
+  chat. It answers general questions itself, briefly, from what it knows
+  (a fact, an explanation, a definition, quick help). A question that
+  needs fresh or checked information (news, opening hours, prices, the
+  weather, a release, "check that") is looked up on the web in the
+  background: it says at once that it looks ("Je regarde ça sur le web,
+  je te redis"), the call goes on, and it tells you what it found once you
+  are not talking, naming the source when it matters. Several searches can
+  run at once; ask "where is that search?" or "cancel that search". Each
+  shows in its conversation with its steps, its whole answer and its
+  links, and a **Cancel** button while it searches. Its conversation also
+  takes text: type to it there, in a call or not, as you would talk.
+  Between turns it
   tells you what happened elsewhere when it is worth it (a session done or
   waiting for input, a Ranger task run), never over you. Speaking up stops
   it. When it is slow, the usual "Got it, on it." says it heard you. While

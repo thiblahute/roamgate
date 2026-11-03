@@ -85,6 +85,11 @@ export type VoiceConfig = {
    */
   front_mode?: FrontMode;
   /**
+   * The Claude model a front's web searches run on (voice-research.ts):
+   * "opus" (at low effort) by default.
+   */
+  research_model?: string;
+  /**
    * The folder of the agent session that general questions and errands go
    * to (a tasks repository), when the router has one.
    */
@@ -190,6 +195,7 @@ export function readVoiceConfig(
     "clean_model",
     "route_model",
     "front_model",
+    "research_model",
     "errand_folder",
     "claude_command",
     "voices_dir",
