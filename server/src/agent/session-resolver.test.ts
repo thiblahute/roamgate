@@ -115,6 +115,55 @@ describe("agent session resolver context", () => {
   });
 });
 
+describe("Claude session resolution", () => {
+  /** A fresh process, so the scratch HOME is the one looked under. */
+  function resolveClaude(home: string, id: string) {
+    const resolverUrl = new URL("./session-resolver.ts", import.meta.url).href;
+    const filesUrl = new URL("./session-file-access.ts", import.meta.url).href;
+    const script = `
+      import { resolveAgentSession } from ${JSON.stringify(resolverUrl)};
+      import { localAgentSessionFiles } from ${JSON.stringify(filesUrl)};
+      const result = await resolveAgentSession(
+        { pane_id: "p1" },
+        async () => ({ agent: { agent: "claude", agent_session: { agent: "claude", kind: "id", value: ${JSON.stringify(id)} } } }),
+        localAgentSessionFiles,
+      );
+      console.log(JSON.stringify({ path: result.path }));
+    `;
+    const child = spawnSync(process.execPath, ["-e", script], {
+      encoding: "utf8",
+      env: { ...process.env, HOME: home },
+    });
+    if (child.status !== 0)
+      throw new Error(child.stderr || "Claude resolver subprocess failed");
+    return (JSON.parse(child.stdout.trim()) as { path: string }).path;
+  }
+
+  test("finds a transcript in its project's folder, else anywhere below", async () => {
+    const home = await mkdtemp(join(tmpdir(), "roamgate-claude-home-"));
+    tempDirectories.push(home);
+    const projects = join(home, ".claude", "projects");
+    const id = crypto.randomUUID();
+    const project = join(projects, "-repo");
+    await mkdir(join(project, id, "subagents"), { recursive: true });
+    const kept = join(project, `${id}.jsonl`);
+    await writeFile(kept, "{}\n");
+    // A file of that name deeper down (newer) is not what a session is.
+    const deep = join(project, id, "subagents", `${id}.jsonl`);
+    await writeFile(deep, "{}\n");
+    const later = new Date(Date.now() + 60_000);
+    await utimes(deep, later, later);
+    expect(resolveClaude(home, id)).toBe(kept);
+
+    // Only kept deeper (an older layout): the tree is walked.
+    const other = crypto.randomUUID();
+    const nested = join(projects, "-old", "nested");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(nested, `${other}.jsonl`), "{}\n");
+    expect(resolveClaude(home, other)).toBe(join(nested, `${other}.jsonl`));
+  });
+});
+
 describe("OMP session resolution", () => {
   test("finds ids in the default OMP session directory", async () => {
     delete process.env.PI_CONFIG_DIR;
