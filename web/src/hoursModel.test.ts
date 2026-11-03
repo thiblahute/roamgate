@@ -124,6 +124,12 @@ test("a reopened block says why and when it was accepted", () => {
     "Moved by a neighbour: accept again",
   );
   expect(REOPENED_LABELS.recomputed).toBe("Recomputed: accept again");
+  expect(REOPENED_LABELS.target_changed).toBe("Project changed: accept again");
+  expect(
+    reopenedTitle({ reason: "target_changed", previously_accepted_at: "noon" }),
+  ).toBe(
+    "This block's project changed (a mapping, say). Accepted before on noon; accept it again to submit it.",
+  );
   const title = reopenedTitle({
     reason: "neighbour_moved",
     previously_accepted_at: "2026-11-03T15:20:00-03:00",
