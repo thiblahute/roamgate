@@ -3,7 +3,10 @@ import {
   canPreview,
   clockMinutes,
   failureText,
-  workedLabel,
+  previewWorkedMinutes,
+  reopenedBlocks,
+  splitPoints,
+  workedMinutes,
   submitHint,
   clockOf,
   type Day,
@@ -91,12 +94,10 @@ test("the day list covers the last two weeks", () => {
   });
 });
 
-test("a rounded block says what was worked; too_short names the rule", () => {
-  expect(workedLabel({ minutes: 15, worked_minutes: 9 })).toBe(
-    "15m (worked 9m)",
-  );
-  expect(workedLabel({ minutes: 30, worked_minutes: 30 })).toBe("30m");
-  expect(workedLabel({ minutes: 45 })).toBe("45m");
+test("reported time is whole units; worked time shows only when it differs", () => {
+  expect(workedMinutes({ minutes: 45, worked_minutes: 37 })).toBe(37);
+  expect(workedMinutes({ minutes: 30, worked_minutes: 30 })).toBeNull();
+  expect(workedMinutes({ minutes: 45 })).toBeNull();
   expect(
     failureText({ message: "the block would last 10 min", code: "too_short" }),
   ).toBe("A block must last at least 15 minutes: the block would last 10 min");
@@ -105,4 +106,61 @@ test("a rounded block says what was worked; too_short names the rule", () => {
   );
   expect(clockMinutes("08:05", "08:50")).toBe(45);
   expect(clockMinutes("09:00", "08:00")).toBe(0);
+});
+
+test("a block splits only into whole units", () => {
+  expect(splitPoints(block("08:00", "09:00", "proposed"))).toEqual([
+    "08:15",
+    "08:30",
+    "08:45",
+  ]);
+  expect(splitPoints(block("08:00", "08:30", "proposed"))).toEqual(["08:15"]);
+  expect(splitPoints(block("08:00", "08:15", "proposed"))).toEqual([]);
+});
+
+test("an accepted block a neighbour moved is proposed again, and noticed", () => {
+  const before: Day = {
+    date: "2026-11-03",
+    status: "accepted",
+    blocks: [
+      block("08:00", "08:45", "accepted"),
+      block("08:45", "09:30", "accepted"),
+    ],
+    gaps: [],
+  };
+  const after: Day = {
+    ...before,
+    blocks: [
+      { ...before.blocks[0]!, status: "accepted" },
+      {
+        ...before.blocks[1]!,
+        start: "2026-11-03T09:00:00-03:00",
+        status: "proposed",
+      },
+    ],
+  };
+  expect([...reopenedBlocks(before, after)]).toEqual([before.blocks[1]!.id]);
+  expect(reopenedBlocks(null, after).size).toBe(0);
+});
+
+test("a preview's worked total comes from its blocks", () => {
+  const day: Day = {
+    date: "2026-11-03",
+    status: "accepted",
+    blocks: [
+      {
+        ...block("08:00", "08:45", "accepted"),
+        id: "a",
+        minutes: 45,
+        worked_minutes: 37,
+      },
+      { ...block("09:00", "09:30", "accepted"), id: "b", minutes: 30 },
+    ],
+    gaps: [],
+  };
+  expect(
+    previewWorkedMinutes([{ block_id: "a" }, { block_id: "b" }], day),
+  ).toBe(67);
+  expect(previewWorkedMinutes([{ block_id: "x" }], day)).toBeNull();
+  expect(previewWorkedMinutes([], null)).toBeNull();
 });

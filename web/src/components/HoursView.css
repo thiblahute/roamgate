@@ -822,3 +822,9 @@
   color: var(--text);
   font-size: 12px;
 }
+
+.hours-worked {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.8;
+}

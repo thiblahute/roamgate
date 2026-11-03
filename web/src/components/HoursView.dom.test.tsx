@@ -109,7 +109,8 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
         if (answers[op]) return { ok: true, value: answers[op]!(rest) };
         switch (op) {
           case "day":
-            return { ok: true, value: day };
+            // A copy, as the wire gives: later changes do not reach it.
+            return { ok: true, value: structuredClone(day) };
           case "days":
             return {
               ok: true,
@@ -411,31 +412,81 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     await unmount();
   });
 
-  test("a rounded block shows the time worked; too_short is explained", async () => {
+  test("a rounded block shows the time worked; a one-unit block cannot split; too_short is explained", async () => {
     reset();
-    (day.blocks as Record<string, unknown>[])[0]!.minutes = 15;
-    (day.blocks as Record<string, unknown>[])[0]!.worked_minutes = 9;
+    const first = (day.blocks as Record<string, unknown>[])[0]!;
+    first.minutes = 15;
+    first.end = T("08:15");
+    first.worked_minutes = 9;
     failures["block-split"] = {
       error: "each half must last 15 min",
       code: "too_short",
     };
     const { container, unmount } = await mount();
     const card = () => container.querySelector(".hours-block")!;
-    expect(text(card().querySelector(".hours-block-top"))).toContain(
-      "15m (worked 9m)",
-    );
-    // Under 30 minutes there is no split leaving two 15-minute halves.
+    expect(text(card().querySelector(".hours-worked"))).toBe("worked 9m");
     expect(button(card(), "Split")!.disabled).toBe(true);
     expect(button(card(), "Split")!.title).toContain("cannot be split");
-    (day.blocks as Record<string, unknown>[])[0]!.minutes = 60;
+    first.minutes = 60;
+    first.end = T("09:00");
     await click(button(card(), "Accept"));
     await click(button(card(), "Split"));
+    // Only whole units are offered.
+    expect(
+      [...card().querySelectorAll(".hours-inline option")].map(
+        (o) => o.textContent,
+      ),
+    ).toEqual(["08:15", "08:30", "08:45"]);
     await click(button(card().querySelector(".hours-inline")!, "Split"));
     expect(text(container.querySelector(".hours-error"))).toBe(
       "A block must last at least 15 minutes: each half must last 15 min",
     );
-    // The day is read again all the same.
     expect(ops().filter((op) => op === "day").length).toBeGreaterThan(1);
+    await unmount();
+  });
+
+  test("an accepted block a neighbour's rounding moved asks to be accepted again", async () => {
+    reset();
+    const blocks = day.blocks as Record<string, unknown>[];
+    blocks.push({
+      id: "b2",
+      start: T("10:30"),
+      end: T("11:00"),
+      minutes: 30,
+      status: "accepted",
+      source: "manual",
+      target: { id: "12", label: "Igalia internal" },
+    });
+    const { container, unmount } = await mount();
+    expect(container.textContent).not.toContain("accept again");
+    // Claiming the gap before it pushes it: the provider proposes it again.
+    answers["block-create"] = () => {
+      blocks[2]!.status = "proposed";
+      blocks[2]!.start = T("10:45");
+      return {};
+    };
+    const gap = container.querySelector(".hours-gap")!;
+    await click(button(gap, "Claim..."));
+    await set(gap.querySelector("select"), "12");
+    await click(button(gap, "Claim"));
+    const moved = container.querySelector('[aria-label="10:45 to 11:00"]')!;
+    expect(text(moved)).toContain("Moved by a neighbour: accept again");
+    await unmount();
+  });
+
+  test("the preview shows the time worked beside the time reported", async () => {
+    reset();
+    const blocks = day.blocks as Record<string, unknown>[];
+    blocks[1]!.status = "skipped";
+    blocks[0]!.status = "accepted";
+    blocks[0]!.worked_minutes = 52;
+    const { container, unmount } = await mount();
+    await click(button(container, "Preview submit"));
+    expect(text(document.querySelector(".hours-worked-total"))).toBe(
+      "Worked 52m, reported 1h: each block is rounded up to whole 15-minute units.",
+    );
+    await click(button(document.querySelector(".hours-submit")!, "Close"));
+    expect(calls.filter((call) => call.op === "submit")).toHaveLength(0);
     await unmount();
   });
 }
