@@ -53,6 +53,11 @@ export type Block = {
   task_type?: string | null;
   description?: string | null;
   confidence?: number | null;
+  /**
+   * The time actually tracked, when the provider rounded `minutes` to the
+   * report's rule (draft field).
+   */
+  worked_minutes?: number | null;
   status: BlockStatus;
   source: BlockSource;
   subject?: string | null;
@@ -74,6 +79,36 @@ export type Segment = {
   note?: string | null;
 };
 
+/** The time report's rule: every reported block lasts at least this long. */
+export const MIN_BLOCK_MINUTES = 15;
+
+/** Minutes from one `HH:MM` to a later one; 0 when not later. */
+export function clockMinutes(start: string, end: string): number {
+  const at = (clock: string) => {
+    const [h, m] = clock.split(":").map(Number);
+    return h! * 60 + m!;
+  };
+  return Math.max(0, at(end) - at(start));
+}
+
+/** "15m (worked 9m)" when the reported time was rounded, else "15m". */
+export function workedLabel(block: {
+  minutes: number;
+  worked_minutes?: number | null;
+}): string {
+  const worked = block.worked_minutes;
+  return typeof worked === "number" && worked !== block.minutes
+    ? `${formatMinutes(block.minutes)} (worked ${formatMinutes(worked)})`
+    : formatMinutes(block.minutes);
+}
+
+/** A provider failure in words: `too_short` names the rule. */
+export function failureText(error: { message: string; code?: string }): string {
+  return error.code === "too_short"
+    ? `A block must last at least ${MIN_BLOCK_MINUTES} minutes: ${error.message}`
+    : error.message;
+}
+
 export type Day = {
   date: string;
   status: DayStatus;
@@ -82,6 +117,8 @@ export type Day = {
   blocks: Block[];
   gaps: Gap[];
   deferred?: boolean;
+  /** Why the model step did not run, when deferred. */
+  deferred_reason?: string | null;
   refreshing?: boolean;
   timeline?: Segment[];
   input_hash?: string;

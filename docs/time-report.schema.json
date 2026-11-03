@@ -131,6 +131,10 @@
         "input_hash": {
           "type": "string",
           "description": "Hash of the DayInput this result was computed from. A provider may return a cached result when the hash is unchanged."
+        },
+        "deferred_reason": {
+          "type": "string",
+          "description": "Why the model step did not run, when deferred is true."
         }
       }
     },
@@ -322,6 +326,11 @@
               "type": "null"
             }
           ]
+        },
+        "worked_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The time actually worked, present only when it was rounded up to the minimum: minutes is then the reported time."
         }
       }
     },

@@ -44,7 +44,10 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
   /** Answers per op; a function gets the params. */
   const answers: Record<string, (params: Record<string, unknown>) => unknown> =
     {};
+  /** Ops that fail, with the provider's error and code. */
+  const failures: Record<string, { error: string; code: string }> = {};
   const reset = () => {
+    for (const key of Object.keys(failures)) delete failures[key];
     calls.length = 0;
     day = {
       date: "2026-11-03",
@@ -102,6 +105,7 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
         if (method !== "bridge.time_report") throw new Error(method);
         const { op, ...rest } = params as { op: string };
         calls.push({ op, params: rest });
+        if (failures[op]) return { ok: false, ...failures[op]! };
         if (answers[op]) return { ok: true, value: answers[op]!(rest) };
         switch (op) {
           case "day":
@@ -390,6 +394,48 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     await click(button(dialog(), "Close"));
     expect(document.querySelector(".hours-submit")).toBeNull();
     expect(calls.filter((call) => call.op === "submit")).toHaveLength(1);
+    await unmount();
+  });
+
+  test("a deferred day says why the model did not run", async () => {
+    reset();
+    day.deferred = true;
+    day.deferred_reason = "preflight failed: clauth: command not found";
+    const { container, unmount } = await mount();
+    expect(text(container.querySelector(".hours-deferred"))).toBe(
+      "The model did not run: preflight failed: clauth: command not found. What it could not place stays a question; Refresh tries again.",
+    );
+    expect(
+      container.querySelector(".hours-chip.is-red")?.getAttribute("title"),
+    ).toBe("preflight failed: clauth: command not found");
+    await unmount();
+  });
+
+  test("a rounded block shows the time worked; too_short is explained", async () => {
+    reset();
+    (day.blocks as Record<string, unknown>[])[0]!.minutes = 15;
+    (day.blocks as Record<string, unknown>[])[0]!.worked_minutes = 9;
+    failures["block-split"] = {
+      error: "each half must last 15 min",
+      code: "too_short",
+    };
+    const { container, unmount } = await mount();
+    const card = () => container.querySelector(".hours-block")!;
+    expect(text(card().querySelector(".hours-block-top"))).toContain(
+      "15m (worked 9m)",
+    );
+    // Under 30 minutes there is no split leaving two 15-minute halves.
+    expect(button(card(), "Split")!.disabled).toBe(true);
+    expect(button(card(), "Split")!.title).toContain("cannot be split");
+    (day.blocks as Record<string, unknown>[])[0]!.minutes = 60;
+    await click(button(card(), "Accept"));
+    await click(button(card(), "Split"));
+    await click(button(card().querySelector(".hours-inline")!, "Split"));
+    expect(text(container.querySelector(".hours-error"))).toBe(
+      "A block must last at least 15 minutes: each half must last 15 min",
+    );
+    // The day is read again all the same.
+    expect(ops().filter((op) => op === "day").length).toBeGreaterThan(1);
     await unmount();
   });
 }

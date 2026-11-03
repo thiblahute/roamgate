@@ -34,15 +34,16 @@ JSON document read from stdout. It runs from a new empty directory with the
 user's environment; the provider holds its own credentials and Roamgate passes
 none. On a non-zero exit, stderr carries `{"error": "message", "code": "..."}`:
 
-| Exit | `code`      | Meaning                                                                          |
-| ---- | ----------- | -------------------------------------------------------------------------------- |
-| 0    |             | Success, JSON on stdout.                                                         |
-| 2    | `invalid`   | Invalid arguments or content.                                                    |
-| 3    | `not_found` | Unknown day or block.                                                            |
-| 4    | `conflict`  | Overlaps another block, already submitted, or the day changed since the preview. |
-| 5    | `forbidden` | Invalid, reused, expired or mismatched `confirm_token`.                          |
-| 6    | `upstream`  | The external system failed; for `submit`, stdout has the partial `SubmitResult`. |
-| 1    | `error`     | Anything else.                                                                   |
+| Exit | `code`      | Meaning                                                                            |
+| ---- | ----------- | ---------------------------------------------------------------------------------- |
+| 0    |             | Success, JSON on stdout.                                                           |
+| 2    | `invalid`   | Invalid arguments or content.                                                      |
+| 2    | `too_short` | A block would last less than 15 minutes (a claim, an edit, a split half or share). |
+| 3    | `not_found` | Unknown day or block.                                                              |
+| 4    | `conflict`  | Overlaps another block, already submitted, or the day changed since the preview.   |
+| 5    | `forbidden` | Invalid, reused, expired or mismatched `confirm_token`.                            |
+| 6    | `upstream`  | The external system failed; for `submit`, stdout has the partial `SubmitResult`.   |
+| 1    | `error`     | Anything else.                                                                     |
 
 Roamgate never runs two provider processes for one day at once, and never
 retries a call by itself.
@@ -118,7 +119,13 @@ block's id can change. Questions are answered with `block-answer` (the
 **Remember** box is `remember`). **Preview submit** is off while a block is
 `needs_input`; it runs `submit-preview`, then a confirmation step whose
 **I checked these entries** box enables **Submit**, which sends the token with
-`confirmed: true`. A failed submit shows what was written.
+`confirmed: true`. A failed submit shows what was written. A deferred day shows the provider's
+`deferred_reason`. Every reported block lasts at least 15 minutes: the provider
+rounds a shorter one up into free time, and a block shows its reported
+`minutes` with, when rounded, the time worked (`worked_minutes`). Split is off
+for a block under 30 minutes, since both halves keep 15; the provider may move
+the split point. A `too_short` refusal says that a block must last at least 15
+minutes.
 
 ## In the bridge
 

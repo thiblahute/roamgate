@@ -6,7 +6,11 @@ import {
   canPreview,
   changeLine,
   clockOf,
+  clockMinutes,
   DAY_STATUS_LABELS,
+  failureText,
+  MIN_BLOCK_MINUTES,
+  workedLabel,
   type Day,
   type DaySummary,
   type Evidence,
@@ -164,14 +168,17 @@ export function HoursView({
   const operate = async (key: string, run: () => Promise<unknown>) => {
     setBusy(key);
     setError(null);
+    let failed: string | null = null;
     try {
       await run();
     } catch (failure) {
-      if (alive.current) setError((failure as Error).message);
+      failed = failureText(failure as TimeReportError);
     } finally {
       if (alive.current) {
         setRefreshing(true);
         await load();
+        // Reading the day again does not hide why the operation failed.
+        if (failed) setError(failed);
         setBusy(null);
       }
     }
@@ -184,7 +191,10 @@ export function HoursView({
       if (alive.current) setSubmit({ step: "preview", preview });
     } catch (failure) {
       if (alive.current)
-        setSubmit({ step: "error", message: (failure as Error).message });
+        setSubmit({
+          step: "error",
+          message: failureText(failure as TimeReportError),
+        });
     }
   };
 
@@ -267,7 +277,7 @@ export function HoursView({
           {day?.deferred ? (
             <span
               className="hours-chip is-red"
-              title="The model could not run: only questions are offered"
+              title={day.deferred_reason ?? "The model could not run"}
             >
               Model deferred
             </span>
@@ -287,6 +297,13 @@ export function HoursView({
             {refreshing ? "Refreshing" : "Refresh"}
           </button>
         </div>
+        {day?.deferred && !refreshing ? (
+          <p className="hours-deferred" role="status">
+            The model did not run
+            {day.deferred_reason ? `: ${day.deferred_reason}` : ""}. What it
+            could not place stays a question; Refresh tries again.
+          </p>
+        ) : null}
         {refreshing ? (
           <p className="hours-muted hours-note" role="status">
             The provider is looking at the day again. What you see stays usable;
@@ -737,7 +754,7 @@ function BlockCard({
           <span className="hours-time">
             {clockOf(block.start)} to {clockOf(block.end)}
           </span>
-          <span className="hours-muted">{formatMinutes(block.minutes)}</span>
+          <span className="hours-muted">{workedLabel(block)}</span>
           <span
             className={`hours-chip ${block.status === "accepted" ? "is-green" : block.status === "proposed" ? "is-blue" : ""}`}
           >
@@ -902,7 +919,12 @@ function BlockCard({
         <button
           type="button"
           className="hours-btn is-small"
-          disabled={busy || submitted || block.minutes < 10}
+          disabled={busy || submitted || block.minutes < 2 * MIN_BLOCK_MINUTES}
+          title={
+            block.minutes < 2 * MIN_BLOCK_MINUTES
+              ? `Both halves must last at least ${MIN_BLOCK_MINUTES} minutes: a block under ${2 * MIN_BLOCK_MINUTES} minutes cannot be split`
+              : undefined
+          }
           aria-pressed={panel === "split"}
           onClick={() => toggle("split")}
         >
@@ -1043,6 +1065,16 @@ function SplitForm({
           onChange={(event) => setAt(event.target.value)}
         />
       </label>
+      <span className="hours-muted">
+        Each half keeps at least {MIN_BLOCK_MINUTES} minutes: the point may
+        move.
+      </span>
+      {inside ? (
+        <span className="hours-muted">
+          {formatMinutes(clockMinutes(startClock, at))} +{" "}
+          {formatMinutes(clockMinutes(at, endClock))}
+        </span>
+      ) : null}
       <button type="button" className="hours-btn is-small" onClick={onCancel}>
         Cancel
       </button>
