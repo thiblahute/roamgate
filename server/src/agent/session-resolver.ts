@@ -192,12 +192,37 @@ async function findClaudeSession(
 ) {
   return resolveCachedSessionPath(context, `claude:${id}`, async () => {
     const root = join(homedir(), ".claude", "projects");
+    // Where Claude Code keeps it: straight under its project's folder. Only
+    // when it is not there is the whole tree walked (half a million entries
+    // on a busy machine, for every session found after a restart).
+    const direct = await claudeProjectFiles(root, `${id}.jsonl`);
+    if (direct.length) return newestFile(direct);
     const files = await walkFiles(
       root,
       (path) => basename(path) === `${id}.jsonl`,
     );
     return newestFile(files);
   });
+}
+
+/** `name` in each project folder under `root` (one level), where it is. */
+async function claudeProjectFiles(root: string, name: string) {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map(async (entry) => {
+        const path = join(root, entry.name, name);
+        const file = await stat(path).catch(() => null);
+        return file?.isFile() ? path : null;
+      }),
+  );
+  return found.filter((path): path is string => path !== null);
 }
 
 async function findKimiSession(
