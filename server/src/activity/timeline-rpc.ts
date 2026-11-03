@@ -31,7 +31,12 @@ export async function readActivityTimeline(
   const reader = openActivityReader(options.directory(), now);
   if (!reader) return { recording: false };
   try {
-    return reader.timeline(range, settings.day_start);
+    return reader.timeline(
+      range,
+      settings.day_start,
+      [],
+      settings.idle_seconds,
+    );
   } finally {
     reader.close();
   }

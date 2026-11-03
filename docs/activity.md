@@ -135,9 +135,16 @@ the offset; durations are milliseconds. Each day has:
   now (`open: true`), or at the recorder's last alive stamp when the recorder
   is not running.
 - `attention`: who had the attention, without overlaps. At each instant the
-  most recently started browser or phone span wins; Herdr's TUI spans only
-  fill the time no browser or phone span covers, since they run whether or not
-  anyone looks.
+  most recently started browser or phone span wins. Herdr's TUI spans only
+  fill the time no browser or phone span covers, and only within
+  `idle_seconds` of a sign of a person, since they run whether or not anyone
+  looks: Herdr reports no attached client nor input time, and its output
+  events cannot tell typing from a program writing. A sign is a browser or
+  phone span (while it runs, and `idle_seconds` after it ends unless it ended
+  as `idle`), input after idle or a page brought to the front, or a focus
+  change in Herdr's TUI (a Herdr span ended with `switch`; one opened when the
+  recorder or the connection starts is none). The rest of a Herdr span is in
+  `focus` but not in `attention`.
 - `idle`: per client, from `session.idle` to the client's next sign of life
   (`session.active`, a visibility change, or a new focus).
 - `agents`: lanes per pane and agent, with the `working`, `blocked`, `idle` and
@@ -148,7 +155,8 @@ the offset; durations are milliseconds. Each day has:
   not running, one from its last stamp (`reason: "recorder"`, `end: null`).
 - `totals`: `attended_ms` (the `attention` segments), `idle_ms`,
   `unrecorded_ms` (recorder gaps), and per workspace `attended_ms` split into
-  `browser_ms`, `phone_ms` and `herdr_ms`, plus `working_ms` and `blocked_ms`:
+  `browser_ms`, `phone_ms` and `herdr_ms` (Herdr's TUI within the attention
+  above), plus `working_ms` and `blocked_ms`:
   the time at least one of its agents was in that state.
 
 `workspaces` lists the workspaces the days refer to, with name, connection,

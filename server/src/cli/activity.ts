@@ -266,7 +266,12 @@ export function createActivityCommand(
         throw new UsageError((error as Error).message);
       }
       return withReader((reader) => {
-        const timeline = reader.timeline(range, settings.day_start, excluded);
+        const timeline = reader.timeline(
+          range,
+          settings.day_start,
+          excluded,
+          settings.idle_seconds,
+        );
         print(formatFlag(values), timeline, () => timelineSummary(timeline));
         return EXIT_OK;
       });

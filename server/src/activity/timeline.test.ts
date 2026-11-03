@@ -172,7 +172,7 @@ test("browser and phone attention wins; Herdr only fills the holes", () => {
     input({
       focus: [
         focus(at(9), at(12), "c", { source: "herdr", client_id: null }),
-        focus(at(10), at(11), "a"),
+        focus(at(10), at(11), "a", { reason: "hidden" }),
         // A phone looking elsewhere meanwhile: the latest start wins.
         focus(at(10, 30), at(10, 45), "b", {
           client_kind: "phone",
@@ -182,6 +182,8 @@ test("browser and phone attention wins; Herdr only fills the holes", () => {
     }),
   );
   const [day] = timeline.days;
+  // Herdr's TUI counts only within idle_seconds (5 minutes) of a sign of a
+  // person: here the browser hidden at 11:00, to type in the terminal.
   expect(
     day!.attention.map((segment) => [
       segment.workspace_id,
@@ -189,25 +191,117 @@ test("browser and phone attention wins; Herdr only fills the holes", () => {
       (ms(segment.end)! - ms(segment.start)!) / MIN,
     ]),
   ).toEqual([
-    ["c", "herdr", 60],
     ["a", "browser", 30],
     ["b", "phone", 15],
     ["a", "browser", 15],
-    ["c", "herdr", 60],
+    ["c", "herdr", 5],
   ]);
   const totals = Object.fromEntries(
     day!.totals.workspaces.map((entry) => [entry.workspace_id, entry]),
   );
   expect(totals.c).toMatchObject({
-    herdr_ms: 120 * MIN,
-    attended_ms: 120 * MIN,
+    herdr_ms: 5 * MIN,
+    attended_ms: 5 * MIN,
   });
   expect(totals.a).toMatchObject({
     browser_ms: 45 * MIN,
     attended_ms: 45 * MIN,
   });
   expect(totals.b).toMatchObject({ phone_ms: 15 * MIN });
-  expect(day!.totals.attended_ms).toBe(180 * MIN);
+  expect(day!.totals.attended_ms).toBe(65 * MIN);
+  // The focus spans themselves stay as recorded.
+  expect(day!.focus.find((entry) => entry.source === "herdr")).toMatchObject({
+    workspace_id: "c",
+  });
+});
+
+test("an overnight Herdr span with no sign of a person is not attended", () => {
+  const from = dayBounds("2026-11-01", "00:00").start;
+  const evening = new Date(2026, 10, 1, 22, 44).getTime();
+  const timeline = buildTimeline(
+    input({
+      from,
+      now: at(9),
+      sessions: [
+        {
+          id: 1,
+          started_at: evening,
+          last_alive: at(9) - MIN,
+          stopped_at: null,
+        },
+      ],
+      focus: [
+        // The browser went idle at 22:35, before the recorder restarted.
+        focus(new Date(2026, 10, 1, 22).getTime(), evening - 9 * MIN, "a", {
+          reason: "idle",
+        }),
+        // Opened by the restart, not by a person; it ran on all night.
+        focus(evening, at(8, 4), "c", { source: "herdr", client_id: null }),
+        // A switch in the TUI at 08:04 is a sign of a person.
+        focus(at(8, 4), null, "b", { source: "herdr", client_id: null }),
+      ],
+    }),
+  );
+  const [yesterday, today] = timeline.days;
+  expect(yesterday!.totals.attended_ms).toBe(35 * MIN);
+  expect(yesterday!.attention.map((segment) => segment.source)).toEqual([
+    "browser",
+  ]);
+  expect(
+    today!.attention.map((segment) => [
+      segment.workspace_id,
+      segment.source,
+      (ms(segment.end)! - ms(segment.start)!) / MIN,
+    ]),
+  ).toEqual([["b", "herdr", 5]]);
+  expect(today!.totals.attended_ms).toBe(5 * MIN);
+  expect(
+    today!.totals.workspaces.find((entry) => entry.workspace_id === "c"),
+  ).toBeUndefined();
+});
+
+test("Herdr time counts after input, a page brought to the front or a switch", () => {
+  const timeline = buildTimeline(
+    input({
+      idleMs: 10 * MIN,
+      focus: [
+        focus(at(8), at(17), "c", { source: "herdr", client_id: null }),
+        // A switch in Herdr's TUI at 9:00.
+        focus(at(7), at(8), "b", {
+          source: "herdr",
+          client_id: null,
+          connection_id: "desktop",
+        }),
+        focus(at(9), at(9, 30), "b", {
+          source: "herdr",
+          client_id: null,
+          connection_id: "desktop",
+        }),
+      ],
+      presence: [
+        presence(at(12), "session.active"),
+        presence(at(14), "ui.visibility", { visible: true }),
+        presence(at(15), "ui.visibility", { visible: false }),
+      ],
+    }),
+  );
+  const [day] = timeline.days;
+  expect(
+    day!.attention.map((segment) => [
+      new Date(ms(segment.start)!).getHours(),
+      segment.workspace_id,
+      (ms(segment.end)! - ms(segment.start)!) / MIN,
+    ]),
+  ).toEqual([
+    // After the desktop TUI's switches at 8:00 and 9:30 (its span from
+    // 9:00 opened with no switch: no sign), input at 12:00 and the page
+    // brought to the front at 14:00.
+    [8, "c", 10],
+    [9, "c", 10],
+    [12, "c", 10],
+    [14, "c", 10],
+  ]);
+  expect(day!.totals.attended_ms).toBe(40 * MIN);
 });
 
 test("idle runs from session.idle to the client's next sign of life", () => {
