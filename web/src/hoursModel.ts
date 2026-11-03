@@ -46,7 +46,7 @@ export type QuestionOption = {
 
 /** Set while a block that was accepted is proposed again. */
 export type Reopened = {
-  reason: "neighbour_moved" | "recomputed";
+  reason: "neighbour_moved" | "recomputed" | "target_changed";
   previously_accepted_at: string;
 };
 
@@ -133,6 +133,7 @@ export function splitPoints(block: { start: string; end: string }): string[] {
 export const REOPENED_LABELS: Record<Reopened["reason"], string> = {
   neighbour_moved: "Moved by a neighbour: accept again",
   recomputed: "Recomputed: accept again",
+  target_changed: "Project changed: accept again",
 };
 
 /** The reopened chip's tooltip: why, and when it was accepted before. */
@@ -150,7 +151,9 @@ export function reopenedTitle(reopened: Reopened): string {
   const why =
     reopened.reason === "neighbour_moved"
       ? "A neighbour's rounding moved this block"
-      : "The provider computed this block again";
+      : reopened.reason === "target_changed"
+        ? "This block's project changed (a mapping, say)"
+        : "The provider computed this block again";
   return `${why}. Accepted before on ${at}; accept it again to submit it.`;
 }
 

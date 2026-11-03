@@ -710,8 +710,8 @@
       "properties": {
         "reason": {
           "type": "string",
-          "enum": ["neighbour_moved", "recomputed"],
-          "description": "neighbour_moved: a neighbour's rounding moved the block; recomputed: its own input changed."
+          "enum": ["neighbour_moved", "recomputed", "target_changed"],
+          "description": "neighbour_moved: a neighbour's rounding moved the block; recomputed: its own input or its reported minutes changed; target_changed: its project or task type changed."
         },
         "previously_accepted_at": {
           "type": "string",

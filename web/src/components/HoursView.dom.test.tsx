@@ -472,6 +472,19 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
         target: { id: "12", label: "Igalia internal" },
         reopened: { reason: "recomputed", previously_accepted_at: T("10:21") },
       },
+      {
+        id: "b4",
+        start: T("11:30"),
+        end: T("12:00"),
+        minutes: 30,
+        status: "proposed",
+        source: "pin",
+        target: { id: "10", label: "Just remote investment" },
+        reopened: {
+          reason: "target_changed",
+          previously_accepted_at: T("10:22"),
+        },
+      },
     );
     const { container, unmount } = await mount();
     const chip = (label: string) =>
@@ -485,6 +498,10 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
       "A neighbour's rounding moved this block. Accepted before on",
     );
     expect(text(chip("11:00 to 11:30"))).toBe("Recomputed: accept again");
+    expect(text(chip("11:30 to 12:00"))).toBe("Project changed: accept again");
+    expect(chip("11:30 to 12:00").getAttribute("title")).toStartWith(
+      "This block's project changed",
+    );
     // Once accepted again, the provider clears it.
     answers["block-accept"] = () => {
       delete blocks[2]!.reopened;
