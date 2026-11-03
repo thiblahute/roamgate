@@ -22,7 +22,7 @@ Schemas: [`time-report.schema.json`](./time-report.schema.json) (`$defs`:
 `DayInput`, `Segment`, `Day`, `DaySummary`, `Block`, `BlockPatch`,
 `BlockCreate`, `Gap`, `Target`, `TaskType`, `Evidence`, `Question`,
 `QuestionOption`, `Explanation`, `Preview`, `Change`, `SubmitResult`,
-`Health`, `Allocation`, `MappingSet`, `Mapping`, `Mappings`,
+`Health`, `Reopened`, `Allocation`, `MappingSet`, `Mapping`, `Mappings`,
 `MappingDelete`). The activity
 shapes it refers to are in [`activity.schema.json`](./activity.schema.json).
 
@@ -122,8 +122,10 @@ block's id can change. Questions are answered with `block-answer` (the
 `confirmed: true`. A failed submit shows what was written. A deferred day shows the provider's
 `deferred_reason`. Reported time is whole 15-minute units, rounded up
 (37 minutes worked is reported as 45); when rounding runs into the next block,
-that block gives way, and an accepted block moved that way is proposed again,
-which the view points out ("Moved by a neighbour: accept again"). A block shows
+that block gives way. A block that was accepted and is proposed again carries
+`reopened` (`neighbour_moved` or `recomputed`, with when it was accepted),
+which the view shows as "Moved by a neighbour: accept again" or "Recomputed:
+accept again". A block shows
 its reported `minutes` and, when it differs, the time worked
 (`worked_minutes`). Split offers whole units only, so a one-unit block cannot
 be split. The preview shows the time worked beside the time reported. A

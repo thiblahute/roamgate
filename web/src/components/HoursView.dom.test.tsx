@@ -445,32 +445,63 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     await unmount();
   });
 
-  test("an accepted block a neighbour's rounding moved asks to be accepted again", async () => {
+  test("a reopened block says why it needs accepting again", async () => {
     reset();
     const blocks = day.blocks as Record<string, unknown>[];
-    blocks.push({
-      id: "b2",
-      start: T("10:30"),
-      end: T("11:00"),
-      minutes: 30,
-      status: "accepted",
-      source: "manual",
-      target: { id: "12", label: "Igalia internal" },
-    });
+    blocks.push(
+      {
+        id: "b2",
+        start: T("10:45"),
+        end: T("11:00"),
+        minutes: 15,
+        status: "proposed",
+        source: "manual",
+        target: { id: "12", label: "Igalia internal" },
+        reopened: {
+          reason: "neighbour_moved",
+          previously_accepted_at: T("10:20"),
+        },
+      },
+      {
+        id: "b3",
+        start: T("11:00"),
+        end: T("11:30"),
+        minutes: 30,
+        status: "proposed",
+        source: "ai",
+        target: { id: "12", label: "Igalia internal" },
+        reopened: { reason: "recomputed", previously_accepted_at: T("10:21") },
+      },
+    );
     const { container, unmount } = await mount();
-    expect(container.textContent).not.toContain("accept again");
-    // Claiming the gap before it pushes it: the provider proposes it again.
-    answers["block-create"] = () => {
-      blocks[2]!.status = "proposed";
-      blocks[2]!.start = T("10:45");
+    const chip = (label: string) =>
+      container
+        .querySelector(`[aria-label="${label}"]`)!
+        .querySelector(".hours-chip.is-yellow")!;
+    expect(text(chip("10:45 to 11:00"))).toBe(
+      "Moved by a neighbour: accept again",
+    );
+    expect(chip("10:45 to 11:00").getAttribute("title")).toStartWith(
+      "A neighbour's rounding moved this block. Accepted before on",
+    );
+    expect(text(chip("11:00 to 11:30"))).toBe("Recomputed: accept again");
+    // Once accepted again, the provider clears it.
+    answers["block-accept"] = () => {
+      delete blocks[2]!.reopened;
+      blocks[2]!.status = "accepted";
       return {};
     };
-    const gap = container.querySelector(".hours-gap")!;
-    await click(button(gap, "Claim..."));
-    await set(gap.querySelector("select"), "12");
-    await click(button(gap, "Claim"));
-    const moved = container.querySelector('[aria-label="10:45 to 11:00"]')!;
-    expect(text(moved)).toContain("Moved by a neighbour: accept again");
+    await click(
+      button(
+        container.querySelector('[aria-label="10:45 to 11:00"]')!,
+        "Accept",
+      ),
+    );
+    expect(
+      container
+        .querySelector('[aria-label="10:45 to 11:00"]')!
+        .querySelector(".hours-chip.is-yellow"),
+    ).toBeNull();
     await unmount();
   });
 
