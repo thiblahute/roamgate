@@ -336,6 +336,9 @@
           "type": "integer",
           "minimum": 0,
           "description": "The time actually worked, present whenever the reported time (minutes) differs from it."
+        },
+        "reopened": {
+          "$ref": "#/$defs/Reopened"
         }
       }
     },
@@ -700,6 +703,22 @@
           "maximum": 100
         }
       }
+    },
+    "Reopened": {
+      "type": "object",
+      "required": ["reason", "previously_accepted_at"],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": ["neighbour_moved", "recomputed"],
+          "description": "neighbour_moved: a neighbour's rounding moved the block; recomputed: its own input changed."
+        },
+        "previously_accepted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Set on a block that had been accepted and was reopened since, until it is accepted again."
     }
   }
 }

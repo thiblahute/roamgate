@@ -4,7 +4,8 @@ import {
   clockMinutes,
   failureText,
   previewWorkedMinutes,
-  reopenedBlocks,
+  REOPENED_LABELS,
+  reopenedTitle,
   splitPoints,
   workedMinutes,
   submitHint,
@@ -118,29 +119,24 @@ test("a block splits only into whole units", () => {
   expect(splitPoints(block("08:00", "08:15", "proposed"))).toEqual([]);
 });
 
-test("an accepted block a neighbour moved is proposed again, and noticed", () => {
-  const before: Day = {
-    date: "2026-11-03",
-    status: "accepted",
-    blocks: [
-      block("08:00", "08:45", "accepted"),
-      block("08:45", "09:30", "accepted"),
-    ],
-    gaps: [],
-  };
-  const after: Day = {
-    ...before,
-    blocks: [
-      { ...before.blocks[0]!, status: "accepted" },
-      {
-        ...before.blocks[1]!,
-        start: "2026-11-03T09:00:00-03:00",
-        status: "proposed",
-      },
-    ],
-  };
-  expect([...reopenedBlocks(before, after)]).toEqual([before.blocks[1]!.id]);
-  expect(reopenedBlocks(null, after).size).toBe(0);
+test("a reopened block says why and when it was accepted", () => {
+  expect(REOPENED_LABELS.neighbour_moved).toBe(
+    "Moved by a neighbour: accept again",
+  );
+  expect(REOPENED_LABELS.recomputed).toBe("Recomputed: accept again");
+  const title = reopenedTitle({
+    reason: "neighbour_moved",
+    previously_accepted_at: "2026-11-03T15:20:00-03:00",
+  });
+  expect(title).toStartWith(
+    "A neighbour's rounding moved this block. Accepted before on ",
+  );
+  expect(title).toEndWith("; accept it again to submit it.");
+  expect(
+    reopenedTitle({ reason: "recomputed", previously_accepted_at: "soon" }),
+  ).toBe(
+    "The provider computed this block again. Accepted before on soon; accept it again to submit it.",
+  );
 });
 
 test("a preview's worked total comes from its blocks", () => {

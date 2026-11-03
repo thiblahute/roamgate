@@ -10,7 +10,8 @@ import {
   DAY_STATUS_LABELS,
   failureText,
   previewWorkedMinutes,
-  reopenedBlocks,
+  REOPENED_LABELS,
+  reopenedTitle,
   splitPoints,
   UNIT_MINUTES,
   workedMinutes,
@@ -72,29 +73,7 @@ export function HoursView({
   workspaces: TimelineWorkspace[];
   onEditMapping?: (workspace: TimelineWorkspace) => void;
 }) {
-  const [day, setDayState] = useState<Day | null>(null);
-  /** Accepted blocks a neighbour's rounding sent back to Proposed. */
-  const [reopened, setReopened] = useState<Set<string>>(new Set());
-  const dayRef = useRef<Day | null>(null);
-  const setDay = useCallback((next: Day | null) => {
-    const before = dayRef.current;
-    dayRef.current = next;
-    setDayState(next);
-    if (!next || !before || before.date !== next.date) {
-      setReopened(new Set());
-      return;
-    }
-    const now = reopenedBlocks(before, next);
-    setReopened((previous) => {
-      const kept = new Set(
-        [...previous].filter((id) =>
-          next.blocks.some((b) => b.id === id && b.status === "proposed"),
-        ),
-      );
-      for (const id of now) kept.add(id);
-      return kept;
-    });
-  }, []);
+  const [day, setDay] = useState<Day | null>(null);
   const [summaries, setSummaries] = useState<DaySummary[]>([]);
   const [targets, setTargets] = useState<Targets | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +125,7 @@ export function HoursView({
         if (alive.current && id === request.current) setLoading(false);
       }
     },
-    [date, loadSummaries, setDay],
+    [date, loadSummaries],
   );
 
   useEffect(() => {
@@ -422,7 +401,6 @@ export function HoursView({
                       operate={(run) => void operate(block.id, run)}
                       mappingWorkspace={subjectWorkspace(block)}
                       onEditMapping={onEditMapping}
-                      reopened={reopened.has(block.id)}
                     />
                   ))}
               </div>
@@ -739,9 +717,7 @@ function BlockCard({
   operate,
   mappingWorkspace,
   onEditMapping,
-  reopened = false,
 }: {
-  reopened?: boolean;
   date: string;
   block: Block;
   targets: Targets | null;
@@ -798,12 +774,13 @@ function BlockCard({
             {BLOCK_STATUS_LABELS[block.status]}
           </span>
           <span className="hours-chip">{SOURCE_LABELS[block.source]}</span>
-          {reopened ? (
+          {block.reopened ? (
             <span
               className="hours-chip is-yellow"
-              title="A neighbour's rounding moved this block, so it is proposed again"
+              title={reopenedTitle(block.reopened)}
             >
-              Moved by a neighbour: accept again
+              {REOPENED_LABELS[block.reopened.reason] ??
+                "Proposed again: accept again"}
             </span>
           ) : null}
           {typeof block.confidence === "number" ? (

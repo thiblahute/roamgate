@@ -44,6 +44,12 @@ export type QuestionOption = {
   kind?: "target" | "skip" | "split" | "other";
 };
 
+/** Set while a block that was accepted is proposed again. */
+export type Reopened = {
+  reason: "neighbour_moved" | "recomputed";
+  previously_accepted_at: string;
+};
+
 export type Block = {
   id: string;
   start: string;
@@ -59,6 +65,7 @@ export type Block = {
    */
   worked_minutes?: number | null;
   status: BlockStatus;
+  reopened?: Reopened | null;
   source: BlockSource;
   subject?: string | null;
   evidence?: Evidence[];
@@ -123,20 +130,28 @@ export function splitPoints(block: { start: string; end: string }): string[] {
   return points;
 }
 
-/**
- * Accepted blocks a recompute sent back to Proposed: a neighbour's rounding
- * moved them, so they need accepting again. Matched by id.
- */
-export function reopenedBlocks(before: Day | null, after: Day): Set<string> {
-  const reopened = new Set<string>();
-  if (!before) return reopened;
-  const accepted = new Set(
-    before.blocks.filter((b) => b.status === "accepted").map((b) => b.id),
-  );
-  for (const block of after.blocks)
-    if (block.status === "proposed" && accepted.has(block.id))
-      reopened.add(block.id);
-  return reopened;
+export const REOPENED_LABELS: Record<Reopened["reason"], string> = {
+  neighbour_moved: "Moved by a neighbour: accept again",
+  recomputed: "Recomputed: accept again",
+};
+
+/** The reopened chip's tooltip: why, and when it was accepted before. */
+export function reopenedTitle(reopened: Reopened): string {
+  const when = new Date(reopened.previously_accepted_at);
+  const at = Number.isNaN(when.getTime())
+    ? reopened.previously_accepted_at
+    : when.toLocaleString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+  const why =
+    reopened.reason === "neighbour_moved"
+      ? "A neighbour's rounding moved this block"
+      : "The provider computed this block again";
+  return `${why}. Accepted before on ${at}; accept it again to submit it.`;
 }
 
 /** The time worked behind a preview's changes, from the day's blocks. */
