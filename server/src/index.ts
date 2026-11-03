@@ -1,5 +1,6 @@
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
+import { sshReadCommandArgv } from "./bridge/ssh-command";
 import { loadOrCreateSessionSecret } from "./config/session-secret";
 import {
   createAgentSeenStore,
@@ -146,6 +147,9 @@ import {
 } from "./config/gui-settings";
 import { createActivityRecorder } from "./activity/recorder";
 import { readActivityTimeline } from "./activity/timeline-rpc";
+import { subjectsFromSettings } from "./activity/subject-settings";
+import { openActivityReader } from "./activity/reader";
+import { createTimeReport, TimeReportError } from "./time-report/rpc";
 import { dataRoot } from "./config/data-paths";
 import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
@@ -288,7 +292,38 @@ const activity = createActivityRecorder({
   ownedAgents: (connectionId) =>
     connectionManager.readyRuntime(connectionId)?.conversation.ownedPanes() ??
     [],
+  // Branches and remotes: read-only git, behind interactive SSH work.
+  runHostScript: async (connectionId, script) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) throw new Error(`connection not ready: ${connectionId}`);
+    const host = runtime.sshHost();
+    // No POSIX shell to read with: the log keeps what Herdr says.
+    if (
+      runtime.remotePlatform === "windows" ||
+      (!host && process.platform === "win32")
+    )
+      return { code: 0, stdout: "" };
+    const argv = host
+      ? sshReadCommandArgv(host, script, [], "activity.repo")
+      : ["/bin/sh", "-c", script];
+    return runInSshLane("background", () =>
+      runProcessWithCodeTimeout(argv, 20_000),
+    );
+  },
   logger: logger.child("activity"),
+});
+const timeReport = createTimeReport({
+  settings: async () => {
+    const settings = await readGuiSettings();
+    return {
+      activity: activitySettings(settings),
+      timeReport: settings.time_report ?? null,
+    };
+  },
+  openReader: async () =>
+    openActivityReader(dataRoot(), Date.now, {
+      subjectOf: subjectsFromSettings(await readGuiSettings()),
+    }),
 });
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
@@ -1816,12 +1851,36 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           settings: async () => activitySettings(await readGuiSettings()),
           recording: () => activity.ready(),
           directory: () => dataRoot(),
+          subjects: async () => subjectsFromSettings(await readGuiSettings()),
         },
         params,
       );
       sendReply({ id, result }, "activity-timeline");
     } catch (error) {
       sendError("activity-timeline-error", error);
+    }
+    return;
+  }
+  if (method === "bridge.time_report") {
+    // Provider failures are answers the Hours view shows, with their code.
+    try {
+      const value = await timeReport.handle(params);
+      sendReply({ id, result: { ok: true, value } }, "time-report");
+    } catch (error) {
+      if (error instanceof TimeReportError)
+        sendReply(
+          {
+            id,
+            result: {
+              ok: false,
+              error: error.message,
+              code: error.code,
+              partial: error.partial,
+            },
+          },
+          "time-report",
+        );
+      else sendError("time-report-error", error);
     }
     return;
   }

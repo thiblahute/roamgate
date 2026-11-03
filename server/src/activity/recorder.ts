@@ -9,6 +9,7 @@ import {
   type EventSource,
   agentState,
 } from "./protocol";
+import { readRepoInfo, type RunHostScript } from "./repo-info";
 import { type ActivityStore, type NewEvent, openActivityStore } from "./store";
 
 /**
@@ -78,6 +79,10 @@ export const ALIVE_INTERVAL_MS = 60_000;
 export const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** A Herdr workspace still unknown after a listing is not re-listed sooner. */
 const MISS_REFRESH_MS = 5_000;
+/** How often a workspace's branch and remote are read again. */
+export const REPO_INFO_INTERVAL_MS = 10 * 60_000;
+/** At most this many paths per host command. */
+const REPO_INFO_BATCH = 24;
 const STOP_DRAIN_MS = 2_000;
 const MAX_INPUT_AGE_MS = 24 * 60 * 60 * 1000;
 const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
@@ -250,6 +255,8 @@ export function createActivityRecorder(options: {
   herdrCall: HerdrCall;
   /** The agents Roamgate runs itself on a connection, with their state. */
   ownedAgents?: (connectionId: string) => readonly OwnedAgent[];
+  /** Runs git on a connection's host for branches and remotes. */
+  runHostScript?: RunHostScript;
   now?: () => number;
   logger?: Logger;
 }): ActivityRecorder {
@@ -264,6 +271,10 @@ export function createActivityRecorder(options: {
   let retentionTimer: ReturnType<typeof setInterval> | null = null;
   const connections = new Map<string, Connection>();
   const clients = new Map<object, PresenceState>();
+  /** When each stable workspace's repository was last read. */
+  const repoReadAt = new Map<string, number>();
+  const repoReading = new Set<string>();
+  const repoTasks = new Set<Promise<void>>();
 
   function ownedAgents(connectionId: string): Map<string, OwnedAgent> {
     let owned: readonly OwnedAgent[] = [];
@@ -491,11 +502,54 @@ export function createActivityRecorder(options: {
     for (const herdrId of conn.workspaces.keys())
       if (!seen.has(herdrId)) conn.workspaces.delete(herdrId);
     conn.stale = false;
+    readRepos(conn);
     if (!focused) return null;
     const pane = listed.find(
       ([, info]) => info.workspaceId === focused && info.focused,
     );
     return { workspaceId: focused, paneId: pane?.[0] ?? null };
+  }
+
+  /**
+   * Reads the branch and remote of the connection's workspaces now and then,
+   * off the signal queue: a slow host never holds up the log.
+   */
+  function readRepos(conn: Connection) {
+    const run = options.runHostScript;
+    if (!run || repoReading.has(conn.id)) return;
+    const at = now();
+    const due = new Map<string, string>();
+    for (const workspace of conn.workspaces.values())
+      if (
+        workspace.path &&
+        at - (repoReadAt.get(workspace.stableId) ?? Number.NEGATIVE_INFINITY) >=
+          REPO_INFO_INTERVAL_MS
+      )
+        due.set(workspace.stableId, workspace.path);
+    if (due.size === 0) return;
+    const entries = [...due].slice(0, REPO_INFO_BATCH);
+    for (const [id] of entries) repoReadAt.set(id, at);
+    repoReading.add(conn.id);
+    const task = (async () => {
+      try {
+        const paths = [...new Set(entries.map(([, path]) => path))];
+        const repos = await readRepoInfo(run, conn.id, paths);
+        if (finished || !store) return;
+        for (const [id, path] of entries) {
+          const repo = repos.get(path);
+          if (repo) store.setRepo(id, repo);
+        }
+      } catch (error) {
+        logger.debug("activity repository read failed", {
+          connection: conn.id,
+          error,
+        });
+      } finally {
+        repoReading.delete(conn.id);
+      }
+    })();
+    repoTasks.add(task);
+    void task.finally(() => repoTasks.delete(task));
   }
 
   async function refreshAndFollowHerdr(conn: Connection, ts: number) {
@@ -752,6 +806,8 @@ export function createActivityRecorder(options: {
         await agentGone(conn, ts, paneId);
     for (const paneId of [...conn.panes.keys()])
       if (!live.has(paneId)) conn.panes.delete(paneId);
+    // Branches change without a workspace event.
+    readRepos(conn);
   }
 
   /** An agent Roamgate runs itself, as Roamgate knows it now. */
@@ -1027,8 +1083,9 @@ export function createActivityRecorder(options: {
       for (;;) {
         const current = chain;
         await current;
-        if (current === chain) return;
+        if (current === chain) break;
       }
+      await Promise.all(repoTasks);
     },
     async stop() {
       if (stopped) return;

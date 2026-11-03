@@ -123,6 +123,7 @@ test("the timeline reads spans, states before the range, and gaps", () => {
       name: "alpha",
       path: "/src/alpha",
       herdr_workspace_id: "w1",
+      subject: null,
     },
   ]);
 });

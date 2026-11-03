@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import {
   addDays,
+  colorFor,
+  storedGroupBy,
+  storeGroupBy,
+  subjectGroups,
   axisWindow,
   formatDuration,
   jumpTarget,
@@ -167,4 +171,99 @@ test("a jump goes to the workspace at the same path on the shown connection", ()
 test("colors are stable per workspace", () => {
   expect(workspaceColor("a")).toBe(workspaceColor("a"));
   expect(workspaceColor("a")).not.toBe(workspaceColor("b"));
+});
+
+const subject = (id: string, label: string) => ({
+  id,
+  label,
+  source: "directory" as const,
+  path: `/src/${label}`,
+  groups: [{ id, label }],
+});
+
+test("workspaces gather under their subjects, the ones with none last", () => {
+  const ocio = subject("dir:~/src/ocio", "ocio");
+  const workspaces = [
+    workspace("a", { subject: ocio }),
+    workspace("b", { subject: ocio }),
+    workspace("c", { subject: null }),
+    workspace("d"),
+  ];
+  const segment = (id: string, from: number, to: number) => ({
+    start: iso(at(from)),
+    end: iso(at(to)),
+    workspace_id: id,
+    source: "browser" as const,
+  });
+  const totals = (id: string, attended: number) => ({
+    workspace_id: id,
+    attended_ms: attended,
+    browser_ms: attended,
+    phone_ms: 0,
+    herdr_ms: 0,
+    working_ms: 0,
+    blocked_ms: 0,
+  });
+  const shown = day({
+    attention: [
+      segment("c", 8, 12),
+      segment("b", 12, 13),
+      segment("a", 13, 14),
+      segment("d", 14, 15),
+    ],
+    totals: {
+      attended_ms: 0,
+      idle_ms: 0,
+      unrecorded_ms: 0,
+      workspaces: [
+        totals("c", 4 * 3_600_000),
+        totals("a", 3_600_000),
+        totals("b", 3_600_000),
+        totals("d", 3_600_000),
+      ],
+      subjects: [
+        {
+          subject_id: ocio.id,
+          label: "ocio",
+          attended_ms: 2 * 3_600_000,
+          browser_ms: 2 * 3_600_000,
+          phone_ms: 0,
+          herdr_ms: 0,
+          working_ms: 30 * 60_000,
+          blocked_ms: 0,
+          workspace_ids: ["a", "b"],
+        },
+      ],
+    },
+  });
+  const groups = subjectGroups(shown, workspaces);
+  expect(
+    groups.map((group) => [group.label, group.rows.map((r) => r.id)]),
+  ).toEqual([
+    ["ocio", ["a", "b"]],
+    ["No subject", ["c", "d"]],
+  ]);
+  expect(groups[0]!.totals.working_ms).toBe(30 * 60_000);
+  // An older bridge sends no subject totals: attention still adds up.
+  expect(groups[1]!.totals.attended_ms).toBe(5 * 3_600_000);
+  expect(groups[0]!.attention.map((s) => s.workspace_id)).toEqual(["b", "a"]);
+});
+
+test("colours follow the subject only when grouping by subject", () => {
+  const ws = workspace("a", { subject: subject("tree:g1", "upstream") });
+  expect(colorFor("a", ws, "workspace")).toBe(workspaceColor("a"));
+  expect(colorFor("a", ws, "subject")).toBe(workspaceColor("tree:g1"));
+  expect(colorFor("b", workspace("b"), "subject")).toBe(workspaceColor("b"));
+});
+
+test("the grouping choice is remembered", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+  };
+  expect(storedGroupBy(storage)).toBe("workspace");
+  storeGroupBy(storage, "subject");
+  expect(storedGroupBy(storage)).toBe("subject");
+  expect(storedGroupBy(null)).toBe("workspace");
 });

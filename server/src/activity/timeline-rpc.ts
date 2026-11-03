@@ -1,5 +1,6 @@
 import type { GuiActivitySettings } from "../config/gui-settings";
 import { openActivityReader } from "./reader";
+import type { SubjectOf } from "./subjects";
 import { type Timeline, timelineRange } from "./timeline";
 
 export type TimelineReply = Timeline | { recording: false };
@@ -15,6 +16,8 @@ export async function readActivityTimeline(
     /** True while the recorder records. */
     recording: () => Promise<boolean>;
     directory: () => string;
+    /** Each workspace's subject (subject-settings.ts). */
+    subjects?: () => Promise<SubjectOf>;
     now?: () => number;
   },
   params: unknown,
@@ -28,7 +31,8 @@ export async function readActivityTimeline(
       ? (params as { from?: unknown; to?: unknown })
       : {};
   const range = timelineRange(request, now(), settings.day_start);
-  const reader = openActivityReader(options.directory(), now);
+  const subjectOf = await options.subjects?.();
+  const reader = openActivityReader(options.directory(), now, { subjectOf });
   if (!reader) return { recording: false };
   try {
     return reader.timeline(

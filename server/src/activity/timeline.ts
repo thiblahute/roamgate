@@ -10,6 +10,7 @@ import type {
   ClientKind,
   EventSource,
   RecordingGap,
+  Subject,
 } from "./protocol";
 import { isoTime } from "./protocol";
 
@@ -163,12 +164,27 @@ export type WorkspaceTotals = {
   blocked_ms: number;
 };
 
+/** A subject's workspaces together; `subject_id` null for those with none. */
+export type SubjectTotals = {
+  subject_id: string | null;
+  label: string | null;
+  attended_ms: number;
+  browser_ms: number;
+  phone_ms: number;
+  herdr_ms: number;
+  /** Time at least one agent of the subject's workspaces was working. */
+  working_ms: number;
+  blocked_ms: number;
+  workspace_ids: string[];
+};
+
 export type DayTotals = {
   attended_ms: number;
   idle_ms: number;
   /** The whole recorder was not running. */
   unrecorded_ms: number;
   workspaces: WorkspaceTotals[];
+  subjects: SubjectTotals[];
 };
 
 export type TimelineDay = {
@@ -191,6 +207,7 @@ export type TimelineWorkspace = {
   name: string;
   path: string | null;
   herdr_workspace_id: string | null;
+  subject: Subject | null;
 };
 
 export type Timeline = {
@@ -601,6 +618,10 @@ export function buildTimeline(input: TimelineInput): Timeline {
     throw new Error("invalid timeline range");
   const limit = Math.min(to, now);
   const ends = sessionEnds(input.sessions, now);
+  const subjects = new Map(
+    input.workspaces.map((workspace) => [workspace.id, workspace.subject]),
+  );
+  const subjectOfId = (id: string) => subjects.get(id) ?? null;
 
   const gaps: (Interval & {
     connection_id: string | null;
@@ -733,6 +754,48 @@ export function buildTimeline(input: TimelineInput): Timeline {
         b.working_ms - a.working_ms ||
         a.workspace_id.localeCompare(b.workspace_id),
     );
+    const subjectTotals = new Map<string | null, SubjectTotals>();
+    for (const entry of workspaceTotals) {
+      const subject = subjectOfId(entry.workspace_id);
+      const key = subject?.id ?? null;
+      let total = subjectTotals.get(key);
+      if (!total)
+        subjectTotals.set(
+          key,
+          (total = {
+            subject_id: key,
+            label: subject?.label ?? null,
+            attended_ms: 0,
+            browser_ms: 0,
+            phone_ms: 0,
+            herdr_ms: 0,
+            working_ms: 0,
+            blocked_ms: 0,
+            workspace_ids: [],
+          }),
+        );
+      total.workspace_ids.push(entry.workspace_id);
+      for (const field of [
+        "attended_ms",
+        "browser_ms",
+        "phone_ms",
+        "herdr_ms",
+      ] as const)
+        total[field] += entry[field];
+    }
+    // Agents overlap across a subject's workspaces: count each instant once.
+    for (const total of subjectTotals.values()) {
+      const ids = new Set(total.workspace_ids);
+      const spans = dayLanes
+        .filter((lane) => lane.workspace_id && ids.has(lane.workspace_id))
+        .flatMap((lane) => lane.spans);
+      total.working_ms = length(
+        spans.filter((span) => span.state === "working"),
+      );
+      total.blocked_ms = length(
+        spans.filter((span) => span.state === "blocked"),
+      );
+    }
     for (const entry of dayFocus)
       if (entry.row.workspace_id) referenced.add(entry.row.workspace_id);
     for (const lane of dayLanes)
@@ -798,6 +861,12 @@ export function buildTimeline(input: TimelineInput): Timeline {
             .filter((gap) => gap !== null),
         ),
         workspaces: workspaceTotals,
+        subjects: [...subjectTotals.values()].sort(
+          (a, b) =>
+            b.attended_ms - a.attended_ms ||
+            b.working_ms - a.working_ms ||
+            (a.label ?? "\uffff").localeCompare(b.label ?? "\uffff"),
+        ),
       },
     });
   }
@@ -818,6 +887,7 @@ export function buildTimeline(input: TimelineInput): Timeline {
         name: workspace.name,
         path: workspace.path,
         herdr_workspace_id: workspace.herdr_workspace_id,
+        subject: workspace.subject,
       })),
   };
 }

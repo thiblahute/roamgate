@@ -13,27 +13,46 @@ import {
   addDays,
   type AxisWindow,
   axisWindow,
+  colorFor,
   formatClock,
   formatDate,
   formatDuration,
+  type GroupBy,
   jumpTarget,
   place,
   REFRESH_MS,
   SOURCE_LABELS,
   STATE_LABELS,
+  type SubjectGroup,
+  storedGroupBy,
+  storeGroupBy,
+  subjectGroups,
   type Timeline,
   type TimelineDay,
   type TimelineReply,
   type TimelineWorkspace,
   workspaceColor,
+  type WorkspaceRow,
   workspaceRows,
 } from "../activityTimelineModel";
 import { store } from "../store";
 import { CloseButton } from "./CloseButton";
 import { focusDialogElement } from "./dialogFocus";
+import {
+  loadProjectMappings,
+  ProjectMappingEditor,
+  type ProjectMappings,
+} from "./ProjectMapping";
+import { allocationLabel, mappingFor } from "../timeReportApi";
 import "./ActivityTimeline.css";
 
 type Tip = { x: number; y: number; title: string; lines: string[] };
+
+/** The workspace (or its subject) whose project is being corrected. */
+type Editing = {
+  workspace: TimelineWorkspace;
+  scope: "workspace" | "subject";
+};
 
 type Load =
   | { state: "loading" }
@@ -59,7 +78,23 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [tip, setTip] = useState<Tip | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [groupBy, setGroupBy] = useState<GroupBy>(() =>
+    storedGroupBy(typeof localStorage === "undefined" ? null : localStorage),
+  );
+  const chooseGroupBy = (value: GroupBy) => {
+    setGroupBy(value);
+    storeGroupBy(
+      typeof localStorage === "undefined" ? null : localStorage,
+      value,
+    );
+  };
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [projects, setProjects] = useState<ProjectMappings | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const reloadProjects = useCallback(() => {
+    loadProjectMappings().then(setProjects, () => setProjects(null));
+  }, []);
+  useEffect(reloadProjects, [reloadProjects]);
   const request = useRef(0);
   const showsToday = date === null || date === today;
 
@@ -110,12 +145,13 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
       if (event.key !== "Escape" || event.isComposing) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (tip) setTip(null);
+      if (editing) setEditing(null);
+      else if (tip) setTip(null);
       else onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, tip]);
+  }, [onClose, tip, editing]);
 
   const shown = load.state === "ready" ? (load.timeline.days[0] ?? null) : null;
   const current = date ?? today;
@@ -202,6 +238,20 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
           >
             Today
           </button>
+          <fieldset className="activity-timeline-group" aria-label="Group by">
+            {(["workspace", "subject"] as const).map((value) => (
+              <label key={value}>
+                <input
+                  type="radio"
+                  name="activity-group-by"
+                  value={value}
+                  checked={groupBy === value}
+                  onChange={() => chooseGroupBy(value)}
+                />
+                <span>{value === "workspace" ? "Workspaces" : "Subjects"}</span>
+              </label>
+            ))}
+          </fieldset>
           {shown ? <DaySummary day={shown} /> : null}
         </div>
         <div className="activity-timeline-body">
@@ -223,9 +273,25 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
               now={now}
               showTip={showTip}
               onJump={jump}
+              groupBy={groupBy}
+              projects={projects}
+              onEditProject={setEditing}
             />
           ) : null}
         </div>
+        {editing && projects ? (
+          <ProjectMappingEditor
+            workspace={editing.workspace}
+            initialScope={editing.scope}
+            projects={projects}
+            current={mappingFor(projects.mappings, editing.workspace)}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              reloadProjects();
+            }}
+          />
+        ) : null}
         {tip ? (
           <div
             className="activity-timeline-tip"
@@ -336,12 +402,18 @@ function DayView({
   now,
   showTip,
   onJump,
+  groupBy,
+  projects,
+  onEditProject,
 }: {
   timeline: Timeline;
   day: TimelineDay;
   now: number;
   showTip: ShowTip;
   onJump: (workspace: TimelineWorkspace) => void;
+  groupBy: GroupBy;
+  projects: ProjectMappings | null;
+  onEditProject: (editing: Editing) => void;
 }) {
   const axis = axisWindow(day, now);
   const left = (ms: number) =>
@@ -350,7 +422,72 @@ function DayView({
   const name = (id: string | null) =>
     (id && names.get(id)?.name) || "Unknown workspace";
   const rows = workspaceRows(day, timeline.workspaces);
+  const groups =
+    groupBy === "subject" ? subjectGroups(day, timeline.workspaces) : null;
+  const color = (id: string) => colorFor(id, names.get(id), groupBy);
   const nowShown = now > axis.start && now < axis.end;
+  const renderRow = (row: WorkspaceRow) => (
+    <div className="activity-workspace" key={row.id}>
+      <Lane
+        label={
+          <>
+            <button
+              type="button"
+              className="activity-workspace-name"
+              disabled={!row.workspace}
+              title={
+                row.workspace
+                  ? `Go to ${row.name}${row.workspace.path ? ` (${row.workspace.path})` : ""}`
+                  : row.name
+              }
+              onClick={() => row.workspace && onJump(row.workspace)}
+            >
+              <span
+                className="activity-dot"
+                style={{ background: color(row.id) }}
+              />
+              <span>{row.name}</span>
+            </button>
+            {groupBy === "workspace" && row.workspace?.subject ? (
+              <span
+                className="activity-subject-chip"
+                title={subjectLine(row.workspace)[0]}
+              >
+                {row.workspace.subject.label}
+              </span>
+            ) : null}
+          </>
+        }
+        className="activity-workspace-head"
+      >
+        {grid}
+        {row.attention.map((segment) => (
+          <Band
+            key={`ws-${segment.start}`}
+            span={segment}
+            axis={axis}
+            now={now}
+            className={`is-attention is-thin${segment.source === "herdr" ? " is-herdr" : ""}`}
+            style={{ "--band": color(row.id) } as CSSProperties}
+            title={row.name}
+            lines={[spanLines(segment, now), SOURCE_LABELS[segment.source]]}
+            showTip={showTip}
+          />
+        ))}
+      </Lane>
+      {row.lanes.map((lane) => (
+        <AgentRow
+          key={`${lane.connection_id}-${lane.pane_id}-${lane.agent}`}
+          lane={lane}
+          workspaceName={row.name}
+          axis={axis}
+          now={now}
+          grid={grid}
+          showTip={showTip}
+        />
+      ))}
+    </div>
+  );
   const grid = (
     <div className="activity-grid" aria-hidden="true">
       {axis.ticks.map((tick) => (
@@ -434,74 +571,44 @@ function DayView({
               className={`is-attention${segment.source === "herdr" ? " is-herdr" : ""}`}
               style={
                 {
-                  "--band": workspaceColor(segment.workspace_id),
+                  "--band": color(segment.workspace_id),
                 } as CSSProperties
               }
               title={name(segment.workspace_id)}
-              lines={[spanLines(segment, now), SOURCE_LABELS[segment.source]]}
+              lines={[
+                spanLines(segment, now),
+                SOURCE_LABELS[segment.source],
+                ...subjectLine(names.get(segment.workspace_id)),
+              ]}
               showTip={showTip}
             />
           ))}
           {gaps}
         </Lane>
-        {rows.map((row) => (
-          <div className="activity-workspace" key={row.id}>
-            <Lane
-              label={
-                <button
-                  type="button"
-                  className="activity-workspace-name"
-                  disabled={!row.workspace}
-                  title={
-                    row.workspace
-                      ? `Go to ${row.name}${row.workspace.path ? ` (${row.workspace.path})` : ""}`
-                      : row.name
-                  }
-                  onClick={() => row.workspace && onJump(row.workspace)}
-                >
-                  <span
-                    className="activity-dot"
-                    style={{ background: workspaceColor(row.id) }}
-                  />
-                  <span>{row.name}</span>
-                </button>
-              }
-              className="activity-workspace-head"
-            >
-              {grid}
-              {row.attention.map((segment) => (
-                <Band
-                  key={`ws-${segment.start}`}
-                  span={segment}
-                  axis={axis}
-                  now={now}
-                  className={`is-attention is-thin${segment.source === "herdr" ? " is-herdr" : ""}`}
-                  style={{ "--band": workspaceColor(row.id) } as CSSProperties}
-                  title={row.name}
-                  lines={[
-                    spanLines(segment, now),
-                    SOURCE_LABELS[segment.source],
-                  ]}
-                  showTip={showTip}
-                />
-              ))}
-            </Lane>
-            {row.lanes.map((lane) => (
-              <AgentRow
-                key={`${lane.connection_id}-${lane.pane_id}-${lane.agent}`}
-                lane={lane}
-                workspaceName={row.name}
+        {groups
+          ? groups.map((group) => (
+              <SubjectSection
+                key={group.id ?? "none"}
+                group={group}
                 axis={axis}
                 now={now}
                 grid={grid}
                 showTip={showTip}
+                renderRow={renderRow}
               />
-            ))}
-          </div>
-        ))}
+            ))
+          : rows.map(renderRow)}
       </div>
       <Legend />
-      <TotalsTable day={day} rows={rows} onJump={onJump} />
+      <TotalsTable
+        day={day}
+        rows={rows}
+        groups={groups}
+        color={color}
+        onJump={onJump}
+        projects={projects}
+        onEditProject={onEditProject}
+      />
     </>
   );
 }
@@ -574,51 +681,135 @@ function Legend() {
 function TotalsTable({
   day,
   rows,
+  groups,
+  color,
   onJump,
+  projects,
+  onEditProject,
 }: {
   day: TimelineDay;
-  rows: ReturnType<typeof workspaceRows>;
+  rows: WorkspaceRow[];
+  groups: SubjectGroup[] | null;
+  color: (workspaceId: string) => string;
   onJump: (workspace: TimelineWorkspace) => void;
+  projects: ProjectMappings | null;
+  onEditProject: (editing: Editing) => void;
 }) {
   if (rows.length === 0)
     return <p className="activity-timeline-note">Nothing recorded that day.</p>;
   const cell = (ms: number | undefined) => (ms ? formatDuration(ms) : "-");
+  const totalsRow = (row: WorkspaceRow, nested: boolean) => (
+    <tr key={row.id} className={nested ? "is-nested" : undefined}>
+      <th scope="row">
+        <button
+          type="button"
+          className="activity-workspace-name"
+          disabled={!row.workspace}
+          onClick={() => row.workspace && onJump(row.workspace)}
+        >
+          <span
+            className="activity-dot"
+            style={{ background: color(row.id) }}
+          />
+          <span>{row.name}</span>
+        </button>
+        {projects && row.workspace ? (
+          <span className="activity-project-inline">
+            <ProjectButton
+              projects={projects}
+              workspace={row.workspace}
+              scope="workspace"
+              onEdit={onEditProject}
+            />
+          </span>
+        ) : null}
+      </th>
+      <td>{cell(row.totals?.attended_ms)}</td>
+      <td>{cell(row.totals?.herdr_ms)}</td>
+      <td>{cell(row.totals?.working_ms)}</td>
+      <td>{cell(row.totals?.blocked_ms)}</td>
+      {projects ? (
+        <td className="activity-project-cell">
+          {row.workspace ? (
+            <ProjectButton
+              projects={projects}
+              workspace={row.workspace}
+              scope="workspace"
+              onEdit={onEditProject}
+            />
+          ) : null}
+        </td>
+      ) : null}
+    </tr>
+  );
   return (
     <table className="activity-totals">
       <thead>
         <tr>
-          <th scope="col">Workspace</th>
+          <th scope="col">{groups ? "Subject" : "Workspace"}</th>
           <th scope="col">Attended</th>
           <th scope="col" title="Of the attended time, from Herdr's TUI">
             Herdr
           </th>
           <th scope="col">Working</th>
           <th scope="col">Blocked</th>
+          {projects ? (
+            <th scope="col" className="activity-project-cell">
+              Project
+            </th>
+          ) : null}
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row.id}>
-            <th scope="row">
-              <button
-                type="button"
-                className="activity-workspace-name"
-                disabled={!row.workspace}
-                onClick={() => row.workspace && onJump(row.workspace)}
+        {groups
+          ? groups.flatMap((group) => [
+              <tr
+                key={`s-${group.id ?? "none"}`}
+                className="activity-subject-total"
               >
-                <span
-                  className="activity-dot"
-                  style={{ background: workspaceColor(row.id) }}
-                />
-                <span>{row.name}</span>
-              </button>
-            </th>
-            <td>{cell(row.totals?.attended_ms)}</td>
-            <td>{cell(row.totals?.herdr_ms)}</td>
-            <td>{cell(row.totals?.working_ms)}</td>
-            <td>{cell(row.totals?.blocked_ms)}</td>
-          </tr>
-        ))}
+                <th scope="row">
+                  <span className="activity-workspace-name">
+                    <span
+                      className="activity-dot"
+                      style={{
+                        background: group.id
+                          ? workspaceColor(group.id)
+                          : "transparent",
+                      }}
+                    />
+                    <span>{group.label}</span>
+                  </span>
+                  {projects && group.subject && group.rows[0]?.workspace ? (
+                    <span className="activity-project-inline">
+                      <ProjectButton
+                        projects={projects}
+                        workspace={group.rows[0].workspace}
+                        scope="subject"
+                        onEdit={onEditProject}
+                      />
+                    </span>
+                  ) : null}
+                </th>
+                <td>{cell(group.totals.attended_ms)}</td>
+                <td>{cell(group.totals.herdr_ms)}</td>
+                <td>{cell(group.totals.working_ms)}</td>
+                <td>{cell(group.totals.blocked_ms)}</td>
+                {projects ? (
+                  <td className="activity-project-cell">
+                    {group.subject && group.rows[0]?.workspace ? (
+                      <ProjectButton
+                        projects={projects}
+                        workspace={group.rows[0].workspace}
+                        scope="subject"
+                        onEdit={onEditProject}
+                      />
+                    ) : null}
+                  </td>
+                ) : null}
+              </tr>,
+              ...group.rows.map((row) => totalsRow(row, true)),
+            ])
+          : rows.map((row) => totalsRow(row, false))}
       </tbody>
       <tfoot>
         <tr>
@@ -633,8 +824,128 @@ function TotalsTable({
             )}
           </td>
           <td colSpan={2} />
+          {projects ? <td className="activity-project-cell" /> : null}
         </tr>
       </tfoot>
     </table>
+  );
+}
+
+/** A tooltip line naming a workspace's subject. */
+function subjectLine(workspace: TimelineWorkspace | undefined): string[] {
+  const subject = workspace?.subject;
+  if (!subject) return [];
+  const chain = subject.groups.map((group) => group.label).join(" / ");
+  return [`Subject: ${chain || subject.label}`];
+}
+
+/** A subject's header lane (all its attention), then its workspaces. */
+function SubjectSection({
+  group,
+  axis,
+  now,
+  grid,
+  showTip,
+  renderRow,
+}: {
+  group: SubjectGroup;
+  axis: AxisWindow;
+  now: number;
+  grid: ReactNode;
+  showTip: ShowTip;
+  renderRow: (row: WorkspaceRow) => ReactNode;
+}) {
+  const chain = group.subject?.groups.map((entry) => entry.label) ?? [];
+  const title =
+    group.subject?.source === "explicit"
+      ? `Group ${chain.join(" / ")} of the Workspaces tree`
+      : group.subject
+        ? `Folder ${group.subject.path ?? chain.join("/")}`
+        : "Workspaces in no group nor subject folder";
+  return (
+    <section
+      className={`activity-subject${group.id ? "" : " is-none"}`}
+      aria-label={`Subject ${group.label}`}
+    >
+      <Lane
+        label={
+          <span className="activity-subject-name" title={title}>
+            {group.id ? (
+              <span
+                className="activity-dot"
+                style={{ background: workspaceColor(group.id) }}
+              />
+            ) : null}
+            <span>{group.label}</span>
+            <span className="activity-subject-total-time">
+              {formatDuration(group.totals.attended_ms)}
+            </span>
+          </span>
+        }
+        className="activity-subject-head"
+      >
+        {grid}
+        {group.id
+          ? group.attention.map((segment) => (
+              <Band
+                key={`subject-${segment.start}`}
+                span={segment}
+                axis={axis}
+                now={now}
+                className={`is-attention${segment.source === "herdr" ? " is-herdr" : ""}`}
+                style={{ "--band": workspaceColor(group.id!) } as CSSProperties}
+                title={group.label}
+                lines={[spanLines(segment, now), SOURCE_LABELS[segment.source]]}
+                showTip={showTip}
+              />
+            ))
+          : null}
+      </Lane>
+      {group.rows.map(renderRow)}
+    </section>
+  );
+}
+
+/** The project a workspace (or its subject) goes to; opens the correction. */
+function ProjectButton({
+  projects,
+  workspace,
+  scope,
+  onEdit,
+}: {
+  projects: ProjectMappings;
+  workspace: TimelineWorkspace;
+  scope: "workspace" | "subject";
+  onEdit: (editing: Editing) => void;
+}) {
+  const mapping =
+    scope === "subject"
+      ? (projects.mappings.find(
+          (entry) =>
+            entry.scope === "subject" &&
+            entry.subject_label === workspace.subject?.label,
+        ) ?? null)
+      : mappingFor(projects.mappings, workspace);
+  const inherited = scope === "workspace" && mapping?.scope === "subject";
+  const label = mapping
+    ? allocationLabel(mapping.allocations)
+    : scope === "subject"
+      ? "Set for subject"
+      : "Set";
+  return (
+    <button
+      type="button"
+      className={`activity-project${mapping ? "" : " is-unset"}${inherited ? " is-inherited" : ""}`}
+      title={
+        inherited
+          ? `From ${workspace.subject?.label}: ${label}. Click to correct.`
+          : mapping
+            ? `${label}. Click to correct.`
+            : "Tell where this time goes"
+      }
+      onClick={() => onEdit({ workspace, scope })}
+    >
+      {label}
+    </button>
   );
 }

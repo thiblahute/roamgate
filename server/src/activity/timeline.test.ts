@@ -449,3 +449,64 @@ test("a request's range is whole local days, today by default", () => {
     timelineRange({ from: "2025-01-01", to: "2026-11-01" }, at(9), "00:00"),
   ).toThrow();
 });
+
+test("totals per subject add up its workspaces; agents overlap once", () => {
+  const subject = {
+    id: "dir:~/devel/gstreamer/ocio",
+    label: "ocio",
+    source: "directory" as const,
+    path: "/src/ocio",
+    groups: [
+      { id: "dir:~/devel/gstreamer", label: "gstreamer" },
+      { id: "dir:~/devel/gstreamer/ocio", label: "ocio" },
+    ],
+  };
+  const timeline = buildTimeline(
+    input({
+      workspaces: [
+        { ...workspace("a"), subject },
+        { ...workspace("b"), subject },
+        workspace("c"),
+      ],
+      focus: [
+        focus(at(9), at(10), "a"),
+        focus(at(10), at(11), "b"),
+        focus(at(11), at(11, 30), "c"),
+      ],
+      agents: [
+        agent(at(9), "working", { workspace_id: "a", pane_id: "pa" }),
+        agent(at(10), "idle", { workspace_id: "a", pane_id: "pa" }),
+        agent(at(9, 30), "working", { workspace_id: "b", pane_id: "pb" }),
+        agent(at(10, 30), "idle", { workspace_id: "b", pane_id: "pb" }),
+      ],
+    }),
+  );
+  const [day] = timeline.days;
+  expect(day!.totals.subjects).toEqual([
+    {
+      subject_id: subject.id,
+      label: "ocio",
+      attended_ms: 120 * MIN,
+      browser_ms: 120 * MIN,
+      phone_ms: 0,
+      herdr_ms: 0,
+      working_ms: 90 * MIN,
+      blocked_ms: 0,
+      workspace_ids: ["a", "b"],
+    },
+    {
+      subject_id: null,
+      label: null,
+      attended_ms: 30 * MIN,
+      browser_ms: 30 * MIN,
+      phone_ms: 0,
+      herdr_ms: 0,
+      working_ms: 0,
+      blocked_ms: 0,
+      workspace_ids: ["c"],
+    },
+  ]);
+  expect(timeline.workspaces.find((w) => w.id === "a")?.subject).toEqual(
+    subject,
+  );
+});

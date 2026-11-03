@@ -15,6 +15,7 @@ import {
   parsePresence,
   stableWorkspaceId,
 } from "./recorder";
+import { subjectResolver, withSubjects } from "./subjects";
 
 /** A Herdr with two workspaces: w1 (a checkout) and w2 (a plain directory). */
 function fakeHerdr() {
@@ -66,9 +67,37 @@ function fakeHerdr() {
     calls: [] as string[],
     /** The agents conversation mode runs. */
     owned: [] as OwnedAgent[],
+    /** What git says per path, for runHostScript. */
+    repos: new Map<
+      string,
+      {
+        top: string;
+        common: string;
+        gitdir: string;
+        branch: string;
+        remote: string;
+      }
+    >(),
+    hostScripts: [] as string[],
   };
   return {
     state,
+    /** Answers repo-info.ts's script from `state.repos`. */
+    runHostScript: async (_connectionId: string, script: string) => {
+      state.hostScripts.push(script);
+      const marker = /printf '(\S+) begin 0/.exec(script)![1]!;
+      const paths = [...script.matchAll(/^p='([^']*)'$/gm)].map((m) => m[1]!);
+      const lines: string[] = [];
+      paths.forEach((path, index) => {
+        lines.push(`${marker} begin ${index}`);
+        const repo = state.repos.get(path);
+        if (repo)
+          for (const [key, value] of Object.entries(repo))
+            lines.push(`${key === "top" ? "top" : key} ${value}`);
+        lines.push(`${marker} end ${index}`);
+      });
+      return { code: 0, stdout: `${lines.join("\n")}\n` };
+    },
     call: async (connectionId: string, method: string) => {
       state.calls.push(`${connectionId} ${method}`);
       if (method === "workspace.list")
@@ -102,6 +131,8 @@ function activityHarness(settings: Partial<GuiActivitySettings> = {}): Harness {
       directory: () => join(directory, "roamgate"),
       herdrCall: herdr.call,
       ownedAgents: () => herdr.state.owned,
+      runHostScript: (connectionId, script) =>
+        herdr.runHostScript(connectionId, script),
     });
     recorders.push(recorder);
     return recorder;
@@ -908,6 +939,33 @@ test("stored events, workspaces and a page conform to activity.schema.json", asy
   ]);
   for (const workspace of workspaces)
     expect(validate(workspace, { $ref: "#/$defs/Workspace" })).toEqual([]);
+  // With subjects, both sources.
+  const subjectOf = subjectResolver({
+    roots: ["/src"],
+    explicit: (workspace) =>
+      workspace.name === "gst"
+        ? [
+            { id: "tree:g1", label: "upstream" },
+            { id: "tree:g2", label: "ocio" },
+          ]
+        : null,
+  });
+  const withSubject = withSubjects(workspaces, subjectOf);
+  expect(withSubject.map((w) => w.subject?.source).sort()).toEqual([
+    "directory",
+    "explicit",
+  ]);
+  for (const workspace of withSubject)
+    expect(validate(workspace, { $ref: "#/$defs/Workspace" })).toEqual([]);
+  expect(
+    validate(
+      {
+        ...withSubject[0],
+        subject: { id: "x", label: "x", source: "repo", groups: [] },
+      },
+      { $ref: "#/$defs/Workspace" },
+    ),
+  ).not.toEqual([]);
   expect(
     validate(
       { events: all, workspaces, next_cursor: null },
@@ -923,4 +981,82 @@ test("stored events, workspaces and a page conform to activity.schema.json", asy
   expect(
     validate({ ...all[0], reason: "bored" }, { $ref: "#/$defs/Event" }),
   ).not.toEqual([]);
+});
+
+test("branches and remotes are read from the host, now and then, and kept", async () => {
+  const { recorder, herdr } = harness();
+  herdr.state.repos.set("/src/roamgate", {
+    top: "/src/roamgate",
+    common: "/src/roamgate/.git",
+    gitdir: "/src/roamgate/.git",
+    branch: "main",
+    remote: "https://u:token@example.com/roamgate.git",
+  });
+  herdr.state.repos.set("/src/gst", {
+    top: "/src/gst",
+    common: "/src/gstreamer/.git",
+    gitdir: "/src/gstreamer/.git/worktrees/gst",
+    branch: "ocio",
+    remote: "git@example.com:gst/gstreamer.git",
+  });
+  await ready(recorder);
+  const byName = () =>
+    Object.fromEntries(
+      recorder
+        .store()!
+        .readWorkspaces()
+        .map((workspace) => [workspace.name, workspace.repo]),
+    );
+  expect(byName()).toEqual({
+    roamgate: {
+      root: "/src/roamgate",
+      remote_url: "https://example.com/roamgate.git",
+      branch: "main",
+      is_worktree: false,
+    },
+    gst: {
+      root: "/src/gstreamer",
+      remote_url: "git@example.com:gst/gstreamer.git",
+      branch: "ocio",
+      is_worktree: true,
+    },
+  });
+  expect(herdr.state.hostScripts).toHaveLength(1);
+  // Herdr listing again keeps what git said; the branch is not read again soon.
+  herdr.state.repos.get("/src/roamgate")!.branch = "next";
+  recorder.paneList("local", { panes: herdr.state.panes }, Date.now());
+  await recorder.flush();
+  expect(herdr.state.hostScripts).toHaveLength(1);
+  expect(byName().roamgate?.branch).toBe("main");
+  advance(10 * 60 * SECOND);
+  recorder.paneList("local", { panes: herdr.state.panes }, Date.now());
+  await recorder.flush();
+  expect(herdr.state.hostScripts).toHaveLength(2);
+  expect(byName().roamgate?.branch).toBe("next");
+  expect(byName().roamgate?.root).toBe("/src/roamgate");
+});
+
+test("a failing host read leaves the log as Herdr says", async () => {
+  const h = harness();
+  h.herdr.state.repos.set("/src/roamgate", {
+    top: "/src/roamgate",
+    common: "/src/roamgate/.git",
+    gitdir: "/src/roamgate/.git",
+    branch: "main",
+    remote: "x",
+  });
+  h.herdr.runHostScript = async () => {
+    throw new Error("ssh down");
+  };
+  await ready(h.recorder);
+  const roamgate = h.recorder
+    .store()!
+    .readWorkspaces()
+    .find((workspace) => workspace.name === "roamgate");
+  expect(roamgate?.repo).toEqual({
+    root: "/src/roamgate",
+    remote_url: null,
+    branch: null,
+    is_worktree: false,
+  });
 });

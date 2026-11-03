@@ -68,6 +68,28 @@ export type WorkspaceTotals = {
   blocked_ms: number;
 };
 
+/** A subject's workspaces together; `subject_id` null for those with none. */
+export type SubjectTotals = {
+  subject_id: string | null;
+  label: string | null;
+  attended_ms: number;
+  browser_ms: number;
+  phone_ms: number;
+  herdr_ms: number;
+  working_ms: number;
+  blocked_ms: number;
+  workspace_ids: string[];
+};
+
+/** The user's grouping of a workspace (docs/activity.md#subjects). */
+export type Subject = {
+  id: string;
+  label: string;
+  source: "explicit" | "directory";
+  path: string | null;
+  groups: { id: string; label: string }[];
+};
+
 export type TimelineDay = {
   date: string;
   start: string;
@@ -82,6 +104,8 @@ export type TimelineDay = {
     idle_ms: number;
     unrecorded_ms: number;
     workspaces: WorkspaceTotals[];
+    /** Absent from bridges older than subjects. */
+    subjects?: SubjectTotals[];
   };
 };
 
@@ -91,6 +115,7 @@ export type TimelineWorkspace = {
   name: string;
   path: string | null;
   herdr_workspace_id: string | null;
+  subject?: Subject | null;
 };
 
 export type Timeline = {
@@ -154,6 +179,44 @@ export function workspaceHue(id: string): number {
 
 export function workspaceColor(id: string): string {
   return `oklch(0.7 0.14 ${workspaceHue(id)})`;
+}
+
+/** How the timeline lists and colours workspaces. */
+export type GroupBy = "workspace" | "subject";
+
+const GROUP_BY_KEY = "roamgate.activity.groupBy";
+
+export function storedGroupBy(
+  storage: Pick<Storage, "getItem"> | null,
+): GroupBy {
+  try {
+    return storage?.getItem(GROUP_BY_KEY) === "subject"
+      ? "subject"
+      : "workspace";
+  } catch {
+    return "workspace";
+  }
+}
+
+export function storeGroupBy(
+  storage: Pick<Storage, "setItem"> | null,
+  value: GroupBy,
+) {
+  try {
+    storage?.setItem(GROUP_BY_KEY, value);
+  } catch {
+    // Private mode: the choice lasts the page.
+  }
+}
+
+/** A workspace's colour: its subject's when grouping by subject. */
+export function colorFor(
+  workspaceId: string,
+  workspace: TimelineWorkspace | null | undefined,
+  groupBy: GroupBy,
+): string {
+  const subject = groupBy === "subject" ? workspace?.subject : null;
+  return workspaceColor(subject ? subject.id : workspaceId);
 }
 
 export type AxisWindow = { start: number; end: number; ticks: number[] };
@@ -316,3 +379,80 @@ export const STATE_LABELS: Record<AgentState, string> = {
   idle: "Idle",
   unknown: "Unknown",
 };
+
+export type SubjectGroup = {
+  /** Null: the workspaces with no subject. */
+  id: string | null;
+  label: string;
+  subject: Subject | null;
+  totals: Omit<SubjectTotals, "subject_id" | "label" | "workspace_ids">;
+  attention: AttentionSegment[];
+  rows: WorkspaceRow[];
+};
+
+/**
+ * The day's workspace rows under their subjects, most attended first; the
+ * workspaces with no subject last.
+ */
+export function subjectGroups(
+  day: TimelineDay,
+  workspaces: TimelineWorkspace[],
+): SubjectGroup[] {
+  const rows = workspaceRows(day, workspaces);
+  const groups = new Map<string | null, SubjectGroup>();
+  const reported = new Map(
+    (day.totals.subjects ?? []).map((entry) => [entry.subject_id, entry]),
+  );
+  for (const row of rows) {
+    const subject = row.workspace?.subject ?? null;
+    const key = subject?.id ?? null;
+    let group = groups.get(key);
+    if (!group) {
+      const totals = reported.get(key);
+      group = {
+        id: key,
+        label: subject?.label ?? "No subject",
+        subject,
+        totals: {
+          attended_ms: totals?.attended_ms ?? 0,
+          browser_ms: totals?.browser_ms ?? 0,
+          phone_ms: totals?.phone_ms ?? 0,
+          herdr_ms: totals?.herdr_ms ?? 0,
+          working_ms: totals?.working_ms ?? 0,
+          blocked_ms: totals?.blocked_ms ?? 0,
+        },
+        attention: [],
+        rows: [],
+      };
+      // An older bridge: attention adds up, agents' overlap is unknown.
+      if (!totals)
+        for (const field of [
+          "attended_ms",
+          "browser_ms",
+          "phone_ms",
+          "herdr_ms",
+        ] as const)
+          group.totals[field] = 0;
+      groups.set(key, group);
+    }
+    group.rows.push(row);
+    group.attention.push(...row.attention);
+    if (!reported.has(key) && row.totals)
+      for (const field of [
+        "attended_ms",
+        "browser_ms",
+        "phone_ms",
+        "herdr_ms",
+      ] as const)
+        group.totals[field] += row.totals[field];
+  }
+  for (const group of groups.values())
+    group.attention.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  return [...groups.values()].sort(
+    (a, b) =>
+      Number(a.id === null) - Number(b.id === null) ||
+      b.totals.attended_ms - a.totals.attended_ms ||
+      b.totals.working_ms - a.totals.working_ms ||
+      a.label.localeCompare(b.label),
+  );
+}

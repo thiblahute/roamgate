@@ -1041,7 +1041,12 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   (green) and blocked (red) stretches. Hover or tap a band for the workspace,
   times, duration and source. Below, a table totals attended, working and
   blocked time per workspace; click a workspace to go to it. Step through days
-  with the arrows or **Today**; today refreshes every minute.
+  with the arrows or **Today**; today refreshes every minute. **Subjects**
+  gathers the workspaces under their [subjects](docs/activity.md#subjects)
+  (groups of the Workspaces tree, else folders under `activity.subject_roots`)
+  and colours them per subject. With a
+  [time-report provider](docs/time-report.md), the table's **Project** column
+  says where each workspace's (or subject's) time goes, split between several projects if need be; click it to correct.
   `roamgate activity` prints the same totals in a terminal
   ([command line](docs/activity.md#command-line)).
 - [Command-line tools](docs/DEPLOYMENT.md#command-line-management) such as
