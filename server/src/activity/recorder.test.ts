@@ -9,6 +9,7 @@ import {
 import type { ActivityEvent } from "./protocol";
 import {
   type ActivityRecorder,
+  type OwnedAgent,
   PRESENCE_TIMEOUT_MS,
   createActivityRecorder,
   parsePresence,
@@ -63,6 +64,8 @@ function fakeHerdr() {
       },
     ] as Array<Record<string, unknown>>,
     calls: [] as string[],
+    /** The agents conversation mode runs. */
+    owned: [] as OwnedAgent[],
   };
   return {
     state,
@@ -98,6 +101,7 @@ function activityHarness(settings: Partial<GuiActivitySettings> = {}): Harness {
       }),
       directory: () => join(directory, "roamgate"),
       herdrCall: herdr.call,
+      ownedAgents: () => herdr.state.owned,
     });
     recorders.push(recorder);
     return recorder;
@@ -312,6 +316,46 @@ test("pane listings catch missed changes but never undo a newer event", async ()
     ["idle", 1000],
     ["blocked", 3000],
     ["unknown", 4000],
+  ]);
+});
+
+test("an agent Roamgate runs itself is recorded as Roamgate knows it, not as Herdr says", async () => {
+  const { recorder, herdr } = harness();
+  await ready(recorder);
+  // Herdr's state for the pane froze at working: its Claude integration
+  // claimed the pane when the headless claude started, and drops
+  // conversation mode's reports since. Herdr sees no agent in w1:p2.
+  herdr.state.owned = [
+    { pane_id: "w1:p1", session_id: "s1", agent_status: "idle" },
+    { pane_id: "w1:p2", session_id: "s2", agent_status: "working" },
+  ];
+  recorder.paneList("local", { panes: herdr.state.panes }, at(0));
+  await recorder.flush();
+  advance(SECOND);
+  recorder.herdrEvent("local", statusEvent("w1:p1", "w1", "working"));
+  await recorder.flush();
+  advance(SECOND);
+  // A turn starts, then ends: conversation mode reports both.
+  herdr.state.owned[0]!.agent_status = "working";
+  recorder.ownedAgentChanged("local", "w1:p1");
+  await recorder.flush();
+  advance(60 * SECOND);
+  herdr.state.owned[0]!.agent_status = "idle";
+  recorder.ownedAgentChanged("local", "w1:p1");
+  await recorder.flush();
+  advance(SECOND);
+  // Herdr's frozen working in the next listing changes nothing.
+  recorder.paneList("local", { panes: herdr.state.panes }, at(63_000));
+  await recorder.flush();
+  expect(
+    events(recorder)
+      .filter((e) => e.kind === "agent.state")
+      .map((e) => [e.pane_id, e.agent?.state, e.agent?.session_id, ms(e) - T0]),
+  ).toEqual([
+    ["w1:p1", "idle", "s1", 0],
+    ["w1:p2", "working", "s2", 0],
+    ["w1:p1", "working", "s1", 2000],
+    ["w1:p1", "idle", "s1", 62000],
   ]);
 });
 

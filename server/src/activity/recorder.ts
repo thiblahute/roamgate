@@ -17,6 +17,8 @@ import { type ActivityStore, type NewEvent, openActivityStore } from "./store";
  *
  * - agent states from Herdr's per-pane status events, consecutive identical
  *   states once, with each `pane.list` reconcile catching missed changes;
+ *   for the agents Roamgate runs itself (`ownedAgents`), their state as
+ *   Roamgate knows it, never Herdr's;
  * - attention spans: a browser's presence reports (`activity.presence`)
  *   become `workspace.focus` / `workspace.blur` pairs, and Herdr's own TUI
  *   focus becomes low-confidence spans with `source: "herdr"`;
@@ -34,6 +36,8 @@ export type ActivityRecorder = {
   herdrEvent(connectionId: string, event: unknown): void;
   /** A `pane.list` result, and when that listing was started. */
   paneList(connectionId: string, result: unknown, startedAt: number): void;
+  /** An agent Roamgate runs itself (`ownedAgents`) changed state. */
+  ownedAgentChanged(connectionId: string, paneId: string): void;
   /** A browser's presence report; `socket` identifies the browser page. */
   presence(
     socket: object,
@@ -52,6 +56,16 @@ export type ActivityRecorder = {
 };
 
 export type PresenceReply = { recording: boolean; idle_seconds: number };
+
+/**
+ * An agent Roamgate runs in a Herdr pane itself (conversation mode's
+ * headless claude): Herdr's state for that pane does not follow it.
+ */
+export type OwnedAgent = {
+  pane_id: string;
+  session_id: string | null;
+  agent_status: string;
+};
 
 export type HerdrCall = (
   connectionId: string,
@@ -234,6 +248,8 @@ export function createActivityRecorder(options: {
   settings: () => Promise<GuiActivitySettings>;
   directory: () => string;
   herdrCall: HerdrCall;
+  /** The agents Roamgate runs itself on a connection, with their state. */
+  ownedAgents?: (connectionId: string) => readonly OwnedAgent[];
   now?: () => number;
   logger?: Logger;
 }): ActivityRecorder {
@@ -248,6 +264,16 @@ export function createActivityRecorder(options: {
   let retentionTimer: ReturnType<typeof setInterval> | null = null;
   const connections = new Map<string, Connection>();
   const clients = new Map<object, PresenceState>();
+
+  function ownedAgents(connectionId: string): Map<string, OwnedAgent> {
+    let owned: readonly OwnedAgent[] = [];
+    try {
+      owned = options.ownedAgents?.(connectionId) ?? [];
+    } catch (error) {
+      logger.debug("activity owned agents unavailable", { error });
+    }
+    return new Map(owned.map((agent) => [agent.pane_id, agent]));
+  }
 
   function unref(timer: unknown) {
     (timer as { unref?: () => void } | null)?.unref?.();
@@ -613,6 +639,14 @@ export function createActivityRecorder(options: {
     if (!name || !data) return;
     const paneId = text(data.pane_id);
     const workspaceId = text(data.workspace_id);
+    // Herdr's view of an agent Roamgate runs itself does not follow it.
+    if (
+      paneId &&
+      (name === "pane.agent.status.changed" ||
+        name === "pane.agent.detected") &&
+      ownedAgents(conn.id).has(paneId)
+    )
+      return;
     switch (name) {
       case "pane.agent.status.changed": {
         if (!paneId || !workspaceId) return;
@@ -686,8 +720,15 @@ export function createActivityRecorder(options: {
     if (!conn.ready) return;
     const listed = listedPanes(result);
     if (!Array.isArray(record(result)?.panes)) return;
+    const owned = ownedAgents(conn.id);
     const live = new Set<string>();
-    for (const [paneId, info, status] of listed) {
+    for (const [paneId, listedInfo, listedStatus] of listed) {
+      const mine = owned.get(paneId);
+      // Herdr sees only the holder in a pane Roamgate runs claude in.
+      const info: PaneInfo = mine
+        ? { ...listedInfo, agent: "claude", sessionId: mine.session_id }
+        : listedInfo;
+      const status = mine ? mine.agent_status : listedStatus;
       conn.panes.set(paneId, info);
       live.add(paneId);
       const previous = conn.agents.get(paneId);
@@ -711,6 +752,29 @@ export function createActivityRecorder(options: {
         await agentGone(conn, ts, paneId);
     for (const paneId of [...conn.panes.keys()])
       if (!live.has(paneId)) conn.panes.delete(paneId);
+  }
+
+  /** An agent Roamgate runs itself, as Roamgate knows it now. */
+  async function handleOwnedAgent(
+    conn: Connection,
+    ts: number,
+    paneId: string,
+  ) {
+    if (!conn.ready) return;
+    const mine = ownedAgents(conn.id).get(paneId);
+    const pane = conn.panes.get(paneId);
+    const workspaceId =
+      pane?.workspaceId ?? conn.agents.get(paneId)?.workspaceId;
+    // Not known yet: the next listing records it.
+    if (!mine || !workspaceId) return;
+    await agentChanged(conn, ts, paneId, {
+      workspaceId,
+      tabId: pane?.tabId ?? conn.agents.get(paneId)?.tabId ?? null,
+      name: "claude",
+      status: mine.agent_status,
+      sessionId: mine.session_id,
+      title: pane?.title ?? null,
+    });
   }
 
   // --- Connections ------------------------------------------------------
@@ -936,6 +1000,11 @@ export function createActivityRecorder(options: {
       enqueue(() =>
         handlePaneList(connection(connectionId), ts, result, startedAt),
       );
+    },
+    ownedAgentChanged(connectionId, paneId) {
+      if (stopped) return;
+      const ts = now();
+      enqueue(() => handleOwnedAgent(connection(connectionId), ts, paneId));
     },
     async presence(socket, connectionId, params) {
       const presence = parsePresence(params);

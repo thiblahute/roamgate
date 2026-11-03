@@ -24,6 +24,7 @@ import {
 } from "../agent/history-watch";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import {
+  type ConversationHerdr,
   conversationCloseEvent,
   createConversationHerdr,
   localPidAlive,
@@ -107,6 +108,42 @@ import { createEventSubscriptionLoop } from "./subscription-loop";
 import { type ConnectionIdentity, LEGACY_DEFAULT_CONNECTION } from "./types";
 import { unixOnlyHandlers } from "./unix-only";
 
+/**
+ * Conversation mode's Herdr adapter, telling `onReport` of every state it
+ * reports. Herdr may keep its own (Herdr's Claude integration claims the
+ * pane when the headless claude starts, and drops later reports from other
+ * sources), so this is where the activity log learns the state.
+ */
+function withStatusReports(
+  herdr: ConversationHerdr,
+  onReport: (paneId: string) => void,
+): ConversationHerdr {
+  const told = (paneId: string) => {
+    try {
+      onReport(paneId);
+    } catch {
+      // An observer must not break the report.
+    }
+  };
+  return {
+    ...herdr,
+    async reportAgent(params) {
+      try {
+        await herdr.reportAgent(params);
+      } finally {
+        told(params.paneId);
+      }
+    },
+    async releaseAgent(paneId) {
+      try {
+        await herdr.releaseAgent(paneId);
+      } finally {
+        told(paneId);
+      }
+    },
+  };
+}
+
 const DEFAULT_EVENTS = [
   "workspace.created",
   "workspace.updated",
@@ -155,6 +192,11 @@ export function createLegacyConnectionRuntime(args: {
   onEvent: (event: unknown, identity: ConnectionIdentity) => void;
   /** Each agent pane listing, with the time it was started (activity log). */
   onPaneList?: (result: unknown, startedAt: number) => void;
+  /**
+   * Conversation mode told Herdr a state for an agent it runs (activity
+   * log): Herdr may not apply it, so its own events do not tell.
+   */
+  onOwnedAgentStatus?: (paneId: string) => void;
   onTaskEvent?: (event: TaskEvent) => void;
   /** Defaults to `status`; the server entrypoint selects `herdr` by default. */
   taskNotificationSource?: TaskNotificationSource;
@@ -260,44 +302,47 @@ export function createLegacyConnectionRuntime(args: {
   };
   conversation = createConversationService<ServerWebSocket<unknown>>({
     connectionId: identity.id,
-    herdr: createConversationHerdr({
-      call: (method, params, timeoutMs) =>
-        herdr.call(method, params, timeoutMs),
-      pidAlive: config.sshHost
-        ? async (pid) => {
-            const result = await runProcessWithCodeTimeout(
-              sshReadCommandArgv(
-                config.sshHost!,
-                `ps -p ${Math.trunc(pid)} >/dev/null`,
-                [],
-                "agent_chat.pid",
-              ),
-              10_000,
-            );
-            // Unsure (no answer from the host) counts as alive.
-            return result.code !== 1;
-          }
-        : localPidAlive,
-      // Unsure (no answer from the host) throws: nothing starts or resumes.
-      listProcesses: async () => {
-        const result = await runProcessWithCodeTimeout(
-          config.sshHost
-            ? sshReadCommandArgv(
-                config.sshHost,
-                "ps -eo pid=,args=",
-                [],
-                "agent_chat.ps",
-              )
-            : ["ps", "-eo", "pid=,args="],
-          10_000,
-        );
-        if (result.code !== 0)
-          throw new Error(
-            `Could not list the host's processes (ps exited ${result.code})`,
+    herdr: withStatusReports(
+      createConversationHerdr({
+        call: (method, params, timeoutMs) =>
+          herdr.call(method, params, timeoutMs),
+        pidAlive: config.sshHost
+          ? async (pid) => {
+              const result = await runProcessWithCodeTimeout(
+                sshReadCommandArgv(
+                  config.sshHost!,
+                  `ps -p ${Math.trunc(pid)} >/dev/null`,
+                  [],
+                  "agent_chat.pid",
+                ),
+                10_000,
+              );
+              // Unsure (no answer from the host) counts as alive.
+              return result.code !== 1;
+            }
+          : localPidAlive,
+        // Unsure (no answer from the host) throws: nothing starts or resumes.
+        listProcesses: async () => {
+          const result = await runProcessWithCodeTimeout(
+            config.sshHost
+              ? sshReadCommandArgv(
+                  config.sshHost,
+                  "ps -eo pid=,args=",
+                  [],
+                  "agent_chat.ps",
+                )
+              : ["ps", "-eo", "pid=,args="],
+            10_000,
           );
-        return result.stdout;
-      },
-    }),
+          if (result.code !== 0)
+            throw new Error(
+              `Could not list the host's processes (ps exited ${result.code})`,
+            );
+          return result.stdout;
+        },
+      }),
+      (paneId) => args.onOwnedAgentStatus?.(paneId),
+    ),
     leases: createLeaseStore({
       connectionId: identity.id,
       file: args.conversationLeaseFile ?? null,
