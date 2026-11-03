@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
+  Clock,
   ChevronDown,
   ChevronRight,
   Download,
@@ -22,7 +23,7 @@ import {
   Wifi,
 } from "lucide-react";
 import packageJson from "../../package.json";
-import { openActivityTimeline } from "../activityTimelineOpen";
+import { openActivityTimeline, openHours } from "../activityTimelineOpen";
 import { logoutBrowserSession } from "../api";
 import { connectionHttpPath } from "../connectionHttp";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -247,6 +248,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     openActivityTimeline();
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<Clock size={15} />}
+                  label="Hours"
+                  description="Time to report, from the activity log"
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openHours();
                   }}
                 />
                 {layout.mobile ? null : (

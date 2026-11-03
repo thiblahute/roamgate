@@ -43,10 +43,13 @@ import {
   ProjectMappingEditor,
   type ProjectMappings,
 } from "./ProjectMapping";
-import { allocationLabel, mappingFor } from "../timeReportApi";
+import { allocationLabel, mappingFor, timeReport } from "../timeReportApi";
+import { HoursView } from "./HoursView";
 import "./ActivityTimeline.css";
 
 type Tip = { x: number; y: number; title: string; lines: string[] };
+
+export type TimelineView = "timeline" | "hours";
 
 /** The workspace (or its subject) whose project is being corrected. */
 type Editing = {
@@ -71,7 +74,25 @@ function spanLines(
 }
 
 /** The day's attention, idle time, agent states and totals, per workspace. */
-export function ActivityTimeline({ onClose }: { onClose: () => void }) {
+export function ActivityTimeline({
+  onClose,
+  initialView = "timeline",
+}: {
+  onClose: () => void;
+  /** "hours" opens the Hours view, when a provider is configured. */
+  initialView?: TimelineView;
+}) {
+  const [view, setView] = useState<TimelineView>(initialView);
+  const [hoursAvailable, setHoursAvailable] = useState(false);
+  useEffect(() => {
+    timeReport<{ ok: boolean }>("health").then(
+      (health) => setHoursAvailable(health.ok),
+      () => {
+        setHoursAvailable(false);
+        setView("timeline");
+      },
+    );
+  }, []);
   // null: today, as the bridge's day start defines it.
   const [date, setDate] = useState<string | null>(null);
   const [today, setToday] = useState<string | null>(null);
@@ -145,6 +166,8 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
       if (event.key !== "Escape" || event.isComposing) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      // The submit dialog closes with its own buttons only.
+      if (document.querySelector(".hours-submit-backdrop")) return;
       if (editing) setEditing(null);
       else if (tip) setTip(null);
       else onClose();
@@ -238,21 +261,36 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
           >
             Today
           </button>
-          <fieldset className="activity-timeline-group" aria-label="Group by">
+          <fieldset className="activity-timeline-group" aria-label="View">
             {(["workspace", "subject"] as const).map((value) => (
               <label key={value}>
                 <input
                   type="radio"
                   name="activity-group-by"
                   value={value}
-                  checked={groupBy === value}
-                  onChange={() => chooseGroupBy(value)}
+                  checked={view === "timeline" && groupBy === value}
+                  onChange={() => {
+                    setView("timeline");
+                    chooseGroupBy(value);
+                  }}
                 />
                 <span>{value === "workspace" ? "Workspaces" : "Subjects"}</span>
               </label>
             ))}
+            {hoursAvailable ? (
+              <label>
+                <input
+                  type="radio"
+                  name="activity-group-by"
+                  value="hours"
+                  checked={view === "hours"}
+                  onChange={() => setView("hours")}
+                />
+                <span>Hours</span>
+              </label>
+            ) : null}
           </fieldset>
-          {shown ? <DaySummary day={shown} /> : null}
+          {shown && view === "timeline" ? <DaySummary day={shown} /> : null}
         </div>
         <div className="activity-timeline-body">
           {load.state === "loading" ? (
@@ -266,6 +304,20 @@ export function ActivityTimeline({ onClose }: { onClose: () => void }) {
               Activity recording is off. Set <code>activity.enabled</code> in
               settings.json and restart Roamgate to record.
             </p>
+          ) : view === "hours" && hoursAvailable && current ? (
+            <HoursView
+              date={current}
+              onDate={(next) => {
+                setTip(null);
+                setDate(today && next >= today ? null : next);
+              }}
+              workspaces={load.timeline.workspaces}
+              onEditMapping={
+                projects
+                  ? (workspace) => setEditing({ workspace, scope: "subject" })
+                  : undefined
+              }
+            />
           ) : shown ? (
             <DayView
               timeline={load.timeline}

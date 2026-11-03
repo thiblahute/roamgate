@@ -1,0 +1,814 @@
+/* The Hours view (HoursView.tsx), inside the activity timeline's dialog. */
+
+.hours {
+  --hours-yellow-soft: color-mix(in srgb, var(--yellow) 15%, transparent);
+  --hours-green-soft: color-mix(in srgb, var(--green) 14%, transparent);
+  --hours-red-soft: color-mix(in srgb, var(--red) 14%, transparent);
+  --hours-accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 18px;
+  font-size: 13px;
+}
+
+.hours-muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.hours-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.hours-error {
+  margin: 8px 0 0;
+  color: var(--red);
+}
+
+.hours-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hours-chip.is-green {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: var(--hours-green-soft);
+  color: var(--green);
+}
+
+.hours-chip.is-blue {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--hours-accent-soft);
+  color: var(--accent);
+}
+
+.hours-chip.is-yellow {
+  border-color: color-mix(in srgb, var(--yellow) 50%, transparent);
+  background: var(--hours-yellow-soft);
+  color: var(--yellow);
+}
+
+.hours-chip.is-red {
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  background: var(--hours-red-soft);
+  color: var(--red);
+}
+
+.hours-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hours-btn.is-small {
+  min-height: 26px;
+  padding: 0 8px;
+}
+
+.hours-btn.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.hours-btn.is-danger {
+  color: var(--red);
+}
+
+.hours-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.hours-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hours-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.is-spinning {
+  animation: hours-spin 1s linear infinite;
+}
+
+@keyframes hours-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Days --------------------------------------------------------------- */
+
+.hours-days {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hours-daybtn {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 6px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hours-daybtn.is-on {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.hours-daybtn b {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.hours-daytime {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.hours-daybtn .hours-chip {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* --- Summary and strip -------------------------------------------------- */
+
+.hours-day {
+  min-width: 0;
+}
+
+.hours-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.hours-tracked {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hours-meter {
+  position: relative;
+  width: 240px;
+  max-width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--panel-2);
+}
+
+.hours-meter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background: var(--green);
+}
+
+.hours-meter i.is-question {
+  background: var(--yellow);
+}
+
+.hours-refresh {
+  margin-left: auto;
+}
+
+.hours-strip {
+  margin-top: 10px;
+  padding-left: 60px;
+}
+
+.hours-axis {
+  position: relative;
+  height: 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hours-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.hours-lane {
+  position: relative;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+
+.hours-lane.is-blocks {
+  height: 28px;
+}
+
+.hours-lane-label {
+  position: absolute;
+  top: 1px;
+  left: -60px;
+  width: 54px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.hours-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  opacity: 0.75;
+}
+
+.hours-seg.is-agent {
+  top: 60%;
+  opacity: 0.5;
+}
+
+.hours-seg.is-gap {
+  border: 1px dashed var(--yellow);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--yellow) 35%, transparent) 4px 6px
+  );
+  opacity: 1;
+}
+
+.hours-blk {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: #0d1020;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hours-blk.is-needs_input {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--yellow) 0 6px,
+    color-mix(in srgb, var(--yellow) 75%, black) 6px 12px
+  );
+}
+
+.hours-blk.is-skipped {
+  opacity: 0.35;
+}
+
+/* --- Sections ------------------------------------------------------------ */
+
+.hours-section {
+  margin-top: 16px;
+}
+
+.hours-section h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.hours-push {
+  margin-left: auto;
+}
+
+.hours-question {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--yellow) 5%, var(--panel));
+}
+
+.hours-question-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  color: var(--text-strong);
+}
+
+.hours-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hours-option {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hours-option.is-suggested {
+  border-color: var(--accent);
+  background: var(--hours-accent-soft);
+  color: var(--text-strong);
+}
+
+.hours-option.is-skip {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.hours-option:disabled {
+  opacity: 0.5;
+}
+
+.hours-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hours-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hours-evidence .is-note {
+  font-style: italic;
+}
+
+.hours-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hours-block {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 10px 12px 10px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.hours-block.is-accepted {
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+}
+
+.hours-block.is-submitted,
+.hours-block.is-skipped {
+  opacity: 0.7;
+}
+
+.hours-block-bar {
+  border-radius: 0 4px 4px 0;
+}
+
+.hours-block-main {
+  min-width: 0;
+}
+
+.hours-block-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.hours-time {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.hours-block-target {
+  margin-top: 3px;
+}
+
+.hours-block-target strong {
+  color: var(--text-strong);
+}
+
+.hours-block-desc {
+  margin-top: 2px;
+}
+
+.hours-confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hours-confidence i {
+  position: relative;
+  width: 40px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.hours-confidence b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--green);
+}
+
+.hours-splitnote {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: var(--hours-accent-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hours-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 280px;
+}
+
+.hours-form {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 96px 96px;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.hours-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hours-field select,
+.hours-field input {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+
+.hours-field.is-wide,
+.hours-form-actions {
+  grid-column: 1 / -1;
+}
+
+.hours-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hours-form-actions .hours-muted {
+  margin-right: auto;
+  font-size: 11px;
+}
+
+.hours-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.hours-explain {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.hours-explain h4 {
+  margin: 0 0 4px;
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.hours-explain p {
+  margin: 0 0 4px;
+}
+
+.hours-explain ul {
+  margin: 4px 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.hours-gaps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hours-gap {
+  padding: 8px 12px;
+  border: 1px dashed color-mix(in srgb, var(--yellow) 50%, transparent);
+  border-radius: 10px;
+}
+
+.hours-gap-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.hours-gap-hint {
+  flex: 1;
+  min-width: 140px;
+  color: var(--muted);
+}
+
+.hours-submitbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* --- Preview and confirmation -------------------------------------------- */
+
+.hours-submit-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--modal-backdrop);
+}
+
+.hours-submit {
+  width: min(640px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-modal);
+}
+
+.hours-submit h3 {
+  margin: 0 0 4px;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.hours-submit p {
+  margin: 4px 0;
+}
+
+.hours-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hours-changes li {
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.hours-warn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--hours-yellow-soft);
+  color: var(--yellow);
+  font-size: 12px;
+}
+
+.hours-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--hours-accent-soft);
+  color: var(--text-strong);
+}
+
+.hours-confirm .hours-remember {
+  color: var(--text-strong);
+}
+
+.hours-submit-actions {
+  position: sticky;
+  bottom: -18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 0 0;
+  background: var(--panel);
+}
+
+/* --- Phone ---------------------------------------------------------------- */
+
+:where(html[data-layout="mobile"]) .hours {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+:where(html[data-layout="mobile"]) .hours-days {
+  flex-direction: row;
+  overflow-x: auto;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+:where(html[data-layout="mobile"]) .hours-daybtn {
+  min-width: 96px;
+  grid-template-columns: 1fr;
+  border-color: var(--border-soft);
+  background: var(--panel-2);
+}
+
+:where(html[data-layout="mobile"]) .hours-daybtn.is-on {
+  border-color: var(--accent);
+}
+
+:where(html[data-layout="mobile"]) .hours-daytime {
+  text-align: left;
+}
+
+:where(html[data-layout="mobile"]) .hours-strip {
+  padding-left: 0;
+}
+
+:where(html[data-layout="mobile"]) .hours-lane-label,
+:where(html[data-layout="mobile"]) .hours-blk {
+  font-size: 0;
+}
+
+:where(html[data-layout="mobile"]) .hours-lane-label {
+  display: none;
+}
+
+:where(html[data-layout="mobile"]) .hours-block {
+  grid-template-columns: 5px minmax(0, 1fr);
+}
+
+:where(html[data-layout="mobile"]) .hours-block-actions {
+  grid-column: 2;
+  justify-content: flex-start;
+  max-width: none;
+  margin-top: 8px;
+}
+
+:where(html[data-layout="mobile"]) .hours-btn {
+  min-height: 36px;
+}
+
+:where(html[data-layout="mobile"]) .hours-form {
+  grid-template-columns: 1fr 1fr;
+}
+
+:where(html[data-layout="mobile"]) .hours-form .hours-field:first-child,
+:where(html[data-layout="mobile"]) .hours-form .hours-field:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+:where(html[data-layout="mobile"]) .hours-refresh {
+  margin-left: 0;
+}
+
+:where(html[data-layout="mobile"]) .hours-submitbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 0;
+  background: var(--panel);
+}
+
+:where(html[data-layout="mobile"]) .hours-submit-backdrop {
+  padding: 0;
+}
+
+:where(html[data-layout="mobile"]) .hours-submit {
+  width: 100%;
+  max-height: 100dvh;
+  height: 100dvh;
+  border-radius: 0;
+}
+
+.hours-days {
+  position: sticky;
+  top: 0;
+  align-self: start;
+}
+
+.hours-daybtn .hours-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:where(html[data-layout="mobile"]) .hours-days {
+  position: static;
+}
+
+:where(html[data-layout="mobile"]) .hours-submitbar {
+  box-shadow: 0 -8px 12px -8px rgb(0 0 0 / 0.4);
+}
+
+.hours-strip {
+  overflow: hidden;
+}
+
+.hours-day,
+.hours-section {
+  overflow-wrap: anywhere;
+}

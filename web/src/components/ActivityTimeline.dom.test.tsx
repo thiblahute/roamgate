@@ -244,6 +244,8 @@ if (process.env.ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST !== "1") {
       [...container.querySelectorAll(".activity-subject-chip")].map(text),
     ).toEqual(["ocio", "ocio"]);
     expect(container.querySelector(".activity-subject")).toBeNull();
+    // A provider answers health: the Hours view is offered.
+    expect(container.querySelector('input[value="hours"]')).not.toBeNull();
     const subjects = container.querySelector<HTMLInputElement>(
       'input[name="activity-group-by"][value="subject"]',
     );
@@ -334,6 +336,7 @@ if (process.env.ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST !== "1") {
     provider = false;
     const { container, unmount } = await mount();
     expect(container.querySelector(".activity-project")).toBeNull();
+    expect(container.querySelector('input[value="hours"]')).toBeNull();
     expect(
       text(container.querySelector(".activity-totals thead")),
     ).not.toContain("Project");
