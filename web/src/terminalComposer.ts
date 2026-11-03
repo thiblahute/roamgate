@@ -204,8 +204,33 @@ export function terminalComposerDraftKey(
   ]);
 }
 
+/**
+ * A box that belongs to no connection (Ranger's chat) keeps its draft under
+ * its own key, so a reload (a newer build) gives it back too.
+ */
+function adoptFreeDraft(key: string): void {
+  if (
+    key.startsWith("[") ||
+    draftStorageKeys.has(key) ||
+    retiredDraftKeys.has(key)
+  )
+    return;
+  const storageKey =
+    DRAFT_STORAGE_PREFIX + JSON.stringify([draftLogoutEpoch, "free", key]);
+  draftStorageKeys.set(key, storageKey);
+  const text = restoreDraft(storageKey);
+  if (text && !drafts.has(key)) drafts.set(key, text);
+}
+
+/** Whether `key`'s draft is kept in the browser, and outlives a reload. */
+export function terminalComposerDraftSaved(key: string): boolean {
+  adoptFreeDraft(key);
+  return draftStorageKeys.has(key);
+}
+
 export function readTerminalComposerDraft(key: string): string {
   synchronizeDraftLogout();
+  adoptFreeDraft(key);
   return drafts.get(key) ?? "";
 }
 
@@ -254,6 +279,7 @@ export function appendToPaneComposerDraft(
 
 export function writeTerminalComposerDraft(key: string, text: string): void {
   if (!terminalComposerDraftKeyIsActive(key)) return;
+  adoptFreeDraft(key);
   if (!text) {
     clearTerminalComposerDraft(key);
     return;
@@ -267,6 +293,7 @@ export function writeTerminalComposerDraft(key: string, text: string): void {
 
 export function clearTerminalComposerDraft(key: string): void {
   synchronizeDraftLogout();
+  adoptFreeDraft(key);
   const storageKey = draftStorageKeys.get(key);
   if (storageKey) saveDraft(storageKey, "");
   recoveredUploadKeys.delete(key);

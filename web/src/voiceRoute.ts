@@ -46,6 +46,23 @@ export type VoiceRoute = (
 };
 
 /**
+ * The routes this page knows, sent with each question: the server gives a
+ * page of an older build only routes it knows.
+ */
+export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
+  "current",
+  "nobody",
+  "open",
+  "send",
+  "ranger",
+  "errand",
+  "ask",
+  "self",
+  "read",
+  "mode",
+];
+
+/**
  * Ranger's chat as voice chat knows it: the session on screen for the
  * router (where a question for Ranger is for the one on screen), and the
  * voice chat's key, which does not follow the user to a workspace's agent.
@@ -71,7 +88,9 @@ export function voiceSessionId(connectionId: string, paneId: string) {
 }
 
 /** `<connection>/<pane>` back into its parts. */
-export function parseVoiceSessionId(id: string) {
+export function parseVoiceSessionId(id: string | undefined) {
+  // A route from a newer server may carry no session.
+  if (typeof id !== "string") return null;
   const slash = id.indexOf("/");
   return slash < 0
     ? null
@@ -147,6 +166,7 @@ export async function routeSpeech(
         said,
         current,
         sessions,
+        routes: KNOWN_ROUTES,
         ...(context ? { context } : {}),
         ...(how === "typed"
           ? { typed: true }
@@ -156,7 +176,8 @@ export async function routeSpeech(
       }),
     });
     if (!response.ok) return { to: "current" };
-    return (await response.json()) as VoiceRoute;
+    const route = (await response.json()) as VoiceRoute;
+    return KNOWN_ROUTES.includes(route?.to) ? route : { to: "current" };
   } catch {
     return { to: "current" };
   }

@@ -61,6 +61,9 @@ const MAX_ANSWER_CHARS = 12000;
  * place, from `context` too (Ranger tasks, merge requests, what happened),
  * and the route carries `reply`: what to say aloud at once; "self" is
  * answered by `reply` alone. GET /api/voice reports `front`.
+ * The page lists the routes it knows (`routes`): one it does not (a page
+ * from an older build, not reloaded yet) gets the nearest older one
+ * instead (legacyRoute).
  * POST /api/voice/forward: `{pane, words}` in, `{job}` out: the voice
  * companion's call gives the words, as said, to that session, and follows
  * its answer as an errand's (GET /api/voice/errand?job=).
@@ -84,6 +87,31 @@ const MAX_ANSWER_CHARS = 12000;
  * off (choosing a voice turns it off); PATCH /api/voice/voices/<id>
  * `{name}` renames one, DELETE forgets it.
  */
+/** The routes every page knows, from before the front. */
+const LEGACY_ROUTES = new Set([
+  "current",
+  "nobody",
+  "open",
+  "send",
+  "ranger",
+  "errand",
+  "ask",
+]);
+
+/**
+ * `route` as a page that knows `routes` can take it. A page of an older
+ * build does not list them, and takes a route it does not know for one to a
+ * session (it crashed reading the pane of "self"): a remark to the voice
+ * itself is held there, anything else goes to the agent on screen.
+ */
+export function legacyRoute(route: FrontReply, routes: unknown): FrontReply {
+  const known = Array.isArray(routes)
+    ? new Set(routes.filter((each) => typeof each === "string"))
+    : LEGACY_ROUTES;
+  if (known.has(route.to)) return route;
+  return route.to === "self" ? { to: "nobody" } : { to: "current" };
+}
+
 export function createVoiceRoutes(
   helper: VoiceHelper,
   router: () => VoiceRouter | null = () => null,
@@ -285,6 +313,7 @@ export function createVoiceRoutes(
         context?: unknown;
         interrupted_at?: unknown;
         typed?: unknown;
+        routes?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
       // The sentence being read when the user cut in, for the voice note.
@@ -335,7 +364,7 @@ export function createVoiceRoutes(
         console.error(
           `[voice] routed in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(route)} <- ${said.slice(0, 200)}`,
         );
-      return Response.json(route);
+      return Response.json(legacyRoute(route, body?.routes));
     }
     if (pathname === "/api/voice/trace" && req.method === "POST") {
       if (req.headers.get(VOICE_REQUEST_HEADER) !== "1" || !debug)

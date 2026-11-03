@@ -1078,9 +1078,14 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   highlights are grey too.
 - Run as a [user service](docs/DEPLOYMENT.md#run-as-a-user-service) with
   checksum-verified updates, and probe `/health` or `/healthz`.
-- An open page reloads itself when the server it reconnects to, or comes back
-  to, serves another frontend build. It waits for editable fields to be cleared,
-  dialogs to close, and pending uploads and message submissions to finish.
+- An open page reloads itself when the server serves another frontend build:
+  checked when it reconnects or comes back to the foreground, every five
+  minutes, and when voice chat fails. Message box drafts (attached images
+  included) come back after it. It waits for uploads and submissions to finish,
+  a pause in typing, and a pause in a voice call (the call goes on); an open
+  dialog closes with it once the page has been left alone two minutes, and
+  text typed elsewhere holds it until cleared. While it waits, a notice says
+  why and offers to reload now.
 - An opt-in [activity log](docs/activity.md) records which workspace had your
   attention on each device, agent states, idle time and recording gaps, never
   terminal contents. Turn it on in

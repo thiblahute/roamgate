@@ -50,6 +50,7 @@ import {
   terminalComposerUploadCount,
   writeTerminalComposerDraft,
   writeTerminalComposerSelection,
+  terminalComposerDraftSaved,
 } from "../terminalComposer";
 import { terminalUploadedPathsText } from "../terminalFileDrop";
 import {
@@ -610,6 +611,8 @@ export function AgentHistoryComposer({
   return (
     <div
       className={`agent-history-composer${shellMode ? " is-shell" : ""}${mobile ? " is-mobile" : ""}`}
+      // Its draft outlives a reload: a newer build need not wait for it.
+      data-draft-saved={terminalComposerDraftSaved(draftKey) || undefined}
       onKeyDownCapture={(event) => {
         if (!picker.keys(event) && !onNextPromptKeys(event))
           onCommandKeys(event);

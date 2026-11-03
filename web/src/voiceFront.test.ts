@@ -16,7 +16,7 @@ import {
   frontContext,
   spokenSentences,
 } from "./voiceFront";
-import { routeSpeech } from "./voiceRoute";
+import { KNOWN_ROUTES, routeSpeech } from "./voiceRoute";
 
 const flush = async () => {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
@@ -361,11 +361,17 @@ describe("routeSpeech", () => {
       said,
       current: "local/p1",
       sessions: [],
+      routes: [...KNOWN_ROUTES],
       context: "Ranger tasks:\n- x",
     });
     // Without a front, no state goes: as it always did.
     await routeSpeech(said, "local/p1", []);
-    expect(bodies[1]).toEqual({ said, current: "local/p1", sessions: [] });
+    expect(bodies[1]).toEqual({
+      said,
+      current: "local/p1",
+      sessions: [],
+      routes: [...KNOWN_ROUTES],
+    });
   });
 });
 

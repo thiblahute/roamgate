@@ -649,3 +649,25 @@ test("logout clears every stored draft while reading each stored key once", asyn
   // One pass per store. An index loop costs 2 * saved ** 2 reads per store.
   expect(keyReads).toBeLessThanOrEqual(2 * saved);
 });
+
+test("a box of no connection (Ranger's chat) gets its draft back after a reload", async () => {
+  const { local } = storage();
+  const before = await freshDrafts();
+  const key = "ranger:instance:session-1";
+  expect(before.terminalComposerDraftSaved(key)).toBe(true);
+  before.writeTerminalComposerDraft(key, "ask Ranger later");
+  // A reload: a fresh module, the same tab.
+  const after = await freshDrafts();
+  expect(after.readTerminalComposerDraft(key)).toBe("ask Ranger later");
+  after.clearTerminalComposerDraft(key);
+  const again = await freshDrafts();
+  expect(again.readTerminalComposerDraft(key)).toBe("");
+  // Logging out clears it with the others.
+  again.writeTerminalComposerDraft(key, "secret");
+  again.clearSavedTerminalComposerDrafts();
+  expect(
+    [...Array(local.length).keys()].some(
+      (index) => local.getItem(local.key(index)!) === "secret",
+    ),
+  ).toBe(false);
+});

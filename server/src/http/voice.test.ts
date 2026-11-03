@@ -211,6 +211,48 @@ describe("the voice front", () => {
     expect(await route("Oui, vas-y.")).toEqual({ to: "current" });
   });
 
+  test("gives a page of an older build only routes it knows", async () => {
+    let next: unknown = { to: "self", reply: "Je suis là." };
+    const front = {
+      warm: () => {},
+      turn: async () => next,
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const ask = async (routesKnown?: string[]) =>
+      (await routes(
+        post(
+          {
+            current: "local/w2:p2",
+            said: "t'es là ?",
+            sessions: [session],
+            ...(routesKnown ? { routes: routesKnown } : {}),
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      ))!.json();
+    // A page that lists them gets them all.
+    expect(await ask(["current", "nobody", "self"])).toEqual({
+      to: "self",
+      reply: "Je suis là.",
+    });
+    // An older page read the pane of a route it did not know, and crashed.
+    expect(await ask()).toEqual({ to: "nobody" });
+    next = { to: "read", agent: "roamgate" };
+    expect(await ask()).toEqual({ to: "current" });
+    next = { to: "mode", mode: "relay" };
+    expect(await ask(["current", "self"])).toEqual({ to: "current" });
+    next = { to: "send", pane: "local/w3:p1", say: "docs" };
+    expect(await ask()).toEqual(next);
+  });
+
   test("tells an event, and stays quiet without a front", async () => {
     const front = {
       event: async ({ event }: { event: { text: string } }) =>
