@@ -120,12 +120,15 @@ block's id can change. Questions are answered with `block-answer` (the
 `needs_input`; it runs `submit-preview`, then a confirmation step whose
 **I checked these entries** box enables **Submit**, which sends the token with
 `confirmed: true`. A failed submit shows what was written. A deferred day shows the provider's
-`deferred_reason`. Every reported block lasts at least 15 minutes: the provider
-rounds a shorter one up into free time, and a block shows its reported
-`minutes` with, when rounded, the time worked (`worked_minutes`). Split is off
-for a block under 30 minutes, since both halves keep 15; the provider may move
-the split point. A `too_short` refusal says that a block must last at least 15
-minutes.
+`deferred_reason`. Reported time is whole 15-minute units, rounded up
+(37 minutes worked is reported as 45); when rounding runs into the next block,
+that block gives way, and an accepted block moved that way is proposed again,
+which the view points out ("Moved by a neighbour: accept again"). A block shows
+its reported `minutes` and, when it differs, the time worked
+(`worked_minutes`). Split offers whole units only, so a one-unit block cannot
+be split. The preview shows the time worked beside the time reported. A
+`too_short` refusal (a safety check of `submit-preview`) says that a block must
+last at least 15 minutes.
 
 ## In the bridge
 

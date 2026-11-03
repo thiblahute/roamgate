@@ -9,8 +9,11 @@ import {
   clockMinutes,
   DAY_STATUS_LABELS,
   failureText,
-  MIN_BLOCK_MINUTES,
-  workedLabel,
+  previewWorkedMinutes,
+  reopenedBlocks,
+  splitPoints,
+  UNIT_MINUTES,
+  workedMinutes,
   type Day,
   type DaySummary,
   type Evidence,
@@ -69,7 +72,29 @@ export function HoursView({
   workspaces: TimelineWorkspace[];
   onEditMapping?: (workspace: TimelineWorkspace) => void;
 }) {
-  const [day, setDay] = useState<Day | null>(null);
+  const [day, setDayState] = useState<Day | null>(null);
+  /** Accepted blocks a neighbour's rounding sent back to Proposed. */
+  const [reopened, setReopened] = useState<Set<string>>(new Set());
+  const dayRef = useRef<Day | null>(null);
+  const setDay = useCallback((next: Day | null) => {
+    const before = dayRef.current;
+    dayRef.current = next;
+    setDayState(next);
+    if (!next || !before || before.date !== next.date) {
+      setReopened(new Set());
+      return;
+    }
+    const now = reopenedBlocks(before, next);
+    setReopened((previous) => {
+      const kept = new Set(
+        [...previous].filter((id) =>
+          next.blocks.some((b) => b.id === id && b.status === "proposed"),
+        ),
+      );
+      for (const id of now) kept.add(id);
+      return kept;
+    });
+  }, []);
   const [summaries, setSummaries] = useState<DaySummary[]>([]);
   const [targets, setTargets] = useState<Targets | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +146,7 @@ export function HoursView({
         if (alive.current && id === request.current) setLoading(false);
       }
     },
-    [date, loadSummaries],
+    [date, loadSummaries, setDay],
   );
 
   useEffect(() => {
@@ -397,6 +422,7 @@ export function HoursView({
                       operate={(run) => void operate(block.id, run)}
                       mappingWorkspace={subjectWorkspace(block)}
                       onEditMapping={onEditMapping}
+                      reopened={reopened.has(block.id)}
                     />
                   ))}
               </div>
@@ -440,6 +466,7 @@ export function HoursView({
       {submit ? (
         <SubmitDialog
           date={date}
+          day={day}
           state={submit}
           setState={setSubmit}
           onSubmit={(preview) => void confirmSubmit(preview)}
@@ -712,7 +739,9 @@ function BlockCard({
   operate,
   mappingWorkspace,
   onEditMapping,
+  reopened = false,
 }: {
+  reopened?: boolean;
   date: string;
   block: Block;
   targets: Targets | null;
@@ -754,13 +783,29 @@ function BlockCard({
           <span className="hours-time">
             {clockOf(block.start)} to {clockOf(block.end)}
           </span>
-          <span className="hours-muted">{workedLabel(block)}</span>
+          <span className="hours-muted">{formatMinutes(block.minutes)}</span>
+          {workedMinutes(block) !== null ? (
+            <span
+              className="hours-worked"
+              title={`Worked ${formatMinutes(workedMinutes(block)!)}; the report counts whole ${UNIT_MINUTES}-minute units`}
+            >
+              worked {formatMinutes(workedMinutes(block)!)}
+            </span>
+          ) : null}
           <span
             className={`hours-chip ${block.status === "accepted" ? "is-green" : block.status === "proposed" ? "is-blue" : ""}`}
           >
             {BLOCK_STATUS_LABELS[block.status]}
           </span>
           <span className="hours-chip">{SOURCE_LABELS[block.source]}</span>
+          {reopened ? (
+            <span
+              className="hours-chip is-yellow"
+              title="A neighbour's rounding moved this block, so it is proposed again"
+            >
+              Moved by a neighbour: accept again
+            </span>
+          ) : null}
           {typeof block.confidence === "number" ? (
             <span className="hours-confidence" title="How sure the provider is">
               <i>
@@ -919,10 +964,10 @@ function BlockCard({
         <button
           type="button"
           className="hours-btn is-small"
-          disabled={busy || submitted || block.minutes < 2 * MIN_BLOCK_MINUTES}
+          disabled={busy || submitted || splitPoints(block).length === 0}
           title={
-            block.minutes < 2 * MIN_BLOCK_MINUTES
-              ? `Both halves must last at least ${MIN_BLOCK_MINUTES} minutes: a block under ${2 * MIN_BLOCK_MINUTES} minutes cannot be split`
+            splitPoints(block).length === 0
+              ? `Halves are whole ${UNIT_MINUTES}-minute units: a ${UNIT_MINUTES}-minute block cannot be split`
               : undefined
           }
           aria-pressed={panel === "split"}
@@ -1046,42 +1091,38 @@ function SplitForm({
   onCancel: () => void;
   onSplit: (at: string) => void;
 }) {
+  // Halves are whole units: only those points are offered.
+  const points = splitPoints(block);
+  const [at, setAt] = useState(
+    () => points[Math.floor((points.length - 1) / 2)] ?? "",
+  );
   const startClock = clockOf(block.start);
   const endClock = clockOf(block.end);
-  const middle = (() => {
-    const [h1, m1] = startClock.split(":").map(Number);
-    const half = h1! * 60 + m1! + Math.round(block.minutes / 2 / 5) * 5;
-    return `${String(Math.floor(half / 60) % 24).padStart(2, "0")}:${String(half % 60).padStart(2, "0")}`;
-  })();
-  const [at, setAt] = useState(middle);
-  const inside = at > startClock && at < endClock;
   return (
     <div className="hours-inline">
       <label className="hours-field is-time">
         <span>Split at</span>
-        <input
-          type="time"
-          value={at}
-          onChange={(event) => setAt(event.target.value)}
-        />
+        <select value={at} onChange={(event) => setAt(event.target.value)}>
+          {points.map((point) => (
+            <option key={point} value={point}>
+              {point}
+            </option>
+          ))}
+        </select>
       </label>
       <span className="hours-muted">
-        Each half keeps at least {MIN_BLOCK_MINUTES} minutes: the point may
-        move.
+        {at
+          ? `${formatMinutes(clockMinutes(startClock, at))} + ${formatMinutes(clockMinutes(at, endClock))}`
+          : ""}{" "}
+        (halves are whole {UNIT_MINUTES}-minute units)
       </span>
-      {inside ? (
-        <span className="hours-muted">
-          {formatMinutes(clockMinutes(startClock, at))} +{" "}
-          {formatMinutes(clockMinutes(at, endClock))}
-        </span>
-      ) : null}
       <button type="button" className="hours-btn is-small" onClick={onCancel}>
         Cancel
       </button>
       <button
         type="button"
         className="hours-btn is-small is-primary"
-        disabled={!inside}
+        disabled={!at}
         onClick={() => {
           const iso = isoAt(block.start, at);
           if (iso) onSplit(iso);
@@ -1183,12 +1224,14 @@ function GapRow({
 
 function SubmitDialog({
   date,
+  day,
   state,
   setState,
   onSubmit,
   onClose,
 }: {
   date: string;
+  day: Day | null;
   state: Submit;
   setState: (state: Submit) => void;
   onSubmit: (preview: Preview) => void;
@@ -1240,8 +1283,19 @@ function SubmitDialog({
             </h3>
             <p className="hours-muted">
               {shortDate(date)} · {count} change{count === 1 ? "" : "s"} ·{" "}
-              {formatMinutes(preview.total_minutes)} · nothing written yet
+              {formatMinutes(preview.total_minutes)} reported · nothing written
+              yet
             </p>
+            {(() => {
+              const worked = previewWorkedMinutes(preview.changes, day);
+              return worked !== null && worked !== preview.total_minutes ? (
+                <p className="hours-muted hours-worked-total">
+                  Worked {formatMinutes(worked)}, reported{" "}
+                  {formatMinutes(preview.total_minutes)}: each block is rounded
+                  up to whole {UNIT_MINUTES}-minute units.
+                </p>
+              ) : null;
+            })()}
             <ul className="hours-changes">
               {preview.changes.map((change, index) => (
                 <li

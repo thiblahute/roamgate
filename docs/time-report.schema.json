@@ -135,6 +135,11 @@
         "deferred_reason": {
           "type": "string",
           "description": "Why the model step did not run, when deferred is true."
+        },
+        "day_end": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The end of the day's window: the start of the next day at day_start, in the time zone of the day."
         }
       }
     },
@@ -330,7 +335,7 @@
         "worked_minutes": {
           "type": "integer",
           "minimum": 0,
-          "description": "The time actually worked, present only when it was rounded up to the minimum: minutes is then the reported time."
+          "description": "The time actually worked, present whenever the reported time (minutes) differs from it."
         }
       }
     },

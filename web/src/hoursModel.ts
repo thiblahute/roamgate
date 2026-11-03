@@ -54,8 +54,8 @@ export type Block = {
   description?: string | null;
   confidence?: number | null;
   /**
-   * The time actually tracked, when the provider rounded `minutes` to the
-   * report's rule (draft field).
+   * The time actually worked, when it differs from the reported `minutes`
+   * (rounded up to whole units, cut by a neighbour, or a split share's).
    */
   worked_minutes?: number | null;
   status: BlockStatus;
@@ -79,8 +79,11 @@ export type Segment = {
   note?: string | null;
 };
 
-/** The time report's rule: every reported block lasts at least this long. */
-export const MIN_BLOCK_MINUTES = 15;
+/**
+ * The time report's unit: every reported time is a whole number of these,
+ * rounded up (37 minutes worked is reported as 45).
+ */
+export const UNIT_MINUTES = 15;
 
 /** Minutes from one `HH:MM` to a later one; 0 when not later. */
 export function clockMinutes(start: string, end: string): number {
@@ -91,21 +94,71 @@ export function clockMinutes(start: string, end: string): number {
   return Math.max(0, at(end) - at(start));
 }
 
-/** "15m (worked 9m)" when the reported time was rounded, else "15m". */
-export function workedLabel(block: {
+/** The time worked, when the report rounded it: else null. */
+export function workedMinutes(block: {
   minutes: number;
   worked_minutes?: number | null;
-}): string {
+}): number | null {
   const worked = block.worked_minutes;
-  return typeof worked === "number" && worked !== block.minutes
-    ? `${formatMinutes(block.minutes)} (worked ${formatMinutes(worked)})`
-    : formatMinutes(block.minutes);
+  return typeof worked === "number" && worked !== block.minutes ? worked : null;
+}
+
+/**
+ * Where a block can be split: whole units from its start, leaving at least a
+ * unit on each side, as `HH:MM`. A one-unit block has none.
+ */
+export function splitPoints(block: { start: string; end: string }): string[] {
+  const start = minuteOf(block.start);
+  let end = minuteOf(block.end);
+  if (end <= start) end += 24 * 60;
+  const points: string[] = [];
+  for (
+    let at = start + UNIT_MINUTES;
+    at <= end - UNIT_MINUTES;
+    at += UNIT_MINUTES
+  )
+    points.push(
+      `${String(Math.floor(at / 60) % 24).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`,
+    );
+  return points;
+}
+
+/**
+ * Accepted blocks a recompute sent back to Proposed: a neighbour's rounding
+ * moved them, so they need accepting again. Matched by id.
+ */
+export function reopenedBlocks(before: Day | null, after: Day): Set<string> {
+  const reopened = new Set<string>();
+  if (!before) return reopened;
+  const accepted = new Set(
+    before.blocks.filter((b) => b.status === "accepted").map((b) => b.id),
+  );
+  for (const block of after.blocks)
+    if (block.status === "proposed" && accepted.has(block.id))
+      reopened.add(block.id);
+  return reopened;
+}
+
+/** The time worked behind a preview's changes, from the day's blocks. */
+export function previewWorkedMinutes(
+  changes: readonly { block_id?: string | null }[],
+  day: Day | null,
+): number | null {
+  if (!day) return null;
+  const byId = new Map(day.blocks.map((block) => [block.id, block]));
+  let total = 0;
+  for (const change of changes) {
+    const block = change.block_id ? byId.get(change.block_id) : undefined;
+    if (!block) return null;
+    total += block.worked_minutes ?? block.minutes;
+  }
+  return total;
 }
 
 /** A provider failure in words: `too_short` names the rule. */
 export function failureText(error: { message: string; code?: string }): string {
   return error.code === "too_short"
-    ? `A block must last at least ${MIN_BLOCK_MINUTES} minutes: ${error.message}`
+    ? `A block must last at least ${UNIT_MINUTES} minutes: ${error.message}`
     : error.message;
 }
 
@@ -116,6 +169,8 @@ export type Day = {
   expected_minutes?: number | null;
   blocks: Block[];
   gaps: Gap[];
+  /** The end of the day's window, time zone aware. */
+  day_end?: string;
   deferred?: boolean;
   /** Why the model step did not run, when deferred. */
   deferred_reason?: string | null;
