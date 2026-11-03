@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import {
   canPreview,
+  clockMinutes,
+  failureText,
+  workedLabel,
   submitHint,
   clockOf,
   type Day,
@@ -86,4 +89,20 @@ test("the day list covers the last two weeks", () => {
     from: "2026-10-21",
     to: "2026-11-03",
   });
+});
+
+test("a rounded block says what was worked; too_short names the rule", () => {
+  expect(workedLabel({ minutes: 15, worked_minutes: 9 })).toBe(
+    "15m (worked 9m)",
+  );
+  expect(workedLabel({ minutes: 30, worked_minutes: 30 })).toBe("30m");
+  expect(workedLabel({ minutes: 45 })).toBe("45m");
+  expect(
+    failureText({ message: "the block would last 10 min", code: "too_short" }),
+  ).toBe("A block must last at least 15 minutes: the block would last 10 min");
+  expect(failureText({ message: "overlaps", code: "conflict" })).toBe(
+    "overlaps",
+  );
+  expect(clockMinutes("08:05", "08:50")).toBe(45);
+  expect(clockMinutes("09:00", "08:00")).toBe(0);
 });

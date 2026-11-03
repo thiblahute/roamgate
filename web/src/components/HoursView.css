@@ -812,3 +812,13 @@
 .hours-section {
   overflow-wrap: anywhere;
 }
+
+.hours-deferred {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 8px;
+  background: var(--hours-red-soft);
+  color: var(--text);
+  font-size: 12px;
+}
