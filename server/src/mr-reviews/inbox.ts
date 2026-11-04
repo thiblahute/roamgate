@@ -186,6 +186,20 @@ export function createMrInbox(deps: MrInboxDeps) {
     deps.store.update((state) => {
       state.items = list;
       // The user saw a request close: its review state ages from now.
+      // A host's first answer is the baseline: everything in it counts as
+      // seen as it is, so "new" and unread mean since then, not "all".
+      for (const result of results) {
+        if (!result.answer || state.baselined[result.state.host]) continue;
+        state.baselined[result.state.host] = iso();
+        for (const item of list)
+          if (item.host === result.state.host && !state.seen[item.key])
+            state.seen[item.key] = {
+              at: iso(),
+              updatedAt: item.updatedAt,
+              headSha: item.headSha,
+              notes: item.notes,
+            };
+      }
       for (const item of list) {
         const review = state.reviews[item.key];
         if (review && item.state !== "open" && !review.closedAt)

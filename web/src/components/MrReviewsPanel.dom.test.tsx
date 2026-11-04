@@ -155,5 +155,74 @@ if (process.env.ROAMGATE_MR_REVIEWS_DOM_TEST !== "1") {
     await key("Escape");
     expect(closed).toBe(1);
     act(() => root.unmount());
+    host.remove();
+
+    // As the user opens it: Option+M with a chat's message box focused,
+    // under a chat that takes Escape and letters on the window first.
+    const { handleMrReviewsShortcut } = await import("../mrReviewsOpen");
+    const composer = document.createElement("div");
+    composer.className = "agent-history-composer";
+    composer.setAttribute("contenteditable", "true");
+    composer.tabIndex = 0;
+    document.body.append(composer);
+    let chatTook = 0;
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape" || event.key.length === 1) {
+          chatTook++;
+          event.preventDefault();
+        }
+      },
+      { capture: true },
+    );
+    // The app's handler: registered on the window, as App.tsx does.
+    window.addEventListener(
+      "keydown",
+      (event) => handleMrReviewsShortcut(event),
+      { capture: true },
+    );
+    composer.focus();
+    expect(document.activeElement).toBe(composer);
+    const press = async (name: string, init: KeyboardEventInit = {}) =>
+      act(async () => {
+        (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: name,
+            bubbles: true,
+            cancelable: true,
+            ...init,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+    await press("m", { altKey: true, code: "KeyM" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    const live = document.querySelector<HTMLElement>(".mr-reviews-panel");
+    expect(live).not.toBeNull();
+    expect(live!.contains(document.activeElement)).toBe(true);
+    const liveSelected = () =>
+      document
+        .querySelector(".mr-reviews-row.is-selected")
+        ?.getAttribute("data-mr-key");
+    await press("j");
+    expect(liveSelected()).toEndWith("#1");
+    await press("j");
+    expect(liveSelected()).toEndWith("#2");
+    await press("k");
+    expect(liveSelected()).toEndWith("#1");
+    await press("Enter");
+    expect(document.body.textContent).toContain("All reviews");
+    await press("Escape");
+    expect(document.body.textContent).not.toContain("All reviews");
+    await press("Escape");
+    expect(document.querySelector(".mr-reviews-panel")).toBeNull();
+    // Esc gave the focus back to the message box; nothing reached it.
+    expect(document.activeElement).toBe(composer);
+    expect(composer.textContent).toBe("");
+    // The chat had marked those keys first: the panel took them anyway.
+    expect(chatTook).toBeGreaterThan(0);
   });
 }

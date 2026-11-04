@@ -4331,6 +4331,16 @@ export default function App() {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       // The review has its own keys (Esc included); see reviewKeyRoute for
       // the app's shortcuts that reach past it.
+      // The reviews panel has its own keys (Esc, j/k...) while focused;
+      // the app's shortcuts that reach past the review reach past it too.
+      if (
+        (e.target as HTMLElement | null)?.closest?.(".mr-reviews-panel") &&
+        reviewKeyRoute(
+          (id) => shortcutMatches(e, id),
+          store.get().overlayOpen,
+        ) === "review"
+      )
+        return;
       if (
         (e.target as HTMLElement | null)?.closest?.(
           ".review-overlay, .review-list-overlay",

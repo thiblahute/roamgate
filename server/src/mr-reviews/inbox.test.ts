@@ -99,7 +99,9 @@ describe("reviews inbox", () => {
       [1, "mine"],
     ]);
     // The followed project's other request is no suggestion until picked.
-    expect(snapshot.entries[0]!.isNew).toBe(true);
+    // A host's first answer is the baseline: nothing is "new" in it.
+    expect(snapshot.entries[0]!.isNew).toBe(false);
+    expect(snapshot.entries[0]!.unread?.changed).toBe(false);
     expect(snapshot.entries[0]!.drafts).toBe(2);
     expect(snapshot.hosts.map((h) => [h.host, h.state])).toEqual([
       ["gitlab.example.org", "ok"],
@@ -111,6 +113,36 @@ describe("reviews inbox", () => {
     now += 60_000;
     await inbox.refresh();
     expect(fake.calls).not.toContain("drafts 1");
+  });
+
+  test("a request that comes after the baseline is new", async () => {
+    let second = false;
+    const fake = fakeFetchers({
+      async gitlab(host) {
+        if (host !== "gitlab.example.org") throw new NotSignedInError("no");
+        return {
+          data: {
+            currentUser: {
+              username: "me",
+              rr: { nodes: second ? [mr(1), mr(5)] : [mr(1)] },
+            },
+          },
+        };
+      },
+    });
+    const inbox = createMrInbox({
+      fetchers: fake.fetchers,
+      settings: async () => settings,
+      store: store(),
+    });
+    await inbox.refresh();
+    second = true;
+    await inbox.refresh();
+    const byNumber = new Map(
+      inbox.snapshot(settings).entries.map((e) => [e.number, e.isNew]),
+    );
+    expect(byNumber.get(1)).toBe(false);
+    expect(byNumber.get(5)).toBe(true);
   });
 
   test("unread follows what the user saw", async () => {

@@ -56,6 +56,11 @@ export type MrState = {
   projects: Record<string, MrProjectRecord>;
   /** The latest inbox items, shown at once after a restart. */
   items: MrItem[];
+  /**
+   * Hosts read once already: the first answer of a host is the baseline
+   * (seen as it is), so only what comes after shows as new.
+   */
+  baselined: Record<string, string>;
   /** The latest GitLab draft counts read, by request. */
   drafts: Record<string, { count: number; at: string }>;
 };
@@ -71,6 +76,7 @@ function empty(): MrState {
     reviews: {},
     projects: {},
     items: [],
+    baselined: {},
     drafts: {},
   };
 }
@@ -95,6 +101,7 @@ export function normalizeState(raw: unknown): MrState {
     reviews: record(value.reviews),
     projects: record(value.projects),
     items: Array.isArray(value.items) ? (value.items as MrItem[]) : [],
+    baselined: record(value.baselined),
     drafts: record(value.drafts),
   };
 }
