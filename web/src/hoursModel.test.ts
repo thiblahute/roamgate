@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import {
+  acceptanceLost,
+  evidenceText,
   canPreview,
+  groupEvidence,
   clockMinutes,
   failureText,
   previewWorkedMinutes,
@@ -165,4 +168,51 @@ test("a preview's worked total comes from its blocks", () => {
   ).toBe(67);
   expect(previewWorkedMinutes([{ block_id: "x" }], day)).toBeNull();
   expect(previewWorkedMinutes([], null)).toBeNull();
+});
+
+test("evidence groups per workspace, notes folded into their workspace", () => {
+  const { groups, other, details } = groupEvidence([
+    { kind: "workspace", title: "clauth", minutes: 3 },
+    { kind: "note", title: "includes 5 min of clauth" },
+    { kind: "note", title: "includes 4 min of hdd-warranty" },
+    { kind: "note", title: "includes 0 min of upstream" },
+    { kind: "note", title: "one share of 100 min split between 2 projects" },
+    { kind: "agent_session", title: "agent working in roamgate", minutes: 2 },
+  ]);
+  expect(groups).toEqual([
+    { name: "clauth", minutes: 8 },
+    { name: "hdd-warranty", minutes: 4 },
+  ]);
+  expect(other.map((entry) => entry.kind)).toEqual(["note", "agent_session"]);
+  expect(details).toHaveLength(6);
+});
+
+test("an acceptance is lost when the block is still there and not accepted", () => {
+  const day: Day = {
+    date: "2026-11-04",
+    status: "proposed",
+    blocks: [
+      block("10:00", "12:30", "proposed"),
+      block("14:35", "15:35", "submitted"),
+    ],
+    gaps: [],
+  };
+  expect(acceptanceLost(day.blocks[0]!.id, day)).toContain(
+    "did not keep the acceptance",
+  );
+  expect(acceptanceLost(day.blocks[1]!.id, day)).toBeNull();
+  expect(acceptanceLost("gone", day)).toBeNull();
+  day.blocks[0]!.status = "accepted";
+  expect(acceptanceLost(day.blocks[0]!.id, day)).toBeNull();
+});
+
+test("an agent's time elsewhere reads short", () => {
+  expect(
+    evidenceText({
+      kind: "agent_session",
+      title: "agent working in roamgate while attention was elsewhere",
+      minutes: 12,
+    }),
+  ).toBe("agent in roamgate 12m");
+  expect(evidenceText({ kind: "commit", title: "fix" })).toBe("fix");
 });

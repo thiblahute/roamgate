@@ -387,3 +387,64 @@ export function recentRange(today: string, days = 14) {
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   return { from: iso(from), to: today };
 }
+
+/** A workspace's share of a block's evidence. */
+export type EvidenceGroup = { name: string; minutes: number };
+
+const INCLUDES = /^includes (\d+) min of (.+)$/;
+
+/**
+ * A block's evidence, readable: one entry per workspace with its minutes
+ * (its "workspace" entry plus the "includes N min of" notes about it), the
+ * rest as given, and every raw entry for the details.
+ */
+export function groupEvidence(evidence: readonly Evidence[]): {
+  groups: EvidenceGroup[];
+  other: Evidence[];
+  details: Evidence[];
+} {
+  const totals = new Map<string, number>();
+  const other: Evidence[] = [];
+  for (const entry of evidence) {
+    const included = entry.kind === "note" ? INCLUDES.exec(entry.title) : null;
+    if (included) {
+      const name = included[2]!;
+      totals.set(name, (totals.get(name) ?? 0) + Number(included[1]));
+    } else if (entry.kind === "workspace" && !entry.url) {
+      totals.set(
+        entry.title,
+        (totals.get(entry.title) ?? 0) + (entry.minutes ?? 0),
+      );
+    } else other.push(entry);
+  }
+  const groups = [...totals]
+    .filter(([, minutes]) => minutes > 0)
+    .map(([name, minutes]) => ({ name, minutes }))
+    .sort((a, b) => b.minutes - a.minutes || a.name.localeCompare(b.name));
+  return { groups, other, details: [...evidence] };
+}
+
+/**
+ * Why an acceptance did not take: the block is still there and not
+ * accepted after the day was read again. Null when it took (or the block
+ * is gone, so nothing can be said).
+ */
+export function acceptanceLost(
+  blockId: string,
+  day: Day | null,
+): string | null {
+  const block = day?.blocks.find((entry) => entry.id === blockId);
+  if (!block || block.status === "accepted" || block.status === "submitted")
+    return null;
+  return `The provider did not keep the acceptance: this block is ${BLOCK_STATUS_LABELS[block.status].toLowerCase()} again. Try again, or tell the provider's maintainer.`;
+}
+
+const AGENT_ELSEWHERE = /^agent working in (.+) while attention was elsewhere$/;
+
+/** An evidence line, short: "agent in roamgate 12m" for an agent's time. */
+export function evidenceText(entry: Evidence): string {
+  const agent =
+    entry.kind === "agent_session" ? AGENT_ELSEWHERE.exec(entry.title) : null;
+  const title = agent ? `agent in ${agent[1]}` : entry.title;
+  return `${title}${entry.minutes ? ` ${formatMinutes(entry.minutes)}` : ""}`;
+}

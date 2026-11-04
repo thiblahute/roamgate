@@ -828,3 +828,30 @@
   font-size: 11px;
   opacity: 0.8;
 }
+
+.hours-evidence-group b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hours-evidence-details {
+  flex-basis: 100%;
+}
+
+.hours-evidence-details summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.hours-evidence-details ul {
+  max-height: 220px;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.hours-block-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
