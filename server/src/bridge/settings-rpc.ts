@@ -10,12 +10,15 @@ import {
 import type { HerdrClient } from "./herdr-client";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "../connections/types";
 import {
+  isClaudeStartMode,
   isIdleStopMinutes,
   MAX_IDLE_STOP_MINUTES,
 } from "../../../shared/agentChat";
 import {
+  claudeStartMode,
   connectionSettingsPrefix,
   conversationIdleStopMinutes,
+  type GuiSettings,
   DEFAULT_WORKSPACE_AUTO_SYNC_INTERVAL_MINUTES,
   type GuiRepoSettings,
   guiSettingsPath,
@@ -69,6 +72,8 @@ export function createSettingsRpcHandler(args: {
   onWorkspaceAutoSyncSettingsChanged: (key: string, enabled: boolean) => void;
   onAgentAutoRenameSettingsChanged?: () => void;
   onTerminalTransportSettingsChanged?: (enabled: boolean) => void;
+  /** Where a claude started in a pane goes changed (its hook may be due). */
+  onClaudeStartSettingsChanged?: () => void;
   safeSend: (
     ws: ServerWebSocket<unknown>,
     payload: string,
@@ -130,6 +135,10 @@ export function createSettingsRpcHandler(args: {
     };
   }
 
+  function claudeStartReply(settings: GuiSettings) {
+    return { mode: claudeStartMode(settings) };
+  }
+
   function ownsSettingsKey(key: string): boolean {
     const host = args.sshHost();
     const prefix = `${connectionSettingsPrefix(args.connectionId)}${host ? `ssh:${host}` : "local"}:`;
@@ -186,6 +195,24 @@ export function createSettingsRpcHandler(args: {
         return reply({
           enabled: settings.auto_rename_agent_tabs !== false,
         });
+      }
+      if (method === "settings.claude_start.get")
+        return reply(claudeStartReply(await readSettings()));
+      if (method === "settings.claude_start.update") {
+        if (
+          !isClaudeStartMode(params.mode) ||
+          Object.keys(params).some((key) => key !== "mode")
+        )
+          return fail(
+            "settings.claude_start.update takes only mode: terminal or conversation",
+          );
+        const mode = params.mode;
+        const settings = await updateSettings(
+          (current) => ({ ...current, claude_start_mode: mode }),
+          requestIsCurrent,
+        );
+        args.onClaudeStartSettingsChanged?.();
+        return reply(claudeStartReply(settings));
       }
       if (method === "settings.conversation.get")
         return reply({

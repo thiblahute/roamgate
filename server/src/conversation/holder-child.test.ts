@@ -175,6 +175,12 @@ function scratch() {
   writeFileSync(join(dir, "hold.py"), HOLD_CLIENT_SCRIPT);
   const work = join(dir, "work");
   mkdirSync(work);
+  // The session has a transcript: it is resumed (none: started anew).
+  mkdirSync(join(dir, ".claude", "projects", "elsewhere"), { recursive: true });
+  writeFileSync(
+    join(dir, ".claude", "projects", "elsewhere", `${SESSION}.jsonl`),
+    "{}\n",
+  );
   // The pane's API key (startHolder's) was turned down in Claude Code.
   writeFileSync(
     join(dir, ".claude.json"),

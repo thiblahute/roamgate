@@ -2,7 +2,11 @@ import type { ClaudeCodeProcess } from "../assistant/claude-driver";
 import type { ApiKeyAnswer } from "./drivers/claude-env";
 
 // Claude's headless command lives with its driver; re-exported here.
-export { headlessClaudeArgs, holderStartCommand } from "./drivers/claude";
+export {
+  headlessClaudeArgs,
+  headlessFlags,
+  holderStartCommand,
+} from "./drivers/claude";
 
 /**
  * A headless claude as the conversation session sees it. The pane holder

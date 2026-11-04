@@ -666,3 +666,56 @@ test("worktree settings of a workspace Herdr reports no repository for are its r
     worktree_directory: "/legacy",
   });
 });
+
+test("the claude start setting: validated, saved, and the change told", async () => {
+  let settings: GuiSettings = {
+    version: 1,
+    repositories: {},
+    workspace_auto_sync: {},
+    custom: {},
+    ui: {},
+  };
+  const messages: any[] = [];
+  let changes = 0;
+  const handler = createSettingsRpcHandler({
+    connectionId: "desk",
+    readSettings: async () => settings,
+    updateSettings: async (update) => {
+      settings = await update(settings);
+      return settings;
+    },
+    onClaudeStartSettingsChanged: () => {
+      changes += 1;
+    },
+    herdr: {} as HerdrClient,
+    sshHost: () => undefined,
+    readWorktreeHooks: async () => null,
+    resolveWorkspaceGitRoot: async () => ({ workspace: {}, root: "/tmp" }),
+    workspaceAutoSyncIsRunning: () => false,
+    onWorkspaceAutoSyncSettingsChanged: () => {},
+    safeSend: (_ws, payload) => {
+      messages.push(JSON.parse(payload));
+      return true;
+    },
+    markRpcError: () => {},
+  });
+  const call = (method: string, params: Record<string, unknown> = {}) =>
+    handler(
+      {} as ServerWebSocket<unknown>,
+      "1",
+      `settings.claude_start.${method}`,
+      params,
+    );
+  await call("get");
+  expect(messages.at(-1).result).toEqual({ mode: "terminal" });
+  await call("update", { mode: "conversation" });
+  expect(messages.at(-1).result).toEqual({ mode: "conversation" });
+  expect(settings.claude_start_mode).toBe("conversation");
+  expect(changes).toBe(1);
+  for (const params of [{}, { mode: "tui" }, { mode: "terminal", other: 1 }]) {
+    await call("update", params);
+    expect(messages.at(-1).error.message).toMatch(/claude_start.update/);
+  }
+  expect(changes).toBe(1);
+  expect(settings.claude_start_mode).toBe("conversation");
+});

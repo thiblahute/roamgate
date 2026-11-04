@@ -119,4 +119,33 @@ describe("headless command", () => {
       }).api_key,
     ).toEqual({ policy: "claude_config", answer: "approve" });
   });
+
+  test("it keeps the flags the pane's claude ran with (model, mode, directories)", () => {
+    const command = holderStartCommand({
+      sessionId: "abc-1",
+      cwd: "/w",
+      flags: [
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "plan",
+        "--add-dir",
+        "/a",
+        "/b",
+        "--ide",
+        "--verbose",
+      ],
+    });
+    expect(command.argv).toEqual([
+      "claude",
+      "--model",
+      "haiku",
+      "--permission-mode",
+      "plan",
+      "--add-dir",
+      "/a",
+      "/b",
+      ...headlessClaudeArgs("abc-1"),
+    ]);
+  });
 });

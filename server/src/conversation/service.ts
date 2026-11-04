@@ -10,6 +10,7 @@ import type {
   AgentChatStatus,
 } from "../../../shared/agentChat";
 import type { AgentPromptAnswer } from "../../../shared/review";
+import { type AutoStartDeps, createAutoStarter } from "./auto-start";
 import { conversationDriver } from "./drivers";
 import { createHandover, type HandoverDeps } from "./handover";
 import type { SpawnHeadless } from "./headless";
@@ -99,6 +100,19 @@ export type ConversationServiceOptions<Ws> = {
       | "exitSwallowed"
       | "exactStatus"
       | "settleMs"
+    >
+  >;
+  /** Timings of taking a claude the user just started (tests). */
+  autoStart?: Partial<
+    Pick<
+      AutoStartDeps,
+      | "sleep"
+      | "now"
+      | "firstDelayMs"
+      | "retryMs"
+      | "startingMs"
+      | "busyRetryMs"
+      | "busyMs"
     >
   >;
   /** How long a holder's poll is held before it polls again. */
@@ -213,6 +227,18 @@ export function createConversationService<Ws>(
       }),
     ...options.handover,
   });
+  // A claude the user starts in a pane, taken by conversation mode as soon
+  // as it can be (Roamgate's claude start setting).
+  const autoStarter = createAutoStarter({
+    toConversation: (paneId, sessionId) => toConversation(paneId, sessionId),
+    owned: (paneId) => !!leases.get(paneId),
+    closed: () => disposed,
+    log,
+    ...options.autoStart,
+  });
+  // A claude started in a pane this soon after its session was handed back
+  // (or a takeover gave up) is the one coming back: it stays.
+  const handedBackMs = 60_000;
   const sessions = new Map<string, ConversationSession>();
   const subscribers = new Map<string, Set<Ws>>();
   const holdPollMs = options.holdPollMs ?? 25_000;
@@ -638,6 +664,7 @@ export function createConversationService<Ws>(
    */
   function paneClosed(paneId: string) {
     if (disposed) return;
+    autoStarter.cancel(paneId);
     idle.forget(paneId);
     const session = sessions.get(paneId);
     sessions.delete(paneId);
@@ -905,6 +932,36 @@ export function createConversationService<Ws>(
       return { ok: true, cleared };
     },
 
+    /**
+     * A claude the user just started in the pane (its SessionStart hook,
+     * with the claude start setting on conversation): conversation mode
+     * takes it once it is up, with the usual handover. Answers at once;
+     * the takeover goes on in the background.
+     */
+    autoStart(
+      paneId: string,
+      sessionId: string,
+    ): { ok: true } | { ok: false; reason: string } {
+      if (disposed) return { ok: false, reason: "The connection is closing" };
+      if (leases.get(paneId))
+        return {
+          ok: false,
+          reason: "Conversation mode already has this pane",
+        };
+      const was = released.get(paneId);
+      if (was && Date.now() - was.at < handedBackMs)
+        return {
+          ok: false,
+          reason: "This pane's session just went back to the terminal",
+        };
+      log("claude started in the pane; conversation mode will take it", {
+        pane: paneId,
+        session: sessionId,
+      });
+      void autoStarter.start(paneId, sessionId);
+      return { ok: true };
+    },
+
     /** roamgate-hold's requests, from the review socket. */
     holder: holderSide.endpoints,
 
@@ -981,6 +1038,7 @@ export function createConversationService<Ws>(
       recovery.dispose();
       stuck.dispose();
       idle.dispose();
+      autoStarter.dispose();
       if (disposed) return;
       for (const [paneId, session] of sessions) {
         const queued: AgentChatQueued[] = session.takeQueue();

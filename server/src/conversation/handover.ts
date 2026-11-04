@@ -7,7 +7,6 @@ import {
 } from "../../../shared/agentChat";
 import { isRecord } from "../agent/session-utils";
 import { conversationDriver, driverForHerdrAgent } from "./drivers";
-import { claudeTerminalDriver } from "./drivers/claude-tui";
 import type { ConversationDriver, TerminalDriver } from "./drivers/types";
 import type {
   ConversationHerdr,
@@ -15,6 +14,7 @@ import type {
   WriterElsewhere,
 } from "./herdr";
 import { type HolderRegistry, resumeReply, suspendReply } from "./holder";
+import { resumeCommand as defaultResumeCommand } from "./holder-script";
 import type { LeaseStore } from "./lease";
 
 /** What a handover needs of the session's headless side. */
@@ -241,10 +241,7 @@ export function createHandover(deps: HandoverDeps) {
   const latePollMs = deps.latePollMs ?? 2000;
   const lateMaxPollMs = deps.lateMaxPollMs ?? 15_000;
   const lateExitMs = deps.lateExitMs ?? 120_000;
-  const resumeCommand =
-    deps.resumeCommand ??
-    ((sessionId: string, _args?: string[], terminal = claudeTerminalDriver) =>
-      ` ${terminal.resumeArgv(sessionId, []).join(" ")}\r`);
+  const resumeCommand = deps.resumeCommand ?? defaultResumeCommand;
   const driverFor = deps.driverFor ?? driverForHerdrAgent;
   /** A lease's driver: the agent it was taken from (absent: claude). */
   const leaseTerminal = (lease: AgentChatLease) =>

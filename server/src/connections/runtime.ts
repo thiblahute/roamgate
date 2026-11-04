@@ -205,6 +205,8 @@ export function createLegacyConnectionRuntime(args: {
   onTransportExit?: (error: SshTunnelError) => void;
   /** The SSH command master became ready (again). */
   onSshMasterReady?: () => void;
+  /** The claude start setting changed (Configuration). */
+  onClaudeStartSettingsChanged?: () => void;
   /** Shared across connections: local ports are a single machine-wide space. */
   forwards?: SshForwards;
   /** Test seam for deterministic shutdown coverage. */
@@ -564,6 +566,7 @@ export function createLegacyConnectionRuntime(args: {
     workspaceAutoSyncIsRunning: workspaceAutoSync.isRunning,
     onWorkspaceAutoSyncSettingsChanged: workspaceAutoSync.settingsChanged,
     onAgentAutoRenameSettingsChanged: () => tabAutoRenamer.settingsChanged(),
+    onClaudeStartSettingsChanged: () => args.onClaudeStartSettingsChanged?.(),
     onTerminalTransportSettingsChanged: (enabled) => {
       if (disposed) return;
       terminalBridge.refreshSurfaceCodecs();

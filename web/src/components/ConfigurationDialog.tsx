@@ -53,6 +53,7 @@ import {
 } from "../useConnectionClient";
 import { AgentIntegrationsSettings } from "./AgentIntegrationsSettings";
 import { AgentAutoRenameSettings } from "./AgentAutoRenameSettings";
+import { ClaudeStartSettings } from "./ClaudeStartSettings";
 import { ConversationIdleSettings } from "./ConversationIdleSettings";
 import { AutoSyncRepositoriesDialog } from "./AutoSyncRepositoriesDialog";
 import { CloseButton } from "./CloseButton";
@@ -789,6 +790,12 @@ export function ConfigurationDialog({
                 <>
                   <AgentAutoRenameSettings
                     key={`auto-rename-${connectionClientScopeKey(
+                      connectionClient,
+                      connectionClient.serverRuntimeGeneration,
+                    )}`}
+                  />
+                  <ClaudeStartSettings
+                    key={`claude-start-${connectionClientScopeKey(
                       connectionClient,
                       connectionClient.serverRuntimeGeneration,
                     )}`}

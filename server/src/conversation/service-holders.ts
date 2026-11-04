@@ -209,7 +209,12 @@ export function createHolderSide(deps: HolderSideDeps) {
           : "The pane holder is not connected",
       );
     return channel.spawn({
-      command: deps.driverOf(spawn.paneId).protocol.startCommand(spawn),
+      // With the flags the pane's claude ran with (`claude --model haiku`),
+      // and the user's answer about the pane's API key, if just given.
+      command: deps.driverOf(spawn.paneId).protocol.startCommand({
+        ...spawn,
+        flags: leases.get(spawn.paneId)?.terminal_args ?? [],
+      }),
       ...(spawn.attachOnly ? { attachOnly: true } : {}),
       ...(spawn.signal ? { signal: spawn.signal } : {}),
     });

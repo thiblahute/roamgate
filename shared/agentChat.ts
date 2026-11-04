@@ -8,6 +8,23 @@
 export type AgentChatOwner = "terminal" | "conversation";
 
 /**
+ * Where a `claude` started by hand in a Herdr pane goes: it stays in the
+ * terminal, or conversation mode takes it as soon as it is up.
+ */
+export type ClaudeStartMode = "terminal" | "conversation";
+
+export function isClaudeStartMode(value: unknown): value is ClaudeStartMode {
+  return value === "terminal" || value === "conversation";
+}
+
+/**
+ * Set to `terminal` in a claude's environment: it stays in the terminal
+ * whatever the setting says. The pane holder sets it on the claude it
+ * becomes, so a session handed back is never taken again at once.
+ */
+export const CLAUDE_START_ENV = "ROAMGATE_CLAUDE_START";
+
+/**
  * Where a session is in its life: owned by the terminal, being handed to
  * conversation mode (the TUI is exiting), owned by conversation mode, or
  * being handed back (the headless process is exiting).

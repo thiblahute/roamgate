@@ -144,9 +144,14 @@ import { serveStatic } from "./http/static-files";
 import { handleInstanceSettings } from "./http/instance-settings";
 import {
   activitySettings,
+  claudeStartMode,
   readGuiSettings,
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
+import {
+  claudeStartHookInstallArgv,
+  claudeStartHookInstallCommand,
+} from "./conversation/claude-start-hook";
 import { createActivityRecorder } from "./activity/recorder";
 import { readActivityTimeline } from "./activity/timeline-rpc";
 import { subjectsFromSettings } from "./activity/subject-settings";
@@ -716,6 +721,12 @@ function connectionFailureReporter(connectionId: string): RecoveryReporter {
 
 // Ranger's scheduled tasks wait on these for a connection to come back.
 const connectionStatusListeners = new Set<() => void>();
+/**
+ * Hosts (`local`, or `ssh:<host>`) whose Claude settings were given the
+ * claude start hook in this run (see ensureClaudeStartHook).
+ */
+const claudeStartHooked = new Set<string>();
+
 const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
   connectionBootstrap.defaultConnectionId,
   (status) => {
@@ -746,6 +757,7 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
       return;
     }
     if (status.state !== "ready") return;
+    void ensureClaudeStartHook(status.id);
     resumeAssistantIfLoaded();
     if (reporter.recovered(fields)) {
       readyConnectionGenerations.set(status.id, status.generation);
@@ -1147,6 +1159,26 @@ function getReviewAgent(): ReviewAgentServer {
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
+    // A claude started by hand in a pane: the claude start setting says
+    // whether conversation mode takes it.
+    claudeStart: async ({ connectionId, paneId, sessionId, source }) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime)
+        return { action: "terminal", reason: "this connection is not ready" };
+      if (claudeStartMode(await readGuiSettings()) !== "conversation")
+        return { action: "terminal", reason: "the setting says terminal" };
+      const started = runtime.conversation.autoStart(paneId, sessionId);
+      logger.info("claude started in a pane", {
+        connection: connectionId,
+        pane: paneId,
+        source,
+        taken: started.ok,
+        ...(started.ok ? {} : { reason: started.reason }),
+      });
+      return started.ok
+        ? { action: "conversation" }
+        : { action: "terminal", reason: started.reason };
+    },
     // Conversation mode's pane holders (roamgate-hold).
     holder: {
       hold: ({ connectionId, paneId, sessionId, signal, status, shell }) => {
@@ -1411,6 +1443,54 @@ async function notifyFromAgent(input: {
   }
 }
 
+/**
+ * Gives the connection's host the claude start hook (in Claude's user
+ * settings) once the claude start setting is conversation for it. Once per
+ * host and run; the hook stays (it does nothing while the setting says
+ * terminal).
+ */
+async function ensureClaudeStartHook(connectionId: string) {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime || runtime.remotePlatform === "windows") return;
+  const host = runtime.sshHost();
+  if (!host && process.platform === "win32") return;
+  const key = host ? `ssh:${host}` : "local";
+  if (claudeStartHooked.has(key)) return;
+  if (claudeStartMode(await readGuiSettings()) !== "conversation") return;
+  if (claudeStartHooked.has(key)) return;
+  claudeStartHooked.add(key);
+  const result = await runProcessWithCodeTimeout(
+    host
+      ? sshReadCommandArgv(
+          host,
+          claudeStartHookInstallCommand(),
+          [],
+          "claude.start_hook",
+        )
+      : claudeStartHookInstallArgv(),
+    20_000,
+  ).catch((error) => ({
+    code: -1,
+    stdout: "",
+    stderr: error instanceof Error ? error.message : String(error),
+  }));
+  const outcome = result.stdout.trim();
+  if (
+    result.code === 0 &&
+    ["installed", "present", "no-claude"].includes(outcome)
+  ) {
+    if (outcome !== "present")
+      logger.info("claude start hook", { connection: connectionId, outcome });
+    return;
+  }
+  claudeStartHooked.delete(key);
+  logger.warn("claude start hook not installed", {
+    connection: connectionId,
+    outcome: outcome || `exit ${result.code}`,
+    error: result.stderr.trim().slice(0, 300),
+  });
+}
+
 /** Lets agents on an SSH host reach the review pane over the master. */
 function setupRemoteReviewAgent(connectionId: string, host: string) {
   // Until it is set up again, comments are not typed for a missing client.
@@ -1568,6 +1648,10 @@ function runtimeFactoryForProfile(
           }
         },
         forwards: sshForwards,
+        onClaudeStartSettingsChanged: () => {
+          for (const status of connectionManager.list())
+            void ensureClaudeStartHook(status.id);
+        },
         onSshMasterReady: profileConfig.sshHost
           ? () => {
               if (context.isCurrent() && profileConfig.sshHost)

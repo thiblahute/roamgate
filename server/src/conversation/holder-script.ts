@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CLAUDE_START_ENV } from "../../../shared/agentChat";
 import { claudeTerminalDriver } from "./drivers/claude-tui";
 import type { TerminalDriver } from "./drivers/types";
 
@@ -27,9 +28,11 @@ becomes claude --resume: one process sequences both writers.
 Installed by Roamgate and rewritten when Roamgate updates it.
 """
 
+import glob
 import http.client
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -49,6 +52,9 @@ SOCKET = os.environ.get(
     "ROAMGATE_REVIEW_SOCKET",
     os.path.join(os.path.expanduser("~"), ".cache", "roamgate", "review.sock"),
 )
+# Set on the claude this holder becomes: it stays in the terminal, whatever
+# Roamgate's claude start setting says (its SessionStart hook steps aside).
+START_ENV = "${CLAUDE_START_ENV}"
 STATE_ROOT = os.path.join(os.path.expanduser("~"), ".cache", "roamgate", "headless")
 NOTICE = "This session is in conversation mode; Enter takes it back here."
 HINT = "Press Enter alone (nothing typed) to take the session back here."
@@ -139,6 +145,31 @@ def conversation_running(sessions):
             if "--resume " + session in line or "--resume '" + session in line:
                 return True
     return False
+
+
+def transcript_exists(session, env, cwd):
+    # Claude keeps a session under its project's folder once it has a
+    # message; one started and left at once has none yet.
+    base = env.get("CLAUDE_CONFIG_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude"
+    )
+    projects = os.path.join(base, "projects")
+    name = session + ".jsonl"
+    here = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(cwd or os.getcwd()))
+    if os.path.exists(os.path.join(projects, here, name)):
+        return True
+    return bool(glob.glob(os.path.join(glob.escape(projects), "*", glob.escape(name))))
+
+
+def new_or_resumed(argv, env, cwd):
+    # --resume of a session with no transcript fails: it starts with that
+    # id instead (claude started, then taken at once, before a message).
+    if "--resume" not in argv:
+        return argv
+    at = argv.index("--resume")
+    if at + 1 >= len(argv) or transcript_exists(argv[at + 1], env, cwd):
+        return argv
+    return argv[:at] + ["--session-id"] + argv[at + 1 :]
 
 
 # The pane's Anthropic API key. Claude Code's TUI asks once whether to use
@@ -563,6 +594,7 @@ class Child:
         for name, value in (command.get("set") or {}).items():
             env[str(name)] = str(value)
         cwd = command.get("cwd") or os.getcwd()
+        argv = new_or_resumed(argv, env, cwd)
         try:
             err = open(os.path.join(self.directory, "err.log"), "ab")
         except OSError:
@@ -1021,6 +1053,10 @@ def main():
         args = target.get("args")
         if not isinstance(args, list) or not all(isinstance(each, str) for each in args):
             args = ["--resume", session]
+    if os.path.basename(program) == "claude":
+        args = new_or_resumed(args, os.environ, os.getcwd())
+    # Handed back: this agent stays in the terminal.
+    os.environ[START_ENV] = "terminal"
     say("Resuming " + session + " in the terminal.")
     os.execvp(program, [program] + args)
 
@@ -1081,5 +1117,7 @@ export function resumeCommand(
   checkSessionId(sessionId);
   const words = args.map(shellWord);
   const flags = words.every((word) => word !== null) ? (words as string[]) : [];
-  return ` ${terminal.resumeArgv(sessionId, flags).join(" ")}\r`;
+  // env, not VAR=value: fish before 3.1 does not read the latter. The
+  // agent resumed here stays in the terminal (see CLAUDE_START_ENV).
+  return ` ${["env", `${CLAUDE_START_ENV}=terminal`, ...terminal.resumeArgv(sessionId, flags)].join(" ")}\r`;
 }

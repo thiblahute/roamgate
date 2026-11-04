@@ -24,8 +24,13 @@ import type {
  * turned them off (`promptSuggestionEnabled` in their config, or
  * CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION).
  */
-export function headlessClaudeArgs(sessionId: string): string[] {
+export function headlessClaudeArgs(
+  sessionId: string,
+  /** The pane's claude's own flags (terminalClaudeArgs): model, mode... */
+  flags: string[] = [],
+): string[] {
   return [
+    ...headlessFlags(flags),
     "-p",
     "--resume",
     sessionId,
@@ -43,13 +48,28 @@ export function headlessClaudeArgs(sessionId: string): string[] {
   ];
 }
 
+/** What the headless run sets itself, or has no use for. */
+const NOT_HEADLESS = new Set(["--ide", "--verbose"]);
+
+/**
+ * The flags the pane's claude ran with (already only the kept ones, see
+ * terminalClaudeArgs) that its headless run takes too: the model, the
+ * permission mode, the directories and MCP configs the user gave it.
+ */
+export function headlessFlags(flags: string[]): string[] {
+  return flags.filter((flag) => !NOT_HEADLESS.has(flag.split("=", 1)[0]!));
+}
+
 /**
  * What the pane holder is asked to run: claude resuming the session, in
  * its directory, with the headless environment.
  */
 export function holderStartCommand(options: StartOptions): HolderStartCommand {
   return {
-    argv: ["claude", ...headlessClaudeArgs(options.sessionId)],
+    argv: [
+      "claude",
+      ...headlessClaudeArgs(options.sessionId, options.flags ?? []),
+    ],
     cwd: options.cwd,
     ...holderEnvChanges(options.apiKeyAnswer, options.paneId),
   };
