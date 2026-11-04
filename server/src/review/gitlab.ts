@@ -13,6 +13,8 @@ import type {
   ReviewThread,
 } from "../../../shared/review";
 import {
+  createPullDraft,
+  deletePullDraft,
   isGithubPullUrl,
   parseGithubPullUrl,
   readPullCommitDiff,
@@ -20,7 +22,9 @@ import {
   readPullDiff,
   readPullRawFile,
   readPullRequest,
+  readPullDrafts,
   readPullThreads,
+  updatePullDraft,
 } from "./github";
 import { parseUnifiedDiff } from "./patch";
 
@@ -507,7 +511,23 @@ export async function readMergeRequestThreads(
   mr: MergeRequestInfo,
   sessionId: string,
 ): Promise<ReviewThread[]> {
-  if (mr.forge === "github") return readPullThreads(context, mr, sessionId);
+  if (mr.forge === "github") {
+    const [threads, drafts] = await Promise.all([
+      readPullThreads(context, mr, sessionId),
+      readPullDrafts(context, mr),
+    ]);
+    const byDiscussion = new Map(
+      threads.map((thread) => [thread.gitlab?.discussionId, thread]),
+    );
+    for (const draft of drafts) {
+      const discussion = draft.discussion_id
+        ? byDiscussion.get(draft.discussion_id)
+        : undefined;
+      if (discussion) discussion.comments.push(draftReply(draft));
+      else threads.push(draftThread(draft, sessionId, mr));
+    }
+    return threads;
+  }
   const [discussions, drafts] = await Promise.all([
     glab(context, mr, "GET", `${mrPath(mr)}/discussions?per_page=100`),
     glab(context, mr, "GET", `${mrPath(mr)}/draft_notes?per_page=100`),
@@ -753,8 +773,7 @@ export async function createDraftNote(
   /** The diff the anchor is on, to place ranges and unchanged lines. */
   diff?: ReviewDiff,
 ): Promise<GitLabDraft> {
-  if (mr.forge === "github")
-    throw new Error("GitHub drafts are not supported here yet");
+  if (mr.forge === "github") return createPullDraft(context, mr, anchor, note);
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
     ["note", note, "raw"],
     ...positionFields(mr, anchor, diff),
@@ -769,7 +788,7 @@ export async function createDraftReply(
   note: string,
 ): Promise<GitLabDraft> {
   if (mr.forge === "github")
-    throw new Error("GitHub drafts are not supported here yet");
+    throw new Error("Replies to GitHub discussions are not supported yet");
   if (!/^[0-9a-f]+$/.test(discussionId))
     throw new Error("invalid discussion id");
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
@@ -784,8 +803,7 @@ export async function updateDraftNote(
   id: number,
   note: string,
 ): Promise<GitLabDraft> {
-  if (mr.forge === "github")
-    throw new Error("GitHub drafts are not supported here yet");
+  if (mr.forge === "github") return updatePullDraft(context, mr, id, note);
   return (await glab(context, mr, "PUT", `${mrPath(mr)}/draft_notes/${id}`, [
     ["note", note, "raw"],
   ])) as GitLabDraft;
@@ -796,8 +814,7 @@ export async function deleteDraftNote(
   mr: MergeRequestInfo,
   id: number,
 ): Promise<void> {
-  if (mr.forge === "github")
-    throw new Error("GitHub drafts are not supported here yet");
+  if (mr.forge === "github") return deletePullDraft(context, mr, id);
   await glab(context, mr, "DELETE", `${mrPath(mr)}/draft_notes/${id}`);
 }
 
@@ -809,7 +826,7 @@ export async function replyToDiscussion(
   body: string,
 ): Promise<void> {
   if (mr.forge === "github")
-    throw new Error("GitHub drafts are not supported here yet");
+    throw new Error("Replies to GitHub discussions are not supported yet");
   if (!/^[0-9a-f]+$/.test(discussionId))
     throw new Error("invalid discussion id");
   await glab(

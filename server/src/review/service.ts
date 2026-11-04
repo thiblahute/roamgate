@@ -1435,6 +1435,53 @@ export function createReviewService(args: {
     }
   }
 
+  /**
+   * "Make it mine": an agent's thread in a merge request's review becomes
+   * the user's draft on the forge (a GitLab draft note, a comment of their
+   * pending GitHub review), with the agent's last words or the user's own
+   * rewording. Only the user does this, from the review pane; the agent's
+   * review comment is then gone from here (now the user's), its
+   * discussion resolved.
+   */
+  async function adoptThread(
+    params: Record<string, unknown>,
+  ): Promise<ReviewSnapshot> {
+    const target = session(params.sessionId);
+    if (author(params.author) !== REVIEW_USER)
+      throw new ReviewError("only you can make a comment yours", 403);
+    if (!gitlabMode(target))
+      throw new ReviewError("this is not a merge request's review");
+    const id = text(params.threadId, "thread", 200);
+    const thread = threadsOf(target.id).get(id);
+    if (!thread || thread.kind === "merge-request")
+      throw new ReviewError("no such thread of an agent", 404);
+    const theirs = [...thread.comments]
+      .reverse()
+      .find((comment) => comment.author !== REVIEW_USER);
+    if (!theirs) throw new ReviewError("this thread has no agent comment");
+    const wording =
+      typeof params.text === "string" && params.text.trim()
+        ? params.text
+        : theirs.body;
+    await addThread({
+      sessionId: target.id,
+      kind: "draft",
+      author: REVIEW_USER,
+      anchor: thread.anchor,
+      text: wording,
+    });
+    if (thread.kind === "draft") {
+      threadsOf(target.id).delete(thread.id);
+      storage.deleteThread(thread.id);
+    } else {
+      thread.resolved = true;
+      thread.updatedAt = now();
+      storage.saveThread(thread);
+    }
+    changed(target);
+    return snapshot(target);
+  }
+
   /** The pushes in flight, by merge request review. */
   const pushes = new Map<string, Promise<ReviewSnapshot>>();
 
@@ -3127,6 +3174,7 @@ export function createReviewService(args: {
     findGitlab,
     openGitlab,
     pushLocalDrafts,
+    adoptThread,
     requestAgentReview,
     agentSummary,
     /**

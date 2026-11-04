@@ -1,11 +1,17 @@
 import type {
+  ReviewAnchor,
   ReviewCommit,
   ReviewDiff,
   ReviewThread,
 } from "../../../shared/review";
 import { forgeGate } from "../workspace/forge-calls";
 import { spawnGh } from "./forge";
-import type { GlabContext, MergeRequestInfo, MergeRequestRef } from "./gitlab";
+import type {
+  GitLabDraft,
+  GlabContext,
+  MergeRequestInfo,
+  MergeRequestRef,
+} from "./gitlab";
 import { parseUnifiedDiff } from "./patch";
 
 /**
@@ -226,8 +232,9 @@ export async function readPullRawFile(
 }
 
 /**
- * The pull request's review comments, grouped in their threads, read only.
- * (The user's pending review drafts come with step d.)
+ * The pull request's review comments, grouped in their threads (read
+ * only); the user's pending review comes with them as drafts
+ * (readPullDrafts), whichever app wrote them.
  */
 export async function readPullThreads(
   context: GlabContext,
@@ -279,4 +286,242 @@ export async function readPullThreads(
     });
   }
   return [...threads.values()];
+}
+
+/*
+ * The user's pending GitHub review: its comments are drafts nobody else
+ * sees until the user submits the review on GitHub. Roamgate only adds,
+ * edits and deletes them (on the user's own action in the review pane)
+ * and never submits the review. The pending review's body is the overall
+ * comment, draft id 0.
+ */
+
+const PENDING_QUERY = `query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) { id reviews(states: PENDING, first: 1) { nodes { id body comments(first: 100) { nodes { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } } } } } }`;
+
+type PendingComment = {
+  id: string;
+  databaseId: number;
+  body: string;
+  path: string;
+  line: number | null;
+  originalLine: number | null;
+  startLine: number | null;
+  diffSide: "LEFT" | "RIGHT";
+  replyTo: { databaseId: number } | null;
+};
+
+type Pending = {
+  pullId: string;
+  review: { id: string; body: string; comments: PendingComment[] } | null;
+};
+
+async function graphql(
+  context: GlabContext,
+  host: string,
+  query: string,
+  variables: Record<string, string | number>,
+  kind: string,
+): Promise<any> {
+  const answer = (await ghApi(context, host, "POST", "graphql", {
+    kind,
+    fields: [
+      ["query", query, "raw"],
+      ...Object.entries(variables).map(
+        ([key, value]): [string, string, "raw" | "typed"] => [
+          key,
+          String(value),
+          typeof value === "number" ? "typed" : "raw",
+        ],
+      ),
+    ],
+  })) as any;
+  const error = answer?.errors?.[0]?.message;
+  if (error) throw new Error(`GitHub: ${String(error).slice(0, 300)}`);
+  return answer?.data;
+}
+
+async function readPending(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+): Promise<Pending> {
+  const [owner, name] = mr.project.split("/");
+  const data = await graphql(
+    context,
+    mr.host,
+    PENDING_QUERY,
+    { o: owner!, r: name!, n: mr.iid },
+    "drafts",
+  );
+  const pull = data?.repository?.pullRequest;
+  if (!pull?.id) throw new Error("GitHub: no such pull request");
+  const review = pull.reviews?.nodes?.[0];
+  return {
+    pullId: String(pull.id),
+    review: review
+      ? {
+          id: String(review.id),
+          body: String(review.body ?? ""),
+          comments: (review.comments?.nodes ?? []) as PendingComment[],
+        }
+      : null,
+  };
+}
+
+/** A pending comment as GitLab would answer a draft note. */
+function asDraft(comment: PendingComment): GitLabDraft {
+  const line = comment.line ?? comment.originalLine;
+  const old = comment.diffSide === "LEFT";
+  return {
+    id: comment.databaseId,
+    note: comment.body,
+    discussion_id: comment.replyTo ? String(comment.replyTo.databaseId) : null,
+    position: comment.path
+      ? {
+          old_path: comment.path,
+          new_path: comment.path,
+          old_line: old ? line : null,
+          new_line: old ? null : line,
+        }
+      : null,
+  };
+}
+
+/** The user's pending drafts on the pull request, the overall one first. */
+export async function readPullDrafts(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+): Promise<GitLabDraft[]> {
+  const { review } = await readPending(context, mr);
+  if (!review) return [];
+  return [
+    ...(review.body.trim()
+      ? [{ id: 0, note: review.body, position: null } as GitLabDraft]
+      : []),
+    ...review.comments.map(asDraft),
+  ];
+}
+
+/** The pending review, made (without an event, so it stays pending). */
+async function pendingReview(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+): Promise<{ id: string; comments: PendingComment[]; body: string }> {
+  const pending = await readPending(context, mr);
+  if (pending.review) return pending.review;
+  const data = await graphql(
+    context,
+    mr.host,
+    "mutation($p: ID!, $c: GitObjectID) { addPullRequestReview(input: {pullRequestId: $p, commitOID: $c}) { pullRequestReview { id state } } }",
+    { p: pending.pullId, c: mr.headSha },
+    "draft-review",
+  );
+  const review = data?.addPullRequestReview?.pullRequestReview;
+  if (!review?.id || review.state !== "PENDING")
+    throw new Error("GitHub did not start a pending review");
+  return { id: String(review.id), comments: [], body: "" };
+}
+
+export async function createPullDraft(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  anchor: ReviewAnchor,
+  note: string,
+): Promise<GitLabDraft> {
+  const review = await pendingReview(context, mr);
+  if (!anchor.path) {
+    await setReviewBody(context, mr, review.id, note);
+    return { id: 0, note, position: null };
+  }
+  if (anchor.commit)
+    throw new Error(
+      "GitHub takes review comments on the whole change: comment there, not on one commit",
+    );
+  const line = anchor.endLine ?? anchor.line;
+  const side = anchor.side === "old" ? "LEFT" : "RIGHT";
+  const fields =
+    line === undefined
+      ? `subjectType: FILE`
+      : `line: ${line}, side: ${side}${anchor.endLine !== undefined && anchor.line !== undefined && anchor.line < anchor.endLine ? `, startLine: ${anchor.line}, startSide: ${side}` : ""}`;
+  const data = await graphql(
+    context,
+    mr.host,
+    `mutation($r: ID!, $path: String!, $body: String!) { addPullRequestReviewThread(input: {pullRequestReviewId: $r, path: $path, body: $body, ${fields}}) { thread { comments(first: 1) { nodes { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } } } }`,
+    { r: review.id, path: anchor.path, body: note },
+    "draft",
+  );
+  const comment =
+    data?.addPullRequestReviewThread?.thread?.comments?.nodes?.[0];
+  if (!comment) throw new Error("GitHub did not add the draft comment");
+  return asDraft(comment);
+}
+
+async function setReviewBody(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  reviewId: string,
+  body: string,
+) {
+  await graphql(
+    context,
+    mr.host,
+    "mutation($r: ID!, $b: String!) { updatePullRequestReview(input: {pullRequestReviewId: $r, body: $b}) { pullRequestReview { id } } }",
+    { r: reviewId, b: body },
+    "draft",
+  );
+}
+
+/** The pending comment with that id, from the user's pending review. */
+async function pendingComment(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  id: number,
+) {
+  const { review } = await readPending(context, mr);
+  const comment = review?.comments.find((each) => each.databaseId === id);
+  if (!review || (id !== 0 && !comment))
+    throw new Error("that draft is no longer in your pending GitHub review");
+  return { review, comment };
+}
+
+export async function updatePullDraft(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  id: number,
+  note: string,
+): Promise<GitLabDraft> {
+  const { review, comment } = await pendingComment(context, mr, id);
+  if (id === 0) {
+    await setReviewBody(context, mr, review.id, note);
+    return { id: 0, note, position: null };
+  }
+  const data = await graphql(
+    context,
+    mr.host,
+    "mutation($c: ID!, $b: String!) { updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $c, body: $b}) { pullRequestReviewComment { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } }",
+    { c: comment!.id, b: note },
+    "draft",
+  );
+  const updated =
+    data?.updatePullRequestReviewComment?.pullRequestReviewComment;
+  if (!updated) throw new Error("GitHub did not update the draft");
+  return asDraft(updated);
+}
+
+export async function deletePullDraft(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  id: number,
+): Promise<void> {
+  const { review, comment } = await pendingComment(context, mr, id);
+  if (id === 0) {
+    await setReviewBody(context, mr, review.id, "");
+    return;
+  }
+  await graphql(
+    context,
+    mr.host,
+    "mutation($c: ID!) { deletePullRequestReviewComment(input: {id: $c}) { pullRequestReview { id } } }",
+    { c: comment!.id },
+    "draft",
+  );
 }

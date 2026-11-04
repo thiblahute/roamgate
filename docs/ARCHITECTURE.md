@@ -717,6 +717,17 @@ session, waits for the shell, then resumes; a busy one is reported
 `requestAgentReview` with that pane, so Claude's threads are the review
 pane's own (local) threads.
 
+Forge drafts: `review/github.ts` keeps the user's drafts in their pending
+GitHub review, through GraphQL (`reviews(states: PENDING)`,
+`addPullRequestReview` without an event, `addPullRequestReviewThread`,
+`updatePullRequestReviewComment`, `deletePullRequestReviewComment`, the
+review body for the overall comment as draft id 0), answered in GitLab's
+draft note shape so `review/service.ts` keeps one path. Only browser
+calls (author `you`) create, edit or delete one; agents' drafts stay
+local, and `review.adopt {thread_id}` (the user's "Make it mine") turns
+an agent's thread into the user's draft. No code path submits a review.
+Replies to GitHub discussions are refused for now.
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p

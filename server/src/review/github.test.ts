@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { withoutGateFlags } from "../workspace/forge-calls";
 import {
   createDraftNote,
+  createDraftReply,
+  deleteDraftNote,
+  updateDraftNote,
   parseMergeRequestUrl,
   readMergeRequest,
   readMergeRequestDiff,
@@ -19,6 +22,18 @@ function context(answers: Record<string, unknown>) {
       runProcessWithCodeTimeout: async (argv: string[]) => {
         const plain = withoutGateFlags(argv);
         calls.push(plain);
+        if (plain.includes("graphql"))
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              data: {
+                repository: {
+                  pullRequest: { id: "PR", reviews: { nodes: [] } },
+                },
+              },
+            }),
+            stderr: "",
+          };
         const path = plain.find((part) => part.startsWith("repos/")) ?? "";
         const key = Object.keys(answers).find((prefix) =>
           path.startsWith(prefix),
@@ -97,12 +112,91 @@ describe("GitHub pull requests in the review pane", () => {
     });
     // Every call is a read with gh.
     expect(
-      calls.every((argv) => argv[0] === "gh" && argv.includes("GET")),
+      calls.every(
+        (argv) =>
+          argv[0] === "gh" &&
+          (argv.includes("GET") ||
+            (argv.includes("graphql") && !argv.join(" ").includes("mutation"))),
+      ),
     ).toBe(true);
   });
 
-  test("no write reaches GitHub through the GitLab draft calls", async () => {
-    const { context: ctx, calls } = context({});
+  test("drafts are the user's pending review; replies and submits never", async () => {
+    const calls: string[][] = [];
+    let pending: any = null;
+    const comments: any[] = [];
+    const ctx = {
+      root: "/tmp",
+      shQuote: (value: string) => `'${value}'`,
+      runProcessWithCodeTimeout: async (argv: string[]) => {
+        const plain = withoutGateFlags(argv);
+        calls.push(plain);
+        const query =
+          plain.find((part) => part.startsWith("query="))?.slice(6) ?? "";
+        const field = (name: string) =>
+          plain
+            .find((part) => part.startsWith(`${name}=`))
+            ?.slice(name.length + 1);
+        let data: any;
+        if (query.includes("reviews(states: PENDING"))
+          data = {
+            repository: {
+              pullRequest: {
+                id: "PR1",
+                reviews: {
+                  nodes: pending
+                    ? [{ ...pending, comments: { nodes: comments } }]
+                    : [],
+                },
+              },
+            },
+          };
+        else if (query.includes("addPullRequestReview(")) {
+          pending = { id: "R1", body: "" };
+          data = {
+            addPullRequestReview: {
+              pullRequestReview: { id: "R1", state: "PENDING" },
+            },
+          };
+        } else if (query.includes("addPullRequestReviewThread")) {
+          const comment = {
+            id: "C9",
+            databaseId: 9,
+            body: field("body"),
+            path: field("path"),
+            line: 3,
+            originalLine: 3,
+            startLine: null,
+            diffSide: "RIGHT",
+            replyTo: null,
+          };
+          comments.push(comment);
+          data = {
+            addPullRequestReviewThread: {
+              thread: { comments: { nodes: [comment] } },
+            },
+          };
+        } else if (query.includes("updatePullRequestReviewComment")) {
+          comments[0].body = field("b");
+          data = {
+            updatePullRequestReviewComment: {
+              pullRequestReviewComment: comments[0],
+            },
+          };
+        } else if (query.includes("deletePullRequestReviewComment")) {
+          comments.splice(0, 1);
+          data = {
+            deletePullRequestReviewComment: { pullRequestReview: { id: "R1" } },
+          };
+        } else if (query.includes("updatePullRequestReview(")) {
+          pending.body = field("b");
+          data = {
+            updatePullRequestReview: { pullRequestReview: { id: "R1" } },
+          };
+        } else return { code: 1, stdout: "", stderr: "unexpected" };
+        return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
+      },
+    };
     const mr = {
       host: "github.com",
       project: "o/r",
@@ -111,14 +205,35 @@ describe("GitHub pull requests in the review pane", () => {
       url: URL,
       title: "",
       state: "opened",
-      baseSha: "",
-      startSha: "",
-      headSha: "",
+      baseSha: "b",
+      startSha: "b",
+      headSha: "a".repeat(40),
     };
-    await expect(createDraftNote(ctx, mr, {}, "x")).rejects.toThrow(/GitHub/);
+    const draft = await createDraftNote(
+      ctx,
+      mr,
+      { path: "a.c", line: 3, side: "new" },
+      "nit",
+    );
+    expect(draft).toMatchObject({
+      id: 9,
+      note: "nit",
+      position: { new_path: "a.c", new_line: 3 },
+    });
+    expect((await updateDraftNote(ctx, mr, 9, "nit 2")).note).toBe("nit 2");
+    await createDraftNote(ctx, mr, {}, "Overall");
+    expect(pending.body).toBe("Overall");
+    await deleteDraftNote(ctx, mr, 9);
+    expect(comments).toEqual([]);
     await expect(replyToDiscussion(ctx, mr, "1", "x")).rejects.toThrow(
       /GitHub/,
     );
-    expect(calls).toEqual([]);
+    await expect(createDraftReply(ctx, mr, "1", "x")).rejects.toThrow(/GitHub/);
+    const all = calls.map((argv) => argv.join(" ")).join("\n");
+    // Never an event: nothing is submitted.
+    expect(all).not.toMatch(
+      /submitPullRequestReview|event|APPROVE|COMMENT\b|REQUEST_CHANGES/,
+    );
+    expect(all).not.toContain("/comments/"); // no public comment
   });
 });

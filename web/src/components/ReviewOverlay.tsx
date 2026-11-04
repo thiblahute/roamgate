@@ -209,6 +209,7 @@ const REVIEW_WRITES = new Set([
   "review.delete",
   "review.resolve",
   "review.restore",
+  "review.adopt",
 ]);
 const SYNTAX_MAX_ROWS = 20_000;
 const LARGE_FILE_LINES = 600;
@@ -5415,10 +5416,48 @@ export function ReviewOverlay({
                   Fold
                 </button>
               ) : null}
+              {adoptButton(thread)}
             </div>
           )
+        ) : adoptable(thread) ? (
+          <div className="rc-bar">
+            <span className="spacer" />
+            {adoptButton(thread)}
+          </div>
         ) : null}
       </div>
+    );
+  }
+
+  /** An agent's thread in a merge request's review, not yet the user's. */
+  function adoptable(thread: ReviewThread): boolean {
+    return (
+      session.gitlab &&
+      thread.kind !== "merge-request" &&
+      !thread.gitlab &&
+      !thread.resolved &&
+      thread.comments.some((comment) => comment.author !== REVIEW_USER)
+    );
+  }
+
+  /** "Make it mine": the agent's words become the user's forge draft. */
+  function adoptButton(thread: ReviewThread): ReactNode {
+    if (!adoptable(thread)) return null;
+    const forge =
+      session.target.kind === "mr" && /\/pull\/\d+/.test(session.target.url)
+        ? "GitHub"
+        : "GitLab";
+    return (
+      <button
+        type="button"
+        className="btn ghost"
+        title={`Its text becomes your draft on ${forge}; you submit your review there. Edit it there or here after.`}
+        onClick={() =>
+          void run(() => call("review.adopt", { thread_id: thread.id }))
+        }
+      >
+        Make it mine
+      </button>
     );
   }
 
@@ -5944,6 +5983,20 @@ export function ReviewOverlay({
   const localDrafts =
     threads.filter((t) => t.kind === "draft" && !t.gitlab).length +
     (session.summaryUnsent ? 1 : 0);
+  /** The user's drafts on the forge: their pending review there. */
+  const forgeDrafts =
+    threads.filter((t) => t.gitlab?.draftId !== undefined).length +
+    threads.reduce(
+      (count, t) =>
+        count +
+        t.comments.filter((comment) => comment.gitlabDraftId !== undefined)
+          .length,
+      0,
+    );
+  const forgeName =
+    session.target.kind === "mr" && /\/pull\/\d+/.test(session.target.url)
+      ? "GitHub"
+      : "GitLab";
 
   let gitlabSection: ReactNode = null;
   if (session.gitlab) {
@@ -6305,6 +6358,17 @@ export function ReviewOverlay({
             />
           </div>
         ) : null}
+        {session.gitlab && gitlabMr && forgeDrafts > 0 ? (
+          <a
+            className="btn ghost rv-sm rv-forge-drafts"
+            href={gitlabMr.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`Your pending review on ${forgeName}: Roamgate never submits it; submit it there`}
+          >
+            {forgeDrafts} draft{forgeDrafts === 1 ? "" : "s"} on {forgeName}
+          </a>
+        ) : null}
         {session.gitlab && localDrafts > 0 ? (
           <button
             type="button"
@@ -6318,7 +6382,7 @@ export function ReviewOverlay({
               )
             }
           >
-            GitLab draft ({localDrafts})
+            {forgeName} draft ({localDrafts})
           </button>
         ) : null}
         <ReviewMenu
