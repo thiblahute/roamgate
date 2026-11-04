@@ -30,6 +30,7 @@ const base = {
   "assistant.toggle": ["Ctrl+Alt+Shift+A"],
   "companion.call": ["Ctrl+Alt+V"],
   "activity.open": ["Alt+A"],
+  "reviews.inbox": ["Alt+M"],
   "zen.toggle": ["Ctrl+Alt+Z"],
   "panes.recent": ["Ctrl+Alt+J"],
   "overlay.toggle": ["Alt+F"],

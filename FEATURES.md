@@ -1012,6 +1012,29 @@ reply. Both chats show it: **From NAME** in the receiver's, **To NAME** in the
 sender's. Only sessions Roamgate manages can send or be addressed, and a
 rate limit stops two sessions answering each other in a loop.
 
+||||||| parent of b823117f (Add a reviews inbox of merge and pull requests waiting for you)
+
+## Reviews Inbox
+
+**Menu > Reviews**, the command menu or `Option+M` (`Alt+M`) opens the
+merge and pull requests waiting for you, from every GitLab and GitHub host
+glab and gh are signed in to on the Roamgate machine (or the hosts listed in
+its settings). It sits beside the page as Ranger does, with the same head,
+list and detail. **For you** lists the open requests where you are a
+requested reviewer, an assignee or mentioned (a pending GitLab to-do, a
+GitHub mention); **Suggested** lists those Claude picked from the projects
+you follow, each with why. A row shows the state, the pipeline, what changed
+since you last looked (new commits, new comments) and how many drafts you
+have pending on the forge. `j`/`k` move, `Enter` opens, `o` opens it on the
+forge, `x` says not interested and `+` more like this on a suggestion, `r`
+refreshes, `Esc` steps back. On a phone it fills the screen.
+
+The inbox only reads: one GraphQL query per host every 5 minutes while it is
+shown (15 otherwise), through the same per-host budget as the forge chips.
+Its settings (gear) hold the hosts, the followed projects, when the review
+worktree follows the selected request, how long a closed request's review
+is kept, and hints for the suggestions.
+
 ## Diff Viewer
 
 - Compare **Working tree**, **Against branch**, or **Last step** (the latest
@@ -1205,6 +1228,7 @@ and is skipped, with a note, on a browser that does not match.
 | Ranger                                                                | `Cmd+Option+Shift+A`    | `Ctrl+Alt+Shift+A`                      |
 | Call the voice companion                                              | `Cmd+Option+V`          | `Ctrl+Alt+V`                            |
 | Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
+| Reviews inbox                                                         | `Option+M`              | `Alt+M`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |
 | Recent pane switcher                                                  | `Ctrl+Tab`              | `Ctrl+Alt+J`                            |
 | Search panes                                                          | `Alt+K`                 | `Alt+K`                                 |

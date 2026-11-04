@@ -1,0 +1,563 @@
+import {
+  ChevronLeft,
+  ExternalLink,
+  LoaderCircle,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  Settings,
+  X,
+} from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { forgeKind, forgeRefLabel } from "../../../shared/forge";
+import type {
+  MrHostState,
+  MrInboxEntry,
+  MrReason,
+  MrSection,
+} from "../../../shared/mrReviews";
+import { useLayoutPreferences } from "../layoutPreferences";
+import { mrReviewsCall, useMrInbox } from "../mrReviews";
+import { formatUiDateTime } from "../uiLocale";
+import { MrReviewsSettingsView } from "./MrReviewsSettings";
+import "./AssistantPanel.css";
+import "./AssistantTasks.css";
+import "./MrReviewsPanel.css";
+
+/**
+ * The reviews inbox, Ranger's sibling: the same right-hand panel, head,
+ * list rows and state chips, list/detail split and Escape order. Two
+ * sections: the requests that are the user's (review requested, assigned,
+ * mentioned) and Claude's suggestions from the followed projects.
+ */
+
+type View = "list" | "settings";
+
+const REASON_LABEL: Record<MrReason, string> = {
+  review_requested: "review requested",
+  assigned: "assigned",
+  mentioned: "mentioned",
+};
+
+const SECTION_TITLE: Record<MrSection, string> = {
+  mine: "For you",
+  suggested: "Suggested",
+};
+
+function relative(iso: string): string {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return "";
+  const minutes = Math.round((Date.now() - at) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+/** What changed since the user looked, in a few words; null when nothing. */
+export function unreadLabel(entry: MrInboxEntry): string | null {
+  if (entry.isNew) return "new";
+  const unread = entry.unread;
+  if (!unread?.changed) return null;
+  const parts = [
+    ...(unread.newCommits ? ["new commits"] : []),
+    ...(unread.newNotes
+      ? [`${unread.newNotes} new comment${unread.newNotes === 1 ? "" : "s"}`]
+      : []),
+  ];
+  return parts.length ? parts.join(", ") : "updated";
+}
+
+function draftsLabel(entry: MrInboxEntry): string | null {
+  if (!entry.drafts) return null;
+  return `${entry.drafts} draft${entry.drafts === 1 ? "" : "s"} on ${entry.provider === "gitlab" ? "GitLab" : "GitHub"}`;
+}
+
+function stateLabel(entry: MrInboxEntry): string {
+  if (entry.state !== "open") return entry.state;
+  return entry.draft ? "draft" : "open";
+}
+
+function PipelineDot({ status }: { status: MrInboxEntry["pipeline"] }) {
+  if (!status) return null;
+  return (
+    <span
+      className={`mr-reviews-pipeline is-${status}`}
+      title={`Pipeline: ${status}`}
+      role="img"
+      aria-label={`Pipeline ${status}`}
+    />
+  );
+}
+
+function hostProblem(host: MrHostState): string | null {
+  if (host.state === "ok" || host.state === "pending")
+    return host.message ?? null;
+  return host.message ?? `${host.host}: ${host.state.replace(/_/g, " ")}`;
+}
+
+export function MrReviewRow({
+  entry,
+  selected,
+  onSelect,
+  onOpen,
+}: {
+  entry: MrInboxEntry;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
+}) {
+  const unread = unreadLabel(entry);
+  const drafts = draftsLabel(entry);
+  return (
+    <li>
+      <button
+        type="button"
+        className={`assistant-task-row mr-reviews-row${selected ? " is-selected" : ""}${unread ? " is-unread" : ""}`}
+        aria-current={selected ? "true" : undefined}
+        data-mr-key={entry.key}
+        onFocus={onSelect}
+        onClick={onOpen}
+      >
+        <div>
+          <strong>
+            <span className="mr-reviews-number">
+              {forgeRefLabel(entry, true)}
+            </span>{" "}
+            {entry.title}
+          </strong>
+          <span className={`assistant-task-state is-${stateLabel(entry)}`}>
+            {stateLabel(entry)}
+          </span>
+        </div>
+        <span className="mr-reviews-row-meta">
+          <PipelineDot status={entry.pipeline} />
+          {entry.project} · {entry.author} · {relative(entry.updatedAt)}
+        </span>
+        {entry.section === "suggested" && entry.reason ? (
+          <small className="mr-reviews-reason">{entry.reason}</small>
+        ) : entry.reasons.length ? (
+          <small>{entry.reasons.map((r) => REASON_LABEL[r]).join(", ")}</small>
+        ) : null}
+        {unread || drafts ? (
+          <small className="mr-reviews-badges">
+            {unread ? <em className="mr-reviews-unread">{unread}</em> : null}
+            {drafts ? <em className="mr-reviews-drafts">{drafts}</em> : null}
+          </small>
+        ) : null}
+      </button>
+    </li>
+  );
+}
+
+function MrDetail({
+  entry,
+  onBack,
+  actions,
+}: {
+  entry: MrInboxEntry;
+  onBack: () => void;
+  actions?: ReactNode;
+}) {
+  const unread = unreadLabel(entry);
+  const drafts = draftsLabel(entry);
+  const kind = forgeKind(entry.provider);
+  return (
+    <>
+      <div className="assistant-section-heading">
+        <button type="button" className="ghost" onClick={onBack}>
+          <ChevronLeft size={13} /> All reviews
+        </button>
+      </div>
+      <section className="assistant-task-overview mr-reviews-detail">
+        <div className="assistant-task-heading">
+          <h3>
+            <span className="mr-reviews-number">{forgeRefLabel(entry)}</span>{" "}
+            {entry.title}
+          </h3>
+          <span className={`assistant-task-state is-${stateLabel(entry)}`}>
+            {stateLabel(entry)}
+          </span>
+        </div>
+        {entry.reason ? (
+          <p className="mr-reviews-reason">{entry.reason}</p>
+        ) : null}
+        <dl className="assistant-task-metadata">
+          <div>
+            <dt>Author</dt>
+            <dd>{entry.author}</dd>
+          </div>
+          <div>
+            <dt>Branches</dt>
+            <dd>
+              {entry.sourceBranch} → {entry.targetBranch}
+            </dd>
+          </div>
+          <div>
+            <dt>Pipeline</dt>
+            <dd>
+              <PipelineDot status={entry.pipeline} /> {entry.pipeline ?? "none"}
+            </dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{formatUiDateTime(entry.updatedAt)}</dd>
+          </div>
+          {entry.reasons.length ? (
+            <div>
+              <dt>Why</dt>
+              <dd>{entry.reasons.map((r) => REASON_LABEL[r]).join(", ")}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Since you looked</dt>
+            <dd>{unread ?? "nothing new"}</dd>
+          </div>
+          <div>
+            <dt>Your drafts</dt>
+            <dd>
+              {drafts ?? (entry.drafts === 0 ? "none" : "not read yet")}
+              {entry.drafts ? (
+                <>
+                  {" "}
+                  <a href={entry.url} target="_blank" rel="noreferrer">
+                    submit them on the {kind}
+                  </a>
+                </>
+              ) : null}
+            </dd>
+          </div>
+        </dl>
+        <div className="assistant-task-buttons">
+          {actions}
+          <a
+            className="button ghost"
+            href={entry.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink size={13} /> Open on{" "}
+            {entry.provider === "gitlab" ? "GitLab" : "GitHub"}
+          </a>
+        </div>
+      </section>
+    </>
+  );
+}
+
+export function MrReviewsPanel({
+  onClose,
+  initialSelect,
+  renderActions,
+  onOpenEntry,
+}: {
+  onClose: () => void;
+  /** The request to show selected (from a review: the one shown). */
+  initialSelect?: string;
+  /** Step (b) on: the buttons of a request's detail (Review...). */
+  renderActions?: (entry: MrInboxEntry) => ReactNode;
+  /** Enter on a request: its review (else its detail). */
+  onOpenEntry?: (entry: MrInboxEntry) => void;
+}) {
+  const { mobile } = useLayoutPreferences();
+  const { inbox, error, reload } = useMrInbox();
+  const [view, setView] = useState<View>("list");
+  const [maximized, setMaximized] = useState(false);
+  const [selected, setSelected] = useState<string | null>(
+    initialSelect ?? null,
+  );
+  const [detail, setDetail] = useState<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const entries = useMemo(() => inbox?.entries ?? [], [inbox]);
+  const bySection = useMemo(() => {
+    const groups: Record<MrSection, MrInboxEntry[]> = {
+      mine: [],
+      suggested: [],
+    };
+    for (const entry of entries) groups[entry.section].push(entry);
+    return groups;
+  }, [entries]);
+  const ordered = [...bySection.mine, ...bySection.suggested];
+  const detailEntry = detail
+    ? entries.find((entry) => entry.key === detail)
+    : undefined;
+
+  useEffect(() => {
+    if (initialSelect) setSelected(initialSelect);
+  }, [initialSelect]);
+
+  // The selected row follows the keys and stays in view.
+  useEffect(() => {
+    if (!selected) return;
+    const row = panelRef.current?.querySelector<HTMLElement>(
+      `[data-mr-key="${CSS.escape(selected)}"]`,
+    );
+    row?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
+  // Focus the panel on open, so its keys work at once.
+  useEffect(() => {
+    panelRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const open = (entry: MrInboxEntry) => {
+    setSelected(entry.key);
+    if (onOpenEntry) onOpenEntry(entry);
+    else {
+      setDetail(entry.key);
+      void mrReviewsCall("seen", { key: entry.key }).catch(() => {});
+    }
+  };
+
+  const feedback = (
+    entry: MrInboxEntry,
+    verdict: "not_interested" | "more_like_this",
+  ) =>
+    void mrReviewsCall("feedback", {
+      key: entry.key,
+      verdict: entry.feedback === verdict ? null : verdict,
+    }).then(() => reload());
+
+  const move = (step: number) => {
+    if (!ordered.length) return;
+    const at = ordered.findIndex((entry) => entry.key === selected);
+    const next =
+      at < 0
+        ? step > 0
+          ? 0
+          : ordered.length - 1
+        : Math.min(ordered.length - 1, Math.max(0, at + step));
+    setSelected(ordered[next]!.key);
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    // The app's own shortcuts must not take typing in the panel.
+    event.stopPropagation();
+    if (event.nativeEvent.isComposing || event.defaultPrevented) return;
+    const typing =
+      event.target instanceof HTMLElement &&
+      (event.target.closest("input, textarea, select, [contenteditable]") ??
+        null) !== null;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (view === "settings") setView("list");
+      else if (detail) setDetail(null);
+      else if (maximized && !mobile) setMaximized(false);
+      else onClose();
+      return;
+    }
+    if (typing || view !== "list" || detail) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const current = ordered.find((entry) => entry.key === selected);
+    if (event.key === "j" || event.key === "ArrowDown") {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === "k" || event.key === "ArrowUp") {
+      event.preventDefault();
+      move(-1);
+    } else if (event.key === "Enter" && current) {
+      event.preventDefault();
+      open(current);
+    } else if (event.key === "o" && current) {
+      event.preventDefault();
+      window.open(current.url, "_blank", "noopener");
+    } else if (event.key === "r") {
+      event.preventDefault();
+      void reload(true);
+    } else if (event.key === "x" && current?.section === "suggested") {
+      event.preventDefault();
+      feedback(current, "not_interested");
+    } else if (event.key === "+" && current?.section === "suggested") {
+      event.preventDefault();
+      feedback(current, "more_like_this");
+    }
+  };
+
+  const problems = (inbox?.hosts ?? [])
+    .map(hostProblem)
+    .filter((line): line is string => !!line);
+  const status = inbox?.refreshing
+    ? "Refreshing"
+    : inbox?.refreshedAt
+      ? `Updated ${relative(inbox.refreshedAt)}`
+      : "Not read yet";
+
+  return (
+    <aside
+      ref={panelRef}
+      tabIndex={-1}
+      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}`}
+      aria-label="Reviews"
+      onKeyDown={onKeyDown}
+    >
+      <header className="assistant-panel-head">
+        <div>
+          <div className="assistant-panel-title">
+            <strong>Reviews</strong>
+          </div>
+          <div className="assistant-panel-meta">
+            <nav className="assistant-primary-nav" aria-label="Reviews views">
+              {(["list", "settings"] as const).map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  className="ghost"
+                  aria-pressed={view === item}
+                  onClick={() => setView(item)}
+                >
+                  {item === "list" ? "Inbox" : "Settings"}
+                </button>
+              ))}
+            </nav>
+            <span
+              className={`assistant-panel-status${inbox?.refreshing ? " is-busy" : ""}`}
+            >
+              {status}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Refresh"
+          title="Refresh (r)"
+          disabled={inbox?.refreshing}
+          onClick={() => void reload(true)}
+        >
+          <RefreshCw size={16} />
+        </button>
+        {!mobile ? (
+          <button
+            type="button"
+            className="assistant-icon-button"
+            title={maximized ? "Restore window" : "Maximize window"}
+            aria-label={maximized ? "Restore Reviews" : "Maximize Reviews"}
+            aria-pressed={maximized}
+            onClick={() => setMaximized((current) => !current)}
+          >
+            {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Reviews settings"
+          title="Hosts, followed projects, checkout"
+          aria-pressed={view === "settings"}
+          onClick={() => setView(view === "settings" ? "list" : "settings")}
+        >
+          <Settings size={16} />
+        </button>
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Close Reviews"
+          title="Close"
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </header>
+      {error ? (
+        <div className="assistant-error" role="alert">
+          <span>{error}</span>
+        </div>
+      ) : null}
+      {view === "settings" ? (
+        <MrReviewsSettingsView onSaved={() => void reload(true)} />
+      ) : (
+        <div className="assistant-tasks mr-reviews-body">
+          {detailEntry ? (
+            <MrDetail
+              entry={detailEntry}
+              onBack={() => setDetail(null)}
+              actions={
+                <>
+                  {renderActions?.(detailEntry)}
+                  {detailEntry.section === "suggested" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="ghost"
+                        aria-pressed={detailEntry.feedback === "more_like_this"}
+                        onClick={() => feedback(detailEntry, "more_like_this")}
+                      >
+                        More like this
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        aria-pressed={detailEntry.feedback === "not_interested"}
+                        onClick={() => feedback(detailEntry, "not_interested")}
+                      >
+                        Not interested
+                      </button>
+                    </>
+                  ) : null}
+                </>
+              }
+            />
+          ) : !inbox ? (
+            <div className="assistant-panel-empty">
+              <LoaderCircle className="assistant-spinner" size={24} />
+            </div>
+          ) : (
+            <>
+              {problems.length ? (
+                <div className="assistant-hint mr-reviews-hosts">
+                  {problems.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+              ) : null}
+              {(["mine", "suggested"] as const).map((section) => (
+                <section
+                  key={section}
+                  className="mr-reviews-section"
+                  aria-label={SECTION_TITLE[section]}
+                >
+                  <h3 className="mr-reviews-section-title">
+                    {SECTION_TITLE[section]}
+                    <span>{bySection[section].length}</span>
+                  </h3>
+                  {bySection[section].length ? (
+                    <ul className="assistant-task-list">
+                      {bySection[section].map((entry) => (
+                        <MrReviewRow
+                          key={entry.key}
+                          entry={entry}
+                          selected={entry.key === selected}
+                          onSelect={() => setSelected(entry.key)}
+                          onOpen={() => open(entry)}
+                        />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="assistant-hint">
+                      {section === "mine"
+                        ? inbox.refreshedAt
+                          ? "Nothing waits for you."
+                          : "Reading the forges..."
+                        : inbox.curation.state === "off"
+                          ? "Follow projects in the settings to get suggestions."
+                          : inbox.curation.state === "running"
+                            ? "Claude is picking suggestions..."
+                            : "No suggestion right now."}
+                    </p>
+                  )}
+                </section>
+              ))}
+              {!mobile ? (
+                <p className="assistant-hint mr-reviews-keys">
+                  j/k move · Enter open · o on the forge · x not interested · +
+                  more like this · r refresh
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      )}
+    </aside>
+  );
+}

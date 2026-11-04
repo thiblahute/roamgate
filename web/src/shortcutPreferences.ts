@@ -57,6 +57,7 @@ const LATE_SHORTCUT_IDS: ShortcutId[] = [
   "pane.tasks",
   "overlay.fullscreen",
   "activity.open",
+  "reviews.inbox",
 ];
 /** Actions renamed since presets could be saved: old id -> new id. */
 const RENAMED_SHORTCUT_IDS: Record<string, ShortcutId> = {

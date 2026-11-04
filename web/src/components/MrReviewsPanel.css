@@ -1,0 +1,192 @@
+/* The reviews panel: Ranger's panel (AssistantPanel.css) and task list
+   (AssistantTasks.css), placed over the page from its own root. */
+
+.mr-reviews-root {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mr-reviews-panel {
+  pointer-events: auto;
+  outline: none;
+}
+
+.mr-reviews-panel.is-floating {
+  position: absolute;
+  top: 52px;
+  right: 8px;
+  bottom: 8px;
+  width: min(var(--assistant-panel-width, 420px), calc(100% - 16px));
+}
+
+.mr-reviews-panel.is-maximized {
+  position: absolute;
+  inset: 52px 8px 8px;
+}
+
+.mr-reviews-panel.is-mobile {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+
+.mr-reviews-body {
+  gap: 14px;
+}
+
+.mr-reviews-section {
+  display: grid;
+  gap: 8px;
+}
+
+.mr-reviews-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mr-reviews-section-title > span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.mr-reviews-row.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mr-reviews-row.is-unread strong {
+  color: var(--text-strong);
+}
+
+.mr-reviews-number {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mr-reviews-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mr-reviews-pipeline {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.mr-reviews-pipeline.is-success {
+  background: var(--success, #3fb950);
+}
+
+.mr-reviews-pipeline.is-failed {
+  background: var(--danger, #f85149);
+}
+
+.mr-reviews-pipeline.is-running,
+.mr-reviews-pipeline.is-pending {
+  background: var(--warning, #d29922);
+}
+
+.mr-reviews-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mr-reviews-badges em {
+  font-style: normal;
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.mr-reviews-unread {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mr-reviews-drafts {
+  background: var(--viewer-code-bg);
+  color: var(--text-strong);
+}
+
+.mr-reviews-reason {
+  color: var(--text);
+  font-style: italic;
+}
+
+.assistant-task-state.is-draft,
+.assistant-task-state.is-merged,
+.assistant-task-state.is-closed {
+  background: var(--viewer-code-bg);
+  color: var(--muted);
+}
+
+.assistant-task-state.is-open {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mr-reviews-detail .assistant-task-metadata > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.mr-reviews-hosts p {
+  margin: 0;
+}
+
+.mr-reviews-keys {
+  margin-top: auto;
+}
+
+.mr-reviews-settings-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.mr-reviews-settings-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mr-reviews-settings-list small {
+  color: var(--muted);
+}
+
+.mr-reviews-settings-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mr-reviews-settings-add input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.mr-reviews-settings-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+}
