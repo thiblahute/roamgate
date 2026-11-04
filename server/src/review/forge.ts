@@ -483,7 +483,7 @@ async function gh(
   );
 }
 
-async function spawnGh(
+export async function spawnGh(
   context: ForgeContext,
   full: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {

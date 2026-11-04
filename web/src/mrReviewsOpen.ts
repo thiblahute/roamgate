@@ -56,6 +56,11 @@ export function openMrReviews(select?: string) {
   void loadRoot().then((module) => module.showMrReviews(select));
 }
 
+/** Opens a request's review, through the panel (it asks what it needs). */
+export function openMrReviewByKey(key: string) {
+  void loadRoot().then((module) => module.showMrReviews(key, key));
+}
+
 /** Opens the panel, or closes it when it is open. */
 export function toggleMrReviews() {
   void loadRoot().then((module) => module.toggleMrReviews());

@@ -172,7 +172,12 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
     } catch {
       throw new ReviewError("invalid merge request URL");
     }
-    if (parsed.protocol !== "https:" || !/\/-\/merge_requests\/\d+/.test(url))
+    if (
+      parsed.protocol !== "https:" ||
+      !/\/-\/merge_requests\/\d+|^https:\/\/[^/]+\/[\w.-]+\/[\w.-]+\/pull\/\d+/.test(
+        url,
+      )
+    )
       throw new ReviewError("invalid merge request URL");
     return { kind: "mr", url: url.replace(/[#?].*$/, "") };
   }

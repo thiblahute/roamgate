@@ -14,7 +14,13 @@ import {
   openActivityTimeline,
 } from "../activityTimelineOpen";
 import { callCompanion } from "../companionCallOpen";
-import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
+import {
+  MR_REVIEWS_ENTRY,
+  openMrReviewByKey,
+  openMrReviews,
+} from "../mrReviewsOpen";
+import { latestMrInbox, loadMrInbox } from "../mrReviews";
+import { forgeRefLabel } from "../../../shared/forge";
 import { voiceFronting } from "../voiceFrontFlag";
 import { endpointCreationReason } from "../store";
 import { normalizeSearchText } from "../searchText";
@@ -108,6 +114,24 @@ type ActionDefinition = {
   disabledReason?: string | null;
   run: () => void;
 };
+
+/** The inbox as last read, read once more when a search starts. */
+function useMrInboxForSearch(search: string) {
+  const [inbox, setInbox] = useState(latestMrInbox);
+  const searching = search.trim().length > 0;
+  useEffect(() => {
+    if (!searching) return;
+    let live = true;
+    loadMrInbox({ viewer: false }).then(
+      (next) => live && setInbox(next),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [searching]);
+  return inbox;
+}
 
 type ActionGroupDefinition = {
   heading: string;
@@ -1219,6 +1243,26 @@ export function CommandCombobox({
     },
   ];
 
+  // The inbox's requests, found by number or title once you type.
+  const mrInbox = useMrInboxForSearch(search);
+  const reviewActions: ActionDefinition[] = search.trim()
+    ? (mrInbox?.entries ?? []).map((entry) => ({
+        key: `mr-review-${entry.key}`,
+        icon: <GitPullRequest size={15} />,
+        title: `${forgeRefLabel(entry, true)} ${entry.title}`,
+        detail: `Review · ${entry.project} · ${entry.author}`,
+        keywords: [
+          String(entry.number),
+          `!${entry.number}`,
+          `#${entry.number}`,
+          entry.project,
+          entry.author,
+          "review",
+        ],
+        run: () => openMrReviewByKey(entry.key),
+      }))
+    : [];
+
   const actionGroups: ActionGroupDefinition[] = [
     { heading: "Current", actions: currentActions },
     { heading: "Files", actions: fileActions },
@@ -1229,6 +1273,7 @@ export function CommandCombobox({
     { heading: "Ports", actions: forwardActions },
     { heading: "Agents", actions: agentActions },
     { heading: "Activity", actions: activityActions },
+    { heading: "Reviews", actions: reviewActions },
     { heading: "Help", actions: helpActions },
   ].filter((group) => group.actions.length > 0);
 

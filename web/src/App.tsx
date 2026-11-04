@@ -6017,6 +6017,11 @@ export default function App() {
                     void store.focusPane(paneId);
                   }}
                   onOpenFile={(workspaceId, path, line) => {
+                    // A request's review worktree follows on demand.
+                    void import("./mrReviewFlow").then(
+                      ({ checkoutForBrowsing }) =>
+                        checkoutForBrowsing(workspaceId),
+                    );
                     // The review steps aside; Option+R brings it back.
                     setReviewSuspended(true);
                     openInspector("files", workspaceId, {

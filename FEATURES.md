@@ -1023,9 +1023,23 @@ requested reviewer, an assignee or mentioned (a pending GitLab to-do, a
 GitHub mention); **Suggested** lists those Claude picked from the projects
 you follow, each with why. A row shows the state, the pipeline, what changed
 since you last looked (new commits, new comments) and how many drafts you
-have pending on the forge. `j`/`k` move, `Enter` opens, `o` opens it on the
-forge, `x` says not interested and `+` more like this on a suggestion, `r`
+have pending on the forge. `j`/`k` move, `Enter` opens its review, `i`
+shows its details, `o` opens it on the forge, `x` says not interested and `+` more like this on a suggestion, `r`
 refreshes, `Esc` steps back. On a phone it fills the screen.
+
+Opening a request gives each project one review worktree,
+`<your clone>.worktrees/review`, shown as a **Reviews · project**
+workspace, and opens the request's review there, GitLab merge requests and
+GitHub pull requests alike. The worktree checks out the request's head,
+detached, at once or only when you browse its files (a setting); nothing is
+built. If it has local changes you are asked: keep them as a WIP commit on
+a `review/<number>` branch, or discard them; leaving it as it is changes
+nothing. Your clone is found among your workspaces' checkouts by its
+remote; with none, the inbox asks where it is. Heads of the inbox's
+requests are fetched in the background, so switching is just a checkout.
+Each request keeps its own review, with its place and drafts. A request's
+review state goes a few days (a setting) after it is merged or closed; the
+worktree stays. The command menu finds a request by number or title.
 
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.

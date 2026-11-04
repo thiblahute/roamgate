@@ -6,7 +6,7 @@ let root: Root | null = null;
 let host: HTMLElement | null = null;
 let previousFocus: Element | null = null;
 
-function close() {
+function close(options: { keepFocus?: boolean } = {}) {
   root?.unmount();
   host?.remove();
   root = null;
@@ -18,12 +18,21 @@ function close() {
     !previousFocus.closest("[role='menu'], .command-popover")
       ? previousFocus
       : focusBeforeMrReviews();
-  back?.focus({ preventScroll: true });
+  if (!options.keepFocus) back?.focus({ preventScroll: true });
   previousFocus = null;
 }
 
-function render(select?: string) {
-  root?.render(<MrReviewsPanel onClose={close} initialSelect={select} />);
+let renders = 0;
+function render(select?: string, open?: string) {
+  // A new key remounts it, so a request to open is taken once.
+  root?.render(
+    <MrReviewsPanel
+      key={open ? `open-${++renders}` : "panel"}
+      onClose={close}
+      initialSelect={open ?? select}
+      initialOpen={open}
+    />,
+  );
 }
 
 /**
@@ -31,9 +40,9 @@ function render(select?: string) {
  * timeline is shown: loaded only when asked for; the bridge and the store
  * are module singletons.
  */
-export function showMrReviews(select?: string) {
+export function showMrReviews(select?: string, open?: string) {
   if (root) {
-    render(select);
+    render(select, open);
     return;
   }
   previousFocus = document.activeElement;
@@ -41,7 +50,7 @@ export function showMrReviews(select?: string) {
   host.className = "mr-reviews-root";
   document.body.append(host);
   root = createRoot(host);
-  render(select);
+  render(select, open);
 }
 
 export function toggleMrReviews() {
