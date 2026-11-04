@@ -8,7 +8,10 @@ import {
   clockOf,
   clockMinutes,
   DAY_STATUS_LABELS,
+  acceptanceLost,
+  evidenceText,
   failureText,
+  groupEvidence,
   previewWorkedMinutes,
   REOPENED_LABELS,
   reopenedTitle,
@@ -96,6 +99,12 @@ export function HoursView({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  /** Why the last operation on a block failed, by block id. */
+  const [blockErrors, setBlockErrors] = useState<Record<string, string>>({});
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [error]);
   const [submit, setSubmit] = useState<Submit | null>(null);
   const request = useRef(0);
   const poll = useRef<number | null>(null);
@@ -117,12 +126,12 @@ export function HoursView({
   }, [date]);
 
   const load = useCallback(
-    async (attempt = 0) => {
+    async (attempt = 0): Promise<Day | null> => {
       const id = ++request.current;
       if (poll.current !== null) window.clearTimeout(poll.current);
       try {
         const next = await timeReport<Day>("day", { date });
-        if (!alive.current || id !== request.current) return;
+        if (!alive.current || id !== request.current) return null;
         setDay(next);
         setError(null);
         setRefreshing(!!next.refreshing);
@@ -133,10 +142,12 @@ export function HoursView({
             POLL_MS[Math.min(attempt, POLL_MS.length - 1)],
           );
         else loadSummaries();
+        return next;
       } catch (failure) {
-        if (!alive.current || id !== request.current) return;
+        if (!alive.current || id !== request.current) return null;
         setError((failure as Error).message);
         setRefreshing(false);
+        return null;
       } finally {
         if (alive.current && id === request.current) setLoading(false);
       }
@@ -184,24 +195,41 @@ export function HoursView({
     }
   };
 
-  /** Runs a block operation, then reads the day again: ids may change. */
-  const operate = async (key: string, run: () => Promise<unknown>) => {
+  /**
+   * Runs a block operation, then reads the day again (ids may change) and
+   * checks the result with `verify`. A failure shows on the block's card
+   * when the key is a block's id, else above the day.
+   */
+  const operate = async (
+    key: string,
+    run: () => Promise<unknown>,
+    verify?: (day: Day | null) => string | null,
+  ) => {
     setBusy(key);
     setError(null);
+    setBlockErrors((errors) => {
+      const next = { ...errors };
+      delete next[key];
+      return next;
+    });
     let failed: string | null = null;
     try {
       await run();
     } catch (failure) {
       failed = failureText(failure as TimeReportError);
-    } finally {
-      if (alive.current) {
-        setRefreshing(true);
-        await load();
-        // Reading the day again does not hide why the operation failed.
-        if (failed) setError(failed);
-        setBusy(null);
-      }
     }
+    if (!alive.current) return;
+    setRefreshing(true);
+    const next = await load();
+    if (!alive.current) return;
+    // Reading the day again does not hide why the operation failed.
+    failed ??= verify?.(next) ?? null;
+    if (failed) {
+      if (next?.blocks.some((block) => block.id === key))
+        setBlockErrors((errors) => ({ ...errors, [key]: failed! }));
+      else setError(failed);
+    }
+    setBusy(null);
   };
 
   const startPreview = async () => {
@@ -331,7 +359,7 @@ export function HoursView({
           </p>
         ) : null}
         {error ? (
-          <p className="hours-error" role="alert">
+          <p className="hours-error" role="alert" ref={errorRef}>
             {error}
           </p>
         ) : null}
@@ -385,16 +413,29 @@ export function HoursView({
                     type="button"
                     className="hours-btn is-small hours-push"
                     disabled={busy !== null}
-                    onClick={() =>
-                      void operate("all", async () => {
-                        for (const block of day.blocks)
-                          if (block.status === "proposed")
+                    onClick={() => {
+                      const ids = day.blocks
+                        .filter((block) => block.status === "proposed")
+                        .map((block) => block.id);
+                      void operate(
+                        "all",
+                        async () => {
+                          for (const id of ids)
                             await timeReport("block-accept", {
                               date,
-                              block: block.id,
+                              block: id,
                             });
-                      })
-                    }
+                        },
+                        (next) => {
+                          const lost = ids.filter((id) =>
+                            acceptanceLost(id, next),
+                          ).length;
+                          return lost
+                            ? `The provider did not keep ${lost === 1 ? "one acceptance" : `${lost} acceptances`}: those blocks are still to review.`
+                            : null;
+                        },
+                      );
+                    }}
                   >
                     Accept all
                   </button>
@@ -414,7 +455,10 @@ export function HoursView({
                       block={block}
                       targets={targets}
                       busy={busy === block.id || busy === "all"}
-                      operate={(run) => void operate(block.id, run)}
+                      operate={(run, verify) =>
+                        void operate(block.id, run, verify)
+                      }
+                      error={blockErrors[block.id] ?? null}
                       mappingWorkspace={subjectWorkspace(block)}
                       onEditMapping={onEditMapping}
                     />
@@ -695,12 +739,7 @@ function QuestionCard({
         </span>
       </div>
       {block.evidence?.length ? (
-        <div className="hours-evidence">
-          {block.evidence.map((entry, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: evidence has no id
-            <EvidenceItem key={index} entry={entry} />
-          ))}
-        </div>
+        <EvidenceList evidence={block.evidence} />
       ) : null}
       <div className="hours-options">
         {options.map((option) => (
@@ -727,8 +766,52 @@ function QuestionCard({
   );
 }
 
+/** How many workspaces show before "+N more". */
+const EVIDENCE_SHOWN = 6;
+
+/**
+ * A block's evidence: its workspaces with their minutes, the rest as
+ * given, and every raw entry behind "Details".
+ */
+function EvidenceList({ evidence }: { evidence: Evidence[] }) {
+  const { groups, other, details } = groupEvidence(evidence);
+  const shown = groups.slice(0, EVIDENCE_SHOWN);
+  const more = groups.length - shown.length;
+  return (
+    <div className="hours-evidence">
+      {shown.map((group) => (
+        <span key={group.name} className="hours-evidence-group">
+          {group.name} <b>{formatMinutes(group.minutes)}</b>
+        </span>
+      ))}
+      {more > 0 ? (
+        <span className="hours-muted">
+          +{more} more workspace{more === 1 ? "" : "s"}
+        </span>
+      ) : null}
+      {other.map((entry, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: evidence has no id
+        <EvidenceItem key={`o${index}`} entry={entry} />
+      ))}
+      {details.length > shown.length + other.length ? (
+        <details className="hours-evidence-details">
+          <summary>Details ({details.length})</summary>
+          <ul>
+            {details.map((entry, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: evidence has no id
+              <li key={index}>
+                <EvidenceItem entry={entry} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 function EvidenceItem({ entry }: { entry: Evidence }) {
-  const text = `${entry.title}${entry.minutes ? ` ${formatMinutes(entry.minutes)}` : ""}`;
+  const text = evidenceText(entry);
   return entry.url ? (
     <a href={entry.url} target="_blank" rel="noreferrer">
       {text}
@@ -798,6 +881,7 @@ function BlockCard({
   targets,
   busy,
   operate,
+  error = null,
   mappingWorkspace,
   onEditMapping,
 }: {
@@ -805,7 +889,12 @@ function BlockCard({
   block: Block;
   targets: Targets | null;
   busy: boolean;
-  operate: (run: () => Promise<unknown>) => void;
+  operate: (
+    run: () => Promise<unknown>,
+    verify?: (day: Day | null) => string | null,
+  ) => void;
+  /** Why the last operation on this block failed. */
+  error?: string | null;
   mappingWorkspace: TimelineWorkspace | null;
   onEditMapping?: (workspace: TimelineWorkspace) => void;
 }) {
@@ -887,15 +976,15 @@ function BlockCard({
         {block.description ? (
           <div className="hours-block-desc">{block.description}</div>
         ) : null}
+        {error ? (
+          <p className="hours-error hours-block-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         {block.evidence?.length ? (
-          <div className="hours-evidence">
-            {block.evidence
-              .filter((entry) => entry !== split)
-              .map((entry, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: evidence has no id
-                <EvidenceItem key={index} entry={entry} />
-              ))}
-          </div>
+          <EvidenceList
+            evidence={block.evidence.filter((entry) => entry !== split)}
+          />
         ) : null}
         {split ? (
           <div className="hours-splitnote">
@@ -1004,8 +1093,9 @@ function BlockCard({
             className="hours-btn is-small is-primary"
             disabled={busy}
             onClick={() =>
-              operate(() =>
-                timeReport("block-accept", { date, block: block.id }),
+              operate(
+                () => timeReport("block-accept", { date, block: block.id }),
+                (next) => acceptanceLost(block.id, next),
               )
             }
           >

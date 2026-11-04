@@ -167,6 +167,14 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
                 results: [{ block_id: "b1", ok: true, external_id: "e1" }],
               },
             };
+          case "block-accept": {
+            // As a working provider: the block is accepted.
+            const block = (day.blocks as Record<string, unknown>[]).find(
+              (entry) => entry.id === (rest as { block: string }).block,
+            );
+            if (block) block.status = "accepted";
+            return { ok: true, value: block ?? {} };
+          }
           default:
             return { ok: true, value: {} };
         }
@@ -575,5 +583,59 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     await click(button(container, "Reset"));
     expect(container.querySelector(".timeline-zoom-range")).toBeNull();
     await act(async () => root.unmount());
+  });
+
+  test("an acceptance the provider does not keep is said on the block", async () => {
+    reset();
+    // The provider answers, but the day still has the block proposed.
+    answers["block-accept"] = () => ({});
+    const { container, unmount } = await mount();
+    const card = () => container.querySelector(".hours-block")!;
+    await click(button(card(), "Accept"));
+    expect(text(card().querySelector(".hours-block-error"))).toBe(
+      "The provider did not keep the acceptance: this block is proposed again. Try again, or tell the provider's maintainer.",
+    );
+    // A refused acceptance says why, on the block too.
+    delete answers["block-accept"];
+    failures["block-accept"] = { error: "blocks overlap", code: "conflict" };
+    await click(button(card(), "Accept"));
+    expect(text(card().querySelector(".hours-block-error"))).toBe(
+      "blocks overlap",
+    );
+    // Once it takes, the message goes.
+    delete failures["block-accept"];
+    await click(button(card(), "Accept"));
+    expect(card().querySelector(".hours-block-error")).toBeNull();
+    expect(text(card().querySelector(".hours-chip"))).toBe("Accepted");
+    await unmount();
+  });
+
+  test("evidence is grouped per workspace, with the details behind an expander", async () => {
+    reset();
+    (day.blocks as Record<string, unknown>[])[0]!.evidence = [
+      { kind: "workspace", title: "clauth", minutes: 3 },
+      { kind: "workspace", title: "roamgate", minutes: 2 },
+      { kind: "note", title: "includes 5 min of clauth" },
+      { kind: "note", title: "includes 2 min of clauth" },
+      { kind: "note", title: "includes 1 min of roamgate" },
+      { kind: "note", title: "includes 0 min of upstream" },
+      {
+        kind: "commit",
+        title: "tracer: add span api",
+        url: "https://example.com/c/1",
+      },
+    ];
+    const { container, unmount } = await mount();
+    const card = container.querySelector(".hours-block")!;
+    expect(
+      [...card.querySelectorAll(".hours-evidence-group")].map(text),
+    ).toEqual(["clauth 10m", "roamgate 3m"]);
+    expect(card.querySelector(".hours-evidence a")?.textContent).toBe(
+      "tracer: add span api",
+    );
+    const details = card.querySelector("details.hours-evidence-details")!;
+    expect(text(details.querySelector("summary"))).toBe("Details (7)");
+    expect(details.querySelectorAll("li")).toHaveLength(7);
+    await unmount();
   });
 }

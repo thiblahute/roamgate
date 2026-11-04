@@ -120,7 +120,11 @@ block's id can change. Questions are answered with `block-answer` (the
 **Remember** box is `remember`). **Preview submit** is off while a block is
 `needs_input`; it runs `submit-preview`, then a confirmation step whose
 **I checked these entries** box enables **Submit**, which sends the token with
-`confirmed: true`. A failed submit shows what was written. A deferred day shows the provider's
+`confirmed: true`. A failed submit shows what was written. A failed block operation is
+reported on the block, and so is an acceptance the provider did not keep (the
+block is still not accepted when the day is read again). Evidence is grouped
+per workspace with its minutes ("includes N min of" notes folded in), with every
+entry behind **Details**. A deferred day shows the provider's
 `deferred_reason`. Reported time is whole 15-minute units, rounded up
 (37 minutes worked is reported as 45); when rounding runs into the next block,
 that block gives way. A block that was accepted and is proposed again carries
