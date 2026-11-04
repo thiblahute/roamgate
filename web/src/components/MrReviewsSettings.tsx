@@ -162,6 +162,30 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
                 <span>
                   {entry.project} <small>{entry.host}</small>
                 </span>
+                <input
+                  aria-label={`Workspaces group of ${entry.project}'s reviews`}
+                  title="Where its review workspace goes in the Workspaces tree: names separated by >, matched case-insensitively and made when missing. Empty: a Reviews group under the clone's workspace."
+                  placeholder="Reviews"
+                  defaultValue={(
+                    settings.treeGroups[
+                      `${entry.host}/${entry.project}`.toLowerCase()
+                    ] ?? []
+                  ).join(" > ")}
+                  disabled={busy}
+                  onBlur={(event) => {
+                    const key = `${entry.host}/${entry.project}`.toLowerCase();
+                    const path = event.target.value
+                      .split(">")
+                      .map((part) => part.trim())
+                      .filter(Boolean);
+                    const current = settings.treeGroups[key] ?? [];
+                    if (path.join(">") === current.join(">")) return;
+                    const treeGroups = { ...settings.treeGroups };
+                    if (path.length) treeGroups[key] = path;
+                    else delete treeGroups[key];
+                    void save({ treeGroups });
+                  }}
+                />
                 <button
                   type="button"
                   className="ghost"

@@ -223,7 +223,11 @@ describe("opening a request", () => {
     const storeDir = mkdtempSync(join(tmpdir(), "mr-open-"));
     const store = openMrStore(join(storeDir, "state.json"));
     const opened: unknown[] = [];
+    const placed: unknown[] = [];
     const fresh = createMrOpener({
+      placeWorkspace: async (place) => {
+        placed.push(place);
+      },
       inbox: {
         item: (key: string) => items.find((each) => each.key === key),
         markSeen: () => true,
@@ -259,6 +263,17 @@ describe("opening a request", () => {
     expect(store.get().reviews[items[1]!.key]).toMatchObject({
       sessionId: "s-1",
     });
+    // The new workspace is placed in the tree, next to its clone's.
+    expect(placed).toEqual([
+      {
+        projectKey: "gitlab.example.org/group/app",
+        connectionId: "local",
+        workspaceId: "w9",
+        label: "Reviews · app",
+        worktree: `${clone}.worktrees/review`,
+        clone,
+      },
+    ]);
     // Another project without a clone: the user is asked.
     const other = await fresh.open(items[2]!.key);
     expect("needClone" in other && other.needClone.project).toBe(

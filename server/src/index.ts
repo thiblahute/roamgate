@@ -1044,6 +1044,10 @@ function getMrReviews(): MrReviews {
   mrReviews = createMrReviews({
     run: runProcessWithCodeTimeout,
     connections: mrReviewConnections,
+    tree: {
+      read: () => readWorkspaceTree(),
+      apply: (ops) => applyWorkspaceTreeOps(ops),
+    },
     defaultConnection: () => {
       const status = connectionManager.list().find((each) => each.is_default);
       return status
