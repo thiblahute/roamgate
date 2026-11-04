@@ -115,6 +115,11 @@ export function curationPrompt(signals: Signals, candidates: MrItem[]): string {
   });
 }
 
+/** What a ranking stands on: the head and the title. */
+export function versionOf(item: Pick<MrItem, "headSha" | "title">): string {
+  return `${item.headSha}\n${item.title}`;
+}
+
 export type Ranking = {
   key: string;
   pick: boolean;
@@ -220,6 +225,7 @@ export function createMrCuration(deps: {
     curation: boolean;
     hints: string;
     followed: unknown[];
+    suggestDays?: number;
   }>;
   connections: () => MrConnection[];
   /** The user's name per forge host: their own requests are no picks. */
@@ -300,8 +306,14 @@ export function createMrCuration(deps: {
     return deps.users?.().get(item.host) === item.author.toLowerCase();
   }
 
-  function candidates(items: MrItem[]): MrItem[] {
+  /**
+   * The candidates not ranked on their current head and title, updated
+   * lately, newest first: a first run ranks the recent ones, and an old
+   * request comes back only once it changes.
+   */
+  function candidates(items: MrItem[], days: number): MrItem[] {
     const state = deps.store.get();
+    const since = now() - days * 24 * 60 * 60_000;
     const dismissed = new Set(
       state.feedback
         .filter((f) => f.verdict === "not_interested")
@@ -314,7 +326,8 @@ export function createMrCuration(deps: {
           !item.reasons.length &&
           !own(item) &&
           !dismissed.has(item.key) &&
-          state.ranked[item.key]?.updatedAt !== item.updatedAt,
+          Date.parse(item.updatedAt) >= since &&
+          state.ranked[item.key]?.version !== versionOf(item),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, BATCH_SIZE);
@@ -326,7 +339,7 @@ export function createMrCuration(deps: {
       status = { state: "off" };
       return;
     }
-    const batchItems = candidates(items);
+    const batchItems = candidates(items, settings.suggestDays ?? 30);
     if (!batchItems.length) return;
     status = { state: "running", at: new Date(now()).toISOString() };
     deps.onChange?.();
@@ -345,6 +358,7 @@ export function createMrCuration(deps: {
         const entry = ranking.find((each) => each.key === item.key);
         const ranked: MrRanked = {
           updatedAt: item.updatedAt,
+          version: versionOf(item),
           pick: entry?.pick ?? false,
           score: entry?.score ?? 0,
           reason: entry?.reason ?? "",

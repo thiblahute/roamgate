@@ -268,6 +268,24 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
         </label>
         <label className="form-field">
           <span>
+            Suggest requests updated within this many days (older ones once they
+            change)
+          </span>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={settings.suggestDays}
+            disabled={busy}
+            onChange={(event) => {
+              const days = Number(event.target.value);
+              if (Number.isInteger(days) && days >= 1 && days <= 365)
+                void save({ suggestDays: days });
+            }}
+          />
+        </label>
+        <label className="form-field">
+          <span>
             Hints for the picks (areas you maintain, people you work with)
           </span>
           <textarea

@@ -39,6 +39,8 @@ const BUSY = new Set(["working", "blocked"]);
 export function claudeCommand(
   session: string,
   resume: boolean,
+  /** The claude start setting: conversation lets its hook take it. */
+  mode: "terminal" | "conversation" = "terminal",
   // Tests run a stand-in by its absolute path.
   bin = process.env.ROAMGATE_MR_CLAUDE_COMMAND || "claude",
 ): string {
@@ -49,8 +51,11 @@ export function claudeCommand(
     ? `sh -c '${bin} --resume ${session} || ${bin} --session-id ${session}'`
     : `${bin} --session-id ${session}`;
   // env, not VAR=value (old fish); the leading space keeps it out of the
-  // history; the claude start hook leaves it in the terminal.
-  return ` env ROAMGATE_CLAUDE_START=terminal ${run}\r`;
+  // history. In terminal mode the claude start hook leaves it there; in
+  // conversation mode the hook takes it, as any claude started by hand.
+  return mode === "terminal"
+    ? ` env ROAMGATE_CLAUDE_START=terminal ${run}\r`
+    : ` ${run}\r`;
 }
 
 export function createMrClaude(deps: {
@@ -63,6 +68,8 @@ export function createMrClaude(deps: {
     paneId: string;
     focus?: string;
   }) => Promise<unknown>;
+  /** The claude start setting (claude_start_mode). */
+  startMode?: () => Promise<"terminal" | "conversation">;
   sleep?: (ms: number) => Promise<void>;
   /** How long a start or an exit is waited for. */
   waitMs?: number;
@@ -175,6 +182,44 @@ export function createMrClaude(deps: {
     const paneId = await paneOf(conn, record, projectKey);
     if (!paneId) return { state: "none", paneId: null };
     let session = deps.store.get().reviews[key]?.claudeSession ?? null;
+    // Conversation mode holds the pane: its own switch, never /exit.
+    const held = conn.conversation?.owned(paneId) ?? null;
+    if (held) {
+      if (session && held === session)
+        return { state: "ready", paneId, session };
+      const other = requestOf(held);
+      if (!other) return { state: "foreign", paneId };
+      if (!session && !options.start) return { state: "none", paneId };
+      const next = session ?? randomUUID();
+      if (!session) {
+        if (!deps.store.get().reviews[key])
+          throw new MrReviewsError(
+            "open the request's review first",
+            "invalid",
+          );
+        deps.store.update((state) => {
+          state.reviews[key]!.claudeSession = next;
+        });
+      }
+      let switched = await conn.conversation!.switch(paneId, next);
+      for (
+        let waited = 0;
+        options.wait && !switched.ok && switched.busy && waited < waitMs;
+        waited += pollMs
+      ) {
+        await sleep(pollMs);
+        switched = await conn.conversation!.switch(paneId, next);
+      }
+      if (switched.ok) {
+        deps.store.update((state) => {
+          const entry = state.projects[projectKey];
+          if (entry) entry.claudeStarted = next;
+        });
+        return { state: "ready", paneId, session: next };
+      }
+      if (switched.busy) return { state: "busy", paneId, with: other };
+      throw new MrReviewsError(switched.reason, "busy");
+    }
     const started = deps.store.get().projects[projectKey]?.claudeStarted;
     let agent = await agentOf(conn, paneId, started);
     if (agent.name === "claude") {
@@ -230,7 +275,11 @@ export function createMrClaude(deps: {
     });
     await conn.herdr("pane.send_text", {
       pane_id: paneId,
-      text: claudeCommand(session, resume),
+      text: claudeCommand(
+        session,
+        resume,
+        (await deps.startMode?.()) ?? "terminal",
+      ),
     });
     const up = await waitFor(
       conn,
@@ -253,12 +302,20 @@ export function createMrClaude(deps: {
       const { conn, record, projectKey } = project(key);
       const paneId = await paneOf(conn, record, projectKey);
       if (!paneId) return { state: "none", paneId: null };
+      const session = deps.store.get().reviews[key]?.claudeSession ?? null;
+      const held = conn.conversation?.owned(paneId) ?? null;
+      if (held) {
+        if (session && held === session)
+          return { state: "ready", paneId, session };
+        return requestOf(held)
+          ? { state: "none", paneId }
+          : { state: "foreign", paneId };
+      }
       const agent = await agentOf(
         conn,
         paneId,
         deps.store.get().projects[projectKey]?.claudeStarted,
       );
-      const session = deps.store.get().reviews[key]?.claudeSession ?? null;
       if (agent.name !== "claude")
         return agent.name
           ? { state: "foreign", paneId }

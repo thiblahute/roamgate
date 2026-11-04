@@ -2299,3 +2299,43 @@ describe("an Anthropic API key in the pane's environment", () => {
     expect(isAgentChatMethod("agent_chat.api_key.answer")).toBe(true);
   });
 });
+
+describe("switching a pane's conversation to another session", () => {
+  test("an idle one stops, the next session starts there; a busy one is left", async () => {
+    const { service, spawner, store } = setup();
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(service.send(PANE, { text: "first" })).toBeTruthy();
+    await eventually(() => spawner.spawned.length === 1);
+    const first = spawner.spawned[0]!;
+    const before = store.get(PANE)!.session_id;
+    // A turn runs: never interrupted.
+    const busy = await service.switchSession(
+      PANE,
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(busy).toMatchObject({ ok: false, busy: true });
+    expect(store.get(PANE)!.session_id).toBe(before);
+    expect(first.fake.alive).toBe(true);
+    first.fake.push(RESULT);
+    await settle();
+    const switched = await service.switchSession(
+      PANE,
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(switched).toEqual({ ok: true });
+    expect(first.fake.alive).toBe(false);
+    expect(store.get(PANE)!.session_id).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    await eventually(() => spawner.spawned.length === 2);
+    expect(spawner.spawned[1]!.options.sessionId).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+    // The terminal owns another pane: not a conversation's to switch.
+    expect(await service.switchSession("w9:p9", "x")).toMatchObject({
+      ok: false,
+      busy: false,
+    });
+  });
+});

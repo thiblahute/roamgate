@@ -996,6 +996,12 @@ function mrReviewConnections(): MrConnection[] {
                 timeoutMs,
               ),
             herdr: call,
+            conversation: {
+              owned: (paneId: string) =>
+                runtime.conversation.ownedSession(paneId)?.session_id ?? null,
+              switch: (paneId: string, sessionId: string) =>
+                runtime.conversation.switchSession(paneId, sessionId),
+            },
             dirs: async () => {
               const [workspaces, panes] = (await Promise.all([
                 call("workspace.list"),

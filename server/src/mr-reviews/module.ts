@@ -136,6 +136,10 @@ export function createMrReviews(options: {
 
   const claude = createMrClaude({
     inbox,
+    startMode: async () =>
+      (await readSettings()).claude_start_mode === "conversation"
+        ? "conversation"
+        : "terminal",
     store,
     connections: options.connections ?? (() => []),
     requestReview: async (params) => {

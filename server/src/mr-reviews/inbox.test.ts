@@ -87,13 +87,24 @@ describe("reviews inbox", () => {
   test("lists the user's requests per host, says which hosts failed", async () => {
     const fake = fakeFetchers();
     let now = Date.parse("2026-11-04T12:00:00Z");
+    const shared = store();
+    // Draft counts are read only for requests reviewed in Roamgate.
+    shared.update((state) => {
+      state.reviews["gitlab:gitlab.example.org/group/app#1"] = {
+        connectionId: "c",
+        sessionId: "s",
+      };
+    });
     const inbox = createMrInbox({
       fetchers: fake.fetchers,
       settings: async () => settings,
-      store: store(),
+      store: shared,
       now: () => now,
     });
     await inbox.refresh();
+    expect(fake.calls.filter((call) => call.startsWith("drafts"))).toEqual([
+      "drafts 1",
+    ]);
     const snapshot = inbox.snapshot(settings);
     expect(snapshot.entries.map((e) => [e.number, e.section])).toEqual([
       [1, "mine"],

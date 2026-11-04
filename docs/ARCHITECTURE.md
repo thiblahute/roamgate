@@ -678,8 +678,8 @@ pending mention to-dos plus each followed project's open merge requests;
 GitHub `search` for review-requested, assignee and mentions plus each
 followed repository's open pull requests, with the viewer's pending review
 (its comment count is the draft count). GitLab draft counts are a
-conditional read of a request's `draft_notes`, at most every 10 minutes per
-request. A host that fails keeps its last answer. State
+conditional read of a request's `draft_notes`, only for requests
+reviewed in Roamgate, when the request changed or hourly. A host that fails keeps its last answer. State
 (`<data>/mr-reviews/state.json`): what the user saw of each request
 (unread), feedback, Claude's picks, each request's Roamgate review and the
 time it was seen merged or closed, and each project's review worktree. The
@@ -697,13 +697,18 @@ worktree with local changes answers `dirty` and is left alone;
 `bridge.mr_reviews.checkout {key, local: wip|discard}` is the user's
 answer (WIP commit on `review/<n>`, or reset and clean). Worktree commands
 for one project run one at a time. After each refresh the heads of the
-inbox's open requests are prefetched, one fetch per project with a review
-worktree; requests closed longer than `retention_days` lose their review
+user's own open requests and the picked suggestions are prefetched, one
+fetch per project with a review worktree, only for a head not fetched yet
+(`prefetched`); requests closed longer than `retention_days` lose their review
 session and state. GitHub pull requests use the same review code path
 through `review/github.ts` (reads only; their drafts come with the pending
 review support).
 
-`mr-reviews/claude.ts`: the review workspace's first pane runs the
+`mr-reviews/claude.ts` (the start command follows `claude_start_mode`;
+when conversation mode holds the pane, a switch is the conversation
+service's `switchSession`: the idle process stops as idle stop stops it,
+the lease and the holder take the other session, a process starts on it;
+a busy session refuses): the review workspace's first pane runs the
 request's Claude session (`reviews[key].claudeSession`), typed into its
 shell as ` env ROAMGATE_CLAUDE_START=terminal claude --session-id ID`
 (or `--resume ID`, falling back to `--session-id`). Which session runs
@@ -726,7 +731,11 @@ draft note shape so `review/service.ts` keeps one path. Only browser
 calls (author `you`) create, edit or delete one; agents' drafts stay
 local, and `review.adopt {thread_id}` (the user's "Make it mine") turns
 an agent's thread into the user's draft. No code path submits a review.
-Replies to GitHub discussions are refused for now.
+A reply to a forge discussion is a draft too: a GitLab draft note with
+`in_reply_to_discussion_id`, or `addPullRequestReviewThreadReply` with the
+pending review's id on GitHub (checked to stay in that review). The review
+code has no call that publishes: no note or comment POST, no resolve, no
+submit (`forge-writes.test.ts` checks its sources).
 
 `mr-reviews/curation.ts`: after an inbox refresh, at most every 20
 minutes and one at a time, the followed projects' open requests not yet
@@ -739,7 +748,10 @@ own `user.email`), their unmerged branches' files, the requests they
 reviewed and their authors, the `hints` setting, and the latest 30
 feedback verdicts. The answer (JSON: key, pick, score, reason) is checked
 against the batch's keys, at most 8 picks, each with a reason, and kept in
-`ranked`. Model choice, measured on two real batches of 25: Opus found 6
+`ranked` with the head and title it stood on (`version`): a new comment
+or pipeline does not rank it again, a push or a new title does; requests
+not updated within `suggest_days` (30) are left out until they change.
+Model choice, measured on two real batches of 25: Opus found 6
 of the 8 requests overlapping the user's files with every pick grounded
 (about $0.13 per batch, 15 s), Sonnet 4 of 8 with person-only picks
 ($0.06, 10-15 s), Haiku 5 of 8 with looser links ($0.005, 14-29 s).
