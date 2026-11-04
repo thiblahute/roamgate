@@ -998,6 +998,20 @@ and the client into `~/.local/bin`, never over a file of yours.
 `open --repo PATH=BASE..HEAD` adds another repository's range, for a series
 across a project and its subprojects. It works in panes on SSH hosts too.
 
+### Agents messaging each other
+
+Agent sessions talk to each other through the same client, across every
+connection: `roamgate-review sessions` lists the sessions Roamgate manages
+(name, workspace, connection, agent, mode, state, and an address such as
+`desktop/w17:p1`), and `roamgate-review message ADDRESS -- TEXT` sends one a
+message. A session in conversation mode gets it through Roamgate's queue; one
+in a terminal gets it typed in once it is idle (never while it asks you
+something). The receiver is told it comes from another agent, not from you,
+that it carries none of your authority and approves nothing, and how to
+reply. Both chats show it: **From NAME** in the receiver's, **To NAME** in the
+sender's. Only sessions Roamgate manages can send or be addressed, and a
+rate limit stops two sessions answering each other in a loop.
+
 ## Diff Viewer
 
 - Compare **Working tree**, **Against branch**, or **Last step** (the latest

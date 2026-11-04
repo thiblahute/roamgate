@@ -637,6 +637,30 @@ answered in its thread counts as delivered, however it got there
 (`unheardComments` in `shared/review.ts`): only newer ones and edits made after
 the answer are sent.
 
+### Agent messages
+
+`roamgate-review sessions` and `message` (server/src/agent/agent-messenger.ts)
+let agent sessions message each other. The list reads every ready connection
+(not a Windows server): Herdr's agents, with the panes conversation mode holds,
+named by their tab's title else their workspace's, addressed
+`CONNECTION/PANE`. A message must come from a pane that list knows (its
+address is the reply address) and go to another one in it. Its text loses its
+control characters and any closing tag of its own, is at most 8,000
+characters, and is framed (shared/agentMessage.ts): a preamble, a
+`<roamgate-agent-message from=... from-name=... workspace=... agent=...>`
+block, and a note saying it is another agent's, carries no user authority,
+approves no permission, answers no question of the user's and authorizes
+nothing outward, with the reply command. The frame comes first, so typed into
+a terminal it is never a slash command or a `!` line. A conversation-mode
+session gets it through `ConversationService.prompt` (the queue: no
+permission or question is ever answered by it); a terminal session through
+Herdr's `agent.prompt` when its agent is idle or done, else polled every 3 s
+for up to 30 minutes, at most 5 waiting per session. Limits: 20 messages per
+sender and 8 between two sessions (both ways) in ten minutes, refused with
+429. The chats parse the frame as an injected notice (**From NAME**, kept out
+of voice and of the user's messages) and show a `roamgate-review message`
+Bash call as **To NAME** beside it.
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p

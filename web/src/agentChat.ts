@@ -14,6 +14,7 @@ import type {
   AgentChatVoiceAction,
 } from "../../shared/agentChat";
 import { bridge, type ConnectionClient, type HerdrEventMsg } from "./api";
+import { parseInjectedMessage } from "../../shared/injectedMessage";
 import type { HistoryEntry } from "./components/agentHistory";
 import {
   applyLiveEvent,
@@ -942,14 +943,29 @@ export async function removeAgentChatQueued(
 export function queuedEntries(
   queue: readonly AgentChatQueued[],
 ): HistoryEntry[] {
-  return queue.map((item) => ({
-    id: `queue:${item.id}`,
-    role: "user",
-    kind: "message",
-    text: [item.text, ...item.images].filter(Boolean).join("\n"),
-    sent_at: item.queued_at,
-    queued: true,
-  }));
+  return queue.map((item) => {
+    // Another agent session's message waits too: shown as one.
+    const injected = item.images.length
+      ? null
+      : parseInjectedMessage(item.text);
+    const notice =
+      injected && !injected.rest && injected.notices.length === 1
+        ? injected.notices[0]!
+        : null;
+    return {
+      id: `queue:${item.id}`,
+      role: "user",
+      kind: "message",
+      text: notice
+        ? notice.body || notice.label
+        : [item.text, ...item.images].filter(Boolean).join("\n"),
+      sent_at: item.queued_at,
+      queued: true,
+      ...(notice
+        ? { injected: { kind: notice.kind, label: notice.label } }
+        : {}),
+    };
+  });
 }
 
 /** The queue item a `queued` entry from queuedEntries stands for. */

@@ -346,3 +346,71 @@ test("queued tool loads respect the limit and wait behind in-flight versions", (
     }),
   ).toEqual({ start: ["a:2"], rest: [] });
 });
+
+test("a message sent to another agent session shows in the chat beside its call", () => {
+  const call = entry("c1", "tool", {
+    tool_name: "Bash",
+    source_call_id: "toolu_1",
+    text: JSON.stringify({
+      command: 'roamgate-review message desktop/w5:p1 -- "Is the build green?"',
+    }),
+  });
+  const result = entry("r1", "tool", {
+    kind: "tool_result",
+    source_call_id: "toolu_1",
+    text: JSON.stringify({ sent: true, to: { name: "Merge checks" } }),
+  });
+  const items = groupHistoryChatItems([call, result]);
+  // After the whole block: the call and its result stay together.
+  expect(items.map((item) => item.type)).toEqual(["tools", "message"]);
+  const sent = items[1]!.type === "message" ? items[1]!.entry : null;
+  expect(sent).toMatchObject({
+    id: "c1:sent",
+    text: "Is the build green?",
+    injected: { kind: "session", label: "To Merge checks (desktop/w5:p1)" },
+  });
+  // Refused (a rate limit, an unknown address): said so.
+  const failed = groupHistoryChatItems([
+    call,
+    { ...result, is_error: true, text: '{"error": "too many messages"}' },
+  ]);
+  expect(
+    failed[1]!.type === "message" && failed[1]!.entry.injected?.label,
+  ).toBe("Not sent to desktop/w5:p1");
+  // Any other command is a plain tool call.
+  expect(
+    groupHistoryChatItems([
+      entry("c2", "tool", {
+        tool_name: "Bash",
+        text: JSON.stringify({ command: "roamgate-review sessions" }),
+      }),
+    ]).map((item) => item.type),
+  ).toEqual(["tools"]);
+});
+
+test("a sent message shows from the bridge's metadata when the payload is withheld", () => {
+  const items = groupHistoryChatItems([
+    entry("c1", "tool", {
+      tool_name: "Bash",
+      source_call_id: "toolu_1",
+      text: "",
+      text_bytes: 120,
+      agent_message: { to: "desktop/w5:p1", text: "Rebase please" },
+    }),
+    entry("r1", "tool", {
+      kind: "tool_result",
+      source_call_id: "toolu_1",
+      text: "",
+      text_bytes: 40,
+      agent_message_result: { sent: true, name: "Merge checks" },
+    }),
+  ]);
+  expect(items.map((item) => item.type)).toEqual(["tools", "message"]);
+  expect(items[1]).toMatchObject({
+    type: "message",
+    entry: {
+      text: "Rebase please",
+      injected: { kind: "session", label: "To Merge checks (desktop/w5:p1)" },
+    },
+  });
+});

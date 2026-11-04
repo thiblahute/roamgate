@@ -35,6 +35,11 @@ import {
 } from "../conversation/suspended";
 import { REVIEW_CLIENT_CHECKSUM, REVIEW_CLIENT_SCRIPT } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
+import {
+  AgentMessageError,
+  type AgentMessenger,
+} from "../agent/agent-messenger";
+import { agentAddress } from "../../../shared/agentMessage";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
 
 /** What the agent server needs to know about a ready connection. */
@@ -288,6 +293,11 @@ export function createReviewAgentServer(args: {
     command: "place" | "worktree" | "workspace" | "groups";
     params: Record<string, string>;
   }) => Promise<Record<string, unknown>>;
+  /**
+   * Agent sessions messaging each other (`roamgate-review sessions` and
+   * `message`): the sessions Roamgate manages, across connections.
+   */
+  messages?: Pick<AgentMessenger, "list" | "send">;
   /**
    * A claude the user just started in a pane (`roamgate-review
    * claude-start`, its SessionStart hook): conversation mode takes it when
@@ -632,6 +642,36 @@ export function createReviewAgentServer(args: {
         pane: paneId,
       });
       return { notified: true };
+    }
+    if (command === "sessions" || command === "message") {
+      if (!args.messages)
+        throw new ReviewError("messaging other sessions is unavailable", 503);
+      const paneId = form.get("pane") ?? "";
+      try {
+        if (command === "sessions") {
+          const self = paneId ? agentAddress(connection.id, paneId) : null;
+          return {
+            sessions: (await args.messages.list()).map((session) =>
+              session.address === self
+                ? { ...session, self: true as const }
+                : session,
+            ),
+          };
+        }
+        if (!paneId)
+          throw new ReviewError(
+            "message runs inside an agent session's pane: a reply needs your address",
+          );
+        return await args.messages.send({
+          from: { connectionId: connection.id, paneId },
+          to: form.get("to") ?? "",
+          text: form.get("text") ?? "",
+        });
+      } catch (error) {
+        if (error instanceof AgentMessageError)
+          throw new ReviewError(error.message, error.status);
+        throw error;
+      }
     }
     if (
       command === "place" ||

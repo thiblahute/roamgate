@@ -1,7 +1,14 @@
+import {
+  AGENT_MESSAGE_NOTE,
+  AGENT_MESSAGE_PREAMBLE,
+  AGENT_MESSAGE_TAG,
+} from "./agentMessage";
+
 /**
  * Messages Claude Code puts in the user's turn that the user did not type:
  * a subagent's report, another session's or a teammate's message, a
- * background task ending, reminders to the model. The chat shows each as a
+ * background task ending, reminders to the model. Also another agent
+ * session's message sent through Roamgate (agentMessage.ts). The chat shows each as a
  * one-line notice in its place (reminders not at all), voice never reads
  * them, and none counts as the user's own message.
  */
@@ -33,8 +40,7 @@ export type InjectedMessage = {
   rest: string;
 };
 
-const TAGS =
-  "agent-message|teammate-message|cross-session-message|task-notification|system-reminder";
+const TAGS = `agent-message|teammate-message|cross-session-message|${AGENT_MESSAGE_TAG}|task-notification|system-reminder`;
 // A block closes at a closing tag on a line of its own when it has one
 // (the harness indents a report's lines, so one inside it never is), else
 // at the first.
@@ -43,8 +49,9 @@ const BLOCK_LINES = new RegExp(
 );
 const BLOCK = new RegExp(`^<(${TAGS})\\b([^>]*)>([\\s\\S]*?)<\\/\\1>\\s*`);
 // The line Claude Code writes before another session's message.
-const PREAMBLE =
-  /^Another Claude session sent a message(?: while you were working)?:\s*/;
+const PREAMBLE = new RegExp(
+  `^(?:Another Claude session sent a message(?: while you were working)?:|${AGENT_MESSAGE_PREAMBLE})\\s*`,
+);
 // The note Claude Code adds after a message from an agent of the same
 // session, for the model: about the message, never the user's words.
 const AGENT_NOTE =
@@ -105,6 +112,12 @@ function notice(
         body: body.trim(),
       };
     }
+    case AGENT_MESSAGE_TAG:
+      return {
+        kind: "session",
+        label: `From ${attrs["from-name"] || attrs.from || "another session"}`,
+        body: body.trim(),
+      };
     case "cross-session-message":
       return {
         kind: "session",
@@ -172,7 +185,10 @@ export function parseInjectedMessage(text: string): InjectedMessage | null {
   const notices: InjectedNotice[] = [];
   let matched = false;
   for (;;) {
-    rest = rest.replace(PREAMBLE, "").replace(AGENT_NOTE, "");
+    rest = rest
+      .replace(PREAMBLE, "")
+      .replace(AGENT_NOTE, "")
+      .replace(AGENT_MESSAGE_NOTE, "");
     const match = BLOCK_LINES.exec(rest) ?? BLOCK.exec(rest);
     if (!match) break;
     matched = true;
@@ -180,6 +196,6 @@ export function parseInjectedMessage(text: string): InjectedMessage | null {
     const found = notice(match[1]!, attributes(match[2]!), match[3]!);
     if (found) notices.push(found);
   }
-  rest = rest.replace(AGENT_NOTE, "");
+  rest = rest.replace(AGENT_NOTE, "").replace(AGENT_MESSAGE_NOTE, "");
   return matched ? { notices, rest: rest.trim() } : null;
 }

@@ -1,5 +1,6 @@
 import { roamgateLocalStorage } from "../browserStorage";
 import type { HistoryEntry } from "./agentHistory";
+import { outgoingAgentMessage } from "../../../shared/agentMessage";
 
 export type AgentHistoryView = "chat" | "timeline";
 
@@ -42,7 +43,18 @@ export function groupHistoryChatItems(
 ): HistoryChatItem[] {
   const items: HistoryChatItem[] = [];
   let sequence = 0;
+  const results = toolResults(entries);
+  // Messages sent to other sessions in a tool block: shown after it.
+  let sent: HistoryEntry[] = [];
+  const flushSent = () => {
+    for (const entry of sent) {
+      sequence += 1;
+      items.push({ type: "message", entry, sequence });
+    }
+    sent = [];
+  };
   for (const entry of entries) {
+    if (entry.role !== "tool") flushSent();
     const previous = items[items.length - 1];
     if (
       entry.role === "user" &&
@@ -67,8 +79,73 @@ export function groupHistoryChatItems(
     if (last?.type === "tools") last.entries.push(entry);
     else
       items.push({ type: "tools", id: `tools:${entry.id}`, entries: [entry] });
+    const message = sentAgentMessage(entry, results);
+    if (message) sent.push(message);
   }
+  flushSent();
   return items;
+}
+
+/** The tool results, by the call they answer. */
+function toolResults(
+  entries: readonly HistoryEntry[],
+): Map<string, HistoryEntry> {
+  const results = new Map<string, HistoryEntry>();
+  for (const entry of entries)
+    if (entry.kind === "tool_result" && entry.source_call_id)
+      results.set(entry.source_call_id, entry);
+  return results;
+}
+
+/**
+ * A message the agent sent another session (`roamgate-review message`, a
+ * Bash call): shown in its chat as one, "To NAME", beside the call.
+ */
+export function sentAgentMessage(
+  entry: HistoryEntry,
+  results: ReadonlyMap<string, HistoryEntry>,
+): HistoryEntry | null {
+  if (entry.kind !== "tool_call") return null;
+  // The bridge reads it from the call (its payload is not sent); a live
+  // turn's call still has its text.
+  const sent =
+    entry.agent_message ?? outgoingAgentMessage(entry.tool_name, entry.text);
+  if (!sent) return null;
+  const result = entry.source_call_id
+    ? results.get(entry.source_call_id)
+    : undefined;
+  let name = sent.to;
+  let failed = result?.is_error === true;
+  if (result?.agent_message_result) {
+    failed = !result.agent_message_result.sent;
+    if (result.agent_message_result.name)
+      name = `${result.agent_message_result.name} (${sent.to})`;
+  } else if (result?.text) {
+    try {
+      const answer = JSON.parse(result.text) as {
+        sent?: unknown;
+        to?: { name?: unknown };
+        error?: unknown;
+      };
+      if (typeof answer?.to?.name === "string" && answer.to.name)
+        name = `${answer.to.name} (${sent.to})`;
+      if (answer?.error !== undefined) failed = true;
+    } catch {
+      // Not the client's JSON (an error printed): said as not sent.
+      failed ||= /error/i.test(result.text);
+    }
+  }
+  return {
+    id: `${entry.id}:sent`,
+    role: "assistant",
+    kind: "message",
+    text: sent.text || "(the message's text is not in the command)",
+    sent_at: entry.sent_at,
+    injected: {
+      kind: "session",
+      label: failed ? `Not sent to ${name}` : `To ${name}`,
+    },
+  };
 }
 
 // Identifies one version of a redacted tool payload. Polling can rewrite an
