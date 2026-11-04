@@ -9,7 +9,6 @@ import {
   readMergeRequest,
   readMergeRequestDiff,
   readMergeRequestThreads,
-  replyToDiscussion,
 } from "./gitlab";
 
 function context(answers: Record<string, unknown>) {
@@ -138,42 +137,88 @@ describe("GitHub pull requests in the review pane", () => {
             .find((part) => part.startsWith(`${name}=`))
             ?.slice(name.length + 1);
         let data: any;
-        if (query.includes("reviews(states: PENDING"))
+        if (query.includes("reviews(states: PENDING")) {
+          // GitHub's shape: the side is the thread's, a comment names its
+          // review, and fullDatabaseId is a string (no databaseId).
+          expect(query).not.toMatch(/\bdatabaseId\b/);
+          expect(query).toContain("reviewThreads");
           data = {
             repository: {
               pullRequest: {
                 id: "PR1",
-                reviews: {
-                  nodes: pending
-                    ? [{ ...pending, comments: { nodes: comments } }]
-                    : [],
+                reviews: { nodes: pending ? [pending] : [] },
+                reviewThreads: {
+                  nodes: [
+                    // A published thread of someone else: not a draft.
+                    {
+                      id: "T0",
+                      diffSide: "LEFT",
+                      comments: {
+                        nodes: [
+                          {
+                            id: "X1",
+                            fullDatabaseId: "5",
+                            body: "old",
+                            path: "a.c",
+                            line: 1,
+                            originalLine: 1,
+                            startLine: null,
+                            replyTo: null,
+                            pullRequestReview: { id: "R0" },
+                          },
+                        ],
+                      },
+                    },
+                    ...comments.map((comment) => ({
+                      diffSide: "RIGHT",
+                      comments: { nodes: [comment] },
+                    })),
+                  ],
                 },
               },
             },
           };
-        else if (query.includes("addPullRequestReview(")) {
+        } else if (query.includes("addPullRequestReview(")) {
           pending = { id: "R1", body: "" };
           data = {
             addPullRequestReview: {
               pullRequestReview: { id: "R1", state: "PENDING" },
             },
           };
-        } else if (query.includes("addPullRequestReviewThread")) {
+        } else if (query.includes("addPullRequestReviewThread(")) {
           const comment = {
             id: "C9",
-            databaseId: 9,
+            fullDatabaseId: "9",
             body: field("body"),
             path: field("path"),
             line: 3,
             originalLine: 3,
             startLine: null,
-            diffSide: "RIGHT",
             replyTo: null,
+            pullRequestReview: { id: "R1" },
           };
           comments.push(comment);
           data = {
             addPullRequestReviewThread: {
-              thread: { comments: { nodes: [comment] } },
+              thread: { diffSide: "RIGHT", comments: { nodes: [comment] } },
+            },
+          };
+        } else if (query.includes("addPullRequestReviewThreadReply")) {
+          expect(field("t")).toBe("T0");
+          expect(field("r")).toBe("R1");
+          data = {
+            addPullRequestReviewThreadReply: {
+              comment: {
+                id: "C10",
+                fullDatabaseId: "10",
+                body: field("b"),
+                path: "a.c",
+                line: 1,
+                originalLine: 1,
+                startLine: null,
+                replyTo: { fullDatabaseId: "5" },
+                pullRequestReview: { id: "R1" },
+              },
             },
           };
         } else if (query.includes("updatePullRequestReviewComment")) {
@@ -225,10 +270,15 @@ describe("GitHub pull requests in the review pane", () => {
     expect(pending.body).toBe("Overall");
     await deleteDraftNote(ctx, mr, 9);
     expect(comments).toEqual([]);
-    await expect(replyToDiscussion(ctx, mr, "1", "x")).rejects.toThrow(
-      /GitHub/,
+    // A reply is a draft of the pending review, in its discussion.
+    await expect(createDraftReply(ctx, mr, "1", "x")).rejects.toThrow(
+      /no such discussion/,
     );
-    await expect(createDraftReply(ctx, mr, "1", "x")).rejects.toThrow(/GitHub/);
+    expect(await createDraftReply(ctx, mr, "5", "agreed")).toMatchObject({
+      id: 10,
+      note: "agreed",
+      discussion_id: "5",
+    });
     const all = calls.map((argv) => argv.join(" ")).join("\n");
     // Never an event: nothing is submitted.
     expect(all).not.toMatch(

@@ -165,7 +165,7 @@ type Editor = {
   /** Editing an existing comment, or answering a thread. */
   commentId?: string;
   replyTo?: string;
-  /** Replies on GitLab threads post publicly. */
+  /** A reply in a forge discussion: a draft of the user's review there. */
   publicReply?: boolean;
   /** The review's overall comment. */
   overall?: boolean;
@@ -928,6 +928,11 @@ export function ReviewOverlay({
     setHideComments(false);
   }, [latestAnswer]);
   const gitlabMr = snapshot.mergeRequest ?? null;
+  /** The forge of a request's review: what its labels name. */
+  const forge =
+    session.target.kind === "mr" && /\/pull\/\d+/.test(session.target.url)
+      ? "GitHub"
+      : "GitLab";
 
   const call = useCallback(
     async <T,>(method: string, params: Record<string, unknown> = {}) => {
@@ -3353,17 +3358,27 @@ export function ReviewOverlay({
    * resolved on GitLab.
    */
   function resolveHere() {
+    const here = threadsHere();
     const thread =
       focusedStop?.thread ??
-      threadsHere().find((t) => t.kind !== "merge-request");
-    if (!thread || thread.kind === "merge-request") {
-      notify(
-        thread
-          ? "GitLab discussions are resolved on GitLab."
-          : "No comment to resolve on this line.",
-        "info",
-        2000,
-      );
+      here.find((t) => t.kind !== "merge-request") ??
+      here[0];
+    if (thread?.kind === "merge-request") {
+      // Resolving on the forge is public: here it is only folded away.
+      const opens = placement.general.includes(thread)
+        ? !thread.resolved
+        : !thread.resolved && !relocations.has(thread.id);
+      toggleFold(thread);
+      if (opens !== foldFlipped.has(thread.id))
+        notify(
+          `Folded here; ${forge} discussions are resolved on ${forge}.`,
+          "info",
+          2000,
+        );
+      return;
+    }
+    if (!thread) {
+      notify("No comment to resolve on this line.", "info", 2000);
       return;
     }
     // Showing only the unresolved ones, the thread resolved goes away: on
@@ -4621,11 +4636,7 @@ export function ReviewOverlay({
         break;
       case "r":
         // A thread here (resolved ones too) before the hunk.
-        if (
-          focusedStop ||
-          (selection === null &&
-            threadsHere().some((thread) => thread.kind !== "merge-request"))
-        )
+        if (focusedStop || (selection === null && threadsHere().length))
           resolveHere();
         else toggleHunksHere();
         break;
@@ -4938,7 +4949,7 @@ export function ReviewOverlay({
           : `Your overall comment, for ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
       : current.replyTo
         ? current.publicReply
-          ? "Your reply, posted on GitLab when saved (Cmd+Enter saves, Esc closes)"
+          ? `Your draft reply, published with your review when you submit it on ${forge} (Cmd+Enter saves, Esc closes)`
           : "Your reply (Cmd+Enter saves, Esc closes)"
         : current.kind === "discussion"
           ? talk
@@ -5315,7 +5326,7 @@ export function ReviewOverlay({
                     )
                   ) : null}
                   {thread.gitlab?.draftId !== undefined ? (
-                    <span className="rc-kind">GitLab draft</span>
+                    <span className="rc-kind">{forge} draft</span>
                   ) : null}
                   {index === 0 && thread.gitlabReplyTo ? (
                     <span
@@ -5443,10 +5454,6 @@ export function ReviewOverlay({
   /** "Make it mine": the agent's words become the user's forge draft. */
   function adoptButton(thread: ReviewThread): ReactNode {
     if (!adoptable(thread)) return null;
-    const forge =
-      session.target.kind === "mr" && /\/pull\/\d+/.test(session.target.url)
-        ? "GitHub"
-        : "GitLab";
     return (
       <button
         type="button"
@@ -5552,10 +5559,13 @@ export function ReviewOverlay({
       <details
         key={thread.id}
         className={`mrt${thread.resolved ? " resolved" : ""}`}
-        open={top ? !thread.resolved : !thread.resolved && !relocated}
+        open={
+          (top ? !thread.resolved : !thread.resolved && !relocated) !==
+          foldFlipped.has(thread.id)
+        }
       >
         <summary className="mr-head">
-          <span className="mr-tag">GitLab</span>{" "}
+          <span className="mr-tag">{forge}</span>{" "}
           {first?.author.replace(/^@/, "")}
           {replies > 0 ? ` + ${plural(replies, "reply", "replies")}` : ""}
           {thread.resolved ? (
@@ -5624,7 +5634,7 @@ export function ReviewOverlay({
                 });
               }}
             >
-              Reply on GitLab
+              Draft reply
             </button>
           </div>
         )}
@@ -5993,23 +6003,20 @@ export function ReviewOverlay({
           .length,
       0,
     );
-  const forgeName =
-    session.target.kind === "mr" && /\/pull\/\d+/.test(session.target.url)
-      ? "GitHub"
-      : "GitLab";
+  const forgeName = forge;
 
   let gitlabSection: ReactNode = null;
   if (session.gitlab) {
     gitlabSection = snapshot.gitlabError ? (
       <p className="note">
-        GitLab comments unavailable: {snapshot.gitlabError}
+        {forge} comments unavailable: {snapshot.gitlabError}
       </p>
     ) : !gitlabMr ? (
       <p className="note">Loading the merge request comments...</p>
     ) : (
       <>
         <p className="note">
-          GitLab: {plural(mrThreads.length, "discussion")}
+          {forge}: {plural(mrThreads.length, "discussion")}
           {gitlabDrafts.length
             ? `, ${plural(gitlabDrafts.length, "pending draft")} of yours`
             : ""}
@@ -6159,9 +6166,9 @@ export function ReviewOverlay({
         ) : session.gitlab ? (
           <span
             className="rv-mr-chip rv-mode"
-            title="Reviewing the merge request on GitLab"
+            title={`Reviewing the request on ${forge}`}
           >
-            GitLab
+            {forge}
           </span>
         ) : null}
         {modeSwitch ? (
@@ -6204,7 +6211,7 @@ export function ReviewOverlay({
                 if (!session.gitlab) setGitlab(true);
               }}
             >
-              GitLab
+              {forge}
             </button>
           </div>
         ) : null}

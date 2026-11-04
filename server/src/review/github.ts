@@ -296,22 +296,34 @@ export async function readPullThreads(
  * comment, draft id 0.
  */
 
-const PENDING_QUERY = `query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) { id reviews(states: PENDING, first: 1) { nodes { id body comments(first: 100) { nodes { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } } } } } }`;
+const PENDING_QUERY = `query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) { id reviews(states: PENDING, first: 1) { nodes { id body } } reviewThreads(first: 100) { nodes { id diffSide comments(first: 100) { nodes { id fullDatabaseId body path line originalLine startLine replyTo { fullDatabaseId } pullRequestReview { id } } } } } } } }`;
+
+/** A comment's fields; its side is its thread's. */
+const COMMENT_FIELDS =
+  "id fullDatabaseId body path line originalLine startLine replyTo { fullDatabaseId } pullRequestReview { id }";
 
 type PendingComment = {
   id: string;
-  databaseId: number;
+  fullDatabaseId: string;
   body: string;
   path: string;
   line: number | null;
   originalLine: number | null;
   startLine: number | null;
   diffSide: "LEFT" | "RIGHT";
-  replyTo: { databaseId: number } | null;
+  replyTo: { fullDatabaseId: string } | null;
+  pullRequestReview?: { id: string } | null;
 };
+
+/** A comment as GitHub answers it, with its thread's side. */
+function withSide(comment: any, diffSide: unknown): PendingComment {
+  return { ...comment, diffSide: diffSide === "LEFT" ? "LEFT" : "RIGHT" };
+}
 
 type Pending = {
   pullId: string;
+  /** Each thread's node id, by its first comment's id (our discussion id). */
+  threads: Map<string, string>;
   review: { id: string; body: string; comments: PendingComment[] } | null;
 };
 
@@ -355,14 +367,27 @@ async function readPending(
   const pull = data?.repository?.pullRequest;
   if (!pull?.id) throw new Error("GitHub: no such pull request");
   const review = pull.reviews?.nodes?.[0];
+  // The pending review's comments, each with its thread's side (only the
+  // viewer's pending review is ever listed).
+  const comments: PendingComment[] = review
+    ? (pull.reviewThreads?.nodes ?? []).flatMap((thread: any) =>
+        (thread?.comments?.nodes ?? [])
+          .filter(
+            (comment: any) => comment?.pullRequestReview?.id === review.id,
+          )
+          .map((comment: any) => withSide(comment, thread.diffSide)),
+      )
+    : [];
+  const threads = new Map<string, string>();
+  for (const thread of pull.reviewThreads?.nodes ?? []) {
+    const root = thread?.comments?.nodes?.[0]?.fullDatabaseId;
+    if (thread?.id && root) threads.set(String(root), String(thread.id));
+  }
   return {
     pullId: String(pull.id),
+    threads,
     review: review
-      ? {
-          id: String(review.id),
-          body: String(review.body ?? ""),
-          comments: (review.comments?.nodes ?? []) as PendingComment[],
-        }
+      ? { id: String(review.id), body: String(review.body ?? ""), comments }
       : null,
   };
 }
@@ -372,9 +397,11 @@ function asDraft(comment: PendingComment): GitLabDraft {
   const line = comment.line ?? comment.originalLine;
   const old = comment.diffSide === "LEFT";
   return {
-    id: comment.databaseId,
+    id: Number(comment.fullDatabaseId),
     note: comment.body,
-    discussion_id: comment.replyTo ? String(comment.replyTo.databaseId) : null,
+    discussion_id: comment.replyTo
+      ? String(comment.replyTo.fullDatabaseId)
+      : null,
     position: comment.path
       ? {
           old_path: comment.path,
@@ -445,14 +472,14 @@ export async function createPullDraft(
   const data = await graphql(
     context,
     mr.host,
-    `mutation($r: ID!, $path: String!, $body: String!) { addPullRequestReviewThread(input: {pullRequestReviewId: $r, path: $path, body: $body, ${fields}}) { thread { comments(first: 1) { nodes { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } } } }`,
+    `mutation($r: ID!, $path: String!, $body: String!) { addPullRequestReviewThread(input: {pullRequestReviewId: $r, path: $path, body: $body, ${fields}}) { thread { diffSide comments(first: 1) { nodes { ${COMMENT_FIELDS} } } } } }`,
     { r: review.id, path: anchor.path, body: note },
     "draft",
   );
-  const comment =
-    data?.addPullRequestReviewThread?.thread?.comments?.nodes?.[0];
+  const thread = data?.addPullRequestReviewThread?.thread;
+  const comment = thread?.comments?.nodes?.[0];
   if (!comment) throw new Error("GitHub did not add the draft comment");
-  return asDraft(comment);
+  return asDraft(withSide(comment, thread.diffSide));
 }
 
 async function setReviewBody(
@@ -477,7 +504,9 @@ async function pendingComment(
   id: number,
 ) {
   const { review } = await readPending(context, mr);
-  const comment = review?.comments.find((each) => each.databaseId === id);
+  const comment = review?.comments.find(
+    (each) => Number(each.fullDatabaseId) === id,
+  );
   if (!review || (id !== 0 && !comment))
     throw new Error("that draft is no longer in your pending GitHub review");
   return { review, comment };
@@ -497,14 +526,14 @@ export async function updatePullDraft(
   const data = await graphql(
     context,
     mr.host,
-    "mutation($c: ID!, $b: String!) { updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $c, body: $b}) { pullRequestReviewComment { id databaseId body path line originalLine startLine diffSide replyTo { databaseId } } } }",
+    `mutation($c: ID!, $b: String!) { updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $c, body: $b}) { pullRequestReviewComment { ${COMMENT_FIELDS} } } }`,
     { c: comment!.id, b: note },
     "draft",
   );
   const updated =
     data?.updatePullRequestReviewComment?.pullRequestReviewComment;
   if (!updated) throw new Error("GitHub did not update the draft");
-  return asDraft(updated);
+  return asDraft(withSide(updated, comment!.diffSide));
 }
 
 export async function deletePullDraft(
@@ -524,4 +553,36 @@ export async function deletePullDraft(
     { c: comment!.id },
     "draft",
   );
+}
+
+/**
+ * A draft reply in a discussion: a reply comment of the user's pending
+ * review, published only when they submit it on GitHub.
+ */
+export async function createPullDraftReply(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  discussionId: string,
+  note: string,
+): Promise<GitLabDraft> {
+  const pending = await readPending(context, mr);
+  const threadId = pending.threads.get(discussionId);
+  if (!threadId)
+    throw new Error("GitHub: no such discussion on the pull request");
+  const review = pending.review ?? (await pendingReview(context, mr));
+  const data = await graphql(
+    context,
+    mr.host,
+    `mutation($r: ID!, $t: ID!, $b: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewId: $r, pullRequestReviewThreadId: $t, body: $b}) { comment { ${COMMENT_FIELDS} } } }`,
+    { r: review.id, t: threadId, b: note },
+    "draft",
+  );
+  const comment = data?.addPullRequestReviewThreadReply?.comment;
+  if (!comment) throw new Error("GitHub did not add the draft reply");
+  if (comment.pullRequestReview?.id !== review.id)
+    throw new Error("GitHub did not keep the reply in your pending review");
+  return {
+    ...asDraft(withSide(comment, "RIGHT")),
+    discussion_id: discussionId,
+  };
 }
