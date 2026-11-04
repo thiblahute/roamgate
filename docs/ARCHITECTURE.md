@@ -641,6 +641,29 @@ sender and 8 between two sessions (both ways) in ten minutes, refused with
 of voice and of the user's messages) and show a `roamgate-review message`
 Bash call as **To NAME** beside it.
 
+||||||| parent of b823117f (Add a reviews inbox of merge and pull requests waiting for you)
+
+### Reviews inbox
+
+`server/src/mr-reviews/` serves `bridge.mr_reviews.*` to every browser,
+machine-wide. Hosts are the settings' `mr_reviews.hosts`, or when empty
+those glab (`config.yml` hosts with a token, a keyring token, or glab's
+default host) and gh (`hosts.yml`) are signed in to; only host names are
+read from those files. Nothing user-specific has a default: followed
+projects, hosts and hints are settings.
+
+Each refresh sends one GraphQL query per host through the forge gate
+(feature `inbox`): GitLab `currentUser` review-requested, assigned and
+pending mention to-dos plus each followed project's open merge requests;
+GitHub `search` for review-requested, assignee and mentions plus each
+followed repository's open pull requests, with the viewer's pending review
+(its comment count is the draft count). GitLab draft counts are a
+conditional read of a request's `draft_notes`, at most every 10 minutes per
+request. A host that fails keeps its last answer. State
+(`<data>/mr-reviews/state.json`): what the user saw of each request
+(unread), feedback, Claude's picks, each request's Roamgate review and the
+time it was seen merged or closed. The inbox never writes to a forge.
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p

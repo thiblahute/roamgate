@@ -192,6 +192,8 @@ import {
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
+import { createMrReviews, type MrReviews } from "./mr-reviews/module";
+import { isMrReviewsMethod } from "./mr-reviews/rpc";
 import {
   AGENT_CHAT_METHODS,
   handleAgentChatRpc,
@@ -884,6 +886,15 @@ function getAssistantService() {
 
 /** Merge and pull requests the chats show, shared by every browser. */
 const forgeCache = createForgeCache();
+
+let mrReviews: MrReviews | null = null;
+/** The reviews inbox (bridge.mr_reviews.*), started on first use. */
+function getMrReviews(): MrReviews {
+  if (mrReviews) return mrReviews;
+  mrReviews = createMrReviews({ run: runProcessWithCodeTimeout });
+  mrReviews.start();
+  return mrReviews;
+}
 
 /** GitLab project ids by host and path, for finding branches' merge requests. */
 const reviewProjectIds = new Map<string, number>();
@@ -2089,6 +2100,16 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "assistant-rpc");
     } catch (error) {
       sendError("assistant-rpc-error", error);
+    }
+    return;
+  }
+  if (isMrReviewsMethod(method)) {
+    // Machine-wide: the inbox reads the forges with this machine's logins.
+    try {
+      const result = await getMrReviews().handle(method, params ?? {});
+      sendReply({ id, result }, "mr-reviews");
+    } catch (error) {
+      sendError("mr-reviews-error", error);
     }
     return;
   }

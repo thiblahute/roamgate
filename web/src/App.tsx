@@ -33,6 +33,7 @@ import {
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 import { callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
+import { handleMrReviewsShortcut } from "./mrReviewsOpen";
 import {
   CompanionChip,
   CompanionStrip,
@@ -4459,6 +4460,13 @@ export default function App() {
         !blocksNavigationShortcuts(e.target, e)
       ) {
         handleActivityShortcut(e);
+        return;
+      }
+      if (
+        shortcutMatches(e, "reviews.inbox") &&
+        !blocksNavigationShortcuts(e.target, e)
+      ) {
+        handleMrReviewsShortcut(e);
         return;
       }
       if (shortcutMatches(e, "companion.call")) {

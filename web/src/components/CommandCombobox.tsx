@@ -14,6 +14,7 @@ import {
   openActivityTimeline,
 } from "../activityTimelineOpen";
 import { callCompanion } from "../companionCallOpen";
+import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
 import { voiceFronting } from "../voiceFrontFlag";
 import { endpointCreationReason } from "../store";
 import { normalizeSearchText } from "../searchText";
@@ -48,6 +49,7 @@ import {
   SplitSquareVertical,
   Waypoints,
   X,
+  GitPullRequest,
 } from "lucide-react";
 import { shallowEqual, store, useStoreSelector } from "../store";
 import { canForwardPorts } from "../portForwarding";
@@ -1205,6 +1207,15 @@ export function CommandCombobox({
       keywords: ACTIVITY_ENTRY.keywords,
       // One entry: a search for the hours opens it on its Hours tab.
       run: () => openActivityTimeline(activityViewForSearch(search)),
+    },
+    {
+      key: "mr-reviews",
+      icon: <GitPullRequest size={15} />,
+      title: MR_REVIEWS_ENTRY.title,
+      detail: MR_REVIEWS_ENTRY.detail,
+      shortcut: shortcutLabel("reviews.inbox"),
+      keywords: MR_REVIEWS_ENTRY.keywords,
+      run: () => openMrReviews(),
     },
   ];
 

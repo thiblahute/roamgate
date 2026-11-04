@@ -16,6 +16,10 @@ import { mkdirSync } from "node:fs";
 import { rename, rm, writeFile } from "node:fs/promises";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "../connections/types";
 import { serverLogger } from "../utils/logger";
+import {
+  normalizeStoredMrReviews,
+  type StoredMrReviewsSettings,
+} from "../mr-reviews/settings";
 import { sourceCheckoutPath as workspaceSourceCheckoutPath } from "../workspace/utils";
 
 export type GuiRepoSettings = {
@@ -225,6 +229,8 @@ export type GuiSettings = {
   claude_start_mode?: ClaudeStartMode;
   /** Conversation mode (absent: its defaults, idle stop after 30 min). */
   conversation?: GuiConversationSettings;
+  /** The reviews inbox (absent: its defaults). */
+  mr_reviews?: StoredMrReviewsSettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -446,6 +452,9 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
       ? obj.claude_start_mode
       : undefined,
     conversation: normalizeConversationSettings(obj.conversation),
+    ...(normalizeStoredMrReviews(obj.mr_reviews)
+      ? { mr_reviews: normalizeStoredMrReviews(obj.mr_reviews) }
+      : {}),
     custom:
       obj.custom && typeof obj.custom === "object"
         ? (obj.custom as Record<string, unknown>)

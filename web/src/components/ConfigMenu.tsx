@@ -21,9 +21,11 @@ import {
   Settings,
   Speech,
   Wifi,
+  GitPullRequest,
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
+import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
 import { callCompanion } from "../companionCallOpen";
 import { voiceFronting } from "../voiceFrontFlag";
 import { logoutBrowserSession } from "../api";
@@ -371,6 +373,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     openActivityTimeline();
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<GitPullRequest size={15} />}
+                  label={MR_REVIEWS_ENTRY.title}
+                  description={`${MR_REVIEWS_ENTRY.detail}${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("reviews.inbox")}`}`}
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openMrReviews();
                   }}
                 />
                 {layout.mobile ? null : (

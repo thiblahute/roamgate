@@ -16,6 +16,7 @@ const descriptions: [ShortcutId, string, string][] = [
   ["assistant.toggle", "Toggle Ranger", "Global"],
   ["companion.call", "Call the voice companion", "Global"],
   ["activity.open", "Open or close the activity timeline", "Global"],
+  ["reviews.inbox", "Open or close the reviews inbox", "Global"],
   ["zen.toggle", "Toggle Zen mode on desktop", "Global"],
   ["panes.recent", "Open the recent pane switcher", "Global"],
   ["overlay.toggle", "Show or hide this Space's overlay tab", "Global"],
