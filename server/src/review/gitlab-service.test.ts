@@ -480,3 +480,55 @@ test("a poll of an unchanged merge request reads only the merge request", async 
   await service.refreshGitlab({ sessionId: review.id });
   expect(threads()).toBe(6);
 });
+
+test("make it mine: an agent's thread becomes the user's draft, on the user's word only", async () => {
+  const { service, writes, drafts } = make({ webProject: "g/p" });
+  const review = openMr(service, "g/p");
+  await service.refreshGitlab({ sessionId: review.id });
+  const thread = await service.addThread({
+    sessionId: review.id,
+    ...agent,
+    kind: "draft",
+    anchor: { path: "a.c", line: 2, side: "new" },
+    text: "Check the error path",
+  });
+  const talk = await service.addThread({
+    sessionId: review.id,
+    ...agent,
+    anchor: { path: "a.c", line: 5, side: "new" },
+    text: "This leaks on failure",
+  });
+  // The agent's own threads never reached GitLab.
+  expect(writes).toEqual([]);
+  // An agent cannot make it the user's.
+  await expect(
+    service.adoptThread({
+      sessionId: review.id,
+      threadId: thread.id,
+      ...agent,
+    }),
+  ).rejects.toThrow(/only you/);
+  expect(writes).toEqual([]);
+  await service.adoptThread({
+    sessionId: review.id,
+    threadId: thread.id,
+    author: "you",
+  });
+  await service.adoptThread({
+    sessionId: review.id,
+    threadId: talk.id,
+    author: "you",
+    text: "Please free it on the error path",
+  });
+  expect(drafts.map((draft) => draft.note)).toEqual([
+    "Check the error path",
+    "Please free it on the error path",
+  ]);
+  expect(writes.every((write) => write.method === "POST")).toBe(true);
+  const snapshot = service.get({ sessionId: review.id });
+  const local = snapshot.threads.filter((each) => !each.gitlab);
+  // The review comment is the user's now; the discussion is resolved.
+  expect(local.map((each) => [each.id, each.resolved])).toEqual([
+    [talk.id, true],
+  ]);
+});

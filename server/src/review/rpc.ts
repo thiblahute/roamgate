@@ -33,6 +33,7 @@ const SESSION_METHODS = new Set([
   "review.gitlab.find",
   "review.gitlab.open",
   "review.gitlab.push",
+  "review.adopt",
   "review.agent.review",
   "review.image.add",
 ]);
@@ -239,6 +240,13 @@ export async function handleReviewRpc(
       return service.openGitlab(params);
     case "review.gitlab.push":
       return service.pushLocalDrafts(params);
+    case "review.adopt":
+      // The user's click: an agent's thread becomes their forge draft.
+      return service.adoptThread({
+        ...params,
+        threadId: raw.thread_id,
+        text: raw.text,
+      });
     case "review.agent.review":
       return service.requestAgentReview({
         ...params,

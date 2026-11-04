@@ -1053,6 +1053,16 @@ when it is done, or leave it on its request. A Claude you started there
 yourself is left alone. Nothing starts Claude or asks it to review but
 your click.
 
+In a request's review your comments are drafts on the forge: GitLab draft
+notes, or comments of your pending GitHub review (its overall comment is
+the pending review's body). Editing or deleting one there changes the
+forge draft, and drafts written on the forge show up in the review. The
+review's head shows **N drafts on GitLab** (or GitHub), a link to the
+request: you submit your review there; Roamgate has no submit button and
+never publishes anything. Claude's threads stay Roamgate notes until you
+choose **Make it mine** on one: its text becomes your draft on the forge
+(Claude's review comment is then yours, its discussion resolved).
+
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.
 Its settings (gear) hold the hosts, the followed projects, when the review
