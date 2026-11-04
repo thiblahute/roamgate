@@ -13,11 +13,13 @@ import { forgeKind, forgeRefLabel } from "../../../shared/forge";
 import type {
   MrHostState,
   MrInboxEntry,
+  MrItem,
   MrReason,
   MrSection,
 } from "../../../shared/mrReviews";
 import { useLayoutPreferences } from "../layoutPreferences";
 import { mrReviewsCall, useMrInbox } from "../mrReviews";
+import { mrAgentItem, setMrAgentOpener } from "../mrReviewsAgent";
 import {
   checkoutMrReview,
   type MrClaudeState,
@@ -27,6 +29,7 @@ import {
   showMrClaude,
 } from "../mrReviewFlow";
 import { formatUiDateTime } from "../uiLocale";
+import { MrReviewsChat } from "./MrReviewsChat";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
@@ -39,7 +42,17 @@ import "./MrReviewsPanel.css";
  * mentioned) and Claude's suggestions from the followed projects.
  */
 
-type View = "list" | "settings";
+type View = "list" | "settings" | "chat";
+
+/** A request the reviews agent showed, as an inbox entry to open. */
+function entryOf(item: MrItem): MrInboxEntry {
+  return {
+    ...item,
+    section: item.reasons.length ? "mine" : "suggested",
+    unread: null,
+    isNew: false,
+  };
+}
 
 /** What opening a request needs from the user. */
 type Prompt =
@@ -479,6 +492,7 @@ export function MrReviewsPanel({
   onClose,
   initialSelect,
   initialOpen,
+  initialView,
   renderActions,
   onOpenEntry,
 }: {
@@ -488,6 +502,8 @@ export function MrReviewsPanel({
   initialOpen?: string;
   /** The request to show selected (from a review: the one shown). */
   initialSelect?: string;
+  /** The reviews agent's chat at once (a voice answer's card). */
+  initialView?: "chat";
   /** Step (b) on: the buttons of a request's detail (Review...). */
   renderActions?: (entry: MrInboxEntry) => ReactNode;
   /** Enter on a request: its review (else its detail). */
@@ -495,7 +511,7 @@ export function MrReviewsPanel({
 }) {
   const { mobile } = useLayoutPreferences();
   const { inbox, error, reload } = useMrInbox();
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>(initialView ?? "list");
   const [maximized, setMaximized] = useState(false);
   const [selected, setSelected] = useState<string | null>(
     initialSelect ?? null,
@@ -554,6 +570,7 @@ export function MrReviewsPanel({
   };
 
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   /** Its review, in the project's review workspace. */
   const open = async (entry: MrInboxEntry, checkout?: "now" | "later") => {
@@ -697,11 +714,20 @@ export function MrReviewsPanel({
   openRef.current = open;
   useEffect(() => {
     if (!initialOpen || openedInitial.current) return;
-    const entry = entries.find((each) => each.key === initialOpen);
+    const listed = entries.find((each) => each.key === initialOpen);
+    // One the reviews agent showed may be in no list.
+    const shown = listed ? undefined : mrAgentItem(initialOpen);
+    const entry = listed ?? (shown ? entryOf(shown) : undefined);
     if (!entry) return;
     openedInitial.current = true;
     void openRef.current(entry);
   }, [entries, initialOpen]);
+
+  // A review the agent shows, asked from here: this panel's own flow.
+  useEffect(() => {
+    setMrAgentOpener((item) => void openRef.current(entryOf(item)));
+    return () => setMrAgentOpener(null);
+  }, []);
 
   const feedback = (
     entry: MrInboxEntry,
@@ -733,6 +759,35 @@ export function MrReviewsPanel({
       event.target instanceof HTMLElement &&
       (event.target.closest("input, textarea, select, [contenteditable]") ??
         null) !== null;
+    if (view === "chat") {
+      // The chat's message box keeps its keys, and Vim the Escape that
+      // ends insert mode; in normal mode Escape leaves the box.
+      const editor =
+        event.target instanceof HTMLElement
+          ? event.target.closest(".cm-editor")
+          : null;
+      const vimInsert =
+        !!editor && !editor.querySelector(".cm-scroller.cm-vimMode");
+      if (event.key === "Escape" && typing && !vimInsert) {
+        panelRef.current?.focus({ preventScroll: true });
+        return true;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey)
+        return false;
+      if (event.key === "Escape") {
+        if (prompt) setPrompt(null);
+        else setView("list");
+        // The focus may have been in the chat, which goes: the panel keeps
+        // the keys.
+        panelRef.current?.focus({ preventScroll: true });
+        return true;
+      }
+      if (event.key === "i" || event.key === "a" || event.key === "Enter") {
+        focusComposer();
+        return true;
+      }
+      return false;
+    }
     if (event.key === "Escape") {
       if (prompt) setPrompt(null);
       else if (view === "settings") setView("list");
@@ -758,12 +813,47 @@ export function MrReviewsPanel({
       window.open(current.url, "_blank", "noopener");
     } else if (event.key === "r") {
       void reload(true);
+    } else if (event.key === "a") {
+      showChat();
     } else if (event.key === "x" && current?.section === "suggested") {
       feedback(current, "not_interested");
     } else if (event.key === "+" && current?.section === "suggested") {
       feedback(current, "more_like_this");
     } else return false;
     return true;
+  };
+
+  /**
+   * The chat's message box, once it is there (its Vim editor loads on
+   * first use), unless the user went elsewhere meanwhile.
+   */
+  const focusComposer = () => {
+    let tries = 0;
+    const take = () => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const box = panel.querySelector<HTMLElement>(
+        ".mr-reviews-chat .agent-history-composer textarea, .mr-reviews-chat .agent-history-composer [contenteditable='true']",
+      );
+      if (box) {
+        box.focus({ preventScroll: true });
+        return;
+      }
+      const active = document.activeElement;
+      if (active && active !== document.body && !panel.contains(active)) return;
+      if (++tries < 30) setTimeout(take, 100);
+    };
+    take();
+  };
+  /** Its message box takes the focus once the chat is there. */
+  const [composerFocus, setComposerFocus] = useState(
+    initialView === "chat" ? 1 : 0,
+  );
+  const showChat = () => {
+    setPrompt(null);
+    setDetail(null);
+    setView("chat");
+    setComposerFocus((count) => count + 1);
   };
 
   // The panel's keys, taken on the window before the page's other key
@@ -800,6 +890,20 @@ export function MrReviewsPanel({
       tabIndex={-1}
       className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}`}
       aria-label="Reviews"
+      onKeyDown={(event) => {
+        // The chat's Vim editor keeps an Escape it takes (insert mode);
+        // one it leaves gives the keys back to the panel.
+        if (
+          view !== "chat" ||
+          event.key !== "Escape" ||
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          !(event.target as HTMLElement).closest(".cm-editor")
+        )
+          return;
+        event.preventDefault();
+        panelRef.current?.focus({ preventScroll: true });
+      }}
       onMouseDown={(event) => {
         // A click anywhere in the panel gives it the keys.
         const target = event.target as HTMLElement;
@@ -815,6 +919,25 @@ export function MrReviewsPanel({
             <strong>Reviews</strong>
           </div>
           <div className="assistant-panel-meta">
+            <nav className="assistant-primary-nav" aria-label="Reviews views">
+              <button
+                type="button"
+                className="ghost"
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
+              >
+                Inbox
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                aria-pressed={view === "chat"}
+                title="Ask the reviews agent (a)"
+                onClick={showChat}
+              >
+                Chat
+              </button>
+            </nav>
             <span
               className={`assistant-panel-status${inbox?.refreshing ? " is-busy" : ""}`}
             >
@@ -869,7 +992,39 @@ export function MrReviewsPanel({
           <span>{error}</span>
         </div>
       ) : null}
-      {view === "settings" ? (
+      {view === "chat" ? (
+        <div className="mr-reviews-chat">
+          {prompt ? (
+            <MrPrompt
+              prompt={prompt}
+              busy={opening !== null}
+              onDismiss={() => setPrompt(null)}
+              onRetry={(entry) => void open(entry)}
+              onAnswer={(entry, local) => void answerDirty(entry, local)}
+              onWaitClaude={(entry) => void waitClaude(entry)}
+            />
+          ) : null}
+          <MrReviewsChat
+            mobile={mobile}
+            focusRequest={composerFocus}
+            onFocusComposer={focusComposer}
+            onOpen={(item) => void open(entryOf(item))}
+            onError={(message) => setChatError(message)}
+          />
+          {chatError ? (
+            <div className="assistant-error" role="alert">
+              <span>{chatError}</span>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setChatError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : view === "settings" ? (
         <>
           <div className="assistant-section-heading mr-reviews-back">
             <button
@@ -1017,7 +1172,8 @@ export function MrReviewsPanel({
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
                   j/k move · Enter review · i details · c Claude · o on the
-                  forge · x not interested · + more like this · r refresh
+                  forge · x not interested · + more like this · r refresh · a
+                  ask the reviews agent
                 </p>
               ) : null}
             </>

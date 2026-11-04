@@ -1,6 +1,6 @@
-import type { AssistantSnapshot } from "../../shared/assistant";
 import type { HistoryEntry } from "./components/agentHistory";
 import {
+  type RangerChatSnapshot,
   rangerChatStatus,
   rangerHistoryEntries,
   rangerThreadsTarget,
@@ -94,7 +94,7 @@ export function paneChatSource(input: {
  * on screen (reviews belong to one), voice chat that stays with Ranger.
  */
 export function rangerChatSource(
-  snapshot: AssistantSnapshot | null,
+  snapshot: RangerChatSnapshot | null,
   connectionId: string,
   entries: readonly HistoryEntry[] = rangerHistoryEntries(snapshot),
 ): ChatSource {

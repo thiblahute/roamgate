@@ -11,6 +11,7 @@ import { createCloneFinder, type MrConnection } from "./clones";
 import { createInboxFetchers, type InboxFetchers } from "./fetchers";
 import { discoverForgeHosts, type ForgeHost } from "./hosts";
 import { createMrInbox } from "./inbox";
+import { createMrAgent, type MrAgent } from "./agent";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
 import { createMrOpener } from "./open";
@@ -25,7 +26,7 @@ import {
   type MrReviewsRpcDeps,
 } from "./rpc";
 import { mrReviewsSettings, storedMrReviews } from "./settings";
-import { type MrStore, openMrStore } from "./store";
+import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
 
 /**
  * The reviews module of the bridge: the inbox and its settings, wired to
@@ -71,6 +72,8 @@ export function createMrReviews(options: {
   runModel?: RunModel;
   /** Drops a request's review (lifecycle). */
   removeReview?: (sessionId: string) => void;
+  /** The reviews agent (tests: one on a fake driver). */
+  agent?: (deps: Parameters<typeof createMrAgent>[0]) => MrAgent;
   more?: MrReviewsRpcDeps["more"];
 }) {
   const logger = serverLogger.child("mr-reviews");
@@ -112,8 +115,9 @@ export function createMrReviews(options: {
     users: () => inbox.users(),
     logger,
   });
+  const fetchers = options.fetchers ?? createInboxFetchers(options.run);
   const inbox = createMrInbox({
-    fetchers: options.fetchers ?? createInboxFetchers(options.run),
+    fetchers,
     settings,
     store,
     logger,
@@ -202,6 +206,15 @@ export function createMrReviews(options: {
    * worktree stays.
    */
   async function lifecycle() {
+    // What the reviews agent found ages out once it is not touched.
+    const foundCutoff = Date.now() - FOUND_KEPT_DAYS * 24 * 60 * 60_000;
+    const stale = Object.entries(store.get().found).filter(
+      ([, entry]) => Date.parse(entry.at) <= foundCutoff,
+    );
+    if (stale.length)
+      store.update((state) => {
+        for (const [key] of stale) delete state.found[key];
+      });
     const days = (await settings()).retentionDays;
     const cutoff = Date.now() - days * 24 * 60 * 60_000;
     const gone = Object.entries(store.get().reviews).filter(
@@ -223,6 +236,30 @@ export function createMrReviews(options: {
     });
     logger.info("closed requests' reviews dropped", { count: gone.length });
   }
+
+  /** The reviews agent's chat, made on first use. */
+  let agent: MrAgent | null = null;
+  const reviewsAgent = (): MrAgent => {
+    agent ??= (options.agent ?? createMrAgent)({
+      fetchers,
+      settings,
+      inbox,
+      store,
+      signals: () => curation.signals(inbox.items()),
+      saveHints: async (hints) => {
+        await updateGuiSettings((current) => ({
+          ...current,
+          mr_reviews: storedMrReviews({
+            ...mrReviewsSettings(current.mr_reviews),
+            hints,
+          }),
+        }));
+        discovered = null;
+      },
+      logger,
+    });
+    return agent;
+  };
 
   const more = async (
     method: string,
@@ -246,6 +283,43 @@ export function createMrReviews(options: {
       return params.key;
     };
     switch (method) {
+      case "bridge.mr_reviews.agent.get":
+        return reviewsAgent().snapshot();
+      case "bridge.mr_reviews.agent.send": {
+        if (typeof params.text !== "string" || !params.text.trim())
+          throw new MrReviewsError("text is required");
+        const requestId =
+          typeof params.request_id === "string" &&
+          /^[\w-]{1,80}$/.test(params.request_id)
+            ? params.request_id
+            : undefined;
+        let sent: { queued: boolean };
+        try {
+          sent = reviewsAgent().send(params.text, {
+            ...(requestId ? { requestId } : {}),
+            ...(params.when_busy === "queue"
+              ? { whenBusy: "queue" as const }
+              : {}),
+          });
+        } catch (error) {
+          throw new MrReviewsError(
+            error instanceof Error ? error.message : String(error),
+            "busy",
+          );
+        }
+        return { ...sent, snapshot: reviewsAgent().snapshot() };
+      }
+      case "bridge.mr_reviews.agent.unqueue":
+        return {
+          removed:
+            typeof params.id === "string" && reviewsAgent().unqueue(params.id),
+        };
+      case "bridge.mr_reviews.agent.stop":
+        await reviewsAgent().stop();
+        return reviewsAgent().snapshot();
+      case "bridge.mr_reviews.agent.reset":
+        await reviewsAgent().reset();
+        return reviewsAgent().snapshot();
       case "bridge.mr_reviews.open": {
         const result = await opener!.open(key(), {
           ...(params.checkout === "now" || params.checkout === "later"
@@ -420,8 +494,12 @@ export function createMrReviews(options: {
         params,
       );
     },
+    agent: reviewsAgent,
     start: () => inbox.start(),
-    stop: () => inbox.stop(),
+    stop: () => {
+      inbox.stop();
+      void agent?.dispose();
+    },
   };
 }
 

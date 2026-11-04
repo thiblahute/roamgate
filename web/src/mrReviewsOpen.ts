@@ -51,9 +51,11 @@ function loadRoot() {
   );
 }
 
-/** Opens the reviews panel (loaded on first use). */
-export function openMrReviews(select?: string) {
-  void loadRoot().then((module) => module.showMrReviews(select));
+/** Opens the reviews panel (loaded on first use), or its chat. */
+export function openMrReviews(select?: string, view?: "chat") {
+  void loadRoot().then((module) =>
+    module.showMrReviews(select, undefined, view),
+  );
 }
 
 /** Opens a request's review, through the panel (it asks what it needs). */

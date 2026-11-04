@@ -661,8 +661,6 @@ sender and 8 between two sessions (both ways) in ten minutes, refused with
 of voice and of the user's messages) and show a `roamgate-review message`
 Bash call as **To NAME** beside it.
 
-||||||| parent of b823117f (Add a reviews inbox of merge and pull requests waiting for you)
-
 ### Reviews inbox
 
 `server/src/mr-reviews/` serves `bridge.mr_reviews.*` to every browser,
@@ -763,6 +761,49 @@ Model choice, measured on two real batches of 25: Opus found 6
 of the 8 requests overlapping the user's files with every pick grounded
 (about $0.13 per batch, 15 s), Sonnet 4 of 8 with person-only picks
 ($0.06, 10-15 s), Haiku 5 of 8 with looser links ($0.005, 14-29 s).
+A ranking saved before the head and title stamp holds while its
+`updatedAt` matches; a pick of the reviews agent (`by: "agent"`) is never
+ranked again by the curation.
+
+`mr-reviews/agent.ts`: the reviews agent, a chat in the Reviews panel
+(`bridge.mr_reviews.agent.get|send|unqueue|stop|reset`). It runs as Ranger's
+Claude Code turns do (`assistant/claude-driver.ts`, which takes another
+agent's tools and system prompt): one `claude -p` per question, resumed
+from the chat's session, with Claude Code's own tools, MCP servers, skills
+and hooks off and only the module's tools over a turn-scoped loopback MCP
+server named `reviews` (`assistant/claude-mcp.ts`). It is not a pane
+session; `claude_start_mode` does not apply. The session id and the chat
+(the latest 120 messages) are kept in `<data>/mr-reviews/agent.json`, its
+working folder is `<data>/mr-reviews/agent/claude`. A question sent while
+it answers waits (at most 5); Stop drops the waiting ones; New chat starts
+a new session.
+
+Its tools (`mr-reviews/agent-tools.ts`): `known_requests` (the inbox, the
+suggestions with their stored reason and score, the followed projects'
+other open requests), `interest_signals` (the curation's signals),
+`search_requests` (GitLab GraphQL `mergeRequests(search, labels,
+authorUsername, updatedAfter, state)` per followed or named project, GitHub
+`search`, plus a changed-path filter on the answers) and `request_files`
+read; `suggest` (a pick in `ranked`, `by: "agent"`; a request found outside
+the inbox's lists is kept in `found` for 14 days so the inbox shows it),
+`feedback` (the inbox's x / +), `set_hints` (the `hints` setting) and
+`open_review` (the browser that asked opens it through the panel's own
+flow) only change the user's own lists, settings or screen. Forge access is
+read only: each query is built by `agent-search.ts` as one GraphQL `query`
+(model-given values JSON-quoted, dates checked), sent through the forge
+gate as feature `reviews-agent`, an identical one shared for 2 minutes, at
+most 12 calls per question; no tool drafts, comments, resolves or
+publishes. Forge text in tool results is marked as data, and the system
+prompt keeps the writing tools to what the user's own message asks.
+The voice router and front route "ask the reviews agent..." and questions
+about requests to review to `{"to": "reviews"}`, which the page sends to
+the agent and tells the answer of.
+Model choice, measured on the live inbox's requests with a fake forge (four
+questions: new on GES or RTP, touching validate, why a suggestion, merged
+lately; two runs each): Opus cited every expected request with nothing off
+topic (median 10 s, about $0.07 a question), Sonnet as accurate but slower
+(14 s, $0.035), Haiku missed 2 of 24 and cited one off-topic request (9 s,
+$0.002).
 
 ## Conversation mode
 

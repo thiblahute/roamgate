@@ -74,10 +74,21 @@ export function createMrInbox(deps: MrInboxDeps) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = true;
 
-  /** Every request known, the user's first, by key. */
+  /**
+   * Every request known: the forges' lists, then those the reviews agent
+   * found (once in a list, the list's copy wins).
+   */
   function items(): MrItem[] {
-    const known = deps.store.get().items;
-    return known;
+    const state = deps.store.get();
+    const found = Object.values(state.found);
+    if (!found.length) return state.items;
+    const listed = new Set(state.items.map((item) => item.key));
+    return [
+      ...state.items,
+      ...found
+        .filter((entry) => !listed.has(entry.item.key))
+        .map((entry) => entry.item),
+    ];
   }
 
   async function readHost(
@@ -172,7 +183,7 @@ export function createMrInbox(deps: MrInboxDeps) {
     for (const result of results) hosts.set(result.state.host, result);
     // A host that failed keeps what it had: the list does not empty on a
     // hiccup.
-    const previous = items();
+    const previous = deps.store.get().items;
     const merged = new Map<string, MrItem>();
     for (const result of results) {
       if (!result.answer) {

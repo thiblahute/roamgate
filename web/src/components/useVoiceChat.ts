@@ -13,6 +13,7 @@ import type {
 } from "../../../shared/agentChat";
 import { messageUuid } from "../agentChat";
 import { askRanger } from "../assistant";
+import { askReviewsAgent } from "../mrReviewsAgent";
 import type { HistoryEntry } from "./agentHistory";
 import { agentStateKind } from "./agentSession";
 import {
@@ -124,6 +125,7 @@ import {
   handOffVoice,
   parseVoiceSessionId,
   RANGER_VOICE_SESSION,
+  REVIEWS_VOICE_SESSION,
   followErrand,
   forwardFailedLine,
   forwardWork,
@@ -973,6 +975,34 @@ export function useVoiceChat({
               },
               (error: Error) => {
                 note(error.message, "Ranger");
+                if (!signal.aborted)
+                  void speak(error.message, signal).catch(() => {});
+              },
+            );
+            return "nobody";
+          }
+          case "reviews": {
+            // Its own chat: a question for it is for the one on screen.
+            if (context.current === REVIEWS_VOICE_SESSION) return "here";
+            // The reviews agent answers in its chat, in Reviews; voice
+            // chat goes on meanwhile and its answer is read when it comes.
+            note(`Asked the reviews agent: ${words}`, "Reviews");
+            if (front && reply && frontReplySaid(route.to, slow))
+              void front.say(reply, signal);
+            // Marked as said, as in its own chat by voice.
+            const cutReviews = interruptedAt;
+            interruptedAt = null;
+            void askReviewsAgent(voiceMessage(words, cutReviews)).then(
+              (answer) => {
+                note("The reviews agent answered.", "Reviews", {
+                  reviews: true,
+                });
+                if (signal.aborted) return;
+                if (companion()) tellAnswer(plainText(answer), [], "Reviews");
+                else void speak(plainText(answer), signal).catch(() => {});
+              },
+              (error: Error) => {
+                note(error.message, "Reviews");
                 if (!signal.aborted)
                   void speak(error.message, signal).catch(() => {});
               },

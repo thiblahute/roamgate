@@ -74,6 +74,7 @@ import {
   type MentionField,
   useMentionPicker,
 } from "./MessageMentions";
+import { openMrReviews } from "../mrReviewsOpen";
 import { setPaneView } from "../paneView";
 import { store } from "../store";
 
@@ -82,6 +83,10 @@ function openRouterNote(target: RouterNoteTarget) {
   showRouterNote(null);
   if ("ranger" in target) {
     openAssistant();
+    return;
+  }
+  if ("reviews" in target) {
+    openMrReviews(undefined, "chat");
     return;
   }
   setPaneView(target.connectionId, target.paneId, "chat");

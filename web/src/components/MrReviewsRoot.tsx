@@ -23,14 +23,16 @@ function close(options: { keepFocus?: boolean } = {}) {
 }
 
 let renders = 0;
-function render(select?: string, open?: string) {
-  // A new key remounts it, so a request to open is taken once.
+function render(select?: string, open?: string, view?: "chat") {
+  // A new key remounts it, so a request to open, or the chat, is taken
+  // once.
   root?.render(
     <MrReviewsPanel
-      key={open ? `open-${++renders}` : "panel"}
+      key={open || view ? `open-${++renders}` : "panel"}
       onClose={close}
       initialSelect={open ?? select}
       initialOpen={open}
+      {...(view ? { initialView: view } : {})}
     />,
   );
 }
@@ -40,9 +42,9 @@ function render(select?: string, open?: string) {
  * timeline is shown: loaded only when asked for; the bridge and the store
  * are module singletons.
  */
-export function showMrReviews(select?: string, open?: string) {
+export function showMrReviews(select?: string, open?: string, view?: "chat") {
   if (root) {
-    render(select, open);
+    render(select, open, view);
     return;
   }
   previousFocus = document.activeElement;
@@ -50,7 +52,7 @@ export function showMrReviews(select?: string, open?: string) {
   host.className = "mr-reviews-root";
   document.body.append(host);
   root = createRoot(host);
-  render(select, open);
+  render(select, open, view);
 }
 
 export function toggleMrReviews() {

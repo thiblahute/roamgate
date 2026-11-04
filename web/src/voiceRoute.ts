@@ -31,6 +31,8 @@ export type VoiceRoute = (
   | { to: "open" | "send"; pane: string; say: string }
   /** A question or request for Ranger, sent by the page. */
   | { to: "ranger" }
+  /** A question for the reviews agent (Reviews' chat), sent by the page. */
+  | { to: "reviews" }
   /** An errand handed to the errands session, followed by `job`. */
   | { to: "errand"; pane: string; say: string; job?: string }
   | { to: "ask"; panes: string[]; question: string }
@@ -65,6 +67,7 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
   "open",
   "send",
   "ranger",
+  "reviews",
   "errand",
   "ask",
   "self",
@@ -78,6 +81,12 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
  * router (where a question for Ranger is for the one on screen), and the
  * voice chat's key, which does not follow the user to a workspace's agent.
  */
+export const REVIEWS_VOICE_SESSION = "reviews";
+/** The reviews agent's chat, in the Reviews panel: as Ranger's. */
+export const REVIEWS_VOICE_KEY = {
+  connectionId: "@reviews",
+  paneId: "@reviews",
+} as const;
 export const RANGER_VOICE_SESSION = "ranger";
 export const RANGER_VOICE_KEY = {
   connectionId: "@ranger",
@@ -446,6 +455,7 @@ export type RouterNote = {
 };
 export type RouterNoteTarget =
   | { ranger: true }
+  | { reviews: true }
   | { connectionId: string; paneId: string };
 
 let note: RouterNote | null = null;

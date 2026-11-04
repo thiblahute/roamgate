@@ -206,3 +206,36 @@
   align-items: flex-start;
   font-size: 12px;
 }
+
+/* The reviews agent's chat: Ranger's chat filling the panel, scrolling
+   inside, its message box at the bottom. */
+.mr-reviews-chat {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.mr-reviews-chat > .mr-reviews-prompt,
+.mr-reviews-chat > .assistant-error {
+  flex: none;
+  margin: 10px 12px 0;
+}
+
+.mr-reviews-chat-after {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mr-reviews-chat-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mr-reviews-chat-empty span {
+  max-width: 34em;
+}

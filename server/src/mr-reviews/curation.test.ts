@@ -7,6 +7,7 @@ import {
   CURATION_MODEL,
   createMrCuration,
   parseRanking,
+  rankedCurrent,
   topPaths,
 } from "./curation";
 import { openMrStore } from "./store";
@@ -154,6 +155,70 @@ describe("curation", () => {
       expect(asked.at(-1)!.prompt.candidates.map((c: any) => c.key)).toEqual([
         "k7",
       ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a ranking saved before the head and title stamp holds at its updatedAt", () => {
+    const ranked = {
+      updatedAt: item(1).updatedAt,
+      pick: false,
+      score: 10,
+      reason: "",
+      at: "t",
+    };
+    expect(rankedCurrent(ranked, item(1))).toBe(true);
+    expect(
+      rankedCurrent(ranked, { ...item(1), updatedAt: "2099-01-01T00:00:00Z" }),
+    ).toBe(false);
+    expect(rankedCurrent(undefined, item(1))).toBe(false);
+    // The reviews agent's pick holds whatever changes.
+    expect(
+      rankedCurrent(
+        { ...ranked, by: "agent", version: "old" },
+        { ...item(1), headSha: "c".repeat(40) },
+      ),
+    ).toBe(true);
+  });
+
+  test("unstamped rankings and the agent's picks are not ranked again", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mr-cur-"));
+    try {
+      const store = openMrStore(join(dir, "state.json"));
+      const items = [item(1), item(2), item(3)];
+      store.update((state) => {
+        state.ranked.k1 = {
+          updatedAt: items[0]!.updatedAt,
+          pick: true,
+          score: 70,
+          reason: "old pick",
+          at: "t",
+        };
+        state.ranked.k2 = {
+          updatedAt: "2000-01-01T00:00:00Z",
+          version: "old",
+          pick: true,
+          score: 90,
+          reason: "asked in the chat",
+          at: "t",
+          by: "agent",
+        };
+      });
+      const asked: string[][] = [];
+      const curation = createMrCuration({
+        store,
+        settings: async () => ({ curation: true, hints: "", followed: [{}] }),
+        connections: () => [],
+        run: async (_model, _system, prompt) => {
+          asked.push(JSON.parse(prompt).candidates.map((c: any) => c.key));
+          return { text: "[]", ms: 1 };
+        },
+      });
+      await curation.maybeRun(items, true);
+      expect(asked).toEqual([["k3"]]);
+      expect(store.get().ranked.k1!.reason).toBe("old pick");
+      expect(store.get().ranked.k2!.by).toBe("agent");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

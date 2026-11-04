@@ -1,3 +1,4 @@
+import type { AssistantSource } from "./assistant";
 import type {
   ForgePipelineStatus,
   ForgeProvider,
@@ -187,3 +188,43 @@ export function mrUnread(
     changed: newCommits || newNotes > 0 || item.updatedAt > seen.updatedAt,
   };
 }
+
+/**
+ * A message of the reviews agent's chat, shaped as Ranger's (its tools as
+ * activity); `opens` are the requests whose review it showed, opened by
+ * the browser that asked (`request_id`).
+ */
+export type MrAgentMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  sent_at: string;
+  tools: {
+    id: string;
+    name: string;
+    status: "running" | "completed" | "failed";
+    arguments?: string;
+    output?: string;
+  }[];
+  /** None: its tools cite no workspace. */
+  sources: AssistantSource[];
+  thinking?: string[];
+  request_id?: string;
+  opens?: MrItem[];
+  /** The turn ended in an error. */
+  failed?: boolean;
+};
+
+/** The reviews agent's chat, as `bridge.mr_reviews.agent.*` gives it. */
+export type MrAgentSnapshot = {
+  instance_id: string;
+  revision: number;
+  /** The Claude Code session the next question resumes. */
+  session_id?: string;
+  model: string;
+  running: boolean;
+  error: string | null;
+  messages: MrAgentMessage[];
+  /** Questions waiting for the running one, oldest first. */
+  queue: { id: string; mode: "follow_up"; text: string; sent_at: string }[];
+};

@@ -24,6 +24,8 @@ export const CURATION_EVERY_MS = 20 * 60_000;
 export const PICKS_PER_BATCH = 8;
 const FEEDBACK_SHOWN = 30;
 const TIMEOUT_MS = 180_000;
+/** The user's history in their clones is read again after this. */
+const HISTORY_TTL_MS = 10 * 60_000;
 
 export type Signals = {
   /** Paths (and their directories) the user committed to lately, by count. */
@@ -118,6 +120,22 @@ export function curationPrompt(signals: Signals, candidates: MrItem[]): string {
 /** What a ranking stands on: the head and the title. */
 export function versionOf(item: Pick<MrItem, "headSha" | "title">): string {
   return `${item.headSha}\n${item.title}`;
+}
+
+/**
+ * Whether `ranked` still holds for `item`: ranked on its head and title, or
+ * (saved before rankings were stamped with them) at its updatedAt. A pick
+ * of the reviews agent holds until the user says otherwise.
+ */
+export function rankedCurrent(
+  ranked: MrRanked | undefined,
+  item: Pick<MrItem, "headSha" | "title" | "updatedAt">,
+): boolean {
+  if (!ranked) return false;
+  if (ranked.by === "agent") return true;
+  return ranked.version !== undefined
+    ? ranked.version === versionOf(item)
+    : ranked.updatedAt === item.updatedAt;
 }
 
 export type Ranking = {
@@ -245,8 +263,18 @@ export function createMrCuration(deps: {
   let running: Promise<void> | null = null;
   let lastRun = 0;
   let status: MrCurationState = { state: "idle" };
+  /** The history read last (a script per clone): kept a while. */
+  let history: {
+    at: number;
+    committed: string[];
+    branches: string[];
+  } | null = null;
 
-  async function signals(items: MrItem[], hints: string): Promise<Signals> {
+  async function readHistory(): Promise<{
+    committed: string[];
+    branches: string[];
+  }> {
+    if (history && now() - history.at < HISTORY_TTL_MS) return history;
     const state = deps.store.get();
     const committed: string[] = [];
     const branches: string[] = [];
@@ -262,13 +290,20 @@ export function createMrCuration(deps: {
       const conn = deps.connections().find((c) => c.id === clone.connectionId);
       if (!conn) continue;
       try {
-        const history = parseHistory(
+        const read = parseHistory(
           (await conn.run(historyScript(clone.path), 60_000)).stdout,
         );
-        committed.push(...history.committed);
-        branches.push(...history.branches);
+        committed.push(...read.committed);
+        branches.push(...read.branches);
       } catch {}
     }
+    history = { at: now(), committed, branches };
+    return history;
+  }
+
+  async function signals(items: MrItem[], hints: string): Promise<Signals> {
+    const state = deps.store.get();
+    const { committed, branches } = await readHistory();
     const byKey = new Map(items.map((item) => [item.key, item]));
     const reviewedItems = Object.keys(state.reviews)
       .map((key) => byKey.get(key))
@@ -327,7 +362,7 @@ export function createMrCuration(deps: {
           !own(item) &&
           !dismissed.has(item.key) &&
           Date.parse(item.updatedAt) >= since &&
-          state.ranked[item.key]?.version !== versionOf(item),
+          !rankedCurrent(state.ranked[item.key], item),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, BATCH_SIZE);
@@ -355,6 +390,8 @@ export function createMrCuration(deps: {
     const at = new Date(now()).toISOString();
     deps.store.update((state) => {
       for (const item of batchItems) {
+        // Picked by the reviews agent meanwhile: its pick stays.
+        if (state.ranked[item.key]?.by === "agent") continue;
         const entry = ranking.find((each) => each.key === item.key);
         const ranked: MrRanked = {
           updatedAt: item.updatedAt,
@@ -379,6 +416,9 @@ export function createMrCuration(deps: {
 
   return {
     state: (): MrCurationState => status,
+    /** The user's interest signals, as the curation reads them. */
+    signals: async (items: MrItem[]) =>
+      signals(items, (await deps.settings()).hints),
     /** After a refresh: one batch when due and none is running. */
     maybeRun(items: MrItem[], force = false): Promise<void> {
       if (running) return running;

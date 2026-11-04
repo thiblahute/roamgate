@@ -11,10 +11,19 @@ import { forgeGate } from "../workspace/forge-calls";
  * budget, queue and rate-limit pauses), feature `inbox`. Reads only.
  */
 
+/**
+ * Who asks, for the gate's log and budget: the inbox by default, the
+ * reviews agent's searches as `reviews-agent`; `reuseMs` shares an
+ * identical query's answer that long.
+ */
+export type FetchCall = { feature: string; kind: string; reuseMs?: number };
+
+const INBOX_CALL: FetchCall = { feature: "inbox", kind: "inbox" };
+
 export type InboxFetchers = {
   /** Throws a NotSignedIn error when the host has no login here. */
-  gitlab(host: string, query: string): Promise<unknown>;
-  github(host: string, query: string): Promise<unknown>;
+  gitlab(host: string, query: string, call?: FetchCall): Promise<unknown>;
+  github(host: string, query: string, call?: FetchCall): Promise<unknown>;
   /** The user's pending draft notes on a GitLab merge request. */
   gitlabDrafts(item: MrItem): Promise<number>;
 };
@@ -47,7 +56,7 @@ export function createInboxFetchers(run: Run): InboxFetchers {
     }
   };
   return {
-    async gitlab(host, query) {
+    async gitlab(host, query, call = INBOX_CALL) {
       const login = await access(host);
       return glab(
         context,
@@ -56,10 +65,10 @@ export function createInboxFetchers(run: Run): InboxFetchers {
         "graphql",
         [["query", query, "raw"]],
         false,
-        { feature: "inbox", kind: "inbox" },
+        call,
       );
     },
-    async github(host, query) {
+    async github(host, query, call = INBOX_CALL) {
       const code = await ghHostLogin(context, host).catch(() => -1);
       if (code === 127) throw new ForgeToolMissingError("gh is not installed");
       if (code !== 0)
@@ -76,7 +85,12 @@ export function createInboxFetchers(run: Run): InboxFetchers {
       ];
       const output = await forgeGate.run(
         run,
-        { host, feature: "inbox", kind: "inbox" },
+        {
+          host,
+          feature: call.feature,
+          kind: call.kind,
+          ...(call.reuseMs ? { reuseMs: call.reuseMs } : {}),
+        },
         argv,
         async (full) => {
           try {

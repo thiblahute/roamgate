@@ -55,7 +55,8 @@ const MAX_ANSWER_CHARS = 12000;
  * ROAMGATE_VOICE_DEBUG set (which GET /api/voice reports as `debug`).
  * POST /api/voice/route: `{current, said, sessions}` in, who it was said to
  * out (voice-router.ts); GET /api/voice reports `route` when it is set up.
- * A question for Ranger ("ranger") is the page's to send. An errand
+ * A question for Ranger ("ranger") or for the reviews agent ("reviews")
+ * is the page's to send. An errand
  * ("errand") is sent to the session in `errand_folder` with `job`, which
  * GET /api/voice/errand?job= follows until its answer is in.
  * With a front (`front_model`, voice-front.ts), it decides in the router's

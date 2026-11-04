@@ -1016,8 +1016,6 @@ reply. Both chats show it: **From NAME** in the receiver's, **To NAME** in the
 sender's. Only sessions Roamgate manages can send or be addressed, and a
 rate limit stops two sessions answering each other in a loop.
 
-||||||| parent of b823117f (Add a reviews inbox of merge and pull requests waiting for you)
-
 ## Reviews Inbox
 
 **Menu > Reviews**, the command menu or `Option+M` (`Alt+M`) opens the
@@ -1094,6 +1092,19 @@ precedent. It only filters; it never reviews or comments. Only requests
 updated in the last 30 days (a setting) are considered, and a request is
 ranked again only when its head or title changes. Turn it off in the
 settings.
+
+**Chat** (or `a` in the inbox) talks with the reviews agent: ask "anything
+new on GES or the RTP stack?", "find MRs touching validate" or "why did you
+suggest !12967?". It answers from your inbox, your suggestions and why each
+was picked, your history in your clones, your hints and feedback, and
+read-only searches on the forges, and shows what it looked at under **Work
+performed**. Asked to, it suggests a request, records your x / +, changes
+your hints, or opens a request's review; it never comments, drafts or
+approves anything on a forge. In the chat `i` (or Enter) goes to the message
+box and Escape back to the inbox; questions sent while it answers wait their
+turn; **New chat** starts over. With the voice companion, say "ask the
+reviews agent..." (or just ask about requests to review): its answer is
+told on the call and kept in its chat.
 
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.
