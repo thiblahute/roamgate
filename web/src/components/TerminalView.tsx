@@ -1319,13 +1319,10 @@ export function TerminalView({
   useEffect(() => {
     if (!isActivePane || !canShowAgentHistory) return;
     const onKey = (e: KeyboardEvent) => {
-      if (
-        e.defaultPrevented ||
-        document.querySelector(".modal-backdrop, .command-popover")
-      )
-        return;
-      const isHistoryShortcut = shortcutMatches(e, "terminal.history");
-      if (!isHistoryShortcut) return;
+      // The shortcut first: a page-wide query on every key typed costs a
+      // long chat's page more than the key itself.
+      if (e.defaultPrevented || !shortcutMatches(e, "terminal.history")) return;
+      if (document.querySelector(".modal-backdrop, .command-popover")) return;
       if (
         isEditableElement(e.target) &&
         !(e.target as HTMLElement).closest(".xterm")

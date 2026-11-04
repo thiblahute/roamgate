@@ -5,6 +5,7 @@ import {
   shortcutLabel,
   useShortcutPreferences,
 } from "../shortcutPreferences";
+import { appKeyInMessageBox } from "../messageBoxKeys";
 import {
   ACTIVITY_ENTRY,
   activityViewForSearch,
@@ -251,15 +252,18 @@ export function CommandCombobox({
     const onKey = (e: KeyboardEvent) => {
       // The pane switcher owns K even when its held modifiers match this
       // shortcut. Both handlers run on window, so listener order cannot decide.
-      if (
-        e.defaultPrevented ||
-        document.querySelector(".modal-backdrop, .pane-jump-backdrop")
-      )
+      // The shortcut first: a page-wide query on every key typed costs a
+      // long chat's page more than the key itself.
+      if (e.defaultPrevented || !shortcutMatches(e, "command.menu") || e.repeat)
         return;
-      if (!shortcutMatches(e, "command.menu") || e.repeat) return;
+      if (document.querySelector(".modal-backdrop, .pane-jump-backdrop"))
+        return;
+      // A message box (composer, review comment) lets it through: it edits
+      // nothing there.
       if (
         isTypingTarget(e.target) &&
-        !(e.target as HTMLElement).closest(".command-popover, .xterm")
+        !(e.target as HTMLElement).closest(".command-popover, .xterm") &&
+        !appKeyInMessageBox(e)
       )
         return;
       e.preventDefault();

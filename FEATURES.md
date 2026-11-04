@@ -1082,6 +1082,11 @@ On desktop, press `Cmd+Shift+K` (`Ctrl+Alt+Shift+K` on Windows/Linux) or choose
 **Menu > Configuration > Behavior > Keyboard shortcuts** (up to three per
 action, with JSON import/export).
 
+App shortcuts also work from a message box (an agent chat's composer or its
+Vim box, a terminal's composer, a review comment) whenever the key edits no
+text there: `Cmd+K`, `Option+A` or `Option+F` do, typing, moving, deleting,
+copying and undoing keys stay the box's.
+
 Presets live on the Roamgate server, so every browser you open shares them and
 a change reaches the others at once; each browser keeps a copy so bindings work
 before the connection is up. A preset records the platform it was written for

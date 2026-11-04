@@ -82,6 +82,7 @@ import {
   overlayPaneInput,
 } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
+import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
   CircleAlert,
@@ -909,13 +910,24 @@ function shownReviewOverlay(root: Document): HTMLElement | null {
   );
 }
 
-function blocksNavigationShortcuts(target: EventTarget | null) {
+function blocksNavigationShortcuts(
+  target: EventTarget | null,
+  event?: KeyboardEvent,
+) {
   if (
     target instanceof HTMLElement &&
     target.closest(".agent-history-composer")
   )
     return false;
-  return isEditableElement(target);
+  return event ? blocksAppShortcut(event) : isEditableElement(target);
+}
+
+/**
+ * Typing where an app shortcut must not fire: an editable field, but not a
+ * message box (composer, review comment) for a key that edits nothing there.
+ */
+function blocksAppShortcut(event: KeyboardEvent) {
+  return isEditableElement(event.target) && !appKeyInMessageBox(event);
 }
 
 function tabShortcutIndex(e: KeyboardEvent) {
@@ -4378,7 +4390,7 @@ export default function App() {
       }
       const paneJumpShortcut = shortcutMatches(e, "panes.recent");
       if (paneJumpShortcut) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         if (paneJumpOptions.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -4398,7 +4410,7 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "panes.search")) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         e.preventDefault();
         e.stopPropagation();
         openPaneJumpSearch();
@@ -4406,7 +4418,7 @@ export default function App() {
       }
       if (
         shortcutMatches(e, "activity.open") &&
-        !blocksNavigationShortcuts(e.target)
+        !blocksNavigationShortcuts(e.target, e)
       ) {
         handleActivityShortcut(e);
         return;
@@ -4451,7 +4463,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (
-          blocksNavigationShortcuts(e.target) ||
+          blocksNavigationShortcuts(e.target, e) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -4524,7 +4536,7 @@ export default function App() {
         // Only while the overlay shows; otherwise the key is the shell's.
         if (
           store.get().overlayOpen &&
-          !blocksNavigationShortcuts(e.target) &&
+          !blocksNavigationShortcuts(e.target, e) &&
           !document.querySelector(".modal-backdrop")
         ) {
           e.preventDefault();
@@ -4538,7 +4550,7 @@ export default function App() {
         // stops at the xterm textarea; so the same key hides the overlay
         // from its own shell.
         if (
-          blocksNavigationShortcuts(e.target) ||
+          blocksNavigationShortcuts(e.target, e) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -4553,7 +4565,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (
-          blocksNavigationShortcuts(e.target) ||
+          blocksNavigationShortcuts(e.target, e) ||
           document.querySelector(".modal-backdrop")
         ) {
           return;
@@ -4599,7 +4611,7 @@ export default function App() {
       }
       const tabIndex = tabShortcutIndex(e);
       if (tabIndex !== null) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         const current = store.get();
         const focusedWorkspace = current.workspaces.find((w) => w.focused);
         // Number shortcuts address tab-strip positions, pinned tabs first.
@@ -4618,14 +4630,14 @@ export default function App() {
         return;
       }
       if (isWorkspaceInspectorShortcut(e)) {
-        if (isEditableElement(e.target)) return;
+        if (blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         toggleWorkspaceInspector();
         return;
       }
       if (shortcutMatches(e, "inspector.expand")) {
-        if (mobile || isEditableElement(e.target)) return;
+        if (mobile || blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat) return;
@@ -4635,14 +4647,14 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "annotations.toggle")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) toggleAnnotations();
         return;
       }
       if (shortcutMatches(e, "reviews.list")) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) {
@@ -4653,7 +4665,7 @@ export default function App() {
         return;
       }
       if (shortcutMatches(e, "review.toggle")) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) void toggleReviewRef.current();
@@ -4668,7 +4680,7 @@ export default function App() {
       }
       const fileExplorerShortcut = shortcutMatches(e, "files.toggle");
       if (fileExplorerShortcut) {
-        if (isEditableElement(e.target)) return;
+        if (blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         toggleFileExplorer();
@@ -4676,7 +4688,7 @@ export default function App() {
       }
       const workspacesShortcut = shortcutMatches(e, "workspaces.open");
       if (workspacesShortcut) {
-        if (blocksNavigationShortcuts(e.target)) return;
+        if (blocksNavigationShortcuts(e.target, e)) return;
         e.preventDefault();
         e.stopPropagation();
         openWorkspaces();
@@ -4684,14 +4696,14 @@ export default function App() {
       }
       const diffViewerShortcut = shortcutMatches(e, "diff.toggle");
       if (diffViewerShortcut) {
-        if (isEditableElement(e.target)) return;
+        if (blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         toggleDiffViewer();
         return;
       }
       if (shortcutMatches(e, "zen.toggle")) {
-        if (isEditableElement(e.target)) return;
+        if (blocksAppShortcut(e)) return;
         e.preventDefault();
         e.stopPropagation();
         toggleZenMode();
@@ -4699,7 +4711,7 @@ export default function App() {
       }
       if (
         !shortcutMatches(e, "sidebar.toggle") ||
-        blocksNavigationShortcuts(e.target)
+        blocksNavigationShortcuts(e.target, e)
       )
         return;
       e.preventDefault();
