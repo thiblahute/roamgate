@@ -5,7 +5,11 @@ import {
   shortcutLabel,
   useShortcutPreferences,
 } from "../shortcutPreferences";
-import { openActivityTimeline, openHours } from "../activityTimelineOpen";
+import {
+  ACTIVITY_ENTRY,
+  activityViewForSearch,
+  openActivityTimeline,
+} from "../activityTimelineOpen";
 import { endpointCreationReason } from "../store";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -26,7 +30,6 @@ import {
   Keyboard,
   ListChecks,
   ChartGantt,
-  Clock,
   Maximize2,
   MoveDown,
   MoveLeft,
@@ -1059,18 +1062,12 @@ export function CommandCombobox({
     {
       key: "activity-timeline",
       icon: <ChartGantt size={15} />,
-      title: "Activity timeline",
-      detail: "Attention and agent states, per day",
-      keywords: ["activity", "time", "attention", "report"],
-      run: () => openActivityTimeline(),
-    },
-    {
-      key: "activity-hours",
-      icon: <Clock size={15} />,
-      title: "Hours",
-      detail: "Time to report, from the activity log",
-      keywords: ["hours", "time", "report", "timesheet", "olmo", "submit"],
-      run: openHours,
+      title: ACTIVITY_ENTRY.title,
+      detail: ACTIVITY_ENTRY.detail,
+      shortcut: shortcutLabel("activity.open"),
+      keywords: ACTIVITY_ENTRY.keywords,
+      // One entry: a search for the hours opens it on its Hours tab.
+      run: () => openActivityTimeline(activityViewForSearch(search)),
     },
   ];
 

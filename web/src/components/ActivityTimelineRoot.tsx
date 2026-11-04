@@ -37,3 +37,9 @@ export function showActivityTimeline(view: TimelineView = "timeline") {
     <ActivityTimeline key={view} onClose={close} initialView={view} />,
   );
 }
+
+/** The shortcut's way in and out: opens the timeline, or closes it. */
+export function toggleActivityTimeline() {
+  if (root) close();
+  else showActivityTimeline();
+}

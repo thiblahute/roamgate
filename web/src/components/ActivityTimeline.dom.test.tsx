@@ -31,6 +31,8 @@ if (process.env.ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST !== "1") {
     Event: browser.Event,
     MouseEvent: browser.MouseEvent,
     KeyboardEvent: browser.KeyboardEvent,
+    PointerEvent: browser.PointerEvent,
+    WheelEvent: browser.WheelEvent,
     IS_REACT_ACT_ENVIRONMENT: true,
   }))
     Object.defineProperty(globalThis, key, {
@@ -391,6 +393,101 @@ if (process.env.ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST !== "1") {
     await click(again.querySelector('[aria-label="Remove share 2"]'));
     expect(again.querySelectorAll(".project-mapping-share")).toHaveLength(1);
     expect(again.querySelector('input[type="number"]')).toBeNull();
+    await unmount();
+  });
+
+  test("a zoom clips the bands, keeps full times, is kept across views and resets", async () => {
+    localStorage.clear();
+    const { container, unmount } = await mount();
+    const range = () => text(container.querySelector(".timeline-zoom-range"));
+    const button = (label: string) =>
+      [...container.querySelectorAll(".timeline-zoom-button")].find(
+        (element) => text(element) === label,
+      );
+    // Unzoomed: the automatic range, and how to zoom.
+    expect(container.querySelector(".timeline-zoom-range")).toBeNull();
+    expect(text(container.querySelector(".timeline-zoom-hint"))).toContain(
+      "Drag across",
+    );
+    // Work hours: the first to the last activity, ten minutes each side.
+    await click(button("Work hours"));
+    expect(range()).toBe("08:50 to 12:10");
+
+    // A drag across the axis zooms to what it covers.
+    const track = container.querySelector<HTMLElement>("[data-zoom-brush]")!;
+    const rect = { left: 100, width: 400, top: 0, height: 16 };
+    track.getBoundingClientRect = () =>
+      ({ ...rect, right: 500, bottom: 16, x: 100, y: 0 }) as DOMRect;
+    const pointer = async (type: string, x: number, target: Element) => {
+      await act(async () => {
+        target.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            pointerId: 1,
+            pointerType: "mouse",
+            button: 0,
+          }),
+        );
+      });
+    };
+    await pointer("pointerdown", 200, track);
+    await pointer("pointermove", 300, track);
+    expect(container.querySelector(".timeline-brush")).not.toBeNull();
+    await pointer("pointerup", 300, track);
+    await settle();
+    expect(container.querySelector(".timeline-brush")).toBeNull();
+    expect(range()).toBe("09:40 to 10:30");
+    // The click ending the drag is not taken for a click on a band.
+    await click(container.querySelector(".activity-chart"));
+
+    // A band the zoom cuts shows its part, and its full times on hover.
+    const first = container.querySelector<HTMLElement>(
+      ".activity-you .activity-band",
+    )!;
+    expect(first.style.left).toBe("0%");
+    expect(first.style.width).toBe("40%");
+    await click(first);
+    expect(text(container.querySelector(".activity-timeline-tip"))).toContain(
+      "09:00 to 10:00",
+    );
+
+    // Ctrl + wheel zooms around the pointer; the zoom stays on Subjects.
+    await act(async () => {
+      const wheel = new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        deltaY: 200,
+      });
+      // happy-dom's WheelEvent leaves out the mouse event's fields.
+      Object.defineProperty(wheel, "ctrlKey", { value: true });
+      Object.defineProperty(wheel, "clientX", { value: 300 });
+      track.dispatchEvent(wheel);
+      expect(wheel.defaultPrevented).toBe(true);
+    });
+    await settle();
+    expect(range()).not.toBe("09:40 to 10:30");
+    const wheeled = range();
+    await act(async () => {
+      container
+        .querySelector<HTMLInputElement>(
+          'input[name="activity-group-by"][value="subject"]',
+        )!
+        .click();
+    });
+    await settle();
+    expect(range()).toBe(wheeled);
+    // Ticks follow the zoom: five or fifteen minutes apart, not hours.
+    expect(
+      [...container.querySelectorAll(".activity-axis span")].some(
+        (tick) => !text(tick).endsWith(":00"),
+      ),
+    ).toBe(true);
+
+    // Reset: the automatic range again.
+    await click(button("Reset"));
+    expect(container.querySelector(".timeline-zoom-range")).toBeNull();
     await unmount();
   });
 }

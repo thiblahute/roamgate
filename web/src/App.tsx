@@ -31,6 +31,7 @@ import {
   type ReviewAnnotation,
 } from "./annotations";
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
+import { handleActivityShortcut } from "./activityTimelineOpen";
 import { passwordManagerIgnore } from "./passwordManagerIgnore";
 import {
   getReviewSnapshot,
@@ -149,6 +150,7 @@ import {
 } from "./components/CommandCombobox";
 import { CONFIG_MENU_ID, ConfigMenu } from "./components/ConfigMenu";
 import { openConfiguration } from "./configurationOpen";
+import { ZenIsland } from "./components/ZenIsland";
 import { ConnectionSwitcher } from "./components/ConnectionSwitcher";
 import {
   type ActiveDiffSelection,
@@ -4402,6 +4404,13 @@ export default function App() {
         openPaneJumpSearch();
         return;
       }
+      if (
+        shortcutMatches(e, "activity.open") &&
+        !blocksNavigationShortcuts(e.target)
+      ) {
+        handleActivityShortcut(e);
+        return;
+      }
       if (shortcutMatches(e, "shortcuts.show")) {
         if (mobile) return;
         e.preventDefault();
@@ -5297,16 +5306,7 @@ export default function App() {
       </header>
 
       {zenMode && !mobile ? (
-        <button
-          type="button"
-          className="zen-island"
-          title={shortcutTitle("Exit Zen mode", "zen.toggle")}
-          aria-label={shortcutTitle("Exit Zen mode", "zen.toggle")}
-          onClick={() => applyZenMode(false)}
-        >
-          <Minimize2 size={13} />
-          <span>Exit Zen</span>
-        </button>
+        <ZenIsland onExit={() => applyZenMode(false)} />
       ) : null}
 
       {mobile && mobileTabSheetOpen ? (

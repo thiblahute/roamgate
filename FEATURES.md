@@ -29,7 +29,8 @@ A Web/PWA client for a running [Herdr](https://herdr.dev) server.
   it on a pane's edge to place it on that side. Running programs keep going.
 - The command menu searches workspaces, worktrees, files, tabs, panes, and
   agents, and opens typed file paths.
-- Desktop **Zen mode** hides app chrome so the terminal fills the window.
+- Desktop **Zen mode** hides app chrome so the terminal fills the window. The
+  small tab at the top edge exits Zen or opens the application menu in place.
 - **Configuration > Integrations > Automatic tab renaming** names default tabs
   from the focused agent's bound session title, or its own terminal title.
   Existing custom labels are preserved. After a bridge restart, previously named
@@ -1036,21 +1037,28 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   attention on each device, agent states, idle time and recording gaps, never
   terminal contents. Turn it on in
   [settings](docs/DEPLOYMENT.md#activity-log).
-- **Activity timeline** (command menu, or the application menu) shows a day of
+- **Activity** (one entry in the command menu and the application menu, or
+  `Option+A` / `Alt+A`, Zen mode included) opens the activity timeline, a day of
   that log: a lane for you, coloured per workspace (Herdr's TUI focus hatched,
   only where no browser or phone had your attention), idle time hatched grey
   and disconnects in red, then a lane per workspace with its agents' working
   (green) and blocked (red) stretches. Hover or tap a band for the workspace,
   times, duration and source. Below, a table totals attended, working and
   blocked time per workspace; click a workspace to go to it. Step through days
-  with the arrows or **Today**; today refreshes every minute. **Subjects**
+  with the arrows or **Today**; today refreshes every minute. Drag across the
+  hours to zoom to them, or zoom around the pointer with Ctrl/Cmd + wheel or a
+  pinch; zoomed, drag the lanes (or scroll sideways) to pan, and the ticks go
+  down to 5 minutes. **Work hours** fits your first to last attention, **Full
+  day** shows it all, **Reset** goes back; the timeline and the Hours strip each
+  keep their zoom while it is open, across Workspaces, Subjects and Hours. **Subjects**
   gathers the workspaces under their [subjects](docs/activity.md#subjects)
   (groups of the Workspaces tree, else folders under `activity.subject_roots`)
   and colours them per subject. With a
   [time-report provider](docs/time-report.md), the table's **Project** column
   says where each workspace's (or subject's) time goes, split between several projects if need be; click it to correct.
-- **Hours** (command menu, the application menu, or the timeline's **Hours**
-  tab, with a [time-report provider](docs/time-report.md)) shows a day's time
+- **Hours** (the timeline's **Hours** tab, with a
+  [time-report provider](docs/time-report.md); searching the command menu for
+  "hours" opens it there) shows a day's time
   to report: tracked against expected time, the provider's cleaned timeline
   with its blocks over it, questions answered in place (the model's guess
   first; every answer is recorded, **Remember** makes it stick), blocks to
@@ -1088,6 +1096,7 @@ and is skipped, with a note, on a browser that does not match.
 | Expand / restore Inspector (desktop)                                  | `Cmd+Option+Enter`      | `Ctrl+Alt+Shift+Enter`                  |
 | Annotations                                                           | `Cmd+Option+A`          | `Ctrl+Alt+A`                            |
 | Ranger                                                                | `Cmd+Option+Shift+A`    | `Ctrl+Alt+Shift+A`                      |
+| Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |
 | Recent pane switcher                                                  | `Ctrl+Tab`              | `Ctrl+Alt+J`                            |
 | Search panes                                                          | `Alt+K`                 | `Alt+K`                                 |

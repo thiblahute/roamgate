@@ -28,6 +28,7 @@ const base = {
   "review.toggle": ["Ctrl+Alt+R"],
   "reviews.list": ["Ctrl+Alt+Shift+R"],
   "assistant.toggle": ["Ctrl+Alt+Shift+A"],
+  "activity.open": ["Alt+A"],
   "zen.toggle": ["Ctrl+Alt+Z"],
   "panes.recent": ["Ctrl+Alt+J"],
   "overlay.toggle": ["Alt+F"],

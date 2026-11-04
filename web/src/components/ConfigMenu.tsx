@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
-  Clock,
   ChevronDown,
   ChevronRight,
   Download,
@@ -23,7 +22,7 @@ import {
   Wifi,
 } from "lucide-react";
 import packageJson from "../../package.json";
-import { openActivityTimeline, openHours } from "../activityTimelineOpen";
+import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
 import { logoutBrowserSession } from "../api";
 import { connectionHttpPath } from "../connectionHttp";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -34,7 +33,7 @@ import type {
   ConfigurationProps,
   ConfigurationTab,
 } from "./ConfigurationDialog";
-import { OPEN_CONFIGURATION } from "../configurationOpen";
+import { OPEN_APP_MENU, OPEN_CONFIGURATION } from "../configurationOpen";
 import { ConfigurationLoadingDialog } from "./ConfigurationLoadingDialog";
 import { HerdrSetupCard } from "./HerdrSetupCard";
 import { MobileSheetHandle } from "./MobileSheetHandle";
@@ -104,6 +103,20 @@ export function ConfigMenu({
     window.addEventListener(OPEN_CONFIGURATION, show);
     return () => window.removeEventListener(OPEN_CONFIGURATION, show);
   }, []);
+  useEffect(() => {
+    // Zen's tab opens (or closes) this menu without the hidden top bar's
+    // button; focus goes to that button so the top bar shows while it is open.
+    const show = () => {
+      setExpanded(false);
+      setLogoutError("");
+      setOpen((value) => !value);
+      window.requestAnimationFrame(() =>
+        triggerRef.current?.focus({ preventScroll: true }),
+      );
+    };
+    window.addEventListener(OPEN_APP_MENU, show);
+    return () => window.removeEventListener(OPEN_APP_MENU, show);
+  }, []);
   const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
   const [health, setHealth] = useState<{
     socket?: string;
@@ -159,8 +172,11 @@ export function ConfigMenu({
           });
     }
     const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node))
-        setOpen(false);
+      const target = event.target as Node;
+      // Zen's menu button toggles the menu itself (OPEN_APP_MENU).
+      if (target instanceof Element && target.closest(".zen-island-menu"))
+        return;
+      if (ref.current && !ref.current.contains(target)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -242,22 +258,12 @@ export function ConfigMenu({
                 />
                 <ConfigMenuItem
                   icon={<ChartGantt size={15} />}
-                  label="Activity timeline"
-                  description="Attention and agent states, per day"
+                  label={ACTIVITY_ENTRY.title}
+                  description={`${ACTIVITY_ENTRY.detail}${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("activity.open")}`}`}
                   className="config-menu-item-row"
                   onClick={() => {
                     setOpen(false);
                     openActivityTimeline();
-                  }}
-                />
-                <ConfigMenuItem
-                  icon={<Clock size={15} />}
-                  label="Hours"
-                  description="Time to report, from the activity log"
-                  className="config-menu-item-row"
-                  onClick={() => {
-                    setOpen(false);
-                    openHours();
                   }}
                 />
                 {layout.mobile ? null : (

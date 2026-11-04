@@ -537,4 +537,43 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     expect(calls.filter((call) => call.op === "submit")).toHaveLength(0);
     await unmount();
   });
+
+  test("the strip zooms: work hours, the full day, and back", async () => {
+    reset();
+    const { useState } = await import("react");
+    const Zoomable = () => {
+      const [zoom, setZoom] = useState<{ start: number; end: number } | null>(
+        null,
+      );
+      return (
+        <HoursView
+          date="2026-11-03"
+          onDate={() => {}}
+          workspaces={[]}
+          zoom={zoom}
+          onZoom={setZoom}
+        />
+      );
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<Zoomable />);
+    });
+    await settle();
+    const range = () => text(container.querySelector(".timeline-zoom-range"));
+    expect(container.querySelector(".timeline-zoom-range")).toBeNull();
+    await click(button(container, "Work hours"));
+    expect(range()).toMatch(/^07:50 to \d\d:\d0$/);
+    await click(button(container, "Full day"));
+    expect(range()).toBe("00:00 to 24:00");
+    // Ticks follow the width shown: three hours apart over the whole day.
+    expect(
+      [...container.querySelectorAll(".hours-axis span")].map(text),
+    ).toContain("03:00");
+    await click(button(container, "Reset"));
+    expect(container.querySelector(".timeline-zoom-range")).toBeNull();
+    await act(async () => root.unmount());
+  });
 }

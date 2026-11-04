@@ -135,9 +135,8 @@
   transform: translateX(-50%);
   z-index: 121;
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px 6px;
+  align-items: stretch;
+  padding: 0;
   border: 1px solid var(--border);
   border-top: 0;
   border-radius: 0 0 10px 10px;
@@ -154,10 +153,40 @@
 }
 
 .zen-island:hover,
-.zen-island:focus-visible {
+.zen-island:focus-within {
   background: color-mix(in srgb, var(--panel) 92%, transparent);
-  color: var(--text);
   opacity: 1;
+}
+
+/* Its two buttons: the way out, then the application menu, so the menu's
+   entries (Activity, Configuration...) need no trip to the top bar's end. */
+.zen-island-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 6px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.zen-island-menu {
+  padding-inline: 9px 10px;
+}
+
+.zen-island-button:hover,
+.zen-island-button:focus-visible {
+  color: var(--text);
+}
+
+.zen-island-divider {
+  align-self: stretch;
+  width: 1px;
+  margin-block: 5px;
+  background: var(--border);
 }
 
 @media (prefers-reduced-motion: reduce) {
