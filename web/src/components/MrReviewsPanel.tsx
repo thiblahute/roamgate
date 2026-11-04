@@ -18,7 +18,14 @@ import type {
 } from "../../../shared/mrReviews";
 import { useLayoutPreferences } from "../layoutPreferences";
 import { mrReviewsCall, useMrInbox } from "../mrReviews";
-import { checkoutMrReview, openMrReview, setMrClone } from "../mrReviewFlow";
+import {
+  checkoutMrReview,
+  type MrClaudeState,
+  mrClaude,
+  openMrReview,
+  setMrClone,
+  showMrClaude,
+} from "../mrReviewFlow";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
@@ -45,6 +52,8 @@ type Prompt =
     }
   | { kind: "dirty"; entry: MrInboxEntry; changes: string[] }
   | { kind: "kept"; entry: MrInboxEntry; branch: string }
+  | { kind: "busy"; entry: MrInboxEntry; with: string | null }
+  | { kind: "claude"; entry: MrInboxEntry; state: MrClaudeState }
   | { kind: "error"; entry: MrInboxEntry; message: string };
 
 function MrPrompt({
@@ -53,12 +62,14 @@ function MrPrompt({
   onDismiss,
   onRetry,
   onAnswer,
+  onWaitClaude,
 }: {
   prompt: Prompt;
   busy: boolean;
   onDismiss: () => void;
   onRetry: (entry: MrInboxEntry) => void;
   onAnswer: (entry: MrInboxEntry, local: "wip" | "discard") => void;
+  onWaitClaude?: (entry: MrInboxEntry) => void;
 }) {
   const [connection, setConnection] = useState(
     prompt.kind === "clone" ? (prompt.connections[0]?.id ?? "") : "",
@@ -167,6 +178,49 @@ function MrPrompt({
             </button>
             <button type="button" className="ghost" onClick={onDismiss}>
               Leave the checkout as it is
+            </button>
+          </div>
+        </>
+      ) : prompt.kind === "busy" ? (
+        <>
+          <h3 className="mr-reviews-section-title">Claude is busy</h3>
+          <p className="assistant-hint">
+            The review of {label} is open. The workspace's Claude is in the
+            middle of a turn
+            {prompt.with ? ` on ${prompt.with.replace(/^.*\//, "")}` : ""}; it
+            is not stopped.
+          </p>
+          <div className="assistant-task-buttons">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={() => onWaitClaude?.(prompt.entry)}
+            >
+              Switch when it is done
+            </button>
+            <button type="button" className="ghost" onClick={onDismiss}>
+              Leave it on its request
+            </button>
+          </div>
+        </>
+      ) : prompt.kind === "claude" ? (
+        <>
+          <h3 className="mr-reviews-section-title">Claude</h3>
+          <p className="assistant-hint">
+            {prompt.state.state === "foreign"
+              ? "A Claude that is not this request's runs in the review workspace; it is left alone. Exit it there to use the request's own."
+              : prompt.state.state === "starting"
+                ? "Claude is starting in the review workspace (it may ask to trust the folder there)."
+                : prompt.state.state === "error"
+                  ? prompt.state.message
+                  : prompt.state.state === "none"
+                    ? "The review workspace has no pane for Claude."
+                    : "Claude is ready."}
+          </p>
+          <div className="assistant-task-buttons">
+            <button type="button" className="ghost" onClick={onDismiss}>
+              OK
             </button>
           </div>
         </>
@@ -530,6 +584,10 @@ export function MrReviewsPanel({
         setPrompt({ kind: "error", entry, message: outcome.checkout.message });
         return;
       }
+      if (outcome.claude?.state === "busy") {
+        setPrompt({ kind: "busy", entry, with: outcome.claude.with });
+        return;
+      }
       onClose({ keepFocus: true });
     } catch (error) {
       setPrompt({
@@ -571,15 +629,78 @@ export function MrReviewsPanel({
     }
   };
 
+  /** The busy Claude finishes its turn, then switches (in the bridge). */
+  const waitClaude = async (entry: MrInboxEntry) => {
+    setOpening(entry.key);
+    try {
+      const state = await mrClaude(entry.key, "switch");
+      if (state.state === "busy")
+        setPrompt({ kind: "busy", entry, with: state.with });
+      else {
+        setPrompt(null);
+        onClose({ keepFocus: true });
+      }
+    } catch (error) {
+      setPrompt({
+        kind: "error",
+        entry,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setOpening(null);
+    }
+  };
+
+  /** Review with Claude, or Ask Claude (its session, shown). */
+  const withClaude = async (entry: MrInboxEntry, review: boolean) => {
+    setOpening(entry.key);
+    try {
+      // Its review first: the workspace, the checkout, the session.
+      if (!entry.review) {
+        const outcome = await openMrReview(entry, { checkout: "now" });
+        if (outcome.kind !== "shown" || outcome.checkout.state !== "done") {
+          await open(entry, "now");
+          return;
+        }
+      } else if (entry.review) {
+        await mrReviewsCall("checkout", { key: entry.key, local: "refuse" });
+      }
+      const state = await mrClaude(entry.key, review ? "review" : "start");
+      if (state.state === "busy") {
+        setPrompt({ kind: "busy", entry, with: state.with });
+        return;
+      }
+      if (state.state !== "ready" && state.state !== "starting") {
+        setPrompt({ kind: "claude", entry, state });
+        return;
+      }
+      const connectionId = entry.review?.connectionId;
+      if (!review && connectionId)
+        await showMrClaude(connectionId, state.paneId);
+      if (state.state === "starting")
+        setPrompt({ kind: "claude", entry, state });
+      else onClose({ keepFocus: true });
+    } catch (error) {
+      setPrompt({
+        kind: "error",
+        entry,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setOpening(null);
+    }
+  };
+
   // The command menu's request: opened as soon as the inbox knows it.
   const openedInitial = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
     if (!initialOpen || openedInitial.current) return;
     const entry = entries.find((each) => each.key === initialOpen);
     if (!entry) return;
     openedInitial.current = true;
-    void open(entry);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: once
+    void openRef.current(entry);
   }, [entries, initialOpen]);
 
   const feedback = (
@@ -631,6 +752,8 @@ export function MrReviewsPanel({
       void open(current);
     } else if (event.key === "i" && current) {
       showDetail(current);
+    } else if (event.key === "c" && current) {
+      void withClaude(current, false);
     } else if (event.key === "o" && current) {
       window.open(current.url, "_blank", "noopener");
     } else if (event.key === "r") {
@@ -768,6 +891,7 @@ export function MrReviewsPanel({
               onDismiss={() => setPrompt(null)}
               onRetry={(entry) => void open(entry)}
               onAnswer={(entry, local) => void answerDirty(entry, local)}
+              onWaitClaude={(entry) => void waitClaude(entry)}
             />
           ) : null}
           {opening && !prompt ? (
@@ -797,6 +921,24 @@ export function MrReviewsPanel({
                     onClick={() => void open(detailEntry, "now")}
                   >
                     Check out
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={opening === detailEntry.key}
+                    title="Claude reads the request and leaves its threads in the review pane; nothing goes to the forge"
+                    onClick={() => void withClaude(detailEntry, true)}
+                  >
+                    Review with Claude
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={opening === detailEntry.key}
+                    title="This request's own Claude session, in its review workspace"
+                    onClick={() => void withClaude(detailEntry, false)}
+                  >
+                    Ask Claude
                   </button>
                   {renderActions?.(detailEntry)}
                   {detailEntry.section === "suggested" ? (
@@ -874,8 +1016,8 @@ export function MrReviewsPanel({
               ))}
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter review · i details · o on the forge · x not
-                  interested · + more like this · r refresh
+                  j/k move · Enter review · i details · c Claude · o on the
+                  forge · x not interested · + more like this · r refresh
                 </p>
               ) : null}
             </>

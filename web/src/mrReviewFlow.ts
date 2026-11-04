@@ -33,7 +33,15 @@ type OpenReply =
       snapshot: ReviewSnapshot;
       worktree: string;
       checkout: MrCheckoutState;
+      claude?: MrClaudeState;
     };
+
+export type MrClaudeState =
+  | { state: "ready" | "starting"; paneId: string; session: string }
+  | { state: "busy"; paneId: string; with: string | null }
+  | { state: "foreign"; paneId: string }
+  | { state: "none"; paneId: string | null }
+  | { state: "error"; message: string };
 
 export type MrOpenOutcome =
   | {
@@ -41,6 +49,7 @@ export type MrOpenOutcome =
       connectionId: string;
       sessionId: string;
       checkout: MrCheckoutState;
+      claude?: MrClaudeState;
     }
   | {
       kind: "needClone";
@@ -68,7 +77,26 @@ export async function openMrReview(
     connectionId: reply.connectionId,
     sessionId: reply.sessionId,
     checkout: reply.checkout,
+    ...(reply.claude ? { claude: reply.claude } : {}),
   };
+}
+
+/**
+ * The request's Claude: `review` asks it to review (the review pane's own
+ * flow), `start` starts or resumes it, `switch` waits for a busy one and
+ * then switches; `status` only reads.
+ */
+export function mrClaude(
+  key: string,
+  action: "status" | "start" | "switch" | "review",
+  options: { focus?: string; wait?: boolean } = {},
+): Promise<MrClaudeState> {
+  return mrReviewsCall<MrClaudeState>("claude", { key, action, ...options });
+}
+
+/** Shows the request's Claude pane. */
+export async function showMrClaude(connectionId: string, paneId: string) {
+  await store.jumpToConnectionPane(connectionId, paneId).catch(() => {});
 }
 
 export function checkoutMrReview(

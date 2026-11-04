@@ -43,6 +43,13 @@ export type MrProjectRecord = {
   workspaceId?: string;
   /** The remote of the clone that is the project, when one is. */
   remote?: string;
+  /** The review workspace's pane its Claude runs in. */
+  claudePane?: string;
+  /**
+   * The session started there last: what runs in the pane when Herdr
+   * cannot tell (a Claude without its session hook).
+   */
+  claudeStarted?: string;
   /** The request the worktree is checked out on. */
   checkedOut?: string;
 };
