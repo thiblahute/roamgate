@@ -112,3 +112,49 @@ test("prefetch: only the user's requests and the picks, once per head", async ()
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a new project waits for the default connection; a known one does not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mr-def-"));
+  try {
+    const store = openMrStore(join(dir, "state.json"));
+    let scans = 0;
+    const opener = createMrOpener({
+      inbox: {
+        item: (key: string) =>
+          [item(1), item(2, { project: "g/q", key: "gitlab:h/g/q#2" })].find(
+            (each) => each.key === key,
+          ),
+        markSeen: () => true,
+      } as any,
+      store,
+      settings: async () => DEFAULT_MR_REVIEWS_SETTINGS,
+      saveClone: async () => {},
+      clones: createCloneFinder(),
+      openReview: () => ({ session: { id: "s" } }) as any,
+      defaultConnection: () => ({
+        id: "desktop",
+        label: "desktop",
+        ready: false,
+      }),
+      connections: () => [
+        {
+          id: "local",
+          label: "Local",
+          dirs: async () => {
+            scans++;
+            return ["/src/q"];
+          },
+          herdr: async () => ({}),
+          run: async () => ({ code: 0, stdout: "", stderr: "" }),
+        },
+      ],
+    });
+    await expect(opener.open("gitlab:h/g/q#2")).rejects.toThrow(
+      /desktop, the default connection, is not connected/,
+    );
+    // Nothing was looked for elsewhere meanwhile.
+    expect(scans).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

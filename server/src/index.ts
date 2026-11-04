@@ -199,7 +199,7 @@ import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
-import type { MrConnection } from "./mr-reviews/clones";
+import { type MrConnection, orderConnections } from "./mr-reviews/clones";
 import { gitShellCommandArgv } from "./workspace/git-shell";
 import {
   AGENT_CHAT_METHODS,
@@ -974,11 +974,14 @@ function getAssistantService() {
 /** Merge and pull requests the chats show, shared by every browser. */
 const forgeCache = createForgeCache();
 
-/** The ready connections for the reviews module, this machine's first. */
+/**
+ * The ready connections for the reviews module: the default connection
+ * first (a project's clone is looked for there first, and its review
+ * worktree made there), then this machine, then the others.
+ */
 function mrReviewConnections(): MrConnection[] {
-  return connectionManager
-    .list()
-    .flatMap((status) => {
+  return orderConnections(
+    connectionManager.list().flatMap((status) => {
       const runtime = connectionManager.readyRuntime(status.id);
       if (!runtime || runtime.remotePlatform === "windows") return [];
       const host = runtime.sshHost();
@@ -986,6 +989,7 @@ function mrReviewConnections(): MrConnection[] {
         runtime.herdr.call(method, params);
       return [
         {
+          isDefault: status.is_default,
           remote: !!host,
           connection: {
             id: status.id,
@@ -1029,9 +1033,8 @@ function mrReviewConnections(): MrConnection[] {
           } satisfies MrConnection,
         },
       ];
-    })
-    .sort((a, b) => Number(a.remote) - Number(b.remote))
-    .map((entry) => entry.connection);
+    }),
+  );
 }
 
 let mrReviews: MrReviews | null = null;
@@ -1041,6 +1044,16 @@ function getMrReviews(): MrReviews {
   mrReviews = createMrReviews({
     run: runProcessWithCodeTimeout,
     connections: mrReviewConnections,
+    defaultConnection: () => {
+      const status = connectionManager.list().find((each) => each.is_default);
+      return status
+        ? {
+            id: status.id,
+            label: status.label,
+            ready: !!connectionManager.readyRuntime(status.id),
+          }
+        : null;
+    },
     openReview: ({ connectionId, workspaceId, root, url, title }) =>
       getReviewService().open({
         connectionId,

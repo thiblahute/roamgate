@@ -35,8 +35,14 @@ export function createMrReviews(options: {
   store?: MrStore;
   readSettings?: () => Promise<GuiSettings>;
   discoverHosts?: () => ForgeHost[];
-  /** The ready connections, the local one first. */
+  /** The ready connections, the default one first. */
   connections?: () => MrConnection[];
+  /** The default connection, ready or not. */
+  defaultConnection?: () => {
+    id: string;
+    label: string;
+    ready: boolean;
+  } | null;
   /** The review pane: opens a request's review in its workspace. */
   openReview?: (params: {
     connectionId: string;
@@ -113,6 +119,9 @@ export function createMrReviews(options: {
     store,
     settings,
     connections: options.connections ?? (() => []),
+    ...(options.defaultConnection
+      ? { defaultConnection: options.defaultConnection }
+      : {}),
     clones,
     logger,
     openReview: (params) => {
@@ -279,6 +288,13 @@ export function createMrReviews(options: {
               discoveredHosts: value.hosts.length
                 ? []
                 : (await settings()).hosts,
+              reviewWorktrees: Object.entries(store.get().projects).map(
+                ([project, record]) => ({
+                  project,
+                  connectionId: record.connectionId,
+                  path: record.worktree,
+                }),
+              ),
             };
           },
           saveSettings: async (next) => {

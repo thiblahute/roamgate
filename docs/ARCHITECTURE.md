@@ -685,8 +685,9 @@ reviewed in Roamgate, when the request changed or hourly. A host that fails keep
 time it was seen merged or closed, and each project's review worktree. The
 inbox never writes to a forge.
 
-`bridge.mr_reviews.open {key, checkout?}` finds the project's clone (the
-settings' `clones`, else a scan of the connections' workspace and pane
+`bridge.mr_reviews.open {key, checkout?}` finds the project's clone (its
+recorded review worktree, the settings' `clones`, else, connections in
+order default first, then this machine, then the others, a scan of the connections' workspace and pane
 directories for a main checkout whose configured remote URL is the
 project), makes `<clone>.worktrees/review` (`git worktree add --detach`)
 and its Herdr workspace, fetches the head into `refs/roamgate/mr/<n>`

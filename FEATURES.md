@@ -1039,7 +1039,10 @@ detached, at once or only when you browse its files (a setting); nothing is
 built. If it has local changes you are asked: keep them as a WIP commit on
 a `review/<number>` branch, or discard them; leaving it as it is changes
 nothing. Your clone is found among your workspaces' checkouts by its
-remote; with none, the inbox asks where it is. Heads of the inbox's
+remote, on the default connection first (the review worktree and its
+workspace go there), then on the others; with none, the inbox asks where it
+is and remembers it (Reviews' settings list and forget those). While the
+default connection is down, a project's first review waits for it. Heads of the inbox's
 requests are fetched in the background, so switching is just a checkout.
 Each request keeps its own review, with its place and drafts. A request's
 review state goes a few days (a setting) after it is merged or closed; the

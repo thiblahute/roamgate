@@ -180,3 +180,17 @@ export function createCloneFinder() {
 }
 
 export type CloneFinder = ReturnType<typeof createCloneFinder>;
+
+/**
+ * The order a project's clone is looked for in, and its review worktree
+ * made: the default connection, then this machine, then the others.
+ */
+export function orderConnections<T>(
+  entries: { isDefault: boolean; remote: boolean; connection: T }[],
+): T[] {
+  const rank = (entry: { isDefault: boolean; remote: boolean }) =>
+    entry.isDefault ? 0 : entry.remote ? 2 : 1;
+  return [...entries]
+    .sort((a, b) => rank(a) - rank(b))
+    .map((entry) => entry.connection);
+}

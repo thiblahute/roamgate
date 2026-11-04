@@ -267,3 +267,16 @@ describe("opening a request", () => {
     rmSync(storeDir, { recursive: true, force: true });
   });
 });
+
+describe("where a project's clone is looked for", () => {
+  test("the default connection first, then this machine, then the others", async () => {
+    const { orderConnections } = await import("./clones");
+    expect(
+      orderConnections([
+        { isDefault: false, remote: false, connection: "local" },
+        { isDefault: false, remote: true, connection: "laptop" },
+        { isDefault: true, remote: true, connection: "desktop" },
+      ]),
+    ).toEqual(["desktop", "local", "laptop"]);
+  });
+});
