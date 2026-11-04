@@ -10,6 +10,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createDraftReply,
   createDraftNote,
   findBranchMergeRequest,
   gitlabHostFor,
@@ -28,7 +29,6 @@ import {
   readMergeRequestThreads,
   type ReviewCheckout,
   remoteProject,
-  replyToDiscussion,
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
 import { createHash } from "node:crypto";
@@ -187,7 +187,7 @@ test("replies refuse odd discussion ids; the API diff is rebuilt", async () => {
   });
   const mr = await readMergeRequest(context, url);
   await expect(
-    replyToDiscussion(context, mr, "abc; rm -rf", "hi"),
+    createDraftReply(context, mr, "abc; rm -rf", "hi"),
   ).rejects.toThrow("invalid discussion id");
   const diff = await readMergeRequestDiff(context, mr);
   expect(diff.files.map((f) => [f.path, f.binary ?? false])).toEqual([

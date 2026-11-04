@@ -14,6 +14,7 @@ import type {
 } from "../../../shared/review";
 import {
   createPullDraft,
+  createPullDraftReply,
   deletePullDraft,
   isGithubPullUrl,
   parseGithubPullUrl,
@@ -788,7 +789,7 @@ export async function createDraftReply(
   note: string,
 ): Promise<GitLabDraft> {
   if (mr.forge === "github")
-    throw new Error("Replies to GitHub discussions are not supported yet");
+    return createPullDraftReply(context, mr, discussionId, note);
   if (!/^[0-9a-f]+$/.test(discussionId))
     throw new Error("invalid discussion id");
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
@@ -816,26 +817,6 @@ export async function deleteDraftNote(
 ): Promise<void> {
   if (mr.forge === "github") return deletePullDraft(context, mr, id);
   await glab(context, mr, "DELETE", `${mrPath(mr)}/draft_notes/${id}`);
-}
-
-/** A public reply on an MR discussion: only ever on the user's click. */
-export async function replyToDiscussion(
-  context: GlabContext,
-  mr: MergeRequestInfo,
-  discussionId: string,
-  body: string,
-): Promise<void> {
-  if (mr.forge === "github")
-    throw new Error("Replies to GitHub discussions are not supported yet");
-  if (!/^[0-9a-f]+$/.test(discussionId))
-    throw new Error("invalid discussion id");
-  await glab(
-    context,
-    mr,
-    "POST",
-    `${mrPath(mr)}/discussions/${discussionId}/notes`,
-    [["body", body, "raw"]],
-  );
 }
 
 /** A file at a commit, from GitLab when the checkout does not have it. */

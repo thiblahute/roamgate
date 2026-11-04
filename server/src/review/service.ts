@@ -35,7 +35,6 @@ import {
   readMergeRequest,
   readMergeRequestThreads,
   type ReviewCheckout,
-  replyToDiscussion,
   updateDraftNote,
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
@@ -1740,8 +1739,10 @@ export function createReviewService(args: {
           delete target.agent.working;
         return thread;
       }
+      // The user's reply is a draft in the discussion, published only
+      // when they submit their review on the forge.
       const { mr, context } = await mergeRequestOf(target);
-      await replyToDiscussion(
+      await createDraftReply(
         context,
         mr,
         remote.gitlab.discussionId,
