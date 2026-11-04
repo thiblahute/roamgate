@@ -63,6 +63,8 @@ export type StartOptions = {
   /** The pane it runs in: the headless process is told it (PANE_NAMES). */
   paneId?: string;
   cwd: string;
+  /** The pane's TUI's kept flags (the lease's terminal_args). */
+  flags?: string[];
   /** The user's answer about the pane's API key, filed by the holder. */
   apiKeyAnswer?: ApiKeyAnswer;
 };

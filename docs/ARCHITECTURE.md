@@ -763,6 +763,19 @@ toolbar's switch) types `fg '%?<session id>'` (by pid in fish) into the
 pane, and only while its shell is at the prompt, so it never takes another
 job.
 
+The headless process runs with the flags the TUI ran with too, and a
+session with no transcript yet (a claude started and taken before its first
+message) is started with `--session-id <id>` instead of `--resume`, by the
+holder and by the claude it becomes. That claude, and the one typed into a
+bare shell, run with `ROAMGATE_CLAUDE_START=terminal`.
+With `claude_start_mode` set to `conversation`, the `SessionStart` hook
+`roamgate-review claude-start` (added to the host's Claude settings by the
+bridge) posts `claude_start` with the pane and session of a claude started
+or resumed by hand; the runtime then tries the same takeover, again while
+Claude is still starting (two minutes) or busy with a prompt it was given
+(thirty minutes), and gives up on anything else (a draft, another session,
+another writer). A pane whose lease went in the last minute is not taken.
+
 A headless process starts only while the lease says `conversation`, a holder
 that holds the session polls from the pane, no claude runs in the pane, no
 earlier headless process runs on the session, and no other writer does:

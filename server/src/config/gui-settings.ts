@@ -4,7 +4,9 @@ import {
 } from "../../../shared/workspaceTree";
 import { normalizeTitleSuffix } from "../../../shared/instanceName";
 import {
+  type ClaudeStartMode,
   DEFAULT_IDLE_STOP_MINUTES,
+  isClaudeStartMode,
   isIdleStopMinutes,
 } from "../../../shared/agentChat";
 import { defaultDataFile } from "./data-paths";
@@ -43,28 +45,6 @@ export type GuiWorkspaceAutoSyncSettings = {
   last_message?: string;
   last_branch?: string;
 };
-
-/** Conversation mode's settings (`conversation` in settings.json). */
-export type GuiConversationSettings = {
-  /**
-   * Minutes a conversation-mode session sits idle before its headless
-   * process stops (its next message starts it again); 0: never.
-   */
-  idle_stop_minutes?: number;
-};
-
-/** Idle stop in minutes, the default included; 0: off. */
-export function conversationIdleStopMinutes(settings: GuiSettings): number {
-  return settings.conversation?.idle_stop_minutes ?? DEFAULT_IDLE_STOP_MINUTES;
-}
-
-function normalizeConversationSettings(
-  raw: unknown,
-): GuiConversationSettings | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const minutes = (raw as Record<string, unknown>).idle_stop_minutes;
-  return isIdleStopMinutes(minutes) ? { idle_stop_minutes: minutes } : {};
-}
 
 /**
  * The activity recorder (server/src/activity). Off unless `enabled`; read at
@@ -191,6 +171,33 @@ export function normalizeTimeReportSettings(
   };
 }
 
+/** Where a claude started by hand in a pane goes (absent: terminal). */
+export function claudeStartMode(settings: GuiSettings): ClaudeStartMode {
+  return settings.claude_start_mode ?? "terminal";
+}
+
+/** Conversation mode's settings (`conversation` in settings.json). */
+export type GuiConversationSettings = {
+  /**
+   * Minutes a conversation-mode session sits idle before its headless
+   * process stops (its next message starts it again); 0: never.
+   */
+  idle_stop_minutes?: number;
+};
+
+/** Idle stop in minutes, the default included; 0: off. */
+export function conversationIdleStopMinutes(settings: GuiSettings): number {
+  return settings.conversation?.idle_stop_minutes ?? DEFAULT_IDLE_STOP_MINUTES;
+}
+
+function normalizeConversationSettings(
+  raw: unknown,
+): GuiConversationSettings | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const minutes = (raw as Record<string, unknown>).idle_stop_minutes;
+  return isIdleStopMinutes(minutes) ? { idle_stop_minutes: minutes } : {};
+}
+
 /** The activity settings in effect, defaults included. */
 export function activitySettings(settings: GuiSettings): GuiActivitySettings {
   return settings.activity ?? normalizeActivitySettings(undefined);
@@ -207,12 +214,17 @@ export type GuiSettings = {
   repositories: Record<string, GuiRepoSettings>;
   workspace_auto_sync: Record<string, GuiWorkspaceAutoSyncSettings>;
   terminal_transport?: Record<string, { surface_codecs: boolean }>;
-  /** Conversation mode (absent: its defaults, idle stop after 30 min). */
-  conversation?: GuiConversationSettings;
   /** Absent until set: written back only when the file has it. */
   activity?: GuiActivitySettings;
   /** Absent: no Hours view. */
   time_report?: GuiTimeReportSettings;
+  /**
+   * Where a claude the user starts in a Herdr pane goes (absent:
+   * terminal). Conversation: conversation mode takes it once it is up.
+   */
+  claude_start_mode?: ClaudeStartMode;
+  /** Conversation mode (absent: its defaults, idle stop after 30 min). */
+  conversation?: GuiConversationSettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -425,12 +437,15 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
           : [],
       ),
     ),
-    conversation: normalizeConversationSettings(obj.conversation),
     activity:
       obj.activity === undefined
         ? undefined
         : normalizeActivitySettings(obj.activity),
     time_report: normalizeTimeReportSettings(obj.time_report) ?? undefined,
+    claude_start_mode: isClaudeStartMode(obj.claude_start_mode)
+      ? obj.claude_start_mode
+      : undefined,
+    conversation: normalizeConversationSettings(obj.conversation),
     custom:
       obj.custom && typeof obj.custom === "object"
         ? (obj.custom as Record<string, unknown>)

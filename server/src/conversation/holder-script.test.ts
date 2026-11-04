@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
@@ -14,6 +15,10 @@ import {
 } from "../../../shared/review";
 import { REVIEW_CLIENT_SCRIPT } from "../review/agent-client";
 import { remoteSetupScript } from "../review/agent-remote";
+import {
+  CLAUDE_START_HOOK_COMMAND,
+  CLAUDE_START_HOOK_INSTALL_SCRIPT,
+} from "./claude-start-hook";
 import {
   HOLD_CLIENT_CHECKSUM,
   HOLD_CLIENT_SCRIPT,
@@ -33,6 +38,15 @@ function scratch(
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "rg-hold-")));
   const socket = join(dir, "r.sock");
   const requests: [string, Record<string, string>][] = [];
+  // The sessions these tests resume have transcripts (see the fresh one).
+  const projects = join(dir, ".claude", "projects", "elsewhere");
+  mkdirSync(projects, { recursive: true });
+  for (const session of [
+    "11111111-aaaa-bbbb-cccc-000000000000",
+    "22222222-aaaa-bbbb-cccc-000000000000",
+    "s-1",
+  ])
+    writeFileSync(join(projects, `${session}.jsonl`), "{}\n");
   const server = Bun.serve({
     unix: socket,
     fetch: async (request) => {
@@ -372,16 +386,67 @@ print(json.dumps({"lines": lines, "size": child.size, "alive": child.proc is not
 
   test("the typed resume keeps the flags every shell reads alike", () => {
     expect(resumeCommand("abcdef12", ["--model", "haiku"])).toBe(
-      " claude --model haiku --resume abcdef12\r",
+      " env ROAMGATE_CLAUDE_START=terminal claude --model haiku --resume abcdef12\r",
     );
     expect(resumeCommand("abcdef12", ["--append-system-prompt", "it's"])).toBe(
-      " claude --append-system-prompt 'it'\\''s' --resume abcdef12\r",
+      " env ROAMGATE_CLAUDE_START=terminal claude --append-system-prompt 'it'\\''s' --resume abcdef12\r",
     );
     // A backslash reads differently in fish: no flags then.
     expect(resumeCommand("abcdef12", ["--settings", "a\\b"])).toBe(
-      " claude --resume abcdef12\r",
+      " env ROAMGATE_CLAUDE_START=terminal claude --resume abcdef12\r",
     );
     expect(() => resumeCommand("$(x)")).toThrow();
+  });
+
+  test("a session with no transcript yet is started with its id, not resumed", async () => {
+    const fresh = "33333333-aaaa-bbbb-cccc-000000000000";
+    const { dir, socket } = scratch(() => ({
+      action: "resume",
+      session_id: fresh,
+      cwd: "/",
+      args: ["--model", "haiku", "--resume", fresh],
+    }));
+    const bin = join(dir, "bin");
+    Bun.spawnSync(["mkdir", "-p", bin]);
+    writeFileSync(
+      join(bin, "claude"),
+      '#!/bin/sh\necho "claude $* start=$ROAMGATE_CLAUDE_START"\n',
+    );
+    chmodSync(join(bin, "claude"), 0o755);
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      [fresh],
+      { HERDR_PANE_ID: "w1:p1", ROAMGATE_REVIEW_SOCKET: socket },
+      "",
+      dir,
+    );
+    // And the claude it becomes stays in the terminal (no claude start).
+    expect(result.stdout).toContain(
+      `claude --model haiku --session-id ${fresh} start=terminal`,
+    );
+  });
+
+  test("the claude it becomes is marked to stay in the terminal", async () => {
+    const { dir, socket } = scratch(() => ({
+      action: "resume",
+      session_id: "s-1",
+      cwd: "/",
+    }));
+    const bin = join(dir, "bin");
+    Bun.spawnSync(["mkdir", "-p", bin]);
+    writeFileSync(
+      join(bin, "claude"),
+      '#!/bin/sh\necho "claude $* start=$ROAMGATE_CLAUDE_START"\n',
+    );
+    chmodSync(join(bin, "claude"), 0o755);
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      ["s-1"],
+      { HERDR_PANE_ID: "w1:p1", ROAMGATE_REVIEW_SOCKET: socket },
+      "",
+      dir,
+    );
+    expect(result.stdout).toContain("claude --resume s-1 start=terminal");
   });
 
   test("is installed on SSH hosts", () => {
@@ -462,5 +527,199 @@ describe("roamgate-review hooks in a headless run", () => {
       expect(result).toMatchObject({ code: 0, stdout: "" });
     }
     expect(requests).toEqual([]);
+  });
+});
+
+describe("roamgate-review claude-start (the SessionStart hook)", () => {
+  const SESSION = "44444444-aaaa-bbbb-cccc-000000000000";
+  const startup = JSON.stringify({
+    hook_event_name: "SessionStart",
+    source: "startup",
+    session_id: SESSION,
+    cwd: "/tmp",
+  });
+
+  /** A ps: the hook's parent is a shell, whose parent is claude (4242). */
+  function fakePs(dir: string, claudeArgs: string) {
+    const bin = join(dir, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "ps"),
+      `#!/bin/sh
+case "$*" in
+  *"-p 4242"*) echo "  1 claude ${claudeArgs}" ;;
+  *) echo "  4242 /bin/sh -c ~/.cache/roamgate/bin/roamgate-review claude-start" ;;
+esac
+`,
+    );
+    chmodSync(join(bin, "ps"), 0o755);
+  }
+
+  test("tells Roamgate of a claude started by hand, printing nothing", async () => {
+    const { dir, socket, requests } = scratch(() => ({
+      action: "conversation",
+    }));
+    fakePs(dir, "--model haiku");
+    const result = await run(
+      REVIEW_CLIENT_SCRIPT,
+      ["claude-start"],
+      {
+        HERDR_PANE_ID: "w1:p1",
+        HERDR_SOCKET_PATH: "/tmp/herdr.sock",
+        ROAMGATE_REVIEW_SOCKET: socket,
+      },
+      startup,
+      dir,
+    );
+    expect(result).toMatchObject({ code: 0, stdout: "" });
+    expect(requests).toEqual([
+      [
+        "claude_start",
+        expect.objectContaining({
+          pane: "w1:p1",
+          herdr_socket: "/tmp/herdr.sock",
+          session: SESSION,
+          source: "startup",
+          pid: "4242",
+        }),
+      ],
+    ]);
+  });
+
+  test("steps aside: told to stay, headless, print mode, /clear, a subagent, no pane", async () => {
+    const { dir, socket, requests } = scratch(() => ({}));
+    const pane = { HERDR_PANE_ID: "w1:p1", ROAMGATE_REVIEW_SOCKET: socket };
+    const cases: [Record<string, string>, string, string][] = [
+      [{ ...pane, ROAMGATE_CLAUDE_START: "terminal" }, startup, ""],
+      [{ ...pane, ROAMGATE_HEADLESS: "1" }, startup, ""],
+      [pane, startup, "-p hello"],
+      [pane, startup, "--print"],
+      [pane, JSON.stringify({ source: "clear", session_id: SESSION }), ""],
+      [
+        pane,
+        JSON.stringify({
+          source: "startup",
+          session_id: SESSION,
+          agent_id: "a1",
+        }),
+        "",
+      ],
+      [{ ROAMGATE_REVIEW_SOCKET: socket }, startup, ""],
+    ];
+    for (const [env, stdin, claudeArgs] of cases) {
+      fakePs(dir, claudeArgs);
+      const result = await run(
+        REVIEW_CLIENT_SCRIPT,
+        ["claude-start"],
+        env,
+        stdin,
+        dir,
+      );
+      expect(result).toMatchObject({ code: 0, stdout: "" });
+    }
+    expect(requests).toEqual([]);
+  });
+
+  test("a resumed claude counts; Roamgate unreachable changes nothing", async () => {
+    const { dir, socket, requests } = scratch(() => ({}));
+    fakePs(dir, "--resume x");
+    const resumed = JSON.stringify({ source: "resume", session_id: SESSION });
+    await run(
+      REVIEW_CLIENT_SCRIPT,
+      ["claude-start"],
+      { HERDR_PANE_ID: "w1:p1", ROAMGATE_REVIEW_SOCKET: socket },
+      resumed,
+      dir,
+    );
+    expect(requests.map(([command, body]) => [command, body.source])).toEqual([
+      ["claude_start", "resume"],
+    ]);
+    const gone = await run(
+      REVIEW_CLIENT_SCRIPT,
+      ["claude-start"],
+      { HERDR_PANE_ID: "w1:p1", ROAMGATE_REVIEW_SOCKET: join(dir, "none") },
+      resumed,
+      dir,
+    );
+    expect(gone).toMatchObject({ code: 0, stdout: "" });
+  });
+});
+
+describe("the claude start hook's installer", () => {
+  function home() {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rg-hookinst-")));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    return dir;
+  }
+
+  test("adds the hook once, beside the user's own hooks and settings", async () => {
+    const dir = home();
+    mkdirSync(join(dir, ".claude"));
+    const own = {
+      model: "opus",
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "*",
+            hooks: [{ type: "command", command: "my-hook session" }],
+          },
+        ],
+        Stop: [{ hooks: [{ type: "command", command: "my-stop" }] }],
+      },
+    };
+    writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify(own));
+    const first = await run(CLAUDE_START_HOOK_INSTALL_SCRIPT, [], {}, "", dir);
+    expect(first.stdout.trim()).toBe("installed");
+    const second = await run(CLAUDE_START_HOOK_INSTALL_SCRIPT, [], {}, "", dir);
+    expect(second.stdout.trim()).toBe("present");
+    const settings = JSON.parse(
+      await Bun.file(join(dir, ".claude", "settings.json")).text(),
+    );
+    expect(settings.model).toBe("opus");
+    expect(settings.hooks.Stop).toEqual(own.hooks.Stop);
+    expect(settings.hooks.SessionStart).toEqual([
+      own.hooks.SessionStart[0],
+      {
+        matcher: "startup|resume",
+        hooks: [
+          { type: "command", command: CLAUDE_START_HOOK_COMMAND, timeout: 10 },
+        ],
+      },
+    ]);
+  });
+
+  test("leaves settings it cannot read alone, and a host without Claude", async () => {
+    const dir = home();
+    expect(
+      (
+        await run(CLAUDE_START_HOOK_INSTALL_SCRIPT, [], {}, "", dir)
+      ).stdout.trim(),
+    ).toBe("no-claude");
+    mkdirSync(join(dir, ".claude"));
+    writeFileSync(join(dir, ".claude", "settings.json"), "{ // comment\n}");
+    expect(
+      (
+        await run(CLAUDE_START_HOOK_INSTALL_SCRIPT, [], {}, "", dir)
+      ).stdout.trim(),
+    ).toBe("invalid");
+    expect(await Bun.file(join(dir, ".claude", "settings.json")).text()).toBe(
+      "{ // comment\n}",
+    );
+  });
+
+  test("creates the settings file when Claude has none", async () => {
+    const dir = home();
+    mkdirSync(join(dir, ".claude"));
+    expect(
+      (
+        await run(CLAUDE_START_HOOK_INSTALL_SCRIPT, [], {}, "", dir)
+      ).stdout.trim(),
+    ).toBe("installed");
+    const settings = JSON.parse(
+      await Bun.file(join(dir, ".claude", "settings.json")).text(),
+    );
+    expect(settings.hooks.SessionStart[0].hooks[0].command).toBe(
+      CLAUDE_START_HOOK_COMMAND,
+    );
   });
 });

@@ -813,3 +813,69 @@ test("an agent can name a group of the Workspaces tree, and list them", async ()
     },
   ]);
 });
+
+test("a claude started in a pane reaches its own connection's claude start", async () => {
+  const dir = temp("rg-rev-");
+  const home = temp("rg-home-");
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+  });
+  const started: Record<string, string>[] = [];
+  const agent = createReviewAgentServer({
+    service,
+    directory: dir,
+    home,
+    connections: () => [
+      {
+        id: "b",
+        herdrSocketPath: "/b.sock",
+        readRoot: async () => "/repo",
+        readDefaultBase: async () => "origin/main",
+      },
+    ],
+    claudeStart: async (input) => {
+      started.push(input);
+      return { action: "conversation" };
+    },
+  });
+  cleanups.push(() => {
+    agent.stop();
+    service.close();
+  });
+  agent.installLocal();
+  const post = (body: Record<string, string>) =>
+    fetch("http://roamgate/v1/claude_start", {
+      unix: join(home, ".cache/roamgate/review.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    } as RequestInit);
+  const session = "44444444-aaaa-bbbb-cccc-000000000000";
+  const ok = await post({
+    pane: "w1:p2",
+    session,
+    source: "startup",
+    herdr_socket: "/b.sock",
+  });
+  expect(await ok.json()).toEqual({ action: "conversation" });
+  expect(started).toEqual([
+    {
+      connectionId: "b",
+      paneId: "w1:p2",
+      sessionId: session,
+      source: "startup",
+    },
+  ]);
+  // Another Herdr's pane, a bad session id, no pane: nothing starts.
+  expect(
+    (await post({ pane: "w1:p2", session, herdr_socket: "/a.sock" })).status,
+  ).toBe(503);
+  expect(
+    (await post({ pane: "w1:p2", session: "$(x)", herdr_socket: "/b.sock" }))
+      .status,
+  ).toBe(400);
+  expect((await post({ session, herdr_socket: "/b.sock" })).status).toBe(400);
+  expect(started).toHaveLength(1);
+});

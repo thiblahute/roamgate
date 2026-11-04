@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CLAUDE_START_ENV } from "../../../shared/agentChat";
 import {
   DISMISSED_PERMISSION_MESSAGE,
   DISMISSED_QUESTION_MESSAGE,
@@ -23,6 +24,7 @@ import http.client
 import json
 import os
 import socket
+import subprocess
 import sys
 
 SOCKET = os.environ.get(
@@ -32,6 +34,8 @@ SOCKET = os.environ.get(
 # What Claude is told of a question or request put away in Roamgate.
 DISMISSED_QUESTION = ${JSON.stringify(DISMISSED_QUESTION_MESSAGE)}
 DISMISSED_PERMISSION = ${JSON.stringify(DISMISSED_PERMISSION_MESSAGE)}
+# terminal in a claude's environment: it stays in the terminal.
+START_ENV = "${CLAUDE_START_ENV}"
 
 
 class UnixConnection(http.client.HTTPConnection):
@@ -234,6 +238,11 @@ def parser():
         help="Claude Code PreToolUse hook for AskUserQuestion: answer in Roamgate, else the terminal",
     )
     a.add_argument("--timeout", type=int, default=180, help="seconds to wait (default 180)")
+
+    sub.add_parser(
+        "claude-start",
+        help="Claude Code SessionStart hook: conversation mode takes a claude started by hand, if Roamgate is set so",
+    )
     return p
 
 
@@ -378,8 +387,96 @@ def permission(args):
     )
 
 
+def claude_process():
+    # The interactive claude this hook runs for: the nearest ancestor that
+    # is claude (the hook runs under a shell). None if none is found.
+    pid = os.getppid()
+    for _ in range(6):
+        if pid <= 1:
+            return None
+        try:
+            out = subprocess.run(
+                ["ps", "-o", "ppid=", "-o", "args=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        parts = out.split(None, 1)
+        if len(parts) < 2:
+            return None
+        argv = parts[1].split()
+        names = [os.path.basename(word) for word in argv[:2]]
+        if "claude" in names or any(word.endswith("claude-code/cli.js") for word in argv[:2]):
+            return pid, argv
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            return None
+    return None
+
+
+def claude_start(args):
+    # A SessionStart hook: prints nothing (it would reach Claude's context),
+    # waits on nothing (Claude starts meanwhile). Roamgate decides, by its
+    # claude start setting, and takes the session once Claude is up.
+    if headless():
+        return
+    if os.environ.get(START_ENV, "").strip().lower() in ("terminal", "tui", "0", "off", "no"):
+        return
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    if not isinstance(hook, dict):
+        return
+    if hook.get("hook_event_name", "SessionStart") != "SessionStart":
+        return
+    # Only a claude started, or resumed, by hand: not /clear, not compact.
+    source = hook.get("source") or ""
+    session = hook.get("session_id") or ""
+    if source not in ("startup", "resume") or not session or hook.get("agent_id"):
+        return
+    found = claude_process()
+    if found is None:
+        return
+    pid, argv = found
+    # claude -p in a pane prints and ends: nothing to take.
+    if "-p" in argv or "--print" in argv:
+        return
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(hook.get("cwd") or os.getcwd()),
+        "session": session,
+        "source": source,
+        "pid": str(pid),
+    }
+    connection = UnixConnection(SOCKET, 3)
+    try:
+        connection.request(
+            "POST",
+            "/v1/claude_start",
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        connection.getresponse().read()
+    except (OSError, http.client.HTTPException):
+        pass
+    finally:
+        connection.close()
+
+
 def main():
     args = parser().parse_args()
+    if args.command == "claude-start":
+        claude_start(args)
+        return
     if args.command == "permission":
         permission(args)
         return

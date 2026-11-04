@@ -25,6 +25,7 @@ import {
   fakeSpawner,
   RESULT,
   settle,
+  virtualClock,
 } from "./testing";
 
 afterEach(disposeServices);
@@ -2087,6 +2088,60 @@ describe("a turn that hangs", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe("a claude started by hand in a pane", () => {
+  test("conversation mode takes it once Claude is up: /exit, then the holder in that pane", async () => {
+    // Tries a millisecond apart, in real time: Herdr catches up meanwhile.
+    const { service, fake } = setup(undefined, {
+      autoStart: { sleep: () => Bun.sleep(1) },
+    });
+    // Herdr has not seen it yet.
+    const agent = fake.pane.agent;
+    fake.pane.agent = null;
+    expect(service.autoStart(PANE, fake.sessionId)).toEqual({ ok: true });
+    await settle();
+    expect(service.state(PANE).phase).toBe("terminal");
+    fake.pane.agent = agent;
+    await eventually(() => service.state(PANE).phase === "conversation");
+    expect(service.state(PANE).session_id).toBe(fake.sessionId);
+    const actions = fake.calls
+      .filter((call) => call[0] === "prompt" || call[0] === "sendText")
+      .map((call) => call.slice(2));
+    expect(actions).toEqual([["/exit"], [`hold ${fake.sessionId}\r`]]);
+    // Taken already: a second start changes nothing.
+    expect(service.autoStart(PANE, fake.sessionId)).toMatchObject({
+      ok: false,
+    });
+  });
+
+  test("a claude with something typed in its prompt box stays in the terminal", async () => {
+    const clock = virtualClock();
+    const { service, fake } = setup(undefined, {
+      autoStart: { sleep: clock.sleep, now: clock.now },
+    });
+    fake.pane.screen = fake.pane.screen.replace("❯ ", "❯ half a thought");
+    expect(service.autoStart(PANE, fake.sessionId)).toEqual({ ok: true });
+    for (let index = 0; index < 20; index += 1) await settle();
+    expect(service.state(PANE).phase).toBe("terminal");
+    expect(fake.calls.some((call) => call[0] === "prompt")).toBe(false);
+  });
+
+  test("the claude a hand-back resumes is not taken again", async () => {
+    const { service, fake, startHolder } = setup();
+    await service.handover(PANE, "conversation");
+    await settle();
+    heldPane(fake);
+    startHolder();
+    await settle();
+    const back = await service.handover(PANE, "terminal");
+    expect(back.ok).toBe(true);
+    fake.resumed();
+    expect(service.autoStart(PANE, fake.sessionId)).toEqual({
+      ok: false,
+      reason: "This pane's session just went back to the terminal",
+    });
   });
 });
 

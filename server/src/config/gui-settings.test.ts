@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  claudeStartMode,
   DEFAULT_ACTIVITY_SETTINGS,
   normalizeActivitySettings,
   normalizeWorktreeDirectory,
@@ -308,6 +309,52 @@ test("activity settings survive other settings writes, and are not added", async
       enabled: true,
       subject_roots: ["~/devel/clients"],
     });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a claude started by hand stays in the terminal unless set; bad values are dropped", async () => {
+  expect(
+    claudeStartMode({
+      version: 1,
+      repositories: {},
+      workspace_auto_sync: {},
+      custom: {},
+      ui: {},
+    }),
+  ).toBe("terminal");
+  const home = await mkdtemp(join(tmpdir(), "roamgate-settings-"));
+  const path = join(home, "settings.json");
+  const source = JSON.stringify(import.meta.resolve("./gui-settings"));
+  const read = async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `import { claudeStartMode, updateGuiSettings } from ${source}; console.log(claudeStartMode(await updateGuiSettings((s) => s)));`,
+      ],
+      {
+        env: { ...process.env, HOME: home, ROAMGATE_SETTINGS_PATH: path },
+        stdout: "pipe",
+      },
+    );
+    const mode = (await new Response(child.stdout).text()).trim();
+    return { mode, file: JSON.parse(await readFile(path, "utf8")) };
+  };
+  try {
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, claude_start_mode: "conversation" }),
+    );
+    expect((await read()).mode).toBe("conversation");
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, claude_start_mode: "tui" }),
+    );
+    const bad = await read();
+    expect(bad.mode).toBe("terminal");
+    expect(bad.file.claude_start_mode).toBeUndefined();
   } finally {
     await rm(home, { recursive: true, force: true });
   }

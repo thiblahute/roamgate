@@ -526,6 +526,49 @@ while a browser is connected, for `--timeout` seconds at most (60 by
 default); unanswered, the terminal asks as usual. Outside Herdr, or without
 Roamgate, it returns at once.
 
+### Starting claude in conversation mode
+
+**Configuration > Integrations > Start claude in conversation mode** (the
+`claude_start_mode` key of `settings.json`: `terminal`, the default, or
+`conversation`) makes a `claude` started by hand in a Herdr pane go to
+conversation mode once it is up. Nothing is set up by hand: once the
+setting is `conversation`, Roamgate adds this `SessionStart` hook to
+`~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) on this
+machine and on each SSH host it connects to, beside the hooks already
+there:
+
+```json
+{
+  "matcher": "startup|resume",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "~/.cache/roamgate/bin/roamgate-review claude-start",
+      "timeout": 10
+    }
+  ]
+}
+```
+
+A settings file that is not plain JSON is left alone (the log says so); add
+the entry by hand then. The hook stays when the setting goes back to
+`terminal`: it then does nothing. Remove the entry to take it out.
+
+The hook prints nothing and does not wait: it tells Roamgate which pane and
+session started (a claude started or resumed, not `/clear`, not `claude
+-p`), and Roamgate hands the session over as the chat's switch does, once
+Claude shows its empty prompt: `/exit`, then the pane holder. `claude`,
+`claude -c` and `claude --resume <id>` keep their session; `--model`,
+`--permission-mode`, `--add-dir` and the other flags the terminal keeps on
+a hand-back go to the headless process too. A prompt given on the command
+line runs in the terminal, and the session moves once that turn ends.
+Claude stays in the terminal when its prompt box has text in it, when it
+is started with `ROAMGATE_CLAUDE_START=terminal` in its environment, and
+when its pane's session went back to the terminal less than a minute
+before (the claude the holder resumes on a hand-back has that variable
+set, so it is never taken again at once). Enter in the pane, or the
+chat's switch, takes a session back to the terminal as usual.
+
 ### Stopping idle conversations
 
 **Configuration > Integrations > Stop idle conversations** (the

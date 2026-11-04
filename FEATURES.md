@@ -621,6 +621,15 @@ Inspector state is scoped to each checkout; see
   table once it is complete, a code block announced once its fence closes;
   speaking up while Claude only writes interrupts the turn and starts the
   next one, while it runs a tool steers that turn, and "stop" interrupts it.
+  **Start claude in conversation mode** (Configuration > Integrations, off
+  by default): a `claude` you start by hand in a Herdr pane, here or on an
+  SSH host, goes to conversation mode as soon as it is up, with the flags
+  it was started with (`--model`, `--permission-mode`, `-c`, `--resume`);
+  a prompt given on its command line runs in the terminal first. It stays
+  in the terminal when something is typed in its prompt box first, for
+  `ROAMGATE_CLAUDE_START=terminal claude`, and for a session just handed
+  back. See [Starting claude in conversation
+  mode](docs/DEPLOYMENT.md#starting-claude-in-conversation-mode).
   A message queued in a Claude chat can be taken back before the agent
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in

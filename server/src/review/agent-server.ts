@@ -289,6 +289,17 @@ export function createReviewAgentServer(args: {
     params: Record<string, string>;
   }) => Promise<Record<string, unknown>>;
   /**
+   * A claude the user just started in a pane (`roamgate-review
+   * claude-start`, its SessionStart hook): conversation mode takes it when
+   * Roamgate's claude start setting says so.
+   */
+  claudeStart?: (input: {
+    connectionId: string;
+    paneId: string;
+    sessionId: string;
+    source: string;
+  }) => Promise<Record<string, unknown>>;
+  /**
    * Conversation mode's pane holder (roamgate-hold): `hold` waits until the
    * session goes back to the terminal (or a while passes), `handback` asks
    * for it now. Both answer `{action: "resume", session_id, cwd}` once the
@@ -579,6 +590,25 @@ export function createReviewAgentServer(args: {
             paneId,
             sessionId,
           });
+    }
+    if (command === "claude_start") {
+      const paneId = form.get("pane");
+      const sessionId = form.get("session") ?? "";
+      if (!paneId)
+        throw new ReviewError("claude-start runs inside a Herdr pane");
+      if (!/^[0-9a-f-]{8,64}$/i.test(sessionId))
+        throw new ReviewError("invalid session id");
+      if (!args.claudeStart)
+        return {
+          action: "terminal",
+          reason: "conversation mode is unavailable",
+        };
+      return args.claudeStart({
+        connectionId: connection.id,
+        paneId,
+        sessionId,
+        source: form.get("source") ?? "",
+      });
     }
     if (command === "notify") {
       // The agent itself says the user needs to act: no review involved.

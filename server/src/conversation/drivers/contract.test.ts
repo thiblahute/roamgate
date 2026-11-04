@@ -311,6 +311,7 @@ for (const { protocol, terminal } of conversationDrivers()) {
       const command = protocol.startCommand({
         sessionId: "11111111-2222-3333-4444-555555555555",
         cwd: "/work",
+        flags: [],
       }) as {
         argv: string[];
         cwd: string;

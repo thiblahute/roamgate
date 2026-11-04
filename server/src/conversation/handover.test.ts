@@ -344,7 +344,7 @@ describe("terminal to conversation", () => {
     expect(fake.calls.filter((call) => call[0] === "sendText").at(-1)).toEqual([
       "sendText",
       PANE,
-      ` claude --resume ${fake.sessionId}\r`,
+      ` env ROAMGATE_CLAUDE_START=terminal claude --resume ${fake.sessionId}\r`,
     ]);
   });
 
@@ -407,7 +407,7 @@ describe("terminal to conversation", () => {
     expect(fake.calls.filter((call) => call[0] === "sendText").at(-1)).toEqual([
       "sendText",
       PANE,
-      ` claude --resume ${fake.sessionId}\r`,
+      ` env ROAMGATE_CLAUDE_START=terminal claude --model haiku --resume ${fake.sessionId}\r`,
     ]);
   });
 
