@@ -200,6 +200,10 @@ import {
 import { defaultLeaseFile } from "./conversation/lease";
 import { promptPaneAgent } from "./conversation/prompt-pane";
 import {
+  type AgentMessenger,
+  createAgentMessenger,
+} from "./agent/agent-messenger";
+import {
   createReviewService,
   ReviewError,
   type ReviewService,
@@ -1148,6 +1152,55 @@ function getReviewService(): ReviewService {
   return reviewService;
 }
 
+/**
+ * Agent sessions messaging each other (`roamgate-review sessions` and
+ * `message`), across every ready connection.
+ */
+let agentMessenger: AgentMessenger | null = null;
+function getAgentMessenger(): AgentMessenger {
+  agentMessenger ??= createAgentMessenger({
+    connections: () =>
+      connectionManager.list().flatMap((status) => {
+        const runtime = connectionManager.readyRuntime(status.id);
+        return runtime && runtime.remotePlatform !== "windows"
+          ? [runtime.identity.id]
+          : [];
+      }),
+    runtime: (connectionId) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime || runtime.remotePlatform === "windows") return null;
+      return {
+        conversation: {
+          holds: (paneId) => !!runtime.conversation.lease(paneId),
+          status: (paneId) => runtime.conversation.state(paneId).status,
+          // Another agent's message: no idle stop for a while after it.
+          prompt: (paneId, text) =>
+            runtime.conversation.prompt(paneId, text, undefined, {
+              peer: true,
+            }),
+        },
+        herdr: runtime.herdr,
+        read: async () => {
+          const [workspaces, tabs, panes, agents] = await Promise.all([
+            runtime.herdr.call("workspace.list", {}, 5000),
+            runtime.herdr.call("tab.list", {}, 5000),
+            runtime.herdr.call("pane.list", {}, 5000),
+            runtime.agentSessions.listWithActivity({}),
+          ]);
+          return {
+            workspaces: (workspaces as any)?.workspaces ?? [],
+            tabs: (tabs as any)?.tabs ?? [],
+            panes: (panes as any)?.panes ?? [],
+            agents: (agents as any)?.agents ?? [],
+          };
+        },
+      };
+    },
+    log: (message, fields) => logger.info(message, fields),
+  });
+  return agentMessenger;
+}
+
 let reviewAgent: ReviewAgentServer | null = null;
 /** The review client and its socket are set up on this machine. */
 let reviewAgentInstalled = false;
@@ -1159,6 +1212,7 @@ function getReviewAgent(): ReviewAgentServer {
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
+    messages: getAgentMessenger(),
     // A claude started by hand in a pane: the claude start setting says
     // whether conversation mode takes it.
     claudeStart: async ({ connectionId, paneId, sessionId, source }) => {

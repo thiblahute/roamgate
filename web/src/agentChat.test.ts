@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from "bun:test";
 import type { AgentChatState } from "../../shared/agentChat";
+import { frameAgentMessage } from "../../shared/agentMessage";
 import {
   agentChatSnapshot,
   applyStateEvent,
@@ -166,6 +167,31 @@ describe("conversation mode's state in the browser", () => {
     ]);
     expect(queuedEntryId(entries[0]!)).toBe("q1");
     expect(queuedEntryId({ id: "abc" })).toBeNull();
+  });
+
+  test("another agent session's queued message shows as one from it", () => {
+    const framed = frameAgentMessage(
+      {
+        address: "desktop/w5:p1",
+        name: "Merge checks",
+        workspace: "gst2",
+        agent: "claude",
+      },
+      "Rebase please",
+    );
+    expect(
+      queuedEntries([{ id: "q2", text: framed, images: [], queued_at: "t" }]),
+    ).toEqual([
+      {
+        id: "queue:q2",
+        role: "user",
+        kind: "message",
+        text: "Rebase please",
+        sent_at: "t",
+        queued: true,
+        injected: { kind: "session", label: "From Merge checks" },
+      },
+    ]);
   });
 });
 

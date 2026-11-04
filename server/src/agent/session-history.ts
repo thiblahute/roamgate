@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { InjectedKind } from "../../../shared/injectedMessage";
+import { outgoingAgentMessage } from "../../../shared/agentMessage";
 import { isDismissedResult } from "../../../shared/review";
 import type { SlashCommand } from "../../../shared/slashCommand";
 import type { AtifTrajectory, SessionFile } from "./session-types";
@@ -31,6 +32,12 @@ export type HistoryEntry = {
   // mr create`, `gh pr create`): its URL as the command printed it. Kept
   // when the payload is redacted, so the chat can list it.
   created_request?: string;
+  // On a Bash call that sent another agent session a message
+  // (`roamgate-review message`): to whom, and what. Kept when the payload is
+  // redacted, so the chat can show the message as one.
+  agent_message?: { to: string; text: string };
+  // On that call's result: whether it was sent, and the receiver's name.
+  agent_message_result?: { sent: boolean; name: string | null };
   // On a tool result: the user dismissed the question or permission it
   // waited on, unanswered, from Roamgate. Kept when the payload is
   // redacted, so the chat can say so.
@@ -128,9 +135,15 @@ export function allHistoryEntries(
   const names = new Map<string, string>();
   const artifactCalls = new Map<string, Record<string, unknown>>();
   const createCalls = new Set<string>();
+  const messageCalls = new Map<string, { to: string; text: string }>();
   for (const step of trajectory.steps) {
     for (const call of step.tool_calls ?? []) {
       names.set(call.tool_call_id, call.function_name);
+      const message = outgoingAgentMessage(
+        call.function_name,
+        JSON.stringify(call.arguments ?? {}),
+      );
+      if (message) messageCalls.set(call.tool_call_id, message);
       if (call.function_name === "Artifact")
         artifactCalls.set(call.tool_call_id, call.arguments);
       if (createsRequest(call.arguments?.command))
@@ -198,6 +211,9 @@ export function allHistoryEntries(
         source_call_id: call.tool_call_id,
         text: JSON.stringify(call.arguments, null, 2),
         sent_at,
+        ...(messageCalls.has(call.tool_call_id)
+          ? { agent_message: messageCalls.get(call.tool_call_id)! }
+          : {}),
       });
     }
     for (const result of step.observation?.results ?? []) {
@@ -225,6 +241,14 @@ export function allHistoryEntries(
         ...(result.extra?.is_error === true &&
         isDismissedResult(result.content ?? step.message)
           ? { dismissed: true }
+          : {}),
+        ...(messageCalls.has(result.source_call_id ?? "")
+          ? {
+              agent_message_result: agentMessageResult(
+                result.content ?? "",
+                result.extra?.is_error === true,
+              ),
+            }
           : {}),
       });
     }
@@ -303,6 +327,25 @@ function shellCreatedRequest(
   return createsRequest(command) && typeof stdout === "string"
     ? createdRequestField(stdout)
     : {};
+}
+
+/** What `roamgate-review message` printed: sent, and to whom. */
+export function agentMessageResult(
+  output: string,
+  isError: boolean,
+): { sent: boolean; name: string | null } {
+  try {
+    const parsed = JSON.parse(output) as {
+      sent?: unknown;
+      to?: { name?: unknown };
+    };
+    return {
+      sent: !isError && parsed?.sent === true,
+      name: typeof parsed?.to?.name === "string" ? parsed.to.name : null,
+    };
+  } catch {
+    return { sent: false, name: null };
+  }
 }
 
 function injectedField(value: unknown): Pick<HistoryEntry, "injected"> {

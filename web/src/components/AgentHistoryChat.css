@@ -544,6 +544,12 @@
   white-space: nowrap;
 }
 
+/* A message between agent sessions: who it is from, or to, stands out. */
+.agent-history-chat-injected.is-peer .agent-history-chat-compacted span {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .agent-history-chat-injected-body {
   margin: 4px 0 8px;
   padding: 8px 12px;

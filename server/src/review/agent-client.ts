@@ -227,6 +227,17 @@ def parser():
         help="the groups of Roamgate's Workspaces tree, as paths to give --group, and the one you are in",
     )
 
+    sub.add_parser(
+        "sessions",
+        help="the agent sessions Roamgate manages, on every connection, with the address to message each",
+    )
+    msg = sub.add_parser(
+        "message",
+        help="send another agent session a message (it is told it comes from you, not its user)",
+    )
+    msg.add_argument("to", help="its address, CONNECTION/PANE, as sessions lists it")
+    msg.add_argument("text", nargs="*", help="text, or - for standard input")
+
     q = sub.add_parser(
         "permission",
         help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",

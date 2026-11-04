@@ -173,7 +173,11 @@ const ChatBubble = memo(function ChatBubble({
   const rewindStates = rewindModeStates(
     useRewindCheck(rewinding ? entry : null, onRewindCheck),
   );
-  const [expanded, setExpanded] = useState(false);
+  // Messages between agent sessions show what they say: they are the
+  // conversation between the sessions, not Claude Code's bookkeeping.
+  const [expanded, setExpanded] = useState(
+    () => entry.injected?.kind === "session",
+  );
   // A compaction summary is long and written by Claude Code, not the user:
   // one line, with the summary a tap away.
   if (entry.compact_summary)
@@ -228,7 +232,7 @@ const ChatBubble = memo(function ChatBubble({
     const shown = body.slice(0, HISTORY_PREVIEW_CHARS);
     return (
       <div
-        className="agent-history-chat-injected"
+        className={`agent-history-chat-injected${entry.injected.kind === "session" ? " is-peer" : ""}`}
         data-sequence={sequence}
         data-bubble-id={entry.id}
         data-entry-id={entry.id}
