@@ -5614,6 +5614,16 @@ export function ReviewOverlay({
         )}
         {editor?.replyTo === thread.id ? (
           editorFor(editor)
+        ) : !thread.gitlab?.discussionId ? (
+          <div className="rc-bar">
+            <span className="spacer" />
+            <span
+              className="rc-kind"
+              title="GitHub keeps no draft of a reply to a conversation comment, and Roamgate never publishes: answer it on GitHub"
+            >
+              Conversation comment: reply on {forge}
+            </span>
+          </div>
         ) : (
           <div className="rc-bar">
             <span className="spacer" />
@@ -6017,6 +6027,9 @@ export function ReviewOverlay({
       <>
         <p className="note">
           {forge}: {plural(mrThreads.length, "discussion")}
+          {mrThreads.some((t) => !t.anchor.path)
+            ? ` (${mrThreads.filter((t) => !t.anchor.path).length} on the whole request)`
+            : ""}
           {gitlabDrafts.length
             ? `, ${plural(gitlabDrafts.length, "pending draft")} of yours`
             : ""}

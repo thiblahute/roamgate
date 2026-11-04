@@ -252,6 +252,34 @@ export function createMrReviews(options: {
           }));
         return { ...result, claude: state };
       }
+      case "bridge.mr_reviews.forget_worktree": {
+        // The project's next review makes its worktree anew (on the
+        // default connection first). The old worktree and its workspace
+        // stay where they are, for the user to remove; reviews, Claude
+        // sessions and drafts (on the forge) are kept.
+        const project =
+          typeof params.project === "string"
+            ? params.project.toLowerCase()
+            : "";
+        const record = store.get().projects[project];
+        if (!record)
+          throw new MrReviewsError(
+            "no review worktree for that project",
+            "not_found",
+          );
+        store.update((state) => {
+          delete state.projects[project];
+          for (const key of Object.keys(state.prefetched))
+            if (key.toLowerCase().includes(`:${project}#`))
+              delete state.prefetched[key];
+        });
+        logger.info("review worktree forgotten", {
+          project,
+          connection: record.connectionId,
+          worktree: record.worktree,
+        });
+        return { forgotten: record };
+      }
       case "bridge.mr_reviews.claude": {
         const action = params.action;
         if (action === "status") return claude.status(key());

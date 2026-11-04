@@ -58,6 +58,17 @@ describe("GitHub pull requests in the review pane", () => {
 
   test("reads the pull request, its diff and its comment threads", async () => {
     const { context: ctx, calls } = context({
+      // GitHub's shape of a pull request's conversation (issue) comments.
+      "repos/o/r/issues/7/comments": [
+        {
+          id: 3501,
+          body: "Thanks! Could you add a test?",
+          user: { login: "reviewer" },
+          created_at: "2026-11-01T10:00:00Z",
+          updated_at: "2026-11-01T10:00:00Z",
+          author_association: "MEMBER",
+        },
+      ],
       "repos/o/r/pulls/7/files": [
         {
           filename: "a.c",
@@ -101,7 +112,17 @@ describe("GitHub pull requests in the review pane", () => {
     });
     const diff = await readMergeRequestDiff(ctx, mr);
     expect(diff.files.map((file) => file.path)).toEqual(["a.c"]);
-    const threads = await readMergeRequestThreads(ctx, mr, "s");
+    const all = await readMergeRequestThreads(ctx, mr, "s");
+    // The conversation comment: a general thread, with no draft reply.
+    const general = all.filter((thread) => !thread.anchor.path);
+    expect(
+      general.map((thread) => [
+        thread.id,
+        thread.comments[0]!.author,
+        thread.gitlab?.discussionId,
+      ]),
+    ).toEqual([["ghc:3501", "@reviewer", undefined]]);
+    const threads = all.filter((thread) => thread.anchor.path);
     expect(threads).toHaveLength(1);
     expect(threads[0]!.comments.map((c) => c.author)).toEqual(["@bob", "@me"]);
     expect(threads[0]!.anchor).toMatchObject({

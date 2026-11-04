@@ -1716,7 +1716,11 @@ export function createReviewService(args: {
     const remote = remoteThread(target.id, params.commentId);
     if (remote) {
       if (!remote.gitlab?.discussionId)
-        throw new ReviewError("edit a draft note instead of replying to it");
+        throw new ReviewError(
+          remote.id.startsWith("ghc:")
+            ? "a pull request's conversation comment has no draft reply on GitHub: answer it there"
+            : "edit a draft note instead of replying to it",
+        );
       const writer = author(params.author);
       if (writer !== REVIEW_USER) {
         // An agent's answer is the user's review comment, kept here: they

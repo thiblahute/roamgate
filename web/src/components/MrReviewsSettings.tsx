@@ -2,7 +2,11 @@ import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ForgeProvider } from "../../../shared/forge";
 import type { MrReviewsSettings } from "../../../shared/mrReviews";
-import { loadMrReviewsSettings, saveMrReviewsSettings } from "../mrReviews";
+import {
+  loadMrReviewsSettings,
+  mrReviewsCall,
+  saveMrReviewsSettings,
+} from "../mrReviews";
 
 /**
  * The reviews settings, in the panel as Ranger's are in its own: the
@@ -291,6 +295,33 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
                       {entry.connectionId}: {entry.path}
                     </small>
                   </span>
+                  <button
+                    type="button"
+                    className="ghost"
+                    title="Its next review makes a new review worktree (on the default connection first). This one and its workspace stay: remove them yourself."
+                    disabled={busy}
+                    onClick={() =>
+                      void mrReviewsCall("forget_worktree", {
+                        project: entry.project,
+                      }).then(
+                        () =>
+                          setSettings({
+                            ...settings,
+                            reviewWorktrees: (
+                              settings.reviewWorktrees ?? []
+                            ).filter((each) => each.project !== entry.project),
+                          }),
+                        (cause) =>
+                          setError(
+                            cause instanceof Error
+                              ? cause.message
+                              : String(cause),
+                          ),
+                      )
+                    }
+                  >
+                    Forget
+                  </button>
                 </li>
               ))}
             </ul>

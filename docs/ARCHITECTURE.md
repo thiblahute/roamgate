@@ -736,6 +736,9 @@ draft note shape so `review/service.ts` keeps one path. Only browser
 calls (author `you`) create, edit or delete one; agents' drafts stay
 local, and `review.adopt {thread_id}` (the user's "Make it mine") turns
 an agent's thread into the user's draft. No code path submits a review.
+A pull request's conversation (issue) comments are read as general
+`merge-request` threads (`ghc:<id>`) without a discussion id: GitHub has no
+draft reply to them, so the service refuses one and the pane says so.
 A reply to a forge discussion is a draft too: a GitLab draft note with
 `in_reply_to_discussion_id`, or `addPullRequestReviewThreadReply` with the
 pending review's id on GitHub (checked to stay in that review). The review

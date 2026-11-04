@@ -949,7 +949,9 @@ again, and comments follow their code or show as outdated.
   comments written in the local review (and the agent's draft replies) wait
   there until **GitLab draft (N)** sends them; you submit the review on
   GitLab. **Local** goes back to the local review; each keeps its own place.
-  Replies to discussions are draft replies too, published only when you
+  A GitHub pull request's conversation comments show as discussions of the
+  whole request; GitHub keeps no draft of a reply to them, so they are
+  answered on GitHub. Replies to discussions are draft replies too, published only when you
   submit your review on the forge; `r` on a forge discussion only folds it
   here (resolving there is public). Roamgate publishes nothing itself.
   Security merge requests are never shared with agents.
@@ -1041,7 +1043,9 @@ a `review/<number>` branch, or discard them; leaving it as it is changes
 nothing. Your clone is found among your workspaces' checkouts by its
 remote, on the default connection first (the review worktree and its
 workspace go there), then on the others; with none, the inbox asks where it
-is and remembers it (Reviews' settings list and forget those). While the
+is and remembers it (Reviews' settings list and forget those, and can forget a project's
+review worktree: its next review makes a new one, the old one stays for
+you to remove). While the
 default connection is down, a project's first review waits for it. A new
 review workspace goes into the Workspaces tree where the project's
 setting says (a path such as `gst > reviews`, matched by name and made
