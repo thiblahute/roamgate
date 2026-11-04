@@ -16,6 +16,7 @@ import { createHandover, type HandoverDeps } from "./handover";
 import type { SpawnHeadless } from "./headless";
 import type { ConversationHerdr } from "./herdr";
 import { createHolderRegistry } from "./holder";
+import { idleStopRefusal } from "./idle-stop";
 import type { LeaseStore } from "./lease";
 import { createApiKeyQuestions } from "./service-api-key";
 import { createSwitches } from "./service-handover";
@@ -384,7 +385,7 @@ export function createConversationService<Ws>(
     carriedQueueDelayMs: options.carriedQueueDelayMs ?? 3000,
     reattachLimit: options.reattachLimit ?? 8,
   });
-  const { setLost, clearLost, recoverLater, recover } = recovery;
+  const { setLost, clearLost, recoverLater, recover, startAgain } = recovery;
 
   const spawnHeadless = options.spawn ?? holderSide.holderSpawn;
   const startDeps = {
@@ -687,6 +688,68 @@ export function createConversationService<Ws>(
      * (Claude is exiting, or the holder starting) and text would land in
      * the dying TUI or the bare shell.
      */
+    /**
+     * Puts another Claude session in a conversation-mode pane (a review
+     * workspace's Claude moving to another request's session): its idle
+     * process stops as idle stop stops it, the lease and the holder take
+     * the new session, and a process starts on it (resumed, or new when it
+     * was never written). Only when nothing runs, waits or is queued; a
+     * busy turn is never interrupted.
+     */
+    async switchSession(
+      paneId: string,
+      sessionId: string,
+    ): Promise<{ ok: true } | { ok: false; busy: boolean; reason: string }> {
+      const lease = leases.get(paneId);
+      if (!lease || lease.phase !== "conversation" || handover.running(paneId))
+        return {
+          ok: false,
+          busy: false,
+          reason: "conversation mode does not own this pane",
+        };
+      if (lease.session_id === sessionId) return { ok: true };
+      const session = sessions.get(paneId);
+      if (session) {
+        const live = session.state();
+        const refusal = idleStopRefusal({
+          limitMs: 1,
+          now: Number.POSITIVE_INFINITY,
+          idleSince: 0,
+          lastPeerAt: null,
+          conversation: true,
+          alive: true,
+          status: live.status,
+          busy: session.busy(),
+          queued: live.queue.length,
+          backgroundTasks: session.backgroundTasks(),
+          shellRunning: shells.running(paneId),
+          apiKeyQuestion: apiKeys.has(paneId),
+          keptAwake: null,
+        });
+        if (refusal) return { ok: false, busy: true, reason: refusal };
+        if (session.alive() && !session.asleep() && !(await session.sleep()))
+          return { ok: false, busy: true, reason: "it is not idle" };
+        sessions.delete(paneId);
+        session.dispose();
+      }
+      dropChannel(paneId);
+      clearLost(paneId);
+      clearStuck(paneId);
+      const current = leases.get(paneId);
+      if (!current) return { ok: false, busy: false, reason: "the lease went" };
+      const next = { ...current, session_id: sessionId };
+      delete next.asleep_at;
+      leases.set(next);
+      log("conversation session switched", { pane: paneId });
+      // The holder resumes the new session; Herdr maps the pane to it.
+      holders.send(paneId, { action: "hold", session_id: sessionId });
+      report(paneId, "idle");
+      emitLease(paneId);
+      const started = await startAgain(paneId);
+      return started.ok
+        ? { ok: true }
+        : { ok: false, busy: false, reason: started.reason };
+    },
     inputRefusal(paneId: string): string | null {
       const phase = leases.get(paneId)?.phase;
       return handover.running(paneId) ||

@@ -16,8 +16,13 @@ import type {
  */
 
 export type MrRanked = {
-  /** The request's updatedAt when it was ranked: ranked again after. */
+  /** The request's updatedAt when it was ranked. */
   updatedAt: string;
+  /**
+   * What it was ranked on (its head and title): ranked again only when
+   * they change, not on every comment or pipeline.
+   */
+  version?: string;
   pick: boolean;
   score: number;
   reason: string;
@@ -68,6 +73,8 @@ export type MrState = {
    * (seen as it is), so only what comes after shows as new.
    */
   baselined: Record<string, string>;
+  /** The head last prefetched, by request: fetched again when it moves. */
+  prefetched: Record<string, string>;
   /** The latest GitLab draft counts read, by request. */
   drafts: Record<string, { count: number; at: string }>;
 };
@@ -84,6 +91,7 @@ function empty(): MrState {
     projects: {},
     items: [],
     baselined: {},
+    prefetched: {},
     drafts: {},
   };
 }
@@ -109,6 +117,7 @@ export function normalizeState(raw: unknown): MrState {
     projects: record(value.projects),
     items: Array.isArray(value.items) ? (value.items as MrItem[]) : [],
     baselined: record(value.baselined),
+    prefetched: record(value.prefetched),
     drafts: record(value.drafts),
   };
 }

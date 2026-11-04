@@ -22,7 +22,7 @@ const item = (n: number, extra: Partial<MrItem> = {}): MrItem => ({
   author: "alice",
   draft: false,
   state: "open",
-  updatedAt: `2026-11-0${n % 9}T00:00:00Z`,
+  updatedAt: new Date(Date.now() - n * 3_600_000).toISOString(),
   headSha: "a".repeat(40),
   sourceBranch: "x",
   targetBranch: "main",
@@ -125,12 +125,35 @@ describe("curation", () => {
         pick: true,
         reason: "touches src/f1.c",
       });
-      // Ranked at its current state: not asked again until it changes.
-      await curation.maybeRun(items, true);
+      // Ranked on its head and title: a new comment (updatedAt) is no
+      // reason to rank it again; a push is.
+      const commented = items.map((each) =>
+        each.key === "k1"
+          ? { ...each, updatedAt: new Date().toISOString() }
+          : each,
+      );
+      await curation.maybeRun(commented, true);
       expect(asked).toHaveLength(1);
+      const pushed = commented.map((each) =>
+        each.key === "k1" ? { ...each, headSha: "b".repeat(40) } : each,
+      );
+      await curation.maybeRun(pushed, true);
+      expect(asked).toHaveLength(2);
+      expect(asked[1]!.prompt.candidates.map((c: any) => c.key)).toEqual([
+        "k1",
+      ]);
       // Rarely: not again before its period, even with new candidates.
-      await curation.maybeRun([...items, item(5)]);
-      expect(asked).toHaveLength(1);
+      await curation.maybeRun([...pushed, item(5)]);
+      expect(asked).toHaveLength(2);
+      // A first run ranks only the requests updated lately.
+      const old = item(6, {
+        key: "k6",
+        updatedAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+      });
+      await curation.maybeRun([old, item(7, { key: "k7" })], true);
+      expect(asked.at(-1)!.prompt.candidates.map((c: any) => c.key)).toEqual([
+        "k7",
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

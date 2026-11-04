@@ -8,7 +8,13 @@ import { openMrStore } from "./store";
 const A = "gitlab:h/g/p#1";
 const B = "gitlab:h/g/p#2";
 
-function setup(options: { hookless?: boolean } = {}) {
+function setup(
+  options: {
+    hookless?: boolean;
+    /** Conversation mode holds the pane on this session; busy refuses. */
+    conversation?: { held: string | null; busy: boolean; switches: string[] };
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "mr-claude-"));
   const store = openMrStore(join(dir, "state.json"));
   store.update((state) => {
@@ -52,6 +58,24 @@ function setup(options: { hookless?: boolean } = {}) {
         label: "C",
         run: async () => ({ code: 0, stdout: "", stderr: "" }),
         dirs: async () => [],
+        ...(options.conversation
+          ? {
+              conversation: {
+                owned: () => options.conversation!.held,
+                switch: async (_pane: string, session: string) => {
+                  options.conversation!.switches.push(session);
+                  if (options.conversation!.busy)
+                    return {
+                      ok: false as const,
+                      busy: true,
+                      reason: "it works",
+                    };
+                  options.conversation!.held = session;
+                  return { ok: true as const };
+                },
+              },
+            }
+          : {}),
         herdr: async (method, params: any) => {
           if (method === "pane.list")
             return {
@@ -177,6 +201,56 @@ describe("one Claude per review workspace, a session per request", () => {
     } finally {
       rmSync(t.dir, { recursive: true, force: true });
     }
+  });
+
+  test("conversation mode: its own switch, never /exit, never a busy turn", async () => {
+    const conversation = {
+      held: null as string | null,
+      busy: false,
+      switches: [] as string[],
+    };
+    const t = setup({ conversation });
+    try {
+      // A's session is held by conversation mode.
+      t.store.update((state) => {
+        state.reviews[A]!.claudeSession =
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      });
+      conversation.held = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      expect((await t.claude.ensure(A, { start: false })).state).toBe("ready");
+      // B has no session: a switch starts none; Ask Claude makes one.
+      expect((await t.claude.ensure(B, { start: false })).state).toBe("none");
+      conversation.busy = true;
+      expect(await t.claude.ensure(B, { start: true })).toMatchObject({
+        state: "busy",
+        with: A,
+      });
+      // "Switch when it is done": tries again until it is idle.
+      const waiting = t.claude.ensure(B, { start: true, wait: true });
+      conversation.busy = false;
+      const done = await waiting;
+      expect(done.state).toBe("ready");
+      const b = t.store.get().reviews[B]!.claudeSession!;
+      expect(conversation.held).toBe(b);
+      expect(conversation.switches.every((id) => id === b)).toBe(true);
+      // Nothing typed into the pane, no /exit.
+      expect(t.typed).toEqual([]);
+      // Back to A: its own session again.
+      expect((await t.claude.ensure(A, { start: false })).state).toBe("ready");
+      expect(conversation.held).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    } finally {
+      rmSync(t.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the claude start setting decides the mode Claude starts in", () => {
+    const id = "0b1c2d3e-0000-4000-8000-000000000001";
+    expect(claudeCommand(id, false, "conversation")).toBe(
+      ` claude --session-id ${id}\r`,
+    );
+    expect(claudeCommand(id, false, "terminal")).toContain(
+      "ROAMGATE_CLAUDE_START=terminal",
+    );
   });
 
   test("a Claude that is no request's is left alone", async () => {

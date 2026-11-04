@@ -406,9 +406,24 @@ export function createMrOpener(deps: MrOpenerDeps) {
      * review worktree, one fetch per project; nothing for the others.
      */
     async prefetch(items: MrItem[]) {
+      // Only what the user is likely to open: their requests and the
+      // suggestions picked (or asked for), and only a head not fetched yet.
+      const known = deps.store.get();
+      const wanted = new Set(
+        known.feedback
+          .filter((entry) => entry.verdict === "more_like_this")
+          .map((entry) => entry.key),
+      );
       const byProject = new Map<string, MrItem[]>();
       for (const entry of items)
-        if (entry.state === "open" && entry.headSha) {
+        if (
+          entry.state === "open" &&
+          entry.headSha &&
+          (entry.reasons.length > 0 ||
+            known.ranked[entry.key]?.pick ||
+            wanted.has(entry.key)) &&
+          known.prefetched[entry.key] !== entry.headSha
+        ) {
           const key = mrProjectKey(entry);
           byProject.set(key, [...(byProject.get(key) ?? []), entry]);
         }
@@ -431,6 +446,12 @@ export function createMrOpener(deps: MrOpenerDeps) {
             300_000,
           );
           const parsed = parseFetch(result.stdout);
+          const done = new Set([...parsed.have, ...parsed.fetched]);
+          deps.store.update((state) => {
+            for (const entry of entries)
+              if (done.has(entry.number))
+                state.prefetched[entry.key] = entry.headSha;
+          });
           if (parsed.fetched.length || parsed.missing.length)
             logger.info("request heads prefetched", {
               project: key,

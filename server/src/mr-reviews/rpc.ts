@@ -78,6 +78,7 @@ export async function handleMrReviewsRpc(
         checkout: value.checkout ?? current.checkout,
         retention_days: value.retentionDays ?? current.retentionDays,
         curation: value.curation ?? current.curation,
+        suggest_days: value.suggestDays ?? current.suggestDays,
         hints: value.hints ?? current.hints,
         clones: Object.fromEntries(
           Object.entries(

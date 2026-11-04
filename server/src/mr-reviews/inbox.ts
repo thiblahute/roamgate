@@ -38,8 +38,12 @@ export const IDLE_REFRESH_MS = 15 * 60_000;
 const VIEWER_MS = 2 * 60_000;
 /** A refresh asked for is not made again sooner than this. */
 export const FRESH_MIN_MS = 60_000;
-/** A GitLab draft count is read again after this. */
-export const DRAFTS_TTL_MS = 10 * 60_000;
+/**
+ * A GitLab draft count is read again after this, or sooner when the
+ * request changed; only for requests reviewed in Roamgate (their review
+ * reads them anyway while open).
+ */
+export const DRAFTS_TTL_MS = 60 * 60_000;
 /** Draft counts read per refresh, at most. */
 const DRAFTS_PER_REFRESH = 10;
 
@@ -125,13 +129,16 @@ export function createMrInbox(deps: MrInboxDeps) {
   async function readDrafts(list: MrItem[]) {
     const state = deps.store.get();
     const due = list
-      .filter(
-        (item) =>
-          item.provider === "gitlab" &&
-          item.reasons.length > 0 &&
-          now() - Date.parse(state.drafts[item.key]?.at ?? "1970-01-01") >=
-            DRAFTS_TTL_MS,
-      )
+      .filter((item) => {
+        if (item.provider !== "gitlab" || !state.reviews[item.key])
+          return false;
+        const known = state.drafts[item.key];
+        if (!known) return true;
+        return (
+          item.updatedAt > known.at ||
+          now() - Date.parse(known.at) >= DRAFTS_TTL_MS
+        );
+      })
       .slice(0, DRAFTS_PER_REFRESH);
     const counts: [string, number][] = [];
     for (const item of due) {

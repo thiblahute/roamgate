@@ -947,8 +947,10 @@ again, and comments follow their code or show as outdated.
   comments written in the local review (and the agent's draft replies) wait
   there until **GitLab draft (N)** sends them; you submit the review on
   GitLab. **Local** goes back to the local review; each keeps its own place.
-  Replies to discussions post publicly. Security merge requests are never
-  shared with agents.
+  Replies to discussions are draft replies too, published only when you
+  submit your review on the forge; `r` on a forge discussion only folds it
+  here (resolving there is public). Roamgate publishes nothing itself.
+  Security merge requests are never shared with agents.
 - `<` / `>` (or the arrows of the commit bar) step through the branch's
   commits and its whole change, wrapping around; on the default branch
   itself, through its history, latest first. The bar names the commit shown
@@ -1046,7 +1048,10 @@ session. **Review with Claude** (a request's details) starts or resumes
 the request's session there and asks it to review through the review pane:
 it reads the request and leaves its threads in the review, where you
 answer them; its threads stay Roamgate notes, never forge comments. **Ask
-Claude** (`c` in the list) takes you to the request's session. Opening
+Claude** (`c` in the list) takes you to the request's session. Claude
+starts there in the mode the claude start setting says; in conversation
+mode, switching request moves the pane's conversation to the other
+session through conversation mode itself, never by exiting it. Opening
 another request's review resumes that request's session, after the
 checkout; a Claude in the middle of a turn is never stopped: you switch
 when it is done, or leave it on its request. A Claude you started there
@@ -1069,8 +1074,10 @@ picks the few you would want, from your own history (what you committed
 to in your clones lately, your unmerged branches), the requests you
 reviewed and with whom, your hints, and your feedback: `x` (not
 interested) and `+` (more like this) are remembered and given to it as
-precedent. It only filters; it never reviews or comments. Turn it off in
-the settings.
+precedent. It only filters; it never reviews or comments. Only requests
+updated in the last 30 days (a setting) are considered, and a request is
+ranked again only when its head or title changes. Turn it off in the
+settings.
 
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.

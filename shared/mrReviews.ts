@@ -132,6 +132,11 @@ export type MrReviewsSettings = {
   /** Claude picks suggestions in the background. */
   curation: boolean;
   /**
+   * Only requests updated this many days ago at most are suggested; an
+   * older one is considered again once it changes.
+   */
+  suggestDays: number;
+  /**
    * The user's own hints for the suggestions (areas they maintain, people
    * they work with), in their words; the rest comes from their history.
    */
@@ -149,6 +154,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   checkout: "immediately",
   retentionDays: 3,
   curation: true,
+  suggestDays: 30,
   hints: "",
   clones: {},
 };

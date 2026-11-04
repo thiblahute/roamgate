@@ -20,6 +20,16 @@ export type MrConnection = {
   dirs: () => Promise<string[]>;
   /** A Herdr call on the connection. */
   herdr: (method: string, params?: Record<string, unknown>) => Promise<any>;
+  /** Conversation mode on the connection, when it runs there. */
+  conversation?: {
+    /** The session conversation mode holds the pane on, if it does. */
+    owned(paneId: string): string | null;
+    /** Its own switch: the idle process stops, the other session starts. */
+    switch(
+      paneId: string,
+      sessionId: string,
+    ): Promise<{ ok: true } | { ok: false; busy: boolean; reason: string }>;
+  };
 };
 
 export type FoundClone = {

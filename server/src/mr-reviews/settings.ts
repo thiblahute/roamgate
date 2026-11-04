@@ -13,6 +13,7 @@ export type StoredMrReviewsSettings = {
   checkout?: "immediately" | "on_demand";
   retention_days?: number;
   curation?: boolean;
+  suggest_days?: number;
   hints?: string;
   clones?: Record<string, { connection_id: string; path: string }>;
 };
@@ -78,6 +79,9 @@ export function normalizeStoredMrReviews(
   if (Number.isInteger(days) && days >= 0 && days <= 365)
     out.retention_days = days;
   if (typeof value.curation === "boolean") out.curation = value.curation;
+  const suggest = Number(value.suggest_days);
+  if (Number.isInteger(suggest) && suggest >= 1 && suggest <= 365)
+    out.suggest_days = suggest;
   if (typeof value.hints === "string") out.hints = value.hints.slice(0, 2000);
   if (
     value.clones &&
@@ -109,6 +113,7 @@ export function mrReviewsSettings(
     checkout: stored?.checkout ?? base.checkout,
     retentionDays: stored?.retention_days ?? base.retentionDays,
     curation: stored?.curation ?? base.curation,
+    suggestDays: stored?.suggest_days ?? base.suggestDays,
     hints: stored?.hints ?? base.hints,
     clones: Object.fromEntries(
       Object.entries(stored?.clones ?? {}).map(([key, clone]) => [
@@ -129,6 +134,7 @@ export function storedMrReviews(
     checkout: settings.checkout,
     retention_days: settings.retentionDays,
     curation: settings.curation,
+    suggest_days: settings.suggestDays,
     hints: settings.hints,
     clones: Object.fromEntries(
       Object.entries(settings.clones).map(([key, clone]) => [
