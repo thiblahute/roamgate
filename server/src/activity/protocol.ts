@@ -25,6 +25,59 @@ export type ClientKind = "desktop" | "phone";
 
 export type EventSource = "browser" | "herdr";
 
+/**
+ * What made an attention event happen. A browser reports the first six;
+ * the recorder knows the Herdr ones. Only `user_input` and `user_focus`
+ * are signs of a person (docs/activity.md#causes).
+ */
+export type EventCause =
+  /** A key, pointer, wheel or touch in the page just before. */
+  | "user_input"
+  /** The page came to the front without input in it, after input since it loaded. */
+  | "user_focus"
+  /** The page loaded and has had no input since. */
+  | "page_load"
+  /** The page's socket to the bridge is new and no input came after it. */
+  | "reconnect"
+  /** The page's view moved without input, following Herdr's focus. */
+  | "follow_herdr"
+  /** The page's view moved without input, Roamgate itself moved it. */
+  | "app"
+  /** Herdr's focus event: someone at the TUI, or an agent through its CLI. */
+  | "herdr_event"
+  /** Herdr's focus found changed in a listing, without an event. */
+  | "herdr_listing"
+  /** The focus Herdr had when the recorder started. */
+  | "recorder_start"
+  /** The focus Herdr had when the connection came (back) up. */
+  | "connection_ready";
+
+export const EVENT_CAUSES: readonly EventCause[] = [
+  "user_input",
+  "user_focus",
+  "page_load",
+  "reconnect",
+  "follow_herdr",
+  "app",
+  "herdr_event",
+  "herdr_listing",
+  "recorder_start",
+  "connection_ready",
+];
+
+/** The causes a page can report with its presence. */
+export type ReportedCause =
+  | "user_input"
+  | "user_focus"
+  | "page_load"
+  | "follow_herdr"
+  | "app";
+
+/** Causes that are a sign of a person. */
+export function personCause(cause: EventCause | null | undefined): boolean {
+  return cause === "user_input" || cause === "user_focus";
+}
+
 export type ActivityEvent = {
   id: string;
   ts: string;
@@ -45,6 +98,10 @@ export type ActivityEvent = {
   open?: boolean | null;
   client?: { id: string; kind: ClientKind } | null;
   source?: EventSource;
+  /** On focus, on a switch or hidden blur, on a reported ui.visibility. */
+  cause?: EventCause | null;
+  /** The page's input age when it reported the event; null when unknown. */
+  input_age_ms?: number | null;
 };
 
 export type SubjectGroup = { id: string; label: string };

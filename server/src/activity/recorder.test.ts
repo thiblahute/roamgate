@@ -158,7 +158,8 @@ function presence(
     pane_id: string | null;
     visible: boolean;
     focused: boolean;
-    input_age_ms: number;
+    input_age_ms: number | null;
+    cause: string | null;
   }> = {},
 ) {
   return {
@@ -170,6 +171,7 @@ function presence(
     visible: true,
     focused: true,
     input_age_ms: 0,
+    cause: "user_input",
     ...fields,
   };
 }
@@ -494,6 +496,7 @@ test("presence becomes focus spans that end on a switch or when hidden", async (
   expect(await report(recorder, socket)).toEqual({
     recording: true,
     idle_seconds: 300,
+    attention: true,
   });
   advance(10 * SECOND);
   // The same place again: nothing new.
@@ -549,6 +552,187 @@ test("presence becomes focus spans that end on a switch or when hidden", async (
     source: "browser",
     open: false,
   });
+});
+
+/** Attention events as [kind, ms since T0, detail, cause, input age]. */
+function caused(recorder: ActivityRecorder, source = "browser") {
+  const rows = attention(recorder, source);
+  return events(recorder)
+    .filter(
+      (event) =>
+        event.kind !== "agent.state" &&
+        (event.source === undefined || event.source === source),
+    )
+    .map((event, index) => [
+      ...rows[index]!,
+      event.cause ?? null,
+      event.input_age_ms ?? null,
+    ]);
+}
+
+test("a page that loads is no attention until an input follows", async () => {
+  const { recorder } = harness();
+  await ready(recorder);
+  const socket = {};
+  // Loaded in front of the user: visible and focused, but no input yet.
+  const loaded = await report(recorder, socket, {
+    input_age_ms: null,
+    cause: "page_load",
+  });
+  expect(loaded.attention).toBe(false);
+  advance(60 * SECOND);
+  // Its minute report: still nobody.
+  await report(recorder, socket, { input_age_ms: null, cause: "repeat" });
+  advance(SECOND);
+  const typed = await report(recorder, socket, {
+    input_age_ms: 0,
+    cause: "user_input",
+  });
+  expect(typed.attention).toBe(true);
+  expect(caused(recorder)).toEqual([
+    ["ui.visibility", 0, "true", "page_load", null],
+    ["workspace.focus", 61_000, "W1 w1:p1", "user_input", 0],
+  ]);
+});
+
+test("a page reconnecting to a restarted bridge is no attention until an input after it", async () => {
+  const h = harness();
+  const socket = {};
+  await ready(h.recorder);
+  await report(h.recorder, socket);
+  advance(10 * SECOND);
+  await h.recorder.stop();
+  // The bridge restarts; the page reconnects on a new socket and reports
+  // its input of 20 s ago, before the restart.
+  advance(SECOND);
+  const recorder = h.reopen();
+  await ready(recorder);
+  const again = {};
+  advance(2 * SECOND);
+  expect(
+    (
+      await report(recorder, again, {
+        input_age_ms: 20 * SECOND,
+        cause: "repeat",
+      })
+    ).attention,
+  ).toBe(false);
+  // Brought to the front without input: the page counts it as input.
+  advance(3 * SECOND);
+  await report(recorder, again, { input_age_ms: 0, cause: "user_focus" });
+  const rows = caused(recorder).filter(([, ts]) => (ts as number) >= 13_000);
+  expect(rows).toEqual([
+    ["ui.visibility", 13_000, "true", "reconnect", 20_000],
+    ["workspace.focus", 16_000, "W1 w1:p1", "user_focus", 0],
+  ]);
+  // The restart's rows are no person: recorder_stop, no cause.
+  expect(caused(recorder).filter(([, ts]) => ts === 10_000)).toEqual([
+    ["workspace.blur", 10_000, "recorder_stop", null, null],
+    ["ui.visibility", 10_000, "false", null, null],
+  ]);
+});
+
+test("a view that follows Herdr or moves by itself ends the span and opens none", async () => {
+  const { recorder } = harness();
+  await ready(recorder);
+  const socket = {};
+  await report(recorder, socket);
+  advance(10 * SECOND);
+  const w2 = { workspace_id: "w2", tab_id: "w2:t1", pane_id: "w2:p1" };
+  const followed = await report(recorder, socket, {
+    ...w2,
+    input_age_ms: 10 * SECOND,
+    cause: "follow_herdr",
+  });
+  expect(followed.attention).toBe(false);
+  advance(10 * SECOND);
+  // Reading on without input: still not attention.
+  await report(recorder, socket, {
+    ...w2,
+    input_age_ms: 20 * SECOND,
+    cause: "repeat",
+  });
+  advance(SECOND);
+  await report(recorder, socket, { ...w2, input_age_ms: 0 });
+  advance(10 * SECOND);
+  await report(recorder, socket, { input_age_ms: 9 * SECOND, cause: "app" });
+  expect(caused(recorder)).toEqual([
+    ["ui.visibility", 0, "true", "user_input", 0],
+    ["workspace.focus", 0, "W1 w1:p1", "user_input", 0],
+    ["workspace.blur", 10_000, "switch", "follow_herdr", 10_000],
+    ["workspace.focus", 21_000, "W2 w2:p1", "user_input", 0],
+    ["workspace.blur", 31_000, "switch", "app", 9_000],
+  ]);
+});
+
+test("input after idle is session.active, caused by input", async () => {
+  const { recorder } = harness({ idle_seconds: 60 });
+  await ready(recorder);
+  const socket = {};
+  await report(recorder, socket);
+  advance(70 * SECOND);
+  await report(recorder, socket, {
+    input_age_ms: 70 * SECOND,
+    cause: "repeat",
+  });
+  advance(SECOND);
+  await report(recorder, socket, { input_age_ms: 0 });
+  const active = events(recorder).find((e) => e.kind === "session.active");
+  expect(active).toMatchObject({ cause: "user_input", input_age_ms: 0 });
+});
+
+test("Herdr's focus says where it came from: start, event, listing, reconnect", async () => {
+  const { recorder, herdr } = harness();
+  await ready(recorder);
+  advance(SECOND);
+  recorder.herdrEvent("local", {
+    event: "workspace.focused",
+    data: { workspace_id: "w2" },
+  });
+  await recorder.flush();
+  advance(SECOND);
+  // Herdr's focus moves without an event (a browser focused its pane),
+  // found by the listing a browser report needs.
+  herdr.state.workspaces = herdr.state.workspaces.map((workspace) => ({
+    ...workspace,
+    focused: workspace.workspace_id === "w1",
+  }));
+  recorder.herdrEvent("local", {
+    event: "workspace.updated",
+    data: { workspace_id: "w1" },
+  });
+  await report(recorder, {});
+  advance(SECOND);
+  recorder.connectionStatus("local", "reconnecting");
+  recorder.connectionStatus("local", "ready");
+  await recorder.flush();
+  expect(
+    caused(recorder, "herdr").filter(([kind]) => kind !== "ui.visibility"),
+  ).toEqual([
+    ["workspace.focus", 0, "W1 w1:p1", "recorder_start", null],
+    ["workspace.blur", 1000, "switch", "herdr_event", null],
+    ["workspace.focus", 1000, "W2 null", "herdr_event", null],
+    ["workspace.blur", 2000, "switch", "herdr_listing", null],
+    ["workspace.focus", 2000, "W1 w1:p1", "herdr_listing", null],
+    ["workspace.blur", 3000, "disconnect", null, null],
+    ["workspace.focus", 3000, "W1 w1:p1", "connection_ready", null],
+  ]);
+});
+
+test("Herdr's focus at a recorder start is recorder_start, never null", async () => {
+  const h = harness();
+  await ready(h.recorder);
+  await h.recorder.stop();
+  advance(SECOND);
+  const recorder = h.reopen();
+  await ready(recorder);
+  const focuses = events(recorder).filter(
+    (e) => e.kind === "workspace.focus" && e.source === "herdr",
+  );
+  expect(focuses.map((e) => e.cause)).toEqual([
+    "recorder_start",
+    "recorder_start",
+  ]);
 });
 
 test("reading counts as attention until the idle threshold", async () => {
@@ -792,6 +976,7 @@ test("with recording off nothing is recorded, not even a file", async () => {
   expect(await recorder.presence({}, "local", presence())).toEqual({
     recording: false,
     idle_seconds: 300,
+    attention: false,
   });
   recorder.socketClosed({});
   await recorder.flush();
@@ -815,6 +1000,15 @@ test("presence reports are checked", () => {
   expect(() => parsePresence({ ...presence(), input_age_ms: -1 })).toThrow(
     "invalid input_age_ms",
   );
+  expect(() => parsePresence({ ...presence(), cause: "agent" })).toThrow(
+    "invalid cause",
+  );
+  expect(parsePresence({ ...presence(), input_age_ms: null })).toMatchObject({
+    inputAgeMs: null,
+    cause: "user_input",
+  });
+  // Pages older than causes send none.
+  expect(parsePresence({ ...presence(), cause: undefined }).cause).toBeNull();
   expect(() =>
     parsePresence({ ...presence(), pane_id: "x".repeat(200) }),
   ).toThrow("invalid pane_id");

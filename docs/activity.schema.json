@@ -193,6 +193,28 @@
             }
           ],
           "description": "Only on workspace.focus and workspace.blur, and only emitted there. browser: reported by a Roamgate client. herdr: the native TUI focus, a low-confidence fill-in that runs whether or not anyone is attached and can duplicate browser spans."
+        },
+        "cause": {
+          "type": ["string", "null"],
+          "enum": [
+            "user_input",
+            "user_focus",
+            "page_load",
+            "reconnect",
+            "follow_herdr",
+            "app",
+            "herdr_event",
+            "herdr_listing",
+            "recorder_start",
+            "connection_ready",
+            null
+          ],
+          "description": "Why the event happened. Only user_input, user_focus and herdr_event are signs of a person. Null on rows written before causes existed, and on rows that are never signs."
+        },
+        "input_age_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Milliseconds since the page's last real input, as the page reported it."
         }
       }
     },

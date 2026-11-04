@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, jest, test } from "bun:test";
 import {
   activityClientId,
   activityClientKind,
+  CAUSE_INPUT_MS,
   PRESENCE_REPEAT_MS,
   watchActivityPresence,
 } from "./activityPresence";
@@ -113,7 +114,9 @@ test("the page says where the user looks, at once and on each change", async () 
       pane_id: "w1:p1",
       visible: true,
       focused: true,
-      input_age_ms: 0,
+      // Loaded in front of the user: no input yet, so nobody yet.
+      input_age_ms: null,
+      cause: "page_load",
     },
   ]);
   // Store updates that change nothing on screen say nothing.
@@ -132,15 +135,24 @@ test("the page says where the user looks, at once and on each change", async () 
     ["w1", "w1:t1", "w1:p2"],
     ["w2", "w2:t1", "w2:p1"],
   ]);
+  expect(h.calls.map((call) => call.cause)).toEqual([
+    "page_load",
+    "page_load",
+    "page_load",
+  ]);
   h.stop();
 });
 
 test("it repeats every minute while looked at, says when idle, and wakes on input", async () => {
   const h = harness();
   await tick();
+  // The bridge counted the load as attention (an older bridge): input
+  // sends nothing of its own.
+  h.input();
+  expect(h.calls).toHaveLength(1);
   jest.advanceTimersByTime(PRESENCE_REPEAT_MS);
   await tick();
-  expect(h.calls.map((call) => call.input_age_ms)).toEqual([0, 60_000]);
+  expect(h.calls.map((call) => call.input_age_ms)).toEqual([null, 60_000]);
   // Input moves the threshold without a report of its own.
   jest.advanceTimersByTime(30_000);
   h.input("pointerdown");
@@ -148,7 +160,12 @@ test("it repeats every minute while looked at, says when idle, and wakes on inpu
   jest.advanceTimersByTime(4 * PRESENCE_REPEAT_MS);
   await tick();
   expect(h.calls.map((call) => call.input_age_ms)).toEqual([
-    0, 60_000, 30_000, 90_000, 150_000, 210_000,
+    null,
+    60_000,
+    30_000,
+    90_000,
+    150_000,
+    210_000,
   ]);
   // The threshold, then nothing more while idle.
   jest.advanceTimersByTime(90_000);
@@ -160,13 +177,14 @@ test("it repeats every minute while looked at, says when idle, and wakes on inpu
   // Input after idle is reported at once.
   h.input("wheel");
   expect(h.calls).toHaveLength(idleCount + 1);
-  expect(last(h.calls)?.input_age_ms).toBe(0);
+  expect(last(h.calls)).toMatchObject({ input_age_ms: 0, cause: "user_input" });
   h.stop();
 });
 
 test("hidden or unfocused pages report it, then stay quiet; returning is input", async () => {
   const h = harness();
   await tick();
+  h.input();
   jest.advanceTimersByTime(400_000);
   await tick();
   const before = h.calls.length;
@@ -175,7 +193,11 @@ test("hidden or unfocused pages report it, then stay quiet; returning is input",
   jest.advanceTimersByTime(10 * PRESENCE_REPEAT_MS);
   expect(h.calls).toHaveLength(before + 1);
   h.setVisible(true);
-  expect(last(h.calls)).toMatchObject({ visible: true, input_age_ms: 0 });
+  expect(last(h.calls)).toMatchObject({
+    visible: true,
+    input_age_ms: 0,
+    cause: "user_focus",
+  });
   h.setFocused(false);
   expect(last(h.calls)).toMatchObject({ visible: true, focused: false });
   h.setFocused(true);
@@ -213,11 +235,71 @@ test("nothing more is sent once the bridge is not recording", async () => {
 test("the bridge's idle threshold is followed", async () => {
   const h = harness({ answer: { recording: true, idle_seconds: 90 } });
   await tick();
+  h.input();
   jest.advanceTimersByTime(PRESENCE_REPEAT_MS);
   await tick();
   jest.advanceTimersByTime(30_000);
   await tick();
-  expect(h.calls.map((call) => call.input_age_ms)).toEqual([0, 60_000, 90_000]);
+  expect(h.calls.map((call) => call.input_age_ms)).toEqual([
+    null,
+    60_000,
+    90_000,
+  ]);
+  h.stop();
+});
+
+test("a page brought to the front before any input is still loading", async () => {
+  const h = harness({ visible: false });
+  await tick();
+  h.setVisible(true);
+  expect(h.calls).toEqual([
+    expect.objectContaining({ input_age_ms: null, cause: "page_load" }),
+  ]);
+  h.stop();
+});
+
+test("input after a report that was no attention is reported at once, once", async () => {
+  const h = harness({
+    answer: { recording: true, idle_seconds: 300, attention: false },
+  });
+  await tick();
+  jest.advanceTimersByTime(2_000);
+  h.input("touchstart");
+  // Asked, not answered yet: more input waits for the answer.
+  h.input("keydown");
+  expect(h.calls.map((call) => [call.cause, call.input_age_ms])).toEqual([
+    ["page_load", null],
+    ["user_input", 0],
+  ]);
+  h.stop();
+});
+
+test("a view that moves without input follows Herdr or Roamgate, and says so", async () => {
+  const h = harness();
+  await tick();
+  h.input();
+  // Shared navigation (the store's default): Herdr moved it.
+  jest.advanceTimersByTime(CAUSE_INPUT_MS + 1);
+  h.update((snapshot) => ({
+    ...snapshot,
+    navigationMode: "shared",
+    layout: layout("w2", ["w2:p1"]),
+  }));
+  h.update((snapshot) => ({
+    ...snapshot,
+    navigationMode: "browser-local",
+    layout: layout("w3", ["w3:p1"]),
+  }));
+  // A switch right after a key: the user did it.
+  h.input();
+  jest.advanceTimersByTime(300);
+  h.update((snapshot) => ({ ...snapshot, layout: layout("w1", ["w1:p1"]) }));
+  expect(h.calls.map((call) => [call.workspace_id, call.cause])).toEqual([
+    ["w1", "page_load"],
+    ["w2", "follow_herdr"],
+    ["w3", "app"],
+    ["w1", "user_input"],
+  ]);
   h.stop();
 });
 

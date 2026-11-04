@@ -16,6 +16,8 @@ export type FocusSpan = {
   source: TimelineSource;
   client_id: string | null;
   reason: string | null;
+  /** What opened it (docs/activity.md#causes); absent from older bridges. */
+  cause?: string | null;
 };
 
 export type AttentionSegment = {

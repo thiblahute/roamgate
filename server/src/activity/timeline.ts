@@ -8,11 +8,12 @@ import type {
   AgentState,
   BlurReason,
   ClientKind,
+  EventCause,
   EventSource,
   RecordingGap,
   Subject,
 } from "./protocol";
-import { isoTime } from "./protocol";
+import { isoTime, personCause } from "./protocol";
 
 /** A recorder whose last alive stamp is older than this is not running. */
 export const RECORDER_STALE_MS = 150_000;
@@ -34,6 +35,10 @@ export type FocusRow = {
   client_id: string | null;
   client_kind: ClientKind | null;
   session: number;
+  /** What opened it; null on rows older than causes. */
+  cause?: EventCause | null;
+  /** What ended it, on a switch or hidden blur. */
+  end_cause?: EventCause | null;
 };
 
 /** session.idle, session.active and ui.visibility, per client. */
@@ -46,6 +51,7 @@ export type PresenceRow = {
   client_kind: ClientKind;
   visible: boolean | null;
   session: number;
+  cause?: EventCause | null;
 };
 
 export type AgentRow = {
@@ -113,6 +119,8 @@ export type FocusSpan = {
   client_id: string | null;
   /** Null while open. */
   reason: BlurReason | null;
+  /** What opened it (protocol EventCause); null on rows older than causes. */
+  cause: EventCause | null;
 };
 
 /** Who had the attention, without overlaps: what the totals count. */
@@ -405,18 +413,33 @@ function latest<T extends { start: number; seq: number }>(
 }
 
 /**
+ * Whether a row with this cause may be a sign of a person: rows older than
+ * causes (null) keep the rules they had.
+ */
+function mayBeSign(cause: EventCause | null | undefined): boolean {
+  return cause === null || cause === undefined || personCause(cause);
+}
+
+/**
  * When a person was there: Herdr cannot say whether anyone looks at its TUI
  * (no attached client count, no input time; its output events cannot tell
  * typing from a program writing), and its focus spans run all night. So its
  * TUI time counts only within `idleMs` of a sign of a person:
  *
- * - a browser or phone span, while it runs (it ends `idleMs` after the last
- *   input at the latest) and `idleMs` after it ends, unless it ended as idle
- *   (dated at the last input plus `idleMs` already): the page was hidden,
- *   say, to type in the terminal;
- * - input after idle (`session.active`) or a page brought to the front;
- * - a focus change in Herdr's TUI, a Herdr span that ended with `switch`.
- *   A span opened when the recorder or the connection starts is no sign.
+ * - a browser or phone span the user opened (cause `user_input` or
+ *   `user_focus`), while it runs (it ends `idleMs` after the last input at
+ *   the latest) and `idleMs` after it ends, unless it ended as idle (dated
+ *   at the last input plus `idleMs` already) or with the recorder (a
+ *   restart says nothing of the person): the page was hidden, say, to type
+ *   in the terminal;
+ * - input after idle (`session.active`) or a page the user brought to the
+ *   front;
+ * - a focus change in Herdr's TUI: a Herdr span opened by Herdr's focus
+ *   event, and one that ended with `switch` to such a span.
+ *
+ * No sign: a page loading, reloading or reconnecting, a view following
+ * Herdr or moved by Roamgate, Herdr's focus found in a listing (a browser
+ * focusing its pane), and what the recorder or a connection starting with.
  */
 function personWindows(
   focus: ResolvedFocus[],
@@ -426,19 +449,30 @@ function personWindows(
   const windows: Interval[] = [];
   for (const entry of focus) {
     if (entry.source === "herdr") {
-      if (entry.row.end !== null && entry.row.reason === "switch")
+      if (entry.row.cause === "herdr_event")
+        windows.push({ start: entry.row.start, end: entry.row.start + idleMs });
+      if (
+        entry.row.end !== null &&
+        entry.row.reason === "switch" &&
+        (entry.row.end_cause === "herdr_event" ||
+          entry.row.end_cause === null ||
+          entry.row.end_cause === undefined)
+      )
         windows.push({ start: entry.row.end, end: entry.row.end + idleMs });
       continue;
     }
-    windows.push({
-      start: entry.start,
-      end: entry.end + (entry.row.reason === "idle" ? 0 : idleMs),
-    });
+    if (!mayBeSign(entry.row.cause)) continue;
+    const tail =
+      entry.row.reason === "idle" || entry.row.reason === "recorder_stop"
+        ? 0
+        : idleMs;
+    windows.push({ start: entry.start, end: entry.end + tail });
   }
   for (const row of presence)
     if (
-      row.kind === "session.active" ||
-      (row.kind === "ui.visibility" && row.visible)
+      (row.kind === "session.active" ||
+        (row.kind === "ui.visibility" && row.visible)) &&
+      mayBeSign(row.cause)
     )
       windows.push({ start: row.ts, end: row.ts + idleMs });
   return union(windows);
@@ -581,7 +615,8 @@ function idleSpans(
     add(row.client_id, { seq: row.seq, ts: row.ts, row });
   // A new focus by the same client also means it is no longer idle.
   for (const row of focus)
-    if (row.client_id) add(row.client_id, { seq: row.seq, ts: row.start });
+    if (row.client_id && mayBeSign(row.cause))
+      add(row.client_id, { seq: row.seq, ts: row.start });
   const spans: (Resolved & {
     connection_id: string;
     client_id: string;
@@ -670,9 +705,12 @@ export function buildTimeline(input: TimelineInput): Timeline {
   });
   const idleMs = input.idleMs ?? DEFAULT_IDLE_MS;
   const windows = personWindows(focus, input.presence, idleMs);
-  // Herdr's TUI time with no sign of a person is no attention.
+  // Herdr's TUI time, and a page's that no person opened, count only
+  // with a sign of a person.
   const attended = focus.flatMap((entry) =>
-    entry.source === "herdr" ? within(entry, windows) : [entry],
+    entry.source === "herdr" || !mayBeSign(entry.row.cause)
+      ? within(entry, windows)
+      : [entry],
   );
   const idle = idleSpans(input.presence, input.focus, ends, limit);
   const lanes = agentLanes(input.agents, ends, gapsFor, limit);
@@ -815,6 +853,7 @@ export function buildTimeline(input: TimelineInput): Timeline {
         source: entry.source,
         client_id: entry.row.client_id,
         reason: entry.row.end === null ? null : entry.row.reason,
+        cause: entry.row.cause ?? null,
       })),
       attention: attention.map((segment) => ({
         ...segment,
