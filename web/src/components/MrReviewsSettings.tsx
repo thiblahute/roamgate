@@ -220,6 +220,60 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
         </div>
       </section>
       <section className="assistant-task-overview">
+        <h3 className="mr-reviews-section-title">Clones</h3>
+        <p className="assistant-hint">
+          A project's clone is looked for on the default connection first, then
+          on the others; with none, Reviews asks. Its review worktree and
+          workspace go next to it.
+        </p>
+        {Object.keys(settings.clones).length ? (
+          <ul className="mr-reviews-settings-list">
+            {Object.entries(settings.clones).map(([project, clone]) => (
+              <li key={project}>
+                <span>
+                  {project}{" "}
+                  <small>
+                    {clone.connectionId}: {clone.path}
+                  </small>
+                </span>
+                <button
+                  type="button"
+                  className="ghost"
+                  aria-label={`Forget the clone picked for ${project}`}
+                  disabled={busy}
+                  onClick={() => {
+                    const clones = { ...settings.clones };
+                    delete clones[project];
+                    void save({ clones });
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="assistant-hint">No clone picked by hand.</p>
+        )}
+        {settings.reviewWorktrees?.length ? (
+          <>
+            <p className="assistant-hint">Review worktrees:</p>
+            <ul className="mr-reviews-settings-list">
+              {settings.reviewWorktrees.map((entry) => (
+                <li key={entry.project}>
+                  <span>
+                    {entry.project}{" "}
+                    <small>
+                      {entry.connectionId}: {entry.path}
+                    </small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </section>
+      <section className="assistant-task-overview">
         <h3 className="mr-reviews-section-title">Review worktree</h3>
         <label className="form-field">
           <span>The checkout follows the selected request</span>

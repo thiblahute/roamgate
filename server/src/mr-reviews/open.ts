@@ -70,8 +70,14 @@ export type MrOpenerDeps = {
     key: string,
     clone: { connectionId: string; path: string },
   ) => Promise<void>;
-  /** The ready connections, the local one first. */
+  /** The ready connections, the default one first. */
   connections: () => MrConnection[];
+  /** The default connection, ready or not (none: no default). */
+  defaultConnection?: () => {
+    id: string;
+    label: string;
+    ready: boolean;
+  } | null;
   clones: CloneFinder;
   /** The review pane's open (review service), never raising it elsewhere. */
   openReview: (params: {
@@ -96,9 +102,11 @@ export function createMrOpener(deps: MrOpenerDeps) {
     const before = locks.get(key) ?? Promise.resolve();
     const next = before.catch(() => {}).then(work);
     locks.set(key, next);
-    void next.finally(() => {
+    const clear = () => {
       if (locks.get(key) === next) locks.delete(key);
-    });
+    };
+    // The caller gets the failure; the lock only lets go.
+    next.then(clear, clear);
     return next;
   }
 
@@ -145,6 +153,14 @@ export function createMrOpener(deps: MrOpenerDeps) {
         }
       );
     }
+    // A new project goes to the default connection's clone first: with
+    // that connection down, nothing is decided elsewhere meanwhile.
+    const preferred = deps.defaultConnection?.();
+    if (preferred && !preferred.ready)
+      throw new MrReviewsError(
+        `${preferred.label}, the default connection, is not connected: ${entry.project}'s review goes there once it is (or pick a clone in Reviews' settings)`,
+        "unavailable",
+      );
     const found = await deps.clones.find(deps.connections(), entry);
     return found[0] ?? null;
   }

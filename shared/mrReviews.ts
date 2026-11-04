@@ -143,6 +143,8 @@ export type MrReviewsSettings = {
   hints: string;
   /** Clones picked by the user: "host/project" -> where. */
   clones: Record<string, { connectionId: string; path: string }>;
+  /** Read only: each project's review worktree, where it is. */
+  reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
   discoveredHosts?: { host: string; provider: ForgeProvider }[];
 };
