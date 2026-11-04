@@ -1046,7 +1046,10 @@ workspace go there), then on the others; with none, the inbox asks where it
 is and remembers it (Reviews' settings list and forget those, and can forget a project's
 review worktree: its next review makes a new one, the old one stays for
 you to remove). While the
-default connection is down, a project's first review waits for it. A new
+default connection is down, a project's first review waits for it. In the
+Workspaces sidebar a review workspace has a pull request mark, and its
+second line shows the request checked out (`!12846 pitch: ...`) rather
+than a detached commit, whatever you named it. A new
 review workspace goes into the Workspaces tree where the project's
 setting says (a path such as `gst > reviews`, matched by name and made
 when missing), else into a "Reviews" group under the clone's workspace,

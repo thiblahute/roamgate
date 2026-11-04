@@ -46,7 +46,7 @@ export function showWorkspaceBranchBadge(workspace: Workspace): boolean {
   );
 }
 
-const NAME_SEPARATOR = /^[-_./:\s]+/;
+const NAME_SEPARATOR = /^[-_./:\s\u00b7\u2022]+/;
 
 /**
  * What a row shows of a workspace's name under `parentName`: a worktree named

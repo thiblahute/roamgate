@@ -84,3 +84,155 @@ test("forgetting a review worktree keeps the reviews and their Claude sessions",
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the review pane's agent review, with no agent pane: the request's Claude starts and reviews", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mr-mod-"));
+  try {
+    const store = openMrStore(join(dir, "state.json"));
+    store.update((state) => {
+      state.items = [
+        {
+          provider: "gitlab",
+          host: "h",
+          project: "g/p",
+          number: 1,
+          key: "gitlab:h/g/p#1",
+          url: "https://h/g/p/-/merge_requests/1",
+          title: "t",
+          author: "a",
+          draft: false,
+          state: "open",
+          updatedAt: "2026-11-04T00:00:00Z",
+          headSha: "a".repeat(40),
+          sourceBranch: "x",
+          targetBranch: "main",
+          pipeline: null,
+          notes: 0,
+          reasons: ["assigned"],
+        },
+      ];
+      state.projects["h/g/p"] = {
+        connectionId: "c",
+        clone: "/x",
+        worktree: "/x.worktrees/review",
+        workspaceId: "w1",
+      };
+      state.reviews["gitlab:h/g/p#1"] = {
+        connectionId: "c",
+        sessionId: "rev1",
+        workspaceId: "w1",
+      };
+    });
+    let paneAgent: string | null = null;
+    const typed: string[] = [];
+    const reviewsAsked: unknown[] = [];
+    const reviews = createMrReviews({
+      run: async () => ({ code: 1, stdout: "", stderr: "" }),
+      store,
+      readSettings: async () => ({ claude_start_mode: "conversation" }) as any,
+      discoverHosts: () => [],
+      requestReview: async (params) => {
+        reviewsAsked.push(params);
+      },
+      connections: () => [
+        {
+          id: "c",
+          label: "C",
+          run: async () => ({ code: 0, stdout: "", stderr: "" }),
+          dirs: async () => [],
+          herdr: async (method, params: any) => {
+            if (method === "pane.list")
+              return { panes: [{ pane_id: "w1:p1", workspace_id: "w1" }] };
+            if (method === "agent.get") {
+              if (!paneAgent) throw new Error("agent_not_found");
+              return {
+                agent: {
+                  agent: "claude",
+                  agent_status: "idle",
+                  agent_session: { value: paneAgent },
+                },
+              };
+            }
+            if (method === "pane.send_text") {
+              typed.push(params.text);
+              paneAgent =
+                /--session-id ([0-9a-f-]{36})/.exec(params.text)?.[1] ?? null;
+            }
+            return {};
+          },
+        },
+      ],
+    });
+    // The workspace's pane is a bare shell: no agent pane.
+    const state = (await reviews.handle("bridge.mr_reviews.claude", {
+      session_id: "rev1",
+      action: "review",
+    })) as any;
+    expect(state.state).toBe("ready");
+    // Started in the claude start setting's mode (conversation: no opt-out).
+    expect(typed).toHaveLength(1);
+    expect(typed[0]).not.toContain("ROAMGATE_CLAUDE_START=terminal");
+    expect(reviewsAsked).toEqual([{ sessionId: "rev1", paneId: "w1:p1" }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the sidebar learns each review workspace and the request it is on", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mr-mod-"));
+  try {
+    const store = openMrStore(join(dir, "state.json"));
+    store.update((state) => {
+      state.items = [
+        {
+          provider: "gitlab",
+          host: "h",
+          project: "g/p",
+          number: 12846,
+          key: "k",
+          url: "https://h/g/p/-/merge_requests/12846",
+          title: "pitch: Predictable output",
+          author: "a",
+          draft: false,
+          state: "open",
+          updatedAt: "t",
+          headSha: "a".repeat(40),
+          sourceBranch: "x",
+          targetBranch: "main",
+          pipeline: null,
+          notes: 0,
+          reasons: [],
+        },
+      ];
+      state.projects["h/g/p"] = {
+        connectionId: "desktop",
+        clone: "/x",
+        worktree: "/x.worktrees/review",
+        workspaceId: "w7",
+        checkedOut: "k",
+      };
+    });
+    const reviews = createMrReviews({
+      run: async () => ({ code: 1, stdout: "", stderr: "" }),
+      store,
+      readSettings: async () => ({}) as any,
+      discoverHosts: () => [],
+    });
+    expect(await reviews.handle("bridge.mr_reviews.workspaces", {})).toEqual({
+      workspaces: [
+        {
+          connectionId: "desktop",
+          workspaceId: "w7",
+          project: "h/g/p",
+          current: {
+            key: "k",
+            label: "!12846 pitch: Predictable output",
+            url: "https://h/g/p/-/merge_requests/12846",
+          },
+        },
+      ],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
