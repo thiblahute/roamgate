@@ -169,3 +169,10 @@ describe("what a narrow row shows", () => {
     expect(colors.size).toBeGreaterThan(1);
   });
 });
+
+test("a review workspace under its Reviews group shows its project, not a dot", () => {
+  expect(shortWorkspaceName("Reviews · OpenColorIO", "Reviews")).toBe(
+    "OpenColorIO",
+  );
+  expect(shortWorkspaceName("Reviews • app", "reviews")).toBe("app");
+});

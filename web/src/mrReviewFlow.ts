@@ -72,6 +72,9 @@ export async function openMrReview(
     .jumpToConnectionWorkspace(reply.connectionId, reply.workspaceId)
     .catch(() => {});
   requestReviewShown(reply.connectionId, reply.sessionId);
+  void import("./mrReviewWorkspaces").then((module) =>
+    module.refreshMrReviewWorkspaces(),
+  );
   return {
     kind: "shown",
     connectionId: reply.connectionId,

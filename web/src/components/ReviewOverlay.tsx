@@ -3885,6 +3885,33 @@ export function ReviewOverlay({
   async function startAgentReview(focus: string) {
     setFocusBar(null);
     if (!agentPaneId) {
+      // A request's review from Reviews: its own Claude, started (or
+      // resumed) in the review workspace, reviews it.
+      if (session.target.kind === "mr") {
+        await run(async () => {
+          const { mrReviewsCall } = await import("../mrReviews");
+          const state = await mrReviewsCall<{
+            state: string;
+            with?: string | null;
+          }>("claude", {
+            session_id: session.id,
+            action: "review",
+            ...(focus.trim() ? { focus: focus.trim() } : {}),
+          });
+          setStatus(
+            state.state === "ready"
+              ? "Claude is reviewing in the review workspace."
+              : state.state === "starting"
+                ? "Claude is starting in the review workspace (it may ask to trust the folder there); ask again once it is up."
+                : state.state === "busy"
+                  ? "Claude is busy with another request's turn; ask again when it is done."
+                  : state.state === "foreign"
+                    ? "Another Claude runs in the review workspace; exit it there first."
+                    : "Claude could not start in the review workspace.",
+          );
+        }, "Claude could not review");
+        return;
+      }
       setStatus(
         `${agentName} could not review: no agent pane in this workspace`,
       );

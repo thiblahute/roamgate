@@ -229,6 +229,18 @@ export function createMrReviews(options: {
     params: Record<string, unknown>,
   ): Promise<unknown> => {
     const key = () => {
+      // A request's review names it by its review session too.
+      if (typeof params.session_id === "string" && !params.key) {
+        const found = Object.entries(store.get().reviews).find(
+          ([, review]) => review.sessionId === params.session_id,
+        );
+        if (!found)
+          throw new MrReviewsError(
+            "this review is not one of Reviews'",
+            "not_found",
+          );
+        return found[0];
+      }
       if (typeof params.key !== "string" || !params.key)
         throw new MrReviewsError("key is required");
       return params.key;
@@ -251,6 +263,37 @@ export function createMrReviews(options: {
             message: error instanceof Error ? error.message : String(error),
           }));
         return { ...result, claude: state };
+      }
+      case "bridge.mr_reviews.workspaces": {
+        // The review workspaces, for the sidebar: whose they are and the
+        // request each is checked out on. No forge call.
+        const state = store.get();
+        return {
+          workspaces: Object.entries(state.projects).flatMap(
+            ([project, record]) => {
+              if (!record.workspaceId) return [];
+              const current = record.checkedOut
+                ? state.items.find((item) => item.key === record.checkedOut)
+                : undefined;
+              return [
+                {
+                  connectionId: record.connectionId,
+                  workspaceId: record.workspaceId,
+                  project,
+                  ...(current
+                    ? {
+                        current: {
+                          key: current.key,
+                          label: `${current.provider === "github" ? "#" : "!"}${current.number} ${current.title}`,
+                          url: current.url,
+                        },
+                      }
+                    : {}),
+                },
+              ];
+            },
+          ),
+        };
       }
       case "bridge.mr_reviews.forget_worktree": {
         // The project's next review makes its worktree anew (on the

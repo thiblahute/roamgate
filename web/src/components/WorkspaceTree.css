@@ -462,3 +462,11 @@
   color: color-mix(in srgb, var(--muted) 55%, transparent);
   font-size: 10px;
 }
+
+/* A project's review workspace (Reviews), reused for each request. */
+.ws-review-mark {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--accent);
+}

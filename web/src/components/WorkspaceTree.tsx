@@ -8,6 +8,10 @@ import type { ConnectionSummary } from "../api";
 import { connectionLifecycleLabel } from "../connectionProfiles";
 import { shortId } from "../utils";
 import {
+  mrReviewWorkspaceOf,
+  useMrReviewWorkspaces,
+} from "../mrReviewWorkspaces";
+import {
   terminalComposerCloseWarning,
   terminalComposerDraftPaneIds,
 } from "../terminalComposer";
@@ -2291,7 +2295,16 @@ function WorkspaceRow({
       : null;
   const fullName = workspaceDisplayName(w);
   const name = shortWorkspaceName(fullName, parentName);
-  const branch = workspaceBranchLine(w, name);
+  // A project's review workspace (Reviews): reused for each request, it
+  // shows the request checked out instead of a detached commit.
+  const reviewWorkspace = mrReviewWorkspaceOf(
+    useMrReviewWorkspaces(),
+    view.connectionId,
+    w.workspace_id,
+  );
+  const branch = reviewWorkspace
+    ? (reviewWorkspace.current?.label ?? "no request checked out")
+    : workspaceBranchLine(w, name);
   const gitStatus = w.worktree?.git_status;
   const change = workspaceChangeIndicator(gitStatus);
   // What its agents idle at Herdr's still run: subagents, workflows,
@@ -2448,12 +2461,34 @@ function WorkspaceRow({
           <HostDot connectionId={view.connectionId} label={serverLabel} />
         ) : null}
         <span className="ws-text">
-          <strong className="ws-label">{name}</strong>
+          <strong className="ws-label">
+            {reviewWorkspace ? (
+              <GitPullRequest
+                size={11}
+                className="ws-review-mark"
+                aria-label="Review workspace"
+              >
+                <title>
+                  {`Reviews: ${reviewWorkspace.project}'s review worktree, checked out on each request you review`}
+                </title>
+              </GitPullRequest>
+            ) : null}
+            {name}
+          </strong>
           {hasSubLine ? (
             <span className="ws-sub">
               {branch ? (
-                <span className="ws-branch">
-                  <GitBranch size={10} aria-hidden="true" />
+                <span
+                  className="ws-branch"
+                  {...(reviewWorkspace?.current
+                    ? { title: `Checked out: ${reviewWorkspace.current.label}` }
+                    : {})}
+                >
+                  {reviewWorkspace ? (
+                    <GitPullRequest size={10} aria-hidden="true" />
+                  ) : (
+                    <GitBranch size={10} aria-hidden="true" />
+                  )}
                   <span>{branch}</span>
                 </span>
               ) : null}
