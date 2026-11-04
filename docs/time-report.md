@@ -111,8 +111,9 @@ repeated preview cannot duplicate entries.
 
 ## The Hours view
 
-The activity timeline's **Hours** tab (also in the command menu and the
-application menu) shows the provider's day: `day` when a date is shown, polled
+The activity timeline's **Hours** tab (**Activity** in the command menu and
+the application menu, or `Option+A` / `Alt+A`; a command-menu search for
+"hours" opens this tab) shows the provider's day: `day` when a date is shown, polled
 every few seconds (2 s up to 15 s) while the day says `refreshing`; **Refresh**
 runs `refresh`. After every block operation the day is read again, since a
 block's id can change. Questions are answered with `block-answer` (the

@@ -1,0 +1,76 @@
+/* A day timeline's zoom: its controls, the surface its gestures land on
+   (useTimelineZoom.ts) and the brush drawn across the axis. */
+.timeline-zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-zoom-button {
+  min-width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.timeline-zoom-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.timeline-zoom-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+.timeline-zoom-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.timeline-zoom-range {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One finger scrolls the page up and down; sideways it pans the zoom, and
+   two pinch it, so the browser's own pinch zoom stays out. */
+.timeline-zoom-surface {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.timeline-zoom-surface [data-zoom-brush] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.timeline-zoom-surface.is-zoomed {
+  cursor: grab;
+}
+
+.timeline-zoom-surface.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.timeline-brush {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  border-inline: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+}

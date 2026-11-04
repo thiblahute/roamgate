@@ -10,6 +10,7 @@ import {
 import { bridge } from "../api";
 import {
   type AgentLane,
+  attentionTimes,
   addDays,
   type AxisWindow,
   axisWindow,
@@ -19,6 +20,7 @@ import {
   formatDuration,
   type GroupBy,
   jumpTarget,
+  localMidnight,
   place,
   REFRESH_MS,
   SOURCE_LABELS,
@@ -36,6 +38,7 @@ import {
   workspaceRows,
 } from "../activityTimelineModel";
 import { store } from "../store";
+import { shortcutMatches } from "../shortcutPreferences";
 import { CloseButton } from "./CloseButton";
 import { focusDialogElement } from "./dialogFocus";
 import {
@@ -45,9 +48,21 @@ import {
 } from "./ProjectMapping";
 import { allocationLabel, mappingFor, timeReport } from "../timeReportApi";
 import { HoursView } from "./HoursView";
+import { TimelineZoomBar } from "./TimelineZoomBar";
+import { ticksFor, useTimelineZoom, useWidth } from "./useTimelineZoom";
+import {
+  clampRange,
+  fitRange,
+  MIN_ZOOM_MINUTES,
+  type Range,
+  rangeTicks,
+  tickStep,
+} from "../timelineZoom";
 import "./ActivityTimeline.css";
 
 type Tip = { x: number; y: number; title: string; lines: string[] };
+
+const MINUTE = 60_000;
 
 export type TimelineView = "timeline" | "hours";
 
@@ -83,6 +98,10 @@ export function ActivityTimeline({
   initialView?: TimelineView;
 }) {
   const [view, setView] = useState<TimelineView>(initialView);
+  // Each view's zoom, while the timeline is open: Workspaces and Subjects
+  // share theirs (from the day's start), Hours has its own (minutes).
+  const [timelineZoom, setTimelineZoom] = useState<Range | null>(null);
+  const [hoursZoom, setHoursZoom] = useState<Range | null>(null);
   const [hoursAvailable, setHoursAvailable] = useState(false);
   useEffect(() => {
     timeReport<{ ok: boolean }>("health").then(
@@ -163,6 +182,19 @@ export function ActivityTimeline({
   useEffect(() => focusDialogElement(dialogRef.current), []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Its shortcut closes it too (the app's handler stays out of dialogs),
+      // unless typing in one of its fields.
+      if (
+        shortcutMatches(event, "activity.open") &&
+        !(event.target as Element | null)?.closest?.(
+          'input:not([type="radio"], [type="checkbox"]), textarea',
+        )
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) onClose();
+        return;
+      }
       if (event.key !== "Escape" || event.isComposing) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -312,6 +344,8 @@ export function ActivityTimeline({
                 setDate(today && next >= today ? null : next);
               }}
               workspaces={load.timeline.workspaces}
+              zoom={hoursZoom}
+              onZoom={setHoursZoom}
               onEditMapping={
                 projects
                   ? (workspace) => setEditing({ workspace, scope: "subject" })
@@ -328,6 +362,8 @@ export function ActivityTimeline({
               groupBy={groupBy}
               projects={projects}
               onEditProject={setEditing}
+              zoom={timelineZoom}
+              onZoom={setTimelineZoom}
             />
           ) : null}
         </div>
@@ -457,6 +493,8 @@ function DayView({
   groupBy,
   projects,
   onEditProject,
+  zoom,
+  onZoom,
 }: {
   timeline: Timeline;
   day: TimelineDay;
@@ -466,8 +504,45 @@ function DayView({
   groupBy: GroupBy;
   projects: ProjectMappings | null;
   onEditProject: (editing: Editing) => void;
+  /** The zoomed range, from the day's start; null: the automatic one. */
+  zoom: Range | null;
+  onZoom: (zoom: Range | null) => void;
 }) {
-  const axis = axisWindow(day, now);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const width = useWidth(trackRef);
+  const auto = axisWindow(day, now);
+  const dayStart = Date.parse(day.start);
+  const bounds = { start: dayStart, end: Date.parse(day.end) };
+  const minSpan = MIN_ZOOM_MINUTES * MINUTE;
+  const shownRange = zoom
+    ? clampRange(
+        { start: dayStart + zoom.start, end: dayStart + zoom.end },
+        bounds,
+        minSpan,
+      )
+    : auto;
+  const axis: AxisWindow = {
+    ...shownRange,
+    ticks: rangeTicks(
+      shownRange,
+      tickStep((shownRange.end - shownRange.start) / MINUTE, ticksFor(width)),
+      MINUTE,
+      localMidnight(day.date),
+    ),
+  };
+  const setRange = (range: Range) =>
+    onZoom({ start: range.start - dayStart, end: range.end - dayStart });
+  const brush = useTimelineZoom({
+    surfaceRef: chartRef,
+    trackRef,
+    range: shownRange,
+    bounds,
+    minSpan,
+    zoomed: zoom !== null,
+    onRange: setRange,
+  });
+  const work = fitRange(attentionTimes(day, now), bounds, 10 * MINUTE, minSpan);
   const left = (ms: number) =>
     `${((ms - axis.start) / (axis.end - axis.start)) * 100}%`;
   const names = new Map(timeline.workspaces.map((entry) => [entry.id, entry]));
@@ -575,10 +650,35 @@ function DayView({
           The recorder is not running: nothing is recorded since its last stamp.
         </p>
       ) : null}
-      <div className="activity-chart">
+      <TimelineZoomBar
+        range={shownRange}
+        auto={auto}
+        bounds={bounds}
+        work={work}
+        minSpan={minSpan}
+        zoomed={zoom !== null}
+        label={formatClock}
+        onRange={setRange}
+        onReset={() => onZoom(null)}
+      />
+      <div
+        ref={chartRef}
+        className={`activity-chart timeline-zoom-surface${zoom ? " is-zoomed" : ""}`}
+      >
+        {brush ? (
+          <div
+            className="timeline-brush"
+            style={{ left: brush.left, width: brush.width }}
+          />
+        ) : null}
         <div className="activity-lane activity-axis">
           <div className="activity-lane-label" />
-          <div className="activity-lane-track">
+          <div
+            ref={trackRef}
+            className="activity-lane-track"
+            data-zoom-brush
+            title="Drag across the hours to zoom"
+          >
             {axis.ticks.map((tick) => {
               const at = (tick - axis.start) / (axis.end - axis.start);
               // Labels at the edges stay inside the track.

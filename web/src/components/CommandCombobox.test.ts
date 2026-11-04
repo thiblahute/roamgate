@@ -1,6 +1,7 @@
 /// <reference types="bun-types" />
 
 import { describe, expect, test } from "bun:test";
+import { ACTIVITY_ENTRY, activityViewForSearch } from "../activityTimelineOpen";
 import {
   commandFilter,
   commandNumberedActions,
@@ -31,12 +32,20 @@ describe("command combobox search helpers", () => {
     expect(workspaceScore).toBeGreaterThan(0);
   });
 
-  test("finds the activity timeline by its words and keywords", () => {
-    const value = "Activity timeline Attention and agent states, per day";
-    const keywords = ["activity", "time", "attention", "report"];
-    expect(commandFilter(value, "timeline", keywords)).toBeGreaterThan(0);
-    expect(commandFilter(value, "report", keywords)).toBeGreaterThan(0);
-    expect(commandFilter(value, "agents time", keywords)).toBeGreaterThan(0);
+  test("finds the one Activity entry by its words, the hours included", () => {
+    const value = `${ACTIVITY_ENTRY.title} ${ACTIVITY_ENTRY.detail}`;
+    const keywords = ACTIVITY_ENTRY.keywords;
+    for (const search of ["activity", "timeline", "report", "hours", "olmo"])
+      expect(commandFilter(value, search, keywords)).toBeGreaterThan(0);
+    // "Hours" is no entry of its own: searching for it opens Activity on
+    // its Hours tab, anything else on the timeline.
+    expect(activityViewForSearch("hours")).toBe("hours");
+    expect(activityViewForSearch("hou")).toBe("hours");
+    expect(activityViewForSearch("timesheet")).toBe("hours");
+    expect(activityViewForSearch("activity")).toBe("timeline");
+    expect(activityViewForSearch("timeline")).toBe("timeline");
+    expect(activityViewForSearch("")).toBe("timeline");
+    expect(activityViewForSearch("h")).toBe("timeline");
   });
 
   test("detects direct file path queries without treating words as paths", () => {

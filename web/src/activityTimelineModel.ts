@@ -221,11 +221,8 @@ export function colorFor(
 
 export type AxisWindow = { start: number; end: number; ticks: number[] };
 
-/**
- * The part of the day the axis shows: whole hours around what happened (and
- * now, today), at least MIN_WINDOW, never outside the day.
- */
-export function axisWindow(day: TimelineDay, now: number): AxisWindow {
+/** When things happened: the edges of every span (and now, today). */
+export function activityTimes(day: TimelineDay, now: number): number[] {
   const dayStart = Date.parse(day.start);
   const dayEnd = Date.parse(day.end);
   const times: number[] = [];
@@ -234,9 +231,39 @@ export function axisWindow(day: TimelineDay, now: number): AxisWindow {
     if (span.end) times.push(Date.parse(span.end));
   };
   day.focus.forEach(add);
+  day.attention.forEach(add);
   day.idle.forEach(add);
   for (const lane of day.agents) lane.spans.forEach(add);
   if (now >= dayStart && now < dayEnd) times.push(now);
+  return times;
+}
+
+/**
+ * When the user was there: the edges of their attention, for the "Work
+ * hours" zoom (agents may run all day); every activity when there is none.
+ */
+export function attentionTimes(day: TimelineDay, now: number): number[] {
+  const times = day.attention.flatMap((span) => [
+    Date.parse(span.start),
+    span.end ? Date.parse(span.end) : now,
+  ]);
+  return times.length ? times : activityTimes(day, now);
+}
+
+/** The local midnight of a day (YYYY-MM-DD), where the axis's ticks start. */
+export function localMidnight(date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y!, m! - 1, d!).getTime();
+}
+
+/**
+ * The part of the day the axis shows: whole hours around what happened (and
+ * now, today), at least MIN_WINDOW, never outside the day.
+ */
+export function axisWindow(day: TimelineDay, now: number): AxisWindow {
+  const dayStart = Date.parse(day.start);
+  const dayEnd = Date.parse(day.end);
+  const times = activityTimes(day, now);
   let start = times.length ? Math.min(...times) : dayStart;
   let end = times.length ? Math.max(...times) : dayEnd;
   const hourOf = (ms: number, up: boolean) => {

@@ -200,7 +200,8 @@
 
 /* A popover opened from the keyboard must not measure a sliding anchor, and
    its trigger must stay visible while the pointer moves to the portal. */
-.app.zen .topbar:has([data-state="open"]) {
+.app.zen .topbar:has([data-state="open"]),
+.app.zen .topbar:has(.config-dropdown) {
   transform: none;
   transition: none;
 }

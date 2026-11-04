@@ -22,6 +22,7 @@ import {
   formatMinutes,
   type Gap,
   hoursWindow,
+  minuteOf,
   isoAt,
   openQuestions,
   placeIn,
@@ -41,6 +42,16 @@ import {
   TimeReportError,
   timeReport,
 } from "../timeReportApi";
+import { TimelineZoomBar } from "./TimelineZoomBar";
+import { ticksFor, useTimelineZoom, useWidth } from "./useTimelineZoom";
+import {
+  clampRange,
+  fitRange,
+  MIN_ZOOM_MINUTES,
+  type Range,
+  rangeTicks,
+  tickStep,
+} from "../timelineZoom";
 import "./HoursView.css";
 
 /** How long between two polls of a day the provider is still refreshing. */
@@ -66,9 +77,14 @@ export function HoursView({
   onDate,
   workspaces,
   onEditMapping,
+  zoom = null,
+  onZoom = () => {},
 }: {
   date: string;
   onDate: (date: string) => void;
+  /** The strip's zoom, in minutes of the day; null: the automatic range. */
+  zoom?: Range | null;
+  onZoom?: (zoom: Range | null) => void;
   /** The timeline's workspaces, to open a subject's mapping from a block. */
   workspaces: TimelineWorkspace[];
   onEditMapping?: (workspace: TimelineWorkspace) => void;
@@ -322,7 +338,7 @@ export function HoursView({
         {loading && !day ? <p className="hours-muted">Loading...</p> : null}
         {day ? (
           <>
-            <Strip day={day} />
+            <Strip day={day} zoom={zoom} onZoom={onZoom} />
             {questions.length ? (
               <section className="hours-section" aria-label="Questions">
                 <h3>
@@ -508,87 +524,154 @@ function DayList({
   );
 }
 
-function Strip({ day }: { day: Day }) {
-  const window = hoursWindow(day);
-  const ticks: number[] = [];
-  const step = window.end - window.start > 8 * 60 ? 120 : 60;
+const DAY_MINUTES: Range = { start: 0, end: 24 * 60 };
+
+function Strip({
+  day,
+  zoom,
+  onZoom,
+}: {
+  day: Day;
+  zoom: Range | null;
+  onZoom: (zoom: Range | null) => void;
+}) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const axisRef = useRef<HTMLDivElement>(null);
+  const width = useWidth(axisRef);
+  const auto = hoursWindow(day);
+  const window = zoom ? clampRange(zoom, DAY_MINUTES, MIN_ZOOM_MINUTES) : auto;
+  const brush = useTimelineZoom({
+    surfaceRef: stripRef,
+    trackRef: axisRef,
+    range: window,
+    bounds: DAY_MINUTES,
+    minSpan: MIN_ZOOM_MINUTES,
+    zoomed: zoom !== null,
+    onRange: onZoom,
+  });
+  const work = fitRange(
+    [
+      ...day.blocks,
+      ...(day.timeline ?? []).filter((s) => s.kind !== "idle"),
+    ].flatMap((span) => [minuteOf(span.start), minuteOf(span.end) || 24 * 60]),
+    DAY_MINUTES,
+    10,
+    MIN_ZOOM_MINUTES,
+  );
   // The edges carry no label: it would hang out of the strip.
-  for (let tick = window.start + step; tick < window.end; tick += step)
-    ticks.push(tick);
+  const ticks = rangeTicks(
+    window,
+    tickStep(window.end - window.start, ticksFor(width)),
+    1,
+  ).filter((tick) => tick > window.start && tick < window.end);
   const at = (minute: number) =>
     `${((minute - window.start) / (window.end - window.start)) * 100}%`;
   return (
-    <div className="hours-strip" aria-hidden="true">
-      <div className="hours-axis">
-        {ticks.map((tick) => (
-          <span key={tick} style={{ left: at(tick) }}>
-            {`${String(Math.floor(tick / 60)).padStart(2, "0")}:00`}
-          </span>
-        ))}
-      </div>
-      <div className="hours-lane">
-        <span className="hours-lane-label">Activity</span>
-        {(day.timeline ?? [])
-          .filter((segment) => segment.kind !== "idle")
-          .map((segment) => {
-            const place = placeIn(segment, window);
+    <>
+      <TimelineZoomBar
+        range={window}
+        auto={auto}
+        bounds={DAY_MINUTES}
+        work={work}
+        minSpan={MIN_ZOOM_MINUTES}
+        zoomed={zoom !== null}
+        label={minuteClock}
+        onRange={onZoom}
+        onReset={() => onZoom(null)}
+      />
+      <div
+        ref={stripRef}
+        className={`hours-strip timeline-zoom-surface${zoom ? " is-zoomed" : ""}`}
+        aria-hidden="true"
+      >
+        {brush ? (
+          <div
+            className="timeline-brush"
+            style={{ left: brush.left, width: brush.width }}
+          />
+        ) : null}
+        <div
+          ref={axisRef}
+          className="hours-axis"
+          data-zoom-brush
+          title="Drag across the hours to zoom"
+        >
+          {ticks.map((tick) => (
+            <span key={tick} style={{ left: at(tick) }}>
+              {minuteClock(tick)}
+            </span>
+          ))}
+        </div>
+        <div className="hours-lane">
+          <span className="hours-lane-label">Activity</span>
+          {(day.timeline ?? [])
+            .filter((segment) => segment.kind !== "idle")
+            .map((segment) => {
+              const place = placeIn(segment, window);
+              if (!place) return null;
+              const key =
+                segment.subject ??
+                segment.workspace_id ??
+                segment.label ??
+                segment.kind;
+              return (
+                <span
+                  key={`${segment.start}-${segment.kind}-${key}`}
+                  className={`hours-seg is-${segment.kind}`}
+                  title={`${clockOf(segment.start)} to ${clockOf(segment.end)} · ${segment.label ?? segment.subject ?? segment.kind}${segment.note ? ` (${segment.note})` : ""}`}
+                  style={{
+                    left: `${place.left}%`,
+                    width: `${place.width}%`,
+                    background: workspaceColor(key),
+                  }}
+                />
+              );
+            })}
+        </div>
+        <div className="hours-lane is-blocks">
+          <span className="hours-lane-label">Blocks</span>
+          {day.blocks.map((block) => {
+            const place = placeIn(block, window);
             if (!place) return null;
-            const key =
-              segment.subject ??
-              segment.workspace_id ??
-              segment.label ??
-              segment.kind;
             return (
               <span
-                key={`${segment.start}-${segment.kind}-${key}`}
-                className={`hours-seg is-${segment.kind}`}
-                title={`${clockOf(segment.start)} to ${clockOf(segment.end)} · ${segment.label ?? segment.subject ?? segment.kind}${segment.note ? ` (${segment.note})` : ""}`}
+                key={block.id}
+                className={`hours-blk is-${block.status}`}
+                title={`${clockOf(block.start)} to ${clockOf(block.end)} · ${block.target?.label ?? BLOCK_STATUS_LABELS[block.status]}`}
                 style={{
                   left: `${place.left}%`,
                   width: `${place.width}%`,
-                  background: workspaceColor(key),
+                  ...(block.status === "needs_input"
+                    ? {}
+                    : { background: targetColor(block.target) }),
                 }}
-              />
+              >
+                {block.status === "needs_input"
+                  ? "?"
+                  : (block.target?.label ?? "")}
+              </span>
             );
           })}
+          {day.gaps.map((gap) => {
+            const place = placeIn(gap, window);
+            return place ? (
+              <span
+                key={`gap-${gap.start}`}
+                className="hours-seg is-gap"
+                style={{ left: `${place.left}%`, width: `${place.width}%` }}
+              />
+            ) : null;
+          })}
+        </div>
       </div>
-      <div className="hours-lane is-blocks">
-        <span className="hours-lane-label">Blocks</span>
-        {day.blocks.map((block) => {
-          const place = placeIn(block, window);
-          if (!place) return null;
-          return (
-            <span
-              key={block.id}
-              className={`hours-blk is-${block.status}`}
-              title={`${clockOf(block.start)} to ${clockOf(block.end)} · ${block.target?.label ?? BLOCK_STATUS_LABELS[block.status]}`}
-              style={{
-                left: `${place.left}%`,
-                width: `${place.width}%`,
-                ...(block.status === "needs_input"
-                  ? {}
-                  : { background: targetColor(block.target) }),
-              }}
-            >
-              {block.status === "needs_input"
-                ? "?"
-                : (block.target?.label ?? "")}
-            </span>
-          );
-        })}
-        {day.gaps.map((gap) => {
-          const place = placeIn(gap, window);
-          return place ? (
-            <span
-              key={`gap-${gap.start}`}
-              className="hours-seg is-gap"
-              style={{ left: `${place.left}%`, width: `${place.width}%` }}
-            />
-          ) : null;
-        })}
-      </div>
-    </div>
+    </>
   );
+}
+
+/** "HH:MM" of a minute of the day. */
+function minuteClock(minute: number) {
+  const whole = Math.round(minute);
+  return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
 }
 
 function QuestionCard({
