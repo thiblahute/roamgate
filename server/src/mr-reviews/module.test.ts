@@ -44,3 +44,43 @@ test("a closed request's review is dropped after the retention days", async () =
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("forgetting a review worktree keeps the reviews and their Claude sessions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mr-mod-"));
+  try {
+    const store = openMrStore(join(dir, "state.json"));
+    store.update((state) => {
+      state.projects["h/g/p"] = {
+        connectionId: "local",
+        clone: "/x",
+        worktree: "/x.worktrees/review",
+      };
+      state.reviews["gitlab:h/g/p#1"] = {
+        connectionId: "local",
+        sessionId: "s",
+        claudeSession: "c",
+      };
+      state.prefetched["gitlab:h/g/p#1"] = "abc";
+    });
+    const reviews = createMrReviews({
+      run: async () => ({ code: 1, stdout: "", stderr: "" }),
+      store,
+      readSettings: async () => ({}) as any,
+      discoverHosts: () => [],
+    });
+    const result = (await reviews.handle("bridge.mr_reviews.forget_worktree", {
+      project: "H/G/P",
+    })) as any;
+    expect(result.forgotten.worktree).toBe("/x.worktrees/review");
+    expect(store.get().projects).toEqual({});
+    expect(store.get().prefetched).toEqual({});
+    expect(store.get().reviews["gitlab:h/g/p#1"]).toMatchObject({
+      claudeSession: "c",
+    });
+    await expect(
+      reviews.handle("bridge.mr_reviews.forget_worktree", { project: "h/g/p" }),
+    ).rejects.toThrow(/no review worktree/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

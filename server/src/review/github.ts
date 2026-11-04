@@ -285,7 +285,38 @@ export async function readPullThreads(
       },
     });
   }
-  return [...threads.values()];
+  // The pull request's conversation (issue) comments: general threads,
+  // one per comment. GitHub has no draft reply to them: no discussion id.
+  const conversation = (await ghApi(
+    context,
+    mr.host,
+    "GET",
+    `repos/${mr.project}/issues/${mr.iid}/comments?per_page=100`,
+    { paginate: true },
+  )) as Record<string, any>[];
+  const general: ReviewThread[] = (conversation ?? []).map((comment) => {
+    const at = String(comment?.created_at ?? "");
+    return {
+      id: `ghc:${comment?.id}`,
+      sessionId,
+      kind: "merge-request",
+      anchor: {},
+      resolved: false,
+      comments: [
+        {
+          id: `ghc:${comment?.id}`,
+          author: `@${comment?.user?.login ?? "someone"}`,
+          body: String(comment?.body ?? ""),
+          createdAt: at,
+          updatedAt: String(comment?.updated_at ?? at),
+        },
+      ],
+      createdAt: at,
+      updatedAt: at,
+      gitlab: {},
+    };
+  });
+  return [...general, ...threads.values()];
 }
 
 /*
