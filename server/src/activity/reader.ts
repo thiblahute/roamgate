@@ -11,9 +11,11 @@ import {
 } from "./protocol";
 import {
   activityStoragePath,
+  causeOf,
   type EventRow,
   eventFromRow,
   hasAddedColumns,
+  hasCauseColumns,
   WORKSPACE_COLUMNS,
   type WorkspaceDbRow,
   workspaceFromRow,
@@ -129,25 +131,37 @@ export function openActivityReader(
   if (!existsSync(path)) return null;
   const db = openReadOnly(path);
 
+  // Logs from before causes were recorded, opened read-only, lack them.
+  const causes = hasCauseColumns(db);
+  const causeColumn = (table: string) => (causes ? `${table}.cause` : "NULL");
   type FocusDbRow = Omit<FocusRow, "end" | "reason"> & {
     end: number | null;
     reason: FocusRow["reason"];
+    session_start: number | null;
   };
   const selectFocus = db.query<FocusDbRow, [number, number]>(
     `SELECT f.seq, f.ts AS start, b.ts AS "end", b.reason, f.connection_id,
        f.workspace_id, f.tab_id, f.pane_id, COALESCE(f.source, 'browser') AS source,
-       f.client_id, f.client_kind, f.session
+       f.client_id, f.client_kind, f.session, ${causeColumn("f")} AS cause,
+       ${causeColumn("b")} AS end_cause, s.started_at AS session_start
      FROM events f LEFT JOIN events b
        ON b.span = f.seq AND b.kind = 'workspace.blur'
+     LEFT JOIN recorder_sessions s ON s.id = f.session
      WHERE f.kind = 'workspace.focus' AND f.ts < ?1
        AND (b.ts IS NULL OR b.ts >= ?2)
      ORDER BY f.seq`,
   );
   const presenceColumns = `seq, ts, kind, connection_id, client_id, client_kind,
-       CASE WHEN visible IS NULL THEN NULL ELSE visible = 1 END AS visible, session`;
+       CASE WHEN visible IS NULL THEN NULL ELSE visible = 1 END AS visible, session,
+       ${causeColumn("events")} AS cause,
+       (SELECT started_at FROM recorder_sessions s WHERE s.id = events.session)
+         AS session_start`;
   const presenceKinds = `kind IN ('session.idle', 'session.active', 'ui.visibility')
        AND client_id IS NOT NULL`;
-  const selectPresence = db.query<PresenceRow, [number, number]>(
+  const selectPresence = db.query<
+    PresenceRow & { session_start: number | null },
+    [number, number]
+  >(
     `SELECT ${presenceColumns} FROM events
      WHERE ${presenceKinds} AND ts >= ?1 AND ts < ?2
      UNION
@@ -228,15 +242,32 @@ export function openActivityReader(
             // Spans ended shortly before the range still show a person
             // was there at its start.
             focus: kept(selectFocus.all(range.to, range.from - idleMs)).map(
-              (row) => ({
+              ({ session_start, ...row }) => ({
                 ...row,
                 reason: row.end === null ? null : row.reason,
+                end_cause: row.end === null ? null : row.end_cause,
+                cause: causeOf({
+                  kind: "workspace.focus",
+                  ts: row.start,
+                  source: row.source,
+                  visible: null,
+                  cause: row.cause,
+                  session_start,
+                }),
               }),
             ),
             presence: kept(selectPresence.all(range.from, range.to)).map(
-              (row) => ({
+              ({ session_start, ...row }) => ({
                 ...row,
                 visible: row.visible === null ? null : !!row.visible,
+                cause: causeOf({
+                  kind: row.kind,
+                  ts: row.ts,
+                  source: null,
+                  visible: row.visible,
+                  cause: row.cause,
+                  session_start,
+                }),
               }),
             ),
             agents: kept(selectAgents.all(range.from, range.to)),
@@ -282,8 +313,10 @@ export function openActivityReader(
       const rows = db
         .query<EventRow, (string | number)[]>(
           `SELECT e.*, (e.kind = 'workspace.focus'
-               AND NOT EXISTS (SELECT 1 FROM events b WHERE b.span = e.seq)) AS open
-           FROM events e WHERE ${where.join(" AND ")}
+               AND NOT EXISTS (SELECT 1 FROM events b WHERE b.span = e.seq)) AS open,
+             s.started_at AS session_start
+           FROM events e LEFT JOIN recorder_sessions s ON s.id = e.session
+           WHERE ${where.join(" AND ")}
            ORDER BY e.seq LIMIT ?`,
         )
         .all(...args);

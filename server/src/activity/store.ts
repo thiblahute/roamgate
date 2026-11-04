@@ -19,6 +19,7 @@ import {
   type AgentState,
   type BlurReason,
   type ClientKind,
+  type EventCause,
   type EventKind,
   type EventSource,
   eventId,
@@ -89,6 +90,8 @@ export type NewEvent = {
   source?: EventSource | null;
   /** On a blur: the seq of the focus it ends. */
   span?: number | null;
+  cause?: EventCause | null;
+  inputAgeMs?: number | null;
 };
 
 export type WorkspaceRow = {
@@ -156,6 +159,11 @@ export type EventRow = {
   source: EventSource | null;
   span: number | null;
   open: number;
+  /** Absent from logs written before causes were recorded. */
+  cause?: EventCause | null;
+  input_age_ms?: number | null;
+  /** When the row's recorder session started, joined by the readers. */
+  session_start?: number | null;
 };
 
 export type WorkspaceDbRow = {
@@ -181,17 +189,73 @@ export const WORKSPACE_COLUMNS =
 const ADDED_COLUMNS = [
   ["workspaces", "repo_branch", "TEXT"],
   ["workspaces", "repo_remote_url", "TEXT"],
+  ["events", "cause", "TEXT"],
+  ["events", "input_age_ms", "INTEGER"],
 ] as const;
 
-export function hasAddedColumns(db: Database): boolean {
-  const columns = new Set(
+function columnsOf(db: Database, table: string): Set<string> {
+  return new Set(
     db
-      .query<{ name: string }, []>("PRAGMA table_info(workspaces)")
+      .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
       .all()
       .map((row) => row.name),
   );
-  return ADDED_COLUMNS.every(([, column]) => columns.has(column));
 }
+
+/** Whether the workspaces table has its git columns. */
+export function hasAddedColumns(db: Database): boolean {
+  const columns = columnsOf(db, "workspaces");
+  return ADDED_COLUMNS.every(
+    ([table, column]) => table !== "workspaces" || columns.has(column),
+  );
+}
+
+/** Whether events record their cause and input age. */
+export function hasCauseColumns(db: Database): boolean {
+  const columns = columnsOf(db, "events");
+  return columns.has("cause") && columns.has("input_age_ms");
+}
+
+/**
+ * Rows written before causes were recorded say nothing of theirs. One
+ * a recorder wrote within this long of starting came from its start: a
+ * page reconnecting to the restarted bridge, or Herdr's focus as it was.
+ */
+export const LEGACY_START_MS = 10_000;
+
+/** A row's cause, derived for rows older than causes (see LEGACY_START_MS). */
+export function causeOf(row: {
+  kind: EventKind;
+  ts: number;
+  source: EventSource | null;
+  visible: number | boolean | null;
+  cause?: EventCause | null;
+  session_start?: number | null;
+}): EventCause | null {
+  if (row.cause) return row.cause;
+  if (
+    row.session_start === null ||
+    row.session_start === undefined ||
+    row.ts - row.session_start > LEGACY_START_MS
+  )
+    return null;
+  if (row.kind === "workspace.focus")
+    return row.source === "herdr" ? "recorder_start" : "reconnect";
+  if (
+    row.kind === "ui.visibility" &&
+    (row.visible === 1 || row.visible === true)
+  )
+    return "reconnect";
+  return null;
+}
+
+/** The kinds that carry `cause` and `input_age_ms`. */
+const CAUSED_KINDS: ReadonlySet<EventKind> = new Set([
+  "workspace.focus",
+  "workspace.blur",
+  "ui.visibility",
+  "session.active",
+]);
 
 const SCHEMA_VERSION = 1;
 const KINDS =
@@ -218,7 +282,8 @@ const schema = `
     visible INTEGER, idle_after_seconds INTEGER, reason TEXT,
     client_id TEXT, client_kind TEXT, source TEXT,
     span INTEGER,
-    session INTEGER NOT NULL
+    session INTEGER NOT NULL,
+    cause TEXT, input_age_ms INTEGER
   ) STRICT;
   CREATE INDEX events_ts ON events(ts, seq);
   CREATE INDEX events_span ON events(span) WHERE span IS NOT NULL;
@@ -264,6 +329,10 @@ export function eventFromRow(row: EventRow): ActivityEvent {
     (row.kind === "workspace.focus" || row.kind === "workspace.blur")
   )
     event.source = row.source;
+  if (CAUSED_KINDS.has(row.kind)) {
+    event.cause = causeOf(row);
+    event.input_age_ms = row.input_age_ms ?? null;
+  }
   return event;
 }
 
@@ -367,7 +436,7 @@ export function openActivityStore(directory: string): ActivityStore {
     // For the readers (reader.ts): states and presence by kind. Added after
     // version 1 shipped, so created on open rather than with the schema.
     db.exec("CREATE INDEX IF NOT EXISTS events_kind ON events(kind, ts)");
-    if (!hasAddedColumns(db))
+    if (!hasAddedColumns(db) || !hasCauseColumns(db))
       db.transaction(() => {
         for (const [table, column, type] of ADDED_COLUMNS) {
           const present = db
@@ -389,8 +458,8 @@ export function openActivityStore(directory: string): ActivityStore {
       ts, kind, connection_id, workspace_id, tab_id, pane_id,
       agent_name, agent_state, agent_task, agent_session_id,
       visible, idle_after_seconds, reason, client_id, client_kind, source,
-      span, session
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      span, session, cause, input_age_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const upsertWorkspaceQuery = db.query(
     `INSERT INTO workspaces (
@@ -466,8 +535,10 @@ export function openActivityStore(directory: string): ActivityStore {
   );
   const selectEvents = db.query<EventRow, [number, number]>(
     `SELECT e.*, (e.kind = 'workspace.focus'
-         AND NOT EXISTS (SELECT 1 FROM events b WHERE b.span = e.seq)) AS open
-     FROM events e WHERE e.ts >= ? AND e.ts < ? ORDER BY e.ts, e.seq`,
+         AND NOT EXISTS (SELECT 1 FROM events b WHERE b.span = e.seq)) AS open,
+       s.started_at AS session_start
+     FROM events e LEFT JOIN recorder_sessions s ON s.id = e.session
+     WHERE e.ts >= ? AND e.ts < ? ORDER BY e.ts, e.seq`,
   );
   const selectWorkspaces = db.query<WorkspaceDbRow, []>(
     `SELECT ${WORKSPACE_COLUMNS} FROM workspaces ORDER BY id`,
@@ -510,6 +581,10 @@ export function openActivityStore(directory: string): ActivityStore {
         event.source ?? null,
         event.span ?? null,
         event.session,
+        event.cause ?? null,
+        event.inputAgeMs === undefined || event.inputAgeMs === null
+          ? null
+          : Math.round(event.inputAgeMs),
       );
       return Number(result.lastInsertRowid);
     },

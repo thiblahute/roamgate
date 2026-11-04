@@ -510,3 +510,62 @@ test("totals per subject add up its workspaces; agents overlap once", () => {
     subject,
   );
 });
+
+test("only a person's causes are signs: loads, reconnects, follows and listings are not", () => {
+  const herdr = { source: "herdr" as const, client_id: null };
+  const timeline = buildTimeline(
+    input({
+      idleMs: 10 * MIN,
+      focus: [
+        // Herdr's focus all day, as the recorder found it when it started.
+        focus(at(8), null, "c", { ...herdr, cause: "recorder_start" }),
+        // A page reloaded after a deploy: no person, though it ran 6 min.
+        focus(at(9), at(9, 6), "a", { cause: "reconnect", reason: "idle" }),
+        // Herdr's focus found moved by a listing (a browser's pane focus),
+        // ended by another listing: no sign either way.
+        focus(at(10), at(10, 30), "b", {
+          ...herdr,
+          connection_id: "desktop",
+          cause: "herdr_listing",
+          end_cause: "herdr_listing",
+        }),
+        // A switch in Herdr's TUI at 11:00: a sign.
+        focus(at(11), at(11, 30), "b", {
+          ...herdr,
+          connection_id: "desktop",
+          cause: "herdr_event",
+          end_cause: "herdr_listing",
+        }),
+        // The user's own browser span at 13:00, ended by the view following
+        // Herdr: the span counts, and its end leaves the usual tail.
+        focus(at(13), at(13, 5), "a", {
+          cause: "user_input",
+          end_cause: "follow_herdr",
+        }),
+      ],
+      presence: [
+        presence(at(9), "ui.visibility", { cause: "page_load" }),
+        presence(at(12), "ui.visibility", { cause: "reconnect" }),
+        presence(at(14), "ui.visibility", { cause: "user_focus" }),
+        presence(at(15), "session.active", { cause: "user_input" }),
+      ],
+    }),
+  );
+  const [day] = timeline.days;
+  expect(
+    day!.attention.map((segment) => [
+      `${new Date(ms(segment.start)!).getHours()}:${new Date(ms(segment.start)!).getMinutes()}`,
+      segment.workspace_id,
+      (ms(segment.end)! - ms(segment.start)!) / MIN,
+    ]),
+  ).toEqual([
+    ["11:0", "b", 10],
+    ["13:0", "a", 5],
+    ["13:5", "c", 10],
+    ["14:0", "c", 10],
+    ["15:0", "c", 10],
+  ]);
+  expect(day!.focus.find((span) => span.workspace_id === "a")!.cause).toBe(
+    "reconnect",
+  );
+});

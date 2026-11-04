@@ -6,7 +6,9 @@ import {
   type AgentState,
   type BlurReason,
   type ClientKind,
+  type EventCause,
   type EventSource,
+  type ReportedCause,
   agentState,
 } from "./protocol";
 import { readRepoInfo, type RunHostScript } from "./repo-info";
@@ -25,6 +27,11 @@ import { type ActivityStore, type NewEvent, openActivityStore } from "./store";
  *   focus becomes low-confidence spans with `source: "herdr"`;
  * - the periods a connection was not ready, and those the recorder itself
  *   was not running, so "nothing happened" can be told from "not recorded".
+ *
+ * Only a person opens a browser span: a page that loads, reloads or
+ * reconnects, or whose view moves without input (following Herdr, or moved
+ * by Roamgate), opens none until a real input follows. Every attention
+ * event says its cause (protocol EventCause).
  *
  * Every focus gets a blur with a reason. Signals are applied in the order
  * they arrive, each with the time it arrived, through one queue: resolving a
@@ -56,7 +63,12 @@ export type ActivityRecorder = {
   store(): ActivityStore | null;
 };
 
-export type PresenceReply = { recording: boolean; idle_seconds: number };
+export type PresenceReply = {
+  recording: boolean;
+  idle_seconds: number;
+  /** Whether this page's report counts as attention: else it reports its next input. */
+  attention: boolean;
+};
 
 /**
  * An agent Roamgate runs in a Herdr pane itself (conversation mode's
@@ -87,6 +99,14 @@ const STOP_DRAIN_MS = 2_000;
 const MAX_INPUT_AGE_MS = 24 * 60 * 60 * 1000;
 const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const REPORTED_CAUSES: ReadonlySet<string> = new Set([
+  "user_input",
+  "user_focus",
+  "page_load",
+  "follow_herdr",
+  "app",
+  "repeat",
+]);
 
 type Client = { id: string; kind: ClientKind };
 
@@ -134,6 +154,8 @@ type Connection = {
   panes: Map<string, PaneInfo>;
   agents: Map<string, AgentRecord>;
   herdrFocus: Span | null;
+  /** Ready once since the recorder started. */
+  wasReady: boolean;
 };
 
 type Presence = {
@@ -143,7 +165,10 @@ type Presence = {
   paneId: string | null;
   visible: boolean;
   focused: boolean;
-  inputAgeMs: number;
+  /** Null: no input since the page loaded. */
+  inputAgeMs: number | null;
+  /** Null from pages older than causes. */
+  cause: ReportedCause | "repeat" | null;
 };
 
 type PresenceState = {
@@ -155,6 +180,13 @@ type PresenceState = {
   lastPresenceAt: number;
   span: Span | null;
   timeout: ReturnType<typeof setTimeout> | null;
+  /**
+   * Only input after this counts: the page's first report on this socket,
+   * or its view moving without input.
+   */
+  armedAfter: number;
+  /** Why it is not armed: what the page's state comes from. */
+  unarmedCause: EventCause;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -186,8 +218,14 @@ export function parsePresence(params: unknown): Presence {
   if (typeof input.visible !== "boolean" || typeof input.focused !== "boolean")
     throw new Error("invalid visibility");
   const age = input.input_age_ms;
-  if (typeof age !== "number" || !Number.isFinite(age) || age < 0)
+  if (
+    age !== null &&
+    (typeof age !== "number" || !Number.isFinite(age) || age < 0)
+  )
     throw new Error("invalid input_age_ms");
+  const cause = input.cause ?? null;
+  if (cause !== null && !REPORTED_CAUSES.has(cause as string))
+    throw new Error("invalid cause");
   return {
     client: { id: clientId, kind },
     workspaceId: optionalId(input.workspace_id, "workspace_id"),
@@ -195,7 +233,8 @@ export function parsePresence(params: unknown): Presence {
     paneId: optionalId(input.pane_id, "pane_id"),
     visible: input.visible,
     focused: input.focused,
-    inputAgeMs: Math.min(age, MAX_INPUT_AGE_MS),
+    inputAgeMs: age === null ? null : Math.min(age, MAX_INPUT_AGE_MS),
+    cause: cause as Presence["cause"],
   };
 }
 
@@ -303,6 +342,7 @@ export function createActivityRecorder(options: {
         panes: new Map(),
         agents: new Map(),
         herdrFocus: null,
+        wasReady: false,
       };
       connections.set(id, entry);
     }
@@ -316,6 +356,8 @@ export function createActivityRecorder(options: {
   function openSpan(
     ts: number,
     fields: Omit<Span, "seq" | "start">,
+    cause: EventCause,
+    inputAgeMs: number | null = null,
   ): Span | null {
     const seq = append({
       ts,
@@ -326,12 +368,23 @@ export function createActivityRecorder(options: {
       paneId: fields.paneId,
       client: fields.client,
       source: fields.source,
+      cause,
+      inputAgeMs,
     });
     return { ...fields, seq, start: ts };
   }
 
-  function closeSpan(span: Span, ts: number, reason: BlurReason) {
+  /** `cause` only for a switch or hidden blur: what made the change. */
+  function closeSpan(
+    span: Span,
+    ts: number,
+    reason: BlurReason,
+    cause: EventCause | null = null,
+    inputAgeMs: number | null = null,
+  ) {
     append({
+      cause,
+      inputAgeMs,
       ts: Math.max(ts, span.start),
       kind: "workspace.blur",
       connectionId: span.connectionId,
@@ -431,7 +484,8 @@ export function createActivityRecorder(options: {
   });
 
   let chain: Promise<void> = Promise.resolve();
-  function enqueue(task: () => void | Promise<void>): void {
+  /** Resolves once the task ran (or was dropped). */
+  function enqueue(task: () => void | Promise<void>): Promise<void> {
     chain = chain.then(async () => {
       if (!(await init) || finished) return;
       try {
@@ -440,6 +494,7 @@ export function createActivityRecorder(options: {
         logger.warn("activity signal dropped", { error });
       }
     });
+    return chain;
   }
 
   // --- Workspaces --------------------------------------------------------
@@ -552,21 +607,33 @@ export function createActivityRecorder(options: {
     void task.finally(() => repoTasks.delete(task));
   }
 
-  async function refreshAndFollowHerdr(conn: Connection, ts: number) {
+  /** Lists, and records Herdr's focus as found when `cause` is given. */
+  async function refreshAndFollowHerdr(
+    conn: Connection,
+    ts: number,
+    cause: EventCause | null,
+  ) {
     const focus = await refresh(conn);
-    if (focus) herdrFocus(conn, ts, focus.workspaceId, focus.paneId, null);
+    if (focus && cause)
+      herdrFocus(conn, ts, focus.workspaceId, focus.paneId, null, cause);
   }
 
+  /**
+   * A Herdr workspace's stable id, listing first when needed. A listing
+   * that finds Herdr's focus moved records it as `herdr_listing`, unless
+   * the caller records that focus itself (`follow` false).
+   */
   async function resolve(
     conn: Connection,
     herdrId: string | null,
     ts: number,
+    follow = true,
   ): Promise<Resolved | null> {
     if (!herdrId || !conn.ready) return null;
     const known = conn.workspaces.get(herdrId);
     if (conn.stale || (!known && now() - conn.refreshedAt >= MISS_REFRESH_MS)) {
       try {
-        await refreshAndFollowHerdr(conn, ts);
+        await refreshAndFollowHerdr(conn, ts, follow ? "herdr_listing" : null);
       } catch (error) {
         logger.debug("activity workspace listing failed", {
           connection: conn.id,
@@ -585,21 +652,26 @@ export function createActivityRecorder(options: {
     herdrId: string,
     paneId: string | null,
     tabId: string | null,
+    cause: EventCause,
   ) {
     const current = conn.herdrFocus;
     if (current?.herdrWorkspaceId === herdrId) return;
     const resolved = conn.workspaces.get(herdrId);
-    if (current) closeSpan(current, ts, "switch");
+    if (current) closeSpan(current, ts, "switch", cause);
     conn.herdrFocus = resolved
-      ? openSpan(ts, {
-          connectionId: conn.id,
-          workspaceId: resolved.stableId,
-          herdrWorkspaceId: herdrId,
-          tabId: tabId ?? conn.panes.get(paneId ?? "")?.tabId ?? null,
-          paneId,
-          client: null,
-          source: "herdr",
-        })
+      ? openSpan(
+          ts,
+          {
+            connectionId: conn.id,
+            workspaceId: resolved.stableId,
+            herdrWorkspaceId: herdrId,
+            tabId: tabId ?? conn.panes.get(paneId ?? "")?.tabId ?? null,
+            paneId,
+            client: null,
+            source: "herdr",
+          },
+          cause,
+        )
       : null;
   }
 
@@ -752,8 +824,8 @@ export function createActivityRecorder(options: {
       case "workspace.focused":
       case "pane.focused":
         if (!workspaceId) return;
-        await resolve(conn, workspaceId, ts);
-        herdrFocus(conn, ts, workspaceId, paneId, null);
+        await resolve(conn, workspaceId, ts, false);
+        herdrFocus(conn, ts, workspaceId, paneId, null, "herdr_event");
         return;
       case "workspace.closed":
         if (workspaceId) conn.workspaces.delete(workspaceId);
@@ -842,8 +914,10 @@ export function createActivityRecorder(options: {
       if (conn.ready) return;
       conn.ready = true;
       conn.stale = true;
+      const cause = conn.wasReady ? "connection_ready" : "recorder_start";
+      conn.wasReady = true;
       try {
-        await refreshAndFollowHerdr(conn, ts);
+        await refreshAndFollowHerdr(conn, ts, cause);
       } catch (error) {
         logger.debug("activity workspace listing failed", {
           connection: conn.id,
@@ -872,7 +946,14 @@ export function createActivityRecorder(options: {
 
   // --- Presence ---------------------------------------------------------
 
-  function visibility(state: PresenceState, ts: number, visible: boolean) {
+  /** `cause` and `inputAgeMs` only when a page's report says so. */
+  function visibility(
+    state: PresenceState,
+    ts: number,
+    visible: boolean,
+    cause: EventCause | null = null,
+    inputAgeMs: number | null = null,
+  ) {
     if (state.attentive === visible || !state.connectionId) return;
     state.attentive = visible;
     append({
@@ -881,6 +962,8 @@ export function createActivityRecorder(options: {
       connectionId: state.connectionId,
       client: state.client,
       visible,
+      cause,
+      inputAgeMs,
     });
   }
 
@@ -888,9 +971,11 @@ export function createActivityRecorder(options: {
     state: PresenceState,
     ts: number,
     reason: BlurReason,
+    cause: EventCause | null = null,
+    inputAgeMs: number | null = null,
   ) {
     if (!state.span) return;
-    closeSpan(state.span, ts, reason);
+    closeSpan(state.span, ts, reason, cause, inputAgeMs);
     state.span = null;
   }
 
@@ -908,6 +993,40 @@ export function createActivityRecorder(options: {
       });
     }, PRESENCE_TIMEOUT_MS);
     unref(state.timeout);
+  }
+
+  /**
+   * What a report's change comes from. Input since the page's socket
+   * reported first, and since its view last moved on its own, is a person;
+   * before that the page is loading, reconnecting or following.
+   */
+  function reportCause(
+    state: PresenceState,
+    ts: number,
+    presence: Presence,
+  ): { cause: EventCause; armed: boolean } {
+    if (presence.cause === "follow_herdr" || presence.cause === "app") {
+      state.armedAfter = ts;
+      state.unarmedCause = presence.cause;
+      return { cause: presence.cause, armed: false };
+    }
+    if (presence.inputAgeMs === null) {
+      state.unarmedCause = "page_load";
+      return { cause: "page_load", armed: false };
+    }
+    // Input at the report that opened the socket counts (the page sent it
+    // for that input), except from pages older than causes, which say
+    // "just now" on load.
+    const lastInput = ts - presence.inputAgeMs;
+    if (
+      lastInput < state.armedAfter ||
+      (presence.cause === null && lastInput === state.armedAfter)
+    )
+      return { cause: state.unarmedCause, armed: false };
+    return {
+      cause: presence.cause === "user_focus" ? "user_focus" : "user_input",
+      armed: true,
+    };
   }
 
   async function handlePresence(
@@ -931,6 +1050,10 @@ export function createActivityRecorder(options: {
         lastPresenceAt: ts,
         span: null,
         timeout: null,
+        // A page's first report on a socket is a load or a reconnect:
+        // what it did before says nothing of now.
+        armedAfter: ts,
+        unarmedCause: "reconnect",
       };
       clients.set(socket, state);
     }
@@ -944,14 +1067,16 @@ export function createActivityRecorder(options: {
       state.connectionId = connectionId;
     }
     state.lastPresenceAt = ts;
+    const { cause, armed } = reportCause(state, ts, presence);
+    const age = presence.inputAgeMs;
     const attentive = presence.visible && presence.focused;
-    visibility(state, ts, attentive);
+    visibility(state, ts, attentive, cause, age);
     if (!attentive) {
-      endPresenceSpan(state, ts, "hidden");
-    } else {
+      endPresenceSpan(state, ts, "hidden", cause, age);
+    } else if (age !== null) {
       const idleMs = settings!.idle_seconds * 1000;
-      const lastInput = ts - presence.inputAgeMs;
-      const idle = presence.inputAgeMs >= idleMs;
+      const lastInput = ts - age;
+      const idle = age >= idleMs;
       if (idle && !state.idle) {
         // Reading counted as attention until the threshold, not after it.
         const idleAt = Math.min(ts, lastInput + idleMs);
@@ -964,13 +1089,15 @@ export function createActivityRecorder(options: {
           client: state.client,
           idleAfterSeconds: settings!.idle_seconds,
         });
-      } else if (!idle && state.idle) {
+      } else if (!idle && state.idle && armed) {
         state.idle = false;
         append({
           ts,
           kind: "session.active",
           connectionId,
           client: state.client,
+          cause: "user_input",
+          inputAgeMs: age,
         });
       }
       if (!state.idle) {
@@ -983,17 +1110,22 @@ export function createActivityRecorder(options: {
             span.workspaceId !== workspace.stableId ||
             span.paneId !== presence.paneId)
         )
-          endPresenceSpan(state, ts, "switch");
-        if (workspace && !state.span)
-          state.span = openSpan(ts, {
-            connectionId,
-            workspaceId: workspace.stableId,
-            herdrWorkspaceId: presence.workspaceId,
-            tabId: presence.tabId,
-            paneId: presence.paneId,
-            client: state.client,
-            source: "browser",
-          });
+          endPresenceSpan(state, ts, "switch", cause, age);
+        if (workspace && !state.span && armed)
+          state.span = openSpan(
+            ts,
+            {
+              connectionId,
+              workspaceId: workspace.stableId,
+              herdrWorkspaceId: presence.workspaceId,
+              tabId: presence.tabId,
+              paneId: presence.paneId,
+              client: state.client,
+              source: "browser",
+            },
+            cause,
+            age,
+          );
         else if (state.span) state.span.tabId = presence.tabId;
       }
     }
@@ -1066,11 +1198,15 @@ export function createActivityRecorder(options: {
       const presence = parsePresence(params);
       const recording = (await init) && !stopped;
       const idleSeconds = settings?.idle_seconds ?? 300;
-      if (recording) {
-        const ts = now();
-        enqueue(() => handlePresence(socket, connectionId, ts, presence));
-      }
-      return { recording, idle_seconds: idleSeconds };
+      if (!recording)
+        return { recording, idle_seconds: idleSeconds, attention: false };
+      const ts = now();
+      await enqueue(() => handlePresence(socket, connectionId, ts, presence));
+      return {
+        recording,
+        idle_seconds: idleSeconds,
+        attention: !!clients.get(socket)?.span,
+      };
     },
     socketClosed(socket) {
       if (stopped) return;

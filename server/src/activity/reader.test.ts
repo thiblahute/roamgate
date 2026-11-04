@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_ACTIVITY_SETTINGS } from "../config/gui-settings";
+import { buildDayInput } from "../time-report/day-input";
 import { type ActivityReader, eventSeq, openActivityReader } from "./reader";
 import { type ActivityStore, openActivityStore } from "./store";
 import { dayBounds } from "./timeline";
@@ -200,4 +202,118 @@ test("a log whose recorder stopped can still be read, and is not written", () =>
   expect(log.page({ limit: 10 }).events).toHaveLength(4);
   log.close();
   expect(existsSync(file)).toBe(true);
+});
+
+/**
+ * A log from before causes: a bridge restarted at 13:00:49 and a page
+ * reloaded 3 s later, as on 2026-11-04; the 12:52 switch is a person.
+ */
+function legacyRestart(path: string) {
+  const store = openActivityStore(path);
+  closers.push(store);
+  const first = store.startSession(at(12, 48));
+  store.upsertWorkspace({
+    id: "ws_a",
+    connectionId: "local",
+    name: "alpha",
+    path: "/src/alpha",
+    herdrWorkspaceId: "w1",
+    repoRoot: null,
+    repoIsWorktree: null,
+    seenAt: at(12, 48),
+  });
+  const browser = { id: "c1", kind: "desktop" as const };
+  const span = (
+    ts: number,
+    end: number,
+    session: number,
+    source: "browser" | "herdr",
+  ) => {
+    const focus = store.append({
+      ts,
+      kind: "workspace.focus",
+      connectionId: "local",
+      session,
+      workspaceId: "ws_a",
+      client: source === "browser" ? browser : null,
+      source,
+    });
+    store.append({
+      ts: end,
+      kind: "workspace.blur",
+      connectionId: "local",
+      session,
+      workspaceId: "ws_a",
+      client: source === "browser" ? browser : null,
+      source,
+      reason: "recorder_stop",
+      span: focus,
+    });
+  };
+  store.append({
+    ts: at(12, 52),
+    kind: "ui.visibility",
+    connectionId: "local",
+    session: first,
+    client: browser,
+    visible: true,
+  });
+  span(at(12, 52), at(13, 0), first, "browser");
+  store.stopSession(first, at(13, 0), true);
+  const second = store.startSession(at(13, 0) + 300);
+  span(at(13, 0) + 1_000, at(13, 6), second, "herdr");
+  store.append({
+    ts: at(13, 0) + 3_000,
+    kind: "ui.visibility",
+    connectionId: "local",
+    session: second,
+    client: browser,
+    visible: true,
+  });
+  span(at(13, 0) + 3_200, at(13, 6), second, "browser");
+  store.stopSession(second, at(13, 6), true);
+  return store;
+}
+
+test("old rows written just after a recorder start read as its start, everywhere", () => {
+  const path = directory();
+  legacyRestart(path);
+  const log = reader(path, at(14));
+  const causes = log
+    .page({ limit: 100 })
+    .events.map((event) => [event.kind, event.source ?? null, event.cause]);
+  expect(causes).toEqual([
+    ["ui.visibility", null, null],
+    ["workspace.focus", "browser", null],
+    ["workspace.blur", "browser", null],
+    ["workspace.focus", "herdr", "recorder_start"],
+    ["workspace.blur", "herdr", null],
+    ["ui.visibility", null, "reconnect"],
+    ["workspace.focus", "browser", "reconnect"],
+    ["workspace.blur", "browser", null],
+  ]);
+  // The provider gets the same.
+  const input = buildDayInput(
+    log,
+    { ...DEFAULT_ACTIVITY_SETTINGS, enabled: true },
+    "2026-11-02",
+    "UTC",
+  );
+  expect(
+    input.events
+      .filter((event) => event.kind === "workspace.focus")
+      .map((event) => event.cause),
+  ).toEqual([null, "recorder_start", "reconnect"]);
+  // The timeline counts the person's 8 minutes, not the reloaded page's 6.
+  const bounds = dayBounds("2026-11-02", "00:00");
+  const [day] = log.timeline(
+    { from: bounds.start, to: bounds.end },
+    "00:00",
+  ).days;
+  expect(day!.totals.attended_ms).toBe(8 * MIN);
+  expect(day!.focus.map((span) => span.cause)).toEqual([
+    null,
+    "recorder_start",
+    "reconnect",
+  ]);
 });

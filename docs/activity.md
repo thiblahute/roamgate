@@ -55,6 +55,40 @@ UI or with [`roamgate activity`](#command-line).
 
 No heartbeat events are stored.
 
+### Causes
+
+`workspace.focus`, `workspace.blur`, `ui.visibility` and `session.active`
+carry a `cause`, what made them happen, and `input_age_ms`, the page's input
+age when it reported them (null when the page had no input since it loaded,
+and on every event the recorder writes on its own).
+
+| `cause`            | Meaning                                                                                          | Sign of a person |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ---------------- |
+| `user_input`       | A key, pointer, wheel or touch in the page within 5 s before                                     | yes              |
+| `user_focus`       | The page came to the front without input in it, after input since it loaded                      | yes              |
+| `page_load`        | The page loaded or reloaded and has had no input since                                           | no               |
+| `reconnect`        | The page's socket to the bridge is new (bridge restart, network drop) and no input came after it | no               |
+| `follow_herdr`     | The page's view moved without input, following Herdr's focus (shared navigation)                 | no               |
+| `app`              | The page's view moved without input, Roamgate itself moved it                                    | no               |
+| `herdr_event`      | Herdr's focus event: someone at its TUI, or an agent through its CLI                             | yes              |
+| `herdr_listing`    | Herdr's focus found changed in a listing, without an event (a browser focusing its pane)         | no               |
+| `recorder_start`   | The focus Herdr had when the recorder started                                                    | no               |
+| `connection_ready` | The focus Herdr had when the connection came (back) up                                           | no               |
+
+Every `workspace.focus` has one: a browser span opens only with `user_input`
+or `user_focus` (see [Presence](#presence)), a Herdr span with one of the
+last four. A blur has the cause of the change that ended it when its reason is
+`switch` or `hidden`, null otherwise (the reason says why). A `ui.visibility`
+from a page's report has the report's cause; the `visible: false` ones the
+recorder writes itself (timeout, disconnect, recorder stop) have none.
+`session.active` is `user_input`. Agent states and `session.idle` have none.
+
+Rows written before causes were recorded have none. Readers (the timeline,
+`roamgate activity`, the time report's DayInput) give the ones written within
+10 seconds of their recorder session's start the cause of that start: a browser
+focus or a visible `ui.visibility` reads as `reconnect`, a Herdr focus as
+`recorder_start`. The log itself is not rewritten.
+
 ## Ids and ordering
 
 Event ids are a zero-padded sequence, never reused: they are the order of the
@@ -81,16 +115,29 @@ Each open page reports to its connection with the `activity.presence` RPC:
   "pane_id": "w2:p1",
   "visible": true,
   "focused": true,
-  "input_age_ms": 12000
+  "input_age_ms": 12000,
+  "cause": "user_input"
 }
 ```
 
 `client_id` is a random id the browser keeps in local storage; `client_kind`
 is `phone` on mobile browsers, else `desktop`. `pane_id` is null on a phone
 showing another view than the pane. `input_age_ms` is how long ago the last key,
-pointer, wheel or touch event was, never what it was; bringing the page to the
-front counts as input. The reply is `{"recording": bool, "idle_seconds": int}`;
-a page stops reporting once `recording` is false.
+pointer, wheel or touch event was, never what it was, and null until the page
+has had one since it loaded; bringing the page to the front counts as input
+once it has. `cause` is why the page reports: `user_input`, `user_focus`,
+`page_load` (no input since it loaded), `follow_herdr` or `app` (its view moved
+without input), or `repeat` (the minute report, the idle threshold). The reply
+is `{"recording": bool, "idle_seconds": int, "attention": bool}`; a page stops
+reporting once `recording` is false, and reports its next input at once when
+`attention` is false.
+
+Only a person opens a span. The bridge counts a page's input only when it came
+after the page's first report on its socket (a load, a reload, or a reconnect
+to a restarted bridge) and after its view last moved without input: until
+then the page's reports are recorded as `ui.visibility` with that cause, and
+open nothing. A view that moves without input ends the running span (`switch`
+with the cause `follow_herdr` or `app`) and opens none until the next input.
 
 A page reports each change of where it looks, of visibility and focus, the
 moment it becomes idle, and input after idle. While it is visible, focused and
@@ -157,7 +204,7 @@ the offset; durations are milliseconds. Each day has:
 
 - `focus`: the attention spans clipped to the day, with `workspace_id`,
   `connection_id`, `pane_id`, `source` (`browser`, `phone` or `herdr`),
-  `client_id` and the blur `reason` (null while `open`). A span still open ends
+  `client_id`, the blur `reason` (null while `open`) and the focus `cause`. A span still open ends
   now (`open: true`), or at the recorder's last alive stamp when the recorder
   is not running.
 - `attention`: who had the attention, without overlaps. At each instant the
@@ -166,11 +213,15 @@ the offset; durations are milliseconds. Each day has:
   `idle_seconds` of a sign of a person, since they run whether or not anyone
   looks: Herdr reports no attached client nor input time, and its output
   events cannot tell typing from a program writing. A sign is a browser or
-  phone span (while it runs, and `idle_seconds` after it ends unless it ended
-  as `idle`), input after idle or a page brought to the front, or a focus
-  change in Herdr's TUI (a Herdr span ended with `switch`; one opened when the
-  recorder or the connection starts is none). The rest of a Herdr span is in
-  `focus` but not in `attention`.
+  phone span a person opened (while it runs, and `idle_seconds` after it ends
+  unless it ended as `idle` or with the recorder), input after idle or a page
+  the user brought to the front, or a focus change in Herdr's TUI (a Herdr
+  span opened by `herdr_event`, or ended with `switch` to one). Only the
+  [causes](#causes) marked as signs count: a page loading, reloading or
+  reconnecting, a view following Herdr or moved by Roamgate, Herdr's focus
+  found in a listing, and what the recorder or a connection starts with are
+  none. The rest of a Herdr span, and a browser span no person opened (in old
+  logs), is in `focus` but not in `attention`.
 - `idle`: per client, from `session.idle` to the client's next sign of life
   (`session.active`, a visibility change, or a new focus).
 - `agents`: lanes per pane and agent, with the `working`, `blocked`, `idle` and
