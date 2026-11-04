@@ -703,6 +703,20 @@ session and state. GitHub pull requests use the same review code path
 through `review/github.ts` (reads only; their drafts come with the pending
 review support).
 
+`mr-reviews/claude.ts`: the review workspace's first pane runs the
+request's Claude session (`reviews[key].claudeSession`), typed into its
+shell as ` env ROAMGATE_CLAUDE_START=terminal claude --session-id ID`
+(or `--resume ID`, falling back to `--session-id`). Which session runs
+comes from Herdr's `agent.get` (`agent_session`), else the session last
+started there (`projects[key].claudeStarted`). Switching request
+(`bridge.mr_reviews.open` after its checkout, or `bridge.mr_reviews.claude
+{action}`) types `/exit` only into an idle Claude of another request's
+session, waits for the shell, then resumes; a busy one is reported
+(`busy`), and `switch` waits for it to finish. A Claude of no request
+(`foreign`) is never touched. `review` then calls the review service's
+`requestAgentReview` with that pane, so Claude's threads are the review
+pane's own (local) threads.
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p

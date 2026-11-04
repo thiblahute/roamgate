@@ -1043,6 +1043,18 @@ Each request keeps its own review, with its place and drafts. A request's
 review state goes a few days (a setting) after it is merged or closed; the
 worktree stays. The command menu finds a request by number or title.
 
+Each review workspace has one Claude, and each request its own Claude
+session. **Review with Claude** (a request's details) starts or resumes
+the request's session there and asks it to review through the review pane:
+it reads the request and leaves its threads in the review, where you
+answer them; its threads stay Roamgate notes, never forge comments. **Ask
+Claude** (`c` in the list) takes you to the request's session. Opening
+another request's review resumes that request's session, after the
+checkout; a Claude in the middle of a turn is never stopped: you switch
+when it is done, or leave it on its request. A Claude you started there
+yourself is left alone. Nothing starts Claude or asks it to review but
+your click.
+
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.
 Its settings (gear) hold the hosts, the followed projects, when the review

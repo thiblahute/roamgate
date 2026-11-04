@@ -11,6 +11,7 @@ import { createCloneFinder, type MrConnection } from "./clones";
 import { createInboxFetchers, type InboxFetchers } from "./fetchers";
 import { discoverForgeHosts, type ForgeHost } from "./hosts";
 import { createMrInbox } from "./inbox";
+import { createMrClaude } from "./claude";
 import { createMrOpener } from "./open";
 import {
   handleMrReviewsRpc,
@@ -43,6 +44,12 @@ export function createMrReviews(options: {
     url: string;
     title: string;
   }) => ReviewSnapshot;
+  /** The review pane's "review with the agent" for a request's review. */
+  requestReview?: (params: {
+    sessionId: string;
+    paneId: string;
+    focus?: string;
+  }) => Promise<unknown>;
   /** Drops a request's review (lifecycle). */
   removeReview?: (sessionId: string) => void;
   more?: MrReviewsRpcDeps["more"];
@@ -105,6 +112,17 @@ export function createMrReviews(options: {
     },
   });
 
+  const claude = createMrClaude({
+    inbox,
+    store,
+    connections: options.connections ?? (() => []),
+    requestReview: async (params) => {
+      if (!options.requestReview)
+        throw new MrReviewsError("reviews are not available", "unavailable");
+      return options.requestReview(params);
+    },
+  });
+
   /**
    * A request merged or closed this many days ago loses its review state
    * here: its review, what was seen and picked. The project's review
@@ -143,12 +161,45 @@ export function createMrReviews(options: {
       return params.key;
     };
     switch (method) {
-      case "bridge.mr_reviews.open":
-        return opener!.open(key(), {
+      case "bridge.mr_reviews.open": {
+        const result = await opener!.open(key(), {
           ...(params.checkout === "now" || params.checkout === "later"
             ? { checkout: params.checkout }
             : {}),
         });
+        if ("needClone" in result || result.checkout.state !== "done")
+          return result;
+        // After the checkout: the request's own Claude session, if it has
+        // one; a busy Claude of another request is only reported.
+        const state = await claude
+          .ensure(key(), { start: false, wait: false })
+          .catch((error) => ({
+            state: "error" as const,
+            message: error instanceof Error ? error.message : String(error),
+          }));
+        return { ...result, claude: state };
+      }
+      case "bridge.mr_reviews.claude": {
+        const action = params.action;
+        if (action === "status") return claude.status(key());
+        if (action === "switch")
+          return claude.ensure(key(), { start: false, wait: true });
+        if (action === "start")
+          return claude.ensure(key(), {
+            start: true,
+            wait: params.wait === true,
+          });
+        if (action === "review")
+          return claude.review(
+            key(),
+            typeof params.focus === "string"
+              ? params.focus.slice(0, 500)
+              : undefined,
+          );
+        throw new MrReviewsError(
+          "action must be status, switch, start or review",
+        );
+      }
       case "bridge.mr_reviews.checkout": {
         const local = params.local ?? "refuse";
         if (local !== "refuse" && local !== "wip" && local !== "discard")
@@ -187,6 +238,7 @@ export function createMrReviews(options: {
     store,
     settings,
     opener,
+    claude,
     lifecycle,
     handle(method: string, params: Record<string, unknown>) {
       return handleMrReviewsRpc(

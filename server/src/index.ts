@@ -1044,6 +1044,13 @@ function getMrReviews(): MrReviews {
         title,
         raise: false,
       }),
+    requestReview: ({ sessionId, paneId, focus }) =>
+      getReviewService().requestAgentReview({
+        sessionId,
+        paneId,
+        agent: "Claude",
+        ...(focus ? { focus } : {}),
+      }),
     removeReview: (sessionId) => {
       getReviewService().remove({ sessionId });
     },
