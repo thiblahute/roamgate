@@ -1063,6 +1063,15 @@ never publishes anything. Claude's threads stay Roamgate notes until you
 choose **Make it mine** on one: its text becomes your draft on the forge
 (Claude's review comment is then yours, its discussion resolved).
 
+**Suggested** is picked by Claude in the background, rarely and in
+batches: among the followed projects' open requests that are not yours, it
+picks the few you would want, from your own history (what you committed
+to in your clones lately, your unmerged branches), the requests you
+reviewed and with whom, your hints, and your feedback: `x` (not
+interested) and `+` (more like this) are remembered and given to it as
+precedent. It only filters; it never reviews or comments. Turn it off in
+the settings.
+
 The inbox only reads: one GraphQL query per host every 5 minutes while it is
 shown (15 otherwise), through the same per-host budget as the forge chips.
 Its settings (gear) hold the hosts, the followed projects, when the review

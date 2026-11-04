@@ -357,6 +357,13 @@ export function createMrInbox(deps: MrInboxDeps) {
       return items().find((entry) => entry.key === key);
     },
     items,
+    /** The user's name on each host read (their own requests are theirs). */
+    users(): Map<string, string> {
+      const users = new Map<string, string>();
+      for (const [host, result] of hosts)
+        if (result.state.user) users.set(host, result.state.user.toLowerCase());
+      return users;
+    },
     /** The projects of the inbox's requests, by mrProjectKey. */
     projects(): Map<string, MrItem[]> {
       const projects = new Map<string, MrItem[]>();
