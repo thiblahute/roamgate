@@ -52,8 +52,10 @@ export function clonesScript(dirs: string[]): string {
   return [
     "for d in " + dirs.map(shQuote).join(" ") + "; do",
     '  [ -d "$d" ] || continue',
-    '  c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || continue',
-    '  case "$c" in */.git) m=${c%/.git} ;; *) continue ;; esac',
+    // The main checkout, whatever the layout (a .git directory, or a
+    // repository directory such as gstreamer.git with linked worktrees).
+    `  m=$(git -C "$d" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')`,
+    '  [ -n "$m" ] || continue',
     '  printf "R\\t%s\\n" "$m"',
     // The configured URLs, as written (`remote -v` applies insteadOf).
     `  git -C "$m" config --get-regexp '^remote\\..*\\.url$' 2>/dev/null | while read -r k u; do n=\${k#remote.}; printf "M\\t%s\\t%s\\n" "\${n%.url}" "$u"; done`,

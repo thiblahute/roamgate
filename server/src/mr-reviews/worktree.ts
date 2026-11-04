@@ -10,7 +10,8 @@ import { shQuote } from "./clones";
  */
 
 export function reviewWorktreePath(clone: string): string {
-  return `${clone.replace(/\/+$/, "")}.worktrees/review`;
+  // gstreamer.git (a repository directory) -> gstreamer.worktrees/review.
+  return `${clone.replace(/\/+$/, "").replace(/\.git$/, "")}.worktrees/review`;
 }
 
 /** Where a request's head is kept in the clone. */

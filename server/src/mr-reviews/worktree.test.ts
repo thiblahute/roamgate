@@ -284,6 +284,24 @@ describe("opening a request", () => {
 });
 
 describe("where a project's clone is looked for", () => {
+  test("a repository directory with linked worktrees (gstreamer.git)", () => {
+    const setup = sh(`
+      set -e
+      git init -q -b main repo.git && cd repo.git
+      echo x > a && git add a && git commit -qm x
+      git remote add origin https://gitlab.example.org/group/lay.git
+      git worktree add -q ../lay-linked
+    `);
+    if (setup.code) throw new Error(setup.stderr);
+    const scanned = parseClones(
+      sh(clonesScript([join(dir, "lay-linked")])).stdout,
+    );
+    expect(scanned.map((repo) => repo.path)).toEqual([join(dir, "repo.git")]);
+    expect(reviewWorktreePath(join(dir, "repo.git"))).toBe(
+      join(dir, "repo.worktrees/review"),
+    );
+  });
+
   test("the default connection first, then this machine, then the others", async () => {
     const { orderConnections } = await import("./clones");
     expect(
