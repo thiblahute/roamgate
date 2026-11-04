@@ -682,7 +682,26 @@ conditional read of a request's `draft_notes`, at most every 10 minutes per
 request. A host that fails keeps its last answer. State
 (`<data>/mr-reviews/state.json`): what the user saw of each request
 (unread), feedback, Claude's picks, each request's Roamgate review and the
-time it was seen merged or closed. The inbox never writes to a forge.
+time it was seen merged or closed, and each project's review worktree. The
+inbox never writes to a forge.
+
+`bridge.mr_reviews.open {key, checkout?}` finds the project's clone (the
+settings' `clones`, else a scan of the connections' workspace and pane
+directories for a main checkout whose configured remote URL is the
+project), makes `<clone>.worktrees/review` (`git worktree add --detach`)
+and its Herdr workspace, fetches the head into `refs/roamgate/mr/<n>`
+(`refs/merge-requests/<n>/head` or `refs/pull/<n>/head`, with the target
+branch for the base), opens the review session (target `mr`, root the
+worktree) and checks out the head detached when the setting says so. A
+worktree with local changes answers `dirty` and is left alone;
+`bridge.mr_reviews.checkout {key, local: wip|discard}` is the user's
+answer (WIP commit on `review/<n>`, or reset and clean). Worktree commands
+for one project run one at a time. After each refresh the heads of the
+inbox's open requests are prefetched, one fetch per project with a review
+worktree; requests closed longer than `retention_days` lose their review
+session and state. GitHub pull requests use the same review code path
+through `review/github.ts` (reads only; their drafts come with the pending
+review support).
 
 ## Conversation mode
 

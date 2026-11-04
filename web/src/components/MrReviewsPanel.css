@@ -3,7 +3,8 @@
 
 .mr-reviews-root {
   position: fixed;
-  z-index: 60;
+  /* Over the review pane (5500-5600), under the toasts (6001). */
+  z-index: 5700;
   inset: 0;
   pointer-events: none;
 }
@@ -186,6 +187,17 @@
 .mr-reviews-settings-add input {
   flex: 1 1 140px;
   min-width: 0;
+}
+
+.mr-reviews-changes {
+  display: grid;
+  gap: 2px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
 }
 
 .mr-reviews-settings-check {

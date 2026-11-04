@@ -145,7 +145,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_DOM_TEST !== "1") {
       verdict: "not_interested",
     });
     await key("k");
-    await key("Enter");
+    await key("i");
     expect(host.textContent).toContain("All reviews");
     expect(
       calls.find(([method]) => method === "bridge.mr_reviews.seen")?.[1],
@@ -213,7 +213,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_DOM_TEST !== "1") {
     expect(liveSelected()).toEndWith("#2");
     await press("k");
     expect(liveSelected()).toEndWith("#1");
-    await press("Enter");
+    await press("i");
     expect(document.body.textContent).toContain("All reviews");
     await press("Escape");
     expect(document.body.textContent).not.toContain("All reviews");

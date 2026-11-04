@@ -18,6 +18,7 @@ import type {
 } from "../../../shared/mrReviews";
 import { useLayoutPreferences } from "../layoutPreferences";
 import { mrReviewsCall, useMrInbox } from "../mrReviews";
+import { checkoutMrReview, openMrReview, setMrClone } from "../mrReviewFlow";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
@@ -32,6 +33,180 @@ import "./MrReviewsPanel.css";
  */
 
 type View = "list" | "settings";
+
+/** What opening a request needs from the user. */
+type Prompt =
+  | {
+      kind: "clone";
+      entry: MrInboxEntry;
+      host: string;
+      project: string;
+      connections: { id: string; label: string }[];
+    }
+  | { kind: "dirty"; entry: MrInboxEntry; changes: string[] }
+  | { kind: "kept"; entry: MrInboxEntry; branch: string }
+  | { kind: "error"; entry: MrInboxEntry; message: string };
+
+function MrPrompt({
+  prompt,
+  busy,
+  onDismiss,
+  onRetry,
+  onAnswer,
+}: {
+  prompt: Prompt;
+  busy: boolean;
+  onDismiss: () => void;
+  onRetry: (entry: MrInboxEntry) => void;
+  onAnswer: (entry: MrInboxEntry, local: "wip" | "discard") => void;
+}) {
+  const [connection, setConnection] = useState(
+    prompt.kind === "clone" ? (prompt.connections[0]?.id ?? "") : "",
+  );
+  const [path, setPath] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const label = forgeRefLabel(prompt.entry);
+  return (
+    <section
+      className="assistant-task-overview mr-reviews-prompt"
+      role="alertdialog"
+      aria-label={`Opening ${label}`}
+    >
+      {prompt.kind === "clone" ? (
+        <>
+          <h3 className="mr-reviews-section-title">Where is your clone?</h3>
+          <p className="assistant-hint">
+            No checkout of {prompt.project} ({prompt.host}) was found in your
+            workspaces. Its review worktree goes next to your clone, as{" "}
+            <code>&lt;clone&gt;.worktrees/review</code>.
+          </p>
+          <div className="mr-reviews-settings-add">
+            <select
+              aria-label="Connection"
+              value={connection}
+              onChange={(event) => setConnection(event.target.value)}
+            >
+              {prompt.connections.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+            <input
+              aria-label="Path of the clone"
+              placeholder="/path/to/clone"
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+            />
+          </div>
+          {error ? (
+            <p className="assistant-task-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div className="assistant-task-buttons">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !connection || !path.startsWith("/")}
+              onClick={() =>
+                void setMrClone({
+                  host: prompt.host,
+                  project: prompt.project,
+                  provider: prompt.entry.provider,
+                  connectionId: connection,
+                  path: path.trim(),
+                }).then(
+                  () => onRetry(prompt.entry),
+                  (cause) =>
+                    setError(
+                      cause instanceof Error ? cause.message : String(cause),
+                    ),
+                )
+              }
+            >
+              Use this clone
+            </button>
+            <button type="button" className="ghost" onClick={onDismiss}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : prompt.kind === "dirty" ? (
+        <>
+          <h3 className="mr-reviews-section-title">
+            The review worktree has local changes
+          </h3>
+          <p className="assistant-hint">
+            The review of {label} is open; checking out its head would touch
+            these files. Nothing is changed until you choose.
+          </p>
+          <ul className="mr-reviews-changes">
+            {prompt.changes.map((line) => (
+              <li key={line}>
+                <code>{line}</code>
+              </li>
+            ))}
+          </ul>
+          <div className="assistant-task-buttons">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={() => onAnswer(prompt.entry, "wip")}
+            >
+              Keep them as a WIP commit on a review/ branch
+            </button>
+            <button
+              type="button"
+              className="ghost danger-text"
+              disabled={busy}
+              onClick={() => onAnswer(prompt.entry, "discard")}
+            >
+              Discard them
+            </button>
+            <button type="button" className="ghost" onClick={onDismiss}>
+              Leave the checkout as it is
+            </button>
+          </div>
+        </>
+      ) : prompt.kind === "kept" ? (
+        <>
+          <h3 className="mr-reviews-section-title">Changes kept</h3>
+          <p className="assistant-hint">
+            Your changes are committed on <code>{prompt.branch}</code>; the
+            worktree is on {label} now.
+          </p>
+          <div className="assistant-task-buttons">
+            <button type="button" className="ghost" onClick={onDismiss}>
+              OK
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <h3 className="mr-reviews-section-title">Cannot open {label}</h3>
+          <p className="assistant-task-error" role="alert">
+            {prompt.message}
+          </p>
+          <div className="assistant-task-buttons">
+            <button
+              type="button"
+              className="ghost"
+              disabled={busy}
+              onClick={() => onRetry(prompt.entry)}
+            >
+              Try again
+            </button>
+            <button type="button" className="ghost" onClick={onDismiss}>
+              Close
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 const REASON_LABEL: Record<MrReason, string> = {
   review_requested: "review requested",
@@ -249,10 +424,14 @@ function MrDetail({
 export function MrReviewsPanel({
   onClose,
   initialSelect,
+  initialOpen,
   renderActions,
   onOpenEntry,
 }: {
-  onClose: () => void;
+  /** keepFocus: a review was shown; the focus is the review's now. */
+  onClose: (options?: { keepFocus?: boolean }) => void;
+  /** A request to open at once (the command menu). */
+  initialOpen?: string;
   /** The request to show selected (from a review: the one shown). */
   initialSelect?: string;
   /** Step (b) on: the buttons of a request's detail (Review...). */
@@ -314,14 +493,94 @@ export function MrReviewsPanel({
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const open = (entry: MrInboxEntry) => {
+  const showDetail = (entry: MrInboxEntry) => {
     setSelected(entry.key);
-    if (onOpenEntry) onOpenEntry(entry);
-    else {
-      setDetail(entry.key);
-      void mrReviewsCall("seen", { key: entry.key }).catch(() => {});
+    setDetail(entry.key);
+    void mrReviewsCall("seen", { key: entry.key }).catch(() => {});
+  };
+
+  const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  /** Its review, in the project's review workspace. */
+  const open = async (entry: MrInboxEntry, checkout?: "now" | "later") => {
+    setSelected(entry.key);
+    if (onOpenEntry) {
+      onOpenEntry(entry);
+      return;
+    }
+    setOpening(entry.key);
+    setPrompt(null);
+    try {
+      const outcome = await openMrReview(entry, checkout ? { checkout } : {});
+      if (outcome.kind === "needClone") {
+        setPrompt({
+          kind: "clone",
+          entry,
+          host: outcome.host,
+          project: outcome.project,
+          connections: outcome.connections,
+        });
+        return;
+      }
+      if (outcome.checkout.state === "dirty") {
+        setPrompt({ kind: "dirty", entry, changes: outcome.checkout.changes });
+        return;
+      }
+      if (outcome.checkout.state === "error") {
+        setPrompt({ kind: "error", entry, message: outcome.checkout.message });
+        return;
+      }
+      onClose({ keepFocus: true });
+    } catch (error) {
+      setPrompt({
+        kind: "error",
+        entry,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setOpening(null);
     }
   };
+
+  const answerDirty = async (entry: MrInboxEntry, local: "wip" | "discard") => {
+    setOpening(entry.key);
+    try {
+      const state = await checkoutMrReview(entry.key, local);
+      if (state.state === "done") {
+        setPrompt(
+          state.kept ? { kind: "kept", entry, branch: state.kept } : null,
+        );
+        if (!state.kept) onClose({ keepFocus: true });
+      } else if (state.state === "dirty")
+        setPrompt({ kind: "dirty", entry, changes: state.changes });
+      else
+        setPrompt({
+          kind: "error",
+          entry,
+          message:
+            state.state === "error" ? state.message : "the checkout failed",
+        });
+    } catch (error) {
+      setPrompt({
+        kind: "error",
+        entry,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setOpening(null);
+    }
+  };
+
+  // The command menu's request: opened as soon as the inbox knows it.
+  const openedInitial = useRef(false);
+  useEffect(() => {
+    if (!initialOpen || openedInitial.current) return;
+    const entry = entries.find((each) => each.key === initialOpen);
+    if (!entry) return;
+    openedInitial.current = true;
+    void open(entry);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: once
+  }, [entries, initialOpen]);
 
   const feedback = (
     entry: MrInboxEntry,
@@ -354,13 +613,14 @@ export function MrReviewsPanel({
       (event.target.closest("input, textarea, select, [contenteditable]") ??
         null) !== null;
     if (event.key === "Escape") {
-      if (view === "settings") setView("list");
+      if (prompt) setPrompt(null);
+      else if (view === "settings") setView("list");
       else if (detail) setDetail(null);
       else if (maximized && !mobile) setMaximized(false);
       else onClose();
       return true;
     }
-    if (typing || view !== "list" || detail) return false;
+    if (typing || view !== "list" || detail || prompt) return false;
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     const current = ordered.find((entry) => entry.key === selected);
     if (event.key === "j" || event.key === "ArrowDown") {
@@ -368,7 +628,9 @@ export function MrReviewsPanel({
     } else if (event.key === "k" || event.key === "ArrowUp") {
       move(-1);
     } else if (event.key === "Enter" && current) {
-      open(current);
+      void open(current);
+    } else if (event.key === "i" && current) {
+      showDetail(current);
     } else if (event.key === "o" && current) {
       window.open(current.url, "_blank", "noopener");
     } else if (event.key === "r") {
@@ -474,7 +736,7 @@ export function MrReviewsPanel({
           className="assistant-icon-button"
           aria-label="Close Reviews"
           title="Close"
-          onClick={onClose}
+          onClick={() => onClose()}
         >
           <X size={16} />
         </button>
@@ -499,12 +761,43 @@ export function MrReviewsPanel({
         </>
       ) : (
         <div className="assistant-tasks mr-reviews-body">
+          {prompt ? (
+            <MrPrompt
+              prompt={prompt}
+              busy={opening !== null}
+              onDismiss={() => setPrompt(null)}
+              onRetry={(entry) => void open(entry)}
+              onAnswer={(entry, local) => void answerDirty(entry, local)}
+            />
+          ) : null}
+          {opening && !prompt ? (
+            <p className="assistant-hint" role="status">
+              Opening the review...
+            </p>
+          ) : null}
           {detailEntry ? (
             <MrDetail
               entry={detailEntry}
               onBack={() => setDetail(null)}
               actions={
                 <>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={opening === detailEntry.key}
+                    onClick={() => void open(detailEntry)}
+                  >
+                    {opening === detailEntry.key ? "Opening..." : "Review"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={opening === detailEntry.key}
+                    title="Check out its head in the project's review worktree"
+                    onClick={() => void open(detailEntry, "now")}
+                  >
+                    Check out
+                  </button>
                   {renderActions?.(detailEntry)}
                   {detailEntry.section === "suggested" ? (
                     <>
@@ -560,7 +853,7 @@ export function MrReviewsPanel({
                           entry={entry}
                           selected={entry.key === selected}
                           onSelect={() => setSelected(entry.key)}
-                          onOpen={() => open(entry)}
+                          onOpen={() => void open(entry)}
                         />
                       ))}
                     </ul>
@@ -581,8 +874,8 @@ export function MrReviewsPanel({
               ))}
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter open · o on the forge · x not interested · +
-                  more like this · r refresh
+                  j/k move · Enter review · i details · o on the forge · x not
+                  interested · + more like this · r refresh
                 </p>
               ) : null}
             </>

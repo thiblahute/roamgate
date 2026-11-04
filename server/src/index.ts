@@ -199,6 +199,8 @@ import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
+import type { MrConnection } from "./mr-reviews/clones";
+import { gitShellCommandArgv } from "./workspace/git-shell";
 import {
   AGENT_CHAT_METHODS,
   handleAgentChatRpc,
@@ -972,11 +974,80 @@ function getAssistantService() {
 /** Merge and pull requests the chats show, shared by every browser. */
 const forgeCache = createForgeCache();
 
+/** The ready connections for the reviews module, this machine's first. */
+function mrReviewConnections(): MrConnection[] {
+  return connectionManager
+    .list()
+    .flatMap((status) => {
+      const runtime = connectionManager.readyRuntime(status.id);
+      if (!runtime || runtime.remotePlatform === "windows") return [];
+      const host = runtime.sshHost();
+      const call = (method: string, params: Record<string, unknown> = {}) =>
+        runtime.herdr.call(method, params);
+      return [
+        {
+          remote: !!host,
+          connection: {
+            id: status.id,
+            label: status.label,
+            run: (script: string, timeoutMs = 60_000) =>
+              runProcessWithCodeTimeout(
+                gitShellCommandArgv(script, host || undefined),
+                timeoutMs,
+              ),
+            herdr: call,
+            dirs: async () => {
+              const [workspaces, panes] = (await Promise.all([
+                call("workspace.list"),
+                call("pane.list"),
+              ])) as [
+                {
+                  workspaces?: {
+                    cwd?: string;
+                    worktree?: { checkout_path?: string };
+                  }[];
+                },
+                { panes?: { cwd?: string; foreground_cwd?: string }[] },
+              ];
+              return [
+                ...(workspaces?.workspaces ?? []).flatMap((w) => [
+                  w.cwd ?? "",
+                  w.worktree?.checkout_path ?? "",
+                ]),
+                ...(panes?.panes ?? []).flatMap((p) => [
+                  p.cwd ?? "",
+                  p.foreground_cwd ?? "",
+                ]),
+              ].filter((dir) => dir.startsWith("/"));
+            },
+          } satisfies MrConnection,
+        },
+      ];
+    })
+    .sort((a, b) => Number(a.remote) - Number(b.remote))
+    .map((entry) => entry.connection);
+}
+
 let mrReviews: MrReviews | null = null;
 /** The reviews inbox (bridge.mr_reviews.*), started on first use. */
 function getMrReviews(): MrReviews {
   if (mrReviews) return mrReviews;
-  mrReviews = createMrReviews({ run: runProcessWithCodeTimeout });
+  mrReviews = createMrReviews({
+    run: runProcessWithCodeTimeout,
+    connections: mrReviewConnections,
+    openReview: ({ connectionId, workspaceId, root, url, title }) =>
+      getReviewService().open({
+        connectionId,
+        workspaceId,
+        root,
+        target: { kind: "mr", url },
+        title,
+        raise: false,
+      }),
+    removeReview: (sessionId) => {
+      getReviewService().remove({ sessionId });
+    },
+  });
   mrReviews.start();
   return mrReviews;
 }

@@ -12,6 +12,16 @@ import type {
   ReviewDiff,
   ReviewThread,
 } from "../../../shared/review";
+import {
+  isGithubPullUrl,
+  parseGithubPullUrl,
+  readPullCommitDiff,
+  readPullCommits,
+  readPullDiff,
+  readPullRawFile,
+  readPullRequest,
+  readPullThreads,
+} from "./github";
 import { parseUnifiedDiff } from "./patch";
 
 /**
@@ -35,6 +45,8 @@ export type GlabContext = {
 export type MergeRequestRef = { host: string; project: string; iid: number };
 
 export type MergeRequestInfo = MergeRequestRef & {
+  /** A GitHub pull request (review/github.ts); absent: GitLab. */
+  forge?: "github";
   /**
    * The project's path as GitLab answers it (from the MR's web_url): the
    * URL may name it by its numeric id or a former path.
@@ -66,6 +78,8 @@ export type GitLabDraft = {
 const TIMEOUT_MS = 30_000;
 
 export function parseMergeRequestUrl(url: string): MergeRequestRef | null {
+  // A GitHub pull request is reviewed the same way (review/github.ts).
+  if (isGithubPullUrl(url)) return parseGithubPullUrl(url);
   const match =
     /^https:\/\/([^/\s]+)\/(.+?)\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/.exec(
       url,
@@ -385,6 +399,7 @@ export async function readMergeRequest(
   context: GlabContext,
   url: string,
 ): Promise<MergeRequestInfo> {
+  if (isGithubPullUrl(url)) return readPullRequest(context, url);
   const ref = parseMergeRequestUrl(url);
   if (!ref) throw new Error("not a GitLab merge request URL");
   const mr = (await glab(context, ref, "GET", mrPath(ref))) as Record<
@@ -420,6 +435,7 @@ export async function readMergeRequestDiff(
   context: GlabContext,
   mr: MergeRequestInfo,
 ): Promise<ReviewDiff> {
+  if (mr.forge === "github") return readPullDiff(context, mr);
   const files = (await glab(
     context,
     mr,
@@ -491,6 +507,7 @@ export async function readMergeRequestThreads(
   mr: MergeRequestInfo,
   sessionId: string,
 ): Promise<ReviewThread[]> {
+  if (mr.forge === "github") return readPullThreads(context, mr, sessionId);
   const [discussions, drafts] = await Promise.all([
     glab(context, mr, "GET", `${mrPath(mr)}/discussions?per_page=100`),
     glab(context, mr, "GET", `${mrPath(mr)}/draft_notes?per_page=100`),
@@ -736,6 +753,8 @@ export async function createDraftNote(
   /** The diff the anchor is on, to place ranges and unchanged lines. */
   diff?: ReviewDiff,
 ): Promise<GitLabDraft> {
+  if (mr.forge === "github")
+    throw new Error("GitHub drafts are not supported here yet");
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
     ["note", note, "raw"],
     ...positionFields(mr, anchor, diff),
@@ -749,6 +768,8 @@ export async function createDraftReply(
   discussionId: string,
   note: string,
 ): Promise<GitLabDraft> {
+  if (mr.forge === "github")
+    throw new Error("GitHub drafts are not supported here yet");
   if (!/^[0-9a-f]+$/.test(discussionId))
     throw new Error("invalid discussion id");
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
@@ -763,6 +784,8 @@ export async function updateDraftNote(
   id: number,
   note: string,
 ): Promise<GitLabDraft> {
+  if (mr.forge === "github")
+    throw new Error("GitHub drafts are not supported here yet");
   return (await glab(context, mr, "PUT", `${mrPath(mr)}/draft_notes/${id}`, [
     ["note", note, "raw"],
   ])) as GitLabDraft;
@@ -773,6 +796,8 @@ export async function deleteDraftNote(
   mr: MergeRequestInfo,
   id: number,
 ): Promise<void> {
+  if (mr.forge === "github")
+    throw new Error("GitHub drafts are not supported here yet");
   await glab(context, mr, "DELETE", `${mrPath(mr)}/draft_notes/${id}`);
 }
 
@@ -783,6 +808,8 @@ export async function replyToDiscussion(
   discussionId: string,
   body: string,
 ): Promise<void> {
+  if (mr.forge === "github")
+    throw new Error("GitHub drafts are not supported here yet");
   if (!/^[0-9a-f]+$/.test(discussionId))
     throw new Error("invalid discussion id");
   await glab(
@@ -801,6 +828,7 @@ export async function readRawFile(
   path: string,
   sha: string,
 ): Promise<string> {
+  if (mr.forge === "github") return readPullRawFile(context, mr, path, sha);
   const result = await glab(
     context,
     mr,
@@ -817,6 +845,7 @@ export async function readMergeRequestCommits(
   context: GlabContext,
   mr: MergeRequestInfo,
 ): Promise<ReviewCommit[]> {
+  if (mr.forge === "github") return readPullCommits(context, mr);
   const commits = (await glab(
     context,
     mr,
@@ -847,6 +876,8 @@ export async function readCommitDiff(
   sha: string,
   parent: string | null,
 ): Promise<ReviewDiff> {
+  if (mr.forge === "github")
+    return readPullCommitDiff(context, mr, sha, parent);
   if (!/^[0-9a-f]{7,64}$/.test(sha)) throw new Error("invalid commit");
   const files = (await glab(
     context,
