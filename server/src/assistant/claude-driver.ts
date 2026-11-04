@@ -12,7 +12,11 @@ import { assertSafeDataPath } from "../config/data-paths";
 import { RANGER_MCP_SERVER, type RangerMcp } from "./claude-mcp";
 import type { AssistantDriver } from "./pi-driver";
 import { AssistantUserError } from "./errors";
-import { rangerSystemPrompt, rangerTools } from "./ranger-tools";
+import {
+  type RangerTool,
+  rangerSystemPrompt,
+  rangerTools,
+} from "./ranger-tools";
 
 export { CLAUDE_CODE_PROVIDER };
 /** Claude Code's model aliases: each names its family's latest model. */
@@ -23,7 +27,6 @@ const CLAUDE_CODE_MODELS = [
 ];
 /** Ranger's thinking levels Claude Code takes as `--effort`. */
 const CLAUDE_CODE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-const TOOL_PREFIX = `mcp__${RANGER_MCP_SERVER}__`;
 const TRUNCATED = "\n[truncated]";
 
 /** The pointer a Claude Code turn leaves in Ranger's saved context. */
@@ -134,8 +137,8 @@ function bounded(value: string, max: number) {
     : value.slice(0, Math.max(0, max - TRUNCATED.length)) + TRUNCATED;
 }
 
-function toolName(name: string) {
-  return name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name;
+function toolName(name: string, prefix: string) {
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
 function resultText(content: unknown): string {
@@ -164,8 +167,21 @@ export function createClaudeCodeDriver(options: {
   spawn?: SpawnClaudeCode;
   /** Whether the command can be found; checked for each catalog. */
   available?: () => boolean;
+  /**
+   * Another agent on the same driver (the reviews agent): its tools and
+   * instructions instead of Ranger's.
+   */
+  tools?: (
+    input: Parameters<AssistantDriver["run"]>[0],
+    automatic: boolean,
+  ) => RangerTool[];
+  systemPrompt?: (automatic: boolean) => string;
 }) {
   const command = options.command ?? "claude";
+  const server = options.mcp.name ?? RANGER_MCP_SERVER;
+  const toolPrefix = `mcp__${server}__`;
+  const turnTools = options.tools ?? rangerTools;
+  const systemPrompt = options.systemPrompt ?? rangerSystemPrompt;
   const spawn = options.spawn ?? spawnClaudeCode(command);
   const available = options.available ?? (() => Bun.which(command) !== null);
   let active:
@@ -263,7 +279,7 @@ export function createClaudeCodeDriver(options: {
         mkdirSync(cwd, { recursive: true, mode: 0o700 });
         const automatic = input.config.approval_mode === "auto";
         lease = options.mcp.open({
-          tools: rangerTools(input, automatic),
+          tools: turnTools(input, automatic),
           signal: controller.signal,
           sources: (sources) => input.sources?.(sources),
         });
@@ -289,12 +305,12 @@ export function createClaudeCodeDriver(options: {
           "--mcp-config",
           configPath,
           "--allowedTools",
-          `mcp__${RANGER_MCP_SERVER}`,
+          `mcp__${server}`,
           "--disable-slash-commands",
           "--settings",
           JSON.stringify({ disableAllHooks: true }),
           "--system-prompt",
-          `${rangerSystemPrompt(automatic)}\nYour tools are named ${TOOL_PREFIX}<name>; these instructions name them without that prefix.`,
+          `${systemPrompt(automatic)}\nYour tools are named ${toolPrefix}<name>; these instructions name them without that prefix.`,
         ];
         // Save the session before it can run a tool, as Pi saves its root.
         input.checkpoint?.(retained);
@@ -366,7 +382,7 @@ export function createClaudeCodeDriver(options: {
                 typeof part.name === "string"
               ) {
                 const tool = {
-                  name: toolName(part.name),
+                  name: toolName(part.name, toolPrefix),
                   arguments: isRecord(part.input)
                     ? bounded(
                         JSON.stringify(part.input, null, 2),

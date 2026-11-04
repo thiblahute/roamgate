@@ -17,6 +17,15 @@ import type { VoiceStream } from "./components/useVoiceChat";
  * events for voice chat.
  */
 
+/**
+ * What Ranger's chat pieces read of a conversation: Ranger's snapshot, or
+ * another agent's shaped as it (the reviews agent's).
+ */
+export type RangerChatSnapshot = Pick<
+  AssistantSnapshot,
+  "instance_id" | "session_id" | "running" | "messages" | "queue" | "error"
+>;
+
 /** A Ranger message as a chat entry. Assistant replies are one block. */
 export function rangerMessageEntry(
   message: AssistantMessage,
@@ -106,7 +115,7 @@ export type RangerVoiceSend = (
  * what the chat held then is the baseline, never replayed.
  */
 export function createRangerVoiceStream(input: {
-  read: () => AssistantSnapshot | null;
+  read: () => RangerChatSnapshot | null;
   subscribe: (listener: () => void) => () => void;
   send: RangerVoiceSend;
   stop: () => Promise<void>;
@@ -122,7 +131,7 @@ export function createRangerVoiceStream(input: {
     tools: new Map(message.tools.map((tool) => [tool.id, tool.status])),
     stopped,
   });
-  const baseline = (snapshot: AssistantSnapshot | null) => {
+  const baseline = (snapshot: RangerChatSnapshot | null) => {
     session = snapshot?.session_id;
     running = !!snapshot?.running;
     seen = new Map(

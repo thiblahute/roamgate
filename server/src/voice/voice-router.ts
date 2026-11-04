@@ -9,6 +9,7 @@ Each request gives the session on screen ("current") and what was just said; the
 - {"to": "open", "pane": "<id>", "say": "<short name>"}: the user asks to go to, open, switch to, look for or check on another session. "say" is how to name it aloud, a few words.
 - {"to": "send", "pane": "<id>", "say": "<short name>"}: the user asks to tell, ask or pass something to another session's agent. The words go to it as said.
 - {"to": "ranger"}: a question about other sessions or workspaces, one or several, without asking to go there: what one is doing, whether it is done or waits on them, the state of work it owns (its merge request, CI, branch or ticket), what they worked on today, which ones wait on them; or a request to manage workspaces said to Ranger by name ("Ranger, close the docker cleanup pane"). A question about the agent on screen or its own work is "current", never "ranger": "how is the rebase going?", "are you done?", "where are we?", "what is that agent you started doing?", even when it names the session on screen ("I'm asking the Roamgate session how the rebase is going"). Work the agent on screen is asked to do, creating worktrees or starting sessions included, stays "current". A question about another session is "ranger" however it is put ("if I ask you whether X is ready, can you answer?"). Ranger, Roamgate's assistant, answers it while the user stays where they are. "Go to", "open", "switch to" or "move to" a session is "open", even with "see what is happening there".
+- {"to": "reviews"}: a question or request for the reviews agent, about merge or pull requests to review on the forges: what is new or waits for review in a project or an area ("anything new on GES or the RTP stack?", "find MRs touching validate"), why one was suggested ("why did you suggest 12967?"), or to suggest, dismiss or open one; or said to the reviews agent by name ("ask the reviews agent..."). A question about the merge request of a session's own work is "ranger"; a request to the agent on screen about the review it is doing is "current".
 - {"to": "errand", "pane": "<id>", "say": "<short name>"}: a question or an errand not about any session, project or Roamgate: the news, football, the weather, sending a WhatsApp message or a mail, a purchase. It goes to the session marked "handles errands", which answers while the user stays where they are. Without such a session, it is "current".
 - {"to": "ask", "panes": ["<id>", "<id>"], "question": "<short question>"}: only when two or three sessions fit equally and nothing said tells them apart, such as the same title on two machines. Otherwise pick the best match: a session whose own workspace or title carries the name said ("IGA-184") beats one that only mentions it among others. The question is a few words naming them, so the user can answer by voice.
 - {"to": "nobody"}: not said to an agent: talk with someone nearby, on the phone, or a fragment of it.
@@ -38,6 +39,8 @@ export type VoiceRoute =
   | { to: "nobody" }
   | { to: "open" | "send"; pane: string; say: string }
   | { to: "ranger" }
+  /** A question for the reviews agent (the Reviews panel's chat). */
+  | { to: "reviews" }
   | { to: "errand"; pane: string; say: string; job?: string }
   | { to: "ask"; panes: string[]; question: string };
 
@@ -85,6 +88,8 @@ function checked(reply: Record<string, unknown>, ids: Set<string>): VoiceRoute {
       return { to: "nobody" };
     case "ranger":
       return { to: "ranger" };
+    case "reviews":
+      return { to: "reviews" };
     case "open":
     case "send":
     case "errand":

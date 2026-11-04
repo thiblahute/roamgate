@@ -11,15 +11,15 @@ import type {
   AssistantMention,
   AssistantMentionTarget,
   AssistantMessage,
-  AssistantSnapshot,
   AssistantWorkspace,
   AssistantWorkspaceRef,
 } from "../../../shared/assistant";
-import { assistantQueueSupported, subscribeAssistant } from "../assistant";
+import { subscribeAssistant } from "../assistant";
 import { adjustAssistantMentions } from "../assistantMentions";
-import { rangerChatSource } from "../chatSource";
+import { type ChatSource, rangerChatSource } from "../chatSource";
 import {
   createRangerVoiceStream,
+  type RangerChatSnapshot,
   rangerHistoryEntries,
   rangerReplyRunning,
 } from "../rangerChat";
@@ -140,8 +140,13 @@ export function RangerChat({
   canSteer = true,
   currentWorkspace,
   onOpenMention,
+  agent = "Ranger",
+  placeholder = "Ask about your workspaces, or @mention one",
+  source: sourceOf,
+  subscribe = subscribeAssistant,
+  stopTitle = "Stop the model response; confirmed actions continue and waiting messages are kept",
 }: {
-  snapshot: AssistantSnapshot;
+  snapshot: RangerChatSnapshot;
   /** The connection on screen: the chat's comment threads are kept there. */
   connectionId: string;
   mobile: boolean;
@@ -178,6 +183,19 @@ export function RangerChat({
    * picker, whose picks become references bound to the message.
    */
   onOpenMention?: (target: AssistantMentionTarget) => void;
+  /**
+   * Another agent's chat on Ranger's pieces (the reviews agent's): its
+   * name, its message box's words, where its threads and voice chat go,
+   * and how its snapshots are watched for voice chat.
+   */
+  agent?: string;
+  placeholder?: string;
+  source?: (
+    snapshot: RangerChatSnapshot,
+    entries: readonly HistoryEntry[],
+  ) => ChatSource;
+  subscribe?: (listener: () => void) => () => void;
+  stopTitle?: string;
 }) {
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<HistoryEntry | null>(null);
@@ -187,7 +205,9 @@ export function RangerChat({
   const searchRef = useRef<HTMLInputElement>(null);
   const highlightTimer = useRef<number | null>(null);
   const entries = useMemo(() => rangerHistoryEntries(snapshot), [snapshot]);
-  const source = rangerChatSource(snapshot, connectionId, entries);
+  const source = sourceOf
+    ? sourceOf(snapshot, entries)
+    : rangerChatSource(snapshot, connectionId, entries);
   const draftKey = source.draftKey;
 
   useEffect(() => {
@@ -227,7 +247,7 @@ export function RangerChat({
         minimap.push({
           id: message.id,
           role: message.role,
-          label: message.role === "user" ? "You" : "Ranger",
+          label: message.role === "user" ? "You" : agent,
           text: message.text,
         });
         items.push({ type: "message", entry, sequence: minimap.length });
@@ -272,7 +292,7 @@ export function RangerChat({
         node: <span className="assistant-hint">Working...</span>,
       });
     return { items, minimap };
-  }, [snapshot, entries, extras, needle]);
+  }, [snapshot, entries, extras, needle, agent]);
 
   const selectMinimap = useCallback((index: number) => {
     const sequence = index + 1;
@@ -331,14 +351,14 @@ export function RangerChat({
     () =>
       createRangerVoiceStream({
         read: () => snapshotRef.current,
-        subscribe: subscribeAssistant,
+        subscribe,
         send: async (text, busy) => {
           await sendRef.current(text, [], busy ? "queue" : undefined);
           return busy ? "queued" : "sent";
         },
         stop: async () => stopRef.current(),
       }),
-    [],
+    [subscribe],
   );
   const voice = useVoiceChat({
     entries,
@@ -404,7 +424,7 @@ export function RangerChat({
           scrollerRef={listRef}
           itemsRef={contentRef}
           orientation={mobile ? "horizontal" : "auto"}
-          label="Ranger conversation navigation"
+          label={`${agent} conversation navigation`}
           emptyText="No response text yet"
           onSelect={selectMinimap}
         />
@@ -420,12 +440,13 @@ export function RangerChat({
     <AgentHistoryComposer
       key={draftKey}
       draftKey={draftKey}
-      agent="Ranger"
+      agent={agent}
       status={source.status}
-      placeholder="Ask about your workspaces, or @mention one"
+      placeholder={placeholder}
       onSend={send}
       onQueue={
-        running && canSteer && assistantQueueSupported(snapshot)
+        // A bridge that queues has a queue.
+        running && canSteer && Array.isArray(snapshot.queue)
           ? queueSend
           : undefined
       }
@@ -443,12 +464,11 @@ export function RangerChat({
       }
       onRecallQueued={recallQueued}
       onStop={running ? onStop : undefined}
-      sendTo="Ranger"
+      sendTo={agent}
       sendBlocked={blocked || !!disabled}
       stop={{
         label: "Stop",
-        title:
-          "Stop the model response; confirmed actions continue and waiting messages are kept",
+        title: stopTitle,
       }}
       onError={onError}
       voice={
@@ -489,7 +509,7 @@ export function RangerChat({
           <input
             ref={searchRef}
             type="search"
-            aria-label="Search Ranger messages"
+            aria-label={`Search ${agent} messages`}
             placeholder="Search this chat"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
@@ -504,7 +524,7 @@ export function RangerChat({
       ) : null}
       <div
         className="assistant-conversation ranger-chat-conversation"
-        aria-label="Ranger conversation"
+        aria-label={`${agent} conversation`}
         aria-busy={running || executing}
       >
         {!snapshot.messages.length ? (
@@ -536,7 +556,7 @@ export function RangerChat({
             muted={voice.muted}
             heard={voice.heard}
             speechRate={voice.speechRate}
-            agent="Ranger"
+            agent={agent}
             place="Roamgate"
             onToggle={voice.toggle}
             onToggleMute={voice.toggleMute}

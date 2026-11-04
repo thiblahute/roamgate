@@ -44,6 +44,10 @@ function setup(route: VoiceRoute) {
       calls.push(`ranger ${text}`);
       return "Ranger says hi.";
     },
+    reviews: async (text) => {
+      calls.push(`reviews ${text}`);
+      return "Two MRs touch validate.";
+    },
     show: (connectionId, paneId) =>
       calls.push(`show ${connectionId}/${paneId}`),
   };
@@ -152,7 +156,7 @@ describe("typing to the companion", () => {
     expect(shown[shown.length - 1]).toContain("pas pu lancer");
   });
 
-  test("a question for Ranger, or a session to show", async () => {
+  test("a question for Ranger or the reviews agent, or a session to show", async () => {
     const ranger = setup({ to: "ranger", reply: "Je demande à Ranger." });
     await sendCompanionText("Qu'est-ce qui attend ?", ranger.deps);
     await settle();
@@ -160,6 +164,16 @@ describe("typing to the companion", () => {
       "ranger Qu'est-ce qui attend ?",
     );
     expect(lines().slice(-1)[0]).toBe("said: Ranger: Ranger says hi.");
+    const reviews = setup({
+      to: "reviews",
+      reply: "Je demande à l'agent des reviews.",
+    });
+    await sendCompanionText("Des MRs qui touchent validate ?", reviews.deps);
+    await settle();
+    expect(reviews.calls[reviews.calls.length - 1]).toBe(
+      "reviews Des MRs qui touchent validate ?",
+    );
+    expect(lines().slice(-1)[0]).toBe("said: Reviews: Two MRs touch validate.");
     const open = setup({ to: "open", pane: "local/w3:p1", say: "docs" });
     await sendCompanionText("Montre-moi docs.", open.deps);
     expect(open.calls[open.calls.length - 1]).toBe("show local/w3:p1");

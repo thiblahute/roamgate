@@ -42,6 +42,8 @@ export function createRangerMcp(
       stop: () => void server.stop(true),
     };
   },
+  /** The server's name: another agent's tools (the reviews agent's). */
+  name: string = RANGER_MCP_SERVER,
 ) {
   const turns = new Map<string, ActiveTurn>();
   let listener: Listener | null = null;
@@ -56,7 +58,7 @@ export function createRangerMcp(
               ? params.protocolVersion
               : "2025-06-18",
           capabilities: { tools: {} },
-          serverInfo: { name: RANGER_MCP_SERVER, version: "1" },
+          serverInfo: { name, version: "1" },
         };
       case "ping":
         return {};
@@ -145,6 +147,8 @@ export function createRangerMcp(
   }
 
   return {
+    /** Claude Code calls its tools `mcp__<name>__<tool>`. */
+    name,
     /** Serves `turn`'s tools until the lease is closed. */
     open(turn: RangerMcpTurn): RangerMcpLease {
       listener ??= listen(handle);
@@ -158,7 +162,7 @@ export function createRangerMcp(
       return {
         config: JSON.stringify({
           mcpServers: {
-            [RANGER_MCP_SERVER]: {
+            [name]: {
               type: "http",
               url: listener.url,
               headers: { Authorization: `Bearer ${token}` },

@@ -32,6 +32,9 @@ describe("parseVoiceRoute", () => {
 
   test("reads a question for Ranger", () => {
     expect(parseVoiceRoute('{"to": "ranger"}', ids)).toEqual({ to: "ranger" });
+    expect(parseVoiceRoute('{"to": "reviews"}', ids)).toEqual({
+      to: "reviews",
+    });
     expect(
       parseVoiceRoute('{"to": "status", "pane": "desktop/w1J:p1"}', ids),
     ).toEqual({ to: "current" });

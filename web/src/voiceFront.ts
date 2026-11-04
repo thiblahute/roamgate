@@ -27,7 +27,11 @@ export const FRONT_SLOW_MS = 3000;
 export function frontReplySaid(to: string, slow: boolean): boolean {
   return !(
     slow &&
-    (to === "current" || to === "send" || to === "ranger" || to === "errand")
+    (to === "current" ||
+      to === "send" ||
+      to === "ranger" ||
+      to === "reviews" ||
+      to === "errand")
   );
 }
 

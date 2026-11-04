@@ -1,4 +1,5 @@
 import { askRanger, readAssistantState } from "./assistant";
+import { askReviewsAgent } from "./mrReviewsAgent";
 import {
   companionCallState,
   companionName,
@@ -52,6 +53,7 @@ export type CompanionTextDeps = {
   follow: typeof followErrand;
   followWeb: typeof followCompanionWeb;
   ranger: typeof askRanger;
+  reviews: typeof askReviewsAgent;
   /** Where work goes by default, and the sessions the user may name. */
   context: () => { current: string; sessions: VoiceSessionInfo[] };
   show: (connectionId: string, paneId: string) => void;
@@ -63,6 +65,7 @@ const defaults: CompanionTextDeps = {
   follow: followErrand,
   followWeb: followCompanionWeb,
   ranger: askRanger,
+  reviews: askReviewsAgent,
   context: () => {
     const state = store.get();
     return {
@@ -180,6 +183,13 @@ export async function sendCompanionText(
       void deps.ranger(said).then(
         (answer) => say(`Ranger: ${plainText(answer)}`),
         (error: Error) => say(`Ranger: ${error.message}`),
+      );
+      return route;
+    case "reviews":
+      if (reply) say(reply);
+      void deps.reviews(said).then(
+        (answer) => say(`Reviews: ${plainText(answer)}`),
+        (error: Error) => say(`Reviews: ${error.message}`),
       );
       return route;
     case "errand":

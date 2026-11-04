@@ -27,7 +27,21 @@ export type MrRanked = {
   score: number;
   reason: string;
   at: string;
+  /**
+   * Who picked it: the reviews agent, asked in its chat ("agent"), or the
+   * curation (unset). The curation leaves the agent's picks alone.
+   */
+  by?: "agent";
 };
+
+/**
+ * A request the reviews agent found by searching, outside the inbox's
+ * lists: kept so its suggestion, feedback or review has its request.
+ * Not refreshed; dropped after FOUND_KEPT_DAYS.
+ */
+export type MrFound = { item: MrItem; at: string };
+
+export const FOUND_KEPT_DAYS = 14;
 
 export type MrReviewRecord = {
   connectionId: string;
@@ -77,6 +91,8 @@ export type MrState = {
   prefetched: Record<string, string>;
   /** The latest GitLab draft counts read, by request. */
   drafts: Record<string, { count: number; at: string }>;
+  /** Requests the reviews agent found, by key. */
+  found: Record<string, MrFound>;
 };
 
 export const FEEDBACK_KEPT = 200;
@@ -93,6 +109,7 @@ function empty(): MrState {
     baselined: {},
     prefetched: {},
     drafts: {},
+    found: {},
   };
 }
 
@@ -119,6 +136,7 @@ export function normalizeState(raw: unknown): MrState {
     baselined: record(value.baselined),
     prefetched: record(value.prefetched),
     drafts: record(value.drafts),
+    found: record(value.found),
   };
 }
 
