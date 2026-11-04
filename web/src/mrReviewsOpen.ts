@@ -19,6 +19,31 @@ export const MR_REVIEWS_ENTRY = {
   ],
 };
 
+/**
+ * The last element focused outside the panel and the menus: Esc gives
+ * the focus back there (a chat's message box, a terminal).
+ */
+let lastFocus: HTMLElement | null = null;
+if (typeof document !== "undefined")
+  document.addEventListener(
+    "focusin",
+    (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        !target.closest(
+          ".mr-reviews-panel, [role='menu'], [role='dialog'], .command-popover",
+        )
+      )
+        lastFocus = target;
+    },
+    true,
+  );
+
+export function focusBeforeMrReviews(): HTMLElement | null {
+  return lastFocus?.isConnected ? lastFocus : null;
+}
+
 function loadRoot() {
   return importWithReload(
     "mr-reviews",

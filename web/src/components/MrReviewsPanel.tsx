@@ -269,6 +269,7 @@ export function MrReviewsPanel({
   );
   const [detail, setDetail] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const openedAt = useRef(Date.now());
   const entries = useMemo(() => inbox?.entries ?? [], [inbox]);
   const bySection = useMemo(() => {
     const groups: Record<MrSection, MrInboxEntry[]> = {
@@ -296,9 +297,21 @@ export function MrReviewsPanel({
     row?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
-  // Focus the panel on open, so its keys work at once.
+  // Focus the panel on open, so its keys work at once; again a moment
+  // later, as a closing menu hands the focus back to its button.
   useEffect(() => {
-    panelRef.current?.focus({ preventScroll: true });
+    const take = () => {
+      const panel = panelRef.current;
+      const active = document.activeElement as HTMLElement | null;
+      if (!panel || panel.contains(active)) return;
+      // Not from a box the user went to type in since.
+      if (active?.closest?.("input, textarea, select, [contenteditable]"))
+        if (Date.now() - openedAt.current > 300) return;
+      panel.focus({ preventScroll: true });
+    };
+    take();
+    const timers = [0, 80, 250].map((ms) => setTimeout(take, ms));
+    return () => timers.forEach(clearTimeout);
   }, []);
 
   const open = (entry: MrInboxEntry) => {
@@ -331,48 +344,61 @@ export function MrReviewsPanel({
     setSelected(ordered[next]!.key);
   };
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    // The app's own shortcuts must not take typing in the panel.
-    event.stopPropagation();
-    if (event.nativeEvent.isComposing || event.defaultPrevented) return;
+  /** One key in the panel; true when the panel took it. */
+  const onKey = (event: KeyboardEvent): boolean => {
+    // Another handler may have marked it (a chat's Escape, say): the panel
+    // still owns its keys while it has the focus.
+    if (event.isComposing) return false;
     const typing =
       event.target instanceof HTMLElement &&
       (event.target.closest("input, textarea, select, [contenteditable]") ??
         null) !== null;
     if (event.key === "Escape") {
-      event.preventDefault();
       if (view === "settings") setView("list");
       else if (detail) setDetail(null);
       else if (maximized && !mobile) setMaximized(false);
       else onClose();
-      return;
+      return true;
     }
-    if (typing || view !== "list" || detail) return;
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (typing || view !== "list" || detail) return false;
+    if (event.metaKey || event.ctrlKey || event.altKey) return false;
     const current = ordered.find((entry) => entry.key === selected);
     if (event.key === "j" || event.key === "ArrowDown") {
-      event.preventDefault();
       move(1);
     } else if (event.key === "k" || event.key === "ArrowUp") {
-      event.preventDefault();
       move(-1);
     } else if (event.key === "Enter" && current) {
-      event.preventDefault();
       open(current);
     } else if (event.key === "o" && current) {
-      event.preventDefault();
       window.open(current.url, "_blank", "noopener");
     } else if (event.key === "r") {
-      event.preventDefault();
       void reload(true);
     } else if (event.key === "x" && current?.section === "suggested") {
-      event.preventDefault();
       feedback(current, "not_interested");
     } else if (event.key === "+" && current?.section === "suggested") {
-      event.preventDefault();
       feedback(current, "more_like_this");
-    }
+    } else return false;
+    return true;
   };
+
+  // The panel's keys, taken on the window before the page's other key
+  // handlers (a chat's, a terminal's) while the focus is in the panel.
+  const onKeyRef = useRef(onKey);
+  onKeyRef.current = onKey;
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      const panel = panelRef.current;
+      const target = event.target as Node | null;
+      if (!panel || !target || !panel.contains(target)) return;
+      if (onKeyRef.current(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener("keydown", listener, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", listener, { capture: true });
+  }, []);
 
   const problems = (inbox?.hosts ?? [])
     .map(hostProblem)
@@ -389,7 +415,14 @@ export function MrReviewsPanel({
       tabIndex={-1}
       className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}`}
       aria-label="Reviews"
-      onKeyDown={onKeyDown}
+      onMouseDown={(event) => {
+        // A click anywhere in the panel gives it the keys.
+        const target = event.target as HTMLElement;
+        if (!target.closest("button, a, input, textarea, select, [tabindex]"))
+          requestAnimationFrame(() =>
+            panelRef.current?.focus({ preventScroll: true }),
+          );
+      }}
     >
       <header className="assistant-panel-head">
         <div>
@@ -397,19 +430,6 @@ export function MrReviewsPanel({
             <strong>Reviews</strong>
           </div>
           <div className="assistant-panel-meta">
-            <nav className="assistant-primary-nav" aria-label="Reviews views">
-              {(["list", "settings"] as const).map((item) => (
-                <button
-                  type="button"
-                  key={item}
-                  className="ghost"
-                  aria-pressed={view === item}
-                  onClick={() => setView(item)}
-                >
-                  {item === "list" ? "Inbox" : "Settings"}
-                </button>
-              ))}
-            </nav>
             <span
               className={`assistant-panel-status${inbox?.refreshing ? " is-busy" : ""}`}
             >
@@ -465,7 +485,18 @@ export function MrReviewsPanel({
         </div>
       ) : null}
       {view === "settings" ? (
-        <MrReviewsSettingsView onSaved={() => void reload(true)} />
+        <>
+          <div className="assistant-section-heading mr-reviews-back">
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setView("list")}
+            >
+              <ChevronLeft size={13} /> Inbox
+            </button>
+          </div>
+          <MrReviewsSettingsView onSaved={() => void reload(true)} />
+        </>
       ) : (
         <div className="assistant-tasks mr-reviews-body">
           {detailEntry ? (

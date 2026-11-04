@@ -1,4 +1,5 @@
 import { createRoot, type Root } from "react-dom/client";
+import { focusBeforeMrReviews } from "../mrReviewsOpen";
 import { MrReviewsPanel } from "./MrReviewsPanel";
 
 let root: Root | null = null;
@@ -10,8 +11,14 @@ function close() {
   host?.remove();
   root = null;
   host = null;
-  if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
-    previousFocus.focus({ preventScroll: true });
+  const back =
+    previousFocus instanceof HTMLElement &&
+    previousFocus.isConnected &&
+    previousFocus !== document.body &&
+    !previousFocus.closest("[role='menu'], .command-popover")
+      ? previousFocus
+      : focusBeforeMrReviews();
+  back?.focus({ preventScroll: true });
   previousFocus = null;
 }
 

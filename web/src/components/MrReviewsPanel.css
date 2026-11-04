@@ -32,6 +32,10 @@
   border-radius: 0;
 }
 
+.mr-reviews-back {
+  padding: 10px 12px 0;
+}
+
 .mr-reviews-body {
   gap: 14px;
 }
