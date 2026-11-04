@@ -12,6 +12,7 @@ import { createInboxFetchers, type InboxFetchers } from "./fetchers";
 import { discoverForgeHosts, type ForgeHost } from "./hosts";
 import { createMrInbox } from "./inbox";
 import { createMrClaude } from "./claude";
+import { createMrCuration, type RunModel } from "./curation";
 import { createMrOpener } from "./open";
 import {
   handleMrReviewsRpc,
@@ -50,6 +51,8 @@ export function createMrReviews(options: {
     paneId: string;
     focus?: string;
   }) => Promise<unknown>;
+  /** The model runner (tests). */
+  runModel?: RunModel;
   /** Drops a request's review (lifecycle). */
   removeReview?: (sessionId: string) => void;
   more?: MrReviewsRpcDeps["more"];
@@ -76,6 +79,23 @@ export function createMrReviews(options: {
 
   const clones = createCloneFinder();
   let opener: ReturnType<typeof createMrOpener> | null = null;
+  const curation = createMrCuration({
+    store,
+    settings,
+    connections: options.connections ?? (() => []),
+    clones: async () => {
+      const value = await settings();
+      const found = [];
+      for (const project of value.followed)
+        found.push(
+          ...(await clones.find(options.connections?.() ?? [], project)),
+        );
+      return found;
+    },
+    ...(options.runModel ? { run: options.runModel } : {}),
+    users: () => inbox.users(),
+    logger,
+  });
   const inbox = createMrInbox({
     fetchers: options.fetchers ?? createInboxFetchers(options.run),
     settings,
@@ -84,7 +104,9 @@ export function createMrReviews(options: {
     afterRefresh: (items) => {
       void opener?.prefetch(items);
       void lifecycle();
+      void curation.maybeRun(items);
     },
+    curation: () => curation.state(),
   });
   opener = createMrOpener({
     inbox,
@@ -239,6 +261,7 @@ export function createMrReviews(options: {
     settings,
     opener,
     claude,
+    curation,
     lifecycle,
     handle(method: string, params: Record<string, unknown>) {
       return handleMrReviewsRpc(

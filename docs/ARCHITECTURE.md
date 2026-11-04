@@ -728,6 +728,22 @@ local, and `review.adopt {thread_id}` (the user's "Make it mine") turns
 an agent's thread into the user's draft. No code path submits a review.
 Replies to GitHub discussions are refused for now.
 
+`mr-reviews/curation.ts`: after an inbox refresh, at most every 20
+minutes and one at a time, the followed projects' open requests not yet
+ranked at their `updatedAt` (not the user's own, by the host's user name;
+not dismissed) go to `claude -p --model opus --tools "" --safe-mode
+--strict-mcp-config --no-session-persistence` (cwd the temp directory, no
+Herdr variables) in batches of 25, with the user's signals: files and
+directories of their commits over 180 days in each clone (by the clone's
+own `user.email`), their unmerged branches' files, the requests they
+reviewed and their authors, the `hints` setting, and the latest 30
+feedback verdicts. The answer (JSON: key, pick, score, reason) is checked
+against the batch's keys, at most 8 picks, each with a reason, and kept in
+`ranked`. Model choice, measured on two real batches of 25: Opus found 6
+of the 8 requests overlapping the user's files with every pick grounded
+(about $0.13 per batch, 15 s), Sonnet 4 of 8 with person-only picks
+($0.06, 10-15 s), Haiku 5 of 8 with looser links ($0.005, 14-29 s).
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p
