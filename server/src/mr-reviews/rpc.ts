@@ -80,6 +80,7 @@ export async function handleMrReviewsRpc(
         curation: value.curation ?? current.curation,
         suggest_days: value.suggestDays ?? current.suggestDays,
         hints: value.hints ?? current.hints,
+        tree_groups: value.treeGroups ?? current.treeGroups,
         clones: Object.fromEntries(
           Object.entries(
             (value.clones as MrReviewsSettings["clones"] | undefined) ??

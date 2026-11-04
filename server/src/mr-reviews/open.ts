@@ -79,6 +79,15 @@ export type MrOpenerDeps = {
     ready: boolean;
   } | null;
   clones: CloneFinder;
+  /** Puts a new review workspace in its place in the Workspaces tree. */
+  placeWorkspace?: (params: {
+    projectKey: string;
+    connectionId: string;
+    workspaceId: string;
+    label: string;
+    worktree: string;
+    clone: string;
+  }) => Promise<void>;
   /** The review pane's open (review service), never raising it elsewhere. */
   openReview: (params: {
     connectionId: string;
@@ -165,6 +174,9 @@ export function createMrOpener(deps: MrOpenerDeps) {
     return found[0] ?? null;
   }
 
+  /** The workspace workspaceFor just created, to place in the tree. */
+  let placing: { workspaceId: string; label: string } | null = null;
+
   async function workspaceFor(
     conn: MrConnection,
     worktree: string,
@@ -192,6 +204,7 @@ export function createMrOpener(deps: MrOpenerDeps) {
         "Herdr did not create the review workspace",
         "herdr",
       );
+    placing = { workspaceId: id, label: workspaceLabel(project) };
     return id;
   }
 
@@ -224,6 +237,26 @@ export function createMrOpener(deps: MrOpenerDeps) {
       entry.project,
       previous?.workspaceId,
     );
+    // A new one goes where the project's reviews go in the tree; one
+    // the user placed is never moved.
+    const fresh = placing as { workspaceId: string; label: string } | null;
+    placing = null;
+    if (fresh?.workspaceId === workspaceId && deps.placeWorkspace)
+      await deps
+        .placeWorkspace({
+          projectKey: key,
+          connectionId: conn.id,
+          workspaceId,
+          label: fresh.label,
+          worktree,
+          clone: clone.path,
+        })
+        .catch((error) =>
+          logger.info("review workspace not placed", {
+            project: key,
+            error: String(error),
+          }),
+        );
     const record: MrProjectRecord = {
       ...previous,
       connectionId: conn.id,

@@ -1040,7 +1040,11 @@ nothing. Your clone is found among your workspaces' checkouts by its
 remote, on the default connection first (the review worktree and its
 workspace go there), then on the others; with none, the inbox asks where it
 is and remembers it (Reviews' settings list and forget those). While the
-default connection is down, a project's first review waits for it. Heads of the inbox's
+default connection is down, a project's first review waits for it. A new
+review workspace goes into the Workspaces tree where the project's
+setting says (a path such as `gst > reviews`, matched by name and made
+when missing), else into a "Reviews" group under the clone's workspace,
+else into a top-level "Reviews" group; one you moved is never moved again. Heads of the inbox's
 requests are fetched in the background, so switching is just a checkout.
 Each request keeps its own review, with its place and drafts. A request's
 review state goes a few days (a setting) after it is merged or closed; the

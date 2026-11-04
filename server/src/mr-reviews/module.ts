@@ -14,6 +14,11 @@ import { createMrInbox } from "./inbox";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
 import { createMrOpener } from "./open";
+import { reviewPlacementOps } from "./tree";
+import type {
+  WorkspaceTree,
+  WorkspaceTreeOp,
+} from "../../../shared/workspaceTree";
 import {
   handleMrReviewsRpc,
   MrReviewsError,
@@ -57,6 +62,11 @@ export function createMrReviews(options: {
     paneId: string;
     focus?: string;
   }) => Promise<unknown>;
+  /** The Workspaces tree (settings `workspace_tree`). */
+  tree?: {
+    read: () => Promise<WorkspaceTree>;
+    apply: (ops: WorkspaceTreeOp[]) => Promise<unknown>;
+  };
   /** The model runner (tests). */
   runModel?: RunModel;
   /** Drops a request's review (lifecycle). */
@@ -124,6 +134,34 @@ export function createMrReviews(options: {
       : {}),
     clones,
     logger,
+    ...(options.tree
+      ? {
+          placeWorkspace: async (place: {
+            projectKey: string;
+            connectionId: string;
+            workspaceId: string;
+            label: string;
+            worktree: string;
+            clone: string;
+          }) => {
+            const tree = options.tree!;
+            const path = (await settings()).treeGroups[place.projectKey];
+            await tree.apply(
+              reviewPlacementOps(await tree.read(), {
+                ref: {
+                  connection_id: place.connectionId,
+                  path: place.worktree,
+                  label: place.label,
+                  workspace_id: place.workspaceId,
+                },
+                connectionId: place.connectionId,
+                clonePath: place.clone,
+                ...(path ? { path } : {}),
+              }),
+            );
+          },
+        }
+      : {}),
     openReview: (params) => {
       if (!options.openReview)
         throw new MrReviewsError("reviews are not available", "unavailable");

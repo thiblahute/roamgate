@@ -676,7 +676,11 @@ branch for the base), opens the review session (target `mr`, root the
 worktree) and checks out the head detached when the setting says so. A
 worktree with local changes answers `dirty` and is left alone;
 `bridge.mr_reviews.checkout {key, local: wip|discard}` is the user's
-answer (WIP commit on `review/<n>`, or reset and clean). Worktree commands
+answer (WIP commit on `review/<n>`, or reset and clean). A workspace it
+creates is placed once through `applyWorkspaceTreeOps`
+(`mr-reviews/tree.ts`): the `tree_groups[project]` path of names, else a
+"Reviews" group under the clone's workspace node, else at the top, groups
+created when missing. Worktree commands
 for one project run one at a time. After each refresh the heads of the
 user's own open requests and the picked suggestions are prefetched, one
 fetch per project with a review worktree, only for a head not fetched yet

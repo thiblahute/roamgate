@@ -15,6 +15,7 @@ export type StoredMrReviewsSettings = {
   curation?: boolean;
   suggest_days?: number;
   hints?: string;
+  tree_groups?: Record<string, string[]>;
   clones?: Record<string, { connection_id: string; path: string }>;
 };
 
@@ -84,6 +85,24 @@ export function normalizeStoredMrReviews(
     out.suggest_days = suggest;
   if (typeof value.hints === "string") out.hints = value.hints.slice(0, 2000);
   if (
+    value.tree_groups &&
+    typeof value.tree_groups === "object" &&
+    !Array.isArray(value.tree_groups)
+  ) {
+    out.tree_groups = {};
+    for (const [key, path] of Object.entries(
+      value.tree_groups as Record<string, unknown>,
+    )) {
+      if (!key.includes("/") || !Array.isArray(path)) continue;
+      const names = path
+        .filter((part): part is string => typeof part === "string")
+        .map((part) => part.trim().slice(0, 120))
+        .filter(Boolean)
+        .slice(0, 6);
+      if (names.length) out.tree_groups[key.toLowerCase()] = names;
+    }
+  }
+  if (
     value.clones &&
     typeof value.clones === "object" &&
     !Array.isArray(value.clones)
@@ -115,6 +134,7 @@ export function mrReviewsSettings(
     curation: stored?.curation ?? base.curation,
     suggestDays: stored?.suggest_days ?? base.suggestDays,
     hints: stored?.hints ?? base.hints,
+    treeGroups: stored?.tree_groups ?? base.treeGroups,
     clones: Object.fromEntries(
       Object.entries(stored?.clones ?? {}).map(([key, clone]) => [
         key,
@@ -136,6 +156,7 @@ export function storedMrReviews(
     curation: settings.curation,
     suggest_days: settings.suggestDays,
     hints: settings.hints,
+    tree_groups: settings.treeGroups,
     clones: Object.fromEntries(
       Object.entries(settings.clones).map(([key, clone]) => [
         key,

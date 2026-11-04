@@ -141,6 +141,12 @@ export type MrReviewsSettings = {
    * they work with), in their words; the rest comes from their history.
    */
   hints: string;
+  /**
+   * Where each project's review workspace goes in the Workspaces tree:
+   * "host/project" -> a path of names (groups, or workspaces). Absent: a
+   * "Reviews" group under the clone's workspace, else at the top.
+   */
+  treeGroups: Record<string, string[]>;
   /** Clones picked by the user: "host/project" -> where. */
   clones: Record<string, { connectionId: string; path: string }>;
   /** Read only: each project's review worktree, where it is. */
@@ -158,6 +164,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   curation: true,
   suggestDays: 30,
   hints: "",
+  treeGroups: {},
   clones: {},
 };
 
