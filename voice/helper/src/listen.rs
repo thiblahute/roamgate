@@ -20,7 +20,7 @@
 //! the gate knowing none) become the speaker's, whatever they are (music, a
 //! reply, someone else). The listener counts the voice the gate's check
 //! takes in, as it does, to know when that voice is taken
-//! (`learning_voice`). With the speaker's
+//! (`learning_voice`): a call's music waits until then. With the speaker's
 //! own recordings (`--speaker-reference`), it hears those first instead, a
 //! second from each in turn (one per language they speak: a voice scores
 //! lower against itself in another language), in a session of its own that
@@ -343,6 +343,10 @@ impl State {
                     pending.speech_ms = speech_ms;
                     if !pending.cancelled {
                         (self.emit)(json!({"event": "speech_end", "session": pending.id}));
+                    } else {
+                        // No final comes for it: the call's music must
+                        // not stay ducked (main.rs keeps this one in).
+                        (self.emit)(json!({"event": "speech_cancelled", "session": pending.id}));
                     }
                 }
             }
@@ -416,6 +420,7 @@ pub struct Listener {
     state: Arc<Mutex<State>>,
     /// The microphone's time line, continued across sessions.
     position: gst::ClockTime,
+    holds: Holds,
     /// The speaker's voice, from their recordings (16 kHz mono S16LE, in
     /// pieces): heard first whenever a new speaker is to be taken, so the
     /// voice kept is theirs, never the first sound heard.
@@ -432,6 +437,21 @@ pub struct Listener {
     speaker_check: bool,
     /// No session started yet: the gate knows no voice.
     fresh: bool,
+}
+
+/// Why the gate holds: a reply plays (the session's `hold`, until
+/// released), or the call's music is heard at the page. The microphone
+/// hears either, and only a louder voice, held longer, starts an utterance.
+#[derive(Default)]
+struct Holds {
+    reply: bool,
+    music: bool,
+}
+
+impl Holds {
+    fn held(&self) -> bool {
+        self.reply || self.music
+    }
 }
 
 impl Listener {
@@ -660,6 +680,7 @@ impl Listener {
             gate,
             state,
             position: gst::ClockTime::ZERO,
+            holds: Holds::default(),
             reference: reference.filter(|_| speaker_model.is_some()),
             gate_heard,
             voice_heard,
@@ -722,6 +743,26 @@ impl Listener {
         );
     }
 
+    /// The call's music is heard at the page now, or not: the gate holds
+    /// meanwhile, as during a reply.
+    pub fn music(&mut self, audible: bool) {
+        if audible == self.holds.music {
+            return;
+        }
+        self.holds.music = audible;
+        self.gate.set_property("hold", self.holds.held());
+        if std::env::var_os("ROAMGATE_VOICE_DEBUG").is_some() {
+            eprintln!(
+                "[voice] {}",
+                if audible {
+                    "the call's music is heard: only a louder voice starts an utterance"
+                } else {
+                    "the call's music stopped: any voice starts an utterance"
+                }
+            );
+        }
+    }
+
     /// An error the pipeline posted, if any.
     pub fn error(&self) -> Option<String> {
         if let Some(message) = self
@@ -774,12 +815,14 @@ impl Listener {
                 }
                 if new_speaker {
                     // speechgate takes the first 2 s of voice it hears as
-                    // the speaker's, whatever it is.
+                    // the speaker's, whatever it is: the call's music waits
+                    // meanwhile (main.rs).
                     eprintln!(
                         "[voice] session {id}: a new speaker: the first voice heard is taken as theirs"
                     );
                 }
-                self.gate.set_property("hold", hold);
+                self.holds.reply = hold;
+                self.gate.set_property("hold", self.holds.held());
                 self.gate.set_property(
                     "end-silence",
                     end_silence_ms.unwrap_or(DEFAULT_END_SILENCE_MS),
@@ -810,7 +853,8 @@ impl Listener {
             }
             Command::Release { id } => {
                 if self.state.lock().unwrap().session == Some(id) {
-                    self.gate.set_property("hold", false);
+                    self.holds.reply = false;
+                    self.gate.set_property("hold", self.holds.held());
                 }
             }
             Command::Finish { id } => {
@@ -948,6 +992,68 @@ mod tests {
         assert_eq!(heard.checked, ms(2600));
         assert!(heard.checked >= ms(600) + super::ENROLL_VOICE);
         assert!(heard.checked < ms(1000) + super::ENROLL_VOICE);
+    }
+
+    /// The gate holds while a reply plays or the call's music is heard:
+    /// a reply released still leaves the music's hold, and the music
+    /// stopping leaves the reply's.
+    #[test]
+    fn the_gate_holds_for_a_reply_or_the_music() {
+        let mut holds = super::Holds::default();
+        assert!(!holds.held());
+        holds.music = true;
+        assert!(holds.held());
+        holds.reply = true;
+        holds.reply = false;
+        assert!(holds.held());
+        holds.reply = true;
+        holds.music = false;
+        assert!(holds.held());
+        holds.reply = false;
+        assert!(!holds.held());
+    }
+
+    /// A cancelled utterance gets no final: speech_cancelled says it ends,
+    /// for the call's music to come back up.
+    #[test]
+    fn a_cancelled_utterance_says_so() {
+        use std::sync::{Arc, Mutex};
+        gst::init().unwrap();
+        let events: Arc<Mutex<Vec<String>>> = Arc::default();
+        let mut state = {
+            let events = events.clone();
+            super::State {
+                emit: Arc::new(move |event: serde_json::Value| {
+                    events
+                        .lock()
+                        .unwrap()
+                        .push(event["event"].as_str().unwrap_or_default().to_string())
+                }),
+                pending: Default::default(),
+                enrolling: None,
+                session: Some(1),
+                done: false,
+                language: None,
+                whisper: None,
+            }
+        };
+        state.message(
+            &gst::Structure::builder("speechgate-speech-start")
+                .field("session", 1u32)
+                .build(),
+        );
+        state.message(
+            &gst::Structure::builder("speechgate-speech-end")
+                .field("session", 1u32)
+                .field("cancelled", true)
+                .build(),
+        );
+        let ended = state.utterance_ended().unwrap();
+        state.deliver(ended);
+        assert_eq!(
+            *events.lock().unwrap(),
+            ["speech_start", "speech_cancelled"]
+        );
     }
 
     /// speechgate as in a gst-launch line, without the application: what

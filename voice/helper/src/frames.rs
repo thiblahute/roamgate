@@ -9,6 +9,10 @@ pub const JSON: u8 = 0;
 /// A listening session's audio: its u32 (little-endian) id, then 16 kHz
 /// mono S16LE samples.
 pub const AUDIO: u8 = 1;
+/// A call's audio (see `call`), to Roamgate: the call's u32 id, the
+/// packet's u32 sequence number and u64 time in µs (all little-endian),
+/// then one Opus packet of the mix (48 kHz stereo, 20 ms).
+pub const CALL_AUDIO: u8 = 2;
 
 /// The largest frame accepted: a few seconds of audio, or a long request.
 const MAX_FRAME: usize = 16 * 1024 * 1024;

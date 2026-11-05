@@ -414,7 +414,7 @@ Inspector state is scoped to each checkout; see
   listens. It keeps listening through silence,
   waits while the agent asks something on screen, and reconnects on its
   own; when the voice helper on the Mac restarts, what was being said is
-  sent and it listens again. Only one thing reads aloud at a time. Replies play with the
+  sent and it listens again, the call going on. Only one thing reads aloud at a time. Replies play with the
   microphone's audio; with replies played as media (Speech settings),
   other apps' music or podcasts on a phone pause while voice chat is on.
   Its mute button, on the call bar, stops listening without
@@ -425,7 +425,9 @@ Inspector state is scoped to each checkout; see
   nearby are left out. With recordings of your voice set up
   (`speaker_reference`), yours is the one listened to from the start, even
   when music, a reply or someone else is heard first, and in each language
-  you recorded.
+  you recorded. While a call's music plays, it is not taken for your words;
+  without recordings of your voice, the music waits, silent, until you have
+  spoken a little, so that its singer is not taken for you.
   With a turn model set up, a pause sends what was said only when it sounds
   finished, and the words read as finished too when a text turn model is
   set up: a pause after "I think we should", or after an "um", "euh", "and"
@@ -555,6 +557,12 @@ Inspector state is scoped to each checkout; see
   recorded in French reads English with its own timbre). The voice call says
   who speaks ("Éloïse is speaking"); choosing a voice with **Use** turns it
   off. Every browser keeps it.
+  **Music under a call**: with `call_background` set in `voice.json` (such
+  as what the Spotify app plays on the Mac), a voice call can hear it under
+  the conversation, ducked while either side talks, at its own speed
+  whatever the reading speed. A call starts without it: ask the companion
+  to put the music on, then to turn it down, up or off
+  ([setup](docs/DEPLOYMENT.md#music-under-a-call)).
   The sentence being read is highlighted. What is said goes to the agent
   marked `[Voice]`, with the sentence it cut short when it interrupted the
   reading, so the agent knows it talks live and what was heard; the chat

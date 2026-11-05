@@ -16,6 +16,7 @@ import {
   speakWith,
   voiceTrace,
 } from "./voiceChat";
+import { activeCallAudio } from "./callAudio";
 import { voiceCallNumber, voiceContextHeld } from "./voiceOutput";
 
 /**
@@ -384,7 +385,11 @@ type BrowserSpeech = { text: string; language?: string };
  * done with calls here, and Roamgate's says the sentence.
  */
 async function playBrowserInCall(speech: BrowserSpeech, signal: AbortSignal) {
-  if (current().callEngine === "server") return playWithServer(speech, signal);
+  if (
+    current().callEngine === "server" ||
+    (activeCallAudio() && current().server === true)
+  )
+    return playWithServer(speech, signal);
   const watch = new AbortController();
   let started = false;
   let failure: string | null = null;
@@ -463,6 +468,9 @@ function readingVoice(): SentenceVoice {
   const state = current();
   if (!voiceContextHeld())
     return state.engine === "browser" ? browserVoice : serverVoice;
+  // The call's audio is one stream mixed on the Mac: only Roamgate's voice
+  // gets into it, whatever this browser reads with.
+  if (activeCallAudio() && state.server === true) return serverVoice;
   if (
     state.engine === "browser" &&
     state.callBlock &&

@@ -171,6 +171,7 @@ import { configuredResearch } from "./voice/voice-research";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import {
+  callBackground,
   frontMode,
   readVoiceConfig,
   VoiceHelper,
@@ -412,6 +413,7 @@ const handleVoice = createVoiceRoutes(
   },
   (mode) => writeFrontMode(mode),
   configuredResearch(() => readVoiceConfig()),
+  () => voiceSocket.currentCall(),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,
@@ -419,6 +421,10 @@ const voiceSocket = createVoiceSocket(
   () => {
     const config = readVoiceConfig();
     return "error" in config ? undefined : config.max_pause_ms;
+  },
+  () => {
+    const config = readVoiceConfig();
+    return "error" in config ? null : callBackground(config);
   },
 );
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;

@@ -83,7 +83,13 @@ export const tapsLoaded = new WeakSet<AudioContext>();
  */
 export function voiceContext(): AudioContext {
   if (!shared || shared.state === "closed") {
-    const context = new AudioContext();
+    // 48 kHz: a call's stream (callAudio.ts) plays without resampling.
+    let context: AudioContext;
+    try {
+      context = new AudioContext({ sampleRate: 48_000 });
+    } catch {
+      context = new AudioContext();
+    }
     shared = context;
     // Suspended by the system (a call, the focus taken): it runs again.
     context.onstatechange = () => {

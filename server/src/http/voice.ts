@@ -15,6 +15,7 @@ import {
   type VoiceFront,
 } from "../voice/voice-front";
 import {
+  type CallHandle,
   type FrontMode,
   isFrontMode,
   LONGEST_PAUSE_MS,
@@ -138,6 +139,8 @@ export function createVoiceRoutes(
   saveMode: (mode: FrontMode) => void = () => {},
   /** The front's web searches (voice-research.ts), with a front. */
   research: () => VoiceResearch | null = () => null,
+  /** The call whose audio the helper mixes now (voice-socket.ts). */
+  currentCall: () => CallHandle | null = () => null,
 ) {
   const surprise = new SurprisePicker();
   /** The sessions a page lists, those of the errands folder marked. */
@@ -390,6 +393,7 @@ export function createVoiceRoutes(
       }
       if (route.to === "web" || route.to === "web_cancel")
         route = webRoute(route, said, researching);
+      if (route.to === "music") route = await musicRoute(route, currentCall());
       if (route.to === "errand") {
         try {
           if (!errands) throw new Error("no errands set up");
@@ -438,6 +442,7 @@ export function createVoiceRoutes(
         language?: unknown;
         reading?: unknown;
         rate?: unknown;
+        call?: unknown;
       } | null;
       const text = typeof body?.text === "string" ? body.text.trim() : "";
       if (!text) return Response.json({ error: "No text." }, { status: 400 });
@@ -452,6 +457,40 @@ export function createVoiceRoutes(
           : undefined;
       const reader = surpriseReader(library, surprise, reading);
       const rate = isSpeechRate(body?.rate) ? body.rate : helper.speechRate();
+      // In a call with music: into its mix, where the page hears it.
+      const call = currentCall();
+      if (call && body?.call === call.id) {
+        try {
+          const queued = await helper.speakInCall(
+            call.id,
+            spoken,
+            language,
+            reader?.models,
+            rate,
+          );
+          return Response.json(
+            {
+              queued: true,
+              call: call.id,
+              start_ms: queued.startMs,
+              duration_ms: queued.durationMs,
+              language: queued.language,
+              native_rate: queued.nativeRate,
+            },
+            {
+              headers: {
+                "cache-control": "no-store",
+                ...(reader?.name
+                  ? { "x-voice-name": encodeURIComponent(reader.name) }
+                  : {}),
+              },
+            },
+          );
+        } catch (error) {
+          // The call ended meanwhile: a file, as without one.
+          if (!/^no call/.test((error as Error).message)) throw error;
+        }
+      }
       const speech = await helper.speak(spoken, language, reader?.models, rate);
       return speechResponse(speech, reader?.name);
     } catch (error) {
@@ -461,6 +500,42 @@ export function createVoiceRoutes(
       );
     }
   };
+}
+
+/** How much quieter or louder "down" and "up" make the music. */
+const MUSIC_STEP = 1.6;
+const MUSIC_FLOOR = 0.05;
+
+/**
+ * A front's "music" route, applied to the call's background (call.rs): what
+ * the front said of it goes to the page as its own answer. With no music
+ * playing, it is said instead.
+ */
+export async function musicRoute(
+  route: Extract<FrontReply, { to: "music" }>,
+  call: CallHandle | null,
+): Promise<FrontReply> {
+  if (!call?.music)
+    return { to: "self", reply: "No music is playing on this call." };
+  try {
+    const now = await call.music_level({});
+    const change =
+      route.music === "off"
+        ? { muted: true }
+        : route.music === "on"
+          ? { muted: false }
+          : {
+              muted: false,
+              volume:
+                route.music === "down"
+                  ? Math.max(MUSIC_FLOOR, now.volume / MUSIC_STEP)
+                  : Math.min(1, Math.max(MUSIC_FLOOR, now.volume) * MUSIC_STEP),
+            };
+    await call.music_level(change);
+  } catch (error) {
+    return { to: "self", reply: `The music: ${(error as Error).message}` };
+  }
+  return route.reply ? { to: "self", reply: route.reply } : { to: "nobody" };
 }
 
 /** The largest recording taken: 25 s of 48 kHz 16-bit WAV is 2.4 MB. */

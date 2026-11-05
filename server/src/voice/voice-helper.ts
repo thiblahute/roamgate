@@ -1,4 +1,11 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   isSpeechRate,
@@ -123,7 +130,43 @@ export type VoiceConfig = {
    * (voice-surprise.ts), from the Voice tab or the voice card.
    */
   voice_surprise?: boolean;
+  /**
+   * What plays under a voice call (voice/helper/src/call.rs): a gst-launch
+   * description of a source, such as `osxprocesstapsrc
+   * bundle-id=com.spotify.client` (what the Spotify app plays on the Mac).
+   * The helper mixes it with the replies and the page hears one stream.
+   * Off when empty.
+   */
+  call_background?: string;
+  /** The music's level when nobody talks, 0 to 1; 0.6 by default. */
+  call_background_volume?: number;
+  /** The factor applied while someone talks, 0 to 1; 0.15 by default. */
+  call_background_ducked?: number;
+  /** Quiet time before the music comes back up, in ms; 3000 by default. */
+  call_background_release_ms?: number;
+  /** Whether a call starts with its music on; off, it waits to be asked. */
+  call_music_at_start?: boolean;
 };
+
+/** A call's background as the helper's call_start takes it. */
+export type CallBackground = {
+  background: string;
+  volume: number;
+  ducked: number;
+  release_ms: number;
+  /** The music off until asked for: its source is only made then. */
+  muted: boolean;
+};
+
+export function callBackground(config: VoiceConfig): CallBackground {
+  return {
+    background: config.call_background?.trim() ?? "",
+    volume: config.call_background_volume ?? 0.6,
+    ducked: config.call_background_ducked ?? 0.15,
+    release_ms: config.call_background_release_ms ?? 3000,
+    muted: config.call_music_at_start !== true,
+  };
+}
 
 /**
  * A pause this long, in audio, ends the utterance when the voice sounded
@@ -212,6 +255,34 @@ export function readVoiceConfig(
     typeof config.voice_surprise !== "boolean"
   )
     return { error: `${path}: voice_surprise must be true or false` };
+  if (
+    config.call_background !== undefined &&
+    typeof config.call_background !== "string"
+  )
+    return { error: `${path}: call_background must be a string` };
+  for (const key of ["call_background_volume", "call_background_ducked"])
+    if (
+      config[key] !== undefined &&
+      (typeof config[key] !== "number" ||
+        !(config[key] >= 0 && config[key] <= 1))
+    )
+      return { error: `${path}: ${key} must be a number from 0 to 1` };
+  if (
+    config.call_background_release_ms !== undefined &&
+    (typeof config.call_background_release_ms !== "number" ||
+      !(
+        config.call_background_release_ms >= 0 &&
+        config.call_background_release_ms <= 60_000
+      ))
+  )
+    return {
+      error: `${path}: call_background_release_ms must be 0 to 60000`,
+    };
+  if (
+    config.call_music_at_start !== undefined &&
+    typeof config.call_music_at_start !== "boolean"
+  )
+    return { error: `${path}: call_music_at_start must be true or false` };
   if (config.front_mode !== undefined && !isFrontMode(config.front_mode))
     return { error: `${path}: front_mode must be "companion" or "relay"` };
   if (config.speech_rate !== undefined && !isSpeechRate(config.speech_rate))
@@ -358,10 +429,73 @@ type Pending = {
 export const FRAME_JSON = 0;
 /** A listening session's audio: its u32 id, then 16 kHz mono S16LE. */
 export const FRAME_AUDIO = 1;
+/**
+ * A call's mix, from the helper: the call's u32 id, the packet's u32
+ * sequence number and u64 time in µs, then one Opus packet (48 kHz stereo).
+ */
+export const FRAME_CALL_AUDIO = 2;
 /** The kinds of frame the helper writes. */
-const FRAME_KINDS: ReadonlySet<number> = new Set([FRAME_JSON, FRAME_AUDIO]);
+const FRAME_KINDS: ReadonlySet<number> = new Set([
+  FRAME_JSON,
+  FRAME_AUDIO,
+  FRAME_CALL_AUDIO,
+]);
 /** The largest frame the helper writes or reads (frames.rs's MAX_FRAME). */
 export const MAX_FRAME = 16 * 1024 * 1024;
+
+/** One Opus packet of a call's mix. */
+export type CallPacket = { seq: number; ptsUs: bigint; packet: Uint8Array };
+
+/** What the helper says of a call: its background failed. */
+export type CallEvent =
+  | { event: "call_error"; call: number; error: string }
+  /** The helper restarted: the call's mix was made again, from time 0. */
+  | { event: "call_restarted"; call: number }
+  /**
+   * The call is over in the helper: it could not be made again after a
+   * restart, or the helper was stopped on purpose.
+   */
+  | { event: "call_ended"; call: number; error: string }
+  /**
+   * The call's music waits, silent, while the helper learns a new
+   * speaker's voice (true), or may play again (false): told at the call's
+   * start and on each change.
+   */
+  | { event: "call_music"; call: number; waiting: boolean };
+
+/** A call the helper mixes (VoiceHelper.startCall). */
+export type CallHandle = {
+  id: number;
+  /** Whether the call has a background (call_background), on or off. */
+  music: boolean;
+  /**
+   * Whether that background is on now: off at the start without
+   * call_music_at_start, then as call_music last left it.
+   */
+  musicOn: () => boolean;
+  /**
+   * Whether it waits, silent, for the helper to learn the speaker's voice
+   * (call_music events): on, yet nothing plays.
+   */
+  musicWaiting: () => boolean;
+  /** The voice queued in the mix goes (the user talks over it). */
+  hush: () => void;
+  /** The music's level and whether it is off; answers what it is now. */
+  music_level: (change: {
+    volume?: number;
+    muted?: boolean;
+  }) => Promise<{ volume: number; muted: boolean }>;
+  stop: () => void;
+};
+
+/** A sentence put into a call's mix: where it is in the packets' time. */
+export type QueuedSpeech = {
+  queued: true;
+  startMs: number;
+  durationMs: number;
+  language: string;
+  nativeRate: number;
+};
 
 export type Frame = { kind: number; payload: Uint8Array };
 
@@ -472,6 +606,8 @@ export type VoiceHelperProcess = {
   frames: AsyncIterable<Frame>;
   exited: Promise<unknown>;
   kill: () => void;
+  /** Its process, sampled before a stuck one is stopped. */
+  pid?: number;
 };
 
 /**
@@ -546,6 +682,7 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
     frames: frames(),
     exited: child.exited,
     kill: () => child.kill(),
+    pid: child.pid,
   };
 }
 
@@ -599,6 +736,23 @@ export type ListenOptions = {
   newSpeaker?: boolean;
 };
 
+/** A call the helper mixes, with where its packets and events go. */
+type RunningCall = {
+  packet: (packet: CallPacket) => void;
+  event: (event: CallEvent) => void;
+  /** What it was started with: made again by a restarted helper. */
+  background: CallBackground;
+  /** The helper answered its call_start: a restarted helper makes it again. */
+  started: boolean;
+  /** Its music waits for a voice (call_start's answer, then its events). */
+  waiting: boolean;
+  /** A call_music event came: newer than call_start's answer. */
+  told: boolean;
+};
+
+/** How long a ping may take before the helper's output is taken as unread. */
+export const PING_MS = 2000;
+
 /**
  * Starts the helper on first use and passes requests to it; a helper that
  * died is started again by the next request.
@@ -613,8 +767,34 @@ export class VoiceHelper {
   >();
   private nextId = 1;
   private nextSession = 1;
+  private nextCall = 1;
+  /** The calls the helper mixes. */
+  private calls = new Map<number, RunningCall>();
+  /** The calls being made again after the helper restarted. */
+  private callsBack: Promise<void> = Promise.resolve();
+  /** Stopped on purpose (stop()): its calls end with it. */
+  private stopping = false;
   /** The rate the running helper's voice speaks at by itself. */
   private nativeRate = 1;
+  /** Speak requests the helper has not answered yet. */
+  private speaking = 0;
+  /** Fires when the helper made no speech for SPEAK_STUCK_MS. */
+  private speakWatch: ReturnType<typeof setTimeout> | null = null;
+  /** What the running helper said of its speaker (speakProgress). */
+  private progress = { reports: false, ready: false, loading: false };
+  /** Whether a stuck helper is sampled before it stops (off in tests). */
+  sampleHangs = true;
+  /** What the running helper has spoken with (voice and call): warm. */
+  private warm = new Set<string>();
+  /** The speak requests waiting, in order: the helper reads one at a time. */
+  private speakQueue: string[] = [];
+  /** When a stuck speaker was last restarted (Date.now()), 0 for never. */
+  private stuckAt = 0;
+  /** Restarts of the helper by this side so far, and why the last one. */
+  private restarts = 0;
+  private restartedFor: "stuck" | "unreadable" = "stuck";
+  /** Arms of the speak watch: a ping's answer acts on its own arm only. */
+  private watchArms = 0;
 
   constructor(
     private readonly config: () => VoiceConfig | { error: string },
@@ -670,6 +850,20 @@ export class VoiceHelper {
     this.nativeRate = nativeSpeechRate(config);
     void (async () => {
       for await (const frame of helper.frames) {
+        if (frame.kind === FRAME_CALL_AUDIO) {
+          if (frame.payload.length < 16) continue;
+          const view = new DataView(
+            frame.payload.buffer,
+            frame.payload.byteOffset,
+            frame.payload.byteLength,
+          );
+          this.calls.get(view.getUint32(0, true))?.packet({
+            seq: view.getUint32(4, true),
+            ptsUs: view.getBigUint64(8, true),
+            packet: frame.payload.subarray(16),
+          });
+          continue;
+        }
         if (frame.kind !== FRAME_JSON) continue;
         let reply: Record<string, unknown>;
         try {
@@ -677,7 +871,20 @@ export class VoiceHelper {
         } catch {
           continue;
         }
+        if (reply.event === "speak_progress") {
+          this.speakProgress(helper, String(reply.stage ?? ""));
+          continue;
+        }
         if (typeof reply.event === "string") {
+          if (typeof reply.call === "number") {
+            const call = this.calls.get(reply.call);
+            if (call && reply.event === "call_music") {
+              call.waiting = reply.waiting === true;
+              call.told = true;
+            }
+            call?.event(reply as CallEvent);
+            continue;
+          }
           this.dispatch(reply as VoiceEvent);
           continue;
         }
@@ -695,13 +902,24 @@ export class VoiceHelper {
       console.error(
         `[voice] the helper's output is not frames, restarting it: ${error instanceof FrameError ? error.bytes : String(error)}`,
       );
-      if (this.process === helper) helper.kill();
+      this.restart(helper, "unreadable");
     });
     void helper.exited.then(() => {
       if (this.process === helper) this.process = null;
-      for (const pending of this.pending.values())
-        pending.reject(new Error("The voice helper stopped"));
+      this.warm.clear();
+      this.progress = { reports: false, ready: false, loading: false };
+      // A call goes on: its mix is made again, under the same number,
+      // before the sentences that waited are said again (speakRequest).
+      // One whose start was not answered fails with it, never made again.
+      const stopping = this.stopping;
+      this.stopping = false;
+      const calls = [...this.calls];
+      const waiting = [...this.pending.values()];
       this.pending.clear();
+      const going = calls.filter(([, call]) => call.started);
+      if (!stopping && going.length) this.callsBack = this.restartCalls(going);
+      for (const pending of waiting)
+        pending.reject(new Error("The voice helper stopped"));
       // Its listenings end with it, each told on its own session: the
       // page listens again, in the next helper, on the same link.
       for (const [session, listener] of [...this.listeners]) {
@@ -714,8 +932,32 @@ export class VoiceHelper {
           recoverable: true,
         });
       }
+      if (stopping)
+        for (const [id, call] of calls) {
+          this.calls.delete(id);
+          call.event({
+            event: "call_ended",
+            call: id,
+            error: "The voice helper stopped",
+          });
+        }
     });
     return helper;
+  }
+
+  /**
+   * Restarts `helper`, if it is still the one running: killed, it starts
+   * again with what goes on (restartCalls), and the sentences it had not
+   * said are said again (speakRequest).
+   */
+  private restart(helper: VoiceHelperProcess, why: "stuck" | "unreadable") {
+    if (this.process !== helper) return;
+    this.restarts += 1;
+    this.restartedFor = why;
+    if (why === "stuck") {
+      this.stuckAt = Date.now();
+      void this.sampleStuck(helper).finally(() => helper.kill());
+    } else helper.kill();
   }
 
   /** An event goes to its session; one without (the helper failing) to all. */
@@ -726,6 +968,32 @@ export class VoiceHelper {
     }
     for (const listener of [...this.listeners.values()])
       listener.onEvent(event);
+  }
+
+  /**
+   * Whether `helper` answers a ping within `ms`: its output is read. True
+   * too when it exits meanwhile (nothing left to tell).
+   */
+  private answers(helper: VoiceHelperProcess, ms: number): Promise<boolean> {
+    if (this.process !== helper) return Promise.resolve(true);
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        resolve(false);
+      }, ms);
+      const done = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      this.pending.set(id, { resolve: done, reject: done });
+      helper.write(
+        encodeFrame(
+          FRAME_JSON,
+          new TextEncoder().encode(JSON.stringify({ op: "ping", id })),
+        ),
+      );
+    });
   }
 
   private send(message: Record<string, unknown>) {
@@ -820,8 +1088,122 @@ export class VoiceHelper {
     /** The rate it was made at: 1 for the voice's own pace. */
     nativeRate: number;
   }> {
+    const reply = await this.speakRequest(text, language, models, rate);
+    return {
+      audio: Buffer.from(String(reply.audio ?? ""), "base64"),
+      language: String(reply.language ?? ""),
+      nativeRate: reply.nativeRate,
+    };
+  }
+
+  /**
+   * Speaks `text` into call `call`'s mix (startCall) instead of a file:
+   * answers where it is in the call's packets' time once it is all made.
+   */
+  async speakInCall(
+    call: number,
+    text: string,
+    language?: string,
+    models?: VoiceConfig["tts_models"],
+    rate?: number,
+  ): Promise<QueuedSpeech> {
+    const reply = await this.speakRequest(text, language, models, rate, call);
+    if (reply.queued !== true) throw new Error("The voice helper sent a file");
+    return {
+      queued: true,
+      startMs: Number(reply.start_ms ?? 0),
+      durationMs: Number(reply.duration_ms ?? 0),
+      language: String(reply.language ?? ""),
+      nativeRate: reply.nativeRate,
+    };
+  }
+
+  /**
+   * Starts a call's mix in the helper: the replies of speakInCall and
+   * `background` (call.rs), as Opus packets to `onPacket`. Rejects when
+   * the helper cannot (an older one has no call_start): the page then
+   * plays each sentence itself. A new call ends the one before.
+   */
+  async startCall(
+    background: CallBackground,
+    onPacket: (packet: CallPacket) => void,
+    onEvent: (event: CallEvent) => void,
+  ): Promise<CallHandle> {
+    const id = this.nextCall++;
+    for (const [other, call] of [...this.calls]) {
+      this.calls.delete(other);
+      call.event({ event: "call_error", call: other, error: "Replaced" });
+    }
+    const entry: RunningCall = {
+      packet: onPacket,
+      event: onEvent,
+      background,
+      started: false,
+      waiting: false,
+      told: false,
+    };
+    this.calls.set(id, entry);
+    let reply: Record<string, unknown>;
+    try {
+      reply = await this.request({ op: "call_start", call: id, ...background });
+    } catch (error) {
+      if (this.calls.get(id) === entry) this.calls.delete(id);
+      throw error;
+    }
+    entry.started = true;
+    if (!entry.told) entry.waiting = reply.waiting === true;
+    const music = reply.music === true;
+    return {
+      id,
+      music,
+      // A helper restarted makes the call again as call_music left it.
+      musicOn: () =>
+        music &&
+        (this.calls.get(id)?.background.muted ?? background.muted) !== true,
+      musicWaiting: () =>
+        music &&
+        this.calls.get(id)?.waiting === true &&
+        this.calls.get(id)?.background.muted !== true,
+      hush: () => {
+        if (this.calls.has(id) && this.process)
+          this.send({ op: "call_hush", call: id });
+      },
+      music_level: async (change) => {
+        const answer = await this.request({
+          op: "call_music",
+          call: id,
+          ...change,
+        });
+        const now = {
+          volume: Number(answer.volume ?? 0),
+          muted: answer.muted === true,
+        };
+        // A helper restarted makes the call again as it is now.
+        const call = this.calls.get(id);
+        if (call) call.background = { ...call.background, ...now };
+        return now;
+      },
+      stop: () => {
+        if (!this.calls.delete(id)) return;
+        if (this.process) this.send({ op: "call_stop", call: id });
+      },
+    };
+  }
+
+  private async speakRequest(
+    text: string,
+    language?: string,
+    models?: VoiceConfig["tts_models"],
+    rate?: number,
+    call?: number,
+    retried = false,
+  ): Promise<Record<string, unknown> & { nativeRate: number }> {
     // Started first: its rate is the one this speech is made at.
-    this.start();
+    const helper = this.start();
+    // A speaker got stuck lately: Kokoro reads meanwhile.
+    const kokoro = this.kokoroModels();
+    if (!models && kokoro && Date.now() - this.stuckAt < KOKORO_AFTER_STUCK_MS)
+      models = kokoro;
     let nativeRate = this.nativeRate;
     let override: VoiceConfig["tts_models"];
     if (models) {
@@ -835,18 +1217,49 @@ export class VoiceHelper {
     }
     // What the model does not do, the helper's tempo does.
     const tempo = rate === undefined ? 1 : playbackRateFor(rate, nativeRate);
-    const reply = await this.request({
-      op: "speak",
-      text,
-      ...(language ? { language } : {}),
-      ...(override ? { tts_models: JSON.stringify(override) } : {}),
-      ...(tempo === 1 ? {} : { rate: tempo }),
-    });
+    // What makes a sentence cold: its voice, and a call's mix, not used
+    // yet by this helper.
+    const key = `${override ? JSON.stringify(override) : "default"}|${call ?? "file"}`;
+    this.speakQueue.push(key);
+    this.speaking += 1;
+    if (this.speaking === 1) this.watchSpeaking();
+    const restarts = this.restarts;
+    let reply: Record<string, unknown>;
+    try {
+      reply = await this.request({
+        op: "speak",
+        text,
+        ...(language ? { language } : {}),
+        ...(override ? { tts_models: JSON.stringify(override) } : {}),
+        ...(tempo === 1 ? {} : { rate: tempo }),
+        ...(call === undefined ? {} : { call }),
+      });
+      if (this.process === helper) this.warm.add(key);
+    } catch (error) {
+      // The helper was restarted under it: said again by the new one, in
+      // order, into the call's mix once it is made again. With Kokoro when
+      // its speaker got stuck; as it was when its output was unreadable.
+      const stuck = this.restartedFor === "stuck";
+      if (!retried && this.restarts !== restarts && (!stuck || kokoro)) {
+        this.dequeue(key);
+        await this.callsBack;
+        return this.speakRequest(
+          text,
+          language,
+          stuck ? kokoro : models,
+          rate,
+          call,
+          true,
+        );
+      }
+      throw error;
+    } finally {
+      this.dequeue(key);
+    }
     const made =
       typeof reply.rate === "number" && reply.rate > 0 ? reply.rate : 1;
     return {
-      audio: Buffer.from(String(reply.audio ?? ""), "base64"),
-      language: String(reply.language ?? ""),
+      ...reply,
       nativeRate: Math.round(nativeRate * made * 1000) / 1000,
     };
   }
@@ -894,7 +1307,184 @@ export class VoiceHelper {
   }
 
   stop() {
+    if (this.process) this.stopping = true;
     this.process?.kill();
     this.process = null;
   }
+
+  /** A speak request answered (or failed): the watch goes on with the next. */
+  private dequeue(key: string) {
+    const at = this.speakQueue.indexOf(key);
+    if (at < 0) return;
+    this.speakQueue.splice(at, 1);
+    this.speaking = Math.max(0, this.speaking - 1);
+    this.watchSpeaking();
+  }
+
+  /**
+   * The calls of a helper that stopped, made again in a new one under
+   * their numbers: the page's stream goes on (told `call_restarted`, it
+   * starts its buffer again), with the music, the replies said there.
+   */
+  private async restartCalls(calls: [number, RunningCall][]) {
+    for (const [id, call] of calls) {
+      if (this.calls.get(id) !== call) continue;
+      let failed: string | null = null;
+      try {
+        await this.request({ op: "call_start", call: id, ...call.background });
+      } catch (error) {
+        failed = (error as Error).message;
+      }
+      if (this.calls.get(id) !== call) {
+        // Stopped while it was made again: not left running in the helper.
+        if (failed === null && this.process)
+          this.send({ op: "call_stop", call: id });
+        continue;
+      }
+      if (failed !== null) {
+        // Not made again: over, not left as a call nobody can reach.
+        this.calls.delete(id);
+        console.error(`[voice] call ${id}: not made again: ${failed}`);
+        call.event({
+          event: "call_ended",
+          call: id,
+          error: `The voice helper stopped: ${failed}`,
+        });
+        continue;
+      }
+      console.error(`[voice] call ${id}: made again in the restarted helper`);
+      call.event({ event: "call_restarted", call: id });
+    }
+  }
+
+  /** voice.json's Kokoro entries of `tts_models`, if any. */
+  private kokoroModels(): VoiceConfig["tts_models"] {
+    const config = this.config();
+    if ("error" in config) return undefined;
+    const kokoro = config.tts_models?.filter(
+      (entry) => entry.model === "kokoro",
+    );
+    if (!kokoro?.length || kokoro.length === config.tts_models?.length)
+      return undefined;
+    return kokoro;
+  }
+
+  /**
+   * The helper reads one sentence at a time: while some wait, an answer
+   * must come within SPEAK_STUCK_MS of the last one (SPEAK_COLD_MS before
+   * its first, which loads the model). Past it, a ping tells why. Answered
+   * within PING_MS, its speaker is stuck (a hung Qwen3-TTS pipeline once
+   * silenced a whole call): the helper is restarted, the waiting sentences
+   * are said again with Kokoro, which reads for KOKORO_AFTER_STUCK_MS. Not
+   * answered, it is its output that is not read (its answers were lost):
+   * restarted, the sentences are said again as they were.
+   */
+  /**
+   * The helper's speaker moves on (voice/helper/src/main.rs): ready (its
+   * models loaded), a request started, a voice loading, its first audio.
+   * The watch starts again from each, as an answer.
+   */
+  private speakProgress(helper: VoiceHelperProcess, stage: string) {
+    if (this.process !== helper) return;
+    this.progress = {
+      reports: true,
+      ready: this.progress.ready || stage === "ready",
+      loading: stage === "loading",
+    };
+    this.watchSpeaking();
+  }
+
+  /**
+   * How long the sentence being made may go without progress: SPEAK_COLD_MS
+   * while a model loads (a helper that reports progress says when; one that
+   * does not, the first sentence with a voice or into a call), SPEAK_STUCK_MS
+   * otherwise.
+   */
+  private speakWait(): number {
+    const { reports, ready, loading } = this.progress;
+    if (reports) return ready && !loading ? SPEAK_STUCK_MS : SPEAK_COLD_MS;
+    const head = this.speakQueue[0];
+    return head && this.warm.has(head) ? SPEAK_STUCK_MS : SPEAK_COLD_MS;
+  }
+
+  private watchSpeaking() {
+    if (this.speakWatch) clearTimeout(this.speakWatch);
+    this.speakWatch = null;
+    const arm = ++this.watchArms;
+    if (this.speaking === 0) return;
+    const helper = this.process;
+    const wait = this.speakWait();
+    this.speakWatch = setTimeout(() => {
+      this.speakWatch = null;
+      if (this.speaking === 0 || !helper || this.process !== helper) return;
+      void this.answers(helper, PING_MS).then((answered) => {
+        // Progress or an answer came meanwhile: the watch went on.
+        if (this.watchArms !== arm || this.speaking === 0) return;
+        if (this.process !== helper) return;
+        if (answered)
+          console.error(
+            `[voice] the voice helper made no speech in ${wait / 1000} s: restarting it, Kokoro reads meanwhile`,
+          );
+        else
+          console.error(
+            `[voice] the voice helper answered no ping in ${PING_MS / 1000} s while a sentence waited ${wait / 1000} s: its output is unreadable, restarting it`,
+          );
+        this.restart(helper, answered ? "stuck" : "unreadable");
+      });
+    }, wait);
+  }
+
+  /**
+   * What a stuck helper's threads do, kept before it is stopped (macOS's
+   * `sample`, 3 s): voice-hang-<time>.txt in VOICE_HANG_DIR. Not elsewhere.
+   */
+  private async sampleStuck(helper: VoiceHelperProcess) {
+    if (process.platform !== "darwin" || !helper.pid || !this.sampleHangs)
+      return;
+    try {
+      const dir = voiceHangDir();
+      mkdirSync(dir, { recursive: true });
+      const file = join(
+        dir,
+        `voice-hang-${new Date().toISOString().replaceAll(":", "-")}.txt`,
+      );
+      const sample = Bun.spawn(
+        ["/usr/bin/sample", String(helper.pid), "3", "-file", file],
+        { stdout: "ignore", stderr: "ignore" },
+      );
+      await Promise.race([
+        sample.exited,
+        new Promise((resolve) => setTimeout(resolve, 8000)),
+      ]);
+      console.error(`[voice] the stuck helper's threads: ${file}`);
+    } catch (error) {
+      console.error(
+        `[voice] sampling the stuck helper failed: ${(error as Error).message}`,
+      );
+    }
+  }
 }
+
+/**
+ * Where a stuck voice helper's samples go: ROAMGATE_VOICE_HANG_DIR, or
+ * ~/Library/Logs/roamgate-voice.
+ */
+export function voiceHangDir(): string {
+  return (
+    process.env.ROAMGATE_VOICE_HANG_DIR ||
+    join(homedir(), "Library", "Logs", "roamgate-voice")
+  );
+}
+
+/**
+ * The longest a sentence may take to be made before the helper is taken as
+ * stuck (Qwen3-TTS makes speech about twice as fast as it plays).
+ */
+export const SPEAK_STUCK_MS = 15_000;
+/**
+ * The same for the first sentence with a voice, or into a call's mix, in a
+ * helper: its model's loading included (Qwen3-TTS: 15 to 20 s).
+ */
+export const SPEAK_COLD_MS = 45_000;
+/** How long Kokoro reads after a stuck speaker was restarted. */
+export const KOKORO_AFTER_STUCK_MS = 5 * 60_000;

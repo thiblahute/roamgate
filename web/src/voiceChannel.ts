@@ -32,6 +32,10 @@ export type ChannelEvent = {
   recoverable?: boolean;
   resume?: string;
   received?: number;
+  /** A call's audio (callAudio.ts). */
+  call?: number;
+  resumed?: boolean;
+  music?: boolean;
 };
 
 const OPEN = 1;
@@ -59,6 +63,10 @@ export type ChannelOptions = {
 export class VoiceChannel {
   private socket: ChannelSocket;
   private listeners = new Set<(event: ChannelEvent) => void>();
+  /** Binary messages: a call's audio packets. */
+  private binaries = new Set<(data: ArrayBuffer) => void>();
+  /** The call whose audio comes on this channel, to resume it. */
+  private callAudio: { call: number; resume: string } | null = null;
   private closedError: Error | null = null;
   private closedByUs = false;
   /** The session listening, its resume token, and whether it is over. */
@@ -105,6 +113,12 @@ export class VoiceChannel {
     return () => this.listeners.delete(listener);
   }
 
+  /** Listens to binary messages (a call's audio packets). */
+  binary(listener: (data: ArrayBuffer) => void) {
+    this.binaries.add(listener);
+    return () => this.binaries.delete(listener);
+  }
+
   close() {
     this.closedByUs = true;
     this.reconnecting = false;
@@ -114,6 +128,15 @@ export class VoiceChannel {
   }
 
   send(message: object) {
+    const op = (message as { op?: unknown; on?: unknown }).op;
+    if (op === "call_audio" && (message as { on?: unknown }).on === false)
+      this.callAudio = null;
+    // A call taken over from another link: this one resumes it from now on.
+    if (op === "call_resume") {
+      const { call, resume } = message as { call?: unknown; resume?: unknown };
+      if (typeof call === "number" && typeof resume === "string")
+        this.callAudio = { call, resume };
+    }
     if (this.reconnecting) {
       this.queued.push(message);
       return;
@@ -148,7 +171,11 @@ export class VoiceChannel {
   private adopt(socket: ChannelSocket) {
     socket.binaryType = "arraybuffer";
     socket.onmessage = (message) => {
-      if (typeof message.data !== "string") return;
+      if (typeof message.data !== "string") {
+        if (message.data instanceof ArrayBuffer)
+          for (const listener of [...this.binaries]) listener(message.data);
+        return;
+      }
       let event: ChannelEvent;
       try {
         event = JSON.parse(message.data);
@@ -166,6 +193,12 @@ export class VoiceChannel {
   }
 
   private seen(event: ChannelEvent) {
+    if (event.event === "call_audio") {
+      if (typeof event.call === "number" && event.resume)
+        this.callAudio = { call: event.call, resume: event.resume };
+      else if (event.error && event.call === this.callAudio?.call)
+        this.callAudio = null;
+    }
     if (event.event === "listening") {
       this.session = event.session ?? null;
       this.token = event.resume ?? null;
@@ -261,6 +294,15 @@ export class VoiceChannel {
           socket.send(at >= received ? data : data.subarray(received - at));
         }
       }
+      // The call's audio goes on on this socket (voice-socket.ts).
+      if (this.callAudio)
+        socket.send(
+          JSON.stringify({
+            op: "call_resume",
+            call: this.callAudio.call,
+            resume: this.callAudio.resume,
+          }),
+        );
       for (const message of this.queued.splice(0))
         socket.send(JSON.stringify(message));
       this.options.trace?.(

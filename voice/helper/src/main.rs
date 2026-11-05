@@ -45,6 +45,26 @@
 //! "codes": [[...], ...], "heard": "...", "seconds": 12.4}`: the voice's
 //! x-vector and codec codes, and what the speech to text model heard.
 //!
+//! A call with music (see `call`): `{"id": 5, "op": "call_start", "call": 7,
+//! "background": "<gst-launch source>", "volume": 0.6, "ducked": 0.15,
+//! "release_ms": 3000, "muted": true}` (the music off until call_music puts
+//! it on, its source made only then) answers `{"id": 5, "ok": true, "rate": 48000,
+//! "channels": 2, "music": true, "waiting": true}` and sends call 7's mix as CALL_AUDIO
+//! frames (Opus, 20 ms each) until `{"op": "call_stop", "call": 7}`; a
+//! background that fails is told as `{"event": "call_error", "call": 7,
+//! "error": "..."}`, the call going on with the voice only. A speak request
+//! with `"call": 7` goes into the mix and answers `{"id": 2, "queued": true,
+//! "start_ms": ..., "duration_ms": ..., "rate": 1.5, "language": "fr"}`, in
+//! the packets' time. `{"op": "call_hush", "call": 7}` drops the voice
+//! queued (the user talks over it); `{"op": "call_music", "call": 7,
+//! "volume": 0.3, "muted": false}` changes the music's level. The music
+//! ducks while the voice plays or the user talks (listen events). It waits,
+//! silent, while the speaker check learns a new speaker's voice from what
+//! it hears (no `--speaker-reference`): call_start's `waiting`, then
+//! `{"event": "call_music", "call": 7, "waiting": true}` at first and on each
+//! change, `"waiting": false` once the voice is taken and the music may
+//! play.
+//!
 //! A failed request answers `{"id": ..., "error": "..."}`. Listening,
 //! speaking and cloning run on threads of their own, so none waits for
 //! another.
@@ -53,6 +73,7 @@
 //! "<what it says>" --output voice.json` writes a voice from the command
 //! line.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -63,10 +84,13 @@ use gst::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod call;
 mod clone;
 mod frames;
 mod language;
 mod listen;
+#[cfg(target_os = "macos")]
+mod processtap;
 mod reference;
 mod reread;
 
@@ -107,6 +131,98 @@ struct Request {
     model: Option<String>,
     #[serde(default)]
     reference: Option<String>,
+    /// The call a speak request, or a call op, is for.
+    #[serde(default)]
+    call: Option<u32>,
+    /// call_start: the background source, its level, ducking and release.
+    #[serde(default)]
+    background: Option<String>,
+    #[serde(default)]
+    volume: Option<f64>,
+    #[serde(default)]
+    ducked: Option<f64>,
+    #[serde(default)]
+    release_ms: Option<u64>,
+    /// call_music: the music off (true) or back (false).
+    #[serde(default)]
+    muted: Option<bool>,
+}
+
+/// The call playing now, if any.
+type Calls = Arc<Mutex<Option<Arc<call::Call>>>>;
+
+fn call_audio(output: &Output, call: u32, seq: u32, pts_us: u64, packet: &[u8]) {
+    let mut payload = Vec::with_capacity(16 + packet.len());
+    payload.extend_from_slice(&call.to_le_bytes());
+    payload.extend_from_slice(&seq.to_le_bytes());
+    payload.extend_from_slice(&pts_us.to_le_bytes());
+    payload.extend_from_slice(packet);
+    let mut out = output.lock().unwrap();
+    let _ = frames::write(&mut *out, frames::CALL_AUDIO, &payload);
+}
+
+/// The call ops: call_start, call_stop, call_hush, call_music.
+fn call_op(output: &Output, calls: &Calls, learning: &AtomicBool, request: &Request) -> Value {
+    let id = request.call.unwrap_or_default();
+    match request.op.as_str() {
+        "call_start" => {
+            // One call at a time: a new one ends the one before.
+            calls.lock().unwrap().take();
+            let defaults = call::Settings::default();
+            let settings = call::Settings {
+                background: request.background.clone().unwrap_or_default(),
+                volume: request.volume.unwrap_or(defaults.volume),
+                ducked: request.ducked.unwrap_or(defaults.ducked),
+                release_ms: request.release_ms.unwrap_or(defaults.release_ms),
+                muted: request.muted.unwrap_or(defaults.muted),
+                // Told by the listener (learning_voice) from then on.
+                wait_for_voice: learning.load(Ordering::SeqCst),
+            };
+            let packets = output.clone();
+            let errors = output.clone();
+            match call::Call::start(
+                id,
+                &settings,
+                Box::new(move |seq, pts, packet| call_audio(&packets, id, seq, pts, packet)),
+                Box::new(move |error| {
+                    eprintln!("call {id}: {error}");
+                    reply(
+                        &errors,
+                        json!({"event": "call_error", "call": id, "error": error}),
+                    );
+                }),
+            ) {
+                Ok(started) => {
+                    let music = started.music;
+                    *calls.lock().unwrap() = Some(Arc::new(started));
+                    json!({"id": request.id, "ok": true, "rate": call::RATE,
+                        "channels": call::CHANNELS, "music": music,
+                        "waiting": music && settings.wait_for_voice})
+                }
+                Err(error) => json!({"id": request.id, "error": error}),
+            }
+        }
+        _ => {
+            let current = calls.lock().unwrap().clone().filter(|call| call.id == id);
+            let Some(current) = current else {
+                return json!({"id": request.id, "error": format!("no call {id}")});
+            };
+            match request.op.as_str() {
+                "call_stop" => {
+                    calls.lock().unwrap().take();
+                    json!({"id": request.id, "ok": true})
+                }
+                "call_hush" => {
+                    current.hush();
+                    json!({"id": request.id, "ok": true})
+                }
+                _ => {
+                    let (volume, muted) = current.set_music(request.volume, request.muted);
+                    json!({"id": request.id, "ok": true, "volume": volume, "muted": muted})
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -191,10 +307,26 @@ const MAX_RATE: f64 = 2.0;
 /// sentence ends with EOS, so oggmux finishes a file the browser can play
 /// on its own, then a flush readies the pipeline for the next one, which
 /// starts a new file from zero.
+/// The speaker's pipeline but its synthesizer (Speaker::new puts it
+/// between `src` and `convert`).
+const SPEAK_PIPELINE: &str = "appsrc name=src format=time caps=text/x-raw,format=utf8 \
+             tee name=convert \
+             convert. ! queue name=oggq max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 ! \
+             audioconvert ! audioresample ! opusenc bitrate=64000 ! oggmux ! \
+             appsink name=sink sync=false async=false \
+             convert. ! queue name=rawq max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 ! \
+             audioconvert ! audioresample quality=10 ! \
+             audio/x-raw,format=F32LE,layout=interleaved,rate=48000,channels=2 ! \
+             appsink name=raw sync=false async=false";
+
 struct Speaker {
     pipeline: gst::Pipeline,
     src: gst_app::AppSrc,
     sink: gst_app::AppSink,
+    /// The same speech as raw F32 48 kHz stereo, for a call's mix.
+    raw: gst_app::AppSink,
+    /// Which branch gets the speech: the Ogg file, or the call's raw blocks.
+    to_call: Arc<std::sync::atomic::AtomicBool>,
     /// anyttssynthesizer, whose models can change; None for Kokoro's.
     anytts: Option<gst::Element>,
     /// soundtouch's `pitch`, whose `tempo` is the next sentence's rate;
@@ -239,18 +371,39 @@ impl Speaker {
         };
         // 64 kb/s: at 32 the voice came out audibly coarser (half the
         // waveform SNR), for a few more kilobytes a sentence.
-        let pipeline = gst::parse::launch(
-            "appsrc name=src format=time caps=text/x-raw,format=utf8 ! \
-             audioconvert name=convert ! audioresample ! opusenc bitrate=64000 ! oggmux ! \
-             appsink name=sink sync=false",
-        )
-        .map_err(|e| e.to_string())?
-        .downcast::<gst::Pipeline>()
-        .unwrap();
-        // appsrc ! synthesizer ! audioconvert: the synthesizer goes between.
+        // In a call, the speech goes to the call's mix as raw audio
+        // instead (call.rs): each branch drops its buffers when the speech
+        // is not for it, so both still end with EOS.
+        // Neither sink waits to preroll (async=false): the flush after each
+        // sentence made async sinks preroll again, and the raw sink,
+        // prerolled on its first buffer, then held the tee while oggmux
+        // waited for more data for its first page: the synthesizer blocked
+        // on the full queue and the reply never came (Qwen3-TTS streams
+        // many small buffers). The queues hold up to 10 s, whatever the
+        // number of buffers.
+        let pipeline = gst::parse::launch(SPEAK_PIPELINE)
+            .map_err(|e| e.to_string())?
+            .downcast::<gst::Pipeline>()
+            .unwrap();
+        let to_call = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for (queue, wanted) in [("oggq", false), ("rawq", true)] {
+            let to_call = to_call.clone();
+            pipeline
+                .by_name(queue)
+                .unwrap()
+                .static_pad("src")
+                .unwrap()
+                .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    if to_call.load(std::sync::atomic::Ordering::SeqCst) == wanted {
+                        gst::PadProbeReturn::Ok
+                    } else {
+                        gst::PadProbeReturn::Drop
+                    }
+                });
+        }
+        // appsrc ! synthesizer ! ... ! tee: the synthesizer goes between.
         let src_element = pipeline.by_name("src").unwrap();
         let convert = pipeline.by_name("convert").unwrap();
-        src_element.unlink(&convert);
         pipeline.add(&synthesizer).unwrap();
         // synthesizer ! audioconvert ! pitch ! audioconvert. soundtouch's
         // pitch makes a sentence `tempo` times faster keeping its pitch;
@@ -294,11 +447,18 @@ impl Speaker {
                 detail.unwrap_or_else(|| err.to_string())
             ));
         }
+        let raw = pipeline
+            .by_name("raw")
+            .unwrap()
+            .downcast::<gst_app::AppSink>()
+            .unwrap();
         dump_dot(&pipeline, "roamgate-voice-speak");
         Ok(Self {
             pipeline,
             src,
             sink,
+            raw,
+            to_call,
             anytts: (name == "any-tts").then_some(synthesizer),
             tempo,
         })
@@ -326,7 +486,16 @@ impl Speaker {
 
     /// Speaks `text` in `language`, `rate` times faster than the voice's
     /// own pace; answers the speech and the rate it was made at.
-    fn speak(&self, text: &str, language: &str, rate: f64) -> Result<(Vec<u8>, f64), String> {
+    fn speak(
+        &self,
+        text: &str,
+        language: &str,
+        rate: f64,
+        mut call: Option<&mut call::Sentence>,
+        on_audio: &dyn Fn(),
+    ) -> Result<(Vec<u8>, f64), String> {
+        self.to_call
+            .store(call.is_some(), std::sync::atomic::Ordering::SeqCst);
         let rate = match &self.tempo {
             Some(tempo) => {
                 let rate = if rate.is_finite() {
@@ -350,10 +519,29 @@ impl Speaker {
             .map_err(|e| e.to_string())?;
         let _ = self.src.end_of_stream();
         let mut speech = Vec::new();
+        let mut heard = false;
         let result = loop {
+            // The raw branch, as it comes: a call hears it while the rest
+            // is still being made.
+            let mut got = false;
+            while let Some(sample) = self.raw.try_pull_sample(gst::ClockTime::ZERO) {
+                got = true;
+                if !heard {
+                    heard = true;
+                    on_audio();
+                }
+                if let (Some(sentence), Some(buffer)) = (call.as_deref_mut(), sample.buffer()) {
+                    let map = buffer.map_readable().map_err(|e| e.to_string())?;
+                    let samples: Vec<f32> = map
+                        .chunks_exact(4)
+                        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                        .collect();
+                    sentence.push(&samples);
+                }
+            }
             if let Some(sample) = self
                 .sink
-                .try_pull_sample(gst::ClockTime::from_mseconds(100))
+                .try_pull_sample(gst::ClockTime::from_mseconds(if got { 0 } else { 5 }))
             {
                 if let Some(buffer) = sample.buffer() {
                     let map = buffer.map_readable().map_err(|e| e.to_string())?;
@@ -361,7 +549,7 @@ impl Speaker {
                 }
                 continue;
             }
-            if self.sink.is_eos() {
+            if self.sink.is_eos() && self.raw.is_eos() {
                 break Ok(speech);
             }
             if let Some(message) = self
@@ -483,6 +671,18 @@ fn main() {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
     }
+    #[cfg(target_os = "macos")]
+    {
+        let swept = processtap::sweep();
+        if swept > 0 {
+            eprintln!("removed {swept} process tap device(s) left over");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Err(err) = processtap::register() {
+        eprintln!("The speech plugins failed to register: {err}");
+        std::process::exit(1);
+    }
     if let Some(audio) = arg("--clone") {
         std::process::exit(match clone_to_file(&audio) {
             Ok(summary) => {
@@ -509,16 +709,36 @@ fn main() {
     });
     let output: Output = Arc::new(Mutex::new(std::io::stdout()));
 
+    let calls: Calls = Arc::new(Mutex::new(None));
+    // Whether a new speaker's voice is learnt from what is heard: no music
+    // meanwhile. Before any listening, a speaker check without the
+    // speaker's recordings has no voice yet.
+    let learns = config.speaker_model.is_some() && config.speaker_reference.is_none();
+    let learning = Arc::new(AtomicBool::new(learns));
     // The language of the last reply read or thing said, for Whisper to
     // read again what Parakeet wrote in English (reread.rs).
     let conversation: reread::Conversation = Arc::default();
     let (listen_tx, listen_rx) = mpsc::channel::<listen::Command>();
     let (speak_tx, speak_rx) = mpsc::channel::<Request>();
+    let (call_tx, call_rx) = mpsc::channel::<Request>();
+    let calling = {
+        let output = output.clone();
+        let calls = calls.clone();
+        let learning = learning.clone();
+        std::thread::spawn(move || {
+            for request in call_rx {
+                let answer = call_op(&output, &calls, &learning, &request);
+                reply(&output, answer);
+            }
+        })
+    };
 
     let listening = {
         let output = output.clone();
         let config = config.clone();
+        let calls = calls.clone();
         let conversation = conversation.clone();
+        let learning = learning.clone();
         std::thread::spawn(move || {
             // With Parakeet, Whisper's model is for reading again.
             let reread = config
@@ -528,7 +748,25 @@ fn main() {
                 .map(|model| Arc::new(reread::Reread::new(model, conversation)));
             let emit: listen::Emit = {
                 let output = output.clone();
-                Arc::new(move |event| reply(&output, event))
+                let calls = calls.clone();
+                Arc::new(move |event| {
+                    // The user talks from speech_start to final (or to
+                    // the utterance's cancellation, which has no final):
+                    // the call's music ducks meanwhile.
+                    let kind = event.get("event").and_then(Value::as_str);
+                    let talking = match kind {
+                        Some("speech_start") => Some(true),
+                        Some("final" | "speech_cancelled") => Some(false),
+                        _ => None,
+                    };
+                    if let (Some(talking), Some(call)) = (talking, calls.lock().unwrap().as_ref()) {
+                        call.set_user_talking(talking);
+                    }
+                    if kind == Some("speech_cancelled") {
+                        return;
+                    }
+                    reply(&output, event)
+                })
             };
             // Made again after it failed.
             let mut listener: Option<listen::Listener> = None;
@@ -541,6 +779,30 @@ fn main() {
                 if let Some(error) = listener.as_ref().and_then(|l| l.error()) {
                     listener = None;
                     reply(&output, json!({"event": "error", "error": error}));
+                }
+                // The call's music heard at the page holds the gate.
+                if let Some(listener) = listener.as_mut() {
+                    let audible = calls
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .is_some_and(|call| call.music_audible());
+                    listener.music(audible);
+                }
+                // No music while a new speaker's voice is learnt from what
+                // is heard: the speaker check would take a singer's.
+                let learning_now = listener
+                    .as_mut()
+                    .map_or(learns, |listener| listener.learning_voice());
+                learning.store(learning_now, Ordering::SeqCst);
+                let call = calls.lock().unwrap().clone();
+                if let Some(call) = call
+                    && let Some(waiting) = call.wait_for_voice(learning_now)
+                {
+                    reply(
+                        &output,
+                        json!({"event": "call_music", "call": call.id, "waiting": waiting}),
+                    );
                 }
                 let Some(command) = command else { continue };
                 // Only a new session tries again; its audio is dropped meanwhile.
@@ -591,9 +853,17 @@ fn main() {
     let speaking = {
         let output = output.clone();
         let config = config.clone();
+        let calls = calls.clone();
         let conversation = conversation.clone();
         std::thread::spawn(move || {
             let mut speaker = Speaker::new(&config);
+            // Progress, for the server's watch on a stuck speaker: ready
+            // (its models loaded), each request started, a voice loading,
+            // its first audio.
+            reply(
+                &output,
+                json!({"event": "speak_progress", "stage": "ready"}),
+            );
             // What every sentence is read with, and what the speaker has now.
             let mut models = config.tts_models.clone();
             let mut current = models.clone();
@@ -632,11 +902,21 @@ fn main() {
                 if language::has_words(&text) {
                     *conversation.lock().unwrap() = Some(language.clone());
                 }
+                let progress = |stage: &str| {
+                    reply(
+                        &output,
+                        json!({"event": "speak_progress", "id": request.id, "stage": stage}),
+                    )
+                };
+                progress("started");
                 // This sentence's own models, or back to everyone's.
                 let wanted = request.tts_models.or_else(|| models.clone());
                 let switched = match &speaker {
                     Ok(speaker) if wanted != current => match &wanted {
-                        Some(wanted) => speaker.set_models(wanted).map(|()| true),
+                        Some(wanted) => {
+                            progress("loading");
+                            speaker.set_models(wanted).map(|()| true)
+                        }
                         None => Ok(false),
                     },
                     _ => Ok(false),
@@ -644,26 +924,49 @@ fn main() {
                 if let Ok(true) = switched {
                     current = wanted;
                 }
+                // For a call: into its mix, not to a file.
+                let call = request
+                    .call
+                    .and_then(|id| calls.lock().unwrap().clone().filter(|call| call.id == id));
+                if request.call.is_some() && call.is_none() {
+                    let error = format!("no call {}", request.call.unwrap_or_default());
+                    reply(&output, json!({"id": request.id, "error": error}));
+                    continue;
+                }
+                let mut sentence = call.as_ref().map(|call| call.sentence());
                 let result = match (&speaker, switched) {
                     (_, Err(err)) => Err(err),
-                    (Ok(speaker), _) if language::has_words(&text) => {
-                        speaker.speak(&text, &language, request.rate.unwrap_or(1.0))
-                    }
+                    (Ok(speaker), _) if language::has_words(&text) => speaker.speak(
+                        &text,
+                        &language,
+                        request.rate.unwrap_or(1.0),
+                        sentence.as_mut(),
+                        &|| progress("audio"),
+                    ),
                     (Ok(_), _) => Err("nothing to say".to_string()),
                     (Err(err), _) => Err(err.clone()),
                 };
-                reply(
-                    &output,
-                    match result {
-                        Ok((audio, rate)) => json!({
+                let answer = match (result, sentence) {
+                    (Ok((_, rate)), Some(sentence)) => {
+                        let (start_ms, duration_ms) = sentence.finish();
+                        json!({
                             "id": request.id,
-                            "audio": BASE64.encode(audio),
+                            "queued": true,
+                            "start_ms": start_ms,
+                            "duration_ms": duration_ms,
                             "language": language,
                             "rate": rate,
-                        }),
-                        Err(error) => json!({"id": request.id, "error": error}),
-                    },
-                );
+                        })
+                    }
+                    (Ok((audio, rate)), None) => json!({
+                        "id": request.id,
+                        "audio": BASE64.encode(audio),
+                        "language": language,
+                        "rate": rate,
+                    }),
+                    (Err(error), _) => json!({"id": request.id, "error": error}),
+                };
+                reply(&output, answer);
             }
         })
     };
@@ -735,8 +1038,17 @@ fn main() {
                 Ok(())
             }
             "listen_stop" => {
+                if let Some(call) = calls.lock().unwrap().as_ref() {
+                    call.set_user_talking(false);
+                }
                 let _ = listen_tx.send(listen::Command::Stop { id: session });
                 Ok(())
+            }
+            "call_start" | "call_stop" | "call_hush" | "call_music" => {
+                // call_start parses a description and starts a pipeline: not
+                // on the input thread, which carries the microphone. One
+                // thread, so they keep their order.
+                call_tx.send(request).map_err(|e| e.0)
             }
             "ping" => {
                 reply(&output, json!({"id": request.id, "ok": true}));
@@ -753,9 +1065,97 @@ fn main() {
     }
     // Roamgate closed stdin: it is gone, so is the helper, once the models
     // are put away.
-    drop((listen_tx, speak_tx));
+    drop((listen_tx, speak_tx, call_tx));
+    let _ = calling.join();
+    calls.lock().unwrap().take();
     let _ = listening.join();
     let _ = speaking.join();
     // SAFETY: every GStreamer object is gone with the threads above.
     unsafe { gst::deinit() };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    /// Sentences of many small buffers (as Qwen3-TTS streams them) through
+    /// the speaker's branches, flushed between them as speak() does: every
+    /// one reaches both sinks' EOS. With async sinks, the second one
+    /// deadlocked in the raw sink's preroll.
+    #[test]
+    fn many_small_buffers_never_block_the_speaker() {
+        gst::init().unwrap();
+        let pipeline = gst::parse::launch(SPEAK_PIPELINE)
+            .unwrap()
+            .downcast::<gst::Pipeline>()
+            .unwrap();
+        let audio = gst_app::AppSrc::builder()
+            .caps(
+                &gst::Caps::builder("audio/x-raw")
+                    .field("format", "F32LE")
+                    .field("layout", "interleaved")
+                    .field("rate", 24_000i32)
+                    .field("channels", 1i32)
+                    .build(),
+            )
+            .format(gst::Format::Time)
+            .build();
+        pipeline.add(&audio).unwrap();
+        audio.link(&pipeline.by_name("convert").unwrap()).unwrap();
+        let sink = pipeline
+            .by_name("sink")
+            .unwrap()
+            .downcast::<gst_app::AppSink>()
+            .unwrap();
+        let raw = pipeline
+            .by_name("raw")
+            .unwrap()
+            .downcast::<gst_app::AppSink>()
+            .unwrap();
+        // As in speak(): in a call only the raw branch gets the speech,
+        // otherwise only the ogg branch; the other drops it.
+        let to_call = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        for (queue, wanted) in [("oggq", false), ("rawq", true)] {
+            let to_call = to_call.clone();
+            pipeline
+                .by_name(queue)
+                .unwrap()
+                .static_pad("src")
+                .unwrap()
+                .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    if to_call.load(std::sync::atomic::Ordering::SeqCst) == wanted {
+                        gst::PadProbeReturn::Ok
+                    } else {
+                        gst::PadProbeReturn::Drop
+                    }
+                });
+        }
+        pipeline.set_state(gst::State::Playing).unwrap();
+        for round in 0..4 {
+            to_call.store(round % 2 == 0, std::sync::atomic::Ordering::SeqCst);
+            for i in 0..600u64 {
+                let mut buffer = gst::Buffer::from_slice(vec![0u8; 64 * 4]);
+                let pts = gst::ClockTime::from_nseconds(i * 64 * 1_000_000_000 / 24_000);
+                buffer.get_mut().unwrap().set_pts(pts);
+                audio.push_buffer(buffer).unwrap();
+            }
+            let _ = audio.end_of_stream();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                while raw.try_pull_sample(gst::ClockTime::ZERO).is_some() {}
+                while sink
+                    .try_pull_sample(gst::ClockTime::from_mseconds(5))
+                    .is_some()
+                {}
+                if sink.is_eos() && raw.is_eos() {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "sentence {round} never ended");
+            }
+            audio.send_event(gst::event::FlushStart::new());
+            audio.send_event(gst::event::FlushStop::new(true));
+        }
+        pipeline.set_state(gst::State::Null).unwrap();
+    }
 }
