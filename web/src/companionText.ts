@@ -7,7 +7,12 @@ import {
   setCompanionTarget,
   updateCompanionJob,
 } from "./companionCall";
-import { followCompanionWeb, webAck } from "./companionWeb";
+import {
+  followCompanionTool,
+  followCompanionWeb,
+  toolAck,
+  webAck,
+} from "./companionWeb";
 import { forgeStore } from "./forgeStore";
 import { setPaneView } from "./paneView";
 import { type State, store } from "./store";
@@ -52,6 +57,7 @@ export type CompanionTextDeps = {
   forward: typeof forwardWork;
   follow: typeof followErrand;
   followWeb: typeof followCompanionWeb;
+  followTool: typeof followCompanionTool;
   ranger: typeof askRanger;
   reviews: typeof askReviewsAgent;
   /** Where work goes by default, and the sessions the user may name. */
@@ -64,6 +70,7 @@ const defaults: CompanionTextDeps = {
   forward: forwardWork,
   follow: followErrand,
   followWeb: followCompanionWeb,
+  followTool: followCompanionTool,
   ranger: askRanger,
   reviews: askReviewsAgent,
   context: () => {
@@ -166,6 +173,10 @@ export async function sendCompanionText(
     case "web":
       say(webAck(reply, said));
       if (route.job) void deps.followWeb(route.job, route.query || said);
+      return route;
+    case "tool":
+      say(toolAck(reply, said));
+      if (route.job) void deps.followTool(route.job, route.task || said);
       return route;
     case "read": {
       const answer = findAnswer(route.agent);

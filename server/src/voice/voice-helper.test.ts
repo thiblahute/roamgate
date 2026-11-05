@@ -814,6 +814,36 @@ describe("readVoiceConfig", () => {
     });
   });
 
+  test("companion_mcp lists tool names, and may name a model", () => {
+    const tts = {
+      ...base,
+      tts_models: [{ model: "qwen3-tts", path: "/models/cv" }],
+    };
+    expect(
+      "error" in
+        read({
+          ...tts,
+          companion_mcp: {
+            allow: ["mcp__spotify"],
+            confirm: ["mcp__claude_ai_WhatsApp__send_message"],
+            model: "sonnet",
+          },
+        }),
+    ).toBe(false);
+    expect(read({ ...tts, companion_mcp: ["mcp__spotify"] })).toEqual({
+      error: `${file}: companion_mcp must be an object`,
+    });
+    expect(read({ ...tts, companion_mcp: { allow: "mcp__spotify" } })).toEqual({
+      error: `${file}: companion_mcp.allow must be a list of tool names`,
+    });
+    expect(read({ ...tts, companion_mcp: { confirm: [""] } })).toEqual({
+      error: `${file}: companion_mcp.confirm must be a list of tool names`,
+    });
+    expect(read({ ...tts, companion_mcp: { model: 1 } })).toEqual({
+      error: `${file}: companion_mcp.model must be a string`,
+    });
+  });
+
   test("Kokoro's files are needed without them", () => {
     expect(read(base)).toEqual({
       error: `${file}: kokoro_model and kokoro_voices, or tts_models, are required`,

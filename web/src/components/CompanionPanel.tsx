@@ -7,6 +7,7 @@ import {
   SendHorizontal,
   PhoneOff,
   Send,
+  Wrench,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -29,7 +30,12 @@ import {
 import { useFollowScroll } from "../followScroll";
 import { store } from "../store";
 import { setPaneView } from "../paneView";
-import { cancelResearch, parseVoiceSessionId, plainText } from "../voiceRoute";
+import {
+  cancelResearch,
+  cancelTool,
+  parseVoiceSessionId,
+  plainText,
+} from "../voiceRoute";
 import { sendCompanionText } from "../companionText";
 import { subscribeVoiceFronting, voiceFronting } from "../voiceFrontFlag";
 import { companionChipText, hearingNow } from "./CompanionChip";
@@ -64,6 +70,13 @@ const WEB_STATUS: Record<
   searching: "Searching the web",
   done: "Found",
   failed: "Not found",
+  cancelled: "Cancelled",
+};
+
+const TOOL_STATUS: typeof WEB_STATUS = {
+  searching: "Working",
+  done: "Done",
+  failed: "Failed",
   cancelled: "Cancelled",
 };
 
@@ -103,16 +116,26 @@ function WebEntry({
       <div className="companion-panel-job-head">
         <span className="companion-panel-time">{clock(entry.at)}</span>
         <span className="companion-panel-web-title">
-          <Globe size={13} aria-hidden="true" /> Web
+          {entry.tool ? (
+            <>
+              <Wrench size={13} aria-hidden="true" /> Tools
+            </>
+          ) : (
+            <>
+              <Globe size={13} aria-hidden="true" /> Web
+            </>
+          )}
         </span>
         <span className="companion-panel-status">
-          {WEB_STATUS[entry.status]}
+          {(entry.tool ? TOOL_STATUS : WEB_STATUS)[entry.status]}
         </span>
         {entry.status === "searching" ? (
           <button
             type="button"
             className="companion-panel-cancel"
-            onClick={() => void cancelResearch(entry.job)}
+            onClick={() =>
+              void (entry.tool ? cancelTool : cancelResearch)(entry.job)
+            }
           >
             Cancel
           </button>

@@ -78,7 +78,12 @@ import {
   setCompanionTeller,
   updateCompanionJob,
 } from "../companionCall";
-import { followCompanionWeb, webAck } from "../companionWeb";
+import {
+  followCompanionTool,
+  followCompanionWeb,
+  toolAck,
+  webAck,
+} from "../companionWeb";
 import {
   answerDelivery,
   answersContext,
@@ -953,6 +958,19 @@ export function useVoiceChat({
             }
             if (route.job)
               void followCompanionWeb(route.job, route.query || words);
+            return "nobody";
+          }
+          case "tool": {
+            // Done in the background with the companion's MCP tools: said
+            // at once, its result told when it comes, as a web search's.
+            if (!front) return "nobody";
+            const line = toolAck(route.reply, heard.text);
+            if (frontReplySaid(route.to, slow)) {
+              note(line);
+              void front.say(line, signal);
+            }
+            if (route.job)
+              void followCompanionTool(route.job, route.task || words);
             return "nobody";
           }
           case "ranger": {

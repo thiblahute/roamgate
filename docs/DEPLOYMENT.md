@@ -871,6 +871,62 @@ searched more and took 30 to 120 s). `GET /api/voice/research` lists the
 searches, `?job=` gives one, `POST /api/voice/research/cancel` `{job?}`
 stops one or all.
 
+With `"companion_mcp"`, the companion also uses the MCP tools Claude Code
+has on this machine: the servers `claude mcp list` shows (user and project
+scope) and the claude.ai connectors of the account Claude Code is logged
+into. Roamgate names no server itself; the configuration lists the tools:
+
+```json
+"companion_mcp": {
+  "allow": [
+    "mcp__spotify",
+    "mcp__claude_ai_Youtube",
+    "mcp__claude_ai_WhatsApp__list_chats",
+    "mcp__claude_ai_WhatsApp__list_messages",
+    "mcp__claude_ai_WhatsApp__search_messages"
+  ],
+  "confirm": ["mcp__claude_ai_WhatsApp__send_message"],
+  "model": "sonnet"
+}
+```
+
+A pattern is a tool's full name, `mcp__<server>` for all of a server's
+tools, or a name where `*` stands for any text
+(`mcp__claude_ai_Spotify*__pause` is `pause` on every server whose name
+starts so; Claude Code turns a claude.ai connector's name into
+`claude_ai_` and the name with anything but letters, digits, `_` and `-`
+made `_`). The front's `"tool"` route starts a job in
+the background (`server/src/voice/voice-tools.ts`) and says at once, in a
+few words, that it does it; the result is told as a search's is, and shows
+in the companion's conversation. Each job is a headless Claude Code with
+only `ToolSearch` built in, no hooks, in the `default` permission mode, and
+Roamgate answers its every permission prompt over the stream-json control
+protocol (`--permission-prompts host --permission-prompt-tool stdio`; its
+settings add an `ask` rule for each server named, so an `allow` rule in a
+settings file cannot skip Roamgate):
+
+- a tool `allow` matches runs;
+- a tool `confirm` matches, and any allowed tool whose own name says it
+  sends, writes or deletes (`send`, `reply`, `forward`, `delete`, `trash`,
+  `create`, `update`, `mark`, `react`, `share`...), is held: the call is not
+  made, and the job's result reads back what would be done, to whom and the
+  content word for word, and asks. The front is given the held call with
+  its exact input. Only when the user answers it with a yes (the words
+  said checked by the server, not only the front) does `"tool_confirm"` start a job that may
+  make that one call, with that exact input, once; any other input is
+  refused. A no (`"tool_cancel"`) forgets it, a correction starts the
+  corrected request, to be read back in its turn, and a held call is
+  forgotten after 5 minutes;
+- any other tool is refused.
+
+The jobs' prompt and the front's treat what tools return (messages, mails,
+transcripts, titles) as untrusted data, never instructions. A server that
+cannot be reached is said to be unreachable. Jobs run on `"model"`
+(`"sonnet"` at low effort by default, about 5 s for a playback change), 3
+at once, each for at most 2 minutes. `GET /api/voice/tools` lists the
+jobs, `?job=` gives one, `POST /api/voice/tools/cancel` `{job?}` stops one
+or all.
+
 ### Voice calls on the move
 
 A call is meant to survive a phone changing networks. The listening session
