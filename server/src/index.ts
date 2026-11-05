@@ -168,6 +168,7 @@ import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
 import { configuredResearch } from "./voice/voice-research";
+import { configuredTools } from "./voice/voice-tools";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import {
@@ -414,6 +415,7 @@ const handleVoice = createVoiceRoutes(
   (mode) => writeFrontMode(mode),
   configuredResearch(() => readVoiceConfig()),
   () => voiceSocket.currentCall(),
+  configuredTools(() => readVoiceConfig()),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,

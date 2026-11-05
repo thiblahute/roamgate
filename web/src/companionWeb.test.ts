@@ -5,7 +5,12 @@ import {
   companionTeller,
   setCompanionTeller,
 } from "./companionCall";
-import { followCompanionWeb, webAck } from "./companionWeb";
+import {
+  followCompanionTool,
+  followCompanionWeb,
+  toolAck,
+  webAck,
+} from "./companionWeb";
 import type { ResearchJob } from "./voiceRoute";
 
 afterEach(() => {
@@ -157,5 +162,45 @@ describe("a web search the companion follows", () => {
     unsetSecond();
     expect(companionTeller()).toBeNull();
     expect(told).toEqual(["second found"]);
+  });
+});
+
+describe("a tool request the companion follows", () => {
+  test("is said at once, the front's own words first", () => {
+    expect(toolAck(undefined, "Mets la musique en pause, s'il te plaît")).toBe(
+      "Je m'en occupe.",
+    );
+    expect(toolAck(undefined, "Pause the music")).toBe("On it.");
+    expect(toolAck("Je mets en pause.", "Pause")).toBe("Je mets en pause.");
+  });
+
+  test("is logged as a tool job, its result told", async () => {
+    const told: string[] = [];
+    setCompanionTeller((text) => told.push(text));
+    const originalFetch = globalThis.fetch;
+    const asked: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      asked.push(String(url));
+      return Response.json(
+        job({
+          id: "t1",
+          question: "Pause",
+          status: "done",
+          spoken: "C'est en pause.",
+        }),
+      );
+    }) as unknown as typeof fetch;
+    jest.useFakeTimers();
+    try {
+      const following = followCompanionTool("t1", "Pause");
+      jest.advanceTimersByTime(1500);
+      await settle();
+      await following;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(asked).toEqual(["/api/voice/tools?job=t1"]);
+    expect(webEntry()).toMatchObject({ tool: true, status: "done" });
+    expect(told).toEqual(["C'est en pause."]);
   });
 });

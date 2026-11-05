@@ -61,9 +61,13 @@ export type CompanionLogEntry =
   | {
       id: number;
       at: number;
-      /** A web search it started (voiceRoute.ts ResearchJob). */
+      /**
+       * A web search it started (voiceRoute.ts ResearchJob), or with
+       * `tool`, a request done with its MCP tools (server voice-tools.ts).
+       */
       kind: "web";
       job: string;
+      tool?: boolean;
       question: string;
       status: "searching" | "done" | "failed" | "cancelled";
       steps: readonly string[];

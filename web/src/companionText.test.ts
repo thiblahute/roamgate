@@ -40,6 +40,10 @@ function setup(route: VoiceRoute) {
       calls.push(`web ${job}: ${question}`);
       return null;
     },
+    followTool: async (job, task) => {
+      calls.push(`tool ${job}: ${task}`);
+      return null;
+    },
     ranger: async (text) => {
       calls.push(`ranger ${text}`);
       return "Ranger says hi.";
@@ -99,6 +103,24 @@ describe("typing to the companion", () => {
     expect(calls).toEqual([
       "route local/w2:p2: La Fnac de Grenoble ferme à quelle heure ?",
       "web w1: Horaires de la Fnac de Grenoble aujourd'hui",
+    ]);
+  });
+
+  test("a request for the companion's tools runs in the background, said at once", async () => {
+    const { calls, deps } = setup({
+      to: "tool",
+      task: "Mets la musique en pause",
+      job: "t1",
+      reply: "Je mets en pause.",
+    });
+    await sendCompanionText("Mets la musique en pause", deps);
+    expect(lines()).toEqual([
+      "heard: Mets la musique en pause",
+      "said: Je mets en pause.",
+    ]);
+    expect(calls).toEqual([
+      "route local/w2:p2: Mets la musique en pause",
+      "tool t1: Mets la musique en pause",
     ]);
   });
 

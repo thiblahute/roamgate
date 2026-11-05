@@ -13,6 +13,7 @@ import {
   speechRateOr,
 } from "../../../shared/speechRate";
 import { dataRoot } from "../config/data-paths";
+import type { CompanionMcpConfig } from "./voice-tools";
 
 /**
  * Voice chat runs on a helper process (voice/helper) that keeps the speech
@@ -96,6 +97,14 @@ export type VoiceConfig = {
    * "opus" (at low effort) by default.
    */
   research_model?: string;
+  /**
+   * The MCP tools the voice companion may use (voice-tools.ts): Claude
+   * Code's own MCP servers and claude.ai connectors. `allow` lists those
+   * it runs, `confirm` those it runs only once the user said yes to the
+   * exact call (and any tool whose name says it sends, writes or deletes
+   * is one of those); `model` runs the jobs. Off without it.
+   */
+  companion_mcp?: CompanionMcpConfig;
   /**
    * The folder of the agent session that general questions and errands go
    * to (a tasks repository), when the router has one.
@@ -283,6 +292,29 @@ export function readVoiceConfig(
     typeof config.call_music_at_start !== "boolean"
   )
     return { error: `${path}: call_music_at_start must be true or false` };
+  if (config.companion_mcp !== undefined) {
+    const mcp = config.companion_mcp as Record<string, unknown> | null;
+    if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
+      return { error: `${path}: companion_mcp must be an object` };
+    for (const key of ["allow", "confirm"])
+      if (
+        mcp[key] !== undefined &&
+        !(
+          Array.isArray(mcp[key]) &&
+          (mcp[key] as unknown[]).every(
+            (tool) => typeof tool === "string" && tool.trim(),
+          )
+        )
+      )
+        return {
+          error: `${path}: companion_mcp.${key} must be a list of tool names`,
+        };
+    if (
+      mcp.model !== undefined &&
+      (typeof mcp.model !== "string" || !mcp.model)
+    )
+      return { error: `${path}: companion_mcp.model must be a string` };
+  }
   if (config.front_mode !== undefined && !isFrontMode(config.front_mode))
     return { error: `${path}: front_mode must be "companion" or "relay"` };
   if (config.speech_rate !== undefined && !isSpeechRate(config.speech_rate))

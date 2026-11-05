@@ -42,6 +42,11 @@ export type VoiceRoute = (
    * `query`, followed by `job` (followResearch).
    */
   | { to: "web"; query: string; job?: string }
+  /**
+   * Done with the companion's MCP tools in the background (server
+   * voice-tools.ts): `task`, followed by `job` as a web search is.
+   */
+  | { to: "tool"; task: string; job?: string }
 ) & {
   /** With a front (voiceFront.ts): what it says aloud now. */
   reply?: string;
@@ -69,6 +74,7 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
   "read",
   "mode",
   "web",
+  "tool",
 ];
 
 /**
@@ -315,9 +321,24 @@ export type ResearchJob = {
 
 /** A web search as it is now; null when it is gone or unreachable. */
 export async function researchState(job: string): Promise<ResearchJob | null> {
+  return jobState("research", job);
+}
+
+/**
+ * A job of the companion's tools as it is now (server voice-tools.ts),
+ * shaped as a web search; null when it is gone or unreachable.
+ */
+export async function toolState(job: string): Promise<ResearchJob | null> {
+  return jobState("tools", job);
+}
+
+async function jobState(
+  kind: "research" | "tools",
+  job: string,
+): Promise<ResearchJob | null> {
   try {
     const response = await fetch(
-      `/api/voice/research?job=${encodeURIComponent(job)}`,
+      `/api/voice/${kind}?job=${encodeURIComponent(job)}`,
     );
     if (!response.ok) return null;
     return (await response.json()) as ResearchJob;
@@ -328,8 +349,20 @@ export async function researchState(job: string): Promise<ResearchJob | null> {
 
 /** Stops a web search, or all those running; whether any was. */
 export async function cancelResearch(job?: string): Promise<boolean> {
+  return cancelJob("research", job);
+}
+
+/** Stops a job of the companion's tools; whether it was running. */
+export async function cancelTool(job: string): Promise<boolean> {
+  return cancelJob("tools", job);
+}
+
+async function cancelJob(
+  kind: "research" | "tools",
+  job?: string,
+): Promise<boolean> {
   try {
-    const response = await fetch("/api/voice/research/cancel", {
+    const response = await fetch(`/api/voice/${kind}/cancel`, {
       method: "POST",
       headers: { ...VOICE_HEADERS, "content-type": "application/json" },
       body: JSON.stringify(job ? { job } : {}),

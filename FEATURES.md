@@ -507,7 +507,14 @@ Inspector state is scoped to each checkout; see
   are not talking, naming the source when it matters. Several searches can
   run at once; ask "where is that search?" or "cancel that search". Each
   shows in its conversation with its steps, its whole answer and its
-  links, and a **Cancel** button while it searches. Its conversation also
+  links, and a **Cancel** button while it searches. With the MCP tools
+  voice.json lists for it (`companion_mcp`, see
+  [deployment](docs/DEPLOYMENT.md)), it also does what they do: pause,
+  skip or play music, find a video or its transcript, read your messages.
+  It says at once that it does it ("Je mets en pause.") and tells you how
+  it went. Anything that would send, write or delete (a message, a mail, a
+  reaction) is never done as asked: it reads back exactly what it would
+  send and to whom, and does it only when you say yes. Its conversation also
   takes text: type to it there, in a call or not, as you would talk.
   Between turns it
   tells you what happened elsewhere when it is worth it (a session done or

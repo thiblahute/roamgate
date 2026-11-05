@@ -27,6 +27,7 @@ import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import { researchContext, type VoiceResearch } from "../voice/voice-research";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
 import { SurprisePicker } from "../voice/voice-surprise";
+import { toolsContext, type VoiceTools } from "../voice/voice-tools";
 
 /** Sent with voice requests: a page from elsewhere cannot add it. */
 export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
@@ -84,6 +85,14 @@ const MAX_ANSWER_CHARS = 12000;
  * (`jobs`), ?job= gives one; POST /api/voice/research/cancel `{job?}`
  * stops one, or all those running. What a search found is only shown and
  * said: nothing here routes, forwards or sends because of it.
+ * The companion's MCP tools (voice-tools.ts, voice.json `companion_mcp`):
+ * a front's "tool" route starts a job in the background and comes back
+ * with its `job`, as "web" does; "tool_confirm" makes the call a job held
+ * for the user's yes, only when the words said are a yes
+ * (voice-tools.ts saysYes), and comes back as "tool" with the job making
+ * it; "tool_cancel" forgets it and comes back as "self". GET
+ * /api/voice/tools lists the jobs, ?job= gives one; POST
+ * /api/voice/tools/cancel `{job?}` stops one, or all those running.
  *
  * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
  * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
@@ -120,7 +129,7 @@ export function legacyRoute(route: FrontReply, routes: unknown): FrontReply {
     : LEGACY_ROUTES;
   if (known.has(route.to)) return route;
   // A search it cannot follow: what the front said of it, at least.
-  if (route.to === "web")
+  if (route.to === "web" || route.to === "tool")
     return known.has("self") && route.reply
       ? { to: "self", reply: route.reply }
       : { to: "nobody" };
@@ -141,6 +150,8 @@ export function createVoiceRoutes(
   research: () => VoiceResearch | null = () => null,
   /** The call whose audio the helper mixes now (voice-socket.ts). */
   currentCall: () => CallHandle | null = () => null,
+  /** The companion's MCP tools (voice-tools.ts), with a front. */
+  tools: () => VoiceTools | null = () => null,
 ) {
   const surprise = new SurprisePicker();
   /** The sessions a page lists, those of the errands folder marked. */
@@ -304,6 +315,34 @@ export function createVoiceRoutes(
           : researching.cancelAll();
       return Response.json({ cancelled });
     }
+    if (pathname === "/api/voice/tools" && req.method === "GET") {
+      const using = tools();
+      const job = new URL(req.url).searchParams.get("job");
+      if (job === null) return Response.json({ jobs: using?.list() ?? [] });
+      const state = using?.state(job);
+      return state
+        ? Response.json(state)
+        : Response.json({ error: "No such job." }, { status: 404 });
+    }
+    if (pathname === "/api/voice/tools/cancel" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      const body = (await req.json().catch(() => null)) as {
+        job?: unknown;
+      } | null;
+      const using = tools();
+      const cancelled = !using
+        ? []
+        : typeof body?.job === "string"
+          ? using.cancel(body.job)
+            ? [body.job]
+            : []
+          : using.cancelAll();
+      return Response.json({ cancelled });
+    }
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
@@ -338,7 +377,7 @@ export function createVoiceRoutes(
         current,
         event: { text: event, kind, ...(agent ? { agent } : {}) },
         sessions: routeSessions(body?.sessions),
-        context: withSearches(contextOf(body?.context), research()),
+        context: withSearches(contextOf(body?.context), research(), tools()),
       });
       if (debug)
         console.error(
@@ -379,7 +418,11 @@ export function createVoiceRoutes(
             current,
             said,
             sessions,
-            context: withSearches(contextOf(body?.context), researching),
+            context: withSearches(
+              contextOf(body?.context),
+              researching,
+              fronting ? tools() : null,
+            ),
           })
         : routing
           ? await routing.route({ current, said, sessions })
@@ -393,6 +436,12 @@ export function createVoiceRoutes(
       }
       if (route.to === "web" || route.to === "web_cancel")
         route = webRoute(route, said, researching);
+      if (
+        route.to === "tool" ||
+        route.to === "tool_confirm" ||
+        route.to === "tool_cancel"
+      )
+        route = toolRoute(route, said, fronting ? tools() : null);
       if (route.to === "music") route = await musicRoute(route, currentCall());
       if (route.to === "errand") {
         try {
@@ -713,10 +762,17 @@ function isSessionInfo(value: unknown): value is VoiceSessionInfo {
   );
 }
 
-/** The state a page gave the front, and its web searches. */
-function withSearches(context: string, research: VoiceResearch | null) {
+/** The state a page gave the front, its web searches and its tools. */
+function withSearches(
+  context: string,
+  research: VoiceResearch | null,
+  tools: VoiceTools | null = null,
+) {
   const searches = research ? researchContext(research.list()) : "";
-  return [context, searches].filter(Boolean).join("\n\n");
+  const using = tools
+    ? toolsContext(tools.configured(), tools.list(), tools.heldJob())
+    : "";
+  return [context, searches, using].filter(Boolean).join("\n\n");
 }
 
 const looksFrench = (text: string) =>
@@ -776,6 +832,88 @@ export function webRoute(
       (french
         ? "Je regarde ça sur le web, je te redis."
         : "Let me look that up, I'll tell you."),
+  };
+}
+
+/**
+ * A front's "tool" route with its job started (`job`), and what is said
+ * at once; "tool_confirm" makes the held call, only when what was said is
+ * a yes, as a "tool" route following the job that makes it;
+ * "tool_cancel" forgets it, said as "self" (or, with a corrected `task`,
+ * started as "tool"). Without tools here, it is
+ * said that they cannot be used.
+ */
+export function toolRoute(
+  route: Extract<FrontReply, { to: "tool" | "tool_confirm" | "tool_cancel" }>,
+  said: string,
+  tools: VoiceTools | null,
+): FrontReply {
+  const french = looksFrench(said);
+  if (!tools)
+    return {
+      to: "self",
+      reply: french
+        ? "Je n'ai pas d'outils pour ça d'ici."
+        : "I don't have tools for that here.",
+    };
+  if (route.to === "tool_cancel") {
+    const declined = tools.decline(route.action);
+    // A change: the corrected request, read back again in its turn.
+    if (route.task?.trim())
+      return toolRoute(
+        { to: "tool", task: route.task, reply: route.reply },
+        said,
+        tools,
+      );
+    return {
+      to: "self",
+      reply:
+        route.reply ||
+        (declined
+          ? french
+            ? "D'accord, je n'envoie rien."
+            : "OK, I won't send anything."
+          : french
+            ? "Rien n'attendait de confirmation."
+            : "Nothing was waiting for a yes."),
+    };
+  }
+  if (route.to === "tool_confirm") {
+    const held = tools.heldJob(route.action) ?? tools.heldJob();
+    // The user's own yes, now, to a call still held: else nothing runs.
+    const job = held ? tools.confirm(said, held.id) : null;
+    if (!job)
+      return {
+        to: "self",
+        reply: !held
+          ? french
+            ? "Rien n'attend de confirmation."
+            : "Nothing is waiting for a yes."
+          : french
+            ? "Je n'ai rien fait. Dis oui pour confirmer, ou non pour annuler."
+            : "I haven't done anything. Say yes to confirm, or no to cancel.",
+      };
+    return {
+      to: "tool",
+      task: job.question,
+      job: job.id,
+      reply: route.reply || (french ? "C'est parti." : "Doing it."),
+    };
+  }
+  const task = route.task.trim() || said;
+  const job = tools.start(task);
+  if (!job || job.status !== "searching")
+    return {
+      to: "self",
+      reply: french
+        ? "Je n'arrive pas à lancer ça pour l'instant."
+        : "I can't start that right now.",
+    };
+  return {
+    to: "tool",
+    task,
+    job: job.id,
+    reply: route.reply || (french ? "Je m'en occupe." : "On it."),
   };
 }
 
