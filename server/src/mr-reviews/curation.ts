@@ -1,3 +1,4 @@
+import { asCommand, commandEnv, helperCommand } from "../profiles/profiles";
 import { tmpdir } from "node:os";
 import type { MrCurationState, MrItem } from "../../../shared/mrReviews";
 import { mrProjectKey } from "../../../shared/mrReviews";
@@ -185,9 +186,10 @@ export type RunModel = (
 /** `claude -p` as a bare model: no tool, no session, no MCP, no hooks. */
 export const runClaudeModel: RunModel = async (model, system, prompt) => {
   const started = Date.now();
+  const command = asCommand(helperCommand());
   const child = Bun.spawn(
     [
-      "claude",
+      command.program,
       "-p",
       "--model",
       model,
@@ -203,7 +205,7 @@ export const runClaudeModel: RunModel = async (model, system, prompt) => {
     ],
     {
       cwd: tmpdir(),
-      env: backgroundClaudeEnv(),
+      env: commandEnv(command, backgroundClaudeEnv()),
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",

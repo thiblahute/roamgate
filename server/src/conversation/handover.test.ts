@@ -1158,6 +1158,94 @@ describe("conversation to terminal", () => {
   });
 });
 
+describe("a terminal session restarts with its profile", () => {
+  const glm = {
+    program: "claude",
+    env: { ANTHROPIC_BASE_URL: "https://gateway.example" },
+    unset: ["ANTHROPIC_API_KEY"],
+    plain: false,
+  };
+
+  test("exits the idle TUI and types a launch of the same session", async () => {
+    const launches: unknown[] = [];
+    const { fake, handover, leases } = setup({
+      holderStarts: false,
+      deps: {
+        resumeProfile: () => glm,
+        launchCommand: (paneId, spec) => {
+          launches.push({ paneId, spec });
+          return " launch TOKEN\r";
+        },
+      },
+    });
+    const result = await handover.restartTerminal(PANE, fake.sessionId);
+    expect(result).toEqual({
+      ok: true,
+      owner: "terminal",
+      session_id: fake.sessionId,
+    });
+    const actions = fake.calls
+      .filter(([name]) => name === "prompt" || name === "sendText")
+      .map((call) => call.slice(2));
+    expect(actions).toEqual([["/exit"], [" launch TOKEN\r"]]);
+    expect(launches).toEqual([
+      {
+        paneId: PANE,
+        spec: {
+          argv: ["claude", "--resume", fake.sessionId],
+          env: glm.env,
+          unset: glm.unset,
+          agent: "claude",
+          terminal: true,
+        },
+      },
+    ]);
+    // No lease: the terminal keeps the session throughout.
+    expect(leases.get(PANE)).toBeNull();
+  });
+
+  test("plain claude resumes as it always did", async () => {
+    const { fake, handover } = setup({
+      holderStarts: false,
+      deps: {
+        resumeProfile: () => ({ ...glm, env: {}, unset: [], plain: true }),
+        launchCommand: () => {
+          throw new Error("not for plain claude");
+        },
+      },
+    });
+    const result = await handover.restartTerminal(PANE);
+    expect(result.ok).toBe(true);
+    const typed = fake.calls.filter(([name]) => name === "sendText");
+    expect(String(typed[0]?.[2])).toContain(
+      `claude --resume ${fake.sessionId}`,
+    );
+  });
+
+  test("refuses while Claude works, and touches nothing", async () => {
+    const { fake, handover } = setup({
+      herdr: {
+        agentGet: async () => ({
+          agent: "claude",
+          agent_status: "working",
+          agent_session: { kind: "id", value: "s" },
+        }),
+      },
+    });
+    const result = await handover.restartTerminal(PANE);
+    expect(result.ok ? "" : result.reason).toMatch(/working/);
+    expect(fake.calls.some(([name]) => name === "prompt")).toBe(false);
+  });
+
+  test("refuses a session conversation mode holds", async () => {
+    const { fake, handover, leases } = setup();
+    expect((await handover.toConversation(PANE)).ok).toBe(true);
+    const result = await handover.restartTerminal(PANE, fake.sessionId);
+    expect(result.ok ? "" : result.reason).toMatch(/Conversation mode holds/);
+    expect(leases.get(PANE)?.phase).toBe("conversation");
+  });
+});
+
 describe("another claude on the session in another pane", () => {
   const OTHER = "w2:p12";
 

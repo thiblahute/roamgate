@@ -18,6 +18,12 @@ import type { ConversationHerdr } from "./herdr";
 import { createHolderRegistry } from "./holder";
 import { idleStopRefusal } from "./idle-stop";
 import type { LeaseStore } from "./lease";
+import {
+  type AgentCommand,
+  describeCommand,
+  type LaunchSpec,
+} from "../profiles/profiles";
+import type { StartOptions } from "./drivers/types";
 import { createApiKeyQuestions } from "./service-api-key";
 import { createSwitches } from "./service-handover";
 import { createHolderSide, releasingLeases } from "./service-holders";
@@ -74,6 +80,16 @@ export type ConversationServiceOptions<Ws> = {
   holderCommand: (sessionId: string) => string;
   /** What is typed into a bare shell to resume the session in claude. */
   resumeCommand?: (sessionId: string, args?: string[]) => string;
+  /**
+   * The command a session's agent starts with (its profile); none: plain
+   * claude. Throws when the profile cannot be used (a secret file).
+   */
+  commandFor?: (sessionId: string) => AgentCommand;
+  /**
+   * What is typed into the pane to start the agent of a profile that is
+   * not plain claude (roamgate-hold fetches it with a one-use token).
+   */
+  launchCommand?: (paneId: string, spec: LaunchSpec) => string;
   log?: (message: string, fields?: Record<string, unknown>) => void;
   /** Overrides for tests: timings and the handover's clock. */
   session?: Partial<
@@ -195,6 +211,29 @@ const HERDR_STATE: Record<
 };
 
 /**
+ * Why a profile switch cannot restart the conversation now, for the user:
+ * said of the agent, whatever profile (model) runs it.
+ */
+export function restartRefusal(refusal: string): string {
+  switch (refusal) {
+    case "it works":
+      return "The agent is working; switch once its turn ends, or stop it first";
+    case "it asks the user something":
+      return "The agent is waiting for your answer; answer it, then switch";
+    case "the API key question waits":
+      return "The agent waits for the API key question; answer it, then switch";
+    case "messages wait in its queue":
+      return "Messages wait in the agent's queue; switch once they are sent, or take them back";
+    case "background work runs":
+      return "The agent runs background tasks that a restart would stop; switch once they end, or stop them";
+    case "a shell line runs":
+      return "A shell line still runs; switch once it ends";
+    default:
+      return `The agent cannot switch now: ${refusal}`;
+  }
+}
+
+/**
  * Conversation mode on one connection: the sessions it owns (each with its
  * headless claude), the handovers to and from the panes' terminals, the
  * panes' holders, and the browsers watching each pane. The parts live in
@@ -216,6 +255,8 @@ export function createConversationService<Ws>(
     holders,
     holderCommand: options.holderCommand,
     ...(options.resumeCommand ? { resumeCommand: options.resumeCommand } : {}),
+    resumeProfile: (sessionId) => resumeProfile(sessionId),
+    ...(options.launchCommand ? { launchCommand: options.launchCommand } : {}),
     // Each phase reaches the browsers as it happens: while a takeover runs
     // nothing may be typed into the pane.
     onLease: (paneId) => emitLease(paneId),
@@ -305,6 +346,8 @@ export function createConversationService<Ws>(
       fromSuspended(paneId, spec, attach),
     confirmMapping: (paneId, sessionId) =>
       handover.confirmMapping(paneId, sessionId),
+    resumeProfile: (sessionId) => resumeProfile(sessionId),
+    profileOf: (sessionId) => profileOf(sessionId),
   });
   const { dropChannel } = holderSide;
   const stuck = createStuckWatch({
@@ -384,6 +427,7 @@ export function createConversationService<Ws>(
     recoverAttempts: options.recoverAttempts ?? 12,
     carriedQueueDelayMs: options.carriedQueueDelayMs ?? 3000,
     reattachLimit: options.reattachLimit ?? 8,
+    resumeProfile: (sessionId) => resumeProfile(sessionId),
   });
   const { setLost, clearLost, recoverLater, recover, startAgain } = recovery;
 
@@ -494,6 +538,73 @@ export function createConversationService<Ws>(
         type: "interrupted",
         interrupted: next.interrupted ?? null,
       });
+  }
+
+  /**
+   * The session's profile, for a start: its program and environment.
+   * Plain claude (or no resolver) adds nothing, as before profiles. A
+   * profile that cannot be read (a missing secret file) refuses the start.
+   */
+  function profileOf(sessionId: string): Pick<StartOptions, "profile"> {
+    const command = options.commandFor?.(sessionId);
+    if (!command || command.plain) return {};
+    log("the conversation process starts with a profile", {
+      session: sessionId,
+      ...describeCommand(command),
+    });
+    return {
+      profile: {
+        program: command.program,
+        env: command.env,
+        unset: command.unset,
+      },
+    };
+  }
+
+  /**
+   * The profile a session resumes with in the terminal. One that cannot
+   * be used (a secret file gone) resumes plain claude: the session never
+   * stays without its TUI.
+   */
+  function resumeProfile(sessionId: string): AgentCommand | undefined {
+    try {
+      return options.commandFor?.(sessionId);
+    } catch (error) {
+      log("the session's profile cannot be used; claude resumes plain", {
+        session: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * Why the pane's process cannot be ended for a restart (another profile
+   * or session) now, as idle stop would end it; null: it can. A process
+   * that is not running (stopped for being idle, or gone) has no turn to
+   * cut: its "stopped" is no work, whatever else still holds it back (a
+   * message on its way, the queue, a shell line).
+   */
+  function restartRefusalOf(
+    paneId: string,
+    session: ConversationSession,
+  ): string | null {
+    const live = session.state();
+    return idleStopRefusal({
+      limitMs: 1,
+      now: Number.POSITIVE_INFINITY,
+      idleSince: 0,
+      lastPeerAt: null,
+      conversation: true,
+      alive: true,
+      status: live.status === "stopped" ? "idle" : live.status,
+      busy: session.busy(),
+      queued: live.queue.length,
+      backgroundTasks: session.backgroundTasks(),
+      shellRunning: shells.running(paneId),
+      apiKeyQuestion: apiKeys.has(paneId),
+      keptAwake: null,
+    });
   }
 
   /** The notice of a turn cut short goes (a new turn, or a dismiss). */
@@ -710,22 +821,7 @@ export function createConversationService<Ws>(
       if (lease.session_id === sessionId) return { ok: true };
       const session = sessions.get(paneId);
       if (session) {
-        const live = session.state();
-        const refusal = idleStopRefusal({
-          limitMs: 1,
-          now: Number.POSITIVE_INFINITY,
-          idleSince: 0,
-          lastPeerAt: null,
-          conversation: true,
-          alive: true,
-          status: live.status,
-          busy: session.busy(),
-          queued: live.queue.length,
-          backgroundTasks: session.backgroundTasks(),
-          shellRunning: shells.running(paneId),
-          apiKeyQuestion: apiKeys.has(paneId),
-          keptAwake: null,
-        });
+        const refusal = restartRefusalOf(paneId, session);
         if (refusal) return { ok: false, busy: true, reason: refusal };
         if (session.alive() && !session.asleep() && !(await session.sleep()))
           return { ok: false, busy: true, reason: "it is not idle" };
@@ -749,6 +845,50 @@ export function createConversationService<Ws>(
       return started.ok
         ? { ok: true }
         : { ok: false, busy: false, reason: started.reason };
+    },
+    /**
+     * Starts the pane's conversation process again on the same session,
+     * with what the session's profile says now (a switch of profile). Only
+     * when nothing runs, waits or is queued, as a session switch.
+     */
+    async restartProcess(
+      paneId: string,
+    ): Promise<{ ok: true } | { ok: false; reason: string }> {
+      const lease = leases.get(paneId);
+      if (!lease || lease.phase !== "conversation" || handover.running(paneId))
+        return {
+          ok: false,
+          reason: "Conversation mode does not own this session",
+        };
+      const session = sessions.get(paneId);
+      if (session) {
+        const refusal = restartRefusalOf(paneId, session);
+        if (refusal) return { ok: false, reason: restartRefusal(refusal) };
+        if (session.alive() && !session.asleep() && !(await session.sleep()))
+          return {
+            ok: false,
+            reason: "The agent is not idle; try again in a moment",
+          };
+        sessions.delete(paneId);
+        session.dispose();
+      }
+      clearLost(paneId);
+      clearStuck(paneId);
+      const current = leases.get(paneId);
+      if (current?.asleep_at) {
+        const next = { ...current };
+        delete next.asleep_at;
+        leases.set(next);
+      }
+      log("conversation process restarts with the session's profile", {
+        pane: paneId,
+      });
+      emitLease(paneId);
+      return startAgain(paneId);
+    },
+    /** A terminal pane's TUI exits and resumes with the session's profile. */
+    restartTerminal(paneId: string, sessionId?: string) {
+      return handover.restartTerminal(paneId, sessionId);
     },
     inputRefusal(paneId: string): string | null {
       const phase = leases.get(paneId)?.phase;

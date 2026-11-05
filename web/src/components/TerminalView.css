@@ -437,6 +437,24 @@
     display: none;
   }
 
+  .terminal-mobile-profile {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 4;
+  }
+
+  .terminal-mobile-profile .terminal-pane-action {
+    width: auto;
+    min-width: 40px;
+    height: 40px;
+    padding: 0 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--shell-panel);
+    box-shadow: var(--shadow-lg);
+    opacity: 1;
+  }
+
   .terminal-view .xterm {
     padding: 5px 0 calc(6px + env(safe-area-inset-bottom, 0px)) 6px;
   }

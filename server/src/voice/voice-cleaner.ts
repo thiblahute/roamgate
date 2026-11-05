@@ -1,3 +1,10 @@
+import {
+  type AgentCommand,
+  asCommand,
+  commandEnv,
+  commandKey,
+  helperCommand,
+} from "../profiles/profiles";
 import { tmpdir } from "node:os";
 import type { VoiceConfig } from "./voice-helper";
 
@@ -233,12 +240,13 @@ export function backgroundClaudeEnv(
 
 export function spawnClaude(
   model: string,
-  command = "claude",
+  command: string | AgentCommand = "claude",
   systemPrompt = CLEANER_SYSTEM_PROMPT,
 ): ClaudeProcess {
+  const resolved = asCommand(command);
   const child = Bun.spawn(
     [
-      command,
+      resolved.program,
       "-p",
       "--input-format",
       "stream-json",
@@ -262,7 +270,7 @@ export function spawnClaude(
     ],
     {
       cwd: tmpdir(),
-      env: backgroundClaudeEnv(),
+      env: commandEnv(resolved, backgroundClaudeEnv()),
       stdin: "pipe",
       stdout: "pipe",
       stderr: "ignore",
@@ -448,14 +456,19 @@ export class VoiceCleaner {
  */
 export function configuredCleaner(
   config: () => VoiceConfig | { error: string },
-  spawn: (model: string, command?: string) => ClaudeProcess = spawnClaude,
+  spawn: (
+    model: string,
+    command?: string | AgentCommand,
+  ) => ClaudeProcess = spawnClaude,
 ): () => VoiceCleaner | null {
   let current: { key: string; cleaner: VoiceCleaner } | null = null;
   return () => {
     const read = config();
     const model = "error" in read ? undefined : read.clean_model;
-    const command = "error" in read ? undefined : read.claude_command;
-    const key = model ? `${model} ${command ?? ""}` : "";
+    const command = model
+      ? helperCommand("error" in read ? undefined : read.claude_command)
+      : undefined;
+    const key = model ? `${model} ${commandKey(command)}` : "";
     if (current?.key !== key) {
       current?.cleaner.stop();
       current = model

@@ -1,3 +1,4 @@
+import type { LaunchSpec } from "../profiles/profiles";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -335,6 +336,12 @@ export function createReviewAgentServer(args: {
     sessionId: string;
     source: string;
   }) => Promise<Record<string, unknown>>;
+  /** A start prepared for a pane (roamgate-hold --launch), taken once. */
+  launch?: (input: {
+    connectionId: string;
+    paneId: string;
+    token: string;
+  }) => LaunchSpec | null;
   /**
    * Conversation mode's pane holder (roamgate-hold): `hold` waits until the
    * session goes back to the terminal (or a while passes), `handback` asks
@@ -626,6 +633,29 @@ export function createReviewAgentServer(args: {
             paneId,
             sessionId,
           });
+    }
+    if (command === "launch") {
+      const paneId = form.get("pane");
+      const token = form.get("token") ?? "";
+      if (!paneId)
+        throw new ReviewError(
+          "roamgate-hold --launch runs inside a Herdr pane",
+        );
+      if (!/^[0-9a-f]{16,64}$/.test(token))
+        throw new ReviewError("invalid launch token");
+      const spec = args.launch?.({
+        connectionId: connection.id,
+        paneId,
+        token,
+      });
+      if (!spec)
+        throw new ReviewError("no such start for this pane (it expired?)", 404);
+      logger.info("agent launched from a pane", {
+        connection: connection.id,
+        pane: paneId,
+        program: spec.argv[0],
+      });
+      return spec;
     }
     if (command === "claude_start") {
       const paneId = form.get("pane");

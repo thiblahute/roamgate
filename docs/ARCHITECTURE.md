@@ -1244,7 +1244,20 @@ Code's own lock (`<config>.lock`), rewriting the config atomically and
 leaving the rest of it as it was, then keeps or drops the key. An answer
 given in a terminal meanwhile shows in the holder's next poll and settles
 the question. `ANTHROPIC_AUTH_TOKEN` is kept: Claude Code uses it without
-asking in both modes. It stays in the
+asking in both modes. A session's agent profile (server/src/profiles,
+[Agent profiles](DEPLOYMENT.md#agent-profiles)) changes the `start`
+command: its program replaces `claude`, its variables join `set` and its
+removals come as `unset`, applied after the API key policy (a profile with
+its own token never sends the pane's key). Secret values are read from
+their files on the bridge's machine at each start and travel only in that
+command (kept, like any unconfirmed command, in the lease file, mode 0600,
+until the holder confirms it). The hand-back's `resume` answer carries the
+same program and environment (`env`, `unset`, `agent`). What is typed
+into a bare shell for a profile is `roamgate-hold --launch <token>`: the
+holder posts `launch` with its pane, gets the argv and environment the
+bridge registered for that pane (one use, two minutes) and execs it, with
+`--session-id` instead of `--resume` for a Claude session with no
+transcript yet. It stays in the
 pane's foreground process group (the holder turns off the terminal's signal
 keys), so Herdr's process listing for the pane includes it; a small guard
 process beside it kills it should the holder die without ending it (killed

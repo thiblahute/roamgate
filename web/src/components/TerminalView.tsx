@@ -233,6 +233,7 @@ import {
   paneShownView,
 } from "../agentChatOwnership";
 import { useConversationSwitch } from "../conversationSwitch";
+import { ProfileChip } from "./ProfileChip";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { TerminalModeStrip } from "./TerminalModeStrip";
 import { takeVoiceHandoff, voiceHandoffPending } from "../voiceRoute";
@@ -4609,6 +4610,21 @@ export function TerminalView({
               <MessagesSquare size={14} />
             </button>
           ) : null}
+          {/* The session's agent profile: its model when not the
+              default, Run with: another, Continue with after a limit. */}
+          <ProfileChip
+            client={connectionClient}
+            paneId={pane.pane_id}
+            enabled={claudePane}
+            agentStatus={pane.agent_status}
+            onError={(message) =>
+              store.notify({
+                kind: "error",
+                message: "Profile switch refused",
+                detail: message,
+              })
+            }
+          />
           {s.endpointAvailability[pane.terminal_id] &&
           store.terminalScrollReason(pane.terminal_id) ? (
             <span
@@ -4682,6 +4698,23 @@ export function TerminalView({
             <ZenDock buttonClassName="terminal-pane-action" />
           ) : null}
         </div>
+        {isMobileLayout() && isActivePane && !chatShown && claudePane ? (
+          <div className="terminal-mobile-profile">
+            <ProfileChip
+              client={connectionClient}
+              paneId={pane.pane_id}
+              enabled
+              agentStatus={pane.agent_status}
+              onError={(message) =>
+                store.notify({
+                  kind: "error",
+                  message: "Profile switch refused",
+                  detail: message,
+                })
+              }
+            />
+          </div>
+        ) : null}
         {s.connectionPaused ? (
           <div className="terminal-loading" role="status" aria-live="polite">
             <span className="terminal-loading-dot" />

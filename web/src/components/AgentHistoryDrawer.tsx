@@ -108,6 +108,7 @@ import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { AgentTasksSheet } from "./AgentTasksSheet";
 import { AgentStatusChip } from "./AgentStatusChip";
+import { ProfileChip } from "./ProfileChip";
 import { AgentChatOwnerChip } from "./AgentChatOwnerChip";
 import { branchRequests, conversationRequests } from "../forgeRefs";
 import { useForgeSession } from "../forgeStore";
@@ -340,6 +341,21 @@ export function AgentHistoryDrawer({
       )?.label,
   );
   const connectionClient = useConnectionClient();
+  const mobileProfileChip = mobile ? (
+    <ProfileChip
+      client={connectionClient}
+      paneId={pane.pane_id}
+      enabled={isConversationAgent(pane.agent)}
+      agentStatus={pane.agent_status}
+      onError={(message) =>
+        store.notify({
+          kind: "error",
+          message: "Profile switch refused",
+          detail: message,
+        })
+      }
+    />
+  ) : null;
   // Images the user uploaded load from the pane's host.
   const imageUrl = useCallback(
     (path: string) =>
@@ -3516,6 +3532,7 @@ export function AgentHistoryDrawer({
             >
               {pane.agent_status}
             </span>
+            {mobileProfileChip}
             {chatViewToggle}
             <button
               ref={searchToggleRef}
@@ -3595,6 +3612,7 @@ export function AgentHistoryDrawer({
             onOpenTasks={() => openTask(null)}
           />
           <div className="agent-history-actions">
+            {paneChat ? mobileProfileChip : null}
             {paneChat ? (
               <>
                 <AgentArtifactsMenu artifacts={artifacts} />

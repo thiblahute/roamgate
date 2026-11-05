@@ -102,10 +102,15 @@ async function registerTests() {
   });
   afterAll(async () => browser.happyDOM.close());
 
-  async function mount(detect = mock(async () => integrations)) {
+  async function mount(
+    detect = mock(async () => integrations),
+    offeredProfiles?: unknown,
+  ) {
     const select = mock((command: string) => command);
     const call = mock(async (method: string) => {
       if (method === "integration.list") return detect();
+      if (method === "settings.profiles.get" && offeredProfiles)
+        return offeredProfiles;
       throw new Error(`Unexpected RPC: ${method}`);
     });
     const client = {
@@ -125,9 +130,10 @@ async function registerTests() {
     spies.push({
       mockRestore: () => {
         expect(createTab).not.toHaveBeenCalled();
+        // Detection, and the agent profiles it offers beside Claude.
         expect(
           call.mock.calls.every(([method]) =>
-            ["integration.list"].includes(method),
+            ["integration.list", "settings.profiles.get"].includes(method),
           ),
         ).toBe(true);
         createTab.mockRestore();
@@ -188,6 +194,25 @@ async function registerTests() {
     await act(async () => button("Pi").click());
     expect(select).toHaveBeenCalledWith("pi");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  test("profile launches use model-neutral agent wording", async () => {
+    await mount(undefined, {
+      default: "Claude",
+      profiles: [
+        { name: "Claude", agent: "claude", label: "Claude" },
+        { name: "Kimi", agent: "claude", label: "Kimi k3p1 pro" },
+      ],
+    });
+    const kimi = button("Agent with Kimi");
+    expect(kimi).not.toBeNull();
+    expect(kimi.textContent).toContain("Agent: Kimi");
+    expect(kimi.querySelector(".agent-icon")?.getAttribute("data-agent")).toBe(
+      "unknown",
+    );
+    expect(kimi.title).toBe("Start an agent with the Kimi profile");
+    expect(button("Claude with Kimi")).toBeNull();
+    expect(document.body.textContent).not.toContain("Claude: Kimi");
   });
 
   test.each(["Claude", "Future"])(

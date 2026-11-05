@@ -645,6 +645,25 @@ Inspector state is scoped to each checkout; see
   `ROAMGATE_CLAUDE_START=terminal claude`, and for a session just handed
   back. See [Starting claude in conversation
   mode](docs/DEPLOYMENT.md#starting-claude-in-conversation-mode).
+  **Agent profiles** (Configuration > Integrations): run Claude Code
+  against another backend (an Anthropic-compatible gateway, its models in
+  each of Claude Code's model slots, its token in a secret file), picked
+  from the gateway's own model list. The default profile starts new
+  sessions, conversation mode and Roamgate's own helpers; **Run with:
+  <profile>** in a Claude pane's profile menu (the gauge in its toolbar) or
+  the command menu moves that session to another profile, keeping its
+  history: the terminal's Claude exits and resumes the same session, a
+  conversation restarts its process. A session not on the default shows its
+  model on the chip ("GLM 5p3"). When a session hits a usage limit
+  ("You've hit your 5-hour limit · resets 5:20pm"), the pane shows
+  **Limit · 5:20 PM** (in local time) with **Use <profile>**; its menu
+  also has **Retry** (sends `continue` on the same profile, for a limit
+  that is over or an account that changed) and **Continue with** each
+  profile. The notice goes once a later turn succeeds, after a retry, or
+  past the reset time; optionally the session goes back to the default
+  after the reset. On a narrow header only the icons stay, their words in
+  the titles and the menu. The agent launcher offers **Agent: <profile>**
+  for a new session. See [Agent profiles](docs/DEPLOYMENT.md#agent-profiles).
   A message queued in a Claude chat can be taken back before the agent
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in

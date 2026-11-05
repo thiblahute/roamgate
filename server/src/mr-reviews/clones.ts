@@ -1,3 +1,4 @@
+import type { LaunchSpec } from "../profiles/profiles";
 import type { ForgeProvider } from "../../../shared/forge";
 import { mrProjectKey } from "../../../shared/mrReviews";
 import { onGitlabHost, remoteProject } from "../review/gitlab";
@@ -20,6 +21,11 @@ export type MrConnection = {
   dirs: () => Promise<string[]>;
   /** A Herdr call on the connection. */
   herdr: (method: string, params?: Record<string, unknown>) => Promise<any>;
+  /**
+   * What to type into a pane to start a profile's agent (a one-use token
+   * roamgate-hold trades for the program and environment).
+   */
+  launch?: (paneId: string, spec: LaunchSpec) => string;
   /** Conversation mode on the connection, when it runs there. */
   conversation?: {
     /** The session conversation mode holds the pane on, if it does. */

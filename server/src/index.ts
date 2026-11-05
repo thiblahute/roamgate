@@ -1,4 +1,6 @@
 import { defaultSessionIndexDir } from "./agent/session-index-store";
+import { launchRegistry, sessionProfiles } from "./profiles/profiles";
+import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
 import { sshReadCommandArgv } from "./bridge/ssh-command";
@@ -1006,6 +1008,7 @@ function mrReviewConnections(): MrConnection[] {
                 timeoutMs,
               ),
             herdr: call,
+            launch: runtime.typedLaunch,
             conversation: {
               owned: (paneId: string) =>
                 runtime.conversation.ownedSession(paneId)?.session_id ?? null,
@@ -1587,6 +1590,9 @@ function getReviewAgent(): ReviewAgentServer {
         ? { action: "conversation" }
         : { action: "terminal", reason: started.reason };
     },
+    // Profile starts typed into a pane (roamgate-hold --launch).
+    launch: ({ connectionId, paneId, token }) =>
+      launchRegistry().take(connectionId, paneId, token),
     // Conversation mode's pane holders (roamgate-hold).
     holder: {
       hold: ({ connectionId, paneId, sessionId, signal, status, shell }) => {
@@ -2671,7 +2677,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const connection = route.runtime;
   if (
     connection.remotePlatform === "windows" &&
-    /^(?:file\.|git\.|forge\.|worktree\.|agent_chat\.|agent_history\.|agent_session\.|agent_tasks?\.|agent_commands\.|agent_artifacts\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
+    /^(?:file\.|git\.|forge\.|worktree\.|agent_chat\.|agent_profile\.|agent_history\.|agent_session\.|agent_tasks?\.|agent_commands\.|agent_artifacts\.|settings\.(?:workspace_auto_sync|worktree_hooks)\.)/.test(
       method,
     )
   ) {
@@ -2872,6 +2878,17 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (method === "agent_artifacts.get") {
     try {
       sendReply({ id, result: await readAgentArtifacts(params ?? {}) }, method);
+    } catch (e) {
+      sendError(`${method}-error`, e);
+    }
+    return;
+  }
+  if (PROFILE_RPC_METHODS.has(method)) {
+    try {
+      sendReply(
+        { id, result: await connection.profileRpc(method, params ?? {}) },
+        method,
+      );
     } catch (e) {
       sendError(`${method}-error`, e);
     }
@@ -3936,6 +3953,37 @@ function main() {
   });
   const listeningPort = server.port ?? config.port;
   forwardReservedListeningPort = listeningPort;
+  // Agent profiles: the settings read now (spawns that cannot wait use
+  // them), and sessions a usage limit moved go back after its reset.
+  void readGuiSettings().catch(() => undefined);
+  setInterval(() => {
+    void readGuiSettings()
+      .then((settings) =>
+        returnAfterReset({
+          settings,
+          store: sessionProfiles(),
+          connections: connectionManager.list().flatMap((status) => {
+            const runtime = connectionManager.readyRuntime(status.id);
+            if (!runtime || runtime.remotePlatform === "windows") return [];
+            return [
+              {
+                panes: runtime.profilePanes,
+                switchPane: async (paneId: string, profile: string) =>
+                  (await runtime.profileRpc("agent_profile.switch", {
+                    pane_id: paneId,
+                    profile,
+                  })) as { ok: boolean; reason?: string },
+              },
+            ];
+          }),
+          log: (message, fields) =>
+            logger.child("profiles").info(message, fields),
+        }),
+      )
+      .catch((error) =>
+        logger.child("profiles").warn("reset return failed", { error }),
+      );
+  }, 60_000).unref?.();
   const publicBrowserUrl = browserUrlFor(
     config.host,
     listeningPort,

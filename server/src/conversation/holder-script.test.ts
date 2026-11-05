@@ -24,6 +24,7 @@ import {
   HOLD_CLIENT_SCRIPT,
   holderCommand,
   resumeCommand,
+  launchCommand,
 } from "./holder-script";
 
 const cleanups: (() => void)[] = [];
@@ -721,5 +722,125 @@ describe("the claude start hook's installer", () => {
     expect(settings.hooks.SessionStart[0].hooks[0].command).toBe(
       CLAUDE_START_HOOK_COMMAND,
     );
+  });
+});
+
+describe("roamgate-hold and agent profiles", () => {
+  const ENV_PROBE =
+    '#!/bin/sh\necho "$(basename "$0") $* BASE=${ANTHROPIC_BASE_URL:-none} KEY=${ANTHROPIC_API_KEY:-none} START=${ROAMGATE_CLAUDE_START:-none}"\n';
+
+  test("--launch trades its token for the program and environment", async () => {
+    const { dir, socket, requests } = scratch((command) =>
+      command === "launch"
+        ? {
+            argv: ["glm-claude", "--resume", "s-1"],
+            env: { ANTHROPIC_BASE_URL: "https://gateway.example" },
+            unset: ["ANTHROPIC_API_KEY"],
+            agent: "claude",
+            terminal: true,
+          }
+        : { error: "unexpected" },
+    );
+    const bin = join(dir, "bin");
+    Bun.spawnSync(["mkdir", "-p", bin]);
+    writeFileSync(join(bin, "glm-claude"), ENV_PROBE);
+    chmodSync(join(bin, "glm-claude"), 0o755);
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      ["--socket", socket, "--launch", "0123456789abcdef0123456789abcdef"],
+      { HERDR_PANE_ID: "w1:p1", ANTHROPIC_API_KEY: "pane-key" },
+      "",
+      dir,
+    );
+    expect(result.stdout.trim()).toBe(
+      "glm-claude --resume s-1 BASE=https://gateway.example KEY=none START=terminal",
+    );
+    expect(requests).toEqual([
+      ["launch", { pane: "w1:p1", token: "0123456789abcdef0123456789abcdef" }],
+    ]);
+  });
+
+  test("--launch of a session with no transcript starts it by its id", async () => {
+    const { dir, socket } = scratch(() => ({
+      argv: ["claude", "--resume", "33333333-aaaa-bbbb-cccc-000000000000"],
+      env: {},
+      unset: [],
+      agent: "claude",
+      terminal: false,
+    }));
+    const bin = join(dir, "bin");
+    Bun.spawnSync(["mkdir", "-p", bin]);
+    writeFileSync(join(bin, "claude"), ENV_PROBE);
+    chmodSync(join(bin, "claude"), 0o755);
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      ["--socket", socket, "--launch", "0123456789abcdef0123456789abcdef"],
+      { HERDR_PANE_ID: "w1:p1" },
+      "",
+      dir,
+    );
+    expect(result.stdout).toContain(
+      "claude --session-id 33333333-aaaa-bbbb-cccc-000000000000",
+    );
+    expect(result.stdout).toContain("START=none");
+  });
+
+  test("an expired launch says so and runs nothing", async () => {
+    const { dir, socket } = scratch(
+      () =>
+        new Response(JSON.stringify({ error: "no such start" }), {
+          status: 404,
+        }),
+    );
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      ["--socket", socket, "--launch", "0123456789abcdef0123456789abcdef"],
+      { HERDR_PANE_ID: "w1:p1" },
+      "",
+      dir,
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("no such start");
+  });
+
+  test("a hand-back resumes with the session's profile environment", async () => {
+    const { dir, socket } = scratch(() => ({
+      action: "resume",
+      session_id: "s-1",
+      cwd: "/",
+      argv: ["glm-claude", "--resume", "s-1"],
+      args: ["--resume", "s-1"],
+      agent: "claude",
+      env: { ANTHROPIC_BASE_URL: "https://gateway.example" },
+      unset: ["ANTHROPIC_API_KEY"],
+    }));
+    const bin = join(dir, "bin");
+    Bun.spawnSync(["mkdir", "-p", bin]);
+    writeFileSync(join(bin, "glm-claude"), ENV_PROBE);
+    chmodSync(join(bin, "glm-claude"), 0o755);
+    const result = await run(
+      HOLD_CLIENT_SCRIPT,
+      ["s-1", "--socket", socket],
+      { HERDR_PANE_ID: "w1:p1", ANTHROPIC_API_KEY: "pane-key" },
+      "",
+      dir,
+    );
+    expect(result.stdout).toContain(
+      "glm-claude --resume s-1 BASE=https://gateway.example KEY=none START=terminal",
+    );
+  });
+
+  test("launchCommand types only a token", () => {
+    const token = "0123456789abcdef0123456789abcdef";
+    expect(launchCommand(token)).toBe(
+      ` "$HOME/.cache/roamgate/bin/roamgate-hold" --launch ${token}\r`,
+    );
+    expect(
+      launchCommand(token, {
+        bin: "/h/bin/roamgate-hold",
+        socket: "/h/r.sock",
+      }),
+    ).toBe(` /h/bin/roamgate-hold --socket /h/r.sock --launch ${token}\r`);
+    expect(() => launchCommand("not a token; rm -rf ~")).toThrow();
   });
 });

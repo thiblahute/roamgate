@@ -8,6 +8,7 @@ import type {
 import type { ConversationHerdr } from "./herdr";
 import { type HolderRegistry, resumeReply } from "./holder";
 import type { LeaseStore } from "./lease";
+import type { AgentCommand } from "../profiles/profiles";
 import { type HolderChannel, HolderChildStuck } from "./pane-child";
 import type { ConversationSession } from "./session";
 
@@ -80,6 +81,8 @@ export type RecoveryDeps = {
   carriedQueueDelayMs: number;
   /** How many conversations are read again at once after a restart. */
   reattachLimit: number;
+  /** The profile a session resumes with in the terminal. */
+  resumeProfile: (sessionId: string) => AgentCommand | undefined;
 };
 
 /**
@@ -380,7 +383,10 @@ export function createRecovery(deps: RecoveryDeps) {
     emitParked(paneId);
     // Its next poll is told so too (no lease): it ends its child, which
     // reaps it, and becomes claude --resume.
-    holders.send(paneId, resumeReply(lease));
+    holders.send(
+      paneId,
+      resumeReply(lease, deps.resumeProfile(lease.session_id)),
+    );
     let reason = "Claude did not come back in the terminal";
     for (let left = deps.recoverAttempts; left > 0 && !deps.closed(); left--) {
       await new Promise((resolve) => setTimeout(resolve, deps.recoverRetryMs));

@@ -2,7 +2,9 @@ import type {
   AgentChatHandoverResult,
   AgentChatLease,
 } from "../../../shared/agentChat";
+import { type AgentCommand, withModel } from "../profiles/profiles";
 import type { conversationDriver } from "./drivers";
+import type { StartOptions } from "./drivers/types";
 import type { SpawnHeadless } from "./headless";
 import type { ConversationHerdr } from "./herdr";
 import { type HolderRegistry, type HolderReply, resumeReply } from "./holder";
@@ -108,6 +110,10 @@ export type HolderSideDeps = {
   ) => Promise<AgentChatHandoverResult>;
   /** Whether Herdr maps the pane to the session again (Handover). */
   confirmMapping: (paneId: string, sessionId: string) => Promise<boolean>;
+  /** The profile a session resumes with in the terminal. */
+  resumeProfile: (sessionId: string) => AgentCommand | undefined;
+  /** The session's profile, for a start. */
+  profileOf: (sessionId: string) => Pick<StartOptions, "profile">;
 };
 
 /**
@@ -211,9 +217,15 @@ export function createHolderSide(deps: HolderSideDeps) {
     return channel.spawn({
       // With the flags the pane's claude ran with (`claude --model haiku`),
       // and the user's answer about the pane's API key, if just given.
+      // A session that moved to a profile whose endpoint lacks its last
+      // model is given one (switchModel): Claude Code would resume on it.
       command: deps.driverOf(spawn.paneId).protocol.startCommand({
         ...spawn,
-        flags: leases.get(spawn.paneId)?.terminal_args ?? [],
+        flags: withModel(
+          leases.get(spawn.paneId)?.terminal_args ?? [],
+          deps.resumeProfile(spawn.sessionId)?.model,
+        ),
+        ...deps.profileOf(spawn.sessionId),
       }),
       ...(spawn.attachOnly ? { attachOnly: true } : {}),
       ...(spawn.signal ? { signal: spawn.signal } : {}),
@@ -371,7 +383,7 @@ export function createHolderSide(deps: HolderSideDeps) {
               pane: input.paneId,
             });
         });
-      return resumeReply(lease);
+      return resumeReply(lease, deps.resumeProfile(lease.session_id));
     },
   };
 

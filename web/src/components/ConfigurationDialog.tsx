@@ -55,6 +55,7 @@ import { AgentIntegrationsSettings } from "./AgentIntegrationsSettings";
 import { AgentAutoRenameSettings } from "./AgentAutoRenameSettings";
 import { ClaudeStartSettings } from "./ClaudeStartSettings";
 import { ConversationIdleSettings } from "./ConversationIdleSettings";
+import { AgentProfilesSettings } from "./AgentProfilesSettings";
 import { AutoSyncRepositoriesDialog } from "./AutoSyncRepositoriesDialog";
 import { CloseButton } from "./CloseButton";
 import { TerminalTransportSettings } from "./TerminalTransportSettings";
@@ -796,6 +797,12 @@ export function ConfigurationDialog({
                   />
                   <ClaudeStartSettings
                     key={`claude-start-${connectionClientScopeKey(
+                      connectionClient,
+                      connectionClient.serverRuntimeGeneration,
+                    )}`}
+                  />
+                  <AgentProfilesSettings
+                    key={`profiles-${connectionClientScopeKey(
                       connectionClient,
                       connectionClient.serverRuntimeGeneration,
                     )}`}

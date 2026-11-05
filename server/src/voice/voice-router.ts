@@ -1,3 +1,8 @@
+import {
+  type AgentCommand,
+  commandKey,
+  helperCommand,
+} from "../profiles/profiles";
 import { type ClaudeProcess, spawnClaude, Worker } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
 
@@ -208,7 +213,7 @@ export class VoiceRouter {
 /** The router `route_model` in voice.json sets up, or null without one. */
 export function configuredRouter(
   config: () => VoiceConfig | { error: string },
-  spawn: (model: string, command?: string) => ClaudeProcess = (
+  spawn: (model: string, command?: string | AgentCommand) => ClaudeProcess = (
     model,
     command,
   ) => spawnClaude(model, command, ROUTER_SYSTEM_PROMPT),
@@ -217,8 +222,10 @@ export function configuredRouter(
   return () => {
     const read = config();
     const model = "error" in read ? undefined : read.route_model;
-    const command = "error" in read ? undefined : read.claude_command;
-    const key = model ? `${model} ${command ?? ""}` : "";
+    const command = model
+      ? helperCommand("error" in read ? undefined : read.claude_command)
+      : undefined;
+    const key = model ? `${model} ${commandKey(command)}` : "";
     if (current?.key !== key) {
       current?.router.stop();
       current = model

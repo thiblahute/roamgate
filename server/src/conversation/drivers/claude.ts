@@ -65,13 +65,24 @@ export function headlessFlags(flags: string[]): string[] {
  * its directory, with the headless environment.
  */
 export function holderStartCommand(options: StartOptions): HolderStartCommand {
+  const env = holderEnvChanges(options.apiKeyAnswer, options.paneId);
+  const profile = options.profile;
   return {
     argv: [
-      "claude",
+      profile?.program ?? "claude",
       ...headlessClaudeArgs(options.sessionId, options.flags ?? []),
     ],
     cwd: options.cwd,
-    ...holderEnvChanges(options.apiKeyAnswer, options.paneId),
+    ...env,
+    // A profile's environment: set after the drop, its removals after the
+    // API key policy (a profile with its own token never sends the pane's
+    // key).
+    ...(profile
+      ? {
+          set: { ...env.set, ...profile.env },
+          ...(profile.unset.length ? { unset: [...profile.unset] } : {}),
+        }
+      : {}),
   };
 }
 

@@ -1,3 +1,4 @@
+import { type AgentCommand, commandForSession } from "../profiles/profiles";
 import { randomUUID } from "node:crypto";
 import { mrProjectKey } from "../../../shared/mrReviews";
 import type { MrConnection } from "./clones";
@@ -56,6 +57,31 @@ export function claudeCommand(
   return mode === "terminal"
     ? ` env ROAMGATE_CLAUDE_START=terminal ${run}\r`
     : ` ${run}\r`;
+}
+
+/**
+ * The session's profile when it is not plain claude: started through the
+ * pane's roamgate-hold, which fetches its environment (never typed). A
+ * test's stand-in command (ROAMGATE_MR_CLAUDE_COMMAND) keeps the typed one.
+ */
+export function profileLaunch(
+  conn: Pick<MrConnection, "launch">,
+  paneId: string,
+  session: string,
+  resume: boolean,
+  mode: "terminal" | "conversation",
+  command: () => AgentCommand = () => commandForSession(session),
+): string | null {
+  if (process.env.ROAMGATE_MR_CLAUDE_COMMAND || !conn.launch) return null;
+  const profile = command();
+  if (profile.plain) return null;
+  return conn.launch(paneId, {
+    argv: [profile.program, resume ? "--resume" : "--session-id", session],
+    env: profile.env,
+    unset: profile.unset,
+    agent: profile.agent,
+    terminal: mode === "terminal",
+  });
 }
 
 export function createMrClaude(deps: {
@@ -273,13 +299,12 @@ export function createMrClaude(deps: {
       const entry = state.projects[projectKey];
       if (entry) entry.claudeStarted = running;
     });
+    const mode = (await deps.startMode?.()) ?? "terminal";
     await conn.herdr("pane.send_text", {
       pane_id: paneId,
-      text: claudeCommand(
-        session,
-        resume,
-        (await deps.startMode?.()) ?? "terminal",
-      ),
+      text:
+        profileLaunch(conn, paneId, session, resume, mode) ??
+        claudeCommand(session, resume, mode),
     });
     const up = await waitFor(
       conn,

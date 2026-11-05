@@ -1,4 +1,14 @@
 import {
+  allProfiles,
+  normalizeProfilesSettings,
+  profileModelLabel,
+  profileNamed,
+  profilesSettingsError,
+  profileView,
+} from "../../../shared/agentProfiles";
+import { profileModels } from "../profiles/models";
+import { profilesOf, readSecretFile } from "../profiles/profiles";
+import {
   WorktreeHookConfigError,
   type createWorktreeHookRunner,
 } from "../worktree/worktree-hooks";
@@ -139,6 +149,35 @@ export function createSettingsRpcHandler(args: {
     return { mode: claudeStartMode(settings) };
   }
 
+  /**
+   * What a browser sees of the profiles: every value but secret files'
+   * contents (it gets their paths), and whether each file can be used.
+   */
+  function profilesReply(settings: GuiSettings) {
+    const profiles = profilesOf(settings);
+    const own = new Set(profiles.list.map((each) => each.name));
+    return {
+      profiles: allProfiles(profiles.list).map((profile) => {
+        const view = profileView(profile, !own.has(profile.name));
+        return {
+          ...view,
+          env: view.env.map((entry) => {
+            if (entry.file === undefined) return entry;
+            try {
+              readSecretFile(entry.file);
+              return entry;
+            } catch (error) {
+              return { ...entry, problem: (error as Error).message };
+            }
+          }),
+          label: profileModelLabel(profile),
+        };
+      }),
+      default: profiles.default,
+      return_after_reset: profiles.return_after_reset,
+    };
+  }
+
   function ownsSettingsKey(key: string): boolean {
     const host = args.sshHost();
     const prefix = `${connectionSettingsPrefix(args.connectionId)}${host ? `ssh:${host}` : "local"}:`;
@@ -213,6 +252,39 @@ export function createSettingsRpcHandler(args: {
         );
         args.onClaudeStartSettingsChanged?.();
         return reply(claudeStartReply(settings));
+      }
+      if (method === "settings.profiles.get")
+        return reply(profilesReply(await readSettings()));
+      if (method === "settings.profiles.update") {
+        const raw = {
+          list: Array.isArray(params.list)
+            ? params.list.map(profileFromView)
+            : params.list,
+          default: params.default,
+          return_after_reset: params.return_after_reset,
+        };
+        const error = Object.keys(params).some(
+          (key) =>
+            key !== "list" && key !== "default" && key !== "return_after_reset",
+        )
+          ? "settings.profiles.update takes list, default and return_after_reset"
+          : profilesSettingsError(raw);
+        if (error) return fail(error);
+        const settings = await updateSettings(
+          (current) => ({
+            ...current,
+            profiles: normalizeProfilesSettings(raw),
+          }),
+          requestIsCurrent,
+        );
+        return reply(profilesReply(settings));
+      }
+      if (method === "settings.profiles.models") {
+        const name = typeof params.name === "string" ? params.name : "";
+        const settings = await readSettings();
+        const profile = profileNamed(profilesOf(settings).list, name);
+        if (!profile) return fail(`No profile is named ${name}`);
+        return reply(await profileModels(profile, params.refresh === true));
       }
       if (method === "settings.conversation.get")
         return reply({
@@ -630,4 +702,28 @@ export function createUiSettingsRpcHandler(
     });
     return { key, value: settings.ui[key] ?? null };
   };
+}
+
+/** A profile as the browser sends it (ProfileView) back to settings form. */
+export function profileFromView(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const view = raw as Record<string, unknown>;
+  if (!Array.isArray(view.env)) return raw;
+  const env: Record<string, unknown> = {};
+  for (const entry of view.env) {
+    if (!entry || typeof entry !== "object") return { ...view, env: null };
+    const { name, value, file } = entry as Record<string, unknown>;
+    if (typeof name !== "string") return { ...view, env: null };
+    env[name] = typeof file === "string" ? { file } : value;
+  }
+  const profile: Record<string, unknown> = {
+    name: view.name,
+    agent: view.agent,
+    env,
+  };
+  if (typeof view.command === "string" && view.command.trim())
+    profile.command = view.command;
+  if (Array.isArray(view.unset) && view.unset.length)
+    profile.unset = view.unset;
+  return profile;
 }
