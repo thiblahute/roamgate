@@ -162,6 +162,40 @@ describe("voice chat text", () => {
     expect(conversationContext(entries)).not.toContain("I committed it.");
   });
 
+  test("a voice message quotes the words when the companion adds context", () => {
+    const sent = voiceMessage(
+      "ask it again",
+      null,
+      "I had just read your summary of the Spotify connector status;\n the user probably wants it asked again (a guess).",
+    );
+    expect(sent).toBe(
+      '[Voice] "ask it again" (Context: I had just read your summary of the Spotify connector status; the user probably wants it asked again (a guess).)',
+    );
+    expect(parseVoiceMessage(sent)).toEqual({
+      text: "ask it again",
+      voice: true,
+      interruptedAt: null,
+      context:
+        "I had just read your summary of the Spotify connector status; the user probably wants it asked again (a guess).",
+    });
+    const cut = voiceMessage('say "stop"', "Step two.", "the user cut it");
+    expect(cut).toBe(
+      '[Voice, interrupted you at: "Step two."] "say \\"stop\\"" (Context: the user cut it)',
+    );
+    expect(parseVoiceMessage(cut)).toEqual({
+      text: 'say "stop"',
+      voice: true,
+      interruptedAt: "Step two.",
+      context: "the user cut it",
+    });
+    // No context, or only blanks: the words go as before, unquoted.
+    expect(voiceMessage("rebase", null, "  ")).toBe("[Voice] rebase");
+    // A message that only looks like it keeps its text.
+    expect(parseVoiceMessage('[Voice] "hi" (Context: a\nb)').text).toBe(
+      '"hi" (Context: a\nb)',
+    );
+  });
+
   test("a voice message says so, and where it cut the reading", () => {
     expect(voiceMessage("hello")).toBe("[Voice] hello");
     const cut = voiceMessage("wait", 'He said "go".');
@@ -170,16 +204,19 @@ describe("voice chat text", () => {
       text: "wait",
       voice: true,
       interruptedAt: 'He said "go".',
+      context: null,
     });
     expect(parseVoiceMessage("[Voice] hello")).toEqual({
       text: "hello",
       voice: true,
       interruptedAt: null,
+      context: null,
     });
     expect(parseVoiceMessage("typed")).toEqual({
       text: "typed",
       voice: false,
       interruptedAt: null,
+      context: null,
     });
     // The reply is found after the message as sent, note and all.
     const entries = [

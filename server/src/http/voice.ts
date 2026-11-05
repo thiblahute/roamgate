@@ -10,6 +10,7 @@ import {
 import { voiceMessage } from "../../../shared/voiceMessage";
 import type { VoiceErrands } from "../voice/voice-errands";
 import {
+  callLines,
   type FrontReply,
   forwardedWords,
   type VoiceFront,
@@ -37,6 +38,8 @@ const MAX_CONTEXT_CHARS = 12000;
 /** An event's words; an agent's answer is given whole, up to this. */
 const MAX_EVENT_CHARS = 1000;
 const MAX_ANSWER_CHARS = 12000;
+/** What the page gives of the call lately, for the front (companionRecent). */
+const MAX_RECENT_CHARS = 4000;
 
 /**
  * GET /api/voice: whether voice chat is set up, and how fast replies are
@@ -401,8 +404,14 @@ export function createVoiceRoutes(
         interrupted_at?: unknown;
         typed?: unknown;
         routes?: unknown;
+        recent?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
+      // What was heard and said lately on the call (companionRecent).
+      const recent =
+        typeof body?.recent === "string"
+          ? body.recent.trim().slice(0, MAX_RECENT_CHARS)
+          : "";
       // The sentence being read when the user cut in, for the voice note.
       const interruptedAt =
         typeof body?.interrupted_at === "string"
@@ -422,6 +431,13 @@ export function createVoiceRoutes(
               contextOf(body?.context),
               researching,
               fronting ? tools() : null,
+            ),
+            ...callOf(
+              callLines({
+                recent,
+                interruptedAt,
+                music: callMusic(currentCall()),
+              }),
             ),
           })
         : routing
@@ -451,7 +467,9 @@ export function createVoiceRoutes(
             job: await errands.start(
               route.pane,
               // Words typed go as typed; words said marked as such.
-              body?.typed === true ? said : voiceMessage(said, interruptedAt),
+              body?.typed === true
+                ? said
+                : voiceMessage(said, interruptedAt, route.context),
             ),
           };
         } catch (error) {
@@ -549,6 +567,18 @@ export function createVoiceRoutes(
       );
     }
   };
+}
+
+/**
+ * The call's music for the front's state: on, off, waiting (on, silent
+ * until the user's voice is learnt), or none at all.
+ */
+export function callMusic(
+  call: Pick<CallHandle, "music" | "musicOn" | "musicWaiting"> | null,
+): "on" | "off" | "waiting" | undefined {
+  if (!call?.music) return undefined;
+  if (!call.musicOn()) return "off";
+  return call.musicWaiting() ? "waiting" : "on";
 }
 
 /** How much quieter or louder "down" and "up" make the music. */
@@ -925,6 +955,11 @@ export function toolRoute(
     job: job.id,
     reply: route.reply || (french ? "Je m'en occupe." : "On it."),
   };
+}
+
+/** The call lately for a turn, only when there is something to give. */
+function callOf(call: string): { call?: string } {
+  return call ? { call } : {};
 }
 
 function contextOf(value: unknown): string {

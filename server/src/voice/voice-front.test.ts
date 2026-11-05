@@ -1,13 +1,16 @@
 import { describe, expect, jest, test } from "bun:test";
 import type { ClaudeProcess } from "./voice-cleaner";
 import {
+  callLines,
   closingQuestion,
   companionReply,
   configuredFront,
   FRONT_SYSTEM_PROMPT,
   forwardedWords,
   isApproval,
+  isNameFix,
   parseFrontReply,
+  turnText,
   VoiceFront,
 } from "./voice-front";
 import type { VoiceSessionInfo } from "./voice-router";
@@ -148,7 +151,7 @@ describe("parseFrontReply", () => {
 
   test("the prompt keeps the front from working or approving", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain("You never do the work");
-    expect(FRONT_SYSTEM_PROMPT).toContain("never through you");
+    expect(FRONT_SYSTEM_PROMPT).toContain("never reworded by you");
     expect(FRONT_SYSTEM_PROMPT).toContain("never for you: route it");
     // The one in charge: first person, never handing the user over.
     expect(FRONT_SYSTEM_PROMPT).toContain(
@@ -312,6 +315,137 @@ describe("the words given to a session", () => {
     expect(
       parseFrontReply('{"to": "self", "reply": "Oui.", "words": "x y"}', ids),
     ).toEqual({ to: "self", reply: "Oui." });
+  });
+});
+
+describe("context for words that lean on the call", () => {
+  test("goes with work for an agent, on one line, never with an answer of its own", () => {
+    expect(
+      parseFrontReply(
+        '{"to": "current", "reply": "Je lui redemande.", "context": "I had just told the user your answer on the Spotify connector DNS step;\\n they probably want it checked again."}',
+        ids,
+      ),
+    ).toEqual({
+      to: "current",
+      reply: "Je lui redemande.",
+      context:
+        "I had just told the user your answer on the Spotify connector DNS step; they probably want it checked again.",
+    });
+    expect(
+      parseFrontReply(
+        '{"to": "send", "pane": "desktop/w1J:p1", "say": "IGA", "words": "Roamgate should do that by itself", "context": "After I read your answer on restarts."}',
+        ids,
+      ),
+    ).toEqual({
+      to: "send",
+      pane: "desktop/w1J:p1",
+      say: "IGA",
+      words: "Roamgate should do that by itself",
+      context: "After I read your answer on restarts.",
+    });
+    expect(
+      parseFrontReply('{"to": "ranger", "context": "About task X."}', ids),
+    ).toEqual({ to: "ranger", context: "About task X." });
+    // Not for what is answered here, nor blank.
+    expect(
+      parseFrontReply(
+        '{"to": "self", "reply": "Oui.", "context": "After the CI."}',
+        ids,
+      ),
+    ).toEqual({ to: "self", reply: "Oui." });
+    expect(parseFrontReply('{"to": "current", "context": "   "}', ids)).toEqual(
+      { to: "current" },
+    );
+    // Kept short.
+    const long = parseFrontReply(
+      JSON.stringify({ to: "current", context: "x".repeat(2000) }),
+      ids,
+    );
+    expect(long.context?.length).toBe(600);
+  });
+
+  test("the turn gives the call lately before the words", () => {
+    expect(
+      turnText({
+        current: "local/w2:p2",
+        said: "Uh yeah, ask it again.",
+        call: callLines({
+          recent: [
+            '- The user: "Where is the Spotify connector?"',
+            '- You said: "Roamgate says it waits for the DNS step."',
+          ].join("\n"),
+          interruptedAt: "Roamgate says it waits for the DNS step.",
+          music: "on",
+        }),
+      }),
+    ).toBe(
+      [
+        "Current: local/w2:p2",
+        "On the call (oldest first):",
+        '- The user: "Where is the Spotify connector?"',
+        '- You said: "Roamgate says it waits for the DNS step."',
+        '- The user cut in while you read: "Roamgate says it waits for the DNS step."',
+        "- Music plays under the call.",
+        'Said: "Uh yeah, ask it again."',
+      ].join("\n"),
+    );
+    // Music configured but off is not said to play.
+    expect(callLines({ music: "off" })).toBe(
+      "- The call's music is off: nothing plays under it.",
+    );
+    expect(callLines({ music: "off" })).not.toContain("Music plays");
+    // On, but waiting for the user's voice: not said to play either.
+    expect(callLines({ music: "waiting" })).toBe(
+      "- The call's music is on but waits for the user's voice: nothing plays under it until they have spoken a little.",
+    );
+    // Nothing on the call: as before.
+    expect(turnText({ current: "c", said: "hi", call: callLines({}) })).toBe(
+      'Current: c\nSaid: "hi"',
+    );
+  });
+
+  test("the prompt asks for context only when the words need it", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain('"context", for "current"');
+    expect(FRONT_SYSTEM_PROMPT).toContain("mark a guess as one");
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      '[Voice] "ask it again" (Context: ...)',
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain("no context: it stands alone");
+    // Its examples are valid JSON.
+    const examples = FRONT_SYSTEM_PROMPT.split("\n")
+      .filter((line) => /^ {2}(After|Said)/.test(line))
+      .map((line) => line.slice(line.indexOf("{"), line.lastIndexOf("}") + 1));
+    expect(examples.length).toBe(3);
+    for (const example of examples)
+      expect(() => JSON.parse(example)).not.toThrow();
+  });
+});
+
+describe("misheard names fixed in the words", () => {
+  const fix = (said: string, fixed: string) => forwardedWords(said, fixed);
+  test("a name written right is kept, nothing else", () => {
+    expect(
+      fix(
+        "Rome gate should do that by itself",
+        "Roamgate should do that by itself",
+      ),
+    ).toBe("Roamgate should do that by itself");
+    expect(fix("ask RunGate to rebase", "ask Roamgate to rebase")).toBe(
+      "ask Roamgate to rebase",
+    );
+    expect(
+      fix("build just plugins RS again", "build gst-plugins-rs again"),
+    ).toBe("build gst-plugins-rs again");
+    // A rewording, an addition or a drop is not a fix: the words go whole.
+    expect(fix("make it faster", "make it quicker please")).toBe(
+      "make it faster",
+    );
+    expect(fix("ask it again", "ask the agent again")).toBe("ask it again");
+    expect(fix("do it now and push", "do it now")).toBe("do it now and push");
+    expect(
+      fix("run the tests on wrong gate", "run the tests on Roamgate"),
+    ).toBe("run the tests on Roamgate");
+    expect(isNameFix(["a", "b"], ["a", "b"])).toBe(false);
   });
 });
 

@@ -73,6 +73,7 @@ import {
 import { createVoiceActions } from "../voiceActions";
 import {
   companionName,
+  companionRecent,
   logCompanion,
   setCompanionTarget,
   setCompanionTeller,
@@ -697,6 +698,8 @@ export function useVoiceChat({
       ): Promise<"here" | "held" | "nobody" | "left"> => {
         const context = routeContextRef.current?.();
         if (!context || !voiceRouting()) return "here";
+        // The call so far, before these words: what they may lean on.
+        const recent = companionCall ? companionRecent() : "";
         if (companionCall) logCompanion({ kind: "heard", text: heard.text });
         if (front) {
           // The answer to the question relayed: to its agent, as said.
@@ -765,6 +768,7 @@ export function useVoiceChat({
           context.sessions,
           front ? stateForFront() : undefined,
           { interruptedAt },
+          recent || undefined,
         );
         let route: VoiceRoute;
         // The front slow to answer: a canned ack says it was heard.
@@ -816,12 +820,15 @@ export function useVoiceChat({
               label,
               words: given,
               ...(given !== words ? { said: words } : {}),
+              ...(route.context ? { context: route.context } : {}),
               status: "running",
             });
             // Marked as said, as voice chat sends it: the session knows the
-            // user talks live, and where the reading was cut.
+            // user talks live, where the reading was cut, and what the
+            // words refer to on the call.
             const started = await forwardWork(action.pane, given, {
               interruptedAt,
+              context: route.context,
             });
             interruptedAt = null;
             const job = started?.job ?? null;
@@ -983,7 +990,7 @@ export function useVoiceChat({
               void front.say(reply, signal);
             // Ranger answers when it has read what it needs: voice chat
             // goes on meanwhile, and its answer is read when it comes.
-            void askRanger(voiceMessage(words, cut)).then(
+            void askRanger(voiceMessage(words, cut, route.context)).then(
               (answer) => {
                 // The answer is read; the card points at Ranger's chat.
                 note("Ranger answered.", "Ranger", { ranger: true });
@@ -1010,7 +1017,9 @@ export function useVoiceChat({
             // Marked as said, as in its own chat by voice.
             const cutReviews = interruptedAt;
             interruptedAt = null;
-            void askReviewsAgent(voiceMessage(words, cutReviews)).then(
+            void askReviewsAgent(
+              voiceMessage(words, cutReviews, route.context),
+            ).then(
               (answer) => {
                 note("The reviews agent answered.", "Reviews", {
                   reviews: true,

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { VoiceErrands } from "../voice/voice-errands";
-import type { VoiceHelper } from "../voice/voice-helper";
+import type { CallHandle, VoiceHelper } from "../voice/voice-helper";
 import { VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import type { VoiceFront } from "../voice/voice-front";
 import type { VoiceRouter } from "../voice/voice-router";
 import { type ResearchProcess, VoiceResearch } from "../voice/voice-research";
-import { createVoiceRoutes } from "./voice";
+import { callMusic, createVoiceRoutes } from "./voice";
 
 const helper = {
   status: () => ({ available: true }),
@@ -168,6 +168,87 @@ describe("the voice front", () => {
         context: "Ranger tasks:\n- Nightly: active",
       },
     ]);
+  });
+
+  test("gives the front the call lately, and an errand its context", async () => {
+    const turns: { call?: string }[] = [];
+    const front = {
+      turn: async (request: { call?: string }) => {
+        turns.push(request);
+        return {
+          to: "errand",
+          pane: "local/wF:p5",
+          say: "tasks",
+          reply: "Je le note.",
+          context: "After I read the CI summary; 'it' is the failing job.",
+        };
+      },
+    } as unknown as VoiceFront;
+    const started: string[] = [];
+    const errands = {
+      start: async (pane: string, text: string) => {
+        started.push(`${pane} ${text}`);
+        return "job-1";
+      },
+    } as unknown as VoiceErrands;
+    const routes = createVoiceRoutes(
+      helper,
+      () => unused,
+      errands,
+      () => undefined,
+      null,
+      () => front,
+      () => null,
+      () => {},
+      () => null,
+      () =>
+        ({
+          music: true,
+          musicOn: () => true,
+          musicWaiting: () => false,
+        }) as unknown as CallHandle,
+    );
+    const routed = await routes(
+      post(
+        {
+          current: "local/w2:p2",
+          said: "note it for tomorrow",
+          sessions: [session],
+          recent: '- You said: "The lint job fails."',
+          interrupted_at: "The lint job fails.",
+        },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect((await routed!.json()).job).toBe("job-1");
+    expect(turns[0]!.call).toBe(
+      [
+        '- You said: "The lint job fails."',
+        '- The user cut in while you read: "The lint job fails."',
+        "- Music plays under the call.",
+      ].join("\n"),
+    );
+    expect(started).toEqual([
+      `local/wF:p5 [Voice, interrupted you at: "The lint job fails."] "note it for tomorrow" (Context: After I read the CI summary; 'it' is the failing job.)`,
+    ]);
+  });
+
+  test("muted call music is not described as playing", () => {
+    expect(callMusic(null)).toBeUndefined();
+    expect(
+      callMusic({ music: false, musicOn: () => false } as CallHandle),
+    ).toBeUndefined();
+    const music = (on: boolean, waiting: boolean) =>
+      callMusic({
+        music: true,
+        musicOn: () => on,
+        musicWaiting: () => waiting,
+      } as CallHandle);
+    expect(music(false, false)).toBe("off");
+    expect(music(true, false)).toBe("on");
+    // On, but silent until the user's voice is learnt: not playing.
+    expect(music(true, true)).toBe("waiting");
   });
 
   test("keeps the words the front gives a session only when they are what was said", async () => {

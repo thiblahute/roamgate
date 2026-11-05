@@ -387,6 +387,11 @@ export function CompanionPanel({ onClose }: { onClose: () => void }) {
                       <span>You said:</span> {entry.said}
                     </p>
                   ) : null}
+                  {entry.context ? (
+                    <p className="companion-panel-said">
+                      <span>With context:</span> {entry.context}
+                    </p>
+                  ) : null}
                   {entry.answer ? (
                     <p className="companion-panel-answer">{entry.answer}</p>
                   ) : null}

@@ -60,6 +60,12 @@ export type VoiceRoute = (
    * dropped (checked by the server), for the companion to give it.
    */
   words?: string;
+  /**
+   * Work handed to an agent: the front's short note of what the words
+   * refer to on the call ("ask it again" after which answer), sent after
+   * them, quoted (voiceMessage).
+   */
+  context?: string;
 };
 
 /**
@@ -223,6 +229,8 @@ export async function routeSpeech(
    * `[Voice]` as voice chat sends them, words typed as typed.
    */
   how: { interruptedAt?: string | null } | "typed" = {},
+  /** On a companion call: what was heard and said on it lately. */
+  recent?: string,
 ): Promise<VoiceRoute> {
   try {
     const response = await fetch("/api/voice/route", {
@@ -234,6 +242,7 @@ export async function routeSpeech(
         sessions,
         routes: KNOWN_ROUTES,
         ...(context ? { context } : {}),
+        ...(recent ? { recent } : {}),
         ...(how === "typed"
           ? { typed: true }
           : how.interruptedAt
@@ -279,12 +288,13 @@ export async function tellVoiceEvent(
  * Gives the words, as said, to a session for the voice companion: a job
  * whose answer followErrand follows; null when it could not be sent. Words `spoken`
  * go marked `[Voice]` as voice chat sends them, with the sentence the user
- * cut off; words typed go as typed.
+ * cut off and the front's note of what they refer to; words typed go as
+ * typed.
  */
 export async function forwardWork(
   pane: string,
   words: string,
-  spoken?: { interruptedAt?: string | null },
+  spoken?: { interruptedAt?: string | null; context?: string | null },
 ): Promise<{ job: string } | null> {
   try {
     const response = await fetch("/api/voice/forward", {
@@ -292,7 +302,9 @@ export async function forwardWork(
       headers: { ...VOICE_HEADERS, "content-type": "application/json" },
       body: JSON.stringify({
         pane,
-        words: spoken ? voiceMessage(words, spoken.interruptedAt) : words,
+        words: spoken
+          ? voiceMessage(words, spoken.interruptedAt, spoken.context)
+          : words,
       }),
     });
     const body = (await response.json().catch(() => null)) as {
