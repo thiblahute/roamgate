@@ -3,6 +3,7 @@ import { askReviewsAgent } from "./mrReviewsAgent";
 import {
   companionCallState,
   companionName,
+  companionRecent,
   logCompanion,
   setCompanionTarget,
   updateCompanionJob,
@@ -118,6 +119,8 @@ export async function sendCompanionText(
   const deps = { ...defaults, ...overrides };
   const said = text.trim();
   if (!said) return null;
+  // The conversation so far, before these words: what they may lean on.
+  const recent = companionRecent();
   logCompanion({ kind: "heard", text: said });
   const { current, sessions } = deps.context();
   // Typed, not said: no `[Voice]` note on what reaches a session.
@@ -127,6 +130,7 @@ export async function sendCompanionText(
     sessions,
     stateForFront(current, sessions),
     "typed",
+    recent || undefined,
   );
   const french = ackLanguage(said) === "fr";
   const reply = route.reply?.trim();

@@ -55,6 +55,8 @@ export type CompanionLogEntry =
       words: string;
       /** What was said, when the addressing was dropped from it. */
       said?: string;
+      /** The companion's note of what the words referred to, sent with them. */
+      context?: string;
       status: "running" | "answered" | "no answer" | "not started";
       answer?: string;
     }
@@ -228,6 +230,51 @@ export function logCompanion(
     ),
   });
   return id;
+}
+
+/** Entries of the call given to the front with each thing said, at most. */
+const RECENT_ENTRIES = 8;
+/** Characters of each entry given, at most: the start of a long reading. */
+const RECENT_CHARS = 320;
+
+const clip = (text: string) => {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > RECENT_CHARS
+    ? `${line.slice(0, RECENT_CHARS)}... (${line.length} characters)`
+    : line;
+};
+
+/**
+ * What happened lately on the call, oldest first, for the front to know
+ * what words that lean on it refer to ("ask it again"): what the user
+ * said, what the companion said (an answer read whole too), the work it
+ * gave and how it went, the searches it ran. "" with nothing yet.
+ */
+export function companionRecent(
+  log: readonly CompanionLogEntry[] = state.log,
+  now = Date.now(),
+): string {
+  const ago = (at: number) => {
+    const minutes = Math.round((now - at) / 60_000);
+    return minutes >= 1 ? ` (${minutes} min ago)` : "";
+  };
+  return log
+    .slice(-RECENT_ENTRIES)
+    .map((entry) => {
+      switch (entry.kind) {
+        case "heard":
+          return `- The user${ago(entry.at)}: ${JSON.stringify(clip(entry.text))}`;
+        case "said":
+          return `- You said${ago(entry.at)}: ${JSON.stringify(clip(entry.text))}`;
+        case "job":
+          return `- You gave ${entry.label}${ago(entry.at)}: ${JSON.stringify(clip(entry.words))}, ${entry.status}${
+            entry.answer ? `: ${JSON.stringify(clip(entry.answer))}` : ""
+          }`;
+        case "web":
+          return `- You ${entry.tool ? "used your tools for" : "looked up"}${ago(entry.at)}: ${JSON.stringify(clip(entry.question))}, ${entry.status}`;
+      }
+    })
+    .join("\n");
 }
 
 /** How a job it started went. */

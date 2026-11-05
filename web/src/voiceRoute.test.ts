@@ -55,7 +55,34 @@ describe("the companion's jobs", () => {
       text: "check out his last messages",
       voice: true,
       interruptedAt: null,
+      context: null,
     });
+  });
+
+  test("words that lean on the call go quoted, with the front's context", async () => {
+    const bodies = recordBodies();
+    await forwardWork("local/w2:p2", "Uh yeah, ask it again.", {
+      interruptedAt: null,
+      context: "I had just read your answer on the DNS step.",
+    });
+    expect(bodies[0]!.words).toBe(
+      '[Voice] "Uh yeah, ask it again." (Context: I had just read your answer on the DNS step.)',
+    );
+  });
+
+  test("routing gives the call lately when there is one", async () => {
+    const bodies = recordBodies();
+    await routeSpeech(
+      "ask it again",
+      "local/p1",
+      [],
+      undefined,
+      {},
+      '- You said: "Done."',
+    );
+    expect(bodies[0]).toMatchObject({ recent: '- You said: "Done."' });
+    await routeSpeech("ask it again", "local/p1", []);
+    expect(bodies[1]).not.toHaveProperty("recent");
   });
 
   test("words said over a reading carry the sentence cut off", async () => {

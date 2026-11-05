@@ -360,6 +360,12 @@ const ChatBubble = memo(function ChatBubble({
         {raw && showHeard ? (
           <p className="agent-history-chat-heard">{raw}</p>
         ) : null}
+        {spoken?.context ? (
+          // The companion's note of what the words referred to on its call.
+          <p className="agent-history-chat-heard">
+            Context given: {spoken.context}
+          </p>
+        ) : null}
         {entry.role === "user" && entry.command ? (
           // A slash command typed in the terminal: the command, as a chip.
           <span className="agent-history-chat-command">

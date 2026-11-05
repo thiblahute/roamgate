@@ -984,7 +984,14 @@ while you talk (from the start of your speech to its final words): down in
 250 ms, back up over 1.5 s once the release passed. While it plays (on,
 and not silent), the listener holds as it does during a reply: only a
 louder voice, held longer, starts what you say, so the music's singing is
-not taken for your words. Only the replies are
+not taken for your words. Without `speaker_reference`, while the speaker
+model learns a new speaker's voice from what it hears (at a voice chat's
+start, or after the voice helper restarted), the music waits, silent: it
+fades in once your first two seconds of speech are heard, so a singer's
+voice is not learnt as yours. The log says `the call's music waits for a
+voice`, then `a voice was taken: the call's music plays`. The companion is
+told whether the music is on, waiting for your voice, or off, never that it
+plays when it does not. Only the replies are
 read faster (`speech_rate`): the music always plays at its own speed and
 pitch. The mix is Opus at 128 kb/s, stereo, 48 kHz, sent on the voice
 socket and played in the call's AudioContext (Chrome's WebCodecs); a page
