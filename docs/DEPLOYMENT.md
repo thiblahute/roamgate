@@ -621,6 +621,94 @@ waits for you, background work (a background command, a subagent) or a
 used in the last 10 minutes, the voice companion has a job on it, or
 another session's message reached it in the last 10 minutes.
 
+## Agent profiles
+
+A profile says how Roamgate starts Claude Code: mostly the environment it
+starts with (another endpoint, its token, the models of Claude Code's model
+slots), and optionally another program. The built-in **Claude** profile is
+plain `claude`; with no other profile, every agent starts exactly as it
+always did. Edit them in **Configuration > Integrations > Agent profiles**,
+or under `profiles` in `settings.json`:
+
+```json
+{
+  "profiles": {
+    "list": [
+      {
+        "name": "Igalia GLM",
+        "agent": "claude",
+        "env": {
+          "ANTHROPIC_BASE_URL": "https://ai.example.com",
+          "ANTHROPIC_AUTH_TOKEN": {
+            "file": "~/.config/roamgate/secrets/ai-token"
+          },
+          "ANTHROPIC_MODEL": "glm-5p3",
+          "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5p3",
+          "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5p3",
+          "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5p3-flash",
+          "ANTHROPIC_SMALL_FAST_MODEL": "glm-5p3-flash",
+          "CLAUDE_CODE_SUBAGENT_MODEL": "glm-5p3"
+        }
+      }
+    ],
+    "default": "Claude",
+    "return_after_reset": false
+  }
+}
+```
+
+- `agent` is the agent driver (`claude`); `command` names another program
+  (default: the driver's own, `claude`); `unset` lists variables to remove.
+  A profile that sets `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` also
+  removes the other one, `CLAUDE_CODE_OAUTH_TOKEN` and the Bedrock/Vertex
+  switches, so the pane's own key never goes with it; one that sets
+  `ANTHROPIC_BASE_URL` removes the Bedrock/Vertex switches.
+- A value is text, or `{"file": "<path>"}`: a secret file Roamgate reads
+  (its final newline dropped) each time it starts the agent. The file must
+  be readable by its owner only (`chmod 600`); Roamgate refuses it
+  otherwise. Browsers see the path, never the value, and logs name only the
+  variables. Keep tokens in files: plain values are shown in the settings.
+- `default` (the built-in Claude unless set) is what new sessions, the
+  Claude in conversation mode, the reviews' Claude, Ranger's Claude Code
+  turns, the reviews agent and the voice helpers (front, router, cleaner,
+  research, tools) start with. `claude_command` in `voice.json` still wins
+  for the voice helpers.
+- For a profile with `ANTHROPIC_BASE_URL`, the settings list its server's
+  models (`GET <base>/v1/models`, with its token as both `Authorization:
+  Bearer` and `x-api-key`, kept an hour, embedding models left out) as
+  choices for the model slots, and warn about a configured model the server
+  no longer offers. The built-in Claude offers its aliases.
+- A usage limit is read from the end of the session's transcript: the
+  newest assistant record, when it is Claude Code's limit message (or an
+  API 429), and only until the reset time it gives, read from when it was
+  hit. **Retry** sends `continue` on the same profile.
+- `return_after_reset`: after a usage limit sent a session to another
+  profile (**Continue with**), it goes back to the default once the reset
+  time the limit message gave has passed, checked each minute (when idle;
+  else at the next check).
+
+Each session can run with another profile (**Run with**): Roamgate
+remembers that choice by session id (`session-profiles.json` in its data
+directory). A session in the terminal is exited with `/exit` when idle and
+resumed (`--resume`, same transcript) with the profile; one in conversation
+mode has its headless process restarted with it. Switching between Claude
+and another Anthropic-compatible backend keeps the conversation both ways,
+thinking turns of either side included. Claude Code resumes a session on the model
+it last answered with; when the new profile's endpoint does not have that
+model (`kimi-k3p1-pro` back on Claude), Roamgate starts the session with
+`--model`: the last model it had on that endpoint, else the profile's own
+model, else `opus`. Once the session answered there, its own model choice
+(`/model`) holds again.
+
+Nothing secret is ever typed into a pane. When the profile is not plain
+`claude`, what Roamgate types is `roamgate-hold --launch <token>`: the
+pane's holder trades the one-use token (two minutes, that pane only) for the
+program and environment over Roamgate's socket and becomes the agent. The
+same goes for conversation mode's headless process and a hand-back to the
+terminal. So profiles work on SSH hosts too: the secret file is read on this
+machine and the environment travels to the host's holder; the program must
+exist on the host.
+
 ## Voice chat
 
 Without this setup, Speak reads replies with the browser's speech synthesis
@@ -790,7 +878,8 @@ through Claude Code before it is sent: fillers, false starts and misheard
 words are cleaned up, and words said to someone else in the room are held
 rather than sent. Two Claude Code sessions are kept running in the
 background (`claude -p`, with `--safe-mode` and no tools), on the account
-`claude` is logged in with; `"claude_command"` names another command.
+`claude` is logged in with; `"claude_command"` names another command (else the
+default [agent profile](#agent-profiles)).
 Sentences are cleaned while the user still talks and the end as soon as
 they pause, so little time is added; a failing or slow model sends the words
 as heard.

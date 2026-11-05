@@ -297,6 +297,45 @@ describe("roamgate-hold runs the headless claude", () => {
     expect(await child.exited).toBe(0);
   }, 20_000);
 
+  test("a profile's program and environment start it, its removals after the key policy", async () => {
+    const { dir, bin, work } = scratch();
+    // The pane's key was approved: plain claude would keep it.
+    writeFileSync(
+      join(dir, ".claude.json"),
+      JSON.stringify({
+        customApiKeyResponses: {
+          approved: [PANE_KEY.slice(-20)],
+          rejected: [],
+        },
+      }),
+    );
+    writeFileSync(join(bin, "glm-claude"), FAKE_CLAUDE);
+    chmodSync(join(bin, "glm-claude"), 0o755);
+    const rg = roamgate(dir);
+    startHolder(dir, bin, rg.socket);
+    const child = (await rg.channel().spawn({
+      command: holderStartCommand({
+        sessionId: SESSION,
+        cwd: work,
+        profile: {
+          program: "glm-claude",
+          env: { ROAMGATE_HEADLESS: "profile" },
+          unset: ["ANTHROPIC_API_KEY"],
+        },
+      }),
+    }))!;
+    const lines = child.lines[Symbol.asyncIterator]();
+    const seen: string[] = [];
+    await readUntil(lines, seen, (line) => line.includes('"init"'));
+    expect(JSON.parse(seen[0]!)).toMatchObject({
+      session_id: SESSION,
+      key: null,
+      marker: "profile",
+    });
+    child.end();
+    expect(await child.exited).toBe(0);
+  }, 20_000);
+
   test("a reader that goes mid-turn loses nothing; the next reads each line once", async () => {
     const { dir, bin, work } = scratch();
     const rg = roamgate(dir);

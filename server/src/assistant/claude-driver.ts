@@ -1,4 +1,10 @@
 import {
+  type AgentCommand,
+  commandEnv,
+  defaultCommand,
+  PLAIN_CLAUDE,
+} from "../profiles/profiles";
+import {
   CLAUDE_CODE_PROVIDER,
   ASSISTANT_MAX_TOOL_ARGUMENTS,
   ASSISTANT_MAX_TOOL_OUTPUT,
@@ -115,20 +121,29 @@ export function spawnClaudeProcess(options: {
   };
 }
 
-function spawnClaudeCode(command: string): SpawnClaudeCode {
-  return (args, cwd) =>
-    spawnClaudeProcess({
-      argv: [command, ...args],
-      cwd,
-      // A bridge started from a Herdr pane passes that pane's HERDR_*
-      // variables on; Claude Code would report its state as that pane's.
-      env: Object.fromEntries(
-        Object.entries(process.env).filter(
-          (entry): entry is [string, string] =>
-            !entry[0].startsWith("HERDR_") && entry[1] !== undefined,
-        ),
+function spawnClaudeCode(
+  command: string | (() => AgentCommand),
+): SpawnClaudeCode {
+  return (args, cwd) => {
+    // A profile is read at each run: the default may have changed.
+    const resolved =
+      typeof command === "string"
+        ? { ...PLAIN_CLAUDE, program: command }
+        : command();
+    // A bridge started from a Herdr pane passes that pane's HERDR_*
+    // variables on; Claude Code would report its state as that pane's.
+    const base = Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] =>
+          !entry[0].startsWith("HERDR_") && entry[1] !== undefined,
       ),
+    );
+    return spawnClaudeProcess({
+      argv: [resolved.program, ...args],
+      cwd,
+      env: commandEnv(resolved, base) as Record<string, string>,
     });
+  };
 }
 
 function bounded(value: string, max: number) {
@@ -177,13 +192,25 @@ export function createClaudeCodeDriver(options: {
   ) => RangerTool[];
   systemPrompt?: (automatic: boolean) => string;
 }) {
-  const command = options.command ?? "claude";
+  // An explicit command (tests, ROAMGATE_*_COMMAND), else the default
+  // profile's, read at each run.
+  const command = options.command ?? (() => defaultCommand());
   const server = options.mcp.name ?? RANGER_MCP_SERVER;
   const toolPrefix = `mcp__${server}__`;
   const turnTools = options.tools ?? rangerTools;
   const systemPrompt = options.systemPrompt ?? rangerSystemPrompt;
   const spawn = options.spawn ?? spawnClaudeCode(command);
-  const available = options.available ?? (() => Bun.which(command) !== null);
+  const available =
+    options.available ??
+    (() => {
+      try {
+        const program =
+          typeof command === "string" ? command : command().program;
+        return Bun.which(program) !== null;
+      } catch {
+        return false;
+      }
+    });
   let active:
     | { stopped: boolean; kill(): void; done: Promise<void> }
     | undefined;

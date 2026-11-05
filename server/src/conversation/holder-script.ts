@@ -591,6 +591,10 @@ class Child:
         for name in list(env):
             if name in drop or (prefixes and name.startswith(prefixes)):
                 del env[name]
+        # A profile's removals: after the API key policy, so a profile with
+        # its own token never sends the pane's key.
+        for name in command.get("unset") or []:
+            env.pop(str(name), None)
         for name, value in (command.get("set") or {}).items():
             env[str(name)] = str(value)
         cwd = command.get("cwd") or os.getcwd()
@@ -836,6 +840,13 @@ def main():
     if "--fg" in RELAUNCH:
         at = RELAUNCH.index("--fg")
         del RELAUNCH[at : at + 2]
+    if args[:1] == ["--launch"]:
+        pane = os.environ.get("HERDR_PANE_ID", "")
+        if not pane or len(args) < 2:
+            print("roamgate-hold --launch runs in a Herdr pane, given a token", file=sys.stderr)
+            sys.exit(2)
+        launch(args[1], pane)
+        return
     session = args[0] if args else ""
     pane = os.environ.get("HERDR_PANE_ID", "")
     if not pane or not session or "/" in session or session.startswith("."):
@@ -1053,12 +1064,59 @@ def main():
         args = target.get("args")
         if not isinstance(args, list) or not all(isinstance(each, str) for each in args):
             args = ["--resume", session]
-    if os.path.basename(program) == "claude":
+    # The session's profile: its environment, never typed or shown.
+    apply_profile_env(target, os.environ)
+    if os.path.basename(program) == "claude" or target.get("agent") == "claude":
         args = new_or_resumed(args, os.environ, os.getcwd())
     # Handed back: this agent stays in the terminal.
     os.environ[START_ENV] = "terminal"
     say("Resuming " + session + " in the terminal.")
     os.execvp(program, [program] + args)
+
+
+def apply_profile_env(spec, env):
+    for name in spec.get("unset") or []:
+        if isinstance(name, str):
+            env.pop(name, None)
+    values = spec.get("env")
+    if isinstance(values, dict):
+        for name, value in values.items():
+            if isinstance(name, str) and isinstance(value, str):
+                env[name] = value
+
+
+def launch(token, pane):
+    # An agent start Roamgate prepared for this pane (a profile's program
+    # and environment, fetched with a one-use token so nothing secret is
+    # typed): become it.
+    try:
+        status, reply = post("launch", {"pane": pane, "token": token}, 30)
+    except OSError as error:
+        print("roamgate-hold: Roamgate is unreachable: " + str(error), file=sys.stderr)
+        sys.exit(1)
+    argv = reply.get("argv") if status == 200 else None
+    if (
+        not isinstance(argv, list)
+        or not argv
+        or not all(isinstance(each, str) and each for each in argv)
+    ):
+        print(
+            "roamgate-hold: "
+            + (reply.get("error") or "Roamgate has no such start (it expired?)"),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    apply_profile_env(reply, os.environ)
+    program, args = argv[0], argv[1:]
+    if reply.get("agent") == "claude":
+        args = new_or_resumed(args, os.environ, os.getcwd())
+    if reply.get("terminal"):
+        os.environ[START_ENV] = "terminal"
+    try:
+        os.execvp(program, [program] + args)
+    except OSError as error:
+        print("roamgate-hold: " + program + " did not start: " + str(error), file=sys.stderr)
+        sys.exit(127)
 
 
 if __name__ == "__main__":
@@ -1102,6 +1160,24 @@ export function holderCommand(
   const socket = shellWord(local.socket);
   if (!bin || !socket) throw new Error("unusual characters in the holder path");
   return ` ${bin} ${sessionId} --socket ${socket}\r`;
+}
+
+/**
+ * What is typed into the pane's shell to start a launch Roamgate prepared
+ * (a profile's agent): roamgate-hold fetches the program and environment
+ * with the token and becomes it. Paths as for holderCommand.
+ */
+export function launchCommand(
+  token: string,
+  local?: { bin: string; socket: string },
+): string {
+  if (!/^[0-9a-f]{16,64}$/.test(token)) throw new Error("invalid token");
+  if (!local)
+    return ` "$HOME/.cache/roamgate/bin/roamgate-hold" --launch ${token}\r`;
+  const bin = shellWord(local.bin);
+  const socket = shellWord(local.socket);
+  if (!bin || !socket) throw new Error("unusual characters in the holder path");
+  return ` ${bin} --socket ${socket} --launch ${token}\r`;
 }
 
 /**

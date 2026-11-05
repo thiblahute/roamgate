@@ -2339,3 +2339,119 @@ describe("switching a pane's conversation to another session", () => {
     });
   });
 });
+
+describe("restarting a conversation with another profile", () => {
+  test("a session stopped for being idle restarts with it: its stopped process is no work", async () => {
+    const { service, spawner, store } = setup(undefined, {
+      idleStopMinutes: () => 1e-9,
+      idleCheckMs: 0,
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    await eventually(() => spawner.spawned.length === 1);
+    await Bun.sleep(2);
+    await service.checkIdle();
+    await eventually(() => service.state(PANE).status === "stopped");
+    expect(store.get(PANE)!.asleep_at).toBeTruthy();
+    expect(await service.restartProcess(PANE)).toEqual({ ok: true });
+    await eventually(() => spawner.spawned.length === 2);
+    expect(spawner.spawned[1]!.fake.alive).toBe(true);
+    expect(store.get(PANE)!.asleep_at).toBeUndefined();
+  });
+
+  test("after a Roamgate restart, a session asleep with no process restarts with it", async () => {
+    const first = setup(undefined, {
+      idleStopMinutes: () => 1e-9,
+      idleCheckMs: 0,
+    });
+    await first.service.handover(PANE, "conversation");
+    await settle();
+    await eventually(() => first.spawner.spawned.length === 1);
+    await Bun.sleep(2);
+    await first.service.checkIdle();
+    await eventually(() => first.service.state(PANE).status === "stopped");
+    first.service.dispose();
+    await first.holderPolls[0];
+    // The next runtime reads the pane again: its holder runs no child.
+    const second = setup(first.store, { carriedQueueDelayMs: 0 });
+    heldPane(second.fake);
+    second.startHolder();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await settle(100);
+    expect(second.spawner.spawned).toHaveLength(0);
+    expect(second.service.state(PANE)).toMatchObject({
+      status: "stopped",
+      asleep: { since: expect.any(String) },
+    });
+    expect(await second.service.restartProcess(PANE)).toEqual({ ok: true });
+    await eventually(() => second.spawner.spawned.length === 1);
+    expect(second.store.get(PANE)!.asleep_at).toBeUndefined();
+  });
+
+  test("a session stopped for being idle also moves to another session", async () => {
+    const { service, spawner, store } = setup(undefined, {
+      idleStopMinutes: () => 1e-9,
+      idleCheckMs: 0,
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    await eventually(() => spawner.spawned.length === 1);
+    await Bun.sleep(2);
+    await service.checkIdle();
+    await eventually(() => service.state(PANE).status === "stopped");
+    expect(
+      await service.switchSession(PANE, "22222222-2222-4222-8222-222222222222"),
+    ).toEqual({ ok: true });
+    expect(store.get(PANE)!.session_id).toBe(
+      "22222222-2222-4222-8222-222222222222",
+    );
+  });
+
+  test("a stopped process with a message on its way or queued still waits", async () => {
+    const { service, spawner } = setup(undefined, {
+      idleStopMinutes: () => 1e-9,
+      idleCheckMs: 0,
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    await eventually(() => spawner.spawned.length === 1);
+    await Bun.sleep(2);
+    await service.checkIdle();
+    await eventually(() => service.state(PANE).status === "stopped");
+    // Waking it: the message is on its way while the process starts.
+    const sent = service.send(PANE, { text: "wake up" });
+    expect(await service.restartProcess(PANE)).toEqual({
+      ok: false,
+      reason:
+        "The agent is working; switch once its turn ends, or stop it first",
+    });
+    await sent;
+  });
+
+  test("an idle process stops and starts again on the same session; a busy one is left", async () => {
+    const { service, spawner, store } = setup();
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(service.send(PANE, { text: "first" })).toBeTruthy();
+    await eventually(() => spawner.spawned.length === 1);
+    const first = spawner.spawned[0]!;
+    const session = store.get(PANE)!.session_id;
+    const busy = await service.restartProcess(PANE);
+    // Said of the agent: the session may run another profile's model.
+    expect(busy).toEqual({
+      ok: false,
+      reason:
+        "The agent is working; switch once its turn ends, or stop it first",
+    });
+    expect(first.fake.alive).toBe(true);
+    first.fake.push(RESULT);
+    await settle();
+    expect(await service.restartProcess(PANE)).toEqual({ ok: true });
+    expect(first.fake.alive).toBe(false);
+    await eventually(() => spawner.spawned.length === 2);
+    expect(spawner.spawned[1]!.options.sessionId).toBe(session);
+    expect(store.get(PANE)!.session_id).toBe(session);
+    expect(store.get(PANE)!.asleep_at).toBeUndefined();
+    expect((await service.restartProcess("w9:p9")).ok).toBe(false);
+  });
+});

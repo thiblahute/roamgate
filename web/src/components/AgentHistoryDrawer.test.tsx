@@ -59,35 +59,56 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
     let sessionId = "one";
     let historyRevision = 1;
     const client = {
+      connectionId: "local",
       isCurrent: () => true,
       call: async (method: string) =>
         method === "agent_session.get"
           ? { status: "ok", stats: {}, session: { value: sessionId } }
-          : {
-              status: "ok",
-              agent: "codex",
-              pane_id: "pane-one",
-              workspace_id: "workspace",
-              tab_id: "tab",
-              path: sessionPath,
-              updated_at: "2026-01-01T00:00:00Z",
-              history_version: 2,
-              mode: "snapshot",
-              cursor: {
-                epoch: sessionPath + sessionId,
-                revision: historyRevision,
-              },
-              window_limit: 200,
-              entries: [
-                {
-                  id: sessionId,
-                  role: "assistant",
-                  kind: "message",
-                  text: `Reply from ${sessionPath}. `.repeat(20),
-                  sent_at: "2026-01-01T00:00:00Z",
+          : method === "agent_profile.get"
+            ? {
+                session_id: "session-one",
+                profile: "Default",
+                default: "Default",
+                profiles: [
+                  {
+                    name: "Default",
+                    agent: "claude",
+                    label: "Default",
+                    default: true,
+                  },
+                  {
+                    name: "OpenAI Luna",
+                    agent: "claude",
+                    label: "OpenAI Luna",
+                    default: false,
+                  },
+                ],
+              }
+            : {
+                status: "ok",
+                agent: "codex",
+                pane_id: "pane-one",
+                workspace_id: "workspace",
+                tab_id: "tab",
+                path: sessionPath,
+                updated_at: "2026-01-01T00:00:00Z",
+                history_version: 2,
+                mode: "snapshot",
+                cursor: {
+                  epoch: sessionPath + sessionId,
+                  revision: historyRevision,
                 },
-              ],
-            },
+                window_limit: 200,
+                entries: [
+                  {
+                    id: sessionId,
+                    role: "assistant",
+                    kind: "message",
+                    text: `Reply from ${sessionPath}. `.repeat(20),
+                    sent_at: "2026-01-01T00:00:00Z",
+                  },
+                ],
+              },
     };
     mock.module("../useConnectionClient", () => ({
       useConnectionClient: () => client,
@@ -230,6 +251,19 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
       await render({ ...pane, pane_id: "pane-two" });
       expect(header().hidden).toBe(true);
       expect(search()).toBeNull();
+
+      await render({ ...pane, agent: "claude" });
+      await React.act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(button("Run with another profile")).not.toBeNull();
+      await click(button("Run with another profile"));
+      expect(
+        Array.from(document.body.querySelectorAll(".context-menu-item")).some(
+          (item) => item.textContent?.includes("Run with: OpenAI Luna"),
+        ),
+      ).toBe(true);
+      await render();
 
       await React.act(async () => updateLayoutPreferences({ mode: "desktop" }));
       expect(container.querySelector(".agent-history-mobile-head")).toBeNull();

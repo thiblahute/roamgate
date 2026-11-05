@@ -16,6 +16,11 @@ import type {
 import { type HolderRegistry, resumeReply, suspendReply } from "./holder";
 import { resumeCommand as defaultResumeCommand } from "./holder-script";
 import type { LeaseStore } from "./lease";
+import {
+  type AgentCommand,
+  type LaunchSpec,
+  withModel,
+} from "../profiles/profiles";
 
 /** What a handover needs of the session's headless side. */
 export type HeadlessSide = {
@@ -53,6 +58,17 @@ export type HandoverDeps = {
    * holders); a handover still running gives up where it is.
    */
   closed?: () => boolean;
+  /**
+   * The profile a session resumes with (absent or plain: the driver's own
+   * program, typed as before profiles).
+   */
+  resumeProfile?: (
+    sessionId: string,
+  ) =>
+    | Pick<AgentCommand, "program" | "env" | "unset" | "plain" | "model">
+    | undefined;
+  /** Typed to start a launch roamgate-hold fetches (a profile's agent). */
+  launchCommand?: (paneId: string, spec: LaunchSpec) => string;
   /** A lease's pane is gone: its lease and process go too. */
   onPaneGone?: (paneId: string) => void;
   sleep?: (ms: number) => Promise<void>;
@@ -377,8 +393,37 @@ export function createHandover(deps: HandoverDeps) {
     if (deps.closed?.() || deps.leases.get(paneId)) return false;
     const info = await deps.herdr.processInfo(paneId).catch(() => null);
     if (!info || !shellInForeground(info, terminal)) return false;
-    await deps.herdr.sendText(paneId, resumeCommand(sessionId, args, terminal));
+    await deps.herdr.sendText(
+      paneId,
+      resumeText(paneId, sessionId, args, terminal),
+    );
     return true;
+  }
+
+  /**
+   * What is typed to resume a session in its TUI: plain claude as before
+   * profiles, else a one-use launch roamgate-hold fetches (its environment
+   * is never typed).
+   */
+  function resumeText(
+    paneId: string,
+    sessionId: string,
+    args: string[] | undefined,
+    terminal: TerminalDriver,
+  ): string {
+    const profile = deps.resumeProfile?.(sessionId);
+    const flags = withModel(args ?? [], profile?.model);
+    if (!profile || profile.plain || !deps.launchCommand)
+      return resumeCommand(sessionId, flags, terminal);
+    const argv = terminal.resumeArgv(sessionId, flags);
+    argv[0] = profile.program;
+    return deps.launchCommand(paneId, {
+      argv,
+      env: profile.env,
+      unset: profile.unset,
+      agent: terminal.agent,
+      terminal: true,
+    });
   }
 
   /**
@@ -989,7 +1034,10 @@ export function createHandover(deps: HandoverDeps) {
         };
       }
       // A holder gone meanwhile resumes claude when it polls again.
-      deps.holders.send(paneId, resumeReply(lease));
+      deps.holders.send(
+        paneId,
+        resumeReply(lease, deps.resumeProfile?.(lease.session_id)),
+      );
       if (!holder)
         return {
           ok: true,
@@ -1077,6 +1125,37 @@ export function createHandover(deps: HandoverDeps) {
     });
   }
 
+  /**
+   * The pane's idle TUI exits and the same session resumes there with its
+   * profile now (a switch of profile). Refused as a handover would be:
+   * while it works, asks, has something typed or runs background work.
+   */
+  function restartTerminal(
+    paneId: string,
+    expectedSessionId?: string,
+  ): Promise<AgentChatHandoverResult> {
+    return exclusive(paneId, async () => {
+      if (deps.leases.get(paneId))
+        return refuse("Conversation mode holds this session");
+      const exited = await exitAgent(paneId, expectedSessionId);
+      if (!exited.ok || !("terminal" in exited)) return exited;
+      const { sessionId, terminal, terminalArgs } = exited;
+      try {
+        guard();
+        await deps.herdr.sendText(
+          paneId,
+          resumeText(paneId, sessionId, terminalArgs, terminal),
+        );
+      } catch (error) {
+        if (error instanceof HandoverClosed) throw error;
+        return refuse(
+          `${terminal.displayName} exited but did not start again: ${errorText(error)}; run ${terminal.resumeArgv(sessionId, []).join(" ")} there`,
+        );
+      }
+      return { ok: true, owner: "terminal", session_id: sessionId };
+    });
+  }
+
   /** Waits a while for a holder in the pane. */
   function waitForHolder(paneId: string) {
     return until(async () => deps.holders.connected(paneId), holderTimeoutMs);
@@ -1086,6 +1165,7 @@ export function createHandover(deps: HandoverDeps) {
     toConversation,
     toTerminal,
     fromSuspended,
+    restartTerminal,
     confirmMapping,
     waitForHolder,
     running: (paneId: string) => running.has(paneId),

@@ -675,10 +675,13 @@ async function registerDomTests() {
         pi.click();
         pi.click();
       });
-      expect(calls.slice(before).map((call) => call.method)).toEqual([
-        "integration.list",
-        ...(draft ? [] : ["pane.send_input"]),
-      ]);
+      // The launcher also reads the agent profiles it offers beside Claude.
+      expect(
+        calls
+          .slice(before)
+          .map((call) => call.method)
+          .filter((method) => method !== "settings.profiles.get"),
+      ).toEqual(["integration.list", ...(draft ? [] : ["pane.send_input"])]);
       if (!draft)
         expect(calls[calls.length - 1]?.params).toEqual({
           pane_id: "pane-a",

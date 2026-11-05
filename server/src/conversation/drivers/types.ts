@@ -67,6 +67,15 @@ export type StartOptions = {
   flags?: string[];
   /** The user's answer about the pane's API key, filed by the holder. */
   apiKeyAnswer?: ApiKeyAnswer;
+  /**
+   * The session's profile (server/src/profiles): its program and the
+   * environment it sets or removes. Absent: the driver's own program.
+   */
+  profile?: {
+    program: string;
+    env: Record<string, string>;
+    unset: string[];
+  };
 };
 
 /**

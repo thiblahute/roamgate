@@ -1,3 +1,9 @@
+import {
+  type AgentCommand,
+  asCommand,
+  commandEnv,
+  helperCommand,
+} from "../profiles/profiles";
 import { tmpdir } from "node:os";
 import { backgroundClaudeEnv } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
@@ -92,9 +98,12 @@ const MAX_SPOKEN_CHARS = 600;
 const MAX_ANSWER_CHARS = 12_000;
 
 /** The arguments of the research process's Claude Code. */
-export function researchArgs(model: string, command = "claude"): string[] {
+export function researchArgs(
+  model: string,
+  command: string | AgentCommand = "claude",
+): string[] {
   return [
-    command,
+    asCommand(command).program,
     "-p",
     "--output-format",
     "stream-json",
@@ -126,12 +135,12 @@ export function researchArgs(model: string, command = "claude"): string[] {
 
 export function spawnResearch(
   model: string,
-  command: string | undefined,
+  command: string | AgentCommand | undefined,
   prompt: string,
 ): ResearchProcess {
   const child = Bun.spawn(researchArgs(model, command), {
     cwd: tmpdir(),
-    env: backgroundClaudeEnv(),
+    env: commandEnv(asCommand(command), backgroundClaudeEnv()),
     stdin: new Blob([prompt]),
     stdout: "pipe",
     stderr: "ignore",
@@ -466,7 +475,7 @@ export function configuredResearch(
   config: () => VoiceConfig | { error: string },
   spawn: (
     model: string,
-    command: string | undefined,
+    command: string | AgentCommand | undefined,
     prompt: string,
   ) => ResearchProcess = spawnResearch,
 ): () => VoiceResearch | null {
@@ -475,7 +484,7 @@ export function configuredResearch(
     if ("error" in read) throw new Error(read.error);
     return spawn(
       read.research_model ?? DEFAULT_RESEARCH_MODEL,
-      read.claude_command,
+      helperCommand(read.claude_command),
       prompt,
     );
   });

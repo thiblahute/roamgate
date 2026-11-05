@@ -32,7 +32,19 @@ import {
 import type { SpawnHeadless } from "../conversation/headless";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { holderCommand, resumeCommand } from "../conversation/holder-script";
+import {
+  holderCommand,
+  launchCommand,
+  resumeCommand,
+} from "../conversation/holder-script";
+import { handleProfileRpc, type ProfileRpcDeps } from "../profiles/rpc";
+import { isRecord } from "../agent/session-utils";
+import {
+  sessionProfiles,
+  commandForSession,
+  type LaunchSpec,
+  launchRegistry,
+} from "../profiles/profiles";
 import { REVIEW_HOME_DIR } from "../review/agent-server";
 import { exitSentAsMessage } from "../conversation/handover";
 import { createImageReader } from "../conversation/images";
@@ -312,6 +324,73 @@ export function createLegacyConnectionRuntime(args: {
       });
     }
   };
+  /**
+   * What is typed into a pane to start a profile's agent there: a one-use
+   * token the pane's roamgate-hold trades for the program and environment.
+   */
+  function typedLaunch(paneId: string, spec: LaunchSpec): string {
+    const token = launchRegistry().register(identity.id, paneId, spec);
+    return config.sshHost
+      ? launchCommand(token)
+      : launchCommand(token, {
+          bin: join(homedir(), REVIEW_HOME_DIR, "bin", "roamgate-hold"),
+          socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
+        });
+  }
+  /** The session RPCs of profiles (server/src/profiles/rpc.ts). */
+  const profileRpcDeps = (): ProfileRpcDeps => ({
+    readSettings: readGuiSettings,
+    store: sessionProfiles(),
+    agentGet: async (paneId) => {
+      const result = await herdr.call("agent.get", { target: paneId }, 5000);
+      return isRecord(result) && isRecord(result.agent) ? result.agent : null;
+    },
+    conversationSession: (paneId) =>
+      conversation?.ownedSession(paneId)?.session_id ?? null,
+    restartProcess: (paneId) =>
+      conversation
+        ? conversation.restartProcess(paneId)
+        : Promise.resolve({ ok: false, reason: "Not ready" }),
+    restartTerminal: (paneId, sessionId) =>
+      conversation
+        ? conversation.restartTerminal(paneId, sessionId)
+        : Promise.resolve({ ok: false, reason: "Not ready" }),
+    transcriptTail: async (paneId) => {
+      const path = await agentSessions.resolvePath({ pane_id: paneId });
+      if (typeof path !== "string") return null;
+      return new TextDecoder().decode(
+        await agentSessionFiles.readTail(path, 64 * 1024),
+      );
+    },
+    typedLaunch: (paneId, spec) => typedLaunch(paneId, spec),
+    sendConversation: async (paneId, text) => {
+      if (!conversation) throw new Error("Not ready");
+      return conversation.send(paneId, { text });
+    },
+    promptTerminal: (paneId, text) =>
+      herdr.call("agent.prompt", { target: paneId, text }, 5000),
+    log: (message, fields) =>
+      logger.info(message, { connection: identity.id, ...fields }),
+  });
+  const profileRpc = (method: string, params: Record<string, unknown>) =>
+    handleProfileRpc(method, params, profileRpcDeps());
+  /** The panes whose Claude session Herdr knows, for the reset return. */
+  const profilePanes = async () => {
+    const listed = await herdr.call("agent.list", {}, 10_000);
+    const agents =
+      isRecord(listed) && Array.isArray(listed.agents) ? listed.agents : [];
+    return agents.flatMap((agent: unknown) => {
+      if (!isRecord(agent) || typeof agent.pane_id !== "string") return [];
+      const owned = conversation?.ownedSession(agent.pane_id)?.session_id;
+      const session = isRecord(agent.agent_session)
+        ? agent.agent_session
+        : null;
+      const sessionId =
+        owned ??
+        (session && typeof session.value === "string" ? session.value : null);
+      return sessionId ? [{ paneId: agent.pane_id, sessionId }] : [];
+    });
+  };
   conversation = createConversationService<ServerWebSocket<unknown>>({
     connectionId: identity.id,
     herdr: withStatusReports(
@@ -425,6 +504,9 @@ export function createLegacyConnectionRuntime(args: {
             socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
           }),
     resumeCommand,
+    // Each session's profile (its choice, else the default).
+    commandFor: (sessionId) => commandForSession(sessionId),
+    launchCommand: (paneId, spec) => typedLaunch(paneId, spec),
     onLeaseChanged: (paneId) => {
       // The pane's history may now be another file (/clear).
       historyWatcher?.refresh(paneId);
@@ -1087,6 +1169,9 @@ export function createLegacyConnectionRuntime(args: {
     agentSessions,
     tabAutoRenamer,
     conversation: conversation!,
+    typedLaunch,
+    profileRpc,
+    profilePanes,
     historyWatcher: historyWatcher!,
     recoveryIdentity,
     taskNotificationSource,

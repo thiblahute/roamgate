@@ -1,4 +1,5 @@
 import type { AgentChatLease } from "../../../shared/agentChat";
+import { type AgentCommand, withModel } from "../profiles/profiles";
 import { conversationDriver } from "./drivers";
 
 /** What roamgate-hold is told: keep holding, or resume claude now. */
@@ -15,6 +16,11 @@ export type HolderReply =
       argv?: string[];
       /** claude's arguments, `--resume <id>` included: older holders. */
       args?: string[];
+      /** The agent (claude: a session with no transcript starts by id). */
+      agent?: string;
+      /** The session's profile: set, and removed, before it execs. */
+      env?: Record<string, string>;
+      unset?: string[];
     }
   | { action: "refused"; reason: string }
   | SuspendReply;
@@ -57,17 +63,30 @@ export function suspendReply(
  * command line, and claude's arguments alone for a holder from before
  * drivers (it always runs claude).
  */
-export function resumeReply(lease: AgentChatLease): HolderReply {
-  const argv = conversationDriver(lease.agent).terminal.resumeArgv(
+export function resumeReply(
+  lease: AgentChatLease,
+  /** The session's profile; absent or plain: the driver's own program. */
+  profile?: Pick<AgentCommand, "program" | "env" | "unset" | "plain" | "model">,
+): HolderReply {
+  const terminal = conversationDriver(lease.agent).terminal;
+  const argv = terminal.resumeArgv(
     lease.session_id,
-    lease.terminal_args ?? [],
+    withModel(lease.terminal_args ?? [], profile?.model),
   );
+  if (profile && !profile.plain) argv[0] = profile.program;
   return {
     action: "resume",
     session_id: lease.session_id,
     cwd: lease.cwd,
     argv,
     args: argv.slice(1),
+    ...(profile && !profile.plain
+      ? {
+          agent: terminal.agent,
+          env: profile.env,
+          unset: profile.unset,
+        }
+      : {}),
   };
 }
 

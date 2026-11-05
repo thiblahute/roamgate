@@ -1,0 +1,63 @@
+/*
+ * The profile's buttons sit in the pane toolbar, which a chat's header row
+ * keeps clear of (--pane-toolbar-width): each stays short, one line, its
+ * words cut with an ellipsis, so the row never grows past its room.
+ */
+.terminal-pane-action.profile-chip,
+.terminal-pane-action.profile-limit,
+.terminal-pane-action.profile-next {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Over a chat the toolbar's buttons are 28px icons: these keep their words. */
+.terminal-pane-toolbar.is-over-chat
+  .terminal-pane-action.profile-chip.is-labelled,
+.terminal-pane-toolbar.is-over-chat .terminal-pane-action.profile-limit,
+.terminal-pane-toolbar.is-over-chat .terminal-pane-action.profile-next {
+  width: auto;
+  padding: 0 6px;
+}
+
+.terminal-pane-action.profile-chip > span,
+.terminal-pane-action.profile-limit > span,
+.terminal-pane-action.profile-next > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-pane-action.profile-chip > span {
+  max-width: 9em;
+}
+
+.terminal-pane-action.profile-limit > span {
+  max-width: 11em;
+}
+
+.terminal-pane-action.profile-next > span {
+  max-width: 8em;
+}
+
+.terminal-pane-action.profile-chip > svg,
+.terminal-pane-action.profile-limit > svg {
+  flex: none;
+}
+
+.profile-chip.is-other,
+.terminal-pane-toolbar.is-over-chat .profile-chip.is-other {
+  color: var(--warning-text);
+}
+
+.terminal-pane-action.profile-limit,
+.terminal-pane-toolbar.is-over-chat .terminal-pane-action.profile-limit {
+  color: var(--warning-text);
+  background: var(--warning-soft);
+}
+
+.terminal-pane-action.profile-next,
+.terminal-pane-toolbar.is-over-chat .terminal-pane-action.profile-next {
+  border: 1px solid var(--border);
+  color: var(--text);
+}

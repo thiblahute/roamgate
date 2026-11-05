@@ -1,3 +1,9 @@
+import {
+  type AgentCommand,
+  asCommand,
+  commandEnv,
+  helperCommand,
+} from "../profiles/profiles";
 import { tmpdir } from "node:os";
 import { backgroundClaudeEnv } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
@@ -274,11 +280,11 @@ export function askRules(policy: CompanionMcpConfig): string[] {
 /** The arguments of a job's Claude Code. */
 export function toolArgs(
   model: string,
-  command = "claude",
+  command: string | AgentCommand = "claude",
   policy: CompanionMcpConfig = {},
 ): string[] {
   return [
-    command,
+    asCommand(command).program,
     "-p",
     "--input-format",
     "stream-json",
@@ -315,12 +321,12 @@ export function toolArgs(
 
 export function spawnTools(
   model: string,
-  command: string | undefined,
+  command: string | AgentCommand | undefined,
   policy: CompanionMcpConfig,
 ): ToolProcess {
   const child = Bun.spawn(toolArgs(model, command, policy), {
     cwd: tmpdir(),
-    env: backgroundClaudeEnv(),
+    env: commandEnv(asCommand(command), backgroundClaudeEnv()),
     stdin: "pipe",
     stdout: "pipe",
     stderr: "ignore",
@@ -709,7 +715,7 @@ export function configuredTools(
   config: () => VoiceConfig | { error: string },
   spawn: (
     model: string,
-    command: string | undefined,
+    command: string | AgentCommand | undefined,
     policy: CompanionMcpConfig,
   ) => ToolProcess = spawnTools,
 ): () => VoiceTools | null {
@@ -721,7 +727,11 @@ export function configuredTools(
     const read = config();
     if ("error" in read) throw new Error(read.error);
     const mcp = read.companion_mcp ?? {};
-    return spawn(mcp.model ?? DEFAULT_TOOLS_MODEL, read.claude_command, mcp);
+    return spawn(
+      mcp.model ?? DEFAULT_TOOLS_MODEL,
+      helperCommand(read.claude_command),
+      mcp,
+    );
   }, policy);
   return () => {
     const read = config();

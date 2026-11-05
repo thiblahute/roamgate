@@ -1,5 +1,10 @@
 import { useCloseGlobalMenuForDialog } from "./useCloseGlobalMenuForDialog";
 import {
+  switchSessionProfile,
+  useSessionProfileEntry,
+} from "../sessionProfiles";
+import { useConnectionClient } from "../useConnectionClient";
+import {
   shortcutMatches,
   shortcutTitle,
   shortcutLabel,
@@ -27,6 +32,7 @@ import { normalizeSearchText } from "../searchText";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
+  Gauge,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
@@ -362,6 +368,11 @@ export function CommandCombobox({
     s.panes.find((p) => p.pane_id === s.layout?.focused_pane_id) ??
     s.panes.find((p) => p.tab_id === activeTab?.tab_id && p.focused) ??
     s.panes.find((p) => p.tab_id === activeTab?.tab_id);
+  const profileClient = useConnectionClient();
+  const profileEntry = useSessionProfileEntry(
+    profileClient.connectionId,
+    activePane?.pane_id ?? null,
+  );
   const agents = useMemo(
     () =>
       s.panes
@@ -1263,8 +1274,48 @@ export function CommandCombobox({
       }))
     : [];
 
+  // The active pane's session: Run with: another agent profile.
+  const profileActions: ActionDefinition[] = [];
+  if (activePane && profileEntry.data?.session_id) {
+    const data = profileEntry.data;
+    const current = data.profile ?? data.default;
+    for (const each of data.profiles) {
+      if (each.name === current) continue;
+      profileActions.push({
+        key: `run-with-${each.name}`,
+        icon: <Gauge size={15} />,
+        title: `Run with: ${each.name}`,
+        detail: `${each.label !== each.name ? `${each.label}; ` : ""}now ${current}`,
+        keywords: [
+          "profile",
+          "model",
+          "backend",
+          "switch",
+          "limit",
+          each.label,
+        ],
+        disabledReason: profileEntry.switching ? "A switch is running" : null,
+        run: () => {
+          void switchSessionProfile(
+            profileClient,
+            activePane.pane_id,
+            each.name,
+          ).then((result) => {
+            if (!result.ok && result.reason)
+              store.notify({
+                kind: "error",
+                message: "Profile switch refused",
+                detail: result.reason,
+              });
+          });
+        },
+      });
+    }
+  }
+
   const actionGroups: ActionGroupDefinition[] = [
     { heading: "Current", actions: currentActions },
+    { heading: "Profiles", actions: profileActions },
     { heading: "Files", actions: fileActions },
     { heading: "Workspaces", actions: workspaceActions },
     { heading: "Worktrees", actions: worktreeActions },

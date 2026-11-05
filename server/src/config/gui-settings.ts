@@ -9,6 +9,10 @@ import {
   isClaudeStartMode,
   isIdleStopMinutes,
 } from "../../../shared/agentChat";
+import {
+  normalizeProfilesSettings,
+  type ProfilesSettings,
+} from "../../../shared/agentProfiles";
 import { defaultDataFile } from "./data-paths";
 import { roamgateEnv } from "./environment";
 import { dirname } from "node:path";
@@ -231,6 +235,11 @@ export type GuiSettings = {
   conversation?: GuiConversationSettings;
   /** The reviews inbox (absent: its defaults). */
   mr_reviews?: StoredMrReviewsSettings;
+  /**
+   * Agent profiles (shared/agentProfiles.ts): how agents are started.
+   * Absent: the built-in Claude only, as before profiles.
+   */
+  profiles?: ProfilesSettings;
   custom: Record<string, unknown>;
   /**
    * Browser-agnostic interface preferences, namespaced by key (for example
@@ -452,6 +461,9 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
       ? obj.claude_start_mode
       : undefined,
     conversation: normalizeConversationSettings(obj.conversation),
+    ...(obj.profiles !== undefined
+      ? { profiles: normalizeProfilesSettings(obj.profiles) }
+      : {}),
     ...(normalizeStoredMrReviews(obj.mr_reviews)
       ? { mr_reviews: normalizeStoredMrReviews(obj.mr_reviews) }
       : {}),
@@ -477,6 +489,14 @@ function workspaceTreeField(value: unknown): {
 } {
   const tree = parseWorkspaceTree(value);
   return tree.nodes.length ? { workspace_tree: tree } : {};
+}
+
+/**
+ * The settings read last, for code that cannot wait (a process spawned
+ * from a synchronous path); null before the first read.
+ */
+export function peekGuiSettings(): GuiSettings | null {
+  return cachedGuiSettings;
 }
 
 export async function readGuiSettings(): Promise<GuiSettings> {

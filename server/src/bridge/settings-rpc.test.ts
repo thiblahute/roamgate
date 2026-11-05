@@ -719,3 +719,101 @@ test("the claude start setting: validated, saved, and the change told", async ()
   expect(changes).toBe(1);
   expect(settings.claude_start_mode).toBe("conversation");
 });
+
+test("agent profiles: listed with the built-in, secrets by path, validated on update", async () => {
+  let settings: GuiSettings = {
+    version: 1,
+    repositories: {},
+    workspace_auto_sync: {},
+    custom: {},
+    ui: {},
+  };
+  const messages: any[] = [];
+  const handler = createSettingsRpcHandler({
+    connectionId: "desk",
+    readSettings: async () => settings,
+    updateSettings: async (update) => {
+      settings = await update(settings);
+      return settings;
+    },
+    herdr: {} as HerdrClient,
+    sshHost: () => undefined,
+    readWorktreeHooks: async () => null,
+    resolveWorkspaceGitRoot: async () => ({ workspace: {}, root: "/tmp" }),
+    workspaceAutoSyncIsRunning: () => false,
+    onWorkspaceAutoSyncSettingsChanged: () => {},
+    safeSend: (_ws, payload) => {
+      messages.push(JSON.parse(payload));
+      return true;
+    },
+    markRpcError: () => {},
+  });
+  const call = (method: string, params: Record<string, unknown> = {}) =>
+    handler(
+      {} as ServerWebSocket<unknown>,
+      "1",
+      `settings.profiles.${method}`,
+      params,
+    );
+  await call("get");
+  expect(messages.at(-1).result).toEqual({
+    profiles: [
+      {
+        name: "Claude",
+        agent: "claude",
+        builtin: true,
+        env: [],
+        unset: [],
+        label: "Claude",
+      },
+    ],
+    default: "Claude",
+    return_after_reset: false,
+  });
+  // Nothing written until the user saves profiles.
+  expect(settings.profiles).toBeUndefined();
+  await call("update", {
+    list: [
+      {
+        name: "Igalia GLM",
+        agent: "claude",
+        env: [
+          { name: "ANTHROPIC_MODEL", value: "glm-5p3" },
+          { name: "ANTHROPIC_AUTH_TOKEN", file: "/nonexistent/token" },
+        ],
+        unset: [],
+      },
+    ],
+    default: "Claude",
+    return_after_reset: true,
+  });
+  const result = messages.at(-1).result;
+  expect(result.default).toBe("Claude");
+  expect(result.return_after_reset).toBe(true);
+  expect(result.profiles[1]).toMatchObject({
+    name: "Igalia GLM",
+    label: "GLM 5p3",
+    env: [
+      { name: "ANTHROPIC_MODEL", value: "glm-5p3" },
+      {
+        name: "ANTHROPIC_AUTH_TOKEN",
+        file: "/nonexistent/token",
+        problem: expect.stringMatching(/cannot be read/),
+      },
+    ],
+  });
+  expect(settings.profiles?.list[0]?.env?.ANTHROPIC_AUTH_TOKEN).toEqual({
+    file: "/nonexistent/token",
+  });
+  for (const params of [
+    { list: [], default: "Nope" },
+    { list: [{ name: "", agent: "claude", env: [] }], default: "Claude" },
+    { list: [], default: "Claude", other: 1 },
+  ]) {
+    await call("update", params);
+    expect(messages.at(-1).error).toBeDefined();
+  }
+  expect(settings.profiles?.list).toHaveLength(1);
+  await call("models", { name: "Claude" });
+  expect(messages.at(-1).result).toMatchObject({ source: "aliases" });
+});

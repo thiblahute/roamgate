@@ -74,6 +74,35 @@ export function AgentLauncher({
     setError(null);
   }, [target]);
 
+  // The agent profiles (Configuration > Integrations > Agent profiles).
+  const [profiles, setProfiles] = useState<
+    { name: string; agent: string; label: string; default: boolean }[]
+  >([]);
+  useEffect(() => {
+    if (!open || !visible) return;
+    let cancelled = false;
+    void client.call("settings.profiles.get").then(
+      (result) => {
+        if (cancelled || !client.isCurrent()) return;
+        const list = Array.isArray(result?.profiles) ? result.profiles : [];
+        setProfiles(
+          list.map((each: Record<string, unknown>) => ({
+            name: String(each.name),
+            agent: String(each.agent),
+            label: String(each.label ?? each.name),
+            default: each.name === result.default,
+          })),
+        );
+      },
+      () => {
+        if (!cancelled) setProfiles([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [client, open, visible]);
+
   useEffect(() => {
     if (!open || !visible) return;
     let cancelled = false;
@@ -104,7 +133,7 @@ export function AgentLauncher({
     };
   }, [client, target, open, reload, visible]);
 
-  const selectCommand = (item: AgentIntegration) => {
+  const selectCommand = async (item: AgentIntegration, profile?: string) => {
     if (
       disabled ||
       !visible ||
@@ -118,6 +147,25 @@ export function AgentLauncher({
         item.target,
         item.command,
       );
+      // Claude with its default command starts with an agent profile (the
+      // default, or the one picked) when it is not plain claude: the
+      // server gives a one-use start the pane's roamgate-hold fetches.
+      if (
+        item.target === "claude" &&
+        (value === item.command || profile) &&
+        (profile || profiles.length > 1)
+      ) {
+        const launch = (await client.call("agent_profile.launch", {
+          pane_id: paneId,
+          ...(profile ? { profile } : {}),
+        })) as { text?: string | null };
+        if (identity.current !== target || !client.isCurrent()) return;
+        if (typeof launch?.text === "string" && launch.text) {
+          onSelectCommand(launch.text);
+          setOpen(false);
+          return;
+        }
+      }
       validateAgentLaunchCommand(value);
       onSelectCommand(value);
       setOpen(false);
@@ -255,7 +303,7 @@ export function AgentLauncher({
                   className="agent-launcher-agent"
                   aria-label={item.label}
                   disabled={disabled || !client.isCurrent()}
-                  onClick={() => selectCommand(item)}
+                  onClick={() => void selectCommand(item)}
                 >
                   <AgentIcon agent={item.target} compact />
                   {item.label}
@@ -282,6 +330,36 @@ export function AgentLauncher({
                 </button>
               </div>
             ))}
+            {items?.some((item) => item.target === "claude")
+              ? profiles
+                  .filter((each) => each.agent === "claude" && !each.default)
+                  .map((each) => (
+                    <div
+                      className="agent-launcher-row"
+                      key={`profile-${each.name}`}
+                    >
+                      <button
+                        type="button"
+                        className="agent-launcher-agent"
+                        aria-label={`Agent with ${each.name}`}
+                        title={`Start an agent with the ${each.name} profile`}
+                        disabled={disabled || !client.isCurrent()}
+                        onClick={() => {
+                          const claude = items?.find(
+                            (item) => item.target === "claude",
+                          );
+                          if (claude) void selectCommand(claude, each.name);
+                        }}
+                      >
+                        <AgentIcon compact />
+                        {`Agent: ${each.name}`}
+                        {each.label !== each.name ? (
+                          <small>{each.label}</small>
+                        ) : null}
+                      </button>
+                    </div>
+                  ))
+              : null}
           </div>
         )}
       </PopoverContent>

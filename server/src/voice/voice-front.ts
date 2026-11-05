@@ -1,3 +1,8 @@
+import {
+  type AgentCommand,
+  commandKey,
+  helperCommand,
+} from "../profiles/profiles";
 import { type ClaudeProcess, spawnClaude, Worker } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
 import {
@@ -681,7 +686,7 @@ function within<T>(asked: Promise<T>, ms: number, fallback: T): Promise<T> {
 /** The front `front_model` in voice.json sets up, or null without one. */
 export function configuredFront(
   config: () => VoiceConfig | { error: string },
-  spawn: (model: string, command?: string) => ClaudeProcess = (
+  spawn: (model: string, command?: string | AgentCommand) => ClaudeProcess = (
     model,
     command,
   ) => spawnClaude(model, command, FRONT_SYSTEM_PROMPT),
@@ -690,8 +695,10 @@ export function configuredFront(
   return () => {
     const read = config();
     const model = "error" in read ? undefined : read.front_model;
-    const command = "error" in read ? undefined : read.claude_command;
-    const key = model ? `${model} ${command ?? ""}` : "";
+    const command = model
+      ? helperCommand("error" in read ? undefined : read.claude_command)
+      : undefined;
+    const key = model ? `${model} ${commandKey(command)}` : "";
     if (current?.key !== key) {
       current?.front.stop();
       current = model
