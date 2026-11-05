@@ -901,7 +901,76 @@ pause from elsewhere (Android taking the audio focus, a car switching
 profiles) plays on, then retries from the sentence's start, then skips the
 sentence after four tries in all, and a pause from a car's or headset's
 controls is honoured until play. With `ROAMGATE_VOICE_DEBUG`,
-the page's trace says which output plays and what paused it.
+the page's trace says which output plays and what paused it, and, once a
+voice chat, which microphone listens, whether its echo cancellation is on
+and which outputs the browser knows.
+
+### Music under a call
+
+`"call_background"` in `voice.json` is a gst-launch description of a source
+that can play under a voice call: the voice helper mixes it with the
+replies (`voice/helper/src/call.rs`) and the page hears one stream, so the
+phone's echo cancellation covers the music too. Nothing in it is special
+to one service. Off when empty or absent. A call starts with the music
+off, its source not made (nothing is tapped): it plays once you ask the
+companion to put it on, unless `call_music_at_start` is `true`.
+
+| Key                          | Default | Meaning                                                             |
+| ---------------------------- | ------- | ------------------------------------------------------------------- |
+| `call_background`            | `""`    | The source, such as `osxprocesstapsrc bundle-id=com.spotify.client` |
+| `call_background_volume`     | `0.6`   | The music's level when nobody talks (0 to 1)                        |
+| `call_background_ducked`     | `0.15`  | The factor applied while someone talks (0 to 1)                     |
+| `call_background_release_ms` | `3000`  | Quiet time before the music comes back up                           |
+| `call_music_at_start`        | `false` | Whether a call starts with the music on                             |
+
+The music ducks while the companion's speech is being made or plays, and
+while you talk (from the start of your speech to its final words): down in
+250 ms, back up over 1.5 s once the release passed. While it plays (on,
+and not silent), the listener holds as it does during a reply: only a
+louder voice, held longer, starts what you say, so the music's singing is
+not taken for your words. Only the replies are
+read faster (`speech_rate`): the music always plays at its own speed and
+pitch. The mix is Opus at 128 kb/s, stereo, 48 kHz, sent on the voice
+socket and played in the call's AudioContext (Chrome's WebCodecs); a page
+or helper that cannot plays each sentence by itself as before. The
+companion puts the music on, turns it down, up or off when asked ("mets de
+la musique", "baisse la musique"); off, the source is stopped until it is
+turned back on. A voice helper restarted during a call makes the call's
+mix again as it was, the music on or off, and the page's stream goes on.
+A call the restarted helper cannot make again ends, and the page is told;
+one whose start the helper never answered is not made again. The helper
+is restarted when its speech stalls (a sentence waits 15 s at most, 45 s
+for the first with a voice or into a call, which may load its model): if
+it still answers a ping within 2 s, its speaker is stuck, and the
+sentences that waited are said with Kokoro, which reads for five minutes;
+if it does not, its output is what was lost, and they are said again as
+they were.
+
+On macOS, `osxprocesstapsrc` (in the helper) plays what one application
+plays, through a Core Audio process tap (macOS 14.2 or later):
+`bundle-id=com.spotify.client` for the Spotify app and its helpers, or
+`pid=` for one process. The tap exists only while a call's music is on,
+is private to the helper (gone with it, even on a crash), and changes
+nothing of the Mac's audio: no device or default output changes, and the
+application keeps playing on the Mac as before, unless `mute=true` mutes
+it there while tapped. Without `mute=true`, the music plays twice near
+the Mac: from its speakers, and in the call; a call made from the Mac, or
+a phone at the desk, hears the first one with no way to cancel it, so use
+`osxprocesstapsrc bundle-id=com.spotify.client mute=true` there. An
+application that is not running or not playing
+gives silence; nothing is launched. With the Spotify app, start it on the
+Mac and pick the Mac as the device from the phone or the car (Spotify
+Connect); tracks are chosen there.
+
+macOS asks for **System Audio Recording Only** (Privacy & Security >
+Screen & System Audio Recording) for the process responsible for the
+helper: the program the launchd service starts (`bun`, by its Homebrew
+path, `/opt/homebrew/Cellar/bun/<version>/bin/bun`). Without it, the tap
+gives only silence; after a Homebrew upgrade of Bun, allow the new path
+again. Descriptions use gst-launch syntax with full paths (no `~`); set
+caps with `capsfilter caps=...`, and end a source with dynamic pads (a
+`decodebin`) with `! audioconvert`. `call_background` is read from
+`voice.json` only: it builds a pipeline in the helper, so no page edits it.
 
 ## Activity log
 

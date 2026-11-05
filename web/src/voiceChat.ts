@@ -11,6 +11,12 @@ import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
 import { setVoiceFronting, voiceFronting } from "./voiceFrontFlag";
+import {
+  activeCallAudio,
+  CallAudio,
+  isQueuedSpeech,
+  type QueuedSpeech,
+} from "./callAudio";
 import { VoiceChannel } from "./voiceChannel";
 import {
   guardPlayback,
@@ -333,10 +339,47 @@ export class VoiceLink {
   onAnySpeech: (() => void) | null = null;
   /** Something else plays (the front's voice): only a louder voice counts. */
   alsoHolding: () => boolean = () => false;
+  /** The microphone and outputs were traced (traceAudioRoute). */
+  private routeTraced = false;
   /** The socket came back after it was lost. */
   onReconnected: ((resumed: boolean) => void) | null = null;
 
+  /** The call's stream (callAudio.ts), when the server mixes one. */
+  private callAudio: Promise<CallAudio | null> | null = null;
+
   private constructor(private readonly channel: VoiceChannel) {}
+
+  /**
+   * In a call, asks for its audio as one stream (the replies mixed with
+   * voice.json's `call_background`); without one, replies play as before.
+   */
+  private startCallAudio() {
+    if (!voiceContextHeld() || voiceOutputMode() !== "context") return;
+    const context = voiceContext();
+    // A chat rebuilt: the call's stream goes on on this new link.
+    const going = activeCallAudio();
+    this.callAudio = (
+      going
+        ? going
+            .adopt(this.channel, context)
+            .then((moved) => (moved ? going : null))
+        : Promise.resolve(null)
+    )
+      .then(
+        (moved) => moved ?? CallAudio.start(this.channel, context, voiceTrace),
+      )
+      .catch((error) => {
+        voiceTrace(`call audio failed: ${error}`);
+        return null;
+      });
+  }
+
+  /** Let go: stopped unless a rebuilt chat's link takes it (adopt). */
+  private stopCallAudio() {
+    const audio = this.callAudio;
+    this.callAudio = null;
+    void audio?.then((started) => started?.release(this.channel));
+  }
 
   static async open(): Promise<VoiceLink> {
     const url = new URL("/api/voice/ws", location.href);
@@ -348,6 +391,7 @@ export class VoiceLink {
       trace: voiceTrace,
     });
     holder.link = new VoiceLink(channel);
+    holder.link.startCallAudio();
     return holder.link;
   }
 
@@ -359,6 +403,7 @@ export class VoiceLink {
   close() {
     // Parked: whoever adopts it closes it.
     if (this.parked) return;
+    this.stopCallAudio();
     this.channel.close();
   }
 
@@ -398,6 +443,7 @@ export class VoiceLink {
   /** Stops a parked listening nobody took, and the socket. */
   dispose() {
     this.parked = false;
+    this.stopCallAudio();
     this.live?.stop();
     this.channel.close();
   }
@@ -500,6 +546,10 @@ export class VoiceLink {
     });
     // The call's context: the replies play through it too (voiceOutput.ts).
     const context = voiceContext();
+    if (!this.routeTraced) {
+      this.routeTraced = true;
+      void traceAudioRoute(stream, context);
+    }
     let unlisten: (() => void) | null = null;
     const nodes: AudioNode[] = [];
     try {
@@ -632,6 +682,38 @@ export class VoiceLink {
       for (const track of stream.getTracks()) track.stop();
       for (const node of nodes) node.disconnect();
     }
+  }
+}
+
+/**
+ * Where a voice chat's sound comes from and goes, traced once: the
+ * microphone, whether the browser cancels the echo on it, and the outputs
+ * it knows. Whether replies come back as the user's words depends on them
+ * (a phone playing to a Bluetooth speaker, its own loudspeaker).
+ */
+async function traceAudioRoute(stream: MediaStream, context: AudioContext) {
+  try {
+    const track = stream.getAudioTracks?.()[0];
+    const settings: MediaTrackSettings = track?.getSettings?.() ?? {};
+    const devices =
+      (await navigator.mediaDevices.enumerateDevices?.().catch(() => [])) ?? [];
+    const outputs = devices
+      .filter((device) => device.kind === "audiooutput")
+      .map((device) => device.label || device.deviceId || "unnamed");
+    const sink = "sinkId" in context ? context.sinkId : "";
+    const flag = (value: boolean | string | undefined) =>
+      value === undefined
+        ? "unknown"
+        : typeof value === "string"
+          ? value
+          : value
+            ? "on"
+            : "off";
+    voiceTrace(
+      `microphone: ${track?.label || "unnamed"}, echo cancellation ${flag(settings.echoCancellation)}, noise suppression ${flag(settings.noiseSuppression)}, auto gain ${flag(settings.autoGainControl)}; plays to ${typeof sink === "string" && sink ? sink : "the default output"} of: ${outputs.join(", ") || "none listed"}`,
+    );
+  } catch (error) {
+    voiceTrace(`microphone: not described (${error})`);
   }
 }
 
@@ -791,7 +873,7 @@ const speechRateListeners = new Set<() => void>();
 /** What plays now, with the rate each was made at. */
 const playing = new Map<HTMLAudioElement, number>();
 /** The rate each fetched speech was made at, when not 1. */
-const nativeRates = new WeakMap<Blob, number>();
+const nativeRates = new WeakMap<object, number>();
 
 /** How fast replies are read here: the server's, until changed. */
 export function getSpeechRate(): number {
@@ -938,7 +1020,7 @@ export async function saveVoiceSurprise(on: boolean): Promise<void> {
 let reader: string | null = null;
 const readerListeners = new Set<() => void>();
 /** Who reads each fetched speech, when the server said. */
-const readers = new WeakMap<Blob, string>();
+const readers = new WeakMap<object, string>();
 
 export function getVoiceReader(): string | null {
   return reader;
@@ -964,11 +1046,41 @@ function newReading(): string {
  * A sentence's speech, made at this page's reading speed (the server keeps
  * the pitch): played as it comes, nothing to speed up here.
  */
+let callSpeech: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs `task` once every task given before it ended: a call's sentences go
+ * into its mix as soon as they are made, so they must be asked for one
+ * after the other, in reading order. Asked together, the next sentence
+ * (made ahead) could overtake the one before and play first in the stream.
+ */
+export function inCallOrder<T>(task: () => Promise<T>): Promise<T> {
+  const run = callSpeech.then(task, task);
+  callSpeech = run.catch(() => {});
+  return run;
+}
+
 export async function fetchSpeech(
   text: string,
   signal: AbortSignal,
-  { language, reading }: { language?: string; reading?: string } = {},
-): Promise<Blob> {
+  options: { language?: string; reading?: string } = {},
+): Promise<Speech> {
+  // In a call with its audio as one stream, the sentence goes into the mix,
+  // in reading order.
+  if (activeCallAudio())
+    return inCallOrder(() => {
+      signal.throwIfAborted();
+      return fetchOneSpeech(text, signal, options);
+    });
+  return fetchOneSpeech(text, signal, options);
+}
+
+async function fetchOneSpeech(
+  text: string,
+  signal: AbortSignal,
+  { language, reading }: { language?: string; reading?: string },
+): Promise<Speech> {
+  const call = activeCallAudio();
   const response = await fetch("/api/voice/speak", {
     method: "POST",
     headers: { ...VOICE_HEADERS, "content-type": "application/json" },
@@ -977,6 +1089,7 @@ export async function fetchSpeech(
       ...(language ? { language } : {}),
       ...(reading ? { reading } : {}),
       rate: speechRate,
+      ...(call ? { call: call.id } : {}),
     }),
     signal,
   });
@@ -985,6 +1098,33 @@ export async function fetchSpeech(
       error?: string;
     };
     throw new Error(body.error ?? response.statusText);
+  }
+  if (response.headers.get("content-type")?.includes("application/json")) {
+    const queued: unknown = await response.json();
+    if (!isQueuedSpeech(queued)) throw new Error("No speech came");
+    // Stopped before it played: what the mix still had of it goes.
+    signal.addEventListener(
+      "abort",
+      () => {
+        const playing = activeCallAudio();
+        const now = playing?.positionMs() ?? null;
+        if (
+          playing &&
+          (now === null || now < queued.start_ms + queued.duration_ms)
+        )
+          playing.hush();
+      },
+      { once: true },
+    );
+    const name = response.headers.get("x-voice-name");
+    if (name) {
+      try {
+        readers.set(queued, decodeURIComponent(name));
+      } catch {
+        // Not a name.
+      }
+    }
+    return queued;
   }
   const audio = await response.blob();
   const native = Number(response.headers.get("x-voice-native-rate"));
@@ -1182,7 +1322,17 @@ function focusHolder(signal: AbortSignal): void {
   );
 }
 
-function play(audio: Blob, signal: AbortSignal): Promise<void> {
+/** A sentence's speech: a file, or where it is in the call's stream. */
+export type Speech = Blob | QueuedSpeech;
+
+function play(audio: Speech, signal: AbortSignal): Promise<void> {
+  if (!(audio instanceof Blob)) {
+    setVoiceReader(readers.get(audio) ?? null);
+    const call = activeCallAudio();
+    if (call && call.id === audio.call) return call.playQueued(audio, signal);
+    // Its call is over: nothing left of it to hear.
+    return Promise.resolve();
+  }
   const mode = voiceOutputMode();
   // In a call, always through its context, at any speed: the server made
   // it at the reading speed, keeping the pitch. A speed changed since it
@@ -1280,7 +1430,7 @@ export type SentenceVoice<Speech = unknown> = {
 };
 
 /** The server's voice engine: Ogg Opus from /api/voice/speak. */
-export const serverVoice: SentenceVoice<Blob> = {
+export const serverVoice: SentenceVoice<Speech> = {
   prepare: (text, signal, options) => fetchSpeech(text, signal, options),
   play,
   // The speed may have changed elsewhere since this page asked.

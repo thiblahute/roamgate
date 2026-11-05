@@ -14,6 +14,8 @@ lingua = { version = "1.8", default-features = false, features = ["chinese", "en
 gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary", "v1_28"] }
 gst-audio = { package = "gstreamer-audio", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary", "v1_20"] }
 gst-app = { package = "gstreamer-app", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+# The call's process tap source (processtap.rs) is a PushSrc.
+gst-base = { package = "gstreamer-base", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
 gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 # audiornnoise: RNNoise's denoiser, and its voice activity verdict.
 gst-plugin-audiofx = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
@@ -53,6 +55,11 @@ include = [
     # soundtouch's pitch: a sentence made faster keeps its pitch. Its C++
     # runtime is linked by .cargo/config.toml.
     "soundtouch",
+    # A call's mix (call.rs): the mixer, its silent floor, and what a
+    # call_background description may use.
+    "audiomixer",
+    "audiotestsrc",
+    "volume",
 ]
 
 # gstreamer-rs's prebuilt bundle support, until it is merged:
@@ -70,6 +77,9 @@ gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", 
 gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# osxprocesstapsrc (processtap.rs): CATapDescription and its dictionaries.
+objc2 = "0.6"
+objc2-foundation = "0.3"
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 
 # any-tts with the Metal speedups, streaming Qwen3-TTS decoding and voice

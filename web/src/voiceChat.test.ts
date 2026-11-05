@@ -3,6 +3,7 @@ import type { HistoryEntry } from "./components/agentHistory";
 import {
   conversationContext,
   Downsampler,
+  inCallOrder,
   isStopCommand,
   nextHeard,
   parseVoiceMessage,
@@ -295,5 +296,40 @@ describe("a rewind", () => {
     expect(readingId()).toBeNull();
     expect(rewindCount()).toBe(before + 1);
     expect(played).toEqual(["First sentence."]);
+  });
+});
+
+describe("a call's sentences", () => {
+  test("are asked for one after the other, in reading order", async () => {
+    const order: string[] = [];
+    let finishFirst: () => void = () => {};
+    const first = inCallOrder(async () => {
+      order.push("first asked");
+      await new Promise<void>((resolve) => {
+        finishFirst = resolve;
+      });
+      order.push("first made");
+      return 1;
+    });
+    // Asked ahead, while the first is being made: it waits for it.
+    const second = inCallOrder(async () => {
+      order.push("second asked");
+      return 2;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(["first asked"]);
+    finishFirst();
+    expect(await first).toBe(1);
+    expect(await second).toBe(2);
+    expect(order).toEqual(["first asked", "first made", "second asked"]);
+  });
+
+  test("a failed one does not hold the next", async () => {
+    const failed = inCallOrder(async () => {
+      throw new Error("no");
+    });
+    await expect(failed).rejects.toThrow("no");
+    expect(await inCallOrder(async () => "next")).toBe("next");
   });
 });

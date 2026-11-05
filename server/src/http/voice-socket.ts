@@ -1,5 +1,8 @@
 import type { CleanSession, VoiceCleaner } from "../voice/voice-cleaner";
 import {
+  type CallBackground,
+  type CallHandle,
+  type CallPacket,
   LONGEST_PAUSE_MS,
   MAX_PAUSE_MS,
   maxPauseMs,
@@ -43,9 +46,60 @@ import {
  * When the voice sounds finished but the words do not, a pause of
  * `max_pause_ms` (voice.json, MAX_PAUSE_MS by default) ends the utterance;
  * any pause ends it at LONGEST_PAUSE_MS (SilenceCap).
+ *
+ * A call's audio (voice.json's `call_background`, voice/helper/src/call.rs):
+ * `{"op": "call_audio", "on": true}` starts the helper's mix of the replies
+ * and the background, answered `{"event": "call_audio", "call": 7,
+ * "resume": "token", "music": true, "rate": 48000, "channels": 2}`, then
+ * one binary message a packet: a 12-byte header (u32 sequence number, u64
+ * time in µs, little-endian) and an Opus packet. Speech asked for that call
+ * (POST /api/voice/speak with `"call": 7`) goes into the mix. Without a
+ * background, or with a helper that cannot, the answer is
+ * `{"event": "call_audio", "error": "..."}` and the page plays each sentence
+ * itself. `{"op": "call_hush"}` drops the voice queued in the mix (the user
+ * talks over it); `{"op": "call_audio", "on": false}` ends it. The call
+ * follows the socket's resume: detached, its packets are dropped (the
+ * stream is live), and `{"op": "call_resume", "call": 7, "resume": "token"}`
+ * on a new socket within DETACHED_MS answers `{"event": "call_audio",
+ * "call": 7, "resumed": true, "seq": n}` for the page to reset its jitter
+ * buffer; past that, the call's mix stops. `{"event": "call_error",
+ * "error": "..."}` says the background failed (the voice goes on).
+ * `{"event": "call_music", "call": 7, "waiting": true}` says the call's
+ * music waits, silent, while the helper learns the speaker's voice, and
+ * `"waiting": false` that it may play.
  */
 export type VoiceSocket = {
   send: (message: string) => unknown;
+  /** A binary message (Bun's ServerWebSocket); call audio needs it. */
+  sendBinary?: (message: Uint8Array) => unknown;
+  /** Bytes given to the socket and not sent yet (Bun's ServerWebSocket). */
+  getBufferedAmount?: () => number;
+};
+
+/** Past this much unsent, a call's packets are dropped: it is live. */
+export const CALL_BUFFERED_BYTES = 64 * 1024;
+
+/** A packet as the page gets it: seq u32, pts u64 µs, then the packet. */
+export function callAudioMessage(packet: CallPacket): Uint8Array {
+  const message = new Uint8Array(12 + packet.packet.length);
+  const view = new DataView(message.buffer);
+  view.setUint32(0, packet.seq, true);
+  view.setBigUint64(4, packet.ptsUs, true);
+  message.set(packet.packet, 12);
+  return message;
+}
+
+/** A call's mix and the socket it goes to, if any. */
+type CallAudio = {
+  handle: CallHandle | null;
+  token: string;
+  ws: VoiceSocket | null;
+  /** The last packet's number. */
+  seq: number;
+  /** Packets dropped because the socket was behind. */
+  dropped: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  stopped: boolean;
 };
 
 /** How long a session whose socket went waits for it to come back. */
@@ -229,9 +283,138 @@ export function createVoiceSocket(
   cleaner: () => VoiceCleaner | null = () => null,
   /** voice.json's `max_pause_ms`, read at each listen. */
   maxPause: () => unknown = () => undefined,
+  /** voice.json's call background, read as a call's audio starts. */
+  background: () => CallBackground | null = () => null,
 ) {
   const bySocket = new Map<VoiceSocket, Listening>();
   const byId = new Map<number, Listening>();
+  /** The helper mixes one call at a time. */
+  let call: CallAudio | null = null;
+
+  const stopCall = (ending: CallAudio | null) => {
+    if (!ending || ending.stopped) return;
+    ending.stopped = true;
+    if (ending.timer) clearTimeout(ending.timer);
+    ending.timer = null;
+    ending.handle?.stop();
+    ending.ws = null;
+    if (call === ending) call = null;
+  };
+
+  const startCall = async (ws: VoiceSocket) => {
+    stopCall(call);
+    const wanted = background();
+    if (!wanted?.background) {
+      ws.send(
+        JSON.stringify({
+          event: "call_audio",
+          error: "No call_background in voice.json",
+        }),
+      );
+      return;
+    }
+    const starting: CallAudio = {
+      handle: null,
+      token: crypto.randomUUID(),
+      ws,
+      seq: 0,
+      dropped: 0,
+      timer: null,
+      stopped: false,
+    };
+    call = starting;
+    try {
+      const handle = await helper.startCall(
+        wanted,
+        (packet) => {
+          starting.seq = packet.seq;
+          const to = starting.ws;
+          if (!to) return;
+          if ((to.getBufferedAmount?.() ?? 0) > CALL_BUFFERED_BYTES) {
+            // The page's network cannot keep up: heard as gaps.
+            starting.dropped += 1;
+            if (starting.dropped % 50 === 1)
+              debug(
+                `call: ${starting.dropped} packets dropped, the socket is behind`,
+              );
+            return;
+          }
+          to.sendBinary?.(callAudioMessage(packet));
+        },
+        (event) => {
+          if (event.event === "call_restarted") {
+            // The helper restarted and made the mix again: the page starts
+            // its buffer again, as after a lost socket.
+            debug(`call ${event.call}: made again after the helper restarted`);
+            starting.ws?.send(
+              JSON.stringify({
+                event: "call_audio",
+                call: event.call,
+                resumed: true,
+                seq: 0,
+              }),
+            );
+            return;
+          }
+          if (event.event === "call_ended") {
+            // Not made again by a restarted helper: over, its page told.
+            debug(`call ${event.call}: ended: ${event.error}`);
+            starting.ws?.send(
+              JSON.stringify({
+                event: "call_audio",
+                call: event.call,
+                error: event.error,
+              }),
+            );
+            stopCall(starting);
+            return;
+          }
+          if (event.event === "call_music") {
+            debug(
+              `call ${event.call}: ${event.waiting ? "the music waits for a voice" : "a voice was taken: the music plays"}`,
+            );
+            starting.ws?.send(
+              JSON.stringify({
+                event: "call_music",
+                call: event.call,
+                waiting: event.waiting,
+              }),
+            );
+            return;
+          }
+          if (event.error === "Replaced") return;
+          starting.ws?.send(
+            JSON.stringify({ event: "call_error", error: event.error }),
+          );
+        },
+      );
+      starting.handle = handle;
+      if (starting.stopped) {
+        handle.stop();
+        return;
+      }
+      debug(`call ${handle.id}: audio started, music ${handle.music}`);
+      starting.ws?.send(
+        JSON.stringify({
+          event: "call_audio",
+          call: handle.id,
+          resume: starting.token,
+          music: handle.music,
+          rate: 48_000,
+          channels: 2,
+        }),
+      );
+    } catch (error) {
+      if (call === starting) call = null;
+      starting.stopped = true;
+      ws.send(
+        JSON.stringify({
+          event: "call_audio",
+          error: (error as Error).message,
+        }),
+      );
+    }
+  };
 
   const clearTimers = (listening: Listening) => {
     if (listening.timer) clearTimeout(listening.timer);
@@ -501,11 +684,63 @@ export function createVoiceSocket(
         case "stop":
           stop(ws);
           return;
+        case "call_audio":
+          if (request.on === false) {
+            if (call?.ws === ws) stopCall(call);
+          } else void startCall(ws);
+          return;
+        case "call_hush":
+          if (call?.ws === ws) call.handle?.hush();
+          return;
+        case "call_resume": {
+          const found = call;
+          if (
+            !found?.handle ||
+            found.handle.id !== request.call ||
+            found.token !== request.resume
+          ) {
+            ws.send(
+              JSON.stringify({
+                event: "call_audio",
+                call: request.call,
+                error: "The call's audio ended",
+              }),
+            );
+            return;
+          }
+          if (found.timer) clearTimeout(found.timer);
+          found.timer = null;
+          found.ws = ws;
+          debug(`call ${found.handle.id}: audio resumed on a new socket`);
+          ws.send(
+            JSON.stringify({
+              event: "call_audio",
+              call: found.handle.id,
+              resumed: true,
+              seq: found.seq,
+            }),
+          );
+          return;
+        }
       }
     },
     close(ws: VoiceSocket) {
       const listening = bySocket.get(ws);
       if (listening) detach(listening, "socket closed");
+      const held = call;
+      if (held?.ws === ws) {
+        // Its packets are dropped until a resume, or it stops.
+        held.ws = null;
+        if (held.timer) clearTimeout(held.timer);
+        held.timer = setTimeout(() => {
+          debug("a call's audio ends: no resume");
+          stopCall(held);
+        }, DETACHED_MS);
+      }
+    },
+    /** The call whose audio plays now, for its music's level. */
+    currentCall(): CallHandle | null {
+      return call?.handle ?? null;
     },
   };
 }

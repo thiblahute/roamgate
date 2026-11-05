@@ -1606,6 +1606,15 @@ English, its reading in that language is the final (`reread.rs`).
 Parakeet drifts to English on some speech in other languages, never the
 other way.
 
+A sentence that makes no progress in time (SPEAK_STUCK_MS, SPEAK_COLD_MS
+while a model loads) is checked with a `ping`. Answered within 2 s, the
+speaker is stuck: the helper is restarted and the sentences that waited
+are said with Kokoro. Not answered, the helper's output is not read: it is
+restarted and they are said again as they were. A restarted helper makes
+again the calls whose start it had answered, under their numbers; a call
+it cannot make again ends (`call_ended`), and one that was stopped
+meanwhile is stopped in it.
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell
