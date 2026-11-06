@@ -58,6 +58,7 @@ const LATE_SHORTCUT_IDS: ShortcutId[] = [
   "overlay.fullscreen",
   "activity.open",
   "reviews.inbox",
+  "companion.ask",
 ];
 /** Actions renamed since presets could be saved: old id -> new id. */
 const RENAMED_SHORTCUT_IDS: Record<string, ShortcutId> = {

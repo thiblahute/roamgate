@@ -1,5 +1,6 @@
 import {
   ArrowDown,
+  Check,
   Globe,
   Mic,
   MicOff,
@@ -8,10 +9,12 @@ import {
   PhoneOff,
   Send,
   Wrench,
+  X,
 } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useRef,
   useState,
@@ -37,6 +40,7 @@ import {
   plainText,
 } from "../voiceRoute";
 import { sendCompanionText } from "../companionText";
+import { answerCompanionTool } from "../companionWeb";
 import { subscribeVoiceFronting, voiceFronting } from "../voiceFrontFlag";
 import { companionChipText, hearingNow } from "./CompanionChip";
 import { useCompanionReading } from "./CompanionReading";
@@ -80,6 +84,24 @@ const TOOL_STATUS: typeof WEB_STATUS = {
   cancelled: "Cancelled",
 };
 
+/** A held call's status: waiting for the user, then how it ended. */
+const HELD_STATUS: Record<
+  NonNullable<Extract<CompanionLogEntry, { kind: "web" }>["heldOutcome"]>,
+  string
+> = {
+  confirmed: "Confirmed",
+  declined: "Declined",
+  expired: "No longer waiting",
+};
+
+function webStatus(entry: Extract<CompanionLogEntry, { kind: "web" }>) {
+  if (entry.held)
+    return entry.heldOutcome
+      ? HELD_STATUS[entry.heldOutcome]
+      : "Waiting for your OK";
+  return (entry.tool ? TOOL_STATUS : WEB_STATUS)[entry.status];
+}
+
 const LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)\]>]+)/g;
 
 /**
@@ -109,9 +131,10 @@ function WebEntry({
 }: {
   entry: Extract<CompanionLogEntry, { kind: "web" }>;
 }) {
+  const waiting = entry.held && !entry.heldOutcome;
   return (
     <li
-      className={`companion-panel-job companion-panel-web is-${entry.status}`}
+      className={`companion-panel-job companion-panel-web is-${entry.status}${waiting ? " is-held" : ""}`}
     >
       <div className="companion-panel-job-head">
         <span className="companion-panel-time">{clock(entry.at)}</span>
@@ -126,9 +149,7 @@ function WebEntry({
             </>
           )}
         </span>
-        <span className="companion-panel-status">
-          {(entry.tool ? TOOL_STATUS : WEB_STATUS)[entry.status]}
-        </span>
+        <span className="companion-panel-status">{webStatus(entry)}</span>
         {entry.status === "searching" ? (
           <button
             type="button"
@@ -167,6 +188,30 @@ function WebEntry({
           ))}
         </ul>
       ) : null}
+      {waiting ? (
+        // The call read back above is made only on the user's yes: said,
+        // typed, or here.
+        <div
+          className="companion-panel-held"
+          role="group"
+          aria-label="Do what it read back?"
+        >
+          <button
+            type="button"
+            className="primary-btn"
+            onClick={() => void answerCompanionTool(entry.id, "yes")}
+          >
+            <Check size={14} aria-hidden="true" /> Yes, do it
+          </button>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => void answerCompanionTool(entry.id, "no")}
+          >
+            <X size={14} aria-hidden="true" /> No
+          </button>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -192,13 +237,18 @@ function SayingText({ reading }: { reading: CompanionReading }) {
   );
 }
 
-/** Typing to the companion, as one talks to it on a call. */
+/**
+ * Typing to the companion, as one talks to it on a call, or instead of a
+ * call: Enter sends, the answer is written above.
+ */
 function CompanionComposer({
   name,
   onSent,
+  inputRef,
 }: {
   name: string;
   onSent: () => void;
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [text, setText] = useState("");
   const submit = (event: FormEvent) => {
@@ -213,6 +263,7 @@ function CompanionComposer({
   return (
     <form className="companion-panel-composer" onSubmit={submit}>
       <input
+        ref={inputRef}
         type="text"
         value={text}
         aria-label={`Write to ${name}`}
@@ -235,14 +286,29 @@ function CompanionComposer({
 /**
  * The companion's own conversation, apart from any workspace: what it
  * heard and said on its calls, and the work it started on which session
- * and how it went. A session's name opens that session's chat.
+ * and how it went. A session's name opens that session's chat. It takes
+ * text too, in a call or without one; each new `ask` (its shortcut, the
+ * menus, its chip outside a call) focuses its message box.
  */
-export function CompanionPanel({ onClose }: { onClose: () => void }) {
+export function CompanionPanel({
+  onClose,
+  ask = 0,
+}: {
+  onClose: () => void;
+  ask?: number;
+}) {
   const call = useSyncExternalStore(subscribeCompanionCall, companionCallState);
   const fronting = useSyncExternalStore(subscribeVoiceFronting, voiceFronting);
   const reading = useCompanionReading();
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => focusDialogElement(dialogRef.current), []);
+  const composerRef = useRef<HTMLInputElement | null>(null);
+  useEffect(
+    () =>
+      focusDialogElement(
+        ask && composerRef.current ? composerRef.current : dialogRef.current,
+      ),
+    [ask],
+  );
   // The newest at the bottom, in view as it comes (lines, streamed words,
   // a search's steps), unless the reader scrolled up to read.
   const follow = useFollowScroll<HTMLOListElement>();
@@ -418,6 +484,12 @@ export function CompanionPanel({ onClose }: { onClose: () => void }) {
                 </li>
               ),
             )}
+            {!call.open && call.presence === "thinking" ? (
+              // Something typed, the front deciding what to do with it.
+              <li className="companion-panel-thinking" aria-live="polite">
+                {name} is thinking...
+              </li>
+            ) : null}
             {hearing ? (
               <li className="companion-panel-hearing" aria-live="polite">
                 <Mic size={12} aria-label="Hearing you" />
@@ -445,7 +517,11 @@ export function CompanionPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
         {fronting ? (
-          <CompanionComposer name={name} onSent={follow.jump} />
+          <CompanionComposer
+            name={name}
+            onSent={follow.jump}
+            inputRef={composerRef}
+          />
         ) : null}
       </div>
     </div>

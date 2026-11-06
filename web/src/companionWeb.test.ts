@@ -6,9 +6,12 @@ import {
   setCompanionTeller,
 } from "./companionCall";
 import {
+  answerCompanionTool,
   followCompanionTool,
   followCompanionWeb,
+  plainHeldAnswer,
   toolAck,
+  waitingHeldCall,
   webAck,
 } from "./companionWeb";
 import type { ResearchJob } from "./voiceRoute";
@@ -202,5 +205,173 @@ describe("a tool request the companion follows", () => {
     expect(asked).toEqual(["/api/voice/tools?job=t1"]);
     expect(webEntry()).toMatchObject({ tool: true, status: "done" });
     expect(told).toEqual(["C'est en pause."]);
+  });
+});
+
+describe("a call its tools hold for the user's yes", () => {
+  const HELD = {
+    tool: "mcp__claude_ai_WhatsApp__send_message",
+    input: { jid: "33600", text: "J'arrive" },
+  };
+  const holding = job({
+    id: "t1",
+    question: "Dis à Marie que j'arrive",
+    status: "done",
+    spoken: "J'envoie à Marie : « J'arrive ». Je confirme ?",
+    held: HELD,
+  });
+  /** Lets the held call's watcher run its reads (its waits are instant). */
+  const drain = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const toolEntry = () => {
+    const entry = companionCallState().log.find(
+      (each) => each.kind === "web" && each.tool,
+    );
+    if (entry?.kind !== "web") throw new Error("no tool entry");
+    return entry;
+  };
+
+  test("waits with its buttons until answered, wherever it was", async () => {
+    let state: ResearchJob = holding;
+    await followCompanionWeb("t1", "Dis à Marie que j'arrive", {
+      tool: true,
+      state: async () => state,
+      wait: async () => {},
+    });
+    expect(toolEntry()).toMatchObject({ held: true });
+    expect(toolEntry().heldOutcome).toBeUndefined();
+    expect(waitingHeldCall()).toBe(toolEntry().id);
+    // Said yes on the call: the server made it, the buttons go.
+    state = { ...holding, heldOutcome: "confirmed" };
+    await drain();
+    expect(toolEntry().heldOutcome).toBe("confirmed");
+    expect(waitingHeldCall()).toBeNull();
+  });
+
+  test("never answered, it stops waiting as the server forgets it", async () => {
+    let reads = 0;
+    await followCompanionWeb("t1", "Dis à Marie que j'arrive", {
+      tool: true,
+      state: async () => {
+        reads += 1;
+        return holding;
+      },
+      wait: async () => {},
+    });
+    await drain();
+    expect(toolEntry().heldOutcome).toBe("expired");
+    // The first read and about 5 minutes of them, no more.
+    expect(reads).toBe(101);
+  });
+
+  test("a web search or a done call holds nothing", async () => {
+    await followCompanionWeb("w1", "Météo", {
+      state: async () => job({ status: "done", spoken: "Beau." }),
+      wait: async () => {},
+    });
+    await followCompanionWeb("t2", "Pause", {
+      tool: true,
+      state: async () =>
+        job({ id: "t2", status: "done", spoken: "C'est en pause." }),
+      wait: async () => {},
+    });
+    expect(
+      companionCallState().log.some((each) => each.kind === "web" && each.held),
+    ).toBe(false);
+    expect(waitingHeldCall()).toBeNull();
+  });
+
+  /**
+   * A held call in the conversation: its result read once, its watcher
+   * then waiting for good (these tests answer it themselves).
+   */
+  async function held() {
+    let waits = 0;
+    await followCompanionWeb("t1", "Dis à Marie que j'arrive", {
+      tool: true,
+      state: async () => holding,
+      wait: () =>
+        waits++ === 0 ? Promise.resolve() : new Promise<void>(() => {}),
+    });
+    return toolEntry().id;
+  }
+
+  test("a click on yes makes it, then follows the job making it", async () => {
+    const id = await held();
+    const asked: string[] = [];
+    const followed: string[] = [];
+    await answerCompanionTool(id, "yes", {
+      answer: async (which, answer) => {
+        asked.push(`${which} ${answer}`);
+        return {
+          job: job({
+            id: "t2",
+            question: "Dis à Marie que j'arrive (confirmed)",
+          }),
+        };
+      },
+      follow: async (which, task) => {
+        followed.push(`${which}: ${task}`);
+        return null;
+      },
+    });
+    expect(asked).toEqual(["t1 yes"]);
+    expect(followed).toEqual(["t2: Dis à Marie que j'arrive (confirmed)"]);
+    expect(toolEntry().heldOutcome).toBe("confirmed");
+    const lines = companionCallState().log.flatMap((each) =>
+      each.kind === "heard" || each.kind === "said"
+        ? [`${each.kind}: ${each.text}`]
+        : [],
+    );
+    expect(lines.slice(-2)).toEqual([
+      "heard: Yes, do it.",
+      "said: C'est parti.",
+    ]);
+    // Answered: another click sends nothing.
+    await answerCompanionTool(id, "no", {
+      answer: async () => {
+        throw new Error("not asked");
+      },
+    });
+  });
+
+  test("no forgets it; not through, its buttons come back", async () => {
+    const id = await held();
+    const told: string[] = [];
+    setCompanionTeller((text) => told.push(text));
+    await answerCompanionTool(id, "no", { answer: async () => null });
+    expect(toolEntry().heldOutcome).toBeUndefined();
+    await answerCompanionTool(id, "no", {
+      answer: async () => ({ declined: true }),
+    });
+    expect(toolEntry().heldOutcome).toBe("declined");
+    // Said on the call that runs: what it says of each.
+    expect(told).toEqual([
+      "Ça n'est pas passé, réessaie.",
+      "D'accord, je n'envoie rien.",
+    ]);
+  });
+
+  test("a click after it was forgotten says nothing waits", async () => {
+    const id = await held();
+    await answerCompanionTool(id, "yes", { answer: async () => "gone" });
+    expect(toolEntry().heldOutcome).toBe("expired");
+    expect(companionCallState().log.slice(-1)[0]).toMatchObject({
+      kind: "said",
+      text: "Rien n'attend de confirmation.",
+    });
+  });
+
+  test("typed, only a plain yes or no answers it", () => {
+    for (const yes of ["oui", "Oui !", "yes please", "vas-y", "OK", "envoie"])
+      expect(plainHeldAnswer(yes)).toBe("yes");
+    for (const no of ["non", "No.", "annule", "non merci", "don't"])
+      expect(plainHeldAnswer(no)).toBe("no");
+    for (const more of [
+      "non, dis plutôt vingt minutes",
+      "oui mais change le texte",
+      "who is Marie?",
+      "",
+    ])
+      expect(plainHeldAnswer(more)).toBeNull();
   });
 });

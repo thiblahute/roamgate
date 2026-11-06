@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   __resetCompanionCallForTests,
   companionCallState,
+  logCompanion,
+  startCompanionCall,
 } from "./companionCall";
 import { type CompanionTextDeps, sendCompanionText } from "./companionText";
 import { followCompanionWeb } from "./companionWeb";
@@ -233,5 +235,100 @@ describe("typing to the companion", () => {
     const { calls, deps } = setup({ to: "self", reply: "?" });
     expect(await sendCompanionText("   ", deps)).toBeNull();
     expect(calls).toEqual([]);
+  });
+
+  test("outside a call, it is thinking until the front decides", async () => {
+    const { deps } = setup({ to: "self", reply: "Paris." });
+    let release: () => void = () => {};
+    const seen: string[] = [];
+    const route = deps.route!;
+    deps.route = async (...args) => {
+      seen.push(companionCallState().presence);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return route(...args);
+    };
+    const sending = sendCompanionText("Capital of France?", deps);
+    await settle();
+    expect(seen).toEqual(["thinking"]);
+    release();
+    await sending;
+    expect(companionCallState().presence).toBe("off");
+    // A front that fails still ends it.
+    deps.route = async () => {
+      throw new Error("down");
+    };
+    await sendCompanionText("Capital of Italy?", deps).catch(() => null);
+    expect(companionCallState().presence).toBe("off");
+  });
+
+  test("in a call, the call says what it does: typing leaves it alone", async () => {
+    const { deps } = setup({ to: "self", reply: "Paris." });
+    startCompanionCall();
+    await sendCompanionText("Capital of France?", deps);
+    expect(companionCallState().presence).toBe("off");
+  });
+});
+
+describe("typing to a call its tools hold", () => {
+  const holdCall = () =>
+    logCompanion({
+      kind: "web",
+      job: "t1",
+      tool: true,
+      question: "Dis à Marie que j'arrive",
+      status: "done",
+      steps: [],
+      held: true,
+    });
+
+  test("a plain yes or no answers it as its buttons do, without the front", async () => {
+    const { calls, deps } = setup({ to: "self", reply: "?" });
+    const answered: string[] = [];
+    deps.answerHeld = async (id, answer, options) => {
+      answered.push(`${id} ${answer} ${options?.said}`);
+    };
+    const id = holdCall();
+    expect(await sendCompanionText(" Oui vas-y ", deps)).toBeNull();
+    expect(answered).toEqual([`${id} yes Oui vas-y`]);
+    expect(calls).toEqual([]);
+  });
+
+  test("anything more goes to the front, a change included", async () => {
+    const { calls, deps } = setup({
+      to: "tool",
+      task: "Envoie à Marie : vingt minutes",
+      job: "t2",
+    });
+    deps.answerHeld = async () => {
+      throw new Error("not a plain answer");
+    };
+    holdCall();
+    await sendCompanionText("Non, dis plutôt vingt minutes", deps);
+    expect(calls).toEqual([
+      "route local/w2:p2: Non, dis plutôt vingt minutes",
+      "tool t2: Envoie à Marie : vingt minutes",
+    ]);
+  });
+
+  test("once something else was typed since, a yes is for the front", async () => {
+    const { calls, deps } = setup({ to: "self", reply: "Lequel ?" });
+    deps.answerHeld = async () => {
+      throw new Error("not the next thing typed");
+    };
+    holdCall();
+    logCompanion({ kind: "heard", text: "Et la météo ?" });
+    await sendCompanionText("ok", deps);
+    expect(calls).toEqual(["route local/w2:p2: ok"]);
+  });
+
+  test("with nothing held, a yes is for the front", async () => {
+    const { calls, deps } = setup({ to: "current", reply: "Je lui dis." });
+    deps.answerHeld = async () => {
+      throw new Error("nothing held");
+    };
+    await sendCompanionText("oui", deps);
+    expect(calls[0]).toBe("route local/w2:p2: oui");
   });
 });

@@ -16,7 +16,8 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  test("a call's conversation mutes, and follows the newest unless scrolled up", async () => {
+  /** A browser for React to render in, as the page's globals. */
+  async function installBrowser() {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });
     for (const [key, value] of Object.entries({
@@ -40,6 +41,11 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
         configurable: true,
         writable: true,
       });
+    return browser;
+  }
+
+  test("a call's conversation mutes, and follows the newest unless scrolled up", async () => {
+    const browser = await installBrowser();
     // No layout here: each row is 50 px in a list 100 px tall.
     const tops = new WeakMap<object, number>();
     const list = browser.HTMLOListElement.prototype;
@@ -213,6 +219,110 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     // Hung up: no Mute left.
     await act(async () => companion.endCompanionCall());
     expect(panel.querySelector(".companion-panel-mute")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  test("asked without a call: its box takes the focus, a held call its buttons", async () => {
+    await installBrowser();
+    const React = await import("react");
+    const { act } = React;
+    const { createRoot } = await import("react-dom/client");
+    const companion = await import("../companionCall");
+    const { setVoiceFronting } = await import("../voiceFrontFlag");
+    const { CompanionPanel } = await import("./CompanionPanel");
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    companion.__resetCompanionCallForTests();
+    setVoiceFronting(true);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(<CompanionPanel onClose={() => {}} ask={1} />);
+    });
+    const panel = document.querySelector<HTMLElement>(".companion-panel")!;
+    const input = panel.querySelector<HTMLInputElement>(
+      ".companion-panel-composer input",
+    )!;
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute("placeholder")).toBe("Ask Companion anything");
+    // No call: nothing to mute or hang up, a call to start if wanted.
+    expect(panel.querySelector(".companion-panel-hang-up")).toBeNull();
+    expect(panel.querySelector(".companion-panel-mute")).toBeNull();
+
+    // Something typed: thinking until the front decides.
+    const thinking = () => panel.querySelector(".companion-panel-thinking");
+    let back = () => {};
+    await act(async () => {
+      back = companion.companionTypedTurn();
+    });
+    expect(thinking()?.textContent).toBe("Companion is thinking...");
+    expect(panel.querySelector(".modal-head p")?.textContent).toBe("thinking");
+    await act(async () => back());
+    expect(thinking()).toBeNull();
+    expect(panel.querySelector(".modal-head p")?.textContent).toBe("idle");
+
+    // A call its tools hold: what it would do, and its buttons.
+    const posted: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      posted.push([String(url), JSON.parse(String(init?.body))]);
+      return Response.json({ declined: "t1" });
+    }) as unknown as typeof fetch;
+    try {
+      await act(async () => {
+        companion.logCompanion({
+          kind: "web",
+          job: "t1",
+          tool: true,
+          question: "Tell Marie I'm on my way",
+          status: "done",
+          steps: [],
+          spoken: 'I would send Marie "On my way". Shall I?',
+          held: true,
+        });
+      });
+      const entry = () => panel.querySelector(".companion-panel-web")!;
+      const status = () =>
+        entry().querySelector(".companion-panel-status")?.textContent;
+      const buttons = () => [
+        ...entry().querySelectorAll<HTMLButtonElement>(
+          ".companion-panel-held button",
+        ),
+      ];
+      expect(entry().classList.contains("is-held")).toBe(true);
+      expect(status()).toBe("Waiting for your OK");
+      expect(buttons().map((button) => button.textContent)).toEqual([
+        " Yes, do it",
+        " No",
+      ]);
+      await act(async () => {
+        buttons()[1]!.click();
+        await settle();
+      });
+      expect(posted).toEqual([
+        ["/api/voice/tools/answer", { job: "t1", answer: "no" }],
+      ]);
+      expect(buttons()).toEqual([]);
+      expect(status()).toBe("Declined");
+      expect(entry().classList.contains("is-held")).toBe(false);
+      const said = [...panel.querySelectorAll(".companion-panel-line p")].map(
+        (line) => line.textContent,
+      );
+      expect(said.slice(-2)).toEqual([
+        "No, don't.",
+        "OK, I won't send anything.",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    // Asked again while open: the box takes the focus back.
+    panel.focus();
+    expect(document.activeElement).toBe(panel);
+    await act(async () => {
+      root.render(<CompanionPanel onClose={() => {}} ask={2} />);
+    });
+    expect(document.activeElement).toBe(input);
     await act(async () => root.unmount());
   });
 }

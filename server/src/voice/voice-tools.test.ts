@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { toolRoute } from "../http/voice";
+import { createVoiceRoutes, toolRoute } from "../http/voice";
+import type { VoiceHelper } from "./voice-helper";
 import { parseFrontReply } from "./voice-front";
 import {
   askRules,
@@ -620,5 +621,108 @@ describe("configuredTools", () => {
         () => fakeProcess(),
       )(),
     ).toBeNull();
+  });
+});
+
+describe("a click on a held call", () => {
+  /** A job holding a send, its read-back done. */
+  async function holding() {
+    const { using, spawned } = tools();
+    const job = using.start("Envoie un message à Marie")!;
+    spawned[0]!.push(asks("r1", SEND, MESSAGE));
+    spawned[0]!.push(result("J'envoie à Marie : « J'arrive ». Je confirme ?"));
+    await settle();
+    await settle();
+    return { using, spawned, job };
+  }
+
+  /** POST /api/voice/tools/answer, with the voice header unless told. */
+  function answering(using: VoiceTools) {
+    const routes = createVoiceRoutes(
+      {} as VoiceHelper,
+      () => null,
+      null,
+      () => undefined,
+      null,
+      () => null,
+      () => null,
+      () => {},
+      () => null,
+      () => null,
+      () => using,
+    );
+    return async (body: unknown, header = true) =>
+      (await routes(
+        new Request("http://roamgate.test/api/voice/tools/answer", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(header ? { "x-roamgate-voice": "1" } : {}),
+          },
+          body: JSON.stringify(body),
+        }),
+        "/api/voice/tools/answer",
+      ))!;
+  }
+
+  test("makes that call once, with no words to check", async () => {
+    const { using, spawned, job } = await holding();
+    const making = using.approve(job.id)!;
+    expect(making.confirms).toBe(job.id);
+    expect(using.state(job.id)?.heldOutcome).toBe("confirmed");
+    expect(spawned).toHaveLength(2);
+    // Once: nothing is held any more.
+    expect(using.approve(job.id)).toBeNull();
+    expect(using.confirm("oui", job.id)).toBeNull();
+    expect(spawned).toHaveLength(2);
+  });
+
+  test("is only the user's, through its own request", async () => {
+    const { using, spawned, job } = await holding();
+    const answer = answering(using);
+    // A page from elsewhere cannot add the voice header.
+    expect((await answer({ job: job.id, answer: "yes" }, false)).status).toBe(
+      403,
+    );
+    expect((await answer({ job: job.id, answer: "maybe" })).status).toBe(400);
+    expect((await answer({ answer: "yes" })).status).toBe(400);
+    // A job holding nothing.
+    expect((await answer({ job: "t9", answer: "yes" })).status).toBe(409);
+    expect(spawned).toHaveLength(1);
+
+    const yes = await answer({ job: job.id, answer: "yes" });
+    expect(yes.status).toBe(200);
+    const made = (await yes.json()) as { job: unknown };
+    expect(made.job).toMatchObject({ id: "t2", confirms: job.id });
+    expect(spawned).toHaveLength(2);
+    // Answered: a second click finds nothing waiting.
+    expect((await answer({ job: job.id, answer: "yes" })).status).toBe(409);
+    expect((await answer({ job: job.id, answer: "no" })).status).toBe(409);
+    expect(spawned).toHaveLength(2);
+  });
+
+  test("no forgets it, nothing made", async () => {
+    const { using, spawned, job } = await holding();
+    const declined = await answering(using)({ job: job.id, answer: "no" });
+    expect(await declined.json()).toEqual({ declined: job.id });
+    expect(using.state(job.id)?.heldOutcome).toBe("declined");
+    expect(using.heldJob()).toBeNull();
+    expect(spawned).toHaveLength(1);
+  });
+
+  test("without tools, nothing waits", async () => {
+    const routes = createVoiceRoutes({} as VoiceHelper);
+    const answered = await routes(
+      new Request("http://roamgate.test/api/voice/tools/answer", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-roamgate-voice": "1",
+        },
+        body: JSON.stringify({ job: "t1", answer: "yes" }),
+      }),
+      "/api/voice/tools/answer",
+    );
+    expect(answered!.status).toBe(409);
   });
 });

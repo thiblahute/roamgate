@@ -43,14 +43,25 @@ function closePanel() {
     focus.focus({ preventScroll: true });
 }
 
-/** The companion's own conversation, over the app. */
-export function showCompanionPanel() {
+/** Each ask, so an open conversation focuses its message box again. */
+let asks = 0;
+
+/**
+ * The companion's own conversation, over the app; with `ask`, its message
+ * box focused, to type to it (an open one takes the focus there again).
+ */
+export function showCompanionPanel({ ask = false }: { ask?: boolean } = {}) {
   mount();
-  if (panel) return;
+  if (ask) asks += 1;
+  if (panel) {
+    if (ask)
+      panel.root.render(<CompanionPanel onClose={closePanel} ask={asks} />);
+    return;
+  }
   const host = document.createElement("div");
   host.className = "companion-panel-root";
   document.body.append(host);
   const shown = createRoot(host);
   panel = { root: shown, host, focus: document.activeElement };
-  shown.render(<CompanionPanel onClose={closePanel} />);
+  shown.render(<CompanionPanel onClose={closePanel} ask={ask ? asks : 0} />);
 }

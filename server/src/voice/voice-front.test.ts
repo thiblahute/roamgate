@@ -402,6 +402,10 @@ describe("context for words that lean on the call", () => {
     expect(turnText({ current: "c", said: "hi", call: callLines({}) })).toBe(
       'Current: c\nSaid: "hi"',
     );
+    // No session yet: said so, for work to need one named.
+    expect(turnText({ current: "", said: "hi" })).toBe(
+      'Current: none (no session to start work on)\nSaid: "hi"',
+    );
   });
 
   test("the prompt asks for context only when the words need it", () => {

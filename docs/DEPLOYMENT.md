@@ -1006,7 +1006,12 @@ settings file cannot skip Roamgate):
   make that one call, with that exact input, once; any other input is
   refused. A no (`"tool_cancel"`) forgets it, a correction starts the
   corrected request, to be read back in its turn, and a held call is
-  forgotten after 5 minutes;
+  forgotten after 5 minutes. The user may also answer it by clicking
+  **Yes, do it** or **No** under the read-back in the companion's
+  conversation, or by typing a plain yes or no there: the page then sends
+  `POST /api/voice/tools/answer` `{job, answer: "yes" | "no"}` (with the
+  voice header, as every voice request), which makes or forgets that very
+  call without the front, and answers 409 when it no longer waits;
 - any other tool is refused.
 
 The jobs' prompt and the front's treat what tools return (messages, mails,
