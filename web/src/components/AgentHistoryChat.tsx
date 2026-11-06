@@ -1,8 +1,10 @@
 import { useRenderTrace } from "../renderTrace";
 import { ShellCommandBlock } from "./AgentChatShell";
 import {
+  type ComponentProps,
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useLayoutEffect,
@@ -13,6 +15,7 @@ import {
   type RefObject,
 } from "react";
 import {
+  ArrowDown,
   Check,
   ChevronRight,
   CircleSlash,
@@ -63,7 +66,21 @@ import {
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
 import { ForgeStreamingContext, useForgeSlotsContext } from "../forgeSlots";
-import { reviewDelivery, useChatParts } from "./ChatThreads";
+import {
+  type OlderMessages,
+  reviewDelivery,
+  useChatParts,
+} from "./ChatThreads";
+import {
+  type ChatAnchor,
+  type ChatSeen,
+  findChatAnchorItem,
+  placeChatAnchor,
+  readChatAnchor,
+  readChatPlace,
+  rememberChatPlace,
+  scrollChatTo,
+} from "../chatPlace";
 import { NoteBody } from "./ReviewNoteBody";
 import { messageImagePieces } from "../chatImages";
 import { looksLikeMarkdown } from "../userMarkdown";
@@ -74,6 +91,11 @@ import "./AgentHistoryChat.css";
 // Treat the list as pinned while the reader is within this distance of the
 // newest message, so polling refreshes keep following live output.
 const FOLLOW_THRESHOLD_PX = 48;
+// A place given back is held this long while what is drawn settles (lazy
+// markdown, images, a page of older messages), unless the reader moves.
+const PLACE_HOLD_MS = 1500;
+// Pages of older messages read at most to give back a place among them.
+const PLACE_SEEK_PAGES = 40;
 
 const EMPTY_LOADING: ReadonlySet<string> = new Set();
 const noop = () => {};
@@ -1266,6 +1288,8 @@ function ToolStepRow({
 // Collapsed by default; the block keeps its open state across polling
 // refreshes because its key follows the first entry's id.
 type ToolBlockProps = {
+  /** The block's item id: where a reader's place is kept by. */
+  placeId: string;
   entries: HistoryEntry[];
   loader: ToolContentLoader;
   // Called before the reader opens or closes part of the block.
@@ -1274,23 +1298,65 @@ type ToolBlockProps = {
   tasks?: ReadonlyMap<string, AgentTask>;
   onOpenTask?: (id: string) => void;
 };
+/**
+ * Whether the background tasks the block's calls started are the same: the
+ * session's task list is read anew every few seconds, and only a block
+ * whose own tasks changed is drawn again.
+ */
+function sameBlockTasks(
+  entries: readonly HistoryEntry[],
+  a: ToolBlockProps["tasks"],
+  b: ToolBlockProps["tasks"],
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  for (const entry of entries) {
+    const id = entry.kind === "tool_call" ? entry.source_call_id : undefined;
+    if (!id) continue;
+    const x = a.get(id);
+    const y = b.get(id);
+    if (x !== y && (!x || !y || JSON.stringify(x) !== JSON.stringify(y)))
+      return false;
+  }
+  return true;
+}
+
+/**
+ * Whether the loader is the same for the block: its set of payloads being
+ * fetched changes with every fetch of any block, and only the blocks whose
+ * own payloads started or finished loading are drawn again.
+ */
+function sameBlockLoader(
+  entries: readonly HistoryEntry[],
+  a: ToolContentLoader,
+  b: ToolContentLoader,
+): boolean {
+  if (a === b) return true;
+  if (a.load !== b.load || a.enqueue !== b.enqueue) return false;
+  return entries.every(
+    (entry) => a.loading.has(entry.id) === b.loading.has(entry.id),
+  );
+}
+
 // Grouping builds a new entries list on every refresh: a block re-renders
-// only when one of its entries changed.
+// only when one of its entries, or one of the tasks they started, changed.
 function sameToolBlock(a: ToolBlockProps, b: ToolBlockProps): boolean {
   return (
-    a.loader === b.loader &&
+    a.placeId === b.placeId &&
+    sameBlockLoader(b.entries, a.loader, b.loader) &&
     a.onToggle === b.onToggle &&
     a.onOpen === b.onOpen &&
-    a.tasks === b.tasks &&
     a.onOpenTask === b.onOpenTask &&
     a.entries.length === b.entries.length &&
     a.entries.every((entry, index) =>
       sameHistoryEntry(entry, b.entries[index]!),
-    )
+    ) &&
+    sameBlockTasks(b.entries, a.tasks, b.tasks)
   );
 }
 
 const ToolBlock = memo(function ToolBlock({
+  placeId,
   entries,
   loader,
   onToggle,
@@ -1364,7 +1430,10 @@ const ToolBlock = memo(function ToolBlock({
     .map(({ name, count }) => (count > 1 ? `${name} ×${count}` : name))
     .join(", ");
   return (
-    <div className={`agent-history-chat-tools ${open ? "is-open" : ""}`}>
+    <div
+      className={`agent-history-chat-tools ${open ? "is-open" : ""}`}
+      data-place-id={placeId}
+    >
       <button
         type="button"
         className="agent-history-chat-tools-toggle"
@@ -1472,7 +1541,84 @@ const ToolBlock = memo(function ToolBlock({
  */
 export type ChatItem =
   | HistoryChatItem
-  | { type: "custom"; id: string; node: ReactNode };
+  | {
+      type: "custom";
+      id: string;
+      node: ReactNode;
+      /** Not what a reader's place is kept by: a loading row. */
+      transient?: boolean;
+    };
+
+/** The reply block a message shows, the same streamed then saved. */
+function blockOf(entry: HistoryEntry): string | undefined {
+  return entry.message_id
+    ? `${entry.message_id}:${entry.block_index ?? 0}`
+    : undefined;
+}
+
+function itemTime(item: ChatItem): number {
+  const at =
+    item.type === "message"
+      ? item.entry.sent_at
+      : item.type === "tools"
+        ? item.entries[0]?.sent_at
+        : undefined;
+  return at ? Date.parse(at) : Number.NaN;
+}
+
+function itemKey(item: ChatItem): string {
+  return item.type === "message" ? item.entry.id : item.id;
+}
+
+/** What an item's message says of itself, for a place kept on it. */
+function describeItem(
+  items: readonly ChatItem[],
+  id: string,
+): Pick<ChatAnchor, "block" | "at"> {
+  const item = items.find((candidate) => itemKey(candidate) === id);
+  if (!item || item.type === "custom") return {};
+  const entry = item.type === "message" ? item.entry : item.entries[0];
+  const block = item.type === "message" ? blockOf(item.entry) : undefined;
+  return {
+    ...(block ? { block } : {}),
+    ...(entry?.sent_at ? { at: entry.sent_at } : {}),
+  };
+}
+
+/** The newest message: the last one a reader at the end has seen. */
+function lastSeen(items: readonly ChatItem[]): ChatSeen | null {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index]!;
+    if (item.type !== "message") continue;
+    const block = blockOf(item.entry);
+    return {
+      id: item.entry.id,
+      ...(block ? { block } : {}),
+      ...(item.entry.sent_at ? { at: item.entry.sent_at } : {}),
+    };
+  }
+  return null;
+}
+
+/** How many messages came after the one seen last at the end. */
+function unseenAfter(
+  items: readonly ChatItem[],
+  seen: ChatSeen | null,
+): number {
+  if (!seen) return 0;
+  const messages = items.filter(
+    (item): item is Extract<ChatItem, { type: "message" }> =>
+      item.type === "message",
+  );
+  let at = messages.findIndex((item) => item.entry.id === seen.id);
+  if (at < 0 && seen.block)
+    at = messages.findIndex((item) => blockOf(item.entry) === seen.block);
+  if (at >= 0) return messages.length - 1 - at;
+  // Under another id, or past the window: by when it was written.
+  const time = seen.at ? Date.parse(seen.at) : Number.NaN;
+  if (Number.isNaN(time)) return 0;
+  return messages.filter((item) => itemTime(item) > time).length;
+}
 
 export const AgentHistoryChat = memo(function AgentHistoryChat({
   items,
@@ -1502,6 +1648,9 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   cutOff = null,
   delivery = null,
   apiKeyQuestion = null,
+  placeKey = null,
+  placeReady = true,
+  older,
 }: {
   items: ChatItem[];
   listRef: RefObject<HTMLDivElement | null>;
@@ -1546,9 +1695,81 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   delivery?: ChatDelivery | null;
   /** Claude waits to start until the user says which account pays. */
   apiKeyQuestion?: ChatApiKeyQuestion | null;
+  /**
+   * Where the reader is is kept under this key (chatPlace.ts) and given
+   * back when the chat is shown again: after another pane, workspace or
+   * connection, the terminal in its place, a reload. None: the chat opens
+   * at its end. Messages coming in under a kept place do not move it; a
+   * pill says how many came.
+   */
+  placeKey?: string | null;
+  /**
+   * The conversation was read since the chat showed: a place not among
+   * the messages shown is looked for (or given up) only then.
+   */
+  placeReady?: boolean;
+  /** Older messages, read to give back a place among them. */
+  older?: OlderMessages;
 }) {
   const speech = useChatSpeech(speechActive, speechScopeKey);
   useRenderTrace("AgentHistoryChat");
+  // What the bubbles and blocks are given keeps its identity: the drawer makes new
+  // callbacks as its state moves (a send, a turn, the message box), and the
+  // speech state changes with every message read aloud; either drew every
+  // bubble of a long conversation again, a keystroke or a stream update
+  // waiting behind it. The bubbles call the latest ones.
+  const latest = useRef({
+    onOpen,
+    onRemoveQueued,
+    onEditQueued,
+    onRewind,
+    onRewindCheck,
+    onSendAgain,
+    onEditAgain,
+    onOpenTask,
+    speech,
+  });
+  latest.current = {
+    onOpen,
+    onRemoveQueued,
+    onEditQueued,
+    onRewind,
+    onRewindCheck,
+    onSendAgain,
+    onEditAgain,
+    onOpenTask,
+    speech,
+  };
+  const stable = useMemo(
+    () => ({
+      onOpen: (entry: HistoryEntry) => latest.current.onOpen(entry),
+      onRemoveQueued: (entry: HistoryEntry) =>
+        latest.current.onRemoveQueued?.(entry),
+      onEditQueued: (entry: HistoryEntry) =>
+        latest.current.onEditQueued?.(entry),
+      onRewind: (entry: HistoryEntry, mode: RewindMode) =>
+        latest.current.onRewind?.(entry, mode),
+      onRewindCheck: (entry: HistoryEntry) =>
+        latest.current.onRewindCheck
+          ? latest.current.onRewindCheck(entry)
+          : Promise.reject(new Error("rewind is not available")),
+      onSendAgain: (text: string) => latest.current.onSendAgain?.(text),
+      onEditAgain: (text: string) => latest.current.onEditAgain?.(text),
+      onOpenTask: (id: string) => latest.current.onOpenTask?.(id),
+      toggleSpeech: (messageId: string, markdown: string) =>
+        latest.current.speech.toggle(messageId, markdown),
+    }),
+    [],
+  );
+  // Only the bubble being read aloud gets the speech state.
+  const quietSpeech = useMemo<BubbleProps["speech"]>(
+    () => ({
+      supported: speech.supported,
+      state: null,
+      toggle: stable.toggleSpeech,
+    }),
+    [speech.supported, stable],
+  );
   const followRef = useRef(true);
   const queueRef = useRef<HistoryEntry[]>([]);
   const [queueVersion, setQueueVersion] = useState(0);
@@ -1588,9 +1809,47 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     followRef.current = false;
   }, []);
 
+  // What a place needs of the items: their ids, blocks and times.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  const placeReadyRef = useRef(placeReady);
+  placeReadyRef.current = placeReady;
+  const placeKeyRef = useRef(placeKey);
+  /**
+   * A kept place being given back: looked for (older messages read for
+   * it), then held a moment while what is drawn settles.
+   */
+  const restoreRef = useRef<{
+    anchor: ChatAnchor;
+    found: boolean;
+    pages: number;
+    until: number;
+  } | null>(null);
+  // Where the reader was when the list last showed: hidden and shown
+  // again (the phone's workspaces sheet), it lost its scroll.
+  const shownRef = useRef<ChatAnchor | null>(null);
+  // The last message the reader saw at the end, and how many came since.
+  const seenRef = useRef<ChatSeen | null>(null);
+  const [unseen, setUnseen] = useState(0);
+
   useLayoutEffect(() => {
     followRef.current = true;
+    restoreRef.current = null;
   }, [followKey]);
+
+  // The chat drawn again: the place kept for it comes back, else its end.
+  useLayoutEffect(() => {
+    placeKeyRef.current = placeKey;
+    const place = placeKey ? readChatPlace(placeKey) : null;
+    seenRef.current = place?.seen ?? null;
+    shownRef.current = place?.anchor ?? null;
+    restoreRef.current = place?.anchor
+      ? { anchor: place.anchor, found: false, pages: 0, until: 0 }
+      : null;
+    followRef.current = !restoreRef.current;
+  }, [placeKey]);
 
   // Keys in the conversation (j / k, a comment being written): what arrives
   // or grows does not move it under the reader.
@@ -1600,11 +1859,145 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     return !!list && !!active && list.contains(active);
   }, [listRef]);
 
+  /** Keeps where the reader is, for when the chat is drawn again. */
+  const record = useCallback(() => {
+    const key = placeKeyRef.current;
+    const list = listRef.current;
+    const content = contentRef.current;
+    const restoring = restoreRef.current;
+    // Hidden, or still looking for the place: what shows is not it.
+    if (!list || !content || list.clientHeight === 0) return;
+    if (restoring && !restoring.found) return;
+    const anchor = followRef.current
+      ? null
+      : readChatAnchor(list, content, (id) =>
+          describeItem(itemsRef.current, id),
+        );
+    shownRef.current = anchor;
+    const seen = seenRef.current;
+    if (key) rememberChatPlace(key, { anchor, ...(seen ? { seen } : {}) });
+  }, [listRef, contentRef]);
+
+  /**
+   * Puts the place being given back in view, reading older messages for
+   * it when it is older than those shown. Gone from the chat (a rewind
+   * cut it, the window moved past it), the first message written since
+   * takes its place, else the end does.
+   */
+  const restore = useCallback(() => {
+    const restoring = restoreRef.current;
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!restoring || !list || !content || list.clientHeight === 0) return;
+    if (
+      restoring.found &&
+      (followRef.current || Date.now() > restoring.until)
+    ) {
+      restoreRef.current = null;
+      return;
+    }
+    if (placeChatAnchor(list, content, restoring.anchor)) {
+      if (!restoring.found) {
+        restoring.found = true;
+        restoring.until = Date.now() + PLACE_HOLD_MS;
+      }
+      followRef.current = false;
+      return;
+    }
+    // Shown, then gone: the view stays where it is.
+    if (restoring.found) {
+      restoreRef.current = null;
+      return;
+    }
+    if (!placeReadyRef.current) return;
+    const items = itemsRef.current;
+    const older = olderRef.current;
+    const at = restoring.anchor.at
+      ? Date.parse(restoring.anchor.at)
+      : Number.NaN;
+    const oldest = items.map(itemTime).find((time) => !Number.isNaN(time));
+    const before = Number.isNaN(at) || oldest === undefined || at <= oldest;
+    if (before && older?.more && restoring.pages < PLACE_SEEK_PAGES) {
+      if (!older.loading) {
+        restoring.pages += 1;
+        older.load();
+      }
+      return;
+    }
+    if (older?.loading) return;
+    restoreRef.current = null;
+    const since = Number.isNaN(at)
+      ? undefined
+      : items.find((item) => itemTime(item) >= at);
+    const element = since
+      ? findChatAnchorItem(content, { id: itemKey(since) })
+      : null;
+    if (element) {
+      followRef.current = false;
+      scrollChatTo(list, element, restoring.anchor.offset);
+    } else {
+      followRef.current = true;
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [listRef, contentRef]);
+
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (list && followRef.current && !reading())
-      list.scrollTop = list.scrollHeight;
-  }, [items, listRef, reading]);
+    if (!list) return;
+    let frame = 0;
+    if (restoreRef.current) {
+      restore();
+      // Again once the drawer moved the list itself in this commit (older
+      // messages put in front keep its first one in place), before the
+      // frame is drawn.
+      frame = requestAnimationFrame(restore);
+    }
+    const following = !restoreRef.current && followRef.current && !reading();
+    if (following) list.scrollTop = list.scrollHeight;
+    // At the end, or back somewhere with nothing said of what was seen:
+    // what shows is seen. Only a chat that keeps places says what came.
+    if (placeKeyRef.current) {
+      if (following || !seenRef.current) seenRef.current = lastSeen(items);
+      setUnseen(following ? 0 : unseenAfter(items, seenRef.current));
+    }
+    return frame ? () => cancelAnimationFrame(frame) : undefined;
+  }, [items, listRef, reading, restore]);
+
+  // A page of older messages read, or the conversation read: the place
+  // being looked for may be among them now.
+  const olderLoading = older?.loading;
+  const olderMore = older?.more;
+  useLayoutEffect(() => {
+    if (restoreRef.current) restore();
+  }, [olderLoading, olderMore, placeReady, restore]);
+
+  // The reader moving (wheel, touch, keys, the scrollbar) is where they
+  // want to be: a place still being given back gives way.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const moved = () => {
+      restoreRef.current = null;
+    };
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const name of events)
+      list.addEventListener(name, moved, { passive: true });
+    return () => {
+      for (const name of events) list.removeEventListener(name, moved);
+    };
+  }, [listRef]);
+
+  /** The pill under new messages: to the end, following again. */
+  const toEnd = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    restoreRef.current = null;
+    followRef.current = true;
+    list.scrollTop = list.scrollHeight;
+    seenRef.current = lastSeen(itemsRef.current);
+    setUnseen(0);
+    record();
+  }, [listRef, record]);
 
   // Bubbles skip drawing when only their place in the window moved (see
   // sameBubble): their data-sequence, which the minimap and its jumps go by,
@@ -1624,11 +2017,16 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     }
   }, [items, contentRef]);
 
-  // A message just sent is shown where the conversation goes on.
+  // A message just sent is shown where the conversation goes on. One on
+  // its way when the chat is drawn again leaves the reader's place be.
   const lastOutboxId = outbox[outbox.length - 1]?.id;
+  const outboxShownRef = useRef(lastOutboxId);
   useLayoutEffect(() => {
     const list = listRef.current;
+    if (outboxShownRef.current === lastOutboxId) return;
+    outboxShownRef.current = lastOutboxId;
     if (!list || !lastOutboxId) return;
+    restoreRef.current = null;
     followRef.current = true;
     list.scrollTop = list.scrollHeight;
   }, [lastOutboxId, listRef]);
@@ -1640,7 +2038,36 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     const list = listRef.current;
     const content = contentRef.current;
     if (!list || !content) return;
+    let shown = list.clientHeight > 0;
+    // Where the reader was when the list was hidden (null: at the end).
+    let hiddenAt: ChatAnchor | null = null;
     const observer = new ResizeObserver(() => {
+      const visible = list.clientHeight > 0;
+      const hidden = !visible && shown;
+      const reshown = visible && !shown;
+      shown = visible;
+      // Hidden (the phone's workspaces sheet): nothing to pin, and the
+      // reader's place stays theirs.
+      if (hidden)
+        hiddenAt =
+          followRef.current && !restoreRef.current ? null : shownRef.current;
+      if (!visible) return;
+      // Shown again, the list lost its scroll: the place it had comes back,
+      // else its end.
+      if (reshown && !restoreRef.current) {
+        if (hiddenAt)
+          restoreRef.current = {
+            anchor: hiddenAt,
+            found: false,
+            pages: 0,
+            until: 0,
+          };
+        else followRef.current = true;
+      }
+      if (restoreRef.current) {
+        restore();
+        if (restoreRef.current) return;
+      }
       // A list that does not overflow is at its newest message already.
       if (list.scrollHeight <= list.clientHeight) followRef.current = true;
       if (followRef.current && !reading()) list.scrollTop = list.scrollHeight;
@@ -1648,7 +2075,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     observer.observe(list);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [listRef, contentRef, reading]);
+  }, [listRef, contentRef, reading, restore]);
 
   return (
     <div
@@ -1658,15 +2085,28 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
         const list = event.currentTarget;
         // A hidden list reports zero geometry; keep the last pin state.
         if (list.clientHeight === 0) return;
-        followRef.current =
+        // Still looking for the place: what shows meanwhile is not it.
+        const restoring = restoreRef.current;
+        if (restoring && !restoring.found) return;
+        const atEnd =
           list.scrollHeight - list.scrollTop - list.clientHeight <
           FOLLOW_THRESHOLD_PX;
+        followRef.current = atEnd;
+        if (atEnd) {
+          seenRef.current = lastSeen(itemsRef.current);
+          setUnseen(0);
+        }
+        record();
       }}
     >
       <div ref={contentRef} className="agent-history-chat-content">
         {items.map((item) =>
           item.type === "custom" ? (
-            <div key={item.id} className="agent-history-chat-custom">
+            <div
+              key={item.id}
+              className="agent-history-chat-custom"
+              data-place-id={item.transient ? undefined : item.id}
+            >
               {item.node}
             </div>
           ) : item.type === "message" ? (
@@ -1677,30 +2117,35 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               repeated={item.repeated}
               firstSentAt={item.firstSentAt}
               highlighted={highlightedSequence === item.sequence}
-              speech={speech}
-              onOpen={onOpen}
-              onRemoveQueued={onRemoveQueued}
-              onEditQueued={onEditQueued}
+              speech={
+                speech.state?.messageId === item.entry.id ? speech : quietSpeech
+              }
+              onOpen={stable.onOpen}
+              onRemoveQueued={
+                onRemoveQueued ? stable.onRemoveQueued : undefined
+              }
+              onEditQueued={onEditQueued ? stable.onEditQueued : undefined}
               queuedHandedOver={
                 item.entry.queued === true &&
                 queuedHandedOver?.(item.entry) === true
               }
-              onRewind={onRewind}
-              onRewindCheck={onRewindCheck}
-              onSendAgain={onSendAgain}
-              onEditAgain={onEditAgain}
+              onRewind={onRewind ? stable.onRewind : undefined}
+              onRewindCheck={onRewindCheck ? stable.onRewindCheck : undefined}
+              onSendAgain={onSendAgain ? stable.onSendAgain : undefined}
+              onEditAgain={onEditAgain ? stable.onEditAgain : undefined}
               imageUrl={imageUrl}
               sentImageUrl={sentImageUrl}
             />
           ) : (
             <ToolBlock
               key={item.id}
+              placeId={item.id}
               entries={item.entries}
               loader={loader}
               onToggle={pauseFollow}
-              onOpen={onOpen}
+              onOpen={stable.onOpen}
               tasks={tasks}
-              onOpenTask={onOpenTask}
+              onOpenTask={onOpenTask ? stable.onOpenTask : undefined}
             />
           ),
         )}
@@ -1718,6 +2163,34 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
           <ApiKeyQuestionNotice question={apiKeyQuestion} />
         ) : null}
       </div>
+      {placeKey && unseen > 0 ? (
+        // Stuck to the bottom of the view, taking no room in the list.
+        <div className="agent-history-chat-latest-dock">
+          <button
+            type="button"
+            className="agent-history-chat-latest"
+            title="Go to the newest message"
+            onClick={toEnd}
+          >
+            <ArrowDown size={13} aria-hidden="true" />
+            {unseen === 1 ? "1 new message" : `${unseen} new messages`}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 });
+
+/**
+ * The chat drawn behind what the user does: a stream update or a history
+ * refresh of a long conversation renders at low priority, and a key typed
+ * meanwhile is handled first (React sets that render aside for it). Every
+ * prop moves together, so the chat never sees messages of one moment with
+ * a place, an outbox or older pages of another.
+ */
+export function DeferredAgentHistoryChat(
+  props: ComponentProps<typeof AgentHistoryChat>,
+) {
+  const shown = useDeferredValue(props);
+  return <AgentHistoryChat {...shown} />;
+}

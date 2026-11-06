@@ -119,6 +119,7 @@ function addImage(
 export function ReviewCommentEditor({
   value,
   vimMode,
+  autoFocus = true,
   placeholder,
   handleRef,
   onChange,
@@ -130,6 +131,11 @@ export function ReviewCommentEditor({
 }: {
   value: string;
   vimMode: boolean;
+  /**
+   * Takes the focus (Vim keys typing at the end) when opened. Without it
+   * (a box drawn again with its words), Vim keys type once it is focused.
+   */
+  autoFocus?: boolean;
   placeholder: string;
   handleRef?: RefObject<CommentEditorHandle | null>;
   onChange: (text: string) => void;
@@ -166,12 +172,13 @@ export function ReviewCommentEditor({
   };
   // Created once per mount (the parent remounts per comment) from the props
   // it was opened with.
-  const initial = useRef({ value, vimMode, placeholder, handleRef });
+  const initial = useRef({ value, vimMode, autoFocus, placeholder, handleRef });
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const { value, vimMode, placeholder, handleRef } = initial.current;
+    const { value, vimMode, autoFocus, placeholder, handleRef } =
+      initial.current;
     if (vimMode) defineExCommands();
     const save = () => {
       handlers.current.onCommit(true);
@@ -276,8 +283,14 @@ export function ReviewCommentEditor({
           } else handlers.current.onCommit(false);
         },
       };
-    view.focus();
-    if (vimMode && cm) Vim.handleKey(cm, "A", "mapping");
+    const typeOnFocus = () => {
+      if (cm && !cm.state.vim?.insertMode) Vim.handleKey(cm, "i", "mapping");
+    };
+    if (autoFocus) {
+      view.focus();
+      if (vimMode && cm) Vim.handleKey(cm, "A", "mapping");
+    } else if (vimMode && cm)
+      view.contentDOM.addEventListener("focus", typeOnFocus, { once: true });
     // A phone's keyboard opening shrinks the screen: keep the box the editor
     // is drawn in (the parent of its box with the dictation button: the
     // editor with its bar and buttons) in view.
@@ -287,6 +300,7 @@ export function ReviewCommentEditor({
     );
     return () => {
       stopKeeping();
+      view.contentDOM.removeEventListener("focus", typeOnFocus);
       host.removeEventListener("keydown", onCaptureKey, true);
       if (handleRef) handleRef.current = null;
       viewRef.current = null;

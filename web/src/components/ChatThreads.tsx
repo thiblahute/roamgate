@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -36,6 +37,7 @@ import {
   type PanelThread,
   ThreadsChip,
   ThreadsPanel,
+  type ThreadsPanelPlace,
   UnresolvedNav,
   useOpenOnly,
 } from "./ThreadsPanel";
@@ -312,6 +314,8 @@ export function ThreadEditor({
   onSave,
   onClose,
   onLeave,
+  kept,
+  autoFocus = true,
 }: {
   placeholder: string;
   /** Sends the text with its id; settles once it is saved or failed. */
@@ -320,20 +324,30 @@ export function ThreadEditor({
   onClose: (id?: string) => void;
   /** Esc with words written: they stay, the keys go back to the chat. */
   onLeave: () => void;
+  /**
+   * Where its words (and the id they were sent with) are kept as they
+   * change: the box drawn again, after the chat was not shown, has them.
+   */
+  kept?: ThreadBox;
+  /** Takes the focus when drawn: not a box drawn again. */
+  autoFocus?: boolean;
 }) {
-  const text = useRef("");
+  const text = useRef(kept?.text ?? "");
+  const [initial] = useState(() => kept?.text ?? "");
   const [vim] = useState(vimKeys);
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
-  const sent = useRef<{ text: string; id: string } | null>(null);
+  const sent = useRef<{ text: string; id: string } | null>(kept?.sent ?? null);
   const close = () => onClose(sent.current?.id);
   const save = () => {
     if (sending.current || !text.current.trim()) return;
     sending.current = true;
     setBusy(true);
     const value = text.current;
-    if (sent.current?.text !== value)
+    if (sent.current?.text !== value) {
       sent.current = { text: value, id: newClientId() };
+      if (kept) kept.sent = sent.current;
+    }
     void onSave(value, sent.current.id).finally(() => {
       sending.current = false;
       setBusy(false);
@@ -343,11 +357,13 @@ export function ThreadEditor({
     <div className="chat-thread-editor">
       <Suspense fallback={null}>
         <ReviewCommentEditor
-          value=""
+          value={initial}
           vimMode={vim}
+          autoFocus={autoFocus}
           placeholder={placeholder}
           onChange={(value) => {
             text.current = value;
+            if (kept) kept.text = value;
           }}
           onCommit={(explicit) => {
             if (explicit && text.current.trim()) save();
@@ -378,17 +394,113 @@ export function ThreadEditor({
   );
 }
 
-export function ChatThreadsProvider({
-  connectionId,
-  workspaceId,
-  chat,
-  path,
-  agent,
-  paneId,
-  entries: shownEntries,
-  older,
-  children,
-}: {
+/** A comment box's words, and the id they were last sent with. */
+export type ThreadBox = { text: string; sent?: { text: string; id: string } };
+
+/**
+ * What a chat's threads have open: the comments on their way, the boxes
+ * open, where j / k are, the threads folded or unfolded by hand, the
+ * comments' panel.
+ */
+type ThreadsView = {
+  pendingWrites: PendingWrite[];
+  draft: ReviewChatPart | null;
+  partDraft: ReviewMessagePart | null;
+  replying: string | null;
+  panelReply: string | null;
+  cursor: string | null;
+  flipped: ReadonlySet<string>;
+  overviewOpen: boolean;
+};
+
+type ThreadsKeep = {
+  get: () => ThreadsView;
+  set: (change: (view: ThreadsView) => Partial<ThreadsView>) => void;
+  subscribe: (listener: () => void) => () => void;
+  /** The open boxes' words, by box (boxKeys): written as they are typed. */
+  boxes: Map<string, ThreadBox>;
+  /** Where the comments' panel is, while it is open. */
+  panel: ThreadsPanelPlace | null;
+};
+
+// The key a box's words are kept under: what it comments on or answers.
+const draftBox = (part: ReviewChatPart) => `draft:${part.entry}\0${part.quote}`;
+const partBox = (part: ReviewMessagePart) =>
+  `part:${part.comment}\0${part.quote ?? ""}`;
+const replyBox = (thread: string) => `reply:${thread}`;
+const panelBox = (thread: string) => `panel:${thread}`;
+
+/** The boxes a view has open. */
+function boxKeys(view: ThreadsView): string[] {
+  const keys: string[] = [];
+  if (view.draft) keys.push(draftBox(view.draft));
+  if (view.partDraft) keys.push(partBox(view.partDraft));
+  if (view.replying) keys.push(replyBox(view.replying));
+  if (view.panelReply) keys.push(panelBox(view.panelReply));
+  return keys;
+}
+
+function threadsKeep(): ThreadsKeep {
+  let view: ThreadsView = {
+    pendingWrites: [],
+    draft: null,
+    partDraft: null,
+    replying: null,
+    panelReply: null,
+    cursor: null,
+    flipped: new Set(),
+    overviewOpen: false,
+  };
+  const listeners = new Set<() => void>();
+  const keep: ThreadsKeep = {
+    get: () => view,
+    set: (change) => {
+      const next = { ...view, ...change(view) };
+      if (
+        Object.keys(next).every((name) => {
+          const field = name as keyof ThreadsView;
+          return next[field] === view[field];
+        })
+      )
+        return;
+      view = next;
+      // A box closed (or another opened in its place) lets its words go.
+      const open = new Set(boxKeys(view));
+      for (const key of keep.boxes.keys())
+        if (!open.has(key)) keep.boxes.delete(key);
+      if (!view.overviewOpen) keep.panel = null;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    boxes: new Map(),
+    panel: null,
+  };
+  return keep;
+}
+
+// Kept in memory only: the boxes hold whatever was typed. Recent chats
+// first; the least recently shown go.
+const keptThreads = new Map<string, ThreadsKeep>();
+const MAX_KEPT_THREADS = 50;
+
+function keptThreadsFor(key: string): ThreadsKeep {
+  const keep = keptThreads.get(key) ?? threadsKeep();
+  keptThreads.delete(key);
+  keptThreads.set(key, keep);
+  while (keptThreads.size > MAX_KEPT_THREADS) {
+    const oldest = keptThreads.keys().next().value;
+    if (oldest === undefined) break;
+    keptThreads.delete(oldest);
+  }
+  return keep;
+}
+
+type ChatThreadsProps = {
   connectionId: string;
   workspaceId: string;
   /** The chat: its agent session. */
@@ -404,8 +516,78 @@ export function ChatThreadsProvider({
   entries?: readonly HistoryEntry[];
   /** Older messages, read to go to a comment on one of them. */
   older?: OlderMessages;
+  /**
+   * What the threads have open (a reply being written, the threads
+   * unfolded, the comments' panel) is kept while the chat is not shown,
+   * per connection, pane and chat, and comes back with it.
+   */
+  keep?: boolean;
   children: ReactNode;
-}) {
+};
+
+export function ChatThreadsProvider(props: ChatThreadsProps) {
+  // Another chat (a new session) starts with nothing open.
+  const keepKey = props.keep
+    ? JSON.stringify([props.connectionId, props.paneId, props.chat])
+    : null;
+  return <ChatThreadsScope key={keepKey ?? ""} {...props} keepKey={keepKey} />;
+}
+
+/** A field of the threads' view, set as with useState. */
+function useKeptField<K extends keyof ThreadsView>(
+  keep: ThreadsKeep,
+  field: K,
+): (
+  change: ThreadsView[K] | ((current: ThreadsView[K]) => ThreadsView[K]),
+) => void {
+  return useCallback(
+    (change) =>
+      keep.set(
+        (view) =>
+          ({
+            [field]:
+              typeof change === "function"
+                ? (change as (current: ThreadsView[K]) => ThreadsView[K])(
+                    view[field],
+                  )
+                : change,
+          }) as Partial<ThreadsView>,
+      ),
+    [keep, field],
+  );
+}
+
+function ChatThreadsScope({
+  connectionId,
+  workspaceId,
+  chat,
+  path,
+  agent,
+  paneId,
+  entries: shownEntries,
+  older,
+  keepKey,
+  children,
+}: ChatThreadsProps & { keepKey: string | null }) {
+  // What its threads have open: kept for the chat, or for this view only.
+  const [keep] = useState(() =>
+    keepKey ? keptThreadsFor(keepKey) : threadsKeep(),
+  );
+  const view = useSyncExternalStore(keep.subscribe, keep.get);
+  // The boxes open when the chat is drawn again do not take the focus:
+  // the message box has it, and the place the reader was is kept.
+  const [restored] = useState(() => new Set(boxKeys(keep.get())));
+  for (const key of restored)
+    if (!boxKeys(view).includes(key)) restored.delete(key);
+  /** A box's kept words, and whether it takes the focus when drawn. */
+  const boxOf = (key: string) => {
+    let box = keep.boxes.get(key);
+    if (!box) {
+      box = { text: "" };
+      keep.boxes.set(key, box);
+    }
+    return { kept: box, autoFocus: !restored.has(key) };
+  };
   const reviews = useReviewState();
   const snapshot = useMemo(
     () =>
@@ -422,7 +604,8 @@ export function ChatThreadsProvider({
    * the review sent back has them; failed, marked so while the box keeps
    * the text to send again.
    */
-  const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
+  const pendingWrites = view.pendingWrites;
+  const setPendingWrites = useKeptField(keep, "pendingWrites");
   const shownThreads = useMemo(
     () => withPendingWrites(snapshot?.threads ?? [], pendingWrites),
     [snapshot, pendingWrites],
@@ -442,7 +625,7 @@ export function ChatThreadsProvider({
       const left = writes.filter((write) => !writeLanded(landed, write));
       return left.length === writes.length ? writes : left;
     });
-  }, [snapshot]);
+  }, [snapshot, setPendingWrites]);
   /** A box closed: what it failed to send is no longer shown. */
   const dropFailed = (id?: string) =>
     setPendingWrites((writes) =>
@@ -458,7 +641,8 @@ export function ChatThreadsProvider({
   }, [shownThreads, shownEntries]);
   placedRef.current = placed;
   const { byEntry, away } = placed;
-  const [draft, setDraft] = useState<ReviewChatPart | null>(null);
+  const draft = view.draft;
+  const setDraft = useKeptField(keep, "draft");
   // Threads on parts of the threads' own messages, by the message, and the
   // one being written.
   const byMessage = useMemo(() => {
@@ -470,14 +654,17 @@ export function ChatThreadsProvider({
     }
     return threads;
   }, [shownThreads]);
-  const [partDraft, setPartDraft] = useState<ReviewMessagePart | null>(null);
+  const partDraft = view.partDraft;
+  const setPartDraft = useKeptField(keep, "partDraft");
   /**
    * Where j / k are: a part of a message (`p:ENTRY:PART`), a message of a
    * thread (`m:COMMENT`) or a folded thread (`t:THREAD`).
    */
-  const [cursor, setCursor] = useState<string | null>(null);
+  const cursor = view.cursor;
+  const setCursor = useKeptField(keep, "cursor");
   /** Threads folded or unfolded by hand: resolved ones start folded. */
-  const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
+  const flipped = view.flipped;
+  const setFlipped = useKeptField(keep, "flipped");
   /** Only the unresolved threads drawn (gH): the review's choice too. */
   const [openOnly, setOpenOnly] = useOpenOnly();
   /**
@@ -501,7 +688,8 @@ export function ChatThreadsProvider({
         left.add(thread.id);
     return left;
   }, [openOnly, shownThreads, byMessage]);
-  const [replying, setReplying] = useState<string | null>(null);
+  const replying = view.replying;
+  const setReplying = useKeptField(keep, "replying");
   const [error, setError] = useState("");
   const entries = useRef(new Map<string, HistoryEntry>());
 
@@ -567,18 +755,21 @@ export function ChatThreadsProvider({
         );
       return ok;
     },
-    [write],
+    [write, setPendingWrites],
   );
 
-  const comment = useCallback((entry: HistoryEntry, quote: string) => {
-    setDraft({
-      entry: entry.id,
-      quote: quote.trim().slice(0, 4000),
-      ...(entry.sent_at ? { at: entry.sent_at } : {}),
-      excerpt: excerptOf(entry.text),
-    });
-    window.getSelection()?.removeAllRanges();
-  }, []);
+  const comment = useCallback(
+    (entry: HistoryEntry, quote: string) => {
+      setDraft({
+        entry: entry.id,
+        quote: quote.trim().slice(0, 4000),
+        ...(entry.sent_at ? { at: entry.sent_at } : {}),
+        excerpt: excerptOf(entry.text),
+      });
+      window.getSelection()?.removeAllRanges();
+    },
+    [setDraft],
+  );
 
   /**
    * A comment box closed (sent or not): the keys go back to the
@@ -708,6 +899,7 @@ export function ChatThreadsProvider({
         })}
         {pendingById.has(thread.id) ? null : replying === thread.id ? (
           <ThreadEditor
+            {...boxOf(replyBox(thread.id))}
             placeholder="Reply..."
             onLeave={backToConversation}
             onClose={(id) => {
@@ -774,6 +966,7 @@ export function ChatThreadsProvider({
   ) => (
     <div className="chat-thread is-draft">
       <ThreadEditor
+        {...boxOf(partBox(part))}
         placeholder={placeholder}
         onLeave={backToConversation}
         onClose={(id) => {
@@ -836,6 +1029,7 @@ export function ChatThreadsProvider({
               node: (
                 <div className="chat-thread is-draft">
                   <ThreadEditor
+                    {...boxOf(draftBox(draft))}
                     placeholder={`Comment for ${agent}...`}
                     onLeave={backToConversation}
                     onClose={(id) => {
@@ -899,7 +1093,8 @@ export function ChatThreadsProvider({
         .map(({ thread }) => thread),
     [snapshot],
   );
-  const [overviewOpen, setOverviewOpen] = useState(false);
+  const overviewOpen = view.overviewOpen;
+  const setOverviewOpen = useKeptField(keep, "overviewOpen");
   /** The threads open whose message is not shown. */
   const awayOpen = useMemo(
     () => overview.filter((thread) => !thread.resolved && away.has(thread.id)),
@@ -909,7 +1104,8 @@ export function ChatThreadsProvider({
     ? "its message is older than those shown: Go to it reads them"
     : "its message is not in the chat shown";
   /** The thread answered from the panel. */
-  const [panelReply, setPanelReply] = useState<string | null>(null);
+  const panelReply = view.panelReply;
+  const setPanelReply = useKeptField(keep, "panelReply");
   const panelThreads = useMemo<PanelThread[]>(
     () =>
       overview.map((thread) => {
@@ -952,28 +1148,34 @@ export function ChatThreadsProvider({
     return () => observer.disconnect();
   }, []);
   /** Puts j / k on a thread (its first message, or its folded line). */
-  const goToThread = useCallback((id: string, commentId?: string) => {
-    const list = scopeRef.current?.querySelector<HTMLElement>(
-      ".agent-history-chat",
-    );
-    const element = list?.querySelector<HTMLElement>(
-      `.chat-thread[data-thread-id="${CSS.escape(id)}"]`,
-    );
-    if (!list || !element) return false;
-    // A comment of an open thread, else its first one (or its folded line).
-    const stop = element.dataset.chatStop
-      ? element
-      : (commentId &&
-          element.querySelector<HTMLElement>(
-            `[data-chat-stop="m:${CSS.escape(commentId)}"]`,
-          )) ||
-        element.querySelector<HTMLElement>("[data-chat-stop]");
-    if (stop?.dataset.chatStop) setCursor(stop.dataset.chatStop);
-    (stop ?? element).scrollIntoView({ block: "center" });
-    list.focus({ preventScroll: true });
-    return true;
-  }, []);
-  const openOverview = useCallback(() => setOverviewOpen(true), []);
+  const goToThread = useCallback(
+    (id: string, commentId?: string) => {
+      const list = scopeRef.current?.querySelector<HTMLElement>(
+        ".agent-history-chat",
+      );
+      const element = list?.querySelector<HTMLElement>(
+        `.chat-thread[data-thread-id="${CSS.escape(id)}"]`,
+      );
+      if (!list || !element) return false;
+      // A comment of an open thread, else its first one (or its folded line).
+      const stop = element.dataset.chatStop
+        ? element
+        : (commentId &&
+            element.querySelector<HTMLElement>(
+              `[data-chat-stop="m:${CSS.escape(commentId)}"]`,
+            )) ||
+          element.querySelector<HTMLElement>("[data-chat-stop]");
+      if (stop?.dataset.chatStop) setCursor(stop.dataset.chatStop);
+      (stop ?? element).scrollIntoView({ block: "center" });
+      list.focus({ preventScroll: true });
+      return true;
+    },
+    [setCursor],
+  );
+  const openOverview = useCallback(
+    () => setOverviewOpen(true),
+    [setOverviewOpen],
+  );
   /**
    * The thread gone to whose message is older than those shown: older
    * messages are read, a page at a time, until it is drawn.
@@ -999,7 +1201,7 @@ export function ChatThreadsProvider({
       setOverviewOpen(false);
       setSeeking({ id, pages: 0 });
     },
-    [goToThread],
+    [goToThread, setOverviewOpen],
   );
   useEffect(() => {
     if (!seeking) return;
@@ -1022,7 +1224,7 @@ export function ChatThreadsProvider({
     }
     setSeeking({ id: seeking.id, pages: seeking.pages + 1 });
     older.load();
-  }, [seeking, away, older, goToThread]);
+  }, [seeking, away, older, goToThread, setOverviewOpen]);
   /** g;: the comment written last, yours or the agent's. */
   const goToLatest = useCallback(() => {
     let latest: { thread: string; comment: string; at: string } | null = null;
@@ -1437,7 +1639,7 @@ export function ChatThreadsProvider({
       list.removeEventListener("focusout", onFocusOut);
       list.style.paddingBottom = "";
     };
-  }, []);
+  }, [setCursor, setReplying]);
 
   // Words selected in a message offer a comment on them.
   const [selection, clearSelection] = useSelectedWords((start) => {
@@ -1520,6 +1722,14 @@ export function ChatThreadsProvider({
               {overviewOpen ? (
                 <ThreadsPanel
                   className="chat-threads-panel"
+                  place={
+                    (keep.panel ??= {
+                      query: "",
+                      selectedId: null,
+                      unfolded: [],
+                      scrollTop: 0,
+                    })
+                  }
                   threads={panelThreads}
                   onClose={closeOverview}
                   onGo={goTo}
@@ -1538,6 +1748,8 @@ export function ChatThreadsProvider({
                           id: panelReply,
                           editor: (
                             <ThreadEditor
+                              key={panelReply}
+                              {...boxOf(panelBox(panelReply))}
                               placeholder="Reply..."
                               onClose={(id) => {
                                 dropFailed(id);

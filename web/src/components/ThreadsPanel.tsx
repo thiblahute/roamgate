@@ -163,6 +163,18 @@ export type PanelThread = {
   search?: string;
 };
 
+/**
+ * Where a panel is (its search, selection, threads unfolded and scroll),
+ * read when it is drawn and written as it changes: a chat's panel drawn
+ * again after the chat was not shown is where it was.
+ */
+export type ThreadsPanelPlace = {
+  query: string;
+  selectedId: string | null;
+  unfolded: string[];
+  scrollTop: number;
+};
+
 /** "2 open · 10 comments": opens the panel. */
 export function ThreadsChip({
   threads,
@@ -216,6 +228,7 @@ export function ThreadsPanel({
   onReply,
   replying,
   renderBody,
+  place,
 }: {
   /** In the order shown: open ones first, then the latest. */
   threads: readonly PanelThread[];
@@ -228,13 +241,33 @@ export function ThreadsPanel({
   /** The answer being written, drawn under its thread. */
   replying?: { id: string; editor: ReactNode } | null;
   renderBody: (thread: PanelThread, body: string) => ReactNode;
+  /** Where it was, kept as it changes. */
+  place?: ThreadsPanelPlace;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [query, setQuery] = useState(place?.query ?? "");
+  const [selectedId, setSelectedId] = useState<string | null>(
+    place?.selectedId ?? null,
+  );
   /** Unfolded by hand: each one is one line until then. */
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(
+    () => new Set(place?.unfolded),
+  );
+  useEffect(() => {
+    if (!place) return;
+    place.query = query;
+    place.selectedId = selectedId;
+    place.unfolded = [...unfolded];
+  }, [place, query, selectedId, unfolded]);
+  // Drawn again: scrolled where it was.
+  const placeRef = useRef(place);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && placeRef.current?.scrollTop)
+      list.scrollTop = placeRef.current.scrollTop;
+  }, []);
   const [showResolved, setShowResolved] = useState(readShowResolved);
   /** Set by a move by key: only that brings the selection into view. */
   const scrollToSelection = useRef(false);
@@ -457,7 +490,13 @@ export function ThreadsPanel({
               : "Nothing open."}
         </p>
       ) : null}
-      <div className="threads-panel-list">
+      <div
+        ref={listRef}
+        className="threads-panel-list"
+        onScroll={(event) => {
+          if (place) place.scrollTop = event.currentTarget.scrollTop;
+        }}
+      >
         {shown.flatMap((thread, index) => {
           const open = isOpen(thread);
           const firstResolved =
