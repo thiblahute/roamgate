@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
+  MessageCircleQuestionMark,
   PhoneCall,
   ChevronDown,
   ChevronRight,
@@ -26,7 +27,7 @@ import {
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
 import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
-import { callCompanion } from "../companionCallOpen";
+import { askCompanion, callCompanion } from "../companionCallOpen";
 import { voiceFronting } from "../voiceFrontFlag";
 import { logoutBrowserSession } from "../api";
 import { connectionHttpPath } from "../connectionHttp";
@@ -362,6 +363,18 @@ export function ConfigMenu({
                     onClick={() => {
                       setOpen(false);
                       callCompanion();
+                    }}
+                  />
+                ) : null}
+                {voiceFronting() ? (
+                  <ConfigMenuItem
+                    icon={<MessageCircleQuestionMark size={15} />}
+                    label="Ask the companion"
+                    description={`Type a question, no call: the answer is written${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("companion.ask")}`}`}
+                    className="config-menu-item-row"
+                    onClick={() => {
+                      setOpen(false);
+                      askCompanion();
                     }}
                   />
                 ) : null}

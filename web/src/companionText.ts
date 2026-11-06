@@ -4,14 +4,18 @@ import {
   companionCallState,
   companionName,
   companionRecent,
+  companionTypedTurn,
   logCompanion,
   setCompanionTarget,
   updateCompanionJob,
 } from "./companionCall";
 import {
+  answerCompanionTool,
   followCompanionTool,
   followCompanionWeb,
+  plainHeldAnswer,
   toolAck,
+  waitingHeldCall,
   webAck,
 } from "./companionWeb";
 import { forgeStore } from "./forgeStore";
@@ -59,6 +63,8 @@ export type CompanionTextDeps = {
   follow: typeof followErrand;
   followWeb: typeof followCompanionWeb;
   followTool: typeof followCompanionTool;
+  /** A plain yes or no typed to a held call: as its buttons answer it. */
+  answerHeld: typeof answerCompanionTool;
   ranger: typeof askRanger;
   reviews: typeof askReviewsAgent;
   /** Where work goes by default, and the sessions the user may name. */
@@ -72,6 +78,7 @@ const defaults: CompanionTextDeps = {
   follow: followErrand,
   followWeb: followCompanionWeb,
   followTool: followCompanionTool,
+  answerHeld: answerCompanionTool,
   ranger: askRanger,
   reviews: askReviewsAgent,
   context: () => {
@@ -110,7 +117,10 @@ function stateForFront(current: string, sessions: VoiceSessionInfo[]) {
  * it does shows there. It answers itself, looks things up on the web in
  * the background (its result written there, and told aloud on a call),
  * starts work on a session as a job, or asks Ranger. The route back once
- * it is handled; work and searches go on after.
+ * it is handled; work and searches go on after. A plain yes or no while
+ * its tools hold a call for one answers that call, as its buttons do,
+ * without the front (anything more, a change, goes to the front); null
+ * then, as when nothing was typed.
  */
 export async function sendCompanionText(
   text: string,
@@ -119,19 +129,32 @@ export async function sendCompanionText(
   const deps = { ...defaults, ...overrides };
   const said = text.trim();
   if (!said) return null;
+  const held = waitingHeldCall();
+  const answer = held === null ? null : plainHeldAnswer(said);
+  if (held !== null && answer) {
+    await deps.answerHeld(held, answer, { said });
+    return null;
+  }
   // The conversation so far, before these words: what they may lean on.
   const recent = companionRecent();
   logCompanion({ kind: "heard", text: said });
   const { current, sessions } = deps.context();
-  // Typed, not said: no `[Voice]` note on what reaches a session.
-  const route = await deps.route(
-    said,
-    current,
-    sessions,
-    stateForFront(current, sessions),
-    "typed",
-    recent || undefined,
-  );
+  // Thinking, outside a call, until the front decides.
+  const back = companionTypedTurn();
+  let route: VoiceRoute;
+  try {
+    // Typed, not said: no `[Voice]` note on what reaches a session.
+    route = await deps.route(
+      said,
+      current,
+      sessions,
+      stateForFront(current, sessions),
+      "typed",
+      recent || undefined,
+    );
+  } finally {
+    back();
+  }
   const french = ackLanguage(said) === "fr";
   const reply = route.reply?.trim();
   const say = (line: string) => logCompanion({ kind: "said", text: line });

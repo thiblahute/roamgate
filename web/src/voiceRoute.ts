@@ -374,6 +374,12 @@ export type ResearchJob = {
   answer?: string;
   sources?: { title: string; url: string }[];
   error?: string;
+  /**
+   * A tool job's call held for the user's yes (server voice-tools.ts): the
+   * tool and its exact input, not made; and whether it was made or not.
+   */
+  held?: { tool: string; input: unknown };
+  heldOutcome?: "confirmed" | "declined";
 };
 
 /** A web search as it is now; null when it is gone or unreachable. */
@@ -412,6 +418,35 @@ export async function cancelResearch(job?: string): Promise<boolean> {
 /** Stops a job of the companion's tools; whether it was running. */
 export async function cancelTool(job: string): Promise<boolean> {
   return cancelJob("tools", job);
+}
+
+/**
+ * The user's click on a call a tool job holds for their yes: "yes" makes
+ * it (the job that does, back), "no" forgets it. "gone" when nothing of
+ * that job waits any more (answered, or forgotten after 5 minutes); null
+ * when the server could not be reached or refused.
+ */
+export async function answerHeldTool(
+  job: string,
+  answer: "yes" | "no",
+): Promise<{ job: ResearchJob } | { declined: true } | "gone" | null> {
+  try {
+    const response = await fetch("/api/voice/tools/answer", {
+      method: "POST",
+      headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+      body: JSON.stringify({ job, answer }),
+    });
+    if (response.status === 409) return "gone";
+    if (!response.ok) return null;
+    const body = (await response.json().catch(() => null)) as {
+      job?: ResearchJob;
+      declined?: unknown;
+    } | null;
+    if (answer === "no") return body?.declined ? { declined: true } : null;
+    return typeof body?.job?.id === "string" ? { job: body.job } : null;
+  } catch {
+    return null;
+  }
 }
 
 async function cancelJob(

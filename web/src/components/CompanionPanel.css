@@ -126,7 +126,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .companion-panel-hearing > svg {
+  .companion-panel-hearing > svg,
+  .companion-panel-thinking {
     animation: none;
   }
 }
@@ -258,6 +259,38 @@
   max-height: 14em;
 }
 
+/* A call its tools hold for the user's yes: what it would do is above,
+   these answer it (as saying or typing yes or no does). */
+.companion-panel-web.is-held {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.companion-panel-web.is-held .companion-panel-status {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.companion-panel-held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.companion-panel-held button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Something typed, outside a call, while the front decides. */
+.companion-panel-thinking {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  animation: companion-panel-hearing 1.4s ease-in-out infinite;
+}
+
 .companion-panel-answer a,
 .companion-panel-sources a {
   color: var(--accent);
@@ -316,7 +349,8 @@
 }
 
 /* On a phone the conversation takes the whole screen: a call shows it
-   (companionPhoneCall.ts), so what is said reads at full size. */
+   (companionPhoneCall.ts), so what is said reads at full size. Typing to
+   it, its message box stays above the keyboard, as the app's content does. */
 :where(html[data-layout="mobile"]) {
   .companion-panel-backdrop {
     padding: 0;
@@ -329,10 +363,22 @@
     margin: 0;
     padding: calc(12px + env(safe-area-inset-top, 0px))
       calc(12px + env(safe-area-inset-right, 0px))
-      calc(12px + env(safe-area-inset-bottom, 0px))
+      calc(
+        12px +
+        max(
+          env(safe-area-inset-bottom, 0px),
+          var(--keyboard-inset-content, var(--keyboard-inset-bottom, 0px))
+        )
+      )
       calc(12px + env(safe-area-inset-left, 0px));
     border: 0;
     border-radius: 0;
+  }
+
+  .companion-panel-composer input,
+  .companion-panel-composer .primary-btn,
+  .companion-panel-held button {
+    min-height: 40px;
   }
 
   .companion-panel .modal-head {

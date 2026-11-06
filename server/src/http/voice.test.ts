@@ -170,6 +170,54 @@ describe("the voice front", () => {
     ]);
   });
 
+  test("with no session yet, the front still answers; the router needs one", async () => {
+    const turns: { current: string }[] = [];
+    const front = {
+      warm: () => {},
+      turn: async (request: { current: string }) => {
+        turns.push(request);
+        return { to: "self", reply: "Paris." };
+      },
+    } as unknown as VoiceFront;
+    const body = {
+      current: "",
+      said: "Capital of France?",
+      sessions: [],
+      routes: ["current", "self"],
+    };
+    const fronted = createVoiceRoutes(
+      helper,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    expect(
+      await (await fronted(
+        post(body, { "x-roamgate-voice": "1" }),
+        "/api/voice/route",
+      ))!.json(),
+    ).toEqual({ to: "self", reply: "Paris." });
+    expect(turns.map((turn) => turn.current)).toEqual([""]);
+    let routed = 0;
+    const router = {
+      warm: () => {},
+      route: async () => {
+        routed += 1;
+        return { to: "nobody" };
+      },
+    } as unknown as VoiceRouter;
+    const routing = createVoiceRoutes(helper, () => router);
+    expect(
+      await (await routing(
+        post(body, { "x-roamgate-voice": "1" }),
+        "/api/voice/route",
+      ))!.json(),
+    ).toEqual({ to: "current" });
+    expect(routed).toBe(0);
+  });
+
   test("gives the front the call lately, and an errand its context", async () => {
     const turns: { call?: string }[] = [];
     const front = {

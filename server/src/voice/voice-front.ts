@@ -528,7 +528,8 @@ export function turnText(request: {
 }): string {
   const call = request.call?.trim();
   return [
-    `Current: ${request.current}`,
+    // No session yet: work needs one named, anything else is answered.
+    `Current: ${request.current || "none (no session to start work on)"}`,
     ...(call ? [`On the call (oldest first):\n${call}`] : []),
     `Said: ${JSON.stringify(request.said)}`,
   ].join("\n");

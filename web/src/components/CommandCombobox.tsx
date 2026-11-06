@@ -16,7 +16,7 @@ import {
   activityViewForSearch,
   openActivityTimeline,
 } from "../activityTimelineOpen";
-import { callCompanion } from "../companionCallOpen";
+import { askCompanion, callCompanion } from "../companionCallOpen";
 import {
   MR_REVIEWS_ENTRY,
   openMrReviewByKey,
@@ -46,6 +46,7 @@ import {
   Keyboard,
   ListChecks,
   ChartGantt,
+  MessageCircleQuestionMark,
   PhoneCall,
   Maximize2,
   MoveDown,
@@ -1112,6 +1113,23 @@ export function CommandCombobox({
             shortcut: shortcutLabel("companion.call"),
             keywords: ["voice", "call", "companion", "talk", "phone"],
             run: () => callCompanion(),
+          },
+          {
+            key: "companion-ask",
+            icon: <MessageCircleQuestionMark size={15} />,
+            title: "Ask the companion",
+            detail: "Type a question, no call: the answer is written",
+            shortcut: shortcutLabel("companion.ask"),
+            keywords: [
+              "companion",
+              "ask",
+              "question",
+              "type",
+              "text",
+              "write",
+              "chat",
+            ],
+            run: () => askCompanion(),
           },
         ]
       : []),

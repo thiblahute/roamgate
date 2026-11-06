@@ -31,7 +31,7 @@ import {
   type ReviewAnnotation,
 } from "./annotations";
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
-import { callCompanion } from "./companionCallOpen";
+import { askCompanion, callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
 import {
   handleMrReviewsShortcut,
@@ -4500,6 +4500,13 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) callCompanion();
+        return;
+      }
+      if (shortcutMatches(e, "companion.ask")) {
+        if (!voiceFronting()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) askCompanion();
         return;
       }
       if (shortcutMatches(e, "shortcuts.show")) {

@@ -1,3 +1,4 @@
+import { companionCallState } from "./companionCall";
 import { importWithReload } from "./lazyWithReload";
 
 /**
@@ -13,10 +14,27 @@ export function callCompanion(target?: string | null) {
   ).then((module) => module.showCompanionCall(target));
 }
 
-/** Opens the companion's own conversation, from its chip. */
+/**
+ * Opens the companion's own conversation, from its chip: outside a call,
+ * ready to type to it.
+ */
 export function openCompanionPanel() {
+  const ask = !companionCallState().open;
   void importWithReload(
     "companion-call",
     () => import("./components/CompanionCallRoot"),
-  ).then((module) => module.showCompanionPanel());
+  ).then((module) => module.showCompanionPanel({ ask }));
+}
+
+/**
+ * Opens the companion's conversation with its message box focused, to ask
+ * it something in writing without a call (no microphone, nothing read
+ * aloud): from its shortcut, the command menu or the application menu.
+ * Already open, its box takes the focus again.
+ */
+export function askCompanion() {
+  void importWithReload(
+    "companion-call",
+    () => import("./components/CompanionCallRoot"),
+  ).then((module) => module.showCompanionPanel({ ask: true }));
 }

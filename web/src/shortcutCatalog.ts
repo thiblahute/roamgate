@@ -15,6 +15,7 @@ const descriptions: [ShortcutId, string, string][] = [
   ["reviews.list", "List the reviews in progress", "Global"],
   ["assistant.toggle", "Toggle Ranger", "Global"],
   ["companion.call", "Call the voice companion", "Global"],
+  ["companion.ask", "Ask the companion in writing, without a call", "Global"],
   ["activity.open", "Open or close the activity timeline", "Global"],
   ["reviews.inbox", "Open or close the reviews inbox", "Global"],
   ["zen.toggle", "Toggle Zen mode on desktop", "Global"],

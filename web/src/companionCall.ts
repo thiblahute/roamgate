@@ -78,6 +78,13 @@ export type CompanionLogEntry =
       answer?: string;
       sources?: readonly { title: string; url: string }[];
       error?: string;
+      /**
+       * A tool job's call held for the user's yes or no, not made: answered
+       * by voice, by typing, or by its buttons. How it ended, once it did
+       * ("expired": nothing waits any more, forgotten or answered elsewhere).
+       */
+      held?: boolean;
+      heldOutcome?: "confirmed" | "declined" | "expired";
     };
 
 /** A web search's entry, as logCompanion takes it. */
@@ -208,6 +215,26 @@ export function endCompanionCall() {
 /** The call's voice chat state, shown by the companion's chip. */
 export function setCompanionPresence(presence: CompanionPresence) {
   if (state.presence !== presence) publish({ presence });
+}
+
+/** Typed turns the front decides now (companionText.ts). */
+let typedTurns = 0;
+
+/**
+ * A typed turn sent to the front: outside a call, the companion is
+ * "thinking" until every one is back (a call shows what it does itself).
+ * The function that marks it back, once.
+ */
+export function companionTypedTurn(): () => void {
+  typedTurns += 1;
+  if (!state.open) setCompanionPresence("thinking");
+  let back = false;
+  return () => {
+    if (back) return;
+    back = true;
+    typedTurns -= 1;
+    if (!typedTurns && !state.open) setCompanionPresence("off");
+  };
 }
 
 /** What the companion says now, for its call card. */
@@ -347,6 +374,7 @@ export function setCompanionName(name: string) {
 export function __resetCompanionCallForTests() {
   state = EMPTY;
   nextLogId = 1;
+  typedTurns = 0;
   teller = null;
   listeners.clear();
 }

@@ -514,9 +514,18 @@ Inspector state is scoped to each checkout; see
   It says at once that it does it ("Je mets en pause.") and tells you how
   it went. Anything that would send, write or delete (a message, a mail, a
   reaction) is never done as asked: it reads back exactly what it would
-  send and to whom, and does it only when you say yes. Its conversation also
-  takes text: type to it there, in a call or not, as you would talk.
-  Between turns it
+  send and to whom, and does it only when you say yes. In its conversation
+  that read-back has **Yes, do it** and **No** buttons, and a plain yes or
+  no typed there answers it too; it stops waiting after 5 minutes.
+  Its conversation also takes text, in a call or without one, for a quick
+  question with no microphone: **Ask the companion** in the application
+  menu or the command menu (`Cmd+Option+Shift+V`, `Ctrl+Alt+Shift+V`), or
+  its chip when no call runs, opens it with its message box focused (full
+  screen on a phone). Enter sends; it says it is thinking while it decides,
+  then answers in writing as it would on a call (an answer, a web search,
+  its tools, work started on a session, Ranger), and nothing is read
+  aloud. With no agent session open, it still answers; work then needs a
+  session named. Between turns it
   tells you what happened elsewhere when it is worth it (a session done or
   waiting for input, a Ranger task run), never over you. Speaking up stops
   it. When it is slow, the usual "Got it, on it." says it heard you. While
@@ -1699,6 +1708,7 @@ and is skipped, with a note, on a browser that does not match.
 | Annotations                                                           | `Cmd+Option+A`          | `Ctrl+Alt+A`                            |
 | Ranger                                                                | `Cmd+Option+Shift+A`    | `Ctrl+Alt+Shift+A`                      |
 | Call the voice companion                                              | `Cmd+Option+V`          | `Ctrl+Alt+V`                            |
+| Ask the companion in writing, without a call                          | `Cmd+Option+Shift+V`    | `Ctrl+Alt+Shift+V`                      |
 | Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
 | Reviews inbox                                                         | `Option+M`              | `Alt+M`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |

@@ -96,6 +96,12 @@ const MAX_RECENT_CHARS = 4000;
  * it; "tool_cancel" forgets it and comes back as "self". GET
  * /api/voice/tools lists the jobs, ?job= gives one; POST
  * /api/voice/tools/cancel `{job?}` stops one, or all those running.
+ * POST /api/voice/tools/answer `{job, answer}` is the user's click on a
+ * held call in the companion's conversation: "yes" makes that call as a
+ * yes said does (`{job}` back, the job making it), "no" forgets it
+ * (`{declined}`); 409 when nothing of `job` waits any more.
+ * With a front, a route needs no `current`: with no session yet, the front
+ * still answers, looks up and uses its tools.
  *
  * Voices (voice-library.ts): GET /api/voice/voices lists them, grouped by
  * model (`voices` recorded, `stock` Qwen3-TTS speakers, `kokoro`), says
@@ -346,6 +352,43 @@ export function createVoiceRoutes(
           : using.cancelAll();
       return Response.json({ cancelled });
     }
+    if (pathname === "/api/voice/tools/answer" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      const body = (await req.json().catch(() => null)) as {
+        job?: unknown;
+        answer?: unknown;
+      } | null;
+      const job = typeof body?.job === "string" ? body.job : "";
+      const answer = body?.answer;
+      if (!job || (answer !== "yes" && answer !== "no"))
+        return Response.json(
+          { error: 'A job and its answer ("yes" or "no") are needed.' },
+          { status: 400 },
+        );
+      const using = tools();
+      if (!using?.heldJob(job))
+        return Response.json(
+          { error: "Nothing is waiting for a yes." },
+          { status: 409 },
+        );
+      if (answer === "no") {
+        using.decline(job);
+        return Response.json({ declined: job });
+      }
+      const making = using.approve(job);
+      if (debug && making)
+        console.error(`[voice] held call of ${job} confirmed by a click`);
+      return making
+        ? Response.json({ job: making })
+        : Response.json(
+            { error: "Too many jobs run now: try again in a moment." },
+            { status: 503 },
+          );
+    }
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
@@ -419,7 +462,10 @@ export function createVoiceRoutes(
           : "";
       const current = typeof body?.current === "string" ? body.current : "";
       const sessions = routeSessions(body?.sessions);
-      if (!said || !current) return Response.json({ to: "current" });
+      // The router only chooses a session; the front also answers, looks
+      // up and uses its tools, with no session yet as well.
+      if (!said || (!current && !fronting))
+        return Response.json({ to: "current" });
       const started = performance.now();
       const researching = fronting ? research() : null;
       let route: FrontReply = fronting

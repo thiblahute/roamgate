@@ -474,9 +474,18 @@ export class VoiceTools {
    * too old, or `said` is not a yes.
    */
   confirm(said: string, id?: string): ToolJob | null {
+    return saysYes(said) ? this.approve(id) : null;
+  }
+
+  /**
+   * The user's yes to `id`'s held call (or the last one held) given
+   * otherwise than in words: a click on that very call in the companion's
+   * conversation. As confirm: a new job makes it, once; null when nothing
+   * is held, it is too old, or too many run.
+   */
+  approve(id?: string): ToolJob | null {
     const job = this.heldJob(id);
-    if (!job?.held || !saysYes(said) || this.running.size >= MAX_RUNNING)
-      return null;
+    if (!job?.held || this.running.size >= MAX_RUNNING) return null;
     job.heldOutcome = "confirmed";
     const held = job.held;
     return this.run(
