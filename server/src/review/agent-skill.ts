@@ -114,7 +114,10 @@ that whole message when it has no \`quote\`: answer it on its own, about
 that part. A thread with \`on_chat_message\` is a comment on
 a part of one of your messages in your chat with the user (a review whose
 target is \`chat\`): answer it with \`reply\` in that thread, and only there;
-the chat does not get the same answer again. A thread with \`on_effort\` is
+the chat does not get the same answer again. One that also has a \`path\` is
+on a file you changed in that chat (\`line\`/\`end_line\` numbered as your
+change left it, \`quote\` the lines): treat it as a review comment on that
+code. A thread with \`on_effort\` is
 a comment on the view of an upstreaming effort you lead (a review whose
 target is \`effort\`): \`tab\` (board, progress, ledger, plans, feeders or
 changes), \`item\` (what was pointed at: a \`plan\` id, a \`card\` of the

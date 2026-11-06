@@ -575,6 +575,27 @@ drawn into slots put in the sanitized Markdown after it renders (never in
 code); what the forge says is not selectable message text and never goes to
 an agent. The history marks a `glab mr create` or `gh pr create` result with
 the URL it printed (`created_request`), kept when the payload is redacted.
+A file-editing call (Edit, MultiEdit, Write, NotebookEdit) carries what it
+changed (`file_edit`, shared/fileEdits.ts), also kept when redacted: Claude
+Code's patch from its result record (`toolUseResult.structuredPatch`, with
+line numbers and context, or a new file's content), else the change its
+arguments ask while it has no result, none once it failed; at most 160
+lines, its counts whole. A call streamed in conversation mode gets the same
+from its arguments until the transcript has it, and a permission prompt
+for such a call carries the change it asks to make.
+A comment on such a change (web/src/fileEditComments.ts) is a thread of the
+chat's review whose anchor has a `chat` part on the call's entry (its time,
+and the tool call's own id as `chat.call`, by which it is found when the call
+is read with another entry id) plus the file as a review comment has it:
+`path`, and on lines `line`/`endLine` on side `new` (as the change numbered
+the file; `old` when only removed lines are taken) with the first line's
+`text`; `chat.quote` holds the lines, marked +/- when removed lines are taken
+with others, or the path for the file as a whole. The card finds the lines
+again by number and text, else by text near the number, else by the quote,
+and otherwise shows the thread at its end with the quote. The delivery names
+the file and lines and quotes them, and asks the agent to treat them as
+review comments on code; `roamgate-review` lists such a thread with its
+`path`, lines and `on_chat_message.tool_call`.
 
 Review diffs run git with the settings that change a patch's shape pinned
 (`core.quotePath`, `diff.noprefix`, `diff.mnemonicPrefix`,

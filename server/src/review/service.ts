@@ -298,6 +298,24 @@ function chatTime(at: string): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
+/**
+ * Where a comment on a file a tool call of the chat changed is, for the
+ * agent: the file and its lines, numbered as the change left the file (a
+ * removed line: as the file was before it), as a review comment says.
+ */
+export function fileChangePlace(anchor: ReviewAnchor, at?: string): string {
+  const path = oneLine(anchor.path ?? "", 300);
+  const change = `your change${at ? ` of ${chatTime(at)}` : ""}`;
+  if (!anchor.line) return `on the file ${path}, as ${change} left it`;
+  const lines = anchor.endLine
+    ? `lines ${anchor.line}-${anchor.endLine}`
+    : `line ${anchor.line}`;
+  const these = anchor.endLine ? "these lines" : "this line";
+  return anchor.side === "old"
+    ? `on ${path}:${anchor.line}${anchor.endLine ? `-${anchor.endLine}` : ""} (${lines} as the file was before ${change}, which removed ${anchor.endLine ? "them" : "it"}), about ${these}`
+    : `on ${path}:${anchor.line}${anchor.endLine ? `-${anchor.endLine}` : ""} (${lines} as ${change} left the file), about ${these}`;
+}
+
 function parseAnchor(value: unknown): ReviewAnchor {
   if (value === undefined || value === null) return {};
   if (typeof value !== "object") throw new ReviewError("invalid anchor");
@@ -360,11 +378,13 @@ function parseAnchor(value: unknown): ReviewAnchor {
       throw new ReviewError("a chat part needs its message and quote");
     const at = optionalText(part.at, "chat message time", 64);
     const excerpt = optionalText(part.excerpt, "chat message excerpt", 300);
+    const call = optionalText(part.call, "tool call", 300);
     anchor.chat = {
       entry,
       quote,
       ...(at ? { at } : {}),
       ...(excerpt ? { excerpt } : {}),
+      ...(call ? { call } : {}),
     };
   }
   const effort = effortPart(raw.effort);
@@ -2469,11 +2489,20 @@ export function createReviewService(args: {
       );
     const chat = target.target.kind === "chat";
     const effort = target.target.kind === "effort";
+    // In a chat: on its messages, on files its tool calls changed, or both.
+    const onFile = (thread: ReviewThread) =>
+      !!thread.anchor.chat && !!thread.anchor.path;
+    const onFiles = due.some(onFile);
+    const onWhat = !onFiles
+      ? "on parts of your messages"
+      : due.every(onFile)
+        ? "on files you changed"
+        : "on parts of your messages and files you changed";
     if (due.length)
       lines.push(
         ...(overall ? [""] : []),
         chat
-          ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on parts of your messages in this chat:`
+          ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me ${onWhat} in this chat:`
           : effort
             ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the view of the upstreaming effort you lead (${oneLine(target.title, 200)}, id ${target.target.kind === "effort" ? target.target.effort : ""}) in Reviews:`
             : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
@@ -2487,18 +2516,24 @@ export function createReviewService(args: {
       const said = thread.anchor.chat;
       // On what an effort's view shows: the tab, the item, the words.
       const shown = thread.anchor.effort;
+      // On a file a tool call of the chat changed: the file and its lines.
+      const file = said && thread.anchor.path ? thread.anchor : null;
+      const quote =
+        file && !file.line && said?.quote === file.path
+          ? undefined
+          : (said ?? part ?? shown)?.quote;
       lines.push(
         "",
         shown && !part
           ? `- [${thread.id.slice(0, 8)}] on ${describeEffortPart(shown)}${shown.quote ? ", about this part" : ""}:`
-          : said
-            ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
-            : part
-              ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
-              : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
-        ...((said ?? part ?? shown)?.quote
-          ?.split("\n")
-          .map((line) => `  > ${line}`) ?? []),
+          : file && said
+            ? `- [${thread.id.slice(0, 8)}] ${fileChangePlace(file, said.at)}:`
+            : said
+              ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
+              : part
+                ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
+                : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
+        ...(quote?.split("\n").map((line) => `  > ${line}`) ?? []),
       );
       // What changed since the agent last heard: new comments, and earlier
       // ones the user rewrote.
@@ -2524,7 +2559,11 @@ export function createReviewService(args: {
     else if (due.length && chat)
       lines.push(
         "",
-        `These are threads on our conversation, not on code. Answer each in its thread with ${replyHow ?? `\`${command} reply --comment ID -- TEXT\``}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,
+        `${
+          onFiles
+            ? "These are threads on our conversation; those on a file you changed are about its lines, as review comments on code are: make in the file the change they ask for."
+            : "These are threads on our conversation, not on code."
+        } Answer each in its thread with ${replyHow ?? `\`${command} reply --comment ID -- TEXT\``}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,
       );
     else if (due.length)
       lines.push(

@@ -12,6 +12,7 @@
    their own: they are not messages of the conversation, whatever the theme
    and accent. */
 .chat-review,
+.chat-file-edit,
 .chat-threads-chip,
 .chat-threads-away,
 .chat-threads-overview {
@@ -21,6 +22,7 @@
 :root[data-theme="light"]
   :is(
     .chat-review,
+    .chat-file-edit,
     .chat-threads-chip,
     .chat-threads-away,
     .chat-threads-overview

@@ -44,6 +44,11 @@ import { useRewindCheck } from "./AgentRewindSheet";
 import { type AgentTask, taskStatusLabel } from "../agentTasks";
 import { formatUiDateTime } from "../uiLocale";
 import { ChatRewoundNotice } from "./ChatRewoundNotice";
+import { ChatFileEdit } from "./ChatFileEdit";
+import {
+  type FileEdit,
+  fileEditFromArgumentText,
+} from "../../../shared/fileEdits";
 import { HISTORY_PREVIEW_CHARS } from "./AgentHistoryCard";
 import type { OutboxMessage } from "./chatOutbox";
 import {
@@ -1314,6 +1319,30 @@ function ToolStepRow({
   );
 }
 
+/**
+ * The file edits of a block's calls: what the transcript's entry says
+ * (Claude Code's patch, kept when the payload is withheld), else what a
+ * streamed call's arguments ask. A failed call changed nothing. With the
+ * call, which comments on the change are on.
+ */
+export function stepFileEdits(steps: readonly ToolStep[]): {
+  id: string;
+  edit: FileEdit;
+  pending: boolean;
+  call: HistoryEntry;
+}[] {
+  return steps.flatMap((step) => {
+    const { call, result } = step;
+    if (!call || result?.is_error) return [];
+    const edit =
+      call.file_edit ??
+      (isToolContentPending(call)
+        ? null
+        : fileEditFromArgumentText(step.name, call.text));
+    return edit ? [{ id: step.id, edit, pending: !result, call }] : [];
+  });
+}
+
 // Collapsed by default; the block keeps its open state across polling
 // refreshes because its key follows the first entry's id.
 type ToolBlockProps = {
@@ -1416,6 +1445,8 @@ const ToolBlock = memo(function ToolBlock({
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const listId = useId();
   const steps = useMemo(() => pairToolSteps(entries), [entries]);
+  // The files these calls changed, shown as the terminal shows them.
+  const edits = useMemo(() => stepFileEdits(steps), [steps]);
   // Each payload version is queued and fetched directly at most once per
   // block, so a failed fetch does not loop on every polling refresh; the Load
   // buttons still retry. A payload rewritten under the same id is a new
@@ -1531,6 +1562,18 @@ const ToolBlock = memo(function ToolBlock({
                 {taskStatusLabel(task)}
               </span>
             </button>
+          ))}
+        </div>
+      ) : null}
+      {edits.length ? (
+        <div className="agent-history-chat-edits">
+          {edits.map(({ id, edit, pending, call }) => (
+            <ChatFileEdit
+              key={id}
+              edit={edit}
+              state={pending ? "running" : "done"}
+              call={call}
+            />
           ))}
         </div>
       ) : null}

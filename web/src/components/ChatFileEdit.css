@@ -1,0 +1,263 @@
+/* A file a tool call changed, under its tool block, as the terminal shows. */
+.chat-file-edit {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--diff-bg);
+  color: var(--diff-text);
+  font-size: 12px;
+}
+
+.chat-file-edit.is-pending {
+  opacity: 0.75;
+}
+
+.chat-file-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+}
+
+.chat-file-edit-verb {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.chat-file-edit-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The file's name stays in view; a long directory is what goes. */
+  direction: rtl;
+  text-align: left;
+}
+
+.chat-file-edit-path > * {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.chat-file-edit-dir {
+  color: var(--muted);
+}
+
+.chat-file-edit-counts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-file-edit-added {
+  color: var(--success-text);
+}
+
+.chat-file-edit-removed {
+  color: var(--danger-text);
+}
+
+.chat-file-edit-change {
+  padding: 2px 0;
+}
+
+.chat-file-edit-lines {
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.chat-file-edit-line {
+  position: relative;
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+}
+
+.chat-file-edit-line.is-add {
+  background: var(--diff-add-bg);
+}
+
+.chat-file-edit-line.is-remove {
+  background: var(--diff-del-bg);
+}
+
+.chat-file-edit-number {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 4ch;
+  padding: 0 6px 0 4px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.chat-file-edit-sign {
+  flex: 0 0 auto;
+  width: 2ch;
+  color: var(--muted);
+  user-select: none;
+}
+
+.chat-file-edit-line.is-add .chat-file-edit-sign {
+  color: var(--success-text);
+}
+
+.chat-file-edit-line.is-remove .chat-file-edit-sign {
+  color: var(--danger-text);
+}
+
+.chat-file-edit-text {
+  padding-right: 8px;
+}
+
+.chat-file-edit-gap {
+  padding: 0 8px;
+  background: var(--diff-hunk-bg);
+  color: var(--diff-hunk-text);
+  user-select: none;
+}
+
+.chat-file-edit-more {
+  align-self: flex-start;
+  margin: 2px 6px 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.chat-file-edit-more:hover,
+.chat-file-edit-more:focus-visible {
+  background: var(--accent-soft);
+}
+
+.chat-file-edit-note {
+  margin: 0 8px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* A card in a chat with threads: its lines and its file take comments. The
+   part j / k is on, and the lines commented on, marked as a message's. */
+.chat-file-edit.is-commentable .chat-file-edit-head,
+.chat-file-edit.is-commentable .chat-file-edit-line {
+  cursor: default;
+}
+
+.chat-file-edit-head.is-focused,
+.chat-file-edit-line.is-focused {
+  background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.chat-file-edit-line.has-notes:not(.is-focused) {
+  box-shadow: inset 2px 0 var(--chat-comment, var(--accent));
+}
+
+/* + over a line's number: comment on that line. Drawn by its style, not
+   text: a selection across the lines copies none. */
+.chat-file-edit-add {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  opacity: 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Not shown, not there: a tap on a line's number puts the cursor on it. */
+  pointer-events: none;
+}
+
+.chat-file-edit-add::before {
+  content: "+";
+}
+
+.chat-file-edit-line:hover .chat-file-edit-add,
+.chat-file-edit-line.is-focused .chat-file-edit-add,
+.chat-file-edit-add:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Comment on the file as a whole. */
+.chat-file-edit-comment {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chat-file-edit:hover .chat-file-edit-comment,
+.chat-file-edit-head.is-focused .chat-file-edit-comment,
+.chat-file-edit-comment:focus-visible {
+  opacity: 1;
+}
+
+.chat-file-edit-comment:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* No hover on a touch screen: the file's button always shows, and a line
+   tapped shows its +, taller than the line for a finger. */
+@media (hover: none) {
+  .chat-file-edit-comment {
+    opacity: 1;
+  }
+
+  .chat-file-edit-add {
+    top: -3px;
+    bottom: -3px;
+    z-index: 1;
+  }
+}
+
+/* Threads on the card: under their line, the head, or at its end. */
+.chat-file-edit-notes {
+  margin: 2px 8px 6px;
+}
+
+.chat-file-edit-notes > .chat-file-edit-thread > .chat-thread {
+  margin: 4px 0;
+}
+
+.chat-file-edit-quote-label {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-file-edit-quote {
+  margin: 2px 0 0;
+  padding: 2px 6px;
+  overflow-x: auto;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre;
+}

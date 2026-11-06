@@ -130,6 +130,11 @@ export function threadOutput(thread: ReviewThread) {
             at: thread.anchor.chat.at ?? null,
             excerpt: thread.anchor.chat.excerpt ?? null,
             quote: thread.anchor.chat.quote,
+            // On a file a tool call changed: that call (the path and
+            // lines are the thread's own).
+            ...(thread.anchor.chat.call
+              ? { tool_call: thread.anchor.chat.call }
+              : {}),
           },
         }
       : {}),

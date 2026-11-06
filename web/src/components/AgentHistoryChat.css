@@ -765,6 +765,14 @@
   border-style: dashed;
 }
 
+/* What a block's calls changed in files, as the terminal shows it. */
+.agent-history-chat-edits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px 6px;
+}
 /* The sentence being read aloud. */
 ::highlight(roamgate-reading) {
   background-color: color-mix(in srgb, var(--accent) 30%, transparent);
