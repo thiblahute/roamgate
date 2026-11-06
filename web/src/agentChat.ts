@@ -4,6 +4,8 @@ import type {
   AgentChatEvent,
   AgentChatHandoverResult,
   AgentChatOtherWriter,
+  AgentChatModelResult,
+  AgentChatModels,
   AgentChatOwner,
   AgentChatQueued,
   AgentChatRewindCheck,
@@ -239,6 +241,7 @@ export function applyStateEvent(
               asleep: null,
               api_key_question: null,
               next_prompt: null,
+              model_notice: null,
             }
           : {}),
       };
@@ -261,6 +264,8 @@ export function applyStateEvent(
       return { ...state, asleep: event.asleep };
     case "api_key_question":
       return { ...state, api_key_question: event.api_key_question };
+    case "model_notice":
+      return { ...state, model_notice: event.model_notice };
     case "shell": {
       // A `!` line's progress; once Claude has it, the transcript shows it,
       // and the last few sent stay here for how they ended (the transcript
@@ -885,6 +890,51 @@ export function lastUserUuid(
     if (entry.role === "user" && entry.uuid && !entry.queued) return entry.uuid;
   }
   return undefined;
+}
+
+/**
+ * What /model offers in the pane's session (the running agent's list, the
+ * profile's besides) and which one it runs.
+ */
+export async function listAgentChatModels(
+  client: ConnectionClient,
+  paneId: string,
+): Promise<AgentChatModels> {
+  return (await client.call("agent_chat.models", {
+    pane_id: paneId,
+  })) as AgentChatModels;
+}
+
+/**
+ * Switches the pane's session to another model (/model): the chat says
+ * what came of it, in every browser.
+ */
+export async function setAgentChatModel(
+  client: ConnectionClient,
+  paneId: string,
+  model: string,
+): Promise<AgentChatModelResult> {
+  try {
+    return (await client.call(
+      "agent_chat.model",
+      { pane_id: paneId, model },
+      // A process that sleeps is started first.
+      90_000,
+    )) as AgentChatModelResult;
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Drops what the chat says of the last /model, for every browser. */
+export function dismissAgentChatModelNotice(
+  client: ConnectionClient,
+  paneId: string,
+): Promise<{ ok: boolean }> {
+  return client.call("agent_chat.model_notice.dismiss", { pane_id: paneId });
 }
 
 /** Drops the notice of a turn cut short, for every browser. */

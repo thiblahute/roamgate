@@ -1,11 +1,13 @@
 import {
   allProfiles,
+  chosenModelAnswered,
   isPlainProfile,
+  latestSessionAnswer,
   latestSessionModel,
+  latestTranscriptModel,
   latestUsageLimit,
   profileModelLabel,
   profileNamed,
-  profileServesModel,
   switchModel,
   type UsageLimit,
 } from "../../../shared/agentProfiles";
@@ -27,6 +29,8 @@ export type ProfileRpcDeps = {
   agentGet: (paneId: string) => Promise<Record<string, unknown> | null>;
   /** The session conversation mode owns in the pane, if it does. */
   conversationSession: (paneId: string) => string | null;
+  /** The model conversation mode's running agent last named, if any. */
+  conversationModel?: (paneId: string) => string | null;
   restartProcess: (
     paneId: string,
   ) => Promise<{ ok: true } | { ok: false; reason: string }>;
@@ -94,6 +98,28 @@ async function paneSession(deps: ProfileRpcDeps, paneId: string) {
     : null;
 }
 
+/**
+ * The model a Claude session runs now, the surest first: what its running
+ * conversation-mode agent named, a choice its next start takes (a /model,
+ * a profile switch's) until it answered with it, the model its transcript
+ * last answered with, the profile's own model.
+ */
+export function runningModel(
+  live: string | null,
+  chosen: string | null,
+  transcriptTail: string | null,
+  profileModel: unknown,
+): string | null {
+  return (
+    live ||
+    chosen ||
+    (transcriptTail ? latestSessionModel(transcriptTail) : null) ||
+    (typeof profileModel === "string" && profileModel.trim()
+      ? profileModel.trim()
+      : null)
+  );
+}
+
 export const PROFILE_RPC_METHODS = new Set([
   "agent_profile.get",
   "agent_profile.switch",
@@ -145,26 +171,57 @@ export async function handleProfileRpc(
 
   const pane = await paneSession(deps, paneId);
   if (method === "agent_profile.get") {
-    if (!pane)
-      return { session_id: null, profiles: listed, default: defaultName };
+    const tail = await deps.transcriptTail(paneId).catch(() => null);
+    if (!pane) {
+      // Another agent (Pi, Codex): the model its transcript names.
+      const model = tail ? latestTranscriptModel(tail) : null;
+      return {
+        session_id: null,
+        profiles: listed,
+        default: defaultName,
+        ...(model ? { model } : {}),
+      };
+    }
     const profile = profileForSession(settings, pane.sessionId, deps.store);
     let limit: UsageLimit | null = null;
     if (params.limit !== false) {
-      const tail = await deps.transcriptTail(paneId).catch(() => null);
       limit = tail ? latestUsageLimit(tail, now()) : null;
-      // Started with a model of its own after a switch (switchModel): once
-      // it answered on its profile, Claude Code resumes on that by itself.
-      const forced = deps.store.get(pane.sessionId)?.model;
-      const answered = forced && tail ? latestSessionModel(tail) : null;
-      if (answered && profileServesModel(profile, answered))
+      // Started with a model of its own (a switch's switchModel, /model):
+      // once it answered with it, Claude Code resumes on that by itself.
+      const chosen = deps.store.get(pane.sessionId);
+      const answer = chosen?.model && tail ? latestSessionAnswer(tail) : null;
+      if (
+        chosen?.model &&
+        answer &&
+        chosenModelAnswered(
+          answer,
+          {
+            model: chosen.model,
+            ...(chosen.model_resolved
+              ? { resolved: chosen.model_resolved }
+              : {}),
+            at: chosen.model_at ?? chosen.at,
+          },
+          profile,
+        )
+      )
         deps.store.settleModel(pane.sessionId);
     }
     const choice = deps.store.get(pane.sessionId);
+    const model = runningModel(
+      pane.owner === "conversation"
+        ? (deps.conversationModel?.(paneId) ?? null)
+        : null,
+      choice?.model ? (choice.model_resolved ?? choice.model) : null,
+      tail,
+      profile.env?.ANTHROPIC_MODEL,
+    );
     return {
       session_id: pane.sessionId,
       owner: pane.owner,
       profile: profile.name,
       label: profileModelLabel(profile),
+      ...(model ? { model } : {}),
       default: defaultName,
       profiles: listed,
       limit,

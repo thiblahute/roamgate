@@ -130,8 +130,14 @@ type SessionChoice = {
   /** Switched because a limit was hit: back to `return_to` at this time. */
   return_at?: number;
   return_to?: string;
-  /** Started with this model until it answered on the profile (switchModel). */
+  /**
+   * Started with this model until it answered with it: a profile switch's
+   * (switchModel), or the user's /model.
+   */
   model?: string;
+  /** When /model chose it (else `at`), and the model the agent said it is. */
+  model_at?: string;
+  model_resolved?: string;
 };
 
 const MAX_SESSIONS = 2000;
@@ -206,6 +212,33 @@ export function createSessionProfiles(
         });
       save();
     },
+    /**
+     * The user's /model: the session starts with `model` until it answered
+     * with it (`resolved`: the model id the agent said it is). Its profile
+     * and return stay. Null drops the choice.
+     */
+    chooseModel(
+      sessionId: string,
+      model: string | null,
+      resolved?: string | null,
+    ) {
+      const all = load();
+      const choice = all.get(sessionId);
+      const rest: SessionChoice = choice
+        ? { ...choice }
+        : { profile: null, at: new Date(now()).toISOString() };
+      delete rest.model;
+      delete rest.model_at;
+      delete rest.model_resolved;
+      if (model) {
+        rest.model = model;
+        rest.model_at = new Date(now()).toISOString();
+        if (resolved) rest.model_resolved = resolved;
+      }
+      all.delete(sessionId);
+      if (rest.profile !== null || rest.model) all.set(sessionId, rest);
+      save();
+    },
     /** The session answered on its profile: its own model choice holds now. */
     settleModel(sessionId: string) {
       const all = load();
@@ -215,6 +248,8 @@ export function createSessionProfiles(
       else {
         const rest = { ...choice };
         delete rest.model;
+        delete rest.model_at;
+        delete rest.model_resolved;
         all.set(sessionId, rest);
       }
       save();
@@ -273,12 +308,8 @@ export function commandForSession(
   return model ? { ...command, model } : command;
 }
 
-/**
- * Agent arguments with `--model` set to `model` (any earlier one dropped);
- * the same arguments when there is none.
- */
-export function withModel(args: readonly string[], model?: string): string[] {
-  if (!model) return [...args];
+/** Agent arguments without any `--model`. */
+export function withoutModel(args: readonly string[]): string[] {
   const kept: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
@@ -289,7 +320,16 @@ export function withModel(args: readonly string[], model?: string): string[] {
     if (arg.startsWith("--model=")) continue;
     kept.push(arg);
   }
-  return [...kept, "--model", model];
+  return kept;
+}
+
+/**
+ * Agent arguments with `--model` set to `model` (any earlier one dropped);
+ * the same arguments when there is none.
+ */
+export function withModel(args: readonly string[], model?: string): string[] {
+  if (!model) return [...args];
+  return [...withoutModel(args), "--model", model];
 }
 
 /** The default profile's command, for Roamgate's own helpers. */

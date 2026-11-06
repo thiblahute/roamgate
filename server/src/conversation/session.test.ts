@@ -13,6 +13,7 @@ import {
 import { isSpokenStop } from "./session-voice";
 import {
   answerInterrupts,
+  answerModels,
   answerRewinds,
   type FakeClaude,
   fakeClaudeProcess,
@@ -1918,5 +1919,152 @@ describe("next prompt", () => {
     });
     await settle();
     expect(context.session.state().next_prompt).toBeNull();
+  });
+});
+
+describe("switching the model (/model)", () => {
+  const withModels = (options?: Parameters<typeof answerModels>[0]) => () =>
+    fakeClaudeProcess({ exitOnEnd: true, respond: answerModels(options) });
+  const requests = (fake: FakeClaude) =>
+    fake.written.flatMap((message) =>
+      message.type === "control_request" ? [message.request] : [],
+    );
+
+  test("a switch starts the process when none runs and asks it", async () => {
+    const context = setup({ make: withModels() });
+    expect(context.session.model()).toBeNull();
+    expect(await context.session.setModel("sonnet")).toEqual({
+      ok: true,
+      model: "claude-sonnet-5-5",
+      nextTurn: false,
+    });
+    expect(context.spawner.spawned).toHaveLength(1);
+    expect(requests(context.proc())).toEqual([
+      { subtype: "set_model", model: "sonnet" },
+    ]);
+    expect(context.session.model()).toBe("claude-sonnet-5-5");
+    expect(context.session.chosenModel()).toBe("sonnet");
+    // Nothing was sent as a message.
+    expect(context.users()).toEqual([]);
+  });
+
+  test("the agent's refusal is said, and nothing changes", async () => {
+    const context = setup({
+      make: withModels({
+        resolve: (name) => {
+          throw new Error(`Model '${name}' not found`);
+        },
+      }),
+    });
+    expect(await context.session.setModel("sonet")).toEqual({
+      ok: false,
+      reason: "Model 'sonet' not found",
+    });
+    expect(context.session.chosenModel()).toBeNull();
+  });
+
+  test("while a turn runs, it is for the next turn, and the turn goes on", async () => {
+    const context = setup({ make: withModels() });
+    await startTurn(context);
+    expect(await context.session.setModel("haiku")).toMatchObject({
+      ok: true,
+      nextTurn: true,
+    });
+    expect(context.session.state().status).toBe("working");
+    expect(context.spawner.spawned).toHaveLength(1);
+  });
+
+  test("the model a turn starts on is known from its init", async () => {
+    const context = setup({ make: withModels() });
+    await startTurn(context);
+    context.proc().push({
+      type: "system",
+      subtype: "init",
+      session_id: "s1",
+      model: "claude-opus-5-5",
+    });
+    await settle();
+    expect(context.session.model()).toBe("claude-opus-5-5");
+    // An answer from another model (a fallback): that one runs now.
+    context.proc().push({
+      type: "assistant",
+      message: {
+        id: "msg_fb",
+        model: "claude-sonnet-5-5",
+        content: [{ type: "text", text: "On Sonnet" }],
+      },
+      parent_tool_use_id: null,
+    });
+    await settle();
+    expect(context.session.model()).toBe("claude-sonnet-5-5");
+  });
+
+  test("no switch while a rewind runs, nor while handing back", async () => {
+    // It answers the switch, never the rewind's step: the rewind waits.
+    const context = setup({ make: withModels(), rewindWaitMs: 50 });
+    await context.session.warm();
+    const rewinding = context.session.rewind({
+      uuid: "u2",
+      mode: "conversation",
+    });
+    await settle();
+    expect(await context.session.setModel("haiku")).toEqual({
+      ok: false,
+      reason: "A rewind is running; switch once it is done",
+    });
+    expect((await rewinding).ok).toBe(false);
+    const stopping = context.session.stop();
+    expect(await context.session.setModel("haiku")).toEqual({
+      ok: false,
+      reason: "The session is being handed back",
+    });
+    await stopping;
+    expect(requests(context.proc())).toEqual([
+      { subtype: "rewind_conversation", target_message_uuid: "u2" },
+    ]);
+  });
+
+  test("the list comes from the running process only, its rows as it says", async () => {
+    const context = setup({ make: withModels() });
+    expect(await context.session.listModels()).toBeNull();
+    expect(context.spawner.spawned).toHaveLength(0);
+    await context.session.warm();
+    expect(await context.session.listModels()).toEqual([
+      {
+        value: "default",
+        label: "Default (recommended)",
+        description: "Use the default model (currently Opus 5.5)",
+        resolved: "claude-opus-5-5",
+      },
+      {
+        value: "sonnet",
+        label: "Sonnet",
+        description: "Sonnet 5.5",
+        resolved: "claude-sonnet-5-5",
+      },
+      {
+        value: "haiku",
+        label: "Haiku",
+        description: "Haiku 5.5",
+        resolved: "claude-haiku-5-5",
+      },
+    ]);
+  });
+
+  test("a process that does not answer the list gives none, in a short while", async () => {
+    jest.useFakeTimers();
+    try {
+      const context = setup({
+        make: () => fakeClaudeProcess({ exitOnEnd: true }),
+        rewindWaitMs: 30_000,
+      });
+      await context.session.warm();
+      const listed = context.session.listModels();
+      await settle();
+      jest.advanceTimersByTime(5000);
+      expect(await listed).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

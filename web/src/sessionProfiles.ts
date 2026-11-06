@@ -22,7 +22,27 @@ export type SessionProfile = {
   limit?: UsageLimit | null;
   returns_at?: number;
   returns_to?: string;
+  /**
+   * The model the session runs now, as the agent names it
+   * ("claude-opus-5-5"); other agents' (Pi, Codex) too.
+   */
+  model?: string;
 };
+
+/**
+ * What a model chip's title says: the model's whole id, then the
+ * session's profile.
+ */
+export function modelTitle(data: SessionProfile): string {
+  const lines = data.model ? [`Model: ${data.model}`] : [];
+  if (data.session_id && data.profiles.length > 1) {
+    const current = data.profile ?? data.default;
+    lines.push(
+      `Profile: ${current}${current === data.default ? " (default)" : ""}`,
+    );
+  }
+  return lines.join("\n");
+}
 
 type Entry = {
   data: SessionProfile | null;
@@ -79,12 +99,33 @@ export function parseSessionProfile(value: unknown): SessionProfile | null {
   return raw as unknown as SessionProfile;
 }
 
-/** Asks the server again for a pane's session profile. */
-export async function refreshSessionProfile(
+/** The asks in flight that a chip's own refresh joins. */
+const asking = new Map<string, Promise<void>>();
+
+/**
+ * Asks the server again for a pane's session profile. `join`: an ask
+ * already in flight answers (the chips of one pane refresh together).
+ */
+export function refreshSessionProfile(
   client: ConnectionClient,
   paneId: string,
+  options: { join?: boolean } = {},
 ): Promise<void> {
   const key = keyOf(client.connectionId, paneId);
+  const pending = options.join ? asking.get(key) : undefined;
+  if (pending) return pending;
+  const ask = askSessionProfile(client, paneId, key).finally(() => {
+    if (asking.get(key) === ask) asking.delete(key);
+  });
+  asking.set(key, ask);
+  return ask;
+}
+
+async function askSessionProfile(
+  client: ConnectionClient,
+  paneId: string,
+  key: string,
+): Promise<void> {
   try {
     const data = parseSessionProfile(
       await client.call("agent_profile.get", { pane_id: paneId }),
@@ -150,9 +191,9 @@ export function useSessionProfile(
   const entry = useSessionProfileEntry(client.connectionId, paneId);
   useEffect(() => {
     if (!enabled) return;
-    void refreshSessionProfile(client, paneId);
+    void refreshSessionProfile(client, paneId, { join: true });
     const timer = setInterval(
-      () => void refreshSessionProfile(client, paneId),
+      () => void refreshSessionProfile(client, paneId, { join: true }),
       everyMs,
     );
     return () => clearInterval(timer);

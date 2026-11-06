@@ -322,6 +322,82 @@ describe("model continuity across a switch", () => {
     expect(store.get("s-1")).toBeNull();
   });
 
+  test("/model is kept until the session answered with it, not settled by an older answer", async () => {
+    const stamped = (model: string, timestamp: string) =>
+      JSON.stringify({
+        type: "assistant",
+        timestamp,
+        message: { model, content: [{ type: "text", text: "ok" }] },
+      });
+    let tail = stamped("claude-opus-5-5", "2026-11-06T09:00:00.000Z");
+    const store = createSessionProfiles({
+      file: null,
+      now: () => Date.parse("2026-11-06T10:00:00.000Z"),
+    });
+    const { deps: d } = deps({ store, transcriptTail: async () => tail });
+    store.chooseModel("s-1", "haiku", "claude-haiku-5-5");
+    // The chip asks every minute: an answer from before is not the choice.
+    await handleProfileRpc("agent_profile.get", { pane_id: "p" }, d);
+    expect(store.get("s-1")?.model).toBe("haiku");
+    tail = `${tail}\n${stamped("claude-haiku-5-5", "2026-11-06T10:05:00.000Z")}`;
+    await handleProfileRpc("agent_profile.get", { pane_id: "p" }, d);
+    expect(store.get("s-1")).toBeNull();
+  });
+
+  test("get says the model the session runs, the surest first", async () => {
+    let tail = answer("claude-opus-5-5");
+    let live: string | null = null;
+    let owned: string | null = null;
+    const store = createSessionProfiles({
+      file: null,
+      now: () => Date.parse("2026-11-06T10:00:00.000Z"),
+    });
+    const { deps: d } = deps({
+      store,
+      transcriptTail: async () => tail,
+      conversationSession: () => owned,
+      conversationModel: () => live,
+    });
+    const model = async () =>
+      (
+        (await handleProfileRpc("agent_profile.get", { pane_id: "p" }, d)) as {
+          model?: string;
+        }
+      ).model;
+    // What it last answered with.
+    expect(await model()).toBe("claude-opus-5-5");
+    // A /model not answered yet: the model it runs from its next turn.
+    store.chooseModel("s-1", "haiku", "claude-haiku-5-5");
+    expect(await model()).toBe("claude-haiku-5-5");
+    // Conversation mode's running agent says best (a fallback too).
+    owned = "s-1";
+    live = "claude-sonnet-5-5";
+    expect(await model()).toBe("claude-sonnet-5-5");
+    // Nothing answered yet: the profile's own model.
+    owned = null;
+    live = null;
+    tail = "";
+    store.set("s-1", "Igalia GLM");
+    expect(await model()).toBe("glm-5p3");
+  });
+
+  test("get says another agent's model from its transcript", async () => {
+    const { deps: d } = deps({
+      agentGet: async () => ({ agent: "pi", agent_status: "idle" }),
+      transcriptTail: async () =>
+        [
+          JSON.stringify({ type: "model_change", modelId: "glm-5p3" }),
+          JSON.stringify({
+            type: "message",
+            message: { role: "assistant", model: "deepseek-v4-flash" },
+          }),
+        ].join("\n"),
+    });
+    expect(
+      await handleProfileRpc("agent_profile.get", { pane_id: "p" }, d),
+    ).toMatchObject({ session_id: null, model: "deepseek-v4-flash" });
+  });
+
   test("a refused switch keeps the one-time model it had", async () => {
     const { deps: d, store } = deps({
       transcriptTail: async () => answer("kimi-k3p1-pro"),

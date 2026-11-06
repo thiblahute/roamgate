@@ -59,6 +59,9 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
   ];
   let revision = 1;
   const sent: { text: string; uuid?: string }[] = [];
+  const switched: string[] = [];
+  // The model agent_profile.get says the session runs; a test changes it.
+  let profileModel: string | null = null;
   let imageCalls = 0;
   const imageLanes: (string | undefined)[] = [];
   URL.createObjectURL = () => "blob:sent-image";
@@ -85,6 +88,32 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       if (method === "agent_chat.send") {
         sent.push(params as { text: string; uuid?: string });
         return { status: "sent", id: params?.uuid };
+      }
+      if (method === "agent_chat.models")
+        return {
+          models: [
+            { value: "default", label: "Default (recommended)" },
+            { value: "haiku", label: "Haiku", resolved: "claude-haiku-5-5" },
+          ],
+          current: null,
+          chosen: null,
+          source: "agent",
+        };
+      if (method === "agent_profile.get")
+        return {
+          session_id: "s1",
+          owner: "conversation",
+          profile: "Claude",
+          label: "Claude",
+          default: "Claude",
+          profiles: [
+            { name: "Claude", agent: "claude", label: "Claude", default: true },
+          ],
+          ...(profileModel ? { model: profileModel } : {}),
+        };
+      if (method === "agent_chat.model") {
+        switched.push(String(params?.model));
+        return { ok: true, model: "claude-haiku-5-5" };
       }
       if (!method.startsWith("agent_")) typedIntoPanes.push(method);
       return !method.startsWith("agent_")
@@ -571,6 +600,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
         backgroundTasks: false,
         images: "path",
         slashCommands: null,
+        models: false,
       });
       expect(rewind()).toBe(0);
       await typed("!ls");
@@ -664,6 +694,188 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       expect(button(container, "Open in terminal")).toBeNull();
     } finally {
       await phone(false);
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("/model in conversation mode opens the chat's own picker; `/model <name>` goes to the bridge", async () => {
+    const { container, root } = mount();
+    const state = {
+      pane_id: "pane-one",
+      owner: "conversation" as const,
+      phase: "conversation" as const,
+      session_id: "s1",
+      cwd: "/repo",
+      status: "idle" as const,
+      tools_running: false,
+      activity: null,
+      queue: [],
+      interrupted: null,
+    };
+    const render = (extra: Record<string, unknown> = {}) =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={{ ...pane, pane_id: "pane-one" }}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+              conversation: {
+                state: { ...state, ...extra },
+                live: { items: [], endedAt: null },
+                refusal: null,
+                handing: null,
+                departing: [],
+              } as never,
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const send = async (text: string) => {
+      const box = container.querySelector("textarea")!;
+      await React.act(async () => {
+        Object.getOwnPropertyDescriptor(
+          browser.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(box, text);
+        box.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
+      await React.act(async () => {
+        box.dispatchEvent(
+          new window.KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    };
+    const sheet = () =>
+      document.querySelector('[role="dialog"][aria-label="Model"]');
+    sent.length = 0;
+    try {
+      await render();
+      await send("/model");
+      expect(sent).toEqual([]);
+      expect(sheet()).not.toBeNull();
+      const haiku = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          ".agent-model-list button",
+        ),
+      ].find((row) => row.textContent?.includes("Haiku"))!;
+      await React.act(async () => {
+        haiku.click();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(switched).toEqual(["haiku"]);
+      expect(sheet()).toBeNull();
+      // With a name: the bridge switches it (and says so in the chat).
+      await send("/model sonnet");
+      expect(sent.map((each) => each.text)).toEqual(["/model sonnet"]);
+      expect(sheet()).toBeNull();
+      await render({
+        model_notice: {
+          at: "2026-11-06T10:00:00.000Z",
+          ok: false,
+          requested: "sonet",
+          model: null,
+          text: "Could not switch the model to sonet: Model 'sonet' not found",
+        },
+      });
+      expect(
+        container.querySelector('.agent-history-chat-lost[role="alert"]')
+          ?.textContent,
+      ).toContain("Could not switch the model to sonet");
+    } finally {
+      sent.length = 0;
+      await React.act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("the chat header says the model the session runs, and a switch at once", async () => {
+    const { container, root } = mount();
+    const state = {
+      pane_id: "pane-model",
+      owner: "conversation" as const,
+      phase: "conversation" as const,
+      session_id: "s1",
+      cwd: "/repo",
+      status: "idle" as const,
+      tools_running: false,
+      activity: null,
+      queue: [],
+      interrupted: null,
+    };
+    const render = (extra: Record<string, unknown> = {}) =>
+      React.act(async () => {
+        root.render(
+          <AgentHistoryDrawer
+            pane={{ ...pane, pane_id: "pane-model", terminal_id: "term-model" }}
+            open
+            embedded
+            paneChat={{
+              prompt: null,
+              onKeys: () => {},
+              onShowTerminal,
+              readScreen: () => [],
+              conversation: {
+                state: { ...state, ...extra },
+                live: { items: [], endedAt: null },
+                refusal: null,
+                handing: null,
+                departing: [],
+              } as never,
+            }}
+            onOpenChange={() => {}}
+          />,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const chip = () =>
+      container.querySelector<HTMLElement>(
+        ".agent-history-drawer-head .agent-chat-model",
+      );
+    try {
+      profileModel = null;
+      await render();
+      // Not known: nothing is guessed.
+      expect(chip()).toBeNull();
+      profileModel = "claude-opus-5-5";
+      await render({ status: "working" });
+      expect(chip()?.textContent).toBe("Opus 5.5");
+      expect(chip()?.getAttribute("aria-label")).toBe("Model: Opus 5.5");
+      expect(chip()?.title).toContain("Model: claude-opus-5-5");
+      // Beside the status pill.
+      expect(
+        chip()?.previousElementSibling?.classList.contains(
+          "agent-history-status",
+        ),
+      ).toBe(true);
+      // A /model switch shows at once, the status unchanged.
+      profileModel = "claude-haiku-5-5";
+      await render({
+        status: "working",
+        model_notice: {
+          at: "2026-11-16T10:00:00.000Z",
+          ok: true,
+          requested: "haiku",
+          model: "claude-haiku-5-5",
+          text: "Model set to haiku (claude-haiku-5-5)",
+        },
+      });
+      expect(chip()?.textContent).toBe("Haiku 5.5");
+      expect(chip()?.title).toContain("Model: claude-haiku-5-5");
+    } finally {
+      profileModel = null;
       await React.act(async () => root.unmount());
       container.remove();
     }

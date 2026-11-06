@@ -979,6 +979,35 @@ function CutOffNotice({ cutOff }: { cutOff: ChatCutOff }) {
   );
 }
 
+/** What the last /model did, after the conversation's last entry. */
+export type ChatModelNotice = {
+  text: string;
+  ok: boolean;
+  onDismiss: () => void;
+};
+
+function ModelNotice({ notice }: { notice: ChatModelNotice }) {
+  return (
+    <div
+      className={`agent-history-chat-cut-off ${
+        notice.ok ? "is-model" : "agent-history-chat-lost"
+      }`}
+      role={notice.ok ? "status" : "alert"}
+    >
+      <span>{notice.text}</span>
+      <button
+        type="button"
+        className="agent-history-copy"
+        onClick={notice.onDismiss}
+        aria-label="Dismiss this notice"
+        title="Dismiss"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
 /**
  * Nothing sent goes out: the conversation process is lost, or the queue
  * has waited too long. Recover starts a new process with the queue. A turn
@@ -1646,6 +1675,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   imageUrl,
   sentImageUrl,
   cutOff = null,
+  modelNotice = null,
   delivery = null,
   apiKeyQuestion = null,
   placeKey = null,
@@ -1691,6 +1721,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   sentImageUrl?: SentImageUrl;
   /** The last turn was cut short: said after the last entry. */
   cutOff?: ChatCutOff | null;
+  /** What the last /model did: said after the last entry. */
+  modelNotice?: ChatModelNotice | null;
   /** Nothing sent goes out (a lost process, a stalled queue): Recover. */
   delivery?: ChatDelivery | null;
   /** Claude waits to start until the user says which account pays. */
@@ -2158,6 +2190,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
           />
         ))}
         {cutOff ? <CutOffNotice cutOff={cutOff} /> : null}
+        {modelNotice ? <ModelNotice notice={modelNotice} /> : null}
         {delivery ? <DeliveryNotice delivery={delivery} /> : null}
         {apiKeyQuestion ? (
           <ApiKeyQuestionNotice question={apiKeyQuestion} />

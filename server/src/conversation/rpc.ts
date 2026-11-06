@@ -15,6 +15,9 @@ export const AGENT_CHAT_METHODS = [
   "agent_chat.queue.edit",
   "agent_chat.queue.remove",
   "agent_chat.interrupted.dismiss",
+  "agent_chat.models",
+  "agent_chat.model",
+  "agent_chat.model_notice.dismiss",
   "agent_chat.recover",
   "agent_chat.api_key.answer",
   "agent_chat.handover",
@@ -157,6 +160,17 @@ export async function handleAgentChatRpc<Ws>(
     }
     case "agent_chat.interrupted.dismiss":
       service.dismissInterrupted(paneId);
+      return { ok: true };
+    case "agent_chat.models":
+      return service.models(paneId);
+    case "agent_chat.model": {
+      const model = params.model;
+      if (typeof model !== "string" || !model.trim() || model.length > 256)
+        throw new Error("model is required");
+      return service.setModel(paneId, model);
+    }
+    case "agent_chat.model_notice.dismiss":
+      service.dismissModelNotice(paneId);
       return { ok: true };
     case "agent_chat.recover":
       return service.recover(paneId);

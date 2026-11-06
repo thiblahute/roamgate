@@ -235,6 +235,7 @@ import {
 import { useConversationSwitch } from "../conversationSwitch";
 import { ProfileChip } from "./ProfileChip";
 import { AgentPermissionCard } from "./AgentPermissionCard";
+import { ModelChip } from "./ModelChip";
 import { TerminalModeStrip } from "./TerminalModeStrip";
 import { takeVoiceHandoff, voiceHandoffPending } from "../voiceRoute";
 import { ConfirmDialog, MessageDialog } from "./ModalDialogs";
@@ -4617,6 +4618,9 @@ export function TerminalView({
             paneId={pane.pane_id}
             enabled={claudePane}
             agentStatus={pane.agent_status}
+            // Every profile's model in the terminal; over a chat, its
+            // header says it.
+            showModel={!chatShown}
             onError={(message) =>
               store.notify({
                 kind: "error",
@@ -4624,6 +4628,13 @@ export function TerminalView({
                 detail: message,
               })
             }
+          />
+          {/* Another agent's terminal (Pi, Codex): the model it names. */}
+          <ModelChip
+            client={connectionClient}
+            paneId={pane.pane_id}
+            enabled={!claudePane && !!agentPane?.agent && !chatShown}
+            agentStatus={pane.agent_status}
           />
           {s.endpointAvailability[pane.terminal_id] &&
           store.terminalScrollReason(pane.terminal_id) ? (
@@ -4705,6 +4716,7 @@ export function TerminalView({
               paneId={pane.pane_id}
               enabled
               agentStatus={pane.agent_status}
+              showModel
               onError={(message) =>
                 store.notify({
                   kind: "error",

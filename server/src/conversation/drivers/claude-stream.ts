@@ -8,6 +8,8 @@ import { isRecord } from "../../agent/session-utils";
  */
 export type StreamItem =
   | { kind: "init"; session_id: string; cwd?: string; model?: string }
+  /** The model an answer came from (a /model, a fallback switch it). */
+  | { kind: "model"; model: string }
   | { kind: "status"; status: string | null; compact_result?: string }
   | {
       kind: "block_start";
@@ -224,6 +226,9 @@ export function createStreamParser() {
     if (!message || !Array.isArray(message.content)) return [];
     const id = str(message.id);
     const items: StreamItem[] = [];
+    // Claude Code's own notices (<synthetic>) come from no model.
+    const model = str(message.model);
+    if (model && model !== "<synthetic>") items.push({ kind: "model", model });
     const commandOutput =
       event.local_command_source !== undefined && str(event.uuid)
         ? { command_output: { uuid: str(event.uuid) } }

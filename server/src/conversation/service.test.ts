@@ -20,6 +20,7 @@ import {
 } from "./service-testing";
 import {
   answerInterrupts,
+  answerModels,
   answerRewinds,
   fakeClaudeProcess,
   fakeSpawner,
@@ -1695,6 +1696,262 @@ describe("agent_chat RPCs", () => {
         text: "hello",
       }),
     ).toMatchObject({ action: "sent" });
+  });
+});
+
+describe("/model in conversation mode", () => {
+  const withModels = (options?: Parameters<typeof answerModels>[0]) =>
+    fakeSpawner(() =>
+      fakeClaudeProcess({ exitOnEnd: true, respond: answerModels(options) }),
+    );
+  /** The session-profiles store's part, kept in a map. */
+  function remembered() {
+    const chosen = new Map<
+      string,
+      { model: string; resolved: string | null }
+    >();
+    const models: NonNullable<ConversationServiceOptions<Ws>["models"]> = {
+      offered: async () => ({
+        models: ["opus", "sonnet", "haiku", "opusplan"],
+      }),
+      lastAnswered: async () => "claude-opus-5-5",
+      chosen: (sessionId) => chosen.get(sessionId)?.model ?? null,
+      choose: (sessionId, model, resolved) =>
+        chosen.set(sessionId, { model, resolved }),
+    };
+    return { chosen, models };
+  }
+  const switches = (written: Record<string, unknown>[]) =>
+    written.flatMap((message) =>
+      message.type === "control_request" &&
+      (message.request as { subtype?: string }).subtype === "set_model"
+        ? [(message.request as { model?: string }).model]
+        : [],
+    );
+  const noticeEvents = (sent: [Ws, AgentChatEventEnvelope][]) =>
+    sent.flatMap(([, envelope]) =>
+      envelope.event === "agent_chat.model_notice" ? [envelope.data] : [],
+    );
+
+  test("refused while the terminal owns the session: its own /model works", async () => {
+    const { service } = setup();
+    expect(await service.setModel(PANE, "sonnet")).toEqual({
+      ok: false,
+      reason: "The terminal owns this session",
+    });
+    await expect(service.models(PANE)).rejects.toThrow(/terminal owns/);
+  });
+
+  test("a switch reaches the process, is kept for the next starts, and the chat says so", async () => {
+    const spawner = withModels();
+    const memory = remembered();
+    const { service, fake, store, sent } = setup(undefined, {
+      spawn: spawner.spawn,
+      models: memory.models,
+    });
+    // The pane's claude was started on a model of its own.
+    fake.pane.process.foreground_processes[0]!.argv = [
+      "claude",
+      "--model",
+      "haiku",
+      "--resume",
+      fake.sessionId,
+    ];
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(store.get(PANE)?.terminal_args).toEqual(["--model", "haiku"]);
+    service.subscribe({ name: "w" }, PANE);
+    expect(
+      await handleAgentChatRpc(
+        service,
+        null,
+        { name: "w" },
+        "agent_chat.model",
+        {
+          pane_id: PANE,
+          model: "sonnet",
+        },
+      ),
+    ).toEqual({ ok: true, model: "claude-sonnet-5-5" });
+    expect(switches(spawner.spawned[0]!.fake.written)).toEqual(["sonnet"]);
+    // The next starts are told until the session answered with it, and
+    // the model it was first started on gives way.
+    expect(memory.chosen.get(fake.sessionId)).toEqual({
+      model: "sonnet",
+      resolved: "claude-sonnet-5-5",
+    });
+    expect(store.get(PANE)?.terminal_args).toEqual([]);
+    const notice = {
+      at: expect.any(String),
+      ok: true,
+      requested: "sonnet",
+      model: "claude-sonnet-5-5",
+      text: "Model set to sonnet (claude-sonnet-5-5)",
+    };
+    expect(service.state(PANE).model_notice).toEqual(notice);
+    expect(noticeEvents(sent)).toEqual([
+      expect.objectContaining({ model_notice: notice }),
+    ]);
+    // Said until the next message goes.
+    await service.send(PANE, { text: "hi" });
+    expect(service.state(PANE).model_notice).toBeUndefined();
+    expect(noticeEvents(sent).at(-1)).toMatchObject({ model_notice: null });
+    expect(userTexts(spawner.spawned[0]!.fake)).toEqual(["hi"]);
+  });
+
+  test("`/model <name>` sent as a message switches instead; a refusal is said in the chat", async () => {
+    const spawner = withModels({
+      resolve: (name) => {
+        if (name === "sonet") throw new Error("Model 'sonet' not found");
+        return `claude-${name}-5-5`;
+      },
+    });
+    const memory = remembered();
+    const { service } = setup(undefined, {
+      spawn: spawner.spawn,
+      models: memory.models,
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(await service.send(PANE, { text: "/model sonet" })).toMatchObject({
+      status: "sent",
+    });
+    expect(userTexts(spawner.spawned[0]!.fake)).toEqual([]);
+    expect(memory.chosen.size).toBe(0);
+    expect(service.state(PANE).model_notice).toMatchObject({
+      ok: false,
+      requested: "sonet",
+      text: "Could not switch the model to sonet: Model 'sonet' not found",
+    });
+    await service.send(PANE, { text: " /model haiku " });
+    expect(service.state(PANE).model_notice).toMatchObject({
+      ok: true,
+      model: "claude-haiku-5-5",
+    });
+    // Anything else is a message, the bare command included.
+    await service.send(PANE, { text: "/model" });
+    expect(userTexts(spawner.spawned[0]!.fake)).toEqual(["/model"]);
+    expect(switches(spawner.spawned[0]!.fake.written)).toEqual([
+      "sonet",
+      "haiku",
+    ]);
+  });
+
+  test("a name the agent could not take is refused before it is asked", async () => {
+    const spawner = withModels();
+    const { service } = setup(undefined, { spawn: spawner.spawn });
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(await service.setModel(PANE, "--model")).toEqual({
+      ok: false,
+      reason: "that is not a model name",
+    });
+    expect(switches(spawner.spawned[0]!.fake.written)).toEqual([]);
+  });
+
+  test("the list: the agent's own rows, then what the profile offers besides", async () => {
+    const spawner = withModels();
+    const memory = remembered();
+    const { service, fake } = setup(undefined, {
+      spawn: spawner.spawn,
+      models: memory.models,
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(await service.models(PANE)).toEqual({
+      models: [
+        {
+          value: "default",
+          label: "Default (recommended)",
+          description: "Use the default model (currently Opus 5.5)",
+          resolved: "claude-opus-5-5",
+        },
+        {
+          value: "sonnet",
+          label: "Sonnet",
+          description: "Sonnet 5.5",
+          resolved: "claude-sonnet-5-5",
+        },
+        {
+          value: "haiku",
+          label: "Haiku",
+          description: "Haiku 5.5",
+          resolved: "claude-haiku-5-5",
+        },
+        { value: "opus", label: "opus" },
+        { value: "opusplan", label: "opusplan" },
+      ],
+      // Not said by the process yet: its transcript's last answer.
+      current: "claude-opus-5-5",
+      chosen: null,
+      source: "both",
+    });
+    await service.setModel(PANE, "haiku");
+    expect(await service.models(PANE)).toMatchObject({
+      current: "claude-haiku-5-5",
+      chosen: "haiku",
+    });
+    expect(memory.chosen.get(fake.sessionId)?.model).toBe("haiku");
+  });
+
+  test("an agent that does not list is left out; the profile's list says why it is short", async () => {
+    const spawner = fakeSpawner(() =>
+      fakeClaudeProcess({ exitOnEnd: true, respond: answerInterrupts }),
+    );
+    const { service } = setup(undefined, {
+      spawn: spawner.spawn,
+      session: { stopWaitMs: 50, interruptWaitMs: 50, rewindWaitMs: 20 },
+      models: {
+        offered: async () => {
+          throw new Error("Could not list the models: the server answered 401");
+        },
+        chosen: () => null,
+        choose: () => {},
+      },
+    });
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(await service.models(PANE)).toEqual({
+      models: [
+        {
+          value: "default",
+          label: "Default",
+          description: "The profile's own model",
+        },
+      ],
+      current: null,
+      chosen: null,
+      source: "profile",
+      error: "Could not list the models: the server answered 401",
+    });
+  });
+
+  test("the RPCs validate, and the notice is dismissed for every browser", async () => {
+    const spawner = withModels();
+    const { service } = setup(undefined, { spawn: spawner.spawn });
+    const ws = { name: "w" };
+    expect(isAgentChatMethod("agent_chat.models")).toBe(true);
+    expect(isAgentChatMethod("agent_chat.model")).toBe(true);
+    expect(isAgentChatMethod("agent_chat.model_notice.dismiss")).toBe(true);
+    await expect(
+      handleAgentChatRpc(service, null, ws, "agent_chat.model", {
+        pane_id: PANE,
+      }),
+    ).rejects.toThrow(/model is required/);
+    await service.handover(PANE, "conversation");
+    await settle();
+    await service.setModel(PANE, "haiku");
+    expect(service.state(PANE).model_notice).toBeTruthy();
+    expect(
+      await handleAgentChatRpc(
+        service,
+        null,
+        ws,
+        "agent_chat.model_notice.dismiss",
+        { pane_id: PANE },
+      ),
+    ).toEqual({ ok: true });
+    expect(service.state(PANE).model_notice).toBeUndefined();
   });
 });
 

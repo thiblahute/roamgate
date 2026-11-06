@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AgentChatEvent,
+  AgentChatModel,
   AgentChatNextPrompt,
   AgentChatQueued,
   AgentChatStatus,
@@ -94,7 +95,10 @@ export type ConversationSessionOptions = {
   interruptWaitMs?: number;
   /** How long a stop waits for the process to exit before killing it. */
   stopWaitMs?: number;
-  /** How long a rewind waits for the CLI to answer each of its steps. */
+  /**
+   * How long a control request waits for the CLI's answer: each step of a
+   * rewind, a model switch.
+   */
   rewindWaitMs?: number;
   /**
    * The session's transcript, for what a rewind would restore of the code;
@@ -223,6 +227,10 @@ export function createConversationSession(options: ConversationSessionOptions) {
   }
   // The message that started the turn that runs.
   let turnUuid: string | null = null;
+  // The model the process runs, as its turns' start or a switch said, and
+  // the name the user last switched it to (/model).
+  let model: string | null = null;
+  let chosenModel: string | null = null;
 
   // The reply on its way to the browsers, and what was sent of it.
   const reply = createReplyStream({
@@ -353,7 +361,11 @@ export function createConversationSession(options: ConversationSessionOptions) {
 
   function handle(item: DriverEvent) {
     switch (item.kind) {
+      case "model":
+        model = item.model;
+        return;
       case "init":
+        if (item.model) model = item.model;
         if (item.session_id !== sessionId) {
           const previous = sessionId;
           sessionId = item.session_id;
@@ -982,6 +994,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
     child: HeadlessProcess,
     kind: string,
     params: Record<string, unknown>,
+    waitMs = rewindWaitMs,
   ): Promise<ControlAnswer> {
     if (proc !== child || ending)
       return { error: "The conversation process is closing" };
@@ -995,10 +1008,78 @@ export function createConversationSession(options: ConversationSessionOptions) {
     write(lines);
     const answered = await Promise.race([
       answer,
-      delay(rewindWaitMs).then(() => null),
+      delay(waitMs).then(() => null),
     ]);
     controls.delete(requestId);
     return answered;
+  }
+
+  /**
+   * The models the running process offers (/model's picker); null when
+   * none runs (nothing is started for it) or it cannot say. Asked briefly:
+   * the picker has the profile's list otherwise.
+   */
+  async function listModels(): Promise<AgentChatModel[] | null> {
+    const models = driver.models;
+    const child = proc;
+    if (!models || !child || ending || stopping || disposed) return null;
+    try {
+      return await models.list({
+        control: (kind, params) =>
+          control(child, kind, params, Math.min(rewindWaitMs, 5000)),
+      });
+    } catch (error) {
+      log("the agent's models could not be listed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Switches the session's model (/model) for its next turns: a turn that
+   * runs keeps its own. Starts the process when none runs, so the agent
+   * itself says whether it has that model. `nextTurn`: a turn ran.
+   */
+  async function setModel(
+    value: string,
+  ): Promise<
+    | { ok: true; model: string | null; nextTurn: boolean }
+    | { ok: false; reason: string }
+  > {
+    const refuse = (reason: string) => ({ ok: false as const, reason });
+    const models = driver.models;
+    if (!models) return refuse(`${agentName} cannot switch models`);
+    if (rewinds.running())
+      return refuse("A rewind is running; switch once it is done");
+    if (stopping) return refuse("The session is being handed back");
+    let child: HeadlessProcess;
+    try {
+      child = await ensureProcess();
+    } catch (error) {
+      return refuse(
+        `${agentName} did not start (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+    const nextTurn = turn || compacting;
+    let result:
+      | { ok: true; model: string | null }
+      | { ok: false; reason: string };
+    try {
+      result = await models.set(
+        { control: (kind, params) => control(child, kind, params) },
+        value,
+      );
+    } catch (error) {
+      result = refuse(error instanceof Error ? error.message : String(error));
+    }
+    if (result.ok) {
+      model = result.model ?? model;
+      chosenModel = value;
+    }
+    // What waited for a process (a start that failed) goes now, on it.
+    if (queue.length && !disposed) flushQueue();
+    return result.ok ? { ...result, nextTurn } : result;
   }
 
   /** What a rewind needs of this session. */
@@ -1197,6 +1278,12 @@ export function createConversationSession(options: ConversationSessionOptions) {
     waitForResult,
     rewind,
     rewindCheck,
+    listModels,
+    setModel,
+    /** The model the process runs, as it last said; null: not known. */
+    model: () => model,
+    /** The name the user last switched it to (/model); null: none. */
+    chosenModel: () => chosenModel,
 
     editQueued(id: string, text: string): boolean {
       const item = queue.find((each) => each.id === id);

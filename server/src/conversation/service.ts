@@ -5,6 +5,9 @@ import type {
   AgentChatEventEnvelope,
   AgentChatHandoverResult,
   AgentChatInterrupted,
+  AgentChatModelNotice,
+  AgentChatModelResult,
+  AgentChatModels,
   AgentChatQueued,
   AgentChatState,
   AgentChatStatus,
@@ -22,7 +25,15 @@ import {
   type AgentCommand,
   describeCommand,
   type LaunchSpec,
+  withoutModel,
 } from "../profiles/profiles";
+import {
+  isModelName,
+  mergeModels,
+  modelRefusalText,
+  modelSwitchText,
+  parseModelCommand,
+} from "../../../shared/agentModels";
 import type { StartOptions } from "./drivers/types";
 import { createApiKeyQuestions } from "./service-api-key";
 import { createSwitches } from "./service-handover";
@@ -90,6 +101,20 @@ export type ConversationServiceOptions<Ws> = {
    * not plain claude (roamgate-hold fetches it with a one-use token).
    */
   launchCommand?: (paneId: string, spec: LaunchSpec) => string;
+  /**
+   * /model's list and memory: what the session's profile offers, the
+   * model its transcript last answered with, and the choice its next
+   * starts use until it answered with it (SessionProfiles). None: the
+   * running agent's list only, and a switch lasts as long as its process.
+   */
+  models?: {
+    offered: (
+      sessionId: string,
+    ) => Promise<{ models: string[]; error?: string }>;
+    lastAnswered?: (paneId: string) => Promise<string | null>;
+    chosen: (sessionId: string) => string | null;
+    choose: (sessionId: string, model: string, resolved: string | null) => void;
+  };
   log?: (message: string, fields?: Record<string, unknown>) => void;
   /** Overrides for tests: timings and the handover's clock. */
   session?: Partial<
@@ -199,6 +224,10 @@ export type ConversationServiceOptions<Ws> = {
   keepAwake?: (paneId: string) => string | null;
 };
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const HERDR_STATE: Record<
   AgentChatStatus,
   "idle" | "working" | "blocked" | null
@@ -284,6 +313,8 @@ export function createConversationService<Ws>(
   const sessions = new Map<string, ConversationSession>();
   const subscribers = new Map<string, Set<Ws>>();
   const holdPollMs = options.holdPollMs ?? 25_000;
+  // What the last /model did, said in the chat until the next message.
+  const modelNotices = new Map<string, AgentChatModelNotice>();
 
   // The conversations stopped as shell jobs (Ctrl+Z): their holders wait
   // in the panes' shells, and `fg` there brings them back.
@@ -502,6 +533,7 @@ export function createConversationService<Ws>(
     if (!lease) {
       dropChannel(paneId);
       recovery.forgetLost(paneId);
+      modelNotices.delete(paneId);
     }
     emit(paneId, {
       type: "lease",
@@ -605,6 +637,130 @@ export function createConversationService<Ws>(
       apiKeyQuestion: apiKeys.has(paneId),
       keptAwake: null,
     });
+  }
+
+  /** What the last /model did, to the chat (null: the notice goes). */
+  function setModelNotice(paneId: string, notice: AgentChatModelNotice | null) {
+    if (disposed) return;
+    if (!notice) {
+      if (!modelNotices.delete(paneId)) return;
+    } else modelNotices.set(paneId, notice);
+    emit(paneId, {
+      type: "model_notice",
+      model_notice: notice ? { ...notice } : null,
+    });
+  }
+
+  /**
+   * Switches the session's model (/model): the running agent first, which
+   * says whether it has it; then kept for the session's next starts, until
+   * it answered with it. The chat says what came of it either way.
+   */
+  async function setModel(
+    paneId: string,
+    value: string,
+  ): Promise<AgentChatModelResult> {
+    const requested = value.trim();
+    const lease = leases.get(paneId);
+    if (disposed || !lease || lease.phase !== "conversation")
+      return {
+        ok: false,
+        reason: lease
+          ? "This session is being handed over; try again shortly"
+          : "The terminal owns this session",
+      };
+    const at = new Date().toISOString();
+    const refused = (reason: string): AgentChatModelResult => {
+      setModelNotice(paneId, {
+        at,
+        ok: false,
+        requested,
+        model: null,
+        text: modelRefusalText(requested, reason),
+      });
+      log("conversation model switch refused", { pane: paneId, reason });
+      return { ok: false, reason };
+    };
+    if (!isModelName(requested)) return refused("that is not a model name");
+    const session = sessionFor(paneId);
+    const result = await session.setModel(requested);
+    if (!result.ok) return refused(result.reason);
+    // A process started before the session answered with it would resume
+    // on the model it last answered with: the next starts are told.
+    options.models?.choose(session.sessionId(), requested, result.model);
+    // The model the pane's agent was started with (`claude --model haiku`)
+    // gives way to the user's choice, here and in the terminal.
+    const current = leases.get(paneId);
+    if (
+      current?.terminal_args?.some(
+        (arg) => arg === "--model" || arg.startsWith("--model="),
+      )
+    )
+      leases.set({
+        ...current,
+        terminal_args: withoutModel(current.terminal_args),
+      });
+    setModelNotice(paneId, {
+      at,
+      ok: true,
+      requested,
+      model: result.model,
+      text: modelSwitchText(requested, result.model, {
+        nextTurn: result.nextTurn,
+      }),
+    });
+    log("conversation model switched", {
+      pane: paneId,
+      model: requested,
+      ...(result.model ? { resolved: result.model } : {}),
+    });
+    return { ok: true, model: result.model };
+  }
+
+  /**
+   * What /model offers: the running agent's own list, with what the
+   * session's profile offers besides, and which one it runs. Nothing is
+   * started for it.
+   */
+  async function listModels(paneId: string): Promise<AgentChatModels> {
+    const lease = leases.get(paneId);
+    if (disposed || !lease || lease.phase !== "conversation")
+      throw new Error(
+        lease
+          ? "This session is being handed over; try again shortly"
+          : "The terminal owns this session",
+      );
+    const protocol = driverOf(paneId).protocol;
+    if (!protocol.models)
+      throw new Error(`${protocol.displayName} cannot switch models`);
+    const session = sessions.get(paneId);
+    const sessionId = lease.session_id;
+    const known = session?.model() ?? null;
+    const [agent, offered, last] = await Promise.all([
+      session ? session.listModels() : Promise.resolve(null),
+      options.models
+        ? options.models.offered(sessionId).catch((error: unknown) => ({
+            models: [],
+            error: errorText(error),
+          }))
+        : Promise.resolve(null),
+      known || !options.models?.lastAnswered
+        ? Promise.resolve(null)
+        : options.models.lastAnswered(paneId).catch(() => null),
+    ]);
+    const models = mergeModels(agent, offered?.models ?? []);
+    return {
+      models,
+      current: known ?? last,
+      chosen:
+        session?.chosenModel() ?? options.models?.chosen(sessionId) ?? null,
+      source: agent?.length
+        ? models.length > agent.length
+          ? "both"
+          : "agent"
+        : "profile",
+      ...(offered?.error ? { error: offered.error } : {}),
+    };
   }
 
   /** The notice of a turn cut short goes (a new turn, or a dismiss). */
@@ -752,6 +908,9 @@ export function createConversationService<Ws>(
       ...(lease?.asleep_at ? { asleep: { since: lease.asleep_at } } : {}),
       ...(apiKeyQuestion ? { api_key_question: apiKeyQuestion } : {}),
       ...(live?.next_prompt ? { next_prompt: live.next_prompt } : {}),
+      ...(lease && modelNotices.has(paneId)
+        ? { model_notice: { ...modelNotices.get(paneId)! } }
+        : {}),
       ...(shellList.length ? { shells: shellList } : {}),
     };
   }
@@ -883,6 +1042,8 @@ export function createConversationService<Ws>(
       log("conversation process restarts with the session's profile", {
         pane: paneId,
       });
+      // What a /model said is the old profile's.
+      setModelNotice(paneId, null);
       emitLease(paneId);
       return startAgain(paneId);
     },
@@ -897,6 +1058,10 @@ export function createConversationService<Ws>(
         phase === "to_terminal"
         ? "The session is being handed over; try again in a moment"
         : null;
+    },
+    /** The model the pane's running agent last named; null: not known. */
+    model(paneId: string): string | null {
+      return sessions.get(paneId)?.model() ?? null;
     },
     /** The session conversation mode owns in a pane, for the resolver. */
     ownedSession(paneId: string): { session_id: string; cwd: string } | null {
@@ -931,10 +1096,22 @@ export function createConversationService<Ws>(
     send(
       paneId: string,
       input: { text: string; images?: string[]; uuid?: string },
-    ) {
+    ): Promise<{ status: "sent" | "queued"; id: string }> {
       const session = sessionFor(paneId);
+      // `/model <name>`: the session switches now, a turn or not, rather
+      // than the agent's own command waiting for its turn (and lasting
+      // only as long as its process). The chat says what came of it.
+      const command = input.images?.length
+        ? null
+        : parseModelCommand(input.text);
+      if (command?.model && driverOf(paneId).protocol.models)
+        return setModel(paneId, command.model).then(() => ({
+          status: "sent" as const,
+          id: input.uuid ?? randomUUID(),
+        }));
       // Whatever is sent next answers the turn cut short.
       clearInterrupted(paneId);
+      setModelNotice(paneId, null);
       return session.send(input).catch(async (error: unknown) => {
         // The holder is gone: the message waits for conversation mode to
         // have the session again (never typed into the terminal).
@@ -973,6 +1150,7 @@ export function createConversationService<Ws>(
       const session = sessionFor(paneId);
       beforeSend?.();
       clearInterrupted(paneId);
+      setModelNotice(paneId, null);
       await session.send({ text });
       return true;
     },
@@ -981,11 +1159,20 @@ export function createConversationService<Ws>(
       input: { text: string; stop?: boolean; uuid?: string },
     ) {
       const session = sessionFor(paneId);
-      if (!input.stop && !isSpokenStop(input.text)) clearInterrupted(paneId);
+      if (!input.stop && !isSpokenStop(input.text)) {
+        clearInterrupted(paneId);
+        setModelNotice(paneId, null);
+      }
       return session.voice(input);
     },
     /** The user dismissed the notice of a turn cut short. */
     dismissInterrupted: clearInterrupted,
+    /** What /model offers in the pane's session, and which one it runs. */
+    models: listModels,
+    /** /model: switches the pane's session to another model. */
+    setModel,
+    /** The user dismissed what the chat said of the last /model. */
+    dismissModelNotice: (paneId: string) => setModelNotice(paneId, null),
     /** Recover, on a chat whose conversation process is lost. */
     recover,
     /**

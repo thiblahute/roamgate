@@ -143,6 +143,7 @@ for (const { protocol, terminal } of conversationDrivers()) {
       expect(protocol.displayName).toBeTruthy();
       // Its optional features are there exactly when it says so.
       expect(!!protocol.rewind).toBe(!!protocol.capabilities.rewind);
+      expect(!!protocol.models).toBe(protocol.capabilities.models);
     });
 
     test("a turn decodes to the session, its reply and its result", () => {

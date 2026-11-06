@@ -5,6 +5,7 @@ import {
 } from "../../../../shared/review";
 import { parseQuestions } from "../../review/agent-server";
 import { holderEnvChanges } from "./claude-env";
+import { claudeModels } from "./claude-models";
 import { claudeRewind } from "./claude-rewind";
 import { createStreamParser, type StreamParserState } from "./claude-stream";
 import type {
@@ -266,4 +267,5 @@ export const claudeProtocolDriver: ProtocolDriver = {
   },
 
   rewind: claudeRewind,
+  models: claudeModels,
 };
