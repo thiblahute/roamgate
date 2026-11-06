@@ -143,3 +143,30 @@ test("a question or a permission may be dismissed, unanswered", async () => {
     expect(prompts.list("local")).toEqual([]);
   }
 });
+
+test("a file edit's prompt carries the change it asks to make", async () => {
+  const { prompts, ask } = setup();
+  const waiting = ask({
+    tool: "Edit",
+    input: { file_path: "/w/a.ts", old_string: "a", new_string: "b" },
+  });
+  const [prompt] = prompts.list("local");
+  expect(prompt?.summary).toBe("/w/a.ts");
+  expect(prompt?.file_edit).toEqual({
+    path: "/w/a.ts",
+    added: 1,
+    removed: 1,
+    hunks: [{ lines: ["-a", "+b"] }],
+  });
+  prompts.answer({ connectionId: "local", id: prompt!.id, answer: "deny" });
+  await waiting;
+  // Other tools have none.
+  const bash = ask();
+  expect(prompts.list("local")[0]?.file_edit).toBeUndefined();
+  prompts.answer({
+    connectionId: "local",
+    id: prompts.list("local")[0]!.id,
+    answer: "deny",
+  });
+  await bash;
+});

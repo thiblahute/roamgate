@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { type BashModePart, splitBashMode } from "../../../shared/bashMode";
+import { fileEditFromResult } from "../../../shared/fileEdits";
 import { parseInjectedMessage } from "../../../shared/injectedMessage";
 import {
   localCommandOutput,
@@ -681,6 +682,12 @@ function projectClaudeTrajectory(
       )
     ) {
       const start = steps.length;
+      // What a file edit did, as Claude Code's result of it says (its
+      // patch): one per record, so only a record with one result has it.
+      const fileEdit =
+        parts.filter((part) => part.type === "tool_result").length === 1
+          ? fileEditFromResult(record.toolUseResult)
+          : null;
       for (const [block, part] of parts.entries()) {
         if (part.type === "tool_use") {
           const name = stringValue(part.name) || "tool";
@@ -709,7 +716,12 @@ function projectClaudeTrajectory(
                   source_call_id: stringValue(part.tool_use_id),
                   content:
                     content || (part.is_error ? "Tool failed" : "Tool result"),
-                  extra: { is_error: part.is_error === true || undefined },
+                  extra: {
+                    is_error: part.is_error === true || undefined,
+                    ...(fileEdit && part.is_error !== true
+                      ? { file_edit: fileEdit }
+                      : {}),
+                  },
                 },
               ],
             },

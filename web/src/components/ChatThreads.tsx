@@ -11,8 +11,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import type { FileEdit } from "../../../shared/fileEdits";
 import {
   REVIEW_USER,
+  type ReviewAnchor,
   type ReviewChatPart,
   type ReviewMessagePart,
   type ReviewSnapshot,
@@ -20,6 +22,14 @@ import {
   unheardComments,
 } from "../../../shared/review";
 import { vimKeys } from "../vimKeys";
+import {
+  fileEditAnchor,
+  fileEditEntry,
+  type FileEditParts,
+  FileEditThreadsContext,
+  onFileEdit,
+  selectedRows,
+} from "../fileEditComments";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import { looseText } from "../reviewMessageParts";
 import {
@@ -93,6 +103,14 @@ function excerptOf(text: string): string {
       .find(Boolean) ?? "";
   const words = line.replace(/\s+/g, " ");
   return words.length > 80 ? `${words.slice(0, 80)}…` : words;
+}
+
+/** Where a thread on a file a call changed is: the file and its lines. */
+export function fileThreadPlace(anchor: ReviewAnchor): string {
+  const lines = anchor.line
+    ? `:${anchor.line}${anchor.endLine ? `-${anchor.endLine}` : ""}${anchor.side === "old" ? " (before the change)" : ""}`
+    : "";
+  return `On ${anchor.path ?? "a file"}${lines}`;
 }
 
 /**
@@ -232,8 +250,13 @@ export function placeChatThreads(
   for (const thread of threads) {
     const part = thread.anchor.chat;
     if (!part) continue;
+    // On a file a call changed: that call's card, never a message.
     const entry =
-      entries && ids ? chatPartEntry(part, entries, ids, texts) : part.entry;
+      entries && ids
+        ? onFileEdit(thread.anchor)
+          ? fileEditEntry(part, entries, ids)
+          : chatPartEntry(part, entries, ids, texts)
+        : part.entry;
     if (entry) byEntry.set(entry, [...(byEntry.get(entry) ?? []), thread]);
     else away.add(thread.id);
   }
@@ -392,6 +415,8 @@ type ThreadsView = {
   pendingWrites: PendingWrite[];
   draft: ReviewChatPart | null;
   partDraft: ReviewMessagePart | null;
+  /** A comment being written on a file a call changed: its anchor. */
+  fileDraft: ReviewAnchor | null;
   replying: string | null;
   panelReply: string | null;
   cursor: string | null;
@@ -413,6 +438,8 @@ type ThreadsKeep = {
 const draftBox = (part: ReviewChatPart) => `draft:${part.entry}\0${part.quote}`;
 const partBox = (part: ReviewMessagePart) =>
   `part:${part.comment}\0${part.quote}`;
+const fileBox = (anchor: ReviewAnchor) =>
+  `file:${anchor.chat?.entry}\0${anchor.side ?? ""}${anchor.line ?? ""}-${anchor.endLine ?? ""}\0${anchor.chat?.quote}`;
 const replyBox = (thread: string) => `reply:${thread}`;
 const panelBox = (thread: string) => `panel:${thread}`;
 
@@ -421,6 +448,7 @@ function boxKeys(view: ThreadsView): string[] {
   const keys: string[] = [];
   if (view.draft) keys.push(draftBox(view.draft));
   if (view.partDraft) keys.push(partBox(view.partDraft));
+  if (view.fileDraft) keys.push(fileBox(view.fileDraft));
   if (view.replying) keys.push(replyBox(view.replying));
   if (view.panelReply) keys.push(panelBox(view.panelReply));
   return keys;
@@ -431,6 +459,7 @@ function threadsKeep(): ThreadsKeep {
     pendingWrites: [],
     draft: null,
     partDraft: null,
+    fileDraft: null,
     replying: null,
     panelReply: null,
     cursor: null,
@@ -642,6 +671,8 @@ function ChatThreadsScope({
   }, [shownThreads]);
   const partDraft = view.partDraft;
   const setPartDraft = useKeptField(keep, "partDraft");
+  const fileDraft = view.fileDraft;
+  const setFileDraft = useKeptField(keep, "fileDraft");
   /**
    * Where j / k are: a part of a message (`p:ENTRY:PART`), a message of a
    * thread (`m:COMMENT`) or a folded thread (`t:THREAD`).
@@ -678,6 +709,10 @@ function ChatThreadsScope({
   const setReplying = useKeptField(keep, "replying");
   const [error, setError] = useState("");
   const entries = useRef(new Map<string, HistoryEntry>());
+  /** The file changes drawn as cards, by their call's entry id. */
+  const cards = useRef(
+    new Map<string, { call: HistoryEntry; edit: FileEdit }>(),
+  );
 
   const sessionId = useRef<string | null>(null);
   sessionId.current = snapshot?.session.id ?? null;
@@ -755,6 +790,17 @@ function ChatThreadsScope({
       window.getSelection()?.removeAllRanges();
     },
     [setDraft],
+  );
+
+  /** A comment on the rows `from` to `to` of a call's card (-1: the file). */
+  const commentFile = useCallback(
+    (entry: string, from: number, to: number) => {
+      const card = cards.current.get(entry);
+      if (!card) return;
+      setFileDraft(fileEditAnchor(card.call, card.edit, from, to));
+      window.getSelection()?.removeAllRanges();
+    },
+    [setFileDraft],
   );
 
   /**
@@ -1023,6 +1069,60 @@ function ChatThreadsScope({
     };
   };
 
+  /**
+   * A call's card: the threads on the file it changed and the comment
+   * being written there, drawn by the card under the lines they are on.
+   */
+  const fileParts = (call: HistoryEntry, edit: FileEdit): FileEditParts => {
+    cards.current.set(call.id, { call, edit });
+    const notes: FileEditParts["notes"][number][] = (byEntry.get(call.id) ?? [])
+      .filter((thread) => !hidden.has(thread.id))
+      .map((thread) => ({
+        key: thread.id,
+        anchor: thread.anchor,
+        node: renderThread(thread),
+      }));
+    if (fileDraft?.chat?.entry === call.id)
+      notes.push({
+        key: "draft",
+        anchor: fileDraft,
+        node: (
+          <div className="chat-thread is-draft">
+            <ThreadEditor
+              {...boxOf(fileBox(fileDraft))}
+              placeholder={`Comment for ${agent}...`}
+              onLeave={backToConversation}
+              onClose={(id) => {
+                dropFailed(id);
+                setFileDraft(null);
+                backToConversation();
+              }}
+              onSave={(text, id) =>
+                send({
+                  id,
+                  kind: "discussion",
+                  anchor: fileDraft,
+                  text,
+                }).then((ok) => {
+                  if (!ok) return;
+                  setFileDraft(null);
+                  backToConversation();
+                })
+              }
+            />
+          </div>
+        ),
+      });
+    return {
+      notes,
+      focused: cursor?.startsWith(`p:${call.id}:`)
+        ? Number(cursor.slice(call.id.length + 3))
+        : null,
+      onComment: (from, to) => commentFile(call.id, from, to),
+      onSelect: (part) => setCursor(`p:${call.id}:${part}`),
+    };
+  };
+
   // The keys: from the message box (k on its first line in normal mode, or
   // Alt+Up) into the conversation. There j / k step through the parts of
   // the agent's messages and the threads under them; c comments on a part
@@ -1062,9 +1162,7 @@ function ChatThreadsScope({
     () => overview.filter((thread) => !thread.resolved && away.has(thread.id)),
     [overview, away],
   );
-  const awayWhere = older?.more
-    ? "its message is older than those shown: Go to it reads them"
-    : "its message is not in the chat shown";
+  const olderMore = !!older?.more;
   /** The thread answered from the panel. */
   const panelReply = view.panelReply;
   const setPanelReply = useKeptField(keep, "panelReply");
@@ -1073,7 +1171,18 @@ function ChatThreadsScope({
       overview.map((thread) => {
         const part = thread.anchor.chat;
         const nested = thread.anchor.message;
+        const file = onFileEdit(thread.anchor);
         const last = thread.comments[thread.comments.length - 1];
+        const time = part?.at
+          ? new Date(part.at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+        const what = file ? "change" : "message";
+        const awayWhere = olderMore
+          ? `its ${what} is older than those shown: Go to it reads them`
+          : `its ${what} is not in the chat shown`;
         return {
           id: thread.id,
           resolved: thread.resolved,
@@ -1081,7 +1190,9 @@ function ChatThreadsScope({
           meta: `${
             nested
               ? "On a message of a thread"
-              : `On ${agent}'s message${part?.at ? ` of ${new Date(part.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}${part?.excerpt ? `: ${part.excerpt}` : ""}`
+              : file
+                ? `${fileThreadPlace(thread.anchor)}${time ? `, changed at ${time}` : ""}`
+                : `On ${agent}'s message${time ? ` of ${time}` : ""}${part?.excerpt ? `: ${part.excerpt}` : ""}`
           }${away.has(thread.id) ? ` (${awayWhere})` : ""}`,
           when: last ? formatUiDateTime(last.updatedAt) : undefined,
           comments: thread.comments.map((comment) => ({
@@ -1092,7 +1203,7 @@ function ChatThreadsScope({
           canReply: true,
         };
       }),
-    [overview, agent, away, awayWhere],
+    [overview, agent, away, olderMore],
   );
   const [frame, setFrame] = useState<HTMLElement | null>(null);
   // The chat's frame, found again whenever it is drawn anew (an empty chat,
@@ -1247,6 +1358,14 @@ function ChatThreadsScope({
         const entry = entryIds.get(thread.id);
         if (!entry || away.has(thread.id))
           key = [0, part?.at ?? "", 0, thread.createdAt];
+        else if (onFileEdit(thread.anchor))
+          // On a file change: by its line in the card.
+          key = [
+            1,
+            entryAt.get(entry) ?? Number.MAX_SAFE_INTEGER,
+            thread.anchor.line ?? 0,
+            thread.createdAt,
+          ];
         else {
           const words = compactText(
             part?.quote.split("\n").find((line) => line.trim()) ?? "",
@@ -1380,6 +1499,7 @@ function ChatThreadsScope({
     jumpUnresolved,
     toggleOpenOnly,
     openOnly,
+    commentFile,
   });
   keys.current = {
     cursor,
@@ -1394,6 +1514,7 @@ function ChatThreadsScope({
     jumpUnresolved,
     toggleOpenOnly,
     openOnly,
+    commentFile,
   };
   useEffect(() => {
     const messages = scopeRef.current?.closest<HTMLElement>(
@@ -1416,16 +1537,17 @@ function ChatThreadsScope({
     const stops = () =>
       Array.from(
         list.querySelectorAll<HTMLElement>(
-          ".chat-review [data-part], [data-chat-stop]",
+          ".chat-review [data-part], .chat-file-edit [data-part], [data-chat-stop]",
         ),
       ).filter(
         (stop) =>
           (stop.dataset.chatStop ||
             !stop.closest(".chat-thread") ||
             partOfLongThreadMessage(stop)) &&
-          // The conversation as shown: not what tool calls hold, nor what
-          // is hidden.
-          !stop.closest(".agent-history-chat-tools") &&
+          // The conversation as shown: not what tool calls hold (but the
+          // files they changed), nor what is hidden.
+          (!stop.closest(".agent-history-chat-tools") ||
+            !!stop.closest(".chat-file-edit")) &&
           stop.getClientRects().length > 0,
       );
     // A thread's message in several parts: each is a stop, after the
@@ -1607,6 +1729,17 @@ function ChatThreadsScope({
         );
         if (open) open.focus();
         else setReplying(thread.id);
+      } else if (
+        (key === "c" || key === "Enter") &&
+        here?.dataset.part !== undefined &&
+        here.closest(".chat-file-edit")
+      ) {
+        // A file a call changed: its head comments on the file, a row on
+        // that line.
+        const entry =
+          here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+        const row = Number(here.dataset.part) - 1;
+        if (entry) keys.current.commentFile(entry, row, row);
       } else if ((key === "c" || key === "Enter") && here) {
         const entry =
           here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
@@ -1640,10 +1773,13 @@ function ChatThreadsScope({
     };
   }, [setCursor, setReplying]);
 
-  // Words selected in a message offer a comment on them.
+  // Words selected in a message offer a comment on them; lines selected in
+  // a file a call changed, a comment on those lines.
   const [selection, setSelection] = useState<{
     entry: string;
     quote: string;
+    /** On a call's card: the rows selected. */
+    rows?: [number, number];
     x: number;
     y: number;
   } | null>(null);
@@ -1661,11 +1797,23 @@ function ChatThreadsScope({
           range?.startContainer instanceof Element
             ? range.startContainer
             : range?.startContainer.parentElement;
-        const message = start?.closest<HTMLElement>(".chat-review [data-part]")
-          ? start?.closest<HTMLElement>("[data-entry-id]")
-          : null;
+        const card = start?.closest(".chat-thread")
+          ? null
+          : start?.closest<HTMLElement>(
+              ".chat-file-edit.is-commentable[data-entry-id]",
+            );
+        const message = card
+          ? card
+          : start?.closest<HTMLElement>(".chat-review [data-part]")
+            ? start?.closest<HTMLElement>("[data-entry-id]")
+            : null;
         const quote = current?.toString().trim() ?? "";
-        if (!range || !message?.dataset.entryId || !quote) {
+        if (
+          !range ||
+          !message?.dataset.entryId ||
+          !quote ||
+          (card && !scopeRef.current?.contains(card))
+        ) {
           setSelection(null);
           return;
         }
@@ -1676,6 +1824,7 @@ function ChatThreadsScope({
         setSelection({
           entry: message.dataset.entryId,
           quote,
+          ...(card ? { rows: selectedRows(card, range) } : {}),
           x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
           y: Math.max(
             8,
@@ -1740,11 +1889,30 @@ function ChatThreadsScope({
       undelivered,
     ],
   );
+  // The same for the files the chat's calls changed.
+  const fileValue = useMemo(
+    () => ({ partsFor: fileParts }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      byEntry,
+      byMessage,
+      partDraft,
+      fileDraft,
+      cursor,
+      flipped,
+      hidden,
+      replying,
+      write,
+      commentFile,
+    ],
+  );
   return (
     <ChatThreadsContext.Provider value={value}>
-      <div ref={scopeRef} className="chat-threads-scope">
-        {children}
-      </div>
+      <FileEditThreadsContext.Provider value={fileValue}>
+        <div ref={scopeRef} className="chat-threads-scope">
+          {children}
+        </div>
+      </FileEditThreadsContext.Provider>
       {frame && overview.length
         ? createPortal(
             <>
@@ -1868,8 +2036,12 @@ function ChatThreadsScope({
               // Keeps the selection while the button is pressed.
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => {
-                const entry = entries.current.get(selection.entry);
-                if (entry) comment(entry, selection.quote);
+                if (selection.rows)
+                  commentFile(selection.entry, ...selection.rows);
+                else {
+                  const entry = entries.current.get(selection.entry);
+                  if (entry) comment(entry, selection.quote);
+                }
                 setSelection(null);
               }}
             >

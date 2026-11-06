@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
 } from "../../../shared/review";
 import { isMobileLayout } from "../layoutPreferences";
+import { ChatFileEdit } from "./ChatFileEdit";
 import { answerAgentPrompt, releaseAgentPrompt } from "../review";
 import { store } from "../store";
 import "./AgentPermissionCard.css";
@@ -149,6 +150,10 @@ export function AgentPermissionCard({
         </span>
       </div>
       <code className="agent-permission-summary">{prompt.summary}</code>
+      {prompt.file_edit && !compact ? (
+        // The change it asks to make, as the terminal shows it.
+        <ChatFileEdit edit={prompt.file_edit} state="asked" />
+      ) : null}
       {prompt.detail && !compact ? (
         <details className="agent-permission-detail">
           <summary>Details</summary>

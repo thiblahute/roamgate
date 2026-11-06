@@ -1,3 +1,5 @@
+import type { FileEdit } from "./fileEdits";
+
 /**
  * Review sessions: a diff under review plus the threads written on it.
  *
@@ -63,7 +65,11 @@ export type ReviewAnchor = {
    * the words quoted from it. The rest of the anchor is that thread's.
    */
   message?: ReviewMessagePart;
-  /** On a part of a message of an agent chat (a chat review). */
+  /**
+   * On a part of a message of an agent chat (a chat review). With a path,
+   * on a file a tool call of the chat changed (its diff card): the path,
+   * and the lines with their text when on lines, say where, as on a diff.
+   */
   chat?: ReviewChatPart;
   /** On what an effort's view shows (an effort review). */
   effort?: ReviewEffortPart;
@@ -167,6 +173,11 @@ export type ReviewChatPart = {
   excerpt?: string;
   /** The words commented on. */
   quote: string;
+  /**
+   * On a file change: the id of the tool call that made it, which keeps
+   * when the chat reads the call with another entry id.
+   */
+  call?: string;
 };
 
 export type ReviewMessagePart = {
@@ -360,6 +371,8 @@ export type AgentPermissionPrompt = {
   summary: string;
   /** The tool's input, shortened. */
   detail?: string;
+  /** A file edit it asks to make (Edit, Write...): the change, shown. */
+  file_edit?: FileEdit;
   /** "Allow, and don't ask again" applies, as the terminal offers it. */
   canAlways: boolean;
   createdAt: string;

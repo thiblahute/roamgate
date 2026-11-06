@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fileEditFromArguments } from "../../../shared/fileEdits";
 import type {
   AgentPermissionPrompt,
   AgentPromptAnswer,
@@ -45,6 +46,15 @@ export function permissionSummary(tool: string, input: unknown): string {
     }
   }
   return tool;
+}
+
+/** The change a file edit asks to make, for its card to show. */
+function fileEditOf(
+  tool: string,
+  input: unknown,
+): Pick<AgentPermissionPrompt, "file_edit"> {
+  const edit = fileEditFromArguments(tool, input);
+  return edit ? { file_edit: edit } : {};
 }
 
 /**
@@ -98,6 +108,7 @@ export function createAgentPrompts(args: {
       tool: params.tool,
       summary: permissionSummary(params.tool, params.input).slice(0, 500),
       detail,
+      ...fileEditOf(params.tool, params.input),
       canAlways: params.canAlways,
       createdAt: new Date(created).toISOString(),
       expiresAt: new Date(created + params.timeoutMs).toISOString(),

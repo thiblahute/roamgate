@@ -6,6 +6,11 @@ import type { SlashCommand } from "../../../shared/slashCommand";
 import type { AtifTrajectory, SessionFile } from "./session-types";
 import { isConversationStep } from "./session-messages";
 import { historyWindowEntries } from "./session-history-window";
+import {
+  type FileEdit,
+  fileEditFromArguments,
+  FILE_EDIT_TOOLS,
+} from "../../../shared/fileEdits";
 import { type PublishedArtifact, publishedArtifact } from "./session-artifacts";
 
 export type HistoryEntry = {
@@ -38,6 +43,11 @@ export type HistoryEntry = {
   agent_message?: { to: string; text: string };
   // On that call's result: whether it was sent, and the receiver's name.
   agent_message_result?: { sent: boolean; name: string | null };
+  // On a call that edits a file (Edit, Write...): what it changed, from
+  // Claude Code's patch once its result has one, else what its arguments
+  // ask. None once it failed. Kept when the payload is redacted, so the
+  // chat can show the change as the terminal does.
+  file_edit?: FileEdit;
   // On a tool result: the user dismissed the question or permission it
   // waited on, unanswered, from Roamgate. Kept when the payload is
   // redacted, so the chat can say so.
@@ -136,6 +146,18 @@ export function allHistoryEntries(
   const artifactCalls = new Map<string, Record<string, unknown>>();
   const createCalls = new Set<string>();
   const messageCalls = new Map<string, { to: string; text: string }>();
+  // What the calls' results say of their file edits: failed, or Claude
+  // Code's patch.
+  const editResults = new Map<string, EditResult>();
+  for (const step of trajectory.steps)
+    for (const result of step.observation?.results ?? [])
+      if (result.source_call_id)
+        editResults.set(result.source_call_id, {
+          failed: result.extra?.is_error === true,
+          ...(result.extra?.file_edit
+            ? { edit: result.extra.file_edit as FileEdit }
+            : {}),
+        });
   for (const step of trajectory.steps) {
     for (const call of step.tool_calls ?? []) {
       names.set(call.tool_call_id, call.function_name);
@@ -214,6 +236,12 @@ export function allHistoryEntries(
         ...(messageCalls.has(call.tool_call_id)
           ? { agent_message: messageCalls.get(call.tool_call_id)! }
           : {}),
+        ...fileEditField(
+          call.function_name,
+          call.arguments,
+          editResults,
+          call.tool_call_id,
+        ),
       });
     }
     for (const result of step.observation?.results ?? []) {
@@ -363,6 +391,25 @@ function commandField(value: unknown): Pick<HistoryEntry, "command"> {
     ? { command: { name, args: typeof args === "string" ? args : "" } }
     : {};
 }
+
+/**
+ * What a file-editing call changed: Claude Code's patch from its result,
+ * else its arguments' change while it has none; nothing once it failed.
+ */
+function fileEditField(
+  tool: string,
+  args: unknown,
+  results: ReadonlyMap<string, EditResult>,
+  callId: string,
+): Pick<HistoryEntry, "file_edit"> {
+  if (!FILE_EDIT_TOOLS.has(tool)) return {};
+  const result = results.get(callId);
+  if (result?.failed) return {};
+  const edit = result?.edit ?? fileEditFromArguments(tool, args);
+  return edit ? { file_edit: edit } : {};
+}
+
+type EditResult = { failed: boolean; edit?: FileEdit };
 
 function artifactField(
   args: Record<string, unknown> | undefined,

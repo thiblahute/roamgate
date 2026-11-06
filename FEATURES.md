@@ -787,7 +787,12 @@ Inspector state is scoped to each checkout; see
   (done ones folded, the running one open, failures marked), each agent's
   state and time, its conversation, and the result. **Follow** keeps the
   running agent in sight until you move or scroll. Each block of tool calls
-  that started one links to it. In the sheet, `j`/`k` (or arrows) move,
+  that started one links to it. The files a block's calls changed (Edit,
+  Write, NotebookEdit) show under it as the terminal shows them, whether
+  folded or not: the file, the lines added and removed, and the change
+  with its line numbers, its first ten lines and the rest a tap away; a
+  call that failed shows none, and one still running shows what it asks.
+  A permission card for such a call shows the change it asks to make. In the sheet, `j`/`k` (or arrows) move,
   `g`/`G` go to the first or last, `n`/`N` and `e`/`E` to the next or
   previous running or failed one, `Enter` opens, `h`/`l` fold and unfold a
   phase, `f` follows, `Esc` or `Backspace` goes back and then closes, and
@@ -1002,9 +1007,18 @@ again, and comments follow their code or show as outdated.
   delivered: Claude for this chat is not running in any pane") with
   **Retry**, the comments chip counts them ("1 not delivered"), and they
   go by themselves once the session runs in a pane again.
+  The files Claude changed take comments the same way, in their cards
+  under the tool blocks: the `+` over a line's number (a tap on the line
+  shows it on a phone), **Comment** on lines selected, or the head's
+  comment button for the file as a whole. The thread is drawn under its
+  last line, and Claude gets it as a review comment on that code: the
+  file, the lines as its change numbered them, and their text. A folded
+  card shows down to its last thread, and a thread whose lines are no
+  longer in the change shows at the card's end with what it quotes.
   From the chat's message box, Up on its first line (or `k` there in
   Vim's normal mode, or Alt+Up) goes up into the conversation: `j`/`k` step through the
-  parts of Claude's messages and the threads under them, `gg`/`G` to the
+  parts of Claude's messages, the lines of the files it changed (each
+  card's head first) and the threads under them, `gg`/`G` to the
   first or last, `zz`/`zt`/`zb` place the one you are on, `c` or Enter
   comments on a part or answers a thread, `r` resolves, `za` folds, `dd`
   deletes your own comment, `J`/`K` go message by message, `n`/`N` go
@@ -1019,7 +1033,8 @@ again, and comments follow their code or show as outdated.
   ones, Esc closes.
   A thread stays on its message when the chat is read anew and the
   message comes back with another id (a long transcript read from its
-  end): it is found by its time and the words it quotes. Open threads on
+  end): it is found by its time and the words it quotes; a thread on a
+  file Claude changed is found by its tool call. Open threads on
   messages not shown are counted beside the chip ("2 on messages not
   shown") and listed in the panel, where Go to it reads older messages
   until it is there.

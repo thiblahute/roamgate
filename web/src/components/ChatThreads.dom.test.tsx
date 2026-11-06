@@ -539,4 +539,215 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     delete session.deliveryError;
     localStorage.clear();
   });
+
+  test("a file a call changed takes comments on its lines, drawn under them", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { EditorView } = await import("@codemirror/view");
+    const { ChatThreadsProvider } = await import("./ChatThreads");
+    const { ChatFileEdit } = await import("./ChatFileEdit");
+    const { selectedRows } = await import("../fileEditComments");
+    localStorage.clear();
+    writes.length = 0;
+    const kept = chatReview.threads;
+    const edit = {
+      path: "/repo/plans/desktop-move.md",
+      created: true,
+      added: 15,
+      removed: 0,
+      hunks: [
+        {
+          old_start: 0,
+          new_start: 1,
+          lines: Array.from({ length: 15 }, (_, i) => `+line ${i + 1}`),
+        },
+      ],
+    };
+    const call = {
+      id: "c1",
+      kind: "tool_call",
+      role: "tool",
+      text: "",
+      tool_name: "Write",
+      source_call_id: "toolu_01",
+      sent_at: "2026-11-07T10:00:00.000Z",
+      file_edit: edit,
+    };
+    const thread = (
+      id: string,
+      anchor: Record<string, unknown>,
+      body: string,
+    ) => ({
+      ...kept[0]!,
+      id,
+      anchor,
+      comments: [{ ...kept[0]!.comments[0]!, id: `${id}c`, body }],
+    });
+    chatReview.threads = [
+      // Written when the call was read with another entry id: found by
+      // the call's id, on a line past the ten a folded card shows.
+      thread(
+        "f1",
+        {
+          path: edit.path,
+          line: 13,
+          side: "new",
+          text: "line 13",
+          chat: { entry: "live:c1", call: "toolu_01", quote: "line 13" },
+        },
+        "Why 13?",
+      ),
+      // Its line no longer in the change.
+      thread(
+        "f2",
+        {
+          path: edit.path,
+          line: 3,
+          side: "new",
+          text: "gone",
+          chat: { entry: "c1", quote: "gone" },
+        },
+        "Where did it go?",
+      ),
+    ] as never;
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[call] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <div className="agent-history-chat">
+              <div className="agent-history-chat-tools">
+                <ChatFileEdit edit={edit} call={call as never} />
+              </div>
+            </div>
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    await act(settle);
+    const card = host.querySelector<HTMLElement>(".chat-file-edit")!;
+    const list = host.querySelector<HTMLElement>(".agent-history-chat")!;
+    const row = (index: number) =>
+      card.querySelector<HTMLElement>(`[data-row="${index}"]`)!;
+    // What is drawn right under a row's run of lines.
+    const under = (index: number) =>
+      row(index).parentElement!.nextElementSibling as HTMLElement | null;
+
+    // Folded, it shows down to the line its thread is on, the thread under
+    // it; counted with the chat's comments.
+    expect(card.querySelectorAll(".chat-file-edit-line")).toHaveLength(13);
+    expect(under(12)?.textContent).toContain("Why 13?");
+    expect(row(12).className).toContain("has-notes");
+    expect(card.querySelector(".chat-file-edit-more")?.textContent).toBe(
+      "Show 2 more lines",
+    );
+    expect(host.querySelector(".threads-chip")?.textContent).toContain(
+      "2 open",
+    );
+    // Its lines gone: at the card's end, with what it quotes.
+    const outdated = card.querySelector(".chat-file-edit-notes.is-outdated");
+    expect(outdated?.textContent).toContain(
+      "On lines no longer in this change",
+    );
+    expect(outdated?.querySelector(".chat-file-edit-quote")?.textContent).toBe(
+      "gone",
+    );
+    expect(outdated?.textContent).toContain("Where did it go?");
+
+    // The + on line 3: a box under it, sent with the file and the line.
+    await act(async () =>
+      row(2).querySelector<HTMLButtonElement>(".chat-file-edit-add")!.click(),
+    );
+    for (let i = 0; i < 50 && !card.querySelector(".cm-content"); i++)
+      await act(settle);
+    expect(under(2)?.querySelector(".chat-thread.is-draft")).not.toBeNull();
+    const view = EditorView.findFromDOM(
+      card.querySelector<HTMLElement>(".cm-content")!,
+    );
+    await act(async () =>
+      view!.dispatch({ changes: { from: 0, insert: "Say which." } }),
+    );
+    await act(async () =>
+      [...card.querySelectorAll("button")]
+        .find((button) => button.textContent === "Send")!
+        .click(),
+    );
+    await act(settle);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.method).toBe("review.thread.add");
+    expect(writes[0]!.params.anchor).toEqual({
+      path: edit.path,
+      line: 3,
+      side: "new",
+      text: "line 3",
+      chat: {
+        entry: "c1",
+        quote: "line 3",
+        at: call.sent_at,
+        call: "toolu_01",
+      },
+    });
+    // Shown at once under its line, on its way.
+    expect(
+      under(2)?.querySelector(".chat-thread-message.is-pending")?.textContent,
+    ).toContain("Say which.");
+    await act(async () => answerWrite!());
+    await act(settle);
+    expect(card.querySelector(".chat-thread.is-draft")).toBeNull();
+
+    // A tap on a line puts j / k on it; c comments on it.
+    await act(async () => row(5).click());
+    expect(row(5).className).toContain("is-focused");
+    await act(async () =>
+      list.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "c", bubbles: true }),
+      ),
+    );
+    await act(settle);
+    expect(under(5)?.querySelector(".chat-thread.is-draft")).not.toBeNull();
+
+    // The head's button: on the file as a whole, under its head.
+    await act(async () =>
+      card.querySelector<HTMLButtonElement>(".chat-file-edit-comment")!.click(),
+    );
+    await act(settle);
+    expect(
+      card.querySelector(
+        ".chat-file-edit-head + .chat-file-edit-notes .chat-thread.is-draft",
+      ),
+    ).not.toBeNull();
+    expect(under(5)?.querySelector(".chat-thread.is-draft") ?? null).toBeNull();
+
+    // Words selected over lines: those lines; a line selected whole (its
+    // end at the start of the next) leaves the next out.
+    const text = (index: number) =>
+      row(index).querySelector(".chat-file-edit-text")!.firstChild!;
+    const range = document.createRange();
+    range.setStart(text(3), 2);
+    range.setEnd(text(6), 3);
+    expect(selectedRows(card, range)).toEqual([3, 6]);
+    range.setEnd(text(7), 0);
+    expect(selectedRows(card, range)).toEqual([3, 6]);
+    // The head's words only: the file.
+    const head = card.querySelector(".chat-file-edit-verb")!.firstChild!;
+    range.setStart(head, 0);
+    range.setEnd(head, 3);
+    expect(selectedRows(card, range)).toEqual([-1, -1]);
+
+    await act(async () => root.unmount());
+    chatReview.threads = kept;
+    writes.length = 0;
+    localStorage.clear();
+  });
 }

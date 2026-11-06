@@ -1253,3 +1253,78 @@ test("a question dismissed from Roamgate shows as dismissed, even redacted", () 
   if (redacted.mode !== "snapshot") throw new Error("Expected snapshot");
   expect(redacted.entries[0]).toMatchObject({ text: "", dismissed: true });
 });
+
+test("a file edit carries its change, from Claude Code's patch once it has one, also redacted", () => {
+  const call = (id: string, input: Record<string, unknown>, name = "Edit") => ({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id, name, input }],
+    },
+  });
+  const result = (id: string, toolUseResult: unknown, is_error = false) => ({
+    type: "user",
+    toolUseResult,
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: id,
+          content: is_error ? "String to replace not found" : "ok",
+          ...(is_error ? { is_error: true } : {}),
+        },
+      ],
+    },
+  });
+  const trajectory = projectAgentTrajectory("claude", file, [
+    call("e1", { file_path: "/w/a.ts", old_string: "b", new_string: "B" }),
+    result("e1", {
+      filePath: "/w/a.ts",
+      structuredPatch: [
+        { oldStart: 7, newStart: 7, lines: [" a", "-b", "+B"] },
+      ],
+    }),
+    // Failed: it changed nothing.
+    call("e2", { file_path: "/w/b.ts", old_string: "x", new_string: "y" }),
+    result("e2", "Error: String to replace not found", true),
+    // Not answered yet: what it asks.
+    call("w1", { file_path: "/w/c.md", content: "hello\n" }, "Write"),
+    call("r1", { file_path: "/w/a.ts" }, "Read"),
+  ]);
+  const update = redactHistoryUpdate({
+    history_version: 2,
+    cursor: { epoch: "e", revision: 1 },
+    window_limit: HISTORY_WINDOW_LIMIT,
+    mode: "snapshot",
+    entries: historyEntriesFromTrajectory(file, trajectory),
+  });
+  const entries = update.mode === "snapshot" ? update.entries : [];
+  const calls = entries.filter((entry) => entry.kind === "tool_call");
+  expect(calls.map((entry) => [entry.source_call_id, entry.file_edit])).toEqual(
+    [
+      [
+        "e1",
+        {
+          path: "/w/a.ts",
+          added: 1,
+          removed: 1,
+          hunks: [{ old_start: 7, new_start: 7, lines: [" a", "-b", "+B"] }],
+        },
+      ],
+      ["e2", undefined],
+      [
+        "w1",
+        {
+          path: "/w/c.md",
+          added: 1,
+          removed: 0,
+          hunks: [{ lines: ["+hello"] }],
+        },
+      ],
+      ["r1", undefined],
+    ],
+  );
+  // The payload itself is withheld as before.
+  expect(calls[0]!.text).toBe("");
+});

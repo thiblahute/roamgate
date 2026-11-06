@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { type ReviewPush, threadNeedsAnswer } from "../../../shared/review";
 import {
   createReviewService,
+  fileChangePlace,
   type ReviewService,
   reviewsBranch,
 } from "./service";
@@ -1303,6 +1304,85 @@ test("a chat's threads: no diff, kept out of the reviews, sent with context", as
       text: "No quote",
     }),
   ).rejects.toThrow("a chat part needs its message and quote");
+});
+
+test("a comment on a file a chat's tool call changed says the file and lines", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const prompts: string[] = [];
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => {
+      throw new Error("a chat has no diff");
+    },
+    deliveryDelayMs: 10,
+    promptAgent: async (_connection, _pane, text) => {
+      prompts.push(text);
+    },
+  });
+  services.push(service);
+  const chat = service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "chat", chat: "claude-session-1" },
+    agent: "Claude",
+    paneId: "w1:p2",
+  }).session;
+  const thread = await service.addThread({
+    sessionId: chat.id,
+    anchor: {
+      path: "/repo/plans/desktop-move.md",
+      line: 12,
+      endLine: 13,
+      side: "new",
+      text: "## Moving the desktop",
+      chat: {
+        entry: "entry-9",
+        at: "2026-10-27T14:32:00",
+        call: "toolu_01",
+        quote: "## Moving the desktop\nFirst, the disks.",
+      },
+    },
+    text: "Say which disks.",
+  });
+  expect(thread.anchor.chat?.call).toBe("toolu_01");
+  expect(thread.anchor.line).toBe(12);
+  expect(thread.anchor.endLine).toBe(13);
+  expect(thread.anchor.text).toBe("## Moving the desktop");
+  // The whole file: no lines, its path as the quote.
+  await service.addThread({
+    sessionId: chat.id,
+    anchor: {
+      path: "/repo/plans/desktop-move.md",
+      chat: {
+        entry: "entry-9",
+        call: "toolu_01",
+        quote: "/repo/plans/desktop-move.md",
+      },
+    },
+    text: "Too long.",
+  });
+  await Bun.sleep(60);
+  const prompt = prompts.join("\n");
+  expect(prompt).toContain(
+    "on /repo/plans/desktop-move.md:12-13 (lines 12-13 as your change of 14:32 left the file), about these lines:\n  > ## Moving the desktop\n  > First, the disks.",
+  );
+  expect(prompt).toContain(
+    "on the file /repo/plans/desktop-move.md, as your change left it:\n  Too long.",
+  );
+  expect(prompt).toContain("from me on files you changed in this chat:");
+  expect(prompt).not.toContain("on parts of your messages");
+  expect(prompt).toContain("as review comments on code are");
+  expect(prompt).not.toContain("not on code");
+  expect(
+    fileChangePlace(
+      { path: "/repo/a.ts", line: 4, side: "old" },
+      "2026-10-27T14:32:00",
+    ),
+  ).toBe(
+    "on /repo/a.ts:4 (line 4 as the file was before your change of 14:32, which removed it), about this line",
+  );
 });
 
 test("a Ranger chat's threads go to Ranger, answered with its own tool", async () => {
