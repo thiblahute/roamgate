@@ -134,12 +134,12 @@ import { AgentMessageContent } from "./AgentMessageContent";
 import { AgentMessageDialog } from "./AgentMessageDialog";
 import { AgentHistoryCard } from "./AgentHistoryCard";
 import {
-  AgentHistoryChat,
   type ChatApiKeyQuestion,
   type ChatCutOff,
   type ChatDelivery,
   type ChatItem,
 } from "./AgentHistoryChat";
+import { DeferredAgentHistoryChat } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { withShellOutcomes } from "../shellOutcomes";
 import { listenOrSayWhy } from "../speechEngine";
@@ -221,6 +221,7 @@ import {
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
 import { paneChatSource } from "../chatSource";
+import { chatPlaceKey } from "../chatPlace";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ZenDock } from "./ZenIsland";
 import "./AgentHistoryDrawer.css";
@@ -1155,7 +1156,12 @@ export function AgentHistoryDrawer({
         : shownMessages,
     );
     if (olderRow)
-      items.unshift({ type: "custom", id: "older", node: olderRow });
+      items.unshift({
+        type: "custom",
+        id: "older",
+        node: olderRow,
+        transient: true,
+      });
     return query.trim() || !shellItems.length
       ? items
       : [...items, ...shellItems];
@@ -2062,6 +2068,12 @@ export function AgentHistoryDrawer({
     claimsVoice: !!paneChat,
   });
   const threadsTarget = chatSource.threads;
+  // Where the reader is in the pane's chat is kept per connection, pane and
+  // session: the chat comes back there when shown again.
+  const placeKey =
+    paneChat && history?.path
+      ? chatPlaceKey(activeConnectionId, pane.pane_id, history.path)
+      : null;
   const voiceSession = chatSource.voiceSession;
   const conversationRef = useRef(conversation);
   conversationRef.current = conversation;
@@ -3260,9 +3272,10 @@ export function AgentHistoryDrawer({
             {...threadsTarget}
             entries={chatSource.entries}
             older={olderMessages}
+            keep
           >
             <div className="agent-history-chat-frame">
-              <AgentHistoryChat
+              <DeferredAgentHistoryChat
                 items={chatItems}
                 speechActive={open}
                 speechScopeKey={JSON.stringify([
@@ -3308,13 +3321,16 @@ export function AgentHistoryDrawer({
                 cutOff={cutOff}
                 delivery={delivery}
                 apiKeyQuestion={apiKeyQuestion}
+                placeKey={placeKey}
+                placeReady={caughtUp}
+                older={olderMessages}
               />
               {historyMinimap("auto")}
             </div>
           </ChatThreadsProvider>
         ) : (
           <div className="agent-history-chat-frame">
-            <AgentHistoryChat
+            <DeferredAgentHistoryChat
               items={chatItems}
               speechActive={open}
               speechScopeKey={JSON.stringify([
@@ -3360,6 +3376,9 @@ export function AgentHistoryDrawer({
               cutOff={cutOff}
               delivery={delivery}
               apiKeyQuestion={apiKeyQuestion}
+              placeKey={placeKey}
+              placeReady={caughtUp}
+              older={olderMessages}
             />
             {historyMinimap("auto")}
           </div>

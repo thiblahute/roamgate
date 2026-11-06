@@ -394,6 +394,19 @@ Inspector state is scoped to each checkout; see
   _Dismissed_. A conversation-mode pane shown as a terminal says when Claude
   waits on a question, with **Show the question** and **Dismiss it**; on a
   call, "dismiss it" (or "laisse tomber la question") does the same.
+  A pane's chat keeps your place in it. Leave it for another pane,
+  workspace or connection, for its terminal, for a phone's Workspaces
+  sheet, or reload the page, and coming back shows the conversation where
+  you were reading: the same message at the same height, kept by the
+  message rather than by a scroll offset, so what the agent answered
+  meanwhile waits under it, and a place among older messages reads them
+  back in. Left at the end, the chat follows the newest message as before.
+  Messages that came under your place are counted in a **N new messages**
+  pill at the bottom of the chat, which goes to the newest. The chat's
+  comment threads come back as you left them: folded or unfolded, the
+  comments panel open, and the reply or comment you were writing with its
+  words (kept in the tab's memory, not across a reload). A pane whose agent
+  started a new session opens at its end.
   With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the call button
   beside the message box talks hands-free: speak, and what you said is sent
   once you pause; the agent's answer is read aloud by the engine Speak uses

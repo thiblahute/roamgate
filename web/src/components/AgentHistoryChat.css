@@ -13,6 +13,46 @@
   padding: 12px 12px 16px;
 }
 
+/* A long chat lays out and paints only the messages near the view: each
+   update (a streamed word, a refresh) otherwise laid the whole conversation
+   out again, and a key typed meanwhile waited for it. A message keeps the
+   size it was last drawn at while away from the view. */
+.agent-history-chat-content > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
+/* Messages come in under the place the reader keeps: a pill at the bottom
+   of the view says how many, and goes to them. Its dock is stuck to the
+   bottom of the list and takes no room in it. */
+.agent-history-chat-latest-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  height: 0;
+  pointer-events: none;
+}
+
+.agent-history-chat-latest {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(calc(-100% - 10px));
+}
+
 .agent-history-chat-message {
   min-width: 0;
   max-width: min(88%, 680px);
