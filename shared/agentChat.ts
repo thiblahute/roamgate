@@ -73,6 +73,8 @@ export type AgentChatCapabilities = {
   images: "base64" | "path";
   /** Which slash command palette the composer offers. */
   slashCommands: "claude" | null;
+  /** The running agent's model is listed and switched (/model). */
+  models: boolean;
 };
 
 export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
@@ -85,6 +87,7 @@ export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
   backgroundTasks: true,
   images: "base64",
   slashCommands: "claude",
+  models: true,
 };
 
 /**
@@ -291,6 +294,52 @@ export type AgentChatState = {
    * (prompt suggestions on); gone once another turn starts.
    */
   next_prompt?: AgentChatNextPrompt | null;
+  /** What the last /model did, until the next message goes. */
+  model_notice?: AgentChatModelNotice | null;
+};
+
+/** A model /model offers, as its picker lists it. */
+export type AgentChatModel = {
+  /** What is asked for: an alias ("sonnet"), "default", or a model id. */
+  value: string;
+  label: string;
+  description?: string;
+  /** The model id the value stands for, when the agent says. */
+  resolved?: string;
+  /** Listed, but not to be picked (the agent says why in description). */
+  disabled?: boolean;
+};
+
+/** The models /model offers in conversation mode (agent_chat.models). */
+export type AgentChatModels = {
+  models: AgentChatModel[];
+  /** The model the session runs, as the agent names it; null: not known. */
+  current: string | null;
+  /** The value last picked for it, kept for its next start; null: none. */
+  chosen: string | null;
+  /**
+   * Where the list came from: the running agent, the profile's endpoint,
+   * or both together.
+   */
+  source: "agent" | "profile" | "both";
+  /** The profile's list could not be read. */
+  error?: string;
+};
+
+/** What a /model switch did (agent_chat.model). */
+export type AgentChatModelResult =
+  | { ok: true; model: string | null }
+  | { ok: false; reason: string };
+
+/** What the chat says of the last /model, after its last entry. */
+export type AgentChatModelNotice = {
+  at: string;
+  ok: boolean;
+  /** What was asked for ("sonnet"). */
+  requested: string;
+  /** The model the agent runs from then on, as it names it. */
+  model: string | null;
+  text: string;
 };
 
 /** Claude Code's predicted next user message. Never sent by itself. */
@@ -524,6 +573,8 @@ export type AgentChatEvent =
   | { type: "stuck"; stuck: AgentChatStuck | null }
   /** Its process was stopped while idle (or woke up again: null). */
   | { type: "asleep"; asleep: AgentChatAsleep | null }
+  /** A /model switch's outcome (or that notice went: null). */
+  | { type: "model_notice"; model_notice: AgentChatModelNotice | null }
   /** The API key question waits for an answer (or not any more: null). */
   | {
       type: "api_key_question";

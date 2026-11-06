@@ -52,6 +52,9 @@ import {
   cutOffNotice,
   deliveryNotice,
   dismissAgentChatInterrupted,
+  dismissAgentChatModelNotice,
+  listAgentChatModels,
+  setAgentChatModel,
   QUEUE_STALL_MS,
   queueWaiting,
   recoverAgentChat,
@@ -87,6 +90,8 @@ import {
   type RewindMode,
 } from "../claudeRewind";
 import { AgentRewindSheet } from "./AgentRewindSheet";
+import { AgentModelSheet } from "./AgentModelSheet";
+import { parseModelCommand } from "../../../shared/agentModels";
 import { copyTextWithFeedback } from "../copyText";
 import {
   connectionClientScopeKey,
@@ -108,6 +113,8 @@ import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { AgentTasksSheet } from "./AgentTasksSheet";
 import { AgentStatusChip } from "./AgentStatusChip";
+import { ModelChip } from "./ModelChip";
+import { refreshSessionProfile } from "../sessionProfiles";
 import { ProfileChip } from "./ProfileChip";
 import { AgentChatOwnerChip } from "./AgentChatOwnerChip";
 import { branchRequests, conversationRequests } from "../forgeRefs";
@@ -138,6 +145,7 @@ import {
   type ChatCutOff,
   type ChatDelivery,
   type ChatItem,
+  type ChatModelNotice,
 } from "./AgentHistoryChat";
 import { DeferredAgentHistoryChat } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
@@ -2021,7 +2029,11 @@ export function AgentHistoryDrawer({
   // /rewind and /tasks typed in a Claude chat open the chat's own picker
   // (AgentRewindSheet) and list of what the session runs on the side, not
   // Claude Code's in its terminal, which would only show as its screen.
+  // /model alone in conversation mode opens the models its agent and
+  // profile offer (AgentModelSheet); `/model <name>` goes to the bridge,
+  // which switches the session at once.
   const [rewindOpen, setRewindOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const sendFromChatBox = useCallback(
     async (text: string) => {
       if (
@@ -2031,6 +2043,13 @@ export function AgentHistoryDrawer({
         text.trim() === "/rewind"
       )
         setRewindOpen(true);
+      else if (
+        conversationAgent &&
+        capabilities.models &&
+        inConversationRef.current &&
+        parseModelCommand(text)?.model === null
+      )
+        setModelOpen(true);
       else if (
         chatPaneId &&
         conversationAgent &&
@@ -2042,6 +2061,7 @@ export function AgentHistoryDrawer({
     },
     [
       capabilities.backgroundTasks,
+      capabilities.models,
       capabilities.rewind,
       chatPaneId,
       conversationAgent,
@@ -2050,6 +2070,18 @@ export function AgentHistoryDrawer({
       sendFromBox,
     ],
   );
+  const loadModels = useCallback(
+    () => listAgentChatModels(connectionClient, pane.pane_id),
+    [connectionClient, pane.pane_id],
+  );
+  const pickModel = useCallback(
+    (model: string) => setAgentChatModel(connectionClient, pane.pane_id, model),
+    [connectionClient, pane.pane_id],
+  );
+  // Closed when conversation mode lets the session go.
+  useEffect(() => {
+    if (!inConversation) setModelOpen(false);
+  }, [inConversation]);
   const composerDraftKey = terminalComposerDraftKey(
     activeConnectionId,
     connectionGeneration,
@@ -2429,6 +2461,39 @@ export function AgentHistoryDrawer({
       pane.pane_id,
       sendFromBox,
     ],
+  );
+  // What the last /model did, after the chat's last entry, until the next
+  // message goes or it is dismissed (in every browser).
+  const modelNoticeState =
+    conversationAgent && inConversation
+      ? (conversationState?.model_notice ?? null)
+      : null;
+  // A /model's switch shows on the header's model chip at once.
+  const modelNoticeAt = modelNoticeState?.at;
+  useEffect(() => {
+    if (modelNoticeAt)
+      void refreshSessionProfile(connectionClient, pane.pane_id);
+  }, [connectionClient, modelNoticeAt, pane.pane_id]);
+  const modelNotice = useMemo<ChatModelNotice | null>(
+    () =>
+      modelNoticeState
+        ? {
+            text: modelNoticeState.text,
+            ok: modelNoticeState.ok,
+            onDismiss: () => {
+              dismissAgentChatModelNotice(connectionClient, pane.pane_id).catch(
+                (error: unknown) =>
+                  store.notify({
+                    kind: "error",
+                    message: "Could not dismiss the notice",
+                    detail:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+              );
+            },
+          }
+        : null,
+    [connectionClient, modelNoticeState, pane.pane_id],
   );
   // Nothing sent goes out: the conversation process is lost, or the queue
   // has waited, with nothing at work, longer than a start takes. Timed in
@@ -3319,6 +3384,7 @@ export function AgentHistoryDrawer({
                 onSendAgain={paneChat ? sendFromBox : undefined}
                 onEditAgain={paneChat ? restoreDraft : undefined}
                 cutOff={cutOff}
+                modelNotice={modelNotice}
                 delivery={delivery}
                 apiKeyQuestion={apiKeyQuestion}
                 placeKey={placeKey}
@@ -3374,6 +3440,7 @@ export function AgentHistoryDrawer({
               onSendAgain={paneChat ? sendFromBox : undefined}
               onEditAgain={paneChat ? restoreDraft : undefined}
               cutOff={cutOff}
+              modelNotice={modelNotice}
               delivery={delivery}
               apiKeyQuestion={apiKeyQuestion}
               placeKey={placeKey}
@@ -3508,6 +3575,13 @@ export function AgentHistoryDrawer({
           check={rewindCheck}
         />
       ) : null}
+      {modelOpen ? (
+        <AgentModelSheet
+          load={loadModels}
+          onPick={pickModel}
+          onClose={() => setModelOpen(false)}
+        />
+      ) : null}
       {/* Once it is known which session's place to open on. */}
       {paneChat && tasksOpen && tasksLoaded ? (
         <AgentTasksSheet
@@ -3629,6 +3703,12 @@ export function AgentHistoryDrawer({
             status={paneChat ? chatAgentStatus : pane.agent_status}
             tasks={tasks}
             onOpenTasks={() => openTask(null)}
+          />
+          <ModelChip
+            client={connectionClient}
+            paneId={pane.pane_id}
+            enabled={!!pane.agent}
+            agentStatus={paneChat ? chatAgentStatus : pane.agent_status}
           />
           <div className="agent-history-actions">
             {paneChat ? mobileProfileChip : null}

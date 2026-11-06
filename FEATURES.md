@@ -715,7 +715,13 @@ Inspector state is scoped to each checkout; see
   wait in Roamgate's queue (taken back or edited as below) and go as one
   turn when it ends; **Stop** interrupts the turn, keeping what was written;
   `/compact`, `/clear`, `/cost`, `/context` and `/rewind` work, and other
-  terminal-only commands are refused. A message starting with `!` runs as a
+  terminal-only commands are refused. `/model` opens a picker of the models
+  the session's Claude offers, with the other models of its profile's
+  endpoint (a gateway's whole list), the current one marked; typing filters
+  it or names a model it lacks. `/model <name>` switches at once, a turn
+  running or not (that turn keeps its model). The chat says which model it
+  is now, or why Claude refused it, and the choice holds when the process
+  restarts (idle stop, hand-back) until the session has answered with it. A message starting with `!` runs as a
   shell command, as Claude Code's bash mode does: on the pane's host (over
   SSH for a remote one), in the session's directory, with your login shell.
   The chat shows its output as it comes, its exit code and **Stop**; Claude
@@ -747,8 +753,12 @@ Inspector state is scoped to each checkout; see
   <profile>** in a Claude pane's profile menu (the gauge in its toolbar) or
   the command menu moves that session to another profile, keeping its
   history: the terminal's Claude exits and resumes the same session, a
-  conversation restarts its process. A session not on the default shows its
-  model on the chip ("GLM 5p3"). When a session hits a usage limit
+  conversation restarts its process. A chat's header always shows the
+  model its agent runs ("Opus 5.5", "Sonnet 5.5", "GLM 5p3"; a Pi or Codex
+  session's too) beside its status, its title the whole model id and the
+  profile, and follows `/model`, a profile switch or a fallback; a
+  terminal's profile chip says the model too, while over a chat only a
+  session not on the default shows its model there. When a session hits a usage limit
   ("You've hit your 5-hour limit · resets 5:20pm"), the pane shows
   **Limit · 5:20 PM** (in local time) with **Use <profile>**; its menu
   also has **Retry** (sends `continue` on the same profile, for a limit

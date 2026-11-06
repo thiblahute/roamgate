@@ -11,6 +11,8 @@
  * the reference only.
  */
 
+import { sameModel, shortModelName } from "./agentModels";
+
 export const PROFILE_AGENTS = ["claude"] as const;
 export type ProfileAgent = (typeof PROFILE_AGENTS)[number];
 
@@ -486,17 +488,13 @@ export function parseUsageLimit(
 
 /**
  * The model a profile runs, for a chip ("GLM 5p3" from glm-5p3, "Kimi
- * k3p1 pro" from kimi-k3p1-pro); its name when it sets no model.
+ * k3p1 pro" from kimi-k3p1-pro: shortModelName); its name when it sets no
+ * model.
  */
 export function profileModelLabel(profile: AgentProfile): string {
   const model = profile.env?.ANTHROPIC_MODEL;
   if (typeof model !== "string" || !model.trim()) return profile.name;
-  const [first = "", ...rest] = model.trim().split(/[-_\s]+/);
-  const head =
-    first.length <= 3
-      ? first.toUpperCase()
-      : first.charAt(0).toUpperCase() + first.slice(1);
-  return [head, ...rest].join(" ").slice(0, 40);
+  return shortModelName(model);
 }
 
 /**
@@ -557,13 +555,14 @@ export function latestUsageLimit(
 
 /**
  * The model a session's transcript (Claude Code's JSONL, its end) last
- * answered with, among those `wanted` accepts; null when none is there.
- * API errors and Claude Code's own notices (<synthetic>) are not answers.
+ * answered with, among those `wanted` accepts, and when (epoch ms; null
+ * when the record does not say); null when none is there. API errors and
+ * Claude Code's own notices (<synthetic>) are not answers.
  */
-export function latestSessionModel(
+export function latestSessionAnswer(
   transcriptTail: string,
   wanted: (model: string) => boolean = () => true,
-): string | null {
+): { model: string; at: number | null } | null {
   const lines = transcriptTail.split("\n");
   for (let index = lines.length - 1; index >= 0; index--) {
     const line = lines[index]!.trim();
@@ -580,9 +579,77 @@ export function latestSessionModel(
     const model = message.model;
     if (typeof model !== "string" || !model || model === "<synthetic>")
       continue;
-    if (wanted(model)) return model;
+    if (!wanted(model)) continue;
+    const at =
+      typeof record.timestamp === "string" ? Date.parse(record.timestamp) : NaN;
+    return { model, at: Number.isFinite(at) ? at : null };
   }
   return null;
+}
+
+/**
+ * The model a session's transcript (its end) last names, whichever agent
+ * wrote it: a Claude Code answer's (as latestSessionAnswer reads it), a
+ * Pi model_change's or answer's, a Codex turn_context's. Null when none.
+ */
+export function latestTranscriptModel(transcriptTail: string): string | null {
+  const lines = transcriptTail.split("\n");
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]!.trim();
+    if (!line.startsWith("{") || !/"model(?:Id)?"/.test(line)) continue;
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const message = isRecord(record.message) ? record.message : {};
+    const payload = isRecord(record.payload) ? record.payload : {};
+    const model =
+      record.type === "assistant" && record.isApiErrorMessage !== true
+        ? message.model
+        : record.type === "message" && message.role === "assistant"
+          ? message.model
+          : record.type === "model_change"
+            ? record.modelId
+            : record.type === "turn_context"
+              ? payload.model
+              : null;
+    if (typeof model === "string" && model.trim() && model !== "<synthetic>")
+      return model.trim();
+  }
+  return null;
+}
+
+/** The model of latestSessionAnswer, or null. */
+export function latestSessionModel(
+  transcriptTail: string,
+  wanted: (model: string) => boolean = () => true,
+): string | null {
+  return latestSessionAnswer(transcriptTail, wanted)?.model ?? null;
+}
+
+/**
+ * Whether a session started with a model of its own (a profile switch's
+ * switchModel, or /model) has answered with it since: Claude Code then
+ * resumes on it by itself, and the choice is no longer needed. An answer
+ * after the choice, with another model the profile serves, counts too:
+ * the session moved on (a /model in its terminal).
+ */
+export function chosenModelAnswered(
+  answer: { model: string; at: number | null },
+  choice: { model: string; resolved?: string; at: string },
+  profile: AgentProfile,
+): boolean {
+  if (sameModel(answer.model, choice.model)) return true;
+  if (choice.resolved && sameModel(answer.model, choice.resolved)) return true;
+  const chosenAt = Date.parse(choice.at);
+  return (
+    answer.at !== null &&
+    Number.isFinite(chosenAt) &&
+    answer.at > chosenAt &&
+    profileServesModel(profile, answer.model)
+  );
 }
 
 /**

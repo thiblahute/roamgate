@@ -59,6 +59,33 @@ describe("conversation mode's state in the browser", () => {
     expect(next?.next_prompt).toBeNull();
   });
 
+  test("says what the last /model did until it goes, or the terminal has the session", () => {
+    const notice = {
+      at: "2026-11-06T10:00:00.000Z",
+      ok: true,
+      requested: "sonnet",
+      model: "claude-sonnet-5-5",
+      text: "Model set to sonnet (claude-sonnet-5-5)",
+    };
+    const next = applyStateEvent(state, {
+      type: "model_notice",
+      model_notice: notice,
+    });
+    expect(next?.model_notice).toEqual(notice);
+    expect(
+      applyStateEvent(next, { type: "model_notice", model_notice: null })
+        ?.model_notice,
+    ).toBeNull();
+    expect(
+      applyStateEvent(next, {
+        type: "lease",
+        owner: "terminal",
+        phase: "terminal",
+        session_id: "s1",
+      })?.model_notice,
+    ).toBeNull();
+  });
+
   test("follows a `!` line until Claude has it", () => {
     const shell = {
       id: "sh1",

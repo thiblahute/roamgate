@@ -1,5 +1,6 @@
 import type {
   AgentChatCapabilities,
+  AgentChatModel,
   AgentChatRewindCheck,
   AgentChatRewindMode,
   AgentChatRewindResult,
@@ -138,6 +139,30 @@ export type RewindDriver = {
   ): Promise<AgentChatRewindResult>;
 };
 
+/** What listing and switching models needs of the running process. */
+export type ModelContext = {
+  /** Asks the running process over its control protocol. */
+  control(
+    kind: string,
+    params: Record<string, unknown>,
+  ): Promise<ControlAnswer>;
+};
+
+export type ModelDriver = {
+  /** The models the running process offers; null when it cannot say. */
+  list(context: ModelContext): Promise<AgentChatModel[] | null>;
+  /**
+   * Switches the running process to `model` for its next turns: the model
+   * it runs then (as it names it; null when it does not say), or why not.
+   */
+  set(
+    context: ModelContext,
+    model: string,
+  ): Promise<
+    { ok: true; model: string | null } | { ok: false; reason: string }
+  >;
+};
+
 export type ProtocolDriver = {
   agent: ConversationAgent;
   /** The agent's name in every user-facing string ("Claude"). */
@@ -159,6 +184,8 @@ export type ProtocolDriver = {
   parseWrittenMessage(line: string): { uuid?: string; text: string } | null;
   /** Present when capabilities.rewind is. */
   rewind?: RewindDriver;
+  /** Present when capabilities.models is. */
+  models?: ModelDriver;
 };
 
 /** The TUI's screen, for a handover from the terminal. */

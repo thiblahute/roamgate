@@ -150,13 +150,15 @@ export function matchCommands(
 
 /**
  * Claude Code's own commands that work in conversation mode (a headless
- * Claude Code): sent as text, or, for /rewind, the chat's own picker.
+ * Claude Code): sent as text, or, for /rewind and /model, the chat's own
+ * picker (`/model <name>` switches at once, kept for the next starts).
  */
 const CONVERSATION_BUILTINS = new Set([
   "clear",
   "compact",
   "context",
   "cost",
+  "model",
   "rewind",
 ]);
 

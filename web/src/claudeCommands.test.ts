@@ -37,9 +37,10 @@ test("conversation mode offers no TUI-only commands", () => {
     { name: "config", description: "" },
     { name: "compact", description: "" },
     { name: "rewind", description: "" },
+    { name: "model", description: "" },
     { name: "my-skill", description: "" },
   ]).map((c) => c.name);
-  expect(offered).toEqual(["clear", "compact", "rewind", "my-skill"]);
+  expect(offered).toEqual(["clear", "compact", "rewind", "model", "my-skill"]);
 });
 
 test("conversation mode refuses TUI-only commands, not shell lines", () => {
@@ -47,6 +48,9 @@ test("conversation mode refuses TUI-only commands, not shell lines", () => {
   expect(conversationRefusal("!ls")).toBeNull();
   expect(conversationRefusal("/config")).toContain("/config");
   expect(conversationRefusal("/compact now")).toBeNull();
+  // The chat's own picker, or a switch the bridge makes.
+  expect(conversationRefusal("/model")).toBeNull();
+  expect(conversationRefusal("/model sonnet")).toBeNull();
   expect(conversationRefusal("/my-skill do it")).toBeNull();
   expect(conversationRefusal("Hello")).toBeNull();
 });

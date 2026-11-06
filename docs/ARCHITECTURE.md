@@ -1463,6 +1463,34 @@ the browser asked to interrupt it first), while a prompt waits or messages
 are queued; while it runs, what is sent waits in the queue and no hand-back
 starts.
 
+`/model` also goes over the child's control protocol, never as a turn.
+`agent_chat.models` asks the running child `list_models` (Claude Code's own
+picker rows: aliases, the default, a gateway's custom slots, with the model
+id each stands for) briefly, and adds the models the session's profile
+offers that no row covers (`profileModels`: a gateway's `/v1/models`, else
+Claude's aliases); nothing is started for it. `agent_chat.model` (and a
+`/model <name>` sent as a message) starts the child if none runs and sends
+`set_model`, which applies from the next turn and answers the model id it
+runs then, or Claude Code's refusal. A switch writes nothing to the
+transcript, and `--resume` takes the model the session last answered with,
+so the choice is kept in `session-profiles.json` (`model`, with when and
+the id it resolved to) and every start passes it as `--model` until the
+transcript shows an answer with it (`chosenModelAnswered`, read when the
+profile chip refreshes); a `--model` in the lease's `terminal_args` is
+dropped. The outcome is `model_notice` in the state, said after the chat's
+last entry until the next message, a dismiss, or a profile restart.
+
+`agent_profile.get` also answers `model`, the model the pane's session runs
+now (`runningModel`), the surest source first: the model conversation
+mode's running process last named (its `init`, a `set_model` answer, or an
+answer's `message.model`, so a fallback shows), a choice not answered with
+yet, the transcript's last answer, the profile's `ANTHROPIC_MODEL`. For a
+pane of another agent it is the model its transcript last names
+(`latestTranscriptModel`: a Pi `model_change` or answer, a Codex
+`turn_context`). The chat header's model chip and the terminal's profile
+chip show it short (`shortModelName`: "Opus 5.5"), refreshed with the
+profile chip and at once on a `model_notice`.
+
 What the code of a rewind comes to is read from the transcript
 (`server/src/conversation/rewind-scan.ts`): the files edited after the
 message with Claude's file tools (Edit, Write, MultiEdit, NotebookEdit),

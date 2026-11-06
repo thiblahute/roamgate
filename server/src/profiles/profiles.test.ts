@@ -22,6 +22,7 @@ import {
   profileForSession,
   readSecretFile,
   withModel,
+  withoutModel,
 } from "./profiles";
 
 const dirs: string[] = [];
@@ -360,6 +361,39 @@ describe("a session's one-time model after a switch", () => {
     ).toEqual(["--verbose", "--model", "claude-opus-5-5"]);
     expect(withModel(["--model=opus"], "x")).toEqual(["--model", "x"]);
     expect(withModel(["--verbose"])).toEqual(["--verbose"]);
+    expect(withoutModel(["--model", "opus", "--model=x", "--verbose"])).toEqual(
+      ["--verbose"],
+    );
+  });
+
+  test("/model: kept with the session's profile until it answered with it", () => {
+    let now = Date.parse("2026-11-06T10:00:00.000Z");
+    const store = createSessionProfiles({ file: null, now: () => now });
+    store.set("s-1", "GLM", { at: 9, to: "Claude" }, "glm-5p3");
+    now += 1000;
+    store.chooseModel("s-1", "glm-5p3-flash", "glm-5p3-flash");
+    expect(store.get("s-1")).toEqual({
+      profile: "GLM",
+      at: "2026-11-06T10:00:00.000Z",
+      return_at: 9,
+      return_to: "Claude",
+      model: "glm-5p3-flash",
+      model_at: "2026-11-06T10:00:01.000Z",
+      model_resolved: "glm-5p3-flash",
+    });
+    expect(commandForSession("s-1", null, store).model).toBe("glm-5p3-flash");
+    store.settleModel("s-1");
+    expect(store.get("s-1")).toEqual({
+      profile: "GLM",
+      at: "2026-11-06T10:00:00.000Z",
+      return_at: 9,
+      return_to: "Claude",
+    });
+    // On the default profile, the choice alone is kept, and dropped whole.
+    store.chooseModel("s-2", "sonnet");
+    expect(store.get("s-2")).toMatchObject({ profile: null, model: "sonnet" });
+    store.chooseModel("s-2", null);
+    expect(store.get("s-2")).toBeNull();
   });
 
   test("a holder resume and a typed resume carry it", () => {

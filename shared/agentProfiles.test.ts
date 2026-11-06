@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   allProfiles,
+  chosenModelAnswered,
   isPlainProfile,
+  latestSessionAnswer,
   latestSessionModel,
+  latestTranscriptModel,
   latestUsageLimit,
   normalizeProfilesSettings,
   parseResetTime,
@@ -284,5 +287,140 @@ describe("the model a session moved to another profile starts with", () => {
     expect(switchModel(answer("claude-opus-5-5"), claude)).toBeNull();
     expect(switchModel(null, claude)).toBeNull();
     expect(switchModel(notice, claude)).toBeNull();
+  });
+});
+
+describe("a chosen model the session answered with", () => {
+  const claude = { name: "Claude", agent: "claude" as const };
+  const luna = {
+    name: "OpenAI Luna",
+    agent: "claude" as const,
+    env: {
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:18765",
+      ANTHROPIC_MODEL: "gpt-6-luna",
+    },
+  };
+  const at = (iso: string) => Date.parse(iso);
+  const chosen = {
+    model: "haiku",
+    resolved: "claude-haiku-5-5",
+    at: "2026-11-06T10:00:00.000Z",
+  };
+
+  test("the last answer, with when it came", () => {
+    const tail = [
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-11-06T09:00:00.000Z",
+        message: { model: "claude-opus-5-5", content: [] },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: { model: "<synthetic>", content: [] },
+      }),
+    ].join("\n");
+    expect(latestSessionAnswer(tail)).toEqual({
+      model: "claude-opus-5-5",
+      at: at("2026-11-06T09:00:00.000Z"),
+    });
+    expect(
+      latestSessionAnswer(
+        JSON.stringify({ type: "assistant", message: { model: "m" } }),
+      ),
+    ).toEqual({ model: "m", at: null });
+  });
+
+  test("an answer from before the choice, on another model, is not one", () => {
+    // /model haiku, nothing sent since: the next start still needs it.
+    expect(
+      chosenModelAnswered(
+        { model: "claude-opus-5-5", at: at("2026-11-06T09:00:00.000Z") },
+        chosen,
+        claude,
+      ),
+    ).toBe(false);
+    expect(
+      chosenModelAnswered(
+        { model: "claude-opus-5-5", at: null },
+        chosen,
+        claude,
+      ),
+    ).toBe(false);
+  });
+
+  test("answered with it: by its name, or the model the agent said it is", () => {
+    expect(
+      chosenModelAnswered(
+        { model: "claude-haiku-5-5", at: at("2026-11-06T09:00:00.000Z") },
+        chosen,
+        claude,
+      ),
+    ).toBe(true);
+    expect(
+      chosenModelAnswered(
+        { model: "gpt-6-sol", at: null },
+        { model: "gpt-6-sol", at: chosen.at },
+        luna,
+      ),
+    ).toBe(true);
+  });
+
+  test("a later answer on another model the profile serves: the session moved on", () => {
+    expect(
+      chosenModelAnswered(
+        { model: "claude-sonnet-5-5", at: at("2026-11-06T11:00:00.000Z") },
+        chosen,
+        claude,
+      ),
+    ).toBe(true);
+    // Not a model the profile serves: not taken as a move.
+    expect(
+      chosenModelAnswered(
+        { model: "kimi-k3p1-pro", at: at("2026-11-06T11:00:00.000Z") },
+        chosen,
+        claude,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("the model a transcript names", () => {
+  const line = (record: unknown) => JSON.stringify(record);
+  test("Claude, Pi and Codex transcripts, the newest record first", () => {
+    expect(
+      latestTranscriptModel(
+        [
+          line({ type: "assistant", message: { model: "claude-opus-5-5" } }),
+          line({ type: "assistant", message: { model: "claude-haiku-5-5" } }),
+          line({
+            type: "assistant",
+            isApiErrorMessage: true,
+            message: { model: "claude-sonnet-5-5" },
+          }),
+          line({ type: "assistant", message: { model: "<synthetic>" } }),
+        ].join("\n"),
+      ),
+    ).toBe("claude-haiku-5-5");
+    expect(
+      latestTranscriptModel(
+        [
+          line({
+            type: "message",
+            message: { role: "assistant", model: "deepseek-v4-flash" },
+          }),
+          line({ type: "model_change", modelId: "glm-5p3" }),
+        ].join("\n"),
+      ),
+    ).toBe("glm-5p3");
+    expect(
+      latestTranscriptModel(
+        line({ type: "turn_context", payload: { model: "gpt-5.6-sol" } }),
+      ),
+    ).toBe("gpt-5.6-sol");
+    expect(
+      latestTranscriptModel(
+        line({ type: "user", message: { role: "user", content: "hi" } }),
+      ),
+    ).toBeNull();
   });
 });

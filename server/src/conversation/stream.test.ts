@@ -59,6 +59,32 @@ describe("stream parser", () => {
     ]);
   });
 
+  test("an answer says which model it came from; Claude Code's own do not", () => {
+    const items = parseAll([
+      {
+        type: "assistant",
+        message: {
+          id: "msg_3",
+          model: "claude-sonnet-5-5",
+          content: [{ type: "text", text: "Fallen back" }],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_4",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "API Error" }],
+        },
+        parent_tool_use_id: null,
+      },
+    ]);
+    expect(items.filter((item) => item.kind === "model")).toEqual([
+      { kind: "model", model: "claude-sonnet-5-5" },
+    ]);
+  });
+
   test("text blocks carry the API message id and block index", () => {
     const items = parseAll([
       {

@@ -44,7 +44,10 @@ import {
   commandForSession,
   type LaunchSpec,
   launchRegistry,
+  profileForSession,
 } from "../profiles/profiles";
+import { profileModels } from "../profiles/models";
+import { latestSessionModel } from "../../../shared/agentProfiles";
 import { REVIEW_HOME_DIR } from "../review/agent-server";
 import { exitSentAsMessage } from "../conversation/handover";
 import { createImageReader } from "../conversation/images";
@@ -341,6 +344,14 @@ export function createLegacyConnectionRuntime(args: {
           socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
         });
   }
+  /** The end of the pane session's transcript, or null. */
+  async function transcriptTail(paneId: string): Promise<string | null> {
+    const path = await agentSessions.resolvePath({ pane_id: paneId });
+    if (typeof path !== "string") return null;
+    return new TextDecoder().decode(
+      await agentSessionFiles.readTail(path, 64 * 1024),
+    );
+  }
   /** The session RPCs of profiles (server/src/profiles/rpc.ts). */
   const profileRpcDeps = (): ProfileRpcDeps => ({
     readSettings: readGuiSettings,
@@ -351,6 +362,7 @@ export function createLegacyConnectionRuntime(args: {
     },
     conversationSession: (paneId) =>
       conversation?.ownedSession(paneId)?.session_id ?? null,
+    conversationModel: (paneId) => conversation?.model(paneId) ?? null,
     restartProcess: (paneId) =>
       conversation
         ? conversation.restartProcess(paneId)
@@ -359,13 +371,7 @@ export function createLegacyConnectionRuntime(args: {
       conversation
         ? conversation.restartTerminal(paneId, sessionId)
         : Promise.resolve({ ok: false, reason: "Not ready" }),
-    transcriptTail: async (paneId) => {
-      const path = await agentSessions.resolvePath({ pane_id: paneId });
-      if (typeof path !== "string") return null;
-      return new TextDecoder().decode(
-        await agentSessionFiles.readTail(path, 64 * 1024),
-      );
-    },
+    transcriptTail: (paneId) => transcriptTail(paneId),
     typedLaunch: (paneId, spec) => typedLaunch(paneId, spec),
     sendConversation: async (paneId, text) => {
       if (!conversation) throw new Error("Not ready");
@@ -510,6 +516,18 @@ export function createLegacyConnectionRuntime(args: {
     resumeCommand,
     // Each session's profile (its choice, else the default).
     commandFor: (sessionId) => commandForSession(sessionId),
+    // /model: the profile's models, and the choice its next starts use.
+    models: {
+      offered: async (sessionId) =>
+        profileModels(profileForSession(await readGuiSettings(), sessionId)),
+      lastAnswered: async (paneId) => {
+        const tail = await transcriptTail(paneId);
+        return tail ? latestSessionModel(tail) : null;
+      },
+      chosen: (sessionId) => sessionProfiles().get(sessionId)?.model ?? null,
+      choose: (sessionId, model, resolved) =>
+        sessionProfiles().chooseModel(sessionId, model, resolved),
+    },
     launchCommand: (paneId, spec) => typedLaunch(paneId, spec),
     onLeaseChanged: (paneId) => {
       // The pane's history may now be another file (/clear).

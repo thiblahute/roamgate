@@ -816,6 +816,12 @@
   font-size: 12px;
 }
 
+/* What the last /model did: said, not warned. */
+.agent-history-chat-cut-off.is-model {
+  background: transparent;
+  color: var(--muted);
+}
+
 .agent-history-chat-cut-off-continue {
   min-height: 28px;
   padding: 3px 10px;

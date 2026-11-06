@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Gauge, TriangleAlert } from "lucide-react";
+import { Cpu, Gauge, TriangleAlert } from "lucide-react";
+import { shortModelName } from "../../../shared/agentModels";
 import type { ConnectionClient } from "../api";
 import {
   activeLimit,
+  modelTitle,
   resetTime,
   retrySession,
   useSessionProfile,
@@ -14,7 +16,10 @@ import "./ProfileChip.css";
 /**
  * The pane session's agent profile, compact enough for a chat's header
  * row: a chip with its model when it is not the default (so the user sees
- * what they spend on), a "Run with:" menu for the other profiles, and,
+ * what they spend on), or with `showModel` the model it runs whatever the
+ * profile (a terminal's, whose chat header does not say it; a lone
+ * profile's chip then only says it), a "Run with:" menu for the other
+ * profiles, and,
  * when the session stopped on a usage limit, "Limit · 5:20 PM" (the whole
  * message in its title; its menu offers Retry and Continue with each
  * profile) and a short "Use <profile>" for the likeliest one.
@@ -24,6 +29,7 @@ export function ProfileChip({
   paneId,
   enabled,
   agentStatus,
+  showModel = false,
   onError,
 }: {
   client: ConnectionClient;
@@ -31,6 +37,8 @@ export function ProfileChip({
   /** The pane runs a Claude (terminal or conversation mode). */
   enabled: boolean;
   agentStatus: string | undefined;
+  /** Say the model the session runs (the pane shows its terminal). */
+  showModel?: boolean;
   onError?: (message: string) => void;
 }) {
   const profile = useSessionProfile(client, paneId, enabled, agentStatus);
@@ -38,7 +46,19 @@ export function ProfileChip({
   const chipRef = useRef<HTMLButtonElement | null>(null);
   const room = usePaneRoom(chipRef);
   const data = profile.data;
-  if (!enabled || !data?.session_id || data.profiles.length < 2) return null;
+  if (!enabled || !data?.session_id) return null;
+  const model = showModel && data.model ? shortModelName(data.model) : null;
+  if (data.profiles.length < 2)
+    return model ? (
+      <span
+        className="terminal-pane-action profile-chip is-labelled is-model"
+        title={modelTitle(data)}
+        aria-label={`Model: ${model}`}
+      >
+        <Cpu size={14} aria-hidden="true" />
+        <span>{model}</span>
+      </span>
+    ) : null;
   const current = data.profile ?? data.default;
   const notDefault = current !== data.default;
   const others = data.profiles.filter((each) => each.name !== current);
@@ -67,15 +87,13 @@ export function ProfileChip({
     room,
     !!limit,
     !!next,
-    notDefault || !!profile.switching,
+    notDefault || !!profile.switching || !!model,
   );
   const label = !shown.chipLabel
     ? null
     : profile.switching
       ? `${profile.switching}...`
-      : notDefault
-        ? (data.label ?? current)
-        : null;
+      : (model ?? (notDefault ? (data.label ?? current) : null));
   const groups: ActionsMenuGroup[] = [
     ...(limit
       ? [
@@ -159,7 +177,7 @@ export function ProfileChip({
       <button
         ref={chipRef}
         type="button"
-        className={`terminal-pane-action profile-chip${label ? " is-labelled is-other" : ""}`}
+        className={`terminal-pane-action profile-chip${label ? " is-labelled" : ""}${label && notDefault ? " is-other" : ""}`}
         title={
           notDefault
             ? `Runs with the ${current} profile (${data.label ?? current}); default: ${data.default}${data.returns_at ? `. Back to ${data.returns_to} at ${new Date(data.returns_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`

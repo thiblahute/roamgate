@@ -699,7 +699,9 @@ it last answered with; when the new profile's endpoint does not have that
 model (`kimi-k3p1-pro` back on Claude), Roamgate starts the session with
 `--model`: the last model it had on that endpoint, else the profile's own
 model, else `opus`. Once the session answered there, its own model choice
-(`/model`) holds again.
+(`/model`) holds again. A `/model` in conversation mode is kept the same
+way: the next starts use it until the session has answered with it, and
+a `--model` the pane's Claude was started with gives way to it.
 
 Nothing secret is ever typed into a pane. When the profile is not plain
 `claude`, what Roamgate types is `roamgate-hold --launch <token>`: the

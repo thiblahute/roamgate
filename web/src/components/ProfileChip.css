@@ -61,3 +61,8 @@
   border: 1px solid var(--border);
   color: var(--text);
 }
+
+/* A lone profile's chip only says the model: nothing to open. */
+.terminal-pane-action.profile-chip.is-model {
+  cursor: default;
+}

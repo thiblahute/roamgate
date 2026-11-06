@@ -169,6 +169,71 @@ export function answerRewinds(
   };
 }
 
+/**
+ * Answers model requests as `claude -p` does: list_models with `models`
+ * (Claude Code's own rows), set_model with the id `resolve` gives, or the
+ * refusal it throws.
+ */
+export function answerModels(
+  options: {
+    models?: Record<string, unknown>[];
+    resolve?: (model: string) => string;
+  } = {},
+) {
+  return (message: Record<string, unknown>, process: FakeClaude) => {
+    answerInterrupts(message, process);
+    if (message.type !== "control_request") return;
+    const request = message.request as
+      | { subtype?: string; model?: string }
+      | undefined;
+    const reply = (response: Record<string, unknown>) =>
+      process.push({
+        type: "control_response",
+        response: { request_id: message.request_id, ...response },
+      });
+    if (request?.subtype === "list_models")
+      reply({
+        subtype: "success",
+        response: {
+          models: options.models ?? [
+            {
+              value: "default",
+              resolvedModel: "claude-opus-5-5",
+              displayName: "Default (recommended)",
+              description: "Use the default model (currently Opus 5.5)",
+            },
+            {
+              value: "sonnet",
+              resolvedModel: "claude-sonnet-5-5",
+              displayName: "Sonnet",
+              description: "Sonnet 5.5",
+            },
+            {
+              value: "haiku",
+              resolvedModel: "claude-haiku-5-5",
+              displayName: "Haiku",
+              description: "Haiku 5.5",
+            },
+          ],
+        },
+      });
+    else if (request?.subtype === "set_model") {
+      try {
+        const model = (options.resolve ?? ((name) => `claude-${name}-5-5`))(
+          request.model ?? "default",
+        );
+        reply({ subtype: "success", response: { model } });
+      } catch (error) {
+        reply({
+          subtype: "error",
+          error: (error as Error).message,
+          error_code: "not_found",
+        });
+      }
+    }
+  };
+}
+
 /** A spawner handing out fakes, recording each start. */
 export function fakeSpawner(
   make: () => FakeClaude = () =>
