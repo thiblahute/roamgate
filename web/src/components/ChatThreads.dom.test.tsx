@@ -91,6 +91,8 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
       },
     ],
   };
+  /** The review as the store has it: a new snapshot replaces it. */
+  let shownReview = chatReview;
   const { mock } = await import("bun:test");
   mock.module("../review", () => ({
     reviewCall: async (
@@ -98,7 +100,7 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
       method: string,
       params: Record<string, unknown> = {},
     ) => {
-      if (method === "review.get") return chatReview;
+      if (method === "review.get") return shownReview;
       writes.push({ method, params });
       await new Promise<void>((resolve, reject) => {
         answerWrite = (error) => (error ? reject(error) : resolve());
@@ -107,7 +109,7 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     },
     rememberReviewSnapshot: () => {},
     useReviewState: () => ({
-      sessions: new Map([["s1", chatReview]]),
+      sessions: new Map([["s1", shownReview]]),
       openRequest: null,
     }),
   }));
@@ -441,6 +443,100 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     expect(localStorage.getItem("roamgate:threads.openOnly")).toBe("1");
     await act(async () => root.unmount());
     chatReview.threads = kept;
+    localStorage.clear();
+  });
+
+  test("a comment the agent did not get says why, on it and on the chip, with a Retry", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    localStorage.clear();
+    // Its delivery failed: Claude for this chat runs in no pane any more.
+    const session = chatReview.session as Record<string, unknown>;
+    session.deliveredAt = "2026-10-31T19:00:00Z";
+    session.deliveryError = "agent_not_found: agent target w1:p1 not found";
+    const kept = chatReview.threads;
+    const entry = { id: "e1", role: "assistant", text: "The review series" };
+    function Message() {
+      const parts = useChatParts(entry as never);
+      return (
+        <div className="agent-history-chat" data-entry-id={entry.id}>
+          {parts?.notes.map((note) => (
+            <div key={note.key}>{note.node}</div>
+          ))}
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const draw = () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[entry] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <Message />
+          </div>
+        </ChatThreadsProvider>,
+      );
+    await act(async () => draw());
+    await act(settle);
+    const notice = host.querySelector(".chat-thread-message .is-failed");
+    expect(notice?.textContent).toBe(
+      "Not delivered: Claude for this chat is not running in any pane",
+    );
+    expect(host.querySelector(".threads-chip")?.textContent).toContain(
+      "1 not delivered",
+    );
+    // Retry asks the bridge to send what waits, now.
+    const before = writes.length;
+    const retry = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    await act(settle);
+    expect(writes.slice(before).map((write) => write.method)).toEqual([
+      "review.retry",
+    ]);
+    await act(async () => answerWrite!());
+    await act(settle);
+
+    // Answered in its thread (pasted by hand): it reached the agent.
+    shownReview = {
+      ...chatReview,
+      threads: [
+        {
+          ...kept[0]!,
+          comments: [
+            ...kept[0]!.comments,
+            {
+              id: "a1b2c3d4e5f60718",
+              author: "Claude",
+              body: "One is enough.",
+              createdAt: "2026-10-31T19:20:00Z",
+              updatedAt: "2026-10-31T19:20:00Z",
+            },
+          ],
+        },
+      ],
+    };
+    await act(async () => draw());
+    await act(settle);
+    expect(host.querySelector(".chat-thread-message .is-failed")).toBeNull();
+    expect(host.querySelector(".threads-chip")?.textContent).not.toContain(
+      "not delivered",
+    );
+    await act(async () => root.unmount());
+    shownReview = chatReview;
+    delete session.deliveredAt;
+    delete session.deliveryError;
     localStorage.clear();
   });
 }

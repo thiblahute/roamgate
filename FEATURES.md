@@ -567,6 +567,11 @@ again, and comments follow their code or show as outdated.
   that part. The threads are the chat's own review: Claude gets them with
   the quote and where it is, answers in them, and you reply, resolve or
   fold them there. The message that hands them over shows as one line.
+  They go to the chat's Claude session in whichever pane runs it now.
+  When it runs in none, each comment it did not get says so ("Not
+  delivered: Claude for this chat is not running in any pane") with
+  **Retry**, the comments chip counts them ("1 not delivered"), and they
+  go by themselves once the session runs in a pane again.
   From the chat's message box, Up on its first line (or `k` there in
   Vim's normal mode, or Alt+Up) goes up into the conversation: `j`/`k` step through the
   parts of Claude's messages and the threads under them, `gg`/`G` to the

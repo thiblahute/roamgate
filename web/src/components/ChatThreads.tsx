@@ -16,6 +16,7 @@ import {
   type ReviewMessagePart,
   type ReviewSnapshot,
   type ReviewThread,
+  unheardComments,
 } from "../../../shared/review";
 import { vimKeys } from "../vimKeys";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
@@ -177,6 +178,34 @@ export function chatPartEntry(
   return holding.reduce((best, entry) =>
     distance(entry) < distance(best) ? entry : best,
   ).id;
+}
+
+/**
+ * The comments that did not reach the chat's agent, and why in plain
+ * words; null while nothing failed (an agent busy with a question in its
+ * pane gets them once it is free, by itself).
+ */
+export function undeliveredComments(
+  snapshot: ReviewSnapshot | undefined,
+  agent: string,
+): { reason: string; ids: Set<string> } | null {
+  const error = snapshot?.session.deliveryError;
+  if (!snapshot || !error || /agent_blocked/.test(error)) return null;
+  const since = snapshot.session.deliveredAt ?? "";
+  const ids = new Set(
+    snapshot.threads
+      .filter((thread) => !thread.resolved && thread.kind === "discussion")
+      .flatMap((thread) => unheardComments(thread, since))
+      .map((comment) => comment.id),
+  );
+  if (!ids.size) return null;
+  const name = agent.charAt(0).toUpperCase() + agent.slice(1);
+  return {
+    reason: /agent_not_found|not[_ ]found/i.test(error)
+      ? `${name} for this chat is not running in any pane`
+      : error,
+    ids,
+  };
 }
 
 /**
@@ -387,6 +416,11 @@ export function ChatThreadsProvider({
   const pendingById = useMemo(
     () => new Map(pendingWrites.map((write) => [write.id, write])),
     [pendingWrites],
+  );
+  /** Your comments the agent did not get, said on each with a Retry. */
+  const undelivered = useMemo(
+    () => undeliveredComments(snapshot, agent),
+    [snapshot, agent],
   );
   useEffect(() => {
     const landed = snapshot?.threads ?? [];
@@ -602,6 +636,22 @@ export function ChatThreadsProvider({
                       ? "Not saved: Send tries again"
                       : "Sending..."}
                   </span>
+                ) : undelivered?.ids.has(message.id) ? (
+                  <>
+                    <span
+                      className="chat-thread-pending is-failed"
+                      role="status"
+                    >
+                      Not delivered: {undelivered.reason}
+                    </span>
+                    <button
+                      type="button"
+                      className="chat-thread-retry"
+                      onClick={() => void write("review.retry", {})}
+                    >
+                      Retry
+                    </button>
+                  </>
                 ) : null}
               </span>
               {/* Its parts take comments too, drawn under them. */}
@@ -1448,6 +1498,7 @@ export function ChatThreadsProvider({
       replying,
       write,
       comment,
+      undelivered,
     ],
   );
   return (
@@ -1475,6 +1526,14 @@ export function ChatThreadsProvider({
                 <ThreadsChip
                   className="chat-threads-chip"
                   threads={overview}
+                  undelivered={
+                    undelivered
+                      ? {
+                          count: undelivered.ids.size,
+                          reason: undelivered.reason,
+                        }
+                      : undefined
+                  }
                   open={overviewOpen}
                   onToggle={() =>
                     overviewOpen ? closeOverview() : openOverview()

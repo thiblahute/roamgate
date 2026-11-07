@@ -233,3 +233,20 @@
 .chat-thread-pending.is-failed {
   color: var(--red);
 }
+
+/* Sends again the comments the agent did not get. */
+.chat-thread-retry {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.chat-thread-retry:hover {
+  border-color: var(--accent);
+}

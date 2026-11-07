@@ -169,11 +169,14 @@ export function ThreadsChip({
   open,
   onToggle,
   className = "",
+  undelivered,
 }: {
   threads: readonly { resolved: boolean }[];
   open: boolean;
   onToggle: () => void;
   className?: string;
+  /** Comments that did not reach the agent, and why: said on the chip. */
+  undelivered?: { count: number; reason: string };
 }) {
   const unresolved = threads.filter((thread) => !thread.resolved).length;
   return (
@@ -181,7 +184,11 @@ export function ThreadsChip({
       type="button"
       className={`threads-chip ${className}`}
       aria-expanded={open}
-      title="The comments (T)"
+      title={
+        undelivered
+          ? `The comments (T). Not delivered: ${undelivered.reason}`
+          : "The comments (T)"
+      }
       onClick={onToggle}
     >
       <span>{unresolved} open</span>
@@ -189,6 +196,12 @@ export function ThreadsChip({
         {" "}
         · {threads.length} comment{threads.length === 1 ? "" : "s"}
       </span>
+      {undelivered ? (
+        <span className="threads-chip-undelivered" role="status">
+          {" "}
+          · {undelivered.count} not delivered
+        </span>
+      ) : null}
     </button>
   );
 }
