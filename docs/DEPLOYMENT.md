@@ -621,6 +621,45 @@ waits for you, background work (a background command, a subagent) or a
 used in the last 10 minutes, the voice companion has a job on it, or
 another session's message reached it in the last 10 minutes.
 
+## Resuming after a usage limit
+
+When a Claude session stops on a usage limit (the 5-hour or the weekly
+one), in a terminal or in conversation mode, on any connection, Roamgate
+resumes it once the limit resets. Set it in
+**Configuration > Integrations > Resume sessions after a usage limit**, or
+under `limit_resume` in `settings.json`:
+
+```json
+{
+  "limit_resume": {
+    "enabled": true,
+    "margin_seconds": 60,
+    "message": "The usage limit has reset. Continue where you stopped, and restart any background agents or workflows that failed because of the limit (resume workflows from their run id)."
+  }
+}
+```
+
+- `enabled` (default `true`): `false` leaves paused sessions to you; they
+  still show as paused, with **Resume now**.
+- `margin_seconds` (a whole number from 0 to 3600, default 60): how long
+  after the reset the message is sent.
+- `message` (at most 4000 characters, default above): what the session is
+  sent, as if you typed it: typed into the terminal's Claude when it is
+  idle, or queued in conversation mode, waking a session that sleeps. The
+  default also asks it to restart the background agents and workflows the
+  limit stopped.
+
+A session is resumed only while its transcript still ends on that limit
+(not when you resumed it yourself), and once per reset: if the limit stops
+it again with the same reset time, it waits for you; a new reset schedules
+it again. Each paused session offers **Resume now** and **Don't resume**,
+which holds that session until **Resume at the reset** undoes it. Roamgate
+keeps, by session id, the reset each session was seen paused by, the reset
+it was resumed for and **Don't resume** in `limit-resume.json` in its data
+directory. After a restart it resumes the pauses it saw before their time,
+up to a day late; a pause whose time passed before Roamgate saw it (the
+server or that connection was down) waits for **Resume now**.
+
 ## Agent profiles
 
 A profile says how Roamgate starts Claude Code: mostly the environment it
@@ -681,8 +720,9 @@ or under `profiles` in `settings.json`:
   no longer offers. The built-in Claude offers its aliases.
 - A usage limit is read from the end of the session's transcript: the
   newest assistant record, when it is Claude Code's limit message (or an
-  API 429), and only until the reset time it gives, read from when it was
-  hit. **Retry** sends `continue` on the same profile.
+  API 429), and only until its reset time (Claude Code's `resetsAt` when
+  the record has it, else the time the message gives, read from when it
+  was hit). **Retry** sends `continue` on the same profile.
 - `return_after_reset`: after a usage limit sent a session to another
   profile (**Continue with**), it goes back to the default once the reset
   time the limit message gave has passed, checked each minute (when idle;

@@ -1610,6 +1610,61 @@ for a pid it does not own, speak an undocumented, authenticated protocol
 changes anyway when the woken process gets a new pid: not safe. Sessions
 that got such a message in the last 10 minutes are left running instead.
 
+## Usage limit resume
+
+server/src/limit-resume resumes the Claude sessions a usage limit stopped,
+once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
+
+- **Detection** (`usageLimitStop` in shared/limitResume.ts): the session's
+  transcript tail (64 KiB, `transcriptTail`, local or over SSH) ends on a
+  usage-limit stop when its last conversation turn is an assistant record
+  with `isApiErrorMessage`, `apiError: "usage_limit_reached"` or
+  `error: "rate_limit"`, and a `rate_limit_info` (in `apiErrorParams`, else
+  `quotaLimits`) whose `status` is `rejected` with a `resetsAt` (unix
+  seconds). The message's words are never read. Turns are user and
+  assistant records that are not meta, not a subagent's (`isSidechain`) and
+  not a local command (`<command-name>`, `<local-command-...>`); Claude
+  Code's bookkeeping (`last-prompt`, `cost-state`, `tools-used`,
+  `queue-operation`, `api-request-blob`, snapshots, system records) is
+  skipped, so a user message after the stop means it is not paused. Every
+  `rateLimitType` (`five_hour`, `seven_day`, ...) is handled alike.
+  Conversation mode's headless claude writes the same record to the same
+  transcript; its stream-json carries it too (`api_error`,
+  `api_error_params`, plus a `rate_limit_event` and a `result` with
+  `terminal_reason: "api_error"`), which `usageLimitStopOf` also reads.
+- **Sessions** (`limitConnection`, connection.ts): per ready connection
+  (Windows hosts excepted), Herdr's `agent.list` Claude panes with a
+  session id, and conversation mode's `ownedPanes()` in the conversation
+  phase (asleep sessions are idle there). Herdr's status is not trusted to
+  say a session stopped: every Claude pane's tail is read, again when its
+  session or status changes and at least every 5 minutes.
+- **Scheduling** (`createLimitResumer`, scheduler.ts): each connection is
+  scanned every minute, and shortly after a pane's agent status changes
+  (`pane.agent_status_changed` events, conversation mode's own reports) or
+  the settings change. A pause gets one timer at `resetsAt` +
+  `margin_seconds`. When it fires, the pane is read again: still the same
+  session, still ending on a stop with the same reset, not held by **Don't
+  resume**, the setting on, and the agent not `working` or `blocked`
+  (else tried again in 30 s). A pause's state is `scheduled`, `off`,
+  `skipped`, `missed`, `resuming`, `resumed` or `failed`.
+- **Delivery** (`promptPaneAgent`, as review comments): conversation mode's
+  `prompt` (its queue; a sleeping process wakes), else Herdr's
+  `agent.prompt` into the terminal's Claude. A failed send is tried again
+  30 s later, five times per reset. "Resume now" sends at once (refused
+  only while the agent asks something); before the reset it does not count
+  as the reset's resume.
+- **Persistence** (`limit-resume.json`, store.ts, by session id): `seen`,
+  the reset of a pause seen before its resume time; `resumed`, the reset a
+  resume was sent for (one per reset: a session stopped again on it is
+  `resumed`, never sent twice); `skip`. After a restart the scan finds the
+  pauses again; a due pause is sent at once only when `seen` matches and
+  it is less than a day late, else it is `missed` (only "Resume now").
+- **Browsers**: `limit_resume.list` (per connection), the
+  `roamgate.limit_pauses` push (a connection's whole list, on each change),
+  `limit_resume.resume_now` and `limit_resume.skip` (`pane_id`, `skip`);
+  settings through `settings.limit_resume.get`/`update`. Ranger's
+  `workspace_status` adds `usage_limit` to a paused pane.
+
 ## Voice helper
 
 The bridge runs the voice helper (`voice/helper`) as a child process and

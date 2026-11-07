@@ -234,6 +234,7 @@ import {
 } from "../agentChatOwnership";
 import { useConversationSwitch } from "../conversationSwitch";
 import { ProfileChip } from "./ProfileChip";
+import { LimitPauseChip, LimitPauseStrip } from "./LimitPauseChip";
 import { AgentPermissionCard } from "./AgentPermissionCard";
 import { ModelChip } from "./ModelChip";
 import { TerminalModeStrip } from "./TerminalModeStrip";
@@ -4330,6 +4331,9 @@ export function TerminalView({
               </div>
             </div>
           ) : null}
+          {claudePane && !chatShown ? (
+            <LimitPauseStrip client={connectionClient} paneId={pane.pane_id} />
+          ) : null}
           {modeBound &&
           !chatShown &&
           !conversationOwnsPane &&
@@ -4610,6 +4614,21 @@ export function TerminalView({
             >
               <MessagesSquare size={14} />
             </button>
+          ) : null}
+          {/* Paused by a usage limit: when it resumes, Resume now,
+              Don't resume. */}
+          {claudePane ? (
+            <LimitPauseChip
+              client={connectionClient}
+              paneId={pane.pane_id}
+              onError={(message) =>
+                store.notify({
+                  kind: "error",
+                  message: "Could not resume the session",
+                  detail: message,
+                })
+              }
+            />
           ) : null}
           {/* The session's agent profile: its model when not the
               default, Run with: another, Continue with after a limit. */}

@@ -7,6 +7,7 @@ import {
   useEndpointCreationReason,
 } from "../store";
 import { AgentStatusIcon } from "./AgentStatusIcon";
+import { LimitPauseNote } from "./LimitPauseChip";
 import { summarizeTabAgents } from "./agentSession";
 import { CloseButton } from "./CloseButton";
 import { focusIfUnchanged } from "./dialogFocus";
@@ -258,6 +259,10 @@ export function MobileTabSheet({
                                 pane.foreground_cwd ||
                                 pane.cwd ||
                                 "Terminal"}
+                              <LimitPauseNote
+                                connectionId={s.activeConnectionId}
+                                paneId={pane.pane_id}
+                              />
                             </span>
                           </span>
                         </button>

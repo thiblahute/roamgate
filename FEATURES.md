@@ -743,6 +743,20 @@ Inspector state is scoped to each checkout; see
   after the reset. On a narrow header only the icons stay, their words in
   the titles and the menu. The agent launcher offers **Agent: <profile>**
   for a new session. See [Agent profiles](docs/DEPLOYMENT.md#agent-profiles).
+  **Resume after a usage limit**: a Claude session that stopped on a usage
+  limit (5-hour or weekly; terminal or conversation mode, asleep or not,
+  on any connection) shows **Paused · 1:41 AM** in its pane's toolbar, on
+  its row in the agents lists and in the phone's tab sheet ("Paused by the
+  usage limit, resumes at 1:41 AM"), and at the end of its chat. A minute
+  after the limit resets, Roamgate sends it a message (by default: continue
+  where you stopped, and restart the background agents and workflows the
+  limit stopped) as you would, typed into the idle terminal or queued in
+  the conversation, waking it. Only once per reset, and not if you resumed
+  it already. **Resume now** sends it at once; **Don't resume** leaves that
+  session to you (**Resume at the reset** undoes it). Ranger sees the pause
+  too. The switch, the margin and the message are in Configuration >
+  Integrations; see [Resuming after a usage
+  limit](docs/DEPLOYMENT.md#resuming-after-a-usage-limit).
   A message queued in a Claude chat can be taken back before the agent
   reads it (the cross beside **Queued**) or into the box to edit (the
   pencil); Up in the empty box takes the whole queue back to edit, as in

@@ -48,7 +48,7 @@ export const workspaceTools = (
   label: `Read workspace ${kind}`,
   description:
     kind === "status"
-      ? "List authorized workspaces, panes, agents and task status. Omit identifiers to list the authorized scope."
+      ? "List authorized workspaces, panes, agents and task status. A pane whose session a usage limit stopped has usage_limit: when the limit resets and when Roamgate resumes it (null: the user resumes it). Omit identifiers to list the authorized scope."
       : kind === "terminal"
         ? `Read recent terminal output from an authorized workspace. Use identifiers from workspace_status. Choose lines from 1 to ${ASSISTANT_MAX_TERMINAL_LINES} (default ${ASSISTANT_DEFAULT_TERMINAL_LINES}); request more when earlier context is needed. Available output depends on Herdr support and agent state; application-owned history may remain unavailable. Results retain at most 32,000 newest characters and indicate truncation.`
         : kind === "diff"

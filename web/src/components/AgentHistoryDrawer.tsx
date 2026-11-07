@@ -229,6 +229,7 @@ import {
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
 import { paneChatSource } from "../chatSource";
+import { LimitPauseNotice } from "./LimitPauseChip";
 import { chatPlaceKey } from "../chatPlace";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ZenDock } from "./ZenIsland";
@@ -365,6 +366,15 @@ export function AgentHistoryDrawer({
       }
     />
   ) : null;
+  // Paused by a usage limit: said at the chat's end, with its buttons.
+  const hasPaneChat = !!paneChat;
+  const limitNotice = useMemo(
+    () =>
+      hasPaneChat ? (
+        <LimitPauseNotice client={connectionClient} paneId={pane.pane_id} />
+      ) : null,
+    [hasPaneChat, connectionClient, pane.pane_id],
+  );
   // Images the user uploaded load from the pane's host.
   const imageUrl = useCallback(
     (path: string) =>
@@ -3387,6 +3397,7 @@ export function AgentHistoryDrawer({
                 modelNotice={modelNotice}
                 delivery={delivery}
                 apiKeyQuestion={apiKeyQuestion}
+                notices={limitNotice}
                 placeKey={placeKey}
                 placeReady={caughtUp}
                 older={olderMessages}
@@ -3443,6 +3454,7 @@ export function AgentHistoryDrawer({
               modelNotice={modelNotice}
               delivery={delivery}
               apiKeyQuestion={apiKeyQuestion}
+              notices={limitNotice}
               placeKey={placeKey}
               placeReady={caughtUp}
               older={olderMessages}

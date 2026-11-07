@@ -1868,6 +1868,9 @@ export function WorkspaceTree({
                               pane.pane_id,
                             ),
                           )}
+                          connectionId={
+                            source?.connectionId ?? s.activeConnectionId
+                          }
                           workspaceLabel={
                             source?.workspaceLabel ??
                             (workspace
@@ -2594,6 +2597,7 @@ function WorkspaceRow({
                 background={backgroundWork(
                   arrange?.tasks(view.connectionId, pane.pane_id) ?? [],
                 )}
+                connectionId={view.connectionId}
               />
               <AgentTaskLine
                 connectionId={view.connectionId}

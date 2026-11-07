@@ -153,6 +153,7 @@ import { handleInstanceSettings } from "./http/instance-settings";
 import {
   activitySettings,
   claudeStartMode,
+  limitResumeSettings,
   readGuiSettings,
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
@@ -249,6 +250,12 @@ import {
 import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
 import { sshMasterControlPath } from "./bridge/ssh-sessions";
 import { createWorkspaceWorktree } from "./worktree/create";
+import {
+  createLimitResumer,
+  type LimitResumer,
+} from "./limit-resume/scheduler";
+import { limitResumeStore } from "./limit-resume/store";
+import { LIMIT_PAUSES_EVENT } from "../../shared/limitResume";
 import { inspectWorkspacePath } from "./workspace/path";
 import {
   removeWorktreeWithRecovery,
@@ -549,6 +556,8 @@ const { handleUpdateCheck, handleUpdateInstall } = createUpdateHandlers({
   scheduleProcessExit: scheduleManagedShutdown,
 });
 const clients = new Set<ServerWebSocket<unknown>>();
+/** Resumes the sessions a usage limit stopped (set once connections exist). */
+let limitResumer: LimitResumer | null = null;
 const clientIds = new WeakMap<ServerWebSocket<unknown>, number>();
 const clientSessions = new WeakMap<ServerWebSocket<unknown>, string | null>();
 interface WebSocketCleanupSnapshot {
@@ -868,6 +877,7 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
 );
 
 const assistantContext = createAssistantContext({
+  limitPauses: (connectionId) => limitResumer?.list(connectionId) ?? [],
   catalog: () => connectionProfiles.list(),
   // A turn Ranger starts is not one the user has to look at.
   onAgentPrompted: ({ connectionId, paneId, terminalId, seq, status }) =>
@@ -2028,11 +2038,14 @@ function runtimeFactoryForProfile(
             activity.paneList(identity.id, result, startedAt);
         },
         onOwnedAgentStatus: (paneId) => {
-          if (context.isCurrent())
-            activity.ownedAgentChanged(identity.id, paneId);
+          if (!context.isCurrent()) return;
+          activity.ownedAgentChanged(identity.id, paneId);
+          // A conversation's turn ended (on a usage limit, maybe).
+          limitResumer?.poke(identity.id, paneId);
         },
         onEvent: (event, eventIdentity) => {
           if (!context.isCurrent()) return;
+          pokeLimitResumer(eventIdentity.id, event);
           activity.herdrEvent(eventIdentity.id, event);
           logger.debug("Herdr event", {
             connection: eventIdentity.id,
@@ -2056,6 +2069,10 @@ function runtimeFactoryForProfile(
         onClaudeStartSettingsChanged: () => {
           for (const status of connectionManager.list())
             void ensureClaudeStartHook(status.id);
+        },
+        onLimitResumeSettingsChanged: () => {
+          for (const status of connectionManager.list())
+            limitResumer?.poke(status.id);
         },
         onSshMasterReady: profileConfig.sshHost
           ? () => {
@@ -2103,6 +2120,58 @@ const connectionProfiles = new ConnectionProfileService({
   bootstrap: connectionBootstrap,
   createRuntime: runtimeFactoryForProfile,
 });
+/** A terminal agent's status changed: it may have stopped on a limit. */
+function pokeLimitResumer(connectionId: string, event: unknown) {
+  if (!limitResumer || !event || typeof event !== "object") return;
+  const { event: name, data } = event as { event?: unknown; data?: unknown };
+  if (
+    name !== "pane.agent_status_changed" &&
+    name !== "pane.agent_detected" &&
+    name !== "pane.exited" &&
+    name !== "pane.closed"
+  )
+    return;
+  const paneId =
+    data && typeof data === "object"
+      ? (data as { pane_id?: unknown }).pane_id
+      : undefined;
+  limitResumer.poke(
+    connectionId,
+    typeof paneId === "string" ? paneId : undefined,
+  );
+}
+
+// Every connection's Claude sessions a usage limit stopped are resumed
+// once it resets; the browsers are told of each pause as it changes.
+limitResumer = createLimitResumer({
+  connections: () =>
+    connectionManager.list().flatMap((status) => {
+      const runtime = connectionManager.readyRuntime(status.id);
+      // No transcripts to read on a Windows host (Agent history is Unix).
+      if (!runtime || runtime.remotePlatform === "windows") return [];
+      return [runtime.limitConnection];
+    }),
+  settings: async () => limitResumeSettings(await readGuiSettings()),
+  store: limitResumeStore(),
+  onChange: (connectionId, pauses) => {
+    let generation: number | undefined;
+    try {
+      generation =
+        connectionManager.readyRuntimeLease(connectionId)?.generation;
+    } catch {
+      generation = undefined;
+    }
+    const line = serializeHerdrEventEnvelope(
+      connectionId,
+      { event: LIMIT_PAUSES_EVENT, data: { pauses } },
+      generation,
+    );
+    for (const ws of clients) safeSend(ws, line, "limit-pauses");
+  },
+  log: (level, message, fields) =>
+    logger.child("limit-resume")[level](message, fields),
+});
+
 // A pending SSH retry may wait up to its capped backoff. When the host's
 // network changes, a peer that was unreachable may be back: try now.
 const stopNetworkWatch = watchNetworkChanges(() => {
@@ -2816,6 +2885,30 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (method === "agent_artifacts.get") {
     try {
       sendReply({ id, result: await readAgentArtifacts(params ?? {}) }, method);
+    } catch (e) {
+      sendError(`${method}-error`, e);
+    }
+    return;
+  }
+  if (method.startsWith("limit_resume.")) {
+    try {
+      const connectionId = connection.identity.id;
+      const paneId = typeof params?.pane_id === "string" ? params.pane_id : "";
+      let result: unknown;
+      if (method === "limit_resume.list")
+        result = { pauses: limitResumer?.list(connectionId) ?? [] };
+      else if (!limitResumer || !paneId)
+        throw new Error(`${method} needs a pane_id`);
+      else if (method === "limit_resume.resume_now")
+        result = await limitResumer.resumeNow(connectionId, paneId);
+      else if (method === "limit_resume.skip")
+        result = await limitResumer.setSkip(
+          connectionId,
+          paneId,
+          params?.skip !== false,
+        );
+      else throw new Error(`unknown method ${method}`);
+      sendReply({ id, result }, method);
     } catch (e) {
       sendError(`${method}-error`, e);
     }
@@ -3913,6 +4006,7 @@ function main() {
   // Agent profiles: the settings read now (spawns that cannot wait use
   // them), and sessions a usage limit moved go back after its reset.
   void readGuiSettings().catch(() => undefined);
+  limitResumer?.start();
   setInterval(() => {
     void readGuiSettings()
       .then((settings) =>

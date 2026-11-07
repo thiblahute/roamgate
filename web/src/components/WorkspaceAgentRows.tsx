@@ -25,6 +25,10 @@ import {
   type ServerSessionSource,
 } from "../useAllServerAgentSessions";
 import "./WorkspaceAgentRows.css";
+import "./LimitPauseChip.css";
+import { bridge } from "../api";
+import { limitPauseOf, limitPauseWords, useLimitPause } from "../limitPauses";
+import { limitPauseGroup, runLimitPauseAction } from "./LimitPauseChip";
 import "./ContextMenu.css";
 
 const LONG_PRESS_MS = 550;
@@ -113,6 +117,7 @@ export function AgentRow({
   onOpenMenu,
   drag,
   background,
+  connectionId,
 }: {
   pane: Pane;
   selected: boolean;
@@ -135,7 +140,17 @@ export function AgentRow({
   };
   /** What it still runs once its turn is over, from the list's task reads. */
   background?: BackgroundWork;
+  /** The pane's connection (absent: the active one), for its usage limit. */
+  connectionId?: string;
 }) {
+  const activeConnectionId = useStoreSelector(
+    (state) => state.activeConnectionId,
+  );
+  const limitPause = useLimitPause(
+    connectionId ?? activeConnectionId,
+    pane.pane_id,
+  );
+  const limitWords = limitPause ? limitPauseWords(limitPause) : null;
   const rawTabLabel = useStoreSelector(
     (state) =>
       sourceTabLabel ??
@@ -186,6 +201,7 @@ export function AgentRow({
     `${pane.agent?.trim() || "Agent"} pane ${pane.pane_id}`,
     rawTabLabel ? `tab ${rawTabLabel}` : `tab ${pane.tab_id}`,
     `status ${pane.agent_status}${backgroundLabel ? `, ${backgroundLabel}` : ""}`,
+    ...(limitWords ? [limitWords.text] : []),
     ...new Set([pane.foreground_cwd, pane.cwd].filter(Boolean)),
   ].join(", ");
 
@@ -302,12 +318,13 @@ export function AgentRow({
               .join(" · ")) +
         (inBackground && background
           ? `\n${backgroundTooltip(pane.agent_status, background)}`
-          : "")
+          : "") +
+        (limitWords && !nested ? `\n${limitWords.text}` : "")
       }
       aria-label={
         nested
           ? details
-          : `${serverLabel ? `${serverLabel}, ` : ""}${pane.agent ?? "Agent"} pane${tabLabel ? `, tab ${tabLabel}` : ""}, status ${pane.agent_status}`
+          : `${serverLabel ? `${serverLabel}, ` : ""}${pane.agent ?? "Agent"} pane${tabLabel ? `, tab ${tabLabel}` : ""}, status ${pane.agent_status}${limitWords ? `, ${limitWords.text}` : ""}`
       }
     >
       <AgentStatusIcon
@@ -347,6 +364,14 @@ export function AgentRow({
                 : pane.agent_status}
             </span>
           ) : null}
+          {limitWords ? (
+            <span
+              className="badge agent-row-status limit-pause-badge"
+              title={`${limitWords.text}.\n${limitWords.detail}`}
+            >
+              {limitWords.short}
+            </span>
+          ) : null}
         </div>
         {!nested ? (
           <div className="agent-sub muted">
@@ -358,6 +383,47 @@ export function AgentRow({
       </div>
     </div>
   );
+}
+
+/**
+ * "Resume now" and "Don't resume" for an agent a usage limit paused, run
+ * against its connection; nothing when it is not paused.
+ */
+function limitPauseMenuGroups(
+  state: AgentMenuState,
+  onClose: () => void,
+): AgentContextMenuGroup[] {
+  const snapshot = store.get();
+  const connectionId =
+    state.source?.connectionId ?? snapshot.activeConnectionId;
+  const pause = limitPauseOf(connectionId, state.pane.pane_id);
+  if (!pause) return [];
+  const generation =
+    snapshot.connections.find((each) => each.id === connectionId)?.generation ??
+    null;
+  const group = limitPauseGroup(pause, (what) => {
+    onClose();
+    void runLimitPauseAction(
+      bridge.connection(connectionId, generation),
+      state.pane.pane_id,
+      what,
+    ).then((result) => {
+      if (!result.ok && result.reason)
+        store.notify({
+          kind: "error",
+          message: "Could not resume the session",
+          detail: result.reason,
+        });
+    });
+  });
+  return [
+    {
+      label: limitPauseWords(pause).text,
+      items: group.items
+        .filter((item) => !item.disabled)
+        .map((item) => ({ label: item.label, action: item.action })),
+    },
+  ];
 }
 
 export function AgentContextMenu({
@@ -421,9 +487,11 @@ export function AgentContextMenu({
   const remote =
     !!state.source &&
     state.source.connectionId !== store.get().activeConnectionId;
+  const pauseGroups = limitPauseMenuGroups(state, onClose);
 
   const groups: AgentContextMenuGroup[] = remote
     ? [
+        ...pauseGroups,
         {
           label: state.source!.serverLabel,
           items: [
@@ -432,6 +500,7 @@ export function AgentContextMenu({
         },
       ]
     : [
+        ...pauseGroups,
         {
           label: "Open",
           items: [

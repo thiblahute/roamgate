@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { LimitPause } from "../../../shared/limitResume";
 import { createHash } from "node:crypto";
 import {
   isAssistantMentionCatalog,
@@ -27,7 +28,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fixture(recovery = false) {
+function fixture(
+  recovery = false,
+  limitPauses?: (connectionId: string) => LimitPause[],
+) {
   let generation = 1;
   let ready = true;
   let endpointFingerprint = "1".repeat(64);
@@ -171,6 +175,7 @@ function fixture(recovery = false) {
     ],
     lease,
     ...(recovery ? { recoveryFingerprint: () => endpointFingerprint } : {}),
+    ...(limitPauses ? { limitPauses } : {}),
   });
   return {
     context,
@@ -1006,6 +1011,36 @@ describe("assistant approved context", () => {
       f.context.captureScope([first], controller.signal),
     ).rejects.toThrow("Stopped during scope admission");
     expect(reads.requests).toHaveLength(8);
+  });
+
+  test("status tells of a pane a usage limit paused, and when it resumes", async () => {
+    const resetsAt = Date.parse("2026-11-07T04:40:00Z");
+    const f = fixture(false, (connectionId) =>
+      connectionId === "local"
+        ? [
+            {
+              connection_id: "local",
+              pane_id: "w1:p1",
+              session_id: "s1",
+              owner: "terminal",
+              kind: "five_hour",
+              resets_at: resetsAt,
+              resume_at: resetsAt + 60_000,
+              stopped_at: null,
+              state: "scheduled",
+              message: "You've hit your 5-hour limit",
+            },
+          ]
+        : [],
+    );
+    const captured = await f.context.captureScope([first]);
+    const result = await f.context.read("status", captured, {});
+    expect(JSON.parse(result.text)[0].panes[0].usage_limit).toEqual({
+      paused_by: "5-hour usage limit",
+      resets_at: "2026-11-07T04:40:00.000Z",
+      resumes_at: "2026-11-07T04:41:00.000Z",
+      state: "scheduled",
+    });
   });
 
   test("status includes only approved topology and safe fields", async () => {

@@ -55,6 +55,7 @@ import { AgentIntegrationsSettings } from "./AgentIntegrationsSettings";
 import { AgentAutoRenameSettings } from "./AgentAutoRenameSettings";
 import { ClaudeStartSettings } from "./ClaudeStartSettings";
 import { ConversationIdleSettings } from "./ConversationIdleSettings";
+import { LimitResumeSettings } from "./LimitResumeSettings";
 import { AgentProfilesSettings } from "./AgentProfilesSettings";
 import { AutoSyncRepositoriesDialog } from "./AutoSyncRepositoriesDialog";
 import { CloseButton } from "./CloseButton";
@@ -809,6 +810,12 @@ export function ConfigurationDialog({
                   />
                   <ConversationIdleSettings
                     key={`idle-stop-${connectionClientScopeKey(
+                      connectionClient,
+                      connectionClient.serverRuntimeGeneration,
+                    )}`}
+                  />
+                  <LimitResumeSettings
+                    key={`limit-resume-${connectionClientScopeKey(
                       connectionClient,
                       connectionClient.serverRuntimeGeneration,
                     )}`}
