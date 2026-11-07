@@ -32,6 +32,11 @@
   background: color-mix(in srgb, var(--tp-accent) 14%, var(--tp-bg));
 }
 
+/* Comments that did not reach the agent: the thread says why. */
+.threads-chip-undelivered {
+  color: var(--red);
+}
+
 .threads-panel {
   display: flex;
   width: min(440px, calc(100% - 32px));
