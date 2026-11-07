@@ -11,6 +11,7 @@
  * the reference only.
  */
 
+import { usageLimitStopOf } from "./limitResume";
 import { sameModel, shortModelName } from "./agentModels";
 
 export const PROFILE_AGENTS = ["claude"] as const;
@@ -546,6 +547,9 @@ export function latestUsageLimit(
           }
         : null);
     if (!limit) return null;
+    // Claude Code's own fields, when it wrote them, say the reset exactly.
+    const stop = usageLimitStopOf(record);
+    if (stop) limit.resets_at = stop.resets_at;
     // Over once its reset time has passed.
     if (limit.resets_at !== null && limit.resets_at <= now) return null;
     return Number.isFinite(at) ? { ...limit, at } : limit;

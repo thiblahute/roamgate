@@ -1721,6 +1721,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   modelNotice = null,
   delivery = null,
   apiKeyQuestion = null,
+  notices = null,
   placeKey = null,
   placeReady = true,
   older,
@@ -1770,6 +1771,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   delivery?: ChatDelivery | null;
   /** Claude waits to start until the user says which account pays. */
   apiKeyQuestion?: ChatApiKeyQuestion | null;
+  /** Roamgate's own notices after the last message (a usage limit pause). */
+  notices?: ReactNode;
   /**
    * Where the reader is is kept under this key (chatPlace.ts) and given
    * back when the chat is shown again: after another pane, workspace or
@@ -2238,6 +2241,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
         {apiKeyQuestion ? (
           <ApiKeyQuestionNotice question={apiKeyQuestion} />
         ) : null}
+        {notices}
       </div>
       {placeKey && unseen > 0 ? (
         // Stuck to the bottom of the view, taking no room in the list.

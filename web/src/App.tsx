@@ -2,6 +2,7 @@ import {
   readWorkspaceSheetAll,
   saveWorkspaceSheetAll,
 } from "./workspaceSheetView";
+import { useLimitPausesSync } from "./limitPauses";
 import { MobileBottomBar } from "./components/MobileBottomBar";
 import { withWaitsOn } from "./needsYou";
 import { usePaneJumpLanding } from "./paneJumpLanding";
@@ -1678,6 +1679,8 @@ export default function App() {
     [],
   );
   useShortcutPreferences();
+  // Every connection's sessions paused by a usage limit, for their chips.
+  useLimitPausesSync();
   const { snapshot: assistantSnapshot } = useAssistantState();
   const s = useStoreSelector(
     (state) => ({

@@ -3,6 +3,7 @@ import {
   roamgateSessionStorage,
   subscribeLocalStorage,
 } from "./browserStorage";
+import { LIMIT_PAUSES_EVENT } from "../../shared/limitResume";
 import { syncTaskPush, type TaskNotificationPreferences } from "./taskPush";
 import { type AssistantTaskNotification } from "../../shared/assistant";
 import {
@@ -2796,7 +2797,8 @@ function handleHerdrEvent(event: HerdrEventMsg) {
   // A chat's own stream and history pushes: they change no topology.
   if (
     event.event.startsWith("agent_chat.") ||
-    event.event === "agent_history.changed"
+    event.event === "agent_history.changed" ||
+    event.event === LIMIT_PAUSES_EVENT
   )
     return;
   if (

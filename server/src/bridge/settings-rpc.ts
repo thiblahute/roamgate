@@ -24,11 +24,13 @@ import {
   isIdleStopMinutes,
   MAX_IDLE_STOP_MINUTES,
 } from "../../../shared/agentChat";
+import { limitResumeSettingsError } from "../../../shared/limitResume";
 import {
   claudeStartMode,
   connectionSettingsPrefix,
   conversationIdleStopMinutes,
   type GuiSettings,
+  limitResumeSettings,
   DEFAULT_WORKSPACE_AUTO_SYNC_INTERVAL_MINUTES,
   type GuiRepoSettings,
   guiSettingsPath,
@@ -84,6 +86,8 @@ export function createSettingsRpcHandler(args: {
   onTerminalTransportSettingsChanged?: (enabled: boolean) => void;
   /** Where a claude started in a pane goes changed (its hook may be due). */
   onClaudeStartSettingsChanged?: () => void;
+  /** Resuming sessions after a usage limit changed (pauses look again). */
+  onLimitResumeSettingsChanged?: () => void;
   safeSend: (
     ws: ServerWebSocket<unknown>,
     payload: string,
@@ -312,6 +316,26 @@ export function createSettingsRpcHandler(args: {
         return reply({
           idle_stop_minutes: conversationIdleStopMinutes(settings),
         });
+      }
+      if (method === "settings.limit_resume.get")
+        return reply(limitResumeSettings(await readSettings()));
+      if (method === "settings.limit_resume.update") {
+        const error = limitResumeSettingsError(params);
+        if (error) return fail(`settings.limit_resume.update: ${error}`);
+        const settings = await updateSettings(
+          (current) => ({
+            ...current,
+            limit_resume: {
+              ...current.limit_resume,
+              ...(typeof params.message === "string"
+                ? { ...params, message: params.message.trim() }
+                : params),
+            },
+          }),
+          requestIsCurrent,
+        );
+        args.onLimitResumeSettingsChanged?.();
+        return reply(limitResumeSettings(settings));
       }
       if (method === "settings.terminal_transport.get") {
         const settings = await readSettings();

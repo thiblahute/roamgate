@@ -4,6 +4,11 @@ import {
 } from "../../../shared/workspaceTree";
 import { normalizeTitleSuffix } from "../../../shared/instanceName";
 import {
+  type LimitResumeSettings,
+  limitResumeSettingsOf,
+  normalizeLimitResumeSettings,
+} from "../../../shared/limitResume";
+import {
   type ClaudeStartMode,
   DEFAULT_IDLE_STOP_MINUTES,
   isClaudeStartMode,
@@ -206,6 +211,13 @@ function normalizeConversationSettings(
   return isIdleStopMinutes(minutes) ? { idle_stop_minutes: minutes } : {};
 }
 
+/** Resuming sessions after a usage limit, defaults included. */
+export function limitResumeSettings(
+  settings: GuiSettings | null,
+): LimitResumeSettings {
+  return limitResumeSettingsOf(settings?.limit_resume);
+}
+
 /** The activity settings in effect, defaults included. */
 export function activitySettings(settings: GuiSettings): GuiActivitySettings {
   return settings.activity ?? normalizeActivitySettings(undefined);
@@ -233,6 +245,11 @@ export type GuiSettings = {
   claude_start_mode?: ClaudeStartMode;
   /** Conversation mode (absent: its defaults, idle stop after 30 min). */
   conversation?: GuiConversationSettings;
+  /**
+   * Resuming the sessions a usage limit stopped, once it resets (absent:
+   * on, a minute after the reset, the default message).
+   */
+  limit_resume?: Partial<LimitResumeSettings>;
   /** The reviews inbox (absent: its defaults). */
   mr_reviews?: StoredMrReviewsSettings;
   /**
@@ -461,6 +478,9 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
       ? obj.claude_start_mode
       : undefined,
     conversation: normalizeConversationSettings(obj.conversation),
+    ...(normalizeLimitResumeSettings(obj.limit_resume)
+      ? { limit_resume: normalizeLimitResumeSettings(obj.limit_resume) }
+      : {}),
     ...(obj.profiles !== undefined
       ? { profiles: normalizeProfilesSettings(obj.profiles) }
       : {}),

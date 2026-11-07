@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { type LimitPause, limitKindLabel } from "../../../shared/limitResume";
 import type {
   AssistantActionKind,
   AssistantMentionCatalog,
@@ -162,6 +163,26 @@ async function mapScopeReads<T, R>(
   }
 }
 
+/**
+ * What Ranger is told of a pane's session a usage limit paused: which
+ * limit, when it resets, and when Roamgate resumes it (null: it will not
+ * by itself; the user resumes it).
+ */
+function limitPauseField(pause: LimitPause | undefined) {
+  if (!pause) return {};
+  return {
+    usage_limit: {
+      paused_by: `${limitKindLabel(pause.kind)} usage limit`,
+      resets_at: new Date(pause.resets_at).toISOString(),
+      resumes_at:
+        pause.resume_at === null
+          ? null
+          : new Date(pause.resume_at).toISOString(),
+      state: pause.state,
+    },
+  };
+}
+
 /** A pane whose agent has no session to bind a mention to. */
 class MentionUnavailable extends Error {
   constructor() {
@@ -183,6 +204,8 @@ export function createAssistantContext(args: {
   onAgentPrompted?: AssistantPromptListener;
   /** Ranger made a workspace from another (actions.ts). */
   onWorkspaceCreated?: AssistantWorkspaceCreatedListener;
+  /** The connection's sessions paused by a usage limit (limit-resume). */
+  limitPauses?(connectionId: string): LimitPause[];
 }) {
   // Keep each turn's original leases, including runtime identity, out of model data.
   const scopes = new WeakMap<AssistantWorkspace[], Map<string, RuntimeLease>>();
@@ -989,6 +1012,12 @@ export function createAssistantContext(args: {
         const panes = records(payload?.panes).filter(
           (pane) => pane.workspace_id === target.workspace_id,
         );
+        const paused = new Map(
+          (args.limitPauses?.(target.connection_id) ?? []).map((pause) => [
+            pause.pane_id,
+            pause,
+          ]),
+        );
         data = {
           ...(lease.runtime.remotePlatform === "windows"
             ? { remote_platform: "windows" }
@@ -1002,6 +1031,7 @@ export function createAssistantContext(args: {
             label: limitedText(pane.label),
             agent: limitedText(pane.agent),
             agent_status: limitedText(pane.agent_status),
+            ...limitPauseField(paused.get(String(pane.pane_id))),
           })),
           truncated: panes.length > MAX_ITEMS,
         };

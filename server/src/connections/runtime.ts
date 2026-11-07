@@ -38,6 +38,7 @@ import {
   resumeCommand,
 } from "../conversation/holder-script";
 import { handleProfileRpc, type ProfileRpcDeps } from "../profiles/rpc";
+import { limitConnection } from "../limit-resume/connection";
 import { isRecord } from "../agent/session-utils";
 import {
   sessionProfiles,
@@ -226,6 +227,8 @@ export function createLegacyConnectionRuntime(args: {
   onSshMasterReady?: () => void;
   /** The claude start setting changed (Configuration). */
   onClaudeStartSettingsChanged?: () => void;
+  /** The usage limit resume settings changed (Configuration). */
+  onLimitResumeSettingsChanged?: () => void;
   /** Shared across connections: local ports are a single machine-wide space. */
   forwards?: SshForwards;
   /** Test seam for deterministic shutdown coverage. */
@@ -671,6 +674,7 @@ export function createLegacyConnectionRuntime(args: {
     onWorkspaceAutoSyncSettingsChanged: workspaceAutoSync.settingsChanged,
     onAgentAutoRenameSettingsChanged: () => tabAutoRenamer.settingsChanged(),
     onClaudeStartSettingsChanged: () => args.onClaudeStartSettingsChanged?.(),
+    onLimitResumeSettingsChanged: () => args.onLimitResumeSettingsChanged?.(),
     onTerminalTransportSettingsChanged: (enabled) => {
       if (disposed) return;
       terminalBridge.refreshSurfaceCodecs();
@@ -1214,6 +1218,13 @@ export function createLegacyConnectionRuntime(args: {
     typedLaunch,
     profileRpc,
     profilePanes,
+    /** The usage limit resumer's view of this connection. */
+    limitConnection: limitConnection({
+      id: identity.id,
+      herdr,
+      conversation: conversation!,
+      transcriptTail,
+    }),
     historyWatcher: historyWatcher!,
     recoveryIdentity,
     taskNotificationSource,

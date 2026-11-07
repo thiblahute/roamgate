@@ -12,6 +12,7 @@ import {
   useSessionProfile,
 } from "../sessionProfiles";
 import { ActionsMenu, type ActionsMenuGroup } from "./ActionsMenu";
+import { useLimitPause } from "../limitPauses";
 import "./ProfileChip.css";
 
 /**
@@ -43,6 +44,8 @@ export function ProfileChip({
   onError?: (message: string) => void;
 }) {
   const profile = useSessionProfile(client, paneId, enabled, agentStatus);
+  // Paused by the limit: its own chip says so; the menu keeps its choices.
+  const paused = !!useLimitPause(client.connectionId, paneId);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const chipRef = useRef<HTMLButtonElement | null>(null);
   const room = usePaneRoom(chipRef);
@@ -86,7 +89,7 @@ export function ProfileChip({
     : "";
   const shown = profileParts(
     room,
-    !!limit,
+    !!limit && !paused,
     !!next,
     notDefault || !!profile.switching || !!model,
   );
@@ -146,7 +149,7 @@ export function ProfileChip({
   ];
   return (
     <>
-      {limit ? (
+      {limit && !paused ? (
         <>
           <button
             type="button"

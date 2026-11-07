@@ -1,0 +1,109 @@
+/*
+ * A session the usage limit paused: a short chip in the pane toolbar (one
+ * line, cut with an ellipsis like the profile's), and a notice in a chat.
+ */
+.terminal-pane-action.limit-pause-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+}
+
+.terminal-pane-toolbar.is-over-chat .terminal-pane-action.limit-pause-chip {
+  width: auto;
+  padding: 0 6px;
+  color: var(--warning-text);
+  background: var(--warning-soft);
+}
+
+.terminal-pane-action.limit-pause-chip > svg {
+  flex: none;
+}
+
+.terminal-pane-action.limit-pause-chip > span {
+  min-width: 0;
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-pane-action.limit-pause-chip.is-failed,
+.terminal-pane-toolbar.is-over-chat
+  .terminal-pane-action.limit-pause-chip.is-failed {
+  color: var(--danger-text, var(--warning-text));
+}
+
+/* Phones: the icon and the time, the words in the title and menu. */
+@media (max-width: 640px) {
+  .terminal-pane-action.limit-pause-chip > span {
+    max-width: 7.5em;
+  }
+}
+
+.limit-pause-notice svg {
+  vertical-align: -2px;
+}
+
+.limit-pause-notice .limit-pause-error {
+  color: var(--danger-text, var(--warning-text));
+}
+
+/* A paused session's badge in the agents lists. */
+.agent-row-status.limit-pause-badge {
+  color: var(--warning-text);
+  background: var(--warning-soft);
+  text-transform: none;
+}
+
+.limit-pause-note {
+  color: var(--warning-text);
+}
+
+/*
+ * Over a terminal in the phone layout, where the toolbar is hidden: at its
+ * foot, clear of the keyboard button at its top.
+ */
+.terminal-limit-strip {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  z-index: 3;
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 8px;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--warning-text);
+  background: var(--shell-panel);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  line-height: 1.35;
+  transform: translateX(-50%);
+}
+
+:where(html[data-layout="mobile"]) .terminal-limit-strip {
+  display: flex;
+}
+
+.terminal-limit-strip > svg {
+  flex: 0 0 auto;
+}
+
+.terminal-limit-strip > span {
+  min-width: 0;
+  flex: 1 1 12em;
+}
+
+.terminal-limit-strip button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}

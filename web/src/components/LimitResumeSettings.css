@@ -1,0 +1,31 @@
+/* Under the switch: the margin and the message, aligned with its words. */
+.limit-resume-settings {
+  display: grid;
+  gap: 4px;
+  margin-left: 30px;
+}
+
+.limit-resume-settings .form-field {
+  margin-top: 6px;
+}
+
+.limit-resume-settings input[type="number"] {
+  width: 7em;
+}
+
+.limit-resume-settings textarea {
+  width: 100%;
+  min-height: 4.5em;
+  resize: vertical;
+  font: inherit;
+}
+
+.limit-resume-default {
+  justify-self: start;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+}
