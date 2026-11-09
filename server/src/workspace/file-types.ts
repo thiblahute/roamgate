@@ -33,6 +33,13 @@ export type FilePreviewResult = FilePreviewDecoded & {
   truncated: boolean;
 };
 
+/** A file's size and modification time, as file.read gives them. */
+export type FileStatResult = {
+  type: "file" | "directory";
+  size: number;
+  mtime_ms: number;
+};
+
 export type FileDownloadResult = {
   acceptRanges?: boolean;
   contentRange?: string;

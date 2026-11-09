@@ -20,6 +20,7 @@ import {
   commentEdited,
   type ReviewAnchor,
   type ReviewSession,
+  type ReviewSnapshot,
   type ReviewTarget,
   type ReviewThread,
   REVIEW_USER,
@@ -46,6 +47,7 @@ import { ClaudeModError, type ClaudeModHub } from "../agent/claude-mod";
 import { writeClaudeModPlugin } from "../agent/claude-mod-plugin";
 import { MOD_VIA } from "../../claude-mod/hooks/tools";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
+import { renderedFileTarget } from "./rendered-target";
 
 /** What the agent server needs to know about a ready connection. */
 export type ReviewAgentConnection = {
@@ -115,6 +117,11 @@ function locationOf(anchor: ReviewAnchor): string {
 }
 
 /** Threads in the shape the skill documents. */
+/** The user's held feedback is not the agent's until sent. */
+function notHeld(thread: ReviewThread): boolean {
+  return thread.held === undefined;
+}
+
 export function threadOutput(thread: ReviewThread) {
   return {
     id: thread.id,
@@ -153,6 +160,9 @@ export function threadOutput(thread: ReviewThread) {
           },
         }
       : {}),
+    ...(thread.anchor.terminal ? { on_terminal: thread.anchor.terminal } : {}),
+    // On what a rendered review shows: the words, region, element, page.
+    ...(thread.anchor.render ? { on_rendered: thread.anchor.render } : {}),
     // On a part of an earlier message: which one, and the words quoted.
     ...(thread.anchor.message
       ? {
@@ -403,6 +413,19 @@ export function createReviewAgentServer(args: {
   };
 }) {
   const logger = args.logger ?? silentLogger;
+  /**
+   * The threads a review shows from the checkout's other reviews (a
+   * rendered file's, a code review's on that file): listed with it, each
+   * with its own review, unless agents may not read that one.
+   */
+  const sharedForAgent = (snapshot: ReviewSnapshot): ReviewThread[] =>
+    (snapshot.shared ?? []).filter((thread) => {
+      try {
+        return args.service.agentMayRead({ sessionId: thread.sessionId });
+      } catch {
+        return false;
+      }
+    });
   const home = args.home ?? homedir();
   const socketDirectory = join(args.directory, "agent");
   const servers = new Map<string, { path: string; server: Server }>();
@@ -453,6 +476,24 @@ export function createReviewAgentServer(args: {
     );
   }
 
+  /**
+   * A thread's file as the review names it: in a rendered review of a
+   * file, its absolute path (or any path ending with it) is that file.
+   */
+  function threadPath(
+    session: ReviewSession,
+    file: string | null,
+  ): string | undefined {
+    if (!file) return undefined;
+    const shown =
+      session.target.kind === "rendered" ? session.target.path : undefined;
+    if (shown && file.startsWith("/")) {
+      if (file === `${session.root}/${shown}` || file.endsWith(`/${shown}`))
+        return shown;
+    }
+    return file;
+  }
+
   async function sessionFor(
     connection: ReviewAgentConnection,
     form: URLSearchParams,
@@ -482,6 +523,37 @@ export function createReviewAgentServer(args: {
         404,
       );
     return latest.session;
+  }
+
+  /**
+   * A rendered review's target and root: a file (absolute) of a checkout,
+   * relative to it (or to its directory outside any), or a site's URL
+   * (the session's checkout, or its directory, as root).
+   */
+  async function renderedTarget(
+    connection: ReviewAgentConnection,
+    form: URLSearchParams,
+  ): Promise<{ root: string; target: ReviewTarget } | null> {
+    const file = form.get("file");
+    const url = form.get("url");
+    if (!file && !url) return null;
+    if (file && url) throw new ReviewError("give a file or a URL, not both");
+    if (url) {
+      const cwd = form.get("cwd") ?? "";
+      let root = cwd;
+      try {
+        root = await rootOf(connection, form);
+      } catch {
+        if (!cwd.startsWith("/"))
+          throw new ReviewError("the client did not send its directory");
+      }
+      return { root, target: { kind: "rendered", url } };
+    }
+    return renderedFileTarget(
+      (directory) => connection.readRoot(directory),
+      file!,
+      form.get("cwd") ?? "",
+    );
   }
 
   async function rootOf(
@@ -864,9 +936,11 @@ export function createReviewAgentServer(args: {
             ? { path: entry.slice(0, at), range }
             : { path: entry, range: "" };
         });
+      // A file or a site to discuss, rendered (`--file`, `--url`).
+      const rendered = await renderedTarget(connection, form);
       let root: string;
       try {
-        root = await rootOf(connection, form);
+        root = rendered ? rendered.root : await rootOf(connection, form);
       } catch (error) {
         if (!repoEntries.length) throw error;
         root = await rootOf(
@@ -874,9 +948,9 @@ export function createReviewAgentServer(args: {
           new URLSearchParams({ cwd: repoEntries[0]!.path }),
         );
       }
-      const target = await parseTargetFlags(form, () =>
-        connection.readDefaultBase(root),
-      );
+      const target =
+        rendered?.target ??
+        (await parseTargetFlags(form, () => connection.readDefaultBase(root)));
       const workspaceId = form.get("workspace") || undefined;
       const opened = args.service.open({
         connectionId: connection.id,
@@ -920,7 +994,9 @@ export function createReviewAgentServer(args: {
         // A security merge request's discussions are not shared with agents.
         threads: opened.mergeRequest?.security
           ? []
-          : opened.threads.map(threadOutput),
+          : [...opened.threads, ...sharedForAgent(opened)]
+              .filter(notHeld)
+              .map(threadOutput),
         ...(repos.length > 1 ? { repos } : {}),
       };
     }
@@ -948,7 +1024,9 @@ export function createReviewAgentServer(args: {
         const snapshot = args.service.get({ sessionId });
         return {
           session: sessionOutput(snapshot.session),
-          threads: snapshot.threads.map(threadOutput),
+          threads: [...snapshot.threads, ...sharedForAgent(snapshot)]
+            .filter(notHeld)
+            .map(threadOutput),
         };
       }
       case "add": {
@@ -963,8 +1041,11 @@ export function createReviewAgentServer(args: {
             author: agent,
             text,
             anchor: {
-              path: form.get("file") || undefined,
+              path: threadPath(session, form.get("file")),
               line,
+              ...(form.get("quote")
+                ? { render: { quote: form.get("quote") } }
+                : {}),
               endLine: intParam(form.get("end_line"), "end line"),
               side: form.get("side") || undefined,
             },

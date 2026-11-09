@@ -15,7 +15,8 @@
 .chat-file-edit,
 .chat-threads-chip,
 .chat-threads-away,
-.chat-threads-overview {
+.chat-threads-overview,
+.file-preview {
   --chat-comment: #e0a84f;
 }
 
@@ -25,7 +26,8 @@
     .chat-file-edit,
     .chat-threads-chip,
     .chat-threads-away,
-    .chat-threads-overview
+    .chat-threads-overview,
+    .file-preview
   ) {
   --chat-comment: #9a6200;
 }
@@ -195,6 +197,36 @@
 .chat-review .rc-part.has-notes,
 .chat-review .rc-part.is-focused {
   padding-left: 8px;
+}
+
+/* The Files preview's Markdown blocks are its parts (FileThreads): those
+   commented on and the one j / k is on, drawn as a chat's. */
+.file-preview .md-source-block,
+.file-preview div.md-source-item {
+  border-radius: 4px;
+}
+
+/* A list item's own words and a table cell are stops of their own. */
+.file-preview .md-source-block.is-focused,
+.file-preview .md-source-item.is-focused {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.file-preview .md-source-block.has-notes,
+.file-preview .md-source-item.has-notes {
+  box-shadow: inset 2px 0 var(--chat-comment);
+}
+
+.file-preview .md-source-block.has-notes,
+.file-preview .md-source-block.is-focused,
+.file-preview div.md-source-item.has-notes,
+.file-preview div.md-source-item.is-focused {
+  padding-left: 8px;
+}
+
+.file-preview-file-content:focus {
+  outline: none;
 }
 
 /* The chat's comments: the chip at the top right of the chat, their panel

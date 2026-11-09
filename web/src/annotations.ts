@@ -1,3 +1,4 @@
+import type { ReviewRenderPart } from "../../shared/review";
 import { connectionStorageKey } from "./connectionStorage";
 import type { GitDiffKind, Pane } from "./types";
 import { resourceOwnerKey, type ResourceScope } from "./workspaceResource";
@@ -29,6 +30,8 @@ export type FileLineReviewAnnotation = ReviewAnnotationBase & {
   anchor: "line";
   line: number;
   endLine?: number;
+  /** A point at what the rendered file shows. */
+  render?: ReviewRenderPart;
 };
 
 export type MarkdownReviewAnnotation = ReviewAnnotationBase & {
@@ -36,6 +39,11 @@ export type MarkdownReviewAnnotation = ReviewAnnotationBase & {
   path: string;
   anchor: "quote";
   section: string[];
+  /** The source lines the words are on, when they could be found. */
+  line?: number;
+  endLine?: number;
+  /** A point at what the rendered file shows. */
+  render?: ReviewRenderPart;
 };
 
 export type TerminalReviewAnnotation = ReviewAnnotationBase & {
@@ -111,6 +119,15 @@ function finitePositiveLine(value: unknown): number | null {
     value <= Number.MAX_SAFE_INTEGER
     ? value
     : null;
+}
+
+/** The rendered part kept with a note; the server checks what it stores. */
+function renderOf(candidate: Record<string, unknown>): {
+  render?: ReviewRenderPart;
+} {
+  return candidate.render && typeof candidate.render === "object"
+    ? { render: candidate.render as ReviewRenderPart }
+    : {};
 }
 
 export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
@@ -213,6 +230,7 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
       anchor: "line",
       line,
       ...(endLine === undefined ? {} : { endLine }),
+      ...renderOf(candidate),
     };
   }
   if (candidate.anchor !== "quote" || !Array.isArray(candidate.section)) {
@@ -222,7 +240,18 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
     .slice(0, MAX_SECTION_DEPTH)
     .map((part) => boundedString(part, 500))
     .filter((part): part is string => part !== null && part.length > 0);
-  return { ...base, path, source: "file", anchor: "quote", section };
+  const line = finitePositiveLine(candidate.line);
+  const endLine = finitePositiveLine(candidate.endLine);
+  return {
+    ...base,
+    path,
+    source: "file",
+    anchor: "quote",
+    section,
+    ...(line === null ? {} : { line }),
+    ...(line === null || endLine === null ? {} : { endLine }),
+    ...renderOf(candidate),
+  };
 }
 
 export function readReviewAnnotations(

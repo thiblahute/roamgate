@@ -105,6 +105,8 @@ export async function openWorkspaceReview(
         // workspace's code.
         snapshot.session.target.kind !== "chat" &&
         snapshot.session.target.kind !== "effort" &&
+        // Nor is a file or a site shown rendered.
+        snapshot.session.target.kind !== "rendered" &&
         !(options.local && snapshot.session.target.kind === "mr"),
     )
     .sort((a, b) => b.session.updatedAt.localeCompare(a.session.updatedAt));
@@ -225,6 +227,37 @@ export async function openWorkspaceReview(
     });
     return null;
   }
+}
+
+/**
+ * Show in code review: the checkout a file (absolute path) is reviewed in,
+ * the deepest root of the connection's reviews holding it (a code review's,
+ * a rendered file's, whose root is its checkout's), else its directory,
+ * whose repository a new review finds.
+ */
+export function fileReviewRoot(
+  sessions: Iterable<ReviewSnapshot>,
+  connectionId: string | null | undefined,
+  path: string,
+): string {
+  const roots = [...sessions]
+    .map(({ session }) => session)
+    .filter(
+      (session) =>
+        session.connectionId === connectionId &&
+        session.target.kind !== "chat" &&
+        !(session.target.kind === "rendered" && session.target.url) &&
+        path.startsWith(`${session.root.replace(/\/+$/, "")}/`),
+    )
+    .map((session) => session.root)
+    .sort((a, b) => b.length - a.length);
+  return roots[0] ?? path.slice(0, path.lastIndexOf("/"));
+}
+
+/** A file's path in a review of the checkout at `root`. */
+export function pathInReview(root: string, path: string): string {
+  const base = root.replace(/\/+$/, "");
+  return path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
 }
 
 /**

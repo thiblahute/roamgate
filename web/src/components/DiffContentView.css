@@ -172,6 +172,31 @@
   color: var(--warning-text);
 }
 
+/* A comment written here: its thread, as the Files preview draws one. */
+.diff-review-thread {
+  max-width: min(640px, 100%);
+  padding: 4px 8px;
+  font-family: var(--sans-font);
+  white-space: normal;
+}
+
+.diff-threads-chip {
+  font: inherit;
+  font-size: 12px;
+}
+
+.diff-threads {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: min(340px, 90%);
+  overflow: auto;
+  border-left: 1px solid var(--viewer-border);
+  background: var(--diff-bg);
+}
+
 .diff-raw-patch {
   max-width: 100%;
   max-height: 60vh;

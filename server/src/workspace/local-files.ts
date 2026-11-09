@@ -21,6 +21,7 @@ import type {
   FileExplorerEntry,
   FileListResult,
   FilePreviewResult,
+  FileStatResult,
   FileUploadResult,
 } from "./file-types";
 import { runBinaryProcessWithTimeout } from "./process";
@@ -136,6 +137,26 @@ export async function readLocalFile(
     truncated,
     ...decoded,
   };
+}
+
+/**
+ * What the Files preview checks to tell a file changed on disk since it
+ * was shown: its size and modification time, nothing read.
+ */
+export async function statLocalFile(
+  rootPath: string,
+  requestedPath: string,
+): Promise<FileStatResult> {
+  const rootReal = await realpath(rootPath);
+  const requestedAbsolute = isAbsolute(requestedPath);
+  const targetReal = await realpath(
+    requestedAbsolute ? requestedPath : resolve(rootReal, requestedPath),
+  );
+  if (!requestedAbsolute) assertInsideRoot(rootReal, targetReal);
+  const info = await stat(targetReal);
+  return info.isDirectory()
+    ? { type: "directory", size: 0, mtime_ms: info.mtimeMs }
+    : { type: "file", size: info.size, mtime_ms: info.mtimeMs };
 }
 
 export async function downloadLocalFile(

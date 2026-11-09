@@ -228,6 +228,43 @@
   margin: 4px 0 8px 14px;
 }
 
+/* An item of a list in a list item: a part of its own, as deep as it was. */
+.rc-nested-item {
+  padding-left: calc(var(--rc-depth, 1) * 1.4em);
+}
+
+/* A table, a part per cell (the header's too). */
+.rc-table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 4px 0;
+  border-collapse: collapse;
+}
+
+.rc-table th,
+.rc-table td {
+  padding: 3px 8px;
+  border: 1px solid var(--rv-border);
+  vertical-align: top;
+}
+
+.rc-table th {
+  background: var(--rv-surface-2);
+  font-weight: 600;
+}
+
+.rc-table .rc-part-add {
+  top: 2px;
+  left: 2px;
+}
+
+/* The comments on a row's cells, under that row. */
+.rc-table tr.rc-table-notes > td {
+  padding: 0;
+  border: 0;
+}
+
 /* A comment on a part sits under it, not at a line's comment indent. */
 .rc-part-notes > .rc {
   margin: 0;

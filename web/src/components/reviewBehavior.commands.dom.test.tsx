@@ -182,11 +182,12 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           expect(review.cursorLine()?.text).toBe("a.ts line 2");
           await review.unmount();
         }
-        // No agent pane: the discussion waits for Send.
+        // No agent pane: the discussion waits for Send in the workspace's
+        // threads.
         const alone = await mount({ files: [added("a.ts", 4)] });
         await alone.command(":ask");
         expect(alone.editor()?.placeholder).toBe(
-          "For Agent: sent when you press Send (Cmd+Enter saves, Esc closes)",
+          "Waiting for Send in the workspace's threads (Cmd+Enter saves, Esc closes)",
         );
         await alone.unmount();
       });

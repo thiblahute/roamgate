@@ -22,6 +22,25 @@ describe("messageBlocks", () => {
     expect(messageBlockCount(blocks)).toBe(7);
   });
 
+  test("a nested list item and a table cell are parts of their own", () => {
+    const blocks = messageBlocks(
+      "- one\n  - one a\n    more\n  1. first\n- [ ] two\n\n| H | I |\n| - | - |\n| a | b |",
+    );
+    expect(blocks).toEqual([
+      { kind: "markdown", source: "- one" },
+      { kind: "markdown", source: "- one a\n  more", depth: 1 },
+      { kind: "markdown", source: "1. first", depth: 1 },
+      { kind: "markdown", source: "- [ ] two" },
+      {
+        kind: "table",
+        header: ["H", "I"],
+        rows: [["a", "b"]],
+        align: [null, null],
+      },
+    ]);
+    expect(messageBlockCount(blocks)).toBe(8);
+  });
+
   test("compares quotes loosely", () => {
     expect(looseText("  Some\n  Words\t here ")).toBe("some words here");
   });

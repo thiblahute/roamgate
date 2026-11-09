@@ -33,12 +33,12 @@ import {
 } from "./ChatThreads";
 import {
   MessageNotes,
-  MessageReplyButton,
   OnMessageHead,
   selectedWords,
   useSelectedWords,
 } from "./MessageThreads";
 import { NoteBody } from "./ReviewNoteBody";
+import { MessageReplyButton } from "./ThreadCard";
 
 /**
  * Comment threads on what an upstreaming effort's view shows: a review of

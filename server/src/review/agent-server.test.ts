@@ -879,3 +879,26 @@ test("a claude started in a pane reaches its own connection's claude start", asy
   expect((await post({ session, herdr_socket: "/b.sock" })).status).toBe(400);
   expect(started).toHaveLength(1);
 });
+
+test("get lists the rendered file's threads in the code review, each with its own review", async () => {
+  const s = setup();
+  const opened = await run(s, ["open", "--worktree"]);
+  const rendered = s.service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "rendered", path: "plan.md" },
+    raise: false,
+  }).session;
+  const thread = await s.service.addThread({
+    sessionId: rendered.id,
+    anchor: { path: "plan.md", line: 2, side: "new" },
+    text: "Decision 1: a or b?",
+  });
+  const got = await run(s, ["get", "--session", opened.json.session.id]);
+  expect(got.code).toBe(0);
+  const listed = got.json.threads.find(
+    (each: { id: string }) => each.id === thread.id,
+  );
+  expect(listed?.session).toBe(rendered.id);
+  expect(listed?.path).toBe("plan.md");
+});

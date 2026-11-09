@@ -303,6 +303,31 @@ export function parseReviewCommand(input: string): ReviewCommand {
 }
 
 /**
+ * g;: the comment written last (or rewritten last) among the threads, in
+ * the review pane, a chat and the Files preview alike; null when none is.
+ */
+export function latestComment<
+  T extends {
+    comments: readonly { id: string; createdAt: string; updatedAt: string }[];
+  },
+>(threads: Iterable<T>): { thread: T; comment: T["comments"][number] } | null {
+  let latest: {
+    thread: T;
+    comment: T["comments"][number];
+    at: string;
+  } | null = null;
+  for (const thread of threads)
+    for (const comment of thread.comments) {
+      const at =
+        comment.updatedAt > comment.createdAt
+          ? comment.updatedAt
+          : comment.createdAt;
+      if (!latest || at > latest.at) latest = { thread, comment, at };
+    }
+  return latest && { thread: latest.thread, comment: latest.comment };
+}
+
+/**
  * Collects a count and multi-key sequences (gg, dd, zz, zo...) the way Vim
  * does: digits accumulate, a prefix waits for its second key.
  */

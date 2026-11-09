@@ -17,7 +17,18 @@ import {
   type NotificationTarget,
   type RangerTaskNotificationTarget,
 } from "./taskNotifications";
+import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 import { useReviewAnnotationDraft } from "./useReviewAnnotationDraft";
+import { useHeldFeedback } from "./useHeldFeedback";
+import {
+  feedbackThreadsTrailer,
+  migrateFeedback,
+  paneChat,
+  workspaceFeedback,
+  writeFeedback,
+  type FeedbackCapture,
+  type FeedbackPlace,
+} from "./workspaceFeedback";
 import {
   annotationDraftStorageKey,
   compileReviewFeedback,
@@ -48,6 +59,8 @@ import { voiceFronting } from "./voiceFrontFlag";
 import { passwordManagerIgnore } from "./passwordManagerIgnore";
 import {
   getReviewSnapshot,
+  rememberReviewSnapshot,
+  reviewCall,
   loadedReviewConnections,
   loadReviews,
   startReviewClient,
@@ -185,6 +198,7 @@ import {
 } from "./components/fileExplorerResources";
 import { type ActiveFilePreviewSelection } from "./components/FilePreviewContent";
 import { AnnotationPanel } from "./components/AnnotationPanel";
+import { WorkspaceConversations } from "./components/FileThreads";
 import {
   assistantActionExecuting,
   onAssistantOpenRequest,
@@ -313,7 +327,11 @@ import {
   isWorkspaceInspectorShortcut,
   preferencesStorageKey,
   readInspectorPreferences,
+  keptFilePath,
   readResourceFileSelection,
+  readResourceFileTabs,
+  renameResourceFileTab,
+  writeResourceFileTabs,
   relativePathWithinCheckout,
   resolveWorkspaceForScope,
   resourceOwnerKey,
@@ -602,6 +620,8 @@ type OpenInspectorOptions = {
   fragment?: string;
   /** Line to show in the file preview. */
   line?: number;
+  /** At that line as rendered, not in its source (Show rendered). */
+  rendered?: boolean;
   initialDirectory?: string;
   originPaneId?: string;
   focusInspector?: boolean;
@@ -1857,7 +1877,7 @@ export default function App() {
     "resource-ui",
   );
   const {
-    annotations,
+    annotations: localAnnotations,
     scope: annotationScope,
     scopeRef: annotationScopeRef,
     sessionRef: annotationSessionRef,
@@ -2034,14 +2054,33 @@ export default function App() {
   const setActiveFilePreview = useCallback(
     (selection: ActiveFilePreviewSelection) => {
       const scope = inspectorStateRef.current?.scope;
+      let next = selection;
       if (scope && selection.entry) {
-        writeResourceFileSelection(
-          roamgateLocalStorage,
+        // Kept where it really is: a tab of a workspace without a checkout
+        // is written once the root it was read from is known.
+        const path = keptFilePath(
           scope,
           selection.entry.path,
+          selection.preview,
         );
+        if (path !== undefined) {
+          if (path !== selection.entry.path) {
+            next = { ...selection, entry: { ...selection.entry, path } };
+            // A tab kept by its relative path before: kept in its place.
+            writeResourceFileTabs(
+              roamgateLocalStorage,
+              scope,
+              renameResourceFileTab(
+                readResourceFileTabs(roamgateLocalStorage, scope),
+                selection.entry.path,
+                path,
+              ),
+            );
+          }
+          writeResourceFileSelection(roamgateLocalStorage, scope, path);
+        }
       }
-      setActiveFilePreviewState(selection);
+      setActiveFilePreviewState(next);
     },
     [],
   );
@@ -2389,6 +2428,17 @@ export default function App() {
   const annotationWorkspace = annotationScope
     ? resolveWorkspaceForScope(annotationScope, s.workspaces)
     : undefined;
+  const heldComments = useHeldFeedback(
+    s.activeConnectionId,
+    annotationWorkspace?.workspace_id,
+  );
+  const heldAnnotations = heldComments.annotations;
+  // One list: the review threads held for Send, and any note the server
+  // has not taken yet, kept in this browser so it is never lost.
+  const annotations = useMemo(
+    () => [...localAnnotations, ...heldAnnotations],
+    [localAnnotations, heldAnnotations],
+  );
   const annotationAgentPanes = useMemo(
     () =>
       reviewAgentPanes(
@@ -2574,17 +2624,22 @@ export default function App() {
       entry: FileExplorerEntry,
       fragment?: string,
       line?: number,
+      rendered?: boolean,
     ) => {
       const requestId = fileQuickOpenRequestRef.current + 1;
       fileQuickOpenRequestRef.current = requestId;
+      // A site's page is shown by the preview itself, no file to read.
+      const site = /^https?:\/\//i.test(entry.path);
       setActiveFilePreview({
         entry,
         fragment,
         line,
+        ...(rendered ? { rendered } : {}),
         preview: null,
-        loading: true,
+        loading: !site,
         error: null,
       });
+      if (site) return;
       void requestFilePreview(workspaceId, entry.path, {
         client: connectionClient,
         refresh: true,
@@ -2600,6 +2655,7 @@ export default function App() {
             entry,
             fragment,
             line,
+            ...(rendered ? { rendered } : {}),
             preview,
             loading: false,
             error: null,
@@ -2616,6 +2672,7 @@ export default function App() {
             entry,
             fragment,
             line,
+            ...(rendered ? { rendered } : {}),
             preview: null,
             loading: false,
             error: error instanceof Error ? error.message : String(error),
@@ -2745,6 +2802,7 @@ export default function App() {
         entry,
         options.fragment,
         options.line,
+        options.rendered,
       );
     },
     [
@@ -2780,6 +2838,45 @@ export default function App() {
     [connectionClient.connectionId, mobile, setAnnotationDraftScope],
   );
   useEffect(() => startReviewClient(), []);
+  /** A file or a site an agent opened: the Files preview shows it. */
+  const showRenderedInFiles = useCallback(
+    (snapshot: ReviewSnapshot) => {
+      const { session } = snapshot;
+      if (session.target.kind !== "rendered") return;
+      const workspaceId =
+        session.workspaceId ??
+        store.get().workspaces.find((each) => each.focused)?.workspace_id;
+      if (!workspaceId) return;
+      const path =
+        session.target.url ??
+        `${session.root.replace(/\/+$/, "")}/${session.target.path}`;
+      if (
+        !store.get().workspaces.find((w) => w.workspace_id === workspaceId)
+          ?.focused
+      )
+        void store.focusWorkspace(workspaceId);
+      openInspector("files", workspaceId, {
+        entry: inspectorFileEntry(path),
+        path,
+        focusInspector: true,
+      });
+    },
+    [openInspector],
+  );
+  /** A thread of the panel, shown where it is. */
+  const goToWorkspaceThread = useCallback(
+    (thread: ReviewThread, snapshot: ReviewSnapshot) => {
+      const { session } = snapshot;
+      if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
+      else if (thread.anchor.terminal)
+        void store.focusPane(thread.anchor.terminal.pane);
+      else if (session.target.kind !== "chat")
+        setReviewSessionId(session.id, true);
+      // A chat's thread: its agent's pane, where the chat shows.
+      else if (session.agent.paneId) void store.focusPane(session.agent.paneId);
+    },
+    [setReviewSessionId, showRenderedInFiles],
+  );
   // Cmd+K from the review: the menu goes to other workspaces, so the review
   // steps aside (it is kept; Option+R brings it back).
   useEffect(() => {
@@ -2817,9 +2914,57 @@ export default function App() {
     if (!request) return;
     void import("./reviewOpen").then(({ takeOpenRequest }) => {
       const sessionId = takeOpenRequest(request, s.activeConnectionId);
-      if (sessionId) setReviewSessionId(sessionId);
+      if (!sessionId) return;
+      const snapshot = getReviewSnapshot(sessionId);
+      if (snapshot?.session.target.kind === "rendered")
+        showRenderedInFiles(snapshot);
+      else setReviewSessionId(sessionId);
     });
-  }, [reviewState.openRequest, s.activeConnectionId, setReviewSessionId]);
+  }, [
+    reviewState.openRequest,
+    s.activeConnectionId,
+    setReviewSessionId,
+    showRenderedInFiles,
+  ]);
+  /** Show in code review: a file and line asked from the Files preview. */
+  const [reviewGoTo, setReviewGoTo] = useState<{
+    sessionId: string;
+    path: string;
+    line?: number;
+    at: number;
+  } | null>(null);
+  /**
+   * The file's checkout's code review in the workspace, as Option+R picks
+   * it for that repository (the one shown there last, else the latest,
+   * else a new one), at the file and line: its threads are the rendered
+   * file's too.
+   */
+  const showFileInReview = useCallback(
+    async (path: string, line?: number) => {
+      const { fileReviewRoot, openWorkspaceReview, pathInReview } =
+        await import("./reviewOpen");
+      const root = fileReviewRoot(
+        reviewState.sessions.values(),
+        store.get().activeConnectionId,
+        path,
+      );
+      const sessionId = await openWorkspaceReview(reviewState.sessions, {
+        root,
+      });
+      if (!sessionId) return;
+      setReviewGoTo({
+        sessionId,
+        path: pathInReview(
+          getReviewSnapshot(sessionId)?.session.root ?? root,
+          path,
+        ),
+        ...(line !== undefined ? { line } : {}),
+        at: Date.now(),
+      });
+      setReviewSessionId(sessionId);
+    },
+    [reviewState.sessions, setReviewSessionId],
+  );
   const toggleReview = useCallback(async () => {
     if (reviewSessionId) {
       setReviewSessionId(null);
@@ -2992,6 +3137,24 @@ export default function App() {
       });
     }
   };
+  // The comments written in the inspector's views, drawn there as threads.
+  const inspectorFeedback = useMemo(
+    () =>
+      workspaceFeedback(
+        reviewState.sessions.values(),
+        s.activeConnectionId,
+        inspectorState?.scope.workspaceId,
+      ),
+    [
+      reviewState.sessions,
+      s.activeConnectionId,
+      inspectorState?.scope.workspaceId,
+    ],
+  );
+  const inspectorFeedbackThreads = useMemo(
+    () => inspectorFeedback.map((entry) => entry.thread),
+    [inspectorFeedback],
+  );
   const reanchorFileAnnotations = useCallback(
     (path: string, text: string) => {
       if (!inspectorState || !connectionClient.isCurrent()) return;
@@ -3010,27 +3173,210 @@ export default function App() {
     },
     [connectionClient, inspectorState, updateAnnotationDraft],
   );
-  const addAnnotation = useCallback(
-    (input: NewReviewAnnotation) => {
-      if (!inspectorState || !connectionClient.isCurrent()) return;
-      const annotation = createReviewAnnotation(input);
-      setAnnotationDraftScope(inspectorState.scope, true);
-      updateAnnotationDraft(inspectorState.scope, (current) => [
-        ...current,
-        annotation,
-      ]);
-      setFocusedAnnotationId(annotation.id);
-      setAnnotationsOpen(true);
-      if (mobile) setMobileView("annotations");
+  /** The place a comment of a scope is written from. */
+  const feedbackPlace = useCallback(
+    (scope: ResourceScope, root?: string): FeedbackPlace | null => {
+      const workspace = resolveWorkspaceForScope(scope, s.workspaces);
+      const pane = workspace
+        ? (s.panes.find(
+            (each) =>
+              each.workspace_id === workspace.workspace_id && each.focused,
+          ) ??
+          s.panes.find((each) => each.workspace_id === workspace.workspace_id))
+        : undefined;
+      const checkout =
+        workspace?.worktree?.checkout_path ??
+        workspace?.cwd ??
+        pane?.foreground_cwd ??
+        pane?.cwd;
+      const base = root ?? checkout;
+      // The workspace's agent, as the review pane gives it.
+      const agentPane = workspace
+        ? reviewAgentPanes(s.panes, workspace.workspace_id)[0]
+        : undefined;
+      const agent = agentPane?.agent
+        ? {
+            paneId: agentPane.pane_id,
+            name:
+              agentPane.agent.charAt(0).toUpperCase() +
+              agentPane.agent.slice(1),
+          }
+        : undefined;
+      return workspace && base
+        ? {
+            workspaceId: workspace.workspace_id,
+            root: base,
+            ...(agent ? { agent } : {}),
+          }
+        : null;
+    },
+    [s.panes, s.workspaces],
+  );
+  const reviewSessionsRef = useRef(reviewState.sessions);
+  reviewSessionsRef.current = reviewState.sessions;
+  /**
+   * Where a note goes, a terminal's with the chat of the agent in its pane
+   * (its comment goes to that chat's review); a pane running no agent keeps
+   * its own review.
+   */
+  const notePlace = useCallback(
+    async (
+      note: ReviewAnnotation,
+      place: FeedbackPlace,
+    ): Promise<FeedbackPlace> => {
+      if (note.source !== "terminal") return place;
+      const pane = store
+        .get()
+        .panes.find((each) => each.pane_id === note.paneId);
+      if (!pane) return place;
+      const chat = await paneChat(
+        (paneId, agent) =>
+          connectionClient.call("agent_session.get", {
+            pane_id: paneId,
+            agent,
+          }),
+        pane,
+        reviewSessionsRef.current.values(),
+        connectionClient.connectionId,
+      );
+      return chat ? { ...place, chat } : place;
+    },
+    [connectionClient],
+  );
+  /** Scopes whose notes kept in this browser were tried this load. */
+  const migratedScopes = useRef(new Set<string>());
+  /**
+   * A new comment, written as a review thread: a thread of the view it was
+   * written in, the focus left there. A terminal's is held in its agent's
+   * chat review until Send, in the workspace's threads. Should the server
+   * not take it, it is kept as a note in this browser and moved on the next
+   * load.
+   */
+  const addFeedback = useCallback(
+    async (
+      scope: ResourceScope,
+      note: ReviewAnnotation,
+      capture?: FeedbackCapture & { root?: string },
+      preferredPaneId?: string,
+    ) => {
+      const terminal = note.source === "terminal";
+      const keepLocally = () => {
+        if (terminal) setAnnotationDraftScope(scope, true, preferredPaneId);
+        updateAnnotationDraft(scope, (current) =>
+          current.some((item) => item.id === note.id)
+            ? current
+            : [...current, note],
+        );
+        if (terminal) setFocusedAnnotationId(note.id);
+      };
+      const base = feedbackPlace(scope, capture?.root);
+      if (!base) {
+        keepLocally();
+        return false;
+      }
+      const connectionId = connectionClient.connectionId;
+      const call = <T,>(method: string, params: Record<string, unknown>) =>
+        reviewCall<T>(connectionId, method, params);
+      try {
+        const place = await notePlace(note, base);
+        const written = await writeFeedback(
+          call,
+          note,
+          place,
+          Date.now() * 1000,
+          capture,
+        );
+        rememberReviewSnapshot(
+          await call<ReviewSnapshot>("review.get", {
+            session_id: written.snapshot.session.id,
+          }),
+        );
+        if (written.held) {
+          setAnnotationDraftScope(scope, true, preferredPaneId);
+          setFocusedAnnotationId(written.threadId);
+        }
+        return written.held;
+      } catch (error) {
+        // Refused: saved on the next load, not tried again in this one.
+        migratedScopes.current.add(annotationDraftStorageKey(scope));
+        keepLocally();
+        store.notify({
+          kind: "error",
+          message: "Comment kept in this browser",
+          detail: `Roamgate could not save it yet (${error instanceof Error ? error.message : String(error)}). It is saved on the next load.`,
+        });
+        return terminal;
+      }
     },
     [
       connectionClient,
-      inspectorState,
-      mobile,
+      feedbackPlace,
+      notePlace,
       setAnnotationDraftScope,
       updateAnnotationDraft,
     ],
   );
+  const addAnnotation = useCallback(
+    (
+      input: NewReviewAnnotation,
+      capture?: FeedbackCapture & { root?: string },
+    ) => {
+      if (!inspectorState || !connectionClient.isCurrent()) return;
+      void addFeedback(
+        inspectorState.scope,
+        createReviewAnnotation(input),
+        capture,
+      ).then((held) => {
+        if (held && mobile) setMobileView("annotations");
+      });
+    },
+    [addFeedback, connectionClient, inspectorState, mobile],
+  );
+  // Notes of this browser go to the review store once per load, as held
+  // threads waiting for Send in the workspace's threads, each forgotten only
+  // when the server has it.
+  useEffect(() => {
+    if (!annotationScope || !annotationStorageKey) return;
+    if (!connectionClient.isCurrent() || !localAnnotations.length) return;
+    if (migratedScopes.current.has(annotationStorageKey)) return;
+    const place = feedbackPlace(annotationScope);
+    if (!place) return;
+    migratedScopes.current.add(annotationStorageKey);
+    const connectionId = connectionClient.connectionId;
+    const call = <T,>(method: string, params: Record<string, unknown>) =>
+      reviewCall<T>(connectionId, method, params);
+    void migrateFeedback({
+      notes: localAnnotations,
+      base: Date.now() * 1000,
+      write: async (note, held) => {
+        const written = await writeFeedback(
+          call,
+          note,
+          await notePlace(note, place),
+          held,
+          undefined,
+          true,
+        );
+        rememberReviewSnapshot(
+          await call<ReviewSnapshot>("review.get", {
+            session_id: written.snapshot.session.id,
+          }),
+        );
+      },
+      forget: (id) =>
+        updateAnnotationDraft(annotationScope, (current) =>
+          current.filter((note) => note.id !== id),
+        ),
+    });
+  }, [
+    annotationScope,
+    annotationStorageKey,
+    connectionClient,
+    feedbackPlace,
+    localAnnotations,
+    notePlace,
+    updateAnnotationDraft,
+  ]);
   const closeAnnotations = useCallback(() => {
     setAnnotationsOpen(false);
     if (mobile) {
@@ -3045,9 +3391,11 @@ export default function App() {
   }, [mobile]);
   const clearAnnotations = useCallback(() => {
     commitAnnotations([]);
+    for (const annotation of heldAnnotations)
+      heldComments.remove(annotation.id);
     setFocusedAnnotationId(null);
     closeAnnotations();
-  }, [closeAnnotations, commitAnnotations]);
+  }, [closeAnnotations, commitAnnotations, heldAnnotations, heldComments]);
   const copyFeedback = useCallback(
     async (fallback = false) => {
       const message = compileReviewFeedback(annotations);
@@ -3066,7 +3414,7 @@ export default function App() {
           kind: "success",
           message: fallback
             ? "No agent pane found; feedback copied"
-            : "Review feedback copied",
+            : "Comments to send copied",
           autoDismissMs: 3000,
         });
       } catch (error) {
@@ -3091,14 +3439,32 @@ export default function App() {
         await copyFeedback(true);
         return;
       }
-      const message = compileReviewFeedback(annotations);
-      if (!message) {
+      const compiled = compileReviewFeedback(annotations);
+      if (!compiled) {
         store.notify({
           kind: "error",
           message: "Add text to a review comment before delivery",
         });
         return;
       }
+      // The agent answers in the threads: Copy stays the plain feedback.
+      const message =
+        compiled +
+        feedbackThreadsTrailer(
+          annotations
+            .filter((annotation) => annotation.comment.trim())
+            .flatMap((annotation, index) =>
+              heldComments.has(annotation.id)
+                ? [
+                    {
+                      index: index + 1,
+                      threadId: annotation.id,
+                      snapshot: heldComments.snapshot(annotation.id),
+                    },
+                  ]
+                : [],
+            ),
+        );
       const deliverySession = annotationSessionRef.current;
       setAnnotationDeliveryBusy(true);
       // An agent shown as a chat: pre-filled in its message box, where it
@@ -3133,6 +3499,12 @@ export default function App() {
           setDeliveredPaneId(target.pane_id);
           commitAnnotations((current) =>
             removeDeliveredReviewAnnotations(current, annotations),
+          );
+          void heldComments.release(
+            heldAnnotations
+              .filter((annotation) => annotation.comment.trim())
+              .map((annotation) => annotation.id),
+            true,
           );
         }
         store.notify({
@@ -3175,6 +3547,8 @@ export default function App() {
       annotations,
       commitAnnotations,
       connectionClient,
+      heldAnnotations,
+      heldComments,
       copyFeedback,
     ],
   );
@@ -3716,13 +4090,7 @@ export default function App() {
         connectionClient.connectionId,
         workspace,
       );
-      setAnnotationDraftScope(scope, true, annotation.paneId);
-      updateAnnotationDraft(scope, (current) =>
-        current.some((item) => item.id === annotation.id)
-          ? current
-          : [...current, annotation],
-      );
-      setFocusedAnnotationId(annotation.id);
+      void addFeedback(scope, annotation, undefined, annotation.paneId);
       annotationAwaitingFocusRef.current = workspace.focused ? null : scope;
       if (!workspace.focused) void store.focusWorkspace(workspace.workspace_id);
       if (mobile) setMobileView("annotations");
@@ -3736,12 +4104,7 @@ export default function App() {
         WORKSPACE_ANNOTATION_REQUEST_EVENT,
         handleAnnotationRequest,
       );
-  }, [
-    connectionClient,
-    mobile,
-    setAnnotationDraftScope,
-    updateAnnotationDraft,
-  ]);
+  }, [addFeedback, connectionClient, mobile, setAnnotationDraftScope]);
   useEffect(() => {
     const pending = pendingInspectorRequestRef.current;
     if (!pending) return;
@@ -5478,14 +5841,14 @@ export default function App() {
           <button
             type="button"
             className={mobileView === "annotations" ? "active" : ""}
-            title={shortcutTitle("Annotations", "annotations.toggle")}
-            aria-label="Show review annotations"
+            title={shortcutTitle("Threads", "annotations.toggle")}
+            aria-label="Show the workspace's threads"
             aria-pressed={annotationsOpen}
             onClick={toggleAnnotations}
           >
             <MessageSquareText size={16} />
             <span className="mobile-nav-label">
-              Annotations
+              Threads
               {annotations.length > 0 ? ` ${annotations.length}` : ""}
             </span>
           </button>
@@ -6005,6 +6368,7 @@ export default function App() {
                     (snapshot) =>
                       snapshot.session.connectionId === s.activeConnectionId &&
                       snapshot.session.target.kind !== "chat" &&
+                      snapshot.session.target.kind !== "rendered" &&
                       snapshot.session.target.kind !== "effort",
                   )}
                   onOpen={(sessionId) => {
@@ -6041,6 +6405,7 @@ export default function App() {
                       : [];
                   })}
                   shownId={reviewSessionId}
+                  goTo={reviewGoTo}
                   panes={s.panes}
                   onClose={() => setReviewSessionId(null)}
                   onShow={(id) => setReviewSessionId(id)}
@@ -6052,7 +6417,7 @@ export default function App() {
                     setReviewSuspended(true);
                     void store.focusPane(paneId);
                   }}
-                  onOpenFile={(workspaceId, path, line) => {
+                  onOpenFile={(workspaceId, path, line, rendered) => {
                     // A request's review worktree follows on demand.
                     void import("./mrReviewFlow").then(
                       ({ checkoutForBrowsing }) =>
@@ -6064,6 +6429,7 @@ export default function App() {
                       entry: inspectorFileEntry(path),
                       path,
                       line,
+                      ...(rendered ? { rendered } : {}),
                       focusInspector: true,
                     });
                   }}
@@ -6156,8 +6522,15 @@ export default function App() {
                       key={`${resourceUiKey}:${resourceOwnerKey(inspectorState.scope)}`}
                       state={inspectorState}
                       onReady={finishInspectorFocus}
-                      annotations={readAnnotationDraft(inspectorState.scope)}
+                      annotations={[
+                        ...readAnnotationDraft(inspectorState.scope),
+                        ...inspectorFeedback.map((entry) => entry.annotation),
+                      ]}
+                      feedbackThreads={inspectorFeedbackThreads}
                       onCreateAnnotation={addAnnotation}
+                      onShowInReview={(path, line) =>
+                        void showFileInReview(path, line)
+                      }
                       onReanchorFileAnnotations={reanchorFileAnnotations}
                       onReanchorDiffAnnotations={reanchorDiffAnnotations}
                       onEditAnnotation={(id) => {
@@ -6232,26 +6605,32 @@ export default function App() {
               busy={annotationDeliveryBusy}
               focusedAnnotationId={focusedAnnotationId}
               onClose={closeAnnotations}
-              onUpdateComment={(id, comment) =>
-                commitAnnotations((current) =>
-                  current.map((annotation) =>
-                    annotation.id === id
-                      ? { ...annotation, comment }
-                      : annotation,
-                  ),
-                )
-              }
+              onUpdateComment={(id, comment) => {
+                if (heldComments.has(id)) heldComments.edit(id, comment);
+                else
+                  commitAnnotations((current) =>
+                    current.map((annotation) =>
+                      annotation.id === id
+                        ? { ...annotation, comment }
+                        : annotation,
+                    ),
+                  );
+              }}
               onDelete={(id) => {
-                commitAnnotations((current) =>
-                  current.filter((annotation) => annotation.id !== id),
-                );
+                if (heldComments.has(id)) heldComments.remove(id);
+                else
+                  commitAnnotations((current) =>
+                    current.filter((annotation) => annotation.id !== id),
+                  );
                 if (focusedAnnotationId === id) setFocusedAnnotationId(null);
               }}
-              onMove={(id, delta) =>
-                commitAnnotations((current) =>
-                  moveReviewAnnotation(current, id, delta),
-                )
-              }
+              onMove={(id, delta) => {
+                if (heldComments.has(id)) heldComments.move(id, delta);
+                else
+                  commitAnnotations((current) =>
+                    moveReviewAnnotation(current, id, delta),
+                  );
+              }}
               onGoToAgent={
                 deliveredPaneId &&
                 annotationAgentPanes.some(
@@ -6260,6 +6639,31 @@ export default function App() {
                   ? goToDeliveredAgent
                   : undefined
               }
+              conversations={
+                annotationWorkspace && s.activeConnectionId ? (
+                  <WorkspaceConversations
+                    connectionId={s.activeConnectionId}
+                    workspaceId={annotationWorkspace.workspace_id}
+                    onGo={goToWorkspaceThread}
+                    onClose={closeAnnotations}
+                  />
+                ) : null
+              }
+              onGo={(id) => {
+                for (const snapshot of reviewState.sessions.values()) {
+                  const thread = snapshot.threads.find(
+                    (each) => each.id === id,
+                  );
+                  if (thread) {
+                    goToWorkspaceThread(thread, snapshot);
+                    return;
+                  }
+                }
+                // A note the server has not taken yet: a terminal's pane.
+                const note = localAnnotations.find((each) => each.id === id);
+                if (note?.source === "terminal")
+                  void store.focusPane(note.paneId);
+              }}
               onClear={clearAnnotations}
               onCopy={() => void copyFeedback()}
               onSend={(paneId, submit) => void sendFeedback(paneId, submit)}

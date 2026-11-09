@@ -1,3 +1,6 @@
+import type { RenderedFrameMessage } from "../../../shared/renderedPage";
+import { isAnimatedSvg } from "../renderedSource";
+import { RenderedFrame } from "./RenderedFrame";
 import { Code2, Copy, Image as ImageIcon, Maximize2, X } from "lucide-react";
 import {
   useEffect,
@@ -5,6 +8,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  createContext,
+  useContext,
 } from "react";
 import { createPortal } from "react-dom";
 import { copyTextWithFeedback } from "../copyText";
@@ -105,6 +110,26 @@ function DiagramPicture({
   );
 }
 
+/**
+ * Set by the Files preview: an animated diagram there is drawn in the
+ * rendered-page sandbox, so it can be paused and cropped where commented.
+ * Elsewhere (comments, chats) nothing changes.
+ */
+export const DiagramFrameContext = createContext<{
+  connectionId: string;
+  pointMode: boolean;
+  /** The user asked for this file's scripts to run. */
+  scripts: boolean;
+  onMessage: (
+    message: Exclude<
+      RenderedFrameMessage,
+      { type: "ready" | "size" | "stray" }
+    >,
+    box: DOMRect,
+    frame: HTMLIFrameElement,
+  ) => void;
+} | null>(null);
+
 export function DiagramBlock({
   lang,
   code,
@@ -181,6 +206,16 @@ export function DiagramBlock({
   const scale = picture
     ? inlineDiagramScale(picture, available - 24, phone)
     : 1;
+  const frames = useContext(DiagramFrameContext);
+  const svgSource =
+    lang === "svg" ? code : picture?.kind === "inline" ? picture.svg : null;
+  const framed =
+    frames &&
+    picture &&
+    svgSource &&
+    (isAnimatedSvg(svgSource) || (frames.scripts && lang === "svg"))
+      ? { frames, svg: svgSource }
+      : null;
   return (
     <figure
       ref={rootRef}
@@ -236,6 +271,25 @@ export function DiagramBlock({
           <pre className="diagram-block-source">
             <code>{code}</code>
           </pre>
+        ) : picture && framed ? (
+          <div
+            className="diagram-block-canvas"
+            style={{
+              width: picture.width * scale,
+              height: picture.height * scale,
+            }}
+          >
+            <RenderedFrame
+              connectionId={framed.frames.connectionId}
+              svg={framed.svg}
+              color={lang === "svg" ? color : undefined}
+              name={label}
+              pointMode={framed.frames.pointMode}
+              scripts={framed.frames.scripts}
+              onMessage={framed.frames.onMessage}
+              className="diagram-block-frame"
+            />
+          </div>
         ) : picture ? (
           <button
             type="button"

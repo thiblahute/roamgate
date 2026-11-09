@@ -59,7 +59,9 @@ export function isReviewSnapshot(value: unknown): value is ReviewSnapshot {
     isObject(session.agent) &&
     typeof session.updatedAt === "string" &&
     Array.isArray(value.threads) &&
-    value.threads.every(isThread)
+    value.threads.every(isThread) &&
+    (value.shared === undefined ||
+      (Array.isArray(value.shared) && value.shared.every(isThread)))
   );
 }
 

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   splitStep,
   commandCompletions,
+  latestComment,
   EMPTY_KEY_STATE,
   feedKey,
   findFile,
@@ -310,4 +311,25 @@ test("gu / gU go to the next hunk not reviewed, wrapping", () => {
   done.add("1:0");
   expect(nextUnreviewedHunk(units, reviewed, 0, 1)).toBeNull();
   expect(nextUnreviewedHunk(units, reviewed, 2, 1)).toBe(0);
+});
+
+test("g; is the comment written or rewritten last, in any thread", () => {
+  const comment = (id: string, createdAt: string, updatedAt = createdAt) => ({
+    id,
+    createdAt,
+    updatedAt,
+  });
+  const threads = [
+    { id: "a", comments: [comment("a1", "2026-11-10T10:00:00Z")] },
+    {
+      id: "b",
+      comments: [
+        comment("b1", "2026-11-10T09:00:00Z", "2026-11-10T11:00:00Z"),
+        comment("b2", "2026-11-10T10:30:00Z"),
+      ],
+    },
+  ];
+  expect(latestComment(threads)?.comment.id).toBe("b1");
+  expect(latestComment(threads)?.thread.id).toBe("b");
+  expect(latestComment([])).toBeNull();
 });

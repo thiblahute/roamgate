@@ -1,13 +1,22 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { endsInOpenFence } from "../diagramSource";
 import { useForgeSlots } from "../forgeSlots";
+import { marked } from "marked";
 import {
   looseText,
   type MessageBlock,
   messageBlocks,
+  tableCells,
 } from "../reviewMessageParts";
 import { Diagram, useDiagramSlots } from "./DiagramSlots";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, sanitizeMarkdownHtml } from "./markdown";
 import { highlightSnippetTokens } from "./syntaxHighlighting";
 import "./ReviewNoteBody.css";
 
@@ -407,6 +416,8 @@ export function renderedText(html: string): string {
 export type MessageLayout = {
   blocks: MessageBlock[];
   html: string[];
+  /** A table's cells rendered, header first (tableCells), by block. */
+  cells: (string[] | null)[];
   /** What each part reads, as the reader sees it. */
   quotes: string[];
   /** The same, compared loosely. */
@@ -427,15 +438,33 @@ export function messageLayout(text: string): MessageLayout {
         })
       : "",
   );
+  const cells = blocks.map((block) =>
+    block.kind === "table"
+      ? tableCells(block).map((cell) =>
+          sanitizeMarkdownHtml(
+            String(marked.parseInline(cell, { async: false, gfm: true })),
+            { imageUrlResolver: reviewImageUrl },
+          ),
+        )
+      : null,
+  );
   const quotes: string[] = [];
   blocks.forEach((block, index) => {
     if (block.kind === "markdown")
       quotes.push(renderedText(html[index]!).trim());
+    else if (block.kind === "table")
+      quotes.push(...cells[index]!.map((cell) => renderedText(cell).trim()));
     else if (block.kind === "code") quotes.push(...block.lines);
     else if (block.kind === "suggestion" || block.kind === "diagram")
       quotes.push(block.code);
   });
-  const layout = { blocks, html, quotes, texts: quotes.map(looseText) };
+  const layout = {
+    blocks,
+    html,
+    cells,
+    quotes,
+    texts: quotes.map(looseText),
+  };
   if (messageLayouts.size > 500) messageLayouts.clear();
   messageLayouts.set(text, layout);
   return layout;
@@ -447,10 +476,96 @@ export function messageLayout(text: string): MessageLayout {
  */
 export function quotedPart(layout: MessageLayout, quote: string): number {
   const first = looseText(quote.split("\n")[0] ?? "").slice(0, 160);
-  const index = first
-    ? layout.texts.findIndex((text) => text.includes(first))
-    : -1;
+  // A part that reads exactly that first (a table cell's few words are
+  // in many parts).
+  const exact = first ? layout.texts.indexOf(first) : -1;
+  const index =
+    exact >= 0
+      ? exact
+      : first
+        ? layout.texts.findIndex((text) => text.includes(first))
+        : -1;
   return index >= 0 ? index : Math.max(0, layout.texts.length - 1);
+}
+
+/**
+ * A table in a message, a part per cell (the header's too): the comments
+ * on a row's cells come right under that row.
+ */
+function NoteTable({
+  block,
+  cells,
+  first,
+  parts,
+  quotes,
+  notesAt,
+  partClass,
+}: {
+  block: Extract<MessageBlock, { kind: "table" }>;
+  cells: readonly string[];
+  first: number;
+  parts?: MessageParts;
+  quotes: readonly string[];
+  notesAt: (index: number) => ReactNode[];
+  partClass: (index: number) => string;
+}) {
+  const width = block.header.length;
+  const row = (count: number, offset: number, header: boolean) => {
+    const Cell = header ? "th" : "td";
+    const indexes = Array.from(
+      { length: count },
+      (_, at) => first + offset + at,
+    );
+    const notes = indexes.flatMap(notesAt);
+    return [
+      <tr key={`r${offset}`}>
+        {indexes.map((at, column) => (
+          <Cell
+            key={at}
+            data-part={at}
+            className={partClass(at)}
+            style={
+              block.align[column]
+                ? { textAlign: block.align[column]! }
+                : undefined
+            }
+            onClick={(event) => {
+              if (!parts?.onSelect) return;
+              event.stopPropagation();
+              parts.onSelect(at);
+            }}
+          >
+            <PartButton quote={quotes[at] ?? ""} parts={parts} />
+            <span
+              // sanitizeMarkdownHtml cleans what marked produces.
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised
+              dangerouslySetInnerHTML={{ __html: cells[at - first] ?? "" }}
+            />
+          </Cell>
+        ))}
+      </tr>,
+      ...(notes.length
+        ? [
+            <tr key={`n${offset}`} className="rc-table-notes">
+              <td colSpan={Math.max(1, count)}>{notes}</td>
+            </tr>,
+          ]
+        : []),
+    ];
+  };
+  let offset = width;
+  return (
+    <table className="rc-table">
+      <thead>{row(width, 0, true)}</thead>
+      <tbody>
+        {block.rows.map((cellsOfRow) => {
+          const drawn = row(cellsOfRow.length, offset, false);
+          offset += cellsOfRow.length;
+          return drawn;
+        })}
+      </tbody>
+    </table>
+  );
 }
 
 /**
@@ -520,6 +635,23 @@ export function NoteBody({
       );
       return;
     }
+    if (block.kind === "table") {
+      const first = index;
+      index += tableCells(block).length;
+      out.push(
+        <NoteTable
+          key={`t${position}`}
+          block={block}
+          cells={layout.cells[position] ?? []}
+          first={first}
+          parts={parts}
+          quotes={quotes}
+          notesAt={notesAt}
+          partClass={partClass}
+        />,
+      );
+      return;
+    }
     if (block.kind === "code") {
       out.push(
         <NoteCode
@@ -536,12 +668,14 @@ export function NoteBody({
       return;
     }
     const at = index++;
+    const depth = block.kind === "markdown" ? (block.depth ?? 0) : 0;
     out.push(
       // biome-ignore lint/a11y/useKeyWithClickEvents: j / k select by key
       <div
         key={`p${position}`}
         data-part={at}
-        className={partClass(at)}
+        className={`${partClass(at)}${depth ? " rc-nested-item" : ""}`}
+        style={depth ? ({ "--rc-depth": depth } as CSSProperties) : undefined}
         onClick={(event) => {
           if (!parts?.onSelect) return;
           event.stopPropagation();

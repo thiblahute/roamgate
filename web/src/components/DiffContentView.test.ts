@@ -25,7 +25,10 @@ import {
   isImageDiff,
   highlightedPatch,
   DiffContentView,
+  diffViewThreads,
 } from "./DiffContentView";
+import { feedbackNote } from "../workspaceFeedback";
+import type { ReviewThread } from "../../../shared/review";
 
 const entries: GitDiffEntry[] = [
   { path: "src/one.ts", kind: "unstaged", status: "M" },
@@ -688,4 +691,51 @@ describe("diffSearchGroups", () => {
 
     expect(result).toEqual({ groups: [], count: 0 });
   });
+});
+
+test("a comment written in Changes is listed in its Comments panel, where its file is shown", () => {
+  const thread = (id: string, path: string, kind: string): ReviewThread => ({
+    id,
+    sessionId: "s1",
+    kind: "discussion",
+    anchor: {
+      path,
+      line: 2,
+      side: "new",
+      feedback: JSON.stringify({
+        source: "diff",
+        path,
+        kind,
+        side: "new",
+        line: 2,
+        hunk: "@@ -1 +1 @@",
+        quote: "x",
+      }),
+    },
+    comments: [
+      {
+        id: `${id}c`,
+        author: "you",
+        body: "Why?",
+        createdAt: "2026-11-10T10:00:00Z",
+        updatedAt: "2026-11-10T10:00:00Z",
+      },
+    ],
+    resolved: false,
+    createdAt: "2026-11-10T10:00:00Z",
+    updatedAt: "2026-11-10T10:00:00Z",
+  });
+  const threads = [
+    thread("a", "src/one.ts", "unstaged"),
+    thread("b", "src/elsewhere.ts", "unstaged"),
+    thread("c", "src/one.ts", "staged"),
+  ];
+  // The notes the views read are the threads' own, by their ids.
+  const annotations = threads.map(feedbackNote);
+  expect(annotations.map((note) => note.id)).toEqual(["a", "b", "c"]);
+  expect(
+    diffViewThreads(annotations, threads, entries).map((each) => each.id),
+  ).toEqual(["a"]);
+  // A note the server has not taken yet has no thread to list.
+  expect(diffViewThreads(annotations, threads.slice(1), entries)).toEqual([]);
 });

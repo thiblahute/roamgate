@@ -19,6 +19,7 @@ export function ReviewHost({
   onShowList,
   onFocusAgentPane,
   onOpenFile,
+  goTo,
 }: {
   connectionId: string;
   pinned: ReviewSnapshot[];
@@ -30,7 +31,14 @@ export function ReviewHost({
   onShowList: () => void;
   onFocusAgentPane: (paneId: string) => void;
   /** Opens a file of the workspace's host (absolute path) at a line. */
-  onOpenFile: (workspaceId: string, path: string, line?: number) => void;
+  onOpenFile: (
+    workspaceId: string,
+    path: string,
+    line?: number,
+    rendered?: boolean,
+  ) => void;
+  /** A file and line of a review to show there (Show in code review). */
+  goTo?: { sessionId: string; path: string; line?: number; at: number } | null;
 }) {
   const { sessions } = useReviewState();
   const openRepo = (root: string, worktree?: boolean) =>
@@ -47,45 +55,50 @@ export function ReviewHost({
     rememberWorkspaceReview(snapshot);
     onShow(snapshot.session.id);
   };
-  return pinned.map((snapshot) => {
-    const workspaceId = snapshot.session.workspaceId ?? "";
-    const here = panes.filter((pane) => pane.workspace_id === workspaceId);
-    const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
-    const dirs = here.map(dirOf).filter((dir) => dir.startsWith("/"));
-    // Agents' directories: their session records name the repositories
-    // they work in from there.
-    const agentDirs = here
-      .filter((pane) => pane.agent)
-      .map((pane) => pane.cwd ?? dirOf(pane))
-      .filter((dir) => dir.startsWith("/"));
-    return (
-      <ReviewOverlay
-        key={snapshot.session.id}
-        snapshot={snapshot}
-        hidden={snapshot.session.id !== shownId}
-        connectionId={connectionId}
-        onClose={onClose}
-        repoDirs={[...new Set(dirs)]}
-        agentDirs={[...new Set(agentDirs)]}
-        onOpenRepo={openRepo}
-        onOpenLocal={openLocal}
-        onShowReview={showReview}
-        agentPanes={reviewAgentPanes(
-          panes,
-          workspaceId,
-          snapshot.session.agent.paneId,
-        ).map((pane) => ({
-          paneId: pane.pane_id,
-          agent: pane.agent ?? "agent",
-        }))}
-        onShowList={onShowList}
-        onFocusAgentPane={onFocusAgentPane}
-        onOpenFile={
-          workspaceId
-            ? (path, line) => onOpenFile(workspaceId, path, line)
-            : undefined
-        }
-      />
-    );
-  });
+  // A file or a site is discussed in the Files preview, not in a review.
+  return pinned
+    .filter(({ session }) => session.target.kind !== "rendered")
+    .map((snapshot) => {
+      const workspaceId = snapshot.session.workspaceId ?? "";
+      const here = panes.filter((pane) => pane.workspace_id === workspaceId);
+      const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
+      const dirs = here.map(dirOf).filter((dir) => dir.startsWith("/"));
+      // Agents' directories: their session records name the repositories
+      // they work in from there.
+      const agentDirs = here
+        .filter((pane) => pane.agent)
+        .map((pane) => pane.cwd ?? dirOf(pane))
+        .filter((dir) => dir.startsWith("/"));
+      return (
+        <ReviewOverlay
+          key={snapshot.session.id}
+          snapshot={snapshot}
+          hidden={snapshot.session.id !== shownId}
+          connectionId={connectionId}
+          onClose={onClose}
+          repoDirs={[...new Set(dirs)]}
+          agentDirs={[...new Set(agentDirs)]}
+          onOpenRepo={openRepo}
+          onOpenLocal={openLocal}
+          onShowReview={showReview}
+          agentPanes={reviewAgentPanes(
+            panes,
+            workspaceId,
+            snapshot.session.agent.paneId,
+          ).map((pane) => ({
+            paneId: pane.pane_id,
+            agent: pane.agent ?? "agent",
+          }))}
+          onShowList={onShowList}
+          onFocusAgentPane={onFocusAgentPane}
+          onOpenFile={
+            workspaceId
+              ? (path, line, rendered) =>
+                  onOpenFile(workspaceId, path, line, rendered)
+              : undefined
+          }
+          goTo={goTo?.sessionId === snapshot.session.id ? goTo : undefined}
+        />
+      );
+    });
 }

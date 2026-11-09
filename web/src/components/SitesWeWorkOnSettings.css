@@ -1,0 +1,81 @@
+.sites-settings {
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sites-settings h3 {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.sites-settings p {
+  margin: 0 0 8px;
+}
+
+.sites-settings-hint {
+  color: var(--muted);
+}
+
+.sites-settings-error {
+  color: var(--danger-text);
+}
+
+.sites-settings-list {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.sites-settings-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+
+.sites-settings form {
+  display: grid;
+  gap: 6px;
+}
+
+.sites-settings label {
+  font-weight: 600;
+}
+
+.sites-settings-add {
+  display: flex;
+  gap: 6px;
+}
+
+.sites-settings-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sites-settings-entry {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sites-settings .sites-settings-root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: normal;
+  color: var(--muted);
+}
+
+.sites-settings-root input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}

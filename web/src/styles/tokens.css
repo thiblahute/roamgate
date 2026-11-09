@@ -81,6 +81,9 @@
   --shadow-modal: 0 18px 48px rgba(0, 0, 0, 0.5);
   --shadow-tooltip: 0 10px 28px rgba(0, 0, 0, 0.38);
   --modal-backdrop: rgba(0, 0, 0, 0.56);
+  /* The reading column: a chat's messages, and a rendered Markdown file,
+     centred in it however wide the view. */
+  --reading-column-width: 820px;
 }
 
 /* The black background option: the dark theme on pure black with neutral

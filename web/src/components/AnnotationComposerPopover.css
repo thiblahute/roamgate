@@ -71,3 +71,12 @@
   padding: 0 9px;
   font-size: 11px;
 }
+
+.annotation-composer-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  margin: 6px 0;
+  border-radius: 4px;
+  border: 1px solid var(--shell-border);
+}

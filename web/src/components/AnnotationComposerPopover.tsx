@@ -1,10 +1,7 @@
-import {
-  shortcutMatches,
-  shortcutLabel,
-  useShortcutPreferences,
-} from "../shortcutPreferences";
+import { useShortcutPreferences } from "../shortcutPreferences";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { type ThreadBox, ThreadEditor } from "./ThreadEditor";
 import "./AnnotationComposerPopover.css";
 
 export type AnnotationComposerDraft = {
@@ -12,6 +9,8 @@ export type AnnotationComposerDraft = {
   y: number;
   title: string;
   quote: string;
+  /** A picture of the graphic's region commented on. */
+  preview?: string;
 };
 
 export function AnnotationComposerPopover({
@@ -23,7 +22,7 @@ export function AnnotationComposerPopover({
   suspendOnFileTabNavigation = false,
 }: {
   draft: AnnotationComposerDraft | null;
-  onSave: (comment: string) => void;
+  onSave: (comment: string) => void | Promise<void>;
   onClose: () => void;
   commentValue?: string;
   onCommentChange?: (comment: string) => void;
@@ -34,10 +33,10 @@ export function AnnotationComposerPopover({
   onCloseRef.current = onClose;
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [internalComment, setInternalComment] = useState("");
-  const comment = commentValue ?? internalComment;
   const setComment = onCommentChange ?? setInternalComment;
+  const keptBox = useRef<ThreadBox>({ text: "" });
+  keptBox.current.text = commentValue ?? internalComment;
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const draftX = draft?.x;
   const draftY = draft?.y;
@@ -61,7 +60,7 @@ export function AnnotationComposerPopover({
     const form = formRef.current;
     setInternalComment("");
     setPosition({ x: draftX, y: draftY });
-    const frame = requestAnimationFrame(() => {
+    const place = () => {
       const form = formRef.current;
       if (!form) return;
       const rect = form.getBoundingClientRect();
@@ -76,8 +75,12 @@ export function AnnotationComposerPopover({
           Math.max(margin, window.innerHeight - rect.height - margin),
         ),
       });
-      textareaRef.current?.focus({ preventScroll: true });
-    });
+    };
+    const frame = requestAnimationFrame(place);
+    // The comment box loads after the first measure, and grows as it fills.
+    const resized =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    if (form) resized?.observe(form);
     const closeOnPointerDown = (event: PointerEvent) => {
       const target = event.target instanceof Node ? event.target : null;
       if (target && formRef.current?.contains(target)) return;
@@ -96,6 +99,7 @@ export function AnnotationComposerPopover({
     });
     return () => {
       cancelAnimationFrame(frame);
+      resized?.disconnect();
       if (form?.contains(document.activeElement) && returnFocus?.isConnected)
         returnFocus.focus({ preventScroll: true });
       window.removeEventListener("pointerdown", closeOnPointerDown, {
@@ -117,18 +121,6 @@ export function AnnotationComposerPopover({
     restoreFocus();
     onClose();
   };
-  const save = () => {
-    const value = comment.trim();
-    if (value) {
-      restoreFocus();
-      onSave(value);
-    }
-  };
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    save();
-  };
-
   return createPortal(
     <form
       ref={formRef}
@@ -136,13 +128,13 @@ export function AnnotationComposerPopover({
       style={{ left: position.x, top: position.y }}
       role="dialog"
       aria-label="Add review comment"
-      onSubmit={submit}
+      onSubmit={(event: FormEvent) => event.preventDefault()}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Tab") {
           const controls = Array.from(
             formRef.current?.querySelectorAll<HTMLElement>(
-              "textarea, button:not(:disabled)",
+              "textarea, .cm-content, button:not(:disabled)",
             ) ?? [],
           );
           const next = event.shiftKey
@@ -156,35 +148,40 @@ export function AnnotationComposerPopover({
             next?.focus();
           }
         }
-        if (event.key === "Escape") {
+        // The comment box has its own Esc (Vim's, or closing when empty).
+        if (
+          event.key === "Escape" &&
+          !(event.target as HTMLElement).closest(".cm-editor")
+        ) {
           event.preventDefault();
           close();
-        } else if (shortcutMatches(event.nativeEvent, "annotation.submit")) {
-          event.preventDefault();
-          save();
         }
       }}
     >
       <strong>{draft.title}</strong>
       <blockquote>{draft.quote || "Blank line"}</blockquote>
-      <textarea
-        ref={textareaRef}
-        value={comment}
-        onChange={(event) => setComment(event.currentTarget.value)}
-        aria-label="Review comment"
+      {draft.preview ? (
+        <img
+          className="annotation-composer-preview"
+          src={draft.preview}
+          alt="The region commented on"
+        />
+      ) : null}
+      <ThreadEditor
+        key={`${draft.title}\n${draft.quote}`}
         placeholder="Add a review comment"
-        rows={3}
-        maxLength={10_000}
+        sendLabel="Add comment"
+        kept={keptBox.current}
+        onChange={setComment}
+        onLeave={() => {}}
+        onClose={close}
+        onSave={async (text) => {
+          const value = text.trim();
+          if (!value) return;
+          restoreFocus();
+          await onSave(value);
+        }}
       />
-      <div className="annotation-composer-actions">
-        <button type="button" className="ghost" onClick={close}>
-          Cancel
-        </button>
-        <button type="submit" disabled={!comment.trim()}>
-          Add comment
-        </button>
-      </div>
-      <small>{shortcutLabel("annotation.submit")} to add</small>
     </form>,
     document.body,
   );

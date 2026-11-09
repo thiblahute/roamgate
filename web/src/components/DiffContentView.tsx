@@ -25,8 +25,10 @@ import {
 } from "lucide-react";
 import {
   Component,
+  createContext,
   memo,
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -36,6 +38,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import type { ReviewThread } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import {
   diffReviewLineLabel,
@@ -71,6 +74,17 @@ import {
   visibleDiffEntryKey,
 } from "./diffContentState";
 import { diffSyntaxLanguageForPath } from "./diffSyntaxHighlighting";
+import {
+  FileThread,
+  type FileThreadView,
+  reviewsUndelivered,
+  threadWrites,
+  ThreadsList,
+  type Undelivered,
+  useFileThreadView,
+} from "./FileThreads";
+import { ThreadsChip } from "./ThreadsPanel";
+import { useReviewState } from "../review";
 import "./DiffContentView.css";
 
 type DiffViewMode = "split" | "unified";
@@ -449,6 +463,76 @@ function HighlightedPatch({
   return <FileDiff<DiffReviewAnnotation> {...props} fileDiff={fileDiff} />;
 }
 
+/**
+ * The threads the diff's comments are (a comment written here is a thread
+ * of its review), drawn under their lines as the Files preview draws its.
+ */
+type DiffThreads = {
+  byId: ReadonlyMap<string, ReviewThread>;
+  api: ReturnType<typeof threadWrites>;
+  view: FileThreadView;
+  undelivered: Undelivered;
+};
+
+const DiffThreadsContext = createContext<DiffThreads | null>(null);
+
+/**
+ * The threads of the comments on the files a diff view shows, in their
+ * order: what its Comments panel lists.
+ */
+export function diffViewThreads(
+  annotations: readonly ReviewAnnotation[],
+  threads: readonly ReviewThread[],
+  entries: readonly GitDiffEntry[],
+): ReviewThread[] {
+  const byId = new Map(threads.map((each) => [each.id, each]));
+  const shown = new Set(entries.map((each) => `${each.kind}:${each.path}`));
+  return annotations.flatMap((note) => {
+    const thread =
+      note.source === "diff" && shown.has(`${note.kind}:${note.path}`)
+        ? byId.get(note.id)
+        : undefined;
+    return thread ? [thread] : [];
+  });
+}
+
+/** A comment under its line: its thread, or a note not saved yet. */
+function DiffAnnotation({
+  annotation,
+  onEdit,
+}: {
+  annotation: DiffReviewAnnotation;
+  onEdit?: (id: string) => void;
+}) {
+  const threads = useContext(DiffThreadsContext);
+  const thread = threads?.byId.get(annotation.id);
+  if (threads && thread)
+    return (
+      <div className="chat-review diff-review-thread">
+        <FileThread
+          thread={thread}
+          api={threads.api}
+          view={threads.view}
+          undelivered={threads.undelivered}
+        />
+      </div>
+    );
+  return (
+    <button
+      type="button"
+      className={`diff-review-annotation ${annotation.stale ? "is-stale" : ""}`}
+      title="Open review comment"
+      onClick={(event) => {
+        event.stopPropagation();
+        onEdit?.(annotation.id);
+      }}
+    >
+      <MessageSquareText size={13} />
+      <span>{annotation.comment || "Review comment"}</span>
+    </button>
+  );
+}
+
 function RawPatch({ patch }: { patch: string }) {
   return <pre className="diff-raw-patch">{patch}</pre>;
 }
@@ -743,18 +827,10 @@ const DiffFileSection = memo(function DiffFileSection({
                     onRequestAnnotation ? selectedLines : undefined
                   }
                   renderAnnotation={({ metadata }) => (
-                    <button
-                      type="button"
-                      className={`diff-review-annotation ${metadata.stale ? "is-stale" : ""}`}
-                      title="Open review comment"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEditAnnotation?.(metadata.id);
-                      }}
-                    >
-                      <MessageSquareText size={13} />
-                      <span>{metadata.comment || "Review comment"}</span>
-                    </button>
+                    <DiffAnnotation
+                      annotation={metadata}
+                      onEdit={onEditAnnotation}
+                    />
                   )}
                 />
               </DiffRenderBoundary>
@@ -814,6 +890,7 @@ export function DiffContentView({
   resourceKey = "default",
   connectionClient,
   annotations = [],
+  threads,
   onSelectFile,
   onNearbyFilesChange,
   onVisibleFileChange,
@@ -841,6 +918,8 @@ export function DiffContentView({
   resourceKey?: string;
   connectionClient: ConnectionClient;
   annotations?: readonly ReviewAnnotation[];
+  /** The threads the comments written here are, by the annotations' ids. */
+  threads?: readonly ReviewThread[];
   onSelectFile?: (entry: GitDiffEntry) => void;
   onNearbyFilesChange?: (entries: GitDiffEntry[]) => void;
   onVisibleFileChange?: (entry: GitDiffEntry | null) => void;
@@ -996,6 +1075,42 @@ export function DiffContentView({
     }
     return grouped;
   }, [annotations]);
+  // The comments' threads, in the file's views: drawn under their lines,
+  // listed in the Comments panel, as in the Files preview.
+  const threadView = useFileThreadView(() => sectionRef.current);
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const { sessions: reviewSessions } = useReviewState();
+  const shownThreads = useMemo(
+    () => diffViewThreads(annotations, threads ?? [], visibleEntries),
+    [annotations, threads, visibleEntries],
+  );
+  const diffThreads = useMemo<DiffThreads | null>(() => {
+    if (!threads?.length) return null;
+    return {
+      byId: new Map(threads.map((each) => [each.id, each])),
+      api: threadWrites(connectionClient.connectionId),
+      view: threadView,
+      undelivered: reviewsUndelivered(
+        [...new Set(threads.map((each) => each.sessionId))].map((id) =>
+          reviewSessions.get(id),
+        ),
+      ),
+    };
+  }, [connectionClient.connectionId, reviewSessions, threadView, threads]);
+  /** A thread of the Comments panel, shown under its line. */
+  const goToThread = useCallback(
+    (thread: ReviewThread) => {
+      if (threadView.folded(thread)) threadView.toggleFold(thread);
+      requestAnimationFrame(() =>
+        sectionRef.current
+          ?.querySelector(
+            `.chat-thread[data-thread-id="${CSS.escape(thread.id)}"]`,
+          )
+          ?.scrollIntoView({ block: "center" }),
+      );
+    },
+    [threadView],
+  );
   const changedFileCount = entries.length || visibleEntries.length;
   const renderedSections = useMemo<DiffSection[]>(
     () =>
@@ -1837,6 +1952,22 @@ export function DiffContentView({
             </div>
           ) : null}
         </div>
+        {shownThreads.length ? (
+          <ThreadsChip
+            className="diff-threads-chip"
+            threads={shownThreads}
+            undelivered={
+              diffThreads?.undelivered
+                ? {
+                    count: diffThreads.undelivered.ids.size,
+                    reason: diffThreads.undelivered.reason,
+                  }
+                : undefined
+            }
+            open={threadsOpen}
+            onToggle={() => setThreadsOpen((open) => !open)}
+          />
+        ) : null}
         {!mobile ? (
           <div className="diff-display-controls">
             <div className="diff-view-toggle" aria-label="Diff view mode">
@@ -1881,16 +2012,27 @@ export function DiffContentView({
       {!summaryLoading && !error && !visibleEntries.length ? (
         <div className="diff-content-state">No changed files.</div>
       ) : null}
-      {diffList ? (
-        <WorkerPoolContextProvider
-          poolOptions={DIFF_WORKER_POOL_OPTIONS}
-          highlighterOptions={DIFF_HIGHLIGHTER_OPTIONS}
-        >
-          {diffList}
-        </WorkerPoolContextProvider>
-      ) : (
-        diffList
-      )}
+      <DiffThreadsContext.Provider value={diffThreads}>
+        {diffList ? (
+          <WorkerPoolContextProvider
+            poolOptions={DIFF_WORKER_POOL_OPTIONS}
+            highlighterOptions={DIFF_HIGHLIGHTER_OPTIONS}
+          >
+            {diffList}
+          </WorkerPoolContextProvider>
+        ) : (
+          diffList
+        )}
+      </DiffThreadsContext.Provider>
+      {threadsOpen && shownThreads.length && diffThreads ? (
+        <ThreadsList
+          className="diff-threads"
+          threads={shownThreads}
+          api={diffThreads.api}
+          onGo={goToThread}
+          onClose={() => setThreadsOpen(false)}
+        />
+      ) : null}
       <AnnotationComposerPopover
         draft={annotationComposerDraft}
         onSave={saveAnnotation}

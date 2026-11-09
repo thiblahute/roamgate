@@ -5,6 +5,7 @@ import { connectionStorageKey } from "../connectionStorage";
 import { gitDiffCode, type GitDiffCode } from "../gitDiffStatus";
 import { retireGitDiffSummaryResource } from "../gitDiffSummaryStore";
 import { connectionClientScopeKey } from "../useConnectionClient";
+import { relativePathWithinCheckout } from "../workspaceResource";
 import type {
   FileExplorerEntry,
   FileExplorerList,
@@ -325,6 +326,18 @@ export function directoryPaths(path: string) {
 
 export function isWorkspaceRelativePath(path: string) {
   return Boolean(path) && !/^(?:\/|[a-z]:[\\/])/i.test(path);
+}
+
+/**
+ * A file's path as the tree under `root` names it: relative when the file
+ * is under that root, as given otherwise (a path outside it, or a site).
+ */
+export function treeRelativePath(
+  path: string | undefined,
+  root: string | undefined,
+) {
+  if (!path || !root || isWorkspaceRelativePath(path)) return path;
+  return relativePathWithinCheckout(root, path) || path;
 }
 
 function normalizeDisplayPath(path: string) {

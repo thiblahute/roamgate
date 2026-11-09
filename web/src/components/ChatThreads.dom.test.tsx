@@ -451,6 +451,147 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     localStorage.clear();
   });
 
+  test("the chat's thread keys: j / k, n / N, za, r, R, dd, T, Esc (useThreadKeys)", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    localStorage.clear();
+    writes.length = 0;
+    const kept = chatReview.threads;
+    const thread = (id: string, quote: string, resolved: boolean) => ({
+      ...kept[0]!,
+      id,
+      anchor: { chat: { entry: "e1", quote } },
+      comments: [{ ...kept[0]!.comments[0]!, id: `${id}c`, body: `On ${id}` }],
+      resolved,
+    });
+    chatReview.threads = [
+      thread("t1", "First part", false),
+      thread("t2", "Second part", false),
+      thread("t3", "Third part", true),
+    ];
+    const entry = {
+      id: "e1",
+      kind: "message",
+      role: "assistant",
+      text: "First part. Second part. Third part.",
+    };
+    function Message() {
+      const parts = useChatParts(entry as never);
+      return (
+        <div className="agent-history-chat" data-entry-id={entry.id}>
+          {parts?.notes.map((note) => (
+            <div key={note.key}>{note.node}</div>
+          ))}
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    const box = document.createElement("textarea");
+    const composer = document.createElement("div");
+    composer.className = "agent-history-composer";
+    composer.append(box);
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[entry] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <Message />
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    host.append(composer);
+    await act(settle);
+    const list = host.querySelector<HTMLElement>(".agent-history-chat")!;
+    const keys = (...names: string[]) =>
+      act(async () => {
+        for (const name of names)
+          list.dispatchEvent(
+            new KeyboardEvent("keydown", { key: name, bubbles: true }),
+          );
+        await settle();
+      });
+    const on = () =>
+      host
+        .querySelector(
+          ".chat-thread-message.is-focused, .chat-thread.is-focused",
+        )
+        ?.closest("[data-thread-id]")
+        ?.getAttribute("data-thread-id");
+    const folded = (id: string) =>
+      host
+        .querySelector(`[data-thread-id="${id}"]`)
+        ?.classList.contains("is-folded");
+
+    // The resolved one starts folded, on one line.
+    expect(folded("t3")).toBe(true);
+    expect(folded("t1")).toBe(false);
+    await keys("j");
+    expect(on()).toBe("t1");
+    await keys("j");
+    expect(on()).toBe("t2");
+    await keys("k");
+    expect(on()).toBe("t1");
+    await keys("n");
+    expect(on()).toBe("t2");
+    await keys("N");
+    expect(on()).toBe("t1");
+    // za folds the thread, the cursor on its line; again unfolds it.
+    await keys("z", "a");
+    expect(folded("t1")).toBe(true);
+    expect(on()).toBe("t1");
+    await keys("z", "a");
+    expect(folded("t1")).toBe(false);
+    // R on its message answers that message: a thread on the whole of it,
+    // under the message.
+    await keys("R");
+    expect(
+      host.querySelector(
+        '[data-thread-id="t1"] [data-message-id="t1c"] > .chat-message-notes > .chat-thread.is-draft .chat-thread-editor',
+      ),
+    ).not.toBeNull();
+    list.focus();
+    // dd deletes a lone comment of yours.
+    await keys("d", "d");
+    expect(writes[writes.length - 1]).toMatchObject({
+      method: "review.delete",
+      params: { comment_id: "t1" },
+    });
+    answerWrite?.();
+    await act(settle);
+    // r resolves it.
+    await keys("r");
+    expect(writes[writes.length - 1]).toMatchObject({
+      method: "review.resolve",
+      params: { comment_id: "t1", resolved: true },
+    });
+    answerWrite?.();
+    await act(settle);
+    // T lists them.
+    await keys("T");
+    expect(host.querySelector(".chat-threads-panel")).not.toBeNull();
+    list.focus();
+    // Esc goes back to the message box.
+    await keys("Escape");
+    expect(on()).toBeUndefined();
+    expect(document.activeElement).toBe(box);
+    await act(async () => root.unmount());
+    host.remove();
+    chatReview.threads = kept;
+    localStorage.clear();
+  });
+
   test("Reply on a thread's message opens a thread on the whole message, drawn under it; R on the message too", async () => {
     const { act } = await import("react");
     const { createRoot } = await import("react-dom/client");
@@ -924,6 +1065,309 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     await act(async () => root.unmount());
     chatReview.threads = kept;
     writes.length = 0;
+    localStorage.clear();
+  });
+
+  test("a chat's list items and table cells are stops of their own, as the Files preview's", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { EditorView } = await import("@codemirror/view");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    const { NoteBody } = await import("./ReviewNoteBody");
+    localStorage.clear();
+    writes.length = 0;
+    const kept = chatReview.threads;
+    const thread = (id: string, quote: string) => ({
+      ...kept[0]!,
+      id,
+      anchor: { chat: { entry: "e1", quote } },
+      comments: [{ ...kept[0]!.comments[0]!, id: `${id}c`, body: `On ${id}` }],
+      resolved: false,
+    });
+    chatReview.threads = [thread("c1", "one a"), thread("c2", "1")];
+    const entry = {
+      id: "e1",
+      kind: "message",
+      role: "assistant",
+      text: [
+        "Intro.",
+        "",
+        "- one",
+        "  - one a",
+        "  - one b",
+        "- two",
+        "",
+        "| Name | Size |",
+        "| --- | --- |",
+        "| a | 1 |",
+        "| b | 2 |",
+        "",
+        "End.",
+      ].join("\n"),
+    };
+    // As AgentHistoryChat draws Claude's messages.
+    function Message() {
+      const parts = useChatParts(entry as never);
+      return (
+        <div className="agent-history-chat" data-entry-id={entry.id}>
+          <div className="agent-history-chat-markdown chat-review">
+            <NoteBody text={entry.text} parts={parts} />
+          </div>
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[entry] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <Message />
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    await act(settle);
+    const list = host.querySelector<HTMLElement>(".agent-history-chat")!;
+    // One at a time: each key reads where the one before left the cursor.
+    const keys = async (...names: string[]) => {
+      for (const name of names)
+        await act(async () => {
+          list.dispatchEvent(
+            new KeyboardEvent("keydown", { key: name, bubbles: true }),
+          );
+          await settle();
+        });
+    };
+    // The message's parts, not those of the threads' messages.
+    const parts = () =>
+      [...host.querySelectorAll<HTMLElement>(".rc-part")].filter(
+        (each) => !each.closest(".chat-thread"),
+      );
+    const part = (words: string) =>
+      parts().find((each) => each.textContent?.trim() === words)!;
+    const on = () =>
+      host
+        .querySelector(".chat-thread-message.is-focused")
+        ?.closest("[data-thread-id]")
+        ?.getAttribute("data-thread-id") ??
+      parts()
+        .find((each) => each.classList.contains("is-focused"))
+        ?.textContent?.trim();
+
+    // Each item (a nested one as deep as it was) and each cell, header
+    // included, is a part.
+    expect(parts().map((each) => each.textContent?.trim())).toEqual([
+      "Intro.",
+      "one",
+      "one a",
+      "one b",
+      "two",
+      "Name",
+      "Size",
+      "a",
+      "1",
+      "b",
+      "2",
+      "End.",
+    ]);
+    expect(part("one a").classList.contains("rc-nested-item")).toBe(true);
+    expect(part("Name").tagName).toBe("TH");
+    // A thread on an item is under it; on a cell, under the cell's row.
+    expect(
+      host.querySelector('[data-thread-id="c1"]')?.closest(".rc-part-notes")
+        ?.previousElementSibling,
+    ).toBe(part("one a"));
+    expect(
+      host
+        .querySelector('[data-thread-id="c2"]')
+        ?.closest("tr.rc-table-notes")
+        ?.previousElementSibling?.contains(part("1")),
+    ).toBe(true);
+    expect(part("1").classList.contains("has-notes")).toBe(true);
+    expect(part("a").classList.contains("has-notes")).toBe(false);
+
+    // j / k item by item, then the table as a grid: h / l along a row,
+    // j / k down and up a column, through the threads on a row.
+    for (const expected of ["Intro.", "one", "one a", "c1", "one b", "two"]) {
+      await keys("j");
+      expect(on()).toBe(expected);
+    }
+    await keys("j");
+    expect(on()).toBe("Name");
+    await keys("l");
+    expect(on()).toBe("Size");
+    await keys("j");
+    expect(on()).toBe("1");
+    await keys("j");
+    expect(on()).toBe("c2");
+    await keys("j");
+    expect(on()).toBe("2");
+    await keys("h");
+    expect(on()).toBe("b");
+    await keys("k");
+    expect(on()).toBe("c2");
+    await keys("k");
+    expect(on()).toBe("a");
+    await keys("k", "k");
+    expect(on()).toBe("two");
+    await keys("G");
+    expect(on()).toBe("End.");
+    await keys("k");
+    expect(on()).toBe("b");
+    // h / l outside a table move nothing.
+    await keys("j", "l", "h");
+    expect(on()).toBe("End.");
+
+    // c on a cell: a comment quoting that cell alone, drawn under its row.
+    await keys("k", "l", "c");
+    expect(on()).toBe("2");
+    for (let i = 0; i < 50 && !host.querySelector(".cm-content"); i++)
+      await act(settle);
+    const draft = host.querySelector(".chat-thread.is-draft");
+    expect(
+      draft
+        ?.closest("tr.rc-table-notes")
+        ?.previousElementSibling?.contains(part("2")),
+    ).toBe(true);
+    const view = EditorView.findFromDOM(
+      host.querySelector<HTMLElement>(".cm-content")!,
+    );
+    await act(async () =>
+      view!.dispatch({ changes: { from: 0, insert: "Why 2?" } }),
+    );
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Send")!
+        .click(),
+    );
+    await act(settle);
+    expect(writes[writes.length - 1]?.method).toBe("review.thread.add");
+    expect(writes[writes.length - 1]?.params.anchor).toMatchObject({
+      chat: { entry: "e1", quote: "2" },
+    });
+    await act(async () => answerWrite?.());
+    await act(async () => root.unmount());
+    host.remove();
+    chatReview.threads = kept;
+    writes.length = 0;
+    localStorage.clear();
+  });
+
+  test("the chat's keys: a count counts, g or z before another key drops only the prefix; J and K go message by message", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    const { NoteBody } = await import("./ReviewNoteBody");
+    localStorage.clear();
+    writes.length = 0;
+    const kept = chatReview.threads;
+    chatReview.threads = [];
+    const entries = [
+      { id: "e1", text: "Alpha one.\n\nAlpha two.\n\nAlpha three." },
+      { id: "e2", text: "Beta one.\n\nBeta two." },
+      { id: "e3", text: "Gamma one." },
+    ].map((entry) => ({ ...entry, kind: "message", role: "assistant" }));
+    function Message({ entry }: { entry: (typeof entries)[number] }) {
+      const parts = useChatParts(entry as never);
+      return (
+        <div data-entry-id={entry.id}>
+          <div className="agent-history-chat-markdown chat-review">
+            <NoteBody text={entry.text} parts={parts} />
+          </div>
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={entries as never}
+        >
+          <div className="agent-history-chat-frame">
+            <div className="agent-history-chat">
+              {entries.map((entry) => (
+                <Message key={entry.id} entry={entry} />
+              ))}
+            </div>
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    await act(settle);
+    const list = host.querySelector<HTMLElement>(".agent-history-chat")!;
+    const keys = async (...names: string[]) => {
+      for (const name of names)
+        await act(async () => {
+          list.dispatchEvent(
+            new KeyboardEvent("keydown", { key: name, bubbles: true }),
+          );
+          await settle();
+        });
+    };
+    const on = () =>
+      [...host.querySelectorAll<HTMLElement>(".rc-part")]
+        .find((each) => each.classList.contains("is-focused"))
+        ?.textContent?.trim();
+
+    await keys("j");
+    expect(on()).toBe("Alpha one.");
+    // A count, as in the review: 2j moves two parts.
+    await keys("2", "j");
+    expect(on()).toBe("Alpha three.");
+    await keys("2", "k");
+    expect(on()).toBe("Alpha one.");
+    // g, z or d then a key that makes no sequence: the prefix is dropped,
+    // the second key read again on its own.
+    await keys("g", "j");
+    expect(on()).toBe("Alpha two.");
+    await keys("z", "j");
+    expect(on()).toBe("Alpha three.");
+    await keys("d", "k");
+    expect(on()).toBe("Alpha two.");
+    // The prefix is gone: j moves on its own.
+    await keys("j");
+    expect(on()).toBe("Alpha three.");
+    // J: the first part of the next message; a count counts there too.
+    await keys("2", "J");
+    expect(on()).toBe("Gamma one.");
+    // At the last message J stays.
+    await keys("J");
+    expect(on()).toBe("Gamma one.");
+    // K: the first part of the message before.
+    await keys("K");
+    expect(on()).toBe("Beta one.");
+    // Inside a message, K goes to its own first part first.
+    await keys("j");
+    expect(on()).toBe("Beta two.");
+    await keys("K");
+    expect(on()).toBe("Beta one.");
+    await keys("K");
+    expect(on()).toBe("Alpha one.");
+    await keys("K");
+    expect(on()).toBe("Alpha one.");
+    await act(async () => root.unmount());
+    host.remove();
+    chatReview.threads = kept;
     localStorage.clear();
   });
 }

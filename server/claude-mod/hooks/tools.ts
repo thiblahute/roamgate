@@ -162,13 +162,17 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     name: "review_add",
     command: "add",
     description:
-      'Start a thread in a Roamgate review. kind "discussion" (default): your note or question to the user, private. kind "draft": a review comment for the merge request, written in the user\'s voice, only where something needs to change; it stays in Roamgate as their pending comment until they send it. Anchor it with file and line (end_line for a range, side "old" for removed lines); without file it is on the whole review.',
+      'Start a thread in a Roamgate review. kind "discussion" (default): your note or question to the user, private. kind "draft": a review comment for the merge request, written in the user\'s voice, only where something needs to change; it stays in Roamgate as their pending comment until they send it. Anchor it with file and line (end_line for a range, side "old" for removed lines); without file it is on the whole review. In a review of a rendered file, file and line are its source lines, and quote the words you mean as they read rendered.',
     inputSchema: schema(
       {
         text: TEXT,
         kind: { type: "string", enum: ["discussion", "draft"] },
         file: { type: "string", description: "The file's path in the diff." },
         line: { type: "integer", minimum: 1 },
+        quote: {
+          type: "string",
+          description: "A rendered file's words the thread is about.",
+        },
         end_line: { type: "integer", minimum: 1 },
         side: {
           type: "string",
@@ -195,6 +199,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
           line: optionalLine(input, "line"),
           end_line: optionalLine(input, "end_line"),
           side,
+          quote: optionalString(input, "quote"),
         }),
       };
     },
@@ -326,7 +331,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     command: "open",
     deferred: true,
     description:
-      "Open a Roamgate review for the user: by default the branch here against its default branch. Give one of range (BASE..HEAD, branch names, never SHAs), worktree (uncommitted changes), mr (a merge request URL, to draft the user's answers and review comments there: they stay in Roamgate), or compare_old and compare_new (only what changed between two versions of a branch, tree to tree).",
+      "Open a Roamgate review for the user: by default the branch here against its default branch. Give one of range (BASE..HEAD, branch names, never SHAs), worktree (uncommitted changes), mr (a merge request URL, to draft the user's answers and review comments there: they stay in Roamgate), compare_old and compare_new (only what changed between two versions of a branch, tree to tree), file (a file to discuss as Roamgate renders it: Markdown, HTML, SVG, an image; the user comments on what they see, you get its source lines) or url (a site's page, such as a dev server's, browsed and commented in Roamgate; its scripts run only when the user listed the site). Then add your own threads with review_add (file and line: its source lines).",
     inputSchema: schema({
       path: {
         type: "string",
@@ -338,6 +343,12 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       mr: { type: "string" },
       compare_old: { type: "string" },
       compare_new: { type: "string" },
+      file: {
+        type: "string",
+        description:
+          "A file to discuss, rendered: absolute, or relative to this session's directory.",
+      },
+      url: { type: "string", description: "An http(s) page to discuss." },
       repos: {
         type: "array",
         items: { type: "string" },
@@ -366,21 +377,29 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       )
         throw new ToolInputError("repos are absolute paths");
       const worktree = optionalFlag(input, "worktree");
+      const file = optionalString(input, "file");
+      const url = optionalString(input, "url");
+      if (url !== undefined && !/^https?:\/\//i.test(url))
+        throw new ToolInputError("url is an http(s) URL");
       const targets = [
         optionalString(input, "range"),
         worktree || undefined,
         optionalString(input, "mr"),
         old,
+        file,
+        url,
       ].filter((each) => each !== undefined);
       if (targets.length > 1)
         throw new ToolInputError(
-          "give one of range, worktree, mr or compare_old/compare_new",
+          "give one of range, worktree, mr, compare_old/compare_new, file or url",
         );
       return fields({
         range: optionalString(input, "range"),
         worktree: worktree ? "1" : undefined,
         mr: optionalString(input, "mr"),
         compare: old !== undefined ? `${old}..${fresh}` : undefined,
+        file,
+        url,
         repo: (repos as string[] | undefined)?.join("\n") || undefined,
         title: optionalString(input, "title"),
         message: optionalString(input, "message"),

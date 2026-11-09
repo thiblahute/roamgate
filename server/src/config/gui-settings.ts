@@ -1,4 +1,8 @@
 import {
+  normalizeSiteList,
+  normalizeSiteRoots,
+} from "../../../shared/renderedPage";
+import {
   parseWorkspaceTree,
   type WorkspaceTree,
 } from "../../../shared/workspaceTree";
@@ -272,6 +276,18 @@ export type GuiSettings = {
    * the workspaces agents create under the workspace that asked.
    */
   workspace_tree?: WorkspaceTree;
+  /**
+   * The sites (URL prefixes) and directories the user works on: a rendered
+   * review's pages from there run their scripts, in a sandbox without
+   * access to Roamgate (shared/renderedPage.ts). Absent: none.
+   */
+  rendered_sites?: string[];
+  /**
+   * Where a listed site's root-absolute links start, when not at the
+   * listed entry itself: a directory or site containing it, keyed by the
+   * entry. Absent: found from the pages (shared/renderedPage.ts).
+   */
+  rendered_site_roots?: Record<string, string>;
 };
 
 /** Namespaces are addressed by RPC, so keep them to unmistakable identifiers. */
@@ -501,6 +517,22 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
           )
         : {},
     ...workspaceTreeField(obj.workspace_tree),
+    ...(normalizeSiteList(obj.rendered_sites).length
+      ? { rendered_sites: normalizeSiteList(obj.rendered_sites) }
+      : {}),
+    ...(Object.keys(
+      normalizeSiteRoots(
+        obj.rendered_site_roots,
+        normalizeSiteList(obj.rendered_sites),
+      ),
+    ).length
+      ? {
+          rendered_site_roots: normalizeSiteRoots(
+            obj.rendered_site_roots,
+            normalizeSiteList(obj.rendered_sites),
+          ),
+        }
+      : {}),
   };
 }
 

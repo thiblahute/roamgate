@@ -3,8 +3,6 @@ import { vimKeys } from "../vimKeys";
 import {
   audioMimeForPath,
   AUDIO_INLINE_PREVIEW_MAX_BYTES,
-  HTML_PREVIEW_MAX_BYTES,
-  isHtmlPath,
 } from "../../../shared/filePreview";
 import {
   Suspense,
@@ -37,14 +35,71 @@ import type {
   ReviewAnnotation,
 } from "../annotations";
 import type { FileExplorerEntry, FilePreview } from "../types";
+import type {
+  ReviewRegion,
+  ReviewRenderPart,
+  ReviewThread,
+} from "../../../shared/review";
+import {
+  parseSiteUrl,
+  type RenderedFrameMessage,
+} from "../../../shared/renderedPage";
+import type { FeedbackCapture } from "../workspaceFeedback";
+import {
+  cropGraphic,
+  elementLabel,
+  type HeldGraphic,
+  holdGraphic,
+} from "../renderedCapture";
+import { isAnimatedSvg, markdownSource, pointQuote } from "../renderedSource";
+import { DiagramFrameContext } from "./DiagramBlock";
+import {
+  fileStopAnchor,
+  fileThreadKeys,
+  fileThreadOrder,
+  fileThreadPlace,
+  focusFileThread,
+  reviewsUndelivered,
+  fileStopForLine,
+  fileStopKey,
+  SlotThreads,
+  ThreadsList,
+  useFileThreads,
+  useFileThreadView,
+  useMarkedBlocks,
+  useQuoteHighlights,
+} from "./FileThreads";
+import { useThreadKeys } from "./useThreadKeys";
+import {
+  stepNotice,
+  stepUnresolved,
+  unresolvedPosition,
+} from "../unresolvedThreads";
+import { RenderedFrame } from "./RenderedFrame";
+import { useGraphicPointing } from "./useGraphicPointing";
+import { useRenderedScripts } from "../useRenderedScripts";
+import { ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
+import {
+  useZenEscape,
+  useZenMode,
+  ZenButton,
+  zenKeyTarget,
+} from "../useZenMode";
 import { copyTextFromUserGesture } from "../terminalClipboard";
+import { useChangedOnDisk } from "../useChangedOnDisk";
 import { useConnectionClient } from "../useConnectionClient";
 import {
+  framesHtmlPreview,
   resolveWorkspaceMarkdownImageUrl,
   workspaceMarkdownDocumentPath,
   workspaceFileUrl,
 } from "../workspaceFileUrl";
-import { MarkdownPreview, type MarkdownSelectionTarget } from "./markdown";
+import {
+  MarkdownPreview,
+  markdownHeadingPath,
+  type MarkdownSelectionTarget,
+  type SlotWhere,
+} from "./markdown";
 import {
   AnnotationComposerPopover,
   type AnnotationComposerDraft,
@@ -61,7 +116,6 @@ import {
 } from "./previewSelection";
 import { highlightCodeTokens } from "./syntaxHighlighting";
 import { store, useStoreSelector } from "../store";
-import { relativePathWithinCheckout } from "../workspaceResource";
 import {
   directoryPreviewName,
   directoryPreviewPath,
@@ -77,6 +131,8 @@ export type ActiveFilePreviewSelection = {
   error: string | null;
   fragment?: string;
   line?: number;
+  /** The line shown as rendered (Show rendered), not in the source. */
+  rendered?: boolean;
   snippet?: string;
 };
 
@@ -106,6 +162,12 @@ type PendingFileAnnotation =
       path: string;
       quote: string;
       section: string[];
+      line?: number;
+      endLine?: number;
+      render?: ReviewRenderPart;
+      /** A picture of a graphic's region, while the comment is written. */
+      snapshot?: Blob;
+      preview?: string;
     };
 
 type CodeMirrorPreviewDeps = Awaited<
@@ -151,12 +213,15 @@ async function importCodeMirrorPreviewDeps() {
 
 /** `:files` in a preview's Vim keys: each preview registers its handler. */
 const previewFilesCommands = new WeakMap<object, () => void>();
+/** `:only` in a preview's Vim keys: its Review only mode, as in the review. */
+const previewOnlyCommands = new WeakMap<object, () => void>();
 let previewExCommandsDefined = false;
 
 function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
   if (previewExCommandsDefined) return;
   previewExCommandsDefined = true;
   deps.Vim.defineEx("files", "files", (cm) => previewFilesCommands.get(cm)?.());
+  deps.Vim.defineEx("only", "only", (cm) => previewOnlyCommands.get(cm)?.());
 }
 
 function loadCodeMirrorPreviewDeps() {
@@ -198,6 +263,20 @@ function framesShowPdf() {
   );
 }
 
+function frameSnapshotBlob(url: string): Blob | null {
+  const data = /^data:image\/png;base64,(.+)$/.exec(url)?.[1];
+  if (!data) return null;
+  try {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let at = 0; at < binary.length; at += 1)
+      bytes[at] = binary.charCodeAt(at);
+    return new Blob([bytes], { type: "image/png" });
+  } catch {
+    return null;
+  }
+}
+
 function isPdfPath(path: string) {
   return path.toLowerCase().endsWith(".pdf");
 }
@@ -225,8 +304,8 @@ function useDocumentTheme() {
 
 export function FilePreviewContent({
   entry,
-  preview,
-  loading,
+  preview: previewProp,
+  loading: loadingProp,
   error,
   fragment,
   line,
@@ -242,7 +321,9 @@ export function FilePreviewContent({
   treeHidden = false,
   onClosePreview,
   onCreateAnnotation,
+  onShowInReview,
   onReanchorAnnotations,
+  rendered: renderedAtLine = false,
 }: {
   entry: FileExplorerEntry | null;
   preview: FilePreview | null;
@@ -262,13 +343,78 @@ export function FilePreviewContent({
   onToggleTree?: () => void;
   treeHidden?: boolean;
   onClosePreview?: () => void;
-  onCreateAnnotation?: (annotation: NewReviewAnnotation) => void;
+  onCreateAnnotation?: (
+    annotation: NewReviewAnnotation,
+    capture?: FeedbackCapture & { root?: string },
+  ) => void;
   onReanchorAnnotations?: (path: string, text: string) => void;
+  /**
+   * Show in code review: the file (absolute path) in the code review of
+   * its checkout, at a line.
+   */
+  onShowInReview?: (path: string, line?: number) => void;
+  /** `line` shown as rendered (Show rendered), not in the source. */
+  rendered?: boolean;
 }) {
   const connectionClient = useConnectionClient();
   const workspaces = useStoreSelector((state) => state.workspaces);
   const previewSectionRef = useRef<HTMLElement | null>(null);
+  /*
+   * A reload keeps the file shown until it is read again: the reader's
+   * place (scroll, cursor, open threads) stays, the text changes under it.
+   */
+  const [held, setHeld] = useState<{
+    path: string;
+    preview: FilePreview;
+  } | null>(null);
+  const holding =
+    !!held &&
+    loadingProp &&
+    !previewProp &&
+    !error &&
+    entry?.path === held.path;
+  useEffect(() => {
+    if (held && !holding) setHeld(null);
+  }, [held, holding]);
+  const preview = holding ? held.preview : previewProp;
+  const loading = holding ? false : loadingProp;
+  /** The refresh button, R and the notice: the file read again, in place. */
+  const reload = () => {
+    if (!onRefresh) return;
+    if (entry && previewProp && !loadingProp)
+      setHeld({ path: entry.path, preview: previewProp });
+    onRefresh();
+  };
+  const changedOnDisk = useChangedOnDisk({
+    client: connectionClient,
+    workspaceId: previewProp?.workspace_id,
+    path: entry && !/^https?:\/\//i.test(entry.path) ? entry.path : undefined,
+    shown:
+      onRefresh &&
+      previewProp &&
+      !loadingProp &&
+      previewProp.type !== "directory"
+        ? previewProp
+        : null,
+    // Not while its view or the inspector is hidden.
+    seen: () => {
+      const section = previewSectionRef.current;
+      return (
+        !!section?.isConnected &&
+        (typeof section.checkVisibility !== "function" ||
+          section.checkVisibility())
+      );
+    },
+  });
   const previewContentRef = useRef<HTMLDivElement | null>(null);
+  /** The preview's content, once drawn: it has the threads' keys. */
+  const [contentElement, setContentElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const contentRef = useCallback((element: HTMLDivElement | null) => {
+    previewContentRef.current = element;
+    setContentElement(element);
+  }, []);
   const editorViewRef = useRef<CodeMirrorEditorView | null>(null);
   const onOpenChangesRef = useRef(onOpenChanges);
   onOpenChangesRef.current = onOpenChanges;
@@ -299,8 +445,28 @@ export function FilePreviewContent({
       [draftPath]: { pending: current[draftPath]?.pending ?? null, comment },
     }));
   };
-  const [markdownSelection, setMarkdownSelection] =
-    useState<MarkdownSelectionTarget | null>(null);
+  const [markdownSelection, setMarkdownSelection] = useState<
+    (MarkdownSelectionTarget & { render?: ReviewRenderPart }) | null
+  >(null);
+  const [pointMode, setPointMode] = useState(false);
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [urlText, setUrlText] = useState("http://localhost:");
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const [zen, toggleZen] = useZenMode();
+  useZenEscape(zen, toggleZen);
+  /** The paused graphic while its comment is written. */
+  const heldGraphic = useRef<HeldGraphic | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const frameHeld = useRef<HTMLIFrameElement | null>(null);
+  const letGraphicGo = useCallback(() => {
+    heldGraphic.current?.resume();
+    heldGraphic.current = null;
+    frameHeld.current?.contentWindow?.postMessage(
+      { roamgate: "rendered", type: "resume" },
+      "*",
+    );
+    frameHeld.current = null;
+  }, []);
   const theme = useDocumentTheme();
   const previewText = preview?.text ?? null;
   const lineBeyondPreview =
@@ -323,17 +489,9 @@ export function FilePreviewContent({
   const audioTooLarge =
     hasAudioPreview && (preview?.size ?? 0) > AUDIO_INLINE_PREVIEW_MAX_BYTES;
   const hasMediaPreview = hasPdfPreview || hasAudioPreview;
-  const hasHtmlPreview =
-    hasPreviewText &&
-    !preview?.binary &&
-    preview?.type !== "directory" &&
-    isHtmlPath(previewPath) &&
-    (!/^(?:\/|[a-z]:[\\/])/i.test(previewPath) ||
-      relativePathWithinCheckout(preview?.root ?? "", previewPath) !==
-        undefined);
-  const htmlTooLarge =
-    hasHtmlPreview &&
-    ((preview?.size ?? 0) > HTML_PREVIEW_MAX_BYTES || !!preview?.truncated);
+  // Framed and read by the rendered pages, whose limits decide: never the
+  // text preview's.
+  const hasHtmlPreview = framesHtmlPreview(preview);
   const hasRichPreview =
     hasMarkdownPreview || hasMermaidPreview || hasHtmlPreview;
   const renderRichPreview = hasRichPreview && previewMode === "rendered";
@@ -410,6 +568,9 @@ export function FilePreviewContent({
                 ? `${pendingAnnotation.path} · ${pendingAnnotation.section.join(" › ")}`
                 : `${pendingAnnotation.path} · selected passage`,
           quote: pendingAnnotation.quote,
+          ...(pendingAnnotation.kind === "quote" && pendingAnnotation.preview
+            ? { preview: pendingAnnotation.preview }
+            : {}),
         }
       : null;
 
@@ -418,8 +579,8 @@ export function FilePreviewContent({
   }, [entry?.path]);
 
   useEffect(() => {
-    if (line) setPreviewMode("raw");
-  }, [entry?.path, line]);
+    if (line && !renderedAtLine) setPreviewMode("raw");
+  }, [entry?.path, line, renderedAtLine]);
 
   useEffect(() => {
     setMarkdownSelection(null);
@@ -484,39 +645,527 @@ export function FilePreviewContent({
 
   const closeAnnotationComposer = useCallback(() => {
     setPendingAnnotation(null);
-  }, [setPendingAnnotation]);
+    letGraphicGo();
+  }, [letGraphicGo, setPendingAnnotation]);
 
   const saveAnnotation = useCallback(
     (comment: string) => {
       const pending = pendingAnnotation;
       if (!pending || !onCreateAnnotation) return;
+      // The source of its last line, as a diff's comment keeps it.
+      const last = pending.endLine ?? pending.line;
+      const lineText =
+        last !== undefined && previewText !== null
+          ? markdownSource(previewText).split("\n")[last - 1]
+          : undefined;
       if (pending.kind === "line") {
-        onCreateAnnotation({
-          source: "file",
-          anchor: "line",
-          path: pending.path,
-          line: pending.line,
-          ...(pending.endLine === undefined
-            ? {}
-            : { endLine: pending.endLine }),
-          quote: pending.quote,
-          comment,
-        });
+        onCreateAnnotation(
+          {
+            source: "file",
+            anchor: "line",
+            path: pending.path,
+            line: pending.line,
+            ...(pending.endLine === undefined
+              ? {}
+              : { endLine: pending.endLine }),
+            quote: pending.quote,
+            comment,
+          },
+          {
+            ...(preview?.root ? { root: preview.root } : {}),
+            ...(lineText !== undefined ? { lineText } : {}),
+          },
+        );
       } else {
-        onCreateAnnotation({
-          source: "file",
-          anchor: "quote",
-          path: pending.path,
-          quote: pending.quote,
-          section: pending.section,
-          comment,
-        });
+        onCreateAnnotation(
+          {
+            source: "file",
+            anchor: "quote",
+            path: pending.path,
+            quote: pending.quote,
+            section: pending.section,
+            comment,
+            ...(pending.line !== undefined ? { line: pending.line } : {}),
+            ...(pending.endLine !== undefined
+              ? { endLine: pending.endLine }
+              : {}),
+            ...(pending.render ? { render: pending.render } : {}),
+          },
+          {
+            ...(preview?.root ? { root: preview.root } : {}),
+            ...(pending.snapshot ? { snapshot: pending.snapshot } : {}),
+            ...(lineText !== undefined ? { lineText } : {}),
+          },
+        );
       }
       setPendingAnnotation(null);
       setMarkdownSelection(null);
+      letGraphicGo();
       window.getSelection()?.removeAllRanges();
     },
-    [onCreateAnnotation, pendingAnnotation, setPendingAnnotation],
+    [
+      letGraphicGo,
+      onCreateAnnotation,
+      pendingAnnotation,
+      preview?.root,
+      previewText,
+      setPendingAnnotation,
+    ],
+  );
+
+  const siteUrl = entry && /^https?:\/\//i.test(entry.path) ? entry.path : null;
+  const absolutePath =
+    preview && previewPath
+      ? previewPath.startsWith("/")
+        ? previewPath
+        : `${preview.root.replace(/\/+$/, "")}/${previewPath}`
+      : undefined;
+  const fileThreads = useFileThreads(
+    connectionClient.connectionId,
+    siteUrl ? { url: siteUrl } : { absolute: absolutePath },
+    previewText,
+  );
+  // Each comment is delivered by the review it is in.
+  const undelivered = useMemo(
+    () => reviewsUndelivered(fileThreads.owners),
+    [fileThreads.owners],
+  );
+  const scripts = useRenderedScripts(
+    connectionClient.connectionId,
+    siteUrl ?? absolutePath,
+  );
+  const canComment = !!onCreateAnnotation && !showingChanges;
+  const isSvgFile = previewPath.toLowerCase().endsWith(".svg");
+  const isFramePage = !!siteUrl || (hasHtmlPreview && renderRichPreview);
+  const canPoint =
+    canComment &&
+    (isFramePage ||
+      (hasMarkdownPreview && renderRichPreview) ||
+      hasMermaidPreview ||
+      !!preview?.image_data_url);
+  useEffect(() => {
+    if (!canPoint) setPointMode(false);
+  }, [canPoint]);
+  // A standalone SVG goes in the sandbox frame while animated or pointed
+  // at, where it can be paused and its elements named.
+  const [svgText, setSvgText] = useState<string | null>(null);
+  useEffect(() => {
+    setSvgText(null);
+    if (!isSvgFile || !inlinePreviewUrl) return;
+    let cancelled = false;
+    void fetch(inlinePreviewUrl)
+      .then((response) => (response.ok ? response.text() : null))
+      .then((text) => {
+        if (!cancelled) setSvgText(text);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSvgFile, inlinePreviewUrl]);
+  const drawSvgFramed =
+    svgText !== null && (isAnimatedSvg(svgText) || pointMode || scripts.on);
+
+  /** Which graphic, said for the agent: "diagram 2", an image's name. */
+  const graphicName = useCallback(
+    (graphic: Element) => {
+      const root = previewContentRef.current;
+      const slot = graphic.closest(".markdown-diagram-slot");
+      if (slot && root)
+        return `diagram ${[...root.querySelectorAll(".markdown-diagram-slot")].indexOf(slot) + 1}`;
+      if (graphic.closest(".md-html-slot")) return "HTML block";
+      if (graphic instanceof HTMLImageElement && hasMarkdownPreview)
+        return graphic.alt || "image";
+      return entry?.name ?? previewPath;
+    },
+    [entry?.name, hasMarkdownPreview, previewPath],
+  );
+  const pointing = useGraphicPointing(
+    previewContentRef,
+    pointMode,
+    (graphic, region: ReviewRegion, under) => {
+      void (async () => {
+        letGraphicGo();
+        const held = holdGraphic(graphic);
+        heldGraphic.current = held;
+        const block = graphic.closest<HTMLElement>(
+          ".md-source-item, .md-source-block",
+        );
+        const line = block ? Number(block.dataset.line) : undefined;
+        const blockEnd = block ? Number(block.dataset.end) : undefined;
+        const element = elementLabel(under, graphic);
+        const name = graphicName(graphic);
+        const crop = await cropGraphic(graphic, region);
+        const box = graphic.getBoundingClientRect();
+        setMarkdownSelection(null);
+        setPendingAnnotation({
+          kind: "quote",
+          x: box.left + box.width * region.x,
+          y: box.top + box.height * (region.y + region.h) + 8,
+          path: previewPath,
+          quote: pointQuote(name, region, element),
+          section: [],
+          ...(line !== undefined ? { line } : {}),
+          ...(blockEnd !== undefined && blockEnd !== line
+            ? { endLine: blockEnd }
+            : {}),
+          render: {
+            graphic: name,
+            region,
+            ...(element ? { element } : {}),
+            ...(held.moment ? { moment: held.moment } : {}),
+          },
+          ...(crop
+            ? { snapshot: crop, preview: URL.createObjectURL(crop) }
+            : {}),
+        });
+      })();
+    },
+  );
+  const frameMessage = useCallback(
+    (
+      message: Exclude<
+        RenderedFrameMessage,
+        { type: "ready" | "size" | "stray" }
+      >,
+      box: DOMRect,
+      frame: HTMLIFrameElement,
+    ) => {
+      if (message.type === "clear") {
+        setMarkdownSelection(null);
+        return;
+      }
+      if (message.type === "key") {
+        // A key of the threads pressed in the page: as if pressed here.
+        previewContentRef.current?.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: message.key,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        return;
+      }
+      const path = siteUrl ?? previewPath;
+      // An SVG in its own frame: a diagram of the file, or the file.
+      const inlineSvg = frame.dataset.inlineSvg === "1";
+      const block = frame.closest<HTMLElement>(
+        ".md-source-item, .md-source-block",
+      );
+      const line = block ? Number(block.dataset.line) : undefined;
+      const blockEnd = block ? Number(block.dataset.end) : undefined;
+      const lines = {
+        ...(line !== undefined ? { line } : {}),
+        ...(blockEnd !== undefined && blockEnd !== line
+          ? { endLine: blockEnd }
+          : {}),
+      };
+      if (message.type === "select") {
+        setMarkdownSelection({
+          quote: message.quote,
+          section: [],
+          x: box.left + message.rect.x,
+          y: box.top + message.rect.y + message.rect.h + 6,
+          ...lines,
+          render: inlineSvg
+            ? { graphic: graphicName(frame), quote: message.quote }
+            : {
+                url: message.url,
+                selector: message.selector,
+                quote: message.quote,
+              },
+        });
+        return;
+      }
+      const snapshot = message.snapshot
+        ? frameSnapshotBlob(message.snapshot)
+        : null;
+      letGraphicGo();
+      frameHeld.current = frame;
+      const name = inlineSvg ? graphicName(frame) : message.selector;
+      setMarkdownSelection(null);
+      setPendingAnnotation({
+        kind: "quote",
+        x: box.left + message.rect.x + message.rect.w * message.region.x,
+        y:
+          box.top +
+          message.rect.y +
+          message.rect.h * (message.region.y + message.region.h) +
+          8,
+        path,
+        quote: pointQuote(name, message.region, message.element),
+        section: [],
+        ...lines,
+        render: {
+          ...(inlineSvg
+            ? { graphic: name }
+            : { url: message.url, selector: message.selector }),
+          region: message.region,
+          ...(message.element ? { element: message.element } : {}),
+          ...(message.moment ? { moment: message.moment } : {}),
+        },
+        ...(snapshot
+          ? { snapshot, preview: URL.createObjectURL(snapshot) }
+          : {}),
+      });
+    },
+    [graphicName, letGraphicGo, previewPath, setPendingAnnotation, siteUrl],
+  );
+  const diagramFrames = useMemo(
+    () =>
+      canComment
+        ? {
+            connectionId: connectionClient.connectionId,
+            pointMode,
+            scripts: scripts.on,
+            onMessage: frameMessage,
+          }
+        : null,
+    [
+      canComment,
+      connectionClient.connectionId,
+      frameMessage,
+      pointMode,
+      scripts.on,
+    ],
+  );
+  const renderHtmlBlock = useCallback(
+    (html: string) => (
+      <RenderedFrame
+        connectionId={connectionClient.connectionId}
+        svg={html}
+        name="HTML block"
+        scripts
+        autoHeight
+        pointMode={pointMode}
+        onMessage={frameMessage}
+        className="md-html-frame"
+      />
+    ),
+    [connectionClient.connectionId, frameMessage, pointMode],
+  );
+  const canScript =
+    !showingChanges &&
+    (!!siteUrl ||
+      (renderRichPreview && (hasMarkdownPreview || hasHtmlPreview)) ||
+      isSvgFile);
+  const scriptsControl = canScript ? (
+    <>
+      <button
+        type="button"
+        className={`file-preview-copy${scripts.on ? " is-on" : ""}`}
+        aria-pressed={scripts.on}
+        disabled={!!scripts.listed}
+        title={
+          scripts.listed
+            ? `Scripts run here: ${scripts.listed} is in Settings, Instance, Sites we work on. Sandboxed, without access to Roamgate.`
+            : scripts.on
+              ? "Scripts run for this file. Sandboxed, without access to Roamgate. Click to turn them off."
+              : "Scripts are off. Click to run this file's scripts, sandboxed without access to Roamgate."
+        }
+        onClick={scripts.toggle}
+      >
+        {scripts.on
+          ? `Scripts on${scripts.listed ? " (listed)" : ""}`
+          : "Scripts off"}
+      </button>
+      {scripts.turnedOn && !scripts.listed && scripts.alwaysEntry ? (
+        <button
+          type="button"
+          className="file-preview-copy"
+          title={`Always run scripts under ${scripts.alwaysEntry}: adds it to Sites we work on`}
+          onClick={() => void scripts.always()}
+        >
+          Always here
+        </button>
+      ) : null}
+    </>
+  ) : null;
+  // The threads' keys and what they have open, as in an agent chat: j / k
+  // through the blocks and the threads' messages, n / N, gn / gN, gH, c,
+  // R, r, za, dd, T, zz / zt / zb (useThreadKeys).
+  const threadView = useFileThreadView(() => previewContentRef.current);
+  const { cursor: threadCursor, setCursor: setThreadCursor } = threadView;
+  const keysRoot = canComment ? contentElement : null;
+  const threadOrder = useMemo(
+    () => fileThreadOrder(fileThreads.threads, previewText),
+    [fileThreads.threads, previewText],
+  );
+  const threadsById = useMemo(
+    () => new Map(fileThreads.all.map((thread) => [thread.id, thread])),
+    [fileThreads.all],
+  );
+  /** The comments' panel lists every conversation, as the review pane's. */
+  const conversations = useMemo(
+    () => fileThreads.all.filter((thread) => thread.kind !== "merge-request"),
+    [fileThreads.all],
+  );
+  /** The thread the cursor is in, if any. */
+  const cursorThread = useMemo(() => {
+    if (!threadCursor) return null;
+    if (threadCursor.startsWith("t:")) return threadCursor.slice(2);
+    if (!threadCursor.startsWith("m:")) return null;
+    const comment = threadCursor.slice(2);
+    return (
+      threadOrder.find((thread) =>
+        thread.comments.some((message) => message.id === comment),
+      )?.id ?? null
+    );
+  }, [threadCursor, threadOrder]);
+  /**
+   * The line the cursor is on: its block's, its thread's, else the line
+   * the file was opened at.
+   */
+  const cursorLine = (): number | undefined => {
+    const block = /^b:(\d+)/.exec(threadCursor ?? "");
+    if (block) return Number(block[1]);
+    const thread = cursorThread ? threadsById.get(cursorThread) : undefined;
+    return thread?.anchor.line ?? line;
+  };
+  /** A word on a step (wrapped around), gone after a moment. */
+  const [threadNotice, setThreadNotice] = useState("");
+  useEffect(() => {
+    if (!threadNotice) return;
+    const timer = window.setTimeout(() => setThreadNotice(""), 1800);
+    return () => window.clearTimeout(timer);
+  }, [threadNotice]);
+  /** A thread's place, shown: in the file, or in the page's frame. */
+  const goToThread = useCallback(
+    (thread: ReviewThread) => {
+      if (isFramePage) {
+        const render = thread.anchor.render;
+        frameRef.current?.contentWindow?.postMessage(
+          {
+            roamgate: "rendered",
+            type: "show",
+            ...(render?.selector ? { selector: render.selector } : {}),
+            ...(render?.quote ? { quote: render.quote } : {}),
+          },
+          "*",
+        );
+        return;
+      }
+      focusFileThread(previewContentRef.current, thread, setThreadCursor);
+    },
+    [isFramePage, setThreadCursor],
+  );
+  /** gn / gN: the next or previous unresolved thread, wrapping around. */
+  const jumpUnresolved = (direction: 1 | -1) => {
+    const step = stepUnresolved(
+      threadOrder,
+      fileThreadPlace(threadOrder, threadCursor, cursorThread, direction),
+      direction,
+    );
+    if (!step) {
+      setThreadNotice("No unresolved comment in this file.");
+      return;
+    }
+    if (step.wrapped) setThreadNotice(stepNotice(step, direction));
+    const thread = threadOrder[step.index]!;
+    // Folded by hand: unfolded to be read.
+    if (threadView.flipped.has(thread.id) && !thread.resolved) {
+      threadView.unfold([thread.id]);
+      requestAnimationFrame(() => goToThread(thread));
+    } else goToThread(thread);
+  };
+  /**
+   * c / Enter on a block, a list item or a table cell: a comment on its
+   * own words and lines, or on those selected in it.
+   */
+  const commentBlock = (block: HTMLElement): boolean => {
+    const own = fileStopAnchor(block, MAX_QUOTE_LENGTH);
+    if (!own) return false;
+    const box = block.getBoundingClientRect();
+    const selected =
+      markdownSelection &&
+      markdownSelection.line !== undefined &&
+      markdownSelection.line >= own.line &&
+      markdownSelection.line <= (own.endLine ?? own.line)
+        ? markdownSelection
+        : null;
+    const line = selected?.line ?? own.line;
+    const end = selected ? selected.endLine : own.endLine;
+    setPendingAnnotation({
+      kind: "quote",
+      path: previewPath,
+      quote: selected?.quote ?? own.quote,
+      section:
+        selected?.section ??
+        markdownHeadingPath(
+          block.closest(".file-preview-markdown") ?? block,
+          block,
+        ),
+      x: selected?.x ?? box.left,
+      y: selected?.y ?? box.bottom + 6,
+      line,
+      ...(end !== undefined && end !== line ? { endLine: end } : {}),
+    });
+    setMarkdownSelection(null);
+    return true;
+  };
+  useThreadKeys(
+    () => keysRoot,
+    keysRoot,
+    fileThreadKeys({
+      view: threadView,
+      api: fileThreads,
+      threadsById,
+      goToThread,
+      openOverview: () => setThreadsOpen(true),
+      jumpUnresolved,
+      comment: commentBlock,
+    }),
+  );
+  useMarkedBlocks(contentElement, threadCursor);
+  // Show rendered: the cursor on the block (item, cell) of the line asked,
+  // in view, once the file is drawn.
+  useEffect(() => {
+    if (!renderedAtLine || !line || !contentElement || previewText === null)
+      return;
+    const frame = requestAnimationFrame(() => {
+      const stop = fileStopForLine(contentElement, line);
+      if (!stop) return;
+      setThreadCursor(fileStopKey(stop));
+      stop.scrollIntoView?.({ block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [renderedAtLine, line, contentElement, previewText, setThreadCursor]);
+  useQuoteHighlights(contentElement, threadsById, previewText);
+  const threadsUnder = useCallback(
+    (
+      stops: readonly string[],
+      stopOf: (line: number, quote?: string) => string | undefined,
+      where: SlotWhere,
+    ) => (
+      <SlotThreads
+        stops={stops}
+        stopOf={stopOf}
+        where={where}
+        threads={fileThreads.threads}
+        api={fileThreads}
+        view={threadView}
+        undelivered={undelivered}
+        nested={fileThreads.nested}
+      />
+    ),
+    [fileThreads, threadView, undelivered],
+  );
+  const unresolvedNav = (
+    <>
+      <UnresolvedNav
+        className="file-preview-unresolved-nav"
+        total={threadOrder.filter((thread) => !thread.resolved).length}
+        position={unresolvedPosition(threadOrder, cursorThread)}
+        openOnly={threadView.openOnly}
+        onStep={jumpUnresolved}
+        onOpenOnly={threadView.setOpenOnly}
+      />
+      {threadNotice ? (
+        <span className="chat-unresolved-notice" role="status">
+          {threadNotice}
+        </span>
+      ) : null}
+    </>
   );
 
   const copyPreviewText = async () => {
@@ -541,10 +1190,59 @@ export function FilePreviewContent({
   return (
     <section
       ref={previewSectionRef}
-      className="file-preview"
+      className={`file-preview${zen ? " is-zen" : ""}`}
       aria-label="File preview"
       tabIndex={-1}
+      onKeyDown={(e) => {
+        // R: the file read again (the refresh button), but where R is
+        // typed text, the source's own keys, or a thread's reply
+        // (useThreadKeys took it then).
+        if (
+          e.key === "R" &&
+          !e.defaultPrevented &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          onRefresh &&
+          entry &&
+          !showingChanges &&
+          zenKeyTarget(e.target) &&
+          !(e.target as HTMLElement).closest?.(".cm-editor")
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          reload();
+          return;
+        }
+        if (
+          e.key === "o" &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          zenKeyTarget(e.target) &&
+          !(e.target as HTMLElement).closest?.(".cm-editor")
+        )
+          toggleZen();
+      }}
       onKeyDownCapture={(e) => {
+        // The file's own source view is read-only: `o` there is the mode
+        // too (its Vim keys would take it and do nothing). Comment editors
+        // keep theirs.
+        if (
+          onCreateAnnotation &&
+          e.key === "o" &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          zenKeyTarget(e.target) &&
+          e.target instanceof Node &&
+          !!editorViewRef.current?.contentDOM.contains(e.target)
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleZen();
+          return;
+        }
         if (shortcutMatches(e.nativeEvent, "preview.search")) {
           if (showingChanges || renderRichPreview) return;
           e.preventDefault();
@@ -607,17 +1305,69 @@ export function FilePreviewContent({
               <button
                 type="button"
                 className="file-preview-refresh"
-                title="Refresh preview"
+                title="Refresh preview (R)"
                 aria-label="Refresh preview"
-                disabled={loading}
-                onClick={onRefresh}
+                disabled={loadingProp}
+                onClick={reload}
               >
                 <RefreshCw
                   size={13}
-                  className={loading ? "is-spinning" : undefined}
+                  className={loadingProp ? "is-spinning" : undefined}
                   aria-hidden="true"
                 />
               </button>
+            ) : null}
+            {!showingChanges && onOpenFile ? (
+              <button
+                type="button"
+                className="file-preview-copy"
+                title="Open a site's page here, to browse and comment on"
+                aria-expanded={urlOpen}
+                onClick={() => setUrlOpen((open) => !open)}
+              >
+                URL
+              </button>
+            ) : null}
+            {!showingChanges && onCreateAnnotation ? (
+              <ZenButton
+                zen={zen}
+                onToggle={toggleZen}
+                className="file-preview-refresh"
+                label="Review only"
+                title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
+                size={13}
+              />
+            ) : null}
+            {scriptsControl}
+            {canPoint ? (
+              <button
+                type="button"
+                className={`file-preview-copy${pointMode ? " is-on" : ""}`}
+                aria-pressed={pointMode}
+                title="Point at a graphic: click for a point, drag for a box (or hold Alt)"
+                onClick={() => setPointMode((on) => !on)}
+              >
+                Point
+              </button>
+            ) : null}
+            {canComment ? (
+              <>
+                <ThreadsChip
+                  threads={fileThreads.threads}
+                  undelivered={
+                    undelivered
+                      ? {
+                          count: undelivered.ids.size,
+                          reason: undelivered.reason,
+                        }
+                      : undefined
+                  }
+                  open={threadsOpen}
+                  onToggle={() => setThreadsOpen((open) => !open)}
+                  className="file-preview-threads-chip"
+                />
+                {unresolvedNav}
+              </>
             ) : null}
             {!showingChanges && hasPreviewText && !preview?.truncated ? (
               <button
@@ -656,6 +1406,16 @@ export function FilePreviewContent({
                 <span className="file-preview-mode-label">Source</span>
               </button>
             ) : null}
+            {!showingChanges && !siteUrl && absolutePath && onShowInReview ? (
+              <button
+                type="button"
+                className="file-preview-copy"
+                title="Show in code review: this file in the review of its checkout, at the cursor's line"
+                onClick={() => onShowInReview(absolutePath, cursorLine())}
+              >
+                Review
+              </button>
+            ) : null}
             {changesAvailable ? (
               <button
                 type="button"
@@ -683,6 +1443,48 @@ export function FilePreviewContent({
           </div>
         </div>
         {entry ? <span>{entry.path}</span> : null}
+        {changedOnDisk && !showingChanges ? (
+          <div className="file-preview-changed" role="status">
+            <span>Changed on disk: R to reload</span>
+            <button
+              type="button"
+              className="file-preview-copy"
+              title="Read the file again, where you are in it (R)"
+              disabled={loadingProp}
+              onClick={reload}
+            >
+              Reload
+            </button>
+          </div>
+        ) : null}
+        {urlOpen ? (
+          <form
+            className="file-preview-url"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const url = parseSiteUrl(urlText);
+              if (!url || !onOpenFile) return;
+              setUrlOpen(false);
+              onOpenFile(url);
+            }}
+          >
+            <input
+              // biome-ignore lint/a11y/noAutofocus: asked for just now
+              autoFocus
+              type="url"
+              value={urlText}
+              onChange={(event) => setUrlText(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setUrlOpen(false);
+              }}
+              placeholder="http://localhost:8080/docs/"
+              aria-label="The page to open"
+            />
+            <button type="submit" className="file-preview-copy">
+              Open
+            </button>
+          </form>
+        ) : null}
       </div>
 
       {showingChanges ? (
@@ -694,194 +1496,269 @@ export function FilePreviewContent({
           {changesContent}
         </div>
       ) : (
-        <div
-          ref={previewContentRef}
-          className="file-preview-file-content"
-          role="region"
-          aria-label={`Preview of ${entry?.name ?? "selected file"}`}
-        >
-          {!entry ? (
-            <div className="file-preview-state">
-              Select a text file to preview.
-            </div>
-          ) : null}
-          {loading ? (
-            <div className="file-preview-state">
-              <span className="file-loading-spinner" />
-              Loading preview
-            </div>
-          ) : null}
-          {error ? (
-            <div className="file-preview-state is-error">{error}</div>
-          ) : null}
-          {!loading && !error && directoryPath ? (
-            <div className="file-preview-state">
-              Directories cannot be previewed.
-            </div>
-          ) : null}
-          {!loading && !error && preview?.image_data_url ? (
-            <ImagePreview
-              key={previewPath}
-              src={preview.image_data_url}
-              name={entry?.name ?? preview.path}
-            />
-          ) : null}
-          {!loading &&
-          !error &&
-          hasPdfPreview &&
-          !pdfTooLarge &&
-          inlinePreviewUrl ? (
-            framesShowPdf() ? (
-              <iframe
-                className="file-preview-pdf"
-                src={inlinePreviewUrl}
-                title={`PDF preview: ${entry?.name ?? previewPath}`}
-              />
-            ) : (
-              <Suspense
-                fallback={
-                  <div className="file-preview-state">Loading the PDF...</div>
-                }
-              >
-                <PdfPages
-                  key={inlinePreviewUrl}
-                  url={inlinePreviewUrl}
-                  name={entry?.name ?? previewPath}
-                />
-              </Suspense>
-            )
-          ) : null}
-          {!loading && !error && pdfTooLarge ? (
-            <div className="file-preview-state">
-              PDF is too large to preview. Use Download from the file menu.
-            </div>
-          ) : null}
-          {!loading && !error && audioTooLarge ? (
-            <div className="file-preview-state">
-              Audio is too large to preview (25 MiB maximum). Use Download from
-              the file menu.
-            </div>
-          ) : null}
-          {!loading &&
-          !error &&
-          hasAudioPreview &&
-          !audioTooLarge &&
-          inlinePreviewUrl ? (
-            <div className="file-preview-audio">
-              <audio
-                key={inlinePreviewUrl}
-                controls
-                preload="metadata"
-                src={inlinePreviewUrl}
-                aria-label={`Audio preview: ${entry?.name ?? previewPath}`}
-              />
-            </div>
-          ) : null}
-          {!loading &&
-          !error &&
-          preview?.binary &&
-          !preview.image_data_url &&
-          !hasMediaPreview ? (
-            <div className="file-preview-state">
-              Binary file cannot be previewed.
-            </div>
-          ) : null}
-          {!loading && !error && hasHtmlPreview && renderRichPreview ? (
-            htmlTooLarge ? (
+        <div className="file-preview-with-threads">
+          <div
+            ref={contentRef}
+            {...(canPoint ? pointing.handlers : {})}
+            className="file-preview-file-content"
+            role="region"
+            aria-label={`Preview of ${entry?.name ?? "selected file"}`}
+          >
+            {!entry ? (
               <div className="file-preview-state">
-                HTML is too large to render. Use Source or Download from the
-                file menu.
+                Select a text file to preview.
               </div>
-            ) : inlinePreviewUrl ? (
-              <>
-                <div className="file-preview-banner">
-                  Static HTML preview. Scripts are blocked; HTTPS stylesheets
-                  can access the network.
-                </div>
+            ) : null}
+            {loading ? (
+              <div className="file-preview-state">
+                <span className="file-loading-spinner" />
+                Loading preview
+              </div>
+            ) : null}
+            {error ? (
+              <div className="file-preview-state is-error">{error}</div>
+            ) : null}
+            {!loading && !error && directoryPath ? (
+              <div className="file-preview-state">
+                Directories cannot be previewed.
+              </div>
+            ) : null}
+            {siteUrl ? (
+              <RenderedFrame
+                connectionId={connectionClient.connectionId}
+                url={siteUrl}
+                scripts={scripts.turnedOn}
+                name={siteUrl}
+                pointMode={pointMode}
+                onMessage={frameMessage}
+                frameRef={frameRef}
+              />
+            ) : null}
+            {!loading && !error && drawSvgFramed && svgText !== null ? (
+              <RenderedFrame
+                key={previewPath}
+                connectionId={connectionClient.connectionId}
+                svg={svgText}
+                scripts={scripts.on}
+                name={entry?.name ?? previewPath}
+                pointMode={pointMode}
+                onMessage={frameMessage}
+                className="file-preview-html"
+              />
+            ) : null}
+            {!loading && !error && preview?.image_data_url && !drawSvgFramed ? (
+              <ImagePreview
+                key={previewPath}
+                src={preview.image_data_url}
+                name={entry?.name ?? preview.path}
+              />
+            ) : null}
+            {!loading &&
+            !error &&
+            hasPdfPreview &&
+            !pdfTooLarge &&
+            inlinePreviewUrl ? (
+              framesShowPdf() ? (
                 <iframe
-                  key={inlinePreviewUrl}
-                  className="file-preview-html"
-                  sandbox=""
-                  referrerPolicy="no-referrer"
+                  className="file-preview-pdf"
                   src={inlinePreviewUrl}
-                  aria-label={`HTML preview: ${entry?.name ?? previewPath}`}
+                  title={`PDF preview: ${entry?.name ?? previewPath}`}
                 />
-              </>
-            ) : null
-          ) : null}
-          {!loading &&
-          !error &&
-          preview?.truncated &&
-          !hasMediaPreview &&
-          !(hasHtmlPreview && renderRichPreview) ? (
-            <div className="file-preview-banner">
-              Preview truncated at 512 KB.
-            </div>
-          ) : null}
-          {!loading && !error && lineBeyondPreview ? (
-            <div className="file-preview-banner" role="status">
-              Match at line {line} is outside this preview. The beginning of the
-              file is shown below.
-              {snippet ? (
-                <code className="file-preview-search-snippet">{snippet}</code>
-              ) : null}
-            </div>
-          ) : null}
-          {!loading && !error && hasMarkdownPreview && renderRichPreview ? (
-            <MarkdownPreview
-              text={previewText}
-              imageUrlResolver={markdownImageUrlResolver}
-              documentPath={onOpenFile ? markdownDocumentPath : undefined}
-              linkUrlResolver={markdownLinkUrlResolver}
-              fragment={fragment}
-              onOpenDocument={onOpenFile}
-              onSelectionChange={
-                onCreateAnnotation ? setMarkdownSelection : undefined
-              }
-            />
-          ) : null}
-          {!loading && !error && hasMermaidPreview && renderRichPreview ? (
-            <MermaidDiagram
-              key={previewPath}
-              code={previewText}
-              className="file-preview-mermaid"
-            />
-          ) : null}
-          {!loading &&
-          !error &&
-          hasPreviewText &&
-          !renderRichPreview &&
-          !hasMediaPreview ? (
-            <CodeMirrorPreview
-              text={previewText}
-              path={previewPath}
-              line={line}
-              theme={theme}
-              annotations={lineAnnotations}
-              editorViewRef={editorViewRef}
-              onToggleTree={onToggleTree}
-              onRequestAnnotation={
-                onCreateAnnotation
-                  ? ({ line, endLine, quote, x, y }) =>
-                      setPendingAnnotation({
-                        kind: "line",
-                        path: previewPath,
-                        line,
-                        endLine,
-                        quote,
-                        x,
-                        y,
-                      })
-                  : undefined
-              }
+              ) : (
+                <Suspense
+                  fallback={
+                    <div className="file-preview-state">Loading the PDF...</div>
+                  }
+                >
+                  <PdfPages
+                    key={inlinePreviewUrl}
+                    url={inlinePreviewUrl}
+                    name={entry?.name ?? previewPath}
+                  />
+                </Suspense>
+              )
+            ) : null}
+            {!loading && !error && pdfTooLarge ? (
+              <div className="file-preview-state">
+                PDF is too large to preview. Use Download from the file menu.
+              </div>
+            ) : null}
+            {!loading && !error && audioTooLarge ? (
+              <div className="file-preview-state">
+                Audio is too large to preview (25 MiB maximum). Use Download
+                from the file menu.
+              </div>
+            ) : null}
+            {!loading &&
+            !error &&
+            hasAudioPreview &&
+            !audioTooLarge &&
+            inlinePreviewUrl ? (
+              <div className="file-preview-audio">
+                <audio
+                  key={inlinePreviewUrl}
+                  controls
+                  preload="metadata"
+                  src={inlinePreviewUrl}
+                  aria-label={`Audio preview: ${entry?.name ?? previewPath}`}
+                />
+              </div>
+            ) : null}
+            {!loading &&
+            !error &&
+            preview?.binary &&
+            !preview.image_data_url &&
+            !hasMediaPreview ? (
+              <div className="file-preview-state">
+                Binary file cannot be previewed.
+              </div>
+            ) : null}
+            {!loading &&
+            !error &&
+            hasHtmlPreview &&
+            renderRichPreview &&
+            absolutePath ? (
+              <RenderedFrame
+                // Read again on a reload: the page shown is the file's now.
+                key={`${absolutePath}:${preview?.resource_revision ?? ""}`}
+                connectionId={connectionClient.connectionId}
+                file={absolutePath}
+                scripts={scripts.turnedOn}
+                name={entry?.name ?? previewPath}
+                pointMode={pointMode}
+                onMessage={frameMessage}
+                frameRef={frameRef}
+              />
+            ) : null}
+            {!loading &&
+            !error &&
+            preview?.truncated &&
+            !hasMediaPreview &&
+            !(hasHtmlPreview && renderRichPreview) ? (
+              <div className="file-preview-banner">
+                Preview truncated at 512 KB.
+              </div>
+            ) : null}
+            {!loading && !error && lineBeyondPreview ? (
+              <div className="file-preview-banner" role="status">
+                Match at line {line} is outside this preview. The beginning of
+                the file is shown below.
+                {snippet ? (
+                  <code className="file-preview-search-snippet">{snippet}</code>
+                ) : null}
+              </div>
+            ) : null}
+            {!loading && !error && hasMarkdownPreview && renderRichPreview ? (
+              <DiagramFrameContext.Provider value={diagramFrames}>
+                <MarkdownPreview
+                  className="file-preview-reading"
+                  threadsFor={onCreateAnnotation ? threadsUnder : undefined}
+                  htmlBlock={scripts.on ? renderHtmlBlock : undefined}
+                  text={previewText}
+                  imageUrlResolver={markdownImageUrlResolver}
+                  documentPath={onOpenFile ? markdownDocumentPath : undefined}
+                  linkUrlResolver={markdownLinkUrlResolver}
+                  fragment={fragment}
+                  onOpenDocument={onOpenFile}
+                  onSelectionChange={
+                    onCreateAnnotation ? setMarkdownSelection : undefined
+                  }
+                />
+              </DiagramFrameContext.Provider>
+            ) : null}
+            {!loading && !error && hasMermaidPreview && renderRichPreview ? (
+              <MermaidDiagram
+                key={previewPath}
+                code={previewText}
+                className="file-preview-mermaid"
+              />
+            ) : null}
+            {!loading &&
+            !error &&
+            hasPreviewText &&
+            !renderRichPreview &&
+            !hasMediaPreview ? (
+              <CodeMirrorPreview
+                text={previewText}
+                path={previewPath}
+                line={line}
+                theme={theme}
+                annotations={lineAnnotations}
+                editorViewRef={editorViewRef}
+                onToggleTree={onToggleTree}
+                onToggleOnly={onCreateAnnotation ? toggleZen : undefined}
+                onRequestAnnotation={
+                  onCreateAnnotation
+                    ? ({ line, endLine, quote, x, y }) =>
+                        setPendingAnnotation({
+                          kind: "line",
+                          path: previewPath,
+                          line,
+                          endLine,
+                          quote,
+                          x,
+                          y,
+                        })
+                    : undefined
+                }
+              />
+            ) : null}
+          </div>
+          {threadsOpen && canComment ? (
+            <ThreadsList
+              className="file-preview-threads"
+              threads={conversations}
+              api={fileThreads}
+              onGo={goToThread}
+              onClose={() => setThreadsOpen(false)}
             />
           ) : null}
         </div>
       )}
+      {pointing.box}
+      {zen ? (
+        <div className="file-preview-zen-hint">
+          <button
+            type="button"
+            title="Show the chrome again (o or Esc)"
+            onClick={toggleZen}
+          >
+            Show all
+          </button>
+          {scriptsControl}
+          {canPoint ? (
+            <button
+              type="button"
+              className={pointMode ? "is-on" : ""}
+              aria-pressed={pointMode}
+              onClick={() => setPointMode((on) => !on)}
+            >
+              Point
+            </button>
+          ) : null}
+          {canComment ? (
+            <>
+              <ThreadsChip
+                threads={fileThreads.threads}
+                undelivered={
+                  undelivered
+                    ? {
+                        count: undelivered.ids.size,
+                        reason: undelivered.reason,
+                      }
+                    : undefined
+                }
+                open={threadsOpen}
+                onToggle={() => setThreadsOpen((open) => !open)}
+              />
+              {unresolvedNav}
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {markdownSelection &&
       onCreateAnnotation &&
-      hasMarkdownPreview &&
-      renderRichPreview &&
+      (siteUrl || (hasRichPreview && renderRichPreview)) &&
       !showingChanges
         ? createPortal(
             <button
@@ -906,6 +1783,15 @@ export function FilePreviewContent({
                   section: markdownSelection.section,
                   x: markdownSelection.x,
                   y: markdownSelection.y,
+                  ...(markdownSelection.line !== undefined
+                    ? { line: markdownSelection.line }
+                    : {}),
+                  ...(markdownSelection.endLine !== undefined
+                    ? { endLine: markdownSelection.endLine }
+                    : {}),
+                  ...(markdownSelection.render
+                    ? { render: markdownSelection.render }
+                    : {}),
                 });
                 setMarkdownSelection(null);
               }}
@@ -1069,6 +1955,7 @@ function CodeMirrorPreview({
   editorViewRef,
   onRequestAnnotation,
   onToggleTree,
+  onToggleOnly,
 }: {
   text: string;
   path: string;
@@ -1079,9 +1966,13 @@ function CodeMirrorPreview({
   onRequestAnnotation?: (request: CodeMirrorAnnotationRequest) => void;
   /** `:files`: hides or shows the file tree beside the preview. */
   onToggleTree?: () => void;
+  /** `:only`: the preview's Review only mode. */
+  onToggleOnly?: () => void;
 }) {
   const toggleTreeRef = useRef(onToggleTree);
   toggleTreeRef.current = onToggleTree;
+  const toggleOnlyRef = useRef(onToggleOnly);
+  toggleOnlyRef.current = onToggleOnly;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const annotationRuntimeRef = useRef<CodeMirrorAnnotationRuntime | null>(null);
   const annotationsRef = useRef(annotations);
@@ -1301,6 +2192,7 @@ function CodeMirrorPreview({
       if (cm) {
         definePreviewExCommands(deps);
         previewFilesCommands.set(cm, () => toggleTreeRef.current?.());
+        previewOnlyCommands.set(cm, () => toggleOnlyRef.current?.());
       }
       annotationRuntimeRef.current = {
         deps,

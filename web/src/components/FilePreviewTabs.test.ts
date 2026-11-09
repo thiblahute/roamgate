@@ -256,9 +256,13 @@ function registerDomTests() {
       );
       expect(closed).toBe(0);
       await act(async () => root.render(render(false)));
-      expect(document.querySelector("textarea")).toBeNull();
+      expect(document.querySelector(".annotation-composer-popover")).toBeNull();
       await act(async () => root.render(render(true)));
-      expect(document.querySelector("textarea")?.value).toBe(
+      // The comment box is loaded on demand, then holds the kept words.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      });
+      expect(document.querySelector(".cm-content")?.textContent).toBe(
         "Keep this comment",
       );
       await act(async () =>

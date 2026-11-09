@@ -892,7 +892,11 @@
    % are of the pane's width. */
 .agent-history-drawer.is-pane-chat {
   --chat-rail: 0px;
-  --chat-column-gutter: max(0px, (100% - var(--chat-rail) - 820px) / 2);
+  --chat-column-gutter: max(
+    0px,
+    (100% - var(--chat-rail) - var(--reading-column-width)) /
+    2
+  );
 }
 
 .agent-history-drawer.is-pane-chat:has(

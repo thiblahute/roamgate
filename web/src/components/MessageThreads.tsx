@@ -1,18 +1,27 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ReviewMessagePart, ReviewThread } from "../../../shared/review";
-import type { MessageParts } from "./ReviewNoteBody";
+import type {
+  ReviewAnchor,
+  ReviewComment,
+  ReviewMessagePart,
+  ReviewThread,
+} from "../../../shared/review";
+import type { PendingWrite } from "../reviewPending";
+import { type MessageParts, NoteBody } from "./ReviewNoteBody";
+import { MessageReplyButton, ThreadCard } from "./ThreadCard";
+import { type ThreadBox, ThreadEditor } from "./ThreadEditor";
 
 /*
- * Messages with threads on their parts, as an agent chat's messages
- * (ChatThreads) draw them: a message is drawn by NoteBody in parts, the +
- * beside a part opens a thread on it quoting it, and the threads on a
- * part are drawn under it, their own messages in parts too. Reply on a
- * thread's message (or R on it) opens a thread on the whole message,
- * quoting nothing (`message: {thread, comment}`): such threads are drawn
- * under the message after those on its parts (MessageNotes), their head
- * saying "On this message". j / k stop on the parts (`q:COMMENT:PART` for
- * a thread's message, the list's own key for another message), the
+ * Messages with threads on their parts, one way for an agent chat's
+ * messages (ChatThreads) and the Files preview's threads (FileThreads): a
+ * message is drawn by NoteBody in parts, the + beside a part opens a
+ * thread on it quoting it, and the threads on a part are drawn under it,
+ * their own messages in parts too. Reply on a thread's
+ * message (or R on it) opens a thread on the whole message, quoting
+ * nothing (`message: {thread, comment}`): such threads are drawn under
+ * the message after those on its parts (MessageNotes), their head saying
+ * "On this message". j / k stop on the parts (`q:COMMENT:PART` for a
+ * thread's message, the list's own key for another message), the
  * threads' messages (`m:COMMENT`) and folded threads (`t:THREAD`); a
  * thread's message in one part is that message's stop. Words selected in
  * a message offer Comment, a thread quoting them.
@@ -205,27 +214,6 @@ export function MessageNotes({
 }
 
 /**
- * Reply on a message of a thread: a thread on the whole of it, drawn under
- * it. At the right of the author's row; shown as the pointer is over the
- * message or j / k are on it, always on a phone.
- */
-export function MessageReplyButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="chat-thread-message-reply"
-      title="Reply to this message (R)"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-    >
-      Reply
-    </button>
-  );
-}
-
-/**
  * The parts of a message: the threads on them drawn under the words they
  * quote, and the one being written; the part j / k is on; a click on a
  * part puts the cursor on it (`KEY:PART`), or on the message itself
@@ -288,6 +276,299 @@ export function messagePartsOf({
     },
     ...(single ? { single: true } : {}),
   };
+}
+
+/** A comment box of the threads: an answer to a thread, or on a part. */
+export type BoxKey = { reply: string } | { part: ReviewMessagePart };
+
+/**
+ * What a list's threads share: the threads on parts of messages, where
+ * j / k are, what is folded, the boxes open, the writes on their way, and
+ * how a thread on a part is anchored and its box kept (the chat keeps
+ * its boxes' words; a work item's anchor says the item).
+ */
+export type MessageThreadsScope = {
+  /** The threads on parts of messages, by the message. */
+  byMessage: ReadonlyMap<string, ReviewThread[]>;
+  /** Threads left out (only the unresolved ones shown). */
+  hidden?: ReadonlySet<string>;
+  cursor: string | null;
+  setCursor: (key: string) => void;
+  /** Threads folded or unfolded by hand: resolved ones start folded. */
+  flipped: ReadonlySet<string>;
+  toggleFold: (thread: ReviewThread) => void;
+  /** The thread whose answer is being written. */
+  replying: string | null;
+  setReplying: (id: string | null) => void;
+  /**
+   * The thread being written on a part: the message, the words (none: on
+   * the whole message, Reply on it).
+   */
+  partDraft: ReviewMessagePart | null;
+  setPartDraft: (part: ReviewMessagePart | null) => void;
+  /** The anchor of a thread on a part: the chat's, the work item's. */
+  partAnchor: (part: ReviewMessagePart) => ReviewAnchor;
+  partPlaceholder: string;
+  pendingById: ReadonlyMap<string, PendingWrite>;
+  /** Your comments the agent did not get, and what is said beside them. */
+  undelivered?: { ids: ReadonlySet<string>; text: string } | null;
+  write: (method: string, params: Record<string, unknown>) => Promise<boolean>;
+  send: (write: Omit<PendingWrite, "sessionId" | "at">) => Promise<boolean>;
+  /** A box's kept words, focus and image store. */
+  box: (key: BoxKey) => {
+    kept?: ThreadBox;
+    autoFocus?: boolean;
+    onAddImage?: (file: File) => Promise<string>;
+  };
+  /** A box closed, with the id of what it last sent (a failed write goes). */
+  onCloseBox?: (id?: string) => void;
+  /** A box closed or left: the keys go back where they were. */
+  onLeave: () => void;
+  /** Drawn before a thread's messages: where it was written. */
+  head?: (thread: ReviewThread) => ReactNode;
+};
+
+/**
+ * A thread drawn where it is: its messages in parts, the threads on their
+ * parts under them (drawn the same) and those on the whole of them after,
+ * Reply on each message, the answer being written, its writes on their
+ * way or not delivered. `onMessage`: drawn under the message it is on,
+ * its head says so.
+ */
+export function MessageThread({
+  thread,
+  scope,
+  onMessage = false,
+}: {
+  thread: ReviewThread;
+  scope: MessageThreadsScope;
+  onMessage?: boolean;
+}) {
+  const pendingOf = (message: ReviewComment, index: number) =>
+    scope.pendingById.get(message.id) ??
+    (index === 0 ? scope.pendingById.get(thread.id) : undefined);
+  return (
+    <ThreadCard
+      thread={thread}
+      folded={thread.resolved !== scope.flipped.has(thread.id)}
+      cursor={scope.cursor}
+      onToggleFold={() => scope.toggleFold(thread)}
+      onReply={() => scope.setReplying(thread.id)}
+      onReplyMessage={(message) =>
+        scope.setPartDraft({ thread: thread.id, comment: message.id })
+      }
+      onResolve={() =>
+        void scope.write("review.resolve", {
+          comment_id: thread.id,
+          resolved: !thread.resolved,
+        })
+      }
+      onDelete={() =>
+        void scope.write("review.delete", { comment_id: thread.id })
+      }
+      head={scope.head?.(thread) ?? (onMessage ? <OnMessageHead /> : undefined)}
+      messageClass={(message, index) =>
+        pendingOf(message, index) ? " is-pending" : ""
+      }
+      authorExtra={(message, index) => {
+        const pending = pendingOf(message, index);
+        return pending ? (
+          <span
+            className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
+            role={pending.error ? "alert" : "status"}
+          >
+            {pending.error ? "Not saved: Send tries again" : "Sending..."}
+          </span>
+        ) : scope.undelivered?.ids.has(message.id) ? (
+          <>
+            <span className="chat-thread-pending is-failed" role="status">
+              {scope.undelivered.text}
+            </span>
+            <button
+              type="button"
+              className="chat-thread-retry"
+              onClick={() => void scope.write("review.retry", {})}
+            >
+              Retry
+            </button>
+          </>
+        ) : null;
+      }}
+      body={(message) => (
+        <ThreadMessageBody scope={scope} thread={thread} message={message} />
+      )}
+      footer={
+        scope.pendingById.has(thread.id) ? null : scope.replying ===
+          thread.id ? (
+          <ThreadEditor
+            {...scope.box({ reply: thread.id })}
+            placeholder="Reply..."
+            onLeave={scope.onLeave}
+            onClose={(id) => {
+              scope.onCloseBox?.(id);
+              scope.setReplying(null);
+              scope.onLeave();
+            }}
+            onSave={(text, id) =>
+              scope
+                .send({
+                  id,
+                  replyTo: thread.id,
+                  kind: thread.kind,
+                  anchor: thread.anchor,
+                  text,
+                })
+                .then((ok) => {
+                  if (!ok) return;
+                  scope.setReplying(null);
+                  scope.onLeave();
+                })
+            }
+          />
+        ) : undefined
+      }
+    />
+  );
+}
+
+/**
+ * A thread's message (`message`, of `thread`) as it is drawn: its parts
+ * with the threads on them under the words they quote (threadMessageParts),
+ * then the threads on the whole of it and the box of one being written
+ * (MessageNotes). `single`: a message that is a stop on its own even in
+ * one part (a work item's description); `actions`: Reply in a row of its
+ * own under it, for a message with no author row to hold it.
+ */
+export function ThreadMessageBody({
+  scope,
+  thread,
+  message,
+  single = false,
+  actions = false,
+}: {
+  scope: MessageThreadsScope;
+  thread: ReviewThread;
+  message: ReviewComment;
+  single?: boolean;
+  actions?: boolean;
+}) {
+  const comment = message.id;
+  const { onMessage } = splitMessageThreads(scope.byMessage.get(comment));
+  const draft = scope.partDraft;
+  return (
+    <>
+      <NoteBody
+        text={message.body}
+        parts={threadMessageParts(scope, thread, comment, { single })}
+      />
+      {actions ? (
+        <div className="chat-thread-message-actions">
+          <MessageReplyButton
+            onClick={() => scope.setPartDraft({ thread: thread.id, comment })}
+          />
+        </div>
+      ) : null}
+      <MessageNotes
+        threads={onMessage}
+        hidden={scope.hidden}
+        renderThread={(nested) => (
+          <MessageThread
+            key={nested.id}
+            thread={nested}
+            scope={scope}
+            onMessage
+          />
+        )}
+        draft={
+          draft?.comment === comment && !draft.quote ? (
+            <PartDraft scope={scope} draft={draft} placeholder="Reply..." />
+          ) : null
+        }
+      />
+    </>
+  );
+}
+
+/**
+ * The parts of a thread's message (`comment`): the threads on them, and
+ * the one being written, under them (those on the whole message are
+ * drawn after the message, by ThreadMessageBody). `single`: a message
+ * that is a stop on its own even in one part (a work item's description).
+ */
+export function threadMessageParts(
+  scope: MessageThreadsScope,
+  thread: ReviewThread,
+  comment: string,
+  options: { single?: boolean } = {},
+): MessageParts {
+  const draft = scope.partDraft;
+  return messagePartsOf({
+    key: `q:${comment}`,
+    threads: splitMessageThreads(scope.byMessage.get(comment)).onParts,
+    hidden: scope.hidden,
+    renderThread: (nested) => (
+      <MessageThread key={nested.id} thread={nested} scope={scope} />
+    ),
+    draft:
+      draft?.comment === comment && draft.quote
+        ? {
+            quote: draft.quote,
+            node: <PartDraft scope={scope} draft={draft} />,
+          }
+        : null,
+    cursor: scope.cursor,
+    setCursor: scope.setCursor,
+    onComment: (quote) =>
+      scope.setPartDraft({
+        thread: thread.id,
+        comment,
+        quote: quote.trim().slice(0, 4000),
+      }),
+    ...(options.single ? { single: true } : { messageStop: `m:${comment}` }),
+  });
+}
+
+/**
+ * The box of a thread being written on a part of a message, or on the
+ * whole of it (`placeholder` says which).
+ */
+function PartDraft({
+  scope,
+  draft,
+  placeholder = scope.partPlaceholder,
+}: {
+  scope: MessageThreadsScope;
+  draft: ReviewMessagePart;
+  placeholder?: string;
+}) {
+  return (
+    <div className="chat-thread is-draft">
+      <ThreadEditor
+        {...scope.box({ part: draft })}
+        placeholder={placeholder}
+        onLeave={scope.onLeave}
+        onClose={(id) => {
+          scope.onCloseBox?.(id);
+          scope.setPartDraft(null);
+          scope.onLeave();
+        }}
+        onSave={(text, id) =>
+          scope
+            .send({
+              id,
+              kind: "discussion",
+              anchor: scope.partAnchor(draft),
+              text,
+            })
+            .then((ok) => {
+              if (!ok) return;
+              scope.setPartDraft(null);
+              scope.onLeave();
+            })
+        }
+      />
+    </div>
+  );
 }
 
 /** Words selected, and where Comment is offered on them. */

@@ -1,0 +1,109 @@
+/*
+ * A merge or pull request's discussion (MrThreadCard): in the review pane,
+ * whose palette it takes, and in a rendered file's threads (.chat-review).
+ */
+.chat-review {
+  --rv-gitlab: #fc6d26;
+}
+
+.mrt .rc-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.mrt .rc-bar .spacer {
+  flex: 1;
+}
+
+.mrt .rc-bar .btn {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.mrt .mr-note.focused {
+  box-shadow: inset 2px 0 0 var(--rv-accent);
+  outline: 1px solid var(--rv-accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+/* GitLab threads */
+.mrt {
+  margin: 4px 8px 8px 94px;
+  padding: 4px 8px;
+  border: 1px solid var(--rv-border);
+  border-left: 3px solid var(--rv-gitlab);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.mrt.resolved {
+  opacity: 0.65;
+}
+
+.mrt summary {
+  color: var(--rv-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mr-tag {
+  color: var(--rv-gitlab);
+  font-weight: 600;
+}
+
+.mr-note {
+  margin-top: 4px;
+  padding: 4px 0;
+  border-top: 1px solid var(--rv-border);
+}
+
+.mr-who {
+  color: var(--rv-faint);
+  font-size: 12px;
+}
+
+/* Your reply, on GitLab but not submitted: only you see it. */
+.mr-note.mr-draft {
+  padding: 4px 8px;
+  border: 1px dashed var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-accent-soft);
+}
+
+.mr-draft-tag {
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.mr-body p {
+  margin: 4px 0;
+}
+
+.mr-where {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+/* In a rendered file: as wide as the other threads, buttons as theirs. */
+.chat-review .mrt {
+  margin: 6px 0;
+}
+
+.chat-review .mrt .rc-bar .btn {
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-review .mrt .rc-bar .btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+}

@@ -78,7 +78,10 @@ test("a thread's message, code, table and image fit the card", async () => {
     // too (each is a part one comments on, kept whole on screen).
     expect(page.style(".rc-text.rich").whiteSpace).toBe("normal");
     expect(page.style(".note-code").whiteSpace).toBe("pre-wrap");
-    // An image scales to the card.
+    // A table scrolls inside its own box; an image scales to the card.
+    const table = page.style(".rc-table");
+    expect(table.overflowX).toBe("auto");
+    expect(table.maxWidth).toBe("100%");
     expect(page.style(".rc-text.rich img").maxWidth).toContain("100%");
     // The author's row gives way before the card does.
     expect(["0", "0px"]).toContain(

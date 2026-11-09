@@ -65,6 +65,7 @@ import { CloseButton } from "./CloseButton";
 import { TerminalTransportSettings } from "./TerminalTransportSettings";
 import { ConfigurationLoadingDialog } from "./ConfigurationLoadingDialog";
 import { InstanceNameSettings } from "./InstanceNameSettings";
+import { SitesWeWorkOnSettings } from "./SitesWeWorkOnSettings";
 import { SpeechSettings } from "./SpeechSettings";
 import { WorktreeCommandSettings } from "./WorktreeCommandSettings";
 import { MobileSheetHandle } from "./MobileSheetHandle";
@@ -749,6 +750,7 @@ export function ConfigurationDialog({
                 <>
                   <InstanceNameSettings />
                   <WorktreeCommandSettings />
+                  <SitesWeWorkOnSettings />
                 </>
               ) : null}
             </section>

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { isHostPath } from "../workspace/review-patch";
+import { isHostPath, validReviewPath } from "../workspace/review-patch";
+import { parseSiteUrl } from "../../../shared/renderedPage";
 import {
   COMMIT_MESSAGE_PATH,
   REVIEW_LIMITS,
@@ -11,6 +12,7 @@ import {
   type ReviewDiff,
   type ReviewEffortPart,
   type ReviewMergeRequestLink,
+  type ReviewRenderPart,
   type ReviewPush,
   type ReviewSession,
   type ReviewSnapshot,
@@ -202,6 +204,19 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
     };
   if (target.kind === "chat")
     return { kind: "chat", chat: text(target.chat, "chat", 300) };
+  if (target.kind === "rendered") {
+    if ((target.path === undefined) === (target.url === undefined))
+      throw new ReviewError("a rendered review shows a path or a URL");
+    if (target.path !== undefined) {
+      const path = text(target.path, "path", 4096);
+      if (!validReviewPath(path))
+        throw new ReviewError("the path must be relative to the checkout");
+      return { kind: "rendered", path };
+    }
+    const url = parseSiteUrl(target.url);
+    if (!url) throw new ReviewError("the URL must be an http(s) URL");
+    return { kind: "rendered", url };
+  }
   if (target.kind === "effort") return effortTarget(target);
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
@@ -236,6 +251,8 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
     return left && right ? sameMergeRequest(left, right) : a.url === b.url;
   }
   if (a.kind === "chat" && b.kind === "chat") return a.chat === b.chat;
+  if (a.kind === "rendered" && b.kind === "rendered")
+    return a.path === b.path && a.url === b.url;
   if (a.kind === "effort" && b.kind === "effort") return a.effort === b.effort;
   return true;
 }
@@ -287,6 +304,7 @@ export function describeTarget(target: ReviewTarget): string {
       : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
   if (target.kind === "chat") return "chat";
+  if (target.kind === "rendered") return target.path ?? target.url ?? "";
   if (target.kind === "effort") return "effort";
   return "working tree";
 }
@@ -387,9 +405,103 @@ function parseAnchor(value: unknown): ReviewAnchor {
       ...(call ? { call } : {}),
     };
   }
+  if (raw.render !== undefined && raw.render !== null)
+    anchor.render = parseRenderPart(raw.render);
+  if (raw.terminal !== undefined && raw.terminal !== null) {
+    if (typeof raw.terminal !== "object")
+      throw new ReviewError("invalid terminal part");
+    const part = raw.terminal as Record<string, unknown>;
+    anchor.terminal = {
+      pane: text(part.pane, "pane", 200),
+      title: oneLine(text(part.title, "title", 500), 300),
+      quote: text(part.quote, "quote", 20_000),
+    };
+  }
+  const feedback = optionalText(raw.feedback, "feedback", 30_000);
+  if (feedback) anchor.feedback = feedback;
   const effort = effortPart(raw.effort);
   if (effort) anchor.effort = effort;
   return anchor;
+}
+
+/** A held comment's place in the feedback list. */
+function heldPlace(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value)
+    ? value
+    : undefined;
+}
+
+/** A fraction of a graphic's size. */
+function fraction(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new ReviewError("invalid region");
+  if (value < 0 || value > 1) throw new ReviewError("invalid region");
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/** A region crop: a review image (images/<review>/<hash>.<ext>). */
+const SNAPSHOT_PATH =
+  /\/images\/[0-9a-f]{16}\/[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
+
+export function parseRenderPart(value: unknown): ReviewRenderPart {
+  if (typeof value !== "object" || value === null)
+    throw new ReviewError("invalid rendered part");
+  const raw = value as Record<string, unknown>;
+  const part: ReviewRenderPart = {};
+  const quote = optionalText(raw.quote, "quote", 4000)?.trim();
+  if (quote) part.quote = quote;
+  const url = optionalText(raw.url, "page", 2048);
+  if (url) part.url = url;
+  const selector = optionalText(raw.selector, "selector", 1000);
+  if (selector) part.selector = selector;
+  if (raw.region !== undefined && raw.region !== null) {
+    if (typeof raw.region !== "object") throw new ReviewError("invalid region");
+    const region = raw.region as Record<string, unknown>;
+    const x = fraction(region.x);
+    const y = fraction(region.y);
+    const w = fraction(region.w ?? 0);
+    const h = fraction(region.h ?? 0);
+    if (x + w > 1.0001 || y + h > 1.0001)
+      throw new ReviewError("invalid region");
+    part.region = { x, y, w, h };
+  }
+  const graphic = optionalText(raw.graphic, "graphic", 300);
+  if (graphic) part.graphic = oneLine(graphic, 300);
+  const element = optionalText(raw.element, "element", 300);
+  if (element) part.element = oneLine(element, 200);
+  const moment = optionalText(raw.moment, "moment", 200);
+  if (moment) part.moment = oneLine(moment, 200);
+  const snapshot = optionalText(raw.snapshot, "snapshot", 4096);
+  if (snapshot) {
+    if (!SNAPSHOT_PATH.test(snapshot) || !isHostPath(snapshot))
+      throw new ReviewError("a snapshot is an image saved with the review");
+    part.snapshot = snapshot;
+  }
+  if (!Object.keys(part).length) throw new ReviewError("invalid rendered part");
+  return part;
+}
+
+/**
+ * What a comment on a rendered view points at, for the agent: the graphic,
+ * the region, the element, the page, the moment of an animation.
+ */
+export function renderedPlace(part: ReviewRenderPart): string {
+  const bits: string[] = [];
+  if (part.url) bits.push(`page ${oneLine(part.url, 300)}`);
+  if (part.graphic) bits.push(oneLine(part.graphic, 120));
+  if (part.region) {
+    const { x, y, w, h } = part.region;
+    const pct = (value: number) => `${Math.round(value * 1000) / 10}%`;
+    bits.push(
+      w || h
+        ? `region x ${pct(x)} y ${pct(y)} w ${pct(w)} h ${pct(h)} of it`
+        : `point x ${pct(x)} y ${pct(y)} of it`,
+    );
+  }
+  if (part.element) bits.push(`element "${part.element.replace(/"/g, "'")}"`);
+  if (part.selector) bits.push(`at \`${part.selector.replace(/`/g, "'")}\``);
+  if (part.moment) bits.push(`at ${part.moment}`);
+  return bits.join(", ");
 }
 
 export function createReviewService(args: {
@@ -591,16 +703,84 @@ export function createReviewService(args: {
     );
   }
 
+  /** A review of the checkout's code: a branch, a range, its work, an MR. */
+  function codeReview(target: ReviewSession): boolean {
+    const { kind } = target.target;
+    return kind === "range" || kind === "worktree" || kind === "mr";
+  }
+
+  /** The file a review of a rendered file shows (none for a site). */
+  function renderedFile(target: ReviewSession): string | undefined {
+    return target.target.kind === "rendered" && !target.target.url
+      ? target.target.path
+      : undefined;
+  }
+
+  /**
+   * The reviews whose threads a review shows with its own (`shared`): in
+   * a code review, those of the checkout's rendered files; in a rendered
+   * file, those of the checkout's code reviews.
+   */
+  function linkedOf(target: ReviewSession): ReviewSession[] {
+    const code = codeReview(target);
+    if (!code && !renderedFile(target)) return [];
+    return [...sessions.values()].filter(
+      (other) =>
+        other.id !== target.id &&
+        other.connectionId === target.connectionId &&
+        other.root === target.root &&
+        (code ? !!renderedFile(other) : codeReview(other)),
+    );
+  }
+
+  /**
+   * The threads of the linked reviews on what this one shows: a rendered
+   * file's in a code review, a code review's on the file in a rendered
+   * one (with a merge request's GitLab threads). Each stays in its own
+   * review (its sessionId), which delivers it and takes what is written
+   * on it. Pending drafts the review shows already are left out.
+   */
+  function sharedThreads(target: ReviewSession): ReviewThread[] {
+    const linked = linkedOf(target);
+    if (!linked.length) return [];
+    const path = renderedFile(target);
+    const seen = new Set(pendingDrafts(target).map((thread) => thread.id));
+    const shared: ReviewThread[] = [];
+    for (const other of linked) {
+      const local = [...(threads.get(other.id)?.values() ?? [])];
+      const remote =
+        path !== undefined && gitlabMode(other)
+          ? (gitlabState.get(other.id)?.threads ?? [])
+          : [];
+      for (const thread of [...local, ...remote]) {
+        if (seen.has(thread.id) || !thread.anchor.path) continue;
+        if (path !== undefined && thread.anchor.path !== path) continue;
+        seen.add(thread.id);
+        shared.push(thread);
+      }
+    }
+    return shared;
+  }
+
+  /** The shared threads that live in a linked review's own store. */
+  function sharedLocal(target: ReviewSession): ReviewThread[] {
+    return sharedThreads(target).filter(
+      (thread) => threads.get(thread.sessionId)?.get(thread.id) === thread,
+    );
+  }
+
   function snapshot(session: ReviewSession): ReviewSnapshot {
     const local = [...(threads.get(session.id)?.values() ?? [])];
     const remote = gitlabMode(session)
       ? gitlabState.get(session.id)
       : undefined;
+    const shared = sharedThreads(session);
     return {
       session,
       threads: remote
         ? [...local, ...pendingDrafts(session), ...remote.threads]
         : local,
+      ...(shared.length ? { shared } : {}),
       ...(remote?.mr
         ? {
             mergeRequest: {
@@ -621,6 +801,13 @@ export function createReviewService(args: {
 
   function publishSession(target: ReviewSession) {
     args.publish({ type: "session", snapshot: snapshot(target) });
+    publishShared(target);
+  }
+
+  /** The reviews showing this one's threads (or that it showed, once gone). */
+  function publishShared(target: ReviewSession) {
+    for (const other of linkedOf(target))
+      args.publish({ type: "session", snapshot: snapshot(other) });
   }
 
   /**
@@ -1027,13 +1214,15 @@ export function createReviewService(args: {
   }
 
   /**
-   * The local review owning a pending review comment shown in a merge
-   * request's review (thread or comment id, or an unambiguous prefix of
-   * one, as locate takes them), else the review itself.
+   * The review owning a thread shown in another: a local review's pending
+   * review comment shown in a merge request's review, or a thread shared
+   * between a rendered file and a code review (thread or comment id, or an
+   * unambiguous prefix of one, as locate takes them), else the review
+   * itself.
    */
   function ownerOf(target: ReviewSession, id: unknown): ReviewSession {
     if (typeof id !== "string" || !id) return target;
-    const pending = pendingDrafts(target);
+    const pending = [...pendingDrafts(target), ...sharedLocal(target)];
     if (!pending.length) return target;
     let found: { thread: ReviewThread };
     try {
@@ -1113,6 +1302,7 @@ export function createReviewService(args: {
     args.publish({ type: "session", snapshot: snapshot(session) });
     wake(session.id);
     publishLinking(session.id);
+    publishShared(session);
   }
 
   /** The merge requests' reviews showing a local review's comments. */
@@ -1247,7 +1437,8 @@ export function createReviewService(args: {
     let found = [...sessions.values()].find(
       (s) =>
         s.connectionId === connectionId &&
-        s.root === root &&
+        // A site is the same review from wherever it is opened.
+        (s.root === root || (target.kind === "rendered" && !!target.url)) &&
         sameTarget(s.target, target),
     );
     if (!found) {
@@ -1545,11 +1736,13 @@ export function createReviewService(args: {
     if (!gitlabMode(target))
       throw new ReviewError("this is not a merge request's review");
     const id = text(params.threadId, "thread", 200);
-    // Its own, or one a local review of the branch wrote and this merge
-    // request's review shows (pending for it, as pendingDrafts tells).
+    // Its own, one a local review of the branch wrote and this merge
+    // request's review shows (pending for it), or one shared from a rendered
+    // file of the checkout.
     const thread = [
       ...threadsOf(target.id).values(),
       ...pendingDrafts(target),
+      ...sharedLocal(target),
     ].find((each) => each.id === id);
     const owner = (thread && sessions.get(thread.sessionId)) ?? target;
     if (!thread || thread.kind === "merge-request")
@@ -1698,6 +1891,7 @@ export function createReviewService(args: {
     wake(target.id);
     gitlabState.delete(target.id);
     publishLinking(target.id);
+    publishShared(target);
     return { removed: target.id };
   }
 
@@ -1742,7 +1936,11 @@ export function createReviewService(args: {
   async function addThread(
     params: Record<string, unknown>,
   ): Promise<ReviewThread> {
-    const target = session(params.sessionId);
+    const asked = session(params.sessionId);
+    // On a part of a message of a thread shown from another review: a
+    // thread of that review, as its thread is.
+    const part = (params.anchor as ReviewAnchor | undefined)?.message?.thread;
+    const target = part ? ownerOf(asked, part) : asked;
     const kind: ReviewThreadKind =
       params.kind === "draft" ? "draft" : "discussion";
     const writer = author(params.author);
@@ -1804,6 +2002,9 @@ export function createReviewService(args: {
       resolved: false,
       createdAt: at,
       updatedAt: at,
+      ...(heldPlace(params.held) !== undefined
+        ? { held: heldPlace(params.held) }
+        : {}),
     };
     saveThread(target, thread);
     if (kind === "draft") notePendingFor(target, thread);
@@ -2029,16 +2230,46 @@ export function createReviewService(args: {
     return thread;
   }
 
+  /** Moves a held comment among the workspace's comments to send. */
+  function moveHeld(params: Record<string, unknown>): ReviewThread {
+    const target = ownerOf(session(params.sessionId), params.commentId);
+    const { thread } = locate(target.id, params.commentId);
+    const place = heldPlace(params.held);
+    if (thread.held === undefined || place === undefined)
+      throw new ReviewError("that comment is not held");
+    thread.held = place;
+    saveThread(target, thread);
+    return thread;
+  }
+
+  /**
+   * Held comments the user handed to the agent in one prompt: they join
+   * the review's threads and what the prompt said counts as heard.
+   */
+  function releaseHeld(params: Record<string, unknown>): ReviewThread {
+    const target = ownerOf(session(params.sessionId), params.commentId);
+    const { thread } = locate(target.id, params.commentId);
+    if (thread.held === undefined) return thread;
+    delete thread.held;
+    if (params.handed === true) thread.handedAt = now();
+    saveThread(target, thread);
+    if (params.handed !== true && forAgent(thread, target))
+      scheduleDelivery(target);
+    return thread;
+  }
+
   /** Puts back a deleted thread (the overlay's one-level undo). */
   function restoreThread(params: Record<string, unknown>): ReviewThread {
     const raw = params.thread as ReviewThread | undefined;
     if (!raw || typeof raw !== "object" || !Array.isArray(raw.comments))
       throw new ReviewError("thread is required");
     const asked = session(params.sessionId);
-    // A pending review comment of a local review goes back there.
+    // A local review's pending review comment, or a thread shared from
+    // another review, goes back to its review.
     const target =
-      localReviewsOf(asked).find((other) => other.id === raw.sessionId) ??
-      asked;
+      [...localReviewsOf(asked), ...linkedOf(asked)].find(
+        (other) => other.id === raw.sessionId,
+      ) ?? asked;
     const restored = threadFrom(target, raw);
     if (
       !threadsOf(target.id).has(restored.id) &&
@@ -2095,6 +2326,10 @@ export function createReviewService(args: {
       parseMergeRequestUrl(raw.pendingFor)
         ? { pendingFor: raw.pendingFor }
         : {}),
+      ...(heldPlace(raw.held) !== undefined
+        ? { held: heldPlace(raw.held) }
+        : {}),
+      ...(isoTime(raw.handedAt) ? { handedAt: isoTime(raw.handedAt) } : {}),
     };
     if (restored.comments.length === 0)
       throw new ReviewError("thread is empty");
@@ -2406,6 +2641,9 @@ export function createReviewService(args: {
   }
 
   function describeAnchor(anchor: ReviewAnchor): string {
+    if (anchor.terminal) return `the terminal "${anchor.terminal.title}"`;
+    if (!anchor.path && anchor.render?.url)
+      return oneLine(anchor.render.url, 300);
     if (!anchor.path) return "the whole change";
     const path = oneLine(anchor.path, 300);
     if (anchor.path === COMMIT_MESSAGE_PATH)
@@ -2522,26 +2760,35 @@ export function createReviewService(args: {
         : "";
       const part = thread.anchor.message;
       const said = thread.anchor.chat;
+      // On what a rendered review shows: the words, region or element.
+      const shown = thread.anchor.render;
       // On what an effort's view shows: the tab, the item, the words.
-      const shown = thread.anchor.effort;
+      const onEffort = thread.anchor.effort;
       // On a file a tool call of the chat changed: the file and its lines.
       const file = said && thread.anchor.path ? thread.anchor : null;
       const quote =
         file && !file.line && said?.quote === file.path
           ? undefined
-          : (said ?? part ?? shown)?.quote;
+          : (said ?? part ?? onEffort)?.quote;
       lines.push(
         "",
-        shown && !part
-          ? `- [${thread.id.slice(0, 8)}] on ${describeEffortPart(shown)}${shown.quote ? ", about this part" : ""}:`
+        onEffort && !part
+          ? `- [${thread.id.slice(0, 8)}] on ${describeEffortPart(onEffort)}${onEffort.quote ? ", about this part" : ""}:`
           : file && said
             ? `- [${thread.id.slice(0, 8)}] ${fileChangePlace(file, said.at)}:`
             : said
               ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
               : part
                 ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
-                : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
-        ...(quote?.split("\n").map((line) => `  > ${line}`) ?? []),
+                : shown
+                  ? `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)} as rendered${renderedPlace(shown) ? ` (${renderedPlace(shown)})` : ""}${shown.quote ? ", about this part" : ""}:`
+                  : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
+        ...((shown && !said && !part ? shown.quote : quote)
+          ?.split("\n")
+          .map((line) => `  > ${line}`) ?? []),
+        ...(shown?.snapshot && !said && !part
+          ? [`  (what I saw there: ${shown.snapshot})`]
+          : []),
       );
       // What changed since the agent last heard: new comments, and earlier
       // ones the user rewrote.
@@ -3129,6 +3376,7 @@ export function createReviewService(args: {
     if (
       target.target.kind === "worktree" ||
       target.target.kind === "chat" ||
+      target.target.kind === "rendered" ||
       !loadCommits
     )
       return { commits: [] };
@@ -3168,6 +3416,7 @@ export function createReviewService(args: {
     if (
       target.target.kind === "mr" ||
       target.target.kind === "chat" ||
+      target.target.kind === "rendered" ||
       !loadState
     )
       return { state: "" };
@@ -3182,7 +3431,8 @@ export function createReviewService(args: {
         : undefined;
     if (commit && !/^[0-9a-f]{7,64}$/.test(commit))
       throw new ReviewError("invalid commit");
-    if (target.target.kind === "chat") return { files: [], truncated: false };
+    if (target.target.kind === "chat" || target.target.kind === "rendered")
+      return { files: [], truncated: false };
     if (commit)
       return fromCheckout(target, () => args.loadDiff(target, commit));
     // The view the overlay opens on, asked with the commits rather than
@@ -3391,6 +3641,8 @@ export function createReviewService(args: {
     update,
     remove,
     addThread,
+    moveHeld,
+    releaseHeld,
     reply,
     replyInChat,
     edit,

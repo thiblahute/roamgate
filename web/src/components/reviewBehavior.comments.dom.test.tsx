@@ -110,7 +110,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("V then C asks the agent about the lines selected, as one discussion", async () => {
+      test("V then C asks the agent about the lines selected, as one discussion; with no agent it is held for Send in the workspace's threads", async () => {
         const review = await mount({ files: [code()] });
         await review.press("2jVj");
         expect(review.selection().map((line) => line.text)).toEqual([
@@ -119,8 +119,10 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         ]);
         await review.press("C");
         expect(review.selection()).toEqual([]);
+        // No agent to ask: not a thread nobody receives, but one held in
+        // the workspace's threads (To send), as a terminal's comment is.
         expect(review.editorPlaceholder()).toBe(
-          "For Agent: sent when you press Send (Cmd+Enter saves, Esc closes)",
+          "Waiting for Send in the workspace's threads (Cmd+Enter saves, Esc closes)",
         );
         await review.type("Why both?");
         await review.editorPress("<C-Enter>");
@@ -128,8 +130,40 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           kind: "discussion",
           anchor: { path: "a.ts", line: 2, endLine: 3, side: "new" },
           text: "Why both?",
+          held: expect.any(Number),
         });
+        expect(review.notices()).toContain(
+          "Waiting for Send in the workspace's threads",
+        );
         await review.unmount();
+        // Held, it says so where it is; once sent, that it was.
+        const shown = await mount({
+          files: [code()],
+          threads: [
+            {
+              ...mine("t1", { path: "a.ts", line: 2, side: "new" }, "Why?", {
+                kind: "discussion",
+              }),
+              held: 1,
+            },
+            {
+              ...mine("t2", { path: "a.ts", line: 3, side: "new" }, "And?", {
+                kind: "discussion",
+              }),
+              handedAt: "2026-11-05T10:00:00Z",
+            },
+          ],
+        });
+        const marks = Object.fromEntries(
+          shown
+            .shownThreads()
+            .map((thread) => [thread.id, thread.messages[0]?.marks]),
+        );
+        expect(marks.t1).toContain(
+          "Waiting for Send in the workspace's threads",
+        );
+        expect(marks.t2).toContain("sent from the workspace's threads");
+        await shown.unmount();
       });
 
       test("C and :ask ask the agent on the line; on a line it already discusses, the answer goes there", async () => {

@@ -93,6 +93,24 @@ Each gets its own review in the same workspace, and the user switches
 between them in the overlay. \`reply --comment ID\` finds the right one by
 itself. Change code in the thread's \`repo\` (\`get\` and \`watch\` give it).
 
+## Discuss a file or a page, rendered
+
+To talk over a plan, a design doc, a diagram or an image as the user sees
+it, open it rendered: \`open --file PATH\` (Markdown, HTML, SVG, images;
+absolute or relative to here), or \`open --url URL\` for a site's page
+(a dev server's docs, say: the user browses it in Roamgate; its scripts
+run only on sites the user listed). Add a thread per point or decision
+with \`add --session ID --file PATH --line N [--end-line M] [--quote
+WORDS] -- TEXT\` (the source lines; \`--quote\` the words as rendered).
+The user's comments come back like review comments, saying what they
+pointed at: the words, a region of a diagram or image (in fractions of its
+size), the element, the page, the moment of an animation, and the path of
+a snapshot of the region when there is one: read it to see what they saw.
+A file's rendered review and the code reviews of its checkout share their
+threads: \`get\` on either lists the other's on that file too, each with
+its own \`session\`. Write a thread once, in either: never copy it to the
+other; answer it with \`reply --comment ID\`, which finds its review.
+
 ## The loop
 
 1. The user's comments come to you as a prompt in your pane, a few
