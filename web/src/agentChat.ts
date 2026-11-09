@@ -4,6 +4,9 @@ import type {
   AgentChatEvent,
   AgentChatHandoverResult,
   AgentChatOtherWriter,
+  AgentChatMcp,
+  AgentChatMcpRequest,
+  AgentChatMcpResult,
   AgentChatModelResult,
   AgentChatModels,
   AgentChatOwner,
@@ -921,6 +924,39 @@ export async function setAgentChatModel(
       // A process that sleeps is started first.
       90_000,
     )) as AgentChatModelResult;
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** The MCP servers of the pane's session (/mcp); starts its process if none runs. */
+export async function listAgentChatMcp(
+  client: ConnectionClient,
+  paneId: string,
+): Promise<AgentChatMcp> {
+  return (await client.call(
+    "agent_chat.mcp",
+    { pane_id: paneId },
+    60_000,
+  )) as AgentChatMcp;
+}
+
+/** Acts on an MCP server of the pane's session (/mcp); a failure is an answer. */
+export async function runAgentChatMcpAction(
+  client: ConnectionClient,
+  paneId: string,
+  request: AgentChatMcpRequest,
+): Promise<AgentChatMcpResult> {
+  try {
+    return (await client.call(
+      "agent_chat.mcp.action",
+      { pane_id: paneId, ...request },
+      // A reconnect or the end of a sign-in can take a server's own time.
+      120_000,
+    )) as AgentChatMcpResult;
   } catch (error) {
     return {
       ok: false,

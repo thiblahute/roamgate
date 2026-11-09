@@ -150,17 +150,23 @@ export function matchCommands(
 
 /**
  * Claude Code's own commands that work in conversation mode (a headless
- * Claude Code): sent as text, or, for /rewind and /model, the chat's own
- * picker (`/model <name>` switches at once, kept for the next starts).
+ * Claude Code): sent as text, or, for /rewind, /model and /mcp, the chat's
+ * own sheet (`/model <name>` switches at once, kept for the next starts).
  */
 const CONVERSATION_BUILTINS = new Set([
   "clear",
   "compact",
   "context",
   "cost",
+  "mcp",
   "model",
   "rewind",
 ]);
+
+/** `/mcp`, with or without the arguments Claude Code's own command takes. */
+export function isMcpCommand(text: string): boolean {
+  return /^\s*\/mcp(?:\s[\s\S]*)?$/.test(text);
+}
 
 /** The commands offered in conversation mode: no TUI-only ones. */
 export function conversationCommands(

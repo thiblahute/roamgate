@@ -1,0 +1,186 @@
+/* /mcp in a conversation-mode chat, on the model sheet's frame. */
+.agent-mcp-sheet {
+  max-height: min(80vh, 760px);
+}
+
+.agent-mcp-summary {
+  margin-bottom: 0;
+}
+
+.agent-mcp-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.agent-mcp-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+}
+
+.agent-mcp-row:last-child {
+  border-bottom: none;
+}
+
+.agent-mcp-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-mcp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.agent-mcp-row[data-status="connected"] .agent-mcp-dot {
+  background: var(--success, #3fb950);
+}
+
+.agent-mcp-row[data-status="failed"] .agent-mcp-dot {
+  background: var(--danger-text);
+}
+
+.agent-mcp-row[data-status="needs-auth"] .agent-mcp-dot {
+  background: var(--warning, #d29922);
+}
+
+.agent-mcp-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.agent-mcp-status {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-mcp-meta,
+.agent-mcp-note,
+.agent-mcp-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-mcp-foot {
+  padding: 4px 10px 8px;
+}
+
+.agent-mcp-error,
+.agent-mcp-alert {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-mcp-tools summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agent-mcp-tools ul {
+  margin: 4px 0 0;
+  padding: 0 0 0 12px;
+  list-style: none;
+}
+
+.agent-mcp-tools li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.agent-mcp-tools li span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.agent-mcp-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-mcp-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.agent-mcp-signin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+}
+
+.agent-mcp-signin a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.agent-mcp-signin input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* A phone: a sheet from the bottom of the screen, with buttons to thumb. */
+@media (max-width: 640px) {
+  .agent-mcp-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .agent-mcp-sheet {
+    width: 100%;
+    max-height: 85dvh;
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .agent-mcp-actions button {
+    min-height: 36px;
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  .agent-mcp-signin input {
+    font-size: 16px;
+  }
+}

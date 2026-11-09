@@ -20,6 +20,7 @@ import {
 } from "./service-testing";
 import {
   answerInterrupts,
+  answerMcp,
   answerModels,
   answerRewinds,
   fakeClaudeProcess,
@@ -1696,6 +1697,137 @@ describe("agent_chat RPCs", () => {
         text: "hello",
       }),
     ).toMatchObject({ action: "sent" });
+  });
+});
+
+describe("MCP servers (/mcp)", () => {
+  const servers = [
+    {
+      name: "docs",
+      status: "needs-auth",
+      transport: "http",
+      source: "project",
+      config: { type: "http", url: "https://mcp.example.com/mcp?token=x" },
+    },
+  ];
+  const mcpSpawner = (
+    answers?: NonNullable<Parameters<typeof answerMcp>[0]>["answers"],
+  ) =>
+    fakeSpawner(() =>
+      fakeClaudeProcess({
+        exitOnEnd: true,
+        respond: answerMcp({ servers, answers }),
+      }),
+    );
+  const rpc =
+    (service: Parameters<typeof handleAgentChatRpc>[0]) =>
+    (method: string, params: Record<string, unknown>) =>
+      handleAgentChatRpc(service, null, { name: "w" }, method, {
+        pane_id: PANE,
+        ...params,
+      });
+
+  test("refused while the terminal owns the session", async () => {
+    const { service } = setup();
+    await expect(service.mcp(PANE)).rejects.toThrow(/terminal owns/);
+    expect(
+      await service.mcpAction(PANE, { action: "reconnect", server: "docs" }),
+    ).toEqual({ ok: false, reason: "The terminal owns this session" });
+  });
+
+  test("lists the session's servers and signs in to one over the RPC", async () => {
+    const spawner = mcpSpawner({
+      mcp_authenticate: {
+        authUrl: "https://auth.example.com/authorize?state=1",
+        requiresUserAction: true,
+        callbackExpected: true,
+        callbackPort: 54321,
+      },
+    });
+    const { service, fake } = setup(undefined, { spawn: spawner.spawn });
+    await service.handover(PANE, "conversation");
+    await settle();
+    const call = rpc(service);
+    expect(await call("agent_chat.mcp", {})).toEqual({
+      servers: [
+        {
+          name: "docs",
+          status: "needs-auth",
+          scope: "project",
+          transport: "http",
+          target: "mcp.example.com",
+          actions: ["authenticate", "reconnect", "disable"],
+        },
+      ],
+    });
+    expect(
+      await call("agent_chat.mcp.action", {
+        action: "authenticate",
+        server: "docs",
+      }),
+    ).toEqual({
+      ok: true,
+      signIn: {
+        url: "https://auth.example.com/authorize?state=1",
+        redirects: true,
+      },
+    });
+    expect(
+      await call("agent_chat.mcp.action", {
+        action: "finish-sign-in",
+        server: "docs",
+        url: "http://localhost:54321/callback?code=abc&state=1",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      spawner.spawned[0]!.fake.written.flatMap((message) =>
+        message.type === "control_request" ? [message.request] : [],
+      ),
+    ).toEqual([
+      { subtype: "mcp_status" },
+      { subtype: "mcp_authenticate", serverName: "docs" },
+      {
+        subtype: "mcp_oauth_callback_url",
+        serverName: "docs",
+        callbackUrl: "http://localhost:54321/callback?code=abc&state=1",
+      },
+      { subtype: "mcp_reconnect", serverName: "docs" },
+    ]);
+    expect(fake.sessionId).toBeTruthy();
+  });
+
+  test("a refusal is an answer, not an error", async () => {
+    const spawner = mcpSpawner({
+      mcp_reconnect: { error: "Server status: needs-auth" },
+    });
+    const { service } = setup(undefined, { spawn: spawner.spawn });
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(
+      await rpc(service)("agent_chat.mcp.action", {
+        action: "reconnect",
+        server: "docs",
+      }),
+    ).toEqual({ ok: false, reason: "Server status: needs-auth" });
+  });
+
+  test("the RPC checks what it is given", async () => {
+    const { service } = setup();
+    const call = rpc(service);
+    await expect(
+      call("agent_chat.mcp.action", { action: "reconnect" }),
+    ).rejects.toThrow("server is required");
+    await expect(
+      call("agent_chat.mcp.action", { action: "wipe", server: "docs" }),
+    ).rejects.toThrow("action is required");
+    await expect(
+      call("agent_chat.mcp.action", {
+        action: "finish-sign-in",
+        server: "docs",
+      }),
+    ).rejects.toThrow("url is required");
+    expect(isAgentChatMethod("agent_chat.mcp")).toBe(true);
+    expect(isAgentChatMethod("agent_chat.mcp.action")).toBe(true);
   });
 });
 

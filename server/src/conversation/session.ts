@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
   AgentChatEvent,
+  AgentChatMcpRequest,
+  AgentChatMcpResult,
+  AgentChatMcpServer,
   AgentChatModel,
   AgentChatNextPrompt,
   AgentChatQueued,
@@ -11,6 +14,8 @@ import type { AgentPromptAnswer, AgentQuestion } from "../../../shared/review";
 import { claudeProtocolDriver } from "./drivers/claude";
 import type {
   ControlAnswer,
+  McpDriver,
+  ModelContext,
   DriverEvent,
   DriverImage,
   PromptRequest,
@@ -100,6 +105,8 @@ export type ConversationSessionOptions = {
    * rewind, a model switch.
    */
   rewindWaitMs?: number;
+  /** How long an MCP action may take (a server's reconnect, a sign-in). */
+  mcpWaitMs?: number;
   /**
    * The session's transcript, for what a rewind would restore of the code;
    * null (or none given) when it cannot be read.
@@ -132,6 +139,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
   const interruptWaitMs = options.interruptWaitMs ?? 3000;
   const stopWaitMs = options.stopWaitMs ?? 10_000;
   const rewindWaitMs = options.rewindWaitMs ?? 30_000;
+  const mcpWaitMs = options.mcpWaitMs ?? 45_000;
   const log = options.log ?? (() => {});
   const driver = options.driver ?? claudeProtocolDriver;
   const agentName = driver.displayName;
@@ -1082,6 +1090,60 @@ export function createConversationSession(options: ConversationSessionOptions) {
     return result.ok ? { ...result, nextTurn } : result;
   }
 
+  /**
+   * Runs something of /mcp on the session's process, started when none
+   * runs: only it knows its servers, and a start costs no turn. Looking
+   * counts as activity, so no idle stop ends a sign-in under way.
+   */
+  async function withMcp<T>(
+    waitMs: number,
+    run: (
+      mcp: McpDriver,
+      context: ModelContext,
+    ) => Promise<T | { ok: false; reason: string }>,
+  ): Promise<T | { ok: false; reason: string }> {
+    const refuse = (reason: string) => ({ ok: false as const, reason });
+    const mcp = driver.mcp;
+    if (!mcp) return refuse(`${agentName} has no MCP servers to manage`);
+    if (rewinds.running())
+      return refuse("A rewind is running; try once it is done");
+    if (stopping) return refuse("The session is being handed back");
+    let child: HeadlessProcess;
+    try {
+      child = await ensureProcess();
+    } catch (error) {
+      return refuse(
+        `${agentName} did not start (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+    lastActivity = now();
+    try {
+      return await run(mcp, {
+        control: (kind, params) => control(child, kind, params, waitMs),
+      });
+    } catch (error) {
+      return refuse(error instanceof Error ? error.message : String(error));
+    } finally {
+      // What waited for a process (a start that failed) goes now, on it.
+      if (queue.length && !disposed) flushQueue();
+    }
+  }
+
+  /** The session's MCP servers (/mcp), or why they cannot be told. */
+  function mcpStatus() {
+    return withMcp<{ ok: true; servers: AgentChatMcpServer[] }>(
+      Math.min(mcpWaitMs, 20_000),
+      (mcp, context) => mcp.status(context),
+    );
+  }
+
+  /** Acts on one of the session's MCP servers (/mcp). */
+  function mcpAction(request: AgentChatMcpRequest) {
+    return withMcp<AgentChatMcpResult>(mcpWaitMs, (mcp, context) =>
+      mcp.act(context, request),
+    );
+  }
+
   /** What a rewind needs of this session. */
   const rewindContext: RewindContext = {
     sessionId: () => sessionId,
@@ -1280,6 +1342,8 @@ export function createConversationSession(options: ConversationSessionOptions) {
     rewindCheck,
     listModels,
     setModel,
+    mcpStatus,
+    mcpAction,
     /** The model the process runs, as it last said; null: not known. */
     model: () => model,
     /** The name the user last switched it to (/model); null: none. */

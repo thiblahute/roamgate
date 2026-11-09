@@ -1,5 +1,8 @@
 import type {
   AgentChatCapabilities,
+  AgentChatMcpRequest,
+  AgentChatMcpResult,
+  AgentChatMcpServer,
   AgentChatModel,
   AgentChatRewindCheck,
   AgentChatRewindMode,
@@ -163,6 +166,20 @@ export type ModelDriver = {
   >;
 };
 
+export type McpDriver = {
+  /** The MCP servers of the running process, or why it did not say. */
+  status(
+    context: ModelContext,
+  ): Promise<
+    { ok: true; servers: AgentChatMcpServer[] } | { ok: false; reason: string }
+  >;
+  /** Asks the running process to act on one of its servers. */
+  act(
+    context: ModelContext,
+    request: AgentChatMcpRequest,
+  ): Promise<AgentChatMcpResult>;
+};
+
 export type ProtocolDriver = {
   agent: ConversationAgent;
   /** The agent's name in every user-facing string ("Claude"). */
@@ -186,6 +203,8 @@ export type ProtocolDriver = {
   rewind?: RewindDriver;
   /** Present when capabilities.models is. */
   models?: ModelDriver;
+  /** Present when capabilities.mcp is. */
+  mcp?: McpDriver;
 };
 
 /** The TUI's screen, for a handover from the terminal. */

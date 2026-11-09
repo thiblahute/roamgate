@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   conversationCommands,
   conversationRefusal,
+  isMcpCommand,
   matchCommands,
 } from "./claudeCommands";
 
@@ -38,9 +39,17 @@ test("conversation mode offers no TUI-only commands", () => {
     { name: "compact", description: "" },
     { name: "rewind", description: "" },
     { name: "model", description: "" },
+    { name: "mcp", description: "" },
     { name: "my-skill", description: "" },
   ]).map((c) => c.name);
-  expect(offered).toEqual(["clear", "compact", "rewind", "model", "my-skill"]);
+  expect(offered).toEqual([
+    "clear",
+    "compact",
+    "rewind",
+    "model",
+    "mcp",
+    "my-skill",
+  ]);
 });
 
 test("conversation mode refuses TUI-only commands, not shell lines", () => {
@@ -51,6 +60,16 @@ test("conversation mode refuses TUI-only commands, not shell lines", () => {
   // The chat's own picker, or a switch the bridge makes.
   expect(conversationRefusal("/model")).toBeNull();
   expect(conversationRefusal("/model sonnet")).toBeNull();
+  // The chat's own sheet.
+  expect(conversationRefusal("/mcp")).toBeNull();
   expect(conversationRefusal("/my-skill do it")).toBeNull();
   expect(conversationRefusal("Hello")).toBeNull();
+});
+
+test("/mcp opens the sheet, with or without Claude Code's arguments", () => {
+  expect(isMcpCommand("/mcp")).toBe(true);
+  expect(isMcpCommand("  /mcp \n")).toBe(true);
+  expect(isMcpCommand("/mcp reconnect docs")).toBe(true);
+  expect(isMcpCommand("/mcps")).toBe(false);
+  expect(isMcpCommand("use /mcp please")).toBe(false);
 });

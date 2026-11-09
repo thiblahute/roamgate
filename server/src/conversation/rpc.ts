@@ -1,3 +1,4 @@
+import type { AgentChatMcpRequest } from "../../../shared/agentChat";
 import type { HistoryWatcher } from "../agent/history-watch";
 import type { ConversationService } from "./service";
 
@@ -18,6 +19,8 @@ export const AGENT_CHAT_METHODS = [
   "agent_chat.models",
   "agent_chat.model",
   "agent_chat.model_notice.dismiss",
+  "agent_chat.mcp",
+  "agent_chat.mcp.action",
   "agent_chat.recover",
   "agent_chat.api_key.answer",
   "agent_chat.handover",
@@ -83,6 +86,26 @@ function imagesOf(params: Record<string, unknown>): string[] {
 }
 
 /** The agent_chat.* and agent_history.(un)subscribe requests of one socket. */
+/** The parameters of `agent_chat.mcp.action`, checked; throws when wrong. */
+function parseMcpRequest(params: Record<string, unknown>): AgentChatMcpRequest {
+  const { action, server, url } = params;
+  if (typeof server !== "string" || !server.trim() || server.length > 256)
+    throw new Error("server is required");
+  if (action === "finish-sign-in") {
+    if (typeof url !== "string" || !url.trim() || url.length > 8192)
+      throw new Error("url is required");
+    return { action, server, url: url.trim() };
+  }
+  if (
+    action === "reconnect" ||
+    action === "enable" ||
+    action === "disable" ||
+    action === "authenticate"
+  )
+    return { action, server };
+  throw new Error("action is required");
+}
+
 export async function handleAgentChatRpc<Ws>(
   service: ConversationService<Ws>,
   history: HistoryWatcher<Ws> | null,
@@ -172,6 +195,10 @@ export async function handleAgentChatRpc<Ws>(
     case "agent_chat.model_notice.dismiss":
       service.dismissModelNotice(paneId);
       return { ok: true };
+    case "agent_chat.mcp":
+      return service.mcp(paneId);
+    case "agent_chat.mcp.action":
+      return service.mcpAction(paneId, parseMcpRequest(params));
     case "agent_chat.recover":
       return service.recover(paneId);
     case "agent_chat.api_key.answer": {
