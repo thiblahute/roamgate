@@ -1328,3 +1328,115 @@ test("a file edit carries its change, from Claude Code's patch once it has one, 
   // The payload itself is withheld as before.
   expect(calls[0]!.text).toBe("");
 });
+
+test("a tool call carries a short summary that survives redaction", () => {
+  const call = (id: string, args: Record<string, unknown>) => ({
+    type: "toolCall",
+    id,
+    name: "bash",
+    arguments: args,
+  });
+  const records = [
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [
+          call("c1", { command: "ls -la\npwd", description: "List files" }),
+          call("c2", { command: "git status\ngit diff" }),
+          call("c3", { description: "x".repeat(400) }),
+        ],
+      },
+    },
+  ];
+  const entries = historyEntriesFromTrajectory(
+    file,
+    projectAgentTrajectory("pi", file, records),
+  );
+  const calls = entries.filter((entry) => entry.kind === "tool_call");
+  expect(calls[0]!.summary).toBe("List files");
+  expect(calls[1]!.summary).toBe("git status");
+  expect(calls[2]!.summary).toHaveLength(160);
+  const update = redactHistoryUpdate({
+    history_version: 2,
+    mode: "snapshot",
+    cursor: { epoch: "e", revision: 1 },
+    window_limit: HISTORY_WINDOW_LIMIT,
+    entries: calls,
+  });
+  if (update.mode !== "snapshot") throw new Error("Expected snapshot");
+  expect(update.entries.map((entry) => [entry.text, entry.summary])).toEqual([
+    ["", "List files"],
+    ["", "git status"],
+    ["", "x".repeat(159) + "…"],
+  ]);
+});
+
+test("a call's summary names the agents and threads its session knows", () => {
+  const use = (id: string, name: string, input: Record<string, unknown>) => ({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id, name, input }],
+    },
+  });
+  const result = (id: string, content: unknown) => ({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: id, content }],
+    },
+  });
+  const trajectory = projectAgentTrajectory("claude", file, [
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content:
+          'A comment from me on parts of your messages in this chat:\n\n- [3bad5213] on your message that starts "I", about this part:\n  > the holder keeps the session\n  Is that so?',
+      },
+    },
+    use("t1", "Agent", {
+      name: "cutover",
+      description: "Write the cutover script",
+      prompt: "Brief",
+    }),
+    // Claude Code's result is a list of text blocks.
+    result("t1", [
+      {
+        type: "text",
+        text: "Async agent launched successfully.\nagentId: a0ed74d49757d9571 (internal ID)",
+      },
+    ]),
+    use("t2", "SendMessage", {
+      to: "a0ed74d49757d9571",
+      summary: "Holder question answered",
+      message: "The holder keeps it.",
+    }),
+    result("t2", '{"success":true}'),
+    use("t3", "mcp__roamgate__review_reply", {
+      comment_id: "3bad5213",
+      text: "Yes, it does.",
+    }),
+  ]);
+  const update = redactHistoryUpdate({
+    history_version: 2,
+    cursor: { epoch: "e", revision: 1 },
+    window_limit: HISTORY_WINDOW_LIMIT,
+    mode: "snapshot",
+    entries: historyEntriesFromTrajectory(file, trajectory),
+  });
+  const entries = update.mode === "snapshot" ? update.entries : [];
+  expect(
+    entries
+      .filter((entry) => entry.kind === "tool_call")
+      .map((entry) => [entry.tool_name, entry.summary]),
+  ).toEqual([
+    ["Agent", "Write the cutover script"],
+    ["SendMessage", "To the cutover agent: Holder question answered"],
+    [
+      "mcp__roamgate__review_reply",
+      'Replied on "the holder keeps the session"',
+    ],
+  ]);
+});

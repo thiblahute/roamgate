@@ -594,7 +594,8 @@ describe("a turn's tool calls, streamed then the transcript's", () => {
       const tools = items.filter((item) => item.type === "tools");
       if (!tools.length) continue;
       blocks += 1;
-      expect(tools.length).toBe(1);
+      // The same block all along, the streamed calls or the transcript's.
+      expect(tools.map((item) => item.id)).toEqual(["tools:call:c1"]);
       // Right under the question, and the last thing shown.
       const place = items.indexOf(tools[0]!);
       expect(items[place - 1]).toMatchObject({ entry: { uuid: "q1" } });

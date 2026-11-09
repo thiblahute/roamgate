@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { InjectedKind } from "../../../shared/injectedMessage";
 import { outgoingAgentMessage } from "../../../shared/agentMessage";
+import {
+  createToolSummaryNotes,
+  type ToolSummaryContext,
+  toolCallSummary,
+} from "../../../shared/toolSummary";
 import { isDismissedResult } from "../../../shared/review";
 import type { SlashCommand } from "../../../shared/slashCommand";
 import type { AtifTrajectory, SessionFile } from "./session-types";
@@ -52,6 +57,11 @@ export type HistoryEntry = {
   // waited on, unanswered, from Roamgate. Kept when the payload is
   // redacted, so the chat can say so.
   dismissed?: boolean;
+  // On a tool call: what it does in one short line (its description
+  // argument, else its main argument's first line, about 160 characters).
+  // Kept when the payload is redacted, so a collapsed tool group can show
+  // progress without fetching arguments.
+  summary?: string;
   // Set on redacted wire entries: UTF-8 byte length of the withheld text,
   // fetchable via agent_history.entry when the user expands the card.
   text_bytes?: number;
@@ -149,15 +159,33 @@ export function allHistoryEntries(
   // What the calls' results say of their file edits: failed, or Claude
   // Code's patch.
   const editResults = new Map<string, EditResult>();
+  // What each call's result says, for the calls' summaries.
+  const resultTexts = new Map<string, string>();
   for (const step of trajectory.steps)
     for (const result of step.observation?.results ?? [])
-      if (result.source_call_id)
+      if (result.source_call_id) {
         editResults.set(result.source_call_id, {
           failed: result.extra?.is_error === true,
           ...(result.extra?.file_edit
             ? { edit: result.extra.file_edit as FileEdit }
             : {}),
         });
+        if (typeof result.content === "string")
+          resultTexts.set(result.source_call_id, result.content);
+      }
+  // Who the session's agents are and what its review threads are about,
+  // so a summary can say them instead of their ids.
+  const summaryNotes = createToolSummaryNotes();
+  for (const step of trajectory.steps) {
+    if (step.source === "user" && typeof step.message === "string")
+      summaryNotes.noteMessage(step.message);
+    for (const call of step.tool_calls ?? [])
+      summaryNotes.noteCall(
+        call.function_name,
+        call.arguments,
+        resultTexts.get(call.tool_call_id),
+      );
+  }
   for (const step of trajectory.steps) {
     for (const call of step.tool_calls ?? []) {
       names.set(call.tool_call_id, call.function_name);
@@ -232,6 +260,11 @@ export function allHistoryEntries(
         tool_name: call.function_name,
         source_call_id: call.tool_call_id,
         text: JSON.stringify(call.arguments, null, 2),
+        ...callSummaryField(
+          call.function_name,
+          call.arguments,
+          summaryNotes.context(resultTexts.get(call.tool_call_id)),
+        ),
         sent_at,
         ...(messageCalls.has(call.tool_call_id)
           ? { agent_message: messageCalls.get(call.tool_call_id)! }
@@ -410,6 +443,15 @@ function fileEditField(
 }
 
 type EditResult = { failed: boolean; edit?: FileEdit };
+
+function callSummaryField(
+  name: string,
+  args: unknown,
+  context: ToolSummaryContext,
+) {
+  const summary = toolCallSummary(name, JSON.stringify(args ?? {}), context);
+  return summary && summary !== "{}" ? { summary } : {};
+}
 
 function artifactField(
   args: Record<string, unknown> | undefined,

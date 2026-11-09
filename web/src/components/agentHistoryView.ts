@@ -1,6 +1,11 @@
 import { roamgateLocalStorage } from "../browserStorage";
 import type { HistoryEntry } from "./agentHistory";
 import { outgoingAgentMessage } from "../../../shared/agentMessage";
+import {
+  isArgumentObject,
+  parseToolArguments,
+  toolCallSummary,
+} from "../../../shared/toolSummary";
 
 export type AgentHistoryView = "chat" | "timeline";
 
@@ -42,6 +47,7 @@ export function groupHistoryChatItems(
   entries: readonly HistoryEntry[],
 ): HistoryChatItem[] {
   const items: HistoryChatItem[] = [];
+  const blockIds = new Set<string>();
   let sequence = 0;
   const results = toolResults(entries);
   // Messages sent to other sessions in a tool block: shown after it.
@@ -78,12 +84,31 @@ export function groupHistoryChatItems(
     const last = items[items.length - 1];
     if (last?.type === "tools") last.entries.push(entry);
     else
-      items.push({ type: "tools", id: `tools:${entry.id}`, entries: [entry] });
+      items.push({
+        type: "tools",
+        id: toolBlockId(entry, blockIds),
+        entries: [entry],
+      });
     const message = sentAgentMessage(entry, results);
     if (message) sent.push(message);
   }
   flushSent();
   return items;
+}
+
+/**
+ * A block is known by its first call: the same whether that call is the
+ * one a conversation streams or the transcript's that replaces it, so the
+ * block keeps its place, and whether it is open, across the swap.
+ */
+function toolBlockId(first: HistoryEntry, taken: Set<string>): string {
+  const byCall =
+    first.kind === "tool_call" && first.source_call_id
+      ? `tools:call:${first.source_call_id}`
+      : "";
+  const id = byCall && !taken.has(byCall) ? byCall : `tools:${first.id}`;
+  taken.add(id);
+  return id;
 }
 
 /** The tool results, by the call they answer. */
@@ -205,7 +230,8 @@ export type ToolStep = {
 // One step per call, with its result attached by call id. When either side
 // lacks an id, the result pairs with the earliest unanswered call of the same
 // tool. A result with no call in the block (it fell outside the history
-// window) stands alone.
+// window) stands alone. A step is known by its call's id, the same for the
+// call a conversation streams and the transcript's that replaces it.
 export function pairToolSteps(entries: readonly HistoryEntry[]): ToolStep[] {
   const steps: ToolStep[] = [];
   const byCallId = new Map<string, ToolStep>();
@@ -226,7 +252,11 @@ export function pairToolSteps(entries: readonly HistoryEntry[]): ToolStep[] {
       else steps.push({ id: entry.id, name, result: entry });
       continue;
     }
-    const step: ToolStep = { id: entry.id, name, call: entry };
+    const step: ToolStep = {
+      id: callId && !byCallId.has(callId) ? `call:${callId}` : entry.id,
+      name,
+      call: entry,
+    };
     if (callId) byCallId.set(callId, step);
     steps.push(step);
   }
@@ -265,57 +295,50 @@ export function searchHistoryChatEntries(
   return entries.filter((entry) => kept.has(entry.id));
 }
 
-function parseToolArguments(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-function isArgumentObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// Keys that best identify what a call does, in priority order. Agents name
-// them differently, so this covers the common spellings.
-const HEADLINE_KEYS = [
-  "command",
-  "cmd",
-  "file_path",
-  "filePath",
-  "path",
-  "pattern",
-  "query",
-  "url",
-  "prompt",
-  "description",
-];
-
 // Single-line values that still read best as code.
 const CODE_KEYS = new Set(["command", "cmd"]);
 
-function firstLine(value: string) {
-  return (
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
+// A one-line summary of a call's arguments for its collapsed row: what the
+// call says it does when it has a description, else its main argument.
+export function toolArgumentHeadline(text: string): string {
+  return toolCallSummary("", text, {}, Number.POSITIVE_INFINITY);
+}
+
+// What a step does in one line: the summary the server kept, which knows the
+// whole session (who an agent id is, what a thread is about), else one from
+// the arguments and result at hand, as a live turn's calls have.
+export function toolStepSummary(step: ToolStep): string {
+  const call = step.call;
+  if (!call) return "";
+  if (call.summary) return call.summary;
+  if (call.text.length === 0) return "";
+  const result = step.result?.text;
+  return toolCallSummary(
+    step.name,
+    call.text,
+    result ? { result } : {},
+    Number.POSITIVE_INFINITY,
   );
 }
 
-// A one-line summary of a call's arguments for its collapsed row.
-export function toolArgumentHeadline(text: string): string {
-  const parsed = parseToolArguments(text);
-  if (!isArgumentObject(parsed)) return firstLine(text);
-  for (const key of HEADLINE_KEYS) {
-    const value = parsed[key];
-    if (typeof value === "string" && value.trim()) return firstLine(value);
-  }
-  const value = Object.values(parsed).find(
-    (item): item is string => typeof item === "string" && !!item.trim(),
+// Finished steps a collapsed group lists besides the running ones.
+export const COLLAPSED_FINISHED_STEPS = 3;
+
+// The steps a collapsed tool group lists as progress: every running step
+// and the last few finished ones, in order; `earlier` counts the finished
+// steps left out.
+export function collapsedToolProgress(
+  steps: readonly ToolStep[],
+  finishedLimit = COLLAPSED_FINISHED_STEPS,
+): { visible: ToolStep[]; earlier: number } {
+  const finished = steps.filter((step) => step.result);
+  const hidden = new Set(
+    finished.slice(0, Math.max(0, finished.length - finishedLimit)),
   );
-  return value ? firstLine(value) : firstLine(JSON.stringify(parsed));
+  return {
+    visible: steps.filter((step) => !hidden.has(step)),
+    earlier: hidden.size,
+  };
 }
 
 export type ToolArgumentField = { key: string; value: string; code: boolean };

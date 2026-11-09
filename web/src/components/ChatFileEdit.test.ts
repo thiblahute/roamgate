@@ -102,9 +102,9 @@ test("a block's edits: the entry's change, a streamed call's arguments, never a 
   expect(
     edits.map(({ call, ...rest }) => ({ ...rest, call: call.id })),
   ).toEqual([
-    { id: "c1", edit: kept, pending: false, call: "c1" },
+    { id: "call:c1", edit: kept, pending: false, call: "c1" },
     {
-      id: "live:c2",
+      id: "call:c2",
       edit: {
         path: "/w/b.md",
         added: 1,
