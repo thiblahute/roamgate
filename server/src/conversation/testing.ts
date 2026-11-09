@@ -170,6 +170,48 @@ export function answerRewinds(
 }
 
 /**
+ * Answers MCP requests as `claude -p` does: mcp_status with `servers` (the
+ * rows Claude Code 2.1.319 sends), any other mcp_* with what `answers` says
+ * for its subtype (`{ error }`: a refusal, `null`: no answer at all), a
+ * plain success otherwise.
+ */
+export function answerMcp(
+  options: {
+    servers?: Record<string, unknown>[];
+    answers?: Record<string, Record<string, unknown> | null>;
+  } = {},
+) {
+  return (message: Record<string, unknown>, process: FakeClaude) => {
+    answerInterrupts(message, process);
+    if (message.type !== "control_request") return;
+    const request = message.request as { subtype?: string } | undefined;
+    const subtype = request?.subtype ?? "";
+    if (!subtype.startsWith("mcp_")) return;
+    const reply = (response: Record<string, unknown>) =>
+      process.push({
+        type: "control_response",
+        response: { request_id: message.request_id, ...response },
+      });
+    if (subtype === "mcp_status" && options.answers?.mcp_status === undefined) {
+      reply({
+        subtype: "success",
+        response: { mcpServers: options.servers ?? [] },
+      });
+      return;
+    }
+    const answer = options.answers?.[subtype];
+    if (answer === null) return;
+    if (typeof answer?.error === "string")
+      reply({ subtype: "error", error: answer.error });
+    else
+      reply({
+        subtype: "success",
+        ...(answer ? { response: answer } : {}),
+      });
+  };
+}
+
+/**
  * Answers model requests as `claude -p` does: list_models with `models`
  * (Claude Code's own rows), set_model with the id `resolve` gives, or the
  * refusal it throws.

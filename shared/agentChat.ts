@@ -75,6 +75,8 @@ export type AgentChatCapabilities = {
   slashCommands: "claude" | null;
   /** The running agent's model is listed and switched (/model). */
   models: boolean;
+  /** The running agent's MCP servers are listed and acted on (/mcp). */
+  mcp: boolean;
 };
 
 export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
@@ -88,6 +90,7 @@ export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
   images: "base64",
   slashCommands: "claude",
   models: true,
+  mcp: true,
 };
 
 /**
@@ -341,6 +344,73 @@ export type AgentChatModelNotice = {
   model: string | null;
   text: string;
 };
+
+/** What an MCP server of the session is doing (/mcp). */
+export type AgentChatMcpStatus =
+  | "connected"
+  | "failed"
+  | "needs-auth"
+  | "pending"
+  | "disabled";
+
+/** What can be asked of an MCP server as it is now. */
+export type AgentChatMcpAction =
+  | "reconnect"
+  | "enable"
+  | "disable"
+  | "authenticate";
+
+export type AgentChatMcpTool = {
+  name: string;
+  description?: string;
+  readOnly?: boolean;
+  destructive?: boolean;
+};
+
+/** An MCP server of the session, as /mcp lists it. */
+export type AgentChatMcpServer = {
+  name: string;
+  status: AgentChatMcpStatus;
+  /** Where it comes from ("user", "project", "plugin", "claudeai"...). */
+  scope?: string;
+  /** How it is reached ("stdio", "http", "claude.ai"...). */
+  transport?: string;
+  /** Its host or command: never its arguments, headers or environment. */
+  target?: string;
+  /** What it calls itself once connected ("github 1.2.0"). */
+  version?: string;
+  error?: string;
+  tools?: AgentChatMcpTool[];
+  /** How many tools it has, when the agent gives no list. */
+  toolCount?: number;
+  actions: AgentChatMcpAction[];
+};
+
+/** The session's MCP servers (agent_chat.mcp). */
+export type AgentChatMcp = {
+  servers: AgentChatMcpServer[];
+};
+
+/** What /mcp asks of a server (agent_chat.mcp.action). */
+export type AgentChatMcpRequest =
+  | { action: AgentChatMcpAction; server: string }
+  | { action: "finish-sign-in"; server: string; url: string };
+
+/** How a sign-in goes on once the agent has started it. */
+export type AgentChatMcpSignIn = {
+  /** The page to open; null: the agent needed no sign-in after all. */
+  url: string | null;
+  /**
+   * The page redirects back to the agent's machine: the address it lands
+   * on can be pasted (finish-sign-in) where that machine is out of reach.
+   */
+  redirects: boolean;
+};
+
+/** What a /mcp action did. */
+export type AgentChatMcpResult =
+  | { ok: true; signIn?: AgentChatMcpSignIn }
+  | { ok: false; reason: string };
 
 /** Claude Code's predicted next user message. Never sent by itself. */
 export type AgentChatNextPrompt = { uuid: string; text: string };

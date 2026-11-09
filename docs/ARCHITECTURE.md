@@ -1592,6 +1592,26 @@ chip show it short (`shortModelName`: "Opus 5.5"), their titles the mod's
 context and plan usage too, refreshed with the profile chip and at once on
 a `model_notice`.
 
+`/mcp` goes over the same control protocol, behind `capabilities.mcp`
+(`server/src/conversation/drivers/claude-mcp.ts`), and starts the child if
+none runs, since only it knows its servers; looking at them counts as
+activity for the idle stop, so a sign-in under way is not cut short.
+`agent_chat.mcp` asks `mcp_status`, and the row carries the server's name,
+state, scope, transport, tools and the actions it allows, with only its
+host or command name: never its arguments, environment or headers.
+`agent_chat.mcp.action` sends `mcp_reconnect`, `mcp_toggle` (Claude Code
+keeps a disabled server in its own per-project settings, so the terminal
+sees it too) or `mcp_authenticate`, which answers the page to open. An
+OAuth server's page redirects to a port on the child's machine, and Claude
+Code connects the server itself when a browser reaches that port. Where a
+browser cannot (a phone, a remote host), the address it lands on comes back
+as `finish-sign-in`, sent as `mcp_oauth_callback_url` and then
+`mcp_reconnect`, which Claude Code needs after a callback it did not
+receive itself. A claude.ai connector is connected on claude.ai, and
+`mcp_reconnect` once that is done. The sheet reads the list again after
+each action, and by itself while a server connects or a sign-in is under
+way, for at most five minutes after the last action.
+
 What the code of a rewind comes to is read from the transcript
 (`server/src/conversation/rewind-scan.ts`): the files edited after the
 message with Claude's file tools (Edit, Write, MultiEdit, NotebookEdit),

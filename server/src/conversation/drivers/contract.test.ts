@@ -144,6 +144,7 @@ for (const { protocol, terminal } of conversationDrivers()) {
       // Its optional features are there exactly when it says so.
       expect(!!protocol.rewind).toBe(!!protocol.capabilities.rewind);
       expect(!!protocol.models).toBe(protocol.capabilities.models);
+      expect(!!protocol.mcp).toBe(protocol.capabilities.mcp);
     });
 
     test("a turn decodes to the session, its reply and its result", () => {

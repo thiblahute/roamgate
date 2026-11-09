@@ -5,6 +5,9 @@ import type {
   AgentChatEventEnvelope,
   AgentChatHandoverResult,
   AgentChatInterrupted,
+  AgentChatMcp,
+  AgentChatMcpRequest,
+  AgentChatMcpResult,
   AgentChatModelNotice,
   AgentChatModelResult,
   AgentChatModels,
@@ -763,6 +766,44 @@ export function createConversationService<Ws>(
     };
   }
 
+  /** Why /mcp cannot be used on this pane now; null when it can. */
+  function mcpRefusal(paneId: string): string | null {
+    const lease = leases.get(paneId);
+    if (disposed || !lease || lease.phase !== "conversation")
+      return lease
+        ? "This session is being handed over; try again shortly"
+        : "The terminal owns this session";
+    const protocol = driverOf(paneId).protocol;
+    return protocol.mcp ? null : `${protocol.displayName} has no MCP servers`;
+  }
+
+  /** The MCP servers of the pane's session (/mcp); throws when it cannot say. */
+  async function mcp(paneId: string): Promise<AgentChatMcp> {
+    const refusal = mcpRefusal(paneId);
+    if (refusal) throw new Error(refusal);
+    const result = await sessionFor(paneId).mcpStatus();
+    if (!result.ok) throw new Error(result.reason);
+    return { servers: result.servers };
+  }
+
+  /** Acts on an MCP server of the pane's session (/mcp). */
+  async function mcpAction(
+    paneId: string,
+    request: AgentChatMcpRequest,
+  ): Promise<AgentChatMcpResult> {
+    const refusal = mcpRefusal(paneId);
+    if (refusal) return { ok: false, reason: refusal };
+    const result = await sessionFor(paneId).mcpAction(request);
+    log("conversation mcp action", {
+      pane: paneId,
+      action: request.action,
+      server: request.server,
+      ok: result.ok,
+      ...(result.ok ? {} : { reason: result.reason }),
+    });
+    return result;
+  }
+
   /** The notice of a turn cut short goes (a new turn, or a dismiss). */
   function clearInterrupted(paneId: string) {
     if (disposed) return;
@@ -1169,6 +1210,8 @@ export function createConversationService<Ws>(
     dismissInterrupted: clearInterrupted,
     /** What /model offers in the pane's session, and which one it runs. */
     models: listModels,
+    mcp,
+    mcpAction,
     /** /model: switches the pane's session to another model. */
     setModel,
     /** The user dismissed what the chat said of the last /model. */

@@ -13,6 +13,7 @@ import {
 import { isSpokenStop } from "./session-voice";
 import {
   answerInterrupts,
+  answerMcp,
   answerModels,
   answerRewinds,
   type FakeClaude,
@@ -1919,6 +1920,113 @@ describe("next prompt", () => {
     });
     await settle();
     expect(context.session.state().next_prompt).toBeNull();
+  });
+});
+
+describe("MCP servers (/mcp)", () => {
+  const STDIO = {
+    name: "echo",
+    status: "connected",
+    transport: "stdio",
+    source: "user",
+    tools: [{ name: "echo", annotations: { readOnly: true } }],
+    config: { type: "stdio", command: "/usr/bin/echo-mcp", args: ["--key=x"] },
+  };
+  const withMcp = (options?: Parameters<typeof answerMcp>[0]) => () =>
+    fakeClaudeProcess({ exitOnEnd: true, respond: answerMcp(options) });
+  const requests = (fake: FakeClaude) =>
+    fake.written.flatMap((message) =>
+      message.type === "control_request" ? [message.request] : [],
+    );
+
+  test("the list starts the process when none runs and asks it", async () => {
+    const context = setup({ make: withMcp({ servers: [STDIO] }) });
+    expect(context.spawner.spawned).toHaveLength(0);
+    expect(await context.session.mcpStatus()).toEqual({
+      ok: true,
+      servers: [
+        {
+          name: "echo",
+          status: "connected",
+          scope: "user",
+          transport: "stdio",
+          target: "echo-mcp",
+          tools: [{ name: "echo", readOnly: true }],
+          actions: ["reconnect", "disable"],
+        },
+      ],
+    });
+    expect(context.spawner.spawned).toHaveLength(1);
+    expect(requests(context.proc())).toEqual([{ subtype: "mcp_status" }]);
+  });
+
+  test("an action reaches the process, and Claude's refusal comes back", async () => {
+    const context = setup({
+      make: withMcp({
+        answers: { mcp_toggle: { error: "Server not found: gone" } },
+      }),
+    });
+    expect(
+      await context.session.mcpAction({ action: "reconnect", server: "echo" }),
+    ).toEqual({ ok: true });
+    expect(
+      await context.session.mcpAction({ action: "disable", server: "gone" }),
+    ).toEqual({ ok: false, reason: "Server not found: gone" });
+    expect(requests(context.proc())).toEqual([
+      { subtype: "mcp_reconnect", serverName: "echo" },
+      { subtype: "mcp_toggle", serverName: "gone", enabled: false },
+    ]);
+  });
+
+  test("a start that fails is said, not thrown", async () => {
+    const context = setup({
+      spawn: async () => {
+        throw new Error("no claude here");
+      },
+    });
+    expect(await context.session.mcpStatus()).toEqual({
+      ok: false,
+      reason: "Claude did not start (no claude here)",
+    });
+  });
+
+  test("a process that does not answer gives a reason once the wait ends", async () => {
+    jest.useFakeTimers();
+    try {
+      const context = setup({
+        make: withMcp({ answers: { mcp_status: null, mcp_reconnect: null } }),
+        mcpWaitMs: 30_000,
+      });
+      const listed = context.session.mcpStatus();
+      await settle();
+      jest.advanceTimersByTime(20_000);
+      expect(await listed).toEqual({
+        ok: false,
+        reason: "Claude did not answer in time",
+      });
+      const done = context.session.mcpAction({
+        action: "reconnect",
+        server: "echo",
+      });
+      await settle();
+      jest.advanceTimersByTime(30_000);
+      expect(await done).toEqual({
+        ok: false,
+        reason: "Claude did not answer in time",
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("looking at the servers counts as activity for the idle stop", async () => {
+    const context = setup({ make: withMcp() });
+    await context.session.warm();
+    await Bun.sleep(5);
+    const before = context.session.idleSince();
+    await Bun.sleep(5);
+    await context.session.mcpStatus();
+    expect(context.session.idleSince()).toBeGreaterThan(before);
   });
 });
 

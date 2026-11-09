@@ -111,6 +111,17 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
           ],
           ...(profileModel ? { model: profileModel } : {}),
         };
+      if (method === "agent_chat.mcp")
+        return {
+          servers: [
+            {
+              name: "docs",
+              status: "needs-auth",
+              transport: "http",
+              actions: ["authenticate", "reconnect", "disable"],
+            },
+          ],
+        };
       if (method === "agent_chat.model") {
         switched.push(String(params?.model));
         return { ok: true, model: "claude-haiku-5-5" };
@@ -601,6 +612,7 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
         images: "path",
         slashCommands: null,
         models: false,
+        mcp: false,
       });
       expect(rewind()).toBe(0);
       await typed("!ls");
@@ -777,6 +789,22 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       });
       expect(switched).toEqual(["haiku"]);
       expect(sheet()).toBeNull();
+      // /mcp goes to the chat's own sheet too, never to the agent as text.
+      sent.length = 0;
+      await send("/mcp");
+      expect(sent).toEqual([]);
+      const mcp = document.querySelector(
+        '[role="dialog"][aria-label="MCP servers"]',
+      );
+      expect(mcp?.textContent).toContain("docs");
+      expect(mcp?.textContent).toContain("Needs sign-in");
+      await React.act(async () => {
+        document
+          .querySelector<HTMLButtonElement>(
+            '[role="dialog"][aria-label="MCP servers"] [aria-label="Close"]',
+          )!
+          .click();
+      });
       // With a name: the bridge switches it (and says so in the chat).
       await send("/model sonnet");
       expect(sent.map((each) => each.text)).toEqual(["/model sonnet"]);

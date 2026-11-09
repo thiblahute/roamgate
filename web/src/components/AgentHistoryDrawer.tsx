@@ -1,6 +1,7 @@
 import { useRenderTrace } from "../renderTrace";
 import { shellLine } from "../../../shared/bashMode";
 import {
+  type AgentChatMcpRequest,
   chatCapabilities,
   isConversationAgent,
 } from "../../../shared/agentChat";
@@ -53,7 +54,9 @@ import {
   deliveryNotice,
   dismissAgentChatInterrupted,
   dismissAgentChatModelNotice,
+  listAgentChatMcp,
   listAgentChatModels,
+  runAgentChatMcpAction,
   setAgentChatModel,
   QUEUE_STALL_MS,
   queueWaiting,
@@ -90,6 +93,7 @@ import {
   type RewindMode,
 } from "../claudeRewind";
 import { AgentRewindSheet } from "./AgentRewindSheet";
+import { AgentMcpSheet } from "./AgentMcpSheet";
 import { AgentModelSheet } from "./AgentModelSheet";
 import { parseModelCommand } from "../../../shared/agentModels";
 import { copyTextWithFeedback } from "../copyText";
@@ -127,6 +131,7 @@ import { shortcutTitle } from "../shortcutPreferences";
 import {
   conversationCommands,
   conversationRefusal,
+  isMcpCommand,
   useAgentCommands,
 } from "../claudeCommands";
 import type { Pane } from "../types";
@@ -2041,9 +2046,11 @@ export function AgentHistoryDrawer({
   // Claude Code's in its terminal, which would only show as its screen.
   // /model alone in conversation mode opens the models its agent and
   // profile offer (AgentModelSheet); `/model <name>` goes to the bridge,
-  // which switches the session at once.
+  // which switches the session at once. /mcp lists the session's MCP
+  // servers with what can be done to them (AgentMcpSheet).
   const [rewindOpen, setRewindOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const sendFromChatBox = useCallback(
     async (text: string) => {
       if (
@@ -2061,6 +2068,13 @@ export function AgentHistoryDrawer({
       )
         setModelOpen(true);
       else if (
+        conversationAgent &&
+        capabilities.mcp &&
+        inConversationRef.current &&
+        isMcpCommand(text)
+      )
+        setMcpOpen(true);
+      else if (
         chatPaneId &&
         conversationAgent &&
         capabilities.backgroundTasks &&
@@ -2071,6 +2085,7 @@ export function AgentHistoryDrawer({
     },
     [
       capabilities.backgroundTasks,
+      capabilities.mcp,
       capabilities.models,
       capabilities.rewind,
       chatPaneId,
@@ -2088,9 +2103,21 @@ export function AgentHistoryDrawer({
     (model: string) => setAgentChatModel(connectionClient, pane.pane_id, model),
     [connectionClient, pane.pane_id],
   );
+  const loadMcp = useCallback(
+    () => listAgentChatMcp(connectionClient, pane.pane_id),
+    [connectionClient, pane.pane_id],
+  );
+  const actOnMcp = useCallback(
+    (request: AgentChatMcpRequest) =>
+      runAgentChatMcpAction(connectionClient, pane.pane_id, request),
+    [connectionClient, pane.pane_id],
+  );
   // Closed when conversation mode lets the session go.
   useEffect(() => {
-    if (!inConversation) setModelOpen(false);
+    if (!inConversation) {
+      setModelOpen(false);
+      setMcpOpen(false);
+    }
   }, [inConversation]);
   const composerDraftKey = terminalComposerDraftKey(
     activeConnectionId,
@@ -3592,6 +3619,13 @@ export function AgentHistoryDrawer({
           load={loadModels}
           onPick={pickModel}
           onClose={() => setModelOpen(false)}
+        />
+      ) : null}
+      {mcpOpen ? (
+        <AgentMcpSheet
+          load={loadMcp}
+          act={actOnMcp}
+          onClose={() => setMcpOpen(false)}
         />
       ) : null}
       {/* Once it is known which session's place to open on. */}

@@ -15,7 +15,9 @@ import {
   liveAfterSubscribe,
   queuedEntries,
   queuedEntryId,
+  listAgentChatMcp,
   rewindAgentChat,
+  runAgentChatMcpAction,
   SUBSCRIBE_RETRY_MS,
   watchAgentChat,
 } from "./agentChat";
@@ -530,6 +532,51 @@ describe("following a pane", () => {
     expect(liveAfterSubscribe(EMPTY_LIVE_TURN, state, 42)).toBe(
       EMPTY_LIVE_TURN,
     );
+  });
+});
+
+describe("/mcp", () => {
+  const client = (call: ConnectionClient["call"]): ConnectionClient => ({
+    connectionId: "c-mcp",
+    generation: 1,
+    serverRuntimeGeneration: 1,
+    call,
+    isCurrent: () => true,
+    acceptsServerGeneration: () => true,
+  });
+
+  test("asks the bridge for the servers and for an action", async () => {
+    const calls: [string, unknown][] = [];
+    const call: ConnectionClient["call"] = async (method, params) => {
+      calls.push([method, params]);
+      return method === "agent_chat.mcp" ? { servers: [] } : { ok: true };
+    };
+    expect(await listAgentChatMcp(client(call), "p1")).toEqual({ servers: [] });
+    expect(
+      await runAgentChatMcpAction(client(call), "p1", {
+        action: "enable",
+        server: "docs",
+      }),
+    ).toEqual({ ok: true });
+    expect(calls).toEqual([
+      ["agent_chat.mcp", { pane_id: "p1" }],
+      [
+        "agent_chat.mcp.action",
+        { pane_id: "p1", action: "enable", server: "docs" },
+      ],
+    ]);
+  });
+
+  test("an action the bridge cannot reach is a failure, not a throw", async () => {
+    expect(
+      await runAgentChatMcpAction(
+        client(async () => {
+          throw new Error("offline");
+        }),
+        "p1",
+        { action: "reconnect", server: "docs" },
+      ),
+    ).toEqual({ ok: false, reason: "offline" });
   });
 });
 

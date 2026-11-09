@@ -700,7 +700,12 @@ Inspector state is scoped to each checkout; see
   it or names a model it lacks. `/model <name>` switches at once, a turn
   running or not (that turn keeps its model). The chat says which model it
   is now, or why Claude refused it, and the choice holds when the process
-  restarts (idle stop, hand-back) until the session has answered with it. A message starting with `!` runs as a
+  restarts (idle stop, hand-back) until the session has answered with it.
+  `/mcp` opens the session's MCP servers: each one's state, where it comes
+  from and its tools, with Reconnect, Enable or Disable (kept for the
+  project, in the terminal too) and Sign in for one that needs it. A
+  sign-in opens the server's page; from a phone or another machine, paste
+  the address that page ends on to finish it. A message starting with `!` runs as a
   shell command, as Claude Code's bash mode does: on the pane's host (over
   SSH for a remote one), in the session's directory, with your login shell.
   The chat shows its output as it comes, its exit code and **Stop**; Claude
