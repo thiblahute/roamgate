@@ -289,8 +289,12 @@ Inspector state is scoped to each checkout; see
 - **Agent History** shows the latest 200 conversation entries with search, a
   minimap, and tool details. The **Chat view** toggle reads them as
   conversation bubbles with rendered replies and collapsible tool-call blocks
-  that follow new output, plus a message box that types into the agent's
-  terminal and shares the pane's terminal composer draft. Paste images or use
+  that follow new output (a collapsed block lists what its running calls and
+  its last few finished ones do, one line each, in plain words: the file read
+  or edited, the agent a message went to, the review thread answered, the
+  tools loaded; MCP tools go by readable names such as "Spotify: search"),
+  plus a message box that types into the agent's terminal and shares the
+  pane's terminal composer draft. Paste images or use
   **Add images** to choose them on desktop or mobile; the box shows each as
   `[Image #N]` with a thumbnail above it (and a button to remove it) while the
   draft keeps its uploaded path, which is what the agent gets. In the

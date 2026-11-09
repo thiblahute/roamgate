@@ -21,6 +21,7 @@ import {
   CircleSlash,
   Copy,
   ExternalLink,
+  Loader2,
   RotateCw,
   Pencil,
   RotateCcw,
@@ -64,10 +65,12 @@ import {
   toolPayloadKey,
   summarizeToolSteps,
   toolArgumentFields,
-  toolArgumentHeadline,
+  collapsedToolProgress,
+  toolStepSummary,
   type HistoryChatItem,
   type ToolStep,
 } from "./agentHistoryView";
+import { toolDisplayName } from "../../../shared/toolSummary";
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
 import { ForgeStreamingContext, useForgeSlotsContext } from "../forgeSlots";
@@ -1272,19 +1275,10 @@ function ToolStepRow({
 }) {
   const { call, result } = step;
   // Dismissed from Roamgate, unanswered: said so, not as a failure.
-  const status = !result
-    ? "pending"
-    : result.dismissed
-      ? "dismissed"
-      : result.is_error
-        ? "error"
-        : "done";
+  const status = stepStatus(step);
   const headline =
-    call && !isToolContentPending(call)
-      ? toolArgumentHeadline(call.text)
-      : call && loader.loading.has(call.id)
-        ? "Loading…"
-        : "";
+    toolStepSummary(step) ||
+    (call && loader.loading.has(call.id) ? "Loading…" : "");
   const sentAt = (call ?? result)?.sent_at;
   return (
     <li
@@ -1306,7 +1300,9 @@ function ToolStepRow({
         ) : (
           <Wrench size={12} aria-label="No output yet" />
         )}
-        <span className="agent-history-chat-step-name">{step.name}</span>
+        <span className="agent-history-chat-step-name">
+          {toolDisplayName(step.name)}
+        </span>
         {status === "dismissed" ? (
           <span className="agent-history-chat-step-dismissed">Dismissed</span>
         ) : null}
@@ -1316,6 +1312,60 @@ function ToolStepRow({
         <ToolStepDetail step={step} loader={loader} onOpen={onOpen} />
       ) : null}
     </li>
+  );
+}
+
+function stepStatus(step: ToolStep) {
+  const { result } = step;
+  return !result
+    ? "pending"
+    : result.dismissed
+      ? "dismissed"
+      : result.is_error
+        ? "error"
+        : "done";
+}
+
+// A collapsed group's progress: what its running steps and its last finished
+// ones do, one line each.
+export function ToolProgress({ steps }: { steps: readonly ToolStep[] }) {
+  const { visible, earlier } = collapsedToolProgress(steps);
+  if (!visible.length) return null;
+  return (
+    <ul className="agent-history-chat-progress" aria-label="Tool progress">
+      {earlier > 0 ? (
+        <li className="agent-history-chat-progress-earlier">
+          +{earlier} earlier
+        </li>
+      ) : null}
+      {visible.map((step) => {
+        const status = stepStatus(step);
+        const summary = toolStepSummary(step);
+        return (
+          <li
+            key={step.id}
+            className={`agent-history-chat-progress-step is-${status}`}
+          >
+            {status === "done" ? (
+              <Check size={11} aria-label="Succeeded" />
+            ) : status === "error" ? (
+              <X size={11} aria-label="Failed" />
+            ) : status === "dismissed" ? (
+              <CircleSlash size={11} aria-label="Dismissed" />
+            ) : (
+              <Loader2
+                size={11}
+                className="agent-history-chat-progress-spin"
+                aria-label="Running"
+              />
+            )}
+            <span className="agent-history-chat-progress-text">
+              {summary || toolDisplayName(step.name)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -1487,7 +1537,10 @@ const ToolBlock = memo(function ToolBlock({
   const summary = summarizeToolSteps(steps);
   const callsLabel = `${summary.calls} tool ${summary.calls === 1 ? "call" : "calls"}`;
   const toolsLabel = summary.tools
-    .map(({ name, count }) => (count > 1 ? `${name} ×${count}` : name))
+    .map(({ name, count }) => {
+      const label = toolDisplayName(name);
+      return count > 1 ? `${label} ×${count}` : label;
+    })
     .join(", ");
   return (
     <div
@@ -1577,6 +1630,7 @@ const ToolBlock = memo(function ToolBlock({
           ))}
         </div>
       ) : null}
+      {!open ? <ToolProgress steps={steps} /> : null}
       {open ? (
         <ul id={listId} className="agent-history-chat-tools-list">
           {steps.map((step) => (

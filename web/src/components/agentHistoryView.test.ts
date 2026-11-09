@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { toolOverlayMatches, type HistoryEntry } from "./agentHistory";
 import {
+  collapsedToolProgress,
+  toolStepSummary,
+  type ToolStep,
   groupHistoryChatItems,
   pairToolSteps,
   previewToolArgumentFields,
@@ -47,6 +50,48 @@ test("consecutive tool entries collapse into one chat block", () => {
   // Minimap sequences count bubbles only, skipping tool rows.
   expect(items[0]).toMatchObject({ type: "message", sequence: 1 });
   expect(items[2]).toMatchObject({ type: "message", sequence: 2 });
+});
+
+test("a tool block and its steps keep their ids when the transcript replaces the streamed calls", () => {
+  const ids = (entries: HistoryEntry[]) =>
+    groupHistoryChatItems(entries).flatMap((item) =>
+      item.type === "tools"
+        ? [[item.id, pairToolSteps(item.entries).map((step) => step.id)]]
+        : [],
+    );
+  const question = entry("q", "user");
+  // A conversation's calls as streamed, then as its transcript has them.
+  const streamed = [
+    entry("live:tool:a", "tool", { source_call_id: "a" }),
+    entry("live:result:a", "tool", {
+      kind: "tool_result",
+      source_call_id: "a",
+    }),
+    entry("live:tool:b", "tool", { source_call_id: "b" }),
+  ];
+  const saved = [
+    entry("h1", "tool", { source_call_id: "a", text: "" }),
+    entry("h2", "tool", { kind: "tool_result", source_call_id: "a" }),
+  ];
+  const expected = [["tools:call:a", ["call:a", "call:b"]]];
+  expect(ids([question, ...streamed])).toEqual(expected);
+  expect(ids([question, ...saved, ...streamed.slice(2)])).toEqual(expected);
+  expect(
+    ids([question, ...saved, entry("h3", "tool", { source_call_id: "b" })]),
+  ).toEqual(expected);
+  // A block that starts with a result (its call before a message) is
+  // known by it, not by the call another block starts with.
+  expect(
+    ids([
+      entry("c", "tool", { source_call_id: "x" }),
+      entry("m", "assistant"),
+      entry("r", "tool", { kind: "tool_result", source_call_id: "x" }),
+      entry("c2", "tool", { source_call_id: "x" }),
+    ]),
+  ).toEqual([
+    ["tools:call:x", ["call:x"]],
+    ["tools:r", ["r", "call:x"]],
+  ]);
 });
 
 test("the same slash command typed again and again is one chip with a count", () => {
@@ -160,7 +205,10 @@ test("argument headlines pick the most telling field", () => {
     toolArgumentHeadline(
       JSON.stringify({ description: "List files", command: "ls -la\npwd" }),
     ),
-  ).toBe("ls -la");
+  ).toBe("List files");
+  expect(toolArgumentHeadline(JSON.stringify({ command: "ls -la\npwd" }))).toBe(
+    "ls -la",
+  );
   expect(toolArgumentHeadline(JSON.stringify({ file_path: "/a/b.ts" }))).toBe(
     "/a/b.ts",
   );
@@ -413,4 +461,78 @@ test("a sent message shows from the bridge's metadata when the payload is withhe
       injected: { kind: "session", label: "To Merge checks (desktop/w5:p1)" },
     },
   });
+});
+
+test("a collapsed group lists running steps and the last finished ones", () => {
+  const step = (id: string, done: boolean, summary?: string): ToolStep => ({
+    id,
+    name: "bash",
+    call: {
+      id,
+      role: "tool",
+      kind: "tool_call",
+      text: "",
+      text_bytes: 20,
+      sent_at: "2026-01-01T00:00:00Z",
+      ...(summary ? { summary } : {}),
+    },
+    ...(done
+      ? {
+          result: {
+            id: `${id}r`,
+            role: "tool" as const,
+            kind: "tool_result" as const,
+            text: "",
+            sent_at: "2026-01-01T00:00:00Z",
+          },
+        }
+      : {}),
+  });
+  const steps = [
+    step("a", true),
+    step("b", false, "Still going"),
+    step("c", true),
+    step("d", true),
+    step("e", true),
+    step("f", true),
+  ];
+  const { visible, earlier } = collapsedToolProgress(steps);
+  expect(visible.map((item) => item.id)).toEqual(["b", "d", "e", "f"]);
+  expect(earlier).toBe(2);
+  expect(toolStepSummary(steps[1]!)).toBe("Still going");
+  expect(toolStepSummary(steps[0]!)).toBe("");
+  expect(collapsedToolProgress(steps.slice(0, 2)).earlier).toBe(0);
+});
+
+test("a step's summary prefers the server's, else reads its arguments", () => {
+  const call = (name: string, args: unknown, summary?: string): ToolStep => ({
+    id: name,
+    name,
+    call: {
+      id: name,
+      role: "tool",
+      kind: "tool_call",
+      tool_name: name,
+      text: JSON.stringify(args),
+      sent_at: "2026-01-01T00:00:00Z",
+      ...(summary ? { summary } : {}),
+    },
+  });
+  expect(
+    toolStepSummary(
+      call(
+        "SendMessage",
+        { to: "a0ed74d49757d9571", summary: "Holder question answered" },
+        "To the cutover agent: Holder question answered",
+      ),
+    ),
+  ).toBe("To the cutover agent: Holder question answered");
+  expect(
+    toolStepSummary(
+      call("SendMessage", { to: "a0ed74d49757d9571", summary: "Answered" }),
+    ),
+  ).toBe("To an agent: Answered");
+  expect(
+    toolStepSummary(call("Read", { file_path: "/x/web/src/App.tsx" })),
+  ).toBe("Read src/App.tsx");
 });

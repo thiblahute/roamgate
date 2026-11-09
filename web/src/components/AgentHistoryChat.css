@@ -344,6 +344,70 @@
   white-space: nowrap;
 }
 
+/* A collapsed block's progress: one line per step, so it reads on a phone. */
+.agent-history-chat-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  padding: 4px 10px 6px;
+  list-style: none;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+.agent-history-chat-progress-earlier {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-history-chat-progress-step {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.agent-history-chat-progress-step > svg {
+  flex: 0 0 auto;
+}
+
+.agent-history-chat-progress-step.is-pending {
+  color: var(--text);
+}
+
+.agent-history-chat-progress-step.is-done > svg {
+  color: var(--green);
+}
+
+.agent-history-chat-progress-step.is-error {
+  color: var(--danger-text);
+}
+
+.agent-history-chat-progress-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-history-chat-progress-spin {
+  animation: agent-history-chat-progress-spin 1s linear infinite;
+}
+
+@keyframes agent-history-chat-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-history-chat-progress-spin {
+    animation: none;
+  }
+}
+
 .agent-history-chat-tools-list {
   display: grid;
   /* A shrinkable track: nowrap headlines must not widen the list. */
