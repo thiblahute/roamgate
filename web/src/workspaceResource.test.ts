@@ -9,6 +9,8 @@ import { describe, expect, test } from "bun:test";
 import type { Workspace } from "./types";
 import {
   checkoutKeyForWorkspace,
+  keptFilePath,
+  renameResourceFileTab,
   readResourceFileTabs,
   writeResourceFileTabs,
   openResourceFileTab,
@@ -704,6 +706,98 @@ describe("file preview tabs", () => {
         previewPath: null,
       }),
     );
+  });
+
+  test("keeps a sibling checkout's file absolute through reloads, in any workspace", () => {
+    const sibling =
+      "/Volumes/data/tasks/areglos-casa/planos-3d/out/casa-monroe-3d.html";
+    const storage = memoryStorage();
+    const checkout = resourceScopeForWorkspace(
+      "local",
+      workspace("w1", "/Volumes/data/tasks/areglos-casa/instalador"),
+    );
+    const plain = resourceScopeForWorkspace("local", workspace("w1F"));
+    for (const scope of [checkout, plain]) {
+      // Opened by its path (an agent, a link, the URL bar): kept as given.
+      expect(keptFilePath(scope, sibling, null)).toBe(sibling);
+      writeResourceFileSelection(storage, scope, sibling);
+      // A reload restores it as it was written, never relative.
+      expect(readResourceFileSelection(storage, scope)).toBe(sibling);
+      expect(readResourceFileTabs(storage, scope).paths).toEqual([sibling]);
+    }
+    expect(keptFilePath(plain, "https://example.com/", null)).toBe(
+      "https://example.com/",
+    );
+  });
+
+  test("keeps a workspace without a checkout's files by the root they were read from", () => {
+    const plain = resourceScopeForWorkspace("local", workspace("w1F"));
+    const checkout = resourceScopeForWorkspace(
+      "local",
+      workspace("w1", "/repo/instalador"),
+    );
+    // Its root follows the focused pane: a relative path is not kept until
+    // the root it was read from is known, then kept absolute.
+    expect(keptFilePath(plain, "out/casa.html", null)).toBeUndefined();
+    expect(
+      keptFilePath(plain, "out/casa.html", {
+        root: "/repo/planos-3d/",
+        path: "out/casa.html",
+      }),
+    ).toBe("/repo/planos-3d/out/casa.html");
+    expect(
+      keptFilePath(plain, "out/casa.html", {
+        root: "/repo/planos-3d",
+        path: "/elsewhere/casa.html",
+      }),
+    ).toBe("/elsewhere/casa.html");
+    expect(
+      keptFilePath(plain, "out\\casa.html", {
+        root: "C:\\work\\planos",
+        path: "out/casa.html",
+      }),
+    ).toBe("C:\\work\\planos\\out\\casa.html");
+    // A checkout's root is its own: its relative paths stay relative.
+    expect(
+      keptFilePath(checkout, "out/casa.html", {
+        root: "/repo/instalador",
+        path: "out/casa.html",
+      }),
+    ).toBe("out/casa.html");
+
+    // A tab kept relative before keeps its place once anchored.
+    const tabs = {
+      paths: ["a.md", "out/casa.html", "b.md"],
+      activePath: "out/casa.html",
+      previewPath: "out/casa.html",
+    };
+    expect(
+      renameResourceFileTab(
+        tabs,
+        "out/casa.html",
+        "/repo/planos-3d/out/casa.html",
+      ),
+    ).toEqual({
+      paths: ["a.md", "/repo/planos-3d/out/casa.html", "b.md"],
+      activePath: "/repo/planos-3d/out/casa.html",
+      previewPath: "/repo/planos-3d/out/casa.html",
+    });
+    expect(renameResourceFileTab(tabs, "missing", "/x")).toBe(tabs);
+    expect(
+      renameResourceFileTab(
+        {
+          paths: ["out/a", "/r/out/a"],
+          activePath: "out/a",
+          previewPath: null,
+        },
+        "out/a",
+        "/r/out/a",
+      ),
+    ).toEqual({
+      paths: ["/r/out/a"],
+      activePath: "/r/out/a",
+      previewPath: null,
+    });
   });
 
   test("rejects corrupt records and sanitizes duplicate or invalid paths", () => {

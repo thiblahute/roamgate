@@ -568,3 +568,57 @@ test("make it mine takes an agent's draft of a local review, shown in the merge 
     service.get({ sessionId: local.id }).threads.map((each) => each.id),
   ).not.toContain(draft.id);
 });
+
+test("a rendered file and its merge request's review share their threads; only the user's drafts go to GitLab", async () => {
+  const { service, writes } = make();
+  const mr = openMr(service, "gnome/glib");
+  const rendered = service.open({
+    connectionId: "c",
+    root: "/repo",
+    target: { kind: "rendered", path: "plan.md" },
+    agent: "claude",
+    paneId: "p1",
+    raise: false,
+  }).session;
+  await service.refreshGitlab({ sessionId: mr.id });
+  const posts = () => writes.filter((write) => write.method === "POST");
+  // Written in the rendered view: a discussion with the agent, shown in
+  // the merge request's review, never written to GitLab.
+  const said = await service.addThread({
+    sessionId: rendered.id,
+    kind: "discussion",
+    anchor: { path: "plan.md", line: 3, side: "new" },
+    text: "Rendered words",
+  });
+  expect(posts()).toHaveLength(0);
+  const inMr = service.get({ sessionId: mr.id });
+  expect(inMr.shared?.map((thread) => thread.id)).toEqual([said.id]);
+  expect(inMr.threads.some((thread) => thread.id === said.id)).toBe(false);
+  // Answered from the merge request's review: still local, in its review.
+  await service.reply({
+    sessionId: mr.id,
+    commentId: said.id,
+    text: "Local answer",
+  });
+  expect(posts()).toHaveLength(0);
+  expect(
+    service.get({ sessionId: rendered.id }).threads[0]?.comments,
+  ).toHaveLength(2);
+  // The user's review comment on the file in the merge request's review is
+  // a GitLab draft, shown in the rendered view too.
+  const draft = await service.addThread({
+    sessionId: mr.id,
+    kind: "draft",
+    author: "you",
+    anchor: { path: "plan.md", line: 5, side: "new" },
+    text: "For GitLab",
+  });
+  expect(posts()).toHaveLength(1);
+  const shared = service.get({ sessionId: rendered.id }).shared ?? [];
+  expect(shared.find((thread) => thread.id === draft.id)?.gitlab?.draftId).toBe(
+    draft.gitlab?.draftId,
+  );
+  expect(shared.find((thread) => thread.id === draft.id)?.sessionId).toBe(
+    mr.id,
+  );
+});

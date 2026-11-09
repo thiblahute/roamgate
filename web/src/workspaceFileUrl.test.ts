@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { HTML_PREVIEW_MAX_BYTES } from "../../shared/filePreview";
 import {
+  framesHtmlPreview,
+  renderedPageFile,
   resolveWorkspaceMarkdownImagePath,
   resolveWorkspaceMarkdownImageUrl,
   workspaceFileUrl,
@@ -181,4 +184,69 @@ test("absolute reference documents retain filesystem paths for links, images, an
   expect(
     resolveWorkspaceMarkdownImagePath("../image.svg", "C:/refs/docs/guide.md"),
   ).toBe("C:/refs/image.svg");
+});
+
+describe("HTML pages the Files preview frames", () => {
+  test("a checkout's file, by its path in the checkout or absolute", () => {
+    expect(renderedPageFile("docs/index.html", "/repo")).toBe(
+      "/repo/docs/index.html",
+    );
+    expect(renderedPageFile("/repo/docs/index.html", "/repo")).toBe(
+      "/repo/docs/index.html",
+    );
+  });
+
+  test("any absolute file the Files view opened, outside the checkout too", () => {
+    // A built docs site under ~/.claude on a Mac reached over SSH.
+    expect(
+      renderedPageFile(
+        "/Users/me/.claude/logs/docs/build/index.html",
+        "/Users/me/devel/gstreamer",
+      ),
+    ).toBe("/Users/me/.claude/logs/docs/build/index.html");
+  });
+
+  test("a Windows path only inside its checkout", () => {
+    expect(renderedPageFile("D:\\site\\index.html", "C:/repo")).toBeNull();
+    expect(renderedPageFile("C:/repo/site/index.html", "C:/repo")).toBe(
+      "C:/repo/site/index.html",
+    );
+  });
+
+  test("nothing without a path", () => {
+    expect(renderedPageFile("", "/repo")).toBeNull();
+    expect(renderedPageFile("a.html", "")).toBeNull();
+  });
+});
+
+describe("HTML files the Files preview shows as pages", () => {
+  const html = {
+    path: "casa-monroe-3d.html",
+    root: "/Users/me/casa",
+    type: "file",
+    text: "<!doctype html>",
+    binary: false,
+  };
+
+  test("whatever their size: a 600 KB page cut by the text preview is framed", () => {
+    // The rendered pages read it themselves, up to their own limit.
+    const cut = { ...html, size: 591_386, truncated: true };
+    expect(framesHtmlPreview(cut)).toBe(true);
+    const huge = {
+      ...html,
+      size: HTML_PREVIEW_MAX_BYTES * 100,
+      truncated: true,
+    };
+    expect(framesHtmlPreview(huge)).toBe(true);
+  });
+
+  test("only HTML text with a path on its host", () => {
+    expect(framesHtmlPreview(null)).toBe(false);
+    expect(framesHtmlPreview({ ...html, path: "casa.glb" })).toBe(false);
+    expect(framesHtmlPreview({ ...html, text: null, binary: true })).toBe(
+      false,
+    );
+    expect(framesHtmlPreview({ ...html, type: "directory" })).toBe(false);
+    expect(framesHtmlPreview({ ...html, root: "" })).toBe(false);
+  });
 });

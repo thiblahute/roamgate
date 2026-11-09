@@ -1,7 +1,6 @@
 import {
   createContext,
   type ReactNode,
-  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -21,7 +20,6 @@ import {
   type ReviewThread,
   unheardComments,
 } from "../../../shared/review";
-import { vimKeys } from "../vimKeys";
 import {
   fileEditAnchor,
   fileEditEntry,
@@ -33,14 +31,12 @@ import {
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import { looseText } from "../reviewMessageParts";
 import {
-  newClientId,
   type PendingWrite,
   pendingWriteCall,
   withPendingWrites,
   writeLanded,
 } from "../reviewPending";
 import type { HistoryEntry } from "./agentHistory";
-import { lazyWithReload } from "../lazyWithReload";
 import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import {
   type PanelThread,
@@ -59,6 +55,10 @@ import {
 } from "../unresolvedThreads";
 import { formatUiDateTime } from "../uiLocale";
 import { CHAT_PARTS_EVENT } from "./chatPaging";
+import { ThreadCard } from "./ThreadCard";
+import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
+import { useThreadKeys } from "./useThreadKeys";
+export { ThreadEditor };
 import "./ChatThreads.css";
 
 /**
@@ -304,108 +304,6 @@ export type OlderMessages = {
 /** Pages read at most to find a comment's message before giving up. */
 const SEEK_PAGES = 40;
 
-// The editor is loaded with the first comment box, not with the chat.
-const ReviewCommentEditor = lazyWithReload("review-comment-editor", () =>
-  import("./ReviewCommentEditor").then((module) => ({
-    default: module.ReviewCommentEditor,
-  })),
-);
-
-/**
- * A comment box: Cmd+Enter or :w saves, Esc on an empty one closes. A save
- * is sent once: until it is answered (the box closes, or stays to try
- * again), Send says so and further saves are ignored. Each text goes with
- * an id made for it; sent again unchanged, the same id, so the server
- * writes it once.
- */
-export function ThreadEditor({
-  placeholder,
-  onSave,
-  onClose,
-  onLeave,
-  kept,
-  autoFocus = true,
-}: {
-  placeholder: string;
-  /** Sends the text with its id; settles once it is saved or failed. */
-  onSave: (text: string, id: string) => Promise<unknown>;
-  /** Closed: with the id of the text last sent, if any. */
-  onClose: (id?: string) => void;
-  /** Esc with words written: they stay, the keys go back to the chat. */
-  onLeave: () => void;
-  /**
-   * Where its words (and the id they were sent with) are kept as they
-   * change: the box drawn again, after the chat was not shown, has them.
-   */
-  kept?: ThreadBox;
-  /** Takes the focus when drawn: not a box drawn again. */
-  autoFocus?: boolean;
-}) {
-  const text = useRef(kept?.text ?? "");
-  const [initial] = useState(() => kept?.text ?? "");
-  const [vim] = useState(vimKeys);
-  const sending = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const sent = useRef<{ text: string; id: string } | null>(kept?.sent ?? null);
-  const close = () => onClose(sent.current?.id);
-  const save = () => {
-    if (sending.current || !text.current.trim()) return;
-    sending.current = true;
-    setBusy(true);
-    const value = text.current;
-    if (sent.current?.text !== value) {
-      sent.current = { text: value, id: newClientId() };
-      if (kept) kept.sent = sent.current;
-    }
-    void onSave(value, sent.current.id).finally(() => {
-      sending.current = false;
-      setBusy(false);
-    });
-  };
-  return (
-    <div className="chat-thread-editor">
-      <Suspense fallback={null}>
-        <ReviewCommentEditor
-          value={initial}
-          vimMode={vim}
-          autoFocus={autoFocus}
-          placeholder={placeholder}
-          onChange={(value) => {
-            text.current = value;
-            if (kept) kept.text = value;
-          }}
-          onCommit={(explicit) => {
-            if (explicit && text.current.trim()) save();
-            // Leaving a box with words in it keeps them.
-            else if (!text.current.trim()) close();
-            else if (!explicit) onLeave();
-          }}
-          onCancel={close}
-          onSuggest={() => {}}
-        />
-      </Suspense>
-      <div className="chat-thread-bar">
-        <span className="chat-thread-hint">Cmd+Enter sends</span>
-        <button type="button" onClick={close}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="is-primary"
-          disabled={busy}
-          aria-busy={busy}
-          onClick={save}
-        >
-          {busy ? "Sending..." : "Send"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** A comment box's words, and the id they were last sent with. */
-export type ThreadBox = { text: string; sent?: { text: string; id: string } };
-
 /**
  * What a chat's threads have open: the comments on their way, the boxes
  * open, where j / k are, the threads folded or unfolded by hand, the
@@ -539,6 +437,49 @@ type ChatThreadsProps = {
   keep?: boolean;
   children: ReactNode;
 };
+
+/** A stop of the chat's keys: its place, as the cursor holds it. */
+function chatStopKey(stop: HTMLElement): string {
+  if (stop.dataset.chatStop) return stop.dataset.chatStop;
+  const message =
+    stop.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
+  if (message) return `q:${message}:${stop.dataset.part}`;
+  const entry = stop.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+  return `p:${entry}:${stop.dataset.part}`;
+}
+
+/**
+ * A thread's message in several parts: each is a stop, after the message
+ * itself (one part: the message is the stop).
+ */
+function partOfLongThreadMessage(stop: HTMLElement): boolean {
+  const body = stop.closest<HTMLElement>(".chat-thread-body");
+  return (
+    !!body &&
+    body.querySelectorAll(":scope [data-part]").length -
+      body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
+      1
+  );
+}
+
+/** The stops of the chat's j / k, in order. */
+function chatStops(list: HTMLElement): HTMLElement[] {
+  return Array.from(
+    list.querySelectorAll<HTMLElement>(
+      ".chat-review [data-part], .chat-file-edit [data-part], [data-chat-stop]",
+    ),
+  ).filter(
+    (stop) =>
+      (stop.dataset.chatStop ||
+        !stop.closest(".chat-thread") ||
+        partOfLongThreadMessage(stop)) &&
+      // The conversation as shown: not what tool calls hold (but the
+      // files they changed), nor what is hidden.
+      (!stop.closest(".agent-history-chat-tools") ||
+        !!stop.closest(".chat-file-edit")) &&
+      stop.getClientRects().length > 0,
+  );
+}
 
 export function ChatThreadsProvider(props: ChatThreadsProps) {
   // Another chat (a new session) starts with nothing open.
@@ -823,140 +764,84 @@ function ChatThreadsScope({
     });
 
   const renderThread = (thread: ReviewThread): ReactNode => {
-    const folded = thread.resolved !== flipped.has(thread.id);
-    const first = thread.comments[0];
-    if (folded)
-      return (
-        <button
-          type="button"
-          className={`chat-thread is-folded${cursor === `t:${thread.id}` ? " is-focused" : ""}`}
-          data-thread-id={thread.id}
-          data-chat-stop={`t:${thread.id}`}
-          onClick={() => toggleFold(thread)}
-          title="Unfold"
-        >
-          <span className="chat-thread-mark">
-            {thread.resolved ? "✓ Resolved" : "▸ Folded"}
-          </span>
-          <span className="chat-thread-summary">
-            {(first?.body ?? "").split("\n")[0]}
-          </span>
-          <span className="chat-thread-count">
-            {thread.comments.length} message
-            {thread.comments.length === 1 ? "" : "s"}
-          </span>
-        </button>
-      );
+    const pendingOf = (message: { id: string }, index: number) =>
+      pendingById.get(message.id) ??
+      (index === 0 ? pendingById.get(thread.id) : undefined);
     return (
-      <div
-        className={`chat-thread${thread.resolved ? " is-resolved" : ""}`}
-        data-thread-id={thread.id}
-      >
-        {thread.comments.map((message, index) => {
-          const pending =
-            pendingById.get(message.id) ??
-            (index === 0 ? pendingById.get(thread.id) : undefined);
-          return (
-            <div
-              key={message.id}
-              className={`chat-thread-message${message.author === REVIEW_USER ? "" : " from-agent"}${cursor === `m:${message.id}` ? " is-focused" : ""}${pending ? " is-pending" : ""}`}
-              data-chat-stop={`m:${message.id}`}
+      <ThreadCard
+        thread={thread}
+        folded={thread.resolved !== flipped.has(thread.id)}
+        cursor={cursor}
+        onToggleFold={() => toggleFold(thread)}
+        onReply={() => setReplying(thread.id)}
+        onResolve={() =>
+          void write("review.resolve", {
+            comment_id: thread.id,
+            resolved: !thread.resolved,
+          })
+        }
+        onDelete={() => void write("review.delete", { comment_id: thread.id })}
+        messageClass={(message, index) =>
+          pendingOf(message, index) ? " is-pending" : ""
+        }
+        authorExtra={(message, index) => {
+          const pending = pendingOf(message, index);
+          return pending ? (
+            <span
+              className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
+              role={pending.error ? "alert" : "status"}
             >
-              <span className="chat-thread-author">
-                {message.author === REVIEW_USER ? "You" : message.author}
-                {pending ? (
-                  <span
-                    className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
-                    role={pending.error ? "alert" : "status"}
-                  >
-                    {pending.error
-                      ? "Not saved: Send tries again"
-                      : "Sending..."}
-                  </span>
-                ) : undelivered?.ids.has(message.id) ? (
-                  <>
-                    <span
-                      className="chat-thread-pending is-failed"
-                      role="status"
-                    >
-                      Not delivered: {undelivered.reason}
-                    </span>
-                    <button
-                      type="button"
-                      className="chat-thread-retry"
-                      onClick={() => void write("review.retry", {})}
-                    >
-                      Retry
-                    </button>
-                  </>
-                ) : null}
+              {pending.error ? "Not saved: Send tries again" : "Sending..."}
+            </span>
+          ) : undelivered?.ids.has(message.id) ? (
+            <>
+              <span className="chat-thread-pending is-failed" role="status">
+                Not delivered: {undelivered.reason}
               </span>
-              {/* Its parts take comments too, drawn under them. */}
-              <div className="chat-thread-body" data-message-id={message.id}>
-                <NoteBody
-                  text={message.body}
-                  parts={messageParts(thread, message.id)}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {pendingById.has(thread.id) ? null : replying === thread.id ? (
-          <ThreadEditor
-            {...boxOf(replyBox(thread.id))}
-            placeholder="Reply..."
-            onLeave={backToConversation}
-            onClose={(id) => {
-              dropFailed(id);
-              setReplying(null);
-              backToConversation();
-            }}
-            onSave={(text, id) =>
-              send({
-                id,
-                replyTo: thread.id,
-                kind: thread.kind,
-                anchor: thread.anchor,
-                text,
-              }).then((ok) => {
-                if (!ok) return;
-                setReplying(null);
-                backToConversation();
-              })
-            }
-          />
-        ) : (
-          <div className="chat-thread-bar">
-            <button type="button" onClick={() => setReplying(thread.id)}>
-              Reply
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void write("review.resolve", {
-                  comment_id: thread.id,
-                  resolved: !thread.resolved,
-                })
-              }
-            >
-              {thread.resolved ? "Reopen" : "Resolve"}
-            </button>
-            <button type="button" onClick={() => toggleFold(thread)}>
-              Fold
-            </button>
-            {thread.comments.length === 1 && first?.author === REVIEW_USER ? (
               <button
                 type="button"
-                onClick={() =>
-                  void write("review.delete", { comment_id: thread.id })
-                }
+                className="chat-thread-retry"
+                onClick={() => void write("review.retry", {})}
               >
-                Delete
+                Retry
               </button>
-            ) : null}
-          </div>
+            </>
+          ) : null;
+        }}
+        body={(message) => (
+          <NoteBody
+            text={message.body}
+            parts={messageParts(thread, message.id)}
+          />
         )}
-      </div>
+        footer={
+          pendingById.has(thread.id) ? null : replying === thread.id ? (
+            <ThreadEditor
+              {...boxOf(replyBox(thread.id))}
+              placeholder="Reply..."
+              onLeave={backToConversation}
+              onClose={(id) => {
+                dropFailed(id);
+                setReplying(null);
+                backToConversation();
+              }}
+              onSave={(text, id) =>
+                send({
+                  id,
+                  replyTo: thread.id,
+                  kind: thread.kind,
+                  anchor: thread.anchor,
+                  text,
+                }).then((ok) => {
+                  if (!ok) return;
+                  setReplying(null);
+                  backToConversation();
+                })
+              }
+            />
+          ) : undefined
+        }
+      />
     );
   };
 
@@ -1133,8 +1018,6 @@ function ChatThreadsScope({
     () => new Map((snapshot?.threads ?? []).map((t) => [t.id, t])),
     [snapshot],
   );
-  const flippedRef = useRef(flipped);
-  flippedRef.current = flipped;
   // The chat's comments, open ones first, then the latest message.
   const overview = useMemo(
     () =>
@@ -1298,21 +1181,6 @@ function ChatThreadsScope({
     setSeeking({ id: seeking.id, pages: seeking.pages + 1 });
     older.load();
   }, [seeking, away, older, goToThread, setOverviewOpen]);
-  /** g;: the comment written last, yours or the agent's. */
-  const goToLatest = useCallback(() => {
-    let latest: { thread: string; comment: string; at: string } | null = null;
-    for (const thread of snapshot?.threads ?? [])
-      if (thread.anchor.chat || thread.anchor.message)
-        for (const comment of thread.comments) {
-          const at =
-            comment.updatedAt > comment.createdAt
-              ? comment.updatedAt
-              : comment.createdAt;
-          if (!latest || at > latest.at)
-            latest = { thread: thread.id, comment: comment.id, at };
-        }
-    if (latest) goToThread(latest.thread, latest.comment);
-  }, [snapshot, goToThread]);
   /**
    * The chat's threads in the order they are read: those on messages not
    * shown first (older ones, by when), then message by message and, in a
@@ -1486,292 +1354,146 @@ function ChatThreadsScope({
       ?.focus({ preventScroll: true });
   };
 
-  const keys = useRef({
-    cursor,
-    threadsById,
-    comment,
-    write,
-    toggleFold,
-    goToThread,
-    openOverview,
-    goToLatest,
-    setPartDraft,
-    jumpUnresolved,
-    toggleOpenOnly,
-    openOnly,
-    commentFile,
-  });
-  keys.current = {
-    cursor,
-    threadsById,
-    comment,
-    write,
-    toggleFold,
-    goToThread,
-    openOverview,
-    goToLatest,
-    setPartDraft,
-    jumpUnresolved,
-    toggleOpenOnly,
-    openOnly,
-    commentFile,
-  };
-  useEffect(() => {
+  /** The chat's list and the message box under it. */
+  const chatList = () => {
     const messages = scopeRef.current?.closest<HTMLElement>(
       ".agent-history-messages",
     );
     const list = scopeRef.current?.querySelector<HTMLElement>(
       ".agent-history-chat",
     );
-    if (!messages || !list) return;
-    list.tabIndex = -1;
-    const keyOf = (stop: HTMLElement) => {
-      if (stop.dataset.chatStop) return stop.dataset.chatStop;
-      const message =
-        stop.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
-      if (message) return `q:${message}:${stop.dataset.part}`;
-      const entry =
-        stop.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
-      return `p:${entry}:${stop.dataset.part}`;
-    };
-    const stops = () =>
-      Array.from(
-        list.querySelectorAll<HTMLElement>(
-          ".chat-review [data-part], .chat-file-edit [data-part], [data-chat-stop]",
-        ),
-      ).filter(
-        (stop) =>
-          (stop.dataset.chatStop ||
-            !stop.closest(".chat-thread") ||
-            partOfLongThreadMessage(stop)) &&
-          // The conversation as shown: not what tool calls hold (but the
-          // files they changed), nor what is hidden.
-          (!stop.closest(".agent-history-chat-tools") ||
-            !!stop.closest(".chat-file-edit")) &&
-          stop.getClientRects().length > 0,
-      );
-    // A thread's message in several parts: each is a stop, after the
-    // message itself (one part: the message is the stop).
-    const partOfLongThreadMessage = (stop: HTMLElement) => {
-      const body = stop.closest<HTMLElement>(".chat-thread-body");
-      return (
-        !!body &&
-        body.querySelectorAll(":scope [data-part]").length -
-          body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
-          1
-      );
-    };
-    const select = (stop: HTMLElement | undefined) => {
-      if (!stop) return;
-      setCursor(keyOf(stop));
-      stop.scrollIntoView({ block: "nearest" });
-      list.focus({ preventScroll: true });
-    };
-    const backToBox = () => {
-      setCursor(null);
-      list.style.paddingBottom = "";
-      messages
-        .querySelector<HTMLElement>(
-          ".agent-history-composer :is(textarea, [contenteditable='true'])",
-        )
-        ?.focus({ preventScroll: true });
-      // Back where the conversation goes on; at its end the chat follows
-      // new messages again.
-      list.scrollTop = list.scrollHeight;
-    };
-    const onEnter = () => {
-      const all = stops();
-      select(all[all.length - 1]);
-    };
-    let pending = "";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.target !== list || event.metaKey || event.ctrlKey) return;
-      const {
-        cursor,
-        threadsById,
-        comment,
-        write,
-        toggleFold,
-        goToThread,
-        openOverview,
-        goToLatest,
-      } = keys.current;
-      const all = stops();
-      const at = all.findIndex((stop) => keyOf(stop) === cursor);
-      const here = all[at];
-      const threadId =
-        here?.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
-      const thread = threadId ? threadsById.get(threadId) : undefined;
-      const key = pending + event.key;
-      pending = "";
-      const place = (block: ScrollLogicalPosition) => {
-        // As Vim does at the end of a file: room below the last messages,
-        // until back in the box.
-        if (block !== "end")
-          list.style.paddingBottom = `${list.clientHeight}px`;
-        here?.scrollIntoView({ block });
-      };
-      if (key === "j" || key === "ArrowDown") {
-        // Past the last one: back down into the box.
-        if (at >= all.length - 1) backToBox();
-        else select(all[at + 1]);
-      } else if (key === "k" || key === "ArrowUp")
-        select(all[Math.max(0, at - 1)]);
-      else if (key === "J" || key === "K") {
-        // Message by message: the first part of the next one, or of this
-        // one (then the one before) going up.
-        const firsts = all.filter(
-          (stop) => !stop.dataset.chatStop && stop.dataset.part === "0",
-        );
-        const entryOf = (stop: HTMLElement | undefined) =>
-          stop?.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
-        const mine = here
-          ? firsts.findIndex((stop) => entryOf(stop) === entryOf(here))
-          : firsts.length;
-        const target =
-          key === "J"
-            ? firsts[mine + 1]
-            : here && firsts[mine] && firsts[mine] !== here
-              ? firsts[mine]
-              : firsts[mine - 1];
-        select(target);
-      } else if (key === "n" || key === "N") {
-        // The next or previous thread, from where the cursor is.
-        const threads = Array.from(
-          list.querySelectorAll<HTMLElement>(
-            ".chat-thread[data-thread-id]:not(.is-draft)",
-          ),
-        );
-        const from = here ?? all[all.length - 1];
-        const own = from?.closest<HTMLElement>(".chat-thread");
-        const after = (element: HTMLElement) =>
-          !!from &&
-          element !== own &&
-          !!(
-            from.compareDocumentPosition(element) &
-            Node.DOCUMENT_POSITION_FOLLOWING
-          );
-        const next =
-          key === "n"
-            ? threads.find(after)
-            : [...threads]
-                .reverse()
-                .find(
-                  (element) =>
-                    element !== own && !after(element) && element !== from,
-                );
-        if (next?.dataset.threadId) goToThread(next.dataset.threadId);
-      } else if (key === "T") openOverview();
-      else if (key === "gg") select(all[0]);
-      else if (key === "G") select(all[all.length - 1]);
-      else if (key === "zz") place("center");
-      else if (key === "zt") place("start");
-      else if (key === "zb") place("end");
-      else if (key === "za" && thread) {
-        // The cursor stays on the thread, folded or open.
-        const folded = here?.dataset.chatStop?.startsWith("t:");
-        setCursor(folded ? `m:${thread.comments[0]?.id}` : `t:${thread.id}`);
-        toggleFold(thread);
-      } else if (key === "g;") goToLatest();
-      else if (key === "gn") keys.current.jumpUnresolved(1);
-      else if (key === "gN") keys.current.jumpUnresolved(-1);
-      else if (key === "gH") keys.current.toggleOpenOnly();
-      else if (key === "g" || key === "z" || key === "d") pending = key;
-      else if (key === "r" && thread) {
-        // Resolving folds it: the cursor follows onto its one line.
-        if (!thread.resolved && !flippedRef.current.has(thread.id))
-          setCursor(`t:${thread.id}`);
-        else if (thread.resolved && here?.dataset.chatStop?.startsWith("t:"))
-          setCursor(`m:${thread.comments[0]?.id}`);
-        void write("review.resolve", {
-          comment_id: thread.id,
-          resolved: !thread.resolved,
-        });
-        // Showing only the unresolved ones, it goes away: on to the next.
-        if (keys.current.openOnly && !thread.resolved)
-          keys.current.jumpUnresolved(1);
-      } else if (key === "dd" && thread) {
-        if (
-          thread.comments.length === 1 &&
-          thread.comments[0]?.author === REVIEW_USER
-        )
-          void write("review.delete", { comment_id: thread.id });
-      } else if (
-        (key === "c" || key === "Enter") &&
-        list.querySelector(".chat-thread.is-draft .cm-content")
+    return messages && list ? { messages, list } : null;
+  };
+  const backToBox = () => {
+    const found = chatList();
+    if (!found) return;
+    const { messages, list } = found;
+    setCursor(null);
+    list.style.paddingBottom = "";
+    messages
+      .querySelector<HTMLElement>(
+        ".agent-history-composer :is(textarea, [contenteditable='true'])",
       )
+      ?.focus({ preventScroll: true });
+    // Back where the conversation goes on; at its end the chat follows
+    // new messages again.
+    list.scrollTop = list.scrollHeight;
+  };
+  useThreadKeys(() => chatList()?.list ?? null, undefined, {
+    stops: chatStops,
+    keyOf: chatStopKey,
+    cursor,
+    setCursor,
+    threadsById,
+    flipped,
+    openOnly,
+    toggleFold,
+    goToThread,
+    // g;: the comment written last, yours or the agent's, on the chat.
+    goToComment: (thread, comment) => void goToThread(thread.id, comment),
+    latestAmong: (thread) => !!(thread.anchor.chat || thread.anchor.message),
+    openOverview,
+    jumpUnresolved,
+    toggleOpenOnly,
+    resolve: (thread) =>
+      void write("review.resolve", {
+        comment_id: thread.id,
+        resolved: !thread.resolved,
+      }),
+    remove: (thread) => void write("review.delete", { comment_id: thread.id }),
+    reply: (thread) => setReplying(thread.id),
+    commentFirst: (here, thread) => {
+      const list = chatList()?.list;
+      const draft = list?.querySelector<HTMLElement>(
+        ".chat-thread.is-draft .cm-content",
+      );
+      if (draft) {
         // A comment being written: back into it.
-        list
-          .querySelector<HTMLElement>(".chat-thread.is-draft .cm-content")
-          ?.focus();
-      else if (
-        (key === "c" || key === "Enter") &&
-        here?.dataset.part !== undefined &&
-        here.closest(".chat-thread-body")
-      ) {
-        // A part of a thread's message: a thread on it.
-        const message =
-          here.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
-        const add = here.querySelector(":scope > .rc-part-add");
-        if (message && thread)
-          keys.current.setPartDraft({
-            thread: thread.id,
-            comment: message,
-            quote: (here.textContent ?? "")
-              .replace(add?.textContent ?? "", "")
-              .trim()
-              .slice(0, 4000),
-          });
-      } else if ((key === "c" || key === "Enter" || key === "R") && thread) {
-        // An answer being written in that thread: back into it.
-        const open = list.querySelector<HTMLElement>(
-          `.chat-thread[data-thread-id="${CSS.escape(thread.id)}"] .chat-thread-editor .cm-content`,
-        );
-        if (open) open.focus();
-        else setReplying(thread.id);
-      } else if (
-        (key === "c" || key === "Enter") &&
-        here?.dataset.part !== undefined &&
-        here.closest(".chat-file-edit")
-      ) {
+        draft.focus();
+        return true;
+      }
+      if (
+        here?.dataset.part === undefined ||
+        !here.closest(".chat-thread-body")
+      )
+        return false;
+      // A part of a thread's message: a thread on it.
+      const message =
+        here.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
+      const add = here.querySelector(":scope > .rc-part-add");
+      if (message && thread)
+        setPartDraft({
+          thread: thread.id,
+          comment: message,
+          quote: (here.textContent ?? "")
+            .replace(add?.textContent ?? "", "")
+            .trim()
+            .slice(0, 4000),
+        });
+      return true;
+    },
+    comment: (here) => {
+      if (here.dataset.part !== undefined && here.closest(".chat-file-edit")) {
         // A file a call changed: its head comments on the file, a row on
         // that line.
         const entry =
           here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
         const row = Number(here.dataset.part) - 1;
-        if (entry) keys.current.commentFile(entry, row, row);
-      } else if ((key === "c" || key === "Enter") && here) {
-        const entry =
-          here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
-        const message = entry ? entries.current.get(entry) : undefined;
-        if (!message) return;
-        const add = here.querySelector(":scope > .rc-part-add");
-        comment(
-          message,
-          (here.textContent ?? "").replace(add?.textContent ?? "", "").trim(),
-        );
-      } else if (key === "i" || key === "a" || key === "Escape") backToBox();
-      else return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    // The room zz made below the last messages goes with the keys, however
-    // they leave (a click in the box, another pane).
-    const onFocusOut = (event: FocusEvent) => {
-      const next = event.relatedTarget;
-      if (!(next instanceof Node && list.contains(next)))
-        list.style.paddingBottom = "";
+        if (entry) commentFile(entry, row, row);
+        return true;
+      }
+      const entry =
+        here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+      const message = entry ? entries.current.get(entry) : undefined;
+      if (!message) return false;
+      const add = here.querySelector(":scope > .rc-part-add");
+      comment(
+        message,
+        (here.textContent ?? "").replace(add?.textContent ?? "", "").trim(),
+      );
+      return true;
+    },
+    pastEnd: backToBox,
+    leave: backToBox,
+    otherKey: (key, { here, all }, select) => {
+      if (key !== "J" && key !== "K") return false;
+      // Message by message: the first part of the next one, or of this
+      // one (then the one before) going up.
+      const firsts = all.filter(
+        (stop) => !stop.dataset.chatStop && stop.dataset.part === "0",
+      );
+      const entryOf = (stop: HTMLElement | undefined) =>
+        stop?.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+      const mine = here
+        ? firsts.findIndex((stop) => entryOf(stop) === entryOf(here))
+        : firsts.length;
+      const target =
+        key === "J"
+          ? firsts[mine + 1]
+          : here && firsts[mine] && firsts[mine] !== here
+            ? firsts[mine]
+            : firsts[mine - 1];
+      select(target);
+      return true;
+    },
+  });
+  // Up from the message box: on the conversation's last stop.
+  useEffect(() => {
+    const found = chatList();
+    if (!found) return;
+    const { messages, list } = found;
+    const onEnter = () => {
+      const all = chatStops(list);
+      const last = all[all.length - 1];
+      if (!last) return;
+      setCursor(chatStopKey(last));
+      last.scrollIntoView({ block: "nearest" });
+      list.focus({ preventScroll: true });
     };
     messages.addEventListener(CHAT_PARTS_EVENT, onEnter);
-    list.addEventListener("keydown", onKey);
-    list.addEventListener("focusout", onFocusOut);
-    return () => {
-      messages.removeEventListener(CHAT_PARTS_EVENT, onEnter);
-      list.removeEventListener("keydown", onKey);
-      list.removeEventListener("focusout", onFocusOut);
-      list.style.paddingBottom = "";
-    };
-  }, [setCursor, setReplying]);
+    return () => messages.removeEventListener(CHAT_PARTS_EVENT, onEnter);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: found once, as the keys are
+  }, [setCursor]);
 
   // Words selected in a message offer a comment on them; lines selected in
   // a file a call changed, a comment on those lines.

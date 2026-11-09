@@ -78,7 +78,9 @@
 
 .annotation-panel-list {
   min-height: 0;
-  flex: 1 1 auto;
+  /* The comments to send, above the workspace's conversations. */
+  flex: 0 1 auto;
+  max-height: 55%;
   display: grid;
   align-content: start;
   gap: 8px;
@@ -87,13 +89,12 @@
 }
 
 .annotation-panel-empty {
-  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 7px;
-  padding: 20px;
+  padding: 12px;
   color: var(--muted);
   text-align: center;
 }
@@ -266,4 +267,17 @@
 
   /* Keep the normal footer padding: the global input rail below this page
      already owns the bottom safe area. */
+}
+
+.annotation-conversations {
+  border-top: 1px solid var(--border, var(--shell-border));
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.annotation-conversations-list {
+  overflow: auto;
+  min-height: 0;
 }

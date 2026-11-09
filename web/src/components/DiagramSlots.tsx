@@ -81,7 +81,10 @@ export function useDiagramSlots(
     if (!root) return;
     // Not the source of a diagram drawn already.
     const codes = [...root.querySelectorAll("pre > code")].filter(
-      (code) => !code.closest(".markdown-diagram-slot, .diagram-block"),
+      (code) =>
+        !code.closest(
+          ".markdown-diagram-slot, .diagram-block, .md-thread-slot",
+        ),
     );
     if (openAtEnd) codes.pop();
     const used = new Set<DiagramSlot>();

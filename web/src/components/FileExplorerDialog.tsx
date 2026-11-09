@@ -47,6 +47,7 @@ import { store, useStoreSelector } from "../store";
 import { copyTextFromUserGesture } from "../terminalClipboard";
 import { useConnectionClient } from "../useConnectionClient";
 import { setWorkspacePathDragData } from "../workspacePathDrag";
+import { checkoutKeyForWorkspace } from "../workspaceResource";
 import {
   revealInFileManager,
   revealMenuLabel,
@@ -93,6 +94,7 @@ import {
   parentDirectoryPath,
   directoryPaths,
   isWorkspaceRelativePath,
+  treeRelativePath,
   buildGitStatusMaps,
   requestFilePreview,
   uploadExplorerFile,
@@ -365,7 +367,7 @@ function FileExplorerContent({
   showCloseButton,
   previewPlacement = "inline",
   previewRequestRef,
-  activePath,
+  activePath: givenActivePath,
   keyboardActive = false,
   onPreviewChange,
   onPinFileTab,
@@ -412,6 +414,10 @@ function FileExplorerContent({
       cacheResourceKey,
     ),
   );
+  // The tree names files relative to the root it lists. A file kept by its
+  // absolute path (in a workspace without a checkout, or outside the
+  // checkout) is found in the tree when it is under that root.
+  const activePath = treeRelativePath(givenActivePath, cache.rootInfo?.root);
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1017,16 +1023,26 @@ function FileExplorerContent({
   };
 
   const loadPreview = async (
-    entry: FileExplorerEntry,
+    listed: FileExplorerEntry,
     fragment?: string,
     refresh = false,
     line?: number,
     snippet?: string,
   ) => {
-    if (!workspace?.workspace_id || entry.type === "directory") return;
+    if (!workspace?.workspace_id || listed.type === "directory") return;
     onActiveDiffEntriesChange?.(
-      gitStatusMaps.fileStatuses.get(entry.path)?.entries ?? [],
+      gitStatusMaps.fileStatuses.get(listed.path)?.entries ?? [],
     );
+    // A workspace without a checkout has its root follow its focused pane,
+    // so a path relative to it names another file once another pane is
+    // focused: its files are opened by their absolute path, from the root
+    // they were listed in.
+    const entry =
+      rootInfo?.root &&
+      checkoutKeyForWorkspace(workspace) === null &&
+      isWorkspaceRelativePath(listed.path)
+        ? { ...listed, path: absolutePath(rootInfo.root, listed) }
+        : listed;
     const workspaceId = workspace.workspace_id;
     const key = filePreviewCacheKey(connectionClient, workspaceId, entry.path);
     // Links, quick-open and tree selections must retire each other at start,
@@ -2075,7 +2091,7 @@ function FileExplorerContent({
               initialPath={rootInfo?.root || initialWorkspacePath(workspace)}
               showHidden={showHidden}
               onShowHiddenChange={setShowHidden}
-              activePath={activePath ?? previewEntry?.path}
+              activePath={givenActivePath ?? previewEntry?.path}
               onSelect={(entry) => {
                 void loadPreview(entry);
               }}

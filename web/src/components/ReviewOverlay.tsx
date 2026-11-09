@@ -1,3 +1,4 @@
+import { useZenMode, ZenButton } from "../useZenMode";
 import { CompanionStrip } from "./CompanionChip";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -83,6 +84,7 @@ import {
   hunkIds,
   hunkKey,
   type KeyState,
+  latestComment,
   type Match,
   nextMatch,
   nextUnreviewedHunk,
@@ -141,7 +143,6 @@ import { ZenDock } from "./ZenIsland";
 import {
   ChevronDown,
   Columns2,
-  Maximize2,
   MessageSquare,
   MessageSquareOff,
   MoreHorizontal,
@@ -149,6 +150,8 @@ import {
   Send,
   X,
 } from "lucide-react";
+import { fmtDate, MrThreadCard, plural } from "./MrThreadCard";
+import { HELD_FOR_SEND } from "../workspaceFeedback";
 import "./ReviewOverlay.css";
 
 /**
@@ -299,26 +302,6 @@ function notify(message: string, kind: "info" | "error" = "info", ms = 4000) {
   });
 }
 
-/** maildesk's dates: today HH:MM, this week the weekday, else the date. */
-function fmtDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  if (date.toDateString() === now.toDateString())
-    return date.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  const days = (now.getTime() - date.getTime()) / 86_400_000;
-  if (days < 6) return date.toLocaleDateString(undefined, { weekday: "short" });
-  return date.toLocaleDateString(
-    undefined,
-    date.getFullYear() === now.getFullYear()
-      ? { month: "short", day: "numeric" }
-      : { month: "short", day: "numeric", year: "numeric" },
-  );
-}
-
 /** When the thread's latest message was written or rewritten. */
 function lastMessageAt(thread: ReviewThread): string {
   let last = "";
@@ -337,9 +320,8 @@ function elapsed(now: number, iso: string): string {
   return `${Math.floor(seconds / 3600)} h`;
 }
 
-function plural(count: number, word: string, many = `${word}s`) {
-  return `${count} ${count === 1 ? word : many}`;
-}
+/** A file the Files preview renders: its comments are shared with it. */
+const RENDERED_FILE = /\.(md|markdown|mdx|html?|svg)$/i;
 
 function drawnRows(rows: ReviewRow[], split: boolean): DrawnRow[] {
   if (!split) return rows.map((row) => ({ type: "line", row }));
@@ -590,8 +572,10 @@ function useWorkspaceRepos(
         other.connectionId !== session.connectionId ||
         !session.workspaceId ||
         other.workspaceId !== session.workspaceId ||
-        // A chat's threads, or an effort's, are not comments on a checkout.
+        // A chat's threads, a rendered file's or an effort's are not a
+        // checkout's.
         other.target.kind === "chat" ||
+        other.target.kind === "rendered" ||
         other.target.kind === "effort"
       )
         continue;
@@ -637,6 +621,7 @@ export function ReviewOverlay({
   onOpenLocal,
   onShowReview,
   onOpenFile,
+  goTo,
   hidden = false,
 }: {
   snapshot: ReviewSnapshot;
@@ -661,33 +646,16 @@ export function ReviewOverlay({
   /** Shows another review in this overlay (the branch's MR review). */
   onShowReview?: (snapshot: ReviewSnapshot) => void;
   /** Opens a file of the checkout (absolute path) at a line, in the preview. */
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: (path: string, line?: number, rendered?: boolean) => void;
+  /**
+   * A file and line to show (Show in code review, from the Files preview),
+   * in all the changes; `at` tells one request from the next.
+   */
+  goTo?: { path: string; line?: number; at: number };
   /** Pinned to a workspace that is not shown: kept as it is, out of sight. */
   hidden?: boolean;
 }) {
   const { session } = snapshot;
-  /**
-   * Replies and new threads on their way: shown at once, pending, until the
-   * review sent back has them.
-   */
-  const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
-  const threads = useMemo(
-    () => withPendingWrites(snapshot.threads, pendingWrites),
-    [snapshot.threads, pendingWrites],
-  );
-  const pendingById = useMemo(
-    () => new Map(pendingWrites.map((write) => [write.id, write])),
-    [pendingWrites],
-  );
-  // Those the review now has are done with.
-  useEffect(() => {
-    setPendingWrites((writes) => {
-      const left = writes.filter(
-        (write) => !writeLanded(snapshot.threads, write),
-      );
-      return left.length === writes.length ? writes : left;
-    });
-  }, [snapshot.threads]);
   const repos = useWorkspaceRepos(
     connectionId,
     session,
@@ -723,9 +691,51 @@ export function ReviewOverlay({
   // Touch screens: their keyboards lack Esc, which Vim needs.
   const coarsePointer =
     globalThis.matchMedia?.("(pointer: coarse)")?.matches === true;
-  const [zen, setZen] = useState(false);
+  const [zen, flipZen] = useZenMode();
   const [diff, setDiff] = useState<ReviewDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  /**
+   * The checkout's rendered files' threads (snapshot.shared) on the files
+   * this review's changes have, drawn with its own; each is written in its
+   * own review, which the server finds from its id.
+   */
+  const sharedHere = useMemo(() => {
+    const shared = snapshot.shared ?? [];
+    if (!shared.length || !diff) return [];
+    const paths = new Set(
+      diff.files.flatMap((file) => [file.path, file.oldPath]),
+    );
+    return shared.filter(
+      (thread) => !!thread.anchor.path && paths.has(thread.anchor.path),
+    );
+  }, [snapshot.shared, diff]);
+  const ownAndShared = useMemo(
+    () =>
+      sharedHere.length
+        ? [...snapshot.threads, ...sharedHere]
+        : snapshot.threads,
+    [snapshot.threads, sharedHere],
+  );
+  /**
+   * Replies and new threads on their way: shown at once, pending, until the
+   * review sent back has them.
+   */
+  const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
+  const threads = useMemo(
+    () => withPendingWrites(ownAndShared, pendingWrites),
+    [ownAndShared, pendingWrites],
+  );
+  const pendingById = useMemo(
+    () => new Map(pendingWrites.map((write) => [write.id, write])),
+    [pendingWrites],
+  );
+  // Those the review now has are done with.
+  useEffect(() => {
+    setPendingWrites((writes) => {
+      const left = writes.filter((write) => !writeLanded(ownAndShared, write));
+      return left.length === writes.length ? writes : left;
+    });
+  }, [ownAndShared]);
   /**
    * The checkout was removed, or the range's base or head is no longer in
    * it: said plainly, with a way to retarget or forget the review.
@@ -897,6 +907,12 @@ export function ReviewOverlay({
   /** Comments wait for Send instead of going as they are written. */
   const held = talk && session.holdComments === true;
   /**
+   * A question for the agent of a review with none (C, :ask) is held for
+   * the user's Send in the workspace's threads (To send), as a terminal's
+   * comment is: not a thread no agent receives.
+   */
+  const holdForSend = !agentPaneId && agentAllowed && !!session.workspaceId;
+  /**
    * Why the comments did not reach the agent, while they wait: shown on
    * each, with a retry. An agent busy with a question in its pane is
    * retried by the bridge on its own.
@@ -908,7 +924,12 @@ export function ReviewOverlay({
   /** Your discussion comments the agent has not had yet. */
   const heldCount = held
     ? threads
-        .filter((thread) => thread.kind === "discussion" && !thread.resolved)
+        .filter(
+          (thread) =>
+            thread.sessionId === session.id &&
+            thread.kind === "discussion" &&
+            !thread.resolved,
+        )
         .flatMap((thread) => thread.comments)
         .filter(
           (comment) =>
@@ -977,6 +998,39 @@ export function ReviewOverlay({
       attachedPane.current = null;
     });
   }, [paneToAttach, sessionId, agentName, call]);
+
+  const { sessions: reviewSessions } = useReviewState();
+  /**
+   * How a thread's comments go to its agent: this review's way, or, for a
+   * thread shared from a rendered file of the checkout, that review's.
+   */
+  function deliveryOf(thread: ReviewThread) {
+    const own = reviewSessions.get(thread.sessionId)?.session;
+    if (thread.sessionId === session.id || !own)
+      return {
+        review: session,
+        talk,
+        held,
+        undeliveredReason,
+        agentName,
+        retry: retryDelivery,
+      };
+    const ownTalk = !own.gitlab && own.autoSend !== false && !!own.agent.paneId;
+    return {
+      review: own,
+      talk: ownTalk,
+      held: ownTalk && own.holdComments === true,
+      undeliveredReason:
+        own.deliveryError && !/agent_blocked/.test(own.deliveryError)
+          ? own.deliveryError
+          : null,
+      agentName: own.agent.name ?? agentName,
+      retry: () =>
+        void run(() =>
+          reviewCall(connectionId, "review.retry", { session_id: own.id }),
+        ),
+    };
+  }
 
   /** Delivery failed: the pane is told first if need be, then Send. */
   function retryDelivery() {
@@ -1613,6 +1667,29 @@ export function ReviewOverlay({
       setCursor(row.at);
     }
   }, [rows]);
+
+  // Show in code review: the file and line asked, in all the changes.
+  const wentTo = useRef<number | null>(null);
+  useEffect(() => {
+    if (!goTo || wentTo.current === goTo.at) return;
+    wentTo.current = goTo.at;
+    if (commitSha !== null) showView(null);
+    restorePlace.current = {
+      commit: null,
+      path: goTo.path,
+      new: goTo.line ?? null,
+    };
+    setPlaceTick((tick) => tick + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per request
+  }, [goTo]);
+  // A file the changes do not have: said once, the review left as it is.
+  const toldOf = useRef<number | null>(null);
+  useEffect(() => {
+    if (!goTo || !diff || toldOf.current === goTo.at) return;
+    toldOf.current = goTo.at;
+    if (!diff.files.some((file) => file.path === goTo.path))
+      notify(`${goTo.path} has no changes in this review.`, "info", 3000);
+  }, [goTo, diff]);
 
   // Back on the line you were at, once its view is loaded.
   useEffect(() => {
@@ -2698,19 +2775,7 @@ export function ReviewOverlay({
 
   /** g;: the comment written last, yours or the agent's, in any view. */
   function jumpLatestComment() {
-    let latest: {
-      thread: ReviewThread;
-      comment: ReviewComment;
-      at: string;
-    } | null = null;
-    for (const thread of threads)
-      for (const comment of thread.comments) {
-        const at =
-          comment.updatedAt > comment.createdAt
-            ? comment.updatedAt
-            : comment.createdAt;
-        if (!latest || at > latest.at) latest = { thread, comment, at };
-      }
+    const latest = latestComment(threads);
     if (!latest) {
       notify("No comment yet.", "info", 1500);
       return;
@@ -3043,7 +3108,7 @@ export function ReviewOverlay({
    * gf: the cursor's file (or `fileIndex`'s) in the file preview, at the
    * cursor line as the checkout has it now.
    */
-  function openFileHere(fileIndex?: number) {
+  function openFileHere(fileIndex?: number, rendered = false) {
     const row = fileIndex === undefined ? rows[cursor] : undefined;
     const file = shownDiff?.files[fileIndex ?? row?.file ?? -1];
     if (!onOpenFile || !file || file.commitMessage) {
@@ -3064,7 +3129,7 @@ export function ReviewOverlay({
         "info",
         3000,
       );
-    onOpenFile(`${session.root}/${file.path}`, line);
+    onOpenFile(`${session.root}/${file.path}`, line, rendered);
   }
 
   /**
@@ -3737,6 +3802,15 @@ export function ReviewOverlay({
     if (meaningful && !current.commentId && hideComments) toggleComments();
     // Shown at once, pending (GitLab's own notes are not made here).
     const pending = !session.gitlab && !current.publicReply;
+    // A new question with no agent to ask: held in the workspace's threads.
+    const heldAt =
+      !current.replyTo &&
+      !current.commentId &&
+      current.kind === "discussion" &&
+      holdForSend
+        ? Date.now() * 1000
+        : undefined;
+    if (meaningful && heldAt !== undefined) notify(HELD_FOR_SEND, "info", 3000);
     if (current.replyTo) {
       if (!meaningful) return;
       if (pending)
@@ -3771,6 +3845,7 @@ export function ReviewOverlay({
           anchor: current.anchor,
           text,
           at: new Date().toISOString(),
+          ...(heldAt !== undefined ? { held: heldAt } : {}),
         },
         editorKey(current),
       );
@@ -3780,6 +3855,7 @@ export function ReviewOverlay({
           kind: current.kind,
           anchor: current.anchor,
           text,
+          ...(heldAt !== undefined ? { held: heldAt } : {}),
         }),
       );
     }
@@ -4016,7 +4092,7 @@ export function ReviewOverlay({
   }
 
   function toggleZen() {
-    setZen((value) => !value);
+    flipZen();
     scrollMode.current = "center";
   }
 
@@ -4986,7 +5062,9 @@ export function ReviewOverlay({
         : current.kind === "discussion"
           ? talk
             ? `For ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
-            : `For ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
+            : holdForSend && !current.commentId
+              ? `${HELD_FOR_SEND} (Cmd+Enter saves, Esc closes)`
+              : `For ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
           : "Your comment on this line (Cmd+Enter saves, Esc closes)";
     return (
       <div className="rc" key={`editor-${current.version}`}>
@@ -5246,6 +5324,7 @@ export function ReviewOverlay({
 
   function renderComment(thread: ReviewThread): ReactNode {
     const discussion = thread.kind === "discussion";
+    const delivery = deliveryOf(thread);
     if (threadFolded(thread)) {
       const first = thread.comments[0];
       const summary = (first?.body ?? "").split("\n")[0]!.slice(0, 140);
@@ -5329,32 +5408,39 @@ export function ReviewOverlay({
                     {authorLabel(comment.author)}
                   </span>
                   {discussion && comment.author === REVIEW_USER ? (
-                    session.deliveredAt &&
-                    comment.updatedAt <= session.deliveredAt ? (
-                      <span className="rc-kind">{`→ ${agentName}`}</span>
-                    ) : held ? (
-                      <span className="rc-kind">{`held for ${agentName}`}</span>
-                    ) : talk && undeliveredReason ? (
+                    thread.held !== undefined ? (
+                      <span className="rc-kind">{HELD_FOR_SEND}</span>
+                    ) : thread.handedAt &&
+                      comment.updatedAt <= thread.handedAt ? (
+                      <span className="rc-kind">
+                        sent from the workspace's threads
+                      </span>
+                    ) : delivery.review.deliveredAt &&
+                      comment.updatedAt <= delivery.review.deliveredAt ? (
+                      <span className="rc-kind">{`→ ${delivery.agentName}`}</span>
+                    ) : delivery.held ? (
+                      <span className="rc-kind">{`held for ${delivery.agentName}`}</span>
+                    ) : delivery.talk && delivery.undeliveredReason ? (
                       <>
                         <span
                           className="rc-kind rc-failed"
                           role="status"
-                          title={`Not delivered to ${agentName}: ${undeliveredReason}`}
+                          title={`Not delivered to ${delivery.agentName}: ${delivery.undeliveredReason}`}
                         >
-                          not delivered: {undeliveredReason}
+                          not delivered: {delivery.undeliveredReason}
                         </span>
                         <button
                           type="button"
                           className="btn ghost"
-                          onClick={retryDelivery}
+                          onClick={delivery.retry}
                         >
                           Retry
                         </button>
                       </>
-                    ) : talk ? (
-                      <span className="rc-kind">{`→ ${agentName}...`}</span>
+                    ) : delivery.talk ? (
+                      <span className="rc-kind">{`→ ${delivery.agentName}...`}</span>
                     ) : (
-                      <span className="rc-kind">{`for ${agentName}, not sent`}</span>
+                      <span className="rc-kind">{`for ${delivery.agentName}, not sent`}</span>
                     )
                   ) : null}
                   {thread.gitlab?.draftId !== undefined ? (
@@ -5398,15 +5484,17 @@ export function ReviewOverlay({
             </div>
           ),
         )}
-        {agent.working?.threadId === thread.id ? (
+        {delivery.review.agent.working?.threadId === thread.id ? (
           <div className="rc-working" role="status">
             <span className="rc-working-mark" aria-hidden="true" />
             <span>
-              <strong>{agentName}</strong> is working on this
-              {agent.working.message ? `: ${agent.working.message}` : "..."}
+              <strong>{delivery.agentName}</strong> is working on this
+              {delivery.review.agent.working.message
+                ? `: ${delivery.review.agent.working.message}`
+                : "..."}
             </span>
             <span className="rc-working-time">
-              {elapsed(now, agent.working.at)}
+              {elapsed(now, delivery.review.agent.working.at)}
             </span>
           </div>
         ) : null}
@@ -5550,155 +5638,44 @@ export function ReviewOverlay({
   }
 
   /** Your draft reply in a GitLab discussion: submitted with your review. */
-  function renderDraftReply(
-    thread: ReviewThread,
-    comment: ReviewComment,
-  ): ReactNode {
-    if (editor?.commentId === comment.id)
-      return <div key={comment.id}>{editorFor(editor)}</div>;
-    return (
-      <div
-        key={comment.id}
-        data-comment-id={comment.id}
-        className={`mr-note mr-draft${comment.id === focusedComment ? " focused" : ""}`}
-      >
-        <div className="mr-who">
-          <span className="mr-draft-tag">Your draft reply</span>, not submitted
-        </div>
-        <div className="mr-body">
-          <NoteBody
-            text={comment.body}
-            newLines={
-              thread.anchor.path
-                ? newLinesByPath.get(thread.anchor.path)
-                : undefined
-            }
-            line={thread.anchor.line}
-            path={thread.anchor.path}
-          />
-        </div>
-        <div className="rc-bar">
-          <span className="spacer" />
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => startEdit(thread, comment)}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() =>
-              void run(() => call("review.delete", { comment_id: comment.id }))
-            }
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   /** A GitLab discussion (maildesk's .mrt). */
   function renderMrThread(thread: ReviewThread, top = false): ReactNode {
-    const relocated = relocations.get(thread.id);
-    const replies = thread.comments.length - 1;
-    const first = thread.comments[0];
     return (
-      <details
+      <MrThreadCard
         key={thread.id}
-        className={`mrt${thread.resolved ? " resolved" : ""}`}
-        open={
-          (top ? !thread.resolved : !thread.resolved && !relocated) !==
-          foldFlipped.has(thread.id)
+        thread={thread}
+        forge={forge}
+        top={top}
+        outdatedLine={relocations.get(thread.id)?.wasLine}
+        flipped={foldFlipped.has(thread.id)}
+        focusedComment={focusedComment}
+        newLines={
+          thread.anchor.path
+            ? newLinesByPath.get(thread.anchor.path)
+            : undefined
         }
-      >
-        <summary className="mr-head">
-          <span className="mr-tag">{forge}</span>{" "}
-          {first?.author.replace(/^@/, "")}
-          {replies > 0 ? ` + ${plural(replies, "reply", "replies")}` : ""}
-          {thread.resolved ? (
-            <span className="mr-resolved"> · resolved</span>
-          ) : null}
-          {relocated ? (
-            <span className="mr-resolved">
-              {" "}
-              · outdated (was line {relocated.wasLine})
-            </span>
-          ) : null}
-          {top && thread.anchor.path ? (
-            <code className="mr-where">
-              {thread.anchor.path}
-              {thread.anchor.line ? `:${thread.anchor.line}` : ""}
-            </code>
-          ) : null}
-        </summary>
-        {thread.comments.map((comment) =>
-          comment.gitlabDraftId !== undefined ? (
-            renderDraftReply(thread, comment)
-          ) : (
-            <div
-              key={comment.id}
-              data-comment-id={comment.id}
-              className={`mr-note${comment.id === focusedComment ? " focused" : ""}`}
-            >
-              <div className="mr-who">
-                <strong>{comment.author.replace(/^@/, "")}</strong> ·{" "}
-                {fmtDate(comment.createdAt)}
-              </div>
-              <div className="mr-body">
-                <NoteBody
-                  text={comment.body}
-                  newLines={
-                    thread.anchor.path
-                      ? newLinesByPath.get(thread.anchor.path)
-                      : undefined
-                  }
-                  line={thread.anchor.line}
-                  path={thread.anchor.path}
-                />
-              </div>
-            </div>
-          ),
-        )}
-        {editor?.replyTo === thread.id ? (
-          editorFor(editor)
-        ) : !thread.gitlab?.discussionId ? (
-          <div className="rc-bar">
-            <span className="spacer" />
-            <span
-              className="rc-kind"
-              title="GitHub keeps no draft of a reply to a conversation comment, and Roamgate never publishes: answer it on GitHub"
-            >
-              Conversation comment: reply on {forge}
-            </span>
-          </div>
-        ) : (
-          <div className="rc-bar">
-            <span className="spacer" />
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => {
-                commitEditor();
-                openEditor({
-                  at: null,
-                  file: null,
-                  kind: "merge-request",
-                  anchor: thread.anchor,
-                  replyTo: thread.id,
-                  publicReply: true,
-                  text: "",
-                  version: 0,
-                });
-              }}
-            >
-              Draft reply
-            </button>
-          </div>
-        )}
-      </details>
+        replying={editor?.replyTo === thread.id ? editorFor(editor) : undefined}
+        editing={(comment) =>
+          editor?.commentId === comment.id ? editorFor(editor) : undefined
+        }
+        onEditReply={(comment) => startEdit(thread, comment)}
+        onDeleteReply={(comment) =>
+          void run(() => call("review.delete", { comment_id: comment.id }))
+        }
+        onDraftReply={() => {
+          commitEditor();
+          openEditor({
+            at: null,
+            file: null,
+            kind: "merge-request",
+            anchor: thread.anchor,
+            replyTo: thread.id,
+            publicReply: true,
+            text: "",
+            version: 0,
+          });
+        }}
+      />
     );
   }
 
@@ -5835,6 +5812,22 @@ export function ReviewOverlay({
               }
             >
               Open
+            </button>
+          ) : null}
+          {onOpenFile &&
+          !file.commitMessage &&
+          RENDERED_FILE.test(file.path) ? (
+            <button
+              type="button"
+              className="btn ghost rd-open"
+              title="Show rendered: the file as the Files preview renders it, at the cursor line, with this review's comments on it"
+              onClick={() =>
+                rows[cursor]?.file === fileIndex
+                  ? openFileHere(undefined, true)
+                  : openFileHere(fileIndex, true)
+              }
+            >
+              Rendered
             </button>
           ) : null}
           {reviewedFolded.has(fileIndex) ? (
@@ -6338,16 +6331,11 @@ export function ReviewOverlay({
           >
             <Columns2 size={16} />
           </button>
-          <button
-            type="button"
-            className={`icon-btn rv-icon${zen ? " on" : ""}`}
-            aria-pressed={zen}
-            aria-label="Diff only"
-            title="Diff only: hide all the chrome, just the diff (o, :only; o or Esc brings it back)"
-            onClick={toggleZen}
-          >
-            <Maximize2 size={16} />
-          </button>
+          <ZenButton
+            zen={zen}
+            onToggle={toggleZen}
+            className="icon-btn rv-icon"
+          />
         </div>
         {agentAllowed ? (
           <div className="rv-agent" role="group" aria-label="Agent">

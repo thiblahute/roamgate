@@ -7,6 +7,8 @@ export type FileDownloadOptions = {
   inline?: boolean;
   range?: string;
   ifRange?: string;
+  /** A file over this is refused (413) before it is read; not directories. */
+  maxBytes?: number;
 };
 
 export class FileDownloadError extends Error {

@@ -225,6 +225,33 @@ export function relativePathWithinCheckout(
   return relative;
 }
 
+/**
+ * The path a Files tab keeps a file by. A checkout's files keep their path
+ * in it. A workspace without a checkout has its Files root follow its
+ * focused pane, so a path relative to that root would name another file once
+ * another pane is focused: such a file is kept by its absolute path, the root
+ * it was read from (`preview`) joined to its path there. Undefined while that
+ * root is not known yet. Absolute paths and sites' URLs are kept as given.
+ */
+export function keptFilePath(
+  scope: ResourceScope,
+  path: string,
+  preview?: { root: string; path: string } | null,
+): string | undefined {
+  if (
+    scope.kind === "worktree" ||
+    !path ||
+    /^(?:\/|[a-z]:[\\/]|\\\\|https?:\/\/)/i.test(path)
+  )
+    return path;
+  if (!preview?.root || !preview.path) return undefined;
+  if (/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(preview.path)) return preview.path;
+  const root = preview.root;
+  if (/^(?:[a-z]:[\\/]|\\\\)/i.test(root) && root.includes("\\"))
+    return `${root.replace(/[\\/]+$/, "")}\\${preview.path.replace(/\//g, "\\")}`;
+  return `${root.replace(/\/+$/, "")}/${preview.path}`;
+}
+
 export function preferencesStorageKey(scope: ResourceScope): string {
   return connectionStorageKey(
     scope.connectionId,
@@ -380,6 +407,21 @@ export function openResourceFileTab(
     ],
     activePath: path,
     previewPath: path,
+  };
+}
+
+/** The tab of `from` keeps its place, now for `to`. */
+export function renameResourceFileTab(
+  tabs: ResourceFileTabs,
+  from: string,
+  to: string,
+): ResourceFileTabs {
+  if (from === to || !tabs.paths.includes(from)) return tabs;
+  const rename = (path: string | null) => (path === from ? to : path);
+  return {
+    paths: [...new Set(tabs.paths.map((path) => rename(path)!))],
+    activePath: rename(tabs.activePath),
+    previewPath: rename(tabs.previewPath),
   };
 }
 

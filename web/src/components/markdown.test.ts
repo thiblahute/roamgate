@@ -100,3 +100,15 @@ test("a list split by a code block keeps its numbers", () => {
   expect(odd.querySelector("ol")?.getAttributeNames()).toEqual([]);
   expect(odd.querySelector("ul")?.getAttributeNames()).toEqual([]);
 });
+
+test("with HTML frames, a raw HTML block is left for its frame", () => {
+  const html = renderMarkdown(
+    '# T\n\n<div onclick="x()">raw</div>\n\n<!-- c -->\n\nText.\n',
+    { sourceBlocks: true, htmlFrames: true },
+  );
+  expect(html).toContain('class="md-html-slot" data-html-index="1"');
+  expect(html).not.toContain("onclick");
+  expect(html).not.toContain("raw");
+  // A comment has nothing to frame.
+  expect((html.match(/md-html-slot/g) ?? []).length).toBe(1);
+});

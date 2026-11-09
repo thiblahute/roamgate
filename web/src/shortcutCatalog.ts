@@ -10,7 +10,7 @@ const descriptions: [ShortcutId, string, string][] = [
   ["sidebar.toggle", "Toggle the desktop sidebar", "Global"],
   ["inspector.toggle", "Toggle the Workspace Inspector", "Global"],
   ["inspector.expand", "Expand or restore the Inspector on desktop", "Global"],
-  ["annotations.toggle", "Toggle Annotations", "Global"],
+  ["annotations.toggle", "Toggle the workspace's threads", "Global"],
   ["review.toggle", "Open or close the review of this branch", "Global"],
   ["reviews.list", "List the reviews in progress", "Global"],
   ["assistant.toggle", "Toggle Ranger", "Global"],
@@ -92,10 +92,10 @@ const descriptions: [ShortcutId, string, string][] = [
   ["preview.search", "Search the raw file preview or diff", "Preview & review"],
   ["preview.selectAll", "Select all in the file preview", "Preview & review"],
   ["annotation.submit", "Add a review comment", "Preview & review"],
-  ["annotations.copy", "Copy review feedback", "Preview & review"],
+  ["annotations.copy", "Copy the comments to send", "Preview & review"],
   [
     "annotations.prefill",
-    "Pre-fill agent with review feedback",
+    "Pre-fill agent with the comments to send",
     "Preview & review",
   ],
 ];

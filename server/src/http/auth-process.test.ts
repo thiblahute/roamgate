@@ -259,6 +259,59 @@ test("development loopback serves HTTP and WebSocket without credentials", async
   );
 }, 20_000);
 
+test("a rendered page's frame off its token gets an error page, never the login page or a route", async () => {
+  const frame = {
+    accept: "text/html",
+    "sec-fetch-site": "cross-site",
+    "sec-fetch-dest": "iframe",
+    "sec-fetch-mode": "navigate",
+  };
+  const check = async (base: string, cookie = "") => {
+    for (const path of [
+      "/documentation/installing/index.html",
+      "/login",
+      "/",
+    ]) {
+      const response = await fetch(`${base}${path}`, {
+        headers: { ...frame, ...(cookie ? { cookie } : {}) },
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000),
+      });
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-security-policy")).toContain(
+        "sandbox allow-scripts",
+      );
+      const page = await response.text();
+      expect(page).toContain("not part of this site");
+      expect(page).not.toMatch(/password|token/i);
+    }
+    const fetched = await fetch(`${base}/api/health`, {
+      headers: {
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-dest": "empty",
+        origin: "null",
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(fetched.status).toBe(404);
+  };
+  await withAuthServer(async (base) => {
+    await check(base);
+    // Roamgate's own pages still go to the login page.
+    const own = await fetch(base, {
+      headers: { accept: "text/html", "sec-fetch-site": "none" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(own.headers.get("location")).toBe("/login");
+  });
+  // Nor any route where the gate lets everything through.
+  await withAuthServer(async (base) => check(base), {
+    NODE_ENV: "development",
+    ROAMGATE_PASSWORD: "",
+  });
+}, 20_000);
+
 test("development non-loopback binding still requires login", async () => {
   await withAuthServer(
     async (base) => {
@@ -326,13 +379,21 @@ test("instance naming is authenticated, persistent, and isolated from other inst
           headers: { cookie },
           signal: AbortSignal.timeout(5000),
         });
-        expect(await get.json()).toEqual({ title_suffix: "" });
+        expect(await get.json()).toEqual({
+          title_suffix: "",
+          rendered_sites: [],
+          rendered_site_roots: {},
+        });
         expect(get.headers.get("cache-control")).toBe("no-store");
         const original = await manifest(base, cookie);
         expect(original.name).toBe("Roamgate");
         const saved = await save(base, cookie, "  Home  ");
         expect(saved.status).toBe(200);
-        expect(await saved.json()).toEqual({ title_suffix: "Home" });
+        expect(await saved.json()).toEqual({
+          title_suffix: "Home",
+          rendered_sites: [],
+          rendered_site_roots: {},
+        });
         expect(await manifest(base, cookie)).toEqual({
           ...original,
           name: "Roamgate \u00b7 Home",
@@ -412,17 +473,25 @@ test("instance name save failures preserve the current name and permit retry", a
         const failed = await save();
         expect(failed.status).toBe(500);
         expect(await failed.json()).toEqual({
-          error: "Unable to save instance name",
+          error: "Unable to save instance settings",
         });
         const get = () =>
           fetch(`${base}/api/instance-settings`, {
             headers: { cookie },
             signal: AbortSignal.timeout(5000),
           }).then((response) => response.json());
-        expect(await get()).toEqual({ title_suffix: "" });
+        expect(await get()).toEqual({
+          title_suffix: "",
+          rendered_sites: [],
+          rendered_site_roots: {},
+        });
         await rm(blockedPath, { recursive: true });
         expect((await save()).status).toBe(200);
-        expect(await get()).toEqual({ title_suffix: "Retry" });
+        expect(await get()).toEqual({
+          title_suffix: "Retry",
+          rendered_sites: [],
+          rendered_site_roots: {},
+        });
       },
       { ROAMGATE_SETTINGS_PATH: blockedPath },
     );

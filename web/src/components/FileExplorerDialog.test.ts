@@ -10,6 +10,7 @@ import {
   invalidateFilePreviewCache,
   prefetchFileExplorerWorkspace,
   requestFilePreview,
+  treeRelativePath,
 } from "./fileExplorerResources";
 
 function preview(label: string): FilePreview {
@@ -316,4 +317,23 @@ describe("connection-scoped file previews", () => {
     ).resolves.toMatchObject({ text: "fresh" });
     expect(calls).toBe(2);
   });
+});
+
+test("the tree finds a file kept by its absolute path only under its root", () => {
+  const root = "/Volumes/data/tasks/areglos-casa/planos-3d";
+  expect(treeRelativePath(`${root}/out/casa.html`, root)).toBe("out/casa.html");
+  expect(treeRelativePath(`${root}/out/casa.html`, `${root}/`)).toBe(
+    "out/casa.html",
+  );
+  // A sibling checkout's file is never named relative to this root.
+  const sibling = "/Volumes/data/tasks/areglos-casa/planos-3d/out/casa.html";
+  expect(
+    treeRelativePath(sibling, "/Volumes/data/tasks/areglos-casa/instalador"),
+  ).toBe(sibling);
+  expect(treeRelativePath(root, root)).toBe(root);
+  expect(treeRelativePath("out/casa.html", root)).toBe("out/casa.html");
+  expect(treeRelativePath(`${root}/out/casa.html`, undefined)).toBe(
+    `${root}/out/casa.html`,
+  );
+  expect(treeRelativePath(undefined, root)).toBeUndefined();
 });

@@ -175,6 +175,12 @@ export function placeThreads(
         continue;
       }
     }
+    // Written on a rendered file, whose anchor may keep the words quoted
+    // rather than the line (older ones do): it stays on its line.
+    if (exact && thread.anchor.render) {
+      put(placement.byRow, exact.at, thread);
+      continue;
+    }
     placement.general.push(thread);
     placement.outdated.add(thread.id);
   }

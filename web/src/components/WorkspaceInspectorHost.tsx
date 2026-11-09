@@ -21,6 +21,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import type { ReviewThread } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import { connectionClientScopeKey } from "../useConnectionClient";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
@@ -112,7 +113,9 @@ export function WorkspaceInspectorHost({
   onDiffSelectionChange,
   onOpenDiffFile,
   annotations,
+  feedbackThreads,
   onCreateAnnotation,
+  onShowInReview,
   onReanchorFileAnnotations,
   onReanchorDiffAnnotations,
   onEditAnnotation,
@@ -142,7 +145,11 @@ export function WorkspaceInspectorHost({
   onRefreshFile: () => void;
   onOpenDiffFile: (entry: ActiveDiffSelection["entry"]) => void;
   annotations: readonly ReviewAnnotation[];
+  /** The threads the annotations written as comments are, by their id. */
+  feedbackThreads?: readonly ReviewThread[];
   onCreateAnnotation: (input: NewReviewAnnotation) => void;
+  /** Shows a file of a checkout (absolute path) in its code review. */
+  onShowInReview?: (path: string, line?: number) => void;
   onReanchorFileAnnotations: (path: string, text: string) => void;
   onReanchorDiffAnnotations: (
     path: string,
@@ -664,6 +671,7 @@ export function WorkspaceInspectorHost({
                 error={fileSelection.error}
                 fragment={fileSelection.fragment}
                 line={fileSelection.line}
+                rendered={fileSelection.rendered}
                 snippet={fileSelection.snippet}
                 onOpenFile={onOpenDocument}
                 onRefresh={onRefreshFile}
@@ -685,6 +693,7 @@ export function WorkspaceInspectorHost({
                 }
                 annotations={annotations}
                 onCreateAnnotation={onCreateAnnotation}
+                onShowInReview={onShowInReview}
                 onReanchorAnnotations={onReanchorFileAnnotations}
                 onOpenChanges={
                   primaryFileChangesEntry
@@ -734,6 +743,7 @@ export function WorkspaceInspectorHost({
                         mobile={compact}
                         connectionClient={connectionClient}
                         annotations={annotations}
+                        threads={feedbackThreads}
                         onCreateAnnotation={onCreateAnnotation}
                         onReanchorAnnotations={onReanchorDiffAnnotations}
                         onEditAnnotation={onEditAnnotation}
@@ -813,6 +823,7 @@ export function WorkspaceInspectorHost({
                     resourceKey={contentResourceKey}
                     connectionClient={connectionClient}
                     annotations={annotations}
+                    threads={feedbackThreads}
                     onCreateAnnotation={onCreateAnnotation}
                     onReanchorAnnotations={onReanchorDiffAnnotations}
                     onEditAnnotation={onEditAnnotation}

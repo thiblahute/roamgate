@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   Clipboard,
+  Crosshair,
   MessageSquareText,
   Pin,
   PinOff,
@@ -9,7 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   diffReviewLineLabel,
   fileReviewLineLabel,
@@ -45,6 +46,13 @@ function paneLabel(pane: Pane) {
   return terminalAnnotationTitle(pane);
 }
 
+/**
+ * The workspace's threads: the comments held for Send (a terminal's, and
+ * notes moved from this browser), edited, ordered and handed to an agent in
+ * one prompt (Send, Pre-fill, Copy), above every thread of the workspace's
+ * reviews (diffs, files, sites, chats), each going to its review at its
+ * place.
+ */
 export function AnnotationPanel({
   open,
   floating,
@@ -62,6 +70,8 @@ export function AnnotationPanel({
   onCopy,
   onSend,
   onGoToAgent,
+  onGo,
+  conversations,
 }: {
   open: boolean;
   floating: boolean;
@@ -72,6 +82,10 @@ export function AnnotationPanel({
   busy: boolean;
   focusedAnnotationId?: string | null;
   onClose: () => void;
+  /** The workspace's threads, below the comments to send. */
+  conversations?: ReactNode;
+  /** Goes to a held comment where it was written (its pane, its file). */
+  onGo?: (id: string) => void;
   onUpdateComment: (id: string, comment: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, delta: -1 | 1) => void;
@@ -126,7 +140,7 @@ export function AnnotationPanel({
   return (
     <aside
       className={`annotation-panel ${floating ? "is-floating" : ""}`}
-      aria-label="Review annotations"
+      aria-label="Workspace threads"
       onKeyDown={(event) => {
         if (
           event.defaultPrevented ||
@@ -150,11 +164,8 @@ export function AnnotationPanel({
     >
       <header className="annotation-panel-head">
         <div>
-          <strong>Review feedback</strong>
-          <span>
-            {annotations.length} comment
-            {annotations.length === 1 ? "" : "s"}
-          </span>
+          <strong>Threads</strong>
+          <span>{annotations.length} to send</span>
         </div>
         {onToggleFloating ? (
           <button
@@ -171,7 +182,7 @@ export function AnnotationPanel({
         <button
           type="button"
           className="annotation-icon-button"
-          aria-label="Close review feedback"
+          aria-label="Close the workspace's threads"
           title="Close"
           onClick={onClose}
         >
@@ -183,10 +194,11 @@ export function AnnotationPanel({
         {annotations.length === 0 ? (
           <div className="annotation-panel-empty">
             <MessageSquareText size={24} />
-            <strong>No review comments yet</strong>
+            <strong>Nothing waiting to send</strong>
             <span>
-              Click or drag across diff line numbers or a source gutter, or
-              select rendered Markdown or terminal text.
+              Select terminal text to comment on it: the comment waits here, in
+              its agent's chat, until you send it. Comments on diffs, files and
+              chats go to their review at once.
             </span>
           </div>
         ) : (
@@ -246,6 +258,17 @@ export function AnnotationPanel({
                 >
                   <ArrowDown size={14} />
                 </button>
+                {onGo ? (
+                  <button
+                    type="button"
+                    className="annotation-icon-button"
+                    aria-label={`Go to comment ${index + 1}`}
+                    title="Go to it"
+                    onClick={() => onGo(annotation.id)}
+                  >
+                    <Crosshair size={14} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="annotation-icon-button is-danger"
@@ -260,6 +283,8 @@ export function AnnotationPanel({
           ))
         )}
       </div>
+
+      {conversations}
 
       <footer className="annotation-panel-footer">
         {agentPanes.length > 1 ? (
@@ -290,7 +315,10 @@ export function AnnotationPanel({
             className="ghost"
             disabled={busy || !hasFeedback}
             onClick={onCopy}
-            title={shortcutTitle("Copy review feedback", "annotations.copy")}
+            title={shortcutTitle(
+              "Copy the comments to send",
+              "annotations.copy",
+            )}
           >
             <Clipboard size={14} /> Copy
             {copyShortcut !== "Unassigned" ? <kbd>{copyShortcut}</kbd> : null}
@@ -332,14 +360,14 @@ export function AnnotationPanel({
           disabled={busy || annotations.length === 0}
           onClick={() => setConfirmClear(true)}
         >
-          Clear draft
+          Clear held
         </button>
       </footer>
       <ConfirmDialog
         open={confirmClear}
-        title="Clear review feedback?"
-        message="This removes every unsent review comment from this draft."
-        confirmLabel="Clear feedback"
+        title="Clear the comments to send?"
+        message="This deletes every comment waiting to be sent."
+        confirmLabel="Delete them"
         danger
         onConfirm={onClear}
         onClose={() => setConfirmClear(false)}

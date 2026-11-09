@@ -8,6 +8,17 @@
   line-height: 1.7;
 }
 
+/* A Markdown file in the Files preview reads in the chat's centred column
+   (--reading-column-width), however wide the view: the margins are the
+   scroller's padding, so it still scrolls from its edges. Tables, code and
+   diagrams wider than the column scroll across in their own box. */
+.file-preview-markdown.file-preview-reading {
+  padding-inline: calc(
+    max(0px, (100% - var(--reading-column-width)) / 2) +
+    22px
+  );
+}
+
 .file-preview-markdown > :first-child {
   margin-top: 0;
 }
@@ -16,65 +27,65 @@
   margin-bottom: 0;
 }
 
-.file-preview-markdown h1,
-.file-preview-markdown h2,
-.file-preview-markdown h3,
-.file-preview-markdown h4,
-.file-preview-markdown h5,
-.file-preview-markdown h6 {
+.file-preview-markdown h1:where(:not(.md-thread-slot *)),
+.file-preview-markdown h2:where(:not(.md-thread-slot *)),
+.file-preview-markdown h3:where(:not(.md-thread-slot *)),
+.file-preview-markdown h4:where(:not(.md-thread-slot *)),
+.file-preview-markdown h5:where(:not(.md-thread-slot *)),
+.file-preview-markdown h6:where(:not(.md-thread-slot *)) {
   margin: 1.35em 0 0.55em;
   color: var(--text-strong);
   line-height: 1.25;
 }
 
-.file-preview-markdown h1 {
+.file-preview-markdown h1:where(:not(.md-thread-slot *)) {
   padding-bottom: 0.32em;
   border-bottom: 1px solid var(--border-soft);
   font-size: 1.8em;
 }
 
-.file-preview-markdown h2 {
+.file-preview-markdown h2:where(:not(.md-thread-slot *)) {
   padding-bottom: 0.25em;
   border-bottom: 1px solid var(--border-soft);
   font-size: 1.45em;
 }
 
-.file-preview-markdown h3 {
+.file-preview-markdown h3:where(:not(.md-thread-slot *)) {
   font-size: 1.2em;
 }
 
-.file-preview-markdown p,
-.file-preview-markdown ul,
-.file-preview-markdown ol,
-.file-preview-markdown blockquote,
-.file-preview-markdown pre,
-.file-preview-markdown table {
+.file-preview-markdown p:where(:not(.md-thread-slot *)),
+.file-preview-markdown ul:where(:not(.md-thread-slot *)),
+.file-preview-markdown ol:where(:not(.md-thread-slot *)),
+.file-preview-markdown blockquote:where(:not(.md-thread-slot *)),
+.file-preview-markdown pre:where(:not(.md-thread-slot *)),
+.file-preview-markdown table:where(:not(.md-thread-slot *)) {
   margin: 0.85em 0;
 }
 
-.file-preview-markdown ul,
-.file-preview-markdown ol {
+.file-preview-markdown ul:where(:not(.md-thread-slot *)),
+.file-preview-markdown ol:where(:not(.md-thread-slot *)) {
   padding-left: 1.5em;
 }
 
-.file-preview-markdown li + li {
+.file-preview-markdown li + li:where(:not(.md-thread-slot *)) {
   margin-top: 0.25em;
 }
 
-.file-preview-markdown a {
+.file-preview-markdown a:where(:not(.md-thread-slot *)) {
   color: var(--blue);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.file-preview-markdown blockquote {
+.file-preview-markdown blockquote:where(:not(.md-thread-slot *)) {
   padding: 0.2em 0 0.2em 1em;
   border-left: 3px solid var(--accent);
   color: var(--muted);
   background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
 
-.file-preview-markdown code {
+.file-preview-markdown code:where(:not(.md-thread-slot *)) {
   padding: 0.12em 0.35em;
   border: 1px solid var(--border-soft);
   border-radius: 5px;
@@ -84,7 +95,7 @@
   font-size: 0.92em;
 }
 
-.file-preview-markdown pre {
+.file-preview-markdown pre:where(:not(.md-thread-slot *)) {
   overflow: auto;
   padding: 12px 14px;
   border: 1px solid var(--border-soft);
@@ -93,7 +104,7 @@
   color: var(--text-code);
 }
 
-.file-preview-markdown pre code {
+.file-preview-markdown pre code:where(:not(.md-thread-slot *)) {
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -101,7 +112,7 @@
   color: inherit;
 }
 
-.file-preview-markdown table {
+.file-preview-markdown table:where(:not(.md-thread-slot *)) {
   width: max-content;
   max-width: 100%;
   border-collapse: collapse;
@@ -109,31 +120,109 @@
   overflow: auto;
 }
 
-.file-preview-markdown th,
-.file-preview-markdown td {
+.file-preview-markdown th:where(:not(.md-thread-slot *)),
+.file-preview-markdown td:where(:not(.md-thread-slot *)) {
   padding: 6px 9px;
   border: 1px solid var(--border-soft);
 }
 
-.file-preview-markdown th {
+.file-preview-markdown th:where(:not(.md-thread-slot *)) {
   background: var(--panel);
   color: var(--text-strong);
   font-weight: 700;
 }
 
-.file-preview-markdown tr:nth-child(even) td {
+.file-preview-markdown
+  tr:where(:nth-child(even of :not(.md-thread-row)))
+  td:where(:not(.md-thread-slot *)) {
   background: color-mix(in srgb, var(--panel) 45%, transparent);
 }
 
-.file-preview-markdown img {
+.file-preview-markdown img:where(:not(.md-thread-slot *)) {
   max-width: 100%;
   border-radius: 7px;
   box-shadow: 0 0 0 1px var(--border-soft);
 }
 
-.file-preview-markdown hr {
+.file-preview-markdown hr:where(:not(.md-thread-slot *)) {
   height: 1px;
   margin: 1.5em 0;
   border: 0;
   background: var(--border-soft);
+}
+
+.md-thread-slot:empty {
+  display: none;
+}
+
+/* A table's rows of threads on its cells: no cell of the table's own, and
+   nothing at all while no thread is there. */
+.file-preview-markdown tr.md-thread-row > td {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Its threads never widen the table's columns (they are drawn in them),
+   but have room for a card under a small table's row. */
+.file-preview-markdown tr.md-thread-row .md-thread-slot {
+  contain: inline-size;
+  min-width: 15em;
+}
+
+/* A cell's threads in its column (FileThreads' SlotThreads): the row's
+   columns as drawn, each card in its cell's. */
+.md-thread-grid {
+  display: grid;
+  align-items: start;
+}
+
+.md-thread-grid > .chat-review {
+  min-width: 0;
+  padding: 0 4px;
+}
+
+/* A cell too narrow for a card: under the row from its column, indented,
+   a line from the cell's middle down to the card. */
+.md-thread-grid > .chat-review.is-under-row {
+  position: relative;
+  padding-top: 8px;
+  padding-left: min(12px, var(--md-thread-pointer));
+}
+
+.md-thread-grid > .chat-review.is-under-row::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: calc(var(--md-thread-pointer) - 1px);
+  width: 2px;
+  height: 18px;
+  border-radius: 1px;
+  background: var(--chat-comment);
+}
+
+/* The words an open thread quotes, where they are, as the review pane
+   marks a selected range (.rl.in-sel). */
+::highlight(roamgate-quote) {
+  background-color: rgba(130, 80, 223, 0.22);
+  color: inherit;
+}
+
+.file-preview-markdown tr.md-thread-row:has(.md-thread-slot:empty) {
+  display: none;
+}
+
+/* The threads under a block: drawn as a chat's (ChatThreads.css), none
+   of the document's rules (the :not above), in the chat's lines. */
+.md-thread-slot {
+  margin: 6px 0 14px;
+  line-height: 1.5;
+}
+
+.md-html-frame {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
 }

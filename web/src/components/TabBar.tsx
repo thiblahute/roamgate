@@ -409,13 +409,13 @@ export function TabBar({
               className={annotationsOpen ? "is-active" : ""}
               aria-expanded={annotationsOpen}
               title={shortcutTitle(
-                annotationsOpen ? "Close Annotations" : "Open Annotations",
+                annotationsOpen ? "Close threads" : "Open threads",
                 "annotations.toggle",
               )}
               onClick={onToggleAnnotations}
             >
               <MessageSquareText size={14} />
-              <span>Annotations</span>
+              <span>Threads</span>
               {annotationCount > 0 ? (
                 <span className="tabbar-change-count">{annotationCount}</span>
               ) : null}

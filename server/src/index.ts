@@ -36,6 +36,8 @@ import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
 import { canRevealFiles } from "./workspace/file-manager";
 import { createWebPushService } from "./notifications/web-push";
 import { rmSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import packageJson from "../../package.json";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
@@ -150,6 +152,18 @@ import {
 } from "./http/call-handoff";
 import { serveStatic } from "./http/static-files";
 import { handleInstanceSettings } from "./http/instance-settings";
+import {
+  connectionFileReader,
+  connectionRootFinder,
+  createRenderedPages,
+  renderedSvgPage,
+  renderedAddress,
+  renderedStray,
+  RENDERED_BODY_MAX_BYTES,
+} from "./http/rendered-pages";
+import { RENDERED_PREFIX } from "../../shared/renderedPage";
+import { downloadLocalFile } from "./workspace/local-files";
+import { downloadRemoteFile } from "./workspace/remote-files";
 import {
   activitySettings,
   claudeStartMode,
@@ -1382,6 +1396,65 @@ async function serveReviewImage(url: URL): Promise<Response> {
     },
   });
 }
+
+/**
+ * Pages of rendered reviews (HTML files, sites), served to sandboxed frames
+ * under `/rendered/<token>/` before the authentication gate: the token is
+ * their credential (server/src/http/rendered-pages.ts).
+ */
+const renderedPages = createRenderedPages({
+  findRoot: connectionRootFinder({
+    sshHost: (connectionId) =>
+      resolveReadyConnection(connectionManager, connectionId).runtime.sshHost(),
+    home: homedir(),
+    exists: (path) =>
+      stat(path).then(
+        () => true,
+        () => false,
+      ),
+    runRemote: async (host, script) => {
+      const result = await runProcessWithCodeTimeout(
+        sshReadCommandArgv(
+          host,
+          `sh -c ${shQuote(script)}`,
+          [],
+          "rendered.root",
+        ),
+        15_000,
+      );
+      return { code: result.code, stdout: result.stdout };
+    },
+    shQuote,
+  }),
+  readFile: connectionFileReader({
+    sshHost: (connectionId) =>
+      resolveReadyConnection(connectionManager, connectionId).runtime.sshHost(),
+    readLocal: async (root, path) => {
+      const download = await downloadLocalFile(root, path);
+      return {
+        body: download.body,
+        size: download.size,
+        contentType: download.contentType,
+      };
+    },
+    readRemote: async (host, root, path) => {
+      const download = await downloadRemoteFile({
+        host,
+        rootPath: root,
+        requestedPath: path,
+        runProcessWithCodeTimeout,
+        shQuote,
+        // Read whole over SSH: refused above this before any byte comes.
+        options: { maxBytes: RENDERED_BODY_MAX_BYTES },
+      });
+      return {
+        body: download.body,
+        size: download.size,
+        contentType: download.contentType,
+      };
+    },
+  }),
+});
 
 let reviewService: ReviewService | null = null;
 function getReviewService(): ReviewService {
@@ -2869,6 +2942,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     listWorkspaceFiles,
     resolveWorkspaceFiles,
     readWorkspaceFile,
+    statWorkspaceFile,
     searchWorkspaceFiles,
     revealWorkspaceFile,
     createWorkspaceDirectory,
@@ -3176,6 +3250,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     }
     return;
   }
+  if (method === "file.stat") {
+    try {
+      const result = await statWorkspaceFile(params ?? {});
+      sendReply({ id, result }, "file-stat");
+    } catch (e) {
+      sendError("file-stat-error", e);
+    }
+    return;
+  }
   if (method === "file.read") {
     try {
       const result = await readWorkspaceFile(params ?? {});
@@ -3234,6 +3317,56 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           readRoot: (path) => connection.files.readReviewRoot(path),
           scanRepos: (paths, agentPaths) =>
             connection.files.scanReviewRepos(paths, agentPaths),
+          renderedSvg: (svg, color, scripts) => {
+            const mode = scripts ? "site" : "static";
+            return {
+              src: `${RENDERED_PREFIX}${renderedPages.mint({
+                connectionId: connection.identity.id,
+                mode,
+                source: { kind: "inline", body: renderedSvgPage(svg, color) },
+              })}/`,
+              mode,
+            };
+          },
+          renderedPage: async (place, page, scripts) => {
+            if (place.target.kind !== "rendered")
+              throw new ReviewError("not a rendered review");
+            const settings = await readGuiSettings();
+            let address: ReturnType<typeof renderedAddress>;
+            try {
+              address = renderedAddress({
+                target: place.target,
+                root: place.root,
+                sites: settings.rendered_sites ?? [],
+                page,
+                scripts,
+                // The root set in Settings wins over the one found.
+                rootOf: (site) => {
+                  const explicit = settings.rendered_site_roots?.[site];
+                  if (explicit) return { root: explicit, explicit: true };
+                  const found = renderedPages.siteRoot(
+                    connection.identity.id,
+                    site,
+                  );
+                  return found ? { root: found, explicit: false } : undefined;
+                },
+              });
+            } catch (error) {
+              throw new ReviewError(
+                error instanceof Error ? error.message : String(error),
+              );
+            }
+            const token = renderedPages.mint({
+              connectionId: connection.identity.id,
+              mode: address.mode,
+              source: address.source,
+            });
+            return {
+              src: `${RENDERED_PREFIX}${token}/${address.rest}`,
+              mode: address.mode,
+              ...(address.site ? { site: address.site } : {}),
+            };
+          },
         },
         method,
         params ?? {},
@@ -3812,6 +3945,11 @@ function main() {
             return new Response("invalid request URL", { status: 400 });
           }
 
+          // A rendered page's frame off its token: never the login page,
+          // nor anything behind the gate.
+          const stray = renderedStray(req, url);
+          if (stray) return stray;
+
           // Forwarded headers are untrusted; use the actual TCP peer address.
           const clientIp = server.requestIP(req)?.address ?? "unknown";
           const tokenLoginResponse = handleTokenLogin(req, clientIp);
@@ -3828,6 +3966,17 @@ function main() {
           // credential, exchanged for the call's and a login.
           if (url.pathname === CALL_HANDOFF_PATH)
             return redeemCallHandoff(req, clientIp);
+
+          // A rendered review's page: its frame is sandboxed with an opaque
+          // origin and sends no cookie; the token in the path is the
+          // credential.
+          const renderedPage = renderedPages.handle(req, url);
+          if (renderedPage) {
+            // A large page or model read whole over SSH can take longer
+            // than the default 10 s idle timeout before its first byte.
+            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+            return renderedPage;
+          }
 
           // Auth endpoints are always reachable.
           if (url.pathname === "/api/login/pin" && req.method === "POST") {
@@ -3866,6 +4015,13 @@ function main() {
           }
 
           if (url.pathname === "/ws") {
+            // Never from another site, nor from a sandboxed page (its
+            // origin is "null"): the bridge is Roamgate's own pages'.
+            if (
+              req.headers.get("sec-fetch-site") === "cross-site" ||
+              req.headers.get("origin") === "null"
+            )
+              return new Response("forbidden", { status: 403 });
             if (
               server.upgrade(req, { data: { sessionToken: sessionToken(req) } })
             )

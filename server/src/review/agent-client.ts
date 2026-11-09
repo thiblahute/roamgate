@@ -122,6 +122,11 @@ def parser():
         metavar=("OLD", "NEW"),
         help="only what changed from OLD to NEW (tree to tree), e.g. a branch before and after a force-push",
     )
+    target.add_argument(
+        "--file",
+        help="a file to discuss as Roamgate renders it (Markdown, HTML, SVG, image)",
+    )
+    target.add_argument("--url", help="a site's page to browse and discuss in Roamgate")
     o.add_argument(
         "--repo",
         action="append",
@@ -140,6 +145,7 @@ def parser():
     a.add_argument("--end-line", type=int)
     a.add_argument("--side", choices=["old", "new"])
     a.add_argument("--draft", action="store_true", help="a review comment, not a discussion")
+    a.add_argument("--quote", help="in a rendered file: the words meant, as they read")
     a.add_argument("text", nargs="*", help="text, or - for standard input")
 
     for name, helptext in (

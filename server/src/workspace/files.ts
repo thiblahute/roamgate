@@ -21,6 +21,7 @@ import {
   downloadLocalFile,
   listLocalFiles,
   readLocalFile,
+  statLocalFile,
   resolveLocalFilePaths,
   uploadLocalFile,
   createLocalDirectory,
@@ -31,6 +32,7 @@ import {
   downloadRemoteFile,
   listRemoteFiles,
   readRemoteFile,
+  statRemoteFile,
   resolveRemoteFilePaths,
   uploadRemoteFile,
   mutateRemoteFile,
@@ -242,6 +244,21 @@ export function createFileHandlers({
       repo_name: workspace?.worktree?.repo_name ?? workspace?.label ?? "",
       checkout_path: checkoutPath,
     };
+  }
+
+  /** The shown file's size and time, for the preview's "Changed on disk". */
+  async function statFile(params: Record<string, unknown>) {
+    const { checkoutPath, path } = await fileTarget(params, "file.stat");
+    const host = sshHost();
+    return host
+      ? statRemoteFile({
+          host,
+          rootPath: checkoutPath,
+          requestedPath: path,
+          runProcessWithCodeTimeout,
+          shQuote,
+        })
+      : statLocalFile(checkoutPath, path);
   }
 
   async function searchFiles(params: Record<string, unknown>) {
@@ -747,6 +764,7 @@ export function createFileHandlers({
     listWorkspaceFiles: listFiles,
     resolveWorkspaceFiles: resolveFiles,
     readWorkspaceFile: readFile,
+    statWorkspaceFile: statFile,
     searchWorkspaceFiles: searchFiles,
     revealWorkspaceFile: revealFile,
     downloadWorkspaceFile: downloadFile,

@@ -159,3 +159,60 @@ test("the browser finds a review's merge request on its own connection only", as
     }),
   ).rejects.toThrow("no such review");
 });
+
+test("a rendered review's page comes from the connection, only for its own reviews", async () => {
+  const service = setup();
+  const asked: { root: string; target: unknown; page?: string }[] = [];
+  const withPages = {
+    ...local,
+    renderedPage: async (
+      session: { root: string; target: unknown },
+      page?: string,
+    ) => {
+      asked.push({ root: session.root, target: session.target, page });
+      return { src: "/rendered/x/index.html", mode: "static" as const };
+    },
+  };
+  const worktree = (await handleReviewRpc(service, withPages, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "worktree" },
+  })) as { session: { id: string } };
+  await expect(
+    handleReviewRpc(service, withPages, "review.rendered.page", {
+      session_id: worktree.session.id,
+    }),
+  ).rejects.toThrow("not a rendered review");
+  const rendered = (await handleReviewRpc(service, withPages, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "rendered", path: "docs/index.html" },
+  })) as { session: { id: string } };
+  expect(
+    await handleReviewRpc(service, withPages, "review.rendered.page", {
+      session_id: rendered.session.id,
+      page: "other.html",
+    }),
+  ).toEqual({ src: "/rendered/x/index.html", mode: "static" });
+  expect(asked).toEqual([
+    {
+      root: "/repo",
+      target: { kind: "rendered", path: "docs/index.html" },
+      page: "other.html",
+    },
+  ]);
+  await expect(
+    handleReviewRpc(
+      service,
+      { ...remote, renderedPage: withPages.renderedPage },
+      "review.rendered.page",
+      {
+        session_id: rendered.session.id,
+      },
+    ),
+  ).rejects.toThrow("no such review");
+  await expect(
+    handleReviewRpc(service, withPages, "review.rendered.page", {
+      session_id: rendered.session.id,
+      page: 5,
+    }),
+  ).rejects.toThrow("invalid page");
+});

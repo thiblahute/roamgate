@@ -1,7 +1,10 @@
-import { REVIEW_USER } from "../../../shared/review";
+import type { RenderedMode } from "../../../shared/renderedPage";
+import { REVIEW_USER, type ReviewTarget } from "../../../shared/review";
 import { isHostPath, type ReviewRepo } from "../workspace/review-patch";
+import { RENDERED_SVG_MAX_BYTES } from "../http/rendered-pages";
 import { saveReviewImage } from "./images";
-import { ReviewError, type ReviewService } from "./service";
+import { renderedFileTarget } from "./rendered-target";
+import { parseReviewTarget, ReviewError, type ReviewService } from "./service";
 import { reviewDirectory } from "./storage";
 
 export type ReviewRpcConnection = {
@@ -11,6 +14,30 @@ export type ReviewRpcConnection = {
   /** The repository of a directory. */
   readRoot?: (path: string) => Promise<string>;
   scanRepos?: (paths: string[], agentPaths: string[]) => Promise<ReviewRepo[]>;
+  /**
+   * Where the browser frames a rendered review's page (an HTML file, or a
+   * site): `page` is a path under the first one served, to go back where
+   * the user was.
+   */
+  renderedPage?: (
+    place: { root: string; target: ReviewTarget },
+    page?: string,
+    scripts?: boolean,
+  ) => Promise<RenderedPageAddress>;
+  /** One SVG as a static page in the sandbox: paused and cropped there. */
+  renderedSvg?: (
+    svg: string,
+    color?: string,
+    scripts?: boolean,
+  ) => RenderedPageAddress;
+};
+
+/** A page to frame: its `/rendered/<token>/...` path and mode. */
+export type RenderedPageAddress = {
+  src: string;
+  mode: RenderedMode;
+  /** The listed site or directory that lowered the restrictions. */
+  site?: string;
 };
 
 const SESSION_METHODS = new Set([
@@ -22,6 +49,8 @@ const SESSION_METHODS = new Set([
   "review.commits",
   "review.file",
   "review.thread.add",
+  "review.thread.move",
+  "review.thread.release",
   "review.reply",
   "review.edit",
   "review.delete",
@@ -100,6 +129,45 @@ export async function handleReviewRpc(
           paneId: raw.agent_pane,
           raise: false,
         });
+      // A site has no checkout.
+      {
+        const target = raw.target as
+          | { kind?: unknown; url?: unknown }
+          | undefined;
+        if (target?.kind === "rendered" && target.url !== undefined)
+          return service.open({
+            connectionId: connection.id,
+            workspaceId,
+            root: "/",
+            target,
+            title: raw.title,
+            agent: raw.agent,
+            paneId: raw.agent_pane,
+            raise: false,
+          });
+      }
+      // A file to discuss, rendered: its checkout and path in it.
+      if (
+        (raw.target as { kind?: unknown } | undefined)?.kind === "rendered" &&
+        typeof raw.file === "string" &&
+        connection.readRoot
+      ) {
+        const { readRoot } = connection;
+        const { root, target } = await renderedFileTarget(
+          (directory) => readRoot(directory),
+          raw.file,
+        );
+        return service.open({
+          connectionId: connection.id,
+          workspaceId,
+          root,
+          target,
+          title: raw.title,
+          agent: raw.agent,
+          paneId: raw.agent_pane,
+          raise: false,
+        });
+      }
       const root =
         isHostPath(path) && connection.readRoot
           ? await connection.readRoot(path)
@@ -164,6 +232,49 @@ export async function handleReviewRpc(
         ),
       };
     }
+    case "review.rendered.page": {
+      // A page shown in the Files preview, which may have no review yet.
+      if (!connection.renderedPage)
+        throw new ReviewError("pages cannot be shown here", 503);
+      const page = raw.page;
+      if (
+        page !== undefined &&
+        (typeof page !== "string" || page.length > 2048)
+      )
+        throw new ReviewError("invalid page");
+      if (typeof raw.svg === "string") {
+        if (!connection.renderedSvg)
+          throw new ReviewError("pages cannot be shown here", 503);
+        if (Buffer.byteLength(raw.svg) > RENDERED_SVG_MAX_BYTES)
+          throw new ReviewError("that SVG is too large to draw here");
+        return connection.renderedSvg(
+          raw.svg,
+          typeof raw.color === "string" ? raw.color : undefined,
+          // Only the browser calls this: asked for by the user, never an agent.
+          raw.scripts === true,
+        );
+      }
+      let place: { root: string; target: ReviewTarget };
+      if (sessionId !== undefined) {
+        const { session } = service.get({ sessionId });
+        if (session.connectionId !== connection.id)
+          throw new ReviewError("no such review", 404);
+        place = { root: session.root, target: session.target };
+      } else if (typeof raw.file === "string" && connection.readRoot) {
+        const { readRoot } = connection;
+        place = await renderedFileTarget(
+          (directory) => readRoot(directory),
+          raw.file,
+        );
+      } else place = { root: "/", target: parseReviewTarget(raw.target) };
+      if (place.target.kind !== "rendered")
+        throw new ReviewError("not a rendered review");
+      return connection.renderedPage(
+        place,
+        page || undefined,
+        raw.scripts === true,
+      );
+    }
     case "review.diff":
       return service.diff(params);
     case "review.state":
@@ -174,6 +285,10 @@ export async function handleReviewRpc(
       return service.file(params);
     case "review.thread.add":
       return service.addThread(params);
+    case "review.thread.move":
+      return service.moveHeld(params);
+    case "review.thread.release":
+      return service.releaseHeld(params);
     case "review.reply":
       return service.reply(params);
     case "review.edit":

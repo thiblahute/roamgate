@@ -739,6 +739,95 @@ answered in its thread counts as delivered, however it got there
 (`unheardComments` in `shared/review.ts`): only newer ones and edits made after
 the answer are sent.
 
+### Rendered files, sites and workspace comments
+
+There is one comment store: review threads. A review whose target is
+`{ kind: "rendered", path | url }` holds the threads on a file or a site as
+Roamgate renders them; it has no diff or commits and is shown in the Files
+preview, never as a review pane. Its anchors are source lines (`path`, `line`,
+`endLine`, `text`) plus `anchor.render`: the quote, page URL and CSS selector, a
+region in fractions of the graphic, the element, the animation's moment and a
+snapshot saved with the review's images.
+
+A rendered file and the code reviews of its checkout (`range`, `worktree`,
+`mr`, same connection and root) share their threads without copying them:
+each snapshot's `shared` lists the other side's threads on what it shows
+(in a code review, the checkout's rendered files' threads; in a rendered
+file, the code reviews' threads on that path, with a merge request's GitLab
+threads), each keeping its own `sessionId`. A thread is delivered only by
+the review it lives in, by that review's agent and settings; a write on a
+shared thread through the other review (reply, edit, delete, resolve, held
+moves, a thread on a part of one of its messages, Make it mine) goes to its
+own review (`ownerOf`), and a change republishes the linked reviews.
+Agents' `get` lists the shared threads with their own review id, unless
+that review is one agents may not read. Pending drafts the merge request's
+review already shows are not shared twice.
+
+In the Files preview, an animated diagram block and a standalone SVG (when
+animated or pointed at) are drawn by the same sandbox, unsanitized, as a static
+page held by the token (`kind: "inline"`): the helper pauses and crops them, and
+the policy keeps them inert. Other diagrams, comments and chats stay on
+`svgImage`.
+
+Whether scripts run is one rule for every format: the browser's own request
+(`review.rendered.page` with `scripts`, never an agent's) or a listing in
+`rendered_sites`. A file turned on alone is served from its own folder only. In
+scripts mode a Markdown file's ` ```svg ` and raw HTML blocks go to the sandbox
+frame too; its other blocks stay in the page with their source lines.
+
+A comment of the Files, Changes, Commits or History views goes to the review
+of what it is on (`web/src/workspaceFeedback.ts`), opened with the
+workspace's agent when it has none, and is written as the review pane writes
+one: a discussion when the review sends to its agent (`autoSend`), else a
+review comment; delivery then follows the review (`holdComments`). The views
+draw it from the review store; `anchor.feedback` keeps the note as written,
+which says where it is. A terminal comment (`anchor.terminal`: pane, title,
+quote) goes to the chat review of the agent in its pane, the review that
+chat's threads use (target `chat`, its agent session from
+`agent_session.get`, opened with the pane as its agent), with `thread.held`
+set until the user sends it from the workspace's threads panel; a pane
+running no agent keeps a review of its own (`chat`: the pane id).
+`review.thread.release` ends the hold, `handed` saying the prompt already told
+the agent (`thread.handedAt`). The panel lists the held threads of every review
+of the workspace, then its other discussions. Notes kept in localStorage are
+moved one at a time as held threads of their review, each forgotten only once
+the server has it (ids derived from the note, so a retry writes once); held
+threads stay held until Send, whatever wrote them.
+
+HTML files and site pages are served under `/rendered/<token>/...`
+(`server/src/http/rendered-pages.ts`), before the authentication gate: the
+128-bit token, minted by `review.rendered.page` for a rendered review, is the
+only credential. Every response carries a CSP `sandbox` without
+`allow-same-origin` and `frame-ancestors 'self'`, so pages run in an opaque
+origin even as a top-level tab: no Roamgate cookie reaches their requests
+(cross-site), and `/ws` refuses `Sec-Fetch-Site: cross-site` and
+`Origin: null`. Static mode allows only Roamgate's nonce'd helper script and
+no network; pages under the user's `rendered_sites` (URL prefixes or
+directories, in `settings.json`) run their scripts and forms. Proxied requests
+never carry cookies or authorization, responses never set cookies, redirects
+stay within the site, and root-absolute URLs in HTML and CSS are rewritten
+under the token. A listed directory's site may be rooted above it (a site
+built for `/` served from its `docs/` folder): its root-absolute URLs are
+written under a `.roamgate-root/` segment, and one not found in the directory
+is looked for in at most 8 directories above it, never at or above the
+host's home or `/` (one SSH command over SSH). The first holding it becomes
+the site's root, kept per connection and listed entry in memory, and the
+request is redirected to a token for that root; nothing above it is served
+or looked for. `rendered_site_roots` in `settings.json` (keyed by listed
+entry, a directory or URL prefix containing it) sets the root instead, and
+wins. A file's pages are read from its connection's host, over SSH
+for an SSH connection, with the Files view's download helpers: a token is
+keyed by connection and directory (the file's checkout, else its directory),
+and each request is a path relative to it, refused when absolute or stepping
+up, and confined to it once links are followed. Any HTML file the Files view
+opens is offered as a page, outside the checkout too. Reads over SSH are kept
+15 s (1 GiB in all) so a site's shared assets are not read again for each
+page. A page reads at most 512 MiB of one file or response, a guard against a
+runaway file only. A file the page cannot read answers 404 with the path it
+tried and why. The helper posts selections and points to the parent, which
+accepts messages only from that frame's window and checks them
+(`parseFrameMessage`).
+
 ### Agent messages
 
 `roamgate-review sessions` and `message` (server/src/agent/agent-messenger.ts)

@@ -1,3 +1,4 @@
+import { isHtmlPath } from "../../shared/filePreview";
 import type { ConnectionClient } from "./api";
 import { connectionHttpPath } from "./connectionHttp";
 import { relativePathWithinCheckout } from "./workspaceResource";
@@ -30,6 +31,48 @@ export function workspaceFileUrl(
     url.searchParams.set("resource_revision", String(options.revision));
   }
   return `${url.pathname}${url.search}`;
+}
+
+/**
+ * The absolute path an HTML file of the Files preview is framed from, on
+ * its connection's host (local or SSH alike), or null when it cannot be: a
+ * path of the checkout, or any absolute path the Files view opened, such as
+ * a built site outside the checkout. Rendered pages are served from POSIX
+ * paths, so a Windows path is framed only inside its checkout, as before.
+ */
+export function renderedPageFile(path: string, root: string): string | null {
+  if (!path || path.includes("\0")) return null;
+  if (path.startsWith("/")) return path;
+  if (/^[a-z]:[\\/]/i.test(path)) {
+    const inside = relativePathWithinCheckout(root, path);
+    return inside ? `${root.replace(/[\\/]+$/, "")}/${inside}` : null;
+  }
+  if (!root) return null;
+  return `${root.replace(/\/+$/, "")}/${path}`;
+}
+
+/**
+ * Whether the Files preview shows this file as a page (RenderedFrame). Its
+ * size and the text preview's cut (`truncated`) do not count: the rendered
+ * pages read the file themselves, and refuse what is over their own limits.
+ */
+export function framesHtmlPreview(
+  preview: {
+    path: string;
+    root: string;
+    type?: string;
+    text: string | null;
+    binary: boolean;
+  } | null,
+): boolean {
+  return (
+    !!preview &&
+    preview.text !== null &&
+    !preview.binary &&
+    preview.type !== "directory" &&
+    isHtmlPath(preview.path) &&
+    renderedPageFile(preview.path, preview.root) !== null
+  );
 }
 
 export function workspaceMarkdownDocumentPath(path: string, root: string) {

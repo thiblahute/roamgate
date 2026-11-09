@@ -31,6 +31,12 @@ export type ReviewTarget =
    */
   | { kind: "chat"; chat: string }
   /**
+   * A file of the checkout as Roamgate renders it (Markdown, HTML, SVG,
+   * an image: `path`, relative to the root), or a site's pages (`url`, an
+   * http(s) URL): no diff, threads on what the user points at.
+   */
+  | { kind: "rendered"; path?: string; url?: string }
+  /**
    * An upstreaming effort's view in Reviews (its id): no diff, threads on
    * what the view shows, delivered to the effort's leader session.
    */
@@ -73,6 +79,44 @@ export type ReviewAnchor = {
   chat?: ReviewChatPart;
   /** On what an effort's view shows (an effort review). */
   effort?: ReviewEffortPart;
+  /**
+   * On what a rendered review shows: the words, the graphic's region or
+   * the page's element pointed at. `path` and the lines, when known, are
+   * where it comes from in the source.
+   */
+  render?: ReviewRenderPart;
+  /** On words selected in a terminal: its pane, as named then. */
+  terminal?: { pane: string; title: string; quote: string };
+  /**
+   * A comment written in a workspace view or on terminal text: its note
+   * there (JSON), which Copy and Send read back word for word.
+   */
+  feedback?: string;
+};
+
+/** A box (or a point: no size) in fractions of a graphic's drawn size. */
+export type ReviewRegion = { x: number; y: number; w: number; h: number };
+
+export type ReviewRenderPart = {
+  /** The words selected, as shown. */
+  quote?: string;
+  /** A site's page or an HTML file's page: its path and query. */
+  url?: string;
+  /** The page's element, as a CSS selector. */
+  selector?: string;
+  /** Where on a graphic (diagram, SVG, image). */
+  region?: ReviewRegion;
+  /** Which graphic: "diagram 2", an image's name. */
+  graphic?: string;
+  /** The SVG element clicked: its id, else its text. */
+  element?: string;
+  /**
+   * An animated graphic's state when the comment started (it is paused
+   * then): its time, as "2.4 s", or its frame.
+   */
+  moment?: string;
+  /** The region's crop, an image saved with the review (absolute path). */
+  snapshot?: string;
 };
 
 /** The tabs of an effort's view. */
@@ -241,6 +285,13 @@ export type ReviewThread = {
    * checkout is on later.
    */
   pendingFor?: string;
+  /**
+   * Held in the workspace's Review feedback until the user sends it: the
+   * agent does not hear of it, and its value orders the feedback list.
+   */
+  held?: number;
+  /** Handed to the agent in one prompt: what it says then has been heard. */
+  handedAt?: string;
 };
 
 export type ReviewAgentStatus = {
@@ -350,6 +401,14 @@ export type ReviewMergeRequestLink = {
 export type ReviewSnapshot = {
   session: ReviewSession;
   threads: ReviewThread[];
+  /**
+   * The threads of the checkout's other reviews on what this one shows: in
+   * a code review, those of its rendered files; in a rendered file, those
+   * of the code reviews on it (a merge request's GitLab threads too). Each
+   * stays in its own review (its sessionId), which delivers it to the agent
+   * and takes what is written on it.
+   */
+  shared?: ReviewThread[];
   /** A merge request's review: the merge request, once read. */
   mergeRequest?: ReviewMergeRequest;
   /** A merge request's review could not reach the merge request. */
@@ -510,7 +569,7 @@ export function threadNeedsAnswer(
   /** A local review: a suggested change is for the agent to apply. */
   options: { suggestions?: boolean } = {},
 ): boolean {
-  if (thread.resolved) return false;
+  if (thread.resolved || thread.held !== undefined) return false;
   if (
     thread.kind !== "discussion" &&
     !(options.suggestions && isSuggestion(thread))
@@ -541,11 +600,13 @@ export function unheardComments(
   thread: ReviewThread,
   since: string,
 ): ReviewComment[] {
-  const { comments } = thread;
+  const { comments, handedAt, held } = thread;
+  if (held !== undefined) return [];
+  const heard = handedAt && handedAt > since ? handedAt : since;
   return comments.filter(
     (comment, index) =>
       comment.author === REVIEW_USER &&
-      comment.updatedAt > since &&
+      comment.updatedAt > heard &&
       !comments
         .slice(index + 1)
         .some(

@@ -23,6 +23,11 @@ export type PendingWrite = {
   anchor: ReviewAnchor;
   text: string;
   at: string;
+  /**
+   * A new thread held for the user's Send in the workspace's threads (a
+   * question for an agent the review has none of): its place there.
+   */
+  held?: number;
   /** Why the last try failed; none while it is on its way. */
   error?: string;
 };
@@ -55,6 +60,7 @@ export function pendingWriteCall(write: PendingWrite): {
           anchor: write.anchor,
           new_thread_id: write.id,
           text: write.text,
+          ...(write.held !== undefined ? { held: write.held } : {}),
         },
       };
 }
@@ -107,6 +113,7 @@ export function withPendingWrites(
         resolved: false,
         createdAt: write.at,
         updatedAt: write.at,
+        ...(write.held !== undefined ? { held: write.held } : {}),
       });
   return merged;
 }

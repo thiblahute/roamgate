@@ -26,6 +26,7 @@ import type {
   FileExplorerEntry,
   FileListResult,
   FilePreviewResult,
+  FileStatResult,
   FileUploadResult,
   RunProcessWithCodeTimeout,
 } from "./file-types";
@@ -307,6 +308,74 @@ printf '\\n'
   return parseRemoteFilePreview(result.stdout, requestedPath);
 }
 
+/** file.stat's answer from the host: "STAT\t<size>\t<mtime s>\t<type>". */
+export function parseRemoteFileStat(stdout: string): FileStatResult {
+  const line = stdout.split(/\r?\n/).find((each) => each.startsWith("STAT\t"));
+  const [, rawSize, rawMtime, rawType] = (line ?? "").split("\t");
+  if (!line) {
+    throw new Error(
+      (stdout || "invalid file stat response").trim().slice(0, 1000),
+    );
+  }
+  const type = rawType === "directory" ? "directory" : "file";
+  return {
+    type,
+    size: type === "directory" ? 0 : Number(rawSize) || 0,
+    // Seconds, as readRemoteFile's: the two compare.
+    mtime_ms: (Number(rawMtime) || 0) * 1000,
+  };
+}
+
+/**
+ * The size and modification time of a file on the host, checked against
+ * the checkout as readRemoteFile does: one stat, nothing read.
+ */
+export async function statRemoteFile({
+  host,
+  rootPath,
+  requestedPath,
+  runProcessWithCodeTimeout,
+  shQuote,
+}: {
+  host: string;
+  rootPath: string;
+  requestedPath: string;
+  runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
+  shQuote: (value: string) => string;
+}): Promise<FileStatResult> {
+  const command = `
+set -eu
+root=${shQuote(rootPath)}
+request=${shQuote(requestedPath)}
+root_real="$(cd "$root" && pwd -P)"
+case "$request" in
+  /*) target="$request"; requested_absolute=1 ;;
+  *) target="$root_real/$request"; requested_absolute=0 ;;
+esac
+target_real="$(realpath "$target")"
+if [ "$requested_absolute" != "1" ]; then
+  case "$target_real/" in "$root_real"/*) ;; *) exit 13 ;; esac
+fi
+type=file
+if [ -d "$target_real" ]; then type=directory; fi
+size="$(stat -c %s "$target_real" 2>/dev/null || stat -f %z "$target_real" 2>/dev/null || printf 0)"
+mtime="$(stat -c %Y "$target_real" 2>/dev/null || stat -f %m "$target_real" 2>/dev/null || printf 0)"
+printf 'STAT\\t%s\\t%s\\t%s\\n' "$size" "$mtime" "$type"
+`;
+  const result = await runProcessWithCodeTimeout(
+    sshReadCommandArgv(host, `sh -c ${shQuote(command)}`, [], "files.stat"),
+    PREVIEW_TIMEOUT_MS,
+  );
+  if (result.code !== 0) {
+    throw new Error(
+      (result.stderr || result.stdout || `file stat exited ${result.code}`)
+        .trim()
+        .slice(0, 1000),
+    );
+  }
+  return parseRemoteFileStat(result.stdout);
+}
+
 export function parseRemoteFileDownload(stdout: string, requestedPath: string) {
   const lines = stdout.split(/\r?\n/);
   const meta = lines.shift() ?? "";
@@ -397,11 +466,12 @@ else
   esac`
       : ""
   }
+  ${options.maxBytes !== undefined ? `[ "$size" -le ${Math.floor(options.maxBytes)} ] || { printf '%s' "$size" >&2; exit 17; }` : ""}
   ${slice ? `[ "$size" -eq ${slice.size} ] || { echo "file changed during download" >&2; exit 16; }` : ""}
   content_type="application/octet-stream"
   printf 'META\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" "$(printf '%s' "$name" | base64 | tr -d '\\n')" "$(printf '%s' "$content_type" | base64 | tr -d '\\n')"
   ${metadataOnly ? "exit 0" : ""}
-  ${slice ? `dd if="$target_real" bs=${blockSize} skip=${Math.floor(slice.start / blockSize)} count=${Math.ceil(slice.end / blockSize) - Math.floor(slice.start / blockSize)} 2>/dev/null | base64` : 'base64 "$target_real"'} | tr -d '\\n'
+  ${slice ? `dd if="$target_real" bs=${blockSize} skip=${Math.floor(slice.start / blockSize)} count=${Math.ceil(slice.end / blockSize) - Math.floor(slice.start / blockSize)} 2>/dev/null | base64` : 'base64 < "$target_real"'} | tr -d '\\n'
 fi
 printf '\\n'
 `;
@@ -418,6 +488,14 @@ printf '\\n'
       throw new FileDownloadError(
         "Audio is too large to preview. Use Download.",
         413,
+      );
+    }
+    if (result.code === 17) {
+      const size = Number(result.stderr.trim());
+      throw new FileDownloadError(
+        "File is too large to read here. Use Download.",
+        413,
+        Number.isSafeInteger(size) ? size : undefined,
       );
     }
     if (result.code !== 0) {

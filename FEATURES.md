@@ -158,7 +158,9 @@ Inspector button, shortcuts, or workspace/agent menus.
 
 - Dock right or bottom, resize, or expand. Narrow layouts use drill-down views.
 - Single-click opens a temporary preview tab; double-click keeps it. Open files
-  are restored per connection and checkout.
+  are restored per connection and checkout. A file outside the checkout, and
+  any file of a workspace without one (whose Files root follows its focused
+  pane), is kept by its absolute path, so it reopens where it really is.
 - Files search covers names, paths, and file contents across the checkout
   (respecting `.gitignore`, up to 100 results).
 - Files refresh automatically after an agent step completes in the workspace,
@@ -972,10 +974,16 @@ conflicts are aborted, and nothing is ever pushed.
 - Browse the tree with Git status badges, hidden-file toggle, and name/glob
   filtering of loaded entries.
 - **Browse filesystem** opens read-only browsing outside the checkout.
-- Preview text with highlighting and search, Markdown (with Mermaid diagrams),
-  static HTML (workspace CSS/images/fonts; scripts blocked; 512 KiB limit),
+- Preview text with highlighting and search, Markdown (with Mermaid diagrams,
+  centred in the chat's reading column however wide the view; wider tables,
+  code and diagrams scroll in their own box), static HTML (workspace CSS/images/fonts; scripts blocked; 512 MiB limit),
   images, PDFs, and audio up to 25 MiB. Browsers without a native PDF viewer
   use a responsive three-page window with previous/next navigation.
+- A file written on disk after it was shown says so above the preview
+  (**Changed on disk**), locally and over SSH, without reloading by itself:
+  `R` (or **Reload**, or the refresh button) reads it again where you are in
+  it, scroll, cursor and threads kept. The check is a stat every few seconds
+  while the preview is seen, and at once when an agent step completes.
 - Upload by drag and drop, download files or folders (`.tar.gz`), copy paths,
   create folders, move files by dragging, and delete with confirmation. All of
   this works over SSH (moves need `python3` on the remote host).
@@ -983,16 +991,32 @@ conflicts are aborted, and nothing is ever pushed.
   loopback clients can open files in the host's Finder/File Explorer.
 - Drag a file into a terminal or the composer to insert its path.
 
-## Review Annotations
+## Workspace threads
 
-Open **Annotations** independently of the Inspector.
+**Threads** (in the tab bar, `Cmd+Option+A`, or **⋮** on a phone) lists the
+workspace's comments in one panel, independently of the Inspector:
 
-1. Comment on diff lines, source lines, rendered Markdown, or selected terminal
-   text.
-2. Edit and reorder comments, then copy them or pre-fill an agent's input.
-   **Pre-fill never submits**; review and press Enter yourself.
+1. **To send**: the comments held for your Send. Selecting terminal text and
+   commenting on it holds the comment in the chat review of the agent running
+   in that pane, the same review its chat threads are in; a review's `C` with
+   no agent pane in the workspace is held here too. Each card says where
+   it was written; edit its words, move it up or down, delete it, or go to it
+   (its pane, its file or its review).
+2. **Send** hands every held comment to the agent pane picked below them in
+   one prompt, **Pre-fill** types it into that pane's input or chat message
+   box without sending (review it and press Enter yourself), and **Copy** puts
+   the same text on the clipboard; without an agent pane, Send copies. The
+   agent answers each in its thread. **Go to agent** goes to the pane it was
+   sent to, and **Clear held** deletes them all, after asking.
+3. **Conversations**: every thread of the workspace's reviews (diffs, files,
+   sites, chats, and the terminal comments sent), open ones first, with the
+   threads panel's keys: `j`/`k`, Enter goes to the thread in its review,
+   `r` resolves, `R` replies, `/` searches, Esc closes.
 
-Drafts stay in this browser and re-anchor to changed files on refresh.
+Comments written in the Files, Changes, Commits and History views go to the
+review of what they are on at once (below); they are not held here. A
+comment Roamgate cannot save yet stays in this browser and is moved, held
+for your Send, on the next load.
 
 ## Review
 
@@ -1008,7 +1032,8 @@ again, and comments follow their code or show as outdated.
 
 - Comment a line with `c` (to the agent while **Comments → Agent** is on,
   else a review comment) or `C` (always a discussion with the agent working
-  on the code). A message to the agent or a GitLab reply leaves only when
+  on the code; with no agent pane in the workspace, it waits in
+  [Workspace threads](#workspace-threads)' To send). A message to the agent or a GitLab reply leaves only when
   you send it (`Cmd+Enter`, Save, `:w`); Esc or moving away keeps it unsent
   until you reopen it. Unsent text, and text whose save failed, stays in this
   browser through reloads and connection switches. `t` hides every comment until you show them again, click a
@@ -1175,6 +1200,69 @@ they exist, Roamgate links its skill into `~/.claude/skills/roamgate-review`
 and the client into `~/.local/bin`, never over a file of yours.
 `open --repo PATH=BASE..HEAD` adds another repository's range, for a series
 across a project and its subprojects. It works in panes on SSH hosts too.
+
+### Commenting on rendered files and sites
+
+Comments happen in place, in the Files preview of the workspace inspector:
+Markdown, HTML pages, SVG, images, and any site's page (the **URL** button, or
+an agent's `review_open` with `file`/`url`, which opens the same preview).
+Select words and comment; with **Point** (or Alt) click a diagram, SVG or
+image for a point or drag a box. Animations pause while the comment is
+written, and the agent gets the source lines, the words, the region in
+fractions of the graphic, the element, the animation's time and a snapshot.
+Threads sit under what they are on and in the Comments panel, drawn and
+keyed as an agent chat's: resolved ones folded, what is commented on marked.
+The stops are the blocks, but each list item (nested ones too) and each table
+cell (the header's too) is a stop of its own, in a chat's messages as in the
+preview: a comment on one takes its own lines and words, and sits under the
+item or under its cell, in the cell's column (under the row, indented and
+pointing at the cell, when the column is too narrow for it), a row's threads
+by column. An open thread's words are highlighted where they are, even part
+of a word or across inline code; words said twice are told apart by the
+thread's line. j / k step through the stops and the threads'
+messages; in a table they move as in a grid, h / l along a row and j / k down
+and up a column. n / N and gn / gN go thread to thread, c comments on a stop,
+R answers, r resolves, za folds, dd deletes, gH shows only the unresolved
+ones, `g;` goes to the comment written last, T lists them, and a page's frame
+hands these keys on.
+
+A file's threads are shared with the code reviews of its checkout (the
+branch, a range, its work, a merge request): a comment written on the
+rendered file shows on its line in each code review whose changes have the
+file, and a comment written on a Markdown, HTML or SVG file in a code review
+shows in its rendered view, on the block of its line. Each stays in the
+review it was written in, which sends it to the agent once; replying,
+resolving and reopening work from either view. A thread finds its line again
+by the line's text after the file changes; one on a removed line is listed in
+the Comments panel only. A merge request's GitLab discussions and your GitLab
+drafts on the file show there too, as the review pane draws them (Draft
+reply, Edit, Delete); nothing written on the rendered file becomes a GitLab
+draft by itself. A part of a comment takes a thread of its own (+, words
+selected, c on a part), as in the review pane and a chat. **Review** in the
+preview's bar shows the file in its checkout's code review at the cursor's
+line, and **Rendered** beside a file's Open in the review pane shows it
+rendered at the cursor's line. `o` or `:only` (or the expand button) hides all the
+chrome, in the rendered view and in the source alike; `o`, Esc or Show all
+brings it back.
+
+Scripts are one choice for every format (Markdown, HTML, SVG, sites): off by
+default, always shown in the preview. **Scripts off** in the preview turns them
+on for that file; **Always here** adds its folder or site to **Settings,
+Instance, Sites we work on**. They always run in a sandbox with no access to
+Roamgate; in Markdown only its SVG and raw HTML blocks are framed, the rest
+stays commentable by source line. A listed folder's links that start with `/`
+start at the site's root: the folder above it where they are found (below
+your home folder), or the **Root** set beside the entry in Settings.
+
+Comments written from the Files, Changes, Commits and History views are
+threads of the review of what they are on, as the review pane's: the view
+draws each under what it is on and lists it in its Comments panel, the focus
+stays where you wrote it, and the workspace's agent gets it as that review's
+settings say (as you write, or held until Send), answering in the thread. A
+click on a block, a list item or a table cell, or words selected in it, puts
+the Files preview's cursor there. A comment on terminal text is a thread of
+the chat of the agent in that pane, held in [Workspace threads](#workspace-threads)
+until you send it with the others (**Send**, **Pre-fill**, **Copy**).
 
 ### Agents messaging each other
 
@@ -1674,7 +1762,7 @@ is kept, and hints for the suggestions.
   Shell panes open in Terminal.
 - The bottom bar holds **Message…**, **Direct**, **Chat** (for agent panes), **Workspaces**, **Tabs** (with the workspace's
   tab count, red when another agent needs you) and **⋮**, a menu of views and tools: Chat, Terminal,
-  Files, Changes, Commits, Annotations, Ranger, and Workspaces.
+  Files, Changes, Commits, Threads, Ranger, and Workspaces.
   **Workspaces** sits beside **Tabs**, for switching workspaces in one tap;
   **Tabs** shows only while the workspace has more than one tab or pane
   (**New tab** is in **⋮**).
@@ -1837,7 +1925,7 @@ and is skipped, with a note, on a browser that does not match.
 | Sidebar                                                               | `Cmd+B`                 | `Ctrl+Alt+B`                            |
 | Workspace Inspector                                                   | `Cmd+Shift+B`           | `Ctrl+Alt+Shift+B`                      |
 | Expand / restore Inspector (desktop)                                  | `Cmd+Option+Enter`      | `Ctrl+Alt+Shift+Enter`                  |
-| Annotations                                                           | `Cmd+Option+A`          | `Ctrl+Alt+A`                            |
+| Workspace threads                                                     | `Cmd+Option+A`          | `Ctrl+Alt+A`                            |
 | Ranger                                                                | `Cmd+Option+Shift+A`    | `Ctrl+Alt+Shift+A`                      |
 | Call the voice companion                                              | `Cmd+Option+V`          | `Ctrl+Alt+V`                            |
 | Ask the companion in writing, without a call                          | `Cmd+Option+Shift+V`    | `Ctrl+Alt+Shift+V`                      |
@@ -1868,7 +1956,7 @@ and is skipped, with a note, on a browser that does not match.
 | Agent history                                                         | `Cmd+Shift+H`           | `Ctrl+Alt+H`                            |
 | Search raw preview / diff                                             | `Cmd+F`                 | `Ctrl+F`                                |
 | Send composer / add review comment / pre-fill agent (focused surface) | `Cmd+Enter`             | `Ctrl+Enter`                            |
-| Copy review feedback (in Annotations)                                 | `Cmd+Shift+C`           | `Ctrl+Shift+C`                          |
+| Copy the comments to send (in Threads)                                | `Cmd+Shift+C`           | `Ctrl+Shift+C`                          |
 | Copy terminal selection                                               | `Cmd+C`                 | `Ctrl+Shift+C` / `Ctrl+Insert`          |
 | Terminal paste                                                        | `Cmd+V`                 | `Ctrl+V` (also `Ctrl+Shift+V` on Linux) |
 | Open terminal links / file paths                                      | `Cmd+Click`             | `Ctrl+Click`                            |

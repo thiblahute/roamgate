@@ -1360,4 +1360,108 @@ if (process.env.ROAMGATE_REVIEW_OVERLAY_DOM_TEST !== "1") {
     diffFiles = [];
     localStorage.clear();
   });
+
+  test("a rendered file's threads show on its lines in the code review, answered in their own review; Rendered shows the file rendered", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ReviewOverlay } = await import("./ReviewOverlay");
+    failing.clear();
+    writes.length = 0;
+    const lines = Array.from({ length: 12 }, (_, i) => `plan line ${i + 1}`);
+    fileText = `${lines.join("\n")}\n`;
+    diffFiles = [
+      {
+        path: "plan.md",
+        oldPath: "plan.md",
+        hunks: [
+          {
+            header: "@@ -1,0 +1,12 @@",
+            lines: lines.map((text, i) => ({
+              kind: "+",
+              old: null,
+              new: i + 1,
+              text,
+            })),
+          },
+        ],
+      },
+    ];
+    const rendered = (
+      id: string,
+      path: string,
+      line: number,
+      body: string,
+    ) => ({
+      id,
+      sessionId: "r1",
+      kind: "discussion",
+      // Written on the rendered file: older anchors keep the words quoted.
+      anchor: {
+        path,
+        line,
+        side: "new",
+        text: "the words",
+        render: { quote: "the words" },
+      },
+      comments: [
+        {
+          id: `${id}c`,
+          author: "you",
+          body,
+          createdAt: "2026-11-10T10:00:00Z",
+          updatedAt: "2026-11-10T10:00:00Z",
+        },
+      ],
+      resolved: false,
+      createdAt: "2026-11-10T10:00:00Z",
+      updatedAt: "2026-11-10T10:00:00Z",
+    });
+    const withShared = {
+      ...snapshot,
+      shared: [
+        rendered("r1t", "plan.md", 4, "Said on the rendered plan"),
+        rendered("r2t", "other.md", 2, "On a file not in the changes"),
+      ],
+    } as unknown as ReviewSnapshot;
+    const opened: unknown[][] = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <ReviewOverlay
+          snapshot={withShared}
+          connectionId="desktop"
+          onClose={() => {}}
+          onOpenFile={(...args) => opened.push(args)}
+        />,
+      );
+    });
+    await act(settle);
+    await act(settle);
+    // On its line, not apart as outdated; another file's is not here.
+    expect(host.textContent).toContain("Said on the rendered plan");
+    const apart = host.querySelector(".review-mr")?.textContent ?? "";
+    expect(apart).not.toContain("Said on the rendered plan");
+    expect(host.textContent).not.toContain("On a file not in the changes");
+    // Answered here: a reply the server writes in the thread's review.
+    const card = [...host.querySelectorAll<HTMLElement>(".rc")].find((each) =>
+      each.textContent?.includes("Said on the rendered plan"),
+    )!;
+    const reply = [...card.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reply",
+    );
+    expect(reply).toBeTruthy();
+    // Rendered: the file in the Files preview, rendered.
+    const button = [...host.querySelectorAll("button")].find(
+      (each) => each.textContent === "Rendered",
+    );
+    expect(button).toBeTruthy();
+    await act(async () => button!.click());
+    expect(opened[opened.length - 1]?.[0]).toBe("/repo/plan.md");
+    expect(opened[opened.length - 1]?.[2]).toBe(true);
+    await act(async () => root.unmount());
+    diffFiles = [];
+    fileText = "";
+  });
 }

@@ -8,6 +8,7 @@ import {
   listLocalFiles,
   readLocalFile,
   resolveLocalFilePaths,
+  statLocalFile,
   uploadLocalFile,
 } from "./local-files";
 
@@ -149,5 +150,20 @@ describe("local workspace file operations", () => {
         uploadLocalFile(root, "..", "x", Buffer.from("")),
       ).rejects.toThrow("file explorer path escaped the workspace checkout");
     });
+  });
+});
+
+test("a file's stat gives what its read gave, and stays in the checkout", async () => {
+  await withTempDir(async (root) => {
+    await writeFile(join(root, "notes.md"), "# Notes\n");
+    const read = await readLocalFile(root, "notes.md");
+    expect(await statLocalFile(root, "notes.md")).toEqual({
+      type: "file",
+      size: read.size,
+      mtime_ms: read.mtime_ms,
+    });
+    await writeFile(join(root, "notes.md"), "# Notes, longer now\n");
+    expect((await statLocalFile(root, "notes.md")).size).not.toBe(read.size);
+    await expect(statLocalFile(root, "../outside.md")).rejects.toThrow();
   });
 });

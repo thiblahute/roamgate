@@ -278,3 +278,108 @@
     min-height: 220px;
   }
 }
+
+.file-preview-with-threads {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.file-preview-with-threads > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-preview-threads {
+  flex: 0 0 min(340px, 40%);
+  border-left: 1px solid var(--viewer-border);
+  overflow: auto;
+}
+
+.file-preview-threads-chip {
+  font: inherit;
+  font-size: 12px;
+}
+
+.file-preview-copy.is-on,
+.file-preview-zen-hint .is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.file-thread-snapshot {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  margin: 4px 0;
+  border-radius: 4px;
+  border: 1px solid var(--viewer-border);
+}
+
+.file-preview-pointing-box {
+  position: fixed;
+  z-index: 1300;
+  border: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.file-preview.is-zen {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  border: 0;
+  border-radius: 0;
+}
+
+.file-preview.is-zen .file-preview-head {
+  display: none;
+}
+
+.file-preview-zen-hint {
+  position: fixed;
+  top: 8px;
+  right: 12px;
+  z-index: 1150;
+  /* On a phone it wraps rather than pushing Show all off the left edge. */
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: var(--viewer-header-bg);
+  border: 1px solid var(--viewer-border);
+}
+
+.file-preview-changed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.file-preview-url {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.file-preview-url input {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+body:has(.file-preview.is-zen) .topbar {
+  visibility: hidden;
+}
