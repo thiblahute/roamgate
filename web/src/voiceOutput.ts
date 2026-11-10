@@ -1,7 +1,8 @@
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 
 /**
- * How a voice call's replies reach the speaker, per device (Speech
+ * How a voice call's replies reach the speaker when the call has no WebRTC
+ * audio (webrtcCall.ts: an older server or helper), per device (Speech
  * settings), and the call's one AudioContext.
  *
  * "context" (the default): each sentence is decoded and played by the
@@ -9,27 +10,22 @@ import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
  * Android's media session sees nothing to pause and the car's media
  * (AVRCP) controls nothing to control: in a car, a reply's audio element
  * was paused a few hundredths of a second into most sentences. Echo
- * cancellation is the platform's, on the microphone, and hears what the
- * phone plays, so speaking over a reply still interrupts it. Any speed
- * plays this way: the server makes the speech at the reading speed,
- * keeping the pitch, so nothing is sped up here. No silent focus holder
- * plays either: nothing of the page competes for the audio focus.
+ * cancellation is the platform's, on the microphone. Any speed plays this
+ * way: the server makes the speech at the reading speed, keeping the
+ * pitch, so nothing is sped up here. No silent focus holder plays either:
+ * nothing of the page competes for the audio focus.
  *
  * "element": each sentence is an audio element, as before, with a silent
  * loop holding the audio focus between them; kept to compare in the car.
  *
- * "call" (an experiment): the element's sound goes through a WebRTC
- * connection of the page to itself, and the received track plays: WebRTC
- * playout is call audio on Android (the voice-call stream, beside the open
- * microphone, outside the media session).
- *
  * docs/DEPLOYMENT.md, "Voice calls on the move", says what to try where.
  */
 
-export type VoiceOutputMode = "context" | "element" | "call";
+export type VoiceOutputMode = "context" | "element";
 
 const KEY = "voiceOutput";
-const MODES: VoiceOutputMode[] = ["context", "element", "call"];
+// A device left on the removed "call" mode reads as the default.
+const MODES: VoiceOutputMode[] = ["context", "element"];
 
 /** Chosen on this page, when storage keeps nothing. */
 let chosen: VoiceOutputMode | null = null;
@@ -77,13 +73,23 @@ let traceOutput: (line: string) => void = () => {};
 export const tapsLoaded = new WeakSet<AudioContext>();
 
 /**
+ * How late the call's context plays what it is given, in seconds
+ * (outputLatency: a Bluetooth headset adds much); 0 without one.
+ */
+export function voiceOutputLatency(): number {
+  if (!shared || shared.state === "closed") return 0;
+  const latency = shared.outputLatency;
+  return typeof latency === "number" && Number.isFinite(latency) ? latency : 0;
+}
+
+/**
  * The call's AudioContext: the microphone and the replies go through it.
  * Made on first use (from the tap starting the call), kept while a voice
  * chat holds it (holdVoiceContext).
  */
 export function voiceContext(): AudioContext {
   if (!shared || shared.state === "closed") {
-    // 48 kHz: a call's stream (callAudio.ts) plays without resampling.
+    // 48 kHz: the microphone and the replies at the rate WebRTC runs at.
     let context: AudioContext;
     try {
       context = new AudioContext({ sampleRate: 48_000 });
@@ -141,7 +147,6 @@ export function holdVoiceContext(
         const context = shared;
         shared = null;
         void context?.close().catch(() => {});
-        closeCallAudio();
       }, 3000);
     },
     { once: true },
@@ -182,90 +187,4 @@ export async function playInContext(
     signal.addEventListener("abort", stop, { once: true });
     source.start();
   });
-}
-
-type Loop = {
-  input: MediaStreamAudioDestinationNode;
-  sender: RTCPeerConnection;
-  receiver: RTCPeerConnection;
-  output: HTMLAudioElement;
-};
-
-let loop: Promise<Loop> | null = null;
-
-/** The page's call to itself, made once a call and kept. */
-async function openLoop(): Promise<Loop> {
-  const input = voiceContext().createMediaStreamDestination();
-  const sender = new RTCPeerConnection();
-  const receiver = new RTCPeerConnection();
-  sender.onicecandidate = (event) => {
-    if (event.candidate) void receiver.addIceCandidate(event.candidate);
-  };
-  receiver.onicecandidate = (event) => {
-    if (event.candidate) void sender.addIceCandidate(event.candidate);
-  };
-  const received = new Promise<MediaStream>((resolve) => {
-    receiver.ontrack = (event) =>
-      resolve(event.streams[0] ?? new MediaStream([event.track]));
-  });
-  for (const track of input.stream.getAudioTracks())
-    sender.addTrack(track, input.stream);
-  const offer = await sender.createOffer();
-  await sender.setLocalDescription(offer);
-  await receiver.setRemoteDescription(offer);
-  const answer = await receiver.createAnswer();
-  await receiver.setLocalDescription(answer);
-  await sender.setRemoteDescription(answer);
-  // Chrome plays a received track only from a media element.
-  const output = new Audio();
-  output.srcObject = await received;
-  await output.play();
-  return { input, sender, receiver, output };
-}
-
-/** Ends the page's call to itself (voice chat is over). */
-export function closeCallAudio() {
-  const ending = loop;
-  loop = null;
-  void ending
-    ?.then(({ sender, receiver, output }) => {
-      output.pause();
-      output.srcObject = null;
-      sender.close();
-      receiver.close();
-    })
-    .catch(() => {});
-}
-
-/**
- * Sends `player`'s sound through the page's call to itself instead of the
- * speaker; null when that cannot be done (it then plays as media). Play it
- * once `ready`; `release` when the sentence is over.
- */
-export function routeThroughCall(
-  player: HTMLAudioElement,
-): { ready: Promise<void>; release: () => void } | null {
-  if (typeof RTCPeerConnection !== "function") return null;
-  loop ??= openLoop();
-  const opening = loop;
-  let source: MediaElementAudioSourceNode | null = null;
-  let released = false;
-  const ready = opening
-    .then(({ input }) => {
-      if (released) return;
-      source = voiceContext().createMediaElementSource(player);
-      source.connect(input);
-    })
-    .catch(() => {
-      // No call: as media, as without the mode.
-      if (loop === opening) loop = null;
-    });
-  return {
-    ready,
-    release: () => {
-      released = true;
-      source?.disconnect();
-      source = null;
-    },
-  };
 }

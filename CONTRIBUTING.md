@@ -80,6 +80,42 @@ ROAMGATE_LIVE_WINDOWS_SSH_OTHER_SESSION=roamgate-ssh-other \
 bun test server/src/connections/windows-ssh-live.test.ts
 ```
 
+### Live voice test
+
+`bun run test:voice-live` checks that what is said into a voice chat comes
+out as said, through the real path: an isolated bridge (its own `$HOME`,
+port 0) runs the voice helper and models of your `voice.json`, headless
+Chrome's fake microphone plays English and French speech (made with
+macOS's `say`, Chrome's echo cancellation, noise suppression and auto gain
+on it), and the page's voice link listens on the voice socket and in a
+WebRTC call: as is; with sung music under the call that the microphone
+hears too; with someone else speaking first; and with one voice going
+from English to French (Parakeet drifts to English on some French, and
+Whisper reads it again). The runs with music, someone else or two
+languages take the speaker's voice from recordings of it
+(`speaker_reference`), and the same runs without are printed beside them.
+Without recordings, music asked for at the call's start must stay silent
+on the replies leg until the speaker has spoken, then play, while the
+microphone hears everything the call plays; the voice taken must be the
+speaker's first sentence, and no sung word may be heard.
+Each run's word error rate is printed and must stay under its bound. The
+page also reads replies in the call, which must be heard on its replies
+leg (their decoded level is printed); and the test bridge's own helper is
+killed in the middle of a call, which must be made again with its
+signalling opened once more, both legs back within ten seconds, what is
+said next heard as said and a reply heard. `ROAMGATE_LIVE_VOICE_SOAK=1`
+adds a call of three minutes, which must keep its one signalling socket
+and both legs, each carrying RTP every ten seconds. It needs macOS and
+Chrome (or `CHROME_BIN`), takes about twelve minutes (three more with the
+soak), and is skipped by `bun run test`. Run it on the Mac before deploying a voice or
+helper change. `ROAMGATE_LIVE_VOICE_HELPER` tests another helper binary,
+`ROAMGATE_LIVE_VOICE_CONFIG` another `voice.json`,
+`ROAMGATE_LIVE_VOICE_MUSIC` plays a WAV of your music under the call and
+the speech, `ROAMGATE_LIVE_VOICE_CLIPS` adds a directory of your own
+recordings (`<name>.wav` with its words in `<name>.txt`), with
+`ROAMGATE_LIVE_VOICE_REFERENCE` (comma-separated files) as their speaker's
+voice, and `ROAMGATE_LIVE_VOICE_KEEP=1` keeps each run's `server.log`.
+
 ## Security Checks and Dependency Updates
 
 - **CodeQL** scans JavaScript/TypeScript and GitHub Actions on PRs, pushes to

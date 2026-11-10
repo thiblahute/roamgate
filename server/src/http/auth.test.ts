@@ -843,6 +843,59 @@ describe("generated token login", () => {
     expect(response?.headers.has("set-cookie")).toBe(false);
   });
 
+  test("token login ignores WebSocket upgrades and /api/ requests, and they never count as failed logins", async () => {
+    const handlers = createAuthHandlers({
+      sessionSecret: "a".repeat(64),
+      password: "generated-secret",
+      urlLoginToken: "generated-secret",
+    });
+    const upgrade = {
+      connection: "Upgrade",
+      upgrade: "websocket",
+      "sec-websocket-version": "13",
+      "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+      "sec-fetch-mode": "websocket",
+    };
+    // A call's signalling carries a token of its own: its route judges it.
+    const notLogins = [
+      new Request("http://example.test/?token=wrong", { headers: upgrade }),
+      new Request(
+        "http://example.test/api/voice/call/signalling?call=1&token=x",
+        { headers: upgrade },
+      ),
+      new Request("http://example.test/api/voice/call/signalling?token=x"),
+      new Request("http://example.test/api?token=x"),
+      new Request("http://example.test/?token=wrong", {
+        headers: { "sec-fetch-mode": "cors" },
+      }),
+    ];
+    for (let round = 0; round < 2; round += 1)
+      for (const request of notLogins)
+        expect(handlers.handleTokenLogin(request, "127.0.0.1")).toBeNull();
+
+    // None counted: the right password still logs in from the same address.
+    const login = await handlers.handleLogin(
+      new Request("http://example.test/api/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: "generated-secret" }),
+      }),
+      "127.0.0.1",
+    );
+    expect(login.status).toBe(200);
+
+    // A page opened with the token still logs in.
+    const navigation = handlers.handleTokenLogin(
+      new Request("http://example.test/workspace?token=generated-secret", {
+        headers: { "sec-fetch-mode": "navigate", accept: "text/html" },
+      }),
+      "127.0.0.1",
+    );
+    expect(navigation?.status).toBe(303);
+    expect(navigation?.headers.get("location")).toBe("/workspace");
+    expect(navigation?.headers.has("set-cookie")).toBe(true);
+  });
+
   test("ignores token parameters when URL login is not enabled", () => {
     const handlers = createAuthHandlers({
       sessionSecret: "a".repeat(64),

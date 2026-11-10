@@ -16,7 +16,7 @@ import {
   speakWith,
   voiceTrace,
 } from "./voiceChat";
-import { activeCallAudio } from "./callAudio";
+import { activeCall } from "./webrtcCall";
 import { voiceCallNumber, voiceContextHeld } from "./voiceOutput";
 
 /**
@@ -387,7 +387,7 @@ type BrowserSpeech = { text: string; language?: string };
 async function playBrowserInCall(speech: BrowserSpeech, signal: AbortSignal) {
   if (
     current().callEngine === "server" ||
-    (activeCallAudio() && current().server === true)
+    (activeCall()?.carriesReplies() && current().server === true)
   )
     return playWithServer(speech, signal);
   const watch = new AbortController();
@@ -468,9 +468,10 @@ function readingVoice(): SentenceVoice {
   const state = current();
   if (!voiceContextHeld())
     return state.engine === "browser" ? browserVoice : serverVoice;
-  // The call's audio is one stream mixed on the Mac: only Roamgate's voice
-  // gets into it, whatever this browser reads with.
-  if (activeCallAudio() && state.server === true) return serverVoice;
+  // The call's audio is one WebRTC stream mixed on the Mac: only
+  // Roamgate's voice gets into it, whatever this browser reads with.
+  if (activeCall()?.carriesReplies() && state.server === true)
+    return serverVoice;
   if (
     state.engine === "browser" &&
     state.callBlock &&

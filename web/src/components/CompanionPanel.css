@@ -125,6 +125,53 @@
   }
 }
 
+.companion-panel-memories {
+  flex: 0 1 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  font-size: 13px;
+}
+
+.companion-panel-memories summary {
+  cursor: pointer;
+}
+
+.companion-panel-memories ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.companion-panel-memory summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.companion-panel-memory-name {
+  font-weight: 600;
+}
+
+.companion-panel-memory-type,
+.companion-panel-memory-day {
+  opacity: 0.65;
+  font-size: 12px;
+}
+
+.companion-panel-memory p {
+  margin: 4px 0;
+}
+
+.companion-panel-memory-body {
+  white-space: pre-wrap;
+}
+
+.companion-panel-memory-delete {
+  margin: 2px 0 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .companion-panel-hearing > svg,
   .companion-panel-thinking {

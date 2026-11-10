@@ -259,6 +259,11 @@ export function logCompanion(
   return id;
 }
 
+/** Forgets the conversation (the companion started over). */
+export function clearCompanionLog() {
+  if (state.log.length) publish({ log: [] });
+}
+
 /** Entries of the call given to the front with each thing said, at most. */
 const RECENT_ENTRIES = 8;
 /** Characters of each entry given, at most: the start of a long reading. */

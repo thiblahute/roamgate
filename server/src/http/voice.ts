@@ -9,10 +9,15 @@ import {
 } from "../../../shared/voiceLibrary";
 import { voiceMessage } from "../../../shared/voiceMessage";
 import type { VoiceErrands } from "../voice/voice-errands";
+import { serverLogger } from "../utils/logger";
 import {
   callLines,
   type FrontReply,
+  type FrontTiming,
   forwardedWords,
+  recoveredWords,
+  skippedContext,
+  skippedWords,
   type VoiceFront,
 } from "../voice/voice-front";
 import {
@@ -25,6 +30,8 @@ import {
   type VoiceHelper,
 } from "../voice/voice-helper";
 import { KOKORO, VoiceError, type VoiceLibrary } from "../voice/voice-library";
+import type { CompanionMemory } from "../voice/voice-memory";
+import type { CompanionMemoryFiles } from "../voice/voice-memory-files";
 import { researchContext, type VoiceResearch } from "../voice/voice-research";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
 import { SurprisePicker } from "../voice/voice-surprise";
@@ -56,6 +63,8 @@ const MAX_RECENT_CHARS = 4000;
  * POST /api/voice/settings: `{speech_rate}` kept in voice.json; so is
  * `{max_pause_ms}`, the longest pause before a turn that sounded finished
  * ends (voice-socket.ts), which GET /api/voice reports too.
+ * POST /api/voice/timing: a turn's times on the page (numbers and short
+ * words only), logged at debug level.
  * POST /api/voice/trace: `{line}` from a page reading aloud, logged with
  * ROAMGATE_VOICE_DEBUG set (which GET /api/voice reports as `debug`).
  * POST /api/voice/route: `{current, said, sessions}` in, who it was said to
@@ -67,7 +76,10 @@ const MAX_RECENT_CHARS = 4000;
  * With a front (`front_model`, voice-front.ts), it decides in the router's
  * place, from `context` too (Ranger tasks, merge requests, what happened),
  * and the route carries `reply`: what to say aloud at once; "self" is
- * answered by `reply` alone. GET /api/voice reports `front`.
+ * answered by `reply` alone. GET /api/voice reports `front`. With
+ * `"stream": true` the answer is NDJSON: `{"early": {"to", "reply"}}` as
+ * soon as the front has written its words (voice-front.ts earlyReply),
+ * for the page to say them while the rest is decided, then the route.
  * The page lists the routes it knows (`routes`): one it does not (a page
  * from an older build, not reloaded yet) gets the nearest older one
  * instead (legacyRoute).
@@ -126,6 +138,9 @@ const LEGACY_ROUTES = new Set([
   "ask",
 ]);
 
+/** The voice's timing lines (a turn's route, a sentence's speech). */
+const voiceLog = serverLogger.child("voice");
+
 /**
  * `route` as a page that knows `routes` can take it. A page of an older
  * build does not list them, and takes a route it does not know for one to a
@@ -139,6 +154,10 @@ export function legacyRoute(route: FrontReply, routes: unknown): FrontReply {
   if (known.has(route.to)) return route;
   // A search it cannot follow: what the front said of it, at least.
   if (route.to === "web" || route.to === "tool")
+    return known.has("self") && route.reply
+      ? { to: "self", reply: route.reply }
+      : { to: "nobody" };
+  if (route.to === "reset")
     return known.has("self") && route.reply
       ? { to: "self", reply: route.reply }
       : { to: "nobody" };
@@ -157,11 +176,52 @@ export function createVoiceRoutes(
   saveMode: (mode: FrontMode) => void = () => {},
   /** The front's web searches (voice-research.ts), with a front. */
   research: () => VoiceResearch | null = () => null,
-  /** The call whose audio the helper mixes now (voice-socket.ts). */
+  /** The call the helper runs now (voice-socket.ts). */
   currentCall: () => CallHandle | null = () => null,
   /** The companion's MCP tools (voice-tools.ts), with a front. */
   tools: () => VoiceTools | null = () => null,
+  /** What the companion remembers across calls (voice-memory.ts). */
+  memory: CompanionMemory | null = null,
+  /** Its long-term memory files, shown and deleted in its panel. */
+  memoryFiles: CompanionMemoryFiles | null = null,
 ) {
+  /** Forgets everything the companion knows, by voice or from its button. */
+  const resetCompanion = (fronting: VoiceFront | null) => {
+    const epoch = memory?.reset() ?? 0;
+    fronting?.restart();
+    research()?.forget();
+    tools()?.forget();
+    voiceLog.debug("companion memory reset", { epoch });
+    return epoch;
+  };
+  /** Keeps what a turn did, for the next calls. */
+  const remember = (said: string, route: FrontReply) => {
+    if (!memory || route.to === "nobody" || route.to === "reset") return;
+    memory.record({ kind: "heard", text: said });
+    if (route.reply) memory.record({ kind: "said", text: route.reply });
+    if (route.to === "current" || route.to === "send") {
+      memory.record({
+        kind: "work",
+        text: route.words ?? said,
+        who: route.to === "send" ? route.say : "the current session",
+      });
+    } else if (
+      route.to === "ranger" ||
+      route.to === "reviews" ||
+      route.to === "errand"
+    ) {
+      memory.record({
+        kind: "work",
+        text: said,
+        who: ("say" in route ? route.say : undefined) ?? route.to,
+      });
+    } else if (route.to === "web") {
+      memory.record({ kind: "lookup", text: route.query || said });
+    } else if (route.to === "tool") {
+      memory.record({ kind: "lookup", text: route.task || said, who: "tools" });
+    }
+  };
+
   const surprise = new SurprisePicker();
   /** The sessions a page lists, those of the errands folder marked. */
   const routeSessions = (value: unknown): VoiceSessionInfo[] => {
@@ -188,12 +248,48 @@ export function createVoiceRoutes(
       return Response.json({
         ...helper.status(),
         ...(routing || fronting ? { route: true } : {}),
-        ...(fronting ? { front: true, front_mode: mode() ?? "companion" } : {}),
+        ...(fronting
+          ? {
+              front: true,
+              front_mode: mode() ?? "companion",
+              ...(memory ? { companion_epoch: memory.epoch } : {}),
+            }
+          : {}),
         speech_rate: helper.speechRate(),
         max_pause_ms: helper.maxPauseMs(),
         ...surpriseStatus(library),
         ...(debug ? { debug } : {}),
       });
+    }
+    const memoryPath = pathname.match(
+      /^\/api\/voice\/companion\/memories(?:\/([^/]+))?$/,
+    );
+    if (memoryPath && memoryFiles) {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      const file = memoryPath[1] ? decodeURIComponent(memoryPath[1]) : null;
+      if (req.method === "GET" && !file)
+        return Response.json({ memories: memoryFiles.list() });
+      if (req.method === "DELETE" && file) {
+        const named = memoryFiles.read(file);
+        if (!named || !memoryFiles.remove(file))
+          return Response.json({ error: "No such memory." }, { status: 404 });
+        // The summary may say it too: the next session drops that as well.
+        memory?.forget(`${named.name}: ${named.description}`);
+        return Response.json({ deleted: file });
+      }
+      return new Response(null, { status: 405 });
+    }
+    if (pathname === "/api/voice/companion/reset" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      return Response.json({ epoch: resetCompanion(front()) });
     }
     if (pathname === "/api/voice/settings" && req.method === "POST") {
       if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
@@ -392,6 +488,9 @@ export function createVoiceRoutes(
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
+      // How the work went, whoever follows it (a call or the typed view).
+      if (state?.done && state.answer)
+        memory?.record({ kind: "answer", text: state.answer });
       return state
         ? Response.json(state)
         : Response.json({ error: "No such errand." }, { status: 404 });
@@ -425,10 +524,22 @@ export function createVoiceRoutes(
         sessions: routeSessions(body?.sessions),
         context: withSearches(contextOf(body?.context), research(), tools()),
       });
+      if (kind === "answer")
+        memory?.record({
+          kind: "answer",
+          text: event,
+          ...(agent ? { who: agent } : {}),
+        });
+      if (reply) memory?.record({ kind: "said", text: reply });
       if (debug)
         console.error(
           `[voice] front told ${kind} in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${event.slice(0, 200)}`,
         );
+      voiceLog.debug("voice front told", {
+        kind,
+        front_ms: Math.round(performance.now() - started),
+        said: reply ? "yes" : "no",
+      });
       return Response.json({ reply });
     }
     if (pathname === "/api/voice/route" && req.method === "POST") {
@@ -448,6 +559,8 @@ export function createVoiceRoutes(
         typed?: unknown;
         routes?: unknown;
         recent?: unknown;
+        stream?: unknown;
+        skipped?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
       // What was heard and said lately on the call (companionRecent).
@@ -462,74 +575,166 @@ export function createVoiceRoutes(
           : "";
       const current = typeof body?.current === "string" ? body.current : "";
       const sessions = routeSessions(body?.sessions);
+      // What was routed to nobody lately: the front may route it now.
+      const skipped = fronting ? skippedWords(body?.skipped) : [];
       // The router only chooses a session; the front also answers, looks
       // up and uses its tools, with no session yet as well.
       if (!said || (!current && !fronting))
         return Response.json({ to: "current" });
-      const started = performance.now();
-      const researching = fronting ? research() : null;
-      let route: FrontReply = fronting
-        ? await fronting.turn({
-            current,
-            said,
-            sessions,
-            context: withSearches(
-              contextOf(body?.context),
-              researching,
-              fronting ? tools() : null,
-            ),
-            ...callOf(
-              callLines({
-                recent,
-                interruptedAt,
-                music: callMusic(currentCall()),
-              }),
-            ),
-          })
-        : routing
-          ? await routing.route({ current, said, sessions })
-          : { to: "current" };
-      // Only the addressing is dropped, and only when what is left is what
-      // was said: otherwise the words go whole.
-      if ("words" in route && route.words !== undefined) {
-        const words = forwardedWords(said, route.words);
-        route = { ...route, words };
-        if (words === said) delete route.words;
-      }
-      if (route.to === "web" || route.to === "web_cancel")
-        route = webRoute(route, said, researching);
-      if (
-        route.to === "tool" ||
-        route.to === "tool_confirm" ||
-        route.to === "tool_cancel"
-      )
-        route = toolRoute(route, said, fronting ? tools() : null);
-      if (route.to === "music") route = await musicRoute(route, currentCall());
-      if (route.to === "errand") {
-        try {
-          if (!errands) throw new Error("no errands set up");
-          route = {
-            ...route,
-            job: await errands.start(
-              route.pane,
-              // Words typed go as typed; words said marked as such.
-              body?.typed === true
-                ? said
-                : voiceMessage(said, interruptedAt, route.context),
-            ),
-          };
-        } catch (error) {
-          if (debug)
-            console.error(`[voice] errand failed: ${(error as Error).message}`);
-          // Not for the agent on screen either: held, to send by hand.
-          route = { to: "nobody" };
+      // With `stream`, the answer is NDJSON: `{"early": {to, reply}}` as
+      // soon as the front has written what it says (earlyReply), then the
+      // route. The page says the words while the rest is decided.
+      const streaming = body?.stream === true && fronting !== null;
+      let tellEarly: ((early: { to: string; reply: string }) => void) | null =
+        null;
+      const decide = async (): Promise<FrontReply> => {
+        const started = performance.now();
+        const timing: FrontTiming = {};
+        const researching = fronting ? research() : null;
+        let route: FrontReply = fronting
+          ? await fronting.turn({
+              timing,
+              onReply: (early) => tellEarly?.(early),
+              current,
+              said,
+              sessions,
+              context: withSearches(
+                [contextOf(body?.context), skippedContext(skipped)]
+                  .filter(Boolean)
+                  .join("\n\n"),
+                researching,
+                fronting ? tools() : null,
+              ),
+              ...callOf(
+                callLines({
+                  recent,
+                  interruptedAt,
+                  music: callMusic(currentCall()),
+                }),
+              ),
+            })
+          : routing
+            ? await routing.route({ current, said, sessions })
+            : { to: "current" };
+        // Words skipped earlier, routed now: only words the user said and
+        // were listed; they are what is handled, not the complaint.
+        if ("recovered" in route) {
+          const recovered = recoveredWords(route.recovered, skipped);
+          route = { ...route };
+          delete route.recovered;
+          if (recovered) route.recovered = recovered;
         }
+        const asSaid = route.recovered ?? said;
+        // Only the addressing is dropped, and only when what is left is what
+        // was said: otherwise the words go whole.
+        if ("words" in route && route.words !== undefined) {
+          const words = forwardedWords(asSaid, route.words);
+          route = { ...route, words };
+          if (words === asSaid) delete route.words;
+        }
+        if (route.to === "web" || route.to === "web_cancel")
+          route = webRoute(route, asSaid, researching);
+        if (
+          route.to === "tool" ||
+          route.to === "tool_confirm" ||
+          route.to === "tool_cancel"
+        )
+          route = toolRoute(route, asSaid, fronting ? tools() : null);
+        if (route.to === "music")
+          route = await musicRoute(route, currentCall());
+        // After the turn: its session answered this request before it goes.
+        if (route.to === "reset" && fronting) resetCompanion(fronting);
+        const forgetting = route.to === "forget";
+        if (route.to === "forget") route = forgetRoute(route, said, memory);
+        if (route.to === "errand") {
+          try {
+            if (!errands) throw new Error("no errands set up");
+            route = {
+              ...route,
+              job: await errands.start(
+                route.pane,
+                // Words typed go as typed; words said marked as such.
+                body?.typed === true
+                  ? asSaid
+                  : voiceMessage(asSaid, interruptedAt, route.context),
+              ),
+            };
+          } catch (error) {
+            if (debug)
+              console.error(
+                `[voice] errand failed: ${(error as Error).message}`,
+              );
+            // Not for the agent on screen either: held, to send by hand.
+            route = { to: "nobody" };
+          }
+        }
+        if (debug)
+          console.error(
+            `[voice] routed in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(route)} <- ${said.slice(0, 200)}`,
+          );
+        if (fronting && !forgetting) remember(asSaid, route);
+        // Each turn's times (debug): where the companion's first words wait.
+        voiceLog.debug("voice turn routed", {
+          to: route.to,
+          front: fronting ? "yes" : "no",
+          streamed: streaming,
+          waited_ms: timing.waitedMs,
+          first_text_ms: timing.firstTextMs,
+          reply_ms: timing.replyMs,
+          front_ms: timing.totalMs,
+          total_ms: Math.round(performance.now() - started),
+          cold: timing.cold === true,
+          timed_out: timing.timedOut === true,
+          said_chars: said.length,
+        });
+        return legacyRoute(route, body?.routes);
+      };
+      if (!streaming) return Response.json(await decide());
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const line = (value: unknown) =>
+            controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+          tellEarly = (early) => line({ early });
+          decide().then(
+            (route) => {
+              tellEarly = null;
+              line(route);
+              controller.close();
+            },
+            () => {
+              tellEarly = null;
+              line({ to: "current" });
+              controller.close();
+            },
+          );
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "content-type": "application/x-ndjson",
+          "cache-control": "no-store",
+        },
+      });
+    }
+    if (pathname === "/api/voice/timing" && req.method === "POST") {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return new Response(null, { status: 403 });
+      const body = (await req.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      // Numbers and a few words only: nothing said goes in the log.
+      const fields: Record<string, string | number> = {};
+      for (const [key, value] of Object.entries(body ?? {}).slice(0, 12)) {
+        if (!/^[a-z_]{1,24}$/.test(key)) continue;
+        if (typeof value === "number" && Number.isFinite(value))
+          fields[key] = Math.round(value);
+        else if (typeof value === "string" && /^[a-z]{1,16}$/.test(value))
+          fields[key] = value;
       }
-      if (debug)
-        console.error(
-          `[voice] routed in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(route)} <- ${said.slice(0, 200)}`,
-        );
-      return Response.json(legacyRoute(route, body?.routes));
+      voiceLog.debug("voice turn first words", fields);
+      return new Response(null, { status: 204 });
     }
     if (pathname === "/api/voice/trace" && req.method === "POST") {
       if (req.headers.get(VOICE_REQUEST_HEADER) !== "1" || !debug)
@@ -570,7 +775,7 @@ export function createVoiceRoutes(
           : undefined;
       const reader = surpriseReader(library, surprise, reading);
       const rate = isSpeechRate(body?.rate) ? body.rate : helper.speechRate();
-      // In a call with music: into its mix, where the page hears it.
+      // In a call: into its mix, which the page hears by WebRTC.
       const call = currentCall();
       if (call && body?.call === call.id) {
         try {
@@ -587,6 +792,7 @@ export function createVoiceRoutes(
               call: call.id,
               start_ms: queued.startMs,
               duration_ms: queued.durationMs,
+              now_ms: queued.nowMs,
               language: queued.language,
               native_rate: queued.nativeRate,
             },
@@ -849,7 +1055,7 @@ function isSessionInfo(value: unknown): value is VoiceSessionInfo {
 }
 
 /** The state a page gave the front, its web searches and its tools. */
-function withSearches(
+export function withSearches(
   context: string,
   research: VoiceResearch | null,
   tools: VoiceTools | null = null,
@@ -871,6 +1077,29 @@ const looksFrench = (text: string) =>
  * at once; "web_cancel" done, said as "self". Without searches here, it is
  * said that it cannot look.
  */
+/** A front's "forget": a background session deletes it; said here at once. */
+export function forgetRoute(
+  route: Extract<FrontReply, { to: "forget" }>,
+  said: string,
+  memory: CompanionMemory | null,
+): FrontReply {
+  const french = looksFrench(said);
+  if (!memory)
+    return {
+      to: "self",
+      reply: french
+        ? "Je n'ai pas de mémoire à effacer d'ici."
+        : "I have no memory to clear from here.",
+    };
+  memory.forget(route.what);
+  return {
+    to: "self",
+    reply:
+      route.reply ||
+      (french ? "D'accord, j'oublie ça." : "OK, I'll forget that."),
+  };
+}
+
 export function webRoute(
   route: Extract<FrontReply, { to: "web" | "web_cancel" }>,
   said: string,

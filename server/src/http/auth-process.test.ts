@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,13 @@ const password = "logout-test-secret";
 
 // Exercise the real HTTP router and socket cleanup, not a second test router.
 async function withAuthServer(
-  run: (base: string, sockets: WebSocket[]) => Promise<void>,
+  run: (
+    base: string,
+    sockets: WebSocket[],
+    home: string,
+    /** What the server wrote to stderr so far. */
+    errors: () => string,
+  ) => Promise<void>,
   environment: NodeJS.ProcessEnv = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "roamgate-logout-"));
@@ -39,7 +45,12 @@ async function withAuthServer(
     stdout: "pipe",
     stderr: "pipe",
   });
-  const errors = new Response(child.stderr).text();
+  let errorText = "";
+  const errors = (async () => {
+    for await (const chunk of child.stderr)
+      errorText += new TextDecoder().decode(chunk);
+    return errorText;
+  })();
   const ready = Promise.withResolvers<string>();
   const output = (async () => {
     let text = "";
@@ -59,7 +70,7 @@ async function withAuthServer(
   try {
     const base = await ready.promise;
     clearTimeout(deadline);
-    await run(base, sockets);
+    await run(base, sockets, root, () => errorText);
   } finally {
     clearTimeout(deadline);
     for (const socket of sockets) socket.close();
@@ -550,3 +561,216 @@ test("instances sharing a home preserve independent sessions across restarts and
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("generated-token login takes only page openings: sockets and API requests with a token are never failed logins", async () => {
+  await withAuthServer(
+    async (base, _sockets, home) => {
+      const token = (
+        await readFile(join(home, ".config/roamgate/auth-token"), "utf8")
+      ).trim();
+      expect(token.length).toBeGreaterThan(0);
+      const upgrade = {
+        connection: "Upgrade",
+        upgrade: "websocket",
+        "sec-websocket-version": "13",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+      };
+      for (let attempt = 0; attempt < 6; attempt++) {
+        for (const path of ["/ws?token=wrong", "/api/health?token=wrong"]) {
+          const response = await fetch(`${base}${path}`, {
+            signal: AbortSignal.timeout(5000),
+            headers: path.startsWith("/ws") ? upgrade : {},
+            redirect: "manual",
+          });
+          // Their routes answer: not logged in, never sent to /login.
+          expect(response.status).toBe(401);
+        }
+      }
+      const login = await fetch(`${base}/api/login`, {
+        signal: AbortSignal.timeout(5000),
+        method: "POST",
+        body: JSON.stringify({ password: token }),
+      });
+      expect(login.status).toBe(200);
+      // Opening a page with the token still logs in.
+      const page = await fetch(`${base}/?token=${encodeURIComponent(token)}`, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "sec-fetch-mode": "navigate", accept: "text/html" },
+        redirect: "manual",
+      });
+      expect(page.status).toBe(303);
+      expect(page.headers.get("location")).toBe("/");
+      expect(page.headers.get("set-cookie")).toContain("=");
+    },
+    { ROAMGATE_PASSWORD: "" },
+  );
+}, 20_000);
+
+test("a call's signalling socket needs login, this site, and the call's own token", async () => {
+  await withAuthServer(async (base) => {
+    const signalling = (cookie = "", site?: string) =>
+      fetch(`${base}/api/voice/call/signalling?call=1&call_token=guess`, {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          connection: "Upgrade",
+          upgrade: "websocket",
+          "sec-websocket-version": "13",
+          "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+          ...(cookie ? { cookie } : {}),
+          ...(site ? { "sec-fetch-site": site } : {}),
+        },
+      });
+    expect((await signalling()).status).toBe(401);
+    const login = await fetch(`${base}/api/login`, {
+      signal: AbortSignal.timeout(5000),
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(cookie).toContain("=");
+    // Logged in, but no call is this token's (none at all here).
+    expect((await signalling(cookie)).status).toBe(403);
+    expect((await signalling(cookie, "cross-site")).status).toBe(403);
+  });
+}, 20_000);
+
+test.skipIf(process.platform === "win32")(
+  "a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429",
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "roamgate-call-"));
+    try {
+      const config = join(home, ".config/roamgate");
+      await mkdir(config, { recursive: true });
+      const helper = join(home, "fake-call-helper");
+      const script = join(
+        import.meta.dir,
+        "../voice/testdata/fake-call-helper.ts",
+      );
+      await writeFile(
+        helper,
+        `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`,
+        { mode: 0o755 },
+      );
+      // The fake helper reads no models: any file stands for them.
+      const model = join(home, "model");
+      await writeFile(model, "");
+      await writeFile(
+        join(config, "voice.json"),
+        JSON.stringify({
+          helper,
+          whisper_model: model,
+          kokoro_model: model,
+          kokoro_voices: model,
+        }),
+      );
+      await withAuthServer(
+        async (base, sockets, _root, errors) => {
+          // The live mode: no password, the generated token.
+          const token = (
+            await readFile(join(config, "auth-token"), "utf8")
+          ).trim();
+          const login = async () =>
+            fetch(`${base}/api/login`, {
+              signal: AbortSignal.timeout(5000),
+              method: "POST",
+              body: JSON.stringify({ password: token }),
+            });
+          const loggedIn = await login();
+          expect(loggedIn.status).toBe(200);
+          const cookie = (loggedIn.headers.get("set-cookie") ?? "").split(
+            ";",
+          )[0]!;
+          // Bun accepts custom handshake headers; lib.dom's constructor
+          // does not.
+          const Socket = WebSocket as unknown as new (
+            url: string,
+            options: Bun.WebSocketOptions,
+          ) => WebSocket;
+          const open = (path: string) => {
+            const ws = new Socket(base.replace("http:", "ws:") + path, {
+              headers: { cookie },
+            });
+            sockets.push(ws);
+            return ws;
+          };
+          const next = (
+            ws: WebSocket,
+            wanted: (message: Record<string, unknown>) => boolean,
+          ) =>
+            new Promise<Record<string, unknown>>((resolve, reject) => {
+              const timeout = setTimeout(
+                () => reject(new Error("no such message in 5 s")),
+                5000,
+              );
+              ws.addEventListener("message", (event) => {
+                const message = JSON.parse(String(event.data));
+                if (!wanted(message)) return;
+                clearTimeout(timeout);
+                resolve(message);
+              });
+              ws.addEventListener("close", (event) => {
+                clearTimeout(timeout);
+                reject(new Error(`closed ${event.code} ${event.reason}`));
+              });
+            });
+
+          const voice = open("/api/voice/ws");
+          const answered = next(voice, (m) => m.event === "call_audio");
+          voice.addEventListener("open", () =>
+            voice.send(JSON.stringify({ op: "call_audio", on: true })),
+          );
+          const answer = await answered;
+          expect(answer).toMatchObject({ webrtc: true });
+          const call = Number(answer.call);
+          const callToken = String(answer.resume);
+
+          // The URL the page builds (webrtcCall.ts): its signalling opens.
+          const signalling = open(
+            `/api/voice/call/signalling?call=${call}&call_token=${encodeURIComponent(callToken)}`,
+          );
+          expect(
+            await next(signalling, (m) => m.type === "welcome"),
+          ).toMatchObject({ peerId: `fake-peer-${call}` });
+
+          const upgrade = (query: string) =>
+            fetch(`${base}/api/voice/call/signalling?${query}`, {
+              signal: AbortSignal.timeout(5000),
+              redirect: "manual",
+              headers: {
+                connection: "Upgrade",
+                upgrade: "websocket",
+                "sec-websocket-version": "13",
+                "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+                cookie,
+              },
+            });
+          for (let attempt = 0; attempt < 6; attempt += 1)
+            for (const query of [
+              `call=${call}&call_token=wrong`,
+              // The parameter that URL login once took: never a login.
+              `call=${call}&token=wrong`,
+              `call=${call + 1}&call_token=${encodeURIComponent(callToken)}`,
+            ])
+              expect((await upgrade(query)).status).toBe(403);
+          // Nothing counted as a failed login.
+          expect((await login()).status).toBe(200);
+          const log = errors();
+          expect(log).toContain(
+            `call ${call}: signalling refused (403): not the call's call_token`,
+          );
+          expect(log).toContain(
+            `call ${call}: signalling refused (403): no call_token`,
+          );
+          expect(log).toContain(
+            `call ${call + 1}: signalling refused (403): the call going on is ${call}`,
+          );
+          expect(log.match(/a page signals on port/g) ?? []).toHaveLength(1);
+        },
+        { HOME: home, ROAMGATE_PASSWORD: "", ROAMGATE_VOICE_DEBUG: "1" },
+      );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);

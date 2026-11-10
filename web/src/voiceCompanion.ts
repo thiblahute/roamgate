@@ -91,6 +91,11 @@ export function noteAgentAnswer(
   return noted;
 }
 
+/** Forgets the agents' answers (the companion started over). */
+export function forgetAgentAnswers() {
+  answers = [];
+}
+
 /** The answers kept, oldest first. */
 export function recentAnswers(): readonly AgentAnswer[] {
   return answers;

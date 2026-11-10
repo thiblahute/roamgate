@@ -1,10 +1,15 @@
 import type { ConversationAgent } from "../../../../shared/agentChat";
 import { claudeProtocolDriver } from "./claude";
+import { claudeMemoryDriver } from "./claude-memory";
 import { claudeTerminalDriver } from "./claude-tui";
 import type { ConversationDriver } from "./types";
 
 const DRIVERS: Record<ConversationAgent, ConversationDriver> = {
-  claude: { protocol: claudeProtocolDriver, terminal: claudeTerminalDriver },
+  claude: {
+    protocol: claudeProtocolDriver,
+    terminal: claudeTerminalDriver,
+    memory: claudeMemoryDriver,
+  },
 };
 
 /** The driver pair of an agent; absent (an older lease): claude. */

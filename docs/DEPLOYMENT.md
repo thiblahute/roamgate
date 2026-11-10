@@ -720,15 +720,25 @@ helper, Roamgate's voice engine: `voice/helper`, a small Rust
 program that keeps two models loaded, Whisper for speech to text
 (`whispertranscriber`) and Kokoro for text to speech (`kokorosynthesizer`),
 both GStreamer elements from gst-plugins-rs. The browser streams its microphone
-to it over `/api/voice/ws`; the helper tells speech from noise and silence
+to it over `/api/voice/ws`, or in a call by WebRTC (see "Voice calls"); the
+helper tells speech from noise and silence
 with RNNoise (`audiornnoise`), and `speechgate` (from the same
 gst-plugins-rs branch as the Parakeet element) lets only the speech through
 to the transcriber, ending each utterance when the speaker is done; the
 speaker and turn models below are its properties.
 `cargo build --release` in `voice/helper` makes one binary with GStreamer,
-those plugins and ONNX Runtime linked in: it downloads GStreamer's official prebuilt package (once,
-about 720 MB on macOS) through gstreamer-rs's `binary` feature. Kokoro also
-needs espeak-ng installed (`brew install espeak-ng`).
+those plugins and ONNX Runtime linked in: it downloads a prebuilt GStreamer
+package once through gstreamer-rs's `binary` feature, GStreamer's official
+one on macOS (about 720 MB), and on Linux (x86-64) the bundle
+`voice/helper/Cargo.toml` names (about 580 MB). Whisper and the any-tts
+models run on the GPU, with Metal on macOS and with CUDA on Linux, where the
+build needs the CUDA toolkit and the binary its libraries.
+`voice/helper/linux/build.sh [--test] [directory]` builds the Linux binary
+with Podman, in a container that has the toolkit, and writes it to the
+directory with those libraries in `lib/` beside it, where it finds them:
+installed as a whole, it needs only the NVIDIA driver on the host. Kokoro
+also needs espeak-ng installed (`brew install espeak-ng`, or the
+distribution's `espeak-ng` package).
 
 With `GST_DEBUG_DUMP_DOT_DIR` set in Roamgate's environment, the helper
 writes its pipelines' graphs there (`roamgate-voice-speak.dot`,
@@ -791,22 +801,48 @@ onnx-community/Qwen3-0.6B-ONNX: `onnx/model_int8.onnx`, `tokenizer.json`,
 clearly unfinished ("I think we should find a way to") keep the turn open,
 clearly finished ones end it sooner. When the voice sounds finished but the
 words keep the turn open, a pause of `"max_pause_ms"` (8000 by default, 2000
-to 15000; "Longest pause before your turn ends" in Speech settings) ends it.
+to 15000; "Longest pause before your turn ends" in Speech settings) ends it;
+a question asked whole (its words end in "?") ends after 2.5 s, and a voice
+that sounds surely finished after 3 s, whatever the words read like (both
+never longer than that setting).
 A pause whose voice does not sound finished, such as one to look for a word,
 or one after "um" or "euh" (said, or heard as a short sound that added no
 word), lasts up to 15 s, and any voice starts the count again. Whisper models are
 whisper.cpp's ggml files; the Kokoro model and voices are
 the v1.0 files of kokoro-onnx's releases. A helper built against an installed
 GStreamer instead finds its plugins in `gst_prefix`, when given. The helper
-starts with the first voice request and stops with the server. A helper that
-writes something that is not a frame on its standard output is restarted at
-once, the log showing the first bytes it wrote. When the helper stops, each
-listening it had ends with what was heard, and the page listens again on the
-same voice link.
+starts with the first voice request and stops with the server, or after
+`"helper_idle_exit_minutes"` minutes with no call, listening or speech,
+giving back the memory its models hold. The next voice request starts it
+again, its first sentence waiting for the models to load. Unset or 0, the
+default, the helper keeps running.
+
+`"helper_wrapper"` runs the helper through another program, to run it in a
+container, as a service of its own, or with a GPU the wrapper frees for it:
+a list of arguments put before the helper's command, empty by default.
+
+```json
+"helper_wrapper": ["/path/to/wrapper", "--"],
+"helper_idle_exit_minutes": 10
+```
+
+The wrapper passes the helper's standard input and output through
+unchanged, and gives it its environment: a wrapper that starts the helper
+elsewhere passes on what the helper reads in Roamgate's
+(`ROAMGATE_VOICE_DEBUG`, `ROAMGATE_VOICE_ICE_ADDRESSES`, `GST_DEBUG`).
+Roamgate stops a wrapped helper by closing its standard input, which ends
+it within 10 s, and signals the wrapper only if it still runs 15 s later,
+since a wrapper may not pass signals on.
+
+The helper's standard output carries only its frames to Roamgate: anything
+else written there goes to its standard error, in Roamgate's log. A helper that writes something
+that is not a frame is restarted at once, the log showing the first bytes
+it wrote. When the helper stops, each listening it had ends with what was
+heard, and the page listens again on the same voice link.
 With `"tts_models"`, [any-tts](https://github.com/TM9657/any-tts) models read
 replies in place of Kokoro's ONNX model (then `kokoro_model` and
 `kokoro_voices` are not needed), through the `anyttssynthesizer` element from
-the same gst-plugins-rs branch, on the GPU on macOS. They are listed in order
+the same gst-plugins-rs branch, on the GPU. They are listed in order
 of preference, and each sentence goes to the first one speaking its
 language; `"model"` names each, the other fields are the element's for it:
 
@@ -910,15 +946,24 @@ is read aloud once it settles.
 With `"front_model"` (a Claude model, such as `"opus"` or `"haiku"`), a
 front decides in the router's place and in the same call says something
 aloud at once: what it does with the words, or the answer to what Roamgate's
-state answers. One background Claude Code session is kept running for it,
-as for the router (`--safe-mode`, no tools, no Herdr pane variables). Each
+state answers. Its words are written first in its answer and said as soon
+as they are written, while it writes the rest (the route, the words for the
+session, its context note). Two background Claude Code sessions are kept
+running for it, as for the router (`--safe-mode`, no tools, no Herdr pane
+variables): one for what the user says, one for telling events and answers,
+so a turn never waits behind an answer being told. Each
 request gives it the agent sessions plus Ranger's tasks, the merge and pull
 requests the page knows and the notifications of the last half hour; it
-never sees files or terminals. The words go on to the agents as said. A
-front that has said nothing after 3 seconds is covered by a canned
-acknowledgement (its own words of passing the words on are then not said,
-so a turn is acknowledged once); one that fails or takes over 15 seconds leaves the words
-to the agent on screen, unsaid. Without `"front_model"`, voice chat works
+never sees files or terminals. The words go on to the agents as said.
+Only the front's own words are said: no canned acknowledgement while it
+is slow, no "not for me" line for words it routes to nobody (the card
+shows them), and "still working" only on a turn it said nothing about
+for 45 seconds. A front that fails or takes over 15 seconds leaves the
+words to the agent on screen, unsaid. The page sends the last few
+sentences routed to nobody (15 minutes at most) with each turn, listed
+in the front's State; when the user says one was for it ("c'était pour
+toi"), the front routes it then, naming it in `recovered`, which the
+bridge accepts only for words listed. Without `"front_model"`, voice chat works
 as before (with `"route_model"`, if set).
 
 `"front_mode"` says what the front does with the agents' answers on a call:
@@ -960,6 +1005,18 @@ most of the time, and more accurate; Sonnet and Opus at default effort
 searched more and took 30 to 120 s). `GET /api/voice/research` lists the
 searches, `?job=` gives one, `POST /api/voice/research/cancel` `{job?}`
 stops one or all.
+
+The companion remembers across calls, in `companion-memory.json` in
+Roamgate's data directory (`~/.config/roamgate`, so a move between hosts
+carries it): a summary of at most 1500 characters and a bounded log of what
+happened since (40 entries at most). The log is noted as a call goes; when
+the call ends (or after 10 minutes of quiet, or as it grows), a background
+request on `"front_model"` folds it into the summary, and new sessions of
+the front are started from it. Each new session is given it once, with its
+first request. A file that cannot be read starts fresh (kept aside as
+`.corrupt`); a failed summary only keeps the log for the next time. Saying
+"repars de zéro" or **Start over** in the companion's conversation
+(`POST /api/voice/companion/reset`) clears it and stops the front's sessions.
 
 With `"companion_mcp"`, the companion also uses the MCP tools Claude Code
 has on this machine: the servers `claude mcp list` shows (user and project
@@ -1022,46 +1079,143 @@ at once, each for at most 2 minutes. `GET /api/voice/tools` lists the
 jobs, `?job=` gives one, `POST /api/voice/tools/cancel` `{job?}` stops one
 or all.
 
+### Voice calls
+
+A voice chat is a WebRTC call between the page and the voice helper: the
+helper sends the replies (mixed with the music, see below) with
+GStreamer's `webrtcsink`, and receives the page's microphone with
+`webrtcsrc`. The browser plays the replies from the call's received track.
+A call has one of two modes:
+
+- Call mode, with a headset, a car, and off Android: the microphone opens
+  with the browser's echo cancellation, which knows what plays and takes
+  it out of the microphone. On Android this puts the phone in
+  communication mode (the voice-call stream with its hardware echo
+  canceller, Bluetooth as a call headset, the earpiece without a headset).
+- Loudspeaker mode, on an Android phone without a headset: the microphone
+  opens with no echo cancellation, noise suppression or gain control, so
+  Chrome leaves the phone in its normal mode and the replies play as media
+  on the loudspeaker. The helper cancels their echo itself, with
+  GStreamer's `webrtcdsp` (WebRTC's AEC3, its noise suppression and gain
+  control) and the call's mix as `webrtcechoprobe`'s far end. AEC3 finds
+  the echo's delay (the network's round trip and the phone's buffers) up
+  to about 450 ms past a 60 ms lead.
+
+The log says each call's mode and why (`loudspeaker mode: no headset
+connected ...`), the helper whether it cancels the echo, and after each
+reply in loudspeaker mode how much it took out (`echo canceller: over 3.2 s
+of the replies playing, the microphone at ... dBFS, ... dBFS once
+cancelled`). The page signals with
+[gstwebrtc-api](https://www.npmjs.com/package/gstwebrtc-api) on
+`/api/voice/call/signalling`, which Roamgate fronts, behind its login, to
+the signalling server the helper runs for that call on 127.0.0.1 only
+(`docs/ARCHITECTURE.md`, "Voice calls"). The microphone leaves the phone
+only while the call listens. With a helper or a browser that cannot make
+the call, replies play one sentence at a time as below and the microphone
+streams on the voice socket.
+
+On a phone's own loudspeaker, Android plays a call on the voice-call
+stream, quieter than media, and the speech models make their speech at
+-20 to -24 LUFS. The helper brings each voice's replies to
+`call_reply_loudness` in `voice.json` (-16 LUFS by default, -40 to -6;
+`false` leaves them as made), their peaks held under -1 dBTP by a
+look-ahead limiter. A sentence goes into the call as it is made, so each
+one is measured (ITU-R BS.1770), and the next sentence the same voice
+reads in that language gets the gain that brings it to the target; a
+voice not heard yet is taken to make -24 LUFS. With `ROAMGATE_VOICE_DEBUG`
+the log says `a reply made at <LUFS>, raised <dB>`.
+
+Chrome on Android lists no audio output to a page but the default:
+`setSinkId` has nothing to choose and there is no `selectAudioOutput`. It
+lists the phone's communication devices as microphones instead
+("Speakerphone", "Headset earpiece", "Bluetooth headset", ...), and opening
+one in call mode routes the call there. The call's controls show where it
+plays, and a tap moves it to the next: the loudspeaker (loudspeaker mode),
+the earpiece, a headset (call mode, the microphone opened again on that
+device). Moving between the two modes pauses the replies about 5 s: the
+microphone closes, and Chrome keeps an idle output stream 5 s before
+closing it, which a new one would take again in the old mode.
+
+The call's media goes over UDP. The helper's ICE agents use the machine's
+IPv4 addresses and 127.0.0.1, on ports 40000 to 40999, and no STUN or
+TURN server: a phone on the same network reaches the first, and a phone
+on Tailscale reaches the second when `tailscaled` runs with
+`--tun=userspace-networking`, which forwards UDP sent to the machine's
+Tailscale address to 127.0.0.1 on the same port. Roamgate gives the page
+the helper's 127.0.0.1 candidates at that address, set in `voice.json`
+(`tailscale ip -4` prints it; with a custom socket,
+`tailscale --socket=<path> ip -4`):
+
+```json
+"call_ice_address": "100.71.231.65"
+```
+
+Nothing else changes in Tailscale (no `tailscale serve` entry, no ACL for
+the ports). A firewall between a phone and the machine on the same
+network must let UDP 40000 to 40999 through to the helper, or the call
+uses Tailscale. `ROAMGATE_VOICE_ICE_ADDRESSES` in Roamgate's environment
+(comma-separated, such as `127.0.0.1`) gives the helper's agents only
+those addresses. A helper built from source needs the GStreamer bundle's
+`webrtc`, `nice`, `dtls`, `srtp`, `rtpmanager`, `rtp` and
+`debugutilsbad` plugins, which `voice/helper/Cargo.toml` lists.
+
+With `ROAMGATE_VOICE_DEBUG`, the trace says, for each call, the ICE path
+each way took (`call 7: microphone: ICE host udp ... -> host udp
+100.71.231.65:40012, not relayed`, the same for `replies`: candidate
+types, UDP or TCP, relayed or not), every 15 s the microphone's
+`echoReturnLoss` and `echoReturnLossEnhancement` as the browser reports
+them (or that it reports none), once a voice chat which microphone
+listens, whether its echo cancellation, noise suppression and auto gain
+are on and which outputs the browser knows, and the helper's ICE states.
+
 ### Voice calls on the move
 
-A call is meant to survive a phone changing networks. The listening session
-outlives its socket on the server for 20 s: the page opens a new socket,
-resumes the session and sends again the audio the server did not get, so a
-sentence cut by the network is heard whole. A socket that stops passing
-audio (a phone that changed networks keeps the old one open) is replaced
-the same way, and a session nobody resumes ends its utterance with what
-was heard. When the page's own connection drops, the chat is rebuilt; the
-listening in progress is kept across that and the call goes on. Two short
-tones say it had to reconnect. Words heard but never sent stay above the
-chat's message box, to send by hand. A page in a call takes a newer build between turns only,
-and the call goes on in the reloaded page.
+A call is meant to survive a phone changing networks. The voice socket
+carries what is said of the listening (and, without WebRTC, the
+microphone): its listening session outlives the socket on the server for
+20 s, and the page opens a new socket and resumes it. A WebRTC leg whose
+ICE connection fails, or stays disconnected 4 s, is negotiated again (a
+new session on the same signalling), and a lost signalling socket is
+opened again with both legs, for as long as the call lasts. A signalling
+that never opened at all is tried six times; the call then ends, the page
+says so, and the chat goes on with the replies played in the page and the
+microphone on the voice socket. What the microphone said while the network
+was gone is lost: it is not sent again afterwards (only a call without
+WebRTC sends the socket's missed audio again). A listening that hears
+nothing for 5 s waits for the stream to come back, and one nobody resumes
+ends its utterance with what was heard. On the call's microphone, a
+listening that hears nothing for 5 s stays on its socket: it ends at once
+with what was heard when the microphone's leg is down, and 20 s later when
+the stream does not come back. A microphone leg the helper ends, or whose
+microphone fails, is published again, five times within a minute at most.
+A call left by its chat ends 5 s later, unless a rebuilt chat takes it. When the page's own connection
+drops, the chat is rebuilt; the listening in progress is kept across that
+and the call goes on, controlled from the new chat. Two short tones say
+it had to reconnect. Words heard but never sent stay above the chat's
+message box, to send by hand. A page in a call takes a newer build
+between turns only, and the call goes on in the reloaded page.
 
-During a call, replies play through the AudioContext the microphone
+Without WebRTC, replies play through the AudioContext the microphone
 streams through, at any reading speed, not as media: Android's media
 session has nothing to pause and a car's media controls nothing to control
 (they are logged and ignored), and no media element of the page competes
-for the audio focus (other apps' music is not paused then). Echo cancellation is the platform's, on the microphone, so
-speaking over a reply still interrupts it. Speech settings' **Voice chat
-replies play** (per device) can bring back media elements ("As media"), or
-try WebRTC call audio ("As a call": each sentence goes through a WebRTC
-connection of the page to itself, which Chrome on Android plays on the
-voice-call stream beside the microphone). As media, a silent loop holds
-the audio focus between replies (other apps' music pauses) and goes quiet
-while a sentence plays, so the two never take the focus from each other; a
-pause from elsewhere (Android taking the audio focus, a car switching
-profiles) plays on, then retries from the sentence's start, then skips the
-sentence after four tries in all, and a pause from a car's or headset's
-controls is honoured until play. With `ROAMGATE_VOICE_DEBUG`,
-the page's trace says which output plays and what paused it, and, once a
-voice chat, which microphone listens, whether its echo cancellation is on
-and which outputs the browser knows.
+for the audio focus (other apps' music is not paused then). Speech
+settings' **Voice chat replies play** (per device) can bring back media
+elements ("As media"). As media, a silent loop holds the audio focus
+between replies (other apps' music pauses) and goes quiet while a
+sentence plays, so the two never take the focus from each other; a pause
+from elsewhere (Android taking the audio focus, a car switching profiles)
+plays on, then retries from the sentence's start, then skips the sentence
+after four tries in all, and a pause from a car's or headset's controls is
+honoured until play. The trace then says which output plays and what
+paused it.
 
 ### Music under a call
 
 `"call_background"` in `voice.json` is a gst-launch description of a source
 that can play under a voice call: the voice helper mixes it with the
-replies (`voice/helper/src/call.rs`) and the page hears one stream, so the
-phone's echo cancellation covers the music too. Nothing in it is special
+replies (`voice/helper/src/call.rs`) and the page hears one stream, the
+call's, so the phone's echo cancellation covers the music too. Nothing in it is special
 to one service. Off when empty or absent. A call starts with the music
 off, its source not made (nothing is tapped): it plays once you ask the
 companion to put it on, unless `call_music_at_start` is `true`.
@@ -1088,21 +1242,22 @@ voice`, then `a voice was taken: the call's music plays`. The companion is
 told whether the music is on, waiting for your voice, or off, never that it
 plays when it does not. Only the replies are
 read faster (`speech_rate`): the music always plays at its own speed and
-pitch. The mix is Opus at 128 kb/s, stereo, 48 kHz, sent on the voice
-socket and played in the call's AudioContext (Chrome's WebCodecs); a page
-or helper that cannot plays each sentence by itself as before. The
+pitch. The mix is Opus at 128 kb/s, stereo, 48 kHz, sent by WebRTC; a
+page or helper that cannot make the call plays each sentence by itself,
+without the music. The
 companion puts the music on, turns it down, up or off when asked ("mets de
 la musique", "baisse la musique"); off, the source is stopped until it is
-turned back on. A voice helper restarted during a call makes the call's
-mix again as it was, the music on or off, and the page's stream goes on.
-A call the restarted helper cannot make again ends, and the page is told;
-one whose start the helper never answered is not made again. The helper
-is restarted when its speech stalls (a sentence waits 15 s at most, 45 s
-for the first with a voice or into a call, which may load its model): if
-it still answers a ping within 2 s, its speaker is stuck, and the
-sentences that waited are said with Kokoro, which reads for five minutes;
-if it does not, its output is what was lost, and they are said again as
-they were.
+turned back on. A voice helper restarted during a call makes the call
+again as it was, the music on or off, with a new signalling server: the
+page's WebRTC sessions start again on it, a page that was reconnecting
+learning it when it resumes the call. A call the restarted helper cannot
+make again ends, and the page is told; one whose start the helper never
+answered is not made again. The helper is restarted when its speech
+stalls (a sentence waits 15 s at most, 45 s for the first with a voice or
+into a call, which may load its model): if it still answers a ping within
+2 s, its speaker is stuck, and the sentences that waited are said with
+Kokoro, which reads for five minutes; if it does not, its output is what
+was lost, and they are said again as they were.
 
 On macOS, `osxprocesstapsrc` (in the helper) plays what one application
 plays, through a Core Audio process tap (macOS 14.2 or later):
@@ -1314,10 +1469,13 @@ curl -fsS http://127.0.0.1:8787/healthz
 ```
 
 **Credentials and sessions.** The generated token is in
-`~/.config/roamgate/auth-token` (`%APPDATA%\roamgate\auth-token`). A `?token=`
-URL logs in and sets a cookie. Cookies are signed by a separate secret in the
-same directory (`session-secret.json`, or `session-secret-<sha256>.json` when
-`ROAMGATE_SETTINGS_PATH` is set). Protect both like passwords.
+`~/.config/roamgate/auth-token` (`%APPDATA%\roamgate\auth-token`). Opening a
+page with `?token=` logs in and sets a cookie. Only page openings do: a
+WebSocket or an `/api/` request carrying a `token` parameter is left to its
+route and never counts as a failed login. Cookies are signed by a separate
+secret in the same directory (`session-secret.json`, or
+`session-secret-<sha256>.json` when `ROAMGATE_SETTINGS_PATH` is set). Protect
+both like passwords.
 - `roamgate auth rotate` replaces the token, signs out every browser, and
   restarts the service. **Do not just delete `auth-token`**: after a migration,
   the legacy token is copied back on the next start. To rotate by hand, stop

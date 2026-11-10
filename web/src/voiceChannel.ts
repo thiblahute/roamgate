@@ -4,7 +4,9 @@
  * stalls with what it was given unsent, is opened again and the listening
  * session resumed (`{"op": "resume"}`), the audio the server did not get
  * sent again from what it says it received, and what was asked meanwhile
- * sent once it is back. Whoever listens sees one unbroken session.
+ * sent once it is back. Whoever listens sees one unbroken session. In a
+ * WebRTC call (webrtcCall.ts) the microphone does not come this way: its
+ * audio lost to the network is not sent again.
  */
 
 /** What of a WebSocket the channel uses. */
@@ -32,10 +34,16 @@ export type ChannelEvent = {
   recoverable?: boolean;
   resume?: string;
   received?: number;
-  /** A call's audio (callAudio.ts). */
+  /** A call (webrtcCall.ts). */
   call?: number;
   resumed?: boolean;
+  /** Times a restarted helper made the call again. */
+  restarts?: number;
   music?: boolean;
+  /** call_music: the music waits for the speaker's voice to be learnt. */
+  waiting?: boolean;
+  webrtc?: boolean;
+  ok?: boolean;
 };
 
 const OPEN = 1;
@@ -63,10 +71,8 @@ export type ChannelOptions = {
 export class VoiceChannel {
   private socket: ChannelSocket;
   private listeners = new Set<(event: ChannelEvent) => void>();
-  /** Binary messages: a call's audio packets. */
-  private binaries = new Set<(data: ArrayBuffer) => void>();
-  /** The call whose audio comes on this channel, to resume it. */
-  private callAudio: { call: number; resume: string } | null = null;
+  /** The call controlled on this channel, to move it to a new socket. */
+  private call: { call: number; resume: string } | null = null;
   private closedError: Error | null = null;
   private closedByUs = false;
   /** The session listening, its resume token, and whether it is over. */
@@ -113,10 +119,13 @@ export class VoiceChannel {
     return () => this.listeners.delete(listener);
   }
 
-  /** Listens to binary messages (a call's audio packets). */
-  binary(listener: (data: ArrayBuffer) => void) {
-    this.binaries.add(listener);
-    return () => this.binaries.delete(listener);
+  /**
+   * The call `call` (webrtcCall.ts) is controlled on this channel: moved to
+   * each new socket (`call_resume`). Only a call the page took: one it gave
+   * up on (answered too late) is not.
+   */
+  holdCall(call: number, resume: string) {
+    this.call = { call, resume };
   }
 
   close() {
@@ -128,15 +137,26 @@ export class VoiceChannel {
   }
 
   send(message: object) {
-    const op = (message as { op?: unknown; on?: unknown }).op;
-    if (op === "call_audio" && (message as { on?: unknown }).on === false)
-      this.callAudio = null;
+    const { op, on, call, resume } = message as {
+      op?: unknown;
+      on?: unknown;
+      call?: unknown;
+      resume?: unknown;
+    };
+    // Its end: not resumed any more (another call's end leaves it).
+    if (
+      op === "call_audio" &&
+      on === false &&
+      (call === undefined || call === this.call?.call)
+    )
+      this.call = null;
     // A call taken over from another link: this one resumes it from now on.
-    if (op === "call_resume") {
-      const { call, resume } = message as { call?: unknown; resume?: unknown };
-      if (typeof call === "number" && typeof resume === "string")
-        this.callAudio = { call, resume };
-    }
+    if (
+      op === "call_resume" &&
+      typeof call === "number" &&
+      typeof resume === "string"
+    )
+      this.call = { call, resume };
     if (this.reconnecting) {
       this.queued.push(message);
       return;
@@ -171,11 +191,7 @@ export class VoiceChannel {
   private adopt(socket: ChannelSocket) {
     socket.binaryType = "arraybuffer";
     socket.onmessage = (message) => {
-      if (typeof message.data !== "string") {
-        if (message.data instanceof ArrayBuffer)
-          for (const listener of [...this.binaries]) listener(message.data);
-        return;
-      }
+      if (typeof message.data !== "string") return;
       let event: ChannelEvent;
       try {
         event = JSON.parse(message.data);
@@ -193,12 +209,12 @@ export class VoiceChannel {
   }
 
   private seen(event: ChannelEvent) {
-    if (event.event === "call_audio") {
-      if (typeof event.call === "number" && event.resume)
-        this.callAudio = { call: event.call, resume: event.resume };
-      else if (event.error && event.call === this.callAudio?.call)
-        this.callAudio = null;
-    }
+    if (
+      event.event === "call_audio" &&
+      event.error &&
+      event.call === this.call?.call
+    )
+      this.call = null;
     if (event.event === "listening") {
       this.session = event.session ?? null;
       this.token = event.resume ?? null;
@@ -294,13 +310,13 @@ export class VoiceChannel {
           socket.send(at >= received ? data : data.subarray(received - at));
         }
       }
-      // The call's audio goes on on this socket (voice-socket.ts).
-      if (this.callAudio)
+      // The call is controlled from this socket (voice-socket.ts).
+      if (this.call)
         socket.send(
           JSON.stringify({
             op: "call_resume",
-            call: this.callAudio.call,
-            resume: this.callAudio.resume,
+            call: this.call.call,
+            resume: this.call.resume,
           }),
         );
       for (const message of this.queued.splice(0))

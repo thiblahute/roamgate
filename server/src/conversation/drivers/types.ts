@@ -199,7 +199,29 @@ export type TerminalDriver = {
   ): number | null;
 };
 
+/** How a headless background session of the agent is started around a memory directory. */
+export type BackgroundMemoryLaunch = {
+  /** What to add to its launch. */
+  args: string[];
+  /** Its tools: "" for none. */
+  tools: string;
+  /** Instead of the system's temporary directory. */
+  cwd?: string;
+};
+
+/**
+ * How one agent reaches the companion's memory directory (voice-memory-files.ts).
+ * The fast front only reads it; a background session writes it.
+ */
+export type CompanionMemoryDriver = {
+  /** Its launch to load the directory's index by itself; null: it cannot, the index goes in its prompt. */
+  reader(dir: string): BackgroundMemoryLaunch | null;
+  /** A session with the file tools limited to `dir`, and nothing else. */
+  writer(dir: string): BackgroundMemoryLaunch;
+};
+
 export type ConversationDriver = {
   protocol: ProtocolDriver;
   terminal: TerminalDriver;
+  memory: CompanionMemoryDriver;
 };

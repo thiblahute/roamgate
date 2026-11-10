@@ -5,7 +5,7 @@
 //! Listening (see `listen`), for one session at a time:
 //! - `{"op": "listen_start", "session": 3, "hold": true, "language": "es",
 //!   "end_silence_ms": 2500, "new_speaker": true}`, then AUDIO frames for
-//!   session 3; with `--speaker-model`, only the voice of whoever spoke
+//!   session 3 (or, with `"call": 7`, call 7's microphone); with `--speaker-model`, only the voice of whoever spoke
 //!   first since a `new_speaker` start counts;
 //! - `{"op": "listen_release", "session": 3}` once a reply stops playing;
 //! - `{"op": "listen_finish", "session": 3}` ends the utterance now,
@@ -45,17 +45,27 @@
 //! "codes": [[...], ...], "heard": "...", "seconds": 12.4}`: the voice's
 //! x-vector and codec codes, and what the speech to text model heard.
 //!
-//! A call with music (see `call`): `{"id": 5, "op": "call_start", "call": 7,
+//! A call (see `call`): `{"id": 5, "op": "call_start", "call": 7,
 //! "background": "<gst-launch source>", "volume": 0.6, "ducked": 0.15,
-//! "release_ms": 3000, "muted": true}` (the music off until call_music puts
-//! it on, its source made only then) answers `{"id": 5, "ok": true, "rate": 48000,
-//! "channels": 2, "music": true, "waiting": true}` and sends call 7's mix as CALL_AUDIO
-//! frames (Opus, 20 ms each) until `{"op": "call_stop", "call": 7}`; a
-//! background that fails is told as `{"event": "call_error", "call": 7,
-//! "error": "..."}`, the call going on with the voice only. A speak request
-//! with `"call": 7` goes into the mix and answers `{"id": 2, "queued": true,
-//! "start_ms": ..., "duration_ms": ..., "rate": 1.5, "language": "fr"}`, in
-//! the packets' time. `{"op": "call_hush", "call": 7}` drops the voice
+//! "release_ms": 3000, "muted": true, "reply_loudness": -16, "reply_peak":
+//! -1}` (the music off until call_music puts it on, its source made only
+//! then; no background, no music; the replies brought to -16 LUFS under
+//! -1 dBTP, null leaving them as made: see `loudness`) answers
+//! `{"id": 5, "ok": true, "rate": 48000, "channels": 2, "music": true,
+//! "waiting": true, "signalling_port": 41234}`: the call's mix goes to the
+//! page by WebRTC (webrtcsink), whose signalling server listens on
+//! 127.0.0.1 on that port, until `{"op": "call_stop", "call": 7}`.
+//! `{"op": "call_microphone", "call": 7, "peer": "<id>"}` listens to the
+//! page's microphone producer of that id (webrtcsrc), with `"echo":
+//! "here"` taking the replies' echo out of it first (echo.rs: the page
+//! plays them on a phone's loudspeaker without its own canceller); a listening session
+//! started with `"call": 7` hears it, and says how much came: `{"event":
+//! "audio", "session": 3, "bytes": 6400}` (16 kHz mono S16LE). A background or a microphone that fails is
+//! told as `{"event": "call_error", "call": 7, "error": "..."}`, the call
+//! going on without it. A speak request with `"call": 7` goes into the mix
+//! and answers `{"id": 2, "queued": true, "start_ms": ..., "duration_ms":
+//! ..., "now_ms": ..., "rate": 1.5, "language": "fr"}`, in the mix's
+//! time. `{"op": "call_hush", "call": 7}` drops the voice
 //! queued (the user talks over it); `{"op": "call_music", "call": 7,
 //! "volume": 0.3, "muted": false}` changes the music's level. The music
 //! ducks while the voice plays or the user talks (listen events). It waits,
@@ -86,9 +96,11 @@ use serde_json::{Value, json};
 
 mod call;
 mod clone;
+mod echo;
 mod frames;
 mod language;
 mod listen;
+mod loudness;
 #[cfg(target_os = "macos")]
 mod processtap;
 mod reference;
@@ -146,23 +158,33 @@ struct Request {
     /// call_music: the music off (true) or back (false).
     #[serde(default)]
     muted: Option<bool>,
+    /// call_microphone: the page's microphone producer, by its peer id.
+    #[serde(default)]
+    peer: Option<String>,
+    /// call_microphone: "here" when the page plays the replies without its
+    /// own echo canceller (its loudspeaker mode): it is cancelled here.
+    #[serde(default)]
+    echo: Option<String>,
+    /// call_start: the replies' loudness in LUFS (null: as the models make
+    /// them), and their highest peak in dBTP.
+    #[serde(default)]
+    reply_loudness: Option<Value>,
+    #[serde(default)]
+    reply_peak: Option<f64>,
 }
 
 /// The call playing now, if any.
 type Calls = Arc<Mutex<Option<Arc<call::Call>>>>;
 
-fn call_audio(output: &Output, call: u32, seq: u32, pts_us: u64, packet: &[u8]) {
-    let mut payload = Vec::with_capacity(16 + packet.len());
-    payload.extend_from_slice(&call.to_le_bytes());
-    payload.extend_from_slice(&seq.to_le_bytes());
-    payload.extend_from_slice(&pts_us.to_le_bytes());
-    payload.extend_from_slice(packet);
-    let mut out = output.lock().unwrap();
-    let _ = frames::write(&mut *out, frames::CALL_AUDIO, &payload);
-}
-
-/// The call ops: call_start, call_stop, call_hush, call_music.
-fn call_op(output: &Output, calls: &Calls, learning: &AtomicBool, request: &Request) -> Value {
+/// The call ops: call_start, call_stop, call_hush, call_music,
+/// call_microphone; the microphone's audio goes to `listen`.
+fn call_op(
+    output: &Output,
+    calls: &Calls,
+    listen: &mpsc::Sender<listen::Command>,
+    learning: &AtomicBool,
+    request: &Request,
+) -> Value {
     let id = request.call.unwrap_or_default();
     match request.op.as_str() {
         "call_start" => {
@@ -177,14 +199,19 @@ fn call_op(output: &Output, calls: &Calls, learning: &AtomicBool, request: &Requ
                 muted: request.muted.unwrap_or(defaults.muted),
                 // Told by the listener (learning_voice) from then on.
                 wait_for_voice: learning.load(Ordering::SeqCst),
+                reply_loudness: match &request.reply_loudness {
+                    None => defaults.reply_loudness,
+                    Some(value) => value.as_f64().map(|lufs| lufs.clamp(-40.0, -6.0)),
+                },
+                reply_peak: request
+                    .reply_peak
+                    .map_or(defaults.reply_peak, |peak| peak.clamp(-12.0, 0.0)),
             };
-            let packets = output.clone();
             let errors = output.clone();
             match call::Call::start(
                 id,
                 &settings,
-                Box::new(move |seq, pts, packet| call_audio(&packets, id, seq, pts, packet)),
-                Box::new(move |error| {
+                Arc::new(move |error| {
                     eprintln!("call {id}: {error}");
                     reply(
                         &errors,
@@ -194,10 +221,12 @@ fn call_op(output: &Output, calls: &Calls, learning: &AtomicBool, request: &Requ
             ) {
                 Ok(started) => {
                     let music = started.music;
+                    let port = started.signalling_port;
                     *calls.lock().unwrap() = Some(Arc::new(started));
                     json!({"id": request.id, "ok": true, "rate": call::RATE,
                         "channels": call::CHANNELS, "music": music,
-                        "waiting": music && settings.wait_for_voice})
+                        "waiting": music && settings.wait_for_voice,
+                        "signalling_port": port})
                 }
                 Err(error) => json!({"id": request.id, "error": error}),
             }
@@ -215,6 +244,23 @@ fn call_op(output: &Output, calls: &Calls, learning: &AtomicBool, request: &Requ
                 "call_hush" => {
                     current.hush();
                     json!({"id": request.id, "ok": true})
+                }
+                "call_microphone" => {
+                    let listen = Mutex::new(listen.clone());
+                    let heard: call::OnSamples = Arc::new(move |samples| {
+                        let _ = listen
+                            .lock()
+                            .unwrap()
+                            .send(listen::Command::CallAudio { call: id, samples });
+                    });
+                    match current.set_microphone(
+                        request.peer.as_deref().unwrap_or(""),
+                        heard,
+                        request.echo.as_deref() == Some("here"),
+                    ) {
+                        Ok(()) => json!({"id": request.id, "ok": true}),
+                        Err(error) => json!({"id": request.id, "error": error}),
+                    }
                 }
                 _ => {
                     let (volume, muted) = current.set_music(request.volume, request.muted);
@@ -236,11 +282,11 @@ struct Config {
     turn_model: Option<String>,
     /// A small language model reading whether the words are finished.
     text_turn_model: Option<String>,
+    /// With a turn model, the longest pause before the utterance ends.
+    turn_give_up_ms: Option<u64>,
     /// Recordings of the speaker's voice (a JSON array of paths), its new
     /// voice taken from them rather than from the first sound heard.
     speaker_reference: Option<String>,
-    /// With a turn model, the longest pause before the utterance ends.
-    turn_give_up_ms: Option<u64>,
     kokoro_model: Option<String>,
     kokoro_voices: Option<String>,
     /// any-tts models reading in place of Kokoro, in order of preference: a
@@ -278,7 +324,8 @@ fn tts_models(json: &str) -> Result<gst::Array, String> {
     Ok(gst::Array::new(models))
 }
 
-type Output = Arc<Mutex<std::io::Stdout>>;
+/// Where frames go: the process's stdout, kept for them (frames::take_stdout).
+type Output = Arc<Mutex<Box<dyn std::io::Write + Send>>>;
 
 fn reply(output: &Output, message: Value) {
     let mut out = output.lock().unwrap();
@@ -298,6 +345,10 @@ fn arg(name: &str) -> Option<String> {
 /// The fastest and slowest a sentence is made.
 const MIN_RATE: f64 = 0.5;
 const MAX_RATE: f64 = 2.0;
+
+/// The longest the helper takes to end once its stdin closed, threads
+/// stuck in a model included (Roamgate waits a little longer for it).
+const EXIT_GRACE: Duration = Duration::from_secs(10);
 
 /// Text to speech: one pipeline kept playing, from a synthesizer to Ogg
 /// Opus (small enough for a phone on the go), a sentence at a time. A
@@ -656,6 +707,13 @@ fn clone_to_file(audio: &str) -> Result<String, String> {
 }
 
 fn main() {
+    // webrtcsink's signalling server (call.rs) logs every message, offers
+    // and candidates included, at its default level: only its warnings,
+    // unless asked for.
+    if std::env::var_os("WEBRTCSINK_SIGNALLING_SERVER_LOG").is_none() {
+        // SAFETY: no other thread runs yet.
+        unsafe { std::env::set_var("WEBRTCSINK_SIGNALLING_SERVER_LOG", "warn") };
+    }
     if let Err(err) = gst::init() {
         eprintln!("GStreamer failed to initialize: {err}");
         std::process::exit(1);
@@ -667,6 +725,7 @@ fn main() {
         .and_then(|_| gstparakeet::plugin_register_static())
         .and_then(|_| gstspeechgate::plugin_register_static())
         .and_then(|_| gstrsaudiofx::plugin_register_static())
+        .and_then(|_| gstrswebrtc::plugin_register_static())
     {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
@@ -701,13 +760,23 @@ fn main() {
         speaker_model: arg("--speaker-model"),
         turn_model: arg("--turn-model"),
         text_turn_model: arg("--text-turn-model"),
-        speaker_reference: arg("--speaker-reference"),
         turn_give_up_ms: arg("--turn-give-up-ms").and_then(|ms| ms.parse().ok()),
+        speaker_reference: arg("--speaker-reference"),
         kokoro_model: arg("--kokoro-model"),
         kokoro_voices: arg("--kokoro-voices"),
         tts_models: arg("--tts-models"),
     });
-    let output: Output = Arc::new(Mutex::new(std::io::stdout()));
+    // From here on, only frames reach Roamgate's end of stdout: a call's
+    // webrtcsink logs to stdout, and a log line there would be read as a
+    // frame's length, so nothing after it would be understood.
+    let frames: Box<dyn std::io::Write + Send> = match frames::take_stdout() {
+        Ok(file) => Box::new(file),
+        Err(err) => {
+            eprintln!("stdout is shared with the frames: {err}");
+            Box::new(std::io::stdout())
+        }
+    };
+    let output: Output = Arc::new(Mutex::new(frames));
 
     let calls: Calls = Arc::new(Mutex::new(None));
     // Whether a new speaker's voice is learnt from what is heard: no music
@@ -724,10 +793,11 @@ fn main() {
     let calling = {
         let output = output.clone();
         let calls = calls.clone();
+        let listen = listen_tx.clone();
         let learning = learning.clone();
         std::thread::spawn(move || {
             for request in call_rx {
-                let answer = call_op(&output, &calls, &learning, &request);
+                let answer = call_op(&output, &calls, &listen, &learning, &request);
                 reply(&output, answer);
             }
         })
@@ -834,8 +904,8 @@ fn main() {
                         config.speaker_model.as_deref(),
                         config.turn_model.as_deref(),
                         config.text_turn_model.as_deref(),
-                        reference,
                         config.turn_give_up_ms,
+                        reference,
                         reread.clone(),
                         emit.clone(),
                     ) {
@@ -933,7 +1003,10 @@ fn main() {
                     reply(&output, json!({"id": request.id, "error": error}));
                     continue;
                 }
-                let mut sentence = call.as_ref().map(|call| call.sentence());
+                // Each voice has its own level, and any-tts reads each
+                // language with the first of its models that speaks it.
+                let voice = format!("{}|{language}", current.as_deref().unwrap_or(""));
+                let mut sentence = call.as_ref().map(|call| call.sentence_of(&voice));
                 let result = match (&speaker, switched) {
                     (_, Err(err)) => Err(err),
                     (Ok(speaker), _) if language::has_words(&text) => speaker.speak(
@@ -949,11 +1022,15 @@ fn main() {
                 let answer = match (result, sentence) {
                     (Ok((_, rate)), Some(sentence)) => {
                         let (start_ms, duration_ms) = sentence.finish();
+                        // Where the mix is now: the page times the
+                        // sentence's end from it.
+                        let now_ms = call.as_ref().map_or(0, |call| call.now().mseconds());
                         json!({
                             "id": request.id,
                             "queued": true,
                             "start_ms": start_ms,
                             "duration_ms": duration_ms,
+                            "now_ms": now_ms,
                             "language": language,
                             "rate": rate,
                         })
@@ -1026,6 +1103,7 @@ fn main() {
                     end_silence_ms: request.end_silence_ms,
                     language: request.language,
                     new_speaker: request.new_speaker,
+                    call: request.call,
                 });
                 Ok(())
             }
@@ -1044,7 +1122,7 @@ fn main() {
                 let _ = listen_tx.send(listen::Command::Stop { id: session });
                 Ok(())
             }
-            "call_start" | "call_stop" | "call_hush" | "call_music" => {
+            "call_start" | "call_stop" | "call_hush" | "call_music" | "call_microphone" => {
                 // call_start parses a description and starts a pipeline: not
                 // on the input thread, which carries the microphone. One
                 // thread, so they keep their order.
@@ -1064,12 +1142,29 @@ fn main() {
         }
     }
     // Roamgate closed stdin: it is gone, so is the helper, once the models
-    // are put away.
+    // are put away. It is also how Roamgate stops a helper run through a
+    // wrapper, which may not pass signals on: a thread stuck in a model
+    // would hold the joins below forever, so the process ends regardless
+    // EXIT_GRACE on.
+    std::thread::spawn(|| {
+        std::thread::sleep(EXIT_GRACE);
+        eprintln!(
+            "still stopping {} s after stdin closed: exiting",
+            EXIT_GRACE.as_secs()
+        );
+        std::process::exit(0);
+    });
     drop((listen_tx, speak_tx, call_tx));
     let _ = calling.join();
     calls.lock().unwrap().take();
     let _ = listening.join();
     let _ = speaking.join();
+    // A call's pipelines stop on threads of their own: a teardown that
+    // never ends leaves GStreamer as it is, for the process to end.
+    if !call::finish_stopping(Duration::from_secs(5)) {
+        eprintln!("a call's pipeline is still stopping: exiting without it");
+        std::process::exit(0);
+    }
     // SAFETY: every GStreamer object is gone with the threads above.
     unsafe { gst::deinit() };
 }

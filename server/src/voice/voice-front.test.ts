@@ -5,11 +5,16 @@ import {
   closingQuestion,
   companionReply,
   configuredFront,
+  earlyReply,
   FRONT_SYSTEM_PROMPT,
+  type FrontTiming,
   forwardedWords,
   isApproval,
   isNameFix,
   parseFrontReply,
+  recoveredWords,
+  skippedContext,
+  skippedWords,
   turnText,
   VoiceFront,
 } from "./voice-front";
@@ -139,7 +144,7 @@ describe("parseFrontReply", () => {
 
   test("the prompt sends tool requests to jobs, and confirms only on a yes", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain(
-      '{"to": "tool", "task": "<what to do>"',
+      '{"to": "tool", "reply": "...", "task": "<what to do>"',
     );
     expect(FRONT_SYSTEM_PROMPT).toContain(
       'Never "tool_confirm" unless the user\'s words in this very turn say yes to that call',
@@ -155,7 +160,14 @@ describe("parseFrontReply", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain("never for you: route it");
     // The one in charge: first person, never handing the user over.
     expect(FRONT_SYSTEM_PROMPT).toContain(
-      "Je lance ça sur la session roamgate.",
+      "Je lance les tests de voice-front sur roamgate, je te dis s'ils passent.",
+    );
+    // Its own words, varied, saying what comes next: no stock phrase.
+    expect(FRONT_SYSTEM_PROMPT).toContain("never a stock phrase");
+    expect(FRONT_SYSTEM_PROMPT).toContain("and what comes next");
+    // What it says is written first, to be said at once.
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      'write "to" first and "reply" right after it',
     );
     expect(FRONT_SYSTEM_PROMPT).toContain('never "passing that to"');
     expect(FRONT_SYSTEM_PROMPT).toContain("Recent answers above all");
@@ -453,6 +465,26 @@ describe("misheard names fixed in the words", () => {
   });
 });
 
+describe("the reset route", () => {
+  test("is told, with what it says", () => {
+    expect(
+      parseFrontReply('{"to": "reset", "reply": "On repart de zéro."}', ids),
+    ).toEqual({ to: "reset", reply: "On repart de zéro." });
+    expect(parseFrontReply('{"to": "reset"}', ids)).toEqual({ to: "reset" });
+  });
+
+  test("is said early, as written", () => {
+    expect(earlyReply('{"to": "reset", "reply": "On repart de zéro."')).toEqual(
+      { to: "reset", reply: "On repart de zéro." },
+    );
+  });
+
+  test("is in the prompt, for its own memory only", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain('"to": "reset"');
+    expect(FRONT_SYSTEM_PROMPT).toContain("repars de zéro");
+  });
+});
+
 describe("VoiceFront", () => {
   test("the words said reach the model exactly, the state once", async () => {
     const claude = fakeClaude(
@@ -475,6 +507,42 @@ describe("VoiceFront", () => {
     expect(written[0]).toContain("Ranger tasks:\n- Nightly CI check: active");
     expect(written[0]).toEndWith(`Said: ${JSON.stringify(said)}`);
     expect(written[1]).toBe('Current: local/w2:p2\nSaid: "Merci."');
+  });
+
+  test("a new session gets the memory once, on its first request", async () => {
+    const claude = fakeClaude(() => '{"to": "self", "reply": "Oui."}');
+    let memory = "Summary:\non parlait des tests";
+    const front = new VoiceFront(claude.spawn, () => memory);
+    const ask = () =>
+      front.turn({ current: "", said: "Salut", sessions, context: "" });
+    await ask();
+    await ask();
+    const written = claude.started[0]!.written;
+    expect(written[0]).toStartWith(
+      "Memory:\nSummary:\non parlait des tests\n\nState:\n",
+    );
+    expect(written[1]).not.toContain("Memory:");
+    // The next session, as after 40 requests or a restart, gets it again.
+    memory = "Summary:\nautre chose";
+    front.restart();
+    await ask();
+    expect(claude.started[1]!.written[0]).toStartWith(
+      "Memory:\nSummary:\nautre chose\n\nState:\n",
+    );
+    // No memory: the first request is as before.
+    const empty = new VoiceFront(claude.spawn, () => "");
+    await empty.turn({ current: "", said: "Salut", sessions, context: "" });
+    expect(claude.started[2]!.written[0]).toStartWith("State:\n");
+  });
+
+  test("a broken memory never breaks a turn", async () => {
+    const claude = fakeClaude(() => '{"to": "self", "reply": "Oui."}');
+    const front = new VoiceFront(claude.spawn, () => {
+      throw new Error("broken");
+    });
+    expect(
+      await front.turn({ current: "", said: "Salut", sessions, context: "" }),
+    ).toEqual({ to: "self", reply: "Oui." });
   });
 
   test("an event is told, or not", async () => {
@@ -626,5 +694,214 @@ describe("VoiceFront", () => {
     expect(get()).toBe(first);
     model = "haiku";
     expect(get()).not.toBe(first);
+  });
+});
+
+describe("the front's words said before its answer is over", () => {
+  test("earlyReply takes to and reply once both are whole", () => {
+    expect(earlyReply('{"to": "self", "reply": "Oui, je')).toBeNull();
+    expect(earlyReply('{"to": "self", "reply": "Oui, je t\'entends."')).toEqual(
+      { to: "self", reply: "Oui, je t'entends." },
+    );
+    // Escapes read as JSON.
+    expect(
+      earlyReply('{"to": "send", "reply": "Je dis \\"go\\" à gst2.", "pa'),
+    ).toEqual({ to: "send", reply: 'Je dis "go" à gst2.' });
+    // "to" still being written, or a route whose words may change.
+    expect(earlyReply('{"reply": "Ok.", "to": "cur')).toBeNull();
+    expect(earlyReply('{"to": "errand", "reply": "Je demande."')).toBeNull();
+    expect(earlyReply('{"to": "nobody", "reply": ""')).toBeNull();
+    // A "reply" inside another string is not it.
+    expect(
+      earlyReply(
+        '{"to": "current", "context": "she said \\"reply\\": \\"no\\""',
+      ),
+    ).toBeNull();
+  });
+
+  /** A session writing each answer in pieces, then its result. */
+  function streamingClaude(answer: (content: string) => string | null) {
+    const writes: string[] = [];
+    let release: (() => void) | null = null;
+    const spawn = (): ClaudeProcess => {
+      const lines: string[] = [];
+      let wake: (() => void) | null = null;
+      return {
+        write: (line) => {
+          const content = JSON.parse(line).message.content as string;
+          writes.push(content);
+          const result = answer(content);
+          if (result === null) return;
+          const cut = result.indexOf('",') + 2;
+          for (const text of [result.slice(0, cut), result.slice(cut)])
+            lines.push(
+              JSON.stringify({
+                type: "stream_event",
+                event: {
+                  type: "content_block_delta",
+                  delta: { type: "text_delta", text },
+                },
+              }),
+            );
+          wake?.();
+          // The result only once released: the words came before it.
+          void new Promise<void>((resolve) => {
+            release = resolve;
+          }).then(() => {
+            lines.push(JSON.stringify({ type: "result", result }));
+            wake?.();
+          });
+        },
+        lines: (async function* () {
+          for (;;) {
+            while (lines.length) yield lines.shift()!;
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+        })(),
+        kill: () => {},
+        exited: new Promise(() => {}),
+      };
+    };
+    return { spawn, writes, release: () => release?.() };
+  }
+
+  test("a turn's reply is heard while the rest is written", async () => {
+    const claude = streamingClaude(
+      () =>
+        '{"to": "self", "reply": "Oui, je t\'entends.", "note": "a long tail"}',
+    );
+    const front = new VoiceFront(claude.spawn);
+    const heard: { to: string; reply: string }[] = [];
+    const timing: FrontTiming = {};
+    const turn = front.turn({
+      current: "local/w2:p2",
+      said: "Tu m'entends ?",
+      sessions,
+      onReply: (early) => heard.push(early),
+      timing,
+    });
+    for (let tries = 0; tries < 50 && !heard.length; tries++)
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    expect(heard).toEqual([{ to: "self", reply: "Oui, je t'entends." }]);
+    expect(timing.totalMs).toBeUndefined();
+    claude.release();
+    expect(await turn).toEqual({ to: "self", reply: "Oui, je t'entends." });
+    expect(timing.replyMs).toBeNumber();
+    expect(timing.totalMs).toBeNumber();
+    expect(timing.waitedMs).toBe(0);
+    // Said once.
+    expect(heard).toHaveLength(1);
+  });
+
+  test("a turn never waits behind an event being told", async () => {
+    // Events are never answered; turns are.
+    const claude = fakeClaude((content) =>
+      content.includes("EVENT") || content.includes("ANSWER")
+        ? null
+        : '{"to": "self", "reply": "Je suis là."}',
+    );
+    const front = new VoiceFront(claude.spawn);
+    void front.event({
+      current: "local/w2:p2",
+      event: { text: "roamgate finished", kind: "answer", agent: "roamgate" },
+      sessions,
+      timeoutMs: 60_000,
+    });
+    const timing: FrontTiming = {};
+    expect(
+      await front.turn({
+        current: "local/w2:p2",
+        said: "T'es là ?",
+        sessions,
+        timing,
+        timeoutMs: 1000,
+      }),
+    ).toEqual({ to: "self", reply: "Je suis là." });
+    expect(timing.timedOut).not.toBe(true);
+    // Two sessions: the events' and the turns'.
+    expect(claude.started).toHaveLength(2);
+  });
+});
+
+describe("skipped words", () => {
+  test("the front's recovered words are parsed with its route", () => {
+    expect(
+      parseFrontReply(
+        '{"to": "current", "reply": "Ah, tu me demandais de lancer les tests, je m\'en occupe.", "recovered": "lance les tests"}',
+        ids,
+      ),
+    ).toEqual({
+      to: "current",
+      reply: "Ah, tu me demandais de lancer les tests, je m'en occupe.",
+      recovered: "lance les tests",
+    });
+    expect(
+      parseFrontReply('{"to": "nobody", "reply": "", "recovered": "x"}', ids),
+    ).toEqual({ to: "nobody" });
+  });
+
+  const now = 10_000_000;
+  test("only recent ones are kept, oldest first, at most five", () => {
+    const given = [
+      { text: " b ", at: now - 2000 },
+      { text: "a", at: now - 5000 },
+      { text: "old", at: now - 16 * 60_000 },
+      { text: "", at: now },
+      { text: 3, at: now },
+      null,
+      ...["c", "d", "e", "f"].map((text, at) => ({
+        text,
+        at: now - 1000 + at,
+      })),
+    ];
+    expect(skippedWords(given, now).map((each) => each.text)).toEqual([
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+    ]);
+    expect(skippedWords("nope", now)).toEqual([]);
+  });
+
+  test("the State lists them with how long ago", () => {
+    expect(skippedContext([], now)).toBe("");
+    expect(
+      skippedContext(
+        [
+          { text: "Vas-y, ça laisse passer", at: now - 125_000 },
+          { text: "lance les tests", at: now - 5000 },
+        ],
+        now,
+      ),
+    ).toBe(
+      'Taken as not for you (routed to "nobody": not answered, nothing sent), oldest first:\n- 2 min ago: "Vas-y, ça laisse passer"\n- just now: "lance les tests"',
+    );
+  });
+
+  test("a recovered sentence is one of those listed, as the user said it", () => {
+    const skipped = [
+      { text: "lance les tests", at: now - 9000 },
+      { text: "Quelle heure il est à Tokyo ?", at: now - 2000 },
+    ];
+    expect(recoveredWords("quelle heure il est à tokyo", skipped)).toBe(
+      "Quelle heure il est à Tokyo ?",
+    );
+    expect(recoveredWords("Lance les tests.", skipped)).toBe("lance les tests");
+    expect(recoveredWords("supprime tout", skipped)).toBeNull();
+    expect(recoveredWords("lance les tests", [])).toBeNull();
+    expect(recoveredWords(true, skipped)).toBeNull();
+  });
+
+  test("the front is told to take skipped words back when the user says so", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      '"recovered": those words exactly as listed',
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain("c'était pour toi");
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "Je n'ai rien laissé passer, tu peux répéter ?",
+    );
   });
 });

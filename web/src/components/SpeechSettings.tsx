@@ -264,11 +264,10 @@ export function SpeechSettings({
           >
             <option value="context">With the microphone's audio</option>
             <option value="element">As media (previous way)</option>
-            <option value="call">As a call (experimental)</option>
           </select>
           <p>
-            Cars and headsets may pause or cut replies played as media during a
-            call.
+            Calls play replies by WebRTC; this applies when a call cannot. Cars
+            and headsets may pause or cut replies played as media during a call.
           </p>
         </>
       ) : null}

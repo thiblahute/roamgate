@@ -56,6 +56,7 @@
     "audit": "bun audit --json --audit-level=high",
     "test": "bun test",
     "test:quick": "bun test --parallel=4",
+    "test:voice-live": "ROAMGATE_LIVE_VOICE=1 bun test server/src/voice/voice-call.live.test.ts --timeout 1800000",
     "typecheck": "tsc --noEmit && bun run --filter roamgate-web typecheck && bun run --filter roamgate-server typecheck",
     "typecheck:bun": "bun check -p tsconfig.json && bun check -p web/tsconfig.json && bun check -p server/tsconfig.json",
     "typecheck:quick": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json && tsc --noEmit -p server/tsconfig.json",

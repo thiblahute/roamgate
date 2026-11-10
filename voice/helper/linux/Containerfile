@@ -1,0 +1,26 @@
+# What builds the voice helper for Linux with CUDA (build.sh): the CUDA
+# toolkit, Rust, libclang for whisper-rs's bindings, CMake for whisper.cpp,
+# espeak-ng for Kokoro, and OpenSSL for the build scripts' downloads (ONNX
+# Runtime). GStreamer comes from its prebuilt bundle, whose static
+# libraries need glibc 2.38 and GCC 13's libstdc++ or newer.
+FROM docker.io/nvidia/cuda:12.6.3-devel-ubuntu24.04
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl git pkg-config cmake clang libclang-dev xz-utils \
+        libespeak-ng-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup \
+    PATH=/opt/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | CARGO_HOME=/opt/cargo sh -s -- -y --no-modify-path --profile minimal \
+        --default-toolchain 1.95.0
+
+# Cargo's downloads, the build, and what build scripts cache (ONNX Runtime)
+# go to the volume mounted on /cache. The binary finds the CUDA libraries
+# build.sh puts beside it, in lib/.
+ENV CARGO_HOME=/cache/cargo \
+    CARGO_TARGET_DIR=/cache/target \
+    XDG_CACHE_HOME=/cache/xdg \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/lib"

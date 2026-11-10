@@ -6,54 +6,90 @@ import type { VoiceEvent } from "./voiceEvents";
 
 /**
  * Voice chat's front (server voice-front.ts), on the page: what it is told
- * of Roamgate's state beyond the sessions, how long its words are waited
- * for before a canned ack says the message was heard, and its voice, which
- * speaking up stops.
+ * of Roamgate's state beyond the sessions and of what it skipped, and its
+ * voice, which speaking up stops. Only its own words are said: no canned
+ * ack while it is slow, and no "not for me" line.
  */
 
 /**
- * No word from the front by then: a canned ack says it was heard. A front
- * usually decides in 1 to 3 seconds, and its own words are the better ack:
- * a canned one sooner would come first nearly every turn.
+ * The routes whose words the page says as soon as the front has written
+ * them (routeSpeech's `onEarly`), before the route is decided: those whose
+ * words are said as written whatever comes with them. On a companion call,
+ * words starting work on a session too; elsewhere those are the turn's
+ * opening, said with its acks.
  */
-export const FRONT_SLOW_MS = 3000;
-
-/**
- * Whether the front's words are said for a route: an answer (it answered
- * itself, a switch) always; words that only say what is done with what
- * was said (passed on, asked Ranger) not once a canned ack said it was
- * heard, so a turn is acknowledged once.
- */
-export function frontReplySaid(to: string, slow: boolean): boolean {
-  return !(
-    slow &&
-    (to === "current" ||
-      to === "send" ||
-      to === "ranger" ||
-      to === "reviews" ||
-      to === "errand")
+export function earlyReplySaid(to: string, companionCall: boolean): boolean {
+  return (
+    to === "self" ||
+    to === "reset" ||
+    to === "web" ||
+    to === "tool" ||
+    to === "ranger" ||
+    to === "reviews" ||
+    (companionCall && (to === "current" || to === "send"))
   );
 }
 
 /**
- * Waits for the front's answer; past `slowMs` without it, `onSlow` runs
- * once (it says a canned ack). `slow` tells whether it did.
+ * Whether the line saying a sentence was taken as not for the agent is
+ * said (voiceNotForMe.ts): only by the router alone. With a front, words
+ * not for it get silence; the card shows them, and they stay listed for
+ * the front (skippedWords) so "c'était pour toi" brings them back.
  */
-export async function awaitFront<T>(
-  answer: Promise<T>,
-  { slowMs = FRONT_SLOW_MS, onSlow }: { slowMs?: number; onSlow: () => void },
-): Promise<{ value: T; slow: boolean }> {
-  let slow = false;
-  const timer = setTimeout(() => {
-    slow = true;
-    onSlow();
-  }, slowMs);
-  try {
-    const value = await answer;
-    return { value, slow };
-  } finally {
-    clearTimeout(timer);
-  }
+export function notForMeSpoken(fronted: boolean): boolean {
+  return !fronted;
+}
+
+/**
+ * What the user said lately that the front routed to nobody, sent with
+ * each turn (server voice-front.ts skippedWords): the front may route it
+ * after all when the user says it was for it.
+ */
+export type SkippedWords = { text: string; at: number };
+
+/** Skipped words kept, at most, and for how long. */
+export const SKIPPED_KEPT = 5;
+export const SKIPPED_MAX_AGE_MS = 15 * 60_000;
+
+/** `list` with `text` skipped now, recent ones only, oldest first. */
+export function withSkipped(
+  list: readonly SkippedWords[],
+  text: string,
+  now = Date.now(),
+): SkippedWords[] {
+  const said = text.trim();
+  const kept = list.filter((each) => now - each.at <= SKIPPED_MAX_AGE_MS);
+  return (said ? [...kept, { text: said, at: now }] : kept).slice(
+    -SKIPPED_KEPT,
+  );
+}
+
+/**
+ * `list` with words taken as not for the agent (`forAgent` false: the
+ * speaker check doubted the voice, or they sounded said to someone else),
+ * when a front listens: kept as what it routed to nobody, so "it was for
+ * you" brings them back. Never dropped unheard.
+ */
+export function withNotForAgent(
+  list: readonly SkippedWords[],
+  heard: { text: string; forAgent?: boolean },
+  fronted: boolean,
+  now = Date.now(),
+): SkippedWords[] {
+  return fronted && heard.forAgent === false
+    ? withSkipped(list, heard.text, now)
+    : [...list];
+}
+
+/** `list` without the skipped words the front routed now, and old ones. */
+export function withoutRecovered(
+  list: readonly SkippedWords[],
+  recovered: string | undefined,
+  now = Date.now(),
+): SkippedWords[] {
+  return list.filter(
+    (each) => each.text !== recovered && now - each.at <= SKIPPED_MAX_AGE_MS,
+  );
 }
 
 /**

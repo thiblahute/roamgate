@@ -687,6 +687,12 @@ export class VoiceTools {
       .map((job) => job.id);
   }
 
+  /** Stops every job and forgets them all, held calls too (the reset). */
+  forget() {
+    this.cancelAll();
+    this.jobs.clear();
+  }
+
   state(id: string): ToolJob | null {
     const job = this.jobs.get(id);
     return job ? { ...job } : null;
