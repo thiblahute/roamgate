@@ -54,8 +54,17 @@ import {
   terminalComposerDraftSaved,
 } from "../terminalComposer";
 import { terminalUploadedPathsText } from "../terminalFileDrop";
+import { messageImagePieces } from "../chatImages";
+import {
+  tooManyImagesMessage,
+  uploadedPaths,
+  uploadFailureMessage,
+  uploadInOrder,
+} from "../uploadInOrder";
+import { UploadProgressBar, useUploadProgress } from "./UploadProgressBar";
 import {
   attachmentDisplay,
+  type ComposerAttachment,
   rememberComposerAttachment,
   withoutAttachment,
 } from "../composerAttachments";
@@ -110,6 +119,9 @@ const altEnter =
 
 // Grow with the draft up to this height, then scroll inside the textarea.
 const MAX_INPUT_HEIGHT_PX = 160;
+
+/** Numbers the composers' image uploads, to show each batch in order. */
+let uploadBatches = 0;
 
 /**
  * Message input under the chat-style session history. It shares the pane's
@@ -243,6 +255,12 @@ export function AgentHistoryComposer({
   const [uploadCount, setUploadCount] = useState(() =>
     terminalComposerUploadCount(draftKey),
   );
+  // The images going up now, and those uploaded so far, in picked order.
+  const { progress: uploadProgress, start: startUploadProgress } =
+    useUploadProgress();
+  const [uploadedEarly, setUploadedEarly] = useState<
+    (ComposerAttachment & { batch: number; index: number })[]
+  >([]);
   const [composing, setComposing] = useState(false);
   const composingRef = useRef(false);
   const compositionEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -398,24 +416,57 @@ export function AgentHistoryComposer({
     if (
       files.length === 0 ||
       composingRef.current ||
-      terminalComposerSubmissionPending(draftKey) ||
-      !beginTerminalComposerUpload(draftKey)
+      terminalComposerSubmissionPending(draftKey)
     )
       return;
-    const paths: string[] = [];
+    // Said now rather than by the bridge refusing the message once sent.
+    const tooMany = tooManyImagesMessage(
+      files.length,
+      messageImagePieces(readTerminalComposerDraft(draftKey)).filter(
+        (piece) => "image" in piece,
+      ).length,
+    );
+    if (tooMany) {
+      onError(tooMany);
+      return;
+    }
+    if (!beginTerminalComposerUpload(draftKey)) return;
+    let paths: string[] = [];
     let failed = false;
+    const progress = startUploadProgress(files.length);
+    const batch = ++uploadBatches;
     try {
-      for (const file of files) {
-        if (file.type && !file.type.startsWith("image/"))
-          throw new Error("Choose an image to attach.");
-        if (!onUploadImage) throw new Error("This chat takes no images.");
-        const path = await onUploadImage(file);
-        rememberComposerAttachment(path, file);
-        paths.push(path);
+      // A few at a time; the paths keep the order the images were picked in.
+      const results = await uploadInOrder(
+        files,
+        async (file) => {
+          if (file.type && !file.type.startsWith("image/"))
+            throw new Error("it is not an image");
+          if (!onUploadImage) throw new Error("This chat takes no images.");
+          return onUploadImage(file);
+        },
+        {
+          onSettled: ({ done }, result, index) => {
+            progress.settled(done);
+            if (!("path" in result)) return;
+            const attachment = rememberComposerAttachment(
+              result.path,
+              result.file,
+            );
+            setUploadedEarly((current) =>
+              [...current, { ...attachment, batch, index }].sort(
+                (a, b) => a.batch - b.batch || a.index - b.index,
+              ),
+            );
+          },
+        },
+      );
+      paths = uploadedPaths(results);
+      const failure = uploadFailureMessage(results, "Image upload failed");
+      if (failure) {
+        failed = true;
+        onError(failure);
       }
-    } catch (error) {
-      failed = true;
-      onError(error instanceof Error ? error.message : "Image upload failed");
     } finally {
       try {
         if (paths.length) {
@@ -441,6 +492,10 @@ export function AgentHistoryComposer({
             );
         }
       } finally {
+        progress.end();
+        setUploadedEarly((current) =>
+          current.filter((each) => each.batch !== batch),
+        );
         finishTerminalComposerUpload(draftKey);
       }
     }
@@ -828,7 +883,14 @@ export function AgentHistoryComposer({
           </div>
         </div>
       ) : null}
-      {shown.attachments.length ? (
+      {uploadProgress ? (
+        <UploadProgressBar
+          className="agent-history-composer-upload"
+          done={uploadProgress.done}
+          total={uploadProgress.total}
+        />
+      ) : null}
+      {shown.attachments.length || uploadedEarly.length ? (
         <div className="agent-history-composer-attachments">
           {shown.attachments.map((attachment, index) => (
             <span key={attachment.path} title={attachment.name}>
@@ -849,6 +911,20 @@ export function AgentHistoryComposer({
               >
                 <X size={12} aria-hidden="true" />
               </button>
+            </span>
+          ))}
+          {/* Uploaded already, in the box once the others are up too. */}
+          {uploadedEarly.map((attachment) => (
+            <span
+              key={`uploading-${attachment.path}`}
+              className="is-uploading"
+              title={attachment.name}
+            >
+              {attachment.url ? (
+                <img src={attachment.url} alt={attachment.name} />
+              ) : (
+                <span>{attachment.name}</span>
+              )}
             </span>
           ))}
         </div>

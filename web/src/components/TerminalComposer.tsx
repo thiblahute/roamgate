@@ -67,6 +67,12 @@ import { isMobileLayout } from "../layoutPreferences";
 import { AgentLauncher } from "./AgentLauncher";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
 import "./TerminalComposer.css";
+import {
+  uploadedPaths,
+  uploadFailureMessage,
+  uploadInOrder,
+} from "../uploadInOrder";
+import { UploadProgressBar, useUploadProgress } from "./UploadProgressBar";
 import type { TerminalInputMode } from "../terminalInputMode";
 export type { TerminalInputMode } from "../terminalInputMode";
 
@@ -182,6 +188,8 @@ export function TerminalComposer({
   const [uploadCount, setUploadCount] = useState(() =>
     terminalComposerUploadCount(draftKey),
   );
+  const { progress: uploadProgress, start: startUploadProgress } =
+    useUploadProgress();
   const accessoriesOpen = open && accessoriesVisible;
   const warningContext = JSON.stringify([
     draftKey,
@@ -524,9 +532,16 @@ export function TerminalComposer({
       !beginTerminalComposerUpload(uploadDraftKey)
     )
       return;
-    const paths: string[] = [];
+    let paths: string[] = [];
+    const progress = startUploadProgress(files.length);
     try {
-      for (const file of files) paths.push(await upload(file));
+      // A few at a time; the paths keep the order the files were picked in.
+      const results = await uploadInOrder(files, upload, {
+        onSettled: ({ done }) => progress.settled(done),
+      });
+      paths = uploadedPaths(results);
+      const failure = uploadFailureMessage(results, "File upload failed");
+      if (failure) throw new Error(failure);
       if (mode === "composer" && composingRef.current)
         await new Promise<void>((resolve) =>
           compositionUploadsRef.current.push(resolve),
@@ -538,7 +553,7 @@ export function TerminalComposer({
       await insert(terminalUploadedPathsText(paths));
       paths.length = 0;
     } catch (error) {
-      // Keep successful earlier files when a later upload fails. Delivery
+      // Keep the files that uploaded when another one failed. Delivery
       // itself owns its fallback, so do not retry an uncertain PTY write.
       if (paths.length) {
         if (mode === "composer" && composingRef.current)
@@ -552,6 +567,7 @@ export function TerminalComposer({
       }
       onError(error instanceof Error ? error.message : "File upload failed");
     } finally {
+      progress.end();
       finishTerminalComposerUpload(uploadDraftKey);
     }
   };
@@ -965,13 +981,22 @@ export function TerminalComposer({
           >
             <SquareTerminal size={17} aria-hidden="true" />
           </button>
+          {uploadProgress ? (
+            <UploadProgressBar
+              className="terminal-composer-upload"
+              done={uploadProgress.done}
+              total={uploadProgress.total}
+            />
+          ) : null}
           <div
             className="terminal-composer-submit-actions"
             hidden={mode !== "composer"}
           >
             <span className="terminal-composer-hint" role="status">
               {uploadCount > 0
-                ? "Uploading file…"
+                ? uploadProgress
+                  ? ""
+                  : "Uploading file…"
                 : submissionPending
                   ? "Sending…"
                   : ""}

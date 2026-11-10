@@ -645,3 +645,9 @@
   color: var(--terminal-bg);
   font-weight: 600;
 }
+
+/* Uploaded while the others still go up: not in the box yet. */
+.agent-history-composer-attachments > span.is-uploading {
+  padding-right: 2px;
+  opacity: 0.7;
+}
