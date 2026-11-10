@@ -48,7 +48,7 @@ import {
   readCommitFile,
   readCommitPreview,
 } from "./git-history";
-import { readPullRequestStatus } from "./pull-request";
+import { sharedPullRequestStatus } from "./pull-request";
 import { collectIgnoredNames } from "./git-ignore";
 import { GIT_DIFF_TIMEOUT_MS } from "./file-constants";
 import { inlinePreviewMimeForPath } from "./preview";
@@ -650,7 +650,7 @@ export function createFileHandlers({
         };
       root = worktree.path;
     }
-    return readPullRequestStatus(
+    return sharedPullRequestStatus(
       { root, host: sshHost(), shQuote, runProcessWithCodeTimeout },
       params,
     );

@@ -11,6 +11,8 @@ import {
   gitlabApprovals,
   parseReviewRemote,
   readPullRequestStatus,
+  SHARED_SUMMARY_MS,
+  sharedPullRequestStatus,
 } from "./pull-request";
 
 const ok = (value: unknown) => ({
@@ -142,6 +144,16 @@ function fixture(
   };
   return {
     commands,
+    shared: (params: Record<string, unknown> = {}) =>
+      sharedPullRequestStatus(
+        {
+          root: "/repo with 'quote",
+          host: options.ssh ? "user@server" : undefined,
+          shQuote,
+          runProcessWithCodeTimeout: run,
+        },
+        params,
+      ),
     read: (params: Record<string, unknown> = {}) =>
       readPullRequestStatus(
         {
@@ -1121,5 +1133,86 @@ describe("PR/MR status", () => {
     expect(gitlabApprovals({ approved: true, approved_by: [] })).toBe(
       "Approved (provider-reported); 0 approver(s)",
     );
+  });
+});
+
+describe("shared PR/MR status", () => {
+  function sharedFixture() {
+    let head = "refs/heads/feature/card\nabc123";
+    const setup = fixture("github", {
+      ssh: true,
+      override: (command) =>
+        command.includes("'--symbolic-full-name'")
+          ? ok(`${head}\n`)
+          : undefined,
+    });
+    const lookups = () =>
+      setup.commands.filter((argv) => argv.at(-1)!.includes("'remote' '-v'"))
+        .length;
+    const heads = () =>
+      setup.commands.filter((argv) =>
+        argv.at(-1)!.includes("'--symbolic-full-name'"),
+      ).length;
+    return {
+      ...setup,
+      lookups,
+      heads,
+      moveHead: (next: string) => {
+        head = next;
+      },
+    };
+  }
+
+  test("browsers asking the same badge together share one lookup", async () => {
+    const setup = sharedFixture();
+    const [a, b] = await Promise.all([
+      setup.shared({ summary: true, workspace_id: "w1" }),
+      setup.shared({ summary: true, workspace_id: "w2" }),
+    ]);
+    expect(a.state).toBe("ready");
+    expect(b).toBe(a);
+    expect(setup.lookups()).toBe(1);
+  });
+
+  test("a badge is reused while HEAD stays, and read again once it moves", async () => {
+    const setup = sharedFixture();
+    const first = await setup.shared({ summary: true });
+    expect(await setup.shared({ summary: true })).toBe(first);
+    expect(setup.lookups()).toBe(1);
+    expect(setup.heads()).toBe(2);
+    setup.moveHead("refs/heads/feature/card\ndef456");
+    const moved = await setup.shared({ summary: true });
+    expect(moved).not.toBe(first);
+    expect(moved.state).toBe("ready");
+    expect(setup.lookups()).toBe(2);
+    // Another branch asked: never the answer of the first one.
+    const other = await setup.shared({ summary: true, branch: "other" });
+    expect(other.state).toBe("error");
+  });
+
+  test("a badge older than its reuse is read again", async () => {
+    const setup = sharedFixture();
+    const realNow = Date.now;
+    try {
+      const at = realNow();
+      Date.now = () => at;
+      await setup.shared({ summary: true });
+      Date.now = () => at + SHARED_SUMMARY_MS + 1;
+      await setup.shared({ summary: true });
+      expect(setup.lookups()).toBe(2);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  test("a card is always read afresh, and refreshes the badges", async () => {
+    const setup = sharedFixture();
+    await setup.shared({ summary: true });
+    await setup.shared({});
+    await setup.shared({});
+    expect(setup.lookups()).toBe(3);
+    // The card read dropped the badge's answer.
+    await setup.shared({ summary: true });
+    expect(setup.lookups()).toBe(4);
   });
 });
