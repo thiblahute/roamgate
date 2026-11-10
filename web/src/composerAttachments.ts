@@ -58,7 +58,10 @@ function forget(path: string) {
   }
 }
 
-export function rememberComposerAttachment(path: string, file: File) {
+export function rememberComposerAttachment(
+  path: string,
+  file: File,
+): ComposerAttachment {
   let url: string | undefined;
   try {
     url = URL.createObjectURL(file);
@@ -66,10 +69,12 @@ export function rememberComposerAttachment(path: string, file: File) {
     url = undefined;
   }
   forget(path);
-  known.set(path, { path, name: file.name || "image", url });
+  const attachment = { path, name: file.name || "image", url };
+  known.set(path, attachment);
   while (known.size > REMEMBERED_ATTACHMENTS)
     forget(known.keys().next().value!);
   keep();
+  return attachment;
 }
 
 const PLACEHOLDER = /\[Image #(\d+)\]/g;

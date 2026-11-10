@@ -1830,6 +1830,11 @@ is kept, and hints for the suggestions.
   File and image uploads in Direct paste their paths into the terminal without
   Enter; in Message they insert into the draft. If the original Direct target
   changes during an upload, its paths stay in that pane's draft with a warning.
+  Several files (or a chat's images) upload three at a time, keep the order
+  they were picked in, and show "Uploading 3/8" over a thin bar; a chat shows
+  each image's thumbnail once it is up. A file that fails is named in the
+  error and the others are kept. A chat message takes at most 20 images, said
+  as soon as more are picked.
   Message is the agent chats' message box with Vim keys while **Vim keys**
   is on (on unless turned off): insert mode first, an
   **Esc** button for the phone keyboard's missing key, `:w` sends; Insert,
