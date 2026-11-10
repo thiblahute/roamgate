@@ -16,7 +16,7 @@ gst-audio = { package = "gstreamer-audio", git = "https://gitlab.freedesktop.org
 gst-app = { package = "gstreamer-app", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
 # The call's process tap source (processtap.rs) is a PushSrc.
 gst-base = { package = "gstreamer-base", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
-gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
+gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 # audiornnoise: RNNoise's denoiser, and its voice activity verdict.
 gst-plugin-audiofx = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 gst-plugin-kokoro = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
@@ -24,8 +24,19 @@ gst-plugin-kokoro = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugi
 gst-plugin-parakeet = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
 # speechgate: lets through only speech, and ends each utterance.
 gst-plugin-speechgate = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
-# anyttssynthesizer: any-tts's models (Qwen3-TTS...), on Metal on macOS.
+# anyttssynthesizer: any-tts's models (Qwen3-TTS...).
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static"] }
+# webrtcsink and webrtcsrc (call.rs): a call's audio is a WebRTC call with
+# the page, signalled with GStreamer's WebRTC signalling protocol. None of
+# the other signallers (Janus, WHIP, WHEP, AWS, LiveKit...) is built.
+gst-plugin-webrtc = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", default-features = false, features = ["static", "rustls-ring"] }
+# The libraries webrtcsink and webrtcsrc use, from the prebuilt bundle.
+gst-webrtc = { package = "gstreamer-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-sdp = { package = "gstreamer-sdp", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-rtp = { package = "gstreamer-rtp", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-pbutils = { package = "gstreamer-pbutils", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-video = { package = "gstreamer-video", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
+gst-net = { package = "gstreamer-net", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
 # Cloning voices for Qwen3-TTS (clone.rs): its speaker encoder, and its
 # speech tokenizer's encoder (Mimi), the versions any-tts uses.
 candle-core = "0.10.2"
@@ -60,7 +71,37 @@ include = [
     "audiomixer",
     "audiotestsrc",
     "volume",
+    # A call's WebRTC (webrtcsink, webrtcsrc): webrtcbin, ICE (libnice),
+    # DTLS, SRTP, RTP sessions and Opus payloading.
+    "webrtc",
+    "nice",
+    "dtls",
+    "srtp",
+    "rtpmanager",
+    "rtp",
+    # errorignore, in webrtcsink's codec discovery.
+    "debugutilsbad",
+    # rawaudioparse: a call_background reading raw audio from a file or a
+    # FIFO, such as a sound server's recording of a music player.
+    "rawparse",
+    # webrtcdsp and webrtcechoprobe (echo.rs): a call's microphone has the
+    # replies' echo taken out here when the page plays them on a phone's
+    # loudspeaker without its own echo canceller.
+    "webrtcdsp",
 ]
+
+# The prebuilt bundles: GStreamer 1.28.8, the one the helper is built and
+# tested with (the locked gstreamer-sys names 1.28.7). On macOS, the
+# official package; on Linux (x86-64), the bundle gstreamer-sys's prebuilt
+# support names, as GStreamer publishes none for Linux. Read by
+# system-deps, this package's metadata overriding its dependencies'.
+[package.metadata.system-deps.gstreamer_1_0.'cfg(target_os = "macos")']
+url = "https://gstreamer.freedesktop.org/data/pkg/macos/1.28.8/gstreamer-1.0-devel-1.28.8-universal.pkg"
+checksum = "e6d380bc17be7eccf13e0154567d4718fc9321da822408c7ca0cd808b3d4a3f7"
+
+[package.metadata.system-deps.gstreamer_1_0.'cfg(target_os = "linux")']
+url = "https://people.freedesktop.org/~tsaunier/gstreamer/pkg/linux/1.28.8/gstreamer-1.0-linux-x86_64-1.28.8.tar.xz"
+checksum = "b6f5a061950541f419e1cccc3559e2154779140d8d051a4cfad395481fc081cd"
 
 # gstreamer-rs's prebuilt bundle support, until it is merged:
 # https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
@@ -75,15 +116,40 @@ gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", 
 gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
 gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
 gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+
+[target.'cfg(unix)'.dependencies]
+# A call's ICE addresses (call.rs): getifaddrs.
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # osxprocesstapsrc (processtap.rs): CATapDescription and its dictionaries.
 objc2 = "0.6"
 objc2-foundation = "0.3"
+# whisper.cpp and any-tts's models on the GPU: Metal on macOS.
+gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 
-# any-tts with the Metal speedups, streaming Qwen3-TTS decoding and voice
-# cloning, until they are merged upstream.
+[target.'cfg(target_os = "linux")'.dependencies]
+# CUDA on Linux, built with the CUDA toolkit (linux/build.sh), its
+# libraries found next to the binary at run time.
+gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
+gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
+
+# any-tts with the Metal and CUDA speedups, streaming Qwen3-TTS decoding
+# and voice cloning, until they are merged upstream.
 [patch.crates-io]
 any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }
 

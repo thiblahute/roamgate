@@ -11,12 +11,15 @@ import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
 import { setVoiceFronting, voiceFronting } from "./voiceFrontFlag";
+import { noteCompanionEpoch } from "./companionMemory";
 import {
-  activeCallAudio,
-  CallAudio,
+  activeCall,
+  activeMicrophoneConstraints,
+  type CallOptions,
   isQueuedSpeech,
   type QueuedSpeech,
-} from "./callAudio";
+  WebRtcCall,
+} from "./webrtcCall";
 import { VoiceChannel } from "./voiceChannel";
 import {
   guardPlayback,
@@ -30,10 +33,10 @@ import {
 import {
   holdVoiceContext,
   playInContext,
-  routeThroughCall,
   tapsLoaded,
   voiceContext,
   voiceContextHeld,
+  voiceOutputLatency,
   voiceOutputMode,
 } from "./voiceOutput";
 
@@ -68,6 +71,8 @@ export type VoiceAvailability = {
    * tells them ("companion") or has them read whole ("relay").
    */
   front_mode?: "companion" | "relay";
+  /** Bumped by each reset of the companion's memory. */
+  companion_epoch?: number;
   /**
    * Whether each reply is read by one of the voices at random; absent
    * without a voice library.
@@ -133,6 +138,19 @@ export function voiceTrace(line: string) {
   }).catch(() => {});
 }
 
+/**
+ * A turn's times on the page, for the server's log (debug): from the
+ * route asked to its first words heard (`how`: the front's words written
+ * early, its reply, a canned ack, or only routed), always sent.
+ */
+export function voiceTiming(fields: Record<string, string | number>) {
+  void fetch("/api/voice/timing", {
+    method: "POST",
+    headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify(fields),
+  }).catch(() => {});
+}
+
 export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
   try {
     const response = await fetch("/api/voice");
@@ -150,6 +168,7 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
       setMaxPause(availability.max_pause_ms);
     routing = availability.route === true;
     setVoiceFronting(availability.front === true);
+    noteCompanionEpoch(availability.companion_epoch);
     if (
       availability.front_mode === "companion" ||
       availability.front_mode === "relay"
@@ -319,10 +338,11 @@ type Live = {
 const PARK_MS = 10_000;
 
 /**
- * The voice socket of a voice chat: the microphone streams to the voice
- * helper, which says when speech starts and what was said. Its socket
- * comes back by itself after a network change (voiceChannel.ts), the
- * session going on; and a listening in progress can be parked when the
+ * The voice socket of a voice chat: the voice helper says when speech
+ * starts and what was said. In a call (webrtcCall.ts) the microphone goes
+ * to the helper by WebRTC; without one, it streams on the socket. Its
+ * socket comes back by itself after a network change (voiceChannel.ts),
+ * the session going on; and a listening in progress can be parked when the
  * chat showing it is rebuilt (a reconnect of the page's own connection
  * does it) and adopted by the one built next, the microphone never
  * stopping (parkVoiceLink).
@@ -344,44 +364,66 @@ export class VoiceLink {
   /** The socket came back after it was lost. */
   onReconnected: ((resumed: boolean) => void) | null = null;
 
-  /** The call's stream (callAudio.ts), when the server mixes one. */
-  private callAudio: Promise<CallAudio | null> | null = null;
+  /** The WebRTC call (webrtcCall.ts), when the server makes one. */
+  private call: Promise<WebRtcCall | null> | null = null;
+  /** Whether that call is made (or failed) already. */
+  private callSettled = false;
 
   private constructor(private readonly channel: VoiceChannel) {}
 
   /**
-   * In a call, asks for its audio as one stream (the replies mixed with
-   * voice.json's `call_background`); without one, replies play as before.
+   * In a voice chat, a WebRTC call: the replies (mixed with voice.json's
+   * `call_background`) come from it, and the microphone goes by it. Without
+   * one, replies play as before and the microphone streams on the socket.
    */
-  private startCallAudio() {
-    if (!voiceContextHeld() || voiceOutputMode() !== "context") return;
-    const context = voiceContext();
-    // A chat rebuilt: the call's stream goes on on this new link.
-    const going = activeCallAudio();
-    this.callAudio = (
+  private startCall(options: CallOptions) {
+    if (!voiceContextHeld()) return;
+    // A chat rebuilt: the call goes on, controlled from this new link.
+    const going = activeCall();
+    this.call = (
       going
-        ? going
-            .adopt(this.channel, context)
-            .then((moved) => (moved ? going : null))
+        ? going.adopt(this.channel).then((moved) => (moved ? going : null))
         : Promise.resolve(null)
     )
       .then(
-        (moved) => moved ?? CallAudio.start(this.channel, context, voiceTrace),
+        (moved) =>
+          moved ??
+          WebRtcCall.start(this.channel, {
+            trace: voiceTrace,
+            outputLatency: voiceOutputLatency,
+            ...options,
+          }),
       )
       .catch((error) => {
-        voiceTrace(`call audio failed: ${error}`);
+        voiceTrace(`call failed: ${error}`);
         return null;
       });
+    this.callSettled = false;
+    const call = this.call;
+    void call.then(() => {
+      if (this.call === call) this.callSettled = true;
+    });
   }
 
-  /** Let go: stopped unless a rebuilt chat's link takes it (adopt). */
-  private stopCallAudio() {
-    const audio = this.callAudio;
-    this.callAudio = null;
-    void audio?.then((started) => started?.release(this.channel));
+  /**
+   * Let go: stopped unless a rebuilt chat's link takes it (adopt). `done`
+   * once it stopped (its end sent on this link's socket) or moved.
+   */
+  private stopCall(done: () => void) {
+    const call = this.call;
+    this.call = null;
+    if (!call) return done();
+    void call.then((started) =>
+      started ? started.release(this.channel, done) : done(),
+    );
   }
 
-  static async open(): Promise<VoiceLink> {
+  /** Opens a voice chat's link; `call` stands in for WebRTC in tests. */
+  static async open({
+    call = {},
+  }: {
+    call?: CallOptions;
+  } = {}): Promise<VoiceLink> {
     const url = new URL("/api/voice/ws", location.href);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const holder: { link: VoiceLink | null } = { link: null };
@@ -391,7 +433,7 @@ export class VoiceLink {
       trace: voiceTrace,
     });
     holder.link = new VoiceLink(channel);
-    holder.link.startCallAudio();
+    holder.link.startCall(call);
     return holder.link;
   }
 
@@ -403,8 +445,9 @@ export class VoiceLink {
   close() {
     // Parked: whoever adopts it closes it.
     if (this.parked) return;
-    this.stopCallAudio();
-    this.channel.close();
+    // The socket closes once the call let go is over (its end reaching the
+    // server) or taken by a rebuilt chat's link.
+    this.stopCall(() => this.channel.close());
   }
 
   /**
@@ -443,9 +486,8 @@ export class VoiceLink {
   /** Stops a parked listening nobody took, and the socket. */
   dispose() {
     this.parked = false;
-    this.stopCallAudio();
     this.live?.stop();
-    this.channel.close();
+    this.stopCall(() => this.channel.close());
   }
 
   /** `live`'s result for a new owner, ended by `signal` and `finish`. */
@@ -537,13 +579,32 @@ export class VoiceLink {
       this.channel.send({ op: "stop" });
       resolveStopped?.();
     };
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    // In a call carrying the microphone, it goes by WebRTC: here only its
+    // level is shown, and nothing goes on the socket.
+    // A call still being made is not waited for (its answer took 3.4 s
+    // once): the user may be talking already, and this listening goes on
+    // the socket; the next ones take the call.
+    if (this.call && !this.callSettled)
+      voiceTrace("listening on the socket while the call starts");
+    const started = this.callSettled ? await this.call : null;
+    const call = started?.carriesMicrophone() ? started : null;
+    if (started && !call)
+      started.traceFallback(
+        "listening on the socket: the call carries no microphone",
+      );
+    // In a call, its microphone is open already, its echo canceller and
+    // gain settled: the socket's audio comes from it too. A capture opened
+    // for each listening starts late and unsettled, its first words lost.
+    // A call over, or whose capture went, has nothing left to hear: a
+    // capture of its own then.
+    const callMicrophone = started?.liveMicrophone() ?? null;
+    const stream =
+      callMicrophone ??
+      // In a call, as the call's own: in its loudspeaker mode, an echo
+      // canceller here would put the phone on its earpiece.
+      (await navigator.mediaDevices.getUserMedia({
+        audio: activeMicrophoneConstraints(),
+      }));
     // The call's context: the replies play through it too (voiceOutput.ts).
     const context = voiceContext();
     if (!this.routeTraced) {
@@ -608,6 +669,20 @@ export class VoiceLink {
             return;
           }
           if (session === null || event.session !== session) return;
+          if (event.event === "stalled") {
+            // The call's microphone stopped coming. Without its leg, the
+            // utterance ends with what was heard, and the next listening
+            // goes on the socket; with it, it may come back (the server
+            // ends the utterance if it does not).
+            const going = call?.carriesMicrophone() === true;
+            call?.traceFallback(
+              going
+                ? "the microphone stopped coming: waiting for it"
+                : "the microphone stopped coming, its leg is down: the utterance ends",
+            );
+            if (!going) this.channel.send({ op: "finish" });
+            return;
+          }
           if (event.event === "speech_start") {
             heard = true;
             this.onAnySpeech?.();
@@ -643,10 +718,12 @@ export class VoiceLink {
             ((block.length / context.sampleRate) * 1000) / LEVEL_SMOOTHING_MS,
           );
           level += (Math.sqrt(sum / block.length) - level) * weight;
-          for (const sample of downsampler.push(block)) chunk.push(sample);
-          if (chunk.length >= chunkSamples) {
-            this.channel.audio(Int16Array.from(chunk));
-            chunk = [];
+          if (!call) {
+            for (const sample of downsampler.push(block)) chunk.push(sample);
+            if (chunk.length >= chunkSamples) {
+              this.channel.audio(Int16Array.from(chunk));
+              chunk = [];
+            }
           }
           if (held && !holds()) {
             held = false;
@@ -654,6 +731,9 @@ export class VoiceLink {
           }
         };
       });
+      call?.listening(true);
+      if (call)
+        voiceTrace(`listening to the call's microphone (call ${call.id})`);
       this.channel.send({
         op: "listen",
         new_speaker: !this.listened,
@@ -661,6 +741,7 @@ export class VoiceLink {
         end_silence_ms: END_SILENCE_MS,
         ...(language ? { language } : {}),
         ...(conversation !== undefined ? { context: conversation } : {}),
+        ...(call ? { call: call.id } : {}),
       });
       this.listened = true;
       // The level is for the eye: once a frame is plenty.
@@ -679,7 +760,11 @@ export class VoiceLink {
       }
     } finally {
       (unlisten as (() => void) | null)?.();
-      for (const track of stream.getTracks()) track.stop();
+      // The call's microphone stays open for the call; only its sending
+      // stops.
+      if (call) call.listening(false);
+      if (stream !== callMicrophone)
+        for (const track of stream.getTracks()) track.stop();
       for (const node of nodes) node.disconnect();
     }
   }
@@ -1060,27 +1145,32 @@ export function inCallOrder<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** When each queued sentence's answer came (performance.now()). */
+const answered = new WeakMap<QueuedSpeech, number>();
+
 export async function fetchSpeech(
   text: string,
   signal: AbortSignal,
   options: { language?: string; reading?: string } = {},
 ): Promise<Speech> {
-  // In a call with its audio as one stream, the sentence goes into the mix,
-  // in reading order.
-  if (activeCallAudio())
+  // In a call whose replies are heard, the sentence goes into its mix, in
+  // reading order; otherwise it plays here, as without a call.
+  const call = activeCall();
+  if (call?.carriesReplies())
     return inCallOrder(() => {
       signal.throwIfAborted();
-      return fetchOneSpeech(text, signal, options);
+      return fetchOneSpeech(text, signal, options, call);
     });
-  return fetchOneSpeech(text, signal, options);
+  call?.traceFallback("a reply plays here: the call carries no replies");
+  return fetchOneSpeech(text, signal, options, null);
 }
 
 async function fetchOneSpeech(
   text: string,
   signal: AbortSignal,
   { language, reading }: { language?: string; reading?: string },
+  call: WebRtcCall | null,
 ): Promise<Speech> {
-  const call = activeCallAudio();
   const response = await fetch("/api/voice/speak", {
     method: "POST",
     headers: { ...VOICE_HEADERS, "content-type": "application/json" },
@@ -1102,17 +1192,13 @@ async function fetchOneSpeech(
   if (response.headers.get("content-type")?.includes("application/json")) {
     const queued: unknown = await response.json();
     if (!isQueuedSpeech(queued)) throw new Error("No speech came");
+    const at = performance.now();
+    answered.set(queued, at);
     // Stopped before it played: what the mix still had of it goes.
     signal.addEventListener(
       "abort",
       () => {
-        const playing = activeCallAudio();
-        const now = playing?.positionMs() ?? null;
-        if (
-          playing &&
-          (now === null || now < queued.start_ms + queued.duration_ms)
-        )
-          playing.hush();
+        if (call && !call.over(queued, at)) call.hush();
       },
       { once: true },
     );
@@ -1149,10 +1235,11 @@ export const HOLDER_RESUME_MS = 1500;
 /**
  * The voice call's media session and output until `signal` aborts.
  *
- * Replies play through the call's AudioContext (the "context" default, at
- * any speed: the server makes the speech at the reading speed): no media
- * element plays, so Android's audio focus and the car see nothing to pause,
- * and nothing else of the page's competes with it.
+ * Replies come from the WebRTC call (webrtcCall.ts); without one, they play
+ * through the call's AudioContext (the "context" default, at any speed:
+ * the server makes the speech at the reading speed): no media element
+ * plays, so Android's audio focus and the car see nothing to pause, and
+ * nothing else of the page's competes with it.
  *
  * Only with replies "As media" (voiceOutput.ts "element"), a silent loop
  * holds the audio focus between replies, pausing other apps' audio (music,
@@ -1175,7 +1262,7 @@ export function holdAudioFocus(signal: AbortSignal): void {
   // The media controls (the car's, a headset's, the lock screen's) reach
   // the page through these: without them Chrome pauses the page's media
   // itself, and a pause from them looks like any other.
-  // Played through the call's context ("context", "call"), nothing is
+  // Played by the WebRTC call or through the call's context, nothing is
   // media for them to pause: each is told and left. As elements, a pause
   // from them is honoured until play.
   const told = (action: string) => () =>
@@ -1328,8 +1415,13 @@ export type Speech = Blob | QueuedSpeech;
 function play(audio: Speech, signal: AbortSignal): Promise<void> {
   if (!(audio instanceof Blob)) {
     setVoiceReader(readers.get(audio) ?? null);
-    const call = activeCallAudio();
-    if (call && call.id === audio.call) return call.playQueued(audio, signal);
+    const call = activeCall();
+    if (call && call.id === audio.call)
+      return call.playQueued(
+        audio,
+        answered.get(audio) ?? performance.now(),
+        signal,
+      );
     // Its call is over: nothing left of it to hear.
     return Promise.resolve();
   }
@@ -1345,14 +1437,10 @@ function play(audio: Speech, signal: AbortSignal): Promise<void> {
       throw new Error("The speech could not be played");
     });
   }
-  return playElement(audio, signal, mode);
+  return playElement(audio, signal);
 }
 
-function playElement(
-  audio: Blob,
-  signal: AbortSignal,
-  mode: ReturnType<typeof voiceOutputMode>,
-): Promise<void> {
+function playElement(audio: Blob, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     // Stopped while it downloaded: an abort listener added now never runs.
     if (signal.aborted) return resolve();
@@ -1377,7 +1465,6 @@ function playElement(
       if (finished) return;
       finished = true;
       guard.release();
-      callRoute?.release();
       signal.removeEventListener("abort", stop);
       playing.delete(player);
       player.pause();
@@ -1389,8 +1476,6 @@ function playElement(
       trace: voiceTrace,
       onGiveUp: () => done(),
     });
-    // Through the call's call to itself (voiceOutput.ts).
-    const callRoute = mode === "call" ? routeThroughCall(player) : null;
     const stop = () => done();
     signal.addEventListener("abort", stop, { once: true });
     player.onended = done;
@@ -1399,14 +1484,11 @@ function playElement(
       done();
       reject(new Error("The speech could not be played"));
     };
-    void (callRoute?.ready ?? Promise.resolve()).then(() => {
-      if (finished) return;
-      noteOwnPlay(player);
-      player.play().catch((error) => {
-        voiceTrace(`play refused: ${error}`);
-        done();
-        reject(error);
-      });
+    noteOwnPlay(player);
+    player.play().catch((error) => {
+      voiceTrace(`play refused: ${error}`);
+      done();
+      reject(error);
     });
   });
 }

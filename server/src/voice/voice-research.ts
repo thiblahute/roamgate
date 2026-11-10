@@ -406,6 +406,12 @@ export class VoiceResearch {
       .map((job) => job.id);
   }
 
+  /** Stops every job and forgets them all (the companion's reset). */
+  forget() {
+    this.cancelAll();
+    this.jobs.clear();
+  }
+
   state(id: string): ResearchJob | null {
     const job = this.jobs.get(id);
     return job ? { ...job } : null;

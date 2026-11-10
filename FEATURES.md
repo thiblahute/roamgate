@@ -414,9 +414,20 @@ Inspector state is scoped to each checkout; see
   listens. It keeps listening through silence,
   waits while the agent asks something on screen, and reconnects on its
   own; when the voice helper on the Mac restarts, what was being said is
-  sent and it listens again, the call going on. Only one thing reads aloud at a time. Replies play with the
-  microphone's audio; with replies played as media (Speech settings),
-  other apps' music or podcasts on a phone pause while voice chat is on.
+  sent and it listens again, the call going on. Only one thing reads aloud at a time. Voice chat is a WebRTC call
+  with the Mac, and the microphone is only sent while it listens. With a
+  headset, or in a car, the phone treats it as a phone call (its echo
+  cancellation takes the replies out of what the microphone hears); a phone
+  without one plays the replies on its loudspeaker, and the Mac takes
+  their echo out. On an Android phone, a button by hang-up shows where the
+  call plays (loudspeaker, earpiece, a headset) and moves it to the next;
+  the replies come at broadcast loudness so the loudspeaker is loud enough
+  ([setup](docs/DEPLOYMENT.md#voice-calls)). On Tailscale, the call's audio needs `call_ice_address`
+  ([setup](docs/DEPLOYMENT.md#voice-calls)). Where the call cannot be
+  made, or does not connect (a note then says so), replies play with the
+  microphone's audio; with replies played as
+  media (Speech settings), other apps' music or podcasts on a phone pause
+  while voice chat is on.
   Its mute button, on the call bar, stops listening without
   ending it: replies are still read, and what was being said when it was
   pressed is sent, as a tap would.
@@ -528,10 +539,26 @@ Inspector state is scoped to each checkout; see
   then answers in writing as it would on a call (an answer, a web search,
   its tools, work started on a session, Ranger), and nothing is read
   aloud. With no agent session open, it still answers; work then needs a
-  session named. Between turns it
+  session named. The companion remembers across calls: when you come back
+  (a new call, or later, after a restart or a move to the other host) it
+  knows what was said, the work it started and how it went, and what is
+  still open, from a summary written when the call ends. It also keeps
+  long-term memories that last across calls, in
+  `~/.config/roamgate/companion-memories` (a `MEMORY.md` index and one fact
+  per Markdown file): who people are,
+  how you want things done, projects, decisions. Ask it what it remembers,
+  tell it to forget one thing, or open **Memories** in its panel to read
+  and delete them. Say "repars de zéro" or "start over" to it, or use
+  **Start over** in its conversation, and it forgets the conversation and
+  the summary only: memories stay, gone one at a time only when you ask.
+  Between turns it
   tells you what happened elsewhere when it is worth it (a session done or
   waiting for input, a Ranger task run), never over you. Speaking up stops
-  it. When it is slow, the usual "Got it, on it." says it heard you. While
+  it. Only its own words are said: no canned "Got it, on it." while it is
+  slow, and silence for what it takes as not for it (talk in the room),
+  which the card still shows. Say "c'était pour toi" or "you didn't
+  answer me" and it takes back the last thing it skipped and handles it
+  ("Ah, tu me demandais de ..., je m'en occupe."). While
   it or the router decides, the call bar says "Choosing who it's for".
   Voice chat follows you between workspaces (sidebar, Find workspace,
   shortcuts, the phone's switcher): the workspace you go to shows its agent's

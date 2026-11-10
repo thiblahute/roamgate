@@ -151,6 +151,48 @@ describe("voice channel", () => {
     expect(channel.closed).not.toBeNull();
   });
 
+  test("only a call the page took is resumed on a new socket", async () => {
+    jest.useFakeTimers();
+    const { channel, sockets } = await opened();
+    // A call answered too late, given up by the page: not resumed.
+    sockets[0]!.tell({ event: "call_audio", call: 4, resume: "late" });
+    sockets[0]!.drop();
+    jest.advanceTimersByTime(0);
+    await flush();
+    sockets[1]!.open();
+    await flush();
+    expect(sockets[1]!.json()).toEqual([]);
+    // The call taken (webrtcCall.ts): resumed, until its end is sent.
+    channel.holdCall(5, "taken");
+    sockets[1]!.drop();
+    jest.advanceTimersByTime(0);
+    await flush();
+    sockets[2]!.open();
+    await flush();
+    expect(sockets[2]!.json()).toEqual([
+      { op: "call_resume", call: 5, resume: "taken" },
+    ]);
+    // Another call's end leaves it; its own ends it.
+    channel.send({ op: "call_audio", on: false, call: 4 });
+    sockets[2]!.drop();
+    jest.advanceTimersByTime(0);
+    await flush();
+    sockets[3]!.open();
+    await flush();
+    expect(sockets[3]!.json()).toContainEqual({
+      op: "call_resume",
+      call: 5,
+      resume: "taken",
+    });
+    channel.send({ op: "call_audio", on: false, call: 5 });
+    sockets[3]!.drop();
+    jest.advanceTimersByTime(0);
+    await flush();
+    sockets[4]!.open();
+    await flush();
+    expect(sockets[4]!.json()).toEqual([]);
+  });
+
   test("a session its helper ended is not resumed", async () => {
     jest.useFakeTimers();
     const { sockets, events, reconnected } = await opened();

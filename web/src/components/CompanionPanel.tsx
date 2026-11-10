@@ -5,6 +5,7 @@ import {
   Mic,
   MicOff,
   PhoneCall,
+  RotateCcw,
   SendHorizontal,
   PhoneOff,
   Wrench,
@@ -15,8 +16,10 @@ import {
   type RefObject,
   useEffect,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
+import { resetCompanion } from "../companionMemory";
 import {
   type CompanionLogEntry,
   companionCallState,
@@ -43,6 +46,8 @@ import { subscribeVoiceFronting, voiceFronting } from "../voiceFrontFlag";
 import { companionChipText, hearingNow } from "./CompanionChip";
 import { useCompanionReading } from "./CompanionReading";
 import { type CompanionReading, isBeingSaid } from "../companionReading";
+import { CompanionMemories } from "./CompanionMemories";
+import { CallOutputButton } from "./CallOutputButton";
 import { CloseButton } from "./CloseButton";
 import { focusDialogElement } from "./dialogFocus";
 import "./CompanionPanel.css";
@@ -282,6 +287,48 @@ function CompanionComposer({
  * text too, in a call or without one; each new `ask` (its shortcut, the
  * menus, its chip outside a call) focuses its message box.
  */
+/** How long the second click may come after the first. */
+const START_OVER_CONFIRM_MS = 5000;
+
+/**
+ * Clears the companion's memory across calls and its running sessions
+ * (voice-memory.ts), after a second click.
+ */
+function StartOverButton() {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), START_OVER_CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+  return (
+    <button
+      type="button"
+      className="secondary-btn companion-panel-start-over"
+      disabled={busy}
+      title="Start over: the companion forgets this conversation; its memories stay"
+      aria-label="Start over: forget this conversation, the memories stay"
+      onClick={() => {
+        if (!confirming) return setConfirming(true);
+        setConfirming(false);
+        setBusy(true);
+        void resetCompanion().then((done) => {
+          setBusy(false);
+          if (!done)
+            store.notify({
+              kind: "error",
+              message: "The companion could not start over",
+            });
+        });
+      }}
+    >
+      <RotateCcw size={15} aria-hidden="true" />
+      {confirming ? "Forget this conversation?" : "Start over"}
+    </button>
+  );
+}
+
 export function CompanionPanel({
   onClose,
   ask = 0,
@@ -414,6 +461,9 @@ export function CompanionPanel({
               </button>
             ) : null}
             {call.open ? (
+              <CallOutputButton className="secondary-btn" withLabel />
+            ) : null}
+            {call.open ? (
               <button
                 type="button"
                 className="secondary-btn companion-panel-hang-up"
@@ -430,10 +480,12 @@ export function CompanionPanel({
                 <PhoneCall size={15} aria-hidden="true" /> Call
               </button>
             )}
+            <StartOverButton />
             <CloseButton onClick={onClose} />
           </div>
         </div>
         <div className="companion-panel-body">
+          <CompanionMemories />
           <ol
             ref={follow.ref}
             className="companion-panel-log"

@@ -1567,9 +1567,10 @@ The bridge runs the voice helper (`voice/helper`) as a child process and
 talks to it in frames (`voice/helper/src/frames.rs`,
 `server/src/voice/voice-helper.ts`): a little-endian u32 length, a kind
 byte (0 for JSON, 1 for a listening session's audio), then the payload,
-16 MiB at most. A length of 0 or past 16 MiB, or another kind, is output
-that is not frames: the bridge logs its first 200 bytes, escaped, and
-restarts the helper at once.
+16 MiB at most. The helper keeps its stdout for frames alone; whatever it
+or a library prints goes to its stderr. A length of 0 or past 16 MiB, or
+another kind, is output that is not frames: the bridge logs its first 200
+bytes, escaped, and restarts the helper at once.
 
 Each listening session lives in one helper process. When that process
 stops, each of its sessions gets an `error` event with its `session` and
@@ -1588,8 +1589,9 @@ recordings (`speaker_reference`), heard first in a session of their own
 that is stopped at once, or else from the first 2 s of voice it hears
 after a `new_speaker` listening (or after its first listening, when it
 knows no voice yet). The helper logs which, so a voice taken from music or
-someone else shows. The listener counts the voice the gate's speaker check
-takes in, as the gate does, so it knows when a learnt voice is taken.
+someone else shows. speechgate says when it has taken a learnt voice
+(its `speechgate-speaker-taken` message): a call's music waits, silent,
+until then (below).
 
 The listener's final is Parakeet's text, except when the helper also has
 Whisper's model: a final that reads as English at least as much as in the
@@ -1609,6 +1611,120 @@ restarted and they are said again as they were. A restarted helper makes
 again the calls whose start it had answered, under their numbers; a call
 it cannot make again ends (`call_ended`), and one that was stopped
 meanwhile is stopped in it.
+
+## Voice calls
+
+A voice chat is a WebRTC call between the page and the voice helper
+(`voice/helper/src/call.rs`, `server/src/http/voice-socket.ts`,
+`web/src/webrtcCall.ts`). The voice socket (`/api/voice/ws`) controls it:
+`{"op": "call_audio", "on": true}` makes the helper start the call, one at
+a time, answered `{"event": "call_audio", "call": <id>, "resume":
+<token>, "webrtc": true}`. The token belongs to the page that owns the
+call: it moves the call to another socket (`call_resume`), and opens its
+signalling. A call answered after the page's 5 s wait is ended at once
+(`{"op": "call_audio", "on": false, "call": <id>}`, which ends that call
+only), and the voice channel moves to its new sockets only a call the
+page took. A link closing lets its call go and keeps its socket open until
+the call ends there or a rebuilt chat's link takes it, so that the end
+reaches the bridge.
+
+The helper restarting makes the call again with a new signalling server
+(`call_restarted`, with `restarts`, the count so far). The bridge closes
+the call's signalling sockets, and the page opens them again. A page whose
+socket was away meanwhile learns it from the `call_resume` answer, which
+carries `restarts` too, and opens its signalling again. A call the helper
+cannot make again ends: the bridge stops it, tells the page (`call_audio`
+with an `error`), and refuses its signalling from then on.
+
+While the listener learns a new speaker's voice from what it hears, the
+call's music waits: its level stays at 0 (its source made when on), and it
+fades in once the voice is taken. The helper tells it as `{"event":
+"call_music", "call": <id>, "waiting": true}` at the call's start and on
+each change; the bridge keeps it for the companion's state (the music is
+on but waits, not playing) and passes it to the page, whose trace says
+it. The call's `call_audio` answer and the `call_resume` answer carry
+`waiting` too, and the page keeps what the helper says from before the
+answer until the call is set up, so a change told before the page set the
+call up, or while no socket held it, is not lost.
+
+Signalling is GStreamer's WebRTC signalling protocol. The helper's
+`webrtcsink` runs the call's signalling server, on 127.0.0.1 at a port
+chosen per call; the page reaches it only through
+`/api/voice/call/signalling?call=<id>&call_token=<token>`, which the
+bridge accepts with the user's login, not from another site
+(`Sec-Fetch-Site`), and for the current call's token only, and proxies
+message by message. The parameter is not `token`, the generated login
+token's (which only page openings use). A refused signalling is answered
+403 before the upgrade, or closed 4004 when the call ended meanwhile;
+with `ROAMGATE_VOICE_DEBUG` the bridge says why. The page uses
+gstwebrtc-api.
+
+Pairing never takes a producer by position. The helper's `webrtcsink`
+registers as the producer with meta `{"call": <id>, "role": "replies"}`,
+and the page consumes only that one. The page publishes its microphone as
+a producer with meta `{"call": <id>, "role": "microphone"}` and tells its
+peer id on the voice socket (`call_microphone`, from the owning socket
+only); the helper points `webrtcsrc` at that id. A new id (the page's
+signalling socket came back) makes `webrtcsrc` again. A `listen` with
+`"call": <id>` hears the call's microphone instead of the socket's audio;
+the helper reports how much came (`audio` events, 16 kHz mono S16LE
+bytes), which times pauses and stalls on the server as the socket's audio
+does, except that a stalled call microphone keeps the session on its
+socket, which is alive: the page is told (`stalled`), ends the utterance
+when the microphone's leg is down, and the bridge ends it 20 s later
+otherwise. The listener keeps the 500 ms before a session starts, so a
+word that overtakes the `listen` request is heard.
+
+The microphone's leg comes back when the helper ends its session without
+making a new one, or reports that its microphone failed (`call_error`):
+the page publishes it again and tells its new peer id, five times within a
+minute at most, listening on the socket after that. The helper does not
+report as failures the errors its microphone pipeline posts while it is
+replaced or stopped.
+
+Media is Opus over UDP. The helper's ICE agents use the machine's IPv4
+addresses and 127.0.0.1, ports 40000 to 40999, no STUN or TURN, no TCP.
+The bridge rewrites the helper's host candidates on 127.0.0.1 to
+`call_ice_address` on their way to the page: Tailscale's userspace
+networking forwards UDP to the machine's Tailscale address to 127.0.0.1
+on the same port. A leg whose ICE connection fails, or stays disconnected
+4 s, gets a new session on the same signalling; a lost signalling socket
+is opened again, with both legs. Media lost meanwhile is not sent again.
+A signalling that never opened is tried six times (about 7 s, 15 s at
+most): the page then ends the call (`call_audio` off), says so, and the
+chat goes on without it, as with a helper that cannot make calls.
+
+Replies asked for during the call (`POST /api/voice/speak` with `call`)
+go into the mix and answer where they are in it (`start_ms`,
+`duration_ms`) and where the mix was then (`now_ms`); the page times
+their end from that, the playout's delay, the received jitter buffer, the
+output's latency (`AudioContext.outputLatency`) and a 300 ms margin, and
+only then releases the listener's hold; `call_hush` drops the voice still
+queued. At each reply's end the page traces its level as received, the
+microphone's level meanwhile and the browser's `echoReturnLoss` and
+`echoReturnLossEnhancement` (`reply heard: ...`): how much of the reply
+the echo canceller kept out of what the helper hears. In loudspeaker mode
+(`web/src/webrtcCall.ts`, `CallMode`) the page opens the microphone with
+none of the browser's processing and says `"echo": "here"` in
+`call_microphone`; the helper then puts the microphone through
+`voice/helper/src/echo.rs`: `webrtcdsp`, its far end the call's mix as it
+goes to `webrtcsink`, copied in a probe into `webrtcechoprobe`, both pushed
+on the helper's own pads with timestamps of one clock (the mix 60 ms
+ahead of when it goes out, the microphone when it comes in). The helper also
+holds the listener while the call's music is on and not silent, as during
+a reply. The page sends sentences
+into the mix only while it hears the replies' leg; otherwise, and with a
+helper or a browser that cannot make the call, each sentence plays in the
+page and the microphone streams on the voice socket, from the call's own
+microphone (already open, its echo canceller settled). Once the call is
+over, or its capture ended (a device gone), each listening opens a
+capture of its own again and closes it at its end. A listening that
+starts while the call is still being made goes on the socket at once,
+rather than waiting for the call's answer. Publishing the microphone
+again closes the producer before only after letting it go, so its
+`closed` event, which gstwebrtc-api sends at once, is not taken for the
+signalling ending it: only a close the page did not make publishes it
+again.
 
 ## Task notifications
 

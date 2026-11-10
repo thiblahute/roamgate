@@ -320,6 +320,36 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
       globalThis.fetch = originalFetch;
     }
 
+    // Start over: asks once, then forgets.
+    {
+      const originalFetch = globalThis.fetch;
+      const asked: string[] = [];
+      globalThis.fetch = (async (url: string) => {
+        asked.push(String(url));
+        return new Response(JSON.stringify({ epoch: 7 }), { status: 200 });
+      }) as typeof fetch;
+      try {
+        const startOver = () =>
+          panel.querySelector<HTMLButtonElement>(
+            ".companion-panel-start-over",
+          )!;
+        await act(async () => startOver().click());
+        expect(startOver().textContent).toContain("Forget this conversation?");
+        expect(asked).toEqual([]);
+        await act(async () => {
+          startOver().click();
+          await Promise.resolve();
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(asked).toEqual(["/api/voice/companion/reset"]);
+        expect(panel.querySelectorAll(".companion-panel-line")).toHaveLength(0);
+        expect(startOver().textContent).toContain("Start over");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+
     // Asked again while open: the box takes the focus back.
     panel.focus();
     expect(document.activeElement).toBe(panel);

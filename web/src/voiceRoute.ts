@@ -37,6 +37,8 @@ export type VoiceRoute = (
   | { to: "read"; agent?: string }
   /** Answers read whole from now on ("relay"), or told ("companion"). */
   | { to: "mode"; mode: "companion" | "relay" }
+  /** Forget everything and start over; the server has done it (voice-memory.ts). */
+  | { to: "reset" }
   /**
    * Looked up on the web in the background (server voice-research.ts):
    * `query`, followed by `job` (followResearch).
@@ -61,6 +63,12 @@ export type VoiceRoute = (
    * them, quoted (voiceMessage).
    */
   context?: string;
+  /**
+   * Words the user said earlier that went to nobody, routed now since the
+   * user said they were for the front (server recoveredWords): what is
+   * handled, in place of what was just said.
+   */
+  recovered?: string;
 };
 
 /**
@@ -79,6 +87,7 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
   "self",
   "read",
   "mode",
+  "reset",
   "web",
   "tool",
 ];
@@ -186,6 +195,17 @@ export async function routeSpeech(
   how: { interruptedAt?: string | null } | "typed" = {},
   /** On a companion call: what was heard and said on it lately. */
   recent?: string,
+  /**
+   * Hears what the front says as soon as it has written it, before the
+   * route is decided (the server's `early`): said at once, it is the
+   * turn's first answer.
+   */
+  onEarly?: (early: EarlyReply) => void,
+  /**
+   * With a front: what the user said lately that it routed to nobody,
+   * for it to route after all when they say it was for it.
+   */
+  skipped?: readonly { text: string; at: number }[],
 ): Promise<VoiceRoute> {
   try {
     const response = await fetch("/api/voice/route", {
@@ -198,6 +218,8 @@ export async function routeSpeech(
         routes: KNOWN_ROUTES,
         ...(context ? { context } : {}),
         ...(recent ? { recent } : {}),
+        ...(skipped?.length ? { skipped } : {}),
+        ...(onEarly ? { stream: true } : {}),
         ...(how === "typed"
           ? { typed: true }
           : how.interruptedAt
@@ -206,11 +228,65 @@ export async function routeSpeech(
       }),
     });
     if (!response.ok) return { to: "current" };
-    const route = (await response.json()) as VoiceRoute;
+    const route = (
+      onEarly &&
+      response.body &&
+      response.headers.get("content-type")?.startsWith("application/x-ndjson")
+        ? await streamedRoute(response.body, onEarly)
+        : await response.json()
+    ) as VoiceRoute;
     return KNOWN_ROUTES.includes(route?.to) ? route : { to: "current" };
   } catch {
     return { to: "current" };
   }
+}
+
+/** What the front says of a turn, written before its route is decided. */
+export type EarlyReply = { to: string; reply: string };
+
+/**
+ * A streamed route (NDJSON): `{"early": {to, reply}}` lines as they come,
+ * told to `onEarly`, then the route itself, last.
+ */
+export async function streamedRoute(
+  body: ReadableStream<Uint8Array>,
+  onEarly: (early: EarlyReply) => void,
+): Promise<unknown> {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  let last: unknown = null;
+  const take = (line: string) => {
+    if (!line.trim()) return;
+    const value = JSON.parse(line) as { early?: unknown };
+    const early = value?.early as Partial<EarlyReply> | undefined;
+    if (
+      early &&
+      typeof early.to === "string" &&
+      typeof early.reply === "string"
+    ) {
+      try {
+        onEarly({ to: early.to, reply: early.reply });
+      } catch {
+        // Its listener's trouble: the route still comes.
+      }
+      return;
+    }
+    last = value;
+  };
+  const reader = body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) buffered += decoder.decode(value, { stream: true });
+    let newline = buffered.indexOf("\n");
+    while (newline >= 0) {
+      take(buffered.slice(0, newline));
+      buffered = buffered.slice(newline + 1);
+      newline = buffered.indexOf("\n");
+    }
+    if (done) break;
+  }
+  take(buffered);
+  return last;
 }
 
 /**

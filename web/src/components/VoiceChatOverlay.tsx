@@ -9,6 +9,7 @@ import {
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { AgentIcon } from "./AgentIcon";
+import { CallOutputButton } from "./CallOutputButton";
 import {
   type ActiveVoiceState,
   formatCallDuration,
@@ -216,6 +217,10 @@ export function VoiceChatOverlay({
                 {rate.label}
               </button>
             ) : null}
+            <CallOutputButton
+              className="voice-chat-overlay-call voice-chat-overlay-output"
+              onMouseDown={keepFocus}
+            />
             <button
               type="button"
               className="voice-chat-overlay-call voice-chat-overlay-hangup"

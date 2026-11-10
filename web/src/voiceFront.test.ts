@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { AssistantTask } from "../../shared/assistant";
 import type { ForgeStatus } from "../../shared/forge";
 import {
@@ -8,62 +8,58 @@ import {
   recentVoiceEvents,
 } from "./voiceEvents";
 import {
-  awaitFront,
   createFrontVoice,
+  earlyReplySaid,
   eventForFront,
-  FRONT_SLOW_MS,
-  frontReplySaid,
   frontContext,
+  notForMeSpoken,
+  SKIPPED_KEPT,
+  SKIPPED_MAX_AGE_MS,
   spokenSentences,
+  withoutRecovered,
+  withNotForAgent,
+  withSkipped,
 } from "./voiceFront";
-import { KNOWN_ROUTES, routeSpeech } from "./voiceRoute";
+import { KNOWN_ROUTES, routeSpeech, streamedRoute } from "./voiceRoute";
 
 const flush = async () => {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 };
 
-describe("awaitFront", () => {
-  test("a front that answers in time leaves the canned ack unsaid", async () => {
-    jest.useFakeTimers();
-    try {
-      let slow = 0;
-      let answer: (value: string) => void = () => {};
-      const waited = awaitFront(
-        new Promise<string>((resolve) => {
-          answer = resolve;
-        }),
-        { onSlow: () => (slow += 1) },
-      );
-      jest.advanceTimersByTime(FRONT_SLOW_MS - 100);
-      answer("current");
-      expect(await waited).toEqual({ value: "current", slow: false });
-      jest.advanceTimersByTime(5000);
-      expect(slow).toBe(0);
-    } finally {
-      jest.useRealTimers();
+describe("the front's words said first", () => {
+  test("its own words are said early; a session's work only on a call", () => {
+    for (const to of ["self", "web", "tool", "ranger", "reviews"]) {
+      expect(earlyReplySaid(to, false)).toBe(true);
+      expect(earlyReplySaid(to, true)).toBe(true);
     }
+    for (const to of ["current", "send"]) {
+      expect(earlyReplySaid(to, true)).toBe(true);
+      // Elsewhere, the turn's opening, said with its acks.
+      expect(earlyReplySaid(to, false)).toBe(false);
+    }
+    for (const to of ["errand", "nobody", "read", "mode", "open"])
+      expect(earlyReplySaid(to, true)).toBe(false);
   });
 
-  test("a slow front: the canned ack is said once, and the answer still used", async () => {
-    jest.useFakeTimers();
-    try {
-      let slow = 0;
-      let answer: (value: string) => void = () => {};
-      const waited = awaitFront(
-        new Promise<string>((resolve) => {
-          answer = resolve;
-        }),
-        { onSlow: () => (slow += 1) },
-      );
-      jest.advanceTimersByTime(FRONT_SLOW_MS);
-      expect(slow).toBe(1);
-      jest.advanceTimersByTime(3000);
-      answer("self");
-      expect(await waited).toEqual({ value: "self", slow: true });
-      expect(slow).toBe(1);
-    } finally {
-      jest.useRealTimers();
-    }
+  test("a streamed route gives its early words, then the route", async () => {
+    const encoder = new TextEncoder();
+    const parts = [
+      '{"early": {"to": "self", "reply": "Oui, je',
+      ' t\'entends."}}\n{"to": "self", ',
+      '"reply": "Oui, je t\'entends."}\n',
+    ];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(encoder.encode(part));
+        controller.close();
+      },
+    });
+    const early: unknown[] = [];
+    expect(await streamedRoute(body, (said) => early.push(said))).toEqual({
+      to: "self",
+      reply: "Oui, je t'entends.",
+    });
+    expect(early).toEqual([{ to: "self", reply: "Oui, je t'entends." }]);
   });
 });
 
@@ -364,6 +360,26 @@ describe("routeSpeech", () => {
       routes: [...KNOWN_ROUTES],
       context: "Ranger tasks:\n- x",
     });
+    // What went to nobody lately goes with it, for the front to take back.
+    const skipped = [{ text: "lance les tests", at: 1000 }];
+    await routeSpeech(
+      "c'était pour toi",
+      "local/p1",
+      [],
+      "",
+      {},
+      undefined,
+      undefined,
+      skipped,
+    );
+    expect(bodies[1]).toEqual({
+      said: "c'était pour toi",
+      current: "local/p1",
+      sessions: [],
+      routes: [...KNOWN_ROUTES],
+      skipped,
+    });
+    bodies.splice(1, 1);
     // Without a front, no state goes: as it always did.
     await routeSpeech(said, "local/p1", []);
     expect(bodies[1]).toEqual({
@@ -375,17 +391,56 @@ describe("routeSpeech", () => {
   });
 });
 
-describe("a turn is acknowledged once", () => {
-  test("the front's words are its ack, the canned one only when it is slow", () => {
-    expect(FRONT_SLOW_MS).toBeGreaterThanOrEqual(3000);
-    for (const to of ["current", "send", "ranger", "errand"]) {
-      expect(frontReplySaid(to, false)).toBe(true);
-      // The canned ack said it already: "Je transmets" is not said again.
-      expect(frontReplySaid(to, true)).toBe(false);
-    }
-    // An answer of its own, or a switch, is said however slow.
-    expect(frontReplySaid("self", true)).toBe(true);
-    expect(frontReplySaid("open", true)).toBe(true);
-    expect(frontReplySaid("mode", true)).toBe(true);
+describe("with a front, only its own words are said", () => {
+  test("no line saying words were not for it: the router alone says it", () => {
+    expect(notForMeSpoken(true)).toBe(false);
+    expect(notForMeSpoken(false)).toBe(true);
+  });
+
+  test("words the speaker check doubted are kept for the front, never lost", () => {
+    // "Taken as not for you": the front gets them, to bring back when the
+    // user says it was for it.
+    const doubted = { text: "Et puis je disais ça.", forAgent: false };
+    expect(withNotForAgent([], doubted, true, 1000)).toEqual([
+      { text: "Et puis je disais ça.", at: 1000 },
+    ]);
+    // Words for the agent are not skipped; without a front, nobody to
+    // bring them back.
+    expect(
+      withNotForAgent([], { text: "Pour toi.", forAgent: true }, true, 1000),
+    ).toEqual([]);
+    expect(withNotForAgent([], doubted, false, 1000)).toEqual([]);
+  });
+
+  test("words not for it are kept for the front, recent ones only", () => {
+    let list = withSkipped([], "Vas-y, vas-y, ça laisse passer", 1000);
+    list = withSkipped(list, "  ", 2000);
+    expect(list).toEqual([
+      { text: "Vas-y, vas-y, ça laisse passer", at: 1000 },
+    ]);
+    for (let at = 0; at < SKIPPED_KEPT + 2; at += 1)
+      list = withSkipped(list, `said ${at}`, 3000 + at);
+    expect(list).toHaveLength(SKIPPED_KEPT);
+    expect(list[list.length - 1]).toEqual({
+      text: `said ${SKIPPED_KEPT + 1}`,
+      at: 3000 + SKIPPED_KEPT + 1,
+    });
+    // Older than SKIPPED_MAX_AGE_MS: forgotten.
+    const later = 3000 + SKIPPED_KEPT + 1 + SKIPPED_MAX_AGE_MS;
+    expect(withSkipped(list, "later", later)).toEqual([
+      { text: `said ${SKIPPED_KEPT + 1}`, at: 3000 + SKIPPED_KEPT + 1 },
+      { text: "later", at: later },
+    ]);
+  });
+
+  test("words the front routed after all are no longer skipped", () => {
+    const list = [
+      { text: "lance les tests", at: 1000 },
+      { text: "Vas-y, ça laisse passer", at: 2000 },
+    ];
+    expect(withoutRecovered(list, "lance les tests", 3000)).toEqual([
+      { text: "Vas-y, ça laisse passer", at: 2000 },
+    ]);
+    expect(withoutRecovered(list, undefined, 3000)).toEqual(list);
   });
 });

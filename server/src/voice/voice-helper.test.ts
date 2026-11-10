@@ -14,13 +14,16 @@ import {
   FrameReader,
   frontMode,
   MAX_FRAME,
+  helperCommand,
   helperTtsModels,
   nativeSpeechRate,
   readVoiceConfig,
+  spawnVoiceHelper,
   transcriberArgs,
   type VoiceConfig,
   VoiceHelper,
   type VoiceHelperProcess,
+  WRAPPED_EXIT_MS,
   writeFrontMode,
   writeMaxPause,
   writeSpeechRate,
@@ -627,6 +630,150 @@ describe("voice socket", () => {
   });
 });
 
+describe("helper launch", () => {
+  test("the helper's command comes after its wrapper's arguments", () => {
+    const own = [
+      "/bin/roamgate-voice",
+      "--whisper-model",
+      "whisper.bin",
+      "--kokoro-model",
+      "kokoro.onnx",
+      "--kokoro-voices",
+      "voices.bin",
+    ];
+    expect(helperCommand(CONFIG)).toEqual(own);
+    expect(helperCommand({ ...CONFIG, helper_wrapper: [] })).toEqual(own);
+    expect(
+      helperCommand({
+        ...CONFIG,
+        helper_wrapper: ["/opt/bin/gpu-lease", "--name=voice", "--"],
+      }),
+    ).toEqual(["/opt/bin/gpu-lease", "--name=voice", "--", ...own]);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "frames go through a wrapper, which ends with the helper's input",
+    async () => {
+      // The wrapper leaves out the helper's arguments and ignores the
+      // signals it is sent: cat gives each frame back, and ends only at
+      // the end of its input.
+      const child = spawnVoiceHelper({
+        ...CONFIG,
+        helper: "/bin/cat",
+        helper_wrapper: ["/bin/sh", "-c", "trap '' TERM; exec cat", "wrap"],
+      });
+      expect(child.pid).toBeUndefined();
+      child.write(json({ op: "ping", id: 1 }));
+      child.write(encodeFrame(FRAME_AUDIO, new Uint8Array([1, 2, 3, 4])));
+      const frames = child.frames[Symbol.asyncIterator]();
+      const ping = (await frames.next()).value as Frame;
+      expect(JSON.parse(new TextDecoder().decode(ping.payload))).toEqual({
+        op: "ping",
+        id: 1,
+      });
+      const audio = (await frames.next()).value as Frame;
+      expect(audio.kind).toBe(FRAME_AUDIO);
+      expect([...audio.payload]).toEqual([1, 2, 3, 4]);
+      const stopping = Date.now();
+      child.kill();
+      await child.exited;
+      expect(Date.now() - stopping).toBeLessThan(WRAPPED_EXIT_MS);
+    },
+  );
+
+  const answers = (request: Record<string, unknown>) =>
+    request.op === "speak"
+      ? [{ id: request.id, audio: "", language: "en" }]
+      : request.op === "call_start"
+        ? [{ id: request.id, signalling_port: 4242 }]
+        : [];
+  const settle = async () => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  };
+
+  test("the helper stops after helper_idle_exit_minutes with nothing to do", async () => {
+    jest.useFakeTimers();
+    const errors: string[] = [];
+    const saved = console.error;
+    console.error = (line: string) => errors.push(line);
+    try {
+      const fake = fakeHelper(answers);
+      const helper = new VoiceHelper(
+        () => ({ ...CONFIG, helper_idle_exit_minutes: 10 }),
+        fake.spawn,
+      );
+      await helper.speak("Hello.");
+      jest.advanceTimersByTime(10 * 60_000 - 1);
+      expect(fake.spawned[0]!.killed()).toBe(false);
+      // A sentence starts the count again.
+      await helper.speak("Again.");
+      jest.advanceTimersByTime(10 * 60_000 - 1);
+      expect(fake.spawned[0]!.killed()).toBe(false);
+      jest.advanceTimersByTime(1);
+      expect(fake.spawned[0]!.killed()).toBe(true);
+      expect(errors.join("\n")).toContain(
+        "nothing for the voice helper in 10 min",
+      );
+      await settle();
+      // The next request starts it again.
+      await helper.speak("Back.");
+      expect(fake.spawned).toHaveLength(2);
+    } finally {
+      console.error = saved;
+      jest.useRealTimers();
+    }
+  });
+
+  test("a call or a listening keeps the helper, however quiet", async () => {
+    jest.useFakeTimers();
+    const saved = console.error;
+    console.error = () => {};
+    try {
+      const fake = fakeHelper(answers);
+      const helper = new VoiceHelper(
+        () => ({ ...CONFIG, helper_idle_exit_minutes: 10 }),
+        fake.spawn,
+      );
+      const session = helper.listen(() => {});
+      jest.advanceTimersByTime(60 * 60_000);
+      expect(fake.spawned[0]!.killed()).toBe(false);
+      session.stop();
+      const call = await helper.startCall(
+        {
+          background: "",
+          volume: 0.6,
+          ducked: 0.15,
+          release_ms: 3000,
+          muted: true,
+          reply_loudness: -16,
+        },
+        () => {},
+      );
+      jest.advanceTimersByTime(60 * 60_000);
+      expect(fake.spawned[0]!.killed()).toBe(false);
+      call.stop();
+      jest.advanceTimersByTime(10 * 60_000);
+      expect(fake.spawned[0]!.killed()).toBe(true);
+    } finally {
+      console.error = saved;
+      jest.useRealTimers();
+    }
+  });
+
+  test("without helper_idle_exit_minutes, the helper runs until stopped", async () => {
+    jest.useFakeTimers();
+    try {
+      const fake = fakeHelper(answers);
+      const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+      await helper.speak("Hello.");
+      jest.advanceTimersByTime(24 * 60 * 60_000);
+      expect(fake.spawned[0]!.killed()).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe("voice routes", () => {
   const fake = fakeHelper((request) =>
     request.op === "speak"
@@ -775,6 +922,29 @@ describe("readVoiceConfig", () => {
     helper: join(dir, "helper"),
     whisper_model: join(dir, "whisper.bin"),
   };
+  const readable = { ...base, tts_models: [{ model: "kokoro" }] };
+
+  test("helper_wrapper is a list of arguments, a program first", () => {
+    const base = { ...readable };
+    for (const helper_wrapper of [[], ["/opt/bin/gpu-lease", "--"]])
+      expect("error" in read({ ...base, helper_wrapper })).toBe(false);
+    for (const helper_wrapper of ["/opt/bin/gpu-lease --", [1], [""]])
+      expect(read({ ...base, helper_wrapper })).toEqual({
+        error: `${file}: helper_wrapper must be a list of arguments, a program first`,
+      });
+  });
+
+  test("helper_idle_exit_minutes is a number of minutes, 0 for never", () => {
+    const base = { ...readable };
+    for (const helper_idle_exit_minutes of [0, 10, 0.5])
+      expect("error" in read({ ...base, helper_idle_exit_minutes })).toBe(
+        false,
+      );
+    for (const helper_idle_exit_minutes of [-1, "10", null])
+      expect(read({ ...base, helper_idle_exit_minutes })).toEqual({
+        error: `${file}: helper_idle_exit_minutes must be a number of minutes, 0 for never`,
+      });
+  });
 
   test("any-tts models read in place of Kokoro", () => {
     const config = read({

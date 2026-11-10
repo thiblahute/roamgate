@@ -6,6 +6,7 @@ import {
   helperCommand,
 } from "../profiles/profiles";
 import { tmpdir } from "node:os";
+import type { BackgroundMemoryLaunch } from "../conversation/drivers/types";
 import type { VoiceConfig } from "./voice-helper";
 
 /**
@@ -242,6 +243,18 @@ export function spawnClaude(
   model: string,
   command: string | AgentCommand = "claude",
   systemPrompt = CLEANER_SYSTEM_PROMPT,
+  /**
+   * The answer's text as it is written, too (Worker.ask's `onText`): the
+   * voice front's words are said before its JSON object is over.
+   */
+  {
+    partial = false,
+    launch,
+  }: {
+    partial?: boolean;
+    /** With the companion's memory (CompanionMemoryDriver): instead of a bare model. */
+    launch?: BackgroundMemoryLaunch;
+  } = {},
 ): ClaudeProcess {
   const resolved = asCommand(command);
   const child = Bun.spawn(
@@ -253,6 +266,7 @@ export function spawnClaude(
       "--output-format",
       "stream-json",
       "--verbose",
+      ...(partial ? ["--include-partial-messages"] : []),
       "--model",
       model,
       // The user waits for each answer, a short JSON object: at its default
@@ -260,16 +274,16 @@ export function spawnClaude(
       "--effort",
       "low",
       "--tools",
-      "",
+      launch?.tools ?? "",
       // No hooks, plugins, MCP servers or CLAUDE.md: a bare model.
-      "--safe-mode",
+      ...(launch ? launch.args : ["--safe-mode"]),
       "--strict-mcp-config",
       "--no-session-persistence",
       "--system-prompt",
       systemPrompt,
     ],
     {
-      cwd: tmpdir(),
+      cwd: launch?.cwd ?? tmpdir(),
       env: commandEnv(resolved, backgroundClaudeEnv()),
       stdin: "pipe",
       stdout: "pipe",
@@ -307,6 +321,9 @@ const REQUESTS_PER_PROCESS = 40;
 export class Worker {
   private process: ClaudeProcess | null = null;
   private answer: ((result: string | Error) => void) | null = null;
+  /** The answer being written (partial messages), and who hears it. */
+  private written = "";
+  private onText: ((soFar: string) => void) | null = null;
   private served = 0;
   busy = false;
   /** Counts the sessions started: a new one knows nothing said before. */
@@ -338,9 +355,28 @@ export class Worker {
         } catch {
           continue;
         }
+        if (event.type === "stream_event") {
+          const streamed = event.event as
+            | { type?: string; delta?: { type?: string; text?: unknown } }
+            | undefined;
+          if (
+            streamed?.type === "content_block_delta" &&
+            streamed.delta?.type === "text_delta" &&
+            typeof streamed.delta.text === "string"
+          ) {
+            this.written += streamed.delta.text;
+            try {
+              this.onText?.(this.written);
+            } catch {
+              // Its listener's trouble: the answer still comes.
+            }
+          }
+          continue;
+        }
         if (event.type !== "result") continue;
         const answer = this.answer;
         this.answer = null;
+        this.onText = null;
         answer?.(
           event.is_error
             ? new Error(String(event.result ?? "The cleaner failed"))
@@ -356,12 +392,18 @@ export class Worker {
     return process;
   }
 
-  async ask(prompt: string): Promise<string> {
+  /**
+   * The answer to `prompt`; `onText` hears it as it is written, whole so
+   * far, when the session streams partial messages (spawnClaude).
+   */
+  async ask(prompt: string, onText?: (soFar: string) => void): Promise<string> {
     this.busy = true;
     try {
       const process = this.start();
       const result = await new Promise<string | Error>((resolve) => {
         this.answer = resolve;
+        this.written = "";
+        this.onText = onText ?? null;
         process.write(
           `${JSON.stringify({
             type: "user",
@@ -372,6 +414,7 @@ export class Worker {
       if (result instanceof Error) throw result;
       return result;
     } finally {
+      this.onText = null;
       this.busy = false;
       this.served += 1;
       if (this.served >= REQUESTS_PER_PROCESS) {

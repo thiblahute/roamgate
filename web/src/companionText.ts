@@ -19,6 +19,7 @@ import {
   webAck,
 } from "./companionWeb";
 import { forgeStore } from "./forgeStore";
+import { forgetCompanionLocally } from "./companionMemory";
 import { setPaneView } from "./paneView";
 import { type State, store } from "./store";
 import { ackLanguage } from "./voiceAck";
@@ -204,6 +205,11 @@ export async function sendCompanionText(
     case "tool":
       say(toolAck(reply, said));
       if (route.job) void deps.followTool(route.job, route.task || said);
+      return route;
+    case "reset":
+      // Forgotten on the server already: only the last line stays.
+      forgetCompanionLocally();
+      if (reply) say(reply);
       return route;
     case "read": {
       const answer = findAnswer(route.agent);

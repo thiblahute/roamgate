@@ -10,8 +10,11 @@ import {
   createVoiceSocket,
   DETACHED_MS,
   endsWithFiller,
+  endsWithQuestion,
   KEPT_MS,
+  QUESTION_PAUSE_MS,
   SilenceCap,
+  SURE_PAUSE_MS,
   STALL_MS,
 } from "./voice-socket";
 
@@ -135,6 +138,36 @@ describe("voice socket", () => {
       },
     ]);
     expect(prompts[0]).toContain("Agent: Ready?");
+  });
+
+  test("words not surely the speaker's stay not for the agent, cleaned or not", async () => {
+    const { helper, emit } = fakeHelper();
+    const { cleaner } = fakeCleaner();
+    const socket = createVoiceSocket(helper, () => cleaner);
+    const sent: Record<string, unknown>[] = [];
+    const ws = { send: (message: string) => sent.push(JSON.parse(message)) };
+    socket.message(
+      ws,
+      JSON.stringify({ op: "listen", context: "Agent: Ready?" }),
+    );
+    // The cleaner takes it for the agent; the helper's speaker check did
+    // not take it as the speaker's voice.
+    emit({
+      event: "final",
+      session: 1,
+      text: "Et um puis je disais.",
+      speech_ms: 680,
+      for_agent: false,
+    });
+    await settle();
+    expect(sent.at(-1)).toEqual({
+      event: "final",
+      session: 1,
+      text: "Et puis je disais.",
+      raw: "Et um puis je disais.",
+      for_agent: false,
+      speech_ms: 680,
+    });
   });
 
   test("a session outlives its socket: a new one resumes it, missing nothing", () => {
@@ -444,7 +477,7 @@ describe("voice socket", () => {
       const pause = pauseIn(socket, ws);
       socket.message(ws, JSON.stringify({ op: "listen" }));
       emit({ event: "speech_start", session: 1 });
-      reading(emit, "that is all", 3500, 0.9, 0.01);
+      reading(emit, "that is all", 3500, 0.8, 0.01);
       pause(12_000 - 3500 - 40);
       expect(calls).toEqual([]);
       pause(40);
@@ -453,7 +486,7 @@ describe("voice socket", () => {
       setting = "soon";
       socket.message(ws, JSON.stringify({ op: "listen" }));
       emit({ event: "speech_start", session: 1 });
-      reading(emit, "that is all", 3500, 0.9, 0.01);
+      reading(emit, "that is all", 3500, 0.8, 0.01);
       pause(MAX_PAUSE_MS - 3500);
       expect(calls.filter((call) => call === "finish")).toHaveLength(2);
     } finally {
@@ -498,14 +531,14 @@ describe("silence cap", () => {
   test("speech in the pause starts the count again", () => {
     const cap = new SilenceCap(4000);
     cap.event({ event: "speech_start" });
-    cap.event({ event: "partial", text: "one two", pause: true, turn: 0.9 });
+    cap.event({ event: "partial", text: "one two", pause: true, turn: 0.8 });
     expect(cap.audio(3000 * 32)).toBe(false);
     // More words at the next pause: the person spoke meanwhile.
     cap.event({
       event: "partial",
       text: "one two three",
       pause: true,
-      turn: 0.9,
+      turn: 0.8,
     });
     expect(cap.audio(3000 * 32)).toBe(false);
     expect(cap.audio(500 * 32)).toBe(true);
@@ -529,6 +562,71 @@ describe("silence cap", () => {
       turn: 0.6,
     });
     expect(cap.audio(2500 * 32)).toBe(true);
+  });
+
+  test("a question asked whole ends soon, even taken for thinking", () => {
+    const cap = new SilenceCap(8000);
+    cap.event({ event: "speech_start" });
+    // A short noise in a car read as the speaker thinking.
+    cap.event({
+      event: "partial",
+      text: "Compagnon, est-ce que tu m'entends?",
+      pause: true,
+      pause_ms: 1500,
+      turn: 0.97,
+      thinking: true,
+    });
+    expect(cap.limitMs()).toBe(QUESTION_PAUSE_MS);
+    // Counted from its reading 1.5 s into the pause.
+    expect(cap.audio(500 * 32)).toBe(false);
+    expect(cap.audio(600 * 32)).toBe(true);
+    // Not in a voice that sounded unfinished.
+    const unsure = new SilenceCap(8000);
+    unsure.event({ event: "speech_start" });
+    unsure.event({
+      event: "partial",
+      text: "Comment ça s'appelle déjà?",
+      pause: true,
+      pause_ms: 1500,
+      turn: 0.2,
+    });
+    expect(unsure.limitMs()).toBe(LONGEST_PAUSE_MS);
+    expect(endsWithQuestion("tu m'entends ?")).toBe(true);
+    // A voice surely done ends soon too, the words read unfinished or a
+    // noise taken for thinking; never on a filler.
+    const sure = new SilenceCap(8000);
+    sure.event({ event: "speech_start" });
+    sure.event({
+      event: "partial",
+      text: "Ouais, vas-y.",
+      pause: true,
+      pause_ms: 1500,
+      turn: 0.98,
+      thinking: true,
+    });
+    expect(sure.limitMs()).toBe(SURE_PAUSE_MS);
+    const filler = new SilenceCap(8000);
+    filler.event({ event: "speech_start" });
+    filler.event({
+      event: "partial",
+      text: "et puis euh",
+      pause: true,
+      pause_ms: 1500,
+      turn: 0.98,
+    });
+    expect(filler.limitMs()).toBe(LONGEST_PAUSE_MS);
+    // A lower setting of its own still applies.
+    const short = new SilenceCap(2000);
+    short.event({ event: "speech_start" });
+    short.event({
+      event: "partial",
+      text: "Ouais, vas-y.",
+      pause: true,
+      pause_ms: 1500,
+      turn: 0.98,
+    });
+    expect(short.limitMs()).toBe(2000);
+    expect(endsWithQuestion("je me demande si. ")).toBe(false);
   });
 
   test("a partial while speaking stops the count; none while no pause", () => {

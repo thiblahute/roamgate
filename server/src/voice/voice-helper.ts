@@ -13,6 +13,7 @@ import {
   speechRateOr,
 } from "../../../shared/speechRate";
 import { dataRoot } from "../config/data-paths";
+import { serverLogger } from "../utils/logger";
 import type { CompanionMcpConfig } from "./voice-tools";
 
 /**
@@ -22,9 +23,29 @@ import type { CompanionMcpConfig } from "./voice-tools";
  * it and its models are; without it, voice is unavailable. Parakeet, when
  * set, transcribes in place of Whisper.
  */
+
+/** The voice's timing lines for speech. */
+const speechLog = serverLogger.child("voice");
+const now = () => performance.now();
+
+/** When a sentence was asked for, started, and its first audio came. */
+type SpeakTimes = { sentAt: number; startedAt?: number; audioAt?: number };
+
 export type VoiceConfig = {
   /** The roamgate-voice binary. */
   helper: string;
+  /**
+   * Arguments put before the helper's command: a program that runs it on
+   * its own terms (elsewhere, with resources it frees for it), passing its
+   * standard input and output through. Empty: the helper runs directly.
+   */
+  helper_wrapper?: string[];
+  /**
+   * Minutes with no call, listening or speech after which the helper
+   * stops, giving back what its models hold; the next voice request starts
+   * it again. Unset or 0: it runs until the server stops.
+   */
+  helper_idle_exit_minutes?: number;
   /** The GStreamer prefix holding the whisper and kokoro plugins. */
   gst_prefix?: string;
   /**
@@ -155,7 +176,30 @@ export type VoiceConfig = {
   call_background_release_ms?: number;
   /** Whether a call starts with its music on; off, it waits to be asked. */
   call_music_at_start?: boolean;
+  /**
+   * The loudness a call's replies are brought to, in LUFS, -40 to -6
+   * (-16 by default), their peaks kept under -1 dBTP; false leaves them as
+   * the models make them (-20 to -24 LUFS). A phone's own loudspeaker
+   * plays a call on the voice call stream, quieter than media.
+   */
+  call_reply_loudness?: number | false;
+  /**
+   * The IPv4 address phones reach this machine at for a call's audio
+   * (WebRTC): its Tailscale address when tailscaled runs in userspace
+   * networking, which forwards UDP sent there to 127.0.0.1. The helper's
+   * loopback ICE candidates are given to the page with it.
+   */
+  call_ice_address?: string;
 };
+
+/** A dotted IPv4 address, each part 0 to 255. */
+export function isIPv4(address: string): boolean {
+  const parts = address.split(".");
+  return (
+    parts.length === 4 &&
+    parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+  );
+}
 
 /** A call's background as the helper's call_start takes it. */
 export type CallBackground = {
@@ -165,7 +209,12 @@ export type CallBackground = {
   release_ms: number;
   /** The music off until asked for: its source is only made then. */
   muted: boolean;
+  /** The replies' loudness in LUFS; null leaves them as made. */
+  reply_loudness: number | null;
 };
+
+/** call_reply_loudness's default: broadcast speech's level. */
+export const CALL_REPLY_LOUDNESS = -16;
 
 export function callBackground(config: VoiceConfig): CallBackground {
   return {
@@ -174,6 +223,10 @@ export function callBackground(config: VoiceConfig): CallBackground {
     ducked: config.call_background_ducked ?? 0.15,
     release_ms: config.call_background_release_ms ?? 3000,
     muted: config.call_music_at_start !== true,
+    reply_loudness:
+      config.call_reply_loudness === false
+        ? null
+        : (config.call_reply_loudness ?? CALL_REPLY_LOUDNESS),
   };
 }
 
@@ -292,6 +345,48 @@ export function readVoiceConfig(
     typeof config.call_music_at_start !== "boolean"
   )
     return { error: `${path}: call_music_at_start must be true or false` };
+  if (
+    config.call_reply_loudness !== undefined &&
+    config.call_reply_loudness !== false &&
+    !(
+      typeof config.call_reply_loudness === "number" &&
+      config.call_reply_loudness >= -40 &&
+      config.call_reply_loudness <= -6
+    )
+  )
+    return {
+      error: `${path}: call_reply_loudness must be -40 to -6 (LUFS), or false`,
+    };
+  if (
+    config.call_ice_address !== undefined &&
+    !(
+      typeof config.call_ice_address === "string" &&
+      isIPv4(config.call_ice_address)
+    )
+  )
+    return { error: `${path}: call_ice_address must be an IPv4 address` };
+  if (
+    config.helper_wrapper !== undefined &&
+    !(
+      Array.isArray(config.helper_wrapper) &&
+      config.helper_wrapper.every((arg) => typeof arg === "string") &&
+      (config.helper_wrapper.length === 0 || config.helper_wrapper[0])
+    )
+  )
+    return {
+      error: `${path}: helper_wrapper must be a list of arguments, a program first`,
+    };
+  if (
+    config.helper_idle_exit_minutes !== undefined &&
+    !(
+      typeof config.helper_idle_exit_minutes === "number" &&
+      Number.isFinite(config.helper_idle_exit_minutes) &&
+      config.helper_idle_exit_minutes >= 0
+    )
+  )
+    return {
+      error: `${path}: helper_idle_exit_minutes must be a number of minutes, 0 for never`,
+    };
   if (config.companion_mcp !== undefined) {
     const mcp = config.companion_mcp as Record<string, unknown> | null;
     if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
@@ -461,27 +556,18 @@ type Pending = {
 export const FRAME_JSON = 0;
 /** A listening session's audio: its u32 id, then 16 kHz mono S16LE. */
 export const FRAME_AUDIO = 1;
-/**
- * A call's mix, from the helper: the call's u32 id, the packet's u32
- * sequence number and u64 time in µs, then one Opus packet (48 kHz stereo).
- */
-export const FRAME_CALL_AUDIO = 2;
 /** The kinds of frame the helper writes. */
-const FRAME_KINDS: ReadonlySet<number> = new Set([
-  FRAME_JSON,
-  FRAME_AUDIO,
-  FRAME_CALL_AUDIO,
-]);
+const FRAME_KINDS: ReadonlySet<number> = new Set([FRAME_JSON, FRAME_AUDIO]);
 /** The largest frame the helper writes or reads (frames.rs's MAX_FRAME). */
 export const MAX_FRAME = 16 * 1024 * 1024;
 
-/** One Opus packet of a call's mix. */
-export type CallPacket = { seq: number; ptsUs: bigint; packet: Uint8Array };
-
-/** What the helper says of a call: its background failed. */
+/** What the helper says of a call: its background or microphone failed. */
 export type CallEvent =
   | { event: "call_error"; call: number; error: string }
-  /** The helper restarted: the call's mix was made again, from time 0. */
+  /**
+   * The helper restarted: the call was made again, from time 0, with a
+   * new signalling server; the page's WebRTC sessions start again on it.
+   */
   | { event: "call_restarted"; call: number }
   /**
    * The call is over in the helper: it could not be made again after a
@@ -495,9 +581,22 @@ export type CallEvent =
    */
   | { event: "call_music"; call: number; waiting: boolean };
 
-/** A call the helper mixes (VoiceHelper.startCall). */
+/**
+ * A call the helper runs (VoiceHelper.startCall): a WebRTC call with the
+ * page, signalled through the helper's signalling server
+ * (voice/helper/src/call.rs).
+ */
 export type CallHandle = {
   id: number;
+  /** Where the call's signalling server listens, on 127.0.0.1, now. */
+  signallingPort: () => number;
+  /**
+   * Listens to the page's microphone: its producer's peer id in the
+   * signalling. Again with the same id after the page published it anew.
+   * `echo` "here" has the helper cancel the replies' echo in it (the page
+   * plays them without its own echo canceller).
+   */
+  microphone: (peer: string, echo?: "here" | "page") => Promise<void>;
   /** Whether the call has a background (call_background), on or off. */
   music: boolean;
   /**
@@ -520,11 +619,13 @@ export type CallHandle = {
   stop: () => void;
 };
 
-/** A sentence put into a call's mix: where it is in the packets' time. */
+/** A sentence put into a call's mix: where it is in the mix's time. */
 export type QueuedSpeech = {
   queued: true;
   startMs: number;
   durationMs: number;
+  /** Where the mix was when it was all made. */
+  nowMs: number;
   language: string;
   nativeRate: number;
 };
@@ -659,6 +760,53 @@ export function transcriberArgs(
   ];
 }
 
+/** helper_idle_exit_minutes in milliseconds: 0 for never. */
+export function idleExitMs(
+  config: Pick<VoiceConfig, "helper_idle_exit_minutes">,
+): number {
+  return Math.max(0, (config.helper_idle_exit_minutes ?? 0) * 60_000);
+}
+
+/**
+ * The helper's command line: `helper_wrapper`'s arguments, when set, then
+ * the helper and what it is given.
+ */
+export function helperCommand(config: VoiceConfig): string[] {
+  return [
+    ...(config.helper_wrapper ?? []),
+    config.helper,
+    ...transcriberArgs(config),
+    ...(config.tts_models
+      ? ["--tts-models", JSON.stringify(helperTtsModels(config))]
+      : [
+          "--kokoro-model",
+          config.kokoro_model ?? "",
+          "--kokoro-voices",
+          config.kokoro_voices ?? "",
+        ]),
+    ...(config.speaker_model ? ["--speaker-model", config.speaker_model] : []),
+    ...(config.speaker_model && config.speaker_reference?.length
+      ? ["--speaker-reference", JSON.stringify(config.speaker_reference)]
+      : []),
+    ...(config.turn_model ? ["--turn-model", config.turn_model] : []),
+    ...(config.text_turn_model
+      ? ["--text-turn-model", config.text_turn_model]
+      : []),
+    // The page's cap (voice-socket.ts) ends finished-sounding pauses
+    // sooner; speechgate's own 5 s would cut a search for a word short.
+    ...(config.text_turn_model && config.parakeet_model
+      ? ["--turn-give-up-ms", String(LONGEST_PAUSE_MS)]
+      : []),
+  ];
+}
+
+/**
+ * How long a wrapped helper has to end once its input closed before its
+ * wrapper is signalled: the helper's own limit (EXIT_GRACE, 10 s) and a
+ * little more.
+ */
+export const WRAPPED_EXIT_MS = 15_000;
+
 export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
   const env: Record<string, string | undefined> = { ...process.env };
   if (config.gst_prefix) {
@@ -669,36 +817,13 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
     );
     env.GST_REGISTRY = join(dataRoot(), "voice-gst-registry.bin");
   }
-  const child = Bun.spawn(
-    [
-      config.helper,
-      ...transcriberArgs(config),
-      ...(config.tts_models
-        ? ["--tts-models", JSON.stringify(helperTtsModels(config))]
-        : [
-            "--kokoro-model",
-            config.kokoro_model ?? "",
-            "--kokoro-voices",
-            config.kokoro_voices ?? "",
-          ]),
-      ...(config.speaker_model
-        ? ["--speaker-model", config.speaker_model]
-        : []),
-      ...(config.speaker_model && config.speaker_reference?.length
-        ? ["--speaker-reference", JSON.stringify(config.speaker_reference)]
-        : []),
-      ...(config.turn_model ? ["--turn-model", config.turn_model] : []),
-      ...(config.text_turn_model
-        ? ["--text-turn-model", config.text_turn_model]
-        : []),
-      // The page's cap (voice-socket.ts) ends finished-sounding pauses
-      // sooner; speechgate's own 5 s would cut a search for a word short.
-      ...(config.text_turn_model && config.parakeet_model
-        ? ["--turn-give-up-ms", String(LONGEST_PAUSE_MS)]
-        : []),
-    ],
-    { stdin: "pipe", stdout: "pipe", stderr: "inherit", env },
-  );
+  const wrapped = (config.helper_wrapper?.length ?? 0) > 0;
+  const child = Bun.spawn(helperCommand(config), {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "inherit",
+    env,
+  });
   async function* frames() {
     const reader = new FrameReader();
     for await (const chunk of child.stdout) {
@@ -713,15 +838,40 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
     },
     frames: frames(),
     exited: child.exited,
-    kill: () => child.kill(),
-    pid: child.pid,
+    // A wrapper may run the helper where signals sent to the wrapper do
+    // not reach (the wrapper ends, the helper goes on): the helper ends at
+    // the end of its input, and the wrapper is signalled only if it still
+    // runs WRAPPED_EXIT_MS later.
+    kill: wrapped
+      ? () => {
+          try {
+            child.stdin.end();
+          } catch {
+            // Already closed: the helper is ending.
+          }
+          const late = setTimeout(() => child.kill(), WRAPPED_EXIT_MS);
+          void child.exited.then(() => clearTimeout(late));
+        }
+      : () => child.kill(),
+    // A wrapper's process is not the helper's: nothing to sample.
+    pid: wrapped ? undefined : child.pid,
   };
 }
 
 /** What the helper says about a listening session. */
 export type VoiceEvent = {
-  event: "speech_start" | "speech_end" | "text" | "partial" | "final" | "error";
+  event:
+    | "speech_start"
+    | "speech_end"
+    | "text"
+    | "partial"
+    | "final"
+    | "error"
+    /** A call's microphone came for the session: `bytes` of it. */
+    | "audio";
   session?: number;
+  /** On `audio`: how much came, as 16 kHz mono S16LE. */
+  bytes?: number;
   text?: string;
   speech_ms?: number;
   error?: string;
@@ -766,14 +916,17 @@ export type ListenOptions = {
   endSilenceMs?: number;
   /** Forget the speaker kept so far: the next one to speak is kept. */
   newSpeaker?: boolean;
+  /** The call whose microphone (WebRTC) is heard, not `audio()`'s. */
+  call?: number;
 };
 
-/** A call the helper mixes, with where its packets and events go. */
+/** A call the helper runs, with where its events go. */
 type RunningCall = {
-  packet: (packet: CallPacket) => void;
   event: (event: CallEvent) => void;
   /** What it was started with: made again by a restarted helper. */
   background: CallBackground;
+  /** Its signalling server's port, in the helper running now. */
+  port: number;
   /** The helper answered its call_start: a restarted helper makes it again. */
   started: boolean;
   /** Its music waits for a voice (call_start's answer, then its events). */
@@ -797,10 +950,12 @@ export class VoiceHelper {
     number,
     { helper: VoiceHelperProcess; onEvent: (event: VoiceEvent) => void }
   >();
+  /** Each sentence being made: when it was asked, started, first heard. */
+  private speakTimes = new Map<number, SpeakTimes>();
   private nextId = 1;
   private nextSession = 1;
   private nextCall = 1;
-  /** The calls the helper mixes. */
+  /** The calls the helper runs. */
   private calls = new Map<number, RunningCall>();
   /** The calls being made again after the helper restarted. */
   private callsBack: Promise<void> = Promise.resolve();
@@ -827,6 +982,10 @@ export class VoiceHelper {
   private restartedFor: "stuck" | "unreadable" = "stuck";
   /** Arms of the speak watch: a ping's answer acts on its own arm only. */
   private watchArms = 0;
+  /** The running helper's helper_idle_exit_minutes, in ms: 0 for never. */
+  private idleMs = 0;
+  /** Stops the helper once idleMs passed with nothing to or from it. */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly config: () => VoiceConfig | { error: string },
@@ -880,22 +1039,11 @@ export class VoiceHelper {
     const helper = this.spawn(config);
     this.process = helper;
     this.nativeRate = nativeSpeechRate(config);
+    this.idleMs = idleExitMs(config);
+    this.touch(helper);
     void (async () => {
       for await (const frame of helper.frames) {
-        if (frame.kind === FRAME_CALL_AUDIO) {
-          if (frame.payload.length < 16) continue;
-          const view = new DataView(
-            frame.payload.buffer,
-            frame.payload.byteOffset,
-            frame.payload.byteLength,
-          );
-          this.calls.get(view.getUint32(0, true))?.packet({
-            seq: view.getUint32(4, true),
-            ptsUs: view.getBigUint64(8, true),
-            packet: frame.payload.subarray(16),
-          });
-          continue;
-        }
+        this.touch(helper);
         if (frame.kind !== FRAME_JSON) continue;
         let reply: Record<string, unknown>;
         try {
@@ -904,6 +1052,12 @@ export class VoiceHelper {
           continue;
         }
         if (reply.event === "speak_progress") {
+          const timed =
+            typeof reply.id === "number"
+              ? this.speakTimes.get(reply.id)
+              : undefined;
+          if (timed && reply.stage === "started") timed.startedAt ??= now();
+          if (timed && reply.stage === "audio") timed.audioAt ??= now();
           this.speakProgress(helper, String(reply.stage ?? ""));
           continue;
         }
@@ -937,7 +1091,10 @@ export class VoiceHelper {
       this.restart(helper, "unreadable");
     });
     void helper.exited.then(() => {
-      if (this.process === helper) this.process = null;
+      if (this.process === helper) {
+        this.process = null;
+        this.clearIdle();
+      }
       this.warm.clear();
       this.progress = { reports: false, ready: false, loading: false };
       // A call goes on: its mix is made again, under the same number,
@@ -1029,19 +1186,23 @@ export class VoiceHelper {
   }
 
   private send(message: Record<string, unknown>) {
-    this.start().write(
+    const helper = this.start();
+    helper.write(
       encodeFrame(
         FRAME_JSON,
         new TextEncoder().encode(JSON.stringify(message)),
       ),
     );
+    this.touch(helper);
   }
 
   private request(
     message: Record<string, unknown>,
+    onId?: (id: number) => void,
   ): Promise<Record<string, unknown>> {
     const helper = this.start();
     const id = this.nextId++;
+    onId?.(id);
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       helper.write(
@@ -1050,7 +1211,46 @@ export class VoiceHelper {
           new TextEncoder().encode(JSON.stringify({ ...message, id })),
         ),
       );
+      this.touch(helper);
     });
+  }
+
+  /**
+   * Something went to or came from `helper`: its idle time
+   * (helper_idle_exit_minutes) starts again.
+   */
+  private touch(helper: VoiceHelperProcess) {
+    if (!this.idleMs || this.process !== helper) return;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.idleExit(helper), this.idleMs);
+  }
+
+  private clearIdle() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  /**
+   * Nothing went to or came from `helper` for helper_idle_exit_minutes: it
+   * stops, giving back what its models hold, unless a call, a listening or
+   * a request still needs it. The next voice request starts it again.
+   */
+  private idleExit(helper: VoiceHelperProcess) {
+    this.idleTimer = null;
+    if (this.process !== helper) return;
+    if (
+      this.calls.size ||
+      this.listeners.size ||
+      this.speaking ||
+      this.pending.size
+    ) {
+      this.touch(helper);
+      return;
+    }
+    console.error(
+      `[voice] nothing for the voice helper in ${this.idleMs / 60_000} min: stopping it until the next voice request`,
+    );
+    this.stop();
   }
 
   /**
@@ -1071,6 +1271,7 @@ export class VoiceHelper {
       ...(options.language ? { language: options.language } : {}),
       ...(options.endSilenceMs ? { end_silence_ms: options.endSilenceMs } : {}),
       ...(options.newSpeaker ? { new_speaker: true } : {}),
+      ...(options.call !== undefined ? { call: options.call } : {}),
     });
     const header = new Uint8Array(4);
     new DataView(header.buffer).setUint32(0, id, true);
@@ -1130,7 +1331,7 @@ export class VoiceHelper {
 
   /**
    * Speaks `text` into call `call`'s mix (startCall) instead of a file:
-   * answers where it is in the call's packets' time once it is all made.
+   * answers where it is in the call's mix once it is all made.
    */
   async speakInCall(
     call: number,
@@ -1145,20 +1346,22 @@ export class VoiceHelper {
       queued: true,
       startMs: Number(reply.start_ms ?? 0),
       durationMs: Number(reply.duration_ms ?? 0),
+      nowMs: Number(reply.now_ms ?? 0),
       language: String(reply.language ?? ""),
       nativeRate: reply.nativeRate,
     };
   }
 
   /**
-   * Starts a call's mix in the helper: the replies of speakInCall and
-   * `background` (call.rs), as Opus packets to `onPacket`. Rejects when
-   * the helper cannot (an older one has no call_start): the page then
-   * plays each sentence itself. A new call ends the one before.
+   * Starts a call in the helper: its replies (speakInCall) mixed with
+   * `background` (call.rs), sent to the page by WebRTC, and the page's
+   * microphone heard by WebRTC. Rejects when the helper cannot (an older
+   * one makes no WebRTC call): the page then plays each sentence itself and
+   * streams its microphone on the voice socket. A new call ends the one
+   * before.
    */
   async startCall(
     background: CallBackground,
-    onPacket: (packet: CallPacket) => void,
     onEvent: (event: CallEvent) => void,
   ): Promise<CallHandle> {
     const id = this.nextCall++;
@@ -1167,9 +1370,9 @@ export class VoiceHelper {
       call.event({ event: "call_error", call: other, error: "Replaced" });
     }
     const entry: RunningCall = {
-      packet: onPacket,
       event: onEvent,
       background,
+      port: 0,
       started: false,
       waiting: false,
       told: false,
@@ -1182,11 +1385,27 @@ export class VoiceHelper {
       if (this.calls.get(id) === entry) this.calls.delete(id);
       throw error;
     }
+    if (typeof reply.signalling_port !== "number") {
+      this.calls.delete(id);
+      if (this.process) this.send({ op: "call_stop", call: id });
+      throw new Error("This voice helper makes no WebRTC call");
+    }
+    entry.port = reply.signalling_port;
     entry.started = true;
     if (!entry.told) entry.waiting = reply.waiting === true;
     const music = reply.music === true;
     return {
       id,
+      signallingPort: () => this.calls.get(id)?.port ?? 0,
+      microphone: async (peer, echo = "page") => {
+        if (!this.calls.has(id)) throw new Error(`no call ${id}`);
+        await this.request({
+          op: "call_microphone",
+          call: id,
+          peer,
+          ...(echo === "here" ? { echo } : {}),
+        });
+      },
       music,
       // A helper restarted makes the call again as call_music left it.
       musicOn: () =>
@@ -1257,16 +1476,43 @@ export class VoiceHelper {
     if (this.speaking === 1) this.watchSpeaking();
     const restarts = this.restarts;
     let reply: Record<string, unknown>;
+    const timed: SpeakTimes = { sentAt: now() };
+    let timedId: number | null = null;
     try {
-      reply = await this.request({
-        op: "speak",
-        text,
-        ...(language ? { language } : {}),
-        ...(override ? { tts_models: JSON.stringify(override) } : {}),
-        ...(tempo === 1 ? {} : { rate: tempo }),
-        ...(call === undefined ? {} : { call }),
-      });
+      reply = await this.request(
+        {
+          op: "speak",
+          text,
+          ...(language ? { language } : {}),
+          ...(override ? { tts_models: JSON.stringify(override) } : {}),
+          ...(tempo === 1 ? {} : { rate: tempo }),
+          ...(call === undefined ? {} : { call }),
+        },
+        (id) => {
+          timedId = id;
+          this.speakTimes.set(id, timed);
+        },
+      );
       if (this.process === helper) this.warm.add(key);
+      // Each sentence's times (debug): how long its first audio took.
+      const doneAt = now();
+      speechLog.debug("voice sentence spoken", {
+        in_call: call !== undefined,
+        chars: text.length,
+        queued_ms:
+          timed.startedAt === undefined
+            ? undefined
+            : Math.round(timed.startedAt - timed.sentAt),
+        first_audio_ms:
+          timed.audioAt === undefined
+            ? undefined
+            : Math.round(timed.audioAt - timed.sentAt),
+        total_ms: Math.round(doneAt - timed.sentAt),
+        duration_ms:
+          typeof reply.duration_ms === "number"
+            ? Math.round(reply.duration_ms)
+            : undefined,
+      });
     } catch (error) {
       // The helper was restarted under it: said again by the new one, in
       // order, into the call's mix once it is made again. With Kokoro when
@@ -1287,6 +1533,7 @@ export class VoiceHelper {
       throw error;
     } finally {
       this.dequeue(key);
+      if (timedId !== null) this.speakTimes.delete(timedId);
     }
     const made =
       typeof reply.rate === "number" && reply.rate > 0 ? reply.rate : 1;
@@ -1340,6 +1587,7 @@ export class VoiceHelper {
 
   stop() {
     if (this.process) this.stopping = true;
+    this.clearIdle();
     this.process?.kill();
     this.process = null;
   }
@@ -1355,25 +1603,32 @@ export class VoiceHelper {
 
   /**
    * The calls of a helper that stopped, made again in a new one under
-   * their numbers: the page's stream goes on (told `call_restarted`, it
-   * starts its buffer again), with the music, the replies said there.
+   * their numbers, each with its new signalling server: the page's WebRTC
+   * sessions start again on it (told `call_restarted`), with the music,
+   * the replies said there.
    */
   private async restartCalls(calls: [number, RunningCall][]) {
     for (const [id, call] of calls) {
       if (this.calls.get(id) !== call) continue;
-      let failed: string | null = null;
+      let port = 0;
+      let failed = "it gives no signalling";
       try {
-        await this.request({ op: "call_start", call: id, ...call.background });
+        const reply = await this.request({
+          op: "call_start",
+          call: id,
+          ...call.background,
+        });
+        if (typeof reply.signalling_port === "number")
+          port = reply.signalling_port;
       } catch (error) {
         failed = (error as Error).message;
       }
       if (this.calls.get(id) !== call) {
         // Stopped while it was made again: not left running in the helper.
-        if (failed === null && this.process)
-          this.send({ op: "call_stop", call: id });
+        if (port && this.process) this.send({ op: "call_stop", call: id });
         continue;
       }
-      if (failed !== null) {
+      if (!port) {
         // Not made again: over, not left as a call nobody can reach.
         this.calls.delete(id);
         console.error(`[voice] call ${id}: not made again: ${failed}`);
@@ -1384,6 +1639,7 @@ export class VoiceHelper {
         });
         continue;
       }
+      call.port = port;
       console.error(`[voice] call ${id}: made again in the restarted helper`);
       call.event({ event: "call_restarted", call: id });
     }

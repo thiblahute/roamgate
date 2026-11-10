@@ -165,10 +165,16 @@ import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
   terminalUploadRequestBodyLimit,
 } from "./http/terminal-upload";
-import { createVoiceRoutes } from "./http/voice";
+import { createVoiceRoutes, withSearches } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
+import {
+  CompanionMemory,
+  companionMemoryPath,
+  frontCompaction,
+} from "./voice/voice-memory";
+import { CompanionMemoryFiles } from "./voice/voice-memory-files";
 import { configuredResearch } from "./voice/voice-research";
 import { configuredTools } from "./voice/voice-tools";
 import { configuredRouter } from "./voice/voice-router";
@@ -397,6 +403,27 @@ function conversationKeepAwake(
     return "a companion job runs on it";
   return null;
 }
+const voiceResearch = configuredResearch(() => readVoiceConfig());
+const voiceTools = configuredTools(() => readVoiceConfig());
+const companionMemoryFiles = new CompanionMemoryFiles();
+const companionMemory = new CompanionMemory({
+  path: companionMemoryPath(),
+  compact: frontCompaction(() => readVoiceConfig(), companionMemoryFiles),
+  files: companionMemoryFiles,
+  jobs: () => withSearches("", voiceResearch(), voiceTools()),
+  onCompacted: (reason) => {
+    // Quietly, between calls only: the next call starts from the summary.
+    if (reason === "size" || voiceSocket.currentCall()) return;
+    const front = voiceFront();
+    if (front && !front.busy) front.restart();
+  },
+});
+const voiceFront = configuredFront(
+  () => readVoiceConfig(),
+  undefined,
+  () => companionMemory.block(),
+  companionMemoryFiles,
+);
 const handleVoice = createVoiceRoutes(
   voiceHelper,
   configuredRouter(() => readVoiceConfig()),
@@ -409,15 +436,17 @@ const handleVoice = createVoiceRoutes(
     clone: (request) => voiceHelper.cloneVoice(request),
     applied: () => voiceHelper.applyTtsModels(),
   }),
-  configuredFront(() => readVoiceConfig()),
+  voiceFront,
   () => {
     const config = readVoiceConfig();
     return "error" in config ? null : frontMode(config);
   },
   (mode) => writeFrontMode(mode),
-  configuredResearch(() => readVoiceConfig()),
+  voiceResearch,
   () => voiceSocket.currentCall(),
-  configuredTools(() => readVoiceConfig()),
+  voiceTools,
+  companionMemory,
+  companionMemoryFiles,
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,
@@ -430,6 +459,12 @@ const voiceSocket = createVoiceSocket(
     const config = readVoiceConfig();
     return "error" in config ? null : callBackground(config);
   },
+  () => {
+    const config = readVoiceConfig();
+    return "error" in config ? null : (config.call_ice_address ?? null);
+  },
+  undefined,
+  () => companionMemory.callEnded(),
 );
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {
@@ -3423,7 +3458,12 @@ async function handleConnectionHttpRequest(
 function main() {
   const server = bindListenerBeforeConnectionStart({
     bindListener: () =>
-      Bun.serve<{ sessionToken: string | null; voice?: true }>({
+      Bun.serve<{
+        sessionToken: string | null;
+        voice?: true;
+        /** A page's signalling for a call (voice-socket.ts). */
+        signalling?: { call: number; token: string };
+      }>({
         port: config.port,
         hostname: config.host,
         tls: config.tls,
@@ -3536,6 +3576,24 @@ function main() {
               return undefined;
             return new Response("websocket upgrade failed", { status: 400 });
           }
+          if (url.pathname === "/api/voice/call/signalling") {
+            // A call's WebRTC signalling, for the page that owns the call
+            // (its `call_token`), from this site only.
+            const call = Number(url.searchParams.get("call"));
+            const token = url.searchParams.get("call_token") ?? "";
+            if (voiceSocket.signallingRefused(req, call, token))
+              return new Response("forbidden", { status: 403 });
+            if (
+              server.upgrade(req, {
+                data: {
+                  sessionToken: sessionToken(req),
+                  signalling: { call, token },
+                },
+              })
+            )
+              return undefined;
+            return new Response("websocket upgrade failed", { status: 400 });
+          }
           if (url.pathname.startsWith("/api/voice")) {
             // Transcribing a long recording can outlast the default timeout.
             server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
@@ -3577,6 +3635,10 @@ function main() {
           // websocket-send decides when a socket is too far behind.
           backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
           open(ws) {
+            if (ws.data.signalling) {
+              const { call, token } = ws.data.signalling;
+              return voiceSocket.openSignalling(ws, call, token);
+            }
             // A voice socket is no Herdr client: see voiceSocket.
             if (ws.data.voice) {
               voiceSocketsOpen += 1;
@@ -3622,7 +3684,7 @@ function main() {
             );
           },
           drain(ws) {
-            if (ws.data.voice) return;
+            if (ws.data.voice || ws.data.signalling) return;
             // The viewer caught up: send the newest repaint we held back.
             flushCoalescedMessages(ws, {
               cleanup: () => {
@@ -3635,6 +3697,8 @@ function main() {
             });
           },
           message(ws, message) {
+            if (ws.data.signalling)
+              return voiceSocket.signallingMessage(ws, message);
             if (ws.data.voice) {
               lastVoiceAt = Date.now();
               return voiceSocket.message(ws, message);
@@ -3713,6 +3777,7 @@ function main() {
               });
           },
           close(ws) {
+            if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
             if (ws.data.voice) {
               voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
               lastVoiceAt = Date.now();

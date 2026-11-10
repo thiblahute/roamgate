@@ -5,6 +5,10 @@ import { VoiceError, type VoiceLibrary } from "../voice/voice-library";
 import type { VoiceFront } from "../voice/voice-front";
 import type { VoiceRouter } from "../voice/voice-router";
 import { type ResearchProcess, VoiceResearch } from "../voice/voice-research";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CompanionMemoryFiles } from "../voice/voice-memory-files";
 import { callMusic, createVoiceRoutes } from "./voice";
 
 const helper = {
@@ -161,11 +165,325 @@ describe("the voice front", () => {
       reply: "Je transmets.",
     });
     expect(turns).toEqual([
-      {
+      expect.objectContaining({
         current: "local/w2:p2",
         said: "Rebase it, yes, push.",
         sessions: [session],
         context: "Ranger tasks:\n- Nightly: active",
+      }),
+    ]);
+  });
+
+  describe("the companion's memory", () => {
+    const fronted = (reply: unknown, files?: CompanionMemoryFiles) => {
+      let restarted = 0;
+      let warmed = 0;
+      const front = {
+        warm: () => {
+          warmed += 1;
+        },
+        restart: () => {
+          restarted += 1;
+        },
+        turn: async () => reply,
+        event: async () => "Roamgate a fini.",
+      } as unknown as VoiceFront;
+      const memory = {
+        epoch: 3,
+        records: [] as unknown[],
+        resets: 0,
+        record(entry: unknown) {
+          this.records.push(entry);
+        },
+        reset() {
+          this.resets += 1;
+          return (this.epoch += 1);
+        },
+        forgotten: [] as string[],
+        forget(what: string) {
+          this.forgotten.push(what);
+        },
+      };
+      const routes = createVoiceRoutes(
+        helper,
+        () => unused,
+        null,
+        () => undefined,
+        null,
+        () => front,
+        () => null,
+        () => {},
+        () => null,
+        () => null,
+        () => null,
+        memory as never,
+        files ?? null,
+      );
+      return {
+        routes,
+        memory,
+        restarted: () => restarted,
+        warmed: () => warmed,
+      };
+    };
+
+    test("a turn is kept: what was said, what it started", async () => {
+      const { routes, memory } = fronted({
+        to: "send",
+        pane: "local/w2:p2",
+        say: "roamgate",
+        reply: "Je lance.",
+        words: "lance les tests",
+      });
+      await routes(
+        post(
+          {
+            current: "local/w2:p2",
+            said: "demande à roamgate de lancer les tests",
+            sessions: [session],
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      );
+      expect(memory.records).toEqual([
+        { kind: "heard", text: "demande à roamgate de lancer les tests" },
+        { kind: "said", text: "Je lance." },
+        { kind: "work", text: "lance les tests", who: "roamgate" },
+      ]);
+    });
+
+    test("words not for it are not kept", async () => {
+      const { routes, memory } = fronted({ to: "nobody" });
+      await routes(
+        post(
+          { current: "local/w2:p2", said: "viens voir", sessions: [] },
+          {
+            "x-roamgate-voice": "1",
+          },
+        ),
+        "/api/voice/route",
+      );
+      expect(memory.records).toEqual([]);
+    });
+
+    test("an answer is kept, with what it said of it", async () => {
+      const { routes, memory } = fronted({ to: "self", reply: "ok" });
+      await routes(
+        post(
+          {
+            current: "local/w2:p2",
+            event: "Les tests passent.",
+            kind: "answer",
+            agent: "roamgate",
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/event",
+      );
+      expect(memory.records).toEqual([
+        { kind: "answer", text: "Les tests passent.", who: "roamgate" },
+        { kind: "said", text: "Roamgate a fini." },
+      ]);
+    });
+
+    test("said aloud, a reset forgets and starts new sessions", async () => {
+      const { routes, memory, restarted } = fronted({
+        to: "reset",
+        reply: "On repart de zéro.",
+      });
+      const answer = await routes(
+        post(
+          {
+            current: "",
+            said: "repars de zéro",
+            sessions: [],
+            routes: ["current", "self", "reset"],
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      );
+      expect(await answer!.json()).toEqual({
+        to: "reset",
+        reply: "On repart de zéro.",
+      });
+      expect(memory.resets).toBe(1);
+      expect(restarted()).toBe(1);
+      expect(memory.records).toEqual([]);
+    });
+
+    test("an older page only hears it said", async () => {
+      const { routes } = fronted({ to: "reset", reply: "On repart de zéro." });
+      const answer = await routes(
+        post(
+          {
+            current: "",
+            said: "repars de zéro",
+            sessions: [],
+            routes: ["self"],
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      );
+      expect(await answer!.json()).toEqual({
+        to: "self",
+        reply: "On repart de zéro.",
+      });
+    });
+
+    test("the button resets, only with the voice header", async () => {
+      const { routes, memory, restarted } = fronted({ to: "self" });
+      const refused = await routes(
+        new Request("http://roamgate.test/api/voice/companion/reset", {
+          method: "POST",
+        }),
+        "/api/voice/companion/reset",
+      );
+      expect(refused!.status).toBe(403);
+      expect(memory.resets).toBe(0);
+      const done = await routes(
+        new Request("http://roamgate.test/api/voice/companion/reset", {
+          method: "POST",
+          headers: { "x-roamgate-voice": "1" },
+        }),
+        "/api/voice/companion/reset",
+      );
+      expect(await done!.json()).toEqual({ epoch: 4 });
+      expect(restarted()).toBe(1);
+    });
+
+    test("a voice forget goes to the writer, said as self, and not noted", async () => {
+      const { routes, memory } = fronted({
+        to: "forget",
+        what: "que je préfère le thé",
+        reply: "D'accord.",
+      } as never);
+      const response = await routes(
+        new Request("http://roamgate.test/api/voice/route", {
+          method: "POST",
+          headers: { "x-roamgate-voice": "1" },
+          body: JSON.stringify({
+            said: "oublie ça",
+            current: "w1:p1",
+            sessions: [],
+            routes: ["self"],
+          }),
+        }),
+        "/api/voice/route",
+      );
+      expect(await response!.json()).toEqual({
+        to: "self",
+        reply: "D'accord.",
+      });
+      expect(memory.forgotten).toEqual(["que je préfère le thé"]);
+      expect(memory.records).toEqual([]);
+    });
+
+    test("the memories are listed and deleted, only with the header", async () => {
+      const root = mkdtempSync(join(tmpdir(), "voice-memories-"));
+      const files = new CompanionMemoryFiles(join(root, "memories"));
+      writeFileSync(
+        join(files.dir, "cat.md"),
+        "---\nname: Cat\ndescription: the cat\ntype: user\n---\nA cat.\n",
+      );
+      writeFileSync(join(files.dir, "MEMORY.md"), "- [Cat](cat.md) - c\n");
+      const { routes, memory } = fronted({ to: "self" }, files);
+      const url = "http://roamgate.test/api/voice/companion/memories";
+      const refused = await routes(
+        new Request(url),
+        "/api/voice/companion/memories",
+      );
+      expect(refused!.status).toBe(403);
+      const listed = await routes(
+        new Request(url, { headers: { "x-roamgate-voice": "1" } }),
+        "/api/voice/companion/memories",
+      );
+      const { memories } = (await listed!.json()) as {
+        memories: { name: string; file: string }[];
+      };
+      expect(memories.map((one) => one.name)).toEqual(["Cat"]);
+      const gone = await routes(
+        new Request(`${url}/cat.md`, {
+          method: "DELETE",
+          headers: { "x-roamgate-voice": "1" },
+        }),
+        "/api/voice/companion/memories/cat.md",
+      );
+      expect(gone!.status).toBe(200);
+      expect(existsSync(join(files.dir, "cat.md"))).toBe(false);
+      expect(memory.forgotten).toHaveLength(1);
+      const missing = await routes(
+        new Request(`${url}/nope.md`, {
+          method: "DELETE",
+          headers: { "x-roamgate-voice": "1" },
+        }),
+        "/api/voice/companion/memories/nope.md",
+      );
+      expect(missing!.status).toBe(404);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    test("the status tells the epoch, for a page to forget its call", async () => {
+      const { routes } = fronted({ to: "self" });
+      const status = await routes(
+        new Request("http://roamgate.test/api/voice"),
+        "/api/voice",
+      );
+      expect(
+        ((await status!.json()) as { companion_epoch: number }).companion_epoch,
+      ).toBe(3);
+    });
+  });
+
+  test("streamed, the front's words come first, then the route", async () => {
+    const front = {
+      warm: () => {},
+      turn: async (request: {
+        onReply?: (early: { to: string; reply: string }) => void;
+      }) => {
+        request.onReply?.({ to: "send", reply: "Je demande à gst2." });
+        return {
+          to: "send",
+          pane: "local/w2:p2",
+          say: "gst2",
+          reply: "Je demande à gst2.",
+        };
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const routed = await routes(
+      post(
+        {
+          current: "local/w2:p2",
+          said: "Demande à gst2 où elle en est.",
+          sessions: [session],
+          stream: true,
+        },
+        { "x-roamgate-voice": "1" },
+      ),
+      "/api/voice/route",
+    );
+    expect(routed!.headers.get("content-type")).toBe("application/x-ndjson");
+    const lines = (await routed!.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(lines).toEqual([
+      { early: { to: "send", reply: "Je demande à gst2." } },
+      {
+        to: "send",
+        pane: "local/w2:p2",
+        say: "gst2",
+        reply: "Je demande à gst2.",
       },
     ]);
   });
@@ -216,6 +534,86 @@ describe("the voice front", () => {
       ))!.json(),
     ).toEqual({ to: "current" });
     expect(routed).toBe(0);
+  });
+
+  test("lists what was routed to nobody, and routes a skipped sentence when the front recovers it", async () => {
+    const contexts: string[] = [];
+    let reply: unknown = null;
+    const front = {
+      warm: () => {},
+      turn: async (request: { context: string }) => {
+        contexts.push(request.context);
+        return reply;
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const session = {
+      id: "local/w2:p2",
+      machine: "Mac",
+      workspace: "roamgate",
+      title: "roamgate",
+      folder: "/src",
+      agent: "claude",
+      status: "idle",
+    };
+    const now = Date.now();
+    const ask = async (said: string, skipped: unknown) =>
+      (await (await routes(
+        post(
+          {
+            current: "local/w2:p2",
+            said,
+            sessions: [session],
+            skipped,
+            routes: ["current", "send", "self", "nobody"],
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      ))!.json()) as Record<string, unknown>;
+    const skipped = [
+      { text: "Vas-y, vas-y, ça laisse passer", at: now - 3 * 60_000 },
+      { text: "lance les tests de voice-front", at: now - 20_000 },
+      { text: "too old", at: now - 60 * 60_000 },
+    ];
+    reply = {
+      to: "current",
+      reply:
+        "Ah, tu me demandais de lancer les tests de voice-front, je m'en occupe.",
+      recovered: "Lance les tests de voice-front.",
+    };
+    expect(await ask("attends, pourquoi tu m'entends pas ?", skipped)).toEqual({
+      to: "current",
+      reply:
+        "Ah, tu me demandais de lancer les tests de voice-front, je m'en occupe.",
+      recovered: "lance les tests de voice-front",
+    });
+    expect(contexts[0]).toContain(
+      'Taken as not for you (routed to "nobody": not answered, nothing sent), oldest first:\n- 3 min ago: "Vas-y, vas-y, ça laisse passer"\n- just now: "lance les tests de voice-front"',
+    );
+    expect(contexts[0]).not.toContain("too old");
+
+    // Words the user never said are not forwarded as recovered.
+    reply = { to: "current", reply: "Je lance.", recovered: "supprime tout" };
+    expect(await ask("c'était pour toi", skipped)).toEqual({
+      to: "current",
+      reply: "Je lance.",
+    });
+
+    // Nothing skipped: no list, and the front asks to repeat.
+    reply = {
+      to: "self",
+      reply: "Je n'ai rien laissé passer, tu peux répéter ?",
+    };
+    expect(await ask("tu m'as pas répondu", [])).toEqual(reply as never);
+    expect(contexts[2]).not.toContain("Taken as not for you");
   });
 
   test("gives the front the call lately, and an errand its context", async () => {

@@ -266,6 +266,10 @@ export function createAuthHandlers(args: {
     }
     // pi-lens-ignore: unchecked-throwing-call
     const url = new URL(req.url);
+    // Only a page opened with the token logs in: an API request or a
+    // socket carrying a `token` of its own is left to its route, and never
+    // counts as a failed login.
+    if (!isNavigation(req, url.pathname)) return null;
     const suppliedToken = url.searchParams.get("token");
     if (suppliedToken === null) return null;
     const attempts = beginLogin(ip);
@@ -393,6 +397,18 @@ export function createAuthHandlers(args: {
     handleLogout,
     loginPage,
   };
+}
+
+/**
+ * Whether `req` opens a page: no upgrade (a WebSocket), no API path, and,
+ * from a browser that says so, a navigation (`Sec-Fetch-Mode`). Clients
+ * that send no fetch metadata, such as older browsers, count as one.
+ */
+function isNavigation(req: Request, pathname: string): boolean {
+  if (req.headers.has("upgrade")) return false;
+  if (pathname === "/api" || pathname.startsWith("/api/")) return false;
+  const mode = req.headers.get("sec-fetch-mode");
+  return mode === null || mode === "navigate";
 }
 
 export function unauthenticatedLoginRedirect(): Response {
