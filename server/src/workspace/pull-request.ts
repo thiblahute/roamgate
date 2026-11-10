@@ -361,6 +361,94 @@ function branchRequests(
   });
 }
 
+/** A badge's answer is reused this long while the checkout's HEAD stays. */
+export const SHARED_SUMMARY_MS = LIST_REUSE_MS;
+
+type SharedAnswers = {
+  answers: Map<string, { at: number; head: string; status: PullRequestStatus }>;
+  inFlight: Map<string, Promise<PullRequestStatus>>;
+};
+const sharedAnswers = new WeakMap<object, SharedAnswers>();
+
+/** Where HEAD is, as one cheap command: its ref and commit. */
+async function readHead(context: GitActionContext): Promise<string | null> {
+  const argv = ["git", "rev-parse", "--symbolic-full-name", "HEAD", "HEAD"];
+  try {
+    const output = context.host
+      ? await context.runProcessWithCodeTimeout(
+          sshCommandArgv(
+            context.host,
+            `cd ${context.shQuote(context.root)} && ${argv.map(context.shQuote).join(" ")}`,
+            [],
+            "git.pull_request",
+          ),
+          15_000,
+        )
+      : await context.runProcessWithCodeTimeout(argv, 15_000, {
+          cwd: context.root,
+        });
+    return output.code === 0 ? output.stdout.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A checkout's pull or merge request status, shared by every browser
+ * asking: identical lookups in flight are one, and a badge's answer is
+ * reused for SHARED_SUMMARY_MS while HEAD is on the same ref and commit
+ * (the forge lists behind it are reused that long anyway). A card's
+ * lookup (not a summary) is always read afresh, and replaces what the
+ * badges of that checkout knew.
+ */
+export function sharedPullRequestStatus(
+  context: GitActionContext,
+  params: Record<string, unknown>,
+): Promise<PullRequestStatus> {
+  const owner = context.runProcessWithCodeTimeout;
+  let shared = sharedAnswers.get(owner);
+  if (!shared) {
+    shared = { answers: new Map(), inFlight: new Map() };
+    sharedAnswers.set(owner, shared);
+  }
+  const state = shared;
+  const checkout = JSON.stringify([context.host ?? "", context.root]);
+  const asked = Object.entries(params)
+    .filter(([name]) => name !== "workspace_id" && name !== "worktree_path")
+    .toSorted(([a], [b]) => a.localeCompare(b));
+  const key = `${checkout}\0${JSON.stringify(asked)}`;
+  const flying = state.inFlight.get(key);
+  if (flying) return flying;
+  const summary = params.summary === true;
+  const task = (async () => {
+    const known = summary ? state.answers.get(key) : undefined;
+    const fresh = known && Date.now() - known.at < SHARED_SUMMARY_MS;
+    // Read before the lookup: a HEAD that moves during it misses next time.
+    const head = summary ? await readHead(context) : null;
+    if (fresh && head !== null && head === known.head) return known.status;
+    const status = await readPullRequestStatus(context, params);
+    if (!summary) {
+      for (const each of state.answers.keys())
+        if (each.startsWith(`${checkout}\0`)) state.answers.delete(each);
+    } else if (
+      head !== null &&
+      status.state !== "error" &&
+      status.retryable !== true
+    ) {
+      state.answers.set(key, { at: Date.now(), head, status });
+      if (state.answers.size > 500)
+        for (const [each, answer] of state.answers)
+          if (Date.now() - answer.at >= SHARED_SUMMARY_MS)
+            state.answers.delete(each);
+    } else state.answers.delete(key);
+    return status;
+  })().finally(() => {
+    if (state.inFlight.get(key) === task) state.inFlight.delete(key);
+  });
+  state.inFlight.set(key, task);
+  return task;
+}
+
 export async function readPullRequestStatus(
   context: GitActionContext,
   params: Record<string, unknown>,
