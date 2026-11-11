@@ -123,6 +123,13 @@ import {
   normalizeFilesystemPath,
 } from "../filesystemPaths";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
+import { CommandLine } from "./CommandLine";
+import {
+  type InspectorCommand,
+  inspectorCompletions,
+  opensCommandLine,
+  runInspectorCommand,
+} from "../inspectorCommands";
 import "./FilePreviewContent.css";
 
 export type ActiveFilePreviewSelection = {
@@ -212,17 +219,51 @@ async function importCodeMirrorPreviewDeps() {
   };
 }
 
-/** `:files` in a preview's Vim keys: each preview registers its handler. */
-const previewFilesCommands = new WeakMap<object, () => void>();
-/** `:only` in a preview's Vim keys: its Review only mode, as in the review. */
-const previewOnlyCommands = new WeakMap<object, () => void>();
+/**
+ * The Files preview's `:` commands, every name and alias: its source view's
+ * Vim keys have them too, run by the preview's own command line.
+ */
+export const PREVIEW_COMMAND_WORDS: readonly string[] = [
+  "files",
+  "only",
+  "o",
+  "zen",
+  "conversations",
+  "threads",
+  "conv",
+  "unresolved",
+  "openonly",
+  "next",
+  "previous",
+  "prev",
+  "comment",
+  "fold",
+  "e",
+  "edit",
+  "reload",
+  "source",
+  "rendered",
+  "preview",
+  "scripts",
+  "point",
+  "review",
+  "url",
+  "copy",
+  "q",
+  "quit",
+  "close",
+];
+/** What runs a preview's commands, for its Vim keys' `:`. */
+const previewCommandRunners = new WeakMap<object, (input: string) => void>();
 let previewExCommandsDefined = false;
 
 function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
   if (previewExCommandsDefined) return;
   previewExCommandsDefined = true;
-  deps.Vim.defineEx("files", "files", (cm) => previewFilesCommands.get(cm)?.());
-  deps.Vim.defineEx("only", "only", (cm) => previewOnlyCommands.get(cm)?.());
+  for (const word of PREVIEW_COMMAND_WORDS)
+    deps.Vim.defineEx(word, word, (cm, params) =>
+      previewCommandRunners.get(cm)?.(params.input),
+    );
 }
 
 function loadCodeMirrorPreviewDeps() {
@@ -1027,6 +1068,10 @@ export function FilePreviewContent({
   };
   /** A word on a step (wrapped around), gone after a moment. */
   const [threadNotice, setThreadNotice] = useState("");
+  /** The `:` prompt, open, and where the focus was when it opened. */
+  const [commandLine, setCommandLine] = useState<{
+    from: HTMLElement | null;
+  } | null>(null);
   useEffect(() => {
     if (!threadNotice) return;
     const timer = window.setTimeout(() => setThreadNotice(""), 1800);
@@ -1153,6 +1198,12 @@ export function FilePreviewContent({
     ),
     [fileThreads, threadView, undelivered],
   );
+  const fileShown = !showingChanges;
+  /** A page, a rendered file: what has the threads' blocks and keys. */
+  const renderedShown = fileShown && (renderRichPreview || !!siteUrl);
+  /** The source view, whose Vim keys are its own: `:` commands said. */
+  const sourceShown =
+    fileShown && hasPreviewText && !renderRichPreview && !hasMediaPreview;
   const unresolvedNav = (
     <>
       <UnresolvedNav
@@ -1162,6 +1213,7 @@ export function FilePreviewContent({
         openOnly={threadView.openOnly}
         onStep={jumpUnresolved}
         onOpenOnly={threadView.setOpenOnly}
+        commandHints={sourceShown}
       />
       {threadNotice ? (
         <span className="chat-unresolved-notice" role="status">
@@ -1190,6 +1242,208 @@ export function FilePreviewContent({
     }
   };
 
+  /** The threads' keys, as if typed on the list (`:comment` is `c`). */
+  const pressThreadKeys = (...names: string[]) => {
+    for (const key of names)
+      keysRoot?.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+  };
+  /**
+   * The `:` commands, each what a key, a button or the source view's Vim
+   * keys already do here, there only where that is.
+   */
+  const previewCommands: InspectorCommand[] = [
+    ...(onToggleTree
+      ? [
+          {
+            name: "files",
+            description: "show / hide the file tree",
+            run: () => onToggleTree(),
+          },
+        ]
+      : []),
+    ...(fileShown && onCreateAnnotation
+      ? [
+          {
+            name: "only",
+            aliases: ["o", "zen"],
+            description: "Review only: no chrome, just the file (o)",
+            run: () => toggleZen(),
+          },
+        ]
+      : []),
+    ...(canComment
+      ? [
+          {
+            name: "conversations",
+            aliases: ["threads", "conv"],
+            description: "every conversation of the file, resolved too (T)",
+            run: () => setThreadsOpen(true),
+          },
+          {
+            name: "unresolved",
+            aliases: ["openonly"],
+            description: "show only the unresolved threads, or all again (gH)",
+            run: () => threadView.setOpenOnly(!threadView.openOnly),
+          },
+          {
+            name: "next",
+            description: "the next unresolved thread (gn)",
+            run: () => jumpUnresolved(1),
+          },
+          {
+            name: "previous",
+            aliases: ["prev"],
+            description: "the previous unresolved thread (gN)",
+            run: () => jumpUnresolved(-1),
+          },
+        ]
+      : []),
+    ...(canComment && renderedShown
+      ? [
+          {
+            name: "comment",
+            description:
+              "comment on the cursor's block, or answer its thread (c)",
+            run: () => pressThreadKeys("c"),
+          },
+          {
+            name: "fold",
+            description: "fold / unfold the cursor's thread (za)",
+            run: () => pressThreadKeys("z", "a"),
+          },
+        ]
+      : []),
+    ...(fileShown && hasRichPreview
+      ? [
+          {
+            name: "source",
+            description: "the file's source (the Source switch)",
+            run: () => setPreviewMode("raw"),
+          },
+          {
+            name: "rendered",
+            aliases: ["preview"],
+            description: "the file rendered (the Source switch)",
+            run: () => setPreviewMode("rendered"),
+          },
+        ]
+      : []),
+    ...(canScript && !scripts.listed
+      ? [
+          {
+            name: "scripts",
+            description:
+              "run this file's or page's scripts, sandboxed, or not (:scripts on|off)",
+            run: (argument: string) => {
+              if (argument === "on" && scripts.on) return;
+              if (argument === "off" && !scripts.on) return;
+              scripts.toggle();
+            },
+          },
+        ]
+      : []),
+    ...(canPoint
+      ? [
+          {
+            name: "point",
+            description: "point at a graphic, or stop (the Point button)",
+            run: () => setPointMode((on) => !on),
+          },
+        ]
+      : []),
+    ...(fileShown && !siteUrl && absolutePath && onShowInReview
+      ? [
+          {
+            name: "review",
+            description: "this file in its checkout's code review, at the line",
+            run: () => onShowInReview(absolutePath, cursorLine()),
+          },
+        ]
+      : []),
+    ...(fileShown && entry && onRefresh
+      ? [
+          {
+            name: "reload",
+            aliases: ["e", "edit"],
+            description: "reload the file (the refresh button)",
+            run: () => onRefresh(),
+          },
+        ]
+      : []),
+    ...(fileShown && hasPreviewText && !preview?.truncated
+      ? [
+          {
+            name: "copy",
+            description: "copy the whole file",
+            run: () => void copyPreviewText(),
+          },
+        ]
+      : []),
+    ...(fileShown && onOpenFile
+      ? [
+          {
+            name: "url",
+            description: "open a site's page here (:url ADDRESS)",
+            run: (argument: string) => {
+              if (!argument) {
+                setUrlOpen(true);
+                return;
+              }
+              const url = parseSiteUrl(argument);
+              if (url) onOpenFile(url);
+              else
+                store.notify({
+                  kind: "info",
+                  message: `Not a page's address: ${argument}`,
+                  autoDismissMs: 2500,
+                });
+            },
+          },
+        ]
+      : []),
+    ...(entry && onClosePreview
+      ? [
+          {
+            name: "q",
+            aliases: ["quit", "close"],
+            description: "close the preview",
+            run: () => onClosePreview(),
+          },
+        ]
+      : []),
+  ];
+  /** `:N` in a rendered file: the cursor on the block of line N. */
+  const goToLine =
+    renderedShown && canComment && contentElement && previewText !== null
+      ? (target: number) => {
+          const stop = fileStopForLine(contentElement, target);
+          if (!stop) return;
+          setThreadCursor(fileStopKey(stop));
+          stop.scrollIntoView?.({ block: "center" });
+        }
+      : undefined;
+  const runPreviewCommand = (input: string) => {
+    const problem = runInspectorCommand(previewCommands, input, goToLine);
+    if (problem)
+      store.notify({ kind: "info", message: problem, autoDismissMs: 2500 });
+  };
+  const openCommandLine = () =>
+    setCommandLine({
+      from:
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null,
+    });
+  /** Esc, Enter: the focus back where it was when `:` was pressed. */
+  const leaveCommandLine = () => {
+    const from = commandLine?.from;
+    setCommandLine(null);
+    const back = from?.isConnected ? from : previewSectionRef.current;
+    back?.focus({ preventScroll: true });
+  };
+
   return (
     <section
       ref={previewSectionRef}
@@ -1197,6 +1451,19 @@ export function FilePreviewContent({
       aria-label="File preview"
       tabIndex={-1}
       onKeyDown={(e) => {
+        // `:` anywhere in the view, a page's frame included (its script
+        // hands it over), but where it is typed text.
+        if (
+          !e.defaultPrevented &&
+          fileShown &&
+          !commandLine &&
+          opensCommandLine(e)
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          openCommandLine();
+          return;
+        }
         // R: the file read again (the refresh button), but where R is
         // typed text, the source's own keys, or a thread's reply
         // (useThreadKeys took it then).
@@ -1287,9 +1554,8 @@ export function FilePreviewContent({
                 type="button"
                 className="file-preview-refresh"
                 title={
-                  treeHidden
-                    ? "Show the file tree (:files)"
-                    : "Hide the file tree (:files)"
+                  // :files is the file view's; Changes has its own.
+                  `${treeHidden ? "Show" : "Hide"} the file tree${showingChanges ? "" : " (:files)"}`
                 }
                 aria-label={
                   treeHidden ? "Show the file tree" : "Hide the file tree"
@@ -1368,6 +1634,7 @@ export function FilePreviewContent({
                   open={threadsOpen}
                   onToggle={() => setThreadsOpen((open) => !open)}
                   className="file-preview-threads-chip"
+                  commandHints={sourceShown}
                 />
                 {unresolvedNav}
               </>
@@ -1691,8 +1958,7 @@ export function FilePreviewContent({
                 theme={theme}
                 annotations={lineAnnotations}
                 editorViewRef={editorViewRef}
-                onToggleTree={onToggleTree}
-                onToggleOnly={onCreateAnnotation ? toggleZen : undefined}
+                onCommand={runPreviewCommand}
                 onRequestAnnotation={
                   onCreateAnnotation
                     ? ({ line, endLine, quote, x, y }) =>
@@ -1721,6 +1987,18 @@ export function FilePreviewContent({
           ) : null}
         </div>
       )}
+      {commandLine && fileShown ? (
+        <CommandLine
+          kind=":"
+          completions={(typed) => inspectorCompletions(previewCommands, typed)}
+          onBlur={() => setCommandLine(null)}
+          onSubmit={(text) => {
+            leaveCommandLine();
+            runPreviewCommand(text);
+          }}
+          onCancel={leaveCommandLine}
+        />
+      ) : null}
       {pointing.box}
       {zen ? (
         <div className="file-preview-zen-hint">
@@ -1757,6 +2035,7 @@ export function FilePreviewContent({
                 }
                 open={threadsOpen}
                 onToggle={() => setThreadsOpen((open) => !open)}
+                commandHints={sourceShown}
               />
               {unresolvedNav}
             </>
@@ -1962,8 +2241,7 @@ function CodeMirrorPreview({
   annotations,
   editorViewRef,
   onRequestAnnotation,
-  onToggleTree,
-  onToggleOnly,
+  onCommand,
 }: {
   text: string;
   path: string;
@@ -1972,15 +2250,11 @@ function CodeMirrorPreview({
   annotations: readonly FileLineReviewAnnotation[];
   editorViewRef: MutableRefObject<CodeMirrorEditorView | null>;
   onRequestAnnotation?: (request: CodeMirrorAnnotationRequest) => void;
-  /** `:files`: hides or shows the file tree beside the preview. */
-  onToggleTree?: () => void;
-  /** `:only`: the preview's Review only mode. */
-  onToggleOnly?: () => void;
+  /** A `:` command typed in its Vim keys (`:files`, `:only`...). */
+  onCommand?: (input: string) => void;
 }) {
-  const toggleTreeRef = useRef(onToggleTree);
-  toggleTreeRef.current = onToggleTree;
-  const toggleOnlyRef = useRef(onToggleOnly);
-  toggleOnlyRef.current = onToggleOnly;
+  const commandRef = useRef(onCommand);
+  commandRef.current = onCommand;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const annotationRuntimeRef = useRef<CodeMirrorAnnotationRuntime | null>(null);
   const annotationsRef = useRef(annotations);
@@ -2199,8 +2473,7 @@ function CodeMirrorPreview({
       const cm = deps.getCM(view);
       if (cm) {
         definePreviewExCommands(deps);
-        previewFilesCommands.set(cm, () => toggleTreeRef.current?.());
-        previewOnlyCommands.set(cm, () => toggleOnlyRef.current?.());
+        previewCommandRunners.set(cm, (input) => commandRef.current?.(input));
       }
       annotationRuntimeRef.current = {
         deps,

@@ -408,3 +408,14 @@
 body:has(.file-preview.is-zen) .topbar {
   visibility: hidden;
 }
+
+/* The `:` prompt (CommandLine) at the preview's bottom edge, zen too. */
+.file-preview > .review-cmdline {
+  flex: none;
+  background: var(--viewer-header-bg);
+  color: var(--text);
+}
+
+.file-preview > .review-cmdline .review-cmd {
+  color: inherit;
+}

@@ -86,6 +86,7 @@ export function UnresolvedNav({
   onStep,
   onOpenOnly,
   className = "",
+  commandHints = false,
 }: {
   total: number;
   /** The unresolved thread you are on, from 1; null when on none. */
@@ -94,7 +95,11 @@ export function UnresolvedNav({
   onStep: (direction: 1 | -1) => void;
   onOpenOnly: (on: boolean) => void;
   className?: string;
+  /** Where the keys are not had (a file's source): the `:` commands said. */
+  commandHints?: boolean;
 }) {
+  const hint = (key: string, command: string) =>
+    commandHints ? `:${command}` : key;
   const label = !total
     ? "All resolved"
     : position
@@ -110,7 +115,7 @@ export function UnresolvedNav({
         type="button"
         className="unresolved-nav-step"
         aria-label="Previous unresolved thread"
-        title="Previous unresolved thread (gN)"
+        title={`Previous unresolved thread (${hint("gN", "previous")})`}
         disabled={!total}
         onClick={() => onStep(-1)}
       >
@@ -123,7 +128,7 @@ export function UnresolvedNav({
         type="button"
         className="unresolved-nav-step"
         aria-label="Next unresolved thread"
-        title="Next unresolved thread (gn)"
+        title={`Next unresolved thread (${hint("gn", "next")})`}
         disabled={!total}
         onClick={() => onStep(1)}
       >
@@ -136,8 +141,10 @@ export function UnresolvedNav({
         aria-label="Unresolved only"
         title={
           openOnly
-            ? "Showing only the unresolved threads: show the resolved ones too (gH)"
-            : "Show only the unresolved threads; n / N skip the resolved ones (gH)"
+            ? `Showing only the unresolved threads: show the resolved ones too (${hint("gH", "unresolved")})`
+            : commandHints
+              ? "Show only the unresolved threads (:unresolved)"
+              : "Show only the unresolved threads; n / N skip the resolved ones (gH)"
         }
         onClick={() => onOpenOnly(!openOnly)}
       >
@@ -182,11 +189,14 @@ export function ThreadsChip({
   onToggle,
   className = "",
   undelivered,
+  commandHints = false,
 }: {
   threads: readonly { resolved: boolean }[];
   open: boolean;
   onToggle: () => void;
   className?: string;
+  /** Where the keys are not had (a file's source): the `:` command said. */
+  commandHints?: boolean;
   /** Comments that did not reach the agent, and why: said on the chip. */
   undelivered?: { count: number; reason: string };
 }) {
@@ -198,8 +208,8 @@ export function ThreadsChip({
       aria-expanded={open}
       title={
         undelivered
-          ? `The comments (T). Not delivered: ${undelivered.reason}`
-          : "The comments (T)"
+          ? `The comments (${commandHints ? ":conversations" : "T"}). Not delivered: ${undelivered.reason}`
+          : `The comments (${commandHints ? ":conversations" : "T"})`
       }
       onClick={onToggle}
     >

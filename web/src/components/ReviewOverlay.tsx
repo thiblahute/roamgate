@@ -172,6 +172,7 @@ import {
   stepUnresolved,
   unresolvedPosition,
 } from "../unresolvedThreads";
+import { CommandLine } from "./CommandLine";
 import { ReviewMenu } from "./ReviewMenu";
 import { ZenDock } from "./ZenIsland";
 import {
@@ -620,12 +621,7 @@ export function ReviewOverlay({
     wholeWord: boolean;
   } | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState<{
-    kind: ":" | "/";
-    text: string;
-    wild: number;
-    typed: string;
-  } | null>(null);
+  const [prompt, setPrompt] = useState<{ kind: ":" | "/" } | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
   // The phone's Back closes the conversations, then the review.
@@ -4274,10 +4270,10 @@ export function ReviewOverlay({
         openMr();
         break;
       case ":":
-        setPrompt({ kind: ":", text: "", wild: -1, typed: "" });
+        setPrompt({ kind: ":" });
         break;
       case "/":
-        setPrompt({ kind: "/", text: "", wild: -1, typed: "" });
+        setPrompt({ kind: "/" });
         break;
       case "?":
         setKeysFilter("");
@@ -5694,8 +5690,6 @@ export function ReviewOverlay({
   const keysList = REVIEW_KEYS.filter(([keys, label]) =>
     matchesFilter(keys, label, keysFilter),
   );
-  const completions =
-    prompt?.kind === ":" ? commandCompletions(prompt.typed) : [];
 
   return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: the review takes the keys
@@ -6364,68 +6358,23 @@ export function ReviewOverlay({
         </div>
       ) : null}
       {prompt ? (
-        <div className="review-cmdline">
-          {prompt.kind}
-          <input
-            className="review-cmd"
-            aria-label={prompt.kind === ":" ? "Command" : "Search"}
-            // biome-ignore lint/a11y/noAutofocus: a Vim prompt takes the keys
-            autoFocus
-            value={prompt.text}
-            onChange={(event) =>
-              setPrompt({
-                ...prompt,
-                text: event.target.value,
-                typed: event.target.value,
-                wild: -1,
-              })
-            }
-            onBlur={() => setPrompt(null)}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === "Enter") {
-                event.preventDefault();
-                const { kind, text } = prompt;
-                setPrompt(null);
-                rootRef.current?.focus({ preventScroll: true });
-                if (kind === ":") runCommand(text);
-                else if (text) runSearch(text, false, 1);
-              } else if (
-                event.key === "Escape" ||
-                (event.key === "Backspace" && !prompt.text)
-              ) {
-                event.preventDefault();
-                setPrompt(null);
-                rootRef.current?.focus({ preventScroll: true });
-              } else if (event.key === "Tab" && prompt.kind === ":") {
-                event.preventDefault();
-                if (!completions.length) return;
-                const step = event.shiftKey ? -1 : 1;
-                const wild =
-                  (prompt.wild + step + completions.length) %
-                  completions.length;
-                setPrompt({
-                  ...prompt,
-                  wild,
-                  text: completions[wild]![0],
-                });
-              }
-            }}
-          />
-          {prompt.kind === ":" ? (
-            <span className="review-wild">
-              {completions.map(([name, description], index) => (
-                <span
-                  key={name}
-                  className={`wild-item${index === prompt.wild ? " on" : ""}`}
-                >
-                  {name}
-                  <span className="note"> {description}</span>
-                </span>
-              ))}
-            </span>
-          ) : null}
-        </div>
+        <CommandLine
+          key={prompt.kind}
+          kind={prompt.kind}
+          completions={commandCompletions}
+          onBlur={() => setPrompt(null)}
+          onSubmit={(text) => {
+            const { kind } = prompt;
+            setPrompt(null);
+            rootRef.current?.focus({ preventScroll: true });
+            if (kind === ":") runCommand(text);
+            else if (text) runSearch(text, false, 1);
+          }}
+          onCancel={() => {
+            setPrompt(null);
+            rootRef.current?.focus({ preventScroll: true });
+          }}
+        />
       ) : null}
       {commitPicker ? (
         // biome-ignore lint/a11y/useKeyWithClickEvents: Esc closes it

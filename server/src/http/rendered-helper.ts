@@ -392,19 +392,32 @@ function renderedHelper(
 
   // The threads' keys, for Roamgate while the page has the focus: not
   // while typing in the page, nor one the page itself handled.
+  const typing = (target: HTMLElement | null) =>
+    !!target &&
+    (target.isContentEditable ||
+      /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ""));
   d.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
-    if (event.altKey || KEYS.indexOf(event.key) < 0) return;
-    const target = event.target as HTMLElement | null;
-    if (
-      target &&
-      (target.isContentEditable ||
-        /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ""))
-    )
+    if (event.altKey || event.key === ":" || KEYS.indexOf(event.key) < 0)
       return;
+    if (typing(event.target as HTMLElement | null)) return;
     event.preventDefault();
     post({ type: "key", key: event.key });
   });
+  // `:` opens the view's command line always: before the page's own keys
+  // see it (with Alt too, as some layouts type it), but in its fields.
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== ":" || event.ctrlKey || event.metaKey) return;
+      if (KEYS.indexOf(":") < 0) return;
+      if (typing(event.target as HTMLElement | null)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      post({ type: "key", key: ":" });
+    },
+    true,
+  );
 
   // Pointing at a graphic: Alt+click (or any click in point mode), or a
   // drag for a box. The region is in fractions of the graphic's box.

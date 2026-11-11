@@ -1,0 +1,49 @@
+/*
+ * The `:` and `/` prompt (CommandLine), the review pane's and the Files
+ * preview's: in the review's colours where they are set, else the app's.
+ */
+.review-cmdline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--rv-border, var(--shell-border));
+  font: 13px var(--rv-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.review-cmd {
+  flex: 0 1 220px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+}
+
+.review-wild {
+  display: flex;
+  gap: 10px;
+  margin-left: 12px;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wild-item {
+  color: var(--rv-faint, color-mix(in srgb, var(--muted) 70%, var(--bg)));
+}
+
+.wild-item .note {
+  display: none;
+}
+
+.wild-item.on {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--rv-accent, var(--accent));
+  color: var(--rv-bg, var(--shell-bg));
+}
+
+.wild-item.on .note {
+  display: inline;
+  color: inherit;
+}
