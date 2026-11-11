@@ -47,6 +47,7 @@ import {
   rememberAgentHistory,
 } from "../agentHistoryCache";
 import { store, useStoreSelector } from "../store";
+import { useInspectorCommands } from "../useInspectorCommands";
 import {
   type AgentChatSnapshot,
   answerAgentChatApiKey,
@@ -3667,6 +3668,78 @@ export function AgentHistoryDrawer({
         )}
       </div>
     </div>
+  );
+
+  /*
+   * History's `:` commands in the inspector's prompt, each a button of its
+   * header or its search field.
+   */
+  useInspectorCommands(
+    embedded && open && !paneChat
+      ? {
+          commands: [
+            ...(loading
+              ? []
+              : [
+                  {
+                    name: "reload",
+                    aliases: ["e", "edit", "refresh"],
+                    description: "refresh the session (the Refresh button)",
+                    run: () => loadHistory(true),
+                  },
+                ]),
+            {
+              name: "search",
+              aliases: ["find"],
+              description:
+                "search the loaded messages (:search WORDS, the search field)",
+              run: (argument: string) => {
+                if (argument) changeFilters(filters, argument);
+                setDetailsOpen(false);
+                setSearchOpen(true);
+                requestAnimationFrame(() =>
+                  searchInputRef.current?.focus({ preventScroll: true }),
+                );
+              },
+            },
+            ...(hasSessionData
+              ? [
+                  {
+                    name: "chat",
+                    description: "the history as a chat (Chat view)",
+                    run: () => changeView("chat"),
+                  },
+                  {
+                    name: "timeline",
+                    description: "the history as a timeline (Chat view)",
+                    run: () => changeView("timeline"),
+                  },
+                  {
+                    name: "details",
+                    description: detailsOpen
+                      ? "back to the history (Session details)"
+                      : "the session's details (Session details)",
+                    run: () => setDetailsOpen((current) => !current),
+                  },
+                ]
+              : []),
+            ...(sessionReady
+              ? [
+                  {
+                    name: "transcript",
+                    description: "open the transcript (Open transcript)",
+                    run: openSessionPreview,
+                  },
+                  {
+                    name: "export",
+                    description: "export the raw session (Export raw session)",
+                    run: () => downloadSession(pane, connectionClient),
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
   );
 
   // The chat's chips, its header's and its list of requests share one

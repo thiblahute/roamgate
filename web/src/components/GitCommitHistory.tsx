@@ -11,6 +11,8 @@ import type { ConnectionClient } from "../api";
 import type { FilePreview, GitDiffEntry, GitDiffFile } from "../types";
 import { gitDiffCode } from "../gitDiffStatus";
 import { useSystemBack } from "../systemBack";
+import { store } from "../store";
+import { useInspectorCommands } from "../useInspectorCommands";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { DiffContentView } from "./DiffContentView";
 import "./GitCommitHistory.css";
@@ -302,6 +304,87 @@ export function GitCommitHistory({
     setSelectedSha(sha);
     setCompactPage("files");
   };
+  const refreshCommits = () => {
+    setPage(null);
+    setRefresh((value) => value + 1);
+  };
+  /*
+   * The commits' `:` commands in the inspector's prompt, each what a click
+   * does here: the list's Refresh and Load more, a commit's row, a file's
+   * preview at the commit and Back to diff.
+   */
+  useInspectorCommands(
+    active
+      ? {
+          commands: [
+            {
+              name: "reload",
+              aliases: ["e", "edit", "refresh"],
+              description: "refresh the commits (the Refresh button)",
+              run: refreshCommits,
+            },
+            ...(page?.commits.length
+              ? [
+                  {
+                    name: "commit",
+                    description:
+                      "a commit: :commit N (its row) or :commit WORDS (its subject or sha)",
+                    run: (argument: string) => {
+                      const commits = page.commits;
+                      const words = argument.toLowerCase();
+                      const target = /^\d+$/.test(words)
+                        ? commits[Number(words) - 1]
+                        : words
+                          ? commits.find(
+                              (item) =>
+                                item.sha.startsWith(words) ||
+                                item.subject.toLowerCase().includes(words),
+                            )
+                          : undefined;
+                      if (target) selectCommit(target.sha);
+                      else
+                        store.notify({
+                          kind: "info",
+                          message: argument
+                            ? `No commit here for ${argument}`
+                            : ":commit N or :commit WORDS",
+                          autoDismissMs: 2500,
+                        });
+                    },
+                  },
+                ]
+              : []),
+            ...(page?.has_more && !loadingMore
+              ? [
+                  {
+                    name: "more",
+                    description: "load more commits (Load more commits)",
+                    run: () => void loadMore(),
+                  },
+                ]
+              : []),
+            ...(entry && !previewPath
+              ? [
+                  {
+                    name: "preview",
+                    description: "the file at this commit (Preview at commit)",
+                    run: () => openPreview(entry),
+                  },
+                ]
+              : []),
+            ...(previewPath
+              ? [
+                  {
+                    name: "diff",
+                    description: "back to the file's diff (Back to diff)",
+                    run: () => setPreviewPath(null),
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
+  );
 
   return (
     <div
@@ -321,10 +404,7 @@ export function GitCommitHistory({
             type="button"
             title="Refresh commits"
             aria-label="Refresh commits"
-            onClick={() => {
-              setPage(null);
-              setRefresh((value) => value + 1);
-            }}
+            onClick={refreshCommits}
           >
             <RefreshCw size={14} />
           </button>

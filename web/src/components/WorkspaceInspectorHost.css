@@ -358,3 +358,25 @@
 .workspace-inspector-file-detail > .file-preview-tabs {
   flex: 0 0 auto;
 }
+
+/*
+ * The `:` prompt (CommandLine) at the inspector's bottom edge; over the
+ * Files preview's Review only, which covers the window.
+ */
+.workspace-inspector > .review-cmdline {
+  flex: none;
+  background: var(--viewer-header-bg);
+  color: var(--text);
+}
+
+.workspace-inspector > .review-cmdline .review-cmd {
+  color: inherit;
+}
+
+.workspace-inspector:has(.file-preview.is-zen) > .review-cmdline {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1160;
+}

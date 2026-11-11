@@ -13,6 +13,8 @@ export type InspectorCommand = {
   description: string;
   /** `argument`: the words typed after the name, trimmed. */
   run: (argument: string) => void;
+  /** The words its argument can be, as [word, note], for Tab. */
+  complete?: () => readonly (readonly [string, string])[];
 };
 
 /** The commands Tab completes for what is typed, as [name, description]. */
@@ -20,9 +22,30 @@ export function inspectorCompletions(
   commands: readonly InspectorCommand[],
   typed: string,
 ): [string, string][] {
+  // A name and the start of its argument: the arguments it can take.
+  const typedArgument = /^\s*:?(\S+)\s+(\S*)\s*$/.exec(typed);
+  const taking = typedArgument
+    ? commands.find(
+        (entry) =>
+          entry.complete &&
+          (entry.name === typedArgument[1] ||
+            entry.aliases?.includes(typedArgument[1]!)),
+      )
+    : undefined;
+  if (typedArgument && taking?.complete)
+    return taking
+      .complete()
+      .filter(([argument]) => argument.startsWith(typedArgument[2]!))
+      .map(([argument, note]) => [`${typedArgument[1]} ${argument}`, note]);
   const word = typed.trim();
+  const seen = new Set<string>();
   return commands
-    .filter((command) => command.name.startsWith(word))
+    .filter((command) => {
+      if (!command.name.startsWith(word) || seen.has(command.name))
+        return false;
+      seen.add(command.name);
+      return true;
+    })
     .map((command) => [command.name, command.description]);
 }
 
@@ -60,9 +83,9 @@ export function runInspectorCommand(
     found.command.run(found.argument);
     return null;
   }
-  const some = commands
+  const some = [...new Set(commands.map((command) => command.name))]
     .slice(0, 4)
-    .map((command) => `:${command.name}`)
+    .map((name) => `:${name}`)
     .join(", ");
   return `Not a command here: :${text}${some ? ` (try ${some})` : ""}`;
 }
@@ -91,5 +114,48 @@ export function isTypingTarget(value: EventTarget | null): boolean {
   return (
     !!target.isContentEditable ||
     /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  );
+}
+
+/**
+ * The words of the inspector's own commands and of the Files tree's: the
+ * source view's Vim `:` hands them to the inspector's prompt too.
+ */
+export const INSPECTOR_COMMAND_WORDS: readonly string[] = [
+  "view",
+  "v",
+  "dock",
+  "expand",
+  "refresh",
+  "hidden",
+  "newfolder",
+  "mkdir",
+  "browse",
+  "search",
+  "find",
+];
+
+/** The views `:view` goes to, in the tab strip's order. */
+export const INSPECTOR_VIEW_NAMES = [
+  "files",
+  "changes",
+  "commits",
+  "history",
+] as const;
+
+/**
+ * The view `:view NAME` names: the whole name or the start of one, the
+ * first in the tab strip's order (`:v c` is Changes).
+ */
+export function inspectorViewNamed<View extends string>(
+  views: readonly View[],
+  name: string,
+): View | null {
+  const word = name.trim().toLowerCase();
+  if (!word) return null;
+  return (
+    views.find((view) => view === word) ??
+    views.find((view) => view.startsWith(word)) ??
+    null
   );
 }

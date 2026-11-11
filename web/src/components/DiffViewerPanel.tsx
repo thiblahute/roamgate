@@ -28,6 +28,7 @@ import {
   useConnectionClient,
 } from "../useConnectionClient";
 import { connectionStorageKey } from "../connectionStorage";
+import { useInspectorCommands } from "../useInspectorCommands";
 import { gitDiffCode, gitDiffCodeLabel } from "../gitDiffStatus";
 import {
   lastStepCompletionKey,
@@ -2047,6 +2048,87 @@ export function DiffViewerPanel({
       ...(baseBranch ? [baseBranch] : []),
     ]),
   ];
+  /*
+   * Changes' `:` commands in the inspector's prompt, each its toolbar's:
+   * the scope switch, Refresh, and the branch compared against.
+   */
+  const scopes: readonly (readonly [string, DiffScope, string])[] = [
+    ["working", "working", "the working tree (Working tree)"],
+    ["branch", "branch-main", `the branch, ${comparisonLabel.toLowerCase()}`],
+    ["last", "last-step", "the agent's last step (Last step)"],
+  ];
+  useInspectorCommands(
+    workspace
+      ? {
+          commands: [
+            {
+              name: "scope",
+              description:
+                "the changes shown: working, branch or last (the scope switch)",
+              complete: () => scopes.map(([word, , note]) => [word, note]),
+              run: (argument) => {
+                const word = argument.toLowerCase();
+                const scope = scopes.find(
+                  ([name]) => word && name.startsWith(word),
+                );
+                if (scope) {
+                  setDiffScope(scope[1]);
+                  return;
+                }
+                store.notify({
+                  kind: "info",
+                  message: `:scope working | branch | last${
+                    argument ? `, not ${argument}` : ""
+                  }`,
+                  autoDismissMs: 2500,
+                });
+              },
+            },
+            ...(summaryLoading
+              ? []
+              : [
+                  {
+                    name: "reload",
+                    aliases: ["e", "edit", "refresh"],
+                    description: "refresh the changes (the Refresh button)",
+                    run: () => void loadSummary(cache.selected, true),
+                  },
+                ]),
+            ...(diffScope === "branch-main"
+              ? [
+                  {
+                    name: "base",
+                    description:
+                      "the branch compared against, or automatic (Compare against)",
+                    complete: () => [
+                      ["auto", "the automatic one"] as const,
+                      ...baseBranches.map(
+                        (branch) =>
+                          [branch, comparisonBranchLabel(branch)] as const,
+                      ),
+                    ],
+                    run: (argument: string) => {
+                      if (!argument || argument === "auto") {
+                        setBaseBranch("");
+                        return;
+                      }
+                      if (baseBranches.includes(argument)) {
+                        setBaseBranch(argument);
+                        return;
+                      }
+                      store.notify({
+                        kind: "info",
+                        message: `Not a branch to compare against: ${argument}`,
+                        autoDismissMs: 2500,
+                      });
+                    },
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
+  );
 
   return (
     <aside className="diff-viewer-side" aria-label="Diff Viewer">

@@ -141,10 +141,12 @@ import {
 import {
   type InspectorCommand,
   inspectorCompletions,
+  INSPECTOR_COMMAND_WORDS,
   isTypingTarget,
   opensCommandLine,
   runInspectorCommand,
 } from "../inspectorCommands";
+import { useInspectorCommands } from "../useInspectorCommands";
 import "./FilePreviewContent.css";
 
 export type ActiveFilePreviewSelection = {
@@ -277,7 +279,10 @@ let previewExCommandsDefined = false;
 function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
   if (previewExCommandsDefined) return;
   previewExCommandsDefined = true;
-  for (const word of PREVIEW_COMMAND_WORDS)
+  for (const word of new Set([
+    ...PREVIEW_COMMAND_WORDS,
+    ...INSPECTOR_COMMAND_WORDS,
+  ]))
     deps.Vim.defineEx(word, word, (cm, params) =>
       previewCommandRunners.get(cm)?.(params.input),
     );
@@ -1657,7 +1662,18 @@ export function FilePreviewContent({
           stop.scrollIntoView?.({ block: "center" });
         }
       : undefined;
+  /*
+   * In the inspector, its prompt has these commands with the rest of the
+   * Files view's and its own, and `:` is the inspector's.
+   */
+  const inspectorRun = useInspectorCommands(
+    fileShown ? { commands: previewCommands, line: goToLine } : null,
+  );
   const runPreviewCommand = (input: string) => {
+    if (inspectorRun) {
+      inspectorRun(input);
+      return;
+    }
     const problem = runInspectorCommand(previewCommands, input, goToLine);
     if (problem)
       store.notify({ kind: "info", message: problem, autoDismissMs: 2500 });
@@ -1688,6 +1704,7 @@ export function FilePreviewContent({
         // hands it over), but where it is typed text.
         if (
           !e.defaultPrevented &&
+          !inspectorRun &&
           fileShown &&
           !commandLine &&
           opensCommandLine(e)
@@ -1801,8 +1818,8 @@ export function FilePreviewContent({
                 type="button"
                 className="file-preview-refresh"
                 title={
-                  // :files is the file view's; Changes has its own.
-                  `${treeHidden ? "Show" : "Hide"} the file tree${showingChanges ? "" : " (:files)"}`
+                  // :files is the file view's (the inspector's, there).
+                  `${treeHidden ? "Show" : "Hide"} the file tree${showingChanges && !inspectorRun ? "" : " (:files)"}`
                 }
                 aria-label={
                   treeHidden ? "Show the file tree" : "Hide the file tree"

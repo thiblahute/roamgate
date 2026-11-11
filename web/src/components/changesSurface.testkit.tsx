@@ -44,6 +44,8 @@ export type ChangesOptions = {
   canReveal?: boolean;
   /** Files' "Open file", when the inspector gives one. */
   onOpenFile?: (entry: GitDiffEntry) => void;
+  /** The inspector's `:` prompt, given the tree's commands as Changes'. */
+  inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
 };
 
 /** One row of the changed-files tree, as a user reads it. */
@@ -230,6 +232,9 @@ export async function mountChangesTree(
   const { bridge } = await import("../api");
   const { store } = await import("../store");
   const { DiffViewerPanel } = await import("./DiffViewerPanel");
+  const { InspectorCommandsContext, InspectorViewContext } = await import(
+    "../useInspectorCommands"
+  );
 
   mounted += 1;
   const connectionId = options.connectionId ?? `changes-kit-${mounted}`;
@@ -348,19 +353,31 @@ export async function mountChangesTree(
   const ref = createRef<DiffViewerPanelHandle>();
   let selection: ActiveDiffSelection | null = null;
   const selections: ActiveDiffSelection[] = [];
+  const panel = () =>
+    createElement(DiffViewerPanel, {
+      ref,
+      workspaceId,
+      resourceKey: workspaceId,
+      onSelectionChange: (next: ActiveDiffSelection) => {
+        selection = next;
+        selections.push(next);
+      },
+      ...(options.onOpenFile ? { onOpenFile: options.onOpenFile } : {}),
+    });
   const render = () =>
     act(async () =>
       root.render(
-        createElement(DiffViewerPanel, {
-          ref,
-          workspaceId,
-          resourceKey: workspaceId,
-          onSelectionChange: (next: ActiveDiffSelection) => {
-            selection = next;
-            selections.push(next);
-          },
-          ...(options.onOpenFile ? { onOpenFile: options.onOpenFile } : {}),
-        }),
+        options.inspectorCommands
+          ? createElement(
+              InspectorCommandsContext.Provider,
+              { value: options.inspectorCommands },
+              createElement(
+                InspectorViewContext.Provider,
+                { value: "changes" },
+                panel(),
+              ),
+            )
+          : panel(),
       ),
     );
   const settle = async () => {

@@ -1247,33 +1247,89 @@ rendered at the cursor's line. `o` or `:only` (or the expand button) hides all t
 chrome, in the rendered view and in the source alike; `o`, Esc or Show all
 brings it back.
 
-`:` opens the preview's command line, the review pane's (Tab / Shift+Tab
-complete, Enter runs, Esc or Backspace on nothing leaves it and gives the
-focus back), wherever the preview has the focus: the rendered file, a page's
-or a site's frame (its script hands `:` over, even a key the page handles),
-Review only, a phone's keyboard; never in a comment box or a field, where
-`:` is text. In the source view its Vim keys' `:` runs the same commands.
-Each does what a key or a button already does, where that one is:
+`:` opens the inspector's command line, the review pane's (Tab / Shift+Tab
+complete, a command's argument too, Enter runs, Esc or Backspace on nothing
+leaves it and gives the focus back), wherever the inspector has the focus:
+its tab strip and buttons, the Files tree and preview (the rendered file, a
+page's or a site's frame, whose script hands `:` over even for a key the page
+handles, Review only, a phone's keyboard), Changes, Commits and History;
+never in a comment box, a search box or another field, where `:` is text. In
+the Files preview's source view its Vim keys' `:` runs the same commands. A
+preview shown outside the inspector has the same prompt, with its own
+commands. Each command does what a key or a button already does, where that
+one is; the shown view's come first, then the inspector's own:
 
-| Command | Does |
-| --- | --- |
-| `:files` | hides or shows the file tree (its button) |
-| `:only` (`:o`, `:zen`) | Review only (`o`) |
-| `:conversations` (`:threads`, `:conv`) | the Comments panel (`T`) |
-| `:unresolved` (`:openonly`) | only the unresolved threads, or all again (`gH`) |
-| `:next`, `:previous` (`:prev`) | the next or previous unresolved thread (`gn` / `gN`) |
-| `:comment` | a comment on the cursor's block, or an answer to its thread (`c`) |
-| `:fold` | folds or unfolds the cursor's thread (`za`) |
-| `:N` | the cursor on the block of line N |
-| `:source`, `:rendered` (`:preview`) | the Source switch |
-| `:scripts` (`on` / `off`) | **Scripts off** / **Scripts on** |
-| `:point` | **Point** |
-| `:review` | **Review**: the file in its checkout's code review, at the line |
-| `:reload` (`:e`, `:edit`) | the refresh button |
-| `:copy` | **Copy** |
-| `:url` (`ADDRESS`) | **URL**: its form, or that page opened |
-| `:back`, `:forward` | Back and Forward (Alt+Left / Alt+Right, Cmd+[ / Cmd+] on a Mac) |
-| `:q` (`:quit`, `:close`) | closes the preview |
+| Command                      | Does                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `:view NAME` (`:v`)          | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes) |
+| `:files`                     | Files, beside a file: hides or shows the file tree (its button)                               |
+| `:dock` (`right` / `bottom`) | the dock button                                                                               |
+| `:expand`                    | the expand button, or restore                                                                 |
+| `:q` (`:quit`, `:close`)     | Files: closes the file's tab; elsewhere closes the inspector                                  |
+
+The Files tree, its toolbar's:
+
+| Command                      | Does                                  |
+| ---------------------------- | ------------------------------------- |
+| `:refresh`                   | **Refresh**                           |
+| `:hidden` (`on` / `off`)     | **Show hidden files**                 |
+| `:newfolder` (`:mkdir`)      | **New folder** in the workspace root  |
+| `:browse`                    | **Browse filesystem**                 |
+| `:search` (`:find`, `WORDS`) | the search box, filled with the words |
+
+The Files preview, for the file shown (from the tree too):
+
+| Command                                | Does                                                              |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `:only` (`:o`, `:zen`)                 | Review only (`o`)                                                 |
+| `:conversations` (`:threads`, `:conv`) | the Comments panel (`T`)                                          |
+| `:unresolved` (`:openonly`)            | only the unresolved threads, or all again (`gH`)                  |
+| `:next`, `:previous` (`:prev`)         | the next or previous unresolved thread (`gn` / `gN`)              |
+| `:comment`                             | a comment on the cursor's block, or an answer to its thread (`c`) |
+| `:fold`                                | folds or unfolds the cursor's thread (`za`)                       |
+| `:N`                                   | the cursor on the block of line N                                 |
+| `:source`, `:rendered` (`:preview`)    | the Source switch                                                 |
+| `:scripts` (`on` / `off`)              | **Scripts off** / **Scripts on**                                  |
+| `:point`                               | **Point**                                                         |
+| `:review`                              | **Review**: the file in its checkout's code review, at the line   |
+| `:reload` (`:e`, `:edit`)              | the refresh button                                                |
+| `:copy`                                | **Copy**                                                          |
+| `:url` (`ADDRESS`)                     | **URL**: its form, or that page opened                            |
+| `:back`, `:forward`                    | Back and Forward (Alt+Left / Alt+Right, Cmd+[ / Cmd+] on a Mac)   |
+| `:q` (`:quit`, `:close`)               | outside the inspector: closes the preview                         |
+
+Changes, its toolbar's and its diff's (a commit's diff in Commits has the
+diff's too):
+
+| Command                                | Does                                                           |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `:scope working` / `branch` / `last`   | the scope switch (Working tree, Against the branch, Last step) |
+| `:reload` (`:e`, `:edit`, `:refresh`)  | **Refresh**                                                    |
+| `:base BRANCH` (`auto`)                | **Compare against**, scope branch only                         |
+| `:next`, `:previous` (`:prev`)         | the next or previous change (the arrows)                       |
+| `:find` (`:search`, `WORDS`)           | the find field, filled with the words                          |
+| `:split`, `:unified`                   | **Split** / **Unified**                                        |
+| `:wrap`                                | **Wrap**                                                       |
+| `:conversations` (`:threads`, `:conv`) | the comments chip                                              |
+
+Commits:
+
+| Command                               | Does                                                       |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `:reload` (`:e`, `:edit`, `:refresh`) | **Refresh commits**                                        |
+| `:commit N` / `WORDS`                 | the commit of row N, or whose subject or sha has the words |
+| `:more`                               | **Load more commits**                                      |
+| `:preview`, `:diff`                   | **Preview at commit** for the file shown, **Back to diff** |
+
+History:
+
+| Command                               | Does                                        |
+| ------------------------------------- | ------------------------------------------- |
+| `:reload` (`:e`, `:edit`, `:refresh`) | **Refresh**                                 |
+| `:search` (`:find`, `WORDS`)          | the search field, filled with the words     |
+| `:chat`, `:timeline`                  | the **Chat view** switch                    |
+| `:details`                            | **Session details**                         |
+| `:transcript`, `:export`              | **Open transcript**, **Export raw session** |
 
 Where the source view's own Vim keys take the threads' keys, the bar's
 hints name these commands instead.
