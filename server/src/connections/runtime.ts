@@ -516,7 +516,9 @@ export function createLegacyConnectionRuntime(args: {
       // A live Claude mod knows whether Claude is idle; Herdr's screen
       // detection may lag behind a turn that just started.
       exactStatus: (paneId) =>
-        claudeMod.live(paneId) ? (claudeMod.pane(paneId)?.status ?? null) : null,
+        claudeMod.live(paneId)
+          ? (claudeMod.pane(paneId)?.status ?? null)
+          : null,
       // An /exit Claude took as a message is in its transcript's end.
       exitSwallowed: async (paneId, command, sinceMs) => {
         const path = await agentSessions.resolvePath({ pane_id: paneId });
