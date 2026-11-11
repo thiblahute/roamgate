@@ -46,6 +46,7 @@ import {
 import { store, useStoreSelector } from "../store";
 import { copyTextFromUserGesture } from "../terminalClipboard";
 import { useConnectionClient } from "../useConnectionClient";
+import { useInspectorCommands } from "../useInspectorCommands";
 import { setWorkspacePathDragData } from "../workspacePathDrag";
 import { checkoutKeyForWorkspace } from "../workspaceResource";
 import {
@@ -434,6 +435,7 @@ function FileExplorerContent({
   );
   const [pendingDeleteEntry, setPendingDeleteEntry] =
     useState<FileExplorerEntry | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [newFolderDirectory, setNewFolderDirectory] = useState<string | null>(
     null,
   );
@@ -2042,6 +2044,75 @@ function FileExplorerContent({
     </div>
   );
 
+  const toggleShowHidden = () => {
+    writeExplorerCache(
+      connectionClient,
+      cacheWorkspaceId,
+      !showHidden,
+      { search },
+      cacheResourceKey,
+    );
+    setShowHidden(!showHidden);
+  };
+  /*
+   * The tree's `:` commands in the inspector's prompt, each its toolbar's
+   * button or field (none while browsing the filesystem, which has its own).
+   */
+  const inInspector = !!useInspectorCommands(
+    workspace && !filesystem
+      ? {
+          commands: [
+            {
+              name: "refresh",
+              description: "refresh the file tree (the Refresh button)",
+              run: refreshFiles,
+            },
+            {
+              name: "hidden",
+              description: showHidden
+                ? "hide the hidden files (the eye button)"
+                : "show the hidden files (the eye button)",
+              complete: () => [
+                ["on", "show them"],
+                ["off", "hide them"],
+              ],
+              run: (argument) => {
+                if (argument === "on" && showHidden) return;
+                if (argument === "off" && !showHidden) return;
+                toggleShowHidden();
+              },
+            },
+            {
+              name: "newfolder",
+              aliases: ["mkdir"],
+              description: "a new folder in the workspace root (New folder)",
+              run: () => setNewFolderDirectory(""),
+            },
+            {
+              name: "browse",
+              description:
+                "browse the filesystem, outside the workspace too (Browse filesystem)",
+              run: () => {
+                setEntryMenu(null);
+                setPendingDeleteEntry(null);
+                setFilesystemContext(runtimeContext);
+              },
+            },
+            {
+              name: "search",
+              aliases: ["find"],
+              description:
+                "search the checkout (:search WORDS, the search box)",
+              run: (argument) => {
+                if (argument) updateCache({ search: argument });
+                searchInputRef.current?.focus({ preventScroll: true });
+              },
+            },
+          ],
+        }
+      : null,
+  );
+
   return (
     <>
       {showCloseButton ? (
@@ -2108,6 +2179,7 @@ function FileExplorerContent({
                 <label className="file-search">
                   <Search size={14} />
                   <input
+                    ref={searchInputRef}
                     value={search}
                     onChange={(e) =>
                       updateCache({ search: e.currentTarget.value })
@@ -2138,16 +2210,7 @@ function FileExplorerContent({
                     aria-label="Show hidden files"
                     aria-pressed={showHidden}
                     title="Show hidden files"
-                    onClick={() => {
-                      writeExplorerCache(
-                        connectionClient,
-                        cacheWorkspaceId,
-                        !showHidden,
-                        { search },
-                        cacheResourceKey,
-                      );
-                      setShowHidden(!showHidden);
-                    }}
+                    onClick={toggleShowHidden}
                   >
                     {showHidden ? <Eye size={15} /> : <EyeOff size={15} />}
                   </button>
@@ -2156,7 +2219,7 @@ function FileExplorerContent({
                       type="button"
                       className="file-toolbar-icon"
                       aria-label="New folder"
-                      title="New folder in workspace root"
+                      title={`New folder in workspace root${inInspector ? " (:newfolder)" : ""}`}
                       disabled={!workspace}
                       onClick={() => setNewFolderDirectory("")}
                     >
@@ -2180,7 +2243,7 @@ function FileExplorerContent({
                       type="button"
                       className="file-toolbar-icon"
                       aria-label="Refresh files"
-                      title="Refresh"
+                      title={inInspector ? "Refresh (:refresh)" : "Refresh"}
                       disabled={!workspace}
                       onClick={refreshFiles}
                     >

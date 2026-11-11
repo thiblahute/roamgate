@@ -76,6 +76,8 @@ import {
 } from "./FileThreads";
 import { ThreadsChip } from "./ThreadsPanel";
 import { useReviewState } from "../review";
+import { useInspectorCommands } from "../useInspectorCommands";
+import type { InspectorCommand } from "../inspectorCommands";
 import "./DiffContentView.css";
 
 export { highlightedPatch } from "./DiffSurface";
@@ -1615,6 +1617,75 @@ export function DiffContentView({
       ))}
     </DiffSurfaceScroll>
   ) : null;
+
+  /*
+   * The diff's `:` commands in the inspector's prompt (Changes, a commit's
+   * diff), each a button of its bar; the Files preview's embedded diff has
+   * the preview's.
+   */
+  const diffCommands: InspectorCommand[] = [
+    ...(hunkTargets.length
+      ? [
+          {
+            name: "next",
+            description: "the next change (the down arrow)",
+            run: () => goToHunk(1),
+          },
+          {
+            name: "previous",
+            aliases: ["prev"],
+            description: "the previous change (the up arrow)",
+            run: () => goToHunk(-1),
+          },
+        ]
+      : []),
+    ...(!mobile && hasSearchableDiff
+      ? [
+          {
+            name: "find",
+            aliases: ["search"],
+            description: "find in the loaded files (:find WORDS, the field)",
+            run: (argument: string) => {
+              if (argument) setSearchQuery(argument);
+              focusSearch();
+            },
+          },
+        ]
+      : []),
+    ...(!mobile
+      ? [
+          {
+            name: "split",
+            description: "side by side (Split)",
+            run: () => setViewMode("split"),
+          },
+          {
+            name: "unified",
+            description: "one column (Unified)",
+            run: () => setViewMode("unified"),
+          },
+        ]
+      : []),
+    {
+      name: "wrap",
+      description: "wrap the long lines, or not (Wrap)",
+      run: () =>
+        mobile
+          ? setMobileWrap((value) => !value)
+          : setDesktopWrap((value) => !value),
+    },
+    ...(shownThreads.length
+      ? [
+          {
+            name: "conversations",
+            aliases: ["threads", "conv"],
+            description: "the comments (the comments chip)",
+            run: () => setThreadsOpen((open) => !open),
+          },
+        ]
+      : []),
+  ];
+  useInspectorCommands(embedded ? null : { commands: diffCommands });
 
   return (
     <section
