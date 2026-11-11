@@ -45,7 +45,7 @@ import {
 } from "../fileExplorerRefresh";
 import { store, useStoreSelector } from "../store";
 import { copyTextFromUserGesture } from "../terminalClipboard";
-import { useConnectionClient } from "../useConnectionClient";
+import { useLiveConnectionClient } from "../useReloadOnReconnect";
 import { useInspectorCommands } from "../useInspectorCommands";
 import { setWorkspacePathDragData } from "../workspacePathDrag";
 import { checkoutKeyForWorkspace } from "../workspaceResource";
@@ -392,7 +392,7 @@ function FileExplorerContent({
   onActiveDiffEntriesChange?: (entries: GitDiffEntry[]) => void;
 }) {
   const workspaces = useStoreSelector((state) => state.workspaces);
-  const connectionClient = useConnectionClient();
+  const connectionClient = useLiveConnectionClient();
   const canReveal = useCanRevealInFileManager();
   const focusedWorkspace = workspaces.find((w) => w.focused);
   const workspace = workspaceId
@@ -2256,7 +2256,18 @@ function FileExplorerContent({
                 </div>
               </div>
 
-              {error ? <p className="modal-error">{error}</p> : null}
+              {error ? (
+                <p className="modal-error">
+                  {error}{" "}
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={refreshFiles}
+                  >
+                    Retry
+                  </button>
+                </p>
+              ) : null}
               {selectedPaths.size > 1 || moving ? (
                 <div className="file-upload-status" role="status">
                   {moving

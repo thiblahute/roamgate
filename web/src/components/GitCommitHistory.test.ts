@@ -330,4 +330,182 @@ if (process.env.ROAMGATE_COMMIT_HISTORY_DOM_TEST !== "1") {
       await browser.happyDOM.close();
     }
   });
+
+  test("commits the lost connection failed load again with the client that comes back, and Retry reads them", async () => {
+    const browser = new Window({ url: "http://localhost" });
+    for (const key of [
+      "window",
+      "document",
+      "navigator",
+      "HTMLElement",
+      "Element",
+      "Node",
+      "Event",
+      "MutationObserver",
+      "ResizeObserver",
+    ] as const) {
+      Object.defineProperty(globalThis, key, {
+        value: key === "window" ? browser : browser[key],
+        configurable: true,
+        writable: true,
+      });
+    }
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const { act, createElement } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    mock.module("./DiffContentView", () => ({
+      DiffContentView: ({ entry }: { entry: { path: string } | null }) =>
+        createElement("div", { "data-testid": "diff" }, entry?.path),
+    }));
+    const { GitCommitHistory } = await import("./GitCommitHistory");
+    const author = {
+      name: "Author",
+      email: "author@example.com",
+      date: "2026-10-20T00:00:00Z",
+    };
+    const commit = (sha: string, subject: string) => ({
+      sha,
+      short_sha: sha,
+      subject,
+      author: author.name,
+      authored_at: author.date,
+    });
+    /** The methods failing, and with what; the others answer. */
+    const failing = new Map<string, string>();
+    const calls: string[] = [];
+    const makeClient = () => ({
+      connectionId: "test",
+      generation: 1,
+      serverRuntimeGeneration: 1,
+      isCurrent: () => true,
+      acceptsServerGeneration: () => true,
+      call: async (method: string, params: Record<string, unknown> = {}) => {
+        calls.push(method);
+        const failure = failing.get(method);
+        if (failure !== undefined) throw new Error(failure);
+        if (method === "git.commits")
+          return {
+            head: "abc123",
+            commits: [
+              commit("abc123", "First commit"),
+              commit("def456", "Second commit"),
+            ],
+            has_more: false,
+            shallow: false,
+          };
+        if (method === "git.commit")
+          return {
+            sha: params.sha,
+            parents: [],
+            base: null,
+            message: String(params.sha),
+            author,
+            committer: author,
+            entries: [
+              { path: "src/one.ts", kind: "branch", status: "modified" },
+            ],
+          };
+        if (method === "git.commit_file")
+          return {
+            path: params.path,
+            kind: "branch",
+            diff: "",
+            truncated: false,
+          };
+        throw new Error(method);
+      },
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const render = async (client: ReturnType<typeof makeClient>) => {
+      await act(async () =>
+        root.render(
+          createElement(GitCommitHistory, {
+            client,
+            compact: false,
+            active: true,
+            workspaceId: "workspace",
+            resourceKey: "test",
+          }),
+        ),
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+    const errors = () =>
+      [...container.querySelectorAll(".git-commit-state.is-error")].map(
+        (state) => state.textContent ?? "",
+      );
+    const retry = async (index = 0) => {
+      const button = [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          ".git-commit-state.is-error button",
+        ),
+      ][index];
+      expect(button?.textContent).toBe("Retry");
+      await act(async () => button!.click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+    const selected = () =>
+      container.querySelector(".git-commit-row.is-selected")?.textContent ?? "";
+    try {
+      // The commits read while the connection is down fail.
+      failing.set("git.commits", "bridge hello is unavailable");
+      const down = makeClient();
+      await render(down);
+      expect(errors()).toEqual(["bridge hello is unavailableRetry"]);
+      // The client that comes with the connection reads them again.
+      failing.clear();
+      await render(makeClient());
+      expect(errors()).toEqual([]);
+      expect(container.textContent).toContain("Second commit");
+      // A commit read while it is down again: kept selected, read once back.
+      const rows = [
+        ...container.querySelectorAll<HTMLElement>(".git-commit-row"),
+      ].filter((row) => row.textContent?.includes("Second commit"));
+      failing.set("git.commit", "bridge disconnected");
+      const client = makeClient();
+      await render(client);
+      await act(async () => rows[0]?.click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(errors()).toEqual(["bridge disconnectedRetry"]);
+      const shown = selected();
+      failing.clear();
+      await render(makeClient());
+      expect(errors()).toEqual([]);
+      expect(selected()).toBe(shown);
+      expect(container.textContent).toContain("def456");
+      // Another error waits for Retry, which reads it again.
+      failing.set("git.commits", "fatal: bad revision");
+      const refresh = container.querySelector<HTMLButtonElement>(
+        "button[aria-label='Refresh commits']",
+      );
+      await act(async () => refresh!.click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(errors()).toEqual(["fatal: bad revisionRetry"]);
+      const tries = calls.filter((call) => call === "git.commits").length;
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(calls.filter((call) => call === "git.commits").length).toBe(tries);
+      failing.clear();
+      await retry();
+      expect(calls.filter((call) => call === "git.commits").length).toBe(
+        tries + 1,
+      );
+      expect(errors()).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      await browser.happyDOM.close();
+    }
+  });
 }

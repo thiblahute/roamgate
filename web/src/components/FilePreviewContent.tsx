@@ -89,7 +89,10 @@ import {
 } from "../useZenMode";
 import { copyTextFromUserGesture } from "../terminalClipboard";
 import { useChangedOnDisk } from "../useChangedOnDisk";
-import { useConnectionClient } from "../useConnectionClient";
+import {
+  useLiveConnectionClient,
+  useReloadOnReconnect,
+} from "../useReloadOnReconnect";
 import {
   framesHtmlPreview,
   resolveWorkspaceMarkdownImageUrl,
@@ -429,7 +432,7 @@ export function FilePreviewContent({
    */
   placeScope?: string;
 }) {
-  const connectionClient = useConnectionClient();
+  const connectionClient = useLiveConnectionClient();
   const workspaces = useStoreSelector((state) => state.workspaces);
   const previewSectionRef = useRef<HTMLElement | null>(null);
   /** On screen: not under another view, nor in a hidden inspector. */
@@ -467,6 +470,22 @@ export function FilePreviewContent({
       setHeld({ path: entry.path, preview: previewProp });
     onRefresh();
   };
+  // A file the lost connection failed to read is read again once it is
+  // back, in place; so is one whose read the connection's loss left
+  // unanswered.
+  useReloadOnReconnect(error, connectionClient.connectionId, reload);
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (!connectionClient.isCurrent()) {
+      wasDown.current = true;
+      return;
+    }
+    if (!wasDown.current) return;
+    wasDown.current = false;
+    if (loadingProp && !previewProp && entry) reload();
+    // Only when the connection comes back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionClient]);
   const changedOnDisk = useChangedOnDisk({
     client: connectionClient,
     workspaceId: previewProp?.workspace_id,
@@ -2190,7 +2209,14 @@ export function FilePreviewContent({
               </div>
             ) : null}
             {error ? (
-              <div className="file-preview-state is-error">{error}</div>
+              <div className="file-preview-state is-error">
+                <span>{error}</span>
+                {onRefresh ? (
+                  <button type="button" className="btn ghost" onClick={reload}>
+                    Retry
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             {!loading && !error && directoryPath ? (
               <div className="file-preview-state">

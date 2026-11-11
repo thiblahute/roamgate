@@ -100,10 +100,8 @@ import { AgentMcpSheet } from "./AgentMcpSheet";
 import { AgentModelSheet } from "./AgentModelSheet";
 import { parseModelCommand } from "../../../shared/agentModels";
 import { copyTextWithFeedback } from "../copyText";
-import {
-  connectionClientScopeKey,
-  useConnectionClient,
-} from "../useConnectionClient";
+import { connectionClientScopeKey } from "../useConnectionClient";
+import { useLiveConnectionClient } from "../useReloadOnReconnect";
 import { sentImageUrl } from "../sentImages";
 import {
   readTerminalComposerDraft,
@@ -358,7 +356,7 @@ export function AgentHistoryDrawer({
         (connection) => connection.id === state.activeConnectionId,
       )?.label,
   );
-  const connectionClient = useConnectionClient();
+  const connectionClient = useLiveConnectionClient();
   const mobileProfileChip = mobile ? (
     <ProfileChip
       client={connectionClient}

@@ -193,7 +193,14 @@ export function FilesystemBrowser({
       </div>
       {error ? (
         <p className="modal-error" role="alert">
-          {error}
+          {error}{" "}
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            Retry
+          </button>
         </p>
       ) : null}
       {list?.truncated ? (

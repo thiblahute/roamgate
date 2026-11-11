@@ -23,10 +23,8 @@ import {
 import type { ConnectionClient } from "../api";
 import type { GitDiffEntry, GitDiffFile, GitDiffSummary } from "../types";
 import { useStoreSelector } from "../store";
-import {
-  connectionClientScopeKey,
-  useConnectionClient,
-} from "../useConnectionClient";
+import { connectionClientScopeKey } from "../useConnectionClient";
+import { useLiveConnectionClient } from "../useReloadOnReconnect";
 import { connectionStorageKey } from "../connectionStorage";
 import { useInspectorCommands } from "../useInspectorCommands";
 import { gitDiffCode, gitDiffCodeLabel } from "../gitDiffStatus";
@@ -90,6 +88,8 @@ export type DiffViewerPanelHandle = {
   selectEntry: (entry: GitDiffEntry) => void;
   selectWorkingEntry: (entry: GitDiffEntry) => void;
   selectWorkingEntries: (entries: GitDiffEntry[]) => void;
+  /** The changes read again, as the Refresh button does. */
+  refresh: () => void;
 };
 
 export type DiffViewerPanelProps = {
@@ -940,7 +940,7 @@ export function DiffViewerPanel({
   ref,
 }: DiffViewerPanelProps) {
   const workspaces = useStoreSelector((state) => state.workspaces);
-  const connectionClient = useConnectionClient();
+  const connectionClient = useLiveConnectionClient();
   const canReveal = useCanRevealInFileManager();
   const continuousReview = useStoreSelector(
     (state) =>
@@ -1541,8 +1541,10 @@ export function DiffViewerPanel({
   };
 
   const loadFileRef = useRef(loadFile);
+  const refreshRef = useRef(() => {});
   useLayoutEffect(() => {
     loadFileRef.current = loadFile;
+    refreshRef.current = () => void loadSummary(cache.selected, true);
   });
   const loadNearbyEntriesRef = useRef<(entries: GitDiffEntry[]) => void>(
     () => {},
@@ -1593,6 +1595,7 @@ export function DiffViewerPanel({
       },
       selectWorkingEntry: (target) => selectWorkingEntries([target]),
       selectWorkingEntries,
+      refresh: () => refreshRef.current(),
     };
   }, [setDiffScope]);
 
