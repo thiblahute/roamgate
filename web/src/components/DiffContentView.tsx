@@ -747,6 +747,7 @@ export function DiffContentView({
   annotations = [],
   threads,
   onSelectFile,
+  onRetry,
   onNearbyFilesChange,
   onVisibleFileChange,
   onOpenFile,
@@ -776,6 +777,8 @@ export function DiffContentView({
   /** The threads the comments written here are, by the annotations' ids. */
   threads?: readonly ReviewThread[];
   onSelectFile?: (entry: GitDiffEntry) => void;
+  /** Read the changes again, offered on an error reading them. */
+  onRetry?: () => void;
   onNearbyFilesChange?: (entries: GitDiffEntry[]) => void;
   onVisibleFileChange?: (entry: GitDiffEntry | null) => void;
   onOpenFile?: (entry: GitDiffEntry) => void;
@@ -1914,7 +1917,14 @@ export function DiffContentView({
       </div>
 
       {error && !visibleEntries.length ? (
-        <div className="diff-content-state is-error">{error}</div>
+        <div className="diff-content-state is-error">
+          <span>{error}</span>
+          {onRetry ? (
+            <button type="button" onClick={onRetry}>
+              Retry
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {summaryLoading && !visibleEntries.length ? (
         <div className="diff-content-state">

@@ -82,6 +82,7 @@ import { workspaceInspectorLayout } from "./workspaceInspectorLayout";
 import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { CommandLine } from "./CommandLine";
+import { useLiveClient } from "../useReloadOnReconnect";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
@@ -131,7 +132,7 @@ export function WorkspaceInspectorHost({
   onSelectFileTab,
   previewRequestRef,
   diffSelection,
-  connectionClient,
+  connectionClient: givenClient,
   onFileSelectionChange,
   onDiffSelectionChange,
   onOpenDiffFile,
@@ -186,6 +187,8 @@ export function WorkspaceInspectorHost({
   onClose: () => void;
   onBack: () => void;
 }) {
+  // Its views load again once the connection is back.
+  const connectionClient = useLiveClient(givenClient);
   const hostRef = useRef<HTMLElement | null>(null);
   const [fileTabs, setFileTabs] = useState(() =>
     readResourceFileTabs(roamgateLocalStorage, state.scope),
@@ -1041,6 +1044,7 @@ export function WorkspaceInspectorHost({
                         onSelectFile={(target) =>
                           diffViewerRef.current?.selectEntry(target)
                         }
+                        onRetry={() => diffViewerRef.current?.refresh()}
                         onNearbyFilesChange={(targets) =>
                           diffViewerRef.current?.loadNearbyEntries(targets)
                         }

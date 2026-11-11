@@ -13,6 +13,7 @@ import { gitDiffCode } from "../gitDiffStatus";
 import { useSystemBack } from "../systemBack";
 import { store } from "../store";
 import { useInspectorCommands } from "../useInspectorCommands";
+import { failedForConnection } from "../useReloadOnReconnect";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { DiffContentView } from "./DiffContentView";
 import "./GitCommitHistory.css";
@@ -80,6 +81,9 @@ export function GitCommitHistory({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  // Bumped by Retry: the commit, or its file at the commit, read again.
+  const [detailRetry, setDetailRetry] = useState(0);
+  const [previewRetry, setPreviewRetry] = useState(0);
   const [compactPage, setCompactPage] = useState<"commits" | "files" | "diff">(
     "commits",
   );
@@ -209,7 +213,7 @@ export function GitCommitHistory({
     return () => {
       current = false;
     };
-  }, [active, client, selectedSha, workspaceId]);
+  }, [active, client, selectedSha, workspaceId, detailRetry]);
 
   const entry =
     detail?.entries.find((item) => item.path === selectedPath) ?? null;
@@ -285,7 +289,20 @@ export function GitCommitHistory({
     return () => {
       current = false;
     };
-  }, [active, client, detail, previewPath, workspaceId]);
+  }, [active, client, detail, previewPath, workspaceId, previewRetry]);
+
+  // A client comes once the connection is back: the files it failed to
+  // read meanwhile are read again (the others keep their error).
+  useEffect(() => {
+    setFileErrors((current) => {
+      const kept = Object.entries(current).filter(
+        ([, message]) => !failedForConnection(message),
+      );
+      return kept.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(kept);
+    });
+  }, [client]);
 
   const loadImagePreview = useCallback(
     async (path: string) => {
@@ -307,6 +324,11 @@ export function GitCommitHistory({
   const refreshCommits = () => {
     setPage(null);
     setRefresh((value) => value + 1);
+  };
+  /** The commits read again: more of them when it was those that failed. */
+  const retryCommits = () => {
+    if (page) void loadMore();
+    else refreshCommits();
   };
   /*
    * The commits' `:` commands in the inspector's prompt, each what a click
@@ -417,6 +439,9 @@ export function GitCommitHistory({
         {error ? (
           <div className="git-commit-state is-error" role="alert">
             {error}
+            <button type="button" onClick={retryCommits}>
+              Retry
+            </button>
           </div>
         ) : null}
         {page?.shallow ? (
@@ -493,6 +518,12 @@ export function GitCommitHistory({
           {detailError ? (
             <div className="git-commit-state is-error" role="alert">
               {detailError}
+              <button
+                type="button"
+                onClick={() => setDetailRetry((value) => value + 1)}
+              >
+                Retry
+              </button>
             </div>
           ) : null}
           {!selectedSha && !loading ? (
@@ -665,6 +696,12 @@ export function GitCommitHistory({
                   {previewError ? (
                     <div className="git-commit-state is-error" role="alert">
                       {previewError}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewRetry((value) => value + 1)}
+                      >
+                        Retry
+                      </button>
                     </div>
                   ) : null}
                   {preview?.truncated ? (
