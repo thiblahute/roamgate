@@ -88,6 +88,12 @@ export type RenderedFrameMessage =
   | { roamgate: "rendered"; type: "clear" }
   /** A key of the threads pressed in the page (RENDERED_THREAD_KEYS). */
   | { roamgate: "rendered"; type: "key"; key: string }
+  /** Back (-1) or Forward (1) pressed in the page: Alt+arrows, Cmd+[ / ]. */
+  | { roamgate: "rendered"; type: "history"; step: -1 | 1 }
+  /** How far down the page is scrolled, as it is read. */
+  | { roamgate: "rendered"; type: "scroll"; y: number }
+  /** The page's script went to `url` without loading a page (pushState). */
+  | { roamgate: "rendered"; type: "location"; url: string }
   /** How tall the page's content is, for a frame sized to it. */
   | { roamgate: "rendered"; type: "size"; height: number }
   /** A write of a listed site's page to its localStorage (see below). */
@@ -189,6 +195,12 @@ export type RenderedParentMessage =
       roamgate: "rendered";
       /** The comment is written or dropped: the graphic moves again. */
       type: "resume";
+    }
+  | {
+      roamgate: "rendered";
+      /** Back or Forward to this page: where it was left. */
+      type: "scrollTo";
+      y: number;
     };
 
 /** The largest snapshot a page may send: a PNG data URL. */
@@ -234,6 +246,19 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
     return typeof raw.key === "string" && RENDERED_THREAD_KEYS.includes(raw.key)
       ? { roamgate: "rendered", type: "key", key: raw.key }
       : null;
+  if (raw.type === "history")
+    return raw.step === -1 || raw.step === 1
+      ? { roamgate: "rendered", type: "history", step: raw.step }
+      : null;
+  if (raw.type === "scroll") {
+    const { y } = raw;
+    if (typeof y !== "number" || !Number.isFinite(y)) return null;
+    return {
+      roamgate: "rendered",
+      type: "scroll",
+      y: Math.min(1e7, Math.max(0, Math.round(y))),
+    };
+  }
   if (raw.type === "size") {
     const { height } = raw;
     if (typeof height !== "number" || !Number.isFinite(height)) return null;
@@ -263,6 +288,8 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
         : {}),
     };
   }
+  if (raw.type === "location")
+    return { roamgate: "rendered", type: "location", url };
   if (raw.type === "stray")
     return url.startsWith("/") && !url.startsWith("//")
       ? { roamgate: "rendered", type: "stray", url }

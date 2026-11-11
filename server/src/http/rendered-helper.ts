@@ -349,9 +349,26 @@ function renderedHelper(
       unused: string,
       url?: string | URL | null,
     ) {
-      return original.call(this, data, unused, mapUrl(url) as string);
+      const done = original.call(this, data, unused, mapUrl(url) as string);
+      // A new place of the page's own: the viewer's Back comes back here.
+      if (name === "pushState") post({ type: "location", url: pageUrl() });
+      return done;
     };
   }
+
+  // How far down the page is read, for the viewer's Back to come back to.
+  let scrollTimer = 0;
+  w.addEventListener(
+    "scroll",
+    () => {
+      w.clearTimeout(scrollTimer);
+      scrollTimer = w.setTimeout(
+        () => post({ type: "scroll", y: w.scrollY }),
+        120,
+      );
+    },
+    { passive: true },
+  );
 
   const ready = () => {
     post({ type: "ready", url: pageUrl(), title: d.title, root: ROOT });
@@ -406,9 +423,32 @@ function renderedHelper(
   });
   // `:` opens the view's command line always: before the page's own keys
   // see it (with Alt too, as some layouts type it), but in its fields.
+  // So do the viewer's Back and Forward: Alt+arrows, Cmd+[ and Cmd+].
   window.addEventListener(
     "keydown",
     (event) => {
+      if (!event.shiftKey && !event.ctrlKey) {
+        const step =
+          event.altKey && !event.metaKey
+            ? event.key === "ArrowLeft"
+              ? -1
+              : event.key === "ArrowRight"
+                ? 1
+                : 0
+            : event.metaKey && !event.altKey
+              ? event.key === "["
+                ? -1
+                : event.key === "]"
+                  ? 1
+                  : 0
+              : 0;
+        if (step && !typing(event.target as HTMLElement | null)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          post({ type: "history", step });
+          return;
+        }
+      }
       if (event.key !== ":" || event.ctrlKey || event.metaKey) return;
       if (KEYS.indexOf(":") < 0) return;
       if (typing(event.target as HTMLElement | null)) return;
@@ -736,6 +776,11 @@ function renderedHelper(
       d.documentElement.style.cursor = pointMode ? "crosshair" : "";
       if (pointMode) d.documentElement.setAttribute("data-roamgate-point", "");
       else d.documentElement.removeAttribute("data-roamgate-point");
+      return;
+    }
+    if (data.type === "scrollTo") {
+      if (typeof data.y === "number" && Number.isFinite(data.y))
+        w.scrollTo(0, data.y);
       return;
     }
     if (data.type === "resume") {

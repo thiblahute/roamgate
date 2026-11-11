@@ -17,6 +17,8 @@ import {
 import { createPortal } from "react-dom";
 import type { EditorView as CodeMirrorEditorView } from "@codemirror/view";
 import {
+  ArrowLeft,
+  ArrowRight,
   ChevronLeft,
   FolderPlus,
   PanelLeftClose,
@@ -124,9 +126,22 @@ import {
 } from "../filesystemPaths";
 import { CreateWorkspaceDialog } from "./CreateWorkspaceDialog";
 import { CommandLine } from "./CommandLine";
+import { detectShortcutPlatform } from "../shortcutBindings";
+import {
+  canStep,
+  currentPlace,
+  historyKeyStep,
+  keepScroll,
+  type PreviewHistory,
+  pushPlace,
+  settleFrame,
+  startHistory,
+  stepHistory,
+} from "../previewHistory";
 import {
   type InspectorCommand,
   inspectorCompletions,
+  isTypingTarget,
   opensCommandLine,
   runInspectorCommand,
 } from "../inspectorCommands";
@@ -252,6 +267,8 @@ export const PREVIEW_COMMAND_WORDS: readonly string[] = [
   "q",
   "quit",
   "close",
+  "back",
+  "forward",
 ];
 /** What runs a preview's commands, for its Vim keys' `:`. */
 const previewCommandRunners = new WeakMap<object, (input: string) => void>();
@@ -866,6 +883,200 @@ export function FilePreviewContent({
       })();
     },
   );
+  // Back and Forward, as a browser's: per tab (the path shown), the files
+  // a link here opened and the pages its frame went to, each with where it
+  // was scrolled.
+  const historyKey = entry?.path ?? "";
+  const histories = useRef(new Map<string, PreviewHistory>());
+  const [, setHistoryTick] = useState(0);
+  const history = histories.current.get(historyKey) ?? startHistory(historyKey);
+  const setHistory = (key: string, next: PreviewHistory) => {
+    histories.current.set(key, next);
+    setHistoryTick((tick) => tick + 1);
+  };
+  /** The tab a link or Back / Forward goes to, with its history there. */
+  const going = useRef<{ to: string; history: PreviewHistory } | null>(null);
+  /** Where to scroll the file once drawn; the page a frame must show. */
+  const pendingScroll = useRef<number | null>(null);
+  const pendingFrame = useRef<{ url: string; scroll: number } | null>(null);
+  const shownKey = useRef("");
+  if (historyKey && shownKey.current !== historyKey) {
+    shownKey.current = historyKey;
+    const arriving = going.current;
+    going.current = null;
+    if (arriving && arriving.to === historyKey) {
+      histories.current.set(historyKey, arriving.history);
+      const place = currentPlace(arriving.history);
+      pendingScroll.current = place.scroll;
+      pendingFrame.current = place.frameUrl
+        ? { url: place.frameUrl, scroll: place.scroll }
+        : null;
+    } else if (!histories.current.has(historyKey))
+      histories.current.set(historyKey, startHistory(historyKey));
+  }
+  /** The scroller of the file shown; a page's frame says its own. */
+  const fileScroller = () =>
+    contentElement?.querySelector<HTMLElement>(
+      ".file-preview-markdown, .cm-scroller, .file-preview-mermaid",
+    ) ?? contentElement;
+  const isPageFrame = !!siteUrl || (hasHtmlPreview && renderRichPreview);
+  /** The history with where the place shown now is scrolled. */
+  const historyNow = () =>
+    isPageFrame ? live() : keepScroll(live(), fileScroller()?.scrollTop ?? 0);
+  /** A link here (or :url) opens `path`: a place after this one. */
+  const openFromView = onOpenFile
+    ? (path: string, fragment?: string) => {
+        const here = historyNow();
+        const next = pushPlace(here, {
+          path,
+          ...(fragment ? { fragment } : {}),
+        });
+        if (path === historyKey) setHistory(historyKey, next);
+        else {
+          histories.current.set(historyKey, here);
+          going.current = { to: path, history: next };
+        }
+        onOpenFile(path, fragment);
+      }
+    : undefined;
+  /** Shows a page in the frame by its URL under the frame's token. */
+  const framePage = (url: string) => {
+    const frame = frameRef.current;
+    const token = frame
+      ? /^(\/rendered\/[^/]+\/)/.exec(new URL(frame.src).pathname)?.[1]
+      : undefined;
+    if (!frame || !token) return false;
+    frame.contentWindow?.location.replace(new URL(token + url, frame.src).href);
+    return true;
+  };
+  /** Back (-1) or Forward (1). */
+  const stepPlace = (step: -1 | 1) => {
+    const here = historyNow();
+    const moved = stepHistory(here, step);
+    if (!moved) return;
+    const { place } = moved;
+    if (place.path !== historyKey) {
+      histories.current.set(historyKey, here);
+      going.current = { to: place.path, history: moved.history };
+      onOpenFile?.(place.path, place.fragment);
+      return;
+    }
+    setHistory(historyKey, moved.history);
+    if (isPageFrame && place.frameUrl) {
+      pendingFrame.current = { url: place.frameUrl, scroll: place.scroll };
+      if (!framePage(place.frameUrl)) pendingFrame.current = null;
+      return;
+    }
+    pendingScroll.current = place.scroll;
+    if ((place.fragment ?? "") !== (fragment ?? ""))
+      onOpenFile?.(place.path, place.fragment);
+  };
+  // The file drawn: scrolled where it was left.
+  useEffect(() => {
+    if (loading || pendingScroll.current === null || isPageFrame) return;
+    const frame = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const scroller = fileScroller();
+        if (!scroller || pendingScroll.current === null) return;
+        scroller.scrollTop = pendingScroll.current;
+        pendingScroll.current = null;
+      }),
+    );
+    return () => cancelAnimationFrame(frame);
+  });
+  /** The tab's history as kept now, frame messages between draws too. */
+  const live = () => histories.current.get(historyKey) ?? history;
+  /** A page's frame shows `url`: a place, or the one Back went to. */
+  const onFramePage = (url: string, first: boolean) => {
+    const frame = frameRef.current;
+    const pending = pendingFrame.current;
+    const wanted =
+      pending?.url ?? (first ? currentPlace(live()).frameUrl : undefined);
+    if (wanted !== undefined && wanted !== url) {
+      if (first || pending) {
+        pendingFrame.current = {
+          url: wanted,
+          scroll: pending?.scroll ?? currentPlace(live()).scroll,
+        };
+        if (framePage(wanted)) return;
+      }
+      pendingFrame.current = null;
+    }
+    if (wanted === url) {
+      const scroll = pending?.scroll ?? currentPlace(live()).scroll;
+      pendingFrame.current = null;
+      if (scroll)
+        frame?.contentWindow?.postMessage(
+          { roamgate: "rendered", type: "scrollTo", y: scroll },
+          "*",
+        );
+      if (first || pending) {
+        setHistory(historyKey, settleFrame(live(), url));
+        return;
+      }
+    }
+    setHistory(
+      historyKey,
+      first
+        ? settleFrame(live(), url)
+        : pushPlace(live(), { path: historyKey, frameUrl: url }),
+    );
+  };
+  /** The page's Back / Forward keys, scroll and own navigation. */
+  const frameHistory = (
+    message: Extract<
+      RenderedFrameMessage,
+      { type: "history" | "scroll" | "location" }
+    >,
+    frame: HTMLIFrameElement,
+  ) => {
+    if (message.type === "history") {
+      stepPlace(message.step);
+      return;
+    }
+    if (frame !== frameRef.current) return;
+    // Kept without drawing again: nothing shown depends on it.
+    if (message.type === "scroll")
+      histories.current.set(historyKey, keepScroll(live(), message.y));
+    else
+      setHistory(
+        historyKey,
+        pushPlace(live(), { path: historyKey, frameUrl: message.url }),
+      );
+  };
+  const frameHistoryRef = useRef(frameHistory);
+  frameHistoryRef.current = frameHistory;
+  const onFramePageRef = useRef(onFramePage);
+  onFramePageRef.current = onFramePage;
+  const reportFramePage = useCallback(
+    (url: string, first: boolean) => onFramePageRef.current(url, first),
+    [],
+  );
+  const mac = detectShortcutPlatform() === "mac";
+  const historyButtons = (
+    <>
+      <button
+        type="button"
+        className="file-preview-refresh"
+        title={`Back (${mac ? "Cmd+[" : "Alt+Left"}, :back)`}
+        aria-label="Back"
+        disabled={!canStep(history, -1)}
+        onClick={() => stepPlace(-1)}
+      >
+        <ArrowLeft size={13} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="file-preview-refresh"
+        title={`Forward (${mac ? "Cmd+]" : "Alt+Right"}, :forward)`}
+        aria-label="Forward"
+        disabled={!canStep(history, 1)}
+        onClick={() => stepPlace(1)}
+      >
+        <ArrowRight size={13} aria-hidden="true" />
+      </button>
+    </>
+  );
   const frameMessage = useCallback(
     (
       message: Exclude<
@@ -877,6 +1088,14 @@ export function FilePreviewContent({
     ) => {
       if (message.type === "clear") {
         setMarkdownSelection(null);
+        return;
+      }
+      if (
+        message.type === "history" ||
+        message.type === "scroll" ||
+        message.type === "location"
+      ) {
+        frameHistoryRef.current(message, frame);
         return;
       }
       if (message.type === "key") {
@@ -1392,7 +1611,7 @@ export function FilePreviewContent({
                 return;
               }
               const url = parseSiteUrl(argument);
-              if (url) onOpenFile(url);
+              if (url) openFromView?.(url);
               else
                 store.notify({
                   kind: "info",
@@ -1400,6 +1619,20 @@ export function FilePreviewContent({
                   autoDismissMs: 2500,
                 });
             },
+          },
+        ]
+      : []),
+    ...(fileShown && entry
+      ? [
+          {
+            name: "back",
+            description: `the place before (${mac ? "Cmd+[" : "Alt+Left"})`,
+            run: () => stepPlace(-1),
+          },
+          {
+            name: "forward",
+            description: `the place after (${mac ? "Cmd+]" : "Alt+Right"})`,
+            run: () => stepPlace(1),
           },
         ]
       : []),
@@ -1462,6 +1695,19 @@ export function FilePreviewContent({
           e.preventDefault();
           e.stopPropagation();
           openCommandLine();
+          return;
+        }
+        // Back and Forward, but where Alt+arrows move in typed text.
+        const historyStep = historyKeyStep(e);
+        if (
+          historyStep &&
+          !e.defaultPrevented &&
+          fileShown &&
+          !isTypingTarget(e.target)
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          stepPlace(historyStep);
           return;
         }
         // R: the file read again (the refresh button), but where R is
@@ -1534,6 +1780,7 @@ export function FilePreviewContent({
               <ChevronLeft size={14} aria-hidden="true" />
             </button>
           ) : null}
+          {fileShown && entry ? historyButtons : null}
           <div className="file-preview-title" title={entry?.name}>
             {entry?.name ?? "Preview"}
           </div>
@@ -1735,7 +1982,7 @@ export function FilePreviewContent({
               const url = parseSiteUrl(urlText);
               if (!url || !onOpenFile) return;
               setUrlOpen(false);
-              onOpenFile(url);
+              openFromView?.(url);
             }}
           >
             <input
@@ -1801,6 +2048,7 @@ export function FilePreviewContent({
                 name={siteUrl}
                 pointMode={pointMode}
                 onMessage={frameMessage}
+                onPage={reportFramePage}
                 frameRef={frameRef}
                 bannerIn={zen ? zenBanner : null}
               />
@@ -1898,6 +2146,7 @@ export function FilePreviewContent({
                 name={entry?.name ?? previewPath}
                 pointMode={pointMode}
                 onMessage={frameMessage}
+                onPage={reportFramePage}
                 frameRef={frameRef}
                 bannerIn={zen ? zenBanner : null}
               />
@@ -1931,7 +2180,7 @@ export function FilePreviewContent({
                   documentPath={onOpenFile ? markdownDocumentPath : undefined}
                   linkUrlResolver={markdownLinkUrlResolver}
                   fragment={fragment}
-                  onOpenDocument={onOpenFile}
+                  onOpenDocument={openFromView}
                   onSelectionChange={
                     onCreateAnnotation ? setMarkdownSelection : undefined
                   }

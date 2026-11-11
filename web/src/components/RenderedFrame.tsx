@@ -31,6 +31,7 @@ export function RenderedFrame({
   name,
   pointMode,
   onMessage,
+  onPage,
   scripts = false,
   autoHeight = false,
   frameRef: givenRef,
@@ -58,6 +59,11 @@ export function RenderedFrame({
     box: DOMRect,
     frame: HTMLIFrameElement,
   ) => void;
+  /**
+   * A page is shown in the frame: `url` under its token, `first` for the
+   * first page of the frame's source (not a navigation of its own).
+   */
+  onPage?: (url: string, first: boolean) => void;
   frameRef?: RefObject<HTMLIFrameElement | null>;
   className?: string;
   /**
@@ -76,8 +82,11 @@ export function RenderedFrame({
   const [error, setError] = useState("");
   const [shown, setShown] = useState("");
   const [height, setHeight] = useState<number | null>(null);
+  /** A page of this source was shown already: the next is a navigation. */
+  const shownOnce = useRef(false);
   useEffect(() => {
     let cancelled = false;
+    shownOnce.current = false;
     setPage(null);
     setError("");
     void reviewCall<{ src: string; mode: RenderedMode; site?: string }>(
@@ -116,6 +125,8 @@ export function RenderedFrame({
   }, [pointMode, toFrame]);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+  const onPageRef = useRef(onPage);
+  onPageRef.current = onPage;
   const pointRef = useRef(pointMode);
   pointRef.current = pointMode;
   // Where the page shown last sends its root-absolute URLs: a navigation
@@ -174,6 +185,9 @@ export function RenderedFrame({
       if (message.type === "ready") {
         rootRef.current = message.root ?? null;
         setShown(message.url);
+        const first = !shownOnce.current;
+        shownOnce.current = true;
+        onPageRef.current?.(message.url, first);
         toFrame({
           roamgate: "rendered",
           type: "pointMode",
