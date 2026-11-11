@@ -54,30 +54,3 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-
-/* The @ button beside the microphone, not under it. */
-.agent-history-composer-field.has-voice
-  .ranger-chat-input
-  .assistant-mention-editor
-  textarea {
-  padding-right: 66px;
-}
-
-.agent-history-composer-field.has-voice
-  .ranger-chat-input
-  .assistant-mention-trigger {
-  right: 36px;
-}
-
-.agent-history-composer-field.has-voice.has-mute
-  .ranger-chat-input
-  .assistant-mention-editor
-  textarea {
-  padding-right: 96px;
-}
-
-.agent-history-composer-field.has-voice.has-mute
-  .ranger-chat-input
-  .assistant-mention-trigger {
-  right: 66px;
-}

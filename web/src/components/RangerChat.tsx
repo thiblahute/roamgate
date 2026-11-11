@@ -34,7 +34,6 @@ import { voiceSessions } from "../voiceRoute";
 import { setPaneView } from "../paneView";
 import { AgentHistoryChat, type ChatItem } from "./AgentHistoryChat";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
-import { AssistantMentionComposer } from "./AssistantMentionComposer";
 import type { HistoryEntry } from "./agentHistory";
 import { AgentMessageDialog } from "./AgentMessageDialog";
 import { scrollChatTo } from "./chatPaging";
@@ -291,9 +290,6 @@ export function RangerChat({
     }, 1200);
   }, []);
 
-  // Chips added or removed leave the text as it is: draw the box again.
-  const [, setMentionsChanged] = useState(0);
-
   const running = snapshot.running;
   // While Ranger answers, Send steers its turn and Queue (Alt+Enter) keeps
   // the message for after it.
@@ -421,43 +417,16 @@ export function RangerChat({
           ? queueSend
           : undefined
       }
-      input={
+      mentions={
         onOpenMention
-          ? (input) => (
-              <div className={`ranger-chat-input${mobile ? " is-mobile" : ""}`}>
-                <AssistantMentionComposer
-                  value={input.value}
-                  mentions={rangerDraftMentions(draftKey, input.value)}
-                  workspaces={workspaces}
-                  currentWorkspace={currentWorkspace}
-                  draftKey={draftKey}
-                  inputRef={input.inputRef}
-                  mobile={mobile}
-                  onChange={(text, picked, _inputType, edit) => {
-                    const saved = draftMentions.get(draftKey);
-                    draftMentions.set(draftKey, {
-                      text,
-                      mentions:
-                        picked ??
-                        (saved
-                          ? adjustAssistantMentions(
-                              saved.text,
-                              text,
-                              saved.mentions,
-                              saved.text === input.value ? edit : undefined,
-                            )
-                          : []),
-                    });
-                    setMentionsChanged((count) => count + 1);
-                    input.onChange(text);
-                  }}
-                  onSubmit={input.onSubmit}
-                  onCompositionChange={input.onCompositionChange}
-                  onOpenMention={onOpenMention}
-                  onError={onError}
-                />
-              </div>
-            )
+          ? {
+              workspaces,
+              currentWorkspace,
+              read: (text) => rangerDraftMentions(draftKey, text),
+              write: (text, mentions) =>
+                draftMentions.set(draftKey, { text, mentions }),
+              onOpen: onOpenMention,
+            }
           : undefined
       }
       onRecallQueued={recallQueued}

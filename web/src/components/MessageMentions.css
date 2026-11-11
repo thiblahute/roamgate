@@ -1,25 +1,15 @@
-.assistant-mention-editor {
-  position: relative;
-  display: grid;
-  gap: 8px;
-}
-
-:is(.assistant-panel-footer, .ranger-chat-input)
-  .assistant-mention-editor
-  textarea {
-  padding-right: 38px;
-}
-
-:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-trigger {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  padding: 5px;
-  min-width: 26px;
-  min-height: 26px;
-  border: 0;
+/* The @ button on the box, beside the microphone. */
+.agent-history-composer-mention {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
   background: transparent;
   color: var(--muted);
+}
+
+.agent-history-composer-mention[aria-expanded="true"] {
+  color: var(--accent);
 }
 
 .assistant-mention-picker {
@@ -51,11 +41,9 @@
   gap: 3px;
 }
 
-:is(.assistant-panel-footer, .ranger-chat-input)
-  .assistant-mention-categories
-  button,
-:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-close,
-:is(.assistant-panel-footer, .ranger-chat-input) .assistant-mention-retry {
+.agent-history-composer .assistant-mention-categories button,
+.agent-history-composer .assistant-mention-close,
+.agent-history-composer .assistant-mention-retry {
   min-height: 26px;
   border: 0;
   background: transparent;
@@ -76,9 +64,7 @@
   padding: 4px;
 }
 
-:is(.assistant-panel-footer, .ranger-chat-input)
-  .assistant-mention-options
-  button {
+.agent-history-composer .assistant-mention-options button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -92,7 +78,7 @@
   color: var(--text);
 }
 
-:is(.assistant-panel-footer, .ranger-chat-input)
+.agent-history-composer
   .assistant-mention-options
   button[aria-selected="true"] {
   background: var(--accent-soft);
@@ -159,9 +145,7 @@
   border-radius: 6px;
 }
 
-:is(.assistant-panel-footer, .ranger-chat-input)
-  .assistant-mention-chip
-  button {
+.agent-history-composer .assistant-mention-chip button {
   display: inline-flex;
   gap: 4px;
   min-width: 0;
@@ -202,18 +186,8 @@
   overflow-wrap: anywhere;
 }
 
-:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
-  .assistant-mention-categories
-  button,
-:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
-  .assistant-mention-close,
-:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
-  .assistant-mention-chip
-  button {
+.agent-history-composer.is-mobile .assistant-mention-categories button,
+.agent-history-composer.is-mobile .assistant-mention-close,
+.agent-history-composer.is-mobile .assistant-mention-chip button {
   min-height: 44px;
-}
-
-:is(.assistant-panel-footer, .ranger-chat-input).is-mobile
-  .assistant-compose-input.assistant-mention-compose {
-  display: grid;
 }
