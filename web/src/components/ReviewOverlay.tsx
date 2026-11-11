@@ -102,6 +102,10 @@ import {
 import { followCommit, nearestLine } from "../reviewFollow";
 import { reviewMrSwitch } from "../reviewMrSwitch";
 import { store } from "../store";
+import {
+  failedForConnection,
+  useReloadOnReconnect,
+} from "../useReloadOnReconnect";
 import { useSystemBack } from "../systemBack";
 import { endsInOpenFence } from "../diagramSource";
 import { Diagram, useDiagramSlots } from "./DiagramSlots";
@@ -1559,6 +1563,13 @@ export function ReviewOverlay({
       (error) => {
         if (cancelled) return;
         noteGone(error);
+        // Lost with the connection: the commits known stay, and the place
+        // with them, until it is back.
+        if (failedForConnection(error)) {
+          setDiffError(errorText(error));
+          setCommits((known) => known ?? []);
+          return;
+        }
         setCommits([]);
       },
     );
@@ -1701,6 +1712,9 @@ export function ReviewOverlay({
   useEffect(() => {
     void loadDiff();
   }, [loadDiff]);
+  // A load the connection's loss failed is made again once it is back,
+  // on the same commit and line.
+  useReloadOnReconnect(diffError, connectionId, reload);
 
   function showView(sha: string | null) {
     restorePlace.current = null;
@@ -6275,7 +6289,7 @@ export function ReviewOverlay({
         ? "Loading the diff..."
         : gone
           ? ""
-          : diffError && !commitSha
+          : diffError && (!commitSha || !status)
             ? `Cannot load the diff: ${diffError}`
             : status ||
               (agent.working
@@ -6780,6 +6794,15 @@ export function ReviewOverlay({
           <div className="review-overall">{overallComment()}</div>
           <div id="review-status" className="note" aria-live="polite">
             {statusText}
+            {diffError && !loading && !gone ? (
+              <button
+                type="button"
+                className="btn ghost rv-sm"
+                onClick={reload}
+              >
+                Retry
+              </button>
+            ) : null}
           </div>
           {gone ? goneSection() : null}
           <div className="review-mr">

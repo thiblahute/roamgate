@@ -300,5 +300,105 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           await review.unmount();
         }
       });
+
+      test("a review the lost connection failed loads again once it is back, on the same commit and line", async () => {
+        const review = await mount({
+          files: [added("all.ts", 2)],
+          commits: [
+            {
+              sha: "a".repeat(40),
+              subject: "First",
+              files: [added("a.ts", 3)],
+            },
+            {
+              sha: "b".repeat(40),
+              subject: "Second",
+              files: [added("b.ts", 5)],
+            },
+          ],
+        });
+        await review.stepCommitBar(1);
+        await review.click({ path: "b.ts", text: "b.ts line 4" });
+        await review.setConnected(false);
+        await review.command("reload");
+        expect(review.status()).toContain("bridge hello is unavailable");
+        expect(review.buttons()).toContain("Retry");
+        const diffs = review.calls("review.diff").length;
+        await review.setConnected(true);
+        expect(review.calls("review.diff").length).toBeGreaterThan(diffs);
+        expect(review.view()).toBe("2/2 bbbbbbbb Second");
+        expect(review.cursorLine()).toMatchObject({
+          path: "b.ts",
+          text: "b.ts line 4",
+        });
+        expect(review.status()).not.toContain("bridge hello is unavailable");
+        expect(review.buttons()).not.toContain("Retry");
+        await review.unmount();
+      });
+
+      test("a review opened while the connection is down loads once it is back, where it was left", async () => {
+        const files = [added("a.ts", 6)];
+        const first = await mount({ files });
+        await first.click({ path: "a.ts", text: "a.ts line 5" });
+        await first.unmount();
+        const review = await mount({ files, storage: "keep" });
+        await review.setConnected(false);
+        await review.reload();
+        expect(review.status()).toBe(
+          "Cannot load the diff: bridge hello is unavailableRetry",
+        );
+        await review.setConnected(true);
+        expect(review.cursorLine()).toMatchObject({
+          path: "a.ts",
+          text: "a.ts line 5",
+        });
+        expect(review.status()).toBe("");
+        await review.unmount();
+      });
+
+      test("Retry loads a review that failed, and another failure is not tried again on its own", async () => {
+        const files = [added("a.ts", 3)];
+        const review = await mount({ files });
+        await review.click({ path: "a.ts", text: "a.ts line 2" });
+        review.failBridge(
+          ["review.diff", "review.commits"],
+          "fatal: bad object",
+        );
+        await review.command("reload");
+        expect(review.status()).toBe(
+          "Cannot load the diff: fatal: bad objectRetry",
+        );
+        const tries = review.calls("review.diff").length;
+        // The connection going down and back does not retry it either.
+        await review.setConnected(false);
+        await review.setConnected(true);
+        expect(review.calls("review.diff").length).toBe(tries);
+        review.failBridge([]);
+        await review.clickButton("Retry");
+        expect(review.calls("review.diff").length).toBeGreaterThan(tries);
+        expect(review.cursorLine()).toMatchObject({
+          path: "a.ts",
+          text: "a.ts line 2",
+        });
+        expect(review.buttons()).not.toContain("Retry");
+        await review.unmount();
+      });
+
+      test("a load the connection fails while it is up is tried once again, not in a loop", async () => {
+        const review = await mount({ files: [added("a.ts", 3)] });
+        review.failBridge(
+          ["review.diff", "review.commits"],
+          "bridge hello is unavailable",
+        );
+        const tries = review.calls("review.diff").length;
+        await review.command("reload");
+        const after = review.calls("review.diff").length;
+        // The reload's own read, then a single try again.
+        expect(after - tries).toBeLessThanOrEqual(4);
+        await review.setConnected(true);
+        expect(review.calls("review.diff").length).toBe(after);
+        expect(review.buttons()).toContain("Retry");
+        await review.unmount();
+      });
     });
 }

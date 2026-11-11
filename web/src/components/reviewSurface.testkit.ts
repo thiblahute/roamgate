@@ -430,6 +430,11 @@ export interface ReviewSurface {
   bridgeHolds(update: BridgeUpdate | (() => BridgeUpdate)): void;
   /** Make the bridge fail these methods (none: answer them again). */
   failBridge(methods: string[], error?: string): void;
+  /**
+   * The connection goes down (false), every call failing meanwhile as the
+   * bridge's socket does ("bridge hello is unavailable"), or comes back.
+   */
+  setConnected(connected: boolean): Promise<void>;
   /** Hold the bridge's answer to a method until released. */
   holdBridge(method: string): { release(error?: string): Promise<void> };
 
