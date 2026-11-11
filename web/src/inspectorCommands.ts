@@ -78,12 +78,18 @@ export function opensCommandLine(event: {
   target: EventTarget | null;
 }): boolean {
   if (event.key !== ":" || event.ctrlKey || event.metaKey) return false;
-  const target = event.target as {
+  return !isTypingTarget(event.target);
+}
+
+/** A field, a comment box or any editable text, where keys are text. */
+export function isTypingTarget(value: EventTarget | null): boolean {
+  const target = value as {
     isContentEditable?: boolean;
     tagName?: unknown;
   } | null;
-  if (!target || typeof target.tagName !== "string") return true;
-  return !(
-    target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  if (!target || typeof target.tagName !== "string") return false;
+  return (
+    !!target.isContentEditable ||
+    /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
   );
 }

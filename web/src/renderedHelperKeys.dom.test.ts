@@ -30,6 +30,28 @@ if (process.env.ROAMGATE_RENDERED_KEYS_DOM_TEST !== "1") {
         parseFrameMessage({ roamgate: "rendered", type: "key", key }),
       ).toBeNull();
   });
+
+  test("Back, Forward, a page's scroll and its own places are what a frame may say", () => {
+    for (const step of [-1, 1] as const)
+      expect(
+        parseFrameMessage({ roamgate: "rendered", type: "history", step }),
+      ).toEqual({ roamgate: "rendered", type: "history", step });
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "history", step: 2 }),
+    ).toBeNull();
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "scroll", y: -5 }),
+    ).toEqual({ roamgate: "rendered", type: "scroll", y: 0 });
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "scroll", y: "1" }),
+    ).toBeNull();
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "location", url: "a" }),
+    ).toEqual({ roamgate: "rendered", type: "location", url: "a" });
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "location", url: 1 }),
+    ).toBeNull();
+  });
 } else {
   const { Window } = await import("happy-dom");
   const browser = new Window({ url: "http://localhost/rendered/x/" });
@@ -149,5 +171,47 @@ if (process.env.ROAMGATE_RENDERED_KEYS_DOM_TEST !== "1") {
     press(page.getElementById("field")!, ":");
     press(body, ":", { ctrlKey: true });
     expect(keys()).toEqual([]);
+  });
+
+  test("the frame hands Back and Forward's keys, its scroll and its pushState places", async () => {
+    const said = (type: string) =>
+      posted.filter((message) => (message as { type?: string }).type === type);
+    posted.length = 0;
+    const press = (target: EventTarget, key: string, init = {}) => {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+    const body = page.body;
+    expect(press(body, "ArrowLeft", { altKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    press(body, "ArrowRight", { altKey: true });
+    press(body, "[", { metaKey: true });
+    press(body, "]", { metaKey: true });
+    // Not in a field, nor with Shift or Ctrl.
+    press(page.getElementById("field")!, "ArrowLeft", { altKey: true });
+    press(body, "ArrowLeft", { altKey: true, shiftKey: true });
+    press(body, "[", { ctrlKey: true });
+    expect(said("history")).toEqual([
+      { roamgate: "rendered", type: "history", step: -1 },
+      { roamgate: "rendered", type: "history", step: 1 },
+      { roamgate: "rendered", type: "history", step: -1 },
+      { roamgate: "rendered", type: "history", step: 1 },
+    ]);
+    // A scroll, said once it stops.
+    window.dispatchEvent(new browser.Event("scroll") as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(said("scroll").length).toBe(1);
+    // pushState: a place of the page's own.
+    window.history.pushState(null, "", "/rendered/x/next.html?tab=2");
+    expect(said("location")).toEqual([
+      { roamgate: "rendered", type: "location", url: "next.html?tab=2" },
+    ]);
   });
 }

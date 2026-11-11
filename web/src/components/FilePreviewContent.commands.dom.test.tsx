@@ -254,6 +254,8 @@ if (process.env.ROAMGATE_PREVIEW_COMMANDS_DOM_TEST !== "1") {
       "reload",
       "copy",
       "url",
+      "back",
+      "forward",
       "q",
     ]);
     // Tab completes.

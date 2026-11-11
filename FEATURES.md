@@ -1309,10 +1309,19 @@ Each does what a key or a button already does, where that one is:
 | `:reload` (`:e`, `:edit`) | the refresh button |
 | `:copy` | **Copy** |
 | `:url` (`ADDRESS`) | **URL**: its form, or that page opened |
+| `:back`, `:forward` | Back and Forward (Alt+Left / Alt+Right, Cmd+[ / Cmd+] on a Mac) |
 | `:q` (`:quit`, `:close`) | closes the preview |
 
 Where the source view's own Vim keys take the threads' keys, the bar's
 hints name these commands instead.
+
+Back and Forward (the arrows at the start of the preview's bar, Alt+Left /
+Alt+Right or Cmd+[ / Cmd+] on a Mac, `:back` / `:forward`) work as a
+browser's, with the focus in the preview or in a page's frame (its script
+hands the keys over): through the files a link in the preview opened and the
+pages a page's or a site's frame went to (links, a script's pushState), each
+shown again where it was scrolled. Each tab keeps its own history; the
+arrows are disabled when there is nothing to go to.
 
 Scripts are one choice for every format (Markdown, HTML, SVG, sites): off by
 default, always shown in the preview. **Scripts off** in the preview turns them
