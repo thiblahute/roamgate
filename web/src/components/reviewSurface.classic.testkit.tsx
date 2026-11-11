@@ -47,6 +47,10 @@ const backend = {
   sessions: new Map<string, { session: unknown }>(),
   /** Image uploads wait on it while held. */
   imageGate: Promise.resolve() as Promise<void>,
+  /** The connection is up: calls reach the bridge. */
+  connected: true,
+  /** Told when the connection goes down or comes back. */
+  connectionListeners: new Set<() => void>(),
 };
 
 let mocked = false;
@@ -62,6 +66,7 @@ export function mockClassicBackend() {
       params: Record<string, unknown> = {},
     ) => {
       backend.calls.push({ method, params });
+      if (!backend.connected) throw new Error("bridge hello is unavailable");
       const held = backend.held.get(method);
       if (held) await held;
       const failure = backend.failing.get(method);
@@ -125,6 +130,15 @@ export function mockClassicBackend() {
         backend.remember(snapshot);
     },
     useReviewState: () => ({ sessions: backend.sessions, openRequest: null }),
+  }));
+  mock.module("../connectionReady", () => ({
+    connectionReady: () => backend.connected,
+    onConnectionChange: (listener: () => void) => {
+      backend.connectionListeners.add(listener);
+      return () => {
+        backend.connectionListeners.delete(listener);
+      };
+    },
   }));
 }
 
@@ -236,6 +250,7 @@ export async function mountClassicReview(
   backend.fileAt = options.fileAt ?? {};
   backend.repos = options.repos ?? [];
   backend.failing.clear();
+  backend.connected = true;
   backend.held.clear();
   backend.holds = null;
   backend.imageGate = Promise.resolve();
@@ -1461,6 +1476,14 @@ export async function mountClassicReview(
           threads: update.threads ?? threads,
         } as unknown as ReviewSnapshot;
       };
+    },
+    async setConnected(connected) {
+      await act(async () => {
+        backend.connected = connected;
+        for (const listener of [...backend.connectionListeners]) listener();
+        await settle();
+      });
+      await settleAll();
     },
     failBridge(methods, error = "not connected to bridge") {
       backend.failing.clear();
