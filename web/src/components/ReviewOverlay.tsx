@@ -26,8 +26,6 @@ import {
   type ReviewThreadKind,
 } from "../../../shared/review";
 import { RpcError } from "../api";
-import { roamgateLocalStorage } from "../browserStorage";
-import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
 import { copyTextWithFeedback } from "../copyText";
 import { BoundedCache } from "../boundedCache";
 import { detectShortcutPlatform, formatShortcut } from "../shortcutBindings";
@@ -39,14 +37,52 @@ import {
   reviewDraftCount,
   takeReviewDraft,
 } from "../reviewDrafts";
+import { newClientId, type PendingWrite } from "../reviewPending";
 import {
-  newClientId,
-  type PendingWrite,
-  pendingWriteCall,
-  withPendingWrites,
-  writeLanded,
-} from "../reviewPending";
-import { handoffStatus, notSavedStatus, saveOrKeep } from "../reviewSave";
+  editorKey,
+  editorSave,
+  handoffStatus,
+  notSavedStatus,
+  type ReviewEditor,
+  saveOrKeep,
+} from "../reviewSave";
+import {
+  readReviewPlace,
+  type ReviewPlace,
+  writeReviewPlace,
+} from "../reviewPlace";
+import {
+  readReviewPrefs,
+  reviewSplitDefault,
+  writeReviewPrefs,
+} from "../reviewPrefs";
+import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
+import { repoLabel, useWorkspaceRepos, worktreeOnly } from "../reviewRepos";
+import {
+  heldCommentCount,
+  latestAnswerAt,
+  paneToAttach as attachPaneOf,
+  reviewAgent,
+  sharedThreadDelivery,
+  useAttachAgentPane,
+} from "../reviewDelivery";
+import { useReviewSessionCall } from "../reviewSessionCall";
+import {
+  type CommentStop,
+  commentStops as commentStopsOf,
+  GENERAL_AT,
+  stopsOn as stopsAt,
+} from "../reviewStops";
+import {
+  fileFingerprint,
+  fileToggleChanges,
+  fileToggleNotice,
+  hunkNear as hunkNearOf,
+  hunkToggle,
+  hunkToggleNotice,
+  pickHunks,
+} from "../reviewToggle";
+import { usePendingWrites } from "../usePendingWrites";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import {
   anchorForRow,
@@ -90,7 +126,6 @@ import {
   nextUnreviewedHunk,
   parseReviewCommand,
   type ReviewedFile,
-  reviewedChanges,
   reviewedState,
   searchRegExp,
   splitStep,
@@ -122,7 +157,6 @@ import {
   markedText,
   messageLayout,
   NoteBody,
-  quotedPart,
 } from "./ReviewNoteBody";
 import {
   ThreadsChip,
@@ -159,132 +193,24 @@ import "./ReviewOverlay.css";
  * keys, comment boxes and GitLab threads, over Roamgate's review sessions.
  */
 
-type Editor = {
-  /** Diff row the comment is on; null for file or whole-review comments. */
-  at: number | null;
-  file: number | null;
-  kind: ReviewThreadKind;
-  anchor: ReviewAnchor;
-  /** Editing an existing comment, or answering a thread. */
-  commentId?: string;
-  replyTo?: string;
-  /** A reply in a forge discussion: a draft of the user's review there. */
-  publicReply?: boolean;
-  /** The review's overall comment. */
-  overall?: boolean;
-  text: string;
-  /** Remounts the editor when a suggestion is inserted from outside. */
-  version: number;
-};
-
-/** A message under a line, or one part of it: where j / k and n / N stop. */
-type CommentStop = {
-  /** Its line, or GENERAL_AT above the diff (review-level comments). */
-  at: number;
-  thread: ReviewThread;
-  comment: ReviewComment;
-  /** The part of the message (see messageBlocks); none on GitLab's. */
-  part?: number;
-};
+type Editor = ReviewEditor;
 
 /** How often an open review reads its merge request's discussions again. */
 const GITLAB_REFRESH_MS = 60_000;
 /** Shown again sooner than this (a workspace switch), it asks nothing. */
 const GITLAB_REFRESH_AGAIN_MS = 30_000;
 
-/** Where the comments on the whole review sit: above the first line. */
-const GENERAL_AT = -1;
-
 /** One drawn line: a unified row, a split context row or a split pair. */
 type DrawnRow =
   | { type: "line"; row: ReviewRow }
   | { type: "pair"; left: ReviewRow | null; right: ReviewRow | null };
 
-const PREFS_KEY = "reviewPrefs";
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-/** A new comment shorter than this is only sent explicitly. */
-const STRAY_MAX = 3;
-/** Calls that change the review's threads: its state is read back after. */
-const REVIEW_WRITES = new Set([
-  "review.thread.add",
-  "review.reply",
-  "review.edit",
-  "review.delete",
-  "review.resolve",
-  "review.restore",
-  "review.adopt",
-]);
 const SYNTAX_MAX_ROWS = 20_000;
 const LARGE_FILE_LINES = 600;
 const NOT_FOUND_MS = 2500;
 
-type Prefs = {
-  split?: boolean;
-  filesHidden?: boolean;
-};
-
-function readPrefs(): Prefs {
-  try {
-    const prefs = JSON.parse(roamgateLocalStorage.getItem(PREFS_KEY) ?? "{}");
-    return prefs && typeof prefs === "object" ? (prefs as Prefs) : {};
-  } catch {
-    return {};
-  }
-}
-
-const PLACE_KEY = "reviewPlace";
-/** The most reviews whose place is kept across reloads. */
-const PLACES_KEPT = 50;
-
-/** Where you were in a review: its view and line, back after a reload. */
-type Place = {
-  /** The commit shown, or null for all changes. */
-  commit: string | null;
-  /** That commit's subject and place, to find it again once rewritten. */
-  subject?: string;
-  index?: number;
-  count?: number;
-  path?: string;
-  old?: number | null;
-  new?: number | null;
-  /** How far down the review the line stood, in pixels (a reload). */
-  offset?: number;
-};
-
-function readPlaces(): Record<string, Place> {
-  try {
-    const all = JSON.parse(roamgateLocalStorage.getItem(PLACE_KEY) ?? "{}");
-    return all && typeof all === "object" ? all : {};
-  } catch {
-    return {};
-  }
-}
-
-function readPlace(sessionId: string): Place | null {
-  const place = readPlaces()[sessionId];
-  return place && typeof place === "object" ? place : null;
-}
-
-function writePlace(sessionId: string, place: Place) {
-  try {
-    const kept = Object.entries(readPlaces())
-      .filter(([id]) => id !== sessionId)
-      .slice(-(PLACES_KEPT - 1));
-    roamgateLocalStorage.setItem(
-      PLACE_KEY,
-      JSON.stringify(Object.fromEntries([...kept, [sessionId, place]])),
-    );
-  } catch {}
-}
-
-function writePrefs(update: Partial<Prefs>) {
-  try {
-    roamgateLocalStorage.setItem(
-      PREFS_KEY,
-      JSON.stringify({ ...readPrefs(), ...update }),
-    );
-  } catch {}
-}
+type Place = ReviewPlace;
 
 function last<T>(items: readonly T[] | undefined): T | undefined {
   return items?.length ? items[items.length - 1] : undefined;
@@ -491,123 +417,6 @@ function matchesFilter(keys: string, label: string, filter: string): boolean {
   return query.split(/\s+/).every((word) => haystack.includes(word));
 }
 
-/** A short fingerprint of a file's diff: reviewed until it changes. */
-function fileFingerprint(file: ReviewDiff["files"][number]): string {
-  let hash = 5381;
-  for (const hunk of file.hunks)
-    for (const line of hunk.lines) {
-      const text = `${line.kind}${line.text}\n`;
-      for (let i = 0; i < text.length; i++)
-        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
-    }
-  return `${file.hunks.length}:${(hash >>> 0).toString(36)}`;
-}
-
-/** Scans cost a round trip to the host: reuse them for a minute. */
-const repoScans = new BoundedCache<string, Promise<WorkspaceRepo[]>>({
-  max: 32,
-  ttlMs: 60_000,
-});
-
-function scanRepos(
-  connectionId: string,
-  dirs: string[],
-  agentDirs: string[],
-): Promise<WorkspaceRepo[]> {
-  const key = `${connectionId}\n${[...dirs].sort().join("\n")}\n-\n${agentDirs.join("\n")}`;
-  const cached = repoScans.get(key);
-  if (cached) return cached;
-  // The picker's list: background work, behind what the user is reading.
-  const repos = reviewCall<{ repos: WorkspaceRepo[] }>(
-    connectionId,
-    "review.repos",
-    { paths: dirs, agent_paths: agentDirs },
-    undefined,
-    { lane: "background" },
-  ).then(
-    (result) => result.repos,
-    () => [],
-  );
-  repoScans.set(key, repos);
-  return repos;
-}
-
-/**
- * The repositories of the review's workspace: those with a review, and
- * those its panes' directories (and their subprojects) have changes in,
- * and those its agent edits.
- */
-function useWorkspaceRepos(
-  connectionId: string,
-  session: ReviewSnapshot["session"],
-  dirs: string[],
-  agentDirs: string[],
-  shown: boolean,
-): WorkspaceRepo[] {
-  const [scanned, setScanned] = useState<WorkspaceRepo[]>([]);
-  const dirsKey = dirs.join("\n");
-  const agentKey = agentDirs.join("\n");
-  useEffect(() => {
-    // Out of sight, the panes' directories are scanned once it shows.
-    if (!shown) return;
-    let cancelled = false;
-    const list = dirsKey ? dirsKey.split("\n") : [];
-    const agents = agentKey ? agentKey.split("\n") : [];
-    void scanRepos(connectionId, [session.root, ...list], agents).then(
-      (repos) => {
-        if (!cancelled) setScanned(repos);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, session.root, dirsKey, agentKey, shown]);
-  const { sessions } = useReviewState();
-  return useMemo(() => {
-    const byRoot = new Map<string, WorkspaceRepo>();
-    for (const repo of scanned) byRoot.set(repo.root, { ...repo });
-    for (const snapshot of sessions.values()) {
-      const other = snapshot.session;
-      if (
-        other.connectionId !== session.connectionId ||
-        !session.workspaceId ||
-        other.workspaceId !== session.workspaceId ||
-        // A chat's threads, a rendered file's or an effort's are not a
-        // checkout's.
-        other.target.kind === "chat" ||
-        other.target.kind === "rendered" ||
-        other.target.kind === "effort"
-      )
-        continue;
-      const entry = byRoot.get(other.root) ?? { root: other.root };
-      entry.comments =
-        (entry.comments ?? 0) +
-        snapshot.threads.filter((t) => t.kind !== "merge-request").length;
-      byRoot.set(other.root, entry);
-    }
-    if (!byRoot.has(session.root))
-      byRoot.set(session.root, { root: session.root });
-    // By path, so ( and ) go the same way from every repository.
-    return [...byRoot.values()].sort((a, b) => a.root.localeCompare(b.root));
-  }, [scanned, sessions, session]);
-}
-
-/** Nothing committed beyond its default branch, but work in progress. */
-function worktreeOnly(repo: WorkspaceRepo): boolean {
-  return !repo.ahead && repo.dirty === true;
-}
-
-function repoLabel(repo: WorkspaceRepo): string {
-  const name = repo.root.split("/").pop() ?? repo.root;
-  const facts = [
-    repo.branch,
-    repo.ahead ? `${repo.ahead} ahead` : "",
-    repo.dirty ? "uncommitted" : "",
-    repo.comments ? plural(repo.comments, "comment") : "",
-  ].filter(Boolean);
-  return facts.length ? `${name} · ${facts.join(", ")}` : name;
-}
-
 export function ReviewOverlay({
   snapshot,
   connectionId,
@@ -678,11 +487,12 @@ export function ReviewOverlay({
       onOpenRepo?.(repo.root, worktreeOnly(repo));
   }
   const sessionId = session.id;
-  const prefs = useMemo(readPrefs, []);
-  const [split, setSplit] = useState(
-    () =>
-      prefs.split ??
-      (typeof window !== "undefined" && window.innerWidth >= 1100),
+  const prefs = useMemo(readReviewPrefs, []);
+  const [split, setSplit] = useState(() =>
+    reviewSplitDefault(
+      prefs,
+      typeof window !== "undefined" ? window.innerWidth : undefined,
+    ),
   );
   const [filesShown, setFilesShown] = useState(() => !prefs.filesHidden);
   // Not remembered: a review always opens with its discussions shown.
@@ -716,26 +526,20 @@ export function ReviewOverlay({
         : snapshot.threads,
     [snapshot.threads, sharedHere],
   );
+  const [status, setStatus] = useState("");
+  const call = useReviewSessionCall(connectionId, sessionId);
   /**
    * Replies and new threads on their way: shown at once, pending, until the
    * review sent back has them.
    */
-  const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
-  const threads = useMemo(
-    () => withPendingWrites(ownAndShared, pendingWrites),
-    [ownAndShared, pendingWrites],
-  );
-  const pendingById = useMemo(
-    () => new Map(pendingWrites.map((write) => [write.id, write])),
-    [pendingWrites],
-  );
-  // Those the review now has are done with.
-  useEffect(() => {
-    setPendingWrites((writes) => {
-      const left = writes.filter((write) => !writeLanded(ownAndShared, write));
-      return left.length === writes.length ? writes : left;
+  const { threads, pendingById, sendWrite, retryWrite, discardWrite } =
+    usePendingWrites({
+      threads: ownAndShared,
+      sessionId,
+      call,
+      setStatus,
+      notify,
     });
-  }, [ownAndShared]);
   /**
    * The checkout was removed, or the range's base or head is no longer in
    * it: said plainly, with a way to retarget or forget the review.
@@ -807,7 +611,6 @@ export function ReviewOverlay({
   const [selection, setSelection] = useState<number | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const editorHandle = useRef<CommentEditorHandle | null>(null);
-  const [status, setStatus] = useState("");
   /** Why "Make it mine" failed, by thread: shown on the thread. */
   const [adoptFailures, setAdoptFailures] = useState<Record<string, string>>(
     {},
@@ -887,66 +690,20 @@ export function ReviewOverlay({
   } | null>(null);
 
   const agent = session.agent;
-  const agentName =
-    agent.name ??
-    (agentPanes[0]
-      ? agentPanes[0].agent.charAt(0).toUpperCase() +
-        agentPanes[0].agent.slice(1)
-      : "Agent");
-  const agentPaneId = agent.paneId ?? agentPanes[0]?.paneId;
-  // A merge request's review only once GitLab told it is not confidential.
-  const agentAllowed =
-    session.target.kind !== "mr" || snapshot.mergeRequest?.security === false;
-  /** Comments go to the agent as they are written (not on GitLab reviews). */
-  const talk =
-    !session.gitlab &&
-    session.autoSend !== false &&
-    !!agentPaneId &&
-    agentAllowed;
-  const commentKind: ReviewThreadKind = talk ? "discussion" : "draft";
-  /** Comments wait for Send instead of going as they are written. */
-  const held = talk && session.holdComments === true;
-  /**
-   * A question for the agent of a review with none (C, :ask) is held for
-   * the user's Send in the workspace's threads (To send), as a terminal's
-   * comment is: not a thread no agent receives.
-   */
-  const holdForSend = !agentPaneId && agentAllowed && !!session.workspaceId;
-  /**
-   * Why the comments did not reach the agent, while they wait: shown on
-   * each, with a retry. An agent busy with a question in its pane is
-   * retried by the bridge on its own.
-   */
-  const undeliveredReason =
-    session.deliveryError && !/agent_blocked/.test(session.deliveryError)
-      ? session.deliveryError
-      : null;
+  const {
+    agentName,
+    agentPaneId,
+    agentAllowed,
+    talk,
+    commentKind,
+    held,
+    holdForSend,
+    undeliveredReason,
+  } = reviewAgent(snapshot, agentPanes);
   /** Your discussion comments the agent has not had yet. */
-  const heldCount = held
-    ? threads
-        .filter(
-          (thread) =>
-            thread.sessionId === session.id &&
-            thread.kind === "discussion" &&
-            !thread.resolved,
-        )
-        .flatMap((thread) => thread.comments)
-        .filter(
-          (comment) =>
-            comment.author === REVIEW_USER &&
-            comment.updatedAt > (session.deliveredAt ?? ""),
-        ).length
-    : 0;
+  const heldCount = heldCommentCount(threads, session, held);
   // A new answer in a discussion shows the comments: it is never missed.
-  const latestAnswer = threads
-    .filter((thread) => thread.kind === "discussion")
-    .flatMap((thread) => thread.comments)
-    .filter((comment) => comment.author !== REVIEW_USER)
-    .reduce(
-      (latest, comment) =>
-        comment.createdAt > latest ? comment.createdAt : latest,
-      "",
-    );
+  const latestAnswer = latestAnswerAt(threads);
   const seenAnswer = useRef(latestAnswer);
   useEffect(() => {
     if (latestAnswer <= seenAnswer.current) return;
@@ -960,44 +717,12 @@ export function ReviewOverlay({
       ? "GitHub"
       : "GitLab";
 
-  const call = useCallback(
-    async <T,>(method: string, params: Record<string, unknown> = {}) => {
-      const result = await reviewCall<T>(connectionId, method, {
-        session_id: sessionId,
-        ...params,
-      });
-      // The server pushes the new state, but a push can be lost with its
-      // socket: read it back so your own comment never goes missing.
-      if (REVIEW_WRITES.has(method))
-        void reviewCall<ReviewSnapshot>(connectionId, "review.get", {
-          session_id: sessionId,
-        })
-          .then(rememberReviewSnapshot)
-          .catch(() => {});
-      return result;
-    },
-    [connectionId, sessionId],
+  useAttachAgentPane(
+    sessionId,
+    attachPaneOf(session, { talk, agentPaneId }),
+    agentName,
+    call,
   );
-
-  /**
-   * "live" with the workspace's agent pane: the review is told that pane,
-   * else the bridge has nowhere to send the comments (an agent that opened
-   * the review without naming its pane). Once per review and pane.
-   */
-  const attachedPane = useRef<string | null>(null);
-  const paneToAttach =
-    talk && !agent.paneId && agentPaneId ? agentPaneId : null;
-  useEffect(() => {
-    const key = paneToAttach && `${sessionId}\n${paneToAttach}`;
-    if (!paneToAttach || attachedPane.current === key) return;
-    attachedPane.current = key;
-    void call<ReviewSnapshot>("review.update", {
-      agent: agentName,
-      agent_pane: paneToAttach,
-    }).then(rememberReviewSnapshot, () => {
-      attachedPane.current = null;
-    });
-  }, [paneToAttach, sessionId, agentName, call]);
 
   const { sessions: reviewSessions } = useReviewState();
   /**
@@ -1015,16 +740,8 @@ export function ReviewOverlay({
         agentName,
         retry: retryDelivery,
       };
-    const ownTalk = !own.gitlab && own.autoSend !== false && !!own.agent.paneId;
     return {
-      review: own,
-      talk: ownTalk,
-      held: ownTalk && own.holdComments === true,
-      undeliveredReason:
-        own.deliveryError && !/agent_blocked/.test(own.deliveryError)
-          ? own.deliveryError
-          : null,
-      agentName: own.agent.name ?? agentName,
+      ...sharedThreadDelivery(own, agentName),
       retry: () =>
         void run(() =>
           reviewCall(connectionId, "review.retry", { session_id: own.id }),
@@ -1148,7 +865,7 @@ export function ReviewOverlay({
   useEffect(() => {
     if (!awake) return;
     let cancelled = false;
-    const remembered = placeRead.current ? null : readPlace(sessionId);
+    const remembered = placeRead.current ? null : readReviewPlace(sessionId);
     const asked = placeRead.current ? viewNow.current() : remembered;
     // The view it will show is read meanwhile: the one asked for, else the
     // one the server opens on (the oldest commit), which the commits then
@@ -1746,7 +1463,7 @@ export function ReviewOverlay({
     const row = rows[cursor];
     const path = row ? shownDiff?.files[row.file]?.path : undefined;
     const view = viewNow.current() ?? { commit: commitSha };
-    writePlace(
+    writeReviewPlace(
       sessionId,
       path && row
         ? { ...view, path, old: row.line.old, new: row.line.new }
@@ -2048,52 +1765,12 @@ export function ReviewOverlay({
    * one per part (j / k step into them), each followed by the comments on
    * that part.
    */
-  const commentStops = useMemo(() => {
-    const stops: CommentStop[] = [];
-    const pushThread = (at: number, thread: ReviewThread) => {
-      // A folded thread is one stop: its summary line.
-      if (threadFolded(thread)) {
-        const first = thread.comments[0];
-        if (first) stops.push({ at, thread, comment: first });
-        return;
-      }
-      for (const comment of thread.comments) {
-        if (thread.kind === "merge-request") {
-          stops.push({ at, thread, comment });
-          continue;
-        }
-        const layout = messageLayout(comment.body);
-        const notes = new Map<number, ReviewThread[]>();
-        for (const note of partNotes(comment.id)) {
-          const part = quotedPart(layout, note.anchor.message?.quote ?? "");
-          notes.set(part, [...(notes.get(part) ?? []), note]);
-        }
-        stops.push({ at, thread, comment });
-        const parts = layout.quotes.length > 1 ? layout.quotes.length : 0;
-        for (let part = 0; part < Math.max(1, parts); part++) {
-          if (parts) stops.push({ at, thread, comment, part });
-          for (const note of notes.get(part) ?? []) pushThread(at, note);
-        }
-      }
-    };
-    // Above the diff, as drawn: the open GitLab discussions, then yours.
-    for (const thread of placement.general)
-      if (thread.kind === "merge-request" && !thread.resolved)
-        pushThread(GENERAL_AT, thread);
-    for (const thread of placement.general)
-      if (thread.kind !== "merge-request") pushThread(GENERAL_AT, thread);
-    for (const at of commentRows) {
-      const list = placement.byRow.get(at) ?? [];
-      for (const thread of [
-        ...list.filter((t) => t.kind === "merge-request"),
-        ...list.filter((t) => t.kind !== "merge-request"),
-      ])
-        pushThread(at, thread);
-    }
-    return stops;
+  const commentStops = useMemo(
+    () => commentStopsOf(placement, commentRows, threadFolded, partNotes),
     // threadFolded reads foldFlipped, partNotes hiddenThreads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentRows, placement, foldFlipped, messageParts, hiddenThreads]);
+    [commentRows, placement, foldFlipped, messageParts, hiddenThreads],
+  );
   /**
    * The rows of the cursor's drawn line: side by side, both halves, whose
    * comments are all drawn under it.
@@ -2110,10 +1787,12 @@ export function ReviewOverlay({
    * GENERAL_AT, those above the diff.
    */
   function stopsOn(at: number) {
-    const own = at === GENERAL_AT ? [GENERAL_AT] : lineRows(at);
-    return hideComments
-      ? []
-      : commentStops.filter((stop) => own.includes(stop.at));
+    return stopsAt(
+      commentStops,
+      at,
+      at === GENERAL_AT ? [] : lineRows(at),
+      hideComments,
+    );
   }
   const focusedStop = [...stopsOn(GENERAL_AT), ...stopsOn(cursor)].find(
     (stop) =>
@@ -3231,14 +2910,11 @@ export function ReviewOverlay({
       : null;
     afterMark.current = to ? { file: index, hunk: null, to } : null;
     if (marking && !to) nextFileAfter.current = index;
-    const want = new Set(marking ? info.hunks.map((_, hunk) => hunk) : []);
     writeReviewed(
-      reviewedChanges(info, want, viewKey, session.reviewed ?? {}, marking),
+      fileToggleChanges(info, marking, viewKey, session.reviewed ?? {}),
       () =>
         notify(
-          marking
-            ? `Reviewed (${reviewedCount + 1}/${fingerprints.length})`
-            : "No longer reviewed, nor its chunks",
+          fileToggleNotice(marking, reviewedCount, fingerprints.length),
           "info",
           1500,
         ),
@@ -3247,19 +2923,7 @@ export function ReviewOverlay({
 
   /** The view's hunk of a row, or for context revealed the nearest one. */
   function hunkNear(at: number): HunkUnit {
-    const own = units[at];
-    if (own) return own;
-    const file = rows[at]?.file;
-    for (let distance = 1; distance < rows.length; distance++) {
-      let inFile = false;
-      for (const near of [at - distance, at + distance]) {
-        if (rows[near]?.file !== file) continue;
-        inFile = true;
-        if (units[near]) return units[near];
-      }
-      if (!inFile) break;
-    }
-    return null;
+    return hunkNearOf(units, (near) => rows[near]?.file, rows.length, at);
   }
 
   /**
@@ -3269,27 +2933,17 @@ export function ReviewOverlay({
    * is marked whole.
    */
   function toggleHunksHere() {
-    const picked = new Map<number, Set<number>>();
-    const pick = (unit: HunkUnit) => {
-      if (!unit) return;
-      picked.set(
-        unit.file,
-        (picked.get(unit.file) ?? new Set()).add(unit.hunk),
-      );
-    };
-    if (selection === null) pick(hunkNear(cursor));
-    else
-      for (
-        let at = Math.min(selection, cursor);
-        at <= Math.max(selection, cursor);
-        at++
-      )
-        pick(units[at] ?? null);
+    const picked = pickHunks(units, cursor, selection, hunkNear);
     if (!picked.size) return toggleReviewedHere();
     setSelection(null);
-    const marking = [...picked].some(([file, hunks]) =>
-      [...hunks].some((hunk) => !hunkReviewed(file, hunk)),
+    const toggle = hunkToggle(
+      picked,
+      reviewedFilesInfo,
+      reviewed.hunks,
+      viewKey,
+      session.reviewed ?? {},
     );
+    const { marking } = toggle;
     const isPicked = (file: number, hunk: number) =>
       picked.get(file)?.has(hunk) ?? false;
     const files = [...picked];
@@ -3299,34 +2953,10 @@ export function ReviewOverlay({
       ? unreviewedAfter(Math.max(selection ?? cursor, cursor), isPicked)
       : null;
     afterMark.current = to ? { file: last[0], hunk: lastHunk, to } : null;
-    const changes: Record<string, string | null> = {};
-    let fileDone = false;
-    let chunks = "";
-    for (const [file, hunks] of picked) {
-      const info = reviewedFilesInfo[file];
-      if (!info) continue;
-      if (marking) refold(file);
-      const want = new Set(reviewed.hunks[file]);
-      for (const hunk of hunks) {
-        if (marking) want.add(hunk);
-        else want.delete(hunk);
-      }
-      if (marking && want.size === info.hunks.length) fileDone = true;
-      chunks = `${want.size}/${info.hunks.length}`;
-      Object.assign(
-        changes,
-        reviewedChanges(info, want, viewKey, session.reviewed ?? {}),
-      );
-    }
-    const count = [...picked.values()].reduce((sum, h) => sum + h.size, 0);
-    const what = count === 1 ? "Chunk" : `${count} chunks`;
-    writeReviewed(changes, () =>
+    if (marking) for (const file of toggle.files) refold(file);
+    writeReviewed(toggle.changes, () =>
       notify(
-        !marking
-          ? `${what} no longer reviewed (${chunks} in the file)`
-          : fileDone
-            ? `${what} reviewed: the file is (${reviewedCount + 1}/${fingerprints.length})`
-            : `${what} reviewed (${chunks} in the file)`,
+        hunkToggleNotice(toggle, reviewedCount, fingerprints.length),
         "info",
         1500,
       ),
@@ -3605,26 +3235,6 @@ export function ReviewOverlay({
     );
   }
 
-  /**
-   * Saves the open editor. Without `explicit` (Esc, another line, another
-   * view), a new comment of a key or two is a stray keystroke: dropped.
-   */
-  function editorKey(current: Editor): string {
-    if (current.overall) return "overall";
-    if (current.commentId) return `edit:${current.commentId}`;
-    if (current.replyTo) return `reply:${current.replyTo}`;
-    return `new:${current.kind}:${JSON.stringify(current.anchor)}`;
-  }
-
-  /** An editor whose text reaches someone once saved: the agent, or GitLab. */
-  function sendsOut(current: Editor, text: string): boolean {
-    if (current.replyTo || current.publicReply) return true;
-    if (current.kind === "discussion" || current.kind === "merge-request")
-      return true;
-    // A suggested change goes to the agent in a local review.
-    return !session.gitlab && /```suggestion\b/.test(text);
-  }
-
   /** Opens an editor, with what you left unsent there. */
   function openEditor(next: Editor) {
     const kept = takeReviewDraft(sessionId, editorKey(next));
@@ -3660,56 +3270,6 @@ export function ReviewOverlay({
     });
   }
 
-  /** Pending writes being sent: a second send of one is ignored. */
-  const sendingWrites = useRef(new Set<string>());
-  /** The editor each pending write came from, whose draft keeps its text. */
-  const writeDrafts = useRef(new Map<string, string>());
-  /**
-   * Sends a reply or a new thread, with its id: shown at once as pending;
-   * failed, it stays shown with its error and Retry, its text kept.
-   */
-  function sendWrite(write: PendingWrite, editorKeyOf: string) {
-    if (sendingWrites.current.has(write.id)) return;
-    sendingWrites.current.add(write.id);
-    writeDrafts.current.set(write.id, editorKeyOf);
-    const sent = { ...write, error: undefined };
-    setPendingWrites((writes) => [
-      ...writes.filter((other) => other.id !== write.id),
-      sent,
-    ]);
-    const { method, params } = pendingWriteCall(sent);
-    void saveOrKeep(
-      () => call(method, params),
-      () => keepReviewDraft(sessionId, editorKeyOf, write.text),
-    ).then((error) => {
-      sendingWrites.current.delete(write.id);
-      if (error) {
-        setStatus(notSavedStatus(error));
-        setPendingWrites((writes) =>
-          writes.map((other) =>
-            other.id === write.id ? { ...other, error } : other,
-          ),
-        );
-        return;
-      }
-      // Saved: a draft kept by an earlier failure is done with.
-      takeReviewDraft(sessionId, editorKeyOf);
-    });
-  }
-
-  /** Sends a failed write again, with the same id. */
-  function retryWrite(write: PendingWrite) {
-    sendWrite(write, writeDrafts.current.get(write.id) ?? "");
-  }
-
-  /** Forgets a failed write; its text stays as the editor's draft. */
-  function discardWrite(write: PendingWrite) {
-    setPendingWrites((writes) =>
-      writes.filter((other) => other.id !== write.id),
-    );
-    notify("Not sent. Reopen the comment to find your text.", "info", 3000);
-  }
-
   // An editor still open as the review goes away (another connection, a
   // review no longer kept, a page reload) keeps its text as a draft.
   /** The review was forgotten: its drafts with it. */
@@ -3741,11 +3301,28 @@ export function ReviewOverlay({
    */
   const committedEditor = useRef<Editor | null>(null);
 
+  /**
+   * Saves the open editor, as editorSave's policy says. Without `explicit`
+   * (Esc, another line, another view), a new comment of a key or two is a
+   * stray keystroke: dropped.
+   */
   function commitEditor(explicit = false) {
     const current = editor;
     if (!current || committedEditor.current === current) return;
+    const row = current.at !== null ? rows[current.at] : undefined;
+    const plan = editorSave({
+      editor: current,
+      explicit,
+      uploading: imageUploadPending(current.text),
+      lineText: row?.line.text,
+      original: editorOriginal(current),
+      gitlab: session.gitlab,
+      talk,
+      agentNamed: !!agent.name,
+      holdForSend,
+    });
     // Saved now, an image still uploading would be lost: the editor stays.
-    if (explicit && imageUploadPending(current.text)) {
+    if (plan.kind === "uploading") {
       notify(IMAGE_UPLOADING, "info", 2500);
       return false;
     }
@@ -3754,65 +3331,40 @@ export function ReviewOverlay({
     // Saved or kept below: a draft kept as the page hid is done with.
     takeReviewDraft(sessionId, editorKey(current));
     const text = current.text;
-    if (current.overall) {
+    if (plan.kind === "overall") {
       // Kept as you leave it; sent as you save while comments go out as
       // written, else with Send.
-      if (explicit && talk && agent.name && text.trim()) void handoff(text);
+      if (plan.send) void handoff(text);
       else saveSummary(text);
       return;
     }
-    // A suggestion that changes nothing counts as empty, as in maildesk.
-    const changed = text
-      .replace(/```suggestion[^\n]*\n([\s\S]*?)\n?```/g, (block, code) => {
-        const row = current.at !== null ? rows[current.at] : undefined;
-        return row && code === row.line.text ? "" : block;
-      })
-      .trim();
     // What goes to the agent or GitLab leaves only on an explicit send (Cmd+Enter,
     // Save, :w): Esc or moving away keeps it for when the editor reopens.
-    if (!explicit) {
-      const original = editorOriginal(current);
-      if (sendsOut(current, text) || sendsOut(current, original)) {
-        if (changed && text !== original) {
-          keepDraft(current);
-          notify(
-            "Not sent: reopen it to go on, Cmd+Enter or Save sends it.",
-            "info",
-            4000,
-          );
-        }
-        return;
+    if (plan.kind === "kept") {
+      if (plan.notice) {
+        keepDraft(current);
+        notify(
+          "Not sent: reopen it to go on, Cmd+Enter or Save sends it.",
+          "info",
+          4000,
+        );
       }
+      return;
     }
-    let meaningful = changed;
-    if (
-      !explicit &&
-      !current.commentId &&
-      meaningful &&
-      meaningful.length < STRAY_MAX
-    ) {
+    if (plan.stray !== null)
       notify(
-        `Not sent: "${meaningful}" looks like a stray key. Cmd+Enter or Save sends it.`,
+        `Not sent: "${plan.stray}" looks like a stray key. Cmd+Enter or Save sends it.`,
         "info",
         4000,
       );
-      meaningful = "";
-    }
     // What you write shows: hidden comments come back.
-    if (meaningful && !current.commentId && hideComments) toggleComments();
-    // Shown at once, pending (GitLab's own notes are not made here).
-    const pending = !session.gitlab && !current.publicReply;
+    if (plan.showComments && hideComments) toggleComments();
+    const { pending } = plan;
     // A new question with no agent to ask: held in the workspace's threads.
-    const heldAt =
-      !current.replyTo &&
-      !current.commentId &&
-      current.kind === "discussion" &&
-      holdForSend
-        ? Date.now() * 1000
-        : undefined;
-    if (meaningful && heldAt !== undefined) notify(HELD_FOR_SEND, "info", 3000);
-    if (current.replyTo) {
-      if (!meaningful) return;
+    const heldAt = plan.held ? Date.now() * 1000 : undefined;
+    if (plan.meaningful && heldAt !== undefined)
+      notify(HELD_FOR_SEND, "info", 3000);
+    if (plan.action === "reply") {
       if (pending)
         sendWrite(
           {
@@ -3830,13 +3382,13 @@ export function ReviewOverlay({
         saveEditor(current, () =>
           call("review.reply", { comment_id: current.replyTo, text }),
         );
-    } else if (current.commentId) {
+    } else if (plan.action === "edit" || plan.action === "delete") {
       saveEditor(current, () =>
-        meaningful
+        plan.action === "edit"
           ? call("review.edit", { comment_id: current.commentId, text })
           : call("review.delete", { comment_id: current.commentId }),
       );
-    } else if (meaningful && pending) {
+    } else if (plan.action === "add" && pending) {
       sendWrite(
         {
           id: newClientId(),
@@ -3849,7 +3401,7 @@ export function ReviewOverlay({
         },
         editorKey(current),
       );
-    } else if (meaningful) {
+    } else if (plan.action === "add") {
       saveEditor(current, () =>
         call("review.thread.add", {
           kind: current.kind,
@@ -4073,7 +3625,7 @@ export function ReviewOverlay({
 
   function toggleSplit() {
     setSplit((value) => {
-      writePrefs({ split: !value });
+      writeReviewPrefs({ split: !value });
       return !value;
     });
     scrollMode.current = "center";
@@ -4081,7 +3633,7 @@ export function ReviewOverlay({
 
   function toggleFiles() {
     setFilesShown((value) => {
-      writePrefs({ filesHidden: value });
+      writeReviewPrefs({ filesHidden: value });
       return !value;
     });
   }
