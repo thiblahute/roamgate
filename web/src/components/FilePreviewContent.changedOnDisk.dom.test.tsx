@@ -195,7 +195,7 @@ if (process.env.ROAMGATE_CHANGED_ON_DISK_DOM_TEST !== "1") {
         expect(view.notice()).toBeNull();
         await advance(CHANGED_ON_DISK_POLL_MS);
         expect(view.notice()).toContain("Changed on disk");
-        expect(view.notice()).toContain("R to reload");
+        expect(view.notice()).toContain("R or :refresh to reload");
         // Told once: no more checks until it is read again.
         const asked = stats.length;
         await advance(CHANGED_ON_DISK_POLL_MS * 3);
@@ -261,6 +261,49 @@ if (process.env.ROAMGATE_CHANGED_ON_DISK_DOM_TEST !== "1") {
         expect(scroller.scrollTop).toBe(120);
         expect(view.notice()).toBeNull();
         await advance(CHANGED_ON_DISK_POLL_MS * 2);
+        expect(view.notice()).toBeNull();
+        await view.unmount();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test("`:refresh` reloads and the notice goes", async () => {
+      jest.useFakeTimers();
+      try {
+        disk.mtime = 1000;
+        const view = await mount();
+        disk.mtime = 6000;
+        await advance(CHANGED_ON_DISK_POLL_MS);
+        expect(view.notice()).toContain("Changed on disk");
+        const content = view.container.querySelector<HTMLElement>(
+          ".file-preview-file-content",
+        )!;
+        const press = (target: Element, key: string) =>
+          act(async () => {
+            target.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+          });
+        await press(content, ":");
+        const input = view.container.querySelector<HTMLInputElement>(
+          ".review-cmdline input",
+        )!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(
+            Object.getPrototypeOf(input),
+            "value",
+          )!.set!.call(input, "refresh");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        await press(input, "Enter");
+        expect(view.reloads()).toBe(1);
+        await view.finishRead();
+        await advance(0);
         expect(view.notice()).toBeNull();
         await view.unmount();
       } finally {

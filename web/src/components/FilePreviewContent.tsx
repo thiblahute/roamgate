@@ -1590,9 +1590,10 @@ export function FilePreviewContent({
       ? [
           {
             name: "reload",
-            aliases: ["e", "edit"],
-            description: "reload the file (the refresh button)",
-            run: () => onRefresh(),
+            aliases: ["refresh", "e", "edit"],
+            description:
+              "read the file again, in place (R, the refresh button)",
+            run: reload,
           },
         ]
       : []),
@@ -1667,7 +1668,13 @@ export function FilePreviewContent({
    * Files view's and its own, and `:` is the inspector's.
    */
   const inspectorRun = useInspectorCommands(
-    fileShown ? { commands: previewCommands, line: goToLine } : null,
+    fileShown
+      ? {
+          commands: previewCommands,
+          line: goToLine,
+          root: () => previewSectionRef.current,
+        }
+      : null,
   );
   const runPreviewCommand = (input: string) => {
     if (inspectorRun) {
@@ -1838,7 +1845,7 @@ export function FilePreviewContent({
               <button
                 type="button"
                 className="file-preview-refresh"
-                title="Refresh preview (R)"
+                title="Refresh preview (R, :refresh)"
                 aria-label="Refresh preview"
                 disabled={loadingProp}
                 onClick={reload}
@@ -1979,11 +1986,11 @@ export function FilePreviewContent({
         {entry ? <span>{entry.path}</span> : null}
         {changedOnDisk && !showingChanges ? (
           <div className="file-preview-changed" role="status">
-            <span>Changed on disk: R to reload</span>
+            <span>Changed on disk: R or :refresh to reload</span>
             <button
               type="button"
               className="file-preview-copy"
-              title="Read the file again, where you are in it (R)"
+              title="Read the file again, where you are in it (R, :refresh)"
               disabled={loadingProp}
               onClick={reload}
             >
