@@ -23,7 +23,13 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
   }, 30_000);
 } else {
   const { installReviewDom } = await import("./reviewSurface.testkit");
-  await installReviewDom();
+  const browser = await installReviewDom();
+  // The comment editors' Vim editor loads lazily, which uses it.
+  Object.defineProperty(globalThis, "sessionStorage", {
+    value: browser.sessionStorage,
+    configurable: true,
+    writable: true,
+  });
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   type Snapshot = import("../../../shared/review").ReviewSnapshot;
@@ -139,12 +145,12 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    act(() => {
+    const draw = (list: readonly Annotation[]) =>
       root.render(
         <AnnotationPanel
           open
           floating={false}
-          annotations={annotations}
+          annotations={list}
           agentPanes={agentPanes}
           preferredPaneId="p2"
           busy={false}
@@ -170,7 +176,7 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
           }
         />,
       );
-    });
+    act(() => draw(annotations));
     const panel = host.querySelector<HTMLElement>(".annotation-panel")!;
     const button = (label: string) =>
       [...panel.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -182,6 +188,7 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
       panel,
       events,
       button,
+      redraw: (list: readonly Annotation[]) => act(() => draw(list)),
       unmount: () => {
         act(() => root.unmount());
         host.remove();
@@ -222,6 +229,11 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
     });
 
     test("a held comment is edited, moved, deleted and gone to from its card", () => {
+      // The plain box (Vim keys off); the Vim editor is tested below.
+      localStorage.setItem(
+        "roamgate:reviewPrefs",
+        JSON.stringify({ vim: false }),
+      );
       const view = mount(held);
       const textarea = view.panel.querySelector<HTMLTextAreaElement>(
         '[data-review-annotation-id="held"] textarea',
@@ -309,6 +321,153 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
       });
       expect(view.events[view.events.length - 1]).toEqual(["close"]);
       view.unmount();
+    });
+
+    /** The panel with the held comments in the Vim editor, once drawn. */
+    async function mountVim(annotations: readonly Annotation[] = held) {
+      localStorage.setItem(
+        "roamgate:reviewPrefs",
+        JSON.stringify({ vim: true }),
+      );
+      const view = mount(annotations);
+      await act(async () => {
+        for (let tick = 0; tick < 8; tick++)
+          await new Promise((done) => setTimeout(done, 10));
+      });
+      const { EditorView } = await import("@codemirror/view");
+      const { getCM } = await import("@replit/codemirror-vim");
+      const editor = (id: string) =>
+        EditorView.findFromDOM(
+          view.panel.querySelector<HTMLElement>(
+            `[data-review-annotation-id="${id}"] .cm-editor`,
+          )!,
+        )!;
+      return {
+        ...view,
+        editor,
+        insertMode: (id: string) => !!getCM(editor(id))?.state.vim?.insertMode,
+        key: (id: string, key: string, init: KeyboardEventInit = {}) =>
+          act(() => {
+            editor(id).contentDOM.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key,
+                bubbles: true,
+                cancelable: true,
+                ...init,
+              }),
+            );
+          }),
+      };
+    }
+
+    test("with Vim keys a held comment is edited in the comment editors' Vim editor, moved, deleted and gone to from its card", async () => {
+      const view = await mountVim();
+      expect(
+        view.panel.querySelector('[data-review-annotation-id="held"] textarea'),
+      ).toBeNull();
+      const editor = view.editor("held");
+      expect(editor.state.doc.toString()).toBe("Fix this");
+      expect(editor.contentDOM.getAttribute("aria-label")).toBe("Comment 1");
+      act(() => {
+        editor.focus();
+      });
+      // Insert mode on focus, as the other comment editors.
+      expect(view.insertMode("held")).toBe(true);
+      act(() => {
+        editor.dispatch({
+          changes: { from: editor.state.doc.length, insert: " now" },
+          userEvent: "input.type",
+        });
+      });
+      expect(view.button("Move comment 1 up")?.disabled).toBe(true);
+      expect(view.button("Move comment 2 down")?.disabled).toBe(true);
+      click(view.button("Move comment 1 down"));
+      click(view.button("Go to comment 2"));
+      click(view.button("Delete comment 1"));
+      expect(view.events).toEqual([
+        ["edit", "held", "Fix this now"],
+        ["move", "held", 1],
+        ["go", "file"],
+        ["delete", "held"],
+      ]);
+      view.unmount();
+    });
+
+    test("with Vim keys Esc leaves insert mode, then the editor, words kept; Pre-fill and Copy keys still work from it", async () => {
+      const view = await mountVim();
+      const editor = view.editor("file");
+      act(() => {
+        editor.focus();
+      });
+      expect(view.insertMode("file")).toBe(true);
+      await view.key("file", "Escape");
+      expect(view.insertMode("file")).toBe(false);
+      expect(document.activeElement).toBe(editor.contentDOM);
+      await view.key("file", "Escape");
+      expect(document.activeElement).not.toBe(editor.contentDOM);
+      expect(editor.state.doc.toString()).toBe("Clearer?");
+      act(() => {
+        editor.focus();
+      });
+      await view.key("file", "Enter", { ctrlKey: true });
+      await view.key("file", "C", { ctrlKey: true, shiftKey: true });
+      expect(view.events).toEqual([["send", "p2", false], ["copy"]]);
+      view.unmount();
+    });
+
+    test("with Vim keys a held comment changed elsewhere is drawn again, and no more than 10000 characters are taken", async () => {
+      const view = await mountVim();
+      // Its own typing is not drawn again.
+      const editor = view.editor("held");
+      act(() => {
+        editor.dispatch({
+          changes: { from: 8, insert: "!" },
+          userEvent: "input.type",
+        });
+      });
+      view.redraw(
+        held.map((annotation) =>
+          annotation.id === "held"
+            ? { ...annotation, comment: "Fix this!" }
+            : annotation,
+        ),
+      );
+      expect(view.editor("held")).toBe(editor);
+      // The same panel, its held comment edited in its chat.
+      view.redraw(
+        held.map((annotation) =>
+          annotation.id === "held"
+            ? { ...annotation, comment: "Fixed from the chat" }
+            : annotation,
+        ),
+      );
+      await act(async () => {
+        for (let tick = 0; tick < 4; tick++)
+          await new Promise((done) => setTimeout(done, 10));
+      });
+      expect(view.editor("held").state.doc.toString()).toBe(
+        "Fixed from the chat",
+      );
+      view.unmount();
+      const long = await mountVim([
+        { ...held[0]!, comment: "x".repeat(9_998) },
+      ]);
+      const full = long.editor("held");
+      act(() => {
+        full.dispatch({
+          changes: { from: full.state.doc.length, insert: "abcdef" },
+          userEvent: "input.type",
+        });
+      });
+      expect(full.state.doc.length).toBe(9_998);
+      act(() => {
+        full.dispatch({
+          changes: { from: full.state.doc.length, insert: "ab" },
+          userEvent: "input.type",
+        });
+      });
+      expect(full.state.doc.length).toBe(10_000);
+      long.unmount();
     });
   });
 }

@@ -182,6 +182,24 @@
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* A held comment in the comment editors' Vim editor (the review's `:vim`),
+   dressed as the plain box. */
+.annotation-card-editor {
+  --rv-surface: var(--input-bg);
+  --rv-surface-2: var(--panel-2);
+  --rv-border: var(--viewer-border);
+  --rv-text: var(--text);
+  --rv-faint: color-mix(in srgb, var(--muted) 70%, transparent);
+  --rv-accent: var(--accent);
+  --rv-accent-soft: var(--accent-soft);
+  min-width: 0;
+  font-size: 12px;
+}
+
+.annotation-card-editor .cm-editor.cm-focused {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
 .annotation-card-actions {
   display: flex;
   justify-content: flex-end;

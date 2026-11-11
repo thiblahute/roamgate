@@ -125,6 +125,8 @@ export function ReviewCommentEditor({
   onSuggest,
   onPasteImage,
   onBlocked,
+  label,
+  maxLength,
 }: {
   value: string;
   vimMode: boolean;
@@ -144,6 +146,10 @@ export function ReviewCommentEditor({
   onPasteImage?: (file: File) => Promise<string>;
   /** Says why the text cannot be saved or closed yet. */
   onBlocked?: (message: string) => void;
+  /** The editor's accessible name. */
+  label?: string;
+  /** The most characters it takes, as a textarea's maxlength. */
+  maxLength?: number;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const handlers = useRef({
@@ -169,13 +175,28 @@ export function ReviewCommentEditor({
   };
   // Created once per mount (the parent remounts per comment) from the props
   // it was opened with.
-  const initial = useRef({ value, vimMode, autoFocus, placeholder, handleRef });
+  const initial = useRef({
+    value,
+    vimMode,
+    autoFocus,
+    placeholder,
+    handleRef,
+    label,
+    maxLength,
+  });
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const { value, vimMode, autoFocus, placeholder, handleRef } =
-      initial.current;
+    const {
+      value,
+      vimMode,
+      autoFocus,
+      placeholder,
+      handleRef,
+      label,
+      maxLength,
+    } = initial.current;
     if (vimMode) defineExCommands();
     const save = () => {
       handlers.current.onCommit(true);
@@ -208,7 +229,19 @@ export function ReviewCommentEditor({
           EditorView.contentAttributes.of({
             spellcheck: "true",
             autocorrect: "on",
+            ...(label ? { "aria-label": label } : {}),
           }),
+          ...(maxLength === undefined
+            ? []
+            : [
+                // Typing past it does nothing; shortening always goes.
+                EditorState.changeFilter.of(
+                  (transaction) =>
+                    transaction.newDoc.length <= maxLength ||
+                    transaction.newDoc.length <
+                      transaction.startState.doc.length,
+                ),
+              ]),
           placeholderText(placeholder),
           reviewEditorTheme,
           EditorView.updateListener.of((update) => {
