@@ -306,21 +306,18 @@
   font-size: 12px;
 }
 
+/* The agent chats' message box, across the dialog's width. */
 .companion-panel-composer {
   flex-shrink: 0;
   display: flex;
-  gap: 8px;
-}
-
-.companion-panel-composer input {
-  flex: 1;
   min-width: 0;
 }
 
-.companion-panel-composer .primary-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.companion-panel-composer > .agent-history-composer {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 0;
+  padding-bottom: 0;
 }
 
 .companion-panel-mute.is-muted {
@@ -375,8 +372,6 @@
     border-radius: 0;
   }
 
-  .companion-panel-composer input,
-  .companion-panel-composer .primary-btn,
   .companion-panel-held button {
     min-height: 40px;
   }

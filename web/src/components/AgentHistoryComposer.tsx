@@ -146,6 +146,8 @@ export function AgentHistoryComposer({
   shell,
   nextPrompt,
   mentions,
+  label: labelProp,
+  enterSends: enterSendsProp = false,
 }: {
   draftKey: string;
   agent?: string;
@@ -203,6 +205,13 @@ export function AgentHistoryComposer({
    * message as a reference.
    */
   mentions?: ComposerMentions;
+  /** The box's accessible name; "Message <agent>" by default. */
+  label?: string;
+  /**
+   * Enter sends on touch keyboards too, as in a one-line box (the
+   * companion's); elsewhere they add a line and the button sends.
+   */
+  enterSends?: boolean;
   /**
    * Hands-free chat; `listen` false when the server has no voice engine:
    * the button then says why it cannot listen.
@@ -255,8 +264,9 @@ export function AgentHistoryComposer({
   // that later changes back, so Send anyway never confirms stale context.
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const confirming = warning !== null && confirmation === context;
-  const enterAddsLine =
+  const touch =
     mobile || globalThis.matchMedia?.("(pointer: coarse)")?.matches === true;
+  const enterAddsLine = touch && !enterSendsProp;
 
   const resumeUploads = useCallback(() => {
     for (const resume of compositionUploadsRef.current.splice(0)) resume();
@@ -813,7 +823,7 @@ export function AgentHistoryComposer({
             <ImagePlus size={17} aria-hidden="true" />
           </button>
         ) : null}
-        {vimKeys && enterAddsLine ? (
+        {vimKeys && touch ? (
           // Phone keyboards have no Esc key, and Vim needs one.
           <button
             type="button"
@@ -837,7 +847,7 @@ export function AgentHistoryComposer({
               <ComposerVimEditor
                 value={shown.text}
                 selection={shownSelection}
-                label={`Message ${name || "agent"}`}
+                label={labelProp ?? `Message ${name || "agent"}`}
                 placeholder={ghost ? ghost.text : placeholder}
                 attributes={picker.aria}
                 enterSends={!enterAddsLine}
@@ -912,7 +922,9 @@ export function AgentHistoryComposer({
               value={shown.text}
               rows={1}
               aria-label={
-                shellMode ? "Shell command" : `Message ${name || "agent"}`
+                shellMode
+                  ? "Shell command"
+                  : (labelProp ?? `Message ${name || "agent"}`)
               }
               placeholder={ghost ? ghost.text : placeholder}
               aria-description={

@@ -7,17 +7,14 @@ import {
   PhoneCall,
   SendHorizontal,
   PhoneOff,
-  Send,
   Wrench,
   X,
 } from "lucide-react";
 import {
-  type FormEvent,
   type ReactNode,
   type RefObject,
   useEffect,
   useRef,
-  useState,
   useSyncExternalStore,
 } from "react";
 import {
@@ -40,6 +37,7 @@ import {
   plainText,
 } from "../voiceRoute";
 import { sendCompanionText } from "../companionText";
+import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { answerCompanionTool } from "../companionWeb";
 import { subscribeVoiceFronting, voiceFronting } from "../voiceFrontFlag";
 import { companionChipText, hearingNow } from "./CompanionChip";
@@ -237,49 +235,43 @@ function SayingText({ reading }: { reading: CompanionReading }) {
   );
 }
 
+/** The companion's message box keeps its draft under this key. */
+const COMPANION_DRAFT_KEY = "companion";
+
 /**
  * Typing to the companion, as one talks to it on a call, or instead of a
- * call: Enter sends, the answer is written above.
+ * call: Enter sends, the answer is written above. It is the agent chats'
+ * message box, Vim keys included with the review's `:vim` setting.
  */
 function CompanionComposer({
   name,
   onSent,
-  inputRef,
+  boxRef,
 }: {
   name: string;
   onSent: () => void;
-  inputRef: RefObject<HTMLInputElement | null>;
+  boxRef: RefObject<HTMLDivElement | null>;
 }) {
-  const [text, setText] = useState("");
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const typed = text.trim();
-    if (!typed) return;
-    setText("");
-    // What one writes is read with its answer: back to the newest.
-    onSent();
-    void sendCompanionText(typed);
-  };
   return (
-    <form className="companion-panel-composer" onSubmit={submit}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={text}
-        aria-label={`Write to ${name}`}
+    <div ref={boxRef} className="companion-panel-composer">
+      <AgentHistoryComposer
+        draftKey={COMPANION_DRAFT_KEY}
+        // It always takes text: nothing to warn about before sending.
+        status="idle"
+        label={`Write to ${name}`}
         placeholder={`Ask ${name} anything`}
-        enterKeyHint="send"
-        onChange={(event) => setText(event.target.value)}
+        sendTo={name}
+        enterSends
+        onSend={async (text) => {
+          const typed = text.trim();
+          if (!typed) return;
+          // What one writes is read with its answer: back to the newest.
+          onSent();
+          void sendCompanionText(typed);
+        }}
+        onError={(message) => store.notify({ kind: "error", message })}
       />
-      <button
-        type="submit"
-        className="primary-btn"
-        aria-label="Send"
-        disabled={!text.trim()}
-      >
-        <Send size={15} aria-hidden="true" />
-      </button>
-    </form>
+    </div>
   );
 }
 
@@ -301,34 +293,65 @@ export function CompanionPanel({
   const fronting = useSyncExternalStore(subscribeVoiceFronting, voiceFronting);
   const reading = useCompanionReading();
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLInputElement | null>(null);
-  useEffect(
-    () =>
-      focusDialogElement(
-        ask && composerRef.current ? composerRef.current : dialogRef.current,
-      ),
-    [ask],
-  );
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!ask || !composerRef.current)
+      return focusDialogElement(dialogRef.current);
+    // The box takes the focus once drawn: the Vim one comes with its
+    // editor, loaded on first use; the dialog has the keys meanwhile.
+    const field = () =>
+      composerRef.current?.querySelector<HTMLElement>(
+        "textarea, [contenteditable='true']",
+      ) ?? null;
+    let stop = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const take = () => {
+      const box = field();
+      if (box) stop = focusDialogElement(box);
+      else {
+        if (tries === 0) dialogRef.current?.focus({ preventScroll: true });
+        if (++tries < 80) timer = setTimeout(take, 25);
+      }
+    };
+    take();
+    return () => {
+      clearTimeout(timer);
+      stop();
+    };
+  }, [ask]);
   // The newest at the bottom, in view as it comes (lines, streamed words,
   // a search's steps), unless the reader scrolled up to read.
   const follow = useFollowScroll<HTMLOListElement>();
   const hearingRef = useRef(false);
   useEffect(() => {
+    // Ahead of the message box, whose Vim editor keeps its keys.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      // Mod+Enter: what is being said goes now (the composer's Enter is
-      // plain, so the two never meet).
+      if (event.isComposing) return;
+      if (event.key === "Escape") {
+        // Vim's insert mode takes the first Esc, to normal mode; the next
+        // closes, as from anywhere else in the dialog.
+        const editor =
+          event.target instanceof Element
+            ? event.target.closest(".cm-editor")
+            : null;
+        if (editor && !editor.querySelector(".cm-scroller.cm-vimMode")) return;
+        onClose();
+      }
+      // Mod+Enter: what is being said goes now, not the box's draft.
       else if (
         event.key === "Enter" &&
         (event.metaKey || event.ctrlKey) &&
         hearingRef.current
       ) {
         event.preventDefault();
+        event.stopPropagation();
         sendCompanionHeard();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, { capture: true });
   }, [onClose]);
   const name = companionName();
   // What the user says now, written as the transcriber hears it; once the
@@ -520,7 +543,7 @@ export function CompanionPanel({
           <CompanionComposer
             name={name}
             onSent={follow.jump}
-            inputRef={composerRef}
+            boxRef={composerRef}
           />
         ) : null}
       </div>

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
   test("the companion's conversation in an isolated browser runtime", async () => {
@@ -33,6 +33,8 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
       MutationObserver: browser.MutationObserver,
       Event: browser.Event,
       KeyboardEvent: browser.KeyboardEvent,
+      Text: browser.Text,
+      getSelection: () => browser.getSelection(),
       getComputedStyle: browser.getComputedStyle.bind(browser),
       IS_REACT_ACT_ENVIRONMENT: true,
     }))
@@ -233,6 +235,11 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
     companion.__resetCompanionCallForTests();
     setVoiceFronting(true);
+    // The plain box (Vim keys off); the Vim one's focus is tested below.
+    localStorage.setItem(
+      "roamgate:reviewPrefs",
+      JSON.stringify({ vim: false }),
+    );
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -240,8 +247,8 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
       root.render(<CompanionPanel onClose={() => {}} ask={1} />);
     });
     const panel = document.querySelector<HTMLElement>(".companion-panel")!;
-    const input = panel.querySelector<HTMLInputElement>(
-      ".companion-panel-composer input",
+    const input = panel.querySelector<HTMLTextAreaElement>(
+      ".companion-panel-composer textarea",
     )!;
     expect(document.activeElement).toBe(input);
     expect(input.getAttribute("placeholder")).toBe("Ask Companion anything");
@@ -324,5 +331,166 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     });
     expect(document.activeElement).toBe(input);
     await act(async () => root.unmount());
+  });
+
+  /** The dialog asked open, its box with Vim keys or not. */
+  async function openAsked(vim: boolean) {
+    const browser = await installBrowser();
+    const React = await import("react");
+    const { act } = React;
+    const { createRoot } = await import("react-dom/client");
+    const companion = await import("../companionCall");
+    const { setVoiceFronting } = await import("../voiceFrontFlag");
+    const drafts = await import("../terminalComposer");
+    const { CompanionPanel } = await import("./CompanionPanel");
+    const { EditorView } = await import("@codemirror/view");
+    const { getCM } = await import("@replit/codemirror-vim");
+    companion.__resetCompanionCallForTests();
+    setVoiceFronting(true);
+    drafts.clearTerminalComposerDraft("companion");
+    localStorage.setItem("roamgate:reviewPrefs", JSON.stringify({ vim }));
+    const sent: string[] = [];
+    let closed = 0;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const settle = () =>
+      act(async () => {
+        for (let tick = 0; tick < 8; tick++)
+          await new Promise((done) => setTimeout(done, 10));
+      });
+    await act(async () => {
+      root.render(
+        <CompanionPanel
+          onClose={() => {
+            closed += 1;
+          }}
+          ask={1}
+        />,
+      );
+    });
+    await settle();
+    const panel = document.querySelector<HTMLElement>(".companion-panel")!;
+    const view = () => {
+      const editor = panel.querySelector<HTMLElement>(".cm-editor");
+      return editor ? EditorView.findFromDOM(editor) : null;
+    };
+    const field = () =>
+      panel.querySelector<HTMLElement>(
+        ".companion-panel-composer :is(textarea, [contenteditable='true'])",
+      )!;
+    return {
+      act,
+      browser,
+      panel,
+      sent,
+      closed: () => closed,
+      drafts,
+      view,
+      field,
+      settle,
+      insertMode: () => !!getCM(view()!)?.state.vim?.insertMode,
+      press: (name: string, init: KeyboardEventInit = {}) =>
+        act(async () => {
+          field().dispatchEvent(
+            new browser.KeyboardEvent("keydown", {
+              key: name,
+              bubbles: true,
+              cancelable: true,
+              ...(init as object),
+            }) as unknown as Event,
+          );
+        }),
+      unmount: () => act(async () => root.unmount()),
+    };
+  }
+
+  test("asked with Vim keys: the companion's box is the agent chats' Vim box, focused in insert mode, and Enter sends", async () => {
+    const text = await import("../companionText");
+    const typed: string[] = [];
+    const spy = spyOn(text, "sendCompanionText").mockImplementation(
+      async (value: string) => {
+        typed.push(value);
+        return null;
+      },
+    );
+    try {
+      const box = await openAsked(true);
+      expect(
+        box.panel.querySelector(".companion-panel-composer textarea"),
+      ).toBeNull();
+      const content = box.view()!.contentDOM;
+      expect(document.activeElement).toBe(content);
+      expect(content.getAttribute("aria-label")).toBe("Write to Companion");
+      expect(box.panel.querySelector(".cm-placeholder")?.textContent).toBe(
+        "Ask Companion anything",
+      );
+      expect(box.insertMode()).toBe(true);
+      await box.act(async () => {
+        box.view()!.dispatch({
+          changes: { from: 0, insert: "  what time is it " },
+          selection: { anchor: 18 },
+          userEvent: "input.type",
+        });
+      });
+      await box.press("Enter");
+      await box.settle();
+      expect(typed).toEqual(["what time is it"]);
+      expect(box.view()!.state.doc.toString()).toBe("");
+      expect(box.closed()).toBe(0);
+      await box.unmount();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("Esc in the companion's dialog: with Vim keys it first leaves insert mode, then closes the dialog", async () => {
+    const box = await openAsked(true);
+    expect(box.insertMode()).toBe(true);
+    await box.press("Escape");
+    expect(box.closed()).toBe(0);
+    expect(box.insertMode()).toBe(false);
+    await box.press("Escape");
+    expect(box.closed()).toBe(1);
+    await box.unmount();
+  });
+
+  test("without Vim keys the companion's box is plain: Enter sends, even on a touch keyboard, and Esc closes the dialog", async () => {
+    const text = await import("../companionText");
+    const typed: string[] = [];
+    const spy = spyOn(text, "sendCompanionText").mockImplementation(
+      async (value: string) => {
+        typed.push(value);
+        return null;
+      },
+    );
+    const coarse = Object.getOwnPropertyDescriptor(globalThis, "matchMedia");
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({ matches: query.includes("coarse") }),
+    });
+    try {
+      const box = await openAsked(false);
+      const textarea = box.field() as HTMLTextAreaElement;
+      expect(textarea.tagName).toBe("TEXTAREA");
+      expect(document.activeElement).toBe(textarea);
+      expect(textarea.getAttribute("aria-label")).toBe("Write to Companion");
+      expect(textarea.getAttribute("enterkeyhint")).toBe("send");
+      await box.act(async () => {
+        box.drafts.writeTerminalComposerDraft("companion", "hello");
+      });
+      await box.press("Enter");
+      await box.settle();
+      expect(typed).toEqual(["hello"]);
+      expect(box.closed()).toBe(0);
+      await box.press("Escape");
+      expect(box.closed()).toBe(1);
+      await box.unmount();
+    } finally {
+      spy.mockRestore();
+      if (coarse) Object.defineProperty(globalThis, "matchMedia", coarse);
+      else Reflect.deleteProperty(globalThis, "matchMedia");
+    }
   });
 }
