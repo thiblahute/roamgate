@@ -10,7 +10,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   diffReviewLineLabel,
   fileReviewLineLabel,
@@ -24,9 +31,77 @@ import {
   useShortcutPreferences,
 } from "../shortcutPreferences";
 import type { Pane } from "../types";
+import { reviewVimKeys } from "../composerVim";
+import { lazyWithReload } from "../lazyWithReload";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ThemedSelect } from "./ThemedSelect";
 import "./AnnotationPanel.css";
+
+// The comment editors' CodeMirror Vim editor, loaded with the first one.
+const ReviewCommentEditor = lazyWithReload("review-comment-editor", () =>
+  import("./ReviewCommentEditor").then((module) => ({
+    default: module.ReviewCommentEditor,
+  })),
+);
+
+/** The most a held comment takes, as typed. */
+const COMMENT_MAX_LENGTH = 10_000;
+
+/**
+ * A held comment's words in the comment editors' Vim editor (the review's
+ * `:vim` setting): each change is kept as typed, as in the plain box. Esc in
+ * normal mode, `:w` or `:q` leave it with its words. A change made
+ * elsewhere (the comment's chat) is drawn again.
+ */
+function HeldCommentEditor({
+  comment,
+  label,
+  onChange,
+  onKeys,
+}: {
+  comment: string;
+  label: string;
+  onChange: (comment: string) => void;
+  /** The panel's own keys (Copy, Pre-fill), ahead of the editor's. */
+  onKeys: (event: ReactKeyboardEvent) => void;
+}) {
+  const typed = useRef(comment);
+  const [drawn, setDrawn] = useState(0);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (comment === typed.current) return;
+    typed.current = comment;
+    setDrawn((count) => count + 1);
+  }, [comment]);
+  const leave = () =>
+    hostRef.current?.querySelector<HTMLElement>(".cm-content")?.blur();
+  return (
+    <div
+      ref={hostRef}
+      className="annotation-card-editor"
+      onKeyDownCapture={onKeys}
+    >
+      <Suspense fallback={null}>
+        <ReviewCommentEditor
+          key={drawn}
+          value={comment}
+          vimMode
+          autoFocus={false}
+          label={label}
+          maxLength={COMMENT_MAX_LENGTH}
+          placeholder="Comment"
+          onChange={(value) => {
+            typed.current = value;
+            onChange(value);
+          }}
+          onCommit={leave}
+          onCancel={leave}
+          onSuggest={() => {}}
+        />
+      </Suspense>
+    </div>
+  );
+}
 
 function annotationLocation(annotation: ReviewAnnotation) {
   if (annotation.source === "terminal")
@@ -103,6 +178,7 @@ export function AnnotationPanel({
   );
   const [targetPaneId, setTargetPaneId] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [vim] = useState(reviewVimKeys);
 
   useEffect(() => {
     if (preferredPaneId) setTargetPaneId(preferredPaneId);
@@ -120,6 +196,7 @@ export function AnnotationPanel({
 
   useEffect(() => {
     if (!open || !focusedAnnotationId) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
         const card = Array.from(
@@ -129,38 +206,48 @@ export function AnnotationPanel({
             element.dataset.reviewAnnotationId === focusedAnnotationId,
         );
         card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        card?.querySelector("textarea")?.focus({ preventScroll: true });
+        // The Vim editor may still be on its way: a few tries.
+        let tries = 0;
+        const focus = () => {
+          const box = card?.querySelector<HTMLElement>("textarea, .cm-content");
+          if (box) box.focus({ preventScroll: true });
+          else if (card && ++tries < 20) timer = setTimeout(focus, 50);
+        };
+        focus();
       });
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
   }, [focusedAnnotationId, open]);
 
   if (!open) return null;
+
+  /** Copy and Pre-fill from anywhere in the panel. */
+  const deliveryKeys = (event: ReactKeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      confirmClear ||
+      !(event.target instanceof Node) ||
+      !event.currentTarget.contains(event.target)
+    )
+      return;
+    const copy = shortcutMatches(event.nativeEvent, "annotations.copy");
+    const prefill = shortcutMatches(event.nativeEvent, "annotations.prefill");
+    if (!copy && !prefill) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (busy || !hasFeedback || event.repeat) return;
+    if (copy) onCopy();
+    else onSend(targetPaneId || null);
+  };
 
   return (
     <aside
       className={`annotation-panel ${floating ? "is-floating" : ""}`}
       aria-label="Workspace threads"
-      onKeyDown={(event) => {
-        if (
-          event.defaultPrevented ||
-          confirmClear ||
-          !(event.target instanceof Node) ||
-          !event.currentTarget.contains(event.target)
-        )
-          return;
-        const copy = shortcutMatches(event.nativeEvent, "annotations.copy");
-        const prefill = shortcutMatches(
-          event.nativeEvent,
-          "annotations.prefill",
-        );
-        if (!copy && !prefill) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (busy || !hasFeedback || event.repeat) return;
-        if (copy) onCopy();
-        else onSend(targetPaneId || null);
-      }}
+      onKeyDown={deliveryKeys}
     >
       <header className="annotation-panel-head">
         <div>
@@ -228,15 +315,26 @@ export function AnnotationPanel({
               >
                 {annotation.quote || "Blank line"}
               </blockquote>
-              <textarea
-                value={annotation.comment}
-                rows={3}
-                maxLength={10_000}
-                aria-label={`Comment ${index + 1}`}
-                onChange={(event) =>
-                  onUpdateComment(annotation.id, event.currentTarget.value)
-                }
-              />
+              {vim ? (
+                <HeldCommentEditor
+                  comment={annotation.comment}
+                  label={`Comment ${index + 1}`}
+                  onChange={(comment) =>
+                    onUpdateComment(annotation.id, comment)
+                  }
+                  onKeys={deliveryKeys}
+                />
+              ) : (
+                <textarea
+                  value={annotation.comment}
+                  rows={3}
+                  maxLength={COMMENT_MAX_LENGTH}
+                  aria-label={`Comment ${index + 1}`}
+                  onChange={(event) =>
+                    onUpdateComment(annotation.id, event.currentTarget.value)
+                  }
+                />
+              )}
               <div className="annotation-card-actions">
                 <button
                   type="button"

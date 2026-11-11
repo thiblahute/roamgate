@@ -1035,7 +1035,9 @@ workspace's comments in one panel, independently of the Inspector:
    in that pane, the same review its chat threads are in; a review's `C` with
    no agent pane in the workspace is held here too. Each card says where
    it was written; edit its words, move it up or down, delete it, or go to it
-   (its pane, its file or its review).
+   (its pane, its file or its review). Its words are edited in the comment
+   editors' Vim editor while the review's `:vim` setting is on (Esc in
+   normal mode leaves it, the words kept as typed).
 2. **Send** hands every held comment to the agent pane picked below them in
    one prompt, **Pre-fill** types it into that pane's input or chat message
    box without sending (review it and press Enter yourself), and **Copy** puts
