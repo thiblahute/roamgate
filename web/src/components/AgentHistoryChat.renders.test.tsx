@@ -370,4 +370,83 @@ if (process.env.ROAMGATE_CHAT_RENDERS_DOM_TEST !== "1") {
     expect(after.ToolBlock).toBe(1);
     await React.act(async () => root.unmount());
   });
+
+  test("a running command or subagent offers Background, and only its block draws again", async () => {
+    const { AgentHistoryChat } = await import("./AgentHistoryChat");
+    const { groupHistoryChatItems } = await import("./agentHistoryView");
+    type Entry = import("./agentHistory").HistoryEntry;
+    const { takeRenderCounts } = await import("../renderTrace");
+    const { createRoot } = await import("react-dom/client");
+    const at = "2026-01-01T00:00:00Z";
+    const call = (n: number, tool: string): Entry[] => [
+      {
+        id: `m${n}`,
+        role: "assistant",
+        kind: "message",
+        text: `step ${n}`,
+        sent_at: at,
+      },
+      {
+        id: `c${n}`,
+        role: "tool",
+        kind: "tool_call",
+        tool_name: tool,
+        source_call_id: `t${n}`,
+        text: JSON.stringify({ command: `cmd ${n}`, description: `Run ${n}` }),
+        sent_at: at,
+      },
+    ];
+    const items = groupHistoryChatItems([
+      ...call(1, "Bash"),
+      ...call(2, "Read"),
+      ...call(3, "Agent"),
+    ]);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const listRef = React.createRef<HTMLDivElement>();
+    const contentRef = React.createRef<HTMLDivElement>();
+    const asked: string[] = [];
+    const render = (running: string[]) =>
+      React.act(async () =>
+        root.render(
+          <AgentHistoryChat
+            items={items}
+            listRef={listRef}
+            contentRef={contentRef}
+            onOpen={() => {}}
+            running={new Set(running)}
+            onBackground={async (id) => {
+              asked.push(id);
+              return true;
+            }}
+          />,
+        ),
+      );
+    const offered = () =>
+      [
+        ...container.querySelectorAll(".agent-history-chat-task.is-foreground"),
+      ].map((button) => button.textContent);
+    takeRenderCounts();
+    await render(["t1", "t2"]);
+    // A Read is not something to move; the subagent does not run.
+    expect(offered()).toEqual(["Run 1Background"]);
+    takeRenderCounts();
+    await render(["t1", "t2", "t3"]);
+    expect(offered()).toEqual(["Run 1Background", "Run 3Background"]);
+    const drawn = takeRenderCounts();
+    expect(drawn).toContain("ToolBlock 1 ");
+    expect(drawn).not.toContain("ChatBubble");
+    const button = container.querySelector<HTMLButtonElement>(
+      ".agent-history-chat-task.is-foreground",
+    )!;
+    await React.act(async () => button.click());
+    expect(asked).toEqual(["t1"]);
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Run 1Moving…");
+    // Its call returned: nothing to offer.
+    await render(["t3"]);
+    expect(offered()).toEqual(["Run 3Background"]);
+    await React.act(async () => root.unmount());
+  });
 }

@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   LocateFixed,
   RotateCcw,
+  Square,
   SquareTerminal,
   Users,
   Workflow,
@@ -225,6 +226,7 @@ export function AgentTasksSheet({
   tasks,
   session,
   initialTaskId = null,
+  onStop,
   onClose,
 }: {
   pane: Pane;
@@ -233,6 +235,11 @@ export function AgentTasksSheet({
   session: string | null;
   /** A task to open on (a chat's link to it), else the place left. */
   initialTaskId?: string | null;
+  /**
+   * Stops a running task (conversation mode): null once asked, else why
+   * not. Absent: tasks are only shown.
+   */
+  onStop?: (taskId: string) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -414,6 +421,7 @@ export function AgentTasksSheet({
             now={now}
             place={openPlace}
             viewKeys={viewKeys}
+            onStop={onStop}
           />
         ) : tasks.length ? (
           <TaskList
@@ -614,6 +622,7 @@ function TaskDetail({
   now,
   place,
   viewKeys,
+  onStop,
 }: {
   pane: Pane;
   task: AgentTask;
@@ -621,6 +630,7 @@ function TaskDetail({
   /** Where it was left: restored on mount, kept up to date. */
   place: TaskPlace;
   viewKeys: ViewKeysRef;
+  onStop?: (taskId: string) => Promise<string | null>;
 }) {
   const client = useConnectionClient();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -647,6 +657,9 @@ function TaskDetail({
   const listRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const running = task.status === "running";
+  // What Claude Code knows it by: its background id, or a subagent's.
+  const stopId = task.taskId ?? task.agentId;
+  const [stopping, setStopping] = useState(false);
   // The workflow overview's state, kept while one of its agents shows.
   const [cursor, setCursor] = useState<string | null>(() => place.cursor);
   const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(
@@ -808,6 +821,25 @@ function TaskDetail({
       </div>
       {task.kind !== "agent" && task.detail ? (
         <code className="agent-task-command">{task.detail}</code>
+      ) : null}
+      {running && onStop && stopId ? (
+        <button
+          type="button"
+          className="agent-task-back"
+          disabled={stopping}
+          onClick={() => {
+            setStopping(true);
+            void onStop(stopId).then((refused) => {
+              if (refused) {
+                setStopping(false);
+                setError(`Could not stop it: ${refused}`);
+              }
+            });
+          }}
+        >
+          <Square size={12} aria-hidden="true" />
+          {stopping ? "Stopping…" : "Stop"}
+        </button>
       ) : null}
       {workflowAgent ? (
         <button type="button" className="agent-task-back" onClick={closeAgent}>

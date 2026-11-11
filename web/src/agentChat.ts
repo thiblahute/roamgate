@@ -223,6 +223,7 @@ export function applyStateEvent(
         ...state,
         status: event.status,
         tools_running: event.tools_running,
+        running_tools: event.running_tools ?? [],
         activity: event.activity,
       };
     case "queue":
@@ -256,7 +257,12 @@ export function applyStateEvent(
     case "user":
       return state.next_prompt ? { ...state, next_prompt: null } : state;
     case "result":
-      return { ...state, tools_running: false, activity: null };
+      return {
+        ...state,
+        tools_running: false,
+        running_tools: [],
+        activity: null,
+      };
     case "interrupted":
       return { ...state, interrupted: event.interrupted };
     case "lost":
@@ -825,6 +831,54 @@ export function interruptAgentChat(
   paneId: string,
 ): Promise<{ interrupted: boolean }> {
   return client.call("agent_chat.interrupt", { pane_id: paneId });
+}
+
+/** What moving a tool call to the background, or stopping a task, did. */
+export type AgentChatTaskAction =
+  | { ok: true; backgrounded?: boolean }
+  | { ok: false; reason: string };
+
+async function taskAction(
+  client: ConnectionClient,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<AgentChatTaskAction> {
+  try {
+    return (await client.call(method, params)) as AgentChatTaskAction;
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Moves the running command or subagent the tool call `toolUseId` started
+ * to the background, all of the turn's when none is named (Ctrl+B): the
+ * turn goes on while it runs. A failure is an answer.
+ */
+export function backgroundAgentChatTool(
+  client: ConnectionClient,
+  paneId: string,
+  toolUseId?: string,
+): Promise<AgentChatTaskAction> {
+  return taskAction(client, "agent_chat.background", {
+    pane_id: paneId,
+    ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+  });
+}
+
+/** Stops a background task of the session (its task or agent id). */
+export function stopAgentChatTask(
+  client: ConnectionClient,
+  paneId: string,
+  taskId: string,
+): Promise<AgentChatTaskAction> {
+  return taskAction(client, "agent_chat.task.stop", {
+    pane_id: paneId,
+    task_id: taskId,
+  });
 }
 
 /**

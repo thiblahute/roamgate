@@ -16,6 +16,7 @@ import {
   answerMcp,
   answerModels,
   answerRewinds,
+  answerTasks,
   type FakeClaude,
   fakeClaudeProcess,
   fakeSpawner,
@@ -2027,6 +2028,150 @@ describe("MCP servers (/mcp)", () => {
     await Bun.sleep(5);
     await context.session.mcpStatus();
     expect(context.session.idleSince()).toBeGreaterThan(before);
+  });
+});
+
+describe("moving tools to the background (Ctrl+B)", () => {
+  const requests = (fake: FakeClaude) =>
+    fake.written.flatMap((message) =>
+      message.type === "control_request" ? [message.request] : [],
+    );
+  const runTool = async (
+    context: ReturnType<typeof setup>,
+    id: string,
+    name = "Bash",
+  ) => {
+    context.proc().push({
+      type: "assistant",
+      message: {
+        id: `m-${id}`,
+        content: [{ type: "tool_use", id, name, input: { command: "make" } }],
+      },
+    });
+    await settle();
+  };
+
+  test("the running calls are told by id, and a named one is moved", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({
+          exitOnEnd: true,
+          respond: answerTasks(["toolu_1"]),
+        }),
+    });
+    await startTurn(context);
+    await runTool(context, "toolu_1");
+    expect(context.session.state().running_tools).toEqual(["toolu_1"]);
+    expect(context.events.at(-1)).toMatchObject({
+      type: "status",
+      running_tools: ["toolu_1"],
+    });
+    expect(await context.session.background("toolu_1")).toEqual({
+      ok: true,
+      backgrounded: true,
+    });
+    await settle();
+    expect(requests(context.proc())).toEqual([
+      { subtype: "background_tasks", tool_use_id: "toolu_1" },
+    ]);
+    // Its call returned; the turn goes on, and the task outlives it.
+    expect(context.session.state().running_tools).toEqual([]);
+    expect(context.session.state().status).toBe("working");
+    expect(context.session.backgroundTasks()).toBe(1);
+  });
+
+  test("Ctrl+B names none: every foreground task goes", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({
+          exitOnEnd: true,
+          respond: answerTasks(["toolu_1", "toolu_2"]),
+        }),
+    });
+    await startTurn(context);
+    await runTool(context, "toolu_1");
+    await runTool(context, "toolu_2", "Agent");
+    expect(await context.session.background()).toEqual({
+      ok: true,
+      backgrounded: true,
+    });
+    await settle();
+    expect(requests(context.proc())).toEqual([{ subtype: "background_tasks" }]);
+    expect(context.session.backgroundTasks()).toBe(2);
+  });
+
+  test("a call that no longer runs is said so", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({ exitOnEnd: true, respond: answerTasks([]) }),
+    });
+    await startTurn(context);
+    expect(await context.session.background("toolu_9")).toEqual({
+      ok: true,
+      backgrounded: false,
+    });
+  });
+
+  test("nothing is asked of a session with no turn running", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({ exitOnEnd: true, respond: answerTasks() }),
+    });
+    expect(await context.session.background("toolu_1")).toEqual({
+      ok: false,
+      reason: "Nothing runs in the foreground",
+    });
+    await context.session.warm();
+    expect(await context.session.background()).toMatchObject({ ok: false });
+    expect(requests(context.proc())).toEqual([]);
+  });
+
+  test("a background task is stopped through the process", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({
+          exitOnEnd: true,
+          respond: answerTasks(["toolu_1"]),
+        }),
+    });
+    await startTurn(context);
+    await runTool(context, "toolu_1");
+    await context.session.background("toolu_1");
+    await settle();
+    expect(context.session.backgroundTasks()).toBe(1);
+    expect(await context.session.stopTask("bg-toolu_1")).toEqual({ ok: true });
+    await settle();
+    expect(requests(context.proc()).at(-1)).toEqual({
+      subtype: "stop_task",
+      task_id: "bg-toolu_1",
+    });
+    expect(context.session.backgroundTasks()).toBe(0);
+  });
+
+  test("the agent's refusal comes back as the reason", async () => {
+    const context = setup({
+      make: () =>
+        fakeClaudeProcess({
+          exitOnEnd: true,
+          respond: (message, process) => {
+            answerInterrupts(message, process);
+            if (message.type !== "control_request") return;
+            process.push({
+              type: "control_response",
+              response: {
+                subtype: "error",
+                request_id: message.request_id,
+                error: "No task found with ID: gone",
+              },
+            });
+          },
+        }),
+    });
+    await context.session.warm();
+    expect(await context.session.stopTask("gone")).toEqual({
+      ok: false,
+      reason: "No task found with ID: gone",
+    });
   });
 });
 

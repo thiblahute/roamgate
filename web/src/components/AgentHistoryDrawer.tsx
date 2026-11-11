@@ -62,6 +62,8 @@ import {
   queueWaiting,
   recoverAgentChat,
   interruptAgentChat,
+  backgroundAgentChatTool,
+  stopAgentChatTask,
   runAgentChatShell,
   stopAgentChatShell,
   lastUserUuid,
@@ -2434,6 +2436,52 @@ export function AgentHistoryDrawer({
     },
     [composerDraftKey, connectionClient, notifyComposerError, pane.pane_id],
   );
+  // Ctrl+B and the tool blocks' Background: a running command or subagent
+  // goes on in the background and the turn with it, as in the terminal.
+  const canBackground =
+    !!paneChat && inConversation && capabilities.backgroundTools === true;
+  const runningToolIds = conversationState?.running_tools;
+  const runningTools = useMemo(
+    () => (canBackground ? new Set(runningToolIds ?? []) : undefined),
+    [canBackground, runningToolIds],
+  );
+  const backgroundTool = useCallback(
+    async (toolUseId?: string): Promise<boolean> => {
+      const result = await backgroundAgentChatTool(
+        connectionClient,
+        pane.pane_id,
+        toolUseId,
+      );
+      if (!result.ok) {
+        store.notify({
+          kind: "error",
+          message: "Could not move it to the background",
+          detail: result.reason,
+        });
+        return false;
+      }
+      if (result.backgrounded === false) {
+        store.notify({
+          kind: "info",
+          message: "It no longer runs in the foreground",
+        });
+        return false;
+      }
+      return true;
+    },
+    [connectionClient, pane.pane_id],
+  );
+  const stopTask = useCallback(
+    async (taskId: string): Promise<string | null> => {
+      const result = await stopAgentChatTask(
+        connectionClient,
+        pane.pane_id,
+        taskId,
+      );
+      return result.ok ? null : result.reason;
+    },
+    [connectionClient, pane.pane_id],
+  );
   const removeQueued = useCallback(
     (entry: AgentHistoryEntry) => {
       const id = queuedEntryId(entry);
@@ -3147,6 +3195,21 @@ export function AgentHistoryDrawer({
   // child of the bottom bar on a phone, so this is caught on the drawer
   // (events come up through the portal), with no element around the box.
   const onComposerKeyCapture = (event: ReactKeyboardEvent<HTMLElement>) => {
+    // Ctrl+B while a tool runs: what the turn waits for goes on in the
+    // background, as in the terminal. Otherwise the key is left alone.
+    if (
+      event.key.toLowerCase() === "b" &&
+      event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      runningTools?.size
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      void backgroundTool();
+      return;
+    }
     if (
       event.key !== "Tab" ||
       event.shiftKey ||
@@ -3399,6 +3462,8 @@ export function AgentHistoryDrawer({
                 onDiscardSend={discardSend}
                 tasks={paneChat ? tasksById : undefined}
                 onOpenTask={openTask}
+                running={runningTools}
+                onBackground={canBackground ? backgroundTool : undefined}
                 onRemoveQueued={
                   paneChat && conversationAgent ? removeQueued : undefined
                 }
@@ -3456,6 +3521,8 @@ export function AgentHistoryDrawer({
               onDiscardSend={discardSend}
               tasks={paneChat ? tasksById : undefined}
               onOpenTask={openTask}
+              running={runningTools}
+              onBackground={canBackground ? backgroundTool : undefined}
               onRemoveQueued={
                 paneChat && conversationAgent ? removeQueued : undefined
               }
@@ -3636,6 +3703,7 @@ export function AgentHistoryDrawer({
           tasks={tasks}
           session={tasksSession}
           initialTaskId={openTaskId}
+          onStop={canBackground ? stopTask : undefined}
           onClose={() => setTasksOpen(false)}
         />
       ) : null}

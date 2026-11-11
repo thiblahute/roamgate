@@ -21,6 +21,7 @@ import {
 import {
   answerInterrupts,
   answerMcp,
+  answerTasks,
   answerModels,
   answerRewinds,
   fakeClaudeProcess,
@@ -1828,6 +1829,77 @@ describe("MCP servers (/mcp)", () => {
     ).rejects.toThrow("url is required");
     expect(isAgentChatMethod("agent_chat.mcp")).toBe(true);
     expect(isAgentChatMethod("agent_chat.mcp.action")).toBe(true);
+  });
+});
+
+describe("background tools in conversation mode", () => {
+  const rpc =
+    (service: Parameters<typeof handleAgentChatRpc>[0]) =>
+    (method: string, params: Record<string, unknown>) =>
+      handleAgentChatRpc(service, null, { name: "w" }, method, {
+        pane_id: PANE,
+        ...params,
+      });
+
+  test("refused while the terminal owns the session", async () => {
+    const { service } = setup();
+    expect(await service.background(PANE, "toolu_1")).toEqual({
+      ok: false,
+      reason: "Nothing runs in the foreground",
+    });
+    expect(await service.stopTask(PANE, "b1")).toMatchObject({ ok: false });
+  });
+
+  test("a running command goes to the background, and is stopped, over the RPC", async () => {
+    const spawner = fakeSpawner(() =>
+      fakeClaudeProcess({
+        exitOnEnd: true,
+        respond: answerTasks(["toolu_1"]),
+      }),
+    );
+    const { service } = setup(undefined, { spawn: spawner.spawn });
+    await service.handover(PANE, "conversation");
+    await settle();
+    await service.send(PANE, { text: "build it" });
+    await settle();
+    const fake = spawner.spawned[0]!.fake;
+    fake.push({
+      type: "assistant",
+      message: {
+        id: "m1",
+        content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }],
+      },
+    });
+    await settle();
+    expect(service.state(PANE).running_tools).toEqual(["toolu_1"]);
+    const call = rpc(service);
+    expect(
+      await call("agent_chat.background", { tool_use_id: "toolu_1" }),
+    ).toEqual({ ok: true, backgrounded: true });
+    expect(
+      await call("agent_chat.task.stop", { task_id: "bg-toolu_1" }),
+    ).toEqual({ ok: true });
+    expect(
+      fake.written.flatMap((message) =>
+        message.type === "control_request" ? [message.request] : [],
+      ),
+    ).toEqual([
+      { subtype: "background_tasks", tool_use_id: "toolu_1" },
+      { subtype: "stop_task", task_id: "bg-toolu_1" },
+    ]);
+  });
+
+  test("the RPC checks what it is given", async () => {
+    const { service } = setup();
+    const call = rpc(service);
+    await expect(
+      call("agent_chat.background", { tool_use_id: "no spaces" }),
+    ).rejects.toThrow("invalid tool_use_id");
+    await expect(call("agent_chat.task.stop", {})).rejects.toThrow(
+      "task_id is required",
+    );
+    expect(isAgentChatMethod("agent_chat.background")).toBe(true);
+    expect(isAgentChatMethod("agent_chat.task.stop")).toBe(true);
   });
 });
 

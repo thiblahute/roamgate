@@ -77,6 +77,11 @@ export type AgentChatCapabilities = {
   models: boolean;
   /** The running agent's MCP servers are listed and acted on (/mcp). */
   mcp: boolean;
+  /**
+   * A running command or subagent can be moved to the background (Ctrl+B),
+   * and a background task stopped. Absent from older servers.
+   */
+  backgroundTools?: boolean;
 };
 
 export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
@@ -91,6 +96,7 @@ export const CLAUDE_CAPABILITIES: AgentChatCapabilities = {
   slashCommands: "claude",
   models: true,
   mcp: true,
+  backgroundTools: true,
 };
 
 /**
@@ -268,6 +274,8 @@ export type AgentChatState = {
   capabilities?: AgentChatCapabilities;
   /** A tool call is running: speech steers the turn instead of stopping it. */
   tools_running: boolean;
+  /** The tool calls that run, by tool_use id; absent from older servers. */
+  running_tools?: string[];
   /** What it is doing: a tool's name, "thinking", "compacting". */
   activity: string | null;
   queue: AgentChatQueued[];
@@ -630,6 +638,7 @@ export type AgentChatEvent =
       type: "status";
       status: AgentChatStatus;
       tools_running: boolean;
+      running_tools?: string[];
       activity: string | null;
     }
   | { type: "queue"; queue: AgentChatQueued[] }

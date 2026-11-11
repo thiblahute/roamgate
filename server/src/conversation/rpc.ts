@@ -21,6 +21,8 @@ export const AGENT_CHAT_METHODS = [
   "agent_chat.model_notice.dismiss",
   "agent_chat.mcp",
   "agent_chat.mcp.action",
+  "agent_chat.background",
+  "agent_chat.task.stop",
   "agent_chat.recover",
   "agent_chat.api_key.answer",
   "agent_chat.handover",
@@ -199,6 +201,13 @@ export async function handleAgentChatRpc<Ws>(
       return service.mcp(paneId);
     case "agent_chat.mcp.action":
       return service.mcpAction(paneId, parseMcpRequest(params));
+    case "agent_chat.background":
+      return service.background(paneId, idOf(params, "tool_use_id"));
+    case "agent_chat.task.stop": {
+      const taskId = idOf(params, "task_id");
+      if (!taskId) throw new Error("task_id is required");
+      return service.stopTask(paneId, taskId);
+    }
     case "agent_chat.recover":
       return service.recover(paneId);
     case "agent_chat.api_key.answer": {
