@@ -58,14 +58,17 @@ function fixture(
     host?: string;
     ssh?: boolean;
     remoteOutput?: string;
-    override?: (command: string) => ReturnType<typeof ok> | undefined;
+    override?: (
+      command: string,
+      timeoutMs: number,
+    ) => ReturnType<typeof ok> | undefined;
   } = {},
 ) {
   const host = options.host ?? `${provider}.com`;
   const commands: string[][] = [];
   const run: typeof runProcessWithCodeTimeout = async (
     argv,
-    _timeout,
+    timeoutMs,
     launchOptions,
   ) => {
     commands.push(argv);
@@ -78,7 +81,7 @@ function fixture(
       expect(launchOptions?.env?.NO_COLOR).toBe("1");
     }
     const command = options.ssh ? argv.at(-1)! : argv.map(shQuote).join(" ");
-    const overridden = options.override?.(command);
+    const overridden = options.override?.(command, timeoutMs);
     if (overridden) return overridden;
     if (command.includes("'symbolic-ref'")) return ok("feature/card\n");
     if (command.includes("'--git-path'"))
@@ -828,6 +831,30 @@ describe("PR/MR status", () => {
     }).read();
     expect(result.state).toBe("ready");
     expect(result.provider).toBe("gitlab");
+  });
+  test("a glab auth status that hangs is cut short and not asked again soon", async () => {
+    const asked: number[] = [];
+    const setup = fixture("gitlab", {
+      host: "code.example.com",
+      ssh: true,
+      override: (command, timeoutMs) => {
+        if (command.includes("'glab' 'auth' 'status'")) {
+          asked.push(timeoutMs);
+          // The process helper kills ssh at the deadline (a locked
+          // keychain on the host keeps glab waiting forever).
+          throw new Error(`ssh timed out after ${timeoutMs}ms`);
+        }
+      },
+    });
+    const first = await setup.read();
+    expect(first.state).toBe("error");
+    expect(first.message).toContain("glab auth status timed out");
+    expect(asked).toEqual([8_000]);
+    // Another checkout on the same connection: the hosts stay unknown
+    // rather than asked again.
+    const second = await setup.read();
+    expect(second.state).toBe("error");
+    expect(asked).toEqual([8_000]);
   });
   describe("fork workflow: origin is the upstream, the branch is pushed to a fork", () => {
     const remoteOutput = [

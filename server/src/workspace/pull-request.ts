@@ -17,6 +17,13 @@ import type { GitActionContext } from "./git-actions";
 
 /** What the CLIs say of their hosts and logins: rarely changes. */
 const HOSTS_REUSE_MS = 10 * 60_000;
+/**
+ * The longest a host listing may take: `glab auth status` can wait forever
+ * on a keyring nobody unlocks (a locked macOS keychain over SSH).
+ */
+const HOSTS_TIMEOUT_MS = 8_000;
+/** The exit status a listing that ran out of time is remembered by. */
+const TIMED_OUT = 124;
 /** A project's id and fork parent. */
 const PROJECT_REUSE_MS = 30 * 60_000;
 /** A branch's request list, for the sidebar's summaries. */
@@ -45,8 +52,13 @@ function rememberLocal(
   facts.set(key, entry);
   entry.value.then(
     (output) => {
-      // A missing CLI may be installed any time; a present one stays.
-      entry.until = Date.now() + (output.code === 0 ? HOSTS_REUSE_MS : 60_000);
+      // A missing CLI may be installed any time; a present one stays, and
+      // one that ran out of time would only hang again soon.
+      entry.until =
+        Date.now() +
+        (output.code === 0 || output.code === TIMED_OUT
+          ? HOSTS_REUSE_MS
+          : 60_000);
     },
     () => {
       if (facts.get(key) === entry) facts.delete(key);
@@ -461,11 +473,11 @@ export async function readPullRequestStatus(
     refreshedAt: new Date().toISOString(),
   };
   const deadline = Date.now() + 55_000;
-  async function run(argv: string[]) {
+  async function run(argv: string[], limitMs = 15_000) {
     const remaining = deadline - Date.now();
     if (remaining <= 0)
       throw new StatusError(`timed out before ${describeStep(argv)}`);
-    const timeout = Math.min(15_000, remaining);
+    const timeout = Math.min(limitMs, remaining);
     try {
       if (context.host) {
         const command = `cd ${context.shQuote(context.root)} && GH_PROMPT_DISABLED=1 GIT_TERMINAL_PROMPT=0 NO_COLOR=1 ${argv.map(context.shQuote).join(" ")}`;
@@ -504,13 +516,14 @@ export async function readPullRequestStatus(
       "host" | "kind" | "conditional" | "include" | "reuseMs"
     >,
     argv: string[],
+    timeoutMs?: number,
   ): Promise<ProcessOutput & { status?: number }> {
     try {
       return await forgeGate.run(
         owner,
         { checkout, feature, deadline, ...call },
         argv,
-        run,
+        (argv) => run(argv, timeoutMs),
       );
     } catch (error) {
       if (error instanceof ForgeBusyError)
@@ -660,6 +673,19 @@ export async function readPullRequestStatus(
         ? undefined
         : result.remotes.find((remote) => remote.name === name);
 
+    // A host listing that runs out of time answers TIMED_OUT, which is
+    // remembered as long as an answer: the hosts are then unknown.
+    const bounded = async (
+      read: () => Promise<ProcessOutput>,
+    ): Promise<ProcessOutput> => {
+      try {
+        return await read();
+      } catch (error) {
+        if (error instanceof StatusError && /timed out$/.test(error.message))
+          return { code: TIMED_OUT, stdout: "", stderr: "" };
+        throw error;
+      }
+    };
     // Ask CLIs only about their configured hosts; never probe an arbitrary
     // remote with a token intended for another host.
     type Listing = { hosts: Set<string> | null; error?: string };
@@ -694,7 +720,9 @@ export async function readPullRequestStatus(
         // host is printed, never the token.
         const script = `token() { (unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN; GLAB_NO_PROMPT=1 glab config get token --host "$1" 2>/dev/null); }; t=$(token "$1"); [ -n "$t" ] && [ "$t" != "$(token roamgate.invalid)" ] && printf '%s\\n' "$1"; exit 0`;
         login = rememberLocal(owner, `${checkout}\nglab-login\n${host}`, () =>
-          run(["sh", "-c", script, "sh", host]),
+          bounded(() =>
+            run(["sh", "-c", script, "sh", host], HOSTS_TIMEOUT_MS),
+          ),
         ).then(
           (output) => output.code === 0 && output.stdout.trim() === host,
           () => false,
@@ -703,16 +731,30 @@ export async function readPullRequestStatus(
       }
       return login;
     };
+    // Asked once per connection, not per checkout, within HOSTS_TIMEOUT_MS
+    // (a keyring can keep it waiting forever), and an answer that ran out
+    // of time is not asked again for HOSTS_REUSE_MS.
     const glabHosts = listing(async () => {
-      const hosts = { host: "*", kind: "auth-hosts", reuseMs: HOSTS_REUSE_MS };
-      let output = await forgeCall(hosts, ["glab", "auth", "status", "--all"]);
-      // Older glab (1.67, for one) has no --all and lists every host
-      // without it.
-      if (
-        output.code !== 0 &&
-        /unknown flag:? '?--all/i.test(`${output.stdout}\n${output.stderr}`)
-      )
-        output = await forgeCall(hosts, ["glab", "auth", "status"]);
+      const output = await rememberLocal(owner, `${checkout}\nglab-hosts`, () =>
+        bounded(async () => {
+          const hosts = {
+            host: "*",
+            kind: "auth-hosts",
+            reuseMs: HOSTS_REUSE_MS,
+          };
+          const status = (argv: string[]) =>
+            forgeCall(hosts, argv, HOSTS_TIMEOUT_MS);
+          const all = await status(["glab", "auth", "status", "--all"]);
+          // Older glab (1.67, for one) has no --all and lists every host
+          // without it.
+          return all.code !== 0 &&
+            /unknown flag:? '?--all/i.test(`${all.stdout}\n${all.stderr}`)
+            ? status(["glab", "auth", "status"])
+            : all;
+        }),
+      );
+      if (output.code === TIMED_OUT)
+        throw new StatusError("glab auth status timed out");
       return hostLines(`${output.stdout}\n${output.stderr}`);
     });
     type Forge = { provider: ReviewProvider; apiHost: string };
