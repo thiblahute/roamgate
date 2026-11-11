@@ -64,6 +64,12 @@ export type WorkflowView = {
 };
 
 const MAX_TASKS = 50;
+/**
+ * The background id a command's result names: started there, or moved
+ * there by the user (Ctrl+B) or by its timeout.
+ */
+const BACKGROUND_ID =
+  /(?:background(?:ed by user)? with ID: |moved to the background \(ID: )(\w+)/;
 /** A task with no end notice this long after it started is taken as lost. */
 const LOST_AFTER_MS = 24 * 60 * 60 * 1000;
 /**
@@ -111,6 +117,9 @@ export function parseSessionTasks(
   options: { rewound?: ReadonlySet<string> | null } = {},
 ): AgentTask[] {
   const tasks = new Map<string, AgentTask>();
+  // Commands run in the foreground: a task once moved to the background
+  // (Ctrl+B, the chat's Background, or their timeout), as their result says.
+  const foreground = new Map<string, AgentTask>();
   const byTaskId = new Map<string, AgentTask>();
   // Teammates idle since their last message: still there to be woken.
   const idle = new Set<AgentTask>();
@@ -261,6 +270,16 @@ export function parseSessionTasks(
             status: "running",
             startedAt: at,
           });
+        else if (name === "Bash")
+          foreground.set(id, {
+            id,
+            kind: "command",
+            title: description || stringValue(input.command).slice(0, 120),
+            detail: stringValue(input.command).slice(0, 2000) || undefined,
+            status: "running",
+            startedAt: at,
+            ...(rewound ? { rewound: true } : {}),
+          });
         else if (name === "Monitor")
           tasks.set(id, {
             id,
@@ -307,8 +326,7 @@ export function parseSessionTasks(
           }
           continue;
         }
-        const task = tasks.get(stringValue(part.tool_use_id));
-        if (!task) continue;
+        const callId = stringValue(part.tool_use_id);
         const text = contentText(part.content);
         const result = isRecord(record.toolUseResult)
           ? record.toolUseResult
@@ -316,8 +334,17 @@ export function parseSessionTasks(
         const taskId =
           stringValue(result.backgroundTaskId) ||
           stringValue(result.taskId) ||
-          /background with ID: (\w+)/.exec(text)?.[1] ||
+          BACKGROUND_ID.exec(text)?.[1] ||
           /Task ID: (\w+)/.exec(text)?.[1];
+        let task = tasks.get(callId);
+        const moved = foreground.get(callId);
+        foreground.delete(callId);
+        if (!task && moved && taskId && part.is_error !== true) {
+          // A foreground command moved to the background: a task from now.
+          task = moved;
+          tasks.set(callId, task);
+        }
+        if (!task) continue;
         const agentId =
           stringValue(result.agentId) || /agentId: (\w+)/.exec(text)?.[1];
         if (taskId) {

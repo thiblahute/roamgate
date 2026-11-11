@@ -804,6 +804,55 @@ export function createConversationService<Ws>(
     return result;
   }
 
+  /**
+   * Moves a running command or subagent of the pane's turn to the
+   * background (the tool call that started it; all of them when none is
+   * named), as Ctrl+B does in the terminal.
+   */
+  async function background(
+    paneId: string,
+    toolUseId?: string,
+  ): Promise<
+    { ok: true; backgrounded: boolean } | { ok: false; reason: string }
+  > {
+    const lease = leases.get(paneId);
+    const session = sessions.get(paneId);
+    if (disposed || !lease || lease.phase !== "conversation" || !session)
+      return { ok: false, reason: "Nothing runs in the foreground" };
+    const result = await session.background(toolUseId);
+    log("conversation background", {
+      pane: paneId,
+      ...(toolUseId ? { tool_use: toolUseId } : {}),
+      ok: result.ok,
+      ...(result.ok
+        ? { backgrounded: result.backgrounded }
+        : { reason: result.reason }),
+    });
+    return result;
+  }
+
+  /** Stops a background task of the pane's session (the Tasks sheet). */
+  async function stopTask(
+    paneId: string,
+    taskId: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const lease = leases.get(paneId);
+    const session = sessions.get(paneId);
+    if (disposed || !lease || lease.phase !== "conversation" || !session)
+      return {
+        ok: false,
+        reason: "Only a running conversation can stop its tasks",
+      };
+    const result = await session.stopTask(taskId);
+    log("conversation task stop", {
+      pane: paneId,
+      task: taskId,
+      ok: result.ok,
+      ...(result.ok ? {} : { reason: result.reason }),
+    });
+    return result;
+  }
+
   /** The notice of a turn cut short goes (a new turn, or a dismiss). */
   function clearInterrupted(paneId: string) {
     if (disposed) return;
@@ -941,6 +990,7 @@ export function createConversationService<Ws>(
           }
         : {}),
       tools_running: live?.tools_running ?? false,
+      running_tools: live?.running_tools ?? [],
       activity: live?.activity ?? null,
       queue: live?.queue ?? lease?.queue ?? recovery.parked(paneId) ?? [],
       interrupted: lease?.interrupted ?? null,
@@ -1212,6 +1262,8 @@ export function createConversationService<Ws>(
     models: listModels,
     mcp,
     mcpAction,
+    background,
+    stopTask,
     /** /model: switches the pane's session to another model. */
     setModel,
     /** The user dismissed what the chat said of the last /model. */

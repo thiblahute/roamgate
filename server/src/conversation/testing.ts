@@ -212,6 +212,73 @@ export function answerMcp(
 }
 
 /**
+ * Answers background_tasks and stop_task as `claude -p` does: a named tool
+ * call that runs (one of `running`) returns at once with the result Claude
+ * Code writes for a command moved to the background, and the turn goes on;
+ * one that does not run is answered `backgrounded: false`. A stop ends the
+ * task with its notification.
+ */
+export function answerTasks(running: string[] = []) {
+  const foreground = new Set(running);
+  return (message: Record<string, unknown>, process: FakeClaude) => {
+    answerInterrupts(message, process);
+    if (message.type !== "control_request") return;
+    const request = (message.request ?? {}) as Record<string, unknown>;
+    const reply = (response: Record<string, unknown>) =>
+      process.push({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: message.request_id,
+          response,
+        },
+      });
+    const moved = (id: string) => {
+      foreground.delete(id);
+      process.push({
+        type: "system",
+        subtype: "task_started",
+        task_id: `bg-${id}`,
+        tool_use_id: id,
+      });
+      process.push({
+        type: "user",
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: id,
+              content: `Command was manually backgrounded by user with ID: bg-${id}. Output is being written to: /tmp/bg-${id}.output.`,
+            },
+          ],
+        },
+      });
+    };
+    if (request.subtype === "background_tasks") {
+      const id = request.tool_use_id;
+      if (typeof id === "string") {
+        const found = foreground.has(id);
+        if (found) moved(id);
+        reply({ backgrounded: found });
+        return;
+      }
+      for (const each of [...foreground]) moved(each);
+      reply({});
+      return;
+    }
+    if (request.subtype === "stop_task") {
+      reply({});
+      process.push({
+        type: "system",
+        subtype: "task_notification",
+        task_id: request.task_id,
+        status: "stopped",
+      });
+    }
+  };
+}
+
+/**
  * Answers model requests as `claude -p` does: list_models with `models`
  * (Claude Code's own rows), set_model with the id `resolve` gives, or the
  * refusal it throws.

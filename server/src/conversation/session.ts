@@ -208,6 +208,8 @@ export function createConversationSession(options: ConversationSessionOptions) {
   let lastStatus: {
     status: AgentChatStatus;
     tools: boolean;
+    /** The running tool calls' ids, space-joined. */
+    running: string;
     activity: string | null;
   } | null = null;
   let codec = driver.createCodec();
@@ -270,6 +272,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
     const now = {
       status: status(),
       tools: tools.size > 0,
+      running: [...tools].join(" "),
       activity: shownActivity(),
     };
     reportStatus(now.status);
@@ -277,6 +280,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
       lastStatus &&
       lastStatus.status === now.status &&
       lastStatus.tools === now.tools &&
+      lastStatus.running === now.running &&
       lastStatus.activity === now.activity
     )
       return;
@@ -285,6 +289,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
       type: "status",
       status: now.status,
       tools_running: now.tools,
+      running_tools: [...tools],
       activity: now.activity,
     });
   }
@@ -1144,6 +1149,58 @@ export function createConversationSession(options: ConversationSessionOptions) {
     );
   }
 
+  /**
+   * Moves the running command or subagent the tool call `toolUseId`
+   * started to the background, as Ctrl+B does in the terminal; all of the
+   * turn's when none is named. The call returns at once and the turn goes
+   * on; the task keeps running and its end is notified. `backgrounded`:
+   * a named call was found running in the foreground.
+   */
+  async function background(
+    toolUseId?: string,
+  ): Promise<
+    { ok: true; backgrounded: boolean } | { ok: false; reason: string }
+  > {
+    const child = proc;
+    if (!driver.capabilities.backgroundTools)
+      return { ok: false, reason: `${agentName} cannot do that` };
+    if (!child || ending || stopping || disposed || (!turn && !compacting))
+      return { ok: false, reason: "Nothing runs in the foreground" };
+    const answer = await control(
+      child,
+      "background_tasks",
+      toolUseId ? { tool_use_id: toolUseId } : {},
+      Math.min(rewindWaitMs, 5000),
+    );
+    if (!answer) return { ok: false, reason: `${agentName} did not answer` };
+    if (answer.error) return { ok: false, reason: answer.error };
+    lastActivity = now();
+    return {
+      ok: true,
+      backgrounded: toolUseId ? answer.response?.backgrounded !== false : true,
+    };
+  }
+
+  /** Stops one of the session's background tasks (its task or agent id). */
+  async function stopTask(
+    taskId: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const child = proc;
+    if (!driver.capabilities.backgroundTools)
+      return { ok: false, reason: `${agentName} cannot do that` };
+    if (!child || ending || disposed)
+      return { ok: false, reason: `${agentName} is not running` };
+    const answer = await control(
+      child,
+      "stop_task",
+      { task_id: taskId },
+      Math.min(rewindWaitMs, 5000),
+    );
+    if (!answer) return { ok: false, reason: `${agentName} did not answer` };
+    if (answer.error) return { ok: false, reason: answer.error };
+    return { ok: true };
+  }
+
   /** What a rewind needs of this session. */
   const rewindContext: RewindContext = {
     sessionId: () => sessionId,
@@ -1241,6 +1298,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
     state: () => ({
       status: status(),
       tools_running: tools.size > 0,
+      running_tools: [...tools],
       activity: shownActivity(),
       queue: queue.map((item) => ({ ...item })),
       next_prompt: nextPrompt ? { ...nextPrompt } : null,
@@ -1344,6 +1402,8 @@ export function createConversationSession(options: ConversationSessionOptions) {
     setModel,
     mcpStatus,
     mcpAction,
+    background,
+    stopTask,
     /** The model the process runs, as it last said; null: not known. */
     model: () => model,
     /** The name the user last switched it to (/model); null: none. */

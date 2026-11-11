@@ -106,6 +106,48 @@ test("background commands and subagents, with how they ended", () => {
   });
 });
 
+test("a foreground command or subagent moved to the background becomes a task", () => {
+  const tasks = parseSessionTasks([
+    use("t1", "Bash", { command: "make", description: "Build" }),
+    result(
+      "t1",
+      "Command was manually backgrounded by user with ID: b1. Output is being written to: /tmp/tasks/b1.output.",
+      { backgroundTaskId: "b1", backgroundedByUser: true },
+    ),
+    use("t2", "Bash", { command: "bun run test" }),
+    // Its timeout moved it there; the payload withheld, the text says so.
+    result(
+      "t2",
+      "Command did not complete within its 120s timeout and was moved to the background (ID: b2). Output is being written to: /tmp/tasks/b2.output.",
+    ),
+    use("t3", "Agent", { description: "Review", subagent_type: "Explore" }),
+    result("t3", "Async agent launched successfully.\nagentId: a3", {
+      isAsync: true,
+      status: "async_launched",
+      agentId: "a3",
+    }),
+    notification(
+      '<task-id>b1</task-id>\n<tool-use-id>t1</tool-use-id>\n<status>killed</status>\n<summary>Background command "Build" was stopped</summary>',
+    ),
+  ]);
+  expect(tasks.map((task) => [task.id, task.kind, task.status])).toEqual([
+    ["t3", "agent", "running"],
+    ["t2", "command", "running"],
+    ["t1", "command", "stopped"],
+  ]);
+  expect(tasks[1]).toMatchObject({
+    title: "bun run test",
+    taskId: "b2",
+    outputFile: "/tmp/tasks/b2.output",
+  });
+  expect(tasks[2]).toMatchObject({
+    title: "Build",
+    detail: "make",
+    taskId: "b1",
+    outputFile: "/tmp/tasks/b1.output",
+  });
+});
+
 test("a subagent in the foreground ends with its result", () => {
   const [task] = parseSessionTasks([
     use("t1", "Agent", { description: "Find it", subagent_type: "Explore" }),

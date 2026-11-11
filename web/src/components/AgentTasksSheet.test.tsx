@@ -356,4 +356,97 @@ if (process.env.ROAMGATE_TASKS_SHEET_DOM_TEST !== "1") {
     expect(marks[0]?.textContent).toBe("started in a rewound part");
     await React.act(async () => root.unmount());
   }, 10_000);
+
+  test("a running task of a conversation is stopped from its detail", async () => {
+    const { Window } = await import("happy-dom");
+    const browser = new Window({ url: "http://localhost" });
+    for (const [key, value] of Object.entries({
+      window: browser,
+      document: browser.document,
+      navigator: browser.navigator,
+      HTMLElement: browser.HTMLElement,
+      Element: browser.Element,
+      Node: browser.Node,
+      Event: browser.Event,
+      KeyboardEvent: browser.KeyboardEvent,
+      CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
+      requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
+      IS_REACT_ACT_ENVIRONMENT: true,
+    }))
+      Object.defineProperty(globalThis, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    browser.HTMLElement.prototype.scrollIntoView = () => {};
+    const client = {
+      connectionId: "c1",
+      call: async () => ({ task: {}, output: "building..." }),
+    };
+    mock.module("../useConnectionClient", () => ({
+      useConnectionClient: () => client,
+    }));
+    const { AgentTasksSheet } = await import("./AgentTasksSheet");
+    const { createRoot } = await import("react-dom/client");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const pane = { pane_id: "p2", agent: "claude" } as unknown as Pane;
+    const tasks: AgentTask[] = [
+      {
+        id: "t1",
+        kind: "command",
+        title: "make",
+        status: "running",
+        taskId: "b1",
+      },
+      { id: "t2", kind: "command", title: "lint", status: "completed" },
+    ];
+    const stops: string[] = [];
+    let refusal: string | null = "No task found with ID: b1";
+    const stop = async (taskId: string) => {
+      stops.push(taskId);
+      return refusal;
+    };
+    const render = (initialTaskId: string, onStop?: typeof stop) =>
+      React.act(async () =>
+        root.render(
+          <AgentTasksSheet
+            key={`${initialTaskId}:${!!onStop}`}
+            pane={pane}
+            tasks={tasks}
+            session="s2"
+            initialTaskId={initialTaskId}
+            onStop={onStop}
+            onClose={() => {}}
+          />,
+        ),
+      );
+    const stopButton = () =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>(".agent-task-back"),
+      ].find((button) => button.textContent?.includes("Stop"));
+    // Only shown: no Stop.
+    await render("t1");
+    expect(
+      document.querySelector(".agent-tasks-head strong")?.textContent,
+    ).toBe("make");
+    expect(stopButton()).toBeUndefined();
+    await render("t1", stop);
+    await React.act(async () => stopButton()!.click());
+    expect(stops).toEqual(["b1"]);
+    // Refused: said, and offered again.
+    expect(document.body.textContent).toContain(
+      "Could not stop it: No task found with ID: b1",
+    );
+    expect(stopButton()!.disabled).toBe(false);
+    refusal = null;
+    await React.act(async () => stopButton()!.click());
+    expect(stopButton()!.textContent).toBe("Stopping…");
+    // An ended task has nothing to stop.
+    await render("t2", stop);
+    expect(stopButton()).toBeUndefined();
+    await React.act(async () => root.unmount());
+  });
 }

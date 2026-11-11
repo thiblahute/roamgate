@@ -16,6 +16,7 @@ import {
 } from "react";
 import {
   ArrowDown,
+  ArrowDownToLine,
   Check,
   ChevronRight,
   CircleSlash,
@@ -1469,7 +1470,47 @@ type ToolBlockProps = {
   onOpen: (entry: HistoryEntry) => void;
   tasks?: ReadonlyMap<string, AgentTask>;
   onOpenTask?: (id: string) => void;
+  /** The tool calls that run now, by tool_use id (conversation mode). */
+  running?: ReadonlySet<string>;
+  /** Moves a running command or subagent to the background. */
+  onBackground?: (toolUseId: string) => Promise<boolean> | void;
 };
+
+/** Tools whose running call can go on in the background (Ctrl+B). */
+const BACKGROUND_TOOLS = new Set(["Bash", "Agent", "Task"]);
+
+/**
+ * The block's calls that run in the foreground and can be moved to the
+ * background: a command or a subagent the agent waits for.
+ */
+export function backgroundableSteps(
+  steps: readonly ToolStep[],
+  running: ReadonlySet<string> | undefined,
+): { id: string; step: ToolStep }[] {
+  if (!running?.size) return [];
+  return steps.flatMap((step) => {
+    const id = step.call?.source_call_id;
+    return id &&
+      !step.result &&
+      running.has(id) &&
+      BACKGROUND_TOOLS.has(step.name)
+      ? [{ id, step }]
+      : [];
+  });
+}
+
+/** Whether the block's calls run now as they did: only its own calls count. */
+function sameBlockRunning(
+  entries: readonly HistoryEntry[],
+  a: ToolBlockProps["running"],
+  b: ToolBlockProps["running"],
+): boolean {
+  if (a === b) return true;
+  return entries.every((entry) => {
+    const id = entry.kind === "tool_call" ? entry.source_call_id : undefined;
+    return !id || (a?.has(id) ?? false) === (b?.has(id) ?? false);
+  });
+}
 /**
  * Whether the background tasks the block's calls started are the same: the
  * session's task list is read anew every few seconds, and only a block
@@ -1519,6 +1560,8 @@ function sameToolBlock(a: ToolBlockProps, b: ToolBlockProps): boolean {
     a.onToggle === b.onToggle &&
     a.onOpen === b.onOpen &&
     a.onOpenTask === b.onOpenTask &&
+    a.onBackground === b.onBackground &&
+    sameBlockRunning(b.entries, a.running, b.running) &&
     a.entries.length === b.entries.length &&
     a.entries.every((entry, index) =>
       sameHistoryEntry(entry, b.entries[index]!),
@@ -1535,6 +1578,8 @@ const ToolBlock = memo(function ToolBlock({
   onOpen,
   tasks,
   onOpenTask,
+  running,
+  onBackground,
 }: ToolBlockProps) {
   useRenderTrace("ToolBlock");
   // The pages these calls published, the latest version of each.
@@ -1573,6 +1618,10 @@ const ToolBlock = memo(function ToolBlock({
       ),
     [steps],
   );
+  // The commands and subagents the turn waits for, which can go on in the
+  // background; the ones asked to, until their call returns.
+  const foreground = onBackground ? backgroundableSteps(steps, running) : [];
+  const [moving, setMoving] = useState<ReadonlySet<string>>(() => new Set());
   // Each payload version is queued and fetched directly at most once per
   // block, so a failed fetch does not loop on every polling refresh; the Load
   // buttons still retry. A payload rewritten under the same id is a new
@@ -1689,6 +1738,38 @@ const ToolBlock = memo(function ToolBlock({
               <span>{task.title}</span>
               <span className={`agent-task-status is-${task.status}`}>
                 {taskStatusLabel(task)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {foreground.length ? (
+        <div className="agent-history-chat-tasks">
+          {foreground.map(({ id, step }) => (
+            <button
+              key={id}
+              type="button"
+              className="agent-history-chat-task is-foreground"
+              disabled={moving.has(id)}
+              title="Move it to the background (Ctrl+B): the turn goes on while it runs"
+              onClick={() => {
+                setMoving((current) => new Set(current).add(id));
+                // Not moved (it ended meanwhile, or the agent refused):
+                // the button is offered again while it runs.
+                void Promise.resolve(onBackground?.(id)).then((moved) => {
+                  if (moved === false)
+                    setMoving((current) => {
+                      const next = new Set(current);
+                      next.delete(id);
+                      return next;
+                    });
+                });
+              }}
+            >
+              <span>{toolStepSummary(step) || toolDisplayName(step.name)}</span>
+              <span className="agent-task-status">
+                <ArrowDownToLine size={11} aria-hidden="true" />
+                {moving.has(id) ? "Moving…" : "Background"}
               </span>
             </button>
           ))}
@@ -1870,6 +1951,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   onDiscardSend,
   tasks,
   onOpenTask,
+  running,
+  onBackground,
   onRemoveQueued,
   onEditQueued,
   queuedHandedOver,
@@ -1907,6 +1990,10 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
   /** The session's background tasks, by the tool call that started each. */
   tasks?: ReadonlyMap<string, AgentTask>;
   onOpenTask?: (id: string) => void;
+  /** The tool calls that run now, by tool_use id (conversation mode). */
+  running?: ReadonlySet<string>;
+  /** Moves a running command or subagent to the background (Ctrl+B). */
+  onBackground?: (toolUseId: string) => Promise<boolean> | void;
   /** Takes a queued message back before the agent reads it. */
   onRemoveQueued?: (entry: HistoryEntry) => void;
   /** Takes a queued message back into the box to edit. */
@@ -1967,6 +2054,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     onSendAgain,
     onEditAgain,
     onOpenTask,
+    onBackground,
     speech,
   });
   latest.current = {
@@ -1978,6 +2066,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     onSendAgain,
     onEditAgain,
     onOpenTask,
+    onBackground,
     speech,
   };
   const stable = useMemo(
@@ -1996,6 +2085,7 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
       onSendAgain: (text: string) => latest.current.onSendAgain?.(text),
       onEditAgain: (text: string) => latest.current.onEditAgain?.(text),
       onOpenTask: (id: string) => latest.current.onOpenTask?.(id),
+      onBackground: (id: string) => latest.current.onBackground?.(id),
       toggleSpeech: (messageId: string, markdown: string) =>
         latest.current.speech.toggle(messageId, markdown),
     }),
@@ -2386,6 +2476,8 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
               onOpen={stable.onOpen}
               tasks={tasks}
               onOpenTask={onOpenTask ? stable.onOpenTask : undefined}
+              running={running}
+              onBackground={onBackground ? stable.onBackground : undefined}
             />
           ),
         )}

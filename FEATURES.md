@@ -727,6 +727,10 @@ Inspector state is scoped to each checkout; see
   their results appear as they are written; messages sent while Claude works
   wait in Roamgate's queue (taken back or edited as below) and go as one
   turn when it ends; **Stop** interrupts the turn, keeping what was written;
+  a command or subagent the turn waits for shows **Background** on its
+  block (Ctrl+B in the chat moves all of them, as in the terminal): it
+  goes on running, the turn goes on without it, and its block then links
+  to it in the background tasks, where a running one shows **Stop**;
   `/compact`, `/clear`, `/cost`, `/context` and `/rewind` work, and other
   terminal-only commands are refused. `/model` opens a picker of the models
   the session's Claude offers, with the other models of its profile's
@@ -1888,6 +1892,7 @@ and is skipped, with a note, on a browser that does not match.
 | Split right / down                                                    | `Cmd+D` / `Cmd+Shift+D` | `Ctrl+Alt+D` / `Ctrl+Alt+Shift+D`       |
 | Zoom / restore pane                                                   | `Cmd+Shift+Enter`       | `Ctrl+Alt+Enter`                        |
 | Claude pane's background tasks                                        | `Cmd+Ctrl+T`            | `Ctrl+Alt+Shift+M`                      |
+| Move what a conversation's turn runs to the background (chat)         | `Ctrl+B`                | `Ctrl+B`                                |
 | Suspend a conversation to its shell (chat; `fg` resumes it)           | `Ctrl+Z`                | `Ctrl+Z` (box empty or Vim normal mode) |
 | Numbered tab                                                          | `Ctrl+1…9`              | `Ctrl+Alt+1…9`                          |
 | Numbered command menu action                                          | `Option+1…9`            | `Alt+1…9`                               |
