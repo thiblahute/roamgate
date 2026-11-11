@@ -408,6 +408,25 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     inputSchema: schema({}),
     body: () => ({}),
   },
+  {
+    name: "reviews_board",
+    command: "reviews",
+    deferred: true,
+    description:
+      "Roamgate's Reviews board: the user's own merge and pull requests in lanes (whose move it is) with their next step, beside those they review. board_tool is one of reviews_list (lanes, next steps, what was set by hand; paged), reviews_override (set or clear whose move, the next step, the requests it waits for, labels, a link, stale), reviews_order, reviews_sort, reviews_pin, reviews_unpin, reviews_hide, reviews_unhide; params its parameters (board_tool help lists each one's). Roamgate's own state only, never a forge; the user sees each change with Undo.",
+    inputSchema: schema(
+      {
+        // Not "tool": the engine's own key in a call, never the model's.
+        board_tool: { type: "string" },
+        params: { type: "object" },
+      },
+      ["board_tool"],
+    ),
+    body: (input) => ({
+      tool: requiredString(input, "board_tool"),
+      params: JSON.stringify(input.params ?? {}),
+    }),
+  },
 ];
 
 const BY_NAME = new Map(ROAMGATE_TOOLS.map((tool) => [tool.name, tool]));

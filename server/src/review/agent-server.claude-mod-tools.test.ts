@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   identityBody,
   ROAMGATE_TOOLS,
+  toolArguments,
   roamgateTool,
   type ToolIdentity,
   ToolInputError,
@@ -65,7 +66,12 @@ function setup() {
   });
   const notified: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
+  const board: Record<string, unknown>[] = [];
   const agent = createReviewAgentServer({
+    reviews: async (input) => {
+      board.push(input);
+      return JSON.stringify({ changed: true });
+    },
     service,
     directory: dir,
     home,
@@ -129,7 +135,7 @@ function setup() {
     const { command, body } = toolRequest(tool, input, identity);
     return raw(command, body);
   }
-  return { hub, service, call, raw, notified, sent };
+  return { hub, service, call, raw, notified, sent, board };
 }
 
 /** Markdown a shell would have mangled. */
@@ -302,6 +308,28 @@ test("notify, sessions and messages go where the client's do", async () => {
     to: "local/w3-1",
     text: MARKDOWN,
   });
+});
+
+test("reviews_board runs a board tool with its parameters as JSON", async () => {
+  const { call, board } = setup();
+  expect(
+    await call("reviews_board", {
+      board_tool: "reviews_override",
+      params: { request: "g/p!2", set: { next: "ping bob" } },
+    }),
+  ).toEqual({ tool: "reviews_override", result: { changed: true } });
+  expect(board[0]).toMatchObject({
+    connectionId: "local",
+    paneId: "w1-2",
+    tool: "reviews_override",
+    params: { request: "g/p!2", set: { next: "ping bob" } },
+  });
+  await call("reviews_board", { board_tool: "reviews_list" });
+  // What the engine passes keeps the model's board_tool.
+  expect(
+    toolArguments({ tool: "reviews_board", board_tool: "reviews_list" }),
+  ).toEqual({ board_tool: "reviews_list" });
+  expect(board[1]).toMatchObject({ tool: "reviews_list", params: {} });
 });
 
 test("a session says it has the tools over the socket, and when it leaves", async () => {
