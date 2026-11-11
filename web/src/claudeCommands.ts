@@ -39,6 +39,10 @@ export const CLAUDE_BUILTIN_COMMANDS: AgentCommand[] = [
   { name: "rewind", description: "Go back to an earlier point" },
   { name: "status", description: "Show the version, model and account" },
   { name: "statusline", description: "Set up the status line" },
+  {
+    name: "tasks",
+    description: "Roamgate: background tasks, subagents and workflows",
+  },
   { name: "todos", description: "Show the todo list" },
   { name: "usage", description: "Show plan usage" },
   { name: "vim", description: "Toggle Vim editing" },
