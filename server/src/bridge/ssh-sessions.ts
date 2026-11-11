@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { copySshAnnotation } from "./ssh-metrics";
 
 /**
  * Bounds concurrent SSH sessions per destination. OpenSSH's sshd defaults to
@@ -22,6 +23,30 @@ export const SSH_SESSION_DEFAULT_WAIT_MS = 60_000;
 export const SSH_BACKGROUND_SESSION_LIMIT = 5;
 /** Background commands queued behind a full destination before more are shed. */
 export const SSH_BACKGROUND_WAITER_LIMIT = 64;
+/**
+ * Long-lived sessions (a history watch, a chat's shell command) that may
+ * hold slots of a master at once, and only while a slot is free: the others
+ * run on connections of their own, so they never starve short commands.
+ */
+export const SSH_STREAM_SESSION_LIMIT = 2;
+/**
+ * A multiplexed command whose session the host refused (sshd's MaxSessions,
+ * 10 by default) is run again over the master after these waits, then on a
+ * connection of its own.
+ */
+export const SSH_REFUSED_RETRY_DELAYS_MS = [200, 500, 1000, 2000] as const;
+/**
+ * After a refusal the host has fewer sessions free than counted here (a
+ * session closes on the host a moment after its client exits, and a command
+ * killed here may still run there): no new slot is given past the ones in
+ * use until this long after the last refusal.
+ */
+export const SSH_REFUSED_COOLDOWN_MS = 5_000;
+/**
+ * A command run with a deadline ends on the host this long (in seconds)
+ * after it, even when nothing there notices its client is gone.
+ */
+export const SSH_REMOTE_GRACE_S = 2;
 
 /**
  * Who a command is for. Interactive work (the default) is what the user is
@@ -72,6 +97,11 @@ export type SshSessionHold = {
   release: () => void;
   /** What is left of `timeoutMs` after the wait; unset without a timeout. */
   remainingMs: number | undefined;
+  /**
+   * What to spawn: the argv given, or for a long-lived session past its
+   * share of the master, the same command on a connection of its own.
+   */
+  argv: string[];
 };
 
 export type SshMasterRegistration = {
@@ -89,6 +119,11 @@ type SshCommandRoute = {
   controlPath?: string;
   /** The same command without multiplexing, for the one cold retry. */
   cold: string[];
+  /**
+   * The multiplexed command that fails instead of logging in on its own
+   * when the master refuses its session; what runSshCommand runs.
+   */
+  muxOnly?: string[];
   /** Only read-only commands may run twice when their master dies. */
   retrySafe: boolean;
 };
@@ -103,6 +138,21 @@ type SessionSlots = {
   active: number;
   /** Of `active`, those held by background commands. */
   background: number;
+  /** Of `active`, those held by long-lived sessions. */
+  streams: number;
+  /**
+   * Sessions whose client was killed here and that may still run on the
+   * host until their deadline: the host counts them, so no slot goes to
+   * them meanwhile.
+   */
+  lingering: number;
+  /**
+   * The most sessions the host serves while it recovers from a refusal,
+   * lingering ones included.
+   */
+  ceiling: number;
+  cooldownUntil: number;
+  cooldownTimer?: ReturnType<typeof setTimeout>;
   waiters: Array<() => void>;
   backgroundWaiters: Array<() => void>;
 };
@@ -175,9 +225,117 @@ function sessionWaitTimeout(destination: string, timeoutMs: number): Error {
   );
 }
 
+/** How many slots the destination gives now. */
+function slotLimit(slot: SessionSlots): number {
+  const sessions =
+    slot.cooldownUntil > Date.now() ? slot.ceiling : SSH_SESSION_LIMIT;
+  return Math.max(0, sessions - slot.lingering);
+}
+
+function newSlots(): SessionSlots {
+  return {
+    active: 0,
+    background: 0,
+    streams: 0,
+    lingering: 0,
+    ceiling: SSH_SESSION_LIMIT,
+    cooldownUntil: 0,
+    waiters: [],
+    backgroundWaiters: [],
+  };
+}
+
+function slotsOf(destination: string): SessionSlots {
+  let slot = sessionSlots.get(destination);
+  if (!slot) {
+    slot = newSlots();
+    sessionSlots.set(destination, slot);
+  }
+  return slot;
+}
+
+function forgetIfIdle(destination: string, slot: SessionSlots) {
+  if (
+    slot.active === 0 &&
+    slot.lingering === 0 &&
+    !slot.waiters.length &&
+    !slot.backgroundWaiters.length &&
+    slot.cooldownUntil <= Date.now() &&
+    sessionSlots.get(destination) === slot
+  )
+    sessionSlots.delete(destination);
+}
+
+/**
+ * The host refused a session: give no slot past the ones in use (less the
+ * refused one) for SSH_REFUSED_COOLDOWN_MS, then hand out the rest again.
+ */
+function noteRefusal(destination: string) {
+  const slot = slotsOf(destination);
+  const until = Date.now() + SSH_REFUSED_COOLDOWN_MS;
+  slot.ceiling = Math.max(
+    1,
+    Math.min(
+      slot.cooldownUntil > Date.now() ? slot.ceiling : SSH_SESSION_LIMIT,
+      slot.active + slot.lingering - 1,
+    ),
+  );
+  slot.cooldownUntil = until;
+  if (slot.cooldownTimer) clearTimeout(slot.cooldownTimer);
+  slot.cooldownTimer = setTimeout(() => {
+    slot.cooldownTimer = undefined;
+    grantWaiters(slot);
+    forgetIfIdle(destination, slot);
+  }, SSH_REFUSED_COOLDOWN_MS);
+  (slot.cooldownTimer as { unref?: () => void }).unref?.();
+}
+
+/**
+ * A command's client was killed here (its deadline passed) while its
+ * session may still run on the host until `until`: the slot is free here,
+ * but the host's session is counted until then.
+ */
+function noteLingering(destination: string, until: number) {
+  const left = until - Date.now();
+  if (left <= 0) return;
+  const slot = slotsOf(destination);
+  slot.lingering += 1;
+  const timer = setTimeout(() => {
+    slot.lingering -= 1;
+    grantWaiters(slot);
+    forgetIfIdle(destination, slot);
+  }, left);
+  (timer as { unref?: () => void }).unref?.();
+}
+
+/**
+ * The remote command line that runs `command` under /bin/sh, as the
+ * commands sent to hosts are written for, but kills it and everything it started `seconds` from now: sshd
+ * gives each session its own process group, and a command that waits on
+ * nothing it reads (a keychain prompt nobody sees, a stalled network call)
+ * would otherwise hold its session, one of sshd's MaxSessions, long after
+ * its client here was killed. The watchdog goes when the command ends.
+ * The outer line parses alike in sh, bash, zsh and fish; PowerShell
+ * commands (Windows hosts) are left as they are.
+ */
+export function withRemoteDeadline(command: string, seconds: number): string {
+  if (/^powershell(?:\.exe)?\s/i.test(command)) return command;
+  const script =
+    't=$1; c=$2; (trap "kill \\$p 2>/dev/null; exit 0" TERM; sleep "$t" & p=$!; wait "$p" && kill -s KILL 0) </dev/null >/dev/null 2>&1 & w=$!; /bin/sh -c "$c"; s=$?; kill "$w" 2>/dev/null; exit "$s"';
+  return `exec /bin/sh -c ${anyShellQuote(script)} roamgate-deadline ${Math.max(1, Math.ceil(seconds))} ${anyShellQuote(command)}`;
+}
+
+/**
+ * Single quotes as POSIX shells read them, with backslashes outside the
+ * quotes, since fish reads \\ and \' inside single quotes as escapes.
+ */
+function anyShellQuote(value: string): string {
+  return `'${value.replace(/['\\]/g, (c) => (c === "'" ? "'\\''" : "'\\\\'"))}'`;
+}
+
 /** Gives free slots to the waiters: interactive ones first. */
 function grantWaiters(slot: SessionSlots) {
-  while (slot.active < SSH_SESSION_LIMIT) {
+  while (slot.active < slotLimit(slot)) {
     const interactive = slot.waiters.shift();
     if (interactive) {
       slot.active += 1;
@@ -210,19 +368,15 @@ export async function acquireSshSession(
   lane: SshLane = currentSshLane(),
 ): Promise<() => void> {
   wait.signal?.throwIfAborted();
-  let slot = sessionSlots.get(destination);
-  if (!slot) {
-    slot = { active: 0, background: 0, waiters: [], backgroundWaiters: [] };
-    sessionSlots.set(destination, slot);
-  }
-  const current = slot;
+  const current = slotsOf(destination);
   const background = lane === "background";
+  const limit = slotLimit(current);
   const free = background
-    ? current.active < SSH_SESSION_LIMIT &&
+    ? current.active < limit &&
       current.background < SSH_BACKGROUND_SESSION_LIMIT &&
       current.waiters.length === 0 &&
       current.backgroundWaiters.length === 0
-    : current.active < SSH_SESSION_LIMIT;
+    : current.active < limit && current.waiters.length === 0;
   if (free) {
     current.active += 1;
     if (background) current.background += 1;
@@ -266,24 +420,73 @@ export async function acquireSshSession(
     if (background) current.background -= 1;
     // Hand the slot straight to the next waiter so a newcomer cannot jump it.
     grantWaiters(current);
-    if (
-      current.active === 0 &&
-      !current.waiters.length &&
-      !current.backgroundWaiters.length
-    )
-      sessionSlots.delete(destination);
+    forgetIfIdle(destination, current);
   };
 }
 
-/** Holds a session slot for argv built by sshCommandArgv; others pass through. */
+/**
+ * A long-lived session's slot: one of the SSH_STREAM_SESSION_LIMIT, taken
+ * only when free now with nobody waiting; null otherwise.
+ */
+function takeStreamSlot(destination: string): (() => void) | null {
+  const slot = slotsOf(destination);
+  if (
+    slot.streams >= SSH_STREAM_SESSION_LIMIT ||
+    slot.active >= slotLimit(slot) ||
+    slot.waiters.length ||
+    slot.backgroundWaiters.length
+  ) {
+    forgetIfIdle(destination, slot);
+    return null;
+  }
+  slot.active += 1;
+  slot.streams += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    slot.active -= 1;
+    slot.streams -= 1;
+    grantWaiters(slot);
+    forgetIfIdle(destination, slot);
+  };
+}
+
+/**
+ * Holds a session slot for argv built by sshCommandArgv; others pass through.
+ * A long-lived session (`longLived`: it runs until stopped) never waits: it
+ * takes one of SSH_STREAM_SESSION_LIMIT slots when one is free, and else
+ * runs on a connection of its own (`argv` of the hold), which holds none of
+ * the master's sessions.
+ */
 export async function holdSshSession(
-  argv: readonly string[],
+  argv: string[],
   wait: SshSessionWait = {},
+  options: { longLived?: boolean } = {},
 ): Promise<SshSessionHold> {
   const route = routes.get(argv);
   if (!route) {
     wait.signal?.throwIfAborted();
-    return { release: noop, remainingMs: wait.timeoutMs };
+    return { release: noop, remainingMs: wait.timeoutMs, argv };
+  }
+  if (options.longLived) {
+    wait.signal?.throwIfAborted();
+    const releaseSlot = route.controlPath
+      ? takeStreamSlot(route.destination)
+      : null;
+    if (!releaseSlot) {
+      if (route.cold !== argv) copySshAnnotation(argv, route.cold);
+      return { release: noop, remainingMs: wait.timeoutMs, argv: route.cold };
+    }
+    const releaseMux = holdMuxSession(route.controlPath);
+    return {
+      release: () => {
+        releaseMux();
+        releaseSlot();
+      },
+      remainingMs: wait.timeoutMs,
+      argv,
+    };
   }
   const startedAt = Date.now();
   const releaseSlot = await acquireSshSession(route.destination, wait);
@@ -297,6 +500,7 @@ export async function holdSshSession(
       wait.timeoutMs === undefined
         ? undefined
         : wait.timeoutMs - (Date.now() - startedAt),
+    argv,
   };
 }
 
@@ -306,6 +510,39 @@ function noop() {}
 // to its own connection; a 255 then belongs to that cold attempt.
 const MUX_FALLBACK_STDERR =
   /Control socket connect|mux_client_request_session: session request failed/;
+// The master could not open the session: the host refused it (MaxSessions).
+const MUX_REFUSED_STDERR = /mux_client_request_session: session request failed/;
+// OpenSSH's lines about the master and its fallback, not the command's.
+const MUX_NOISE_LINE =
+  /^(?:Control socket connect\(.*|mux_client_\w+: .*|muxclient: .*|kex_exchange_identification: .*|Connection closed by UNKNOWN port \d+)$/;
+
+/** The command's stderr without OpenSSH's lines about the master. */
+export function withoutMuxNoise(stderr: string): string {
+  if (!/mux_client|Control socket connect|muxclient/.test(stderr))
+    return stderr;
+  return stderr
+    .split("\n")
+    .filter((line) => !MUX_NOISE_LINE.test(line.replace(/\r$/, "")))
+    .join("\n");
+}
+
+function backoff(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      done();
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      done();
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
 
 async function masterDied(controlPath: string): Promise<boolean> {
   for (const master of masters.values()) {
@@ -316,8 +553,17 @@ async function masterDied(controlPath: string): Promise<boolean> {
 }
 
 /**
- * Runs argv from sshCommandArgv inside the destination's session limit. A
- * read-only command (sshReadCommandArgv) is rerun once without multiplexing
+ * Runs argv from sshCommandArgv inside the destination's session limit.
+ *
+ * Over a master it runs the command's mux-only form: when the host refuses
+ * the session (sshd's MaxSessions) the command has not run, so it waits
+ * SSH_REFUSED_RETRY_DELAYS_MS and runs again over the master, holding its
+ * slot, while the destination gives no new slot (SSH_REFUSED_COOLDOWN_MS);
+ * past the last wait, and when the master's socket is gone, it runs on a
+ * connection of its own. OpenSSH's lines about the master are left out of
+ * the stderr returned.
+ *
+ * A read-only command (sshReadCommandArgv) is rerun once without multiplexing
  * when the master died under it. A mux client whose master goes away exits 255
  * with nothing on stderr, while the remote side may still be running; a 255
  * while the master is still alive is the remote command's own status. Other
@@ -325,7 +571,10 @@ async function masterDied(controlPath: string): Promise<boolean> {
  *
  * `run` gets what is left of `wait.timeoutMs` (unset without one) once the
  * slot is held, so queueing and a retry spend the caller's budget rather than
- * extend it.
+ * extend it. With a deadline, the remote command is run under
+ * withRemoteDeadline, to end SSH_REMOTE_GRACE_S after it; when `run` throws
+ * (its client killed at the deadline), the slot is free again but the
+ * host's session is counted until then.
  */
 export async function runSshCommand<T extends { code: number; stderr: string }>(
   argv: string[],
@@ -342,23 +591,81 @@ export async function runSshCommand<T extends { code: number; stderr: string }>(
     if (left <= 0) throw new Error(`ssh timed out after ${wait.timeoutMs}ms`);
     return left;
   };
+  const clean = (result: T): T => {
+    const stderr = withoutMuxNoise(result.stderr);
+    return stderr === result.stderr ? result : { ...result, stderr };
+  };
   const release = await acquireSshSession(route.destination, wait);
   const releaseMux = holdMuxSession(route.controlPath);
-  try {
-    wait.signal?.throwIfAborted();
-    const result = await run(argv, remaining());
-    if (
-      route.retrySafe &&
-      route.controlPath &&
-      result.code === 255 &&
-      !MUX_FALLBACK_STDERR.test(result.stderr) &&
-      (await masterDied(route.controlPath))
-    ) {
-      releaseMux();
-      wait.signal?.throwIfAborted();
-      return await run(route.cold, remaining());
+  // With a deadline, the command ends on the host too, shortly after it;
+  // a client killed here leaves its session counted until then.
+  const attempt = async (each: string[]) => {
+    const left = remaining();
+    if (left === undefined) return run(each, left);
+    const until = Date.now() + left + SSH_REMOTE_GRACE_S * 1000;
+    const bounded = [
+      ...each.slice(0, -1),
+      withRemoteDeadline(
+        each[each.length - 1] ?? "",
+        (until - Date.now()) / 1000,
+      ),
+    ];
+    copySshAnnotation(each, bounded);
+    try {
+      return await run(bounded, left);
+    } catch (error) {
+      noteLingering(route.destination, until);
+      throw error;
     }
-    return result;
+  };
+  try {
+    const muxOnly = route.muxOnly;
+    if (muxOnly) copySshAnnotation(argv, muxOnly);
+    for (let tries = 0; ; tries += 1) {
+      wait.signal?.throwIfAborted();
+      const result = await attempt(muxOnly ?? argv);
+      if (
+        muxOnly &&
+        result.code === 255 &&
+        MUX_REFUSED_STDERR.test(result.stderr)
+      ) {
+        noteRefusal(route.destination);
+        const delay = SSH_REFUSED_RETRY_DELAYS_MS[tries];
+        if (delay !== undefined) {
+          const left = remaining();
+          if (left === undefined || left > delay) {
+            await backoff(delay, wait.signal);
+            continue;
+          }
+        }
+        // Still refused: a connection of its own.
+        releaseMux();
+        wait.signal?.throwIfAborted();
+        return clean(await attempt(route.cold));
+      }
+      if (
+        muxOnly &&
+        result.code === 255 &&
+        MUX_FALLBACK_STDERR.test(result.stderr)
+      ) {
+        // The socket is gone: the command never started.
+        releaseMux();
+        wait.signal?.throwIfAborted();
+        return clean(await attempt(route.cold));
+      }
+      if (
+        route.retrySafe &&
+        route.controlPath &&
+        result.code === 255 &&
+        !MUX_FALLBACK_STDERR.test(result.stderr) &&
+        (await masterDied(route.controlPath))
+      ) {
+        releaseMux();
+        wait.signal?.throwIfAborted();
+        return clean(await attempt(route.cold));
+      }
+      return clean(result);
+    }
   } finally {
     releaseMux();
     release();
