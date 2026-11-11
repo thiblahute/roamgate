@@ -199,6 +199,11 @@ checkout path, per connection. Workspaces on the same checkout may share caches.
 Actions remember their originating checkout and never fall back to a sibling.
 Terminals stay mounted while the Inspector changes.
 
+Changes, Commits and a file's changes in Files draw diffs through one surface,
+`DiffSurface` (Pierre's `@pierre/diffs`, virtualized, highlighted in workers).
+It only draws: each view keeps its own state and gives the surface the patch,
+the options, what is shown under lines and what a line selection does.
+
 Browser preferences live in namespaced `localStorage` and sync across tabs on the
 same origin. Navigation, open files, live draft edits, and focus stay per tab.
 

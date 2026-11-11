@@ -1,18 +1,7 @@
 import { imageMimeForPath } from "../../../shared/filePreview";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import { shortcutMatches } from "../shortcutPreferences";
-import {
-  DEFAULT_THEMES,
-  getSingularPatch,
-  type SelectedLineRange,
-} from "@pierre/diffs";
-import {
-  FileDiff,
-  Virtualizer,
-  WorkerPoolContextProvider,
-  type WorkerInitializationRenderOptions,
-  type WorkerPoolOptions,
-} from "@pierre/diffs/react";
+import type { SelectedLineRange } from "@pierre/diffs";
 import {
   ChevronDown,
   ChevronLeft,
@@ -24,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  Component,
   createContext,
   memo,
   useCallback,
@@ -35,8 +23,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
-  type ReactNode,
 } from "react";
 import type { ReviewThread } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
@@ -73,7 +59,12 @@ import {
   nearestDiffEntryKeys,
   visibleDiffEntryKey,
 } from "./diffContentState";
-import { diffSyntaxLanguageForPath } from "./diffSyntaxHighlighting";
+import {
+  DiffSurface,
+  DiffSurfaceScroll,
+  diffSurfaceOptions,
+  type DiffSurfaceOptions,
+} from "./DiffSurface";
 import {
   FileThread,
   type FileThreadView,
@@ -87,60 +78,15 @@ import { ThreadsChip } from "./ThreadsPanel";
 import { useReviewState } from "../review";
 import "./DiffContentView.css";
 
+export { highlightedPatch } from "./DiffSurface";
+
 type DiffViewMode = "split" | "unified";
 type AppTheme = "dark" | "light";
-type PierreDiffOptions = NonNullable<
-  ComponentProps<typeof FileDiff<DiffReviewAnnotation>>["options"]
->;
 
 const DIFF_VIEW_MODE_KEY = "diffViewMode";
 const DESKTOP_DIFF_WRAP_KEY = "desktopDiffWrap";
 const MOBILE_DIFF_WRAP_KEY = "mobileDiffWrap";
 const EMPTY_DIFF_REVIEW_ANNOTATIONS: readonly DiffReviewAnnotation[] = [];
-const DIFF_WORKER_POOL_OPTIONS: WorkerPoolOptions = {
-  poolSize: Math.min(
-    Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1),
-    globalThis.matchMedia?.("(pointer: coarse)")?.matches ? 1 : 2,
-  ),
-  totalASTLRUCacheSize: 8,
-  workerFactory: () =>
-    new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
-      type: "module",
-    }),
-};
-const DIFF_HIGHLIGHTER_OPTIONS: WorkerInitializationRenderOptions = {
-  theme: DEFAULT_THEMES,
-  preferredHighlighter: "shiki-wasm",
-};
-const DIFF_SELECTION_CSS = `
-  [data-line][data-selected-line] {
-    background-color: color-mix(
-      in srgb,
-      var(--diffs-selection-base) 32%,
-      var(--diffs-computed-diff-line-bg)
-    ) !important;
-    box-shadow: inset 3px 0 0 var(--diffs-selection-base);
-  }
-  [data-column-number][data-selected-line] {
-    background-color: color-mix(
-      in srgb,
-      var(--diffs-selection-base) 46%,
-      var(--diffs-bg)
-    ) !important;
-    color: var(--diffs-fg) !important;
-    font-weight: 800;
-  }
-  [data-line][data-selected-line="first"] {
-    border-top: 1px solid var(--diffs-selection-base);
-  }
-  [data-line][data-selected-line="last"] {
-    border-bottom: 1px solid var(--diffs-selection-base);
-  }
-  [data-line][data-selected-line="single"] {
-    border-block: 1px solid var(--diffs-selection-base);
-  }
-`;
-
 type ImagePreviewState = {
   preview: FilePreview | null;
   loading: boolean;
@@ -417,52 +363,6 @@ function DiffImagePreview({
   );
 }
 
-class DiffRenderBoundary extends Component<
-  { fallback: ReactNode; children: ReactNode; resetKey: string },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidUpdate(previousProps: Readonly<{ resetKey: string }>) {
-    if (this.state.failed && previousProps.resetKey !== this.props.resetKey) {
-      this.setState({ failed: false });
-    }
-  }
-
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
-let nextPatchCacheKey = 0;
-
-export function highlightedPatch(patch: string, path: string) {
-  const diff = getSingularPatch(patch);
-  // Pierre 1.4 no longer assigns keys; each parsed patch needs its own worker cache entry.
-  diff.cacheKey = `patch:${++nextPatchCacheKey}`;
-  const language = diffSyntaxLanguageForPath(path);
-  // Pierre applies lang to both sides; let it infer each side of a language-changing rename.
-  if (!diff.prevName || diffSyntaxLanguageForPath(diff.prevName) === language)
-    diff.lang = language;
-  return diff;
-}
-
-function HighlightedPatch({
-  patch,
-  path,
-  ...props
-}: Omit<ComponentProps<typeof FileDiff<DiffReviewAnnotation>>, "fileDiff"> & {
-  patch: string;
-  path: string;
-}) {
-  const fileDiff = useMemo(() => highlightedPatch(patch, path), [patch, path]);
-  return <FileDiff<DiffReviewAnnotation> {...props} fileDiff={fileDiff} />;
-}
-
 /**
  * The threads the diff's comments are (a comment written here is a thread
  * of its review), drawn under their lines as the Files preview draws its.
@@ -533,16 +433,12 @@ function DiffAnnotation({
   );
 }
 
-function RawPatch({ patch }: { patch: string }) {
-  return <pre className="diff-raw-patch">{patch}</pre>;
-}
-
 type DiffFileSectionProps = {
   section: DiffSection;
   loading: boolean;
   nearby: boolean;
   imagePreviewState?: ImagePreviewState;
-  options: PierreDiffOptions;
+  options: DiffSurfaceOptions;
   currentSearchMatch: boolean;
   embedded: boolean;
   mobile: boolean;
@@ -603,32 +499,17 @@ const DiffFileSection = memo(function DiffFileSection({
     };
   }, [nearby, section.collapsed, section.file]);
   const pointerPositionRef = useRef({ x: 0, y: 0 });
-  const [selectedLines, setSelectedLines] = useState<SelectedLineRange | null>(
-    null,
-  );
-  const sectionOptions = useMemo<PierreDiffOptions>(
-    () => ({
-      ...options,
-      lineHoverHighlight: onRequestAnnotation ? "number" : "disabled",
-      enableLineSelection: Boolean(onRequestAnnotation),
-      controlledSelection: Boolean(onRequestAnnotation),
-      onLineSelectionStart: onRequestAnnotation ? setSelectedLines : undefined,
-      onLineSelectionChange: onRequestAnnotation ? setSelectedLines : undefined,
-      onLineSelectionEnd: onRequestAnnotation
-        ? (range) => {
-            if (!section.file || !range) {
-              setSelectedLines(null);
-              return;
-            }
+  const selectLines = useMemo(
+    () =>
+      onRequestAnnotation
+        ? (range: SelectedLineRange | null) => {
+            if (!section.file || !range) return false;
             const target = findDiffReviewSelection(
               section.file.diff,
               range,
               options.diffStyle === "unified" ? "unified" : "split",
             );
-            if (!target) {
-              setSelectedLines(null);
-              return;
-            }
+            if (!target) return false;
             onRequestAnnotation({
               x: pointerPositionRef.current.x + 6,
               y: pointerPositionRef.current.y + 8,
@@ -636,32 +517,16 @@ const DiffFileSection = memo(function DiffFileSection({
               kind: section.entry.kind,
               ...target,
             });
+            return true;
           }
         : undefined,
-    }),
     [
       onRequestAnnotation,
-      options,
+      options.diffStyle,
       section.entry.kind,
       section.entry.path,
       section.file,
     ],
-  );
-  useEffect(() => {
-    if (!annotationSelectionActive) setSelectedLines(null);
-  }, [annotationSelectionActive]);
-
-  const pierreAnnotations = useMemo(
-    () =>
-      annotations.map((annotation) => ({
-        side:
-          annotation.side === "old"
-            ? ("deletions" as const)
-            : ("additions" as const),
-        lineNumber: annotation.line,
-        metadata: annotation,
-      })),
-    [annotations],
   );
   const toggle = () => {
     onToggle(section.key, section.collapsed);
@@ -809,32 +674,20 @@ const DiffFileSection = memo(function DiffFileSection({
             <div className="diff-truncated">Diff truncated at 512 KB.</div>
           ) : null}
           {section.file?.diff && !section.imagePreview ? (
-            <div className="pierre-diff-surface">
-              <DiffRenderBoundary
-                fallback={<RawPatch patch={section.file.diff} />}
-                resetKey={section.file.diff}
-              >
-                <HighlightedPatch
-                  // Remount on patch change: the renderer's line cache
-                  // realigns against edited documents and can index out of
-                  // range when a reloaded diff replaces the whole patch.
-                  key={section.file.diff}
-                  patch={section.file.diff}
-                  path={section.entry.path}
-                  options={sectionOptions}
-                  lineAnnotations={pierreAnnotations}
-                  selectedLines={
-                    onRequestAnnotation ? selectedLines : undefined
-                  }
-                  renderAnnotation={({ metadata }) => (
-                    <DiffAnnotation
-                      annotation={metadata}
-                      onEdit={onEditAnnotation}
-                    />
-                  )}
+            <DiffSurface
+              patch={section.file.diff}
+              path={section.entry.path}
+              options={options}
+              annotations={annotations}
+              renderAnnotation={(annotation) => (
+                <DiffAnnotation
+                  annotation={annotation}
+                  onEdit={onEditAnnotation}
                 />
-              </DiffRenderBoundary>
-            </div>
+              )}
+              onSelectLines={selectLines}
+              selectionActive={annotationSelectionActive}
+            />
           ) : null}
         </div>
       )}
@@ -1315,27 +1168,17 @@ export function DiffContentView({
     },
     [],
   );
-  const pierreOptions = useMemo<PierreDiffOptions>(
-    () => ({
-      theme: DEFAULT_THEMES,
-      themeType: theme,
-      diffStyle: effectiveViewMode === "split" ? "split" : "unified",
-      overflow: wrapEnabled ? "wrap" : "scroll",
-      disableFileHeader: true,
-      stickyHeader: false,
-      diffIndicators: "bars",
-      hunkSeparators: "line-info-basic",
-      lineDiffType: "word-alt",
-      maxLineDiffLength: 2_000,
-      tokenizeMaxLineLength: 4_000,
-      tokenizeMaxLength: 250_000,
-      preferredHighlighter: "shiki-wasm",
-      unsafeCSS: DIFF_SELECTION_CSS,
-      onPostRender: () => {
-        if (performance.now() <= userScrollUntilRef.current)
-          restoreScrollAnchor();
-      },
-    }),
+  const pierreOptions = useMemo<DiffSurfaceOptions>(
+    () =>
+      diffSurfaceOptions({
+        diffStyle: effectiveViewMode === "split" ? "split" : "unified",
+        wrap: wrapEnabled,
+        themeType: theme,
+        onPostRender: () => {
+          if (performance.now() <= userScrollUntilRef.current)
+            restoreScrollAnchor();
+        },
+      }),
     [effectiveViewMode, restoreScrollAnchor, theme, wrapEnabled],
   );
 
@@ -1731,9 +1574,8 @@ export function DiffContentView({
   }, [embedded, mobile, focusSearch]);
 
   const diffList = visibleEntries.length ? (
-    <Virtualizer
+    <DiffSurfaceScroll
       className={`pierre-diff-scroll ${mobile ? "is-compact" : ""} ${continuous ? "is-continuous" : ""}`}
-      contentClassName="pierre-diff-scroll-content"
     >
       {renderedSections.map((section) => (
         <DiffFileSection
@@ -1771,7 +1613,7 @@ export function DiffContentView({
           onEditAnnotation={onEditAnnotation}
         />
       ))}
-    </Virtualizer>
+    </DiffSurfaceScroll>
   ) : null;
 
   return (
@@ -2013,16 +1855,7 @@ export function DiffContentView({
         <div className="diff-content-state">No changed files.</div>
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
-        {diffList ? (
-          <WorkerPoolContextProvider
-            poolOptions={DIFF_WORKER_POOL_OPTIONS}
-            highlighterOptions={DIFF_HIGHLIGHTER_OPTIONS}
-          >
-            {diffList}
-          </WorkerPoolContextProvider>
-        ) : (
-          diffList
-        )}
+        {diffList}
       </DiffThreadsContext.Provider>
       {threadsOpen && shownThreads.length && diffThreads ? (
         <ThreadsList
