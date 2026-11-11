@@ -1015,9 +1015,10 @@ conflicts are aborted, and nothing is ever pushed.
   use a responsive three-page window with previous/next navigation.
 - A file written on disk after it was shown says so above the preview
   (**Changed on disk**), locally and over SSH, without reloading by itself:
-  `R` (or **Reload**, or the refresh button) reads it again where you are in
-  it, scroll, cursor and threads kept. The check is a stat every few seconds
-  while the preview is seen, and at once when an agent step completes.
+  `R`, `:refresh` (or **Reload**, or the refresh button) reads it again
+  where you are in it, scroll, cursor and threads kept. The check is a stat
+  every few seconds while the preview is seen, and at once when an agent step
+  completes.
 - Upload by drag and drop, download files or folders (`.tar.gz`), copy paths,
   create folders, move files by dragging, and delete with confirmation. All of
   this works over SSH (moves need `python3` on the remote host).
@@ -1329,7 +1330,7 @@ The Files preview, for the file shown (from the tree too):
 | `:scripts` (`on` / `off`)              | **Scripts off** / **Scripts on**                                  |
 | `:point`                               | **Point**                                                         |
 | `:review`                              | **Review**: the file in its checkout's code review, at the line   |
-| `:reload` (`:e`, `:edit`)              | the refresh button                                                |
+| `:reload` (`:refresh`, `:e`, `:edit`)  | the refresh button (`R`); `:refresh` here with the focus in it    |
 | `:copy`                                | **Copy**                                                          |
 | `:url` (`ADDRESS`)                     | **URL**: its form, or that page opened                            |
 | `:back`, `:forward`                    | Back and Forward (Alt+Left / Alt+Right, Cmd+[ / Cmd+] on a Mac)   |

@@ -6,6 +6,11 @@ import type { InspectorView } from "./workspaceResource";
 export type InspectorCommandSet = {
   commands: readonly InspectorCommand[];
   line?: (line: number) => void;
+  /**
+   * Where the part is drawn: with the focus in it, its commands come before
+   * the other parts' (`:refresh` is the preview's there, the tree's in it).
+   */
+  root?: () => Element | null;
 };
 
 /** The inspector's one prompt: what each part of its views can do there. */

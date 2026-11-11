@@ -522,11 +522,18 @@ export function WorkspaceInspectorHost({
       },
     },
   ];
-  /** The commands of the view shown, its parts' first, then the inspector's. */
+  /**
+   * The commands of the view shown, its parts' first, then the inspector's;
+   * of its parts, first the one where the focus is (or was, when `:` was
+   * pressed): one word means that part's.
+   */
   const shownCommands = (): InspectorCommandSet => {
-    const parts = [...commandPartsRef.current.values()].filter(
-      (part) => part.view === state.view,
-    );
+    const focus = commandLine?.from ?? document.activeElement;
+    const focused = (part: { commands: InspectorCommandSet }) =>
+      !!focus && !!part.commands.root?.()?.contains(focus);
+    const parts = [...commandPartsRef.current.values()]
+      .filter((part) => part.view === state.view)
+      .sort((a, b) => Number(focused(b)) - Number(focused(a)));
     return {
       commands: [
         ...parts.flatMap((part) => part.commands.commands),

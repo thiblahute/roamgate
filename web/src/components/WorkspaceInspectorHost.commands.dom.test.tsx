@@ -89,9 +89,31 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
     DiffViewerPanel: part("changes", "scope", "editable"),
   }));
   const preview = await import("./FilePreviewContent");
+  const { useRef } = await import("react");
   mock.module("./FilePreviewContent", () => ({
     ...preview,
-    FilePreviewContent: () => null,
+    // The preview's `:reload`, `:refresh` too, drawn where its focus is.
+    FilePreviewContent: () => {
+      const section = useRef<HTMLElement | null>(null);
+      useInspectorCommands({
+        commands: [
+          {
+            name: "reload",
+            aliases: ["refresh"],
+            description: "read the file again",
+            run: () => ran.push("preview reload"),
+          },
+        ],
+        root: () => section.current,
+      });
+      return (
+        <section ref={section} aria-label="File preview">
+          <div tabIndex={0} data-place="preview">
+            a.md
+          </div>
+        </section>
+      );
+    },
   }));
   mock.module("./DiffContentView", () => ({
     DiffContentView: () => null,
@@ -286,6 +308,7 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         );
         expect(inspector.completions()).toEqual([
           "refresh",
+          "reload",
           "view",
           "dock",
           "expand",
@@ -301,6 +324,23 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         told.length = 0;
         await inspector.command(item, "scope");
         expect(told[0]).toStartWith("Not a command here: :scope (try :refresh");
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("`:refresh` is the preview's with the focus in it, the tree's in the tree", async () => {
+      const inspector = await mountInspector({ view: "files" });
+      try {
+        ran.length = 0;
+        await inspector.command(inspector.place("preview"), "refresh");
+        expect(ran).toEqual(["preview reload"]);
+        ran.length = 0;
+        await inspector.command(inspector.place("tree"), "refresh");
+        expect(ran).toEqual(["tree refresh"]);
+        ran.length = 0;
+        await inspector.command(inspector.place("preview"), "reload");
+        expect(ran).toEqual(["preview reload"]);
       } finally {
         await inspector.unmount();
       }
