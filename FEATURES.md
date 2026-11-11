@@ -1380,6 +1380,12 @@ pages a page's or a site's frame went to (links, a script's pushState), each
 shown again where it was scrolled. Each tab keeps its own history; the
 arrows are disabled when there is nothing to go to.
 
+A tab is shown again as it was left: back from Changes, Commits or History,
+from another workspace, or after a page reload, the preview has the same
+file at the same scroll (a page's frame too), with its cursor, its threads
+folded or opened, the Comments panel, the Source switch and its Back /
+Forward history.
+
 Scripts are one choice for every format (Markdown, HTML, SVG, sites): off by
 default, always shown in the preview. **Scripts off** in the preview turns them
 on for that file; **Always here** adds its folder or site to **Settings,

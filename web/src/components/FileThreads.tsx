@@ -744,6 +744,8 @@ export type FileThreadView = {
   cursor: string | null;
   setCursor: (key: string | null) => void;
   flipped: ReadonlySet<string>;
+  /** The threads folded or opened against their default, all at once. */
+  setFlipped: (ids: ReadonlySet<string>) => void;
   folded: (thread: ReviewThread) => boolean;
   toggleFold: (thread: ReviewThread) => void;
   unfold: (ids: readonly string[]) => void;
@@ -825,6 +827,7 @@ export function useFileThreadView(
     cursor,
     setCursor,
     flipped,
+    setFlipped,
     folded: (thread) => thread.resolved !== flipped.has(thread.id),
     toggleFold,
     unfold,

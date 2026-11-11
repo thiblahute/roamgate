@@ -870,6 +870,7 @@ export function WorkspaceInspectorHost({
                     line={fileSelection.line}
                     rendered={fileSelection.rendered}
                     snippet={fileSelection.snippet}
+                    placeScope={contentResourceKey}
                     onOpenFile={onOpenDocument}
                     onRefresh={onRefreshFile}
                     onToggleTree={treeHideable ? toggleFilesTree : undefined}

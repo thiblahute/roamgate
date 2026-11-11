@@ -138,6 +138,7 @@ import {
   startHistory,
   stepHistory,
 } from "../previewHistory";
+import { keepPreviewTabPlace, readPreviewTabPlace } from "../previewPlaces";
 import {
   type InspectorCommand,
   inspectorCompletions,
@@ -169,6 +170,8 @@ export type FilePreviewSelectionMeta = {
 type AppTheme = "dark" | "light";
 
 const PDF_INLINE_PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
+/** How long a scroll waits for the file to be tall enough for it. */
+const SCROLL_RESTORE_MS = 3000;
 
 type PendingFileAnnotation =
   | {
@@ -388,6 +391,7 @@ export function FilePreviewContent({
   onShowInReview,
   onReanchorAnnotations,
   rendered: renderedAtLine = false,
+  placeScope,
 }: {
   entry: FileExplorerEntry | null;
   preview: FilePreview | null;
@@ -419,10 +423,24 @@ export function FilePreviewContent({
   onShowInReview?: (path: string, line?: number) => void;
   /** `line` shown as rendered (Show rendered), not in the source. */
   rendered?: boolean;
+  /**
+   * The checkout the tabs are of: each tab is shown again where it was left
+   * (previewPlaces), after another view or workspace and a page reload.
+   */
+  placeScope?: string;
 }) {
   const connectionClient = useConnectionClient();
   const workspaces = useStoreSelector((state) => state.workspaces);
   const previewSectionRef = useRef<HTMLElement | null>(null);
+  /** On screen: not under another view, nor in a hidden inspector. */
+  const previewSeen = () => {
+    const section = previewSectionRef.current;
+    return (
+      !!section?.isConnected &&
+      (typeof section.checkVisibility !== "function" ||
+        section.checkVisibility())
+    );
+  };
   /*
    * A reload keeps the file shown until it is read again: the reader's
    * place (scroll, cursor, open threads) stays, the text changes under it.
@@ -461,14 +479,7 @@ export function FilePreviewContent({
         ? previewProp
         : null,
     // Not while its view or the inspector is hidden.
-    seen: () => {
-      const section = previewSectionRef.current;
-      return (
-        !!section?.isConnected &&
-        (typeof section.checkVisibility !== "function" ||
-          section.checkVisibility())
-      );
-    },
+    seen: () => previewSeen(),
   });
   const previewContentRef = useRef<HTMLDivElement | null>(null);
   /** The preview's content, once drawn: it has the threads' keys. */
@@ -641,8 +652,13 @@ export function FilePreviewContent({
       : null;
 
   useEffect(() => {
-    setPreviewMode("rendered");
-  }, [entry?.path]);
+    // A tab shown again keeps the Source switch it was left with.
+    setPreviewMode(
+      (placeScope && entry?.path
+        ? readPreviewTabPlace(placeScope, entry.path)?.mode
+        : undefined) ?? "rendered",
+    );
+  }, [entry?.path, placeScope]);
 
   useEffect(() => {
     if (line && !renderedAtLine) setPreviewMode("raw");
@@ -909,15 +925,26 @@ export function FilePreviewContent({
     shownKey.current = historyKey;
     const arriving = going.current;
     going.current = null;
-    if (arriving && arriving.to === historyKey) {
-      histories.current.set(historyKey, arriving.history);
-      const place = currentPlace(arriving.history);
-      pendingScroll.current = place.scroll;
+    // A tab shown again: where it was left, here or kept (previewPlaces).
+    const kept =
+      histories.current.get(historyKey) ??
+      (placeScope
+        ? readPreviewTabPlace(placeScope, historyKey)?.history
+        : undefined);
+    const arrived =
+      arriving && arriving.to === historyKey ? arriving.history : kept;
+    if (arrived) {
+      histories.current.set(historyKey, arrived);
+      const place = currentPlace(arrived);
+      // A link's or Back's place from its top; a tab left scrolled, there.
+      pendingScroll.current =
+        arriving && arriving.to === historyKey
+          ? place.scroll
+          : place.scroll || null;
       pendingFrame.current = place.frameUrl
         ? { url: place.frameUrl, scroll: place.scroll }
         : null;
-    } else if (!histories.current.has(historyKey))
-      histories.current.set(historyKey, startHistory(historyKey));
+    } else histories.current.set(historyKey, startHistory(historyKey));
   }
   /** The scroller of the file shown; a page's frame says its own. */
   const fileScroller = () =>
@@ -976,18 +1003,37 @@ export function FilePreviewContent({
     if ((place.fragment ?? "") !== (fragment ?? ""))
       onOpenFile?.(place.path, place.fragment);
   };
-  // The file drawn: scrolled where it was left.
+  // The file drawn: scrolled where it was left, once it is tall enough
+  // (diagrams and images draw after the text): tried again as it grows,
+  // for a while.
   useEffect(() => {
     if (loading || pendingScroll.current === null || isPageFrame) return;
-    const frame = requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const scroller = fileScroller();
-        if (!scroller || pendingScroll.current === null) return;
-        scroller.scrollTop = pendingScroll.current;
+    let observer: ResizeObserver | null = null;
+    let giveUp: ReturnType<typeof setTimeout> | null = null;
+    const settle = () => {
+      const scroller = fileScroller();
+      const wanted = pendingScroll.current;
+      if (!scroller || wanted === null) return;
+      scroller.scrollTop = wanted;
+      if (Math.abs(scroller.scrollTop - wanted) <= 1) {
         pendingScroll.current = null;
-      }),
-    );
-    return () => cancelAnimationFrame(frame);
+        observer?.disconnect();
+        return;
+      }
+      if (observer || typeof ResizeObserver === "undefined") return;
+      observer = new ResizeObserver(settle);
+      for (const child of scroller.children) observer.observe(child);
+      giveUp = setTimeout(() => {
+        observer?.disconnect();
+        pendingScroll.current = null;
+      }, SCROLL_RESTORE_MS);
+    };
+    const frame = requestAnimationFrame(() => requestAnimationFrame(settle));
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      if (giveUp) clearTimeout(giveUp);
+    };
   });
   /** The tab's history as kept now, frame messages between draws too. */
   const live = () => histories.current.get(historyKey) ?? history;
@@ -1040,10 +1086,13 @@ export function FilePreviewContent({
       return;
     }
     if (frame !== frameRef.current) return;
-    // Kept without drawing again: nothing shown depends on it.
-    if (message.type === "scroll")
+    // Kept without drawing again: nothing shown depends on it. Not while
+    // hidden (another view), where the frame may say it is at the top.
+    if (message.type === "scroll") {
+      if (!previewSeen()) return;
       histories.current.set(historyKey, keepScroll(live(), message.y));
-    else
+      keepPlaceRef.current();
+    } else
       setHistory(
         historyKey,
         pushPlace(live(), { path: historyKey, frameUrl: message.url }),
@@ -1254,6 +1303,90 @@ export function FilePreviewContent({
   // R, r, za, dd, T, zz / zt / zb (useThreadKeys).
   const threadView = useFileThreadView(() => previewContentRef.current);
   const { cursor: threadCursor, setCursor: setThreadCursor } = threadView;
+  /*
+   * Where the tab is left (previewPlaces): kept as it changes, its scroll
+   * as it scrolls, while the preview is seen, and given back when the tab
+   * is shown again, here or in an inspector drawn anew.
+   */
+  /** The tab the cursor, folds, panel and mode shown now are of. */
+  const placeKey = useRef("");
+  const keepPlace = () => {
+    if (!placeScope || !historyKey || placeKey.current !== historyKey) return;
+    keepPreviewTabPlace(placeScope, historyKey, {
+      history: live(),
+      cursor: threadView.cursor,
+      flipped: [...threadView.flipped],
+      mode: previewMode,
+      threadsOpen,
+    });
+  };
+  const keepPlaceRef = useRef(keepPlace);
+  keepPlaceRef.current = keepPlace;
+  const shownRef = useRef({ historyKey, isPageFrame, live });
+  shownRef.current = { historyKey, isPageFrame, live };
+  // A tab shown again: its cursor, folds and Comments panel as left.
+  useEffect(() => {
+    const kept =
+      placeScope && historyKey
+        ? readPreviewTabPlace(placeScope, historyKey)
+        : null;
+    if (!kept) return;
+    setThreadCursor(kept.cursor);
+    threadView.setFlipped(new Set(kept.flipped));
+    setThreadsOpen(kept.threadsOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyKey, placeScope]);
+  // Kept as it changes; not in the draw a tab is shown in (its state is
+  // still the last tab's until given back).
+  useEffect(() => {
+    if (placeKey.current !== historyKey) {
+      placeKey.current = historyKey;
+      return;
+    }
+    keepPlace();
+  });
+  // Its scroll as it scrolls: not while a scroll is given back, nor while
+  // hidden (a hidden scroller is at its top).
+  useEffect(() => {
+    if (!contentElement) return;
+    const onScroll = (event: Event) => {
+      const { historyKey: key, isPageFrame: framed, live } = shownRef.current;
+      if (pendingScroll.current !== null || framed || !previewSeen()) return;
+      const scroller = fileScroller();
+      if (!scroller || event.target !== scroller) return;
+      histories.current.set(key, keepScroll(live(), scroller.scrollTop));
+      keepPlaceRef.current();
+    };
+    contentElement.addEventListener("scroll", onScroll, true);
+    return () => contentElement.removeEventListener("scroll", onScroll, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentElement]);
+  // Shown again after another view (hidden, its scroll is lost): where it
+  // was, the frame's page too.
+  useEffect(() => {
+    const section = previewSectionRef.current;
+    if (!section || typeof ResizeObserver === "undefined") return;
+    let seen = previewSeen();
+    const observer = new ResizeObserver(() => {
+      const now = previewSeen();
+      if (now && !seen) {
+        const { isPageFrame: framed, live } = shownRef.current;
+        const { scroll } = currentPlace(live());
+        if (framed)
+          frameRef.current?.contentWindow?.postMessage(
+            { roamgate: "rendered", type: "scrollTo", y: scroll },
+            "*",
+          );
+        else if (scroll) {
+          pendingScroll.current = scroll;
+          setHistoryTick((tick) => tick + 1);
+        }
+      }
+      seen = now;
+    });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
   const keysRoot = canComment ? contentElement : null;
   const threadOrder = useMemo(
     () => fileThreadOrder(fileThreads.threads, previewText),
