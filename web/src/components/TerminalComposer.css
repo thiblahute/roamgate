@@ -33,10 +33,76 @@
     overscroll-behavior: contain;
   }
 
+  .terminal-composer .terminal-composer-vim:focus-within,
   .terminal-composer .terminal-composer-input:focus {
     outline: none;
     border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
     color: var(--text-strong);
+  }
+
+  /* The box with Vim keys (the review's `:vim`): CodeMirror, dressed as
+     the plain box, which it fills. */
+  .terminal-composer-input.terminal-composer-vim {
+    display: flex;
+    overflow-y: auto;
+    cursor: text;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-editor {
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-editor.cm-focused {
+    outline: none;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-scroller {
+    overflow: visible;
+    font-family: inherit;
+    line-height: inherit;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-content {
+    min-height: 0;
+    padding: 0;
+    caret-color: var(--text-strong);
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-line {
+    padding: 0;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-fat-cursor {
+    background: var(--accent) !important;
+    opacity: 0.6;
+  }
+
+  .terminal-composer-vim .agent-history-composer-editor .cm-placeholder {
+    color: var(--muted);
+  }
+
+  .terminal-composer-escape {
+    flex: 0 0 auto;
+    align-self: center;
+    min-width: 40px;
+    min-height: 36px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: transparent;
+    color: var(--text-strong);
+    font-size: 13px;
   }
 
   .terminal-composer [hidden] {

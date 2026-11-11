@@ -90,6 +90,8 @@ if (process.env.ROAMGATE_COMPOSER_DOM_TEST !== "1") {
       },
       onUploadImage: async () => "/image.png",
       onUploadFile: async () => "/file.txt",
+      // The plain box; the Vim one has its own tests.
+      vimKeys: false,
       onError() {},
     };
     const render = () =>

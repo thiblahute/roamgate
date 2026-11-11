@@ -1,5 +1,11 @@
 import type { PointerEvent } from "react";
 
+/** The Message box's Vim editor takes the keys in its content. */
+function typingField(box: HTMLElement | null | undefined) {
+  if (!box?.classList.contains("terminal-composer-vim")) return box ?? null;
+  return box.querySelector<HTMLElement>(".cm-content") ?? box;
+}
+
 export function activeTerminalInput(root: ParentNode): HTMLElement | null {
   // A shown overlay tab takes the keyboard; a hidden one never does.
   const scope =
@@ -18,9 +24,11 @@ export function activeTerminalInput(root: ParentNode): HTMLElement | null {
       ).find((composer) => composer.dataset.paneId === shell.dataset.paneId)
     : undefined;
   return (
-    editor?.querySelector<HTMLElement>(".terminal-composer-input") ??
-    shell.querySelector<HTMLElement>(
-      ".terminal-composer-input:not([hidden])",
+    typingField(
+      editor?.querySelector<HTMLElement>(".terminal-composer-input") ??
+        shell.querySelector<HTMLElement>(
+          ".terminal-composer-input:not([hidden])",
+        ),
     ) ??
     // A pane shown as a chat takes keys in its message box.
     shell.querySelector<HTMLElement>(

@@ -400,6 +400,8 @@ async function registerDomTests() {
     scrollDisabledReason = null;
     scrollReason.mockClear();
     localStorage.clear();
+    // The plain Message box: the Vim one has its own tests.
+    localStorage.setItem("roamgate:vimKeys", "false");
     sessionStorage.clear();
     // These agent panes show their terminal, which a phone opens as a chat
     // until switched: each was switched to it.

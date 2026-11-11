@@ -232,6 +232,8 @@ test.each(["claude", "grok-build", "agy"])(
             onSubmit,
             onUploadImage: async () => "/tmp/image.png",
             onUploadFile: async () => "/tmp/file.txt",
+            // The plain box; the Vim one has its own tests.
+            vimKeys: false,
             onError,
           }),
         );

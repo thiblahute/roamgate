@@ -128,6 +128,8 @@ async function registerDomTests() {
           },
           onUploadImage: upload,
           onUploadFile: upload,
+          // The plain box; the Vim one has its own tests.
+          vimKeys: false,
           onError: (message) => errors.push(message),
         }),
       );

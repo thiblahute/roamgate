@@ -88,6 +88,9 @@ export function ComposerVimEditor({
   onSelect,
   onSubmit,
   onPasteImages,
+  onPasteFiles,
+  onDragOver,
+  onDrop,
   onComposingChange,
   onUpWhenEmpty,
   onSuspend,
@@ -113,6 +116,15 @@ export function ComposerVimEditor({
   /** `queue`: Alt+Enter, which queues while the agent answers. */
   onSubmit: (options?: { queue: boolean }) => void;
   onPasteImages: (files: File[]) => void;
+  /**
+   * Takes every pasted file, not only images (the terminal's box uploads
+   * any file); without it, only images are taken, by `onPasteImages`.
+   */
+  onPasteFiles?: (files: File[]) => void;
+  /** A drag over the box, ahead of CodeMirror's; true when it took it. */
+  onDragOver?: (event: DragEvent) => boolean;
+  /** A drop on the box (files, a path), ahead of CodeMirror's text drop. */
+  onDrop?: (event: DragEvent) => boolean;
   onComposingChange: (composing: boolean) => void;
   /** Up in the empty box; true when it did something. */
   onUpWhenEmpty?: () => boolean;
@@ -141,6 +153,9 @@ export function ComposerVimEditor({
     onComposingChange,
     onUpWhenEmpty,
     enterSends,
+    onPasteFiles,
+    onDragOver,
+    onDrop,
     onSuspend,
   });
   handlers.current = {
@@ -151,6 +166,9 @@ export function ComposerVimEditor({
     onComposingChange,
     onUpWhenEmpty,
     enterSends,
+    onPasteFiles,
+    onDragOver,
+    onDrop,
     onSuspend,
   };
   const initial = useRef({
@@ -284,6 +302,21 @@ export function ComposerVimEditor({
               return false;
             },
             paste: (event) => {
+              const takeFiles = handlers.current.onPasteFiles;
+              if (takeFiles) {
+                const listed = Array.from(event.clipboardData?.files ?? []);
+                const files = listed.length
+                  ? listed
+                  : Array.from(event.clipboardData?.items ?? [])
+                      .filter((item) => item.kind === "file")
+                      .map((item) => item.getAsFile())
+                      .filter((file): file is File => file !== null);
+                // No files: the text pastes as usual.
+                if (!files.length) return false;
+                event.preventDefault();
+                takeFiles(files);
+                return true;
+              }
               const images = Array.from(
                 event.clipboardData?.files ?? [],
               ).filter((file) => file.type.startsWith("image/"));
@@ -292,6 +325,8 @@ export function ComposerVimEditor({
               handlers.current.onPasteImages(images);
               return true;
             },
+            dragover: (event) => handlers.current.onDragOver?.(event) ?? false,
+            drop: (event) => handlers.current.onDrop?.(event) ?? false,
             compositionstart: () => {
               handlers.current.onComposingChange(true);
               return false;

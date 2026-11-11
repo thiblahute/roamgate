@@ -956,6 +956,10 @@ across a project and its subprojects. It works in panes on SSH hosts too.
   File and image uploads in Direct paste their paths into the terminal without
   Enter; in Message they insert into the draft. If the original Direct target
   changes during an upload, its paths stay in that pane's draft with a warning.
+  Message is the agent chats' message box with Vim keys while the review's
+  `:vim` setting is on (on unless turned off there): insert mode first, an
+  **Esc** button for the phone keyboard's missing key, `:w` sends; Insert,
+  Send, Direct, Commands, uploads and drops work as in the plain box.
   While editing a multiline draft (including visual wraps), Message expands
   and temporarily hides Direct, Chat, Tabs, and **⋮**. Leaving the field restores
   the single-line preview and navigation; tapping Message resumes editing.

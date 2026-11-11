@@ -13,13 +13,23 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import {
   type MobileTerminalShortcut,
   mobileTerminalShortcutOption,
 } from "../mobileTerminalShortcuts";
+import { useVimKeys } from "../vimKeys";
+import { lazyWithReload } from "../lazyWithReload";
+import type { ComposerVimHandle } from "./ComposerVimEditor";
 import {
   beginTerminalComposerUpload,
   finishTerminalComposerUpload,
@@ -59,6 +69,21 @@ import "./TerminalComposer.css";
 import type { TerminalInputMode } from "../terminalInputMode";
 export type { TerminalInputMode } from "../terminalInputMode";
 
+// The agent chats' Vim box, loaded with the first box that needs Vim keys.
+const ComposerVimEditor = lazyWithReload("composer-vim-editor", () =>
+  import("./ComposerVimEditor").then((module) => ({
+    default: module.ComposerVimEditor,
+  })),
+);
+
+/** The element typing goes to: the plain box, or the Vim box's content. */
+function typingField(
+  textarea: HTMLTextAreaElement | null,
+  vimHost: HTMLElement | null,
+): HTMLElement | null {
+  return textarea ?? vimHost?.querySelector<HTMLElement>(".cm-content") ?? null;
+}
+
 const SHORTCUTS_OPEN_STORAGE_KEY = "terminalComposerShortcutsOpen.v1";
 let unsavedShortcutsOpen: boolean | undefined;
 
@@ -80,6 +105,11 @@ export function readTerminalComposerShortcutsOpen(): boolean {
  * The configurable mobile shortcut keys live at the top of the dock so the
  * composer is the single mobile input control surface. Direct mode reuses
  * xterm's input channel; the native editor stays mounted to preserve its caret.
+ *
+ * With the one Vim keys setting on (the default), the box is the agent
+ * chats' Vim editor (ComposerVimEditor) instead of the textarea, with the
+ * same modes, picker, uploads and drops; an Esc button stands in for the
+ * phone keyboard's missing key.
  *
  * Files arrive through clipboard paste, drop, or the file picker, upload once, and
  * land at the draft caret in Composer. Direct captures a guarded terminal
@@ -111,6 +141,7 @@ export function TerminalComposer({
   onUploadFile,
   onPreparePathInsertion,
   onError,
+  vimKeys: vimKeysProp,
 }: {
   draftKey: string;
   submitWarning?: string | null;
@@ -138,6 +169,8 @@ export function TerminalComposer({
   onUploadFile: (file: File) => Promise<string>;
   onPreparePathInsertion?: () => (text: string) => Promise<void>;
   onError: (message: string) => void;
+  /** Vim keys in the box; the one Vim keys setting by default. */
+  vimKeys?: boolean;
 }) {
   useRenderTrace("TerminalComposer");
   useShortcutPreferences();
@@ -228,6 +261,12 @@ export function TerminalComposer({
     if (replacement && replacement.draft !== text) setReplacement(null);
   }, [replacement, text]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const vimSetting = useVimKeys();
+  const vimKeys = vimKeysProp ?? vimSetting;
+  const vimHostRef = useRef<HTMLDivElement | null>(null);
+  const vimHandleRef = useRef<ComposerVimHandle | null>(null);
+  const editorField = () =>
+    typingField(textareaRef.current, vimHostRef.current);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composingRef = useRef(false);
   const compositionEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -248,7 +287,7 @@ export function TerminalComposer({
   useEffect(() => {
     if (open) return;
     temporaryComposerRef.current = false;
-    textareaRef.current?.blur();
+    typingField(textareaRef.current, vimHostRef.current)?.blur();
     setPickerMode(null);
     setReplacement(null);
   }, [open]);
@@ -257,7 +296,12 @@ export function TerminalComposer({
     let pending = false;
     let releaseTimer: ReturnType<typeof setTimeout> | undefined;
     const blurOutsideEditor = (event: PointerEvent) => {
-      const textarea = textareaRef.current;
+      const textarea = typingField(textareaRef.current, vimHostRef.current);
+      const inEditor =
+        event.target === textarea ||
+        (!!vimHostRef.current &&
+          event.target instanceof Node &&
+          vimHostRef.current.contains(event.target));
       // xterm prevents native focus transfer on terminal touches. End editing
       // explicitly in capture, but never for caret drags, scrolling, IME, or
       // composer tools. Tools keep their DOM/geometry through blur and click;
@@ -275,7 +319,7 @@ export function TerminalComposer({
       if (!inside) {
         pending = false;
         setToolPointerPending(false);
-      } else if (event.target !== textarea) {
+      } else if (!inEditor) {
         pending = true;
         setToolPointerPending(true);
       }
@@ -286,10 +330,11 @@ export function TerminalComposer({
           event.target.closest(".terminal-composer-submit"),
       );
       if (
+        !!textarea &&
         document.activeElement === textarea &&
         (!inside ||
           (event.pointerType === "touch" &&
-            event.target !== textarea &&
+            !inEditor &&
             !keepEditorFocus &&
             !document.documentElement.classList.contains("keyboard-open")))
       )
@@ -387,6 +432,30 @@ export function TerminalComposer({
     return () => observer.disconnect();
   }, [text, mode, open, editorFocused, expanded]);
 
+  // The Vim box sizes itself; it expands as the plain box does, once its
+  // draft takes more than a row while it is being edited.
+  useEffect(() => {
+    const host = vimHostRef.current;
+    if (!host || mode !== "composer") return;
+    const measure = () => {
+      if (!text || !editorFocused || !open || expanded) return;
+      const content = host.querySelector<HTMLElement>(".cm-content");
+      if (!content) return;
+      const style = window.getComputedStyle(content);
+      const oneRow =
+        Number.parseFloat(style.lineHeight) +
+        Number.parseFloat(style.paddingTop) +
+        Number.parseFloat(style.paddingBottom);
+      if (/\r|\n/.test(text) || content.scrollHeight > oneRow + 1)
+        setExpanded(true);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [text, mode, open, editorFocused, expanded]);
+
   // Restore the shared selection after a programmatic insertion. The shared
   // value belongs to the draft key, so an upload started by an older mount can
   // place its path at the current mount's completion-time caret.
@@ -399,30 +468,34 @@ export function TerminalComposer({
 
   // No visualViewport lift here: App.tsx owns keyboard geometry and exposes
   // the measured inset through shared CSS variables.
-  const updateText = (textarea: HTMLTextAreaElement) => {
-    setText(textarea.value);
+  const updateText = (value: string, start: number, end: number) => {
+    setText(value);
     setReplacement(null);
     if (pickerMode !== "browse") {
       const nextPickerMode =
-        composerCommandPrefix(
-          textarea.value,
-          textarea.selectionStart,
-          textarea.selectionEnd,
-        ) !== null
-          ? "inline"
-          : null;
+        composerCommandPrefix(value, start, end) !== null ? "inline" : null;
       setPickerMode(nextPickerMode);
       setActiveCommand(0);
       onShortcutsVisibleChange?.(
         shortcutsOpen && !(nextPickerMode !== null && commands.length > 0),
       );
     }
-    writeTerminalComposerDraft(draftKey, textarea.value);
-    writeTerminalComposerSelection(
-      draftKey,
-      textarea.selectionStart,
-      textarea.selectionEnd,
-    );
+    writeTerminalComposerDraft(draftKey, value);
+    writeTerminalComposerSelection(draftKey, start, end);
+  };
+
+  // A caret or selection the user moved in the box.
+  const selectionChanged = (value: string, start: number, end: number) => {
+    // Ignore hidden or not-yet-committed DOM selections. They belong
+    // to an older draft, not the caret advanced by an async insertion.
+    if (mode !== "composer" || value !== readTerminalComposerDraft(draftKey))
+      return;
+    writeTerminalComposerSelection(draftKey, start, end);
+    if (
+      pickerMode === "inline" &&
+      composerCommandPrefix(value, start, end) === null
+    )
+      dismissCommands();
   };
 
   const preparePathInsertion = () =>
@@ -552,8 +625,10 @@ export function TerminalComposer({
     onShortcutsVisibleChange?.(shortcutsOpen);
   };
 
-  const commandEditorFocused = () =>
-    document.activeElement === textareaRef.current;
+  const commandEditorFocused = () => {
+    const field = editorField();
+    return !!field && document.activeElement === field;
+  };
 
   const focusPickerWithoutKeyboard = () => {
     if (!commandEditorFocused())
@@ -579,13 +654,16 @@ export function TerminalComposer({
       return;
     }
     const textarea = textareaRef.current;
+    const caret = textarea
+      ? { start: textarea.selectionStart, end: textarea.selectionEnd }
+      : vimHandleRef.current?.selection();
     const next =
       pickerMode === "inline"
         ? completeComposerCommand(
             draft,
             command,
-            textarea?.selectionStart ?? 0,
-            textarea?.selectionEnd ?? 0,
+            caret?.start ?? 0,
+            caret?.end ?? 0,
           )
         : {
             text: `${command.name} `,
@@ -655,6 +733,81 @@ export function TerminalComposer({
   const activateMessage = (remember: boolean) => {
     if (composingRef.current) return;
     flushSync(() => onModeChange("composer", remember));
+  };
+  const placeholder = agent?.trim() ? `Message ${agent.trim()}…` : "Message…";
+  // The command list the box controls, and its active option.
+  const listShown = presentedPickerOpen && !replacement;
+  const activeOption =
+    listShown && selectedCommand ? `${pickerId}-${activeCommand}` : undefined;
+  const focusEditor = () => {
+    setEditorFocused(true);
+    const remember =
+      !open || mode !== "composer" || temporaryComposerRef.current;
+    temporaryComposerRef.current = false;
+    activateMessage(remember);
+  };
+  const compositionStarted = () => {
+    cancelSubmitTouch();
+    if (compositionEndTimerRef.current !== null) {
+      clearTimeout(compositionEndTimerRef.current);
+      compositionEndTimerRef.current = null;
+    }
+    composingRef.current = true;
+    setComposing(true);
+  };
+  const compositionEnded = () => {
+    const finish = () => {
+      compositionEndTimerRef.current = null;
+      composingRef.current = false;
+      setComposing(false);
+      for (const resume of compositionUploadsRef.current.splice(0)) resume();
+    };
+    compositionEndTimerRef.current = setTimeout(finish, 0);
+  };
+  // Pasted files, images or not, upload and land at the caret.
+  const pasteFiles = (files: File[]) =>
+    void uploadAndInsert(files, (file) =>
+      file.type.startsWith("image/") ? onUploadImage(file) : onUploadFile(file),
+    );
+  const takesDrag = (data: DataTransfer) =>
+    isWorkspacePathDrag(data) || isNativeFileDrag(data);
+  /** A drop on the box: a workspace path, or files to upload; true if taken. */
+  const dropOnEditor = (data: DataTransfer): boolean => {
+    if (isWorkspacePathDrag(data)) {
+      const path = workspacePathFromDrag(data);
+      if (
+        path &&
+        !composingRef.current &&
+        !terminalComposerSubmissionPending(draftKey)
+      )
+        void preparePathInsertion()(path);
+      return true;
+    }
+    if (!isNativeFileDrag(data)) return false;
+    const files = filesFromTerminalDrop(data);
+    if (files === "directory") {
+      onError("Drop files only; directories are not supported.");
+    } else if (files?.length) {
+      void uploadAndInsert(files, onUploadFile);
+    }
+    return true;
+  };
+  /** The box's own keys; true when one was taken. */
+  const editorKeyDown = (e: React.KeyboardEvent): boolean => {
+    if (e.nativeEvent.isComposing || composingRef.current || e.keyCode === 229)
+      return false;
+    if (e.key === "Escape" && confirming) {
+      e.preventDefault();
+      e.stopPropagation();
+      setConfirmation(null);
+      return true;
+    }
+    if (shortcutMatches(e.nativeEvent, "composer.send")) {
+      e.preventDefault();
+      if (!e.repeat) void submit(true);
+      return true;
+    }
+    return commandKeyDown(e);
   };
 
   return (
@@ -1050,151 +1203,150 @@ export function TerminalComposer({
               }}
             />
           ) : null}
-          <textarea
-            ref={textareaRef}
-            className="terminal-composer-input terminal-mobile-message"
-            value={text}
-            rows={1}
-            placeholder={
-              agent?.trim() ? `Message ${agent.trim()}…` : "Message…"
-            }
-            onFocus={() => {
-              setEditorFocused(true);
-              const remember =
-                !open || mode !== "composer" || temporaryComposerRef.current;
-              temporaryComposerRef.current = false;
-              activateMessage(remember);
-            }}
-            onBlur={() => {
-              setEditorFocused(false);
-            }}
-            onClick={() => activateMessage(true)}
-            autoComplete="off"
-            aria-label="Terminal input draft"
-            enterKeyHint="enter"
-            role="combobox"
-            aria-expanded={presentedPickerOpen && !replacement}
-            aria-controls={
-              presentedPickerOpen && !replacement ? pickerId : undefined
-            }
-            aria-autocomplete="list"
-            aria-activedescendant={
-              presentedPickerOpen && !replacement && selectedCommand
-                ? `${pickerId}-${activeCommand}`
-                : undefined
-            }
-            onChange={(e) => updateText(e.currentTarget)}
-            onSelect={(e) => {
-              const textarea = e.currentTarget;
-              // Ignore hidden or not-yet-committed DOM selections. They belong
-              // to an older draft, not the caret advanced by an async insertion.
-              if (
-                mode !== "composer" ||
-                textarea.value !== readTerminalComposerDraft(draftKey)
-              )
-                return;
-              writeTerminalComposerSelection(
-                draftKey,
-                textarea.selectionStart,
-                textarea.selectionEnd,
-              );
-              if (
-                pickerMode === "inline" &&
-                composerCommandPrefix(
-                  textarea.value,
-                  textarea.selectionStart,
-                  textarea.selectionEnd,
-                ) === null
-              )
-                dismissCommands();
-            }}
-            onCompositionStart={() => {
-              cancelSubmitTouch();
-              if (compositionEndTimerRef.current !== null) {
-                clearTimeout(compositionEndTimerRef.current);
-                compositionEndTimerRef.current = null;
-              }
-              composingRef.current = true;
-              setComposing(true);
-            }}
-            onCompositionEnd={() => {
-              const finish = () => {
-                compositionEndTimerRef.current = null;
-                composingRef.current = false;
-                setComposing(false);
-                for (const resume of compositionUploadsRef.current.splice(0))
-                  resume();
-              };
-              compositionEndTimerRef.current = setTimeout(finish, 0);
-            }}
-            onPaste={(e) => {
-              const clipboardFiles = Array.from(e.clipboardData?.files ?? []);
-              const files = clipboardFiles.length
-                ? clipboardFiles
-                : Array.from(e.clipboardData?.items ?? [])
-                    .filter((item) => item.kind === "file")
-                    .map((item) => item.getAsFile())
-                    .filter((file): file is File => file !== null);
-              // No files on the clipboard: let the native text paste proceed.
-              if (files.length === 0) return;
-              e.preventDefault();
-              void uploadAndInsert(files, (file) =>
-                file.type.startsWith("image/")
-                  ? onUploadImage(file)
-                  : onUploadFile(file),
-              );
-            }}
-            onDragOver={(e) => {
-              if (
-                !isWorkspacePathDrag(e.dataTransfer) &&
-                !isNativeFileDrag(e.dataTransfer)
-              )
-                return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "copy";
-            }}
-            onDrop={(e) => {
-              if (isWorkspacePathDrag(e.dataTransfer)) {
-                e.preventDefault();
-                const path = workspacePathFromDrag(e.dataTransfer);
-                if (
-                  path &&
-                  !composingRef.current &&
-                  !terminalComposerSubmissionPending(draftKey)
+          {vimKeys && mode === "composer" ? (
+            // Phone keyboards have no Esc key, and Vim needs one.
+            <button
+              type="button"
+              className="terminal-composer-escape"
+              aria-label="Esc: Vim normal mode"
+              title="Esc: Vim normal mode"
+              onMouseDown={keepTextareaFocus}
+              onClick={() => vimHandleRef.current?.escape()}
+            >
+              Esc
+            </button>
+          ) : null}
+          {vimKeys ? (
+            <div
+              ref={vimHostRef}
+              className="terminal-composer-input terminal-mobile-message terminal-composer-vim"
+              onFocus={focusEditor}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                  setEditorFocused(false);
+              }}
+              onClick={() => activateMessage(true)}
+              // Ahead of Vim: the confirmation, the send shortcut and the
+              // command picker take their keys first, as in the plain box.
+              onKeyDownCapture={(e) => {
+                if (editorKeyDown(e)) e.stopPropagation();
+              }}
+            >
+              <Suspense fallback={null}>
+                <ComposerVimEditor
+                  value={text}
+                  selection={
+                    mode === "composer"
+                      ? readTerminalComposerSelection(draftKey)
+                      : null
+                  }
+                  label="Terminal input draft"
+                  placeholder={placeholder}
+                  attributes={{
+                    role: "combobox",
+                    "aria-expanded": String(listShown),
+                    "aria-autocomplete": "list",
+                    enterkeyhint: "enter",
+                    ...(listShown ? { "aria-controls": pickerId } : {}),
+                    ...(activeOption
+                      ? { "aria-activedescendant": activeOption }
+                      : {}),
+                  }}
+                  enterSends={false}
+                  onChange={updateText}
+                  onSelect={(start, end, value) =>
+                    selectionChanged(value, start, end)
+                  }
+                  onSubmit={(options) => {
+                    // :w sends, as the send shortcut does; Alt+Enter queues
+                    // nothing in a terminal.
+                    if (!options?.queue) void submit(true);
+                  }}
+                  onPasteImages={() => undefined}
+                  onPasteFiles={pasteFiles}
+                  onDragOver={(event) => {
+                    if (!event.dataTransfer || !takesDrag(event.dataTransfer))
+                      return false;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "copy";
+                    return true;
+                  }}
+                  onDrop={(event) => {
+                    if (
+                      !event.dataTransfer ||
+                      !dropOnEditor(event.dataTransfer)
+                    )
+                      return false;
+                    event.preventDefault();
+                    return true;
+                  }}
+                  onComposingChange={(composing) =>
+                    composing ? compositionStarted() : compositionEnded()
+                  }
+                  handleRef={vimHandleRef}
+                />
+              </Suspense>
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              className="terminal-composer-input terminal-mobile-message"
+              value={text}
+              rows={1}
+              placeholder={placeholder}
+              onFocus={focusEditor}
+              onBlur={() => {
+                setEditorFocused(false);
+              }}
+              onClick={() => activateMessage(true)}
+              autoComplete="off"
+              aria-label="Terminal input draft"
+              enterKeyHint="enter"
+              role="combobox"
+              aria-expanded={listShown}
+              aria-controls={listShown ? pickerId : undefined}
+              aria-autocomplete="list"
+              aria-activedescendant={activeOption}
+              onChange={(e) =>
+                updateText(
+                  e.currentTarget.value,
+                  e.currentTarget.selectionStart,
+                  e.currentTarget.selectionEnd,
                 )
-                  void preparePathInsertion()(path);
-                return;
               }
-              if (!isNativeFileDrag(e.dataTransfer)) return;
-              e.preventDefault();
-              const files = filesFromTerminalDrop(e.dataTransfer);
-              if (files === "directory") {
-                onError("Drop files only; directories are not supported.");
-              } else if (files?.length) {
-                void uploadAndInsert(files, onUploadFile);
+              onSelect={(e) =>
+                selectionChanged(
+                  e.currentTarget.value,
+                  e.currentTarget.selectionStart,
+                  e.currentTarget.selectionEnd,
+                )
               }
-            }}
-            onKeyDown={(e) => {
-              if (
-                e.nativeEvent.isComposing ||
-                composingRef.current ||
-                e.keyCode === 229
-              )
-                return;
-              if (e.key === "Escape" && confirming) {
+              onCompositionStart={compositionStarted}
+              onCompositionEnd={compositionEnded}
+              onPaste={(e) => {
+                const clipboardFiles = Array.from(e.clipboardData?.files ?? []);
+                const files = clipboardFiles.length
+                  ? clipboardFiles
+                  : Array.from(e.clipboardData?.items ?? [])
+                      .filter((item) => item.kind === "file")
+                      .map((item) => item.getAsFile())
+                      .filter((file): file is File => file !== null);
+                // No files on the clipboard: let the native text paste proceed.
+                if (files.length === 0) return;
                 e.preventDefault();
-                e.stopPropagation();
-                setConfirmation(null);
-                return;
-              }
-              if (shortcutMatches(e.nativeEvent, "composer.send")) {
+                pasteFiles(files);
+              }}
+              onDragOver={(e) => {
+                if (!takesDrag(e.dataTransfer)) return;
                 e.preventDefault();
-                if (!e.repeat) void submit(true);
-                return;
-              }
-              commandKeyDown(e);
-            }}
-          />
+                e.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(e) => {
+                if (dropOnEditor(e.dataTransfer)) e.preventDefault();
+              }}
+              onKeyDown={(e) => void editorKeyDown(e)}
+            />
+          )}
           <button
             type="button"
             className="terminal-mobile-direct"
@@ -1212,7 +1364,7 @@ export function TerminalComposer({
                 setExpanded(false);
                 onModeChange("direct", true);
               });
-              textareaRef.current?.blur?.();
+              editorField()?.blur?.();
               onFocusDirect();
             }}
           >

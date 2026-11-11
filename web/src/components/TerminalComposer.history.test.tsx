@@ -89,6 +89,8 @@ if (process.env.ROAMGATE_BOTTOM_HISTORY_COMPOSER_TEST !== "1") {
                 onUploadImage={upload}
                 onUploadFile={upload}
                 onError={error}
+                // The plain box; the Vim one has its own tests.
+                vimKeys={false}
               />
             </div>
           </div>,

@@ -283,6 +283,8 @@ async function registerDomTests() {
               return "";
             },
             onError() {},
+            // The plain box; the Vim one has its own tests.
+            vimKeys: false,
           })
         : null,
     );
