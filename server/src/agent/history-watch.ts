@@ -85,11 +85,12 @@ export function createRemoteStatSpawner(args: {
     void (async () => {
       let release = () => {};
       try {
-        // A slot that does not free up within the wait ends the watch,
-        // reported as an exit like any other failure.
-        ({ release } = await holdSshSession(argv));
+        // It runs until stopped: one of the master's few long-lived
+        // sessions, or a connection of its own, never a short command's.
+        const hold = await holdSshSession(argv, {}, { longLived: true });
+        release = hold.release;
         if (stopped) return;
-        const proc = Bun.spawn(argv, {
+        const proc = Bun.spawn(hold.argv, {
           stdin: "ignore",
           stdout: "pipe",
           stderr: "ignore",

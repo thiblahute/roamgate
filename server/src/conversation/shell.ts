@@ -127,12 +127,16 @@ export function createShellRunner(options: {
     const done = (async () => {
       let release = () => {};
       try {
-        // The user waits on it: the interactive lane, never shed.
-        ({ release } = await runInSshLane("interactive", () =>
-          holdSshSession(argv),
-        ));
+        // The user waits on it: the interactive lane, never shed. It may
+        // run for long: one of the master's few long-lived sessions, or a
+        // connection of its own, never a short command's slot.
+        const hold = await runInSshLane("interactive", () =>
+          holdSshSession(argv, {}, { longLived: true }),
+        );
+        release = hold.release;
         if (stopped) return { code: null, stopped: true };
-        const proc = spawn(argv[0]!, argv.slice(1), {
+        const run = hold.argv;
+        const proc = spawn(run[0]!, run.slice(1), {
           stdio: ["pipe", "pipe", "pipe"],
           env: shellEnv(),
         });
