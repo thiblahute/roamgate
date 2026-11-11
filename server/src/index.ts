@@ -173,10 +173,7 @@ import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredFront } from "./voice/voice-front";
 import { configuredResearch } from "./voice/voice-research";
 import { configuredRouter } from "./voice/voice-router";
-import {
-  type ErrandEntry,
-  VoiceErrands,
-} from "./voice/voice-errands";
+import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import {
   frontMode,
   readVoiceConfig,
