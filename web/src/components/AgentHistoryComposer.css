@@ -347,12 +347,6 @@
   flex: 1 1 auto;
 }
 
-/* A text input of the chat's own (Ranger's, with its mention picker). */
-.agent-history-composer-input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .agent-history-composer-field.has-voice textarea,
 .agent-history-composer-field.has-voice .cm-content {
   padding-right: 36px;
@@ -361,6 +355,22 @@
 .agent-history-composer-field.has-voice.has-mute textarea,
 .agent-history-composer-field.has-voice.has-mute .cm-content {
   padding-right: 66px;
+}
+
+/* The @ button (Ranger's mention picker), beside the microphone. */
+.agent-history-composer-field.has-mention textarea,
+.agent-history-composer-field.has-mention .cm-content {
+  padding-right: 36px;
+}
+
+.agent-history-composer-field.has-mention.has-voice textarea,
+.agent-history-composer-field.has-mention.has-voice .cm-content {
+  padding-right: 66px;
+}
+
+.agent-history-composer-field.has-mention.has-voice.has-mute textarea,
+.agent-history-composer-field.has-mention.has-voice.has-mute .cm-content {
+  padding-right: 96px;
 }
 
 /* A predicted next message: grey text in the empty box, Tab takes it. */

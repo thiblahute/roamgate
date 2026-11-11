@@ -8,12 +8,11 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-  type RefObject,
 } from "react";
 import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import {
+  AtSign,
   CornerDownRight,
   ImagePlus,
   ListPlus,
@@ -67,6 +66,12 @@ import {
   useRouterNote,
 } from "../voiceRoute";
 import { openAssistant } from "../assistant";
+import { adjustAssistantMentions } from "../assistantMentions";
+import {
+  type ComposerMentions,
+  type MentionField,
+  useMentionPicker,
+} from "./MessageMentions";
 import { setPaneView } from "../paneView";
 import { store } from "../store";
 
@@ -93,15 +98,6 @@ const ComposerVimEditor = lazyWithReload("composer-vim-editor", () =>
 
 const altEnter =
   detectShortcutPlatform() === "mac" ? "Option+Enter" : "Alt+Enter";
-
-/** What the box hands a text input of its own (`input`). */
-export type ComposerInput = {
-  value: string;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
-  onChange: (text: string) => void;
-  onSubmit: (options?: { queue: boolean }) => void;
-  onCompositionChange: (composing: boolean) => void;
-};
 
 // Grow with the draft up to this height, then scroll inside the textarea.
 const MAX_INPUT_HEIGHT_PX = 160;
@@ -142,7 +138,7 @@ export function AgentHistoryComposer({
   },
   shell,
   nextPrompt,
-  input,
+  mentions,
 }: {
   draftKey: string;
   agent?: string;
@@ -195,11 +191,11 @@ export function AgentHistoryComposer({
    */
   nextPrompt?: { key: string; text: string } | null;
   /**
-   * The box's own text input in place of its textarea (Ranger's, with its
-   * mention picker): it shows the draft, writes it back, and sends through
-   * the box; Alt+Enter (`queue`) queues while the agent answers.
+   * The @mention picker (Ranger's): @ or the box's @ button opens it, in
+   * the plain box and in the Vim one, and a pick is a chip bound to the
+   * message as a reference.
    */
-  input?: (box: ComposerInput) => ReactNode;
+  mentions?: ComposerMentions;
   /**
    * Hands-free chat; `listen` false when the server has no voice engine:
    * the button then says why it cannot listen.
@@ -236,8 +232,6 @@ export function AgentHistoryComposer({
   );
   const compositionUploadsRef = useRef<Array<() => void>>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  // An input of its own sizes and places its caret itself.
-  const ownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const vimHandleRef = useRef<ComposerVimHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Shell mode: the box starts with `!`, and Send runs it.
@@ -517,11 +511,107 @@ export function AgentHistoryComposer({
       }
     : null;
 
+  // The @mention picker, on whichever input the box has.
+  const mentionField = (): MentionField | null => {
+    if (vimKeys) {
+      const handle = vimHandleRef.current;
+      return handle
+        ? {
+            selection: handle.selection,
+            replace: handle.replace,
+            focus: handle.focus,
+          }
+        : null;
+    }
+    const textarea = textareaRef.current;
+    if (!textarea) return null;
+    return {
+      selection: () => ({
+        start: textarea.selectionStart,
+        end: textarea.selectionEnd,
+      }),
+      replace: (start, end, insert) => {
+        textarea.setSelectionRange(start, end);
+        // Native insertion keeps the browser's undo where it has insertText;
+        // the draft is written after it either way.
+        try {
+          document.execCommand?.("insertText", false, insert);
+        } catch {
+          // Written below.
+        }
+      },
+      focus: () => textarea.focus({ preventScroll: true }),
+    };
+  };
+  const picker = useMentionPicker({
+    config: mentions,
+    draftKey,
+    text: shown.text,
+    draft: text,
+    draftOffset: (offset) => shown.draftOffset(shown.text, offset),
+    field: mentionField,
+    composing: () => composingRef.current,
+    onPicked: (draft, caret) => {
+      writeTerminalComposerDraft(draftKey, draft);
+      writeTerminalComposerSelection(draftKey, caret, caret);
+    },
+    onError,
+  });
+  /**
+   * The draft goes from what it holds to `next` by an edit of `start`..`end`
+   * of the box's text (`edit`): the references it binds follow.
+   */
+  const moveMentions = (
+    next: string,
+    edit?: { start: number; end: number; inputType?: string },
+  ) => {
+    if (!mentions) return;
+    const previous = readTerminalComposerDraft(draftKey);
+    const before = attachmentDisplay(previous);
+    const bound = mentions.read(previous);
+    if (!bound.length) {
+      mentions.write(next, []);
+      return;
+    }
+    mentions.write(
+      next,
+      adjustAssistantMentions(
+        previous,
+        next,
+        bound,
+        edit && {
+          start: before.draftOffset(before.text, edit.start),
+          end: before.draftOffset(before.text, edit.end),
+          inputType: edit.inputType,
+        },
+      ),
+    );
+  };
+  // The textarea's edit, as the browser is about to make it.
+  const textareaEditRef = useRef<
+    { start: number; end: number; inputType?: string } | undefined
+  >(undefined);
+  const mentionsOn = !!mentions;
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !mentionsOn) return;
+    const capture = (event: InputEvent) => {
+      textareaEditRef.current = {
+        start: textarea.selectionStart,
+        end: textarea.selectionEnd,
+        inputType: event.inputType,
+      };
+    };
+    textarea.addEventListener("beforeinput", capture);
+    return () => textarea.removeEventListener("beforeinput", capture);
+  }, [mentionsOn, vimKeys]);
+
   return (
     <div
-      className={`agent-history-composer${shellMode ? " is-shell" : ""}`}
+      className={`agent-history-composer${shellMode ? " is-shell" : ""}${mobile ? " is-mobile" : ""}`}
       onKeyDownCapture={(event) => {
-        if (!onNextPromptKeys(event)) onCommandKeys(event);
+        if (!picker.keys(event) && !onNextPromptKeys(event))
+          onCommandKeys(event);
       }}
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
@@ -660,6 +750,7 @@ export function AgentHistoryComposer({
           ))}
         </div>
       ) : null}
+      {picker.chips}
       {offered && mobile ? (
         <div className="agent-history-composer-next">
           <button
@@ -729,77 +820,17 @@ export function AgentHistoryComposer({
         ) : null}
         {/* The box, with the microphone on it, at its right edge. */}
         <div
-          className={`agent-history-composer-field${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
+          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
         >
-          {input ? (
-            <div
-              className="agent-history-composer-input"
-              onKeyDownCapture={(event) => {
-                if (
-                  event.key === "ArrowUp" &&
-                  !text &&
-                  onRecallQueued &&
-                  !event.shiftKey &&
-                  !event.altKey
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onRecallQueued();
-                }
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.nativeEvent.isComposing ||
-                  composingRef.current ||
-                  event.keyCode === 229
-                )
-                  return;
-                if (
-                  event.key === "ArrowUp" &&
-                  event.altKey &&
-                  enterChatParts(event.currentTarget)
-                ) {
-                  event.preventDefault();
-                  return;
-                }
-                if (
-                  (event.key === "PageUp" || event.key === "PageDown") &&
-                  scrollChatPage(
-                    event.currentTarget,
-                    event.key === "PageUp" ? -1 : 1,
-                  )
-                ) {
-                  event.preventDefault();
-                  return;
-                }
-                if (event.key === "Escape" && confirming) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setConfirmation(null);
-                }
-              }}
-            >
-              {input({
-                value: text,
-                inputRef: ownInputRef,
-                onChange: (value) =>
-                  writeTerminalComposerDraft(draftKey, value),
-                onSubmit: (options) =>
-                  void send(false, !!options?.queue && !!onQueue),
-                onCompositionChange: (value) => {
-                  composingRef.current = value;
-                  setComposing(value);
-                  if (!value) resumeUploads();
-                },
-              })}
-            </div>
-          ) : vimKeys ? (
+          {picker.popup}
+          {vimKeys ? (
             <Suspense fallback={null}>
               <ComposerVimEditor
                 value={shown.text}
                 selection={shownSelection}
                 label={`Message ${name || "agent"}`}
                 placeholder={ghost ? ghost.text : placeholder}
+                attributes={picker.aria}
                 enterSends={!enterAddsLine}
                 onUpWhenEmpty={
                   onRecallQueued
@@ -809,17 +840,22 @@ export function AgentHistoryComposer({
                       }
                     : undefined
                 }
-                onChange={(value, start, end) => {
+                onChange={(value, start, end, edit) => {
                   const draft = shown.toDraft(value);
                   const next = attachmentDisplay(draft);
+                  moveMentions(draft, edit);
                   writeTerminalComposerDraft(draftKey, draft);
                   writeTerminalComposerSelection(
                     draftKey,
                     next.draftOffset(value, start),
                     next.draftOffset(value, end),
                   );
+                  // The picker follows typing, not Vim's commands.
+                  if (vimHandleRef.current?.insertMode())
+                    picker.update(value, start, end, true);
+                  else picker.hide();
                 }}
-                onSelect={(start, end) => {
+                onSelect={(start, end, value) => {
                   const committed = attachmentDisplay(
                     readTerminalComposerDraft(draftKey),
                   );
@@ -828,8 +864,15 @@ export function AgentHistoryComposer({
                     committed.draftOffset(committed.text, start),
                     committed.draftOffset(committed.text, end),
                   );
+                  if (vimHandleRef.current?.insertMode())
+                    picker.update(value, start, end);
                 }}
-                onSubmit={() => void send(false)}
+                onSubmit={(options) => {
+                  // Alt+Enter queues while the agent answers; else it sends
+                  // as Enter does.
+                  if (options?.queue && !onQueue && enterAddsLine) return;
+                  void send(false, !!options?.queue && !!onQueue);
+                }}
                 onPasteImages={
                   onUploadImage
                     ? (files) => void uploadImages(files)
@@ -840,7 +883,17 @@ export function AgentHistoryComposer({
                 onComposingChange={(composing) => {
                   composingRef.current = composing;
                   setComposing(composing);
-                  if (!composing) resumeUploads();
+                  if (composing) picker.hide();
+                  else {
+                    resumeUploads();
+                    const at = vimHandleRef.current?.selection();
+                    if (at && vimHandleRef.current?.insertMode())
+                      picker.update(
+                        vimHandleRef.current.text(),
+                        at.start,
+                        at.end,
+                      );
+                  }
                 }}
               />
             </Suspense>
@@ -860,6 +913,26 @@ export function AgentHistoryComposer({
               }
               enterKeyHint={enterAddsLine ? "enter" : "send"}
               autoComplete="off"
+              {...picker.aria}
+              onInput={(event) => {
+                if (!mentions) return;
+                const textarea = event.currentTarget;
+                const edit = textareaEditRef.current;
+                textareaEditRef.current = undefined;
+                moveMentions(shown.toDraft(textarea.value), {
+                  ...(edit ?? {
+                    start: textarea.selectionStart,
+                    end: textarea.selectionStart,
+                  }),
+                  inputType: (event.nativeEvent as InputEvent).inputType,
+                });
+                picker.update(
+                  textarea.value,
+                  textarea.selectionStart,
+                  textarea.selectionEnd,
+                  true,
+                );
+              }}
               onChange={(event) => {
                 const textarea = event.currentTarget;
                 const draft = shown.toDraft(textarea.value);
@@ -891,6 +964,11 @@ export function AgentHistoryComposer({
                   readTerminalComposerDraft(draftKey),
                 );
                 if (textarea.value !== committed.text) return;
+                picker.update(
+                  textarea.value,
+                  textarea.selectionStart,
+                  textarea.selectionEnd,
+                );
                 writeTerminalComposerSelection(
                   draftKey,
                   committed.draftOffset(
@@ -908,14 +986,21 @@ export function AgentHistoryComposer({
                 }
                 composingRef.current = true;
                 setComposing(true);
+                picker.hide();
               }}
-              onCompositionEnd={() => {
+              onCompositionEnd={(event) => {
+                const textarea = event.currentTarget;
                 // The final native input can follow compositionend in the same task.
                 compositionEndTimerRef.current = setTimeout(() => {
                   compositionEndTimerRef.current = null;
                   composingRef.current = false;
                   setComposing(false);
                   resumeUploads();
+                  picker.update(
+                    textarea.value,
+                    textarea.selectionStart,
+                    textarea.selectionEnd,
+                  );
                 }, 0);
               }}
               onKeyDown={(event) => {
@@ -961,15 +1046,16 @@ export function AgentHistoryComposer({
                   return;
                 }
                 if (
-                  onQueue &&
+                  (onQueue || !enterAddsLine) &&
                   event.key === "Enter" &&
                   event.altKey &&
                   !event.shiftKey &&
                   !event.ctrlKey &&
                   !event.metaKey
                 ) {
+                  // Queues while the agent answers; else sends, as Enter.
                   event.preventDefault();
-                  if (!event.repeat) void send(false, true);
+                  if (!event.repeat) void send(false, !!onQueue);
                   return;
                 }
                 const plainEnter =
@@ -989,6 +1075,19 @@ export function AgentHistoryComposer({
             />
           )}
           <div className="agent-history-composer-inline">
+            {mentions ? (
+              <button
+                type="button"
+                className="agent-history-composer-mention"
+                aria-label="Mention workspace or agent"
+                title="Mention a workspace or agent"
+                aria-expanded={picker.open}
+                onMouseDown={keepTextareaFocus}
+                onClick={picker.toggle}
+              >
+                <AtSign size={15} aria-hidden="true" />
+              </button>
+            ) : null}
             {ghost ? (
               <span
                 className="agent-history-composer-next-key"

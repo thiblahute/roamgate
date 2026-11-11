@@ -283,7 +283,8 @@ Inspector state is scoped to each checkout; see
   and Esc closes the list. **Vim keys** in Configuration > Behavior (on by
   default; one setting for every device, which the review's `:vim` and
   `:set novim` change too) makes chat message boxes Vim editors: insert mode
-  first, `:w` sends, PageUp/PageDown scroll the conversation, and on touch
+  first, `:w` sends, Alt+Enter queues while the agent answers (and sends
+  otherwise), PageUp/PageDown scroll the conversation, and on touch
   screens an **Esc** button stands in for the missing key. Enter sends and
   Shift+Enter adds a line; on touch keyboards Enter adds a line and the Send
   button sends. Messages are submitted in the terminal with the agent's
@@ -631,7 +632,10 @@ or its shortcut.
 - **Ask:** Ranger reads workspace status, agent history, diffs, and terminal
   output, and cites its sources. Type **@** (or use the **@** button) to point
   it at a workspace or agent: the picker lists them, all or by kind, and a pick
-  becomes a chip under the message box, sent with the message as a reference.
+  becomes a chip above the message box, sent with the message as a reference.
+  Ranger's box is the agent chats' message box, Vim keys included: the picker
+  opens as **@** is typed in insert mode, its arrows, Enter and Tab pick, and
+  Esc puts it away without leaving insert mode.
   When the model shares its reasoning, a collapsible **Thinking** section shows
   it above the reply.
 - **Chat:** Ranger's conversation is an agent chat: Markdown replies with copy

@@ -7,7 +7,15 @@ import type {
 } from "../../../shared/assistant";
 import * as assistant from "../assistant";
 import { adjustAssistantMentions } from "../assistantMentions";
-import { AssistantMentionComposer } from "./AssistantMentionComposer";
+import {
+  readTerminalComposerDraft,
+  writeTerminalComposerDraft,
+} from "../terminalComposer";
+// Upstream's AssistantMentionComposer is the message box's @mention picker
+// now (MessageMentions), in the agent chats' box: these are its tests, on
+// the plain box (Vim keys off); the Vim box's are in
+// AgentHistoryComposer.mentions.dom.test.tsx.
+import { AgentHistoryComposer } from "./AgentHistoryComposer";
 
 const workspace: AssistantWorkspace = {
   connection_id: "local",
@@ -69,48 +77,66 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       });
     }
     const { createRoot } = await import("react-dom/client");
+    // A box that sends refuses, so the draft stays, as it did beside a
+    // harness that only counted sends.
+    const kept = new Error("kept");
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     const catalog = spyOn(assistant, "getAssistantMentions");
     const spies: { mockRestore: () => void }[] = [catalog];
-    const submit = mock(() => {});
-    const openMention = mock(() => {});
-    const composing = mock(() => {});
-    let value = "";
-    let mentions: AssistantMention[] = [];
+    const submit = mock((options: { queue: boolean }) => {
+      void options;
+    });
+    const openMention = mock((target: AssistantMentionTarget) => {
+      void target;
+    });
     let draftKey = "bridge:chat";
-    let mobile = false;
-    const inputRef = React.createRef<HTMLTextAreaElement>();
+    // The draft and the references it binds, as Ranger keeps them.
+    let bound = { text: "", mentions: [] as AssistantMention[] };
+    let mentions: AssistantMention[] = [];
+    const read = (text: string) =>
+      bound.text === text
+        ? bound.mentions
+        : adjustAssistantMentions(bound.text, text, bound.mentions);
     const render = async () => {
       await React.act(async () => root.render(<Harness />));
     };
     function Harness() {
       return (
-        <AssistantMentionComposer
-          value={value}
-          mentions={mentions}
-          workspaces={[workspace]}
-          currentWorkspace={workspace}
+        <AgentHistoryComposer
           draftKey={draftKey}
-          inputRef={inputRef}
-          mobile={mobile}
-          onChange={(next, refs, inputType, edit) => {
-            mentions =
-              refs ?? adjustAssistantMentions(value, next, mentions, edit);
-            expect(
-              inputType === undefined || typeof inputType === "string",
-            ).toBe(true);
-            value = next;
-            root.render(<Harness />);
+          agent="Ranger"
+          status="idle"
+          vimKeys={false}
+          onSend={async () => {
+            submit({ queue: false });
+            throw kept;
           }}
-          onSubmit={submit}
-          onOpenMention={openMention}
-          onCompositionChange={composing}
+          onQueue={async () => {
+            submit({ queue: true });
+            throw kept;
+          }}
+          onError={() => {}}
+          mentions={{
+            workspaces: [workspace],
+            currentWorkspace: workspace,
+            read,
+            write: (text, refs) => {
+              bound = { text, mentions: refs };
+              mentions = refs;
+            },
+            onOpen: openMention,
+          }}
         />
       );
     }
-    const input = () => inputRef.current!;
+    const input = () =>
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Message Ranger"]',
+      )!;
+    // The draft the box holds.
+    const draft = () => readTerminalComposerDraft(draftKey);
     const button = (label: string) =>
       container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
     const key = async (name: string, options: KeyboardEventInit = {}) => {
@@ -158,12 +184,12 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       );
       await key("ArrowDown");
       await key("Enter");
-      expect(value).toBe("@Codex / Project ");
+      expect(draft()).toBe("@Codex / Project ");
       expect(mentions).toHaveLength(1);
       expect(mentions[0]?.kind).toBe("agent");
       expect(submit).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(input());
-      expect(input().selectionStart).toBe(value.length);
+      expect(input().selectionStart).toBe(draft().length);
       await key("Enter");
       expect(submit).toHaveBeenCalledTimes(1);
       await React.act(async () =>
@@ -188,10 +214,10 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
         );
       });
       expect(mentions).toEqual([]);
-      expect(value).toBe("@Codex / Project ");
+      expect(draft()).toBe("@Codex / Project ");
       catalog.mockResolvedValue({ targets: [target, agent], errors: [] });
       await React.act(async () => {
-        input().setSelectionRange(0, value.length);
+        input().setSelectionRange(0, draft().length);
         button("Mention workspace or agent").click();
       });
       await key("ArrowDown");
@@ -201,7 +227,7 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
         button("Remove reference to Codex / Project").click(),
       );
       expect(mentions).toEqual([]);
-      expect(value).toBe("@Codex / Project ");
+      expect(draft()).toBe("@Codex / Project ");
 
       catalog.mockResolvedValue({ targets: [target, agent], errors: [] });
       await fill("user@example.com");
@@ -217,13 +243,24 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       );
       await key("Enter");
       expect(submit).toHaveBeenCalledTimes(1);
-      expect(composing).toHaveBeenLastCalledWith(true);
-      await React.act(async () =>
+      // While it composes, Send waits too; the composition ends after its
+      // last input, in the same task.
+      expect(
+        container.querySelector<HTMLButtonElement>(
+          ".agent-history-composer-send",
+        )!.disabled,
+      ).toBe(true);
+      await React.act(async () => {
         input().dispatchEvent(
           new window.CompositionEvent("compositionend", { bubbles: true }),
-        ),
-      );
-      expect(composing).toHaveBeenLastCalledWith(false);
+        );
+        await new Promise((done) => setTimeout(done, 0));
+      });
+      expect(
+        container.querySelector<HTMLButtonElement>(
+          ".agent-history-composer-send",
+        )!.disabled,
+      ).toBe(false);
       await key("Escape");
       expect(input().getAttribute("aria-expanded")).toBe("false");
 
@@ -242,19 +279,21 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       expect(submit).toHaveBeenLastCalledWith({ queue: true });
       expect(mentions).toEqual([]);
       draftKey = "bridge:other-chat";
-      value = "Another draft";
+      writeTerminalComposerDraft(draftKey, "Another draft");
       await render();
       expect(input().value).toBe("Another draft");
       expect(input().getAttribute("aria-expanded")).toBe("false");
 
+      // The box grows with the draft, up to 160 pixels, then scrolls; it
+      // is the same box all along (upstream's grew so on a phone, where it
+      // started one row high; the agent chats' box does so everywhere).
       const originalInput = input();
       let scrollHeight = 44;
       Object.defineProperty(input(), "scrollHeight", {
         configurable: true,
         get: () => scrollHeight,
       });
-      mobile = true;
-      await render();
+      await fill("A short draft");
       expect(input().getAttribute("rows")).toBe("1");
       expect(input().style.height).toBe("44px");
       scrollHeight = 240;
@@ -264,10 +303,6 @@ if (process.env.ROAMGATE_MENTION_DOM_TEST !== "1") {
       await fill("");
       expect(input().style.height).toBe("44px");
       expect(input()).toBe(originalInput);
-      mobile = false;
-      await render();
-      expect(input().getAttribute("rows")).toBe("3");
-      expect(input().style.height).toBe("");
 
       // Ranger's sent messages are drawn by the agent chat now: their
       // references are tested in AssistantPanel.test.ts.

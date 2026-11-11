@@ -29,6 +29,14 @@ import { type RefObject, useEffect, useRef } from "react";
 export type ComposerVimHandle = {
   /** Esc, for keyboards without one: leaves insert mode. */
   escape: () => void;
+  /** What the box holds now, ahead of the draft maybe. */
+  text: () => string;
+  selection: () => { start: number; end: number };
+  /** Puts `insert` in place of `start`..`end`, as typed: undo takes it back. */
+  replace: (start: number, end: number, insert: string) => void;
+  focus: () => void;
+  /** In Vim's insert mode, where typing goes in the box. */
+  insertMode: () => boolean;
 };
 import { takeRenderCounts } from "../renderTrace";
 import { voiceTrace } from "../voiceChat";
@@ -74,6 +82,7 @@ export function ComposerVimEditor({
   selection,
   placeholder,
   label,
+  attributes,
   enterSends,
   onChange,
   onSelect,
@@ -90,10 +99,19 @@ export function ComposerVimEditor({
   selection: { start: number; end: number } | null;
   placeholder: string;
   label: string;
+  /** More of the box's attributes (a picker's combobox role), as they change. */
+  attributes?: Record<string, string>;
   enterSends: boolean;
-  onChange: (text: string, start: number, end: number) => void;
-  onSelect: (start: number, end: number) => void;
-  onSubmit: () => void;
+  /** `edit`: what the change replaced, in the text before it. */
+  onChange: (
+    text: string,
+    start: number,
+    end: number,
+    edit?: { start: number; end: number },
+  ) => void;
+  onSelect: (start: number, end: number, text: string) => void;
+  /** `queue`: Alt+Enter, which queues while the agent answers. */
+  onSubmit: (options?: { queue: boolean }) => void;
   onPasteImages: (files: File[]) => void;
   onComposingChange: (composing: boolean) => void;
   /** Up in the empty box; true when it did something. */
@@ -106,6 +124,8 @@ export function ComposerVimEditor({
   const viewRef = useRef<EditorView | null>(null);
   // The placeholder changes (a predicted next message shows there).
   const placeholderSlot = useRef(new Compartment());
+  const attributesSlot = useRef(new Compartment());
+  const attributesKey = JSON.stringify(attributes ?? {});
   // What the box reported and the draft has not caught up with: the draft
   // comes back with each, maybe after more was typed, and must not undo it.
   const reportedRef = useRef(new Set<string>());
@@ -133,12 +153,19 @@ export function ComposerVimEditor({
     enterSends,
     onSuspend,
   };
-  const initial = useRef({ value, placeholder, label, handleRef });
+  const initial = useRef({
+    value,
+    placeholder,
+    label,
+    handleRef,
+    attributesKey,
+  });
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const { value, placeholder, label, handleRef } = initial.current;
+    const { value, placeholder, label, handleRef, attributesKey } =
+      initial.current;
     defineExCommands();
     voiceTrace(`composer: box created with ${value.length} characters`);
     const submit = () => {
@@ -191,6 +218,13 @@ export function ComposerVimEditor({
           ),
           keymap.of([
             { key: "Mod-Enter", run: submit },
+            {
+              key: "Alt-Enter",
+              run: () => {
+                handlers.current.onSubmit({ queue: true });
+                return true;
+              },
+            },
             // Without the default keymap nothing else adds a line.
             {
               key: "Enter",
@@ -219,13 +253,29 @@ export function ComposerVimEditor({
             autocapitalize: "sentences",
           }),
           placeholderSlot.current.of(placeholderText(placeholder)),
+          attributesSlot.current.of(
+            EditorView.contentAttributes.of(JSON.parse(attributesKey)),
+          ),
           EditorView.updateListener.of((update) => {
             const { from, to } = update.state.selection.main;
             if (update.docChanged) {
               const text = update.state.doc.toString();
               reportedRef.current.add(text);
-              handlers.current.onChange(text, from, to);
-            } else if (update.selectionSet) handlers.current.onSelect(from, to);
+              // The span of the old text the change replaced.
+              let start = Infinity;
+              let end = -1;
+              update.changes.iterChangedRanges((fromA, toA) => {
+                start = Math.min(start, fromA);
+                end = Math.max(end, toA);
+              });
+              handlers.current.onChange(
+                text,
+                from,
+                to,
+                end >= 0 ? { start, end } : undefined,
+              );
+            } else if (update.selectionSet)
+              handlers.current.onSelect(from, to, update.state.doc.toString());
           }),
           EditorView.domEventHandlers({
             keydown: (event) => {
@@ -273,6 +323,20 @@ export function ComposerVimEditor({
             Vim.handleKey(cm, "<Esc>", "user");
             view.focus();
           },
+          text: () => view.state.doc.toString(),
+          selection: () => {
+            const { from, to } = view.state.selection.main;
+            return { start: from, end: to };
+          },
+          replace: (start, end, insert) =>
+            view.dispatch({
+              changes: { from: start, to: end, insert },
+              selection: EditorSelection.cursor(start + insert.length),
+              userEvent: "input.complete",
+              scrollIntoView: true,
+            }),
+          focus: () => view.focus(),
+          insertMode: () => !!cm.state.vim?.insertMode,
         };
     }
     return () => {
@@ -369,6 +433,17 @@ export function ComposerVimEditor({
       ),
     });
   }, [placeholder]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || attributesKey === initial.current.attributesKey) return;
+    initial.current.attributesKey = attributesKey;
+    view.dispatch({
+      effects: attributesSlot.current.reconfigure(
+        EditorView.contentAttributes.of(JSON.parse(attributesKey)),
+      ),
+    });
+  }, [attributesKey]);
 
   // Someone else's change to the draft (an upload, the terminal's box).
   useEffect(() => {
