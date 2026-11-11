@@ -798,52 +798,6 @@
   font-family: var(--rv-code);
 }
 
-.review-cmdline {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 14px;
-  border-top: 1px solid var(--rv-border);
-  font: 13px var(--rv-code);
-}
-
-.review-cmd {
-  flex: 0 1 220px;
-  border: 0;
-  outline: none;
-  background: transparent;
-  font: inherit;
-}
-
-.review-wild {
-  display: flex;
-  gap: 10px;
-  margin-left: 12px;
-  overflow: hidden;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.wild-item {
-  color: var(--rv-faint);
-}
-
-.wild-item .note {
-  display: none;
-}
-
-.wild-item.on {
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--rv-accent);
-  color: var(--rv-bg);
-}
-
-.wild-item.on .note {
-  display: inline;
-  color: inherit;
-}
-
 /* The cursor's word reads in the background colour over any token colour. */
 .review-diff .rv-word,
 .review-diff .rv-word[class*="hljs-"] {

@@ -139,5 +139,15 @@ if (process.env.ROAMGATE_RENDERED_KEYS_DOM_TEST !== "1") {
     own.addEventListener("keydown", (event) => event.preventDefault());
     press(own, "n");
     expect(keys()).toEqual([]);
+    // `:` always opens Roamgate's command line: a page's own keys (even
+    // one that stops it) and Alt do not keep it; its fields do.
+    own.addEventListener("keydown", (event) => event.stopPropagation());
+    press(own, ":");
+    press(body, ":", { altKey: true });
+    expect(keys()).toEqual([":", ":"]);
+    posted.length = 0;
+    press(page.getElementById("field")!, ":");
+    press(body, ":", { ctrlKey: true });
+    expect(keys()).toEqual([]);
   });
 }

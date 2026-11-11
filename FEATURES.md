@@ -1247,6 +1247,36 @@ rendered at the cursor's line. `o` or `:only` (or the expand button) hides all t
 chrome, in the rendered view and in the source alike; `o`, Esc or Show all
 brings it back.
 
+`:` opens the preview's command line, the review pane's (Tab / Shift+Tab
+complete, Enter runs, Esc or Backspace on nothing leaves it and gives the
+focus back), wherever the preview has the focus: the rendered file, a page's
+or a site's frame (its script hands `:` over, even a key the page handles),
+Review only, a phone's keyboard; never in a comment box or a field, where
+`:` is text. In the source view its Vim keys' `:` runs the same commands.
+Each does what a key or a button already does, where that one is:
+
+| Command | Does |
+| --- | --- |
+| `:files` | hides or shows the file tree (its button) |
+| `:only` (`:o`, `:zen`) | Review only (`o`) |
+| `:conversations` (`:threads`, `:conv`) | the Comments panel (`T`) |
+| `:unresolved` (`:openonly`) | only the unresolved threads, or all again (`gH`) |
+| `:next`, `:previous` (`:prev`) | the next or previous unresolved thread (`gn` / `gN`) |
+| `:comment` | a comment on the cursor's block, or an answer to its thread (`c`) |
+| `:fold` | folds or unfolds the cursor's thread (`za`) |
+| `:N` | the cursor on the block of line N |
+| `:source`, `:rendered` (`:preview`) | the Source switch |
+| `:scripts` (`on` / `off`) | **Scripts off** / **Scripts on** |
+| `:point` | **Point** |
+| `:review` | **Review**: the file in its checkout's code review, at the line |
+| `:reload` (`:e`, `:edit`) | the refresh button |
+| `:copy` | **Copy** |
+| `:url` (`ADDRESS`) | **URL**: its form, or that page opened |
+| `:q` (`:quit`, `:close`) | closes the preview |
+
+Where the source view's own Vim keys take the threads' keys, the bar's
+hints name these commands instead.
+
 Scripts are one choice for every format (Markdown, HTML, SVG, sites): off by
 default, always shown in the preview. **Scripts off** in the preview turns them
 on for that file; **Always here** adds its folder or site to **Settings,
