@@ -62,7 +62,8 @@ export type MrUnread = {
   changed: boolean;
 };
 
-export type MrSection = "mine" | "suggested";
+/** "pinned": added by the user (by URL), listed whether or not a query finds it. */
+export type MrSection = "pinned" | "mine" | "suggested";
 
 export type MrInboxEntry = MrItem & {
   section: MrSection;
@@ -76,6 +77,23 @@ export type MrInboxEntry = MrItem & {
   feedback?: MrVerdict;
   /** Its review in Roamgate, once opened. */
   review?: { connectionId: string; workspaceId?: string; sessionId: string };
+  /**
+   * A pinned request the forge did not give (not found, no access, host
+   * down), or not read yet: the row shows this instead of its state, and
+   * only the remove button works.
+   */
+  unavailable?: string;
+};
+
+/** A request the user removed from the view, for the Restore list. */
+export type MrHiddenEntry = {
+  key: string;
+  provider: ForgeProvider;
+  host: string;
+  project: string;
+  number: number;
+  url: string;
+  title: string;
 };
 
 export type MrHostState = {
@@ -104,6 +122,8 @@ export type MrInbox = {
   refreshing: boolean;
   /** The user's order (the settings' `order`), when they set one. */
   order?: string[];
+  /** Removed by the user and quiet since: the "N hidden" list. */
+  hidden: MrHiddenEntry[];
 };
 
 export type MrVerdict = "not_interested" | "more_like_this";
@@ -157,6 +177,13 @@ export type MrReviewsSettings = {
    * first, in the inbox's own order. Empty: the inbox's order.
    */
   order: string[];
+  /** Requests the user added by URL, newest first. */
+  pinned: ForgeRef[];
+  /**
+   * Requests the user removed from the view, with their activity marker
+   * (mrActivityMarker) at that time: shown again once it changes.
+   */
+  hidden: { key: string; marker: string }[];
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -175,7 +202,19 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   treeGroups: {},
   clones: {},
   order: [],
+  pinned: [],
+  hidden: [],
 };
+
+/**
+ * What counts as activity on a request for a hidden one to come back: a
+ * push, a comment or a state change (not a pipeline or a title edit).
+ */
+export function mrActivityMarker(
+  item: Pick<MrItem, "headSha" | "notes" | "state">,
+): string {
+  return `${item.headSha}|${item.notes}|${item.state}`;
+}
 
 /** "host/project", lower case: a project's key in the settings and state. */
 export function mrProjectKey(ref: { host: string; project: string }): string {

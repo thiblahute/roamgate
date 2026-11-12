@@ -2,12 +2,14 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronLeft,
+  EyeOff,
   ExternalLink,
   GripVertical,
   Keyboard,
   LoaderCircle,
   Maximize2,
   Minimize2,
+  Plus,
   RefreshCw,
   Settings,
   X,
@@ -29,7 +31,14 @@ import type {
   MrSection,
 } from "../../../shared/mrReviews";
 import { useLayoutPreferences } from "../layoutPreferences";
-import { mrReviewsCall, saveMrReviewsSettings, useMrInbox } from "../mrReviews";
+import {
+  hideMrRequest,
+  mrReviewsCall,
+  pinMrRequest,
+  saveMrReviewsSettings,
+  unhideMrRequest,
+  useMrInbox,
+} from "../mrReviews";
 import { mrAgentItem, setMrAgentOpener } from "../mrReviewsAgent";
 import {
   checkoutMrReview,
@@ -43,6 +52,7 @@ import {
   MR_REVIEWS_KEYS,
   moveMrKey,
   mrMatches,
+  mrPastedRequest,
   orderMrEntries,
 } from "../mrReviewsOrder";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
@@ -300,7 +310,10 @@ const REASON_LABEL: Record<MrReason, string> = {
   mentioned: "mentioned",
 };
 
+const SECTIONS = ["pinned", "mine", "suggested"] as const;
+
 const SECTION_TITLE: Record<MrSection, string> = {
+  pinned: "Pinned",
   mine: "For you",
   suggested: "Suggested",
 };
@@ -382,12 +395,15 @@ export function MrReviewRow({
   onSelect,
   onOpen,
   move,
+  onRemove,
 }: {
   entry: MrInboxEntry;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
   move?: MrRowMove;
+  /** Takes it out of the view (d); on the selected row, always on a broken pin. */
+  onRemove?: () => void;
 }) {
   const unread = unreadLabel(entry);
   const drafts = draftsLabel(entry);
@@ -426,14 +442,22 @@ export function MrReviewRow({
             </span>{" "}
             {entry.title}
           </strong>
-          <span className={`assistant-task-state is-${stateLabel(entry)}`}>
-            {stateLabel(entry)}
-          </span>
+          {entry.unavailable ? null : (
+            <span className={`assistant-task-state is-${stateLabel(entry)}`}>
+              {stateLabel(entry)}
+            </span>
+          )}
         </div>
-        <span className="mr-reviews-row-meta">
-          <PipelineDot status={entry.pipeline} />
-          {entry.project} · {entry.author} · {relative(entry.updatedAt)}
-        </span>
+        {entry.unavailable ? (
+          <span className="mr-reviews-row-meta mr-reviews-unavailable">
+            {entry.unavailable}
+          </span>
+        ) : (
+          <span className="mr-reviews-row-meta">
+            <PipelineDot status={entry.pipeline} />
+            {entry.project} · {entry.author} · {relative(entry.updatedAt)}
+          </span>
+        )}
         {entry.section === "suggested" && entry.reason ? (
           <small className="mr-reviews-reason">{entry.reason}</small>
         ) : entry.reasons.length ? (
@@ -446,6 +470,27 @@ export function MrReviewRow({
           </small>
         ) : null}
       </button>
+      {onRemove && (selected || entry.unavailable) ? (
+        <span className="mr-reviews-move">
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label={
+              entry.section === "pinned"
+                ? "Unpin it"
+                : "Remove it from the view"
+            }
+            title={
+              entry.section === "pinned"
+                ? "Unpin it (dd)"
+                : "Remove it from the view (dd)"
+            }
+            onClick={onRemove}
+          >
+            <EyeOff size={14} />
+          </button>
+        </span>
+      ) : null}
       {selected && move?.onStep ? (
         <span className="mr-reviews-move">
           <button
@@ -609,11 +654,13 @@ export function MrReviewsPanel({
   );
   const bySection = useMemo(() => {
     const groups: Record<MrSection, MrInboxEntry[]> = {
+      pinned: [],
       mine: [],
       suggested: [],
     };
     for (const entry of entries) groups[entry.section].push(entry);
     return {
+      pinned: orderMrEntries(groups.pinned, order),
       mine: orderMrEntries(groups.mine, order),
       suggested: orderMrEntries(groups.suggested, order),
     };
@@ -623,12 +670,13 @@ export function MrReviewsPanel({
   const searchRef = useRef<HTMLInputElement>(null);
   const shown = useMemo(
     () => ({
+      pinned: bySection.pinned.filter((entry) => mrMatches(entry, query)),
       mine: bySection.mine.filter((entry) => mrMatches(entry, query)),
       suggested: bySection.suggested.filter((entry) => mrMatches(entry, query)),
     }),
     [bySection, query],
   );
-  const ordered = [...shown.mine, ...shown.suggested];
+  const ordered = [...shown.pinned, ...shown.mine, ...shown.suggested];
   const [helpOpen, setHelpOpen] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const detailEntry = detail
@@ -879,9 +927,9 @@ export function MrReviewsPanel({
     const keys = (list: MrInboxEntry[]) => list.map((entry) => entry.key);
     const moved = moveMrKey(keys(bySection[section]), key, target, place);
     saveOrder(
-      section === "mine"
-        ? [...moved, ...keys(bySection.suggested)]
-        : [...keys(bySection.mine), ...moved],
+      SECTIONS.flatMap((each) =>
+        each === section ? moved : keys(bySection[each]),
+      ),
     );
   };
 
@@ -969,6 +1017,99 @@ export function MrReviewsPanel({
     };
   };
 
+  // Adding a request by URL, and removing one from the view with an undo.
+  const addRef = useRef<HTMLInputElement>(null);
+  const [addText, setAddText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [undo, setUndo] = useState<{
+    label: string;
+    key: string;
+    run: () => Promise<unknown>;
+  } | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    },
+    [],
+  );
+  const hidden = inbox?.hidden ?? [];
+
+  /** Pins what was typed, pasted or dropped: a URL, or project!12. */
+  const add = async (text: string) => {
+    const value = text.trim();
+    if (!value || adding) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const { key } = await pinMrRequest(value);
+      setAddText("");
+      setQuery("");
+      await reload();
+      setSelected(key);
+    } catch (cause) {
+      setAddError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  /** Out of the view: a pinned request is unpinned, another one hidden. */
+  const remove = (entry: MrInboxEntry) => {
+    const at = ordered.findIndex((each) => each.key === entry.key);
+    const next = ordered[at + 1] ?? ordered[at - 1];
+    if (selected === entry.key) setSelected(next?.key ?? null);
+    setDetail(null);
+    // A button that goes with its row leaves the focus on nothing: the
+    // panel keeps the keys.
+    panelRef.current?.focus({ preventScroll: true });
+    void hideMrRequest(entry.key)
+      .then(({ action }) => {
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        setUndo({
+          label: `${action === "unpinned" ? "Unpinned" : "Removed"} ${forgeRefLabel(entry, true)}`,
+          key: entry.key,
+          run: () =>
+            action === "unpinned"
+              ? pinMrRequest(entry.url)
+              : unhideMrRequest(entry.key),
+        });
+        undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+        return reload();
+      })
+      .catch((cause) =>
+        setOrderError(
+          `Could not remove it: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+      );
+  };
+
+  const undoRemoval = () => {
+    if (!undo) return;
+    const { run, key } = undo;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndo(null);
+    void run()
+      .then(() => reload())
+      .then(() => setSelected(key))
+      .catch((cause) =>
+        setOrderError(
+          `Could not undo it: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+      );
+  };
+
+  const restore = (key: string) =>
+    void unhideMrRequest(key)
+      .then(() => reload())
+      .catch((cause) =>
+        setOrderError(
+          `Could not restore it: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+      );
+
   /** A count and the g of gg, as the review pane reads them. */
   const keyState = useRef(EMPTY_KEY_STATE);
 
@@ -1010,6 +1151,17 @@ export function MrReviewsPanel({
       }
       return false;
     }
+    // The add box: Enter pins what it holds, Esc empties it.
+    if (event.target === addRef.current) {
+      if (event.key === "Escape") {
+        setAddText("");
+        setAddError(null);
+        panelRef.current?.focus({ preventScroll: true });
+      } else if (event.key === "Enter" && !event.isComposing) {
+        void add(addText);
+      } else return false;
+      return true;
+    }
     // The search box: Enter reviews the selected (or first) request
     // found, the arrows move, Esc clears it and goes back to the list.
     if (event.target === searchRef.current) {
@@ -1032,6 +1184,7 @@ export function MrReviewsPanel({
       if (prompt) setPrompt(null);
       else if (view === "settings") setView("list");
       else if (detail) setDetail(null);
+      else if (hiddenOpen) setHiddenOpen(false);
       else if (helpOpen) setHelpOpen(false);
       else if (query) setQuery("");
       else if (maximized && !mobile) setMaximized(false);
@@ -1085,8 +1238,19 @@ export function MrReviewsPanel({
       void reload(true);
     } else if (event.key === "a") {
       showChat();
-    } else if (event.key === "x" && current?.section === "suggested") {
-      feedback(current, "not_interested");
+    } else if (event.key === "p") {
+      addRef.current?.focus();
+    } else if ((fed.key === "dd" || event.key === "Delete") && current) {
+      remove(current);
+    } else if (event.key === "u" && undo) {
+      undoRemoval();
+    } else if (event.key === "H") {
+      setHiddenOpen((open) => !open);
+    } else if (event.key === "x" && current) {
+      // A suggestion: not interested (kept, and Claude learns from it); any
+      // other request: out of the view, as dd.
+      if (current.section === "suggested") feedback(current, "not_interested");
+      else remove(current);
     } else if (event.key === "+" && current?.section === "suggested") {
       feedback(current, "more_like_this");
     } else return false;
@@ -1173,6 +1337,19 @@ export function MrReviewsPanel({
           return;
         event.preventDefault();
         panelRef.current?.focus({ preventScroll: true });
+      }}
+      onPaste={(event) => {
+        // A URL pasted into the panel (not into a box) is added.
+        if (view !== "list") return;
+        const target = event.target as HTMLElement;
+        if (target.closest("input, textarea, select, [contenteditable]"))
+          return;
+        const pasted = mrPastedRequest(
+          event.clipboardData?.getData("text") ?? "",
+        );
+        if (!pasted) return;
+        event.preventDefault();
+        void add(pasted);
       }}
       onMouseDown={(event) => {
         // A click anywhere in the panel gives it the keys.
@@ -1332,7 +1509,32 @@ export function MrReviewsPanel({
           <MrReviewsSettingsView onSaved={() => void reload(true)} />
         </>
       ) : (
-        <div className="assistant-tasks mr-reviews-body">
+        <div
+          className="assistant-tasks mr-reviews-body"
+          onDragOver={(event) => {
+            // A link dragged in from elsewhere (not a row being moved).
+            if (dragging) return;
+            const types = Array.from(event.dataTransfer?.types ?? []);
+            if (types.includes("text/uri-list") || types.includes("text/plain"))
+              event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (dragging) return;
+            const data = event.dataTransfer;
+            const dropped = mrPastedRequest(
+              (
+                data?.getData("text/uri-list") ||
+                data?.getData("text/plain") ||
+                ""
+              )
+                .split(/\r?\n/)
+                .find((line) => line && !line.startsWith("#")) ?? "",
+            );
+            if (!dropped) return;
+            event.preventDefault();
+            void add(dropped);
+          }}
+        >
           {prompt ? (
             <MrPrompt
               prompt={prompt}
@@ -1389,6 +1591,18 @@ export function MrReviewsPanel({
                   >
                     Ask Claude
                   </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    title={
+                      detailEntry.section === "pinned"
+                        ? "Unpin it (dd)"
+                        : "Remove it from the view (dd)"
+                    }
+                    onClick={() => remove(detailEntry)}
+                  >
+                    {detailEntry.section === "pinned" ? "Unpin" : "Remove"}
+                  </button>
                   {renderActions?.(detailEntry)}
                   {detailEntry.section === "suggested" ? (
                     <>
@@ -1426,6 +1640,37 @@ export function MrReviewsPanel({
                   ))}
                 </div>
               ) : null}
+              <div className="mr-reviews-add">
+                <input
+                  ref={addRef}
+                  type="text"
+                  className="mr-reviews-addbox"
+                  aria-label="Add a merge or pull request"
+                  placeholder="Add a request (p): paste its URL"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={addText}
+                  onChange={(event) => {
+                    setAddText(event.target.value);
+                    setAddError(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  aria-label="Add"
+                  title="Pin it to your reviews"
+                  disabled={adding || !addText.trim()}
+                  onClick={() => void add(addText)}
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </div>
+              {addError ? (
+                <p className="assistant-error" role="alert">
+                  {addError}
+                </p>
+              ) : null}
               {entries.length ? (
                 <input
                   ref={searchRef}
@@ -1440,7 +1685,43 @@ export function MrReviewsPanel({
                   }}
                 />
               ) : null}
-              {(["mine", "suggested"] as const).map((section) => (
+              {hidden.length ? (
+                <div className="mr-reviews-hidden">
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-pressed={hiddenOpen}
+                    title="Requests you removed, back when something happens on them (H)"
+                    onClick={() => setHiddenOpen((open) => !open)}
+                  >
+                    {hidden.length} hidden
+                  </button>
+                  {hiddenOpen ? (
+                    <ul aria-label="Hidden requests">
+                      {hidden.map((each) => (
+                        <li key={each.key}>
+                          <span>
+                            <span className="mr-reviews-number">
+                              {forgeRefLabel(each, true)}
+                            </span>{" "}
+                            {each.title}
+                          </span>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => restore(each.key)}
+                          >
+                            Restore
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+              {SECTIONS.filter(
+                (section) => section !== "pinned" || bySection.pinned.length,
+              ).map((section) => (
                 <section
                   key={section}
                   className="mr-reviews-section"
@@ -1464,6 +1745,7 @@ export function MrReviewsPanel({
                           onSelect={() => setSelected(entry.key)}
                           onOpen={() => void open(entry)}
                           move={rowMove(entry)}
+                          onRemove={() => remove(entry)}
                         />
                       ))}
                     </ul>
@@ -1487,9 +1769,17 @@ export function MrReviewsPanel({
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
                   j/k move · Enter review · i details · c Claude · o on the
-                  forge · J/K reorder · / search · r refresh · a ask the reviews
-                  agent · ? all keys
+                  forge · J/K reorder · / search · p add · dd remove · r refresh
+                  · a ask the reviews agent · ? all keys
                 </p>
+              ) : null}
+              {undo ? (
+                <div className="mr-reviews-undo" role="status">
+                  <span>{undo.label}.</span>
+                  <button type="button" className="ghost" onClick={undoRemoval}>
+                    Undo (u)
+                  </button>
+                </div>
               ) : null}
             </>
           )}

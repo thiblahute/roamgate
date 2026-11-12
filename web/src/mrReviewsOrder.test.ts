@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { MrInboxEntry } from "../../shared/mrReviews";
-import { moveMrKey, mrMatches, orderMrEntries } from "./mrReviewsOrder";
+import {
+  moveMrKey,
+  mrMatches,
+  mrPastedRequest,
+  orderMrEntries,
+} from "./mrReviewsOrder";
 
 const keyed = (...keys: string[]) => keys.map((key) => ({ key }));
 
@@ -57,4 +62,26 @@ test("the search finds a request by every word typed", () => {
   ])
     expect(mrMatches(entry, query)).toBe(true);
   expect(mrMatches(entry, "timeline audio")).toBe(false);
+});
+
+describe("what a paste or a drop may add", () => {
+  test("one URL or reference, nothing else", () => {
+    for (const text of [
+      "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/123",
+      " https://github.com/o/r/pull/45 ",
+      "!123",
+      "#45",
+      "group/project!12",
+    ])
+      expect(mrPastedRequest(text)).toBe(text.trim());
+    for (const text of [
+      "",
+      "hello",
+      "https://example.org/",
+      "see https://github.com/o/r/pull/45",
+      "!",
+      "a\nb",
+    ])
+      expect(mrPastedRequest(text)).toBeNull();
+  });
 });

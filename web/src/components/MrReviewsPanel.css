@@ -303,3 +303,63 @@
 .mr-reviews-chat-empty span {
   max-width: 34em;
 }
+
+/* Adding a request by URL, the hidden ones, the undo after a removal. */
+.mr-reviews-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mr-reviews-addbox {
+  flex: 1;
+  min-width: 0;
+}
+
+.mr-reviews-add .ghost {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mr-reviews-unavailable {
+  color: var(--danger, var(--muted));
+}
+
+.mr-reviews-hidden ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.mr-reviews-hidden li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mr-reviews-hidden li > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr-reviews-undo {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel, var(--bg));
+  font-size: 12px;
+}

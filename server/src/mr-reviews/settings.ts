@@ -1,5 +1,5 @@
-import type { ForgeProvider } from "../../../shared/forge";
-import { validHost, validProject } from "../../../shared/forge";
+import type { ForgeProvider, ForgeRef } from "../../../shared/forge";
+import { forgeRefKey, validHost, validProject } from "../../../shared/forge";
 import {
   DEFAULT_MR_REVIEWS_SETTINGS,
   type MrReviewsSettings,
@@ -18,12 +18,18 @@ export type StoredMrReviewsSettings = {
   tree_groups?: Record<string, string[]>;
   clones?: Record<string, { connection_id: string; path: string }>;
   order?: string[];
+  pinned?: ForgeRef[];
+  hidden?: { key: string; marker: string }[];
 };
 
 export const MAX_HOSTS = 10;
 export const MAX_FOLLOWED = 30;
 /** Requests kept in the user's order. */
 export const MAX_ORDER = 500;
+/** Requests the user added by URL. */
+export const MAX_PINNED = 100;
+/** Requests the user removed from the view (the oldest forgotten first). */
+export const MAX_HIDDEN = 300;
 
 function provider(value: unknown): ForgeProvider | null {
   return value === "gitlab" || value === "github" ? value : null;
@@ -131,6 +137,50 @@ export function normalizeStoredMrReviews(
       .filter((key) => !seen.has(key) && !!seen.add(key))
       .slice(0, MAX_ORDER);
   }
+  if (Array.isArray(value.pinned)) {
+    const seen = new Set<string>();
+    out.pinned = list(value.pinned)
+      .flatMap((entry) => {
+        const host = String(entry.host ?? "").toLowerCase();
+        const project = String(entry.project ?? "").replace(/^\/+|\/+$/g, "");
+        const kind = provider(entry.provider);
+        const number = Number(entry.number);
+        if (
+          !kind ||
+          !validHost(host) ||
+          !validProject(project) ||
+          !Number.isSafeInteger(number) ||
+          number <= 0
+        )
+          return [];
+        const ref: ForgeRef = { provider: kind, host, project, number };
+        const key = forgeRefKey(ref);
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [ref];
+      })
+      .slice(0, MAX_PINNED);
+  }
+  if (Array.isArray(value.hidden)) {
+    const seen = new Set<string>();
+    out.hidden = list(value.hidden)
+      .flatMap((entry) => {
+        const key = entry.key;
+        const marker = entry.marker;
+        if (
+          typeof key !== "string" ||
+          !key ||
+          key.length > 600 ||
+          typeof marker !== "string" ||
+          marker.length > 200 ||
+          seen.has(key)
+        )
+          return [];
+        seen.add(key);
+        return [{ key, marker }];
+      })
+      .slice(-MAX_HIDDEN);
+  }
   return out;
 }
 
@@ -155,6 +205,8 @@ export function mrReviewsSettings(
       ]),
     ),
     order: stored?.order ?? base.order,
+    pinned: stored?.pinned ?? base.pinned,
+    hidden: stored?.hidden ?? base.hidden,
   };
 }
 
@@ -178,5 +230,7 @@ export function storedMrReviews(
       ]),
     ),
     ...(settings.order.length ? { order: settings.order } : {}),
+    ...(settings.pinned.length ? { pinned: settings.pinned } : {}),
+    ...(settings.hidden.length ? { hidden: settings.hidden } : {}),
   };
 }
