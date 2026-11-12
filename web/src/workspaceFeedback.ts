@@ -118,8 +118,13 @@ export function feedbackRoute(
       held: false,
       open: {
         path: place.root,
-        // No target: the branch against its default base.
-        ...(note.kind === "branch" ? {} : { target: { kind: "worktree" } }),
+        // No target: the branch against Automatic's base. A base picked
+        // in Compare against is its own review (plan D12).
+        ...(note.kind !== "branch"
+          ? { target: { kind: "worktree" } }
+          : note.base
+            ? { target: { kind: "range", base: note.base, head: "HEAD" } }
+            : {}),
       },
       anchor: () => ({
         path: note.path,

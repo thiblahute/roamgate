@@ -76,6 +76,11 @@ export type ActiveDiffSelection = {
   fileErrors: Record<string, string>;
   summaryLoading: boolean;
   loadingKeys?: string[];
+  /**
+   * The branch picked in Compare against (`other`, `origin/x`), when the
+   * Branch scope shows one: its comments go to that base's review.
+   */
+  pickedBase?: string;
 };
 
 export type DiffSelectionMeta = {
@@ -1257,9 +1262,20 @@ export function DiffViewerPanel({
         ),
         selectionRevision: selectionRevisionRef.current,
         loadingKeys,
+        ...(diffScope === "branch-main" && baseBranch
+          ? { pickedBase: comparisonBranchLabel(baseBranch) }
+          : {}),
       };
     },
-    [cache, fileLoadingKey, loadingKeys, runtimeContextKey, summaryLoading],
+    [
+      baseBranch,
+      cache,
+      diffScope,
+      fileLoadingKey,
+      loadingKeys,
+      runtimeContextKey,
+      summaryLoading,
+    ],
   );
 
   useEffect(() => {

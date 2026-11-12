@@ -227,6 +227,11 @@ export function formOf(body: string): URLSearchParams {
   return form;
 }
 
+/** No target named: the branch against Automatic's base (plan D12). */
+function automaticTarget(form: URLSearchParams): boolean {
+  return !["mr", "worktree", "compare", "range"].some((flag) => form.get(flag));
+}
+
 export function parseTargetFlags(
   form: URLSearchParams,
   defaultBase: () => Promise<string>,
@@ -956,6 +961,7 @@ export function createReviewAgentServer(args: {
         connectionId: connection.id,
         root,
         target,
+        automatic: !rendered && automaticTarget(form),
         title: form.get("title") || undefined,
         workspaceId,
         paneId: pane,
@@ -976,6 +982,7 @@ export function createReviewAgentServer(args: {
             new URLSearchParams(entry.range ? { range: entry.range } : {}),
             () => connection.readDefaultBase(other),
           ),
+          automatic: !entry.range,
           workspaceId,
           paneId: pane,
           agent,

@@ -1025,7 +1025,8 @@ for your Send, on the next load.
 
 Option+R (Ctrl+Alt+R elsewhere), **Review** in the tab bar, or on a phone **Review** in the ⋮ More options sheet, opens a review of
 the focused workspace's branch against its default branch, over the
-terminals. Option+Shift+R lists the reviews in progress, the ones with new
+terminals. That base is the one Changes' Branch scope shows under Automatic
+(below), and the review's title names it. Option+Shift+R lists the reviews in progress, the ones with new
 commits or discussions waiting on you first. Closing a review only hides
 it: Option+R brings it back exactly as you left it (view, place, folds,
 drafts), and a workspace's other repositories keep theirs too. On a phone,
@@ -1846,6 +1847,14 @@ is kept, and hints for the suggestions.
   completed agent turn; not proof of which agent made the change).
   Branch comparisons detect the recorded repository default (including `master`
   and custom names), and let you choose a comparison branch per repository.
+  **Automatic** takes the newer of the local default branch and its remote
+  counterpart: `origin/main` when the local `main` is behind it, the local
+  one when it is ahead (unless it is checked out), and when they diverged
+  the one whose merge-base with the branch is newest. **Against** and
+  **Compare against** name the base chosen. Option+R and an agent's review
+  use the same base; when it moves (a stale `main` caught up, say) the
+  branch's review follows it with its comments. A comment under a branch
+  picked in Compare against goes to that base's own review.
   Inspection uses local refs only and never fetches from a remote.
 - Side-by-side or unified view, search, syntax highlighting, and image previews.
   Generated and very large files start collapsed.

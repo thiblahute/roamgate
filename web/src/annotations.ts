@@ -22,6 +22,11 @@ export type DiffReviewAnnotation = ReviewAnnotationBase & {
   endSide?: ReviewAnnotationSide;
   endLine?: number;
   hunk: string;
+  /**
+   * A Branch-scope line's base picked in Compare against: the comment
+   * goes to that base's review. Absent under Automatic.
+   */
+  base?: string;
 };
 
 export type FileLineReviewAnnotation = ReviewAnnotationBase & {
@@ -110,6 +115,18 @@ export function annotationDraftStorageKey(scope: ResourceScope) {
 
 function boundedString(value: unknown, max: number): string | null {
   return typeof value === "string" && value.length <= max ? value : null;
+}
+
+/** A branch name as Compare against offers it: no option, no range. */
+function validBase(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    !value.startsWith("-") &&
+    !value.includes("..") &&
+    !/[\s~^:?*[\\]/.test(value)
+  );
 }
 
 function finitePositiveLine(value: unknown): number | null {
@@ -206,6 +223,9 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
       ...(endLine === undefined ? {} : { endLine }),
       ...(endSide === undefined ? {} : { endSide }),
       hunk,
+      ...(candidate.kind === "branch" && validBase(candidate.base)
+        ? { base: candidate.base }
+        : {}),
     };
   }
 

@@ -316,6 +316,13 @@ export type ReviewSession = {
   title: string;
   target: ReviewTarget;
   /**
+   * A range opened against Automatic's base (no base named): it follows
+   * that base when it moves between the local default branch and its
+   * remote counterpart, its comments with it. False for a base someone
+   * named; absent on reviews from before.
+   */
+  automaticBase?: boolean;
+  /**
    * A review of a GitLab merge request (target `mr`): its discussions and
    * draft notes are shown. Always false for a local review.
    */

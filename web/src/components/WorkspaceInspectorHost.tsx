@@ -1038,7 +1038,15 @@ export function WorkspaceInspectorHost({
                         connectionClient={connectionClient}
                         annotations={annotations}
                         threads={feedbackThreads}
-                        onCreateAnnotation={onCreateAnnotation}
+                        onCreateAnnotation={(input) =>
+                          onCreateAnnotation(
+                            input.source === "diff" &&
+                              input.kind === "branch" &&
+                              diffSelection.pickedBase
+                              ? { ...input, base: diffSelection.pickedBase }
+                              : input,
+                          )
+                        }
                         onReanchorAnnotations={onReanchorDiffAnnotations}
                         onEditAnnotation={onEditAnnotation}
                         onSelectFile={(target) =>

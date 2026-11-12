@@ -238,6 +238,17 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
   throw new ReviewError("unknown target kind");
 }
 
+/**
+ * The local and remote-tracking forms of one branch: `main` and
+ * `origin/main`, `release/x` and `upstream/release/x`.
+ */
+function counterpartBases(a: string, b: string): boolean {
+  const remoteOf = (remote: string, local: string) =>
+    remote.endsWith(`/${local}`) &&
+    !remote.slice(0, -local.length - 1).includes("/");
+  return a !== b && (remoteOf(a, b) || remoteOf(b, a));
+}
+
 function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "range" && b.kind === "range")
@@ -1423,6 +1434,8 @@ export function createReviewService(args: {
       "message",
       REVIEW_LIMITS.messageChars,
     );
+    // The branch against Automatic's base (no base named; plan D12).
+    const automatic = params.automatic === true && target.kind === "range";
     let found = [...sessions.values()].find(
       (s) =>
         s.connectionId === connectionId &&
@@ -1430,6 +1443,31 @@ export function createReviewService(args: {
         (s.root === root || (target.kind === "rendered" && !!target.url)) &&
         sameTarget(s.target, target),
     );
+    // Automatic's base moved between the local default branch and its
+    // remote counterpart (a stale local main caught up, or pushed): the
+    // branch's review follows it, comments and all, as after a rebase.
+    const moved =
+      !found && automatic
+        ? [...sessions.values()]
+            .filter(
+              (s) =>
+                s.connectionId === connectionId &&
+                s.root === root &&
+                s.automaticBase !== false &&
+                s.target.kind === "range" &&
+                target.kind === "range" &&
+                !s.target.compare &&
+                s.target.head === target.head &&
+                counterpartBases(s.target.base, target.base),
+            )
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+        : undefined;
+    if (moved) {
+      moveTarget(moved, target);
+      found = moved;
+    }
+    if (found && automatic && found.automaticBase === undefined)
+      found.automaticBase = true;
     if (!found) {
       if (sessions.size >= REVIEW_LIMITS.sessions)
         throw new ReviewError("too many reviews; delete old ones first");
@@ -1443,6 +1481,7 @@ export function createReviewService(args: {
           optionalText(params.title, "title", REVIEW_LIMITS.titleChars) ??
           describeTarget(target),
         target,
+        ...(target.kind === "range" ? { automaticBase: automatic } : {}),
         gitlab: isGitlabTarget(target),
         // Discussions with the agent go straight to it, on a merge request
         // too: only the drafts for the forge wait for the user.
@@ -1549,14 +1588,9 @@ export function createReviewService(args: {
     // Nothing waits to go by itself once sending is off or held.
     if (!sendsByItself(target)) cancelDelivery(target);
     if (base) {
-      if (target.title === describeTarget(target.target))
-        target.title = describeTarget(base);
-      target.target = base;
-      delete target.seenHeadSha;
-      found.delete(target.id);
-      gone.delete(target.id);
-      // A load of the previous range records nothing.
-      loads.set(target.id, (loads.get(target.id) ?? 0) + 1);
+      moveTarget(target, base);
+      // A base the user named: Automatic no longer moves it.
+      target.automaticBase = false;
     }
     if (title !== undefined) target.title = title;
     // Reviewed files are the user's bookkeeping, not news for the agent.
@@ -1574,6 +1608,21 @@ export function createReviewService(args: {
     if (attached || autoSend === true || holdComments === false)
       scheduleDelivery(target);
     return snapshot(target);
+  }
+
+  /**
+   * A review compares `next` from now on; its comments stay, re-placed as
+   * after a rebase, outdated where the code differs.
+   */
+  function moveTarget(target: ReviewSession, next: ReviewTarget) {
+    if (target.title === describeTarget(target.target))
+      target.title = describeTarget(next);
+    target.target = next;
+    delete target.seenHeadSha;
+    found.delete(target.id);
+    gone.delete(target.id);
+    // A load of the previous range records nothing.
+    loads.set(target.id, (loads.get(target.id) ?? 0) + 1);
   }
 
   /**

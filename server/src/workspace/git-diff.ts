@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { selectDiffBase } from "./diff-base";
+import {
+  parseRefsOutput,
+  refsScript,
+  resolveDefaultBase,
+  selectDiffBase,
+} from "./diff-base";
 import { LARGE_DIFF_PATCH_BYTES } from "../../../shared/gitDiffLimits";
 import { worktreeSnapshotCommand } from "./git-snapshot";
 import { gitShellCommandArgv } from "./git-shell";
@@ -907,14 +912,8 @@ async function resolveComparisonBase({
   root: string;
   requested?: unknown;
 } & GitCommandContext) {
-  const command = `
-set -eu
-git -C ${shQuote(root)} for-each-ref --format='%(refname)%09%(symref)' refs/heads/ refs/remotes/
-printf '\n--diff-base-config--\n'
-git -C ${shQuote(root)} config --get init.defaultBranch || test "$?" = 1
-`;
   const result = await runProcessWithCodeTimeout(
-    gitShellCommandArgv(command, host),
+    gitShellCommandArgv(refsScript(shQuote, root), host),
     GIT_DIFF_TIMEOUT_MS,
   );
   if (result.code !== 0) {
@@ -924,17 +923,19 @@ git -C ${shQuote(root)} config --get init.defaultBranch || test "$?" = 1
         .slice(0, 1000),
     );
   }
-  const [refOutput = "", configuredDefault = ""] = result.stdout.split(
-    "\n--diff-base-config--\n",
-  );
-  const refs = refOutput
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [name = "", symbolic] = line.split("\t");
-      return { name, symbolic };
-    });
-  return selectDiffBase(refs, configuredDefault.trim(), requested);
+  const listed = parseRefsOutput(result.stdout);
+  if (requested !== undefined && requested !== "")
+    return selectDiffBase(listed.refs, undefined, requested);
+  // Automatic: the same base as the branch's review (D12).
+  const { base, branches } = await resolveDefaultBase({
+    root,
+    host,
+    shQuote,
+    runProcessWithCodeTimeout,
+    timeoutMs: GIT_DIFF_TIMEOUT_MS,
+    listed,
+  });
+  return { base, branches };
 }
 
 async function resolveLastStepRange({

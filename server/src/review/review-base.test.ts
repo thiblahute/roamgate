@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
-import { selectDiffBase } from "../workspace/diff-base";
+import { resolveDefaultBase } from "../workspace/diff-base";
 import { readDefaultBase } from "../workspace/review-patch";
 import { createReviewAgentServer } from "./agent-server";
 import { handleReviewRpc } from "./rpc";
@@ -15,7 +15,8 @@ import { openReviewStorage } from "./storage";
  * browser's `review.open` without a target) and a comment written in
  * Changes' Branch scope (`review.open` with the checkout's path, as
  * workspaceFeedback's route sends it). Against a real repository, with the
- * real default base lookup and the real Branch scope base selection.
+ * real default base lookup and the real Branch scope base selection: one
+ * resolution (D12), the newer of the local default branch and its remote.
  */
 
 const cleanups: (() => void)[] = [];
@@ -63,25 +64,14 @@ function repository() {
   git(root, "branch", "other", "origin/other");
   git(root, "checkout", "-q", "-b", "topic");
   git(root, "commit", "-q", "--allow-empty", "-m", "topic work");
-  return root;
+  return { root, upstream };
 }
 
-/** The Branch scope's base, as Changes resolves it (git-diff.ts). */
-function branchScopeBase(root: string, requested?: string) {
-  const refs = git(
-    root,
-    "for-each-ref",
-    "--format=%(refname)%09%(symref)",
-    "refs/heads/",
-    "refs/remotes/",
-  )
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [name = "", symbolic] = line.split("\t");
-      return { name, symbolic: symbolic || undefined };
-    });
-  return selectDiffBase(refs, "", requested).base;
+/** The Branch scope's base under Automatic, as Changes resolves it. */
+async function branchScopeBase(root: string) {
+  return (
+    await resolveDefaultBase({ root, shQuote, runProcessWithCodeTimeout })
+  ).base;
 }
 
 function setup(root: string) {
@@ -155,10 +145,13 @@ function setup(root: string) {
    * A comment in Changes' Branch scope: workspaceFeedback's route opens
    * the checkout's path with no target, then adds the thread there.
    */
-  const branchComment = async (text: string) => {
+  const branchComment = async (text: string, picked?: string) => {
     const opened = (await handleReviewRpc(service, connection, "review.open", {
       workspace_id: "w1",
       path: root,
+      ...(picked
+        ? { target: { kind: "range", base: picked, head: "HEAD" } }
+        : {}),
     })) as { session: { id: string; target: unknown } };
     await handleReviewRpc(service, connection, "review.thread.add", {
       session_id: opened.session.id,
@@ -171,7 +164,7 @@ function setup(root: string) {
 }
 
 test("review_open with no target, Option+R and a Branch-scope comment land on the same review", async () => {
-  const root = repository();
+  const { root } = repository();
   const { service, agentOpen, optionR, branchComment } = setup(root);
   const byAgent = await agentOpen();
   const byKey = await optionR();
@@ -193,32 +186,116 @@ test("review_open with no target, Option+R and a Branch-scope comment land on th
       .get({ sessionId: byAgent.session.id })
       .threads.map((thread) => thread.comments[0]?.body),
   ).toEqual(["Why?"]);
-  // Today Changes' Branch scope draws the diff against the local branch
-  // its remote HEAD names, not the remote ref the review compares with
-  // (D12: two base resolutions).
-  expect(branchScopeBase(root)).toBe("refs/heads/main");
+  // Changes' Branch scope draws against the same base (D12): local main
+  // and origin/main are the same commit, so the remote one.
+  expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
 });
 
-test("a comment under a picked Compare against base lands in the default base's review, not that base's (today)", async () => {
-  const root = repository();
-  const { service, agentOpen, branchComment } = setup(root);
-  // The Branch scope compares against the branch picked.
-  expect(branchScopeBase(root, "other")).toBe("refs/heads/other");
+test("a comment under a picked Compare against base lands in that base's review", async () => {
+  const { root } = repository();
+  const { service, agentOpen, optionR, branchComment } = setup(root);
   // That base's review exists (the agent opened it).
   const picked = await agentOpen("--range", "other..HEAD");
   expect(picked.session.target).toBe("other..HEAD");
-  expect(service.get({ sessionId: picked.session.id }).session.target).toEqual({
-    kind: "range",
-    base: "other",
-    head: "HEAD",
-  });
-  // The comment carries no base: it goes to the default base's review.
-  const byComment = await branchComment("On the picked base");
-  expect(byComment.session.id).not.toBe(picked.session.id);
-  expect(byComment.session.target).toEqual({
+  // The comment carries the picked base (workspaceFeedback's route).
+  const byComment = await branchComment("On the picked base", "other");
+  expect(byComment.session.id).toBe(picked.session.id);
+  expect(
+    service
+      .get({ sessionId: picked.session.id })
+      .threads.map((thread) => thread.comments[0]?.body),
+  ).toEqual(["On the picked base"]);
+  // The default base's review is another, and Automatic never moves the
+  // picked one.
+  const byKey = await optionR();
+  expect(byKey.session.id).not.toBe(picked.session.id);
+  expect(byKey.session.target).toEqual({
     kind: "range",
     base: "origin/main",
     head: "HEAD",
   });
-  expect(service.get({ sessionId: picked.session.id }).threads).toEqual([]);
+  expect(service.get({ sessionId: byKey.session.id }).threads).toEqual([]);
+});
+
+test("a stale local main: Changes and the review both compare with origin/main", async () => {
+  const { root, upstream } = repository();
+  git(upstream, "commit", "-q", "--allow-empty", "-m", "upstream moves on");
+  git(root, "fetch", "-q");
+  // The branch is rebased on origin/main; local main stays behind.
+  git(root, "rebase", "-q", "origin/main");
+  expect(git(root, "rev-list", "--count", "main..origin/main").trim()).toBe(
+    "1",
+  );
+  const { optionR } = setup(root);
+  expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
+  expect((await optionR()).session.target).toEqual({
+    kind: "range",
+    base: "origin/main",
+    head: "HEAD",
+  });
+});
+
+test("a local main ahead of origin/main: Changes and the review both compare with main", async () => {
+  const { root } = repository();
+  git(root, "checkout", "-q", "main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "not pushed yet");
+  git(root, "checkout", "-q", "topic");
+  git(root, "rebase", "-q", "main");
+  const { optionR } = setup(root);
+  expect(await branchScopeBase(root)).toBe("refs/heads/main");
+  expect((await optionR()).session.target).toEqual({
+    kind: "range",
+    base: "main",
+    head: "HEAD",
+  });
+  // On main itself, main..HEAD would be empty: its unpushed work is
+  // compared with origin/main.
+  git(root, "checkout", "-q", "main");
+  expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
+});
+
+test("local main and origin/main diverged: the one whose merge-base with HEAD is newest", async () => {
+  const { root, upstream } = repository();
+  git(upstream, "commit", "-q", "--allow-empty", "-m", "upstream moves on");
+  git(root, "fetch", "-q");
+  git(root, "checkout", "-q", "main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "local only");
+  // Branched from origin/main: origin/main.
+  git(root, "checkout", "-q", "-b", "from-remote", "origin/main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "work");
+  expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
+  // Branched from the local main: main.
+  git(root, "checkout", "-q", "-b", "from-local", "main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "work");
+  expect(await branchScopeBase(root)).toBe("refs/heads/main");
+});
+
+test("when Automatic's base moves, the branch's review follows it with its comments", async () => {
+  const { root } = repository();
+  const { service, optionR, branchComment } = setup(root);
+  const before = await branchComment("Kept?");
+  expect(before.session.target).toEqual({
+    kind: "range",
+    base: "origin/main",
+    head: "HEAD",
+  });
+  // The local main gets ahead and the branch moves onto it.
+  git(root, "checkout", "-q", "main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "not pushed yet");
+  git(root, "checkout", "-q", "topic");
+  git(root, "rebase", "-q", "main");
+  const after = await optionR();
+  // The same review, now against main, its comment still there.
+  expect(after.session.id).toBe(before.session.id);
+  const now = service.get({ sessionId: after.session.id });
+  expect(now.session.target).toEqual({
+    kind: "range",
+    base: "main",
+    head: "HEAD",
+  });
+  expect(now.session.title).toBe("main..HEAD");
+  expect(now.threads.map((thread) => thread.comments[0]?.body)).toEqual([
+    "Kept?",
+  ]);
+  expect(service.list({ root }).length).toBe(1);
 });
