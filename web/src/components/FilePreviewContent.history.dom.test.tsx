@@ -344,4 +344,73 @@ if (process.env.ROAMGATE_PREVIEW_HISTORY_DOM_TEST !== "1") {
     expect(went[2]).toBe("http://localhost/rendered/tok/docs/a.html");
     await view.unmount();
   });
+
+  test("a page kept under one token is the same page under another serving its folder, not its path doubled", async () => {
+    const view = await mount("page.html");
+    const T1 = "1".repeat(32);
+    const T2 = "2".repeat(32);
+    const frameOf = () => {
+      const frame = view.host.querySelector<HTMLIFrameElement>(
+        "iframe.file-preview-html",
+      )!;
+      const went: string[] = [];
+      const win = {
+        location: { replace: (url: string) => went.push(url) },
+        postMessage: () => {},
+      };
+      Object.defineProperty(frame, "contentWindow", {
+        value: win,
+        configurable: true,
+      });
+      const say = (data: Record<string, unknown>) =>
+        act(async () => {
+          window.dispatchEvent(
+            new MessageEvent("message", {
+              data: { roamgate: "rendered", ...data },
+              source: win as unknown as Window,
+            }),
+          );
+          await settle();
+        });
+      return { went, say };
+    };
+    // Served from the checkout above it: the page is cancun/page.html
+    // there, its frame's home cancun/.
+    const first = frameOf();
+    const checkout = { base: "/", to: `/rendered/${T1}/`, home: "cancun/" };
+    await first.say({
+      type: "ready",
+      url: "cancun/page.html",
+      title: "",
+      root: checkout,
+    });
+    await first.say({
+      type: "ready",
+      url: "cancun/day.html",
+      title: "",
+      root: checkout,
+    });
+    await view.show("a.md");
+    await view.show("page.html");
+    // Shown again from its listed folder (scripts on): the page left is
+    // day.html there, never cancun/day.html under the folder.
+    const again = frameOf();
+    const listed = { base: "/", to: `/rendered/${T2}/` };
+    await again.say({
+      type: "ready",
+      url: "page.html",
+      title: "",
+      root: listed,
+    });
+    expect(again.went).toEqual([`http://localhost/rendered/${T2}/day.html`]);
+    await again.say({
+      type: "ready",
+      url: "day.html",
+      title: "",
+      root: listed,
+    });
+    await again.say({ type: "history", step: -1 });
+    expect(again.went[1]).toBe(`http://localhost/rendered/${T2}/page.html`);
+    await view.unmount();
+  });
 }

@@ -43,8 +43,12 @@ import type {
   ReviewThread,
 } from "../../../shared/review";
 import {
+  pageFromHome,
+  pageUnderHome,
   parseSiteUrl,
+  RENDERED_PREFIX,
   type RenderedFrameMessage,
+  type RenderedRootMap,
 } from "../../../shared/renderedPage";
 import type { FeedbackCapture } from "../workspaceFeedback";
 import {
@@ -938,7 +942,9 @@ export function FilePreviewContent({
   const going = useRef<{ to: string; history: PreviewHistory } | null>(null);
   /** Where to scroll the file once drawn; the page a frame must show. */
   const pendingScroll = useRef<number | null>(null);
-  const pendingFrame = useRef<{ url: string; scroll: number } | null>(null);
+  const pendingFrame = useRef<{ page: string; scroll: number } | null>(null);
+  /** The frame's page's token and the frame's home under it. */
+  const frameAt = useRef<{ prefix: string; home: string } | null>(null);
   const shownKey = useRef("");
   if (historyKey && shownKey.current !== historyKey) {
     shownKey.current = historyKey;
@@ -960,8 +966,8 @@ export function FilePreviewContent({
         arriving && arriving.to === historyKey
           ? place.scroll
           : place.scroll || null;
-      pendingFrame.current = place.frameUrl
-        ? { url: place.frameUrl, scroll: place.scroll }
+      pendingFrame.current = place.framePage
+        ? { page: place.framePage, scroll: place.scroll }
         : null;
     } else histories.current.set(historyKey, startHistory(historyKey));
   }
@@ -990,16 +996,23 @@ export function FilePreviewContent({
         onOpenFile(path, fragment);
       }
     : undefined;
-  /** Shows a page in the frame by its URL under the frame's token. */
-  const framePage = (url: string) => {
+  /**
+   * Shows a page in the frame by its path from the frame's home, under the
+   * token of the page it shows; false when that token cannot reach it.
+   */
+  const framePage = (page: string) => {
     const frame = frameRef.current;
-    const token = frame
-      ? /^(\/rendered\/[^/]+\/)/.exec(new URL(frame.src).pathname)?.[1]
-      : undefined;
-    if (!frame || !token) return false;
-    frame.contentWindow?.location.replace(new URL(token + url, frame.src).href);
+    const at = frameAt.current;
+    const url = at ? pageUnderHome(page, at.home) : null;
+    if (!frame || !at || url === null) return false;
+    frame.contentWindow?.location.replace(
+      new URL(at.prefix + url, frame.src).href,
+    );
     return true;
   };
+  /** A URL under the frame's token as a path from its home. */
+  const homePage = (url: string) =>
+    pageFromHome(url, frameAt.current?.home ?? "");
   /** Back (-1) or Forward (1). */
   const stepPlace = (step: -1 | 1) => {
     const here = historyNow();
@@ -1013,9 +1026,9 @@ export function FilePreviewContent({
       return;
     }
     setHistory(historyKey, moved.history);
-    if (isPageFrame && place.frameUrl) {
-      pendingFrame.current = { url: place.frameUrl, scroll: place.scroll };
-      if (!framePage(place.frameUrl)) pendingFrame.current = null;
+    if (isPageFrame && place.framePage) {
+      pendingFrame.current = { page: place.framePage, scroll: place.scroll };
+      if (!framePage(place.framePage)) pendingFrame.current = null;
       return;
     }
     pendingScroll.current = place.scroll;
@@ -1056,16 +1069,33 @@ export function FilePreviewContent({
   });
   /** The tab's history as kept now, frame messages between draws too. */
   const live = () => histories.current.get(historyKey) ?? history;
-  /** A page's frame shows `url`: a place, or the one Back went to. */
-  const onFramePage = (url: string, first: boolean) => {
+  /**
+   * A page's frame shows `shown` under its token (`root`): a place, or the
+   * one Back went to.
+   */
+  const onFramePage = (
+    shown: string,
+    first: boolean,
+    root?: RenderedRootMap,
+  ) => {
     const frame = frameRef.current;
+    const prefix =
+      (root && /^\/rendered\/[0-9a-f]{32}\//.exec(root.to)?.[0]) ||
+      (frame
+        ? /^\/rendered\/[^/]+\//.exec(new URL(frame.src).pathname)?.[0]
+        : undefined);
+    frameAt.current = prefix?.startsWith(RENDERED_PREFIX)
+      ? { prefix, home: root?.home ?? "" }
+      : null;
+    // Kept from the frame's home: the same page under any of its tokens.
+    const url = homePage(shown);
     const pending = pendingFrame.current;
     const wanted =
-      pending?.url ?? (first ? currentPlace(live()).frameUrl : undefined);
+      pending?.page ?? (first ? currentPlace(live()).framePage : undefined);
     if (wanted !== undefined && wanted !== url) {
       if (first || pending) {
         pendingFrame.current = {
-          url: wanted,
+          page: wanted,
           scroll: pending?.scroll ?? currentPlace(live()).scroll,
         };
         if (framePage(wanted)) return;
@@ -1089,7 +1119,7 @@ export function FilePreviewContent({
       historyKey,
       first
         ? settleFrame(live(), url)
-        : pushPlace(live(), { path: historyKey, frameUrl: url }),
+        : pushPlace(live(), { path: historyKey, framePage: url }),
     );
   };
   /** The page's Back / Forward keys, scroll and own navigation. */
@@ -1114,7 +1144,10 @@ export function FilePreviewContent({
     } else
       setHistory(
         historyKey,
-        pushPlace(live(), { path: historyKey, frameUrl: message.url }),
+        pushPlace(live(), {
+          path: historyKey,
+          framePage: homePage(message.url),
+        }),
       );
   };
   const frameHistoryRef = useRef(frameHistory);
@@ -1122,7 +1155,8 @@ export function FilePreviewContent({
   const onFramePageRef = useRef(onFramePage);
   onFramePageRef.current = onFramePage;
   const reportFramePage = useCallback(
-    (url: string, first: boolean) => onFramePageRef.current(url, first),
+    (url: string, first: boolean, root?: RenderedRootMap) =>
+      onFramePageRef.current(url, first, root),
     [],
   );
   const mac = detectShortcutPlatform() === "mac";

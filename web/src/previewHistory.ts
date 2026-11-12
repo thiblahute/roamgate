@@ -9,8 +9,12 @@ export type PreviewPlace = {
   /** The file's path or the site's URL, as the preview's tab has it. */
   path: string;
   fragment?: string;
-  /** In a page's frame: the page shown, as its script says it. */
-  frameUrl?: string;
+  /**
+   * In a page's frame: the page shown, as a path (and query) from the
+   * frame's home, the directory of the file or URL it was opened on
+   * (pageFromHome): the same page whatever directory its token serves.
+   */
+  framePage?: string;
   /** How far down it was read, in CSS pixels. */
   scroll: number;
 };
@@ -26,13 +30,13 @@ export function startHistory(path: string): PreviewHistory {
 }
 
 export function samePlace(
-  a: Pick<PreviewPlace, "path" | "fragment" | "frameUrl">,
-  b: Pick<PreviewPlace, "path" | "fragment" | "frameUrl">,
+  a: Pick<PreviewPlace, "path" | "fragment" | "framePage">,
+  b: Pick<PreviewPlace, "path" | "fragment" | "framePage">,
 ): boolean {
   return (
     a.path === b.path &&
     (a.fragment ?? "") === (b.fragment ?? "") &&
-    (a.frameUrl ?? "") === (b.frameUrl ?? "")
+    (a.framePage ?? "") === (b.framePage ?? "")
   );
 }
 
@@ -69,15 +73,15 @@ export function keepScroll(
   return { ...history, places };
 }
 
-/** The frame's page is now `frameUrl`, without going anywhere new. */
+/** The frame's page is now `framePage`, without going anywhere new. */
 export function settleFrame(
   history: PreviewHistory,
-  frameUrl: string,
+  framePage: string,
 ): PreviewHistory {
   const place = currentPlace(history);
-  if (place.frameUrl === frameUrl) return history;
+  if (place.framePage === framePage) return history;
   const places = history.places.slice();
-  places[history.at] = { ...place, frameUrl };
+  places[history.at] = { ...place, framePage };
   return { ...history, places };
 }
 

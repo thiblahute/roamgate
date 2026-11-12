@@ -5,6 +5,7 @@ import {
   parseSiteUrl,
   RENDERED_PREFIX,
   RENDERED_TOKEN,
+  validHome,
   type RenderedMode,
   type RenderedRootMap,
   type RenderedStorageWrite,
@@ -43,6 +44,13 @@ export type RenderedEntry = {
   connectionId: string;
   mode: RenderedMode;
   source: RenderedSource;
+  /**
+   * The directory of the file or URL the frame was opened on, as a path
+   * under the token ("" or ending in `/`, encoded as URLs are): what the
+   * pages it goes to are kept relative to (RenderedRootMap home), so they
+   * are found again whatever directory a later token serves.
+   */
+  home?: string;
   expiresAt: number;
 };
 
@@ -530,10 +538,12 @@ export function createRenderedPages(args: {
     connectionId: string,
     mode: RenderedMode,
     source: RenderedSource,
+    home: string | undefined,
   ) {
     return JSON.stringify([
       connectionId,
       mode,
+      home ?? "",
       source.kind,
       source.kind === "files"
         ? [source.root, source.site ?? null, source.walk === true]
@@ -548,8 +558,12 @@ export function createRenderedPages(args: {
     connectionId: string;
     mode: RenderedMode;
     source: RenderedSource;
+    home?: string;
   }): string {
     const { connectionId, mode, source } = params;
+    const home = params.home || undefined;
+    if (home !== undefined && !validHome(home))
+      throw new Error("a page's home is a relative directory");
     if (source.kind === "files" && !source.root.startsWith("/"))
       throw new Error("pages are served from an absolute directory");
     if (source.kind === "url") {
@@ -563,9 +577,11 @@ export function createRenderedPages(args: {
         throw new Error("a site is an http(s) URL prefix");
     }
     prune();
-    const key = keyOf(connectionId, mode, source);
+    const key = keyOf(connectionId, mode, source, home);
     for (const [token, entry] of entries)
-      if (keyOf(entry.connectionId, entry.mode, entry.source) === key) {
+      if (
+        keyOf(entry.connectionId, entry.mode, entry.source, entry.home) === key
+      ) {
         entry.expiresAt = now() + ttl;
         return token;
       }
@@ -580,6 +596,7 @@ export function createRenderedPages(args: {
       connectionId,
       mode,
       source: { ...source },
+      ...(home !== undefined ? { home } : {}),
       expiresAt: now() + ttl,
     });
     return token;
@@ -646,11 +663,12 @@ export function createRenderedPages(args: {
    */
   function rootMap(token: string, found: RenderedEntry): RenderedRootMap {
     const prefix = `${RENDERED_PREFIX}${token}/`;
+    const home = found.home ? { home: found.home } : {};
     if (found.source.kind === "url")
-      return { base: new URL(found.source.base).pathname, to: prefix };
+      return { base: new URL(found.source.base).pathname, to: prefix, ...home };
     if (found.source.kind === "files" && found.source.walk)
-      return { base: "/", to: `${prefix}${RENDERED_ROOT_MARK}/` };
-    return { base: "/", to: prefix };
+      return { base: "/", to: `${prefix}${RENDERED_ROOT_MARK}/`, ...home };
+    return { base: "/", to: prefix, ...home };
   }
 
   /** A root-absolute path of a page under `token`, as a path there. */
@@ -681,12 +699,21 @@ export function createRenderedPages(args: {
     if (!site) return null;
     const from = root.replace(/\/+$/, "");
     const known = siteRoot(found.connectionId, site);
+    // The frame's home as a path under the root above: the way down to
+    // this directory first.
+    const homeUnder = (top: string) =>
+      `${from
+        .slice(top === "/" ? 1 : top.length + 1)
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}/${found.home ?? ""}`;
     // Found already by another of the site's links: its pages go there.
     if (known && siteRootCandidates(from, "").includes(known))
       return mint({
         connectionId: found.connectionId,
         mode: found.mode,
         source: { kind: "files", root: known, site },
+        home: homeUnder(known),
       });
     if (!args.findRoot) return null;
     const missKey = JSON.stringify([found.connectionId, root, path]);
@@ -714,6 +741,7 @@ export function createRenderedPages(args: {
       connectionId: found.connectionId,
       mode: found.mode,
       source: { kind: "files", root: top, site },
+      home: homeUnder(top),
     });
   }
 
@@ -1339,6 +1367,8 @@ export function renderedAddress(params: {
   source: RenderedSource;
   rest: string;
   site?: string;
+  /** Its file's or URL's directory under the token (RenderedEntry home). */
+  home?: string;
 } {
   const { target, root, sites, page, scripts, rootOf } = params;
   /** The listed site's root, if one is set and contains it. */
@@ -1376,6 +1406,7 @@ export function renderedAddress(params: {
         : root;
     const inside = absolute.slice(directory.replace(/\/+$/, "").length + 1);
     let rest = inside.split("/").map(encodeURIComponent).join("/");
+    const home = rest.slice(0, rest.lastIndexOf("/") + 1);
     if (page !== undefined) {
       // As the helper reports it: a path under the directory, its query.
       const query = page.indexOf("?");
@@ -1396,6 +1427,7 @@ export function renderedAddress(params: {
         : { kind: "files", root: directory },
       rest,
       ...(site ? { site } : {}),
+      ...(home ? { home } : {}),
     };
   }
   const url = parseSiteUrl(target.url);
@@ -1415,10 +1447,13 @@ export function renderedAddress(params: {
     if (!next.startsWith(base)) throw new Error("the page is off the site");
     at = next;
   }
+  const directory = urlDirectory(url);
+  const home = directory.startsWith(base) ? directory.slice(base.length) : "";
   return {
     mode: site || scripts ? "site" : "static",
     source: { kind: "url", base, ...(site ? { site } : {}) },
     rest: at.slice(base.length),
     ...(site ? { site } : {}),
+    ...(home && validHome(home) ? { home } : {}),
   };
 }
