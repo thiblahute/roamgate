@@ -774,3 +774,22 @@ test.skipIf(process.platform === "win32")(
   },
   30_000,
 );
+
+test("a call handoff is redeemed without login, its token the only credential", async () => {
+  await withAuthServer(async (base) => {
+    const redeem = await fetch(`${base}/api/voice/call/handoff`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ handoff: "not-a-token" }),
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(redeem.status).toBe(410);
+    expect(redeem.headers.get("set-cookie")).toBeNull();
+    // Nothing else of the call's API comes out from under the login.
+    const other = await fetch(`${base}/api/voice/call/handoff/x`, {
+      method: "POST",
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(other.status).toBe(401);
+  });
+}, 20_000);

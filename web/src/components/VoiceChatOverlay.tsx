@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { AgentIcon } from "./AgentIcon";
 import { MICROPHONE_PAUSED } from "../webrtcCall";
 import {
+  CallAppButton,
   CallOutputButton,
   useMicrophonePausedByPhone,
 } from "./CallOutputButton";
@@ -222,6 +223,10 @@ export function VoiceChatOverlay({
                 {rate.label}
               </button>
             ) : null}
+            <CallAppButton
+              className="voice-chat-overlay-call voice-chat-overlay-output"
+              onMouseDown={keepFocus}
+            />
             <CallOutputButton
               className="voice-chat-overlay-call voice-chat-overlay-output"
               onMouseDown={keepFocus}

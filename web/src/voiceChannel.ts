@@ -44,6 +44,19 @@ export type ChannelEvent = {
   waiting?: boolean;
   webrtc?: boolean;
   ok?: boolean;
+  /** call_carrier: whether the Android app "joined" the call or "left" it. */
+  state?: string;
+  /** call_carrier: the legs the app carries. */
+  legs?: unknown;
+  /** call_carrier: the helper hears the app's microphone. */
+  heard?: boolean;
+  /** call_carrier left: why. */
+  why?: string;
+  /** call_handoff: the single-use token the app joins with. */
+  handoff?: string;
+  /** call_output_state: the app's outputs, and the one it plays on. */
+  outputs?: unknown;
+  current?: unknown;
 };
 
 const OPEN = 1;

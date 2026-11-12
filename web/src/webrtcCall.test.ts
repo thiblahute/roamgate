@@ -15,6 +15,7 @@ import {
   echoLevels,
   describePath,
   FAST_RETRIES,
+  HANDOFF_WAIT_MS,
   jitterMs,
   LATE_MS,
   MICROPHONE_CHECK_MS,
@@ -1728,5 +1729,203 @@ describe("a call's screen and microphone on a phone", () => {
         ]),
       ),
     ).toEqual({ energy: 2, seconds: 3 });
+  });
+});
+
+/** The Android app, as a call sees it: what it was asked to open. */
+function fakeApp(known = true) {
+  const app = {
+    opened: [] as string[],
+    took: 0,
+    missed: 0,
+    known: () => known,
+    open: (url: string) => {
+      app.opened.push(url);
+    },
+  };
+  return {
+    app,
+    options: {
+      known: app.known,
+      open: app.open,
+      took: () => {
+        app.took += 1;
+      },
+      missed: () => {
+        app.missed += 1;
+        return false;
+      },
+    },
+  };
+}
+
+/** The server's answers, handing out a handoff token too. */
+const handing = (message: Record<string, unknown>) =>
+  message.op === "call_handoff"
+    ? [
+        {
+          event: "call_handoff",
+          call: 7,
+          handoff: "one-use",
+          expires_ms: 60000,
+        },
+      ]
+    : answering(message);
+
+describe("a call handed to the Android app", () => {
+  test("a browser without the app keeps its call and asks no handoff", async () => {
+    const { app, options } = fakeApp(false);
+    const { call, sent } = await started({ app: options }, handing);
+    expect(sent.some((m) => m.op === "call_handoff")).toBe(false);
+    expect(call.canHandOff()).toBe(false);
+    expect(app.opened).toEqual([]);
+    call.stop();
+  });
+
+  test("on a phone with the app, the call is handed to it once set up", async () => {
+    const { app, options } = fakeApp();
+    const { call, sent } = await started({ app: options }, handing);
+    await settle();
+    expect(sent.filter((m) => m.op === "call_handoff")).toEqual([
+      { op: "call_handoff", call: 7 },
+    ]);
+    expect(app.opened).toEqual([
+      "intent://mac.example/call/7?handoff=one-use#Intent;scheme=https;package=net.ts.roamgate;action=android.intent.action.VIEW;end",
+    ]);
+    expect(call.handingOff()).toBe(true);
+    expect(call.canHandOff()).toBe(false);
+    call.stop();
+    expect(call.handingOff()).toBe(false);
+  });
+
+  test("the app carrying the microphone: the page's closes, the screen may turn off, and it comes back when the app leaves", async () => {
+    const { app, options } = fakeApp();
+    const { screen, locks } = fakeScreen();
+    const { call, made, sent, tell, microphone, lines } = await connectedCall({
+      app: options,
+      screen,
+    });
+    await settle();
+    expect(call.holdsScreen()).toBe(true);
+    const api = made[0]!;
+    const producer = api.producers[0]!;
+    const published = producer.stream.tracks[0]!;
+    tell({
+      event: "call_carrier",
+      call: 7,
+      state: "joined",
+      legs: ["microphone"],
+      heard: false,
+    });
+    expect(app.took).toBe(1);
+    expect(call.inApp()).toBe(true);
+    expect(call.appCarries("microphone")).toBe(true);
+    expect(call.appCarries("replies")).toBe(false);
+    expect(producer.closed).toBe(true);
+    expect(published.stopped).toBe(true);
+    expect(microphone.stopped).toBe(true);
+    expect(call.liveMicrophone()).toBeNull();
+    // Listenings ask for the call's microphone, the app's: none opened here.
+    expect(call.carriesMicrophone()).toBe(true);
+    expect(locks[0]!.released).toBe(true);
+    expect(call.holdsScreen()).toBe(false);
+    expect(lines).toContain("call 7: the Roamgate app carries the microphone");
+    const producers = api.producers.length;
+    // The signalling coming back publishes nothing behind the app's back.
+    api.connection.connected("page-peer");
+    expect(api.producers).toHaveLength(producers);
+    tell({
+      event: "call_carrier",
+      call: 7,
+      state: "left",
+      why: "The Roamgate app gave the call back",
+    });
+    await settle();
+    expect(call.inApp()).toBe(false);
+    expect(api.producers).toHaveLength(producers + 1);
+    expect(lines).toContain(
+      "call 7: the Roamgate app gave the call back (The Roamgate app gave the call back): it goes on here",
+    );
+    expect(call.holdsScreen()).toBe(true);
+    call.stop();
+    expect(sent.slice(-1)[0]).toEqual({ op: "call_audio", on: false, call: 7 });
+  });
+
+  test("the app carrying the replies plays them and moves them between its outputs", async () => {
+    const { options } = fakeApp(false);
+    const { call, made, sent, tell, player } = await started({ app: options });
+    const api = made[0]!;
+    api.connection.connected("page-peer");
+    api.peers.producerAdded?.({
+      id: "helper",
+      meta: { call: 7, role: "replies" },
+    });
+    const consumer = api.consumers[0]!;
+    consumer.up();
+    await settle();
+    expect(player.srcObject).not.toBeNull();
+    tell({
+      event: "call_carrier",
+      call: 7,
+      state: "joined",
+      legs: ["microphone", "replies"],
+      heard: true,
+    });
+    expect(consumer.closed).toBe(true);
+    expect(player.srcObject).toBeNull();
+    expect(call.carriesReplies()).toBe(true);
+    // The helper's producer seen again consumes nothing while the app has it.
+    api.peers.producerAdded?.({
+      id: "helper",
+      meta: { call: 7, role: "replies" },
+    });
+    expect(api.consumers).toHaveLength(1);
+    expect(await call.outputs()).toEqual({ choices: [], current: null });
+    tell({
+      event: "call_output_state",
+      call: 7,
+      current: "speaker",
+      outputs: [
+        { id: "speaker", kind: "speaker", label: "Loudspeaker" },
+        { id: "bt:AA", kind: "bluetooth", label: "Car" },
+      ],
+    });
+    const outputs = await call.outputs();
+    expect(outputs.current).toBe("speaker");
+    const next = nextCallOutput(outputs)!;
+    expect(next).toMatchObject({ kind: "bluetooth", deviceId: "bt:AA" });
+    expect(await call.useOutput(next)).toBe(true);
+    expect(sent.slice(-1)[0]).toEqual({
+      op: "call_output",
+      call: 7,
+      output: "bt:AA",
+    });
+    call.stop();
+  });
+
+  test("an app that does not join leaves the call here, and is told it missed", async () => {
+    jest.useFakeTimers();
+    try {
+      const { app, options } = fakeApp();
+      const notices: string[] = [];
+      const { call } = await started(
+        { app: options, notice: (text) => notices.push(text) },
+        handing,
+      );
+      await settle();
+      expect(call.handingOff()).toBe(true);
+      jest.advanceTimersByTime(HANDOFF_WAIT_MS);
+      expect(app.missed).toBe(1);
+      expect(call.handingOff()).toBe(false);
+      expect(call.inApp()).toBe(false);
+      expect(notices).toEqual([
+        "The Roamgate app did not take the call: it goes on here.",
+      ]);
+      // Offered again, by hand.
+      expect(call.canHandOff()).toBe(true);
+      call.stop();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

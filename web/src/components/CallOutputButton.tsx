@@ -1,4 +1,11 @@
-import { Bluetooth, Ear, Headphones, Usb, Volume2 } from "lucide-react";
+import {
+  Bluetooth,
+  Ear,
+  Headphones,
+  Smartphone,
+  Usb,
+  Volume2,
+} from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -103,6 +110,71 @@ export function CallOutputButton({
     >
       <Icon size={withLabel ? 15 : 18} aria-hidden="true" />
       {withLabel ? now.label : null}
+    </button>
+  );
+}
+
+/** Where the call is: in the Roamgate app, being handed to it, or here. */
+type CallPlace = "app" | "opening" | "can" | null;
+
+function useCallPlace(): CallPlace {
+  const read = (): CallPlace => {
+    const call = activeCall();
+    if (!call) return null;
+    if (call.inApp()) return "app";
+    if (call.handingOff()) return "opening";
+    return call.canHandOff() ? "can" : null;
+  };
+  const [place, setPlace] = useState<CallPlace>(read);
+  useEffect(() => {
+    const update = () => setPlace(read());
+    update();
+    return subscribeActiveCall(update);
+  }, []);
+  return place;
+}
+
+/**
+ * The call and the Roamgate Android app (webrtcCall.ts's handOff): "In
+ * the Roamgate app" while the app carries it (hang-up and the output
+ * button still work from here), or a button handing it to the app on a
+ * phone that has it, when it did not take it by itself. Nothing
+ * elsewhere.
+ */
+export function CallAppButton({
+  className,
+  withLabel = false,
+  onMouseDown,
+}: {
+  className: string;
+  withLabel?: boolean;
+  onMouseDown?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  const place = useCallPlace();
+  if (!place) return null;
+  const label =
+    place === "app"
+      ? "In the Roamgate app"
+      : place === "opening"
+        ? "Opening the Roamgate app"
+        : "Move to the Roamgate app";
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={
+        place === "can"
+          ? "Move the call to the Roamgate app, which keeps the microphone with the screen off"
+          : label
+      }
+      title={label}
+      disabled={place !== "can"}
+      aria-pressed={place === "app"}
+      onMouseDown={onMouseDown}
+      onClick={() => activeCall()?.handOff()}
+    >
+      <Smartphone size={withLabel ? 15 : 18} aria-hidden="true" />
+      {withLabel ? label : null}
     </button>
   );
 }
