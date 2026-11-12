@@ -1,0 +1,9 @@
+/* The characters a search matched, in a result. */
+.search-match {
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}

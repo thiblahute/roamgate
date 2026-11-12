@@ -114,17 +114,24 @@ press returns to the workspace you were on just before; each extra press while
 the modifier is held goes one workspace further back. The history is kept in
 this browser, so it survives a reload. The recent switcher and its
 search both follow the setting, which is remembered for this browser, and
-search lists its matches in the same order. Every
+search lists equal matches in the same order. Every
 workspace is listed, including ones never visited here, and a search still
 matches on the tab, directory, or agent of any pane in a workspace.
 
 ### Pane Search
 
 `Alt+K` searches **every** live pane by workspace, tab, cwd, or agent
-name/status. Agents on the other ready servers follow, attention first, and
-every row shows its server, which is searchable too. All terms must match, in
-any order. Enter switches, opening another server's agent on its server;
-`Alt+K` or Esc closes.
+name/status, on this server and the other ready ones; every row shows its
+server, which is searchable too. All words must match, in any order, each
+fzf-style: its letters in order within one field (`rgdic` finds
+`roamgate-dictation`), with word, path and camelCase starts and runs of
+letters scoring higher; the matched letters are highlighted. A workspace whose
+name is the query comes first, then names starting with it, names with a word
+starting with it, names containing it, names matching letter by letter, and
+last the workspaces matched only by directory, tab or agent, on every server
+alike. Equal matches put what needs you first, then keep the recent order. The
+phone's workspace search ranks the same way. Enter switches, opening another
+server's agent on its server; `Alt+K` or Esc closes.
 
 With **All servers** selected, search covers every pane of every connection, not
 only agent panes, so typing a workspace, agent, or connection name finds it
