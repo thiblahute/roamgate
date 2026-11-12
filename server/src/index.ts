@@ -168,6 +168,7 @@ import {
 import { createVoiceRoutes, withSearches } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
+import { configuredDictation } from "./voice/voice-dictation";
 import { configuredFront } from "./voice/voice-front";
 import {
   CompanionMemory,
@@ -465,6 +466,7 @@ const voiceSocket = createVoiceSocket(
   },
   undefined,
   () => companionMemory.callEnded(),
+  configuredDictation(() => readVoiceConfig(), companionMemoryFiles),
 );
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {

@@ -86,11 +86,18 @@ export class CleanSession {
   private settled: string[] = [];
   private ends = new Map<string, Promise<Cleaned>>();
   private aborted = new AbortController();
+  /**
+   * The last `final` gave the words as heard: the model failed, was too
+   * slow, or its reply was refused.
+   */
+  fellBack = false;
 
   constructor(
     private readonly ask: CleanerAsk,
     private readonly context: string,
     private readonly timeoutMs = 6000,
+    /** What the context is, as the requests name it. */
+    private readonly contextLabel = "Conversation so far",
   ) {}
 
   /**
@@ -118,12 +125,15 @@ export class CleanSession {
   }
 
   async final(text: string): Promise<Cleaned> {
+    this.fellBack = false;
     const cleaned = await this.finalCleaned(text);
     // Cleaning drops fillers and false starts, never most of the words: a
     // model that lost them gives the words as heard.
     const words = (value: string) => value.split(/\s+/).filter(Boolean).length;
-    if (cleaned.forAgent && words(cleaned.text) < words(text) * 0.5)
+    if (cleaned.forAgent && words(cleaned.text) < words(text) * 0.5) {
+      this.fellBack = true;
       return { text: text.trim(), forAgent: true };
+    }
     return cleaned;
   }
 
@@ -132,10 +142,10 @@ export class CleanSession {
     if (!raw) return { text: "", forAgent: true };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<Cleaned>((resolve) => {
-      timer = setTimeout(
-        () => resolve({ text: raw, forAgent: true }),
-        this.timeoutMs,
-      );
+      timer = setTimeout(() => {
+        this.fellBack = true;
+        resolve({ text: raw, forAgent: true });
+      }, this.timeoutMs);
     });
     try {
       return await Promise.race([this.end(raw), timeout]);
@@ -150,7 +160,7 @@ export class CleanSession {
   }
 
   private header() {
-    return this.context ? `Conversation so far:\n${this.context}\n\n` : "";
+    return this.context ? `${this.contextLabel}:\n${this.context}\n\n` : "";
   }
 
   /** Drops pieces whose sentences the transcript no longer starts with. */
@@ -170,7 +180,10 @@ export class CleanSession {
     const raw = text.trim();
     let ending = this.ends.get(raw);
     if (!ending) {
-      ending = this.clean(raw).catch(() => ({ text: raw, forAgent: true }));
+      ending = this.clean(raw).catch(() => {
+        this.fellBack = true;
+        return { text: raw, forAgent: true };
+      });
       this.ends.set(raw, ending);
     }
     return ending;
@@ -454,11 +467,16 @@ export class VoiceCleaner {
     for (const worker of this.workers) worker.warm();
   }
 
-  session(context: string, timeoutMs?: number): CleanSession {
+  session(
+    context: string,
+    timeoutMs?: number,
+    contextLabel?: string,
+  ): CleanSession {
     return new CleanSession(
       (prompt, signal) => this.ask(prompt, signal),
       context,
       timeoutMs,
+      contextLabel,
     );
   }
 

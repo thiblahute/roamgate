@@ -921,6 +921,15 @@ Sentences are cleaned while the user still talks and the end as soon as
 they pause, so little time is added; a failing or slow model sends the words
 as heard.
 
+Dictation ([protocol](ARCHITECTURE.md#dictation)) cleans what is dictated
+into a text field with `"dictation_model"`: `"opus"` (at low effort) by
+default, any Claude model, or `"off"` to type the words as heard.
+`"dictation_command"` is its Claude Code command, `"claude_command"` by
+default. Its two background sessions read the voice companion's long-term
+memories, never writing them. The field's text around the cursor and what
+is said go to that model through Claude Code's login, as the companion's
+requests do; nothing of it is logged or kept.
+
 `"speech_rate"` (0.5 to 2, 1.2 by default) is how fast replies are read, as
 a multiple of the voice's own pace; the voice card's speed button and
 **Configuration > Speech** change it and write it back to
