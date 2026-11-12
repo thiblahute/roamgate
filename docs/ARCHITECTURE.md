@@ -690,6 +690,25 @@ alone, without the refresh other settings start. The panel lists requests
 not in it first (the inbox's order), then the others in it, per section,
 and saves only the keys listed, so gone requests drop out.
 
+Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
+`{provider, host, project, number}`, newest first, at most 100) and
+`mr_reviews.hidden` (`{key, marker}`, at most 300, the oldest forgotten
+first). `bridge.mr_reviews.pin {text}` takes a URL on one of the effective
+hosts or `project!12` (`parseRequestRef`), saves it, un-hides it and reads
+it at once; `unpin {key}`, `hide {key}` (a pinned request is unpinned,
+another is hidden, answering `action`) and `unhide {key}` edit the lists
+one at a time. A pinned request the inbox's queries do not list is read
+with the single-request query (feature `inbox`, kind `pinned`, one call
+each, at most 20 per refresh: new, failed, open or older than an hour) and
+kept in `state.json` (`pins`: the item, or the error); a listed one uses
+its list copy. Inbox entries get the section `pinned` (before `mine`), and
+a pin the forge did not give is an entry with `unavailable` saying why.
+`marker` is `mrActivityMarker` (head, comment count, state) when the
+request was hidden: the entry is out of `entries` while it matches, and
+listed in the inbox's `hidden` meanwhile; any change shows it again.
+Pinned requests are in `items()`, so open, seen and the agent's tools know
+them; the order and the search are the browser's, over all three sections.
+
 `bridge.mr_reviews.open {key, checkout?}` finds the project's clone (its
 recorded review worktree, the settings' `clones`, else, connections in
 order default first, then this machine, then the others, a scan of the connections' workspace and pane

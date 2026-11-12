@@ -87,3 +87,19 @@ export function saveMrReviewsSettings(
 ): Promise<MrReviewsSettings> {
   return mrReviewsCall<MrReviewsSettings>("settings.update", { settings });
 }
+
+/** Pins a request by URL (or `project!12`): it stays listed. */
+export function pinMrRequest(text: string): Promise<{ key: string }> {
+  return mrReviewsCall<{ key: string }>("pin", { text });
+}
+
+/** Takes a request out of the view; a pinned one is unpinned. */
+export function hideMrRequest(
+  key: string,
+): Promise<{ action: "hidden" | "unpinned" }> {
+  return mrReviewsCall<{ action: "hidden" | "unpinned" }>("hide", { key });
+}
+
+export function unhideMrRequest(key: string): Promise<unknown> {
+  return mrReviewsCall("unhide", { key });
+}

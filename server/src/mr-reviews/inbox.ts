@@ -1,5 +1,8 @@
+import type { ForgeRef } from "../../../shared/forge";
+import { forgeRefKey } from "../../../shared/forge";
 import type {
   MrCurationState,
+  MrHiddenEntry,
   MrHostState,
   MrInbox,
   MrInboxEntry,
@@ -7,9 +10,19 @@ import type {
   MrReviewsSettings,
   MrVerdict,
 } from "../../../shared/mrReviews";
-import { mrProjectKey, mrUnread } from "../../../shared/mrReviews";
+import {
+  mrActivityMarker,
+  mrProjectKey,
+  mrUnread,
+} from "../../../shared/mrReviews";
 import { type Logger, serverLogger } from "../utils/logger";
 import {
+  githubRequestQuery,
+  gitlabRequestQuery,
+  parseRequest,
+} from "./agent-search";
+import {
+  type FetchCall,
   ForgeToolMissingError,
   type InboxFetchers,
   NotSignedInError,
@@ -46,6 +59,18 @@ export const FRESH_MIN_MS = 60_000;
 export const DRAFTS_TTL_MS = 60 * 60_000;
 /** Draft counts read per refresh, at most. */
 const DRAFTS_PER_REFRESH = 10;
+/** Pinned requests no list has, read per refresh at most (a call each). */
+const PINS_PER_REFRESH = 20;
+/** A pinned request that closed is read again after this. */
+const PIN_TTL_MS = 60 * 60_000;
+const PIN_CALL: FetchCall = { feature: "inbox", kind: "pinned" };
+
+/** The page a request has on its forge, for a pin not read. */
+function requestUrl(ref: ForgeRef): string {
+  return ref.provider === "gitlab"
+    ? `https://${ref.host}/${ref.project}/-/merge_requests/${ref.number}`
+    : `https://${ref.host}/${ref.project}/pull/${ref.number}`;
+}
 
 export type MrInboxDeps = {
   fetchers: InboxFetchers;
@@ -80,15 +105,80 @@ export function createMrInbox(deps: MrInboxDeps) {
    */
   function items(): MrItem[] {
     const state = deps.store.get();
-    const found = Object.values(state.found);
-    if (!found.length) return state.items;
     const listed = new Set(state.items.map((item) => item.key));
-    return [
-      ...state.items,
-      ...found
-        .filter((entry) => !listed.has(entry.item.key))
-        .map((entry) => entry.item),
-    ];
+    const extra: MrItem[] = [];
+    for (const item of [
+      ...Object.values(state.found).map((entry) => entry.item),
+      ...Object.values(state.pins).flatMap((pin) =>
+        pin.item ? [pin.item] : [],
+      ),
+    ]) {
+      if (listed.has(item.key)) continue;
+      listed.add(item.key);
+      extra.push(item);
+    }
+    return extra.length ? [...state.items, ...extra] : state.items;
+  }
+
+  /** One pinned request, read from the forge and kept. */
+  async function readPin(ref: ForgeRef): Promise<void> {
+    const key = forgeRefKey(ref);
+    const previous = deps.store.get().pins[key];
+    try {
+      const answer =
+        ref.provider === "gitlab"
+          ? await deps.fetchers.gitlab(
+              ref.host,
+              gitlabRequestQuery(ref),
+              PIN_CALL,
+            )
+          : await deps.fetchers.github(
+              ref.host,
+              githubRequestQuery(ref),
+              PIN_CALL,
+            );
+      const found = parseRequest(ref, answer);
+      deps.store.update((state) => {
+        state.pins[key] = found
+          ? { item: found.item, at: iso() }
+          : { error: "Not found, or you have no access to it", at: iso() };
+      });
+    } catch (error) {
+      const message = (
+        error instanceof Error ? error.message : String(error)
+      ).slice(0, 300);
+      logger.debug("pinned request not read", { mr: key, error: message });
+      // A hiccup keeps what was known; it is read again next refresh.
+      if (previous?.item) return;
+      deps.store.update((state) => {
+        state.pins[key] = { error: message, at: iso() };
+      });
+    }
+  }
+
+  /** The pinned requests no list has: read when new, failed, open or old. */
+  async function readPins(settings: MrReviewsSettings, listed: Set<string>) {
+    const wanted = new Set(settings.pinned.map(forgeRefKey));
+    const stale = Object.keys(deps.store.get().pins).filter(
+      (key) => !wanted.has(key) || listed.has(key),
+    );
+    if (stale.length)
+      deps.store.update((state) => {
+        for (const key of stale) delete state.pins[key];
+      });
+    const due = settings.pinned
+      .filter((ref) => {
+        const key = forgeRefKey(ref);
+        if (listed.has(key)) return false;
+        const known = deps.store.get().pins[key];
+        if (!known?.item) return true;
+        return (
+          known.item.state === "open" ||
+          now() - Date.parse(known.at) >= PIN_TTL_MS
+        );
+      })
+      .slice(0, PINS_PER_REFRESH);
+    for (const ref of due) await readPin(ref);
   }
 
   async function readHost(
@@ -224,6 +314,7 @@ export function createMrInbox(deps: MrInboxDeps) {
           review.closedAt = iso();
       }
     });
+    await readPins(settings, new Set(list.map((item) => item.key)));
     lastRefresh = now();
     deps.onChange?.();
     await readDrafts(list);
@@ -257,14 +348,30 @@ export function createMrInbox(deps: MrInboxDeps) {
     (timer as { unref?: () => void }).unref?.();
   }
 
-  function entries(): MrInboxEntry[] {
+  function entries(settings: MrReviewsSettings): {
+    entries: MrInboxEntry[];
+    hidden: MrHiddenEntry[];
+  } {
     const state = deps.store.get();
+    const pinned = new Map(
+      settings.pinned.map((ref) => [forgeRefKey(ref), ref]),
+    );
+    const hiddenAt = new Map(
+      settings.hidden.map((entry) => [entry.key, entry.marker]),
+    );
+    const hidden: MrHiddenEntry[] = [];
     const verdicts = new Map(
       state.feedback.map((entry) => [entry.key, entry.verdict]),
     );
     const out: MrInboxEntry[] = [];
+    const listed = new Set<string>();
     for (const item of items()) {
-      const section = item.reasons.length ? "mine" : "suggested";
+      listed.add(item.key);
+      const section = pinned.has(item.key)
+        ? "pinned"
+        : item.reasons.length
+          ? "mine"
+          : "suggested";
       const ranked = state.ranked[item.key];
       const verdict = verdicts.get(item.key);
       if (section === "suggested") {
@@ -273,6 +380,22 @@ export function createMrInbox(deps: MrInboxDeps) {
         // it); never after "not interested".
         if (verdict === "not_interested") continue;
         if (!ranked?.pick && verdict !== "more_like_this") continue;
+      }
+      // Removed by the user, and quiet since: out of the view, listed apart.
+      if (
+        section !== "pinned" &&
+        hiddenAt.get(item.key) === mrActivityMarker(item)
+      ) {
+        hidden.push({
+          key: item.key,
+          provider: item.provider,
+          host: item.host,
+          project: item.project,
+          number: item.number,
+          url: item.url,
+          title: item.title,
+        });
+        continue;
       }
       const seen = state.seen[item.key];
       const review = state.reviews[item.key];
@@ -302,16 +425,42 @@ export function createMrInbox(deps: MrInboxDeps) {
           : {}),
       });
     }
+    // A pinned request the forge did not give: a row saying so.
+    for (const [key, ref] of pinned) {
+      if (listed.has(key)) continue;
+      out.push({
+        ...ref,
+        key,
+        url: requestUrl(ref),
+        title: `${ref.project}${ref.provider === "gitlab" ? "!" : "#"}${ref.number}`,
+        author: "",
+        draft: false,
+        state: "open",
+        updatedAt: "",
+        headSha: "",
+        sourceBranch: "",
+        targetBranch: "",
+        pipeline: null,
+        notes: 0,
+        reasons: [],
+        section: "pinned",
+        unread: null,
+        isNew: false,
+        unavailable: state.pins[key]?.error ?? "Not read yet",
+      });
+    }
+    const rank = { pinned: 0, mine: 1, suggested: 2 } as const;
     const unreadFirst = (entry: MrInboxEntry) =>
       entry.isNew || entry.unread?.changed ? 0 : 1;
     const score = (entry: MrInboxEntry) => state.ranked[entry.key]?.score ?? 0;
-    return out.sort(
+    out.sort(
       (a, b) =>
-        (a.section === b.section ? 0 : a.section === "mine" ? -1 : 1) ||
+        rank[a.section] - rank[b.section] ||
         (a.section === "suggested" ? score(b) - score(a) : 0) ||
         unreadFirst(a) - unreadFirst(b) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+    return { entries: out, hidden };
   }
 
   return {
@@ -330,8 +479,10 @@ export function createMrInbox(deps: MrInboxDeps) {
       return this.snapshot(settings);
     },
     snapshot(settings: MrReviewsSettings): MrInbox {
+      const { entries: shown, hidden } = entries(settings);
       return {
-        entries: entries(),
+        entries: shown,
+        hidden,
         hosts: settings.hosts.map(
           (host) =>
             hosts.get(host.host)?.state ?? {
@@ -349,6 +500,19 @@ export function createMrInbox(deps: MrInboxDeps) {
       };
     },
     refresh,
+    /** The forge hosts in effect (those set, or those signed in to). */
+    async hosts() {
+      return (await deps.settings()).hosts;
+    },
+    /** The settings changed what the inbox shows: browsers may ask again. */
+    changed() {
+      deps.onChange?.();
+    },
+    /** A request just pinned: read at once, so its row has its state. */
+    async readPin(ref: ForgeRef) {
+      await readPin(ref);
+      deps.onChange?.();
+    },
     /** The user looked at a request: its activity is read. */
     markSeen(key: string) {
       const item = items().find((entry) => entry.key === key);

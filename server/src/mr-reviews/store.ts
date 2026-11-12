@@ -43,6 +43,12 @@ export type MrFound = { item: MrItem; at: string };
 
 export const FOUND_KEPT_DAYS = 14;
 
+/**
+ * A request the user pinned that no inbox query lists: what the forge last
+ * said of it, or why it could not be read.
+ */
+export type MrPinRead = { item?: MrItem; error?: string; at: string };
+
 export type MrReviewRecord = {
   connectionId: string;
   workspaceId?: string;
@@ -93,6 +99,8 @@ export type MrState = {
   drafts: Record<string, { count: number; at: string }>;
   /** Requests the reviews agent found, by key. */
   found: Record<string, MrFound>;
+  /** The pinned requests the inbox's lists lack, by key. */
+  pins: Record<string, MrPinRead>;
 };
 
 export const FEEDBACK_KEPT = 200;
@@ -110,6 +118,7 @@ function empty(): MrState {
     prefetched: {},
     drafts: {},
     found: {},
+    pins: {},
   };
 }
 
@@ -137,6 +146,7 @@ export function normalizeState(raw: unknown): MrState {
     prefetched: record(value.prefetched),
     drafts: record(value.drafts),
     found: record(value.found),
+    pins: record(value.pins),
   };
 }
 

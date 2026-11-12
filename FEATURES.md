@@ -1035,24 +1035,44 @@ Your order is kept in Roamgate's settings (`mr_reviews.order` in
 `settings.json`), so it is the same after a reload and on every device; a
 new request comes first, one no longer listed drops out of it. The search
 box (`/`) narrows the list to the requests whose title, project, author,
-number (`!123`, `#45`) or branches hold every word typed. The keys, as in
-Roamgate's other lists (`?` lists them):
+number (`!123`, `#45`) or branches hold every word typed.
 
-| Key                      | Action                                                   |
-| ------------------------ | -------------------------------------------------------- |
-| `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)          |
-| `gg`/`G`, Home/End       | First / last (`2G`: the second)                          |
-| `Enter`                  | Open its review                                          |
-| `i`                      | Its details                                              |
-| `c`                      | Its Claude session                                       |
-| `o`                      | Open it on GitLab or GitHub                              |
-| `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                   |
-| `/`                      | Search; in the box Enter opens, Esc clears and goes back |
-| `x` / `+`                | Not interested / more like this (a suggestion)           |
-| `r`                      | Refresh                                                  |
-| `a`                      | Ask the reviews agent                                    |
-| `?`                      | List the keys                                            |
-| `Esc`                    | Step back: the key list, the search, then the panel      |
+**Add** and **remove** requests from the view. The Add box (`p`, with an
+Add button, on a phone too) takes the URL of any merge or pull request on
+one of your hosts, or `group/project!12`; pasting a URL anywhere in the
+panel, or dropping a link on it, does the same. It goes into a **Pinned**
+section above For you, read from the forge, and stays there whether or not
+a query lists it, with its state, pipeline and what changed like any row.
+One the forge does not give (not found, no access, host down) shows why,
+with a button to remove it. Pinned requests keep your order and answer the
+search. Removing a request (`dd` or `Delete`, `x` on a request that is not a
+suggestion, or the row's button) unpins a pinned one; any other one is
+hidden until something happens on it (a push, a comment, a state change),
+and an **N hidden** chip (`H`) lists the hidden ones with Restore. `u` right
+after takes the removal back (a toast offers it for a few seconds). `x` on
+a suggestion stays "not interested". Pins and hidden requests are kept in
+the settings (`mr_reviews.pinned`, `mr_reviews.hidden`), so every device
+follows. The keys, as in Roamgate's other lists (`?` lists them):
+
+| Key                      | Action                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)                                   |
+| `gg`/`G`, Home/End       | First / last (`2G`: the second)                                                   |
+| `Enter`                  | Open its review                                                                   |
+| `i`                      | Its details                                                                       |
+| `c`                      | Its Claude session                                                                |
+| `o`                      | Open it on GitLab or GitHub                                                       |
+| `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                            |
+| `/`                      | Search; in the box Enter opens, Esc clears and goes back                          |
+| `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                         |
+| `dd` / `Delete`          | Remove it from the view (a pinned one is unpinned)                                |
+| `u`                      | Undo the last removal                                                             |
+| `H`                      | The hidden requests, to restore                                                   |
+| `x` / `+`                | Not interested / more like this (a suggestion); `x` on another request removes it |
+| `r`                      | Refresh                                                                           |
+| `a`                      | Ask the reviews agent                                                             |
+| `?`                      | List the keys                                                                     |
+| `Esc`                    | Step back: the key list, the search, then the panel                               |
 
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**
