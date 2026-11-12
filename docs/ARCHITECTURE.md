@@ -2406,6 +2406,15 @@ gone the command runs cold at once, write or not, since it never started.
 OpenSSH's lines about the master are dropped from the stderr returned.
 Callers that spawn the argv themselves keep OpenSSH's own fallback.
 
+A host can also keep a connection's sessions taken for good: macOS's sshd
+has been seen to stop reaping its session processes, which stay zombies,
+so every session of that connection stays counted while new connections
+are served. When the master's host refuses eight sessions in a row over at
+least fifteen seconds, none served in between, the master is closed and
+opened again at once (at most once a minute), and commands go straight to
+a connection of their own instead of retrying over it until it is back.
+Commands in flight over it end with it; read-only ones run again cold.
+
 A command run with a deadline (the `*Timeout` process helpers) ends on the
 host as well as here. sshd keeps a session until its command exits, and a
 command waiting on nothing it reads (a locked macOS keychain under

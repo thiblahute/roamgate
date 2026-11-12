@@ -12,6 +12,7 @@ import {
   runInSshLane,
   SSH_BACKGROUND_SESSION_LIMIT,
   SSH_BACKGROUND_WAITER_LIMIT,
+  SSH_MASTER_RECYCLE_AFTER_MS,
   registerSshMaster,
   runSshCommand,
   SSH_SESSION_DEFAULT_WAIT_MS,
@@ -351,6 +352,62 @@ describe("SSH command execution", () => {
         ),
       );
       for (const release of all) release();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("recycles a master only while its host serves no session at all", async () => {
+    jest.useFakeTimers();
+    try {
+      const { controlPath, owner } = fakeMaster("streak-box");
+      let recycles = 0;
+      registerSshMaster(owner, {
+        destination: "streak-box",
+        controlPath,
+        isListening: () => existsSync(controlPath),
+        isAlive: async () => true,
+        recycle: () => {
+          recycles += 1;
+        },
+      });
+      let serve = false;
+      const run = async (attempt: string[]) =>
+        attempt.includes("-S") && !serve
+          ? { code: 255, stderr: REFUSED }
+          : { code: 0, stderr: "" };
+      async function command() {
+        let settled = false;
+        const done = runSshCommand(
+          sshReadCommandArgv("streak-box", "true"),
+          run,
+        ).finally(() => {
+          settled = true;
+        });
+        while (!settled) {
+          await flush();
+          jest.advanceTimersByTime(100);
+        }
+        return done;
+      }
+      // Refused, then a session served: the host is busy, not broken.
+      await command();
+      jest.advanceTimersByTime(SSH_MASTER_RECYCLE_AFTER_MS);
+      serve = true;
+      await command();
+      serve = false;
+      await command();
+      expect(recycles).toBe(0);
+      // Refused again past the threshold, with nothing served between.
+      jest.advanceTimersByTime(SSH_MASTER_RECYCLE_AFTER_MS);
+      await command();
+      expect(recycles).toBe(1);
+      // Not again right away, even while the host keeps refusing.
+      jest.advanceTimersByTime(SSH_MASTER_RECYCLE_AFTER_MS);
+      await command();
+      await command();
+      expect(recycles).toBe(1);
+      jest.advanceTimersByTime(SSH_REFUSED_COOLDOWN_MS);
     } finally {
       jest.useRealTimers();
     }
