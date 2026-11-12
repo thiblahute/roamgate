@@ -422,7 +422,12 @@ Inspector state is scoped to each checkout; see
   their echo out. On an Android phone, a button by hang-up shows where the
   call plays (loudspeaker, earpiece, a headset) and moves it to the next;
   the replies come at broadcast loudness so the loudspeaker is loud enough
-  ([setup](docs/DEPLOYMENT.md#voice-calls)). On Tailscale, the call's audio needs `call_ice_address`
+  ([setup](docs/DEPLOYMENT.md#voice-calls)). The phone's screen stays on
+  during a call: Chrome on Android gives a web page no microphone with
+  the screen off. Turned off anyway (the power button), the call bar
+  shows "Microphone paused by the phone" and the call says it aloud;
+  once the screen is back the microphone opens again and the call goes
+  on, never hung up. On Tailscale, the call's audio needs `call_ice_address`
   ([setup](docs/DEPLOYMENT.md#voice-calls)). Where the call cannot be
   made, or does not connect (a note then says so), replies play with the
   microphone's audio; with replies played as

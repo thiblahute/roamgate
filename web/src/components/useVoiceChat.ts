@@ -1849,9 +1849,20 @@ export function useVoiceChat({
                 }
               }
             }
-            // A call that cannot connect says so; the chat goes on.
+            // A call that cannot connect says so; the chat goes on. A
+            // microphone the phone pauses (its screen off) is said aloud:
+            // nothing else reaches with the screen off.
             link ??= await VoiceLink.open({
-              call: { notice: (text) => showRouterNote(text) },
+              call: {
+                notice: (text) => showRouterNote(text),
+                microphonePaused: (paused) => {
+                  if (paused)
+                    void speak(
+                      "I can't hear you: the phone paused the microphone. Turn the screen on.",
+                      controller.signal,
+                    ).catch(() => {});
+                },
+              },
             });
             const voice = link;
             if (controllerRef.current === controller) linkRef.current = voice;

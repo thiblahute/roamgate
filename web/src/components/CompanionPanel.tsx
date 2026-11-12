@@ -47,7 +47,10 @@ import { companionChipText, hearingNow } from "./CompanionChip";
 import { useCompanionReading } from "./CompanionReading";
 import { type CompanionReading, isBeingSaid } from "../companionReading";
 import { CompanionMemories } from "./CompanionMemories";
-import { CallOutputButton } from "./CallOutputButton";
+import {
+  CallOutputButton,
+  useMicrophonePausedByPhone,
+} from "./CallOutputButton";
 import { CloseButton } from "./CloseButton";
 import { focusDialogElement } from "./dialogFocus";
 import "./CompanionPanel.css";
@@ -339,6 +342,7 @@ export function CompanionPanel({
   const call = useSyncExternalStore(subscribeCompanionCall, companionCallState);
   const fronting = useSyncExternalStore(subscribeVoiceFronting, voiceFronting);
   const reading = useCompanionReading();
+  const microphonePaused = useMicrophonePausedByPhone();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -432,9 +436,11 @@ export function CompanionPanel({
             <h2>{name}</h2>
             <p>
               {call.open
-                ? call.muted
-                  ? "In a call, muted: "
-                  : "In a call: "
+                ? microphonePaused
+                  ? "In a call, microphone paused by the phone: "
+                  : call.muted
+                    ? "In a call, muted: "
+                    : "In a call: "
                 : ""}
               {companionChipText(call.presence, 0)}
             </p>

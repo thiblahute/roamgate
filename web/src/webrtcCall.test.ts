@@ -17,13 +17,19 @@ import {
   FAST_RETRIES,
   jitterMs,
   LATE_MS,
+  MICROPHONE_CHECK_MS,
+  MICROPHONE_PAUSED,
   MICROPHONE_TRIES,
   microphoneConstraints,
+  microphoneEnergy,
   NEVER_OPENED_TRIES,
   nextCallOutput,
   OUTPUT_CLOSE_MS,
   RELEASE_MARGIN_MS,
+  REOPEN_MS,
+  type ScreenLock,
   type SignallingApi,
+  SILENT_MS,
   type SignallingConfig,
   type SignallingPeer,
   START_MS,
@@ -34,12 +40,22 @@ const saved: Record<string, unknown> = {};
 const globals = globalThis as Record<string, unknown>;
 
 /** A microphone track: its clones are what gets published. */
-class FakeTrack {
+class FakeTrack extends EventTarget {
   enabled = true;
   stopped = false;
+  muted = false;
+  readyState: MediaStreamTrackState = "live";
   kind = "audio";
   clones: FakeTrack[] = [];
-  constructor(readonly deviceId = "default") {}
+  constructor(readonly deviceId = "default") {
+    super();
+  }
+  /** The phone muted, unmuted or ended it (not the page). */
+  phone(event: "mute" | "unmute" | "ended") {
+    if (event === "ended") this.readyState = "ended";
+    else this.muted = event === "mute";
+    this.dispatchEvent(new Event(event));
+  }
   getSettings() {
     return { deviceId: this.deviceId };
   }
@@ -97,8 +113,19 @@ class FakeConnection extends EventTarget {
     this.iceConnectionState = state;
     this.dispatchEvent(new Event("iceconnectionstatechange"));
   }
+  /** What getStats reports: the microphone's media-source, if set. */
+  stats = new Map<string, Record<string, unknown>>();
   async getStats() {
-    return new Map();
+    return this.stats;
+  }
+  /** The microphone's running energy as sent, as Chrome reports it. */
+  captured(energy: number, seconds: number) {
+    this.stats.set("source", {
+      type: "media-source",
+      kind: "audio",
+      totalAudioEnergy: energy,
+      totalSamplesDuration: seconds,
+    });
   }
 }
 
@@ -1420,5 +1447,286 @@ describe("a call's output on a phone", () => {
     expect(before.stopped).toBe(false);
     expect(lines.some((line) => line.includes("could not move"))).toBe(true);
     call.stop();
+  });
+});
+
+/** The page's visibility and the screen wake lock, as the test sets them. */
+function fakeScreen({ hidden = false, wakeLock = true } = {}) {
+  const listeners = new Set<() => void>();
+  const locks: (ScreenLock & { released: boolean; lose(): void })[] = [];
+  const screen = {
+    hidden: () => state.hidden,
+    visibility(changed: () => void) {
+      listeners.add(changed);
+      return () => listeners.delete(changed);
+    },
+    wakeLock: wakeLock
+      ? async () => {
+          if (state.hidden) throw new Error("NotAllowedError: hidden");
+          const target = new EventTarget();
+          const lock = {
+            released: false,
+            async release() {
+              lock.lose();
+            },
+            addEventListener(type: "release", listener: () => void) {
+              target.addEventListener(type, listener);
+            },
+            /** Released, by the page or by the browser (page hidden). */
+            lose() {
+              if (lock.released) return;
+              lock.released = true;
+              target.dispatchEvent(new Event("release"));
+            },
+          };
+          locks.push(lock);
+          return lock;
+        }
+      : null,
+  };
+  const state = { hidden };
+  /** The page is hidden (its wake lock let go) or shown. */
+  const show = (shown: boolean) => {
+    state.hidden = !shown;
+    if (!shown) for (const lock of locks) lock.lose();
+    for (const listener of [...listeners]) listener();
+  };
+  return { screen, locks, show, listeners };
+}
+
+/** A call whose microphone leg is up: its connection, its client. */
+async function connectedCall(options: CallOptions = {}) {
+  const call = await started(options);
+  const api = call.made[0]!;
+  api.connection.connected("page-peer");
+  api.producers[0]!.registered();
+  const client = api.producers[0]!.client();
+  const connection = client.rtcPeerConnection as FakeConnection;
+  connection.set("connected");
+  return { ...call, connection };
+}
+
+describe("a call's screen and microphone on a phone", () => {
+  test("holds the screen on while the call lasts, and lets it go at hang-up", async () => {
+    const { screen, locks, listeners } = fakeScreen();
+    const { call, lines } = await started({ screen });
+    await settle();
+    expect(locks).toHaveLength(1);
+    expect(call.holdsScreen()).toBe(true);
+    expect(lines).toContain(
+      "call 7: the screen stays on during the call (a wake lock)",
+    );
+    call.stop();
+    expect(locks[0]!.released).toBe(true);
+    expect(call.holdsScreen()).toBe(false);
+    expect(listeners.size).toBe(0);
+  });
+
+  test("takes the wake lock again each time the page shows, never while hidden", async () => {
+    const { screen, locks, show } = fakeScreen({ hidden: true });
+    const { call, lines } = await started({ screen });
+    await settle();
+    // A hidden page gets none.
+    expect(locks).toHaveLength(0);
+    show(true);
+    await settle();
+    expect(locks).toHaveLength(1);
+    // Hidden, the browser lets it go; shown, it is taken again.
+    show(false);
+    await settle();
+    expect(call.holdsScreen()).toBe(false);
+    expect(locks).toHaveLength(1);
+    show(true);
+    await settle();
+    expect(locks).toHaveLength(2);
+    expect(call.holdsScreen()).toBe(true);
+    expect(lines).toContain(
+      "call 7: the page is hidden (the screen off, or another app in front)",
+    );
+    expect(lines).toContain("call 7: the page shows again");
+    call.stop();
+    expect(locks[1]!.released).toBe(true);
+  });
+
+  test("says when the browser gives no wake lock, and goes on", async () => {
+    const { screen } = fakeScreen({ wakeLock: false });
+    const { call } = await started({
+      screen: {
+        ...screen,
+        wakeLock: async () => {
+          throw new Error("NotAllowedError");
+        },
+      },
+    });
+    await settle();
+    expect(call.holdsScreen()).toBe(false);
+    call.stop();
+  });
+
+  test("says a microphone the phone mutes is paused, and that it is back once unmuted", async () => {
+    const { screen } = fakeScreen();
+    const notices: string[] = [];
+    const paused: boolean[] = [];
+    const { call, microphone, lines, sent } = await started({
+      screen,
+      notice: (text) => notices.push(text),
+      microphonePaused: (on) => paused.push(on),
+    });
+    microphone.phone("mute");
+    expect(call.microphonePausedByPhone()).toBe("its track muted");
+    expect(notices).toEqual([MICROPHONE_PAUSED]);
+    expect(paused).toEqual([true]);
+    expect(lines).toContain(
+      "call 7: the microphone is paused by the phone: its track muted",
+    );
+    microphone.phone("unmute");
+    expect(call.microphonePausedByPhone()).toBeNull();
+    expect(paused).toEqual([true, false]);
+    expect(lines).toContain(
+      "call 7: the microphone is back: its track unmuted",
+    );
+    // Never hung up for it.
+    expect(sent.some((m) => m.op === "call_audio" && m.on === false)).toBe(
+      false,
+    );
+    call.stop();
+  });
+
+  test("opens a microphone ended while hidden again once the page shows, the call going on", async () => {
+    jest.useFakeTimers();
+    try {
+      const { screen, show } = fakeScreen();
+      const opened: unknown[] = [];
+      const notices: string[] = [];
+      const microphone = new FakeTrack();
+      const { call, connection, lines, sent } = await connectedCall({
+        screen,
+        notice: (text) => notices.push(text),
+        microphone: async (request) => {
+          opened.push(request);
+          return new FakeStream([
+            opened.length === 1 ? microphone : new FakeTrack("again"),
+          ]) as unknown as MediaStream;
+        },
+      });
+      call.listening(true);
+      show(false);
+      microphone.phone("ended");
+      expect(call.microphonePausedByPhone()).toBe("its track ended");
+      expect(notices).toEqual([`${MICROPHONE_PAUSED}: turn the screen on.`]);
+      expect(call.liveMicrophone()).toBeNull();
+      // Nothing opens while hidden.
+      await pass(REOPEN_MS * 3);
+      expect(opened).toHaveLength(1);
+      show(true);
+      await pass(REOPEN_MS + 100);
+      expect(opened).toEqual([
+        { mode: "call" },
+        { mode: "call", deviceId: "default" },
+      ]);
+      const stream = call.microphone as unknown as FakeStream;
+      const now = stream.tracks[0]!;
+      expect(stream.tracks).toEqual([now]);
+      expect(now.deviceId).toBe("again");
+      expect(microphone.stopped).toBe(true);
+      // The leg sends the new track's clone, listening as before.
+      expect(connection.sent).toEqual([now.clones[0]]);
+      expect(now.clones[0]!.enabled).toBe(true);
+      expect(call.microphonePausedByPhone()).toBeNull();
+      expect(call.liveMicrophone()).toBe(call.microphone);
+      expect(lines).toContain("call 7: the microphone is back: opened again");
+      expect(sent.some((m) => m.op === "call_audio" && m.on === false)).toBe(
+        false,
+      );
+      // The new track is watched in turn.
+      now.phone("mute");
+      expect(call.microphonePausedByPhone()).toBe("its track muted");
+      call.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("says a capture the phone silences while listening is paused, and that it is back with sound", async () => {
+    jest.useFakeTimers();
+    try {
+      const { screen, show } = fakeScreen();
+      const paused: boolean[] = [];
+      const { call, connection, lines } = await connectedCall({
+        screen,
+        microphonePaused: (on) => paused.push(on),
+      });
+      call.listening(true);
+      let energy = 0.5;
+      let seconds = 1;
+      const tick = async (grows: boolean) => {
+        seconds += MICROPHONE_CHECK_MS / 1000;
+        if (grows) energy += 0.01;
+        connection.captured(energy, seconds);
+        await pass(MICROPHONE_CHECK_MS);
+      };
+      for (let i = 0; i < 4; i += 1) await tick(true);
+      expect(call.microphonePausedByPhone()).toBeNull();
+      // The screen goes off: the phone gives the page exact silence.
+      show(false);
+      for (
+        let i = 0;
+        i * MICROPHONE_CHECK_MS < SILENT_MS - MICROPHONE_CHECK_MS;
+        i += 1
+      )
+        await tick(false);
+      expect(call.microphonePausedByPhone()).toBeNull();
+      await tick(false);
+      await tick(false);
+      expect(call.microphonePausedByPhone()).toBe("its capture went silent");
+      expect(lines).toContain(
+        "call 7: the microphone is paused by the phone: its capture went silent, the page hidden",
+      );
+      // Shown again, the capture has sound: back, without opening again.
+      show(true);
+      await tick(true);
+      expect(call.microphonePausedByPhone()).toBeNull();
+      expect(paused).toEqual([true, false]);
+      expect(lines).toContain(
+        "call 7: the microphone is back: its capture has sound again",
+      );
+      call.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("takes no silence for a pause while not listening (nothing sent then)", async () => {
+    jest.useFakeTimers();
+    try {
+      const { call, connection } = await connectedCall({
+        screen: fakeScreen().screen,
+      });
+      connection.captured(0.5, 1);
+      await pass(SILENT_MS * 3);
+      expect(call.microphonePausedByPhone()).toBeNull();
+      call.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("reads the microphone's running energy as sent", () => {
+    expect(microphoneEnergy(new Map())).toBeNull();
+    expect(
+      microphoneEnergy(
+        new Map([
+          [
+            "s",
+            {
+              type: "media-source",
+              kind: "audio",
+              totalAudioEnergy: 2,
+              totalSamplesDuration: 3,
+            },
+          ],
+        ]),
+      ),
+    ).toEqual({ energy: 2, seconds: 3 });
   });
 });
