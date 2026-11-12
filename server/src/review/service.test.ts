@@ -613,6 +613,101 @@ test("a discarded review comes back with its threads", async () => {
   ).toThrow();
 });
 
+test("a merge request's review sends your discussions to the agent as written, one that came after it opened too; its drafts for GitLab stay put", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const prompts: string[] = [];
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+    deliveryDelayMs: 10,
+    promptAgent: async (_connection, _pane, text) => {
+      prompts.push(text);
+    },
+    gitlab: {
+      checkout: async () => checkoutOn("fix", "a1"),
+      find: async () => ({
+        url: "https://gitlab.example/gst/gstreamer/-/merge_requests/3",
+        title: "Fix",
+        number: 3,
+        state: "opened",
+        branch: "fix",
+      }),
+      context: () => ({
+        root: "/repo",
+        shQuote: (value) => value,
+        runProcessWithCodeTimeout: async (argv) => {
+          if (argv.some((arg) => arg.includes("glab config get host")))
+            return { code: 0, stdout: "glab gitlab.example\n", stderr: "" };
+          const method = argv[argv.indexOf("--method") + 1];
+          const path = argv.find((arg) => arg.startsWith("projects/"))!;
+          const body = path.endsWith("/discussions?per_page=100")
+            ? []
+            : path.endsWith("/draft_notes?per_page=100")
+              ? []
+              : path.endsWith("/draft_notes")
+                ? {
+                    id: 11,
+                    note: "Leak",
+                    position: { new_path: "a.c", new_line: 2 },
+                  }
+                : {
+                    web_url: "u",
+                    diff_refs: { base_sha: "b", start_sha: "s", head_sha: "h" },
+                  };
+          void method;
+          return { code: 0, stdout: JSON.stringify(body), stderr: "" };
+        },
+      }),
+    },
+  });
+  services.push(service);
+  // No agent yet when the review opens.
+  const local = service.open({
+    connectionId: "local",
+    root: "/repo",
+    workspaceId: "w1",
+    target: { kind: "range", base: "main", head: "HEAD" },
+  }).session;
+  const session = (await service.openGitlab({ sessionId: local.id })).snapshot!
+    .session;
+  expect(session).toMatchObject({ gitlab: true, autoSend: true });
+  await service.addThread({
+    sessionId: session.id,
+    anchor: { path: "a.c", line: 3, side: "new" },
+    text: "Is it similar to enough features?",
+  });
+  await service.addThread({
+    sessionId: session.id,
+    kind: "draft",
+    anchor: { path: "a.c", line: 2, side: "new" },
+    text: "Leak",
+  });
+  await Bun.sleep(40);
+  expect(prompts).toHaveLength(0);
+  // The agent starts after the review opened: it is attached, and what
+  // waited goes, the draft for GitLab not among it.
+  await service.update({
+    sessionId: session.id,
+    agent: "Claude",
+    paneId: "w1:p2",
+  });
+  await Bun.sleep(100);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain("Is it similar to enough features?");
+  expect(prompts[0]).not.toContain("Leak");
+  // The next one goes as it is written.
+  await service.addThread({
+    sessionId: session.id,
+    anchor: { path: "a.c", line: 4, side: "new" },
+    text: "And here?",
+  });
+  await Bun.sleep(100);
+  expect(prompts).toHaveLength(2);
+  expect(prompts[1]).toContain("And here?");
+});
+
 test("a merge request's review: drafts are draft notes; agents write only here", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
@@ -1919,6 +2014,38 @@ test("the local review's review comments wait in the merge request's review", as
   const after = service.get({ sessionId: mr.session.id }).threads;
   expect(after.filter((t) => t.gitlab?.draftId !== undefined)).toHaveLength(2);
   expect(after.some((t) => !t.gitlab)).toBe(false);
+});
+
+test("a merge request's review stored with sending off, as they once started, sends your discussions again", () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const storage = openReviewStorage(dir);
+  const at = "2026-10-29T10:00:00.000Z";
+  const mr = {
+    kind: "mr" as const,
+    url: "https://gitlab.example/gst/gstreamer/-/merge_requests/3",
+  };
+  const stored = (id: string, more: object) =>
+    storage.saveSession({
+      id,
+      connectionId: "local",
+      root: "/repo",
+      title: "MR",
+      target: mr,
+      gitlab: true,
+      summary: "",
+      agent: {},
+      createdAt: at,
+      updatedAt: at,
+      ...more,
+    } as never);
+  stored("s1", { autoSend: false });
+  stored("s2", { holdComments: true });
+  storage.close();
+  const { service } = setup(dir);
+  expect(service.get({ sessionId: "s1" }).session.autoSend).toBeUndefined();
+  // Held by the user: still held.
+  expect(service.get({ sessionId: "s2" }).session.holdComments).toBe(true);
 });
 
 test("a local review left in the old GitLab mode is local again, threads kept", async () => {

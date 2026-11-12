@@ -443,6 +443,12 @@ export function createReviewService(args: {
       }
       storage.saveSession(session);
     }
+    // A merge request's review used to start with sending off, with no way
+    // to turn it on: its discussions with the agent are sent as written.
+    if (session.gitlab && session.autoSend === false) {
+      delete session.autoSend;
+      storage.saveSession(session);
+    }
     sessions.set(session.id, session);
     threads.set(
       session.id,
@@ -1170,8 +1176,9 @@ export function createReviewService(args: {
           describeTarget(target),
         target,
         gitlab: isGitlabTarget(target),
-        // Comments on the agent's own branch go straight to it.
-        autoSend: !isGitlabTarget(target),
+        // Discussions with the agent go straight to it, on a merge request
+        // too: only the drafts for the forge wait for the user.
+        autoSend: true,
         summary: "",
         agent: {},
         createdAt: at,
