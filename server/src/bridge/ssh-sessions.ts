@@ -47,6 +47,18 @@ export const SSH_REFUSED_COOLDOWN_MS = 5_000;
  * after it, even when nothing there notices its client is gone.
  */
 export const SSH_REMOTE_GRACE_S = 2;
+/**
+ * A master whose host refused this many sessions in a row, over at least
+ * SSH_MASTER_RECYCLE_AFTER_MS with none served in between, is closed and
+ * opened again: its sessions stay taken on the host (an sshd that stopped
+ * reaping its session processes keeps them counted), and only a new
+ * connection gets fresh ones. Until it is back, commands go straight to a
+ * connection of their own instead of retrying over it.
+ */
+export const SSH_MASTER_RECYCLE_REFUSALS = 8;
+export const SSH_MASTER_RECYCLE_AFTER_MS = 15_000;
+/** The least time between two recycles of one master. */
+export const SSH_MASTER_RECYCLE_INTERVAL_MS = 60_000;
 
 /**
  * Who a command is for. Interactive work (the default) is what the user is
@@ -111,6 +123,11 @@ export type SshMasterRegistration = {
   isListening: () => boolean;
   /** Confirms the master still serves sessions (process alive, `-O check`). */
   isAlive: () => Promise<boolean>;
+  /**
+   * Closes the master and opens a new one, for a host that keeps refusing
+   * its sessions; commands meanwhile log in on their own.
+   */
+  recycle?: () => void;
 };
 
 type SshCommandRoute = {
@@ -189,6 +206,47 @@ export function muxSessionsIdle(controlPath: string): Promise<void> {
   const entry = muxSessions.get(controlPath);
   if (!entry) return Promise.resolve();
   return new Promise((resolve) => entry.idle.push(resolve));
+}
+
+// Refusals in a row over each master's control socket, since the first.
+const refusalStreaks = new Map<string, { since: number; count: number }>();
+const lastRecycles = new Map<string, number>();
+
+/** A session over `controlPath` ran: its host serves sessions again. */
+function noteMasterServed(controlPath: string) {
+  refusalStreaks.delete(controlPath);
+}
+
+/**
+ * The host refused a session over `controlPath`. Past
+ * SSH_MASTER_RECYCLE_REFUSALS in a row over SSH_MASTER_RECYCLE_AFTER_MS,
+ * the master is recycled (at most every SSH_MASTER_RECYCLE_INTERVAL_MS) and
+ * true is returned: the master is not worth retrying.
+ */
+function noteMasterRefusal(controlPath: string): boolean {
+  const now = Date.now();
+  let streak = refusalStreaks.get(controlPath);
+  if (!streak) {
+    streak = { since: now, count: 0 };
+    refusalStreaks.set(controlPath, streak);
+  }
+  streak.count += 1;
+  if (
+    streak.count < SSH_MASTER_RECYCLE_REFUSALS ||
+    now - streak.since < SSH_MASTER_RECYCLE_AFTER_MS
+  )
+    return false;
+  const last = lastRecycles.get(controlPath);
+  if (last === undefined || now - last >= SSH_MASTER_RECYCLE_INTERVAL_MS) {
+    for (const master of masters.values()) {
+      if (master.controlPath !== controlPath || !master.recycle) continue;
+      lastRecycles.set(controlPath, now);
+      refusalStreaks.delete(controlPath);
+      master.recycle();
+      break;
+    }
+  }
+  return true;
 }
 
 export function registerSshMaster(
@@ -630,7 +688,10 @@ export async function runSshCommand<T extends { code: number; stderr: string }>(
         MUX_REFUSED_STDERR.test(result.stderr)
       ) {
         noteRefusal(route.destination);
-        const delay = SSH_REFUSED_RETRY_DELAYS_MS[tries];
+        const broken =
+          route.controlPath !== undefined &&
+          noteMasterRefusal(route.controlPath);
+        const delay = broken ? undefined : SSH_REFUSED_RETRY_DELAYS_MS[tries];
         if (delay !== undefined) {
           const left = remaining();
           if (left === undefined || left > delay) {
@@ -653,6 +714,7 @@ export async function runSshCommand<T extends { code: number; stderr: string }>(
         wait.signal?.throwIfAborted();
         return clean(await attempt(route.cold));
       }
+      if (muxOnly && route.controlPath) noteMasterServed(route.controlPath);
       if (
         route.retrySafe &&
         route.controlPath &&
