@@ -459,14 +459,14 @@
   }
 
   /* Not writing, and nothing in the box: the box alone beside the
-     navigation. */
+     navigation, and the voice call button, a tap away as it was on the box. */
   .mobile-bottom-input
     > .agent-history-composer:not(
       :focus-within,
       :has(.agent-history-composer-send:not(:disabled))
     )
     :is(
-      .agent-history-composer-attach,
+      .agent-history-composer-attach:not(.agent-history-composer-voice),
       .agent-history-composer-escape,
       .agent-history-composer-send:disabled
     ) {

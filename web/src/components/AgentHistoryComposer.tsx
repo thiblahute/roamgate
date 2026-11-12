@@ -14,11 +14,11 @@ import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import {
   AtSign,
-  AudioLines,
   CornerDownRight,
   ImagePlus,
   ListPlus,
   Mic,
+  PhoneCall,
   Route,
   Send,
   Square,
@@ -548,6 +548,9 @@ export function AgentHistoryComposer({
   useEffect(() => {
     if (text && nextPromptKey) setNextPromptGone(nextPromptKey);
   }, [text, nextPromptKey]);
+  // Dictate, the microphone on the box: hidden during a voice call, which
+  // the server's helper would refuse it for, and without a voice engine.
+  const dictateHere = !!voice?.listen && voice.state === "off";
   const offered =
     nextPrompt &&
     nextPrompt.text.trim() &&
@@ -904,29 +907,30 @@ export function AgentHistoryComposer({
             <ImagePlus size={17} aria-hidden="true" />
           </button>
         ) : null}
-        {voice?.listen && voice.state === "off" ? (
-          // Never during a voice chat: the helper listens to one at a time.
+        {voice?.state === "off" ? (
+          // A running call is controlled from over the chat.
           <button
             type="button"
-            className={`agent-history-composer-attach agent-history-composer-dictate${dictation?.state === "listening" ? " is-listening" : ""}`}
+            className={`agent-history-composer-attach agent-history-composer-voice is-off${voice.listen ? "" : " is-unavailable"}`}
             aria-label={
-              dictation?.state === "listening"
-                ? "Stop dictating and put the text in the box"
-                : "Dictate into the box"
+              voice.listen
+                ? voiceFronting()
+                  ? "Call the companion"
+                  : "Start a voice call with the agent"
+                : "Voice calls need the server's voice engine"
             }
-            aria-pressed={dictation?.state === "listening"}
+            aria-pressed={false}
             title={
-              dictation?.state === "listening"
-                ? "Stop: the cleaned text goes in the box"
-                : "Dictate: what you say is cleaned and put in the box"
-            }
-            disabled={
-              dictation?.state === "starting" || dictation?.state === "cleaning"
+              voice.listen
+                ? voiceFronting()
+                  ? "Call the companion: this session is where work goes by default"
+                  : "Start a voice call with the agent"
+                : "Voice calls cannot listen: the server has no voice engine"
             }
             onMouseDown={keepTextareaFocus}
-            onClick={() => void toggleDictation()}
+            onClick={voice.onToggle}
           >
-            <AudioLines size={17} aria-hidden="true" />
+            <PhoneCall size={17} aria-hidden="true" />
           </button>
         ) : null}
         {vimKeys && touch ? (
@@ -943,9 +947,9 @@ export function AgentHistoryComposer({
             Esc
           </button>
         ) : null}
-        {/* The box, with the microphone on it, at its right edge. */}
+        {/* The box, with Dictate's microphone on it, at its right edge. */}
         <div
-          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${voice ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
+          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${dictateHere ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
         >
           {picker.popup}
           {vimKeys ? (
@@ -1224,28 +1228,28 @@ export function AgentHistoryComposer({
                 Tab
               </span>
             ) : null}
-            {voice?.state === "off" ? (
-              // A running conversation is controlled from over the chat.
+            {dictateHere ? (
+              // Never during a voice call: the helper listens to one at a time.
               <button
                 type="button"
-                className={`agent-history-composer-voice is-off${voice.listen ? "" : " is-unavailable"}`}
+                className={`agent-history-composer-voice agent-history-composer-dictate${dictation?.state === "listening" ? " is-listening" : ""}`}
                 aria-label={
-                  voice.listen
-                    ? voiceFronting()
-                      ? "Call the companion"
-                      : "Talk to the agent"
-                    : "Voice chat needs the server's voice engine"
+                  dictation?.state === "listening"
+                    ? "Stop dictating and put the text in the box"
+                    : "Dictate"
                 }
-                aria-pressed={false}
+                aria-pressed={dictation?.state === "listening"}
                 title={
-                  voice.listen
-                    ? voiceFronting()
-                      ? "Call the companion: this session is where work goes by default"
-                      : "Talk to the agent"
-                    : "Voice chat cannot listen: the server has no voice engine"
+                  dictation?.state === "listening"
+                    ? "Stop: the cleaned text goes in the box"
+                    : "Dictate"
+                }
+                disabled={
+                  dictation?.state === "starting" ||
+                  dictation?.state === "cleaning"
                 }
                 onMouseDown={keepTextareaFocus}
-                onClick={voice.onToggle}
+                onClick={() => void toggleDictation()}
               >
                 <Mic size={17} aria-hidden="true" />
               </button>
