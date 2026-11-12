@@ -88,7 +88,10 @@
  * The Roamgate Android app keeps the microphone with the screen off: on a
  * phone that has it (androidApp.ts), the call is handed to it once set up
  * (handOff): the page asks the server for a single-use token
- * (`call_handoff`) and opens the app with it (an intent URL); the app
+ * (`call_handoff`) and opens the app with it (an intent URL), or, in the
+ * app's own WebView, gives it to the app's bridge (`RoamgateApp.handOff`,
+ * no intent URL and no button; a bridge that throws leaves the call
+ * here); the app
  * joins the call with the legs it carries, and the page, told so
  * (`call_carrier`), lets those legs go: no microphone of its own, no
  * replies played when the app plays them (its outputs, `call_output_state`,
@@ -101,6 +104,7 @@
 
 import {
   androidAppKnown,
+  appBridge,
   androidAppMissedCall,
   androidAppTookCall,
   handoffIntentUrl,
@@ -483,8 +487,15 @@ export type CallOptions = {
 export type AndroidApp = {
   /** Whether it is on this phone, as far as the page knows. */
   known(): boolean;
+  /**
+   * Whether this page runs in the app's own WebView: the call goes to its
+   * bridge (handOff), never through an intent URL or a button.
+   */
+  embedded(): boolean;
   /** Opens it on `url` (an intent URL). */
   open(url: string): void;
+  /** Gives call `callId` to the app's bridge with `token`; may throw. */
+  handOff(callId: string, token: string): void;
   /** It took a call handed to it. */
   took(): void;
   /** It did not; true when it is forgotten now. */
@@ -492,9 +503,15 @@ export type AndroidApp = {
 };
 
 const browserApp: AndroidApp = {
-  known: () => androidAppKnown(),
+  known: () => appBridge() !== null || androidAppKnown(),
+  embedded: () => appBridge() !== null,
   open: (url) => {
     globalThis.location.href = url;
+  },
+  handOff: (callId, token) => {
+    const bridge = appBridge();
+    if (!bridge) throw new Error("no Roamgate app bridge");
+    bridge.handOff(callId, token);
   },
   took: () => androidAppTookCall(),
   missed: () => androidAppMissedCall(),
@@ -684,6 +701,8 @@ export class WebRtcCall {
   } | null = null;
   /** A handoff offered to the app, waited for. */
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The app's bridge threw: the call stays here, not handed again. */
+  private bridgeFailed = false;
 
   private constructor(
     readonly id: number,
@@ -2001,6 +2020,7 @@ export class WebRtcCall {
       !this.stopped &&
       !this.carrier &&
       !this.handoffTimer &&
+      !this.bridgeFailed &&
       this.options.app.known()
     );
   }
@@ -2038,7 +2058,32 @@ export class WebRtcCall {
       return;
     }
     if (this.stopped || this.carrier) return;
-    this.options.app.open(handoffIntentUrl(location.href, this.id, handoff));
+    if (!this.options.app.embedded()) {
+      this.options.app.open(handoffIntentUrl(location.href, this.id, handoff));
+      return;
+    }
+    try {
+      this.options.app.handOff(String(this.id), handoff);
+    } catch (error) {
+      if (this.handoffTimer) clearTimeout(this.handoffTimer);
+      this.handoffTimer = null;
+      this.bridgeFailed = true;
+      this.trace(
+        `the Roamgate app could not take the call (${String(error)}): it goes on here`,
+      );
+      this.options.notice(
+        "The Roamgate app could not take the call: it goes on here.",
+      );
+      callChanged();
+    }
+  }
+
+  /**
+   * Whether this page runs in the app's own WebView, which takes the call
+   * by itself: no button hands it there.
+   */
+  inAppWebView(): boolean {
+    return this.options.app.embedded();
   }
 
   /** Whether a handoff to the app is being waited for. */

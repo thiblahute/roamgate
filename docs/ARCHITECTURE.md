@@ -1823,6 +1823,13 @@ that has the app is carried by the app (`web/src/androidApp.ts`,
    A browser opening `/call/<id>` itself gets the web app, the parameter
    ignored. Should Chrome not open the app by itself (no user gesture
    left), the call's controls offer "Move to the Roamgate app".
+   In the app's own WebView, which exposes the JavaScript bridge
+   `window.RoamgateApp` with a `handOff` function, the app is taken as
+   installed (no launch parameter or referrer needed): once the call is set
+   up the page sends the same `call_handoff` and calls
+   `window.RoamgateApp.handOff("7", "<token>")` with only the call id and
+   the token, no intent URL and no "Move to the Roamgate app" button. A
+   bridge that throws leaves the call in the page, which says so.
 3. **Redeeming.** The app posts `{"handoff": "<token>"}` to `POST
    /api/voice/call/handoff`, before the login gate: the token is the
    credential. 200 answers `{"call": 7, "carrier": "<carrier token>"}`

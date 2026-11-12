@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, jest, test } from "bun:test";
+import { callPlace } from "./components/CallOutputButton";
 import type { ChannelEvent } from "./voiceChannel";
 import {
   activeCall,
@@ -1733,9 +1734,13 @@ describe("a call's screen and microphone on a phone", () => {
 });
 
 /** The Android app, as a call sees it: what it was asked to open. */
-function fakeApp(known = true) {
+function fakeApp(
+  known = true,
+  bridge: ((callId: string, token: string) => void) | null = null,
+) {
   const app = {
     opened: [] as string[],
+    handedOff: [] as unknown[][],
     took: 0,
     missed: 0,
     known: () => known,
@@ -1747,7 +1752,12 @@ function fakeApp(known = true) {
     app,
     options: {
       known: app.known,
+      embedded: () => bridge !== null,
       open: app.open,
+      handOff: (...args: [string, string]) => {
+        app.handedOff.push(args);
+        bridge?.(...args);
+      },
       took: () => {
         app.took += 1;
       },
@@ -1794,8 +1804,51 @@ describe("a call handed to the Android app", () => {
     ]);
     expect(call.handingOff()).toBe(true);
     expect(call.canHandOff()).toBe(false);
+    expect(app.handedOff).toEqual([]);
+    expect(callPlace(call)).toBe("opening");
     call.stop();
     expect(call.handingOff()).toBe(false);
+  });
+
+  test("in the app's WebView, its bridge takes the call: no intent URL, no button", async () => {
+    const { app, options } = fakeApp(true, () => {});
+    const { call, sent } = await started({ app: options }, handing);
+    await settle();
+    expect(sent.filter((m) => m.op === "call_handoff")).toEqual([
+      { op: "call_handoff", call: 7 },
+    ]);
+    expect(app.handedOff).toEqual([["7", "one-use"]]);
+    expect(app.opened).toEqual([]);
+    expect(call.handingOff()).toBe(true);
+    expect(call.inAppWebView()).toBe(true);
+    expect(callPlace(call)).toBeNull();
+    call.stop();
+  });
+
+  test("in the app's WebView, a bridge that throws leaves the call here and says so", async () => {
+    const { app, options } = fakeApp(true, () => {
+      throw new Error("no service");
+    });
+    const notices: string[] = [];
+    const { call, sent, lines } = await started(
+      { app: options, notice: (text) => notices.push(text) },
+      handing,
+    );
+    await settle();
+    expect(app.handedOff).toEqual([["7", "one-use"]]);
+    expect(app.opened).toEqual([]);
+    expect(call.handingOff()).toBe(false);
+    expect(call.inApp()).toBe(false);
+    expect(call.canHandOff()).toBe(false);
+    expect(callPlace(call)).toBeNull();
+    expect(notices).toEqual([
+      "The Roamgate app could not take the call: it goes on here.",
+    ]);
+    expect(lines).toContain(
+      "call 7: the Roamgate app could not take the call (Error: no service): it goes on here",
+    );
+    expect(sent.filter((m) => m.op === "call_handoff")).toHaveLength(1);
+    call.stop();
   });
 
   test("the app carrying the microphone: the page's closes, the screen may turn off, and it comes back when the app leaves", async () => {
@@ -1923,6 +1976,7 @@ describe("a call handed to the Android app", () => {
       ]);
       // Offered again, by hand.
       expect(call.canHandOff()).toBe(true);
+      expect(callPlace(call)).toBe("can");
       call.stop();
     } finally {
       jest.useRealTimers();
