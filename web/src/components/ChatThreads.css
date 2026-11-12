@@ -250,3 +250,106 @@
 .chat-thread-retry:hover {
   border-color: var(--accent);
 }
+
+/* A part's + sits in a gutter its message (or thread card) keeps for it,
+   inside the bubble's padding: in the margin it straddled the bubble's
+   border, half outside. A table's cells keep theirs inside. */
+.chat-review .rc-text:has(.rc-part-add) {
+  padding-left: 16px;
+}
+
+.chat-review .rc-part > .rc-part-add {
+  left: -20px;
+}
+
+.chat-review .rc-table .rc-part > .rc-part-add {
+  left: 2px;
+}
+
+/* A phone: no hover, and a finger. The part tapped shows its + in a gutter
+   it makes inside itself (one kept by every message would cost each line
+   16px of a narrow screen), with a 44px target kept by a transparent
+   border; parts not tapped have no + to hit by mistake. The comments'
+   buttons and Comment on a selection take 44px too. */
+@media (hover: none) and (pointer: coarse) {
+  /* No gutter kept for a + not shown: the part tapped makes its own. */
+  .chat-review .rc-text:has(.rc-part-add) {
+    padding-left: 0;
+  }
+
+  .chat-review .rc-part.is-focused {
+    padding-left: calc(var(--rc-depth, 0) * 1.4em + 36px);
+  }
+
+  .chat-review .rc-part > .rc-part-add {
+    --rc-add-left: -10px;
+    top: -12px;
+    left: calc(var(--rc-depth, 0) * 1.4em + var(--rc-add-left));
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    border: 12px solid transparent;
+    background-clip: padding-box;
+    box-shadow: inset 0 0 0 1px var(--rv-border);
+    font-size: 16px;
+    line-height: 18px;
+    visibility: hidden;
+    transition: none;
+  }
+
+  /* A table scrolls sideways: its cells' + stays inside them. */
+  .chat-review .rc-table .rc-part > .rc-part-add {
+    --rc-add-left: 0px;
+    top: -6px;
+  }
+
+  .chat-review .rc-table .rc-part.is-focused {
+    padding-left: 44px;
+  }
+
+  .chat-review .rc-part.is-focused > .rc-part-add {
+    visibility: visible;
+  }
+
+  .chat-review .rc-part > .rc-part-add:is(:hover, :focus-visible) {
+    border-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--rv-accent);
+  }
+
+  /* The bar is a finger high; its buttons keep their size and take all of
+     it, as the pane's drag grip does. */
+  .chat-thread-bar {
+    min-height: 44px;
+    margin-top: 0;
+  }
+
+  .chat-thread-bar button {
+    position: relative;
+  }
+
+  .chat-thread-bar button::before {
+    content: "";
+    position: absolute;
+    inset: -12px -2px;
+  }
+
+  .chat-thread-select {
+    min-height: 44px;
+  }
+
+  /* A box brought back above the keyboard leaves room for the chat's "new
+     messages" chip under its buttons. */
+  .chat-thread-editor {
+    scroll-margin-bottom: 40px;
+  }
+
+  .chat-thread.is-folded {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  /* No Cmd key on a phone: its button sends. */
+  .chat-thread-hint {
+    visibility: hidden;
+  }
+}
