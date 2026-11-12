@@ -564,7 +564,9 @@ again, and comments follow their code or show as outdated.
   in any view (in an agent chat too).
   In an agent chat, Claude's messages are in parts too: the `+` in a
   part's margin, or **Comment** on words selected, starts a thread under
-  that part. The threads are the chat's own review: Claude gets them with
+  that part. On a phone, the part tapped shows its `+` at its own left
+  edge, a finger wide, and **Comment** comes below the selection's
+  handles. The threads are the chat's own review: Claude gets them with
   the quote and where it is, answers in them, and you reply, resolve or
   fold them there. The message that hands them over shows as one line.
   They go to the chat's Claude session in whichever pane runs it now.

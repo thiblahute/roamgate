@@ -1468,11 +1468,20 @@ export function ChatThreadsProvider({
           return;
         }
         const rect = range.getBoundingClientRect();
+        // On a touch screen the selection's handles hang under its ends:
+        // Comment goes below them, 44px high, where a finger reaches it.
+        const touch = window.matchMedia?.("(pointer: coarse)").matches;
         setSelection({
           entry: message.dataset.entryId,
           quote,
           x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
-          y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 44)),
+          y: Math.max(
+            8,
+            Math.min(
+              rect.bottom + (touch ? 32 : 8),
+              window.innerHeight - (touch ? 52 : 44),
+            ),
+          ),
         });
       }, 200);
     };
@@ -1480,6 +1489,34 @@ export function ChatThreadsProvider({
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("selectionchange", onChange);
+    };
+  }, []);
+
+  // A phone's keyboard opening under a comment being written, or a box
+  // opened while it is up: the whole box, its buttons too, back into what
+  // the keyboard leaves of the chat (the browser only keeps the caret).
+  useEffect(() => {
+    let frame = 0;
+    const reveal = () => {
+      if (!window.matchMedia?.("(pointer: coarse)").matches) return;
+      cancelAnimationFrame(frame);
+      // After the app has measured the keyboard and laid out again.
+      frame = requestAnimationFrame(() => {
+        const active = document.activeElement;
+        const box =
+          active instanceof Element
+            ? active.closest<HTMLElement>(".chat-thread-editor")
+            : null;
+        if (box && scopeRef.current?.contains(box))
+          box.scrollIntoView({ block: "nearest" });
+      });
+    };
+    window.visualViewport?.addEventListener("resize", reveal);
+    document.addEventListener("focusin", reveal);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.visualViewport?.removeEventListener("resize", reveal);
+      document.removeEventListener("focusin", reveal);
     };
   }, []);
 
