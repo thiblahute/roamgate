@@ -688,8 +688,16 @@ export function ReviewOverlay({
     holdForSend,
     undeliveredReason,
   } = reviewAgent(snapshot, agentPanes);
-  /** Your discussion comments the agent has not had yet. */
-  const heldCount = heldCommentCount(threads, session, held);
+  /**
+   * Your discussion comments the agent has not had yet, while they wait for
+   * a Send: held, or written while nothing sends by itself.
+   */
+  const waitingCount =
+    agentAllowed && (held || !talk)
+      ? heldCommentCount(threads, session, true)
+      : 0;
+  /** An agent to send to: named by the review, or in its workspace. */
+  const canSend = agentAllowed && (!!agent.name || !!agentPaneId);
   // A new answer in a discussion shows the comments: it is never missed.
   const latestAnswer = latestAnswerAt(threads);
   const seenAnswer = useRef(latestAnswer);
@@ -710,6 +718,20 @@ export function ReviewOverlay({
     attachPaneOf(session, { talk, agentPaneId }),
     agentName,
     call,
+    (attached) => {
+      // An agent that came after the review: what you wrote for it goes now.
+      const sent = heldCommentCount(
+        attached.threads ?? [],
+        attached.session,
+        true,
+      );
+      if (sent)
+        notify(
+          `Sent ${plural(sent, "comment")} to ${agentName}.`,
+          "info",
+          4000,
+        );
+    },
   );
 
   const { sessions: reviewSessions } = useReviewState();
@@ -4611,7 +4633,7 @@ export function ReviewOverlay({
     const placeholder = current.overall
       ? !agent.name
         ? "Your overall comment on the review (Cmd+Enter saves, Esc closes)"
-        : talk
+        : talk && !session.gitlab
           ? `Your overall comment, for ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
           : `Your overall comment, for ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
       : current.replyTo
@@ -4978,7 +5000,17 @@ export function ReviewOverlay({
                       comment.updatedAt <= delivery.review.deliveredAt ? (
                       <span className="rc-kind">{`→ ${delivery.agentName}`}</span>
                     ) : delivery.held ? (
-                      <span className="rc-kind">{`held for ${delivery.agentName}`}</span>
+                      <>
+                        <span className="rc-kind">{`held for ${delivery.agentName}`}</span>
+                        <button
+                          type="button"
+                          className="btn ghost rc-send"
+                          title={`Send your held comments to ${delivery.agentName} (:send)`}
+                          onClick={() => void handoff()}
+                        >
+                          Send
+                        </button>
+                      </>
                     ) : delivery.talk && delivery.undeliveredReason ? (
                       <>
                         <span
@@ -4998,8 +5030,25 @@ export function ReviewOverlay({
                       </>
                     ) : delivery.talk ? (
                       <span className="rc-kind">{`→ ${delivery.agentName}...`}</span>
+                    ) : canSend ? (
+                      <>
+                        <span className="rc-kind">{`for ${delivery.agentName}, not sent`}</span>
+                        <button
+                          type="button"
+                          className="btn ghost rc-send"
+                          title={`Send your comments to ${delivery.agentName} (:send)`}
+                          onClick={() => void handoff()}
+                        >
+                          Send
+                        </button>
+                      </>
                     ) : (
-                      <span className="rc-kind">{`for ${delivery.agentName}, not sent`}</span>
+                      <span
+                        className="rc-kind"
+                        title="Copy the review as Markdown from the agent menu, or start or pick an agent in this workspace"
+                      >
+                        No agent in this workspace: Copy or pick one
+                      </span>
                     )
                   ) : null}
                   {thread.gitlab?.draftId !== undefined ? (
@@ -5782,6 +5831,23 @@ export function ReviewOverlay({
             {forge}
           </span>
         ) : null}
+        {canSend ? (
+          <button
+            type="button"
+            className={`btn rv-sm rv-send${waitingCount || overallUnsent ? " primary" : ""}`}
+            title={
+              waitingCount
+                ? `Send your ${plural(waitingCount, "comment")} to ${agentName} (:send)`
+                : overallUnsent
+                  ? `Send your overall comment and the open discussions to ${agentName} (:send, or Cmd+Enter in the comment)`
+                  : `Hand the open discussions to ${agentName} (:send)`
+            }
+            onClick={() => void handoff()}
+          >
+            <Send size={14} />
+            {waitingCount ? `Send ${waitingCount}` : "Send"}
+          </button>
+        ) : null}
         {modeSwitch ? (
           <div
             className="rv-mode-switch"
@@ -5894,23 +5960,6 @@ export function ReviewOverlay({
         </div>
         {agentAllowed ? (
           <div className="rv-agent" role="group" aria-label="Agent">
-            {agent.name ? (
-              <button
-                type="button"
-                className={`btn rv-sm rv-send${heldCount || overallUnsent ? " primary" : ""}`}
-                title={
-                  heldCount
-                    ? `Send your ${plural(heldCount, "held comment")} to ${agentName} (:send)`
-                    : overallUnsent
-                      ? `Send your overall comment and the open discussions to ${agentName} (:send, or Cmd+Enter in the comment)`
-                      : `Hand the open discussions to ${agentName} (:send)`
-                }
-                onClick={() => void handoff()}
-              >
-                <Send size={14} />
-                {heldCount ? `Send ${heldCount}` : "Send"}
-              </button>
-            ) : null}
             <ReviewMenu
               title={`${agentName}: how your comments reach it, and asking it`}
               label={
@@ -5923,22 +5972,21 @@ export function ReviewOverlay({
                 </>
               }
               items={[
-                !session.gitlab &&
-                  !!agentPaneId && {
-                    label: `Comments go to ${agentName}`,
-                    title: talk
-                      ? `Your comments go to ${agentName} as you write them; uncheck to write review comments instead`
-                      : `Send your comments to ${agentName} as you write them`,
-                    checked: talk,
-                    onSelect: () =>
-                      void run(async () =>
-                        rememberReviewSnapshot(
-                          await call<ReviewSnapshot>("review.update", {
-                            autoSend: !talk,
-                          }),
-                        ),
+                !!agentPaneId && {
+                  label: `Comments go to ${agentName}`,
+                  title: talk
+                    ? `Your comments go to ${agentName} as you write them; uncheck to hold them until you Send them`
+                    : `Send your comments to ${agentName} as you write them`,
+                  checked: talk,
+                  onSelect: () =>
+                    void run(async () =>
+                      rememberReviewSnapshot(
+                        await call<ReviewSnapshot>("review.update", {
+                          autoSend: !talk,
+                        }),
                       ),
-                  },
+                    ),
+                },
                 talk && {
                   label: "Hold until Send",
                   hint: ":hold",
