@@ -61,9 +61,10 @@ export function RenderedFrame({
   ) => void;
   /**
    * A page is shown in the frame: `url` under its token, `first` for the
-   * first page of the frame's source (not a navigation of its own).
+   * first page of the frame's source (not a navigation of its own), `root`
+   * its token's root map (with the frame's home under it).
    */
-  onPage?: (url: string, first: boolean) => void;
+  onPage?: (url: string, first: boolean, root?: RenderedRootMap) => void;
   frameRef?: RefObject<HTMLIFrameElement | null>;
   className?: string;
   /**
@@ -187,7 +188,7 @@ export function RenderedFrame({
         setShown(message.url);
         const first = !shownOnce.current;
         shownOnce.current = true;
-        onPageRef.current?.(message.url, first);
+        onPageRef.current?.(message.url, first, message.root);
         toFrame({
           roamgate: "rendered",
           type: "pointMode",

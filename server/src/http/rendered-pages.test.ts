@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderedHelperSource } from "./rendered-helper";
 import { renderedFileTarget } from "../review/rendered-target";
+import { pageFromHome, pageUnderHome } from "../../../shared/renderedPage";
 import {
   RENDERED_STORAGE_MAX_CHARS,
   RENDERED_STORAGE_MAX_KEYS,
@@ -717,6 +718,7 @@ describe("renderedAddress", () => {
       mode: "static",
       source: { kind: "files", root: "/repo" },
       rest: "docs/site/index.html",
+      home: "docs/site/",
     });
     expect(
       renderedAddress({
@@ -735,6 +737,7 @@ describe("renderedAddress", () => {
       },
       rest: "sub/p.html?x=1",
       site: "/repo/docs/",
+      home: "site/",
     });
   });
 
@@ -781,6 +784,7 @@ describe("renderedAddress", () => {
       },
       rest: "docs/c.html",
       site: "http://localhost:8080/",
+      home: "docs/a/",
     });
     expect(() =>
       renderedAddress({
@@ -1257,11 +1261,90 @@ describe("a listed directory's site root", () => {
         connectionId: "c1",
         mode: address.mode,
         source: address.source,
+        ...(address.home ? { home: address.home } : {}),
       });
       return { address, token };
     };
     return { pages, reads, finds, open };
   }
+
+  test("a page is kept from the frame's home, never doubled under another token's root", async () => {
+    const { pages, open } = sitePages();
+    // Opened before its root is known: served from the listed folder.
+    const first = open();
+    expect(first.address.rest).toBe("index.html");
+    expect(first.address.home).toBeUndefined();
+    const moved = await got(
+      pages,
+      `/rendered/${first.token}/.roamgate-root/documentation/libs.html`,
+    );
+    const [, next] = /^\/rendered\/([0-9a-f]{32})\//.exec(
+      moved.headers.get("location")!,
+    )!;
+    // The root found above: the frame's home is the listed folder there.
+    const libs = await (
+      await got(pages, `/rendered/${next}/documentation/libs.html`)
+    ).text();
+    expect(libs).toContain('"home":"documentation/"');
+    expect(pageFromHome("documentation/libs.html", "documentation/")).toBe(
+      "libs.html",
+    );
+    // Opened again: from the root found, the same home.
+    const again = open();
+    expect(again.address.rest).toBe("documentation/index.html");
+    expect(again.address.home).toBe("documentation/");
+    expect(
+      await (
+        await got(pages, `/rendered/${again.token}/documentation/index.html`)
+      ).text(),
+    ).toContain('"home":"documentation/"');
+    // A server that forgot the root (restarted) serves the listed folder:
+    // the page kept there is the listed folder's, not its path doubled.
+    expect(pageUnderHome("index.html", "")).toBe("index.html");
+    expect(pageUnderHome("index.html", "documentation/")).toBe(
+      "documentation/index.html",
+    );
+    const fresh = sitePages().open();
+    expect(fresh.address.source).toMatchObject({ walk: true });
+    expect(
+      pageUnderHome(
+        pageFromHome("documentation/index.html", "documentation/"),
+        fresh.address.home ?? "",
+      ),
+    ).toBe("index.html");
+  });
+
+  test("a file's home is its directory under the served one, a URL's under the site", () => {
+    // The checkout served (scripts off), then its own folder (scripts on).
+    const statically = renderedAddress({
+      target: { path: "cancun/index.html" },
+      root: "/trips/vacation",
+      sites: [],
+    });
+    expect(statically.rest).toBe("cancun/index.html");
+    expect(statically.home).toBe("cancun/");
+    const listed = renderedAddress({
+      target: { path: "cancun/index.html" },
+      root: "/trips/vacation",
+      sites: ["/trips/vacation/cancun/"],
+    });
+    expect(listed.rest).toBe("index.html");
+    expect(listed.home).toBeUndefined();
+    // The page the checkout's token showed, under the listed folder's.
+    expect(
+      pageUnderHome(
+        pageFromHome(statically.rest, statically.home!),
+        listed.home ?? "",
+      ),
+    ).toBe("index.html");
+    const url = renderedAddress({
+      target: { url: "http://h:8000/docs/a/page.html" },
+      root: "/",
+      sites: ["http://h:8000/docs/"],
+    });
+    expect(url.rest).toBe("a/page.html");
+    expect(url.home).toBe("a/");
+  });
 
   test("is found above the listed folder from a root-absolute link, then kept", async () => {
     const { pages, finds, open } = sitePages();
@@ -1372,7 +1455,11 @@ describe("a listed directory's site root", () => {
       `href="/rendered/${next}/documentation/installing/on-mac.html"`,
     );
     expect(html).toContain(
-      JSON.stringify({ base: "/", to: `/rendered/${next}/` }),
+      JSON.stringify({
+        base: "/",
+        to: `/rendered/${next}/`,
+        home: "documentation/",
+      }),
     );
     expect(
       await (

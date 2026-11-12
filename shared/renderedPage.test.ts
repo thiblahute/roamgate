@@ -3,6 +3,8 @@ import {
   listedDirectory,
   listedSite,
   normalizeSiteList,
+  pageFromHome,
+  pageUnderHome,
   parseFrameMessage,
   parseSiteUrl,
   strayTarget,
@@ -240,5 +242,45 @@ describe("sites we work on", () => {
     );
     expect(parseSiteUrl("http://u:p@localhost/")).toBeNull();
     expect(parseSiteUrl("data:text/html,x")).toBeNull();
+  });
+});
+
+describe("a frame's page from its home", () => {
+  test("is kept from the frame's home and found again under any token", () => {
+    // The listed folder vacation/cancun/ shown from its parent, then alone.
+    expect(pageFromHome("cancun/index.html", "cancun/")).toBe("index.html");
+    expect(pageUnderHome("index.html", "")).toBe("index.html");
+    expect(pageUnderHome("index.html", "cancun/")).toBe("cancun/index.html");
+    // Pages beside or above the home, with their query.
+    expect(pageFromHome("cancun/day/2.html?x=1#a", "cancun/")).toBe(
+      "day/2.html?x=1#a",
+    );
+    expect(pageFromHome("shared/map.html", "cancun/")).toBe(
+      "../shared/map.html",
+    );
+    expect(pageFromHome("a/", "a/b/")).toBe("../");
+    expect(pageUnderHome("../shared/map.html", "cancun/")).toBe(
+      "shared/map.html",
+    );
+    // Above what the token serves: not reachable there.
+    expect(pageUnderHome("../shared/map.html", "")).toBeNull();
+    expect(pageUnderHome("a/../../b.html", "x/")).toBeNull();
+    expect(pageFromHome("index.html", "")).toBe("index.html");
+  });
+
+  test("a ready message keeps a valid home only", () => {
+    const ready = (home: unknown) =>
+      parseFrameMessage({
+        roamgate: "rendered",
+        type: "ready",
+        url: "index.html",
+        title: "",
+        root: { base: "/", to: `/rendered/${"a".repeat(32)}/`, home },
+      });
+    expect(ready("cancun/")).toMatchObject({ root: { home: "cancun/" } });
+    for (const bad of ["cancun", "../", "a/../", "/a/", "a?b/", 3])
+      expect(
+        (ready(bad) as { root?: { home?: string } }).root?.home,
+      ).toBeUndefined();
   });
 });

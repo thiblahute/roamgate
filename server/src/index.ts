@@ -3369,6 +3369,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
               connectionId: connection.identity.id,
               mode: address.mode,
               source: address.source,
+              ...(address.home ? { home: address.home } : {}),
             });
             return {
               src: `${RENDERED_PREFIX}${token}/${address.rest}`,

@@ -37,13 +37,13 @@ test("a tab's history goes back and forward, with the scroll each place was left
 
 test("a frame's pages are places of their tab; its first page settles the tab's", () => {
   let history = settleFrame(startHistory("/site/index.html"), "index.html");
-  expect(currentPlace(history).frameUrl).toBe("index.html");
+  expect(currentPlace(history).framePage).toBe("index.html");
   history = pushPlace(history, {
     path: "/site/index.html",
-    frameUrl: "docs/a.html",
+    framePage: "docs/a.html",
   });
   expect(history.places.length).toBe(2);
-  expect(stepHistory(history, -1)?.place.frameUrl).toBe("index.html");
+  expect(stepHistory(history, -1)?.place.framePage).toBe("index.html");
 });
 
 test("Back and Forward's keys: Alt+arrows, Cmd+[ and Cmd+]", () => {

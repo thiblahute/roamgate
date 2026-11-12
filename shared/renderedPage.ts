@@ -19,8 +19,66 @@ export const RENDERED_TOKEN = /^[0-9a-f]{32}$/;
  */
 export type RenderedMode = "static" | "site";
 
-/** Where a page's root-absolute URLs go (RenderedFrameMessage ready). */
-export type RenderedRootMap = { base: string; to: string };
+/**
+ * Where a page's root-absolute URLs go (RenderedFrameMessage ready), and
+ * `home`: the directory of the file or URL the frame was opened on, as a
+ * path under the token ("" or ending in `/`).
+ */
+export type RenderedRootMap = { base: string; to: string; home?: string };
+
+/** A home: a relative directory path, "" or ending in `/`, no dot parts. */
+export function validHome(home: string): boolean {
+  if (home === "") return true;
+  if (!home.endsWith("/") || home.length > 1024 || /[?#\\]/.test(home))
+    return false;
+  return home
+    .slice(0, -1)
+    .split("/")
+    .every((part) => !!part && !/^(\.|%2e){1,2}$/i.test(part));
+}
+
+function splitPage(url: string): { path: string; tail: string } {
+  const at = url.search(/[?#]/);
+  return at < 0
+    ? { path: url, tail: "" }
+    : { path: url.slice(0, at), tail: url.slice(at) };
+}
+
+/**
+ * A page under a token (its path and query, as the frame says it) as a
+ * path from the frame's home: the same page whatever directory the token
+ * serves (another token may serve one above it), so it is found again.
+ */
+export function pageFromHome(url: string, home: string): string {
+  const { path, tail } = splitPage(url);
+  const homeParts = home.split("/").slice(0, -1);
+  const parts = path.split("/");
+  let common = 0;
+  while (
+    common < homeParts.length &&
+    common < parts.length - 1 &&
+    parts[common] === homeParts[common]
+  )
+    common++;
+  return `${"../".repeat(homeParts.length - common)}${parts.slice(common).join("/")}${tail}`;
+}
+
+/**
+ * A page kept from its home (pageFromHome) as a path under a token whose
+ * home is `home`; null when it is above what the token serves.
+ */
+export function pageUnderHome(page: string, home: string): string | null {
+  const { path, tail } = splitPage(page);
+  const parts = home.split("/").slice(0, -1);
+  const rest = path.split("/");
+  while (rest[0] === "..") {
+    if (!parts.length) return null;
+    parts.pop();
+    rest.shift();
+  }
+  if (rest.some((part) => /^(\.|%2e){1,2}$/i.test(part))) return null;
+  return `${[...parts, ...rest].join("/")}${tail}`;
+}
 
 const ROOT_TO = /^\/rendered\/[0-9a-f]{32}\/(\.roamgate-root\/)?$/;
 
@@ -275,6 +333,7 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
     const root = raw.root as Record<string, unknown> | null | undefined;
     const base = shortText(root?.base, 1024);
     const to = shortText(root?.to, 100);
+    const home = shortText(root?.home, 1024);
     return {
       roamgate: "rendered",
       type: "ready",
@@ -284,7 +343,13 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
       to !== null &&
       /^\/([^?#]*\/)?$/.test(base) &&
       ROOT_TO.test(to)
-        ? { root: { base, to } }
+        ? {
+            root: {
+              base,
+              to,
+              ...(home && validHome(home) ? { home } : {}),
+            },
+          }
         : {}),
     };
   }
