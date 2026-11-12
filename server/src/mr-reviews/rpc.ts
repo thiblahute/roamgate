@@ -90,9 +90,12 @@ export async function handleMrReviewsRpc(
             { connection_id: clone?.connectionId, path: clone?.path },
           ]),
         ),
+        order: value.order ?? current.order,
       });
       const saved = await deps.saveSettings(mrReviewsSettings(stored));
-      void deps.inbox.refresh();
+      // The user's order alone changes nothing the forges are asked.
+      if (Object.keys(value).some((name) => name !== "order"))
+        void deps.inbox.refresh();
       return saved;
     }
     default:

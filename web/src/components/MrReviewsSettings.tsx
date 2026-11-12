@@ -52,7 +52,12 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const saved = await saveMrReviewsSettings({ ...settings, ...change });
+      // The inbox's order is the list's to change: never an old copy of it.
+      const saved = await saveMrReviewsSettings({
+        ...settings,
+        order: undefined,
+        ...change,
+      });
       setSettings({
         ...saved,
         discoveredHosts: settings.discoveredHosts ?? [],

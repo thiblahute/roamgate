@@ -1,6 +1,10 @@
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ExternalLink,
+  GripVertical,
+  Keyboard,
   LoaderCircle,
   Maximize2,
   Minimize2,
@@ -8,7 +12,14 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { forgeKind, forgeRefLabel } from "../../../shared/forge";
 import type {
   MrHostState,
@@ -18,7 +29,7 @@ import type {
   MrSection,
 } from "../../../shared/mrReviews";
 import { useLayoutPreferences } from "../layoutPreferences";
-import { mrReviewsCall, useMrInbox } from "../mrReviews";
+import { mrReviewsCall, saveMrReviewsSettings, useMrInbox } from "../mrReviews";
 import { mrAgentItem, setMrAgentOpener } from "../mrReviewsAgent";
 import {
   checkoutMrReview,
@@ -28,11 +39,19 @@ import {
   setMrClone,
   showMrClaude,
 } from "../mrReviewFlow";
+import {
+  MR_REVIEWS_KEYS,
+  moveMrKey,
+  mrMatches,
+  orderMrEntries,
+} from "../mrReviewsOrder";
+import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
+import "./AgentTasksSheet.css";
 import "./MrReviewsPanel.css";
 
 /**
@@ -339,21 +358,59 @@ function hostProblem(host: MrHostState): string | null {
   return host.message ?? `${host.host}: ${host.state.replace(/_/g, " ")}`;
 }
 
+/** Moving a request in the user's order: by drag, or up / down. */
+export type MrRowMove = {
+  /** Pressed and dragged with the mouse (not on a phone). */
+  drag?: {
+    dragging: boolean;
+    drop: "before" | "after" | null;
+    onDragStart: (event: DragEvent<HTMLElement>) => void;
+    onDragOver: (event: DragEvent<HTMLElement>) => void;
+    onDragLeave: () => void;
+    onDrop: (event: DragEvent<HTMLElement>) => void;
+    onDragEnd: () => void;
+  };
+  /** Its up / down buttons, shown on the selected one. */
+  onStep?: (step: -1 | 1) => void;
+  canUp?: boolean;
+  canDown?: boolean;
+};
+
 export function MrReviewRow({
   entry,
   selected,
   onSelect,
   onOpen,
+  move,
 }: {
   entry: MrInboxEntry;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  move?: MrRowMove;
 }) {
   const unread = unreadLabel(entry);
   const drafts = draftsLabel(entry);
+  const drag = move?.drag;
   return (
-    <li>
+    <li
+      className={`mr-reviews-item${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}`}
+      draggable={drag ? true : undefined}
+      onDragStart={drag?.onDragStart}
+      onDragOver={drag?.onDragOver}
+      onDragLeave={drag?.onDragLeave}
+      onDrop={drag?.onDrop}
+      onDragEnd={drag?.onDragEnd}
+    >
+      {drag ? (
+        <span
+          className="mr-reviews-grip"
+          title="Drag to move it in your order (J / K)"
+          aria-hidden="true"
+        >
+          <GripVertical size={13} />
+        </span>
+      ) : null}
       <button
         type="button"
         className={`assistant-task-row mr-reviews-row${selected ? " is-selected" : ""}${unread ? " is-unread" : ""}`}
@@ -389,6 +446,30 @@ export function MrReviewRow({
           </small>
         ) : null}
       </button>
+      {selected && move?.onStep ? (
+        <span className="mr-reviews-move">
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Move up"
+            title="Move up (K)"
+            disabled={!move.canUp}
+            onClick={() => move.onStep?.(-1)}
+          >
+            <ArrowUp size={14} />
+          </button>
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Move down"
+            title="Move down (J)"
+            disabled={!move.canDown}
+            onClick={() => move.onStep?.(1)}
+          >
+            <ArrowDown size={14} />
+          </button>
+        </span>
+      ) : null}
     </li>
   );
 }
@@ -520,15 +601,36 @@ export function MrReviewsPanel({
   const panelRef = useRef<HTMLElement>(null);
   const openedAt = useRef(Date.now());
   const entries = useMemo(() => inbox?.entries ?? [], [inbox]);
+  /** The order just changed here, until the bridge has it. */
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const order = useMemo(
+    () => localOrder ?? inbox?.order ?? [],
+    [localOrder, inbox],
+  );
   const bySection = useMemo(() => {
     const groups: Record<MrSection, MrInboxEntry[]> = {
       mine: [],
       suggested: [],
     };
     for (const entry of entries) groups[entry.section].push(entry);
-    return groups;
-  }, [entries]);
-  const ordered = [...bySection.mine, ...bySection.suggested];
+    return {
+      mine: orderMrEntries(groups.mine, order),
+      suggested: orderMrEntries(groups.suggested, order),
+    };
+  }, [entries, order]);
+  /** The search (/): the requests shown, each section narrowed. */
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const shown = useMemo(
+    () => ({
+      mine: bySection.mine.filter((entry) => mrMatches(entry, query)),
+      suggested: bySection.suggested.filter((entry) => mrMatches(entry, query)),
+    }),
+    [bySection, query],
+  );
+  const ordered = [...shown.mine, ...shown.suggested];
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
   const detailEntry = detail
     ? entries.find((entry) => entry.key === detail)
     : undefined;
@@ -744,11 +846,131 @@ export function MrReviewsPanel({
     const next =
       at < 0
         ? step > 0
-          ? 0
-          : ordered.length - 1
+          ? Math.min(ordered.length - 1, step - 1)
+          : Math.max(0, ordered.length + step)
         : Math.min(ordered.length - 1, Math.max(0, at + step));
     setSelected(ordered[next]!.key);
   };
+
+  /** Saves the user's order: every request listed, the gone ones left out. */
+  const saveSeq = useRef(0);
+  const saveOrder = (next: string[]) => {
+    setLocalOrder(next);
+    setOrderError(null);
+    const seq = ++saveSeq.current;
+    void saveMrReviewsSettings({ order: next })
+      .then(() => reload())
+      .then(
+        () => {
+          if (seq === saveSeq.current) setLocalOrder(null);
+        },
+        (cause) =>
+          setOrderError(
+            `Your order was not saved: ${cause instanceof Error ? cause.message : String(cause)}`,
+          ),
+      );
+  };
+
+  /** `key` just before or after `target`, in their section. */
+  const reorder = (key: string, target: string, place: "before" | "after") => {
+    const section = entries.find((entry) => entry.key === key)?.section;
+    const other = entries.find((entry) => entry.key === target)?.section;
+    if (!section || section !== other) return;
+    const keys = (list: MrInboxEntry[]) => list.map((entry) => entry.key);
+    const moved = moveMrKey(keys(bySection[section]), key, target, place);
+    saveOrder(
+      section === "mine"
+        ? [...moved, ...keys(bySection.suggested)]
+        : [...keys(bySection.mine), ...moved],
+    );
+  };
+
+  /** The selected request `step` places down (up when negative), as shown. */
+  const shiftSelected = (step: number) => {
+    const current = entries.find((entry) => entry.key === selected);
+    if (!current) return;
+    const list = shown[current.section];
+    const at = list.findIndex((entry) => entry.key === current.key);
+    if (at < 0) return;
+    const to = Math.min(list.length - 1, Math.max(0, at + step));
+    if (to === at) return;
+    reorder(current.key, list[to]!.key, step > 0 ? "after" : "before");
+  };
+
+  // Dragging a request onto another, in its section (a mouse; on a phone
+  // the selected one has up and down buttons).
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{
+    key: string;
+    place: "before" | "after";
+  } | null>(null);
+  const endDrag = () => {
+    setDragging(null);
+    setDropAt(null);
+  };
+  const sectionOf = (key: string | null) =>
+    entries.find((entry) => entry.key === key)?.section;
+  const rowMove = (entry: MrInboxEntry): MrRowMove => {
+    const list = shown[entry.section];
+    const at = list.indexOf(entry);
+    return {
+      onStep: (step) => {
+        setSelected(entry.key);
+        reorder(
+          entry.key,
+          list[Math.min(list.length - 1, Math.max(0, at + step))]!.key,
+          step > 0 ? "after" : "before",
+        );
+      },
+      canUp: at > 0,
+      canDown: at >= 0 && at < list.length - 1,
+      ...(mobile
+        ? {}
+        : {
+            drag: {
+              dragging: dragging === entry.key,
+              drop: dropAt?.key === entry.key ? dropAt.place : null,
+              onDragStart: (event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", entry.key);
+                setDragging(entry.key);
+                setSelected(entry.key);
+              },
+              onDragOver: (event) => {
+                if (
+                  !dragging ||
+                  dragging === entry.key ||
+                  sectionOf(dragging) !== entry.section
+                )
+                  return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                const rect = event.currentTarget.getBoundingClientRect();
+                const place =
+                  event.clientY < rect.top + rect.height / 2
+                    ? "before"
+                    : "after";
+                if (dropAt?.key !== entry.key || dropAt.place !== place)
+                  setDropAt({ key: entry.key, place });
+              },
+              onDragLeave: () => {
+                if (dropAt?.key === entry.key) setDropAt(null);
+              },
+              onDrop: (event) => {
+                event.preventDefault();
+                const place = dropAt?.key === entry.key ? dropAt.place : null;
+                const from = dragging;
+                endDrag();
+                if (from && place) reorder(from, entry.key, place);
+              },
+              onDragEnd: endDrag,
+            },
+          }),
+    };
+  };
+
+  /** A count and the g of gg, as the review pane reads them. */
+  const keyState = useRef(EMPTY_KEY_STATE);
 
   /** One key in the panel; true when the panel took it. */
   const onKey = (event: KeyboardEvent): boolean => {
@@ -788,21 +1010,69 @@ export function MrReviewsPanel({
       }
       return false;
     }
+    // The search box: Enter reviews the selected (or first) request
+    // found, the arrows move, Esc clears it and goes back to the list.
+    if (event.target === searchRef.current) {
+      const key = event.ctrlKey ? `C-${event.key}` : event.key;
+      if (key === "Escape") {
+        setQuery("");
+        panelRef.current?.focus({ preventScroll: true });
+      } else if (key === "ArrowDown" || key === "C-n") move(1);
+      else if (key === "ArrowUp" || key === "C-p") move(-1);
+      else if (key === "Enter") {
+        const found =
+          ordered.find((entry) => entry.key === selected) ?? ordered[0];
+        panelRef.current?.focus({ preventScroll: true });
+        if (found) void open(found);
+      } else return false;
+      return true;
+    }
     if (event.key === "Escape") {
+      keyState.current = EMPTY_KEY_STATE;
       if (prompt) setPrompt(null);
       else if (view === "settings") setView("list");
       else if (detail) setDetail(null);
+      else if (helpOpen) setHelpOpen(false);
+      else if (query) setQuery("");
       else if (maximized && !mobile) setMaximized(false);
       else onClose();
       return true;
     }
     if (typing || view !== "list" || detail || prompt) return false;
+    if (
+      event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
+    ) {
+      shiftSelected(event.key === "ArrowUp" ? -1 : 1);
+      return true;
+    }
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
+    const fed = feedKey(keyState.current, event.key);
+    keyState.current = fed.state;
+    if (fed.type === "wait") return true;
+    const count = fed.count ?? 1;
     const current = ordered.find((entry) => entry.key === selected);
-    if (event.key === "j" || event.key === "ArrowDown") {
-      move(1);
-    } else if (event.key === "k" || event.key === "ArrowUp") {
-      move(-1);
+    if (fed.key === "j" || fed.key === "ArrowDown") {
+      move(count);
+    } else if (fed.key === "k" || fed.key === "ArrowUp") {
+      move(-count);
+    } else if (fed.key === "gg" || fed.key === "Home") {
+      const at = Math.min(ordered.length, fed.count ?? 1) - 1;
+      if (at >= 0) setSelected(ordered[at]!.key);
+    } else if (fed.key === "G" || fed.key === "End") {
+      const at = Math.min(ordered.length, fed.count ?? ordered.length) - 1;
+      if (at >= 0) setSelected(ordered[at]!.key);
+    } else if (fed.key === "J") {
+      shiftSelected(count);
+    } else if (fed.key === "K") {
+      shiftSelected(-count);
+    } else if (fed.key === "/") {
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    } else if (fed.key === "?") {
+      setHelpOpen((open) => !open);
     } else if (event.key === "Enter" && current) {
       void open(current);
     } else if (event.key === "i" && current) {
@@ -967,6 +1237,18 @@ export function MrReviewsPanel({
             {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         ) : null}
+        {!mobile ? (
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Keys"
+            title="Keys (?)"
+            aria-pressed={helpOpen}
+            onClick={() => setHelpOpen((open) => !open)}
+          >
+            <Keyboard size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="assistant-icon-button"
@@ -990,6 +1272,18 @@ export function MrReviewsPanel({
       {error ? (
         <div className="assistant-error" role="alert">
           <span>{error}</span>
+        </div>
+      ) : null}
+      {orderError ? (
+        <div className="assistant-error" role="alert">
+          <span>{orderError}</span>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setOrderError(null)}
+          >
+            Dismiss
+          </button>
         </div>
       ) : null}
       {view === "chat" ? (
@@ -1132,6 +1426,20 @@ export function MrReviewsPanel({
                   ))}
                 </div>
               ) : null}
+              {entries.length ? (
+                <input
+                  ref={searchRef}
+                  type="search"
+                  className="mr-reviews-search"
+                  aria-label="Search the reviews"
+                  placeholder="Search (/): title, project, author, number, branch"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setSelected(null);
+                  }}
+                />
+              ) : null}
               {(["mine", "suggested"] as const).map((section) => (
                 <section
                   key={section}
@@ -1140,20 +1448,27 @@ export function MrReviewsPanel({
                 >
                   <h3 className="mr-reviews-section-title">
                     {SECTION_TITLE[section]}
-                    <span>{bySection[section].length}</span>
+                    <span>
+                      {query
+                        ? `${shown[section].length} of ${bySection[section].length}`
+                        : bySection[section].length}
+                    </span>
                   </h3>
-                  {bySection[section].length ? (
+                  {shown[section].length ? (
                     <ul className="assistant-task-list">
-                      {bySection[section].map((entry) => (
+                      {shown[section].map((entry) => (
                         <MrReviewRow
                           key={entry.key}
                           entry={entry}
                           selected={entry.key === selected}
                           onSelect={() => setSelected(entry.key)}
                           onOpen={() => void open(entry)}
+                          move={rowMove(entry)}
                         />
                       ))}
                     </ul>
+                  ) : bySection[section].length ? (
+                    <p className="assistant-hint">Nothing matches.</p>
                   ) : (
                     <p className="assistant-hint">
                       {section === "mine"
@@ -1172,14 +1487,36 @@ export function MrReviewsPanel({
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
                   j/k move · Enter review · i details · c Claude · o on the
-                  forge · x not interested · + more like this · r refresh · a
-                  ask the reviews agent
+                  forge · J/K reorder · / search · r refresh · a ask the reviews
+                  agent · ? all keys
                 </p>
               ) : null}
             </>
           )}
         </div>
       )}
+      {helpOpen ? (
+        <div className="agent-tasks-help" role="note" aria-label="Keys">
+          <dl>
+            {MR_REVIEWS_KEYS.map(([keys, label]) => (
+              <div key={keys}>
+                <dt>
+                  {keys
+                    .split(" ")
+                    .map((key, index) =>
+                      key === "/" ? (
+                        <span key={index}> / </span>
+                      ) : (
+                        <kbd key={index}>{key}</kbd>
+                      ),
+                    )}
+                </dt>
+                <dd>{label}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
     </aside>
   );
 }

@@ -63,6 +63,70 @@
   font-weight: 400;
 }
 
+.mr-reviews-search {
+  width: 100%;
+  min-width: 0;
+}
+
+/* A request: the grip it is dragged by, its row, its up / down buttons
+   when selected. */
+.mr-reviews-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.mr-reviews-item > .mr-reviews-row {
+  flex: 1 1 auto;
+}
+
+.mr-reviews-grip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-right: -2px;
+  color: var(--muted);
+  cursor: grab;
+  opacity: 0;
+}
+
+.mr-reviews-item:hover > .mr-reviews-grip,
+.mr-reviews-item.is-dragging > .mr-reviews-grip {
+  opacity: 1;
+}
+
+.mr-reviews-item.is-dragging {
+  opacity: 0.5;
+}
+
+.mr-reviews-item.is-drop-before::before,
+.mr-reviews-item.is-drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  content: "";
+}
+
+.mr-reviews-item.is-drop-before::before {
+  top: -5px;
+}
+
+.mr-reviews-item.is-drop-after::after {
+  bottom: -5px;
+}
+
+.mr-reviews-move {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
 .mr-reviews-row.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);

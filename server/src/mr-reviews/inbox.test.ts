@@ -344,4 +344,45 @@ describe("settings", () => {
       ),
     ).rejects.toThrow(/verdict/);
   });
+
+  test("the user's order: kept, checked, saved alone without a refresh", async () => {
+    expect(
+      normalizeStoredMrReviews({ order: ["a", "a", 3, "", "b"] })?.order,
+    ).toEqual(["a", "b"]);
+    expect(mrReviewsSettings(undefined).order).toEqual([]);
+    let current: MrReviewsSettings = { ...settings, order: ["x"] };
+    const inbox = createMrInbox({
+      fetchers: fakeFetchers().fetchers,
+      settings: async () => current,
+      store: store(),
+    });
+    let refreshes = 0;
+    const deps = {
+      inbox: {
+        ...inbox,
+        refresh: async () => {
+          refreshes++;
+        },
+      } as typeof inbox,
+      settings: async () => current,
+      saveSettings: async (next: MrReviewsSettings) => {
+        current = next;
+        return next;
+      },
+    };
+    await handleMrReviewsRpc(deps, "bridge.mr_reviews.settings.update", {
+      settings: { order: ["b", "a"] },
+    });
+    expect(current.order).toEqual(["b", "a"]);
+    expect(refreshes).toBe(0);
+    // Saving the other settings keeps it, and refreshes.
+    await handleMrReviewsRpc(deps, "bridge.mr_reviews.settings.update", {
+      settings: { retentionDays: 4 },
+    });
+    expect(current.order).toEqual(["b", "a"]);
+    expect(refreshes).toBe(1);
+    // Every browser reads it with the inbox.
+    expect(inbox.snapshot(current).order).toEqual(["b", "a"]);
+    expect(inbox.snapshot({ ...current, order: [] }).order).toBeUndefined();
+  });
 });
