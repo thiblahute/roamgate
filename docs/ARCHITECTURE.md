@@ -1796,6 +1796,88 @@ again closes the producer before only after letting it go, so its
 signalling ending it: only a close the page did not make publishes it
 again.
 
+### Calls carried by the Android app
+
+Chrome on Android gives a page silence from its microphone once the
+screen is off; the Roamgate Android app (`net.ts.roamgate`) keeps it in a
+microphone foreground service. A call started in the web UI on a phone
+that has the app is carried by the app (`web/src/androidApp.ts`,
+`web/src/webrtcCall.ts`'s `handOff`, `server/src/http/voice-socket.ts`,
+`server/src/http/call-handoff.ts`):
+
+1. **Knowing the app.** The app's Trusted Web Activity opens the server at
+   `/?roamgate_app=<versionCode>`; Chrome also gives such a page the
+   referrer `android-app://net.ts.roamgate`. The page keeps that in
+   localStorage (shared by the Trusted Web Activity and Chrome's tabs) and
+   strips the parameter. Only an Android browser that noted the app offers
+   a handoff; three handoffs in a row the app does not take forget it
+   until its next launch.
+2. **Handing off.** Once its call is set up, the page (the call's owner)
+   sends `{"op": "call_handoff", "call": 7}` and gets `{"event":
+   "call_handoff", "call": 7, "handoff": "<token>", "expires_ms":
+   60000}`: 256 random bits, single use, valid 60 s and only while that
+   call lasts; a newer one voids the one before. The page opens
+   `intent://<host>/call/7?handoff=<token>#Intent;scheme=https;package=net.ts.roamgate;action=android.intent.action.VIEW;end`.
+   The package is named, so only the app takes it; without the app
+   nothing opens. The parameter is `handoff`, never `token` (URL login).
+   A browser opening `/call/<id>` itself gets the web app, the parameter
+   ignored. Should Chrome not open the app by itself (no user gesture
+   left), the call's controls offer "Move to the Roamgate app".
+3. **Redeeming.** The app posts `{"handoff": "<token>"}` to `POST
+   /api/voice/call/handoff`, before the login gate: the token is the
+   credential. 200 answers `{"call": 7, "carrier": "<carrier token>"}`
+   with a new login cookie (`herdr_auth`, as a password login gives); an
+   unknown, used or expired token answers 410, ten failures from one
+   address within 10 minutes 429, another site's request 403. A new
+   carrier replaces the one before, which gets `call_audio` with an
+   `error`.
+4. **Carrying.** On its own `/api/voice/ws` the app sends `{"op":
+   "call_carry", "call": 7, "carrier": "<carrier token>", "legs":
+   ["microphone"]}` (legs: `microphone`, `replies`), answered `{"event":
+   "call_carry", "call": 7, "ok": true, "legs": [...], "restarts": 0,
+   "waiting": false}`. The carrier token opens the call's signalling
+   (`call_token`) as the page's does; the app consumes the producer
+   `{"call": 7, "role": "replies"}` when it carries the replies, and
+   publishes its microphone as `{"call": 7, "role": "microphone"}`,
+   telling its peer id with `call_microphone` on the carrying socket
+   (`"echo": "here"` when it plays nothing itself or cancels no echo).
+   The page's own `call_microphone` is refused meanwhile. The carrying
+   socket also gets `call_restarted`, `call_music` and the call's end, and
+   may send `call_ice` (logged as the app's).
+5. **The page meanwhile.** It is told `{"event": "call_carrier", "call":
+   7, "state": "joined", "legs": [...], "heard": false}` (again with
+   `heard: true` once the helper listens to the app's microphone, and on
+   a `call_resume`). It closes its microphone and producer for a carried
+   microphone, stops consuming and playing the replies for carried
+   replies, and lets the screen wake lock go. It still runs the
+   conversation: its listenings use `listen` with `call` and hear the
+   app's microphone, and replies go into the mix (`POST
+   /api/voice/speak` with `call`). The call's controls say "In the
+   Roamgate app".
+6. **Controls.** Hang-up from the page ends the call and tells the app
+   (`call_audio` with `error`); the app's hang-up, `{"op": "call_audio",
+   "on": false, "call": 7}` on the carrying socket, ends it and tells the
+   page "Hung up in the Roamgate app". The app tells its outputs with
+   `{"op": "call_output_state", "current": "speaker", "outputs": [{"id":
+   "speaker", "kind": "speaker", "label": "Loudspeaker"}]}` (`kind` one
+   of `speaker`, `earpiece`, `bluetooth`, `wired`, `usb`; 16 at most);
+   the page shows them on its output button and sends a choice as
+   `{"op": "call_output", "call": 7, "output": "<id>"}`, which the app
+   gets as `{"event": "call_output", ...}`.
+7. **Giving it back.** `{"op": "call_carry_end"}`, a newer carrier, an
+   app that never sends `call_carry`, or a carrying socket gone for
+   DETACHED_MS (20 s; `call_carry` again on a new socket within it keeps
+   the call) tells the page `{"event": "call_carrier", "call": 7,
+   "state": "left", "why": "..."}`: the app's signalling closes and the
+   page opens its microphone and consumes the replies again. An app that
+   has not joined 15 s after the handoff leaves the call in the page,
+   which says so.
+
+The app carries the microphone first: Android freezes a Chrome that
+plays nothing in the background, and the conversation runs in the page,
+so the page keeps playing the replies while the app holds the
+microphone (the helper cancels their echo, `"echo": "here"`).
+
 ## Task notifications
 
 With the default `herdr` source, each runtime keeps one passive endpoint shell

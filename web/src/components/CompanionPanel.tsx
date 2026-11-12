@@ -48,6 +48,7 @@ import { useCompanionReading } from "./CompanionReading";
 import { type CompanionReading, isBeingSaid } from "../companionReading";
 import { CompanionMemories } from "./CompanionMemories";
 import {
+  CallAppButton,
   CallOutputButton,
   useMicrophonePausedByPhone,
 } from "./CallOutputButton";
@@ -465,6 +466,9 @@ export function CompanionPanel({
                 )}
                 {call.muted ? "Muted" : "Mute"}
               </button>
+            ) : null}
+            {call.open ? (
+              <CallAppButton className="secondary-btn" withLabel />
             ) : null}
             {call.open ? (
               <CallOutputButton className="secondary-btn" withLabel />

@@ -101,6 +101,23 @@ import {
  * most CALL_ICE_LINES lines a call, so a call that fails on the road tells
  * why afterwards.
  *
+ * A call can be carried by the Roamgate Android app (its native call
+ * service keeps the microphone with the screen off, which Chrome does
+ * not): the owning page asks `{"op": "call_handoff", "call": 7}`, answered
+ * `{"event": "call_handoff", "call": 7, "handoff": "<token>",
+ * "expires_ms": 60000}`, a single-use token the app exchanges at POST
+ * /api/voice/call/handoff (redeemHandoff) for the call's carrier token and
+ * a login. On its own socket the app then sends `{"op": "call_carry",
+ * "call": 7, "carrier": "<token>", "legs": ["microphone"]}` (answered
+ * `call_carry`), signals with `call_token=<carrier token>`, and may send
+ * `call_microphone`, `call_ice`, `call_output_state` and `call_audio` off
+ * (hang-up). The page, still the call's owner, is told `{"event":
+ * "call_carrier", "call": 7, "state": "joined", "legs": [...], "heard":
+ * true}` and lets the legs the app carries go; `"state": "left"` gives
+ * them back (`call_carry_end`, a newer carrier, or the app's socket gone
+ * DETACHED_MS). `call_output` from the page goes to the app, its
+ * `call_output_state` to the page. docs/ARCHITECTURE.md tells it all.
+ *
  * A listening on a call's microphone whose stream stops for STALL_MS stays
  * on its socket, which is alive: the page is told `{"event": "stalled",
  * "session": 4}`, and past DETACHED_MS more the utterance ends with what
@@ -181,8 +198,39 @@ export function rewriteCandidates(text: string, address: string | null) {
   return text;
 }
 
+/** What of a call the Android app may carry instead of the page. */
+export type CarriedLeg = "microphone" | "replies";
+const CARRIED_LEGS: readonly CarriedLeg[] = ["microphone", "replies"];
+/** What an output may be, as the page draws it (CallOutputKind). */
+const OUTPUT_KINDS = new Set([
+  "speaker",
+  "earpiece",
+  "bluetooth",
+  "wired",
+  "usb",
+]);
+/** How long a handoff token may be redeemed. */
+export const HANDOFF_MS = 60_000;
+
+/** The Android app carrying a call (call_carry), or about to. */
+type Carrier = {
+  token: string;
+  ws: VoiceSocket | null;
+  legs: CarriedLeg[];
+  /** It sent call_carry: the page was told it took its legs. */
+  joined: boolean;
+  /** The helper listens to its microphone. */
+  heard: boolean;
+  /** Its last call_output_state, as relayed to the page. */
+  outputs: Record<string, unknown> | null;
+  /** Never joined, or its socket gone: it lets the call go. */
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
 /** A call, and the socket that owns it, if any. */
 type CallState = {
+  /** The Android app carrying some of its legs, if any. */
+  carrier?: Carrier | null;
   handle: CallHandle | null;
   token: string;
   ws: VoiceSocket | null;
@@ -197,10 +245,16 @@ type CallState = {
 /** A page's signalling socket and its way to the helper. */
 type Signalling = {
   call: CallState;
+  /** Opened with the carrier's token: the app's, closed when it leaves. */
+  carrier?: Carrier;
   upstream: UpstreamSocket | null;
   /** What the page said before the helper's socket opened. */
   queue: string[];
 };
+
+/** A 256-bit random token, URL-safe. */
+const randomToken = () =>
+  Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 
 /** The reason given to a call a newer one stops. */
 const REPLACED_CALL = "Replaced by a newer call";
@@ -485,16 +539,86 @@ export function createVoiceSocket(
   /** The pages' signalling sockets, fronted to the helper's server. */
   const signalling = new Map<SignallingSocket, Signalling>();
 
-  /** Why `token` does not own call `id` now, or null when it does. */
+  /** The handoff tokens given, single use, to the call they hand. */
+  const handoffs = new Map<string, { call: CallState; expires: number }>();
+
+  /**
+   * Why `token` does not own call `id` now, or null when it does: the
+   * page's token, or the carrying app's.
+   */
   const notOwner = (id: unknown, token: unknown): string | null => {
     if (!call) return "no call goes on";
     if (!call.handle) return "the call is still starting";
     if (call.stopped) return `call ${call.handle.id} is over`;
     if (call.handle.id !== id) return `the call going on is ${call.handle.id}`;
     if (typeof token !== "string" || !token) return "no call_token";
-    if (call.token !== token) return "not the call's call_token";
+    if (call.token !== token && call.carrier?.token !== token)
+      return "not the call's call_token";
     return null;
   };
+
+  const send = (ws: VoiceSocket | null | undefined, message: object) =>
+    ws?.send(JSON.stringify(message));
+
+  /** Tells the call's page and its carrying app alike. */
+  const tellBoth = (of: CallState, message: object) => {
+    send(of.ws, message);
+    if (of.carrier?.ws && of.carrier.ws !== of.ws) send(of.carrier.ws, message);
+  };
+
+  /** Where the carrier stands, as told to the page. */
+  const carrierState = (of: CallState, carrier: Carrier) => ({
+    event: "call_carrier",
+    call: of.handle?.id,
+    state: "joined",
+    legs: carrier.legs,
+    heard: carrier.heard,
+  });
+
+  /** Closes the app's signalling sockets for `carrier`. */
+  const closeCarrierSignalling = (carrier: Carrier, why: string) => {
+    for (const [ws, held] of [...signalling]) {
+      if (held.carrier !== carrier) continue;
+      signalling.delete(ws);
+      if (held.upstream) {
+        held.upstream.onclose = null;
+        held.upstream.close();
+      }
+      ws.close(4000, why);
+    }
+  };
+
+  /**
+   * The app lets the call's legs go (`why`): the page takes them back,
+   * the app's signalling closes, and a dropped app (`dropped`) is told the
+   * call is over for it.
+   */
+  const carrierLeft = (of: CallState, why: string, dropped = false) => {
+    const carrier = of.carrier;
+    if (!carrier) return;
+    of.carrier = null;
+    if (carrier.timer) clearTimeout(carrier.timer);
+    carrier.timer = null;
+    debug(`call ${of.handle?.id}: the app lets the call go: ${why}`);
+    if (carrier.joined)
+      send(of.ws, {
+        event: "call_carrier",
+        call: of.handle?.id,
+        state: "left",
+        why,
+      });
+    if (dropped)
+      send(carrier.ws, {
+        event: "call_audio",
+        call: of.handle?.id,
+        error: why,
+      });
+    closeCarrierSignalling(carrier, why);
+  };
+
+  /** The call `ws` carries for the app, if it does. */
+  const carried = (ws: VoiceSocket): CallState | null =>
+    call?.carrier?.ws === ws && call.carrier.joined ? call : null;
 
   /** Closes the signalling sockets of `of`: the page opens them again. */
   const closeSignalling = (of: CallState, why: string) => {
@@ -516,6 +640,19 @@ export function createVoiceSocket(
     if (ending.timer) clearTimeout(ending.timer);
     ending.timer = null;
     ending.handle?.stop();
+    for (const [token, given] of handoffs)
+      if (given.call === ending) handoffs.delete(token);
+    const carrier = ending.carrier;
+    ending.carrier = null;
+    if (carrier) {
+      if (carrier.timer) clearTimeout(carrier.timer);
+      if (ending.handle)
+        send(carrier.ws, {
+          event: "call_audio",
+          call: ending.handle.id,
+          error: why,
+        });
+    }
     if (ending.handle)
       ending.ws?.send(
         JSON.stringify({
@@ -560,13 +697,11 @@ export function createVoiceSocket(
           starting.restarts += 1;
           debug(`call ${event.call}: made again after the helper restarted`);
           closeSignalling(starting, "The voice helper restarted");
-          starting.ws?.send(
-            JSON.stringify({
-              event: "call_restarted",
-              call: event.call,
-              restarts: starting.restarts,
-            }),
-          );
+          tellBoth(starting, {
+            event: "call_restarted",
+            call: event.call,
+            restarts: starting.restarts,
+          });
           return;
         }
         if (event.event === "call_ended") {
@@ -579,13 +714,11 @@ export function createVoiceSocket(
           debug(
             `call ${event.call}: ${event.waiting ? "the music waits for a voice" : "a voice was taken: the music plays"}`,
           );
-          starting.ws?.send(
-            JSON.stringify({
-              event: "call_music",
-              call: event.call,
-              waiting: event.waiting,
-            }),
-          );
+          tellBoth(starting, {
+            event: "call_music",
+            call: event.call,
+            waiting: event.waiting,
+          });
           return;
         }
         if (event.error === "Replaced") return;
@@ -1246,14 +1379,164 @@ export function createVoiceSocket(
         case "call_audio":
           if (request.on === false) {
             // With its number, that call only (a late answer's page).
-            if (
-              call?.ws === ws &&
-              (typeof request.call !== "number" ||
-                call.handle?.id === request.call)
-            )
-              stopCall(call);
-          } else void startCall(ws);
+            const numbered =
+              typeof request.call !== "number" ||
+              call?.handle?.id === request.call;
+            if (call?.ws === ws && numbered) stopCall(call);
+            // The app's hang-up ends the call for the page too.
+            else if (carried(ws) && numbered)
+              stopCall(call, "Hung up in the Roamgate app");
+          } else if (!carried(ws)) void startCall(ws);
           return;
+        case "call_handoff": {
+          // The page hands its call to the Android app: a token to give it.
+          const found = call?.ws === ws ? call : null;
+          if (
+            !found?.handle ||
+            found.stopped ||
+            found.handle.id !== request.call
+          ) {
+            send(ws, {
+              event: "call_handoff",
+              call: request.call,
+              error: "No such call",
+            });
+            return;
+          }
+          for (const [token, given] of handoffs)
+            if (given.call === found) handoffs.delete(token);
+          const handoff = randomToken();
+          handoffs.set(handoff, {
+            call: found,
+            expires: Date.now() + HANDOFF_MS,
+          });
+          debug(`call ${found.handle.id}: a handoff to the app is offered`);
+          send(ws, {
+            event: "call_handoff",
+            call: found.handle.id,
+            handoff,
+            expires_ms: HANDOFF_MS,
+          });
+          return;
+        }
+        case "call_carry": {
+          // The app takes the legs it carries, with its carrier token.
+          const found = call;
+          const carrier = found?.carrier;
+          if (
+            !found?.handle ||
+            found.stopped ||
+            !carrier ||
+            found.handle.id !== request.call ||
+            carrier.token !== request.carrier
+          ) {
+            send(ws, {
+              event: "call_carry",
+              call: request.call,
+              error: "No such call",
+            });
+            return;
+          }
+          const legs = Array.isArray(request.legs)
+            ? CARRIED_LEGS.filter((leg) =>
+                (request.legs as unknown[]).includes(leg),
+              )
+            : ["microphone" as const];
+          if (!legs.length) {
+            send(ws, {
+              event: "call_carry",
+              call: found.handle.id,
+              error: "No leg to carry",
+            });
+            return;
+          }
+          if (carrier.timer) clearTimeout(carrier.timer);
+          carrier.timer = null;
+          if (!legs.includes("microphone")) carrier.heard = false;
+          carrier.ws = ws;
+          carrier.legs = legs;
+          carrier.joined = true;
+          debug(
+            `call ${found.handle.id}: the app carries ${legs.join(" and ")}`,
+          );
+          send(ws, {
+            event: "call_carry",
+            call: found.handle.id,
+            ok: true,
+            legs,
+            restarts: found.restarts,
+            waiting: found.handle.musicWaiting(),
+          });
+          send(found.ws, carrierState(found, carrier));
+          if (carrier.outputs) send(found.ws, carrier.outputs);
+          return;
+        }
+        case "call_carry_end": {
+          const found = carried(ws);
+          if (found) carrierLeft(found, "The Roamgate app gave the call back");
+          return;
+        }
+        case "call_output": {
+          // The page picks where the app plays the call.
+          const found = call?.ws === ws ? call : null;
+          const output = request.output;
+          const carrier = found?.carrier;
+          if (
+            !found?.handle ||
+            !carrier?.joined ||
+            typeof output !== "string" ||
+            !output ||
+            output.length > 128
+          )
+            return;
+          send(carrier.ws, {
+            event: "call_output",
+            call: found.handle.id,
+            output,
+          });
+          return;
+        }
+        case "call_output_state": {
+          // Where the app plays the call, and what else it could: for the page.
+          const found = carried(ws);
+          if (!found?.handle || !found.carrier) return;
+          const outputs = Array.isArray(request.outputs)
+            ? request.outputs
+                .filter(
+                  (
+                    each,
+                  ): each is { id: string; kind: string; label?: unknown } =>
+                    !!each &&
+                    typeof each === "object" &&
+                    typeof each.id === "string" &&
+                    each.id.length > 0 &&
+                    each.id.length <= 128 &&
+                    OUTPUT_KINDS.has(each.kind),
+                )
+                .slice(0, 16)
+                .map((each) => ({
+                  id: each.id,
+                  kind: each.kind,
+                  label:
+                    typeof each.label === "string"
+                      ? each.label.slice(0, 64)
+                      : "",
+                }))
+            : [];
+          const current =
+            typeof request.current === "string" &&
+            outputs.some((each) => each.id === request.current)
+              ? request.current
+              : null;
+          found.carrier.outputs = {
+            event: "call_output_state",
+            call: found.handle.id,
+            current,
+            outputs,
+          };
+          send(found.ws, found.carrier.outputs);
+          return;
+        }
         case "call_hush":
           if (call?.ws === ws) call.handle?.hush();
           return;
@@ -1286,30 +1569,52 @@ export function createVoiceSocket(
               waiting: found.handle.musicWaiting(),
             }),
           );
+          // The app still carries it: the page's new socket learns so.
+          if (found.carrier?.joined) {
+            send(ws, carrierState(found, found.carrier));
+            if (found.carrier.outputs) send(ws, found.carrier.outputs);
+          }
           return;
         }
         case "call_ice": {
-          const found = call?.ws === ws ? call : null;
+          const found = call?.ws === ws ? call : carried(ws);
           const line = request.line;
           if (!found?.handle || typeof line !== "string" || !line) return;
           found.iceLines = (found.iceLines ?? 0) + 1;
           if (found.iceLines > CALL_ICE_LINES) return;
           console.error(
-            `[voice] call ${found.handle.id} (page): ${line
+            `[voice] call ${found.handle.id} (${found.ws === ws ? "page" : "app"}): ${line
               .replace(/[\r\n]+/g, " | ")
               .slice(0, CALL_ICE_CHARS)}`,
           );
           return;
         }
         case "call_microphone": {
-          const handle = call?.ws === ws ? call.handle : null;
+          const app = carried(ws);
+          const from = app ? "app" : "page";
+          const carrier = app?.carrier ?? null;
+          const handle = (call?.ws === ws ? call : app)?.handle ?? null;
           const peer = request.peer;
           if (!handle || typeof peer !== "string" || !peer || peer.length > 128)
             return;
+          if (
+            !app &&
+            call?.carrier?.joined &&
+            call.carrier.legs.includes("microphone")
+          ) {
+            // The app carries the microphone: the page's is not listened to.
+            send(ws, {
+              event: "call_microphone",
+              call: handle.id,
+              error: "The Roamgate app carries the microphone",
+            });
+            return;
+          }
+          if (app && !carrier?.legs.includes("microphone")) return;
           // Who cancels the replies' echo: the helper ("here"), or the page.
           const echo = request.echo === "here" ? "here" : "page";
           debug(
-            `call ${handle.id}: the page's microphone is ${peer}, the echo cancelled ${echo === "here" ? "by the helper" : "by the page"}`,
+            `call ${handle.id}: the ${from}'s microphone is ${peer}, the echo cancelled ${echo === "here" ? "by the helper" : `by the ${from}`}`,
           );
           handle.microphone(peer, echo).then(
             () => {
@@ -1321,9 +1626,18 @@ export function createVoiceSocket(
                   ok: true,
                 }),
               );
+              // The page's listenings hear the app's microphone now.
+              if (app && carrier && app.carrier === carrier) {
+                carrier.heard = true;
+                send(app.ws, carrierState(app, carrier));
+              }
             },
             (error) => {
               debug(`call ${handle.id}: the helper cannot listen: ${error}`);
+              if (app && carrier && app.carrier === carrier && carrier.heard) {
+                carrier.heard = false;
+                send(app.ws, carrierState(app, carrier));
+              }
               ws.send(
                 JSON.stringify({
                   event: "call_microphone",
@@ -1340,6 +1654,18 @@ export function createVoiceSocket(
     close(ws: VoiceSocket) {
       const listening = bySocket.get(ws);
       if (listening) detach(listening, "socket closed");
+      const app = call?.carrier?.ws === ws ? call : null;
+      const carrier = app?.carrier;
+      if (app && carrier) {
+        // The app may come back on a new socket (call_carry again).
+        carrier.ws = null;
+        if (carrier.timer) clearTimeout(carrier.timer);
+        carrier.timer = setTimeout(() => {
+          carrier.timer = null;
+          if (app.carrier === carrier)
+            carrierLeft(app, "The Roamgate app's link went");
+        }, DETACHED_MS);
+      }
       const held = call;
       if (held?.ws === ws) {
         // Its packets are dropped until a resume, or it stops.
@@ -1354,6 +1680,40 @@ export function createVoiceSocket(
     /** The call going on now, for its music's level. */
     currentCall(): CallHandle | null {
       return call?.handle ?? null;
+    },
+    /**
+     * Exchanges a handoff token (call_handoff) for the call's carrier
+     * token, once: null when it is unknown, used, expired, or its call
+     * over. A newer carrier replaces the one before, which is told the
+     * call is over for it.
+     */
+    redeemHandoff(token: unknown): { call: number; carrier: string } | null {
+      if (typeof token !== "string" || !token) return null;
+      const given = handoffs.get(token);
+      if (!given) return null;
+      handoffs.delete(token);
+      const of = given.call;
+      if (given.expires < Date.now() || of !== call || of.stopped || !of.handle)
+        return null;
+      carrierLeft(of, "The call went to another app", true);
+      const carrier: Carrier = {
+        token: randomToken(),
+        ws: null,
+        legs: [],
+        joined: false,
+        heard: false,
+        outputs: null,
+        timer: null,
+      };
+      // Never joined: let go, the page keeps the call.
+      carrier.timer = setTimeout(() => {
+        carrier.timer = null;
+        if (of.carrier === carrier)
+          carrierLeft(of, "The Roamgate app never joined");
+      }, DETACHED_MS);
+      of.carrier = carrier;
+      debug(`call ${of.handle.id}: the handoff was taken`);
+      return { call: of.handle.id, carrier: carrier.token };
     },
     /** Whether `token` owns call `id` now: its page may signal it. */
     ownsCall(id: unknown, token: unknown): boolean {
@@ -1394,7 +1754,14 @@ export function createVoiceSocket(
         ws.close(1011, "The call's signalling is not there");
         return;
       }
-      const held: Signalling = { call: of, upstream: null, queue: [] };
+      const held: Signalling = {
+        call: of,
+        upstream: null,
+        queue: [],
+        ...(of.carrier && of.carrier.token === token
+          ? { carrier: of.carrier }
+          : {}),
+      };
       signalling.set(ws, held);
       let upstream: UpstreamSocket;
       try {

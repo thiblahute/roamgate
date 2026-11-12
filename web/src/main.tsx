@@ -1,3 +1,4 @@
+import { noteAndroidApp } from "./androidApp";
 import { initializeLayoutPreferences } from "./layoutPreferences";
 import { initializeShortcutPreferences } from "./shortcutPreferences";
 import { initializeInstanceName } from "./instanceName";
@@ -38,6 +39,8 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// Opened by the Roamgate Android app: its calls can go to the app.
+noteAndroidApp();
 initializeLayoutPreferences();
 initializeShortcutPreferences();
 const stopInstanceNameSync = initializeInstanceName();

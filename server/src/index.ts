@@ -143,6 +143,10 @@ import {
   roamgateOwnPorts,
 } from "./bridge/ssh-forward";
 import { createAuthHandlers, unauthenticatedLoginRedirect } from "./http/auth";
+import {
+  CALL_HANDOFF_PATH,
+  createCallHandoffRedeem,
+} from "./http/call-handoff";
 import { serveStatic } from "./http/static-files";
 import { handleInstanceSettings } from "./http/instance-settings";
 import {
@@ -480,6 +484,7 @@ const downstreamConnectionConfig = {
 const {
   isAuthed,
   sessionToken,
+  newSessionCookie,
   handleTokenLogin,
   handleLogin,
   handlePinLogin,
@@ -495,6 +500,11 @@ const {
     config.generatedAuthTokenPath &&
     authTokenPrintCommand(config.generatedAuthTokenPath),
   secureCookies: Boolean(config.tls),
+});
+
+const redeemCallHandoff = createCallHandoffRedeem({
+  redeem: (token) => voiceSocket.redeemHandoff(token),
+  sessionCookie: newSessionCookie,
 });
 
 type RpcRequest = ConnectionRpcRequest;
@@ -3490,6 +3500,11 @@ function main() {
               headers: { "content-type": "text/plain; charset=utf-8" },
             });
           }
+
+          // A call handed to the Android app: its single-use token is the
+          // credential, exchanged for the call's and a login.
+          if (url.pathname === CALL_HANDOFF_PATH)
+            return redeemCallHandoff(req, clientIp);
 
           // Auth endpoints are always reachable.
           if (url.pathname === "/api/login/pin" && req.method === "POST") {

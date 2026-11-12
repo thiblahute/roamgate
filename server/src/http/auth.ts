@@ -388,9 +388,19 @@ export function createAuthHandlers(args: {
     );
   }
 
+  /**
+   * A new login's cookie, for a client that proved itself otherwise (a
+   * call handed to the Android app): null when no login is required.
+   */
+  function newSessionCookie(): string | null {
+    if (!authRequired) return null;
+    return `${AUTH_COOKIE}=${signedToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${AUTH_TOKEN_TTL_SECONDS}${args.secureCookies ? "; Secure" : ""}`;
+  }
+
   return {
     isAuthed,
     sessionToken,
+    newSessionCookie,
     handleTokenLogin,
     handleLogin,
     handlePinLogin,
