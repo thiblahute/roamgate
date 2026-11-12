@@ -39,7 +39,10 @@ if (process.env.ROAMGATE_CALL_APP_DOM_TEST !== "1") {
   const call = {
     place: "can" as "app" | "opening" | "can" | "none",
     handedOff: 0,
+    /** Shown in the app's own WebView, whose bridge takes the call. */
+    webView: false,
     inApp: () => call.place === "app",
+    inAppWebView: () => call.webView,
     handingOff: () => call.place === "opening",
     canHandOff: () => call.place === "can",
     handOff: () => {
@@ -88,6 +91,29 @@ if (process.env.ROAMGATE_CALL_APP_DOM_TEST !== "1") {
     });
     expect(button()?.textContent).toBe("In the Roamgate app");
     expect(button()?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("in the app's WebView, offers no button while the app takes the call", async () => {
+    await act(async () => {
+      call.webView = true;
+      call.place = "can";
+      changed();
+    });
+    expect(button()).toBeNull();
+    await act(async () => {
+      call.place = "opening";
+      changed();
+    });
+    expect(button()).toBeNull();
+    await act(async () => {
+      call.place = "app";
+      changed();
+    });
+    expect(button()?.textContent).toBe("In the Roamgate app");
+    await act(async () => {
+      call.webView = false;
+      changed();
+    });
   });
 
   test("shows nothing without the app or without a call", async () => {

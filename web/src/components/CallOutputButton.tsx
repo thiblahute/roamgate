@@ -14,6 +14,7 @@ import {
   type CallOutputs,
   nextCallOutput,
   subscribeActiveCall,
+  type WebRtcCall,
 } from "../webrtcCall";
 
 const OUTPUTS: Record<CallOutputKind, { label: string; icon: typeof Volume2 }> =
@@ -115,16 +116,27 @@ export function CallOutputButton({
 }
 
 /** Where the call is: in the Roamgate app, being handed to it, or here. */
-type CallPlace = "app" | "opening" | "can" | null;
+export type CallPlace = "app" | "opening" | "can" | null;
+
+/**
+ * Where `call` is, for its button. In the app's own WebView the call goes
+ * to the app by itself: only "In the Roamgate app" is shown there.
+ */
+export function callPlace(
+  call: Pick<
+    WebRtcCall,
+    "inApp" | "inAppWebView" | "handingOff" | "canHandOff"
+  > | null,
+): CallPlace {
+  if (!call) return null;
+  if (call.inApp()) return "app";
+  if (call.inAppWebView()) return null;
+  if (call.handingOff()) return "opening";
+  return call.canHandOff() ? "can" : null;
+}
 
 function useCallPlace(): CallPlace {
-  const read = (): CallPlace => {
-    const call = activeCall();
-    if (!call) return null;
-    if (call.inApp()) return "app";
-    if (call.handingOff()) return "opening";
-    return call.canHandOff() ? "can" : null;
-  };
+  const read = (): CallPlace => callPlace(activeCall());
   const [place, setPlace] = useState<CallPlace>(read);
   useEffect(() => {
     const update = () => setPlace(read());

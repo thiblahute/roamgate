@@ -7,6 +7,10 @@
  * call service (webrtcCall.ts's handOff). A handoff the app does not take
  * counts against it: after FORGET_AFTER in a row the page forgets the app
  * (uninstalled), until its next launch notes it again.
+ *
+ * The app may also show Roamgate in its own WebView, with a JavaScript
+ * bridge `window.RoamgateApp` (appBridge): there the app is taken as
+ * installed, and a call goes to it through the bridge, with no intent URL.
  */
 
 export const ANDROID_APP_PACKAGE = "net.ts.roamgate";
@@ -91,6 +95,24 @@ export function noteAndroidApp(
     url.searchParams.delete(APP_PARAM);
     page.replace?.(`${url.pathname}${url.search}${url.hash}`);
   }
+}
+
+/** The JavaScript bridge of the app's WebView: it takes a call by itself. */
+export type AppBridge = {
+  /** Joins call `callId` with the single-use handoff `token`. */
+  handOff(callId: string, token: string): void;
+};
+
+/**
+ * The app's bridge when this page runs in the app's WebView
+ * (`window.RoamgateApp` with a `handOff` function), else null.
+ */
+export function appBridge(scope: object = globalThis): AppBridge | null {
+  const bridge = (scope as { RoamgateApp?: unknown }).RoamgateApp;
+  if (typeof bridge === "undefined" || bridge === null) return null;
+  return typeof (bridge as { handOff?: unknown }).handOff === "function"
+    ? (bridge as AppBridge)
+    : null;
 }
 
 /** Whether the app is on this phone, as far as the page knows. */

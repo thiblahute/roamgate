@@ -3,6 +3,7 @@ import {
   androidAppKnown,
   androidAppMissedCall,
   androidAppTookCall,
+  appBridge,
   FORGET_AFTER,
   handoffIntentUrl,
   noteAndroidApp,
@@ -88,4 +89,19 @@ test("the handoff opens only the app, on /call/<id>, never with `token`", () => 
     "intent://roamgate.example:8443/call/7?handoff=a_b-c#Intent;scheme=https;package=net.ts.roamgate;action=android.intent.action.VIEW;end",
   );
   expect(url).not.toContain("token=");
+});
+
+test("the app's WebView bridge is found only with a handOff function", () => {
+  const calls: unknown[][] = [];
+  const bridge = {
+    handOff(callId: string, token: string) {
+      calls.push([this === bridge, callId, token]);
+    },
+  };
+  expect(appBridge({ RoamgateApp: bridge })).toBe(bridge);
+  appBridge({ RoamgateApp: bridge })?.handOff("7", "one-use");
+  expect(calls).toEqual([[true, "7", "one-use"]]);
+  expect(appBridge({})).toBeNull();
+  expect(appBridge({ RoamgateApp: null })).toBeNull();
+  expect(appBridge({ RoamgateApp: { handOff: "no" } })).toBeNull();
 });
