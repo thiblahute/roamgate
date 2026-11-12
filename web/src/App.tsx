@@ -238,6 +238,7 @@ import {
 } from "./components/TabBar";
 import type { TerminalWorkspaceFileRequest } from "./components/TerminalView";
 import type { ChangesGoTo } from "./components/WorkspaceInspectorHost";
+import { SearchHighlight } from "./components/SearchHighlight";
 import { WorkspaceSearchField } from "./components/WorkspaceSearchField";
 import { WorkspaceTree } from "./components/WorkspaceTree";
 import { CreateWorkspaceDialog } from "./components/CreateWorkspaceDialog";
@@ -279,6 +280,7 @@ import {
   type PaneJumpScope,
   paneJumpTargetId,
   paneSearchEntries,
+  paneSearchHighlights,
   serverPaneSearchEntries,
   serverSessionPaneEntries,
   needsYouFirst,
@@ -1167,10 +1169,18 @@ function PaneJumpOverlay({
               ) : null}
               <span className="pane-jump-text">
                 <span className="pane-jump-title-line">
-                  <strong>{entry.title}</strong>
+                  <strong>
+                    <SearchHighlight
+                      text={entry.title}
+                      positions={paneSearchHighlights(entry).title}
+                    />
+                  </strong>
                   {entry.serverLabel ? (
                     <span className="pane-jump-server-badge">
-                      {entry.serverLabel}
+                      <SearchHighlight
+                        text={entry.serverLabel}
+                        positions={paneSearchHighlights(entry).serverLabel}
+                      />
                     </span>
                   ) : null}
                   {entry.current ? (
@@ -1187,22 +1197,34 @@ function PaneJumpOverlay({
                   {entry.agent ? (
                     <>
                       <span className="pane-jump-agent-name">
-                        {entry.agent}
+                        <SearchHighlight
+                          text={entry.agent}
+                          positions={paneSearchHighlights(entry).agent}
+                        />
                       </span>
                       {" · "}
                     </>
                   ) : null}
                   <span className="pane-jump-tab" title={entry.tabLabel}>
-                    {entry.tabLabel}
+                    <SearchHighlight
+                      text={entry.tabLabel}
+                      positions={paneSearchHighlights(entry).tabLabel}
+                    />
                   </span>
                   <span className="pane-jump-id" title={entry.paneId}>
                     {" · "}
-                    {entry.paneLabel}
+                    <SearchHighlight
+                      text={entry.paneLabel}
+                      positions={paneSearchHighlights(entry).paneLabel}
+                    />
                   </span>
                   {entry.cwd ? (
                     <span className="pane-jump-cwd" title={entry.cwd}>
                       {" · "}
-                      {entry.cwd}
+                      <SearchHighlight
+                        text={entry.cwd}
+                        positions={paneSearchHighlights(entry).cwd}
+                      />
                     </span>
                   ) : null}
                 </span>
@@ -2256,25 +2278,28 @@ export default function App() {
           (connection) => connection.id === s.activeConnectionId,
         )?.label
       : undefined;
+    const results = [
+      ...paneSearchEntries(
+        snapshot,
+        paneJumpSearch,
+        activePaneId,
+        connectionSessions,
+        paneJumpScope,
+        history,
+        activeServerLabel,
+      ),
+      ...serverPaneSearchEntries(
+        sortAgentPanes(serverPanes, [], "attention"),
+        paneJumpSearch,
+        s.activeConnectionId,
+        paneJumpScope,
+        history,
+      ),
+    ];
     return withWaitsOn(
-      [
-        ...paneSearchEntries(
-          snapshot,
-          paneJumpSearch,
-          activePaneId,
-          connectionSessions,
-          paneJumpScope,
-          history,
-          activeServerLabel,
-        ),
-        ...serverPaneSearchEntries(
-          sortAgentPanes(serverPanes, [], "attention"),
-          paneJumpSearch,
-          s.activeConnectionId,
-          paneJumpScope,
-          history,
-        ),
-      ],
+      // One ranking for every server's matches: `tasks` on another server
+      // comes before this one's directories that hold the word.
+      paneJumpSearch.trim() ? needsYouFirst(results) : results,
       s.activeConnectionId,
       reviewState.prompts,
     );
@@ -6772,7 +6797,12 @@ export default function App() {
                       ) : null}
                       <span className="pane-jump-text">
                         <span className="pane-jump-title-line">
-                          <strong>{entry.title}</strong>
+                          <strong>
+                            <SearchHighlight
+                              text={entry.title}
+                              positions={paneSearchHighlights(entry).title}
+                            />
+                          </strong>
                           <ConnectionBadge
                             label={otherConnectionLabel(
                               entry,
@@ -6797,12 +6827,18 @@ export default function App() {
                         </span>
                         <span className="pane-jump-subtitle">
                           <span className="pane-jump-tab">
-                            {entry.tabLabel}
+                            <SearchHighlight
+                              text={entry.tabLabel}
+                              positions={paneSearchHighlights(entry).tabLabel}
+                            />
                           </span>
                           {entry.cwd ? (
                             <span className="pane-jump-cwd">
                               {" · "}
-                              {entry.cwd}
+                              <SearchHighlight
+                                text={entry.cwd}
+                                positions={paneSearchHighlights(entry).cwd}
+                              />
                             </span>
                           ) : null}
                         </span>

@@ -1,7 +1,12 @@
 import { withAgentActivity } from "./agentOrder";
 import type { ConnectionSummary } from "./api";
 import type { ConnectionSessionView } from "./connectionSessions";
-import { normalizeSearchText } from "./searchText";
+import {
+  compareSearchMatches,
+  matchSearch,
+  type SearchMatch,
+  searchTokens,
+} from "./fuzzyMatch";
 import { shortId } from "./utils";
 import type { Pane, PaneLayout, Tab, Workspace } from "./types";
 import type {
@@ -37,6 +42,8 @@ export type PaneJumpEntry = {
   needsYou?: "blocked" | "asked" | "done";
   /** What it waits on, when known: its question, or its last message. */
   waitsOn?: string;
+  /** How the search matched it, fields in `paneSearchFields` order. */
+  match?: SearchMatch;
 };
 
 /** Typed first in the search: only what needs the user. */
@@ -386,9 +393,11 @@ function orderByWorkspaceHistory(
 /**
  * Searches every live pane instead of the recent ones alone, so a pane that was
  * never visited stays reachable by workspace, tab, directory, or agent name.
- * Matches keep the recent-first order rather than a relevance ranking, which
- * leaves the list stable while the query grows. Workspace scope uses the same
- * visit order as the recent switcher. `serverEntries` adds connections no
+ * Each word of the query matches fzf-style (see `matchSearch`): the
+ * workspace's own name ranks first (exact, then its start, word starts,
+ * inside it, letter by letter), matches in other fields after; equal matches
+ * keep the recent-first order, so the list stays stable while the query
+ * grows. Workspace scope uses the same visit order as the recent switcher. `serverEntries` adds connections no
  * session of this browser covers (see `serverSessionPaneEntries`).
  */
 export function paneSearchEntries(
@@ -525,15 +534,16 @@ function filterPaneSearchEntries(
   // What needs the user leads the search; "!" first keeps only that.
   const only = query.trimStart().startsWith(NEEDS_YOU_QUERY);
   if (only) query = query.trimStart().slice(NEEDS_YOU_QUERY.length);
-  const tokens = normalizeSearchText(query).split(" ").filter(Boolean);
+  const tokens = searchTokens(query);
   const matches =
     tokens.length === 0
       ? entries
-      : entries.filter((entry) => {
-          const haystack = normalizeSearchText(paneSearchValue(entry));
-          return tokens.every((token) => haystack.includes(token));
+      : entries.flatMap((entry) => {
+          const match = matchSearch(tokens, paneSearchFields(entry));
+          return match ? [{ ...entry, match }] : [];
         });
   // Collapsed last, so a workspace stays reachable through any of its panes.
+  // needsYouFirst ranks by the match before anything else.
   return needsYouFirst(
     scope === "workspaces"
       ? orderByWorkspaceHistory(workspaceJumpEntries(matches), workspaceHistory)
@@ -564,10 +574,22 @@ function workspaceJumpEntries(entries: PaneJumpEntry[]): PaneJumpEntry[] {
     // A pane that needs the user leads its workspace: going there goes to it.
     const lead = leadRank(entry) < leadRank(kept) ? entry : kept;
     const seenAt = Math.max(entry.seenAt ?? -1, kept.seenAt ?? -1);
+    // The workspace ranks by its best matching pane, and shows the lead's.
+    const best =
+      compareSearchMatches(entry.match, kept.match) < 0 ? entry : kept;
     byWorkspace.set(key, {
       ...lead,
       current: kept.current || entry.current,
       ...(seenAt >= 0 ? { seenAt } : {}),
+      ...(lead.match && best.match
+        ? {
+            match: {
+              ...lead.match,
+              tier: best.match.tier,
+              score: best.match.score,
+            },
+          }
+        : {}),
     });
   }
   return [...byWorkspace.values()];
@@ -608,7 +630,8 @@ function orderedPaneJumpEntries(
     );
 }
 
-function paneSearchValue(entry: PaneJumpEntry): string {
+/** What the search matches, the workspace's name first. */
+function paneSearchFields(entry: PaneJumpEntry): (string | undefined)[] {
   return [
     entry.title,
     entry.serverLabel,
@@ -618,9 +641,20 @@ function paneSearchValue(entry: PaneJumpEntry): string {
     entry.agent,
     entry.agentStatus,
     entry.paneId,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ];
+}
+
+/** The characters the search matched in each displayed field. */
+export function paneSearchHighlights(entry: PaneJumpEntry) {
+  const highlights = entry.match?.highlights ?? [];
+  return {
+    title: highlights[0],
+    serverLabel: highlights[1],
+    tabLabel: highlights[2],
+    cwd: highlights[3],
+    paneLabel: highlights[4],
+    agent: highlights[5],
+  };
 }
 
 /** Returns a real focus target, excluding an invalid or already-current item. */
@@ -755,10 +789,11 @@ const needsRank = (entry: PaneJumpEntry) =>
     : 3;
 
 /**
- * What waits on the user first: agents asking something, then those that
- * said the user must act, each group keeping its order, then the rest as
- * they were: one done unseen shows it but stays in place; with `only`,
- * nothing but what needs the user.
+ * The best search matches first (see `SearchMatch`), then what waits on the
+ * user: agents asking something, then those that said the user must act,
+ * each group keeping its order; the rest keep theirs, one done unseen among
+ * them; with `only`, nothing but what needs the user. Without a search,
+ * only what waits on the user moves.
  */
 export function needsYouFirst(
   entries: PaneJumpEntry[],
@@ -769,6 +804,7 @@ export function needsYouFirst(
     .filter(({ entry }) => !only || entry.needsYou)
     .sort(
       (left, right) =>
+        compareSearchMatches(left.entry.match, right.entry.match) ||
         needsRank(left.entry) - needsRank(right.entry) ||
         left.index - right.index,
     )

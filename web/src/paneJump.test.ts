@@ -12,6 +12,7 @@ import {
   paneJumpEntryKey,
   paneJumpTargetId,
   paneSearchEntries,
+  paneSearchHighlights,
   serverPaneSearchEntries,
   serverSessionPaneEntries,
   parseWorkspaceHistory,
@@ -21,6 +22,7 @@ import {
   recordWorkspaceVisit,
   workspaceHistoryKey,
 } from "./paneJump";
+import { searchRealWorkspaces, workspaceLabel } from "./paneSearch.testkit";
 import type { Pane, Tab, Workspace } from "./types";
 import type {
   ConnectionAgentSessions,
@@ -1085,5 +1087,113 @@ describe("focusedPaneIdForSnapshot", () => {
         overlaySelectedPaneId: "gone",
       }),
     ).toBe("float-a");
+  });
+});
+
+describe("workspace search ranking, on the user's real workspaces", () => {
+  const labels = (query: string) =>
+    searchRealWorkspaces(query).map(workspaceLabel);
+
+  test("`tasks` puts the workspace named tasks before those whose directories hold it", () => {
+    for (const query of ["tasks", "Tasks", "TASKS", " tasks "]) {
+      const found = labels(query);
+      expect(found[0]).toBe("Mac:tasks");
+      // Those reach it through tasks/subtasks/... or tasks-worktrees/...
+      expect(found).toContain("Mac:areglos-casa");
+      expect(found).toContain("Mac:clauth");
+    }
+  });
+
+  test("the exact name first, on every connection, then names starting with it", () => {
+    expect(labels("gst").slice(0, 2)).toEqual(["gst", "Mac:gst"]);
+    expect(labels("gst2").slice(0, 3).sort()).toEqual([
+      "Mac:gst2",
+      "gst2",
+      "gst2",
+    ]);
+    expect(labels("clauth")).toEqual([
+      "Mac:clauth",
+      "clauth",
+      "Mac:clauth-repo",
+    ]);
+    expect(labels("pi")[0]).toBe("Mac:pi");
+  });
+
+  test("names starting with the query before words inside names, before paths", () => {
+    const found = labels("ocio");
+    const at = (label: string) => found.indexOf(label);
+    for (const prefix of ["ocio-plugin", "ocio-ges-demo", "Mac:ocio-mac"])
+      for (const inside of ["gstreamer-ocio", "ges-ocio-tests"])
+        expect(at(prefix)).toBeLessThan(at(inside));
+    expect(labels("seq").slice(0, 3)).toEqual([
+      "sequence",
+      "sequence",
+      "Mac:sequence",
+    ]);
+  });
+
+  test("the current workspace leads only among equal matches", () => {
+    // roamgate is current, and its directory is .../misc/roamgate.
+    expect(labels("misc").slice(0, 3)).toEqual([
+      "misc",
+      "Mac:misc",
+      "roamgate",
+    ]);
+  });
+
+  test("letters in order find a name, as fzf does", () => {
+    expect(labels("rgdic")).toEqual(["roamgate-dictation"]);
+    expect(labels("upval")).toEqual(["upstream-validatefloatpixels"]);
+    expect(labels("cps185")).toEqual(["cps-iga185"]);
+    expect(labels("glft")).toContain("gl-float-transfer");
+  });
+
+  test("every word must match, in any order, the name's matches first", () => {
+    expect(labels("gst video")).toEqual(["gst2-video", "opengl-videoscope"]);
+    expect(labels("video gst")).toEqual(labels("gst video"));
+    expect(labels("mac tasks")[0]).toBe("Mac:tasks");
+  });
+
+  test("marks the matched letters of the name", () => {
+    const [entry] = searchRealWorkspaces("rgdic");
+    expect(paneSearchHighlights(entry!).title).toEqual([0, 4, 9, 10, 11]);
+    expect(paneSearchHighlights(searchRealWorkspaces("")[0]!).title).toBe(
+      undefined,
+    );
+  });
+
+  test("one ranking across servers, and before what needs the user", () => {
+    const desktop = {
+      panes: [
+        { ...pane("p1", "w1", "t1", "claude"), cwd: "/tasks-worktrees/notes" },
+      ],
+      recentPaneIds: ["p1"],
+      tabs: [tab("t1", "w1")],
+      workspaces: [workspace("w1", "notes")],
+    };
+    const local = paneSearchEntries(desktop, "tasks", null, [], "workspaces");
+    const remote = serverPaneSearchEntries(
+      [
+        {
+          ...pane("pF", "wF", "tF", "claude"),
+          connectionId: "local",
+          runtimeGeneration: 1,
+          serverLabel: "Mac",
+          workspaceKey: "local-wF",
+          workspaceLabel: "tasks",
+          tabLabel: "1",
+        },
+      ],
+      "tasks",
+      "desktop",
+      "workspaces",
+    );
+    const blocked = local.map((entry) => ({
+      ...entry,
+      needsYou: "blocked" as const,
+    }));
+    expect(
+      needsYouFirst([...blocked, ...remote]).map((entry) => entry.title),
+    ).toEqual(["tasks", "notes"]);
   });
 });
