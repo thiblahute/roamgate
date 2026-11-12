@@ -27,9 +27,15 @@ export type ReviewAgent = {
   agentPaneId: string | undefined;
   /** A merge request's review only once the forge told it is not confidential. */
   agentAllowed: boolean;
-  /** Comments go to the agent as they are written (not on GitLab reviews). */
+  /**
+   * Your discussions go to the agent as they are written, on a merge
+   * request's review too (its drafts for the forge stay yours to send there).
+   */
   talk: boolean;
-  /** What a new comment is: a discussion with the agent, else a draft. */
+  /**
+   * What a new comment is: a discussion with the agent in a local review
+   * that talks, else a draft (for the forge, on a merge request's review).
+   */
   commentKind: ReviewThreadKind;
   /** Comments wait for Send instead of going as they are written. */
   held: boolean;
@@ -70,17 +76,13 @@ export function reviewAgent(
   const agentPaneId = agent.paneId ?? agentPanes[0]?.paneId;
   const agentAllowed =
     session.target.kind !== "mr" || snapshot.mergeRequest?.security === false;
-  const talk =
-    !session.gitlab &&
-    session.autoSend !== false &&
-    !!agentPaneId &&
-    agentAllowed;
+  const talk = session.autoSend !== false && !!agentPaneId && agentAllowed;
   return {
     agentName,
     agentPaneId,
     agentAllowed,
     talk,
-    commentKind: talk ? "discussion" : "draft",
+    commentKind: talk && !session.gitlab ? "discussion" : "draft",
     held: talk && session.holdComments === true,
     holdForSend: !agentPaneId && agentAllowed && !!session.workspaceId,
     undeliveredReason: undeliveredReason(session),
@@ -141,7 +143,7 @@ export function sharedThreadDelivery(
   own: ReviewSession,
   agentName: string,
 ): Omit<ThreadDelivery, "retry"> {
-  const talk = !own.gitlab && own.autoSend !== false && !!own.agent.paneId;
+  const talk = own.autoSend !== false && !!own.agent.paneId;
   return {
     review: own,
     talk,
@@ -172,8 +174,12 @@ export function useAttachAgentPane(
   pane: string | null,
   agentName: string,
   call: ReviewSessionCall,
+  /** The review was told the pane: what it sends, now, goes out. */
+  onAttached?: (snapshot: ReviewSnapshot) => void,
 ) {
   const attachedPane = useRef<string | null>(null);
+  const attached = useRef(onAttached);
+  attached.current = onAttached;
   useEffect(() => {
     const key = pane && `${sessionId}\n${pane}`;
     if (!pane || attachedPane.current === key) return;
@@ -181,8 +187,14 @@ export function useAttachAgentPane(
     void call<ReviewSnapshot>("review.update", {
       agent: agentName,
       agent_pane: pane,
-    }).then(rememberReviewSnapshot, () => {
-      attachedPane.current = null;
-    });
+    }).then(
+      (snapshot) => {
+        rememberReviewSnapshot(snapshot);
+        attached.current?.(snapshot);
+      },
+      () => {
+        attachedPane.current = null;
+      },
+    );
   }, [pane, sessionId, agentName, call]);
 }

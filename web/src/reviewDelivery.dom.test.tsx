@@ -66,7 +66,7 @@ if (process.env.ROAMGATE_REVIEW_DELIVERY_TEST !== "1") {
   ) => ({ session: session(more), mergeRequest }) as unknown as ReviewSnapshot;
   const panes = [{ paneId: "p9", agent: "codex" }];
 
-  test("comments go to the agent as written when it has a pane, not on GitLab, not when turned off", () => {
+  test("comments go to the agent as written when it has a pane, on a merge request's review too, not when turned off", () => {
     const live = reviewAgent(snapshot(), []);
     expect(live).toMatchObject({
       agentName: "Claude",
@@ -76,7 +76,15 @@ if (process.env.ROAMGATE_REVIEW_DELIVERY_TEST !== "1") {
       held: false,
       holdForSend: false,
     });
-    expect(reviewAgent(snapshot({ gitlab: true }), []).talk).toBe(false);
+    // A merge request's review: your discussions with the agent go as
+    // written; a line comment stays a draft for the forge.
+    expect(reviewAgent(snapshot({ gitlab: true }), [])).toMatchObject({
+      talk: true,
+      commentKind: "draft",
+    });
+    expect(
+      reviewAgent(snapshot({ autoSend: false, gitlab: true }), []).talk,
+    ).toBe(false);
     expect(reviewAgent(snapshot({ autoSend: false }), []).commentKind).toBe(
       "draft",
     );
@@ -215,6 +223,23 @@ if (process.env.ROAMGATE_REVIEW_DELIVERY_TEST !== "1") {
     const none = session({ agent: {} as Session["agent"] });
     expect(paneToAttach(none, { talk: true, agentPaneId: "p9" })).toBe("p9");
     expect(paneToAttach(none, { talk: false, agentPaneId: "p9" })).toBeNull();
+  });
+
+  test("a merge request's review is told the agent that came after it, and what waited is counted", () => {
+    const mr = session({
+      agent: {} as Session["agent"],
+      gitlab: true,
+      target: { kind: "mr", url: "u" },
+    } as unknown as Partial<Session>);
+    const agent = reviewAgent(
+      { session: mr, mergeRequest: { security: false } } as never,
+      panes,
+    );
+    expect(agent).toMatchObject({ talk: true, commentKind: "draft" });
+    expect(paneToAttach(mr, agent)).toBe("p9");
+    // Written before the agent came: held back, counted for the flush.
+    const waiting = [thread("a", [["you", at(1)]])];
+    expect(heldCommentCount(waiting, mr, true)).toBe(1);
   });
 
   test("the agent pane is told to the review once per review and pane, again after a failure", async () => {
