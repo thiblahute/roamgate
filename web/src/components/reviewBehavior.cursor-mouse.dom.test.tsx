@@ -26,7 +26,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith, testWith } = await import(
+    "./reviewSurfaces.testkit"
+  );
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -39,22 +41,26 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       ),
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
-    describe(name, () => {
-      test("a click puts the cursor on a line; a second click on it opens a comment editor", async () => {
-        const review = await mount({ files: [added("a.ts", 8)] });
-        await review.click({ path: "a.ts", new: 3 });
-        expect(review.cursorLine()?.text).toBe("a.ts line 3");
-        expect(review.editorOpen()).toBe(false);
-        // Keys after one click move the cursor, rather than write.
-        await review.press("j");
-        expect(review.cursorLine()?.text).toBe("a.ts line 4");
-        await review.click({ path: "a.ts", new: 6 });
-        await review.click({ path: "a.ts", new: 6 });
-        expect(review.cursorLine()?.text).toBe("a.ts line 6");
-        expect(review.editorOpen()).toBe(true);
-        await review.unmount();
-      });
+  for (const surface of reviewSurfacesWith("mouse"))
+    describe(surface.name, () => {
+      const { mount } = surface;
+      testWith(surface, "editor")(
+        "a click puts the cursor on a line; a second click on it opens a comment editor",
+        async () => {
+          const review = await mount({ files: [added("a.ts", 8)] });
+          await review.click({ path: "a.ts", new: 3 });
+          expect(review.cursorLine()?.text).toBe("a.ts line 3");
+          expect(review.editorOpen()).toBe(false);
+          // Keys after one click move the cursor, rather than write.
+          await review.press("j");
+          expect(review.cursorLine()?.text).toBe("a.ts line 4");
+          await review.click({ path: "a.ts", new: 6 });
+          await review.click({ path: "a.ts", new: 6 });
+          expect(review.cursorLine()?.text).toBe("a.ts line 6");
+          expect(review.editorOpen()).toBe(true);
+          await review.unmount();
+        },
+      );
 
       test("Shift+click starts a Visual selection from the cursor, or extends the one there, inside its file", async () => {
         const review = await mount({
@@ -82,55 +88,67 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("a click on a file's header folds its lines away, another shows them", async () => {
-        const review = await mount({
-          files: [added("a.ts", 3), added("b.ts", 3)],
-        });
-        expect(review.fileFolded("a.ts")).toBe(false);
-        await review.clickFileHeader("a.ts");
-        expect(review.fileFolded("a.ts")).toBe(true);
-        expect(review.lines("a.ts")).toEqual([]);
-        expect(review.lines("b.ts").length).toBe(3);
-        await review.clickFileHeader("a.ts");
-        expect(review.fileFolded("a.ts")).toBe(false);
-        expect(review.lines("a.ts").length).toBe(3);
-        await review.unmount();
-      });
+      testWith(surface, "file-folds")(
+        "a click on a file's header folds its lines away, another shows them",
+        async () => {
+          const review = await mount({
+            files: [added("a.ts", 3), added("b.ts", 3)],
+          });
+          expect(review.fileFolded("a.ts")).toBe(false);
+          await review.clickFileHeader("a.ts");
+          expect(review.fileFolded("a.ts")).toBe(true);
+          expect(review.lines("a.ts")).toEqual([]);
+          expect(review.lines("b.ts").length).toBe(3);
+          await review.clickFileHeader("a.ts");
+          expect(review.fileFolded("a.ts")).toBe(false);
+          expect(review.lines("a.ts").length).toBe(3);
+          await review.unmount();
+        },
+      );
 
-      test("a file of more than 600 changed lines starts folded; Show N lines shows it", async () => {
-        const review = await mount({
-          files: [added("a.ts", 2), added("big.ts", 601)],
-        });
-        expect(review.fileFolded("big.ts")).toBe(true);
-        expect(review.lines("big.ts")).toEqual([]);
-        expect(review.fileButtons("big.ts")).toEqual(["Show 601 lines"]);
-        await review.clickFileHeader("big.ts", "Show 601 lines");
-        expect(review.fileFolded("big.ts")).toBe(false);
-        expect(review.lines("big.ts").length).toBe(601);
-        expect(review.fileButtons("big.ts")).toEqual([]);
-        await review.unmount();
-      });
+      testWith(surface, "file-folds")(
+        "a file of more than 600 changed lines starts folded; Show N lines shows it",
+        async () => {
+          const review = await mount({
+            files: [added("a.ts", 2), added("big.ts", 601)],
+          });
+          expect(review.fileFolded("big.ts")).toBe(true);
+          expect(review.lines("big.ts")).toEqual([]);
+          expect(review.fileButtons("big.ts")).toEqual(["Show 601 lines"]);
+          await review.clickFileHeader("big.ts", "Show 601 lines");
+          expect(review.fileFolded("big.ts")).toBe(false);
+          expect(review.lines("big.ts").length).toBe(601);
+          expect(review.fileButtons("big.ts")).toEqual([]);
+          await review.unmount();
+        },
+      );
 
-      test("Open on a file's header opens it in the Files preview, at the cursor line when it is in that file", async () => {
-        const review = await mount({
-          files: [added("a.ts", 4), added("b.ts", 4)],
-          openFiles: true,
-        });
-        expect(review.fileButtons("a.ts")).toEqual(["Open"]);
-        await review.press("j");
-        await review.clickFileHeader("a.ts", "Open");
-        await review.clickFileHeader("b.ts", "Open");
-        expect(review.openedFiles()).toEqual([
-          { path: "/repo/a.ts", line: 2 },
-          { path: "/repo/b.ts" },
-        ]);
-        await review.unmount();
-      });
+      testWith(surface, "open-files")(
+        "Open on a file's header opens it in the Files preview, at the cursor line when it is in that file",
+        async () => {
+          const review = await mount({
+            files: [added("a.ts", 4), added("b.ts", 4)],
+            openFiles: true,
+          });
+          expect(review.fileButtons("a.ts")).toEqual(["Open"]);
+          await review.press("j");
+          await review.clickFileHeader("a.ts", "Open");
+          await review.clickFileHeader("b.ts", "Open");
+          expect(review.openedFiles()).toEqual([
+            { path: "/repo/a.ts", line: 2 },
+            { path: "/repo/b.ts" },
+          ]);
+          await review.unmount();
+        },
+      );
 
-      test("without a Files preview to open in, a file's header has no Open", async () => {
-        const review = await mount({ files: [added("doc.md", 2)] });
-        expect(review.fileButtons("doc.md")).toEqual([]);
-        await review.unmount();
-      });
+      testWith(surface, "open-files")(
+        "without a Files preview to open in, a file's header has no Open",
+        async () => {
+          const review = await mount({ files: [added("doc.md", 2)] });
+          expect(review.fileButtons("doc.md")).toEqual([]);
+          await review.unmount();
+        },
+      );
     });
 }

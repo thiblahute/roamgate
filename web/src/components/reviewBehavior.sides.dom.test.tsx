@@ -25,7 +25,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith, testWith } = await import(
+    "./reviewSurfaces.testkit"
+  );
 
   /** Two lines replaced by three, between unchanged ones. */
   const replaced = () => [
@@ -43,8 +45,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     ),
   ];
 
-  for (const { name, mount } of REVIEW_SURFACES)
-    describe(name, () => {
+  for (const surface of reviewSurfacesWith("sides"))
+    describe(surface.name, () => {
+      const { mount } = surface;
       test("side by side, j and k go line by line on their side", async () => {
         const review = await mount({ files: replaced(), split: true });
         expect(review.sideBySide()).toBe(true);
@@ -150,21 +153,24 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("side by side by default in a window 1100 px wide or more, unified below", async () => {
-        const wide = await mount({ files: replaced(), width: 1100 });
-        expect(wide.sideBySide()).toBe(true);
-        await wide.unmount();
-        const narrow = await mount({ files: replaced(), width: 1099 });
-        expect(narrow.sideBySide()).toBe(false);
-        await narrow.unmount();
-        // A remembered choice wins over the width.
-        const kept = await mount({
-          files: replaced(),
-          width: 1400,
-          split: false,
-        });
-        expect(kept.sideBySide()).toBe(false);
-        await kept.unmount();
-      });
+      testWith(surface, "window-width")(
+        "side by side by default in a window 1100 px wide or more, unified below",
+        async () => {
+          const wide = await mount({ files: replaced(), width: 1100 });
+          expect(wide.sideBySide()).toBe(true);
+          await wide.unmount();
+          const narrow = await mount({ files: replaced(), width: 1099 });
+          expect(narrow.sideBySide()).toBe(false);
+          await narrow.unmount();
+          // A remembered choice wins over the width.
+          const kept = await mount({
+            files: replaced(),
+            width: 1400,
+            split: false,
+          });
+          expect(kept.sideBySide()).toBe(false);
+          await kept.unmount();
+        },
+      );
     });
 }

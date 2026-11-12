@@ -350,8 +350,14 @@ export type KeyState = { count: string; pending: string };
 
 export const EMPTY_KEY_STATE: KeyState = { count: "", pending: "" };
 
-const PREFIXES = new Set(["g", "z", "d"]);
-const SEQUENCES = new Set([
+/** The keys that wait for a second one: g, z, d. */
+export const REVIEW_KEY_PREFIXES: ReadonlySet<string> = new Set([
+  "g",
+  "z",
+  "d",
+]);
+/** The two-key commands of the review (and every host of the key machine). */
+export const REVIEW_KEY_SEQUENCES: ReadonlySet<string> = new Set([
   "gg",
   "gf",
   "gl",
@@ -383,21 +389,25 @@ export type KeyResult =
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock"]);
 
-export function feedKey(state: KeyState, key: string): KeyResult {
+export function feedKey(
+  state: KeyState,
+  key: string,
+  sequences: ReadonlySet<string> = REVIEW_KEY_SEQUENCES,
+): KeyResult {
   // A bare modifier is part of the next key, not a key: it must not cancel
   // a count or a pending g/z/d (maildesk's 12G and zO lose to Shift).
   if (MODIFIERS.has(key)) return { type: "wait", state };
   if (state.pending) {
     const sequence = state.pending + key;
     const count = state.count ? Number(state.count) : null;
-    if (SEQUENCES.has(sequence))
+    if (sequences.has(sequence))
       return { type: "command", key: sequence, count, state: EMPTY_KEY_STATE };
     // An unknown sequence drops the prefix and reads the key on its own.
-    return feedKey({ count: state.count, pending: "" }, key);
+    return feedKey({ count: state.count, pending: "" }, key, sequences);
   }
   if (/^[0-9]$/.test(key) && (key !== "0" || state.count))
     return { type: "wait", state: { ...state, count: state.count + key } };
-  if (PREFIXES.has(key))
+  if (REVIEW_KEY_PREFIXES.has(key))
     return { type: "wait", state: { ...state, pending: key } };
   return {
     type: "command",

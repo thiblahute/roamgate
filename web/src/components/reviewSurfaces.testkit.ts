@@ -1,12 +1,80 @@
 /**
- * Every review surface the behavior tests run against. The classic review
- * pane today; the review in Changes joins once it exists (plan: review into
- * the inspector, phase 3), and each shared test then runs on both.
+ * Every review surface the behavior tests run against: the classic review
+ * pane, and the review in Changes (plan: review into the inspector), which
+ * runs the tests of what it does so far. A test needing what a surface does
+ * not do yet is not registered for it (it is neither run nor skipped there).
  */
+import { test } from "bun:test";
+import { mountChangesReview } from "./reviewSurface.changes.testkit";
 import { mountClassicReview } from "./reviewSurface.classic.testkit";
 import type { ReviewSurface, SurfaceOptions } from "./reviewSurface.testkit";
 
-export const REVIEW_SURFACES: {
+/** What a test needs of a surface, beyond the diff it draws. */
+export type SurfaceFeature =
+  /** Everything the classic pane does (the files not yet sorted). */
+  | "review"
+  /** The Vim cursor, its motions, the screen, Visual lines (phase 3). */
+  | "cursor"
+  /** `/ * # n N` in the diff and its file paths (phase 3). */
+  | "search"
+  /** Side by side: sides, S and its commands (phase 3). */
+  | "sides"
+  /** A click and Shift+click on a line (phase 3). */
+  | "mouse"
+  /** The review's commits: the commit bar, views (phase 6). */
+  | "commits"
+  /** The comment editor (phase 4). */
+  | "editor"
+  /** The window's width picks side by side (classic; D4 for Changes). */
+  | "window-width"
+  /** A file's header folds it; large files start folded (phase 5). */
+  | "file-folds"
+  /** Open on a file's header, to the Files preview (phase 8). */
+  | "open-files";
+
+export type SurfaceEntry = {
   name: string;
   mount: (options: SurfaceOptions) => Promise<ReviewSurface>;
-}[] = [{ name: "classic", mount: mountClassicReview }];
+  has: (feature: SurfaceFeature) => boolean;
+};
+
+const CHANGES_FEATURES = new Set<SurfaceFeature>([
+  "cursor",
+  "search",
+  "sides",
+  "mouse",
+]);
+
+export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [
+  { name: "classic", mount: mountClassicReview, has: () => true },
+  {
+    name: "changes",
+    mount: mountChangesReview,
+    has: (feature) => CHANGES_FEATURES.has(feature),
+  },
+];
+
+/** The surfaces with every one of `features`. */
+export function reviewSurfacesWith(
+  ...features: SurfaceFeature[]
+): SurfaceEntry[] {
+  return ALL_REVIEW_SURFACES.filter((surface) =>
+    features.every((feature) => surface.has(feature)),
+  );
+}
+
+/** The surfaces with the whole review: the classic pane, today. */
+export const REVIEW_SURFACES = reviewSurfacesWith("review");
+
+/**
+ * `test`, registered only where `surface` has `features`: a test of what
+ * the surface does not do yet is not one of its tests.
+ */
+export function testWith(
+  surface: SurfaceEntry,
+  ...features: SurfaceFeature[]
+): typeof test {
+  return (
+    features.every((feature) => surface.has(feature)) ? test : () => {}
+  ) as typeof test;
+}

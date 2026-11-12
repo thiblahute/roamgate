@@ -1,0 +1,256 @@
+import { describe, expect, test } from "bun:test";
+import { getSingularPatch } from "@pierre/diffs";
+import {
+  clampRow,
+  diffCursorModel,
+  fileStep,
+  filesWithHits,
+  hunkStep,
+  relocatedRow,
+  rowAt,
+  rowLine,
+  rowSide,
+  screenRow,
+  searchFileStep,
+  searchHits,
+  stepRows,
+  wordStep,
+} from "./diffCursor";
+
+/*
+ * The adapter from Pierre's parsed hunks to the review's cursor rows (plan:
+ * review into the inspector, phase 3), on patches as git writes them.
+ */
+
+const source = (path: string, patch: string, key = `unstaged:${path}`) => ({
+  key,
+  path,
+  diff: getSingularPatch(patch),
+});
+
+const changed = source(
+  "a.ts",
+  [
+    "diff --git a/a.ts b/a.ts",
+    "--- a/a.ts",
+    "+++ b/a.ts",
+    "@@ -1,4 +1,5 @@",
+    " top",
+    "-old 1",
+    "-old 2",
+    "+new 1",
+    "+new 2",
+    "+new 3",
+    " bottom",
+    "@@ -20,2 +21,3 @@",
+    " twenty",
+    "+added",
+    " twenty one",
+    "",
+  ].join("\n"),
+);
+const created = source(
+  "new.ts",
+  [
+    "diff --git a/new.ts b/new.ts",
+    "new file mode 100644",
+    "--- /dev/null",
+    "+++ b/new.ts",
+    "@@ -0,0 +1,2 @@",
+    "+first",
+    "+second",
+    "",
+  ].join("\n"),
+);
+const deleted = source(
+  "gone.ts",
+  [
+    "diff --git a/gone.ts b/gone.ts",
+    "deleted file mode 100644",
+    "--- a/gone.ts",
+    "+++ /dev/null",
+    "@@ -1,2 +0,0 @@",
+    "-was here",
+    "-and here",
+    "",
+  ].join("\n"),
+);
+const renamed = source(
+  "src/moved.ts",
+  [
+    "diff --git a/lib/moved.ts b/src/moved.ts",
+    "similarity index 90%",
+    "rename from lib/moved.ts",
+    "rename to src/moved.ts",
+    "--- a/lib/moved.ts",
+    "+++ b/src/moved.ts",
+    "@@ -3,2 +3,2 @@",
+    " kept",
+    "-before",
+    "+after",
+    "",
+  ].join("\n"),
+);
+const binary = source(
+  "logo.png",
+  [
+    "diff --git a/logo.png b/logo.png",
+    "index 1111111..2222222 100644",
+    "Binary files a/logo.png and b/logo.png differ",
+    "",
+  ].join("\n"),
+);
+
+describe("the cursor's rows from Pierre's hunks", () => {
+  test("unified: a change's removed lines, then its added ones, with both numbers", () => {
+    const model = diffCursorModel([changed]);
+    expect(
+      model.rows.map((row) => [row.kind, row.old, row.new, row.text, row.hunk]),
+    ).toEqual([
+      [" ", 1, 1, "top", 0],
+      ["-", 2, null, "old 1", 0],
+      ["-", 3, null, "old 2", 0],
+      ["+", null, 2, "new 1", 0],
+      ["+", null, 3, "new 2", 0],
+      ["+", null, 4, "new 3", 0],
+      [" ", 4, 5, "bottom", 0],
+      [" ", 20, 21, "twenty", 1],
+      ["+", null, 22, "added", 1],
+      [" ", 21, 23, "twenty one", 1],
+    ]);
+    expect(model.files).toEqual([
+      { key: "unstaged:a.ts", path: "a.ts", start: 0, end: 10 },
+    ]);
+  });
+
+  test("split: removed and added lines face each other, an unchanged line across", () => {
+    const model = diffCursorModel([changed]);
+    const text = (at: number | null) =>
+      at === null ? null : model.rows[at]!.text;
+    expect(
+      model.splitLines.map((line) => [text(line.left), text(line.right)]),
+    ).toEqual([
+      ["top", "top"],
+      ["old 1", "new 1"],
+      ["old 2", "new 2"],
+      [null, "new 3"],
+      ["bottom", "bottom"],
+      ["twenty", "twenty"],
+      [null, "added"],
+      ["twenty one", "twenty one"],
+    ]);
+    // j / k on a side: the left side skips the added line with no partner.
+    expect(text(stepRows(model, 1, 1, "left"))).toBe("old 2");
+    expect(text(stepRows(model, 2, 1, "left"))).toBe("new 3");
+    expect(text(stepRows(model, 3, 1, "right"))).toBe("new 2");
+    expect(rowSide(model.rows[0]!)).toBe("both");
+    expect(rowSide(model.rows[1]!)).toBe("left");
+    expect(rowSide(model.rows[3]!)).toBe("right");
+  });
+
+  test("new, deleted, renamed and binary files", () => {
+    const model = diffCursorModel([created, deleted, renamed, binary]);
+    expect(
+      model.rows.map((row) => [row.path, row.kind, row.old, row.new, row.text]),
+    ).toEqual([
+      ["new.ts", "+", null, 1, "first"],
+      ["new.ts", "+", null, 2, "second"],
+      ["gone.ts", "-", 1, null, "was here"],
+      ["gone.ts", "-", 2, null, "and here"],
+      ["src/moved.ts", " ", 3, 3, "kept"],
+      ["src/moved.ts", "-", 4, null, "before"],
+      ["src/moved.ts", "+", null, 4, "after"],
+    ]);
+    // A binary file has no rows: `]` goes past it.
+    expect(
+      model.files.map((file) => [file.path, file.end - file.start]),
+    ).toEqual([
+      ["new.ts", 2],
+      ["gone.ts", 2],
+      ["src/moved.ts", 3],
+      ["logo.png", 0],
+    ]);
+    expect(fileStep(model, 4, 1)).toBeNull();
+    expect(fileStep(model, 0, 2)).toBe(4);
+    // Each path's new lines, for suggestions.
+    expect([...model.newLinesByPath.get("src/moved.ts")!]).toEqual([
+      [3, "kept"],
+      [4, "after"],
+    ]);
+    expect(model.newLinesByPath.get("gone.ts")!.size).toBe(0);
+  });
+
+  test("where Pierre draws a row, and the row of a line Pierre drew", () => {
+    const model = diffCursorModel([changed]);
+    expect(rowLine(model.rows[1]!)).toEqual({ line: 2, side: "deletions" });
+    expect(rowLine(model.rows[3]!)).toEqual({ line: 2, side: "additions" });
+    expect(rowLine(model.rows[0]!, "left")).toEqual({
+      line: 1,
+      side: "deletions",
+    });
+    expect(rowLine(model.rows[6]!, "right")).toEqual({
+      line: 5,
+      side: "additions",
+    });
+    expect(rowAt(model, "unstaged:a.ts", 2, "deletions")).toBe(1);
+    expect(rowAt(model, "unstaged:a.ts", 2, "additions")).toBe(3);
+    expect(rowAt(model, "unstaged:a.ts", 5, "additions")).toBe(6);
+    expect(rowAt(model, "unstaged:a.ts", 4, "deletions")).toBe(6);
+    expect(rowAt(model, "elsewhere", 1, "additions")).toBe(-1);
+  });
+
+  test("hunks, files, a Visual selection's file, words and the screen", () => {
+    const model = diffCursorModel([changed, created]);
+    expect(hunkStep(model, 0, 1, 1)).toBe(7);
+    expect(hunkStep(model, 0, 1, 2)).toBe(10);
+    expect(hunkStep(model, 10, -1, 1)).toBe(7);
+    expect(hunkStep(model, 8, -1, 1)).toBe(7);
+    expect(fileStep(model, 3, 1)).toBe(10);
+    expect(fileStep(model, 10, -1)).toBe(0);
+    // A selection that began in a.ts stays there.
+    expect(clampRow(model, 11, 2)).toBe(9);
+    expect(clampRow(model, 11, null)).toBe(11);
+    expect(clampRow(model, -4, null)).toBe(0);
+    expect(wordStep(model, { at: 0, col: 0 }, "w", 2)).toEqual({
+      at: 1,
+      col: 4,
+    });
+    expect(screenRow([4, 5, 6, 7, 8], "H", 2)).toBe(5);
+    expect(screenRow([4, 5, 6, 7, 8], "L", 1)).toBe(8);
+    expect(screenRow([4, 5, 6, 7, 8], "M", 1)).toBe(6);
+    expect(screenRow([], "M", 1)).toBeNull();
+  });
+
+  test("search: lines that match, smart case, and files by their path", () => {
+    const model = diffCursorModel([changed, created, renamed]);
+    expect(searchHits(model, "new", false).map((hit) => hit.at)).toEqual([
+      3, 4, 5, 10,
+    ]);
+    expect(searchHits(model, "New", false)).toEqual([]);
+    // A path that matches: a hit at its first line.
+    expect(searchHits(model, "moved", false)).toEqual([
+      { at: 12, start: 0, end: 0 },
+    ]);
+    expect(filesWithHits(model, searchHits(model, "e", false))).toEqual([
+      "a.ts",
+      "new.ts",
+      "src/moved.ts",
+    ]);
+    expect(searchFileStep(model, "moved", 0, 1)).toBe(2);
+    expect(searchFileStep(model, "nowhere", 0, 1)).toBe(-1);
+  });
+
+  test("a thread of an older version is put on today's row, or is outdated", () => {
+    const model = diffCursorModel([renamed]);
+    const before = ["one", "two", "kept", "before", "five"];
+    const now = ["one", "two", "kept", "after", "five"];
+    expect(relocatedRow(model, "src/moved.ts", before, now, 3)).toEqual({
+      row: 0,
+      line: 3,
+    });
+    // Its line is gone: outdated.
+    expect(relocatedRow(model, "src/moved.ts", before, now, 4)).toBeNull();
+    // Found, but on a line the diff does not draw.
+    expect(relocatedRow(model, "src/moved.ts", before, now, 5)).toBeNull();
+  });
+});

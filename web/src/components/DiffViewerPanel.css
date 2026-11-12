@@ -723,3 +723,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* A file the review cursor's search has hits in. */
+.diff-tree-name mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 3px;
+}

@@ -40,7 +40,7 @@ import type {
   GitDiffKind,
 } from "../types";
 import { connectionClientScopeKey } from "../useConnectionClient";
-import { useStoreSelector } from "../store";
+import { store, useStoreSelector } from "../store";
 import { gitDiffCode, gitDiffCodeLabel } from "../gitDiffStatus";
 import { requestFilePreview } from "./fileExplorerResources";
 import {
@@ -62,6 +62,7 @@ import {
 import {
   DiffSurface,
   DiffSurfaceScroll,
+  type DiffSurfaceInstance,
   diffSurfaceOptions,
   type DiffSurfaceOptions,
 } from "./DiffSurface";
@@ -78,6 +79,8 @@ import { ThreadsChip } from "./ThreadsPanel";
 import { useReviewState } from "../review";
 import { useInspectorCommands } from "../useInspectorCommands";
 import type { InspectorCommand } from "../inspectorCommands";
+import { CommandLine } from "./CommandLine";
+import { DIFF_CURSOR_KEYS, useDiffCursor } from "./useDiffCursor";
 import "./DiffContentView.css";
 
 export { highlightedPatch } from "./DiffSurface";
@@ -452,6 +455,22 @@ type DiffFileSectionProps = {
   openFileLabel?: string;
   onRequestAnnotation?: (request: DiffAnnotationRequest) => void;
   onEditAnnotation?: (id: string) => void;
+  /** The review cursor's: Pierre's instance of the file, drawn or gone. */
+  onInstance?: (key: string, instance: DiffSurfaceInstance | null) => void;
+  /**
+   * The review cursor's: a click on a line; true when it was the cursor's
+   * line already (a second click), for a comment to open there.
+   */
+  onLineClick?: (
+    key: string,
+    line: number,
+    side: "deletions" | "additions",
+    shift: boolean,
+  ) => boolean;
+  /** The review cursor's Visual lines here (undefined: no cursor). */
+  cursorSelection?: SelectedLineRange | null;
+  /** The review cursor's search has a hit in this file. */
+  searchHit?: boolean;
 };
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -471,6 +490,10 @@ const DiffFileSection = memo(function DiffFileSection({
   openFileLabel = "Open in Files",
   onRequestAnnotation,
   onEditAnnotation,
+  onInstance,
+  onLineClick,
+  cursorSelection,
+  searchHit = false,
 }: DiffFileSectionProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const measuredHeightRef = useRef<number | null>(null);
@@ -530,6 +553,30 @@ const DiffFileSection = memo(function DiffFileSection({
       section.file,
     ],
   );
+  const sectionKey = section.key;
+  const surfaceInstance = useMemo(
+    () =>
+      onInstance
+        ? (instance: DiffSurfaceInstance | null) =>
+            onInstance(sectionKey, instance)
+        : undefined,
+    [onInstance, sectionKey],
+  );
+  const lineClick = useMemo(
+    () =>
+      onLineClick
+        ? (
+            line: number,
+            side: "deletions" | "additions",
+            event: PointerEvent,
+          ) => {
+            // A second click on the cursor's line: a comment there.
+            if (onLineClick(sectionKey, line, side, event.shiftKey))
+              selectLines?.({ start: line, end: line, side });
+          }
+        : undefined,
+    [onLineClick, sectionKey, selectLines],
+  );
   const toggle = () => {
     onToggle(section.key, section.collapsed);
     if (section.collapsed && (!section.file || !section.active))
@@ -547,7 +594,7 @@ const DiffFileSection = memo(function DiffFileSection({
 
   return (
     <article
-      className={`diff-file-section ${embedded ? "is-embedded" : ""} ${currentSearchMatch ? "is-search-current" : ""}`}
+      className={`diff-file-section ${embedded ? "is-embedded" : ""} ${currentSearchMatch ? "is-search-current" : ""} ${searchHit ? "is-cursor-search-hit" : ""}`}
       data-diff-entry-key={section.key}
       aria-current={currentSearchMatch ? "true" : undefined}
       onPointerDownCapture={(event) => {
@@ -689,6 +736,11 @@ const DiffFileSection = memo(function DiffFileSection({
               )}
               onSelectLines={selectLines}
               selectionActive={annotationSelectionActive}
+              onInstance={surfaceInstance}
+              onLineClick={lineClick}
+              {...(cursorSelection !== undefined
+                ? { selectedLines: cursorSelection }
+                : {})}
             />
           ) : null}
         </div>
@@ -726,7 +778,24 @@ function areDiffFileSectionPropsEqual(
     previous.onOpenFile === next.onOpenFile &&
     previous.openFileLabel === next.openFileLabel &&
     previous.onRequestAnnotation === next.onRequestAnnotation &&
-    previous.onEditAnnotation === next.onEditAnnotation
+    previous.onEditAnnotation === next.onEditAnnotation &&
+    previous.onInstance === next.onInstance &&
+    previous.onLineClick === next.onLineClick &&
+    sameRange(previous.cursorSelection, next.cursorSelection) &&
+    previous.searchHit === next.searchHit
+  );
+}
+
+function sameRange(
+  a: SelectedLineRange | null | undefined,
+  b: SelectedLineRange | null | undefined,
+) {
+  if (!a || !b) return a === b;
+  return (
+    a.start === b.start &&
+    a.end === b.end &&
+    a.side === b.side &&
+    a.endSide === b.endSide
   );
 }
 
@@ -759,6 +828,8 @@ export function DiffContentView({
   embedded = false,
   showFileSelector = true,
   backAction,
+  reviewCursor = false,
+  onSearchMatchesChange,
 }: {
   selectionRevision?: number;
   entry: GitDiffEntry | null;
@@ -794,6 +865,13 @@ export function DiffContentView({
   embedded?: boolean;
   showFileSelector?: boolean;
   backAction?: { label: string; onClick: () => void };
+  /**
+   * The review's Vim cursor and keys (on "in Changes" with Vim keys on);
+   * off, Changes keeps its own keys and mouse.
+   */
+  reviewCursor?: boolean;
+  /** The files with a hit of the cursor's search, for the tree to mark. */
+  onSearchMatchesChange?: (paths: readonly string[]) => void;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1187,6 +1265,68 @@ export function DiffContentView({
     [effectiveViewMode, restoreScrollAnchor, theme, wrapEnabled],
   );
 
+  /*
+   * The review's Vim cursor (plan: review into the inspector, phase 3), on
+   * the files drawn as diffs; only where the inspector shows Changes "in
+   * Changes" with Vim keys on.
+   */
+  const cursorSections = useMemo(
+    () =>
+      renderedSections.map((section) => ({
+        key: section.key,
+        path: section.entry.path,
+        patch:
+          !section.collapsed && !section.imagePreview && section.file?.diff
+            ? section.file.diff
+            : null,
+      })),
+    [renderedSections],
+  );
+  const inspectorRunRef = useRef<((input: string) => void) | null>(null);
+  const cursor = useDiffCursor({
+    enabled: reviewCursor && !embedded,
+    sections: cursorSections,
+    split: effectiveViewMode === "split",
+    rootRef: sectionRef,
+    onToggleSplit: () =>
+      setViewMode((mode) => (mode === "split" ? "unified" : "split")),
+    onReload: onRetry,
+    runCommand: (input) => {
+      if (!inspectorRunRef.current) return false;
+      inspectorRunRef.current(input);
+      return true;
+    },
+    notify: (message) =>
+      store.notify({ kind: "info", message, autoDismissMs: 2000 }),
+    selectionRevision,
+    selectedKey: activeEntryKey || null,
+  });
+  const cursorMatching = useMemo(
+    () => new Set(cursor.matchingPaths),
+    [cursor.matchingPaths],
+  );
+  const searchMatchesChangeRef = useRef(onSearchMatchesChange);
+  searchMatchesChangeRef.current = onSearchMatchesChange;
+  useEffect(() => {
+    searchMatchesChangeRef.current?.(cursor.matchingPaths);
+  }, [cursor.matchingPaths]);
+  const cursorLineClick = useCallback(
+    (
+      key: string,
+      line: number,
+      side: "deletions" | "additions",
+      shift: boolean,
+    ) => {
+      sectionRef.current?.focus({ preventScroll: true });
+      return cursorLineClickRef.current(key, line, side, shift);
+    },
+    [],
+  );
+  const cursorActiveRef = useRef(cursor.active);
+  cursorActiveRef.current = cursor.active;
+  const cursorLineClickRef = useRef(cursor.onLineClick);
+  cursorLineClickRef.current = cursor.onLineClick;
+
   useEffect(() => {
     hunkIndexRef.current = -1;
     hunkNavigationRevisionRef.current += 1;
@@ -1568,6 +1708,15 @@ export function DiffContentView({
       if (!shortcutMatches(e, "preview.search")) return;
       const section = sectionRef.current;
       if (!section || section.offsetParent === null) return;
+      // The review's cursor has the keys: Ctrl-f is its page down.
+      if (
+        cursorActiveRef.current &&
+        e.ctrlKey &&
+        !e.metaKey &&
+        e.target instanceof Node &&
+        section.contains(e.target)
+      )
+        return;
       if (isEditableSearchTarget(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1616,6 +1765,14 @@ export function DiffContentView({
             onCreateAnnotation ? handleRequestAnnotation : undefined
           }
           onEditAnnotation={onEditAnnotation}
+          {...(cursor.active
+            ? {
+                onInstance: cursor.onInstance,
+                onLineClick: cursorLineClick,
+                cursorSelection: cursor.selectionIn(section.key),
+                searchHit: cursorMatching.has(section.entry.path),
+              }
+            : {})}
         />
       ))}
     </DiffSurfaceScroll>
@@ -1664,15 +1821,30 @@ export function DiffContentView({
             run: () =>
               setViewMode((mode) => (mode === "split" ? "unified" : "split")),
           },
+          // With the review's cursor, the review's meaning: a toggle.
           {
             name: "split",
-            description: "side by side (Split)",
-            run: () => setViewMode("split"),
+            description: cursor.active
+              ? "side by side / unified (S)"
+              : "side by side (Split)",
+            run: () =>
+              cursor.active
+                ? setViewMode((mode) =>
+                    mode === "split" ? "unified" : "split",
+                  )
+                : setViewMode("split"),
           },
           {
             name: "unified",
-            description: "one column (Unified)",
-            run: () => setViewMode("unified"),
+            description: cursor.active
+              ? "side by side / unified (S)"
+              : "one column (Unified)",
+            run: () =>
+              cursor.active
+                ? setViewMode((mode) =>
+                    mode === "split" ? "unified" : "split",
+                  )
+                : setViewMode("unified"),
           },
         ]
       : []),
@@ -1695,7 +1867,16 @@ export function DiffContentView({
         ]
       : []),
   ];
-  useInspectorCommands(embedded ? null : { commands: diffCommands });
+  inspectorRunRef.current = useInspectorCommands(
+    embedded
+      ? null
+      : {
+          commands: diffCommands,
+          ...(cursor.active
+            ? { line: cursor.goToLine, keys: DIFF_CURSOR_KEYS }
+            : {}),
+        },
+  );
 
   return (
     <section
@@ -1705,11 +1886,16 @@ export function DiffContentView({
       }`}
       aria-label={embedded ? "File changes" : "Diff Viewer content"}
       tabIndex={-1}
+      data-review-cursor={cursor.active ? "" : undefined}
+      onKeyDown={cursor.active ? cursor.onKeyDown : undefined}
       onKeyDownCapture={(e) => {
         if (
           !embedded &&
           !mobile &&
-          shortcutMatches(e.nativeEvent, "preview.search")
+          shortcutMatches(e.nativeEvent, "preview.search") &&
+          // With the review's cursor, Ctrl-f is a page down (Vim's); a
+          // Mac's Cmd+F still finds.
+          !(cursor.active && e.ctrlKey && !e.metaKey)
         ) {
           if (isEditableSearchTarget(e.target)) return;
           e.preventDefault();
@@ -1952,6 +2138,25 @@ export function DiffContentView({
           api={diffThreads.api}
           onGo={goToThread}
           onClose={() => setThreadsOpen(false)}
+        />
+      ) : null}
+      {cursor.status ? (
+        <div className="diff-cursor-status" aria-live="polite">
+          {cursor.status}
+        </div>
+      ) : null}
+      {cursor.searchPrompt ? (
+        <CommandLine
+          kind="/"
+          onBlur={cursor.closeSearchPrompt}
+          onSubmit={(text) => {
+            sectionRef.current?.focus({ preventScroll: true });
+            cursor.submitSearch(text);
+          }}
+          onCancel={() => {
+            cursor.closeSearchPrompt();
+            sectionRef.current?.focus({ preventScroll: true });
+          }}
         />
       ) : null}
       <AnnotationComposerPopover

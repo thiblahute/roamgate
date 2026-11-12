@@ -44,10 +44,13 @@ import { parseReviewCommand } from "../reviewNavigation";
 import {
   reviewSurfaceChoice,
   reviewSurfaceMessage,
+  reviewVimKeys,
+  useReviewPrefs,
   writeReviewPrefs,
 } from "../reviewPrefs";
 import { setVimKeys, vimKeys } from "../vimKeys";
 import { useZenEscape, useZenMode } from "../useZenMode";
+import { resetKeyMachines, useKeyMachine } from "../keyMachine";
 import { store } from "../store";
 import {
   type InspectorCommandRegistry,
@@ -135,6 +138,7 @@ const CHANGES_TREE_HIDDEN_KEY = "inspectorChangesTreeHidden";
 
 /** The inspector's own keys, in its shortcut list (`?`, `:help`). */
 const INSPECTOR_KEYS: readonly ShortcutRow[] = [
+  ["gt gT", "next / previous view (2gt: the second view, Vim's tabs)"],
   [":", "command line, in every view; Tab / Shift+Tab complete"],
   ["?", "this list (:help WORD opens it filtered)"],
   ["← → Home End", "on the tabs: previous / next view, the first / last"],
@@ -303,6 +307,14 @@ export function WorkspaceInspectorHost({
   /** Review only in Changes (`:only`): the diff alone, Esc brings all back. */
   const [changesOnly, toggleChangesOnly] = useZenMode();
   useZenEscape(changesOnly, toggleChangesOnly);
+  /**
+   * The review in Changes (`:set reviewin=changes`, Vim keys on): its Vim
+   * cursor and keys there. On classic, Changes keeps upstream's.
+   */
+  const reviewPrefs = useReviewPrefs();
+  const reviewInChanges =
+    reviewSurfaceChoice(reviewPrefs) === "changes" &&
+    reviewVimKeys(reviewPrefs);
   /** The shortcut list (`?`, `:help`), with what its filter starts with. */
   const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
   const [drillInByView, setDrillInByView] = useState<
@@ -435,6 +447,46 @@ export function WorkspaceInspectorHost({
     if (fileSelection.entry)
       setDrillInByView((current) => ({ ...current, files: true }));
   }, [fileSelection.entry, state.view, state.initialDirectory]);
+
+  /*
+   * `gt` / `gT`: the next and previous view (Vim's tab keys), anywhere in
+   * the inspector but where keys are typed text; `2gt` is the second view.
+   * Read before the views (capture), which go on reading `g` as theirs.
+   */
+  const viewKeys = useKeyMachine(["gt", "gT"]);
+  const onViewKey = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (
+      commandLine ||
+      shortcuts ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      isTypingTarget(event.target)
+    )
+      return;
+    const result = viewKeys.feed(event.key);
+    if (result.type !== "command") return;
+    if (result.key !== "gt" && result.key !== "gT") return;
+    const views: InspectorView[] = historyAvailable
+      ? ["files", "changes", "commits", "history"]
+      : ["files", "changes", "commits"];
+    const at = Math.max(0, views.indexOf(state.view));
+    const next =
+      result.key === "gt" && result.count
+        ? views[Math.min(views.length, result.count) - 1]!
+        : views[
+            (at +
+              (result.key === "gt" ? 1 : -(result.count ?? 1)) +
+              views.length * 10) %
+              views.length
+          ]!;
+    event.preventDefault();
+    event.stopPropagation();
+    // The views had begun reading the `g`: they forget it.
+    resetKeyMachines();
+    onViewChange(next);
+    tabRefs[next].current?.focus({ preventScroll: true });
+  };
 
   const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowDown" && state.view === "files") {
@@ -764,6 +816,7 @@ export function WorkspaceInspectorHost({
       } ${compact ? "is-compact" : ""} ${hasDetail ? "has-detail" : ""}`}
       aria-label="Workspace Inspector"
       data-view={state.view}
+      onKeyDownCapture={onViewKey}
       onKeyDown={(event) => {
         if (
           event.key === "?" &&
@@ -1243,6 +1296,10 @@ export function WorkspaceInspectorHost({
                           diffViewerRef.current?.highlightEntry(target)
                         }
                         onOpenFile={onOpenDiffFile}
+                        reviewCursor={reviewInChanges}
+                        onSearchMatchesChange={(paths) =>
+                          diffViewerRef.current?.markSearchMatches(paths)
+                        }
                         backAction={
                           compact && hasDetail
                             ? {

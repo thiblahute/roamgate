@@ -171,6 +171,21 @@ Inspector button, shortcuts, or workspace/agent menus.
   navigate from commits to files to diffs, with Back returning one level.
 - Changes counts the lines of untracked files when there are at most 500 of
   them; a larger untracked tree is listed without line counts.
+- `gt` / `gT` go to the next and previous view (`2gt` to the second), from
+  anywhere in the inspector but a text field; the tabs' arrow keys stay.
+- With reviews set to open in Changes (`:set reviewin=changes`) and Vim keys
+  on (`:vim`), Changes takes the review's cursor: `j`/`k` (counts too),
+  `J`/`K`, `gg`/`G` and `12G` or `:12` (line 12 of all the changes),
+  Ctrl-d/u/f/b/e/y, PageUp/PageDown, `H`/`M`/`L`, `zz`/`zt`/`zb`, `{`/`}`
+  hunks, `[`/`]` files, `w`/`b`/`E`, `h`/`l`/`0`/`^`/`$`, Left and Right to
+  change side in a side by side diff, `/`, `*`, `#`, `n`/`N` (a search that
+  finds no line goes file to file by path, the tree marks the files with a
+  hit), `V` Visual lines (Shift+click too), `S` side by side, `R`/`gr`
+  reload, `f` the tree, `o` Review only. A click puts the cursor on a line,
+  a second click there opens the comment box. Ctrl-f is then the page down
+  (Cmd+F still finds on a Mac) and `:split` / `:unified` switch, as in the
+  review pane. On the classic setting (the default), Changes keeps its own
+  keys and mouse.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes

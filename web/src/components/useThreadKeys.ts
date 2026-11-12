@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { REVIEW_USER, type ReviewThread } from "../../../shared/review";
+import { createKeyMachine, runKeyCommand } from "../keyMachine";
 import { latestComment } from "../reviewNavigation";
 
 /*
@@ -32,20 +33,6 @@ const REPEATED = new Set([
   "N",
   "J",
   "K",
-]);
-
-/** The keys g, z and d begin. */
-const SEQUENCES = new Set([
-  "gg",
-  "gn",
-  "gN",
-  "gH",
-  "g;",
-  "zz",
-  "zt",
-  "zb",
-  "za",
-  "dd",
 ]);
 
 /** What the keys act on, read as each key is pressed. */
@@ -129,9 +116,11 @@ export function useThreadKeys(
       stop.scrollIntoView({ block: "nearest" });
       list.focus({ preventScroll: true });
     };
-    let pending = "";
-    /** Digits typed before a key: how many times it moves. */
-    let count = 0;
+    /*
+     * Counts and the g / z / d prefixes: the one key machine (keyMachine.ts),
+     * so `5j`, `gg`, `gn`, `g;`, `za`, `dd` read as in the review and Changes.
+     */
+    const machine = createKeyMachine();
     /** The column j / k keep in a table, across the threads on its rows. */
     let column: { table: Element; at: number } | null = null;
     /** The scroller zz / zt made room in. */
@@ -142,26 +131,20 @@ export function useThreadKeys(
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.target !== list || event.metaKey || event.ctrlKey) return;
-      // A count, as in the review: 3j moves three stops.
-      if (
-        !pending &&
-        /^[0-9]$/.test(event.key) &&
-        (count > 0 || event.key !== "0")
-      ) {
-        count = Math.min(count * 10 + Number(event.key), 9999);
-        event.preventDefault();
-        event.stopPropagation();
+      const result = machine.feed(event.key);
+      if (result.type === "wait") {
+        // A count (3j moves three stops) or a prefix: kept for the next key.
+        if (event.key.length === 1) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
-      const times = Math.max(1, count);
-      count = 0;
-      const prefix = pending;
-      pending = "";
       moved = undefined;
-      let done = run(prefix + event.key, times);
-      // g, z or d then a key that makes no sequence: that key on its own.
-      if (!done && prefix && !SEQUENCES.has(prefix + event.key))
-        done = run(event.key, times);
+      // A sequence the list has no meaning for: its second key alone.
+      const done = runKeyCommand(result, (key, count) =>
+        run(key, Math.min(Math.max(1, count ?? 1), 9999)),
+      );
       if (!done) return;
       event.preventDefault();
       event.stopPropagation();
@@ -293,8 +276,7 @@ export function useThreadKeys(
         if (latest) k.goToComment(latest.thread, latest.comment.id);
       } else if (k.otherKey?.(key, { here, all }, select)) {
         /* The list's own key. */
-      } else if (key === "g" || key === "z" || key === "d") pending = key;
-      else if (key === "r" && thread) {
+      } else if (key === "r" && thread) {
         // Resolving folds it: the cursor follows onto its one line.
         if (!thread.resolved && !k.flipped.has(thread.id))
           k.setCursor(`t:${thread.id}`);

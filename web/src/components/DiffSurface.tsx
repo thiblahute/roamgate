@@ -84,6 +84,22 @@ const DIFF_SELECTION_CSS = `
   [data-line][data-selected-line="single"] {
     border-block: 1px solid var(--diffs-selection-base);
   }
+  [data-line][data-editor-active-line] {
+    background-color: color-mix(
+      in srgb,
+      var(--diffs-selection-base) 18%,
+      var(--diffs-computed-diff-line-bg)
+    ) !important;
+    box-shadow: inset 2px 0 0 var(--diffs-selection-base);
+  }
+  [data-column-number][data-editor-active-line] {
+    color: var(--diffs-fg) !important;
+    font-weight: 800;
+  }
+  ::highlight(roamgate-diff-cursor) {
+    background-color: var(--diffs-selection-base);
+    color: var(--diffs-bg);
+  }
 `;
 
 /** The options every diff view draws with: its layout, wrap and theme. */
@@ -218,6 +234,17 @@ export type DiffSurfaceProps<A extends DiffSurfaceAnnotation> = {
   decorate?: (node: HTMLElement, instance: DiffSurfaceInstance) => void;
   /** Pierre's instance while it is drawn, null once it is gone. */
   onInstance?: (instance: DiffSurfaceInstance | null) => void;
+  /** A click on a line's text: its number and side. */
+  onLineClick?: (
+    line: number,
+    side: "deletions" | "additions",
+    event: PointerEvent,
+  ) => void;
+  /**
+   * The lines drawn selected, set by the view (a Visual selection): over
+   * a drag's selection while given (null: none).
+   */
+  selectedLines?: SelectedLineRange | null;
 };
 
 /**
@@ -237,6 +264,8 @@ export function DiffSurface<A extends DiffSurfaceAnnotation>({
   transformDiff,
   decorate,
   onInstance,
+  onLineClick,
+  selectedLines: viewSelection,
 }: DiffSurfaceProps<A>) {
   const [selectedLines, setSelectedLines] = useState<SelectedLineRange | null>(
     null,
@@ -255,6 +284,12 @@ export function DiffSurface<A extends DiffSurfaceAnnotation>({
             if (!onSelectLines(range)) setSelectedLines(null);
           }
         : undefined,
+      ...(onLineClick
+        ? {
+            onLineClick: ({ lineNumber, annotationSide, event }) =>
+              onLineClick(lineNumber, annotationSide, event),
+          }
+        : {}),
       ...(decorate || onInstance
         ? {
             onPostRender: (node, instance, phase) => {
@@ -269,7 +304,7 @@ export function DiffSurface<A extends DiffSurfaceAnnotation>({
           }
         : {}),
     };
-  }, [decorate, onInstance, onSelectLines, options]);
+  }, [decorate, onInstance, onLineClick, onSelectLines, options]);
   useEffect(() => {
     if (!selectionActive) setSelectedLines(null);
   }, [selectionActive]);
@@ -298,7 +333,13 @@ export function DiffSurface<A extends DiffSurfaceAnnotation>({
           transformDiff={transformDiff}
           options={surfaceOptions}
           lineAnnotations={pierreAnnotations}
-          selectedLines={onSelectLines ? selectedLines : undefined}
+          selectedLines={
+            viewSelection !== undefined
+              ? viewSelection
+              : onSelectLines
+                ? selectedLines
+                : undefined
+          }
           renderAnnotation={
             renderAnnotation
               ? ({ metadata }) => renderAnnotation(metadata as A)

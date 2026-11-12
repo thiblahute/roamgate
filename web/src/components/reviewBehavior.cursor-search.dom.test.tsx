@@ -25,7 +25,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith, testWith } = await import(
+    "./reviewSurfaces.testkit"
+  );
 
   /** A file of added lines. */
   const added = (path: string, lines: string[]) =>
@@ -38,8 +40,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       ),
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
-    describe(name, () => {
+  for (const surface of reviewSurfacesWith("search"))
+    describe(surface.name, () => {
+      const { mount } = surface;
       test("n and N go to the next and previous match, wrapping, counted on the search line; Esc ends the search", async () => {
         const review = await mount({
           files: [
@@ -125,57 +128,63 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("a search with no match in this commit finds a file of another commit by its path, and goes there", async () => {
-        const review = await mount({
-          files: [
-            added("a.ts", ["first commit"]),
-            added("b.ts", ["second commit"]),
-          ],
-          commits: [
-            {
-              sha: "a".repeat(40),
-              subject: "First",
-              files: [added("a.ts", ["first commit"])],
-            },
-            {
-              sha: "b".repeat(40),
-              subject: "Second",
-              files: [added("b.ts", ["second commit"])],
-            },
-          ],
-        });
-        expect(review.view()).toBe("1/2 aaaaaaaa First");
-        await review.search("b.ts");
-        expect(review.view()).toBe("2/2 bbbbbbbb Second");
-        expect(review.cursorLine()).toMatchObject({
-          path: "b.ts",
-          text: "second commit",
-        });
-        expect(review.notices()).toContain("b.ts: in commit 2/2");
-        // Text is not looked for elsewhere, only paths.
-        await review.search("first commit");
-        expect(review.view()).toBe("2/2 bbbbbbbb Second");
-        expect(review.searchLine()).toBe("Pattern not found: first commit");
-        await review.unmount();
-      });
+      testWith(surface, "commits")(
+        "a search with no match in this commit finds a file of another commit by its path, and goes there",
+        async () => {
+          const review = await mount({
+            files: [
+              added("a.ts", ["first commit"]),
+              added("b.ts", ["second commit"]),
+            ],
+            commits: [
+              {
+                sha: "a".repeat(40),
+                subject: "First",
+                files: [added("a.ts", ["first commit"])],
+              },
+              {
+                sha: "b".repeat(40),
+                subject: "Second",
+                files: [added("b.ts", ["second commit"])],
+              },
+            ],
+          });
+          expect(review.view()).toBe("1/2 aaaaaaaa First");
+          await review.search("b.ts");
+          expect(review.view()).toBe("2/2 bbbbbbbb Second");
+          expect(review.cursorLine()).toMatchObject({
+            path: "b.ts",
+            text: "second commit",
+          });
+          expect(review.notices()).toContain("b.ts: in commit 2/2");
+          // Text is not looked for elsewhere, only paths.
+          await review.search("first commit");
+          expect(review.view()).toBe("2/2 bbbbbbbb Second");
+          expect(review.searchLine()).toBe("Pattern not found: first commit");
+          await review.unmount();
+        },
+      );
 
-      test("from a commit, a path found only in all the changes goes to all the changes", async () => {
-        const review = await mount({
-          files: [added("a.ts", ["one"]), added("later.ts", ["two"])],
-          commits: [
-            {
-              sha: "a".repeat(40),
-              subject: "First",
-              files: [added("a.ts", ["one"])],
-            },
-          ],
-        });
-        expect(review.view()).toBe("1/1 aaaaaaaa First");
-        await review.search("later");
-        expect(review.view()).toBe("All changes 1 commit");
-        expect(review.cursorLine()).toMatchObject({ path: "later.ts" });
-        expect(review.notices()).toContain("later.ts: in all changes");
-        await review.unmount();
-      });
+      testWith(surface, "commits")(
+        "from a commit, a path found only in all the changes goes to all the changes",
+        async () => {
+          const review = await mount({
+            files: [added("a.ts", ["one"]), added("later.ts", ["two"])],
+            commits: [
+              {
+                sha: "a".repeat(40),
+                subject: "First",
+                files: [added("a.ts", ["one"])],
+              },
+            ],
+          });
+          expect(review.view()).toBe("1/1 aaaaaaaa First");
+          await review.search("later");
+          expect(review.view()).toBe("All changes 1 commit");
+          expect(review.cursorLine()).toMatchObject({ path: "later.ts" });
+          expect(review.notices()).toContain("later.ts: in all changes");
+          await review.unmount();
+        },
+      );
     });
 }
