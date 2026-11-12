@@ -626,6 +626,8 @@ export type ChangesDiffOptions = {
   backAction?: { label: string; onClick: () => void };
   /** A kept comment opened from under its line. */
   onEditAnnotation?: (id: string) => void;
+  /** The inspector's `:` prompt, given the diff's commands as Changes'. */
+  inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
 };
 
 export interface ChangesDiff {
@@ -652,6 +654,8 @@ export interface ChangesDiff {
   comments(key: string): string[];
   /** Open a comment drawn under a line, by its text. */
   openComment(key: string, text: string): Promise<void>;
+  /** How a section's diff is drawn: side by side or in one column. */
+  diffStyle(key: string): "split" | "unified" | null;
   /** The Wrap toggle's state, or null without one. */
   wrap(): boolean | null;
   toggleWrap(): Promise<void>;
@@ -733,6 +737,9 @@ export async function mountChangesDiff(
   const { spyOn } = await import("bun:test");
   const { store } = await import("../store");
   const { DiffContentView } = await import("./DiffContentView");
+  const { InspectorCommandsContext, InspectorViewContext } = await import(
+    "../useInspectorCommands"
+  );
   mounted += 1;
   const connectionId = `changes-diff-${mounted}`;
   const client: ConnectionClient = {
@@ -789,29 +796,43 @@ export async function mountChangesDiff(
       ]),
     );
     const selected = options.entry ?? options.entries[0] ?? null;
+    const inInspector = (view: ReturnType<typeof createElement>) =>
+      options.inspectorCommands
+        ? createElement(
+            InspectorCommandsContext.Provider,
+            { value: options.inspectorCommands },
+            createElement(
+              InspectorViewContext.Provider,
+              { value: "changes" },
+              view,
+            ),
+          )
+        : view;
     await act(async () =>
       root.render(
-        createElement(DiffContentView, {
-          entry: selected,
-          file: selected ? files[`${selected.kind}:${selected.path}`]! : null,
-          entries: options.entries,
-          files,
-          loading: false,
-          error: null,
-          resourceKey: connectionId,
-          connectionClient: client,
-          mobile: options.mobile ?? false,
-          embedded: options.embedded ?? false,
-          annotations: options.annotations ?? [],
-          ...(options.threads ? { threads: options.threads } : {}),
-          ...(options.onCreateAnnotation
-            ? { onCreateAnnotation: options.onCreateAnnotation }
-            : {}),
-          ...(options.backAction ? { backAction: options.backAction } : {}),
-          ...(options.onEditAnnotation
-            ? { onEditAnnotation: options.onEditAnnotation }
-            : {}),
-        }),
+        inInspector(
+          createElement(DiffContentView, {
+            entry: selected,
+            file: selected ? files[`${selected.kind}:${selected.path}`]! : null,
+            entries: options.entries,
+            files,
+            loading: false,
+            error: null,
+            resourceKey: connectionId,
+            connectionClient: client,
+            mobile: options.mobile ?? false,
+            embedded: options.embedded ?? false,
+            annotations: options.annotations ?? [],
+            ...(options.threads ? { threads: options.threads } : {}),
+            ...(options.onCreateAnnotation
+              ? { onCreateAnnotation: options.onCreateAnnotation }
+              : {}),
+            ...(options.backAction ? { backAction: options.backAction } : {}),
+            ...(options.onEditAnnotation
+              ? { onEditAnnotation: options.onEditAnnotation }
+              : {}),
+          }),
+        ),
       ),
     );
     await settle();
@@ -929,6 +950,12 @@ export async function mountChangesDiff(
       if (!button) throw new Error(`no comment ${text}`);
       await act(async () => button.click());
       await settle();
+    },
+    diffStyle(key) {
+      const type = shadow(key)
+        ?.querySelector("pre")
+        ?.getAttribute("data-diff-type");
+      return type === "split" ? "split" : type ? "unified" : null;
     },
     wrap() {
       const toggle = container.querySelector(".diff-wrap-toggle");

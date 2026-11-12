@@ -20,9 +20,8 @@ if (process.env.ROAMGATE_CHANGES_COMMANDS_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  const { installChangesDom, mountChangesTree, entry } = await import(
-    "./changesSurface.testkit"
-  );
+  const { installChangesDom, mountChangesTree, mountChangesDiff, entry } =
+    await import("./changesSurface.testkit");
   await installChangesDom();
   const { act } = await import("react");
   const { inspectorCompletions, runInspectorCommand } = await import(
@@ -141,6 +140,54 @@ if (process.env.ROAMGATE_CHANGES_COMMANDS_DOM_TEST !== "1") {
         expect(changes.selection()?.pickedBase).toBeUndefined();
       } finally {
         await changes.unmount();
+      }
+    });
+
+    test("the diff's :diff and :s switch side by side and unified, :split and :unified pick one, :wrap wraps, as its bar's buttons", async () => {
+      const prompt = inspector();
+      const a = entry("a.ts", "unstaged", "M");
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches: {
+          "unstaged:a.ts":
+            "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,2 @@\n-one\n+uno\n two\n",
+        },
+        inspectorCommands: prompt.registry,
+      });
+      const key = "unstaged:a.ts";
+      try {
+        expect(prompt.completions("")).toEqual([
+          "next",
+          "previous",
+          "find",
+          "diff",
+          "split",
+          "unified",
+          "wrap",
+        ]);
+        const start = diff.diffStyle(key);
+        const other = start === "split" ? "unified" : "split";
+        await prompt.run("diff");
+        await diff.settle();
+        expect(diff.diffStyle(key)).toBe(other);
+        await prompt.run("s");
+        await diff.settle();
+        expect(diff.diffStyle(key)).toBe(start);
+        await prompt.run("unified");
+        await diff.settle();
+        expect(diff.diffStyle(key)).toBe("unified");
+        await prompt.run("unified");
+        await diff.settle();
+        expect(diff.diffStyle(key)).toBe("unified");
+        await prompt.run("split");
+        await diff.settle();
+        expect(diff.diffStyle(key)).toBe("split");
+        const wrapped = diff.wrap();
+        await prompt.run("wrap");
+        await diff.settle();
+        expect(diff.wrap()).toBe(!wrapped);
+      } finally {
+        await diff.unmount();
       }
     });
   });

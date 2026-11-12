@@ -1658,6 +1658,13 @@ export function DiffContentView({
     ...(!mobile
       ? [
           {
+            name: "diff",
+            aliases: ["s"],
+            description: "side by side / unified (Split, Unified)",
+            run: () =>
+              setViewMode((mode) => (mode === "split" ? "unified" : "split")),
+          },
+          {
             name: "split",
             description: "side by side (Split)",
             run: () => setViewMode("split"),

@@ -1293,18 +1293,26 @@ its tab strip and buttons, the Files tree and preview (the rendered file, a
 page's or a site's frame, whose script hands `:` over even for a key the page
 handles, Review only, a phone's keyboard), Changes, Commits and History;
 never in a comment box, a search box or another field, where `:` is text. In
-the Files preview's source view its Vim keys' `:` runs the same commands. A
-preview shown outside the inspector has the same prompt, with its own
-commands. Each command does what a key or a button already does, where that
-one is; the shown view's come first, then the inspector's own:
+the Files preview's source view its Vim keys' `:` runs the same commands
+(but `:set`, which stays the editor's own there). A preview shown outside
+the inspector has the same prompt, with its own commands. The review pane's
+prompt is the same one, with the review's commands. Each command does what a
+key or a button already does, where that one is; the shown view's come
+first, then the inspector's own. `?` (or `:help`) lists them with the view's
+keys, filtered as you type; `:help WORD` opens the list filtered:
 
-| Command                      | Does                                                                                          |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| `:view NAME` (`:v`)          | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes) |
-| `:files`                     | Files, beside a file: hides or shows the file tree (its button)                               |
-| `:dock` (`right` / `bottom`) | the dock button                                                                               |
-| `:expand`                    | the expand button, or restore                                                                 |
-| `:q` (`:quit`, `:close`)     | Files: closes the file's tab; elsewhere closes the inspector                                  |
+| Command                             | Does                                                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `:view NAME` (`:v`)                 | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes)                                    |
+| `:files`                            | Files, beside a file: hides or shows the file tree (its button); Changes: its changed files' tree; Commits: its commit list      |
+| `:only` (`:o`)                      | Changes: Review only, the diff alone over the app; Esc, `:only` or **Show all** bring the inspector back                         |
+| `:dock` (`right` / `bottom`)        | the dock button                                                                                                                  |
+| `:expand`                           | the expand button, or restore                                                                                                    |
+| `:vim`, `:novim`                    | Vim keys in the review, its comments and the previews, on / off (one setting)                                                    |
+| `:set vim` / `novim`                | the same                                                                                                                         |
+| `:set reviewin=classic` / `changes` | where reviews open: the review pane (the default) or Changes; `:set reviewin` says which. On classic, Changes keeps its own keys |
+| `:help` (`WORD`)                    | the shortcut list (`?`), filtered by the word                                                                                    |
+| `:q` (`:quit`, `:close`)            | Files: closes the file's tab; elsewhere closes the inspector                                                                     |
 
 The Files tree, its toolbar's:
 
@@ -1347,18 +1355,20 @@ diff's too):
 | `:base BRANCH` (`auto`)                | **Compare against**, scope branch only                         |
 | `:next`, `:previous` (`:prev`)         | the next or previous change (the arrows)                       |
 | `:find` (`:search`, `WORDS`)           | the find field, filled with the words                          |
+| `:diff` (`:s`)                         | **Split** / **Unified**, whichever is not shown                |
 | `:split`, `:unified`                   | **Split** / **Unified**                                        |
 | `:wrap`                                | **Wrap**                                                       |
 | `:conversations` (`:threads`, `:conv`) | the comments chip                                              |
 
 Commits:
 
-| Command                               | Does                                                       |
-| ------------------------------------- | ---------------------------------------------------------- |
-| `:reload` (`:e`, `:edit`, `:refresh`) | **Refresh commits**                                        |
-| `:commit N` / `WORDS`                 | the commit of row N, or whose subject or sha has the words |
-| `:more`                               | **Load more commits**                                      |
-| `:preview`, `:diff`                   | **Preview at commit** for the file shown, **Back to diff** |
+| Command                               | Does                                                           |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `:reload` (`:e`, `:edit`, `:refresh`) | **Refresh commits**                                            |
+| `:files`                              | hides or shows the commit list beside the commit (not compact) |
+| `:commit N` / `WORDS`                 | the commit of row N, or whose subject or sha has the words     |
+| `:more`                               | **Load more commits**                                          |
+| `:preview`, `:diff`                   | **Preview at commit** for the file shown, **Back to diff**     |
 
 History:
 

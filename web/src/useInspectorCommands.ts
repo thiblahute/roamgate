@@ -1,5 +1,6 @@
 import { createContext, useContext, useId, useLayoutEffect } from "react";
 import type { InspectorCommand } from "./inspectorCommands";
+import type { ShortcutRow } from "./components/ShortcutList";
 import type { InspectorView } from "./workspaceResource";
 
 /** A view part's `:` commands, and `:N` where it has lines. */
@@ -11,6 +12,8 @@ export type InspectorCommandSet = {
    * the other parts' (`:refresh` is the preview's there, the tree's in it).
    */
   root?: () => Element | null;
+  /** The part's keys, for the inspector's shortcut list (`?`, `:help`). */
+  keys?: readonly ShortcutRow[];
 };
 
 /** The inspector's one prompt: what each part of its views can do there. */

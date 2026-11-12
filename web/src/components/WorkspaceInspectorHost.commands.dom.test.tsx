@@ -312,6 +312,9 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
           "view",
           "dock",
           "expand",
+          "vim",
+          "set",
+          "help",
           "q",
         ]);
         await inspector.press(inspector.prompt()!, "Escape");
@@ -478,6 +481,190 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         expect(inspector.closed).toEqual(["inspector"]);
       } finally {
         await inspector.unmount();
+      }
+    });
+
+    test(":vim, :novim and :set vim / novim switch the Vim keys; :set reviewin= picks where reviews open; another :set is unknown", async () => {
+      const { readReviewPrefs, writeReviewPrefs } = await import(
+        "../reviewPrefs"
+      );
+      const { setVimKeys, vimKeys } = await import("../vimKeys");
+      writeReviewPrefs({ reviewIn: undefined });
+      setVimKeys(true);
+      const inspector = await mountInspector({ view: "changes" });
+      try {
+        const place = () => inspector.place("changes");
+        told.length = 0;
+        await inspector.command(place(), "vim");
+        expect(vimKeys()).toBe(false);
+        await inspector.command(place(), "vim");
+        expect(vimKeys()).toBe(true);
+        await inspector.command(place(), "novim");
+        expect(vimKeys()).toBe(false);
+        await inspector.command(place(), "set vim");
+        expect(vimKeys()).toBe(true);
+        expect(told).toEqual([
+          "Vim keys off",
+          "Vim keys on",
+          "Vim keys off",
+          "Vim keys on",
+        ]);
+        told.length = 0;
+        await inspector.command(place(), "set reviewin");
+        await inspector.command(place(), "set reviewin=changes");
+        expect(readReviewPrefs().reviewIn).toBe("changes");
+        await inspector.command(place(), "set reviewin=classic");
+        expect(readReviewPrefs().reviewIn).toBe("classic");
+        expect(told).toEqual([
+          "Reviews open in the review pane (reviewin=classic)",
+          "Reviews open in Changes (reviewin=changes)",
+          "Reviews open in the review pane (reviewin=classic)",
+        ]);
+        told.length = 0;
+        await inspector.command(place(), "set number");
+        expect(told[0]).toStartWith("Not a command here: :set number (try ");
+        // Tab completes what :set takes.
+        place().focus();
+        await inspector.press(place(), ":");
+        await inspector.type("set rev");
+        expect(inspector.completions()).toEqual([
+          "set reviewin=classic",
+          "set reviewin=changes",
+        ]);
+        await inspector.press(inspector.prompt()!, "Escape");
+      } finally {
+        await inspector.unmount();
+        writeReviewPrefs({ reviewIn: undefined });
+        setVimKeys(true);
+      }
+    });
+
+    test("? and :help list the view's commands and the inspector's keys, filtered by :help WORD; Esc closes it; ? in a field is text", async () => {
+      const inspector = await mountInspector({ view: "files" });
+      const list = () =>
+        inspector.host.querySelector(".review-keys.inspector-keys");
+      const rows = () =>
+        [...inspector.host.querySelectorAll(".inspector-keys .keys-row")].map(
+          (row) =>
+            [...row.querySelectorAll("kbd")]
+              .map((key) => key.textContent)
+              .join(" "),
+        );
+      try {
+        const item = inspector.place("tree");
+        item.focus();
+        await inspector.press(item, "?");
+        expect(list()?.querySelector("h2")?.textContent).toBe(
+          "Inspector shortcuts",
+        );
+        expect(rows()).toEqual([
+          ":",
+          "?",
+          "← → Home End",
+          ":refresh",
+          ":reload :refresh",
+          ":view :v",
+          ":dock",
+          ":expand",
+          ":vim",
+          ":set",
+          ":help",
+          ":q :quit :close",
+        ]);
+        const filter = list()!.querySelector<HTMLInputElement>("input")!;
+        expect(document.activeElement).toBe(filter);
+        await inspector.press(filter, "Escape");
+        expect(list()).toBeNull();
+        await inspector.command(inspector.tab("Files"), "help dock");
+        expect(filter.isConnected).toBe(false);
+        expect(list()!.querySelector("input")!.value).toBe("dock");
+        expect(rows()).toEqual([":dock"]);
+        // The close button too, the focus back on the view's tab.
+        await act(async () =>
+          list()!
+            .querySelector<HTMLButtonElement>("[title='Close (Esc)']")!
+            .click(),
+        );
+        expect(list()).toBeNull();
+        expect(document.activeElement).toBe(inspector.tab("Files"));
+        // In a text field, ? is text.
+        await inspector.press(
+          inspector.host.querySelector("[aria-label='Search checkout']")!,
+          "?",
+        );
+        expect(list()).toBeNull();
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("in Changes, :files hides the changed files' tree and :only shows the diff alone; Esc, :only and Show all bring all back", async () => {
+      const inspector = await mountInspector({ view: "changes" });
+      const changes = () =>
+        inspector.host.querySelector(".inspector-changes-resource")!;
+      const hint = () =>
+        inspector.host.querySelector<HTMLButtonElement>(
+          ".inspector-review-only-hint button",
+        );
+      try {
+        const place = () => inspector.place("changes");
+        expect(changes().classList.contains("files-tree-hidden")).toBe(false);
+        await inspector.command(place(), "files");
+        expect(changes().classList.contains("files-tree-hidden")).toBe(true);
+        await inspector.command(place(), "files");
+        expect(changes().classList.contains("files-tree-hidden")).toBe(false);
+        await inspector.command(place(), "only");
+        expect(changes().classList.contains("is-review-only")).toBe(true);
+        expect(hint()?.textContent).toBe("Show all");
+        await inspector.press(document.body, "Escape");
+        expect(changes().classList.contains("is-review-only")).toBe(false);
+        await inspector.command(place(), "o");
+        expect(changes().classList.contains("is-review-only")).toBe(true);
+        await inspector.command(place(), "only");
+        expect(changes().classList.contains("is-review-only")).toBe(false);
+        await inspector.command(place(), "only");
+        await act(async () => hint()!.click());
+        expect(changes().classList.contains("is-review-only")).toBe(false);
+        // Another view has its own :files, none of Changes' :only.
+        told.length = 0;
+        await inspector.command(inspector.tab("Changes"), "view commits");
+        await inspector.command(inspector.place("commits"), "only");
+        expect(told[0]).toStartWith("Not a command here: :only");
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("every word of the inspector's own commands reaches the source view's Vim `:` too", async () => {
+      const { INSPECTOR_COMMAND_WORDS } = await import("../inspectorCommands");
+      const { PREVIEW_COMMAND_WORDS } = await import("./FilePreviewContent");
+      const forwarded = new Set([
+        ...INSPECTOR_COMMAND_WORDS,
+        ...PREVIEW_COMMAND_WORDS,
+      ]);
+      for (const view of ["files", "changes", "commits"] as const) {
+        const inspector = await mountInspector({ view });
+        try {
+          const tab = inspector.tab(view[0]!.toUpperCase() + view.slice(1));
+          tab.focus();
+          await inspector.press(tab, "?");
+          const words = [
+            ...inspector.host.querySelectorAll(".inspector-keys .keys-row kbd"),
+          ]
+            .map((key) => key.textContent ?? "")
+            .filter((key) => key.startsWith(":") && key.length > 1)
+            .map((key) => key.slice(1));
+          // The stand-ins' own words aside, every word is forwarded; but
+          // `:set`, which stays CodeMirror Vim's own options there.
+          for (const word of words.filter(
+            (word) =>
+              !["refresh", "reload", "scope", "commit", "set"].includes(word),
+          ))
+            expect([word, forwarded.has(word)]).toEqual([word, true]);
+          expect(words).toContain("help");
+        } finally {
+          await inspector.unmount();
+        }
       }
     });
   });

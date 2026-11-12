@@ -31,6 +31,19 @@ if (process.env.ROAMGATE_RENDERED_KEYS_DOM_TEST !== "1") {
       ).toBeNull();
   });
 
+  test("a count's digits and `:` come from a frame: 5j, 12G and the prompt work there", () => {
+    for (const key of [":", ..."0123456789"]) {
+      expect(RENDERED_THREAD_KEYS).toContain(key);
+      expect(
+        parseFrameMessage({ roamgate: "rendered", type: "key", key }),
+      ).toEqual({ roamgate: "rendered", type: "key", key });
+    }
+    // One key at a time, never a number typed whole.
+    expect(
+      parseFrameMessage({ roamgate: "rendered", type: "key", key: "12" }),
+    ).toBeNull();
+  });
+
   test("Back, Forward, a page's scroll and its own places are what a frame may say", () => {
     for (const step of [-1, 1] as const)
       expect(

@@ -392,3 +392,12 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* The commit alone, its list hidden (`:files`). */
+.git-commit-history.is-list-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.git-commit-history.is-list-hidden > :not(.git-commit-detail) {
+  display: none;
+}

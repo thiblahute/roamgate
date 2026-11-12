@@ -3,6 +3,8 @@ import {
   PREFS_KEY,
   readReviewPrefs,
   reviewSplitDefault,
+  reviewSurfaceChoice,
+  reviewSurfaceMessage,
   SPLIT_MIN_WIDTH,
   writeReviewPrefs,
 } from "./reviewPrefs";
@@ -89,4 +91,18 @@ test("side by side as chosen, else from a wide enough window", () => {
   expect(reviewSplitDefault({}, SPLIT_MIN_WIDTH - 1)).toBe(false);
   // No window (a server render): unified.
   expect(reviewSplitDefault({}, undefined)).toBe(false);
+});
+
+test("reviews open in the classic pane unless set to Changes; a write tells who listens", () => {
+  expect(reviewSurfaceChoice()).toBe("classic");
+  writeReviewPrefs({ reviewIn: "changes" });
+  expect(reviewSurfaceChoice()).toBe("changes");
+  // Anything else stored reads as the classic pane.
+  expect(reviewSurfaceChoice({ reviewIn: "nowhere" as never })).toBe("classic");
+  expect(reviewSurfaceMessage("changes")).toBe(
+    "Reviews open in Changes (reviewin=changes)",
+  );
+  expect(reviewSurfaceMessage("classic")).toBe(
+    "Reviews open in the review pane (reviewin=classic)",
+  );
 });

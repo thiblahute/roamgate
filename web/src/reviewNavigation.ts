@@ -169,7 +169,15 @@ export type ReviewCommand =
   | { type: "overall" }
   | { type: "reviews" }
   | { type: "vim"; on?: boolean }
+  /**
+   * `:set reviewin=classic|changes`: where reviews open (the classic pane
+   * or Changes); `:set reviewin` alone says where.
+   */
+  | { type: "reviewIn"; surface: ReviewSurfaceChoice | null }
   | { type: "unknown"; text: string };
+
+/** Where reviews open: the classic review pane or the inspector's Changes. */
+export type ReviewSurfaceChoice = "classic" | "changes";
 
 /** maildesk's command list, for the `:` line and its Tab completion. */
 export const REVIEW_COMMANDS: [string, string][] = [
@@ -296,6 +304,13 @@ export function parseReviewCommand(input: string): ReviewCommand {
     case "set":
       if (argument === "vim") return { type: "vim", on: true };
       if (argument === "novim") return { type: "vim", on: false };
+      if (/^reviewin\??$/.test(argument))
+        return { type: "reviewIn", surface: null };
+      if (argument === "reviewin=classic" || argument === "reviewin=changes")
+        return {
+          type: "reviewIn",
+          surface: argument.slice("reviewin=".length) as ReviewSurfaceChoice,
+        };
       return { type: "unknown", text };
     default:
       return { type: "unknown", text };

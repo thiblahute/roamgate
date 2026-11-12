@@ -205,8 +205,9 @@ export function parseStorageWrite(raw: unknown): RenderedStorageWrite | null {
 
 /**
  * The keys of the threads drawn in the Files preview (useThreadKeys: j / k,
- * n / N, gg / G, gn / gN / gH, g;, za, zz / zt / zb, c, R, r, dd, T) and its
- * `o` and Esc, and `:` for the view's command line: a page's frame has
+ * n / N, gg / G, gn / gN / gH, g;, za, zz / zt / zb, c, R, r, dd, T), its
+ * `o` and Esc, the digits of a count (`5j`, `12G`), and `:` for the view's
+ * command line: a page's frame has
  * them while it has the focus, so its script hands these, and only these,
  * to Roamgate. Typing in the page's fields keeps them, and so does a key
  * the page itself handled, but for `:`, which always opens the prompt.
@@ -232,6 +233,16 @@ export const RENDERED_THREAD_KEYS: readonly string[] = [
   "o",
   "Escape",
   ":",
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
 ];
 
 /** The parent to the frame's script. */

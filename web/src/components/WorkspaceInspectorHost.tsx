@@ -36,9 +36,18 @@ import {
   type InspectorCommand,
   inspectorCompletions,
   inspectorViewNamed,
+  isTypingTarget,
   opensCommandLine,
   runInspectorCommand,
 } from "../inspectorCommands";
+import { parseReviewCommand } from "../reviewNavigation";
+import {
+  reviewSurfaceChoice,
+  reviewSurfaceMessage,
+  writeReviewPrefs,
+} from "../reviewPrefs";
+import { setVimKeys, vimKeys } from "../vimKeys";
+import { useZenEscape, useZenMode } from "../useZenMode";
 import { store } from "../store";
 import {
   type InspectorCommandRegistry,
@@ -82,6 +91,7 @@ import { workspaceInspectorLayout } from "./workspaceInspectorLayout";
 import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { CommandLine } from "./CommandLine";
+import { type ShortcutRow, ShortcutList } from "./ShortcutList";
 import { useLiveClient } from "../useReloadOnReconnect";
 import "./WorkspaceInspectorHost.css";
 
@@ -121,6 +131,23 @@ const VIEW_NOTES: Record<InspectorView, string> = {
   history: "the agent's history",
 };
 const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
+const CHANGES_TREE_HIDDEN_KEY = "inspectorChangesTreeHidden";
+
+/** The inspector's own keys, in its shortcut list (`?`, `:help`). */
+const INSPECTOR_KEYS: readonly ShortcutRow[] = [
+  [":", "command line, in every view; Tab / Shift+Tab complete"],
+  ["?", "this list (:help WORD opens it filtered)"],
+  ["← → Home End", "on the tabs: previous / next view, the first / last"],
+];
+
+/** The tree hidden beside a view's detail, remembered in the browser. */
+function readTreeHidden(key: string): boolean {
+  try {
+    return roamgateLocalStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function WorkspaceInspectorHost({
   state,
@@ -257,6 +284,27 @@ export function WorkspaceInspectorHost({
       }
       return !hidden;
     });
+  /** Changes' tree beside the diff, hidden by `:files`. */
+  const [changesTreeHidden, setChangesTreeHidden] = useState(() =>
+    readTreeHidden(CHANGES_TREE_HIDDEN_KEY),
+  );
+  const toggleChangesTree = () =>
+    setChangesTreeHidden((hidden) => {
+      try {
+        roamgateLocalStorage.setItem(
+          CHANGES_TREE_HIDDEN_KEY,
+          hidden ? "0" : "1",
+        );
+      } catch {
+        /* Kept for this page only. */
+      }
+      return !hidden;
+    });
+  /** Review only in Changes (`:only`): the diff alone, Esc brings all back. */
+  const [changesOnly, toggleChangesOnly] = useZenMode();
+  useZenEscape(changesOnly, toggleChangesOnly);
+  /** The shortcut list (`?`, `:help`), with what its filter starts with. */
+  const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
   const [drillInByView, setDrillInByView] = useState<
     Record<InspectorView, boolean>
   >(() => ({
@@ -358,6 +406,7 @@ export function WorkspaceInspectorHost({
   const hasDetail = detailAvailable && drillInByView[state.view];
   // Compact layouts show the tree or the file, never both.
   const treeHideable = !compact && !!fileSelection.entry;
+  const changesTreeHideable = !compact;
   const fileChangesEntries = fileSelection.entry
     ? fileDiffEntries.filter(
         (entry) => entry.path === fileSelection.entry?.path,
@@ -488,6 +537,37 @@ export function WorkspaceInspectorHost({
           },
         ]
       : []),
+    ...(state.view === "changes" && changesTreeHideable
+      ? [
+          {
+            name: "files",
+            description: "show / hide the changed files' tree",
+            run: () => {
+              const navigation = document.getElementById(navigationIds.changes);
+              const leaving =
+                !changesTreeHidden &&
+                !!navigation?.contains(document.activeElement);
+              toggleChangesTree();
+              if (leaving)
+                document
+                  .getElementById(detailIds.changes)
+                  ?.focus({ preventScroll: true });
+            },
+          },
+        ]
+      : []),
+    ...(state.view === "changes"
+      ? [
+          {
+            name: "only",
+            aliases: ["o"],
+            description: changesOnly
+              ? "the inspector again (o, Esc)"
+              : "Review only: the diff alone (Esc brings all back)",
+            run: toggleChangesOnly,
+          },
+        ]
+      : []),
     {
       name: "dock",
       description: "dock at right or at bottom (the dock button)",
@@ -514,6 +594,35 @@ export function WorkspaceInspectorHost({
       run: () => onExpandedChange(!state.expanded),
     },
     {
+      name: "vim",
+      description: "Vim keys in the review, comments and previews on / off",
+      run: () => runSetting("vim"),
+    },
+    {
+      name: "novim",
+      description: "Vim keys off",
+      listed: false,
+      run: () => runSetting("novim"),
+    },
+    {
+      name: "set",
+      description: "set vim, novim, reviewin=classic|changes",
+      complete: () => [
+        ["vim", "Vim keys on"],
+        ["novim", "Vim keys off"],
+        ["reviewin=classic", "reviews open in the review pane"],
+        ["reviewin=changes", "reviews open in Changes"],
+      ],
+      run: (argument, how) => {
+        if (!runSetting(`set ${argument}`)) how.unknown();
+      },
+    },
+    {
+      name: "help",
+      description: "the shortcuts and commands here (:help WORD, filtered)",
+      run: (argument) => setShortcuts({ filter: argument }),
+    },
+    {
       name: "q",
       aliases: ["quit", "close"],
       description: activeFileTab
@@ -525,6 +634,60 @@ export function WorkspaceInspectorHost({
       },
     },
   ];
+  /**
+   * `:vim`, `:novim`, `:set ...`: the review's preferences, as the review
+   * pane's prompt sets them. False when the words are not a setting.
+   */
+  function runSetting(words: string): boolean {
+    const command = parseReviewCommand(words);
+    if (command.type === "vim") {
+      // The one Vim keys setting, for every editor and device.
+      const on = command.on ?? !vimKeys();
+      setVimKeys(on);
+      store.notify({
+        kind: "info",
+        message: on ? "Vim keys on" : "Vim keys off",
+        autoDismissMs: 1800,
+      });
+      return true;
+    }
+    if (command.type === "reviewIn") {
+      if (command.surface) writeReviewPrefs({ reviewIn: command.surface });
+      store.notify({
+        kind: "info",
+        message: reviewSurfaceMessage(command.surface ?? reviewSurfaceChoice()),
+        autoDismissMs: 2500,
+      });
+      return true;
+    }
+    return false;
+  }
+  /**
+   * The shortcut list's rows: the shown view's keys, the inspector's, then
+   * every command the prompt has here.
+   */
+  const shortcutRows = (): ShortcutRow[] => {
+    const { commands, keys } = shownCommands();
+    const seen = new Set<string>();
+    return [
+      ...(keys ?? []),
+      ...INSPECTOR_KEYS,
+      ...commands
+        .filter((command) => {
+          if (command.listed === false || seen.has(command.name)) return false;
+          seen.add(command.name);
+          return true;
+        })
+        .map(
+          (command): ShortcutRow => [
+            [command.name, ...(command.aliases ?? [])]
+              .map((word) => `:${word}`)
+              .join(" "),
+            command.description,
+          ],
+        ),
+    ];
+  };
   /**
    * The commands of the view shown, its parts' first, then the inspector's;
    * of its parts, first the one where the focus is (or was, when `:` was
@@ -543,6 +706,7 @@ export function WorkspaceInspectorHost({
         ...inspectorCommands,
       ],
       line: parts.find((part) => part.commands.line)?.commands.line,
+      keys: parts.flatMap((part) => part.commands.keys ?? []),
     };
   };
   const runCommand = (input: string) => {
@@ -601,6 +765,21 @@ export function WorkspaceInspectorHost({
       aria-label="Workspace Inspector"
       data-view={state.view}
       onKeyDown={(event) => {
+        if (
+          event.key === "?" &&
+          !event.defaultPrevented &&
+          !commandLine &&
+          !shortcuts &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !isTypingTarget(event.target)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          setShortcuts({ filter: "" });
+          return;
+        }
         if (event.defaultPrevented || commandLine || !opensCommandLine(event))
           return;
         event.preventDefault();
@@ -970,7 +1149,11 @@ export function WorkspaceInspectorHost({
               <div
                 className={`workspace-inspector-resource inspector-changes-resource ${
                   state.view === "changes" ? "" : "is-hidden"
-                } ${splitEnabled ? "has-split-resizer" : ""}`}
+                } ${splitEnabled ? "has-split-resizer" : ""} ${
+                  changesTreeHideable && changesTreeHidden
+                    ? "files-tree-hidden"
+                    : ""
+                } ${changesOnly ? "is-review-only" : ""}`}
                 style={splitEnabled ? splitStyle("changes") : undefined}
               >
                 <div
@@ -1139,6 +1322,31 @@ export function WorkspaceInspectorHost({
             </InspectorViewContext.Provider>
           </div>
         )}
+        {changesOnly && state.view === "changes" ? (
+          <div className="inspector-review-only-hint">
+            <button
+              type="button"
+              title="Show the inspector again (:only or Esc)"
+              onClick={toggleChangesOnly}
+            >
+              Show all
+            </button>
+          </div>
+        ) : null}
+        {shortcuts ? (
+          <ShortcutList
+            className="inspector-keys"
+            title="Inspector shortcuts"
+            rows={shortcutRows()}
+            filter={shortcuts.filter}
+            onFilter={(filter) => setShortcuts({ filter })}
+            placeholder="Search shortcuts and commands"
+            onClose={() => {
+              setShortcuts(null);
+              tabRefs[state.view].current?.focus({ preventScroll: true });
+            }}
+          />
+        ) : null}
         {commandLine ? (
           <CommandLine
             kind=":"
