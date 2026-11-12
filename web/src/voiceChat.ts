@@ -191,12 +191,12 @@ const END_SILENCE_MS = 2500;
 /** The level follows the sound over about this long, for the eye. */
 const LEVEL_SMOOTHING_MS = 50;
 /** What the voice helper listens at. */
-const STREAM_RATE = 16_000;
+export const STREAM_RATE = 16_000;
 /** Audio is sent in pieces this long. */
 const CHUNK_MS = 40;
 
 // Hands the microphone's samples to the page, block by block.
-const TAP_WORKLET = `
+export const TAP_WORKLET = `
 class RoamgateTap extends AudioWorkletProcessor {
   process(inputs) {
     const channel = inputs[0] && inputs[0][0];

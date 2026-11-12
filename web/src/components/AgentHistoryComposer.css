@@ -202,6 +202,24 @@
   color: var(--muted);
 }
 
+/* Dictation: the words as heard while they are said. */
+.agent-history-composer-dictation {
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.agent-history-composer-dictation.is-error {
+  color: var(--warning-text);
+}
+
+.agent-history-composer-dictate.is-listening {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .agent-history-composer-held {
   display: flex;
   flex-direction: column;

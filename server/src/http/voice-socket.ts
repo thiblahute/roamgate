@@ -1,9 +1,16 @@
 import { serverLogger } from "../utils/logger";
 import type { CleanSession, VoiceCleaner } from "../voice/voice-cleaner";
 import {
+  type Dictated,
+  dictated,
+  dictationSession,
+  dictationTarget,
+} from "../voice/voice-dictation";
+import {
   CALL_REPLY_LOUDNESS,
   type CallBackground,
   type CallHandle,
+  type ListenOptions,
   LONGEST_PAUSE_MS,
   MAX_PAUSE_MS,
   maxPauseMs,
@@ -388,9 +395,32 @@ function countWords(text: string) {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
+/**
+ * A dictation (`"mode": "dictation"`): one text, from `listen` to the
+ * client's `finish`, over as many of the helper's utterances as its pauses
+ * make.
+ */
+type Dictation = {
+  /** The helper's finals so far, and what it hears now. */
+  segments: string[];
+  current: string;
+  clean: CleanSession | null;
+  /** When the client said `finish`; null before. */
+  finishedAt: number | null;
+  /** The final is being made: the helper's last utterance came. */
+  concluding: boolean;
+  /** FINISH_DEADLINE_MS after `finish`: a final, whatever came. */
+  deadline: ReturnType<typeof setTimeout> | null;
+  /** Starts the helper's next utterance. */
+  next: () => VoiceSession;
+};
+
 /** A listening session and the socket it reports to, if any. */
 type Listening = {
+  /** The id the socket knows it by: its first helper session's. */
+  id: number;
   session: VoiceSession;
+  dictation?: Dictation;
   token: string;
   ws: VoiceSocket | null;
   /** What was told while no socket was there, sent on resume. */
@@ -412,6 +442,21 @@ export const CALL_ICE_LINES = 200;
 /** The longest ICE line kept. */
 const CALL_ICE_CHARS = 2000;
 
+/**
+ * After a dictation's `finish`, its final (or an error) comes within this,
+ * whatever the helper or the cleaner do: the words heard so far, as heard.
+ */
+export const FINISH_DEADLINE_MS = 15_000;
+/** A dictation's pauses never end it: the client says when it is over. */
+const DICTATION_END_SILENCE_MS = 10_000;
+
+/** Told to a socket: the helper's events, and dictation's own fields. */
+type Told = VoiceEvent & {
+  mode?: "dictation";
+  cleaned?: boolean;
+  timing?: { stt_ms: number; clean_ms: number };
+};
+
 const debug = (line: string) => {
   if (process.env.ROAMGATE_VOICE_DEBUG) console.error(`[voice] ${line}`);
 };
@@ -430,6 +475,8 @@ export function createVoiceSocket(
     new WebSocket(url) as unknown as UpstreamSocket,
   /** A call is over, for good: not replaced by a newer one. */
   onCallEnded: () => void = () => {},
+  /** The dictation cleaner (voice-dictation.ts), null to type raw words. */
+  dictation: () => VoiceCleaner | null = () => null,
 ) {
   const bySocket = new Map<VoiceSocket, Listening>();
   const byId = new Map<number, Listening>();
@@ -587,7 +634,7 @@ export function createVoiceSocket(
     clearTimers(listening);
     listening.session.stop();
     listening.closeCleaning();
-    byId.delete(listening.session.id);
+    byId.delete(listening.id);
     for (const [ws, held] of bySocket)
       if (held === listening) bySocket.delete(ws);
     listening.ws = null;
@@ -615,15 +662,13 @@ export function createVoiceSocket(
       if (why === "socket closed") end(listening);
       return;
     }
-    debug(
-      `session ${listening.session.id} detached (${why}): kept for a resume`,
-    );
+    debug(`session ${listening.id} detached (${why}): kept for a resume`);
     listening.timer = setTimeout(() => {
       if (!listening.over) {
         debug(
-          `session ${listening.session.id}: no resume, the utterance ends with what was heard`,
+          `session ${listening.id}: no resume, the utterance ends with what was heard`,
         );
-        listening.session.finish();
+        finishListening(listening);
       }
       listening.timer = setTimeout(() => end(listening), KEPT_MS);
     }, DETACHED_MS);
@@ -642,7 +687,7 @@ export function createVoiceSocket(
       detach(listening, "no audio");
       return;
     }
-    const id = listening.session.id;
+    const id = listening.id;
     debug(`session ${id}: the call's microphone stalled`);
     ws.send(JSON.stringify({ event: "stalled", session: id }));
     if (listening.timer) clearTimeout(listening.timer);
@@ -652,14 +697,15 @@ export function createVoiceSocket(
       debug(
         `session ${id}: no audio from the call's microphone, the utterance ends with what was heard`,
       );
-      listening.session.finish();
+      finishListening(listening);
     }, DETACHED_MS);
   };
 
   const watchStall = (listening: Listening) => {
     if (listening.stall) clearTimeout(listening.stall);
+    // A finished dictation waits for its final, sending no more audio.
     listening.stall =
-      listening.ws && !listening.over
+      listening.ws && !listening.over && listening.dictation?.finishedAt == null
         ? setTimeout(() => stalled(listening), STALL_MS)
         : null;
   };
@@ -676,11 +722,11 @@ export function createVoiceSocket(
     }
     if (listening.cap.audio(bytes)) {
       voiceLog.debug("voice pause ends the turn", {
-        session: listening.session.id,
+        session: listening.id,
         limit_ms: listening.cap.limitMs(),
       });
       debug(
-        `session ${listening.session.id}: a pause of ${listening.cap.limitMs()} ms ends the utterance`,
+        `session ${listening.id}: a pause of ${listening.cap.limitMs()} ms ends the utterance`,
       );
       listening.session.finish();
     }
@@ -699,14 +745,14 @@ export function createVoiceSocket(
   };
 
   /** Tells the session's socket, or keeps it for the next one. */
-  const deliver = (listening: Listening, event: VoiceEvent) => {
+  const deliver = (listening: Listening, event: Told) => {
     // Its helper stopped under it: nothing more comes for it (no finish
     // either), and the page listens again on a new session.
     const gone = event.event === "error" && event.recoverable === true;
     if (event.event === "final")
       // When each turn was heard whole (debug): its route and speech follow.
       voiceLog.debug("voice turn heard", {
-        session: listening.session.id,
+        session: listening.id,
         chars: event.text?.length ?? 0,
         speech_ms: event.speech_ms,
         via: listening.viaCall ? "call" : "socket",
@@ -720,9 +766,252 @@ export function createVoiceSocket(
     if (listening.ws) listening.ws.send(message);
     else listening.backlog.push(message);
     if (gone && listening.ws) {
-      debug(`session ${listening.session.id}: ended with the helper`);
+      debug(`session ${listening.id}: ended with the helper`);
       end(listening);
     }
+  };
+
+  /** A dictation's words so far, as heard. */
+  const heardSoFar = (state: Dictation) =>
+    [...state.segments, state.current]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(" ");
+
+  /** A dictation's one final: later ones (a late cleaner) are dropped. */
+  const dictationFinal = (
+    listening: Listening,
+    result: Dictated,
+    raw: string,
+    sttMs: number,
+    cleanMs: number,
+  ) => {
+    const state = listening.dictation;
+    if (!state || listening.over) return;
+    if (state.deadline) clearTimeout(state.deadline);
+    state.deadline = null;
+    state.clean?.close();
+    // Timings and sizes only: never the words.
+    debug(
+      `dictation ${listening.id}: heard ${sttMs} ms after finish, ${result.cleaned ? `cleaned in ${cleanMs} ms` : "typed as heard"}, ${raw.length} chars heard, ${result.text.length} typed`,
+    );
+    deliver(listening, {
+      event: "final",
+      session: listening.id,
+      text: result.text,
+      raw,
+      cleaned: result.cleaned,
+      timing: { stt_ms: sttMs, clean_ms: cleanMs },
+    });
+  };
+
+  /** The helper's last utterance came after `finish`: clean and tell. */
+  const concludeDictation = async (listening: Listening) => {
+    const state = listening.dictation;
+    if (!state || state.concluding || listening.over) return;
+    state.concluding = true;
+    const now = performance.now();
+    const sttMs = Math.round(now - (state.finishedAt ?? now));
+    const raw = heardSoFar(state);
+    const result = await dictated(state.clean, raw);
+    dictationFinal(
+      listening,
+      result,
+      raw,
+      sttMs,
+      Math.round(performance.now() - now),
+    );
+  };
+
+  /**
+   * The client is done: the helper ends what it hears, and the final
+   * comes within FINISH_DEADLINE_MS whatever happens.
+   */
+  const finishDictation = (listening: Listening) => {
+    const state = listening.dictation;
+    if (!state || state.finishedAt !== null || listening.over) return;
+    state.finishedAt = performance.now();
+    if (listening.stall) clearTimeout(listening.stall);
+    listening.stall = null;
+    state.deadline = setTimeout(() => {
+      state.deadline = null;
+      debug(`dictation ${listening.id}: no final in time, the words as heard`);
+      dictationFinal(
+        listening,
+        { text: heardSoFar(state), cleaned: false },
+        heardSoFar(state),
+        Math.round(performance.now() - (state.finishedAt ?? 0)),
+        0,
+      );
+    }, FINISH_DEADLINE_MS);
+    listening.session.finish();
+  };
+
+  /** Ends the utterance, or the dictation, with what was heard. */
+  const finishListening = (listening: Listening) => {
+    if (listening.dictation) finishDictation(listening);
+    else listening.session.finish();
+  };
+
+  /** The helper's events for a dictation, as the socket is told them. */
+  const dictationEvent = (listening: Listening | null, event: VoiceEvent) => {
+    const state = listening?.dictation;
+    if (!listening || !state || listening.over) return;
+    // The utterance before this one may still say how it ended.
+    if (event.session !== undefined && event.session !== listening.session.id)
+      return;
+    switch (event.event) {
+      case "speech_start":
+        deliver(listening, { event: "speech_start", session: listening.id });
+        return;
+      case "partial": {
+        if (!event.text) return;
+        state.current = event.text;
+        const whole = heardSoFar(state);
+        state.clean?.partial(whole, event.pause === true);
+        deliver(listening, {
+          event: "partial",
+          session: listening.id,
+          text: whole,
+          ...(event.pause === true ? { pause: true } : {}),
+        });
+        return;
+      }
+      case "final": {
+        // A voice the helper doubts is the speaker's is typed too: the
+        // phone is held by the one dictating.
+        const text = event.text?.trim() ?? "";
+        if (text) state.segments.push(text);
+        state.current = "";
+        if (state.finishedAt !== null) {
+          void concludeDictation(listening);
+          return;
+        }
+        // A pause ended the helper's utterance, not the dictation: it
+        // listens again at once, the same socket's audio going on.
+        const before = listening.session;
+        try {
+          listening.session = state.next();
+        } catch (error) {
+          deliver(listening, {
+            event: "error",
+            session: listening.id,
+            error: (error as Error).message,
+            recoverable: true,
+          });
+          return;
+        }
+        before.stop();
+        return;
+      }
+      case "error":
+        deliver(listening, {
+          event: "error",
+          session: listening.id,
+          ...(event.error !== undefined ? { error: event.error } : {}),
+          ...(event.recoverable !== undefined
+            ? { recoverable: event.recoverable }
+            : {}),
+        });
+        if (event.recoverable === true) listening.over = true;
+        return;
+    }
+  };
+
+  /**
+   * The helper listens to one session at a time: a newer listening takes
+   * it from a dictation, which ends with what it heard.
+   */
+  const preemptDictations = () => {
+    for (const listening of [...byId.values()]) {
+      const state = listening.dictation;
+      if (!state || listening.over) continue;
+      debug(`dictation ${listening.id}: another listening took the helper`);
+      const raw = heardSoFar(state);
+      dictationFinal(listening, { text: raw, cleaned: false }, raw, 0, 0);
+      listening.session.stop();
+    }
+  };
+
+  /** `{"op": "listen", "mode": "dictation"}`. */
+  const startDictation = (
+    ws: VoiceSocket,
+    request: Record<string, unknown>,
+  ) => {
+    if (call && !call.stopped) {
+      ws.send(
+        JSON.stringify({
+          event: "error",
+          session: null,
+          error: "A voice call is going on",
+          busy: true,
+        }),
+      );
+      return;
+    }
+    preemptDictations();
+    const target = dictationTarget(request);
+    const using = dictation();
+    using?.warm();
+    const holder: { listening: Listening | null } = { listening: null };
+    const options: ListenOptions = {
+      ...(target.language ? { language: target.language } : {}),
+      endSilenceMs: DICTATION_END_SILENCE_MS,
+    };
+    const next = () =>
+      helper.listen(
+        (event) => dictationEvent(holder.listening, event),
+        options,
+      );
+    const state: Dictation = {
+      segments: [],
+      current: "",
+      clean: using ? dictationSession(using, target) : null,
+      finishedAt: null,
+      concluding: false,
+      deadline: null,
+      next,
+    };
+    let started: VoiceSession;
+    try {
+      started = next();
+    } catch (error) {
+      state.clean?.close();
+      ws.send(
+        JSON.stringify({ event: "error", error: (error as Error).message }),
+      );
+      return;
+    }
+    const created: Listening = {
+      id: started.id,
+      session: started,
+      dictation: state,
+      token: crypto.randomUUID(),
+      ws: null,
+      backlog: [],
+      cap: new SilenceCap(),
+      received: 0,
+      over: false,
+      viaCall: false,
+      closeCleaning: () => {
+        state.clean?.close();
+        if (state.deadline) clearTimeout(state.deadline);
+        state.deadline = null;
+      },
+      timer: null,
+      stall: null,
+    };
+    holder.listening = created;
+    byId.set(created.id, created);
+    ws.send(
+      JSON.stringify({
+        event: "listening",
+        session: created.id,
+        resume: created.token,
+        mode: "dictation",
+      }),
+    );
+    attach(created, ws);
   };
 
   /**
@@ -793,13 +1082,13 @@ export function createVoiceSocket(
         else watchStall(listening);
         listening.received += message.length;
         listening.session.audio(message);
-        if (listening.cap.audio(message.length)) {
+        if (!listening.dictation && listening.cap.audio(message.length)) {
           voiceLog.debug("voice pause ends the turn", {
-            session: listening.session.id,
+            session: listening.id,
             limit_ms: listening.cap.limitMs(),
           });
           debug(
-            `session ${listening.session.id}: a pause of ${listening.cap.limitMs()} ms ends the utterance`,
+            `session ${listening.id}: a pause of ${listening.cap.limitMs()} ms ends the utterance`,
           );
           listening.session.finish();
         }
@@ -817,6 +1106,11 @@ export function createVoiceSocket(
       switch (request.op) {
         case "listen": {
           stop(ws);
+          if (request.mode === "dictation") {
+            startDictation(ws, request);
+            return;
+          }
+          preemptDictations();
           try {
             const holder: { listening: Listening | null } = {
               listening: null,
@@ -858,6 +1152,7 @@ export function createVoiceSocket(
               },
             );
             const created: Listening = {
+              id: started.id,
               session: started,
               token: crypto.randomUUID(),
               ws: null,
@@ -896,6 +1191,17 @@ export function createVoiceSocket(
               ? byId.get(request.session)
               : undefined;
           if (!found || found.token !== request.resume) {
+            if (request.mode === "dictation") {
+              ws.send(
+                JSON.stringify({
+                  event: "error",
+                  session: request.session,
+                  error: "unknown session",
+                  recoverable: false,
+                }),
+              );
+              return;
+            }
             ws.send(
               JSON.stringify({
                 event: "resume_failed",
@@ -904,11 +1210,11 @@ export function createVoiceSocket(
             );
             return;
           }
-          debug(`session ${found.session.id} resumed on a new socket`);
+          debug(`session ${found.id} resumed on a new socket`);
           ws.send(
             JSON.stringify({
               event: "resumed",
-              session: found.session.id,
+              session: found.id,
               received: found.received,
             }),
           );
@@ -919,8 +1225,21 @@ export function createVoiceSocket(
           listening?.session.release();
           return;
         case "finish":
-          listening?.session.finish();
+          if (listening) finishListening(listening);
           return;
+        case "warm": {
+          if (request.mode !== "dictation") return;
+          const using = dictation();
+          using?.warm();
+          ws.send(
+            JSON.stringify({
+              event: "warm",
+              mode: "dictation",
+              cleaner: using !== null,
+            }),
+          );
+          return;
+        }
         case "stop":
           stop(ws);
           return;

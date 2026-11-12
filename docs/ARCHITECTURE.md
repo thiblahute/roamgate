@@ -1632,6 +1632,76 @@ again the calls whose start it had answered, under their numbers; a call
 it cannot make again ends (`call_ended`), and one that was stopped
 meanwhile is stopped in it.
 
+## Dictation
+
+Dictation types what the user says into a text field, cleaned first: the
+Android dictation app (a bubble over other apps) and the message box's
+dictate button (`web/src/dictation.ts`) use it. It is a mode of the voice
+socket (`/api/voice/ws`, `server/src/http/voice-socket.ts`); the cleaner
+is `server/src/voice/voice-dictation.ts`.
+
+Client to server, JSON unless binary:
+
+- `{"op": "warm", "mode": "dictation"}` starts the dictation cleaner's
+  sessions ahead of the first dictation, answered `{"event": "warm",
+  "mode": "dictation", "cleaner": true}` (false: no model, the words are
+  typed as heard). Informational: each final says whether it was cleaned.
+- `{"op": "listen", "mode": "dictation", "language": "fr", "field":
+  {"app": "com.whatsapp", "app_label": "WhatsApp", "kind": "chat",
+  "hint": "Message", "multi_line": true}, "before": "...", "after":
+  "..."}` starts one. `kind` is one of `chat`, `email_body`,
+  `email_subject`, `search`, `url`, `code`, `name`, `email_address`,
+  `address`, `number`, `text`. `before` and `after` are the field's text
+  around the cursor, kept to their last 1500 and first 500 characters.
+  `"context": false` (an incognito field, an app kept private) drops the
+  field and its text. Clients never dictate into password fields. During
+  a voice call it is refused: `{"event": "error", "session": null,
+  "error": "...", "busy": true}`.
+- Binary messages are its audio, 16 kHz mono S16LE, at least every
+  STALL_MS (5 s) until `finish`.
+- `{"op": "finish"}` ends the dictation: pauses never do. The helper
+  listens with its longest end silence (10 s); each utterance a pause
+  ends there is kept and a new one starts at once, all of them one text.
+  `{"op": "stop"}` cancels it: nothing is told.
+- `{"op": "resume", "mode": "dictation", "session": 4, "resume":
+  "token"}` resumes it on a new socket, as for voice chat (`resumed`,
+  with the bytes received). An unknown, expired or wrongly tokened session
+  answers `{"event": "error", "session": 4, "error": "unknown session",
+  "recoverable": false}`.
+
+Server to client: `{"event": "listening", "session": 4, "resume":
+"token", "mode": "dictation"}`, `speech_start`, `{"event": "partial",
+"session": 4, "text": "..."}` (the whole dictation's words as heard so
+far, to show while the user speaks), and once, within
+FINISH_DEADLINE_MS (15 s) of `finish` whatever the helper and the model
+do, `{"event": "final", "session": 4, "text": "to type", "raw": "as
+heard", "cleaned": true, "timing": {"stt_ms": 180, "clean_ms": 640}}`
+(`stt_ms` from `finish` to the helper's last words, `clean_ms` the
+cleaning's own). `cleaned` false gives the words as heard: no model, a
+model that failed, took over 8 s, or whose reply is not a cleaning of
+them (most of its words not said, or much longer). A helper that stops
+gives `{"event": "error", "session": 4, "recoverable": true}` at once. A
+voice chat listening takes the helper from a dictation, which then ends
+with a final of what it heard, not cleaned. Dictation has no `for_agent`:
+a voice the helper doubts is still typed. The client spaces the text
+around the cursor; the cleaner continues a sentence the text before the
+cursor left open.
+
+The cleaner is the voice cleaner's machinery (pieces cleaned while the
+user speaks, the end at `finish`) with its own prompt: fillers, false
+starts and self-corrections go, spoken punctuation and layout become
+characters, numbers and addresses are written as typed, each word stays in
+the language it was said in (never translated), and the field's kind sets
+the format. The field's facts and text go before each request as quoted
+data, which the prompt says never to follow. Its Claude Code sessions read
+the companion's long-term memories (`companion-memories`) through
+`autoMemoryDirectory`, never writing them, for the names the user says.
+Nothing of a dictation is logged: with `ROAMGATE_VOICE_DEBUG`, timings and
+sizes only.
+
+`scripts/dictate-wav.ts` dictates an audio file through a running server,
+for a corpus of dictations.
+
 ## Voice calls
 
 A voice chat is a WebRTC call between the page and the voice helper

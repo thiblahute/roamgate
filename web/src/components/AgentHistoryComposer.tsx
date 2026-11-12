@@ -14,6 +14,7 @@ import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import {
   AtSign,
+  AudioLines,
   CornerDownRight,
   ImagePlus,
   ListPlus,
@@ -62,6 +63,7 @@ import { type AgentCommand, matchCommands } from "../claudeCommands";
 import { agentPromptWarning, agentStateKind } from "./agentSession";
 import { useTouchReleaseSubmit } from "./useTouchReleaseSubmit";
 import type { Heard } from "../voiceChat";
+import { type Dictating, insertDictation, startDictation } from "../dictation";
 import {
   type RouterNoteTarget,
   showRouterNote,
@@ -252,6 +254,70 @@ export function AgentHistoryComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Shell mode: the box starts with `!`, and Send runs it.
   const shellMode = !!shell && /^\s*!/.test(text);
+  // Dictation into the box (dictation.ts): the words as heard while they
+  // are said, the cleaned text put at the cursor when the user stops.
+  const [dictation, setDictation] = useState<{
+    state: "starting" | "listening" | "cleaning";
+    heard: string;
+    error?: string;
+  } | null>(null);
+  const dictatingRef = useRef<Dictating | null>(null);
+  useEffect(
+    () => () => {
+      dictatingRef.current?.cancel();
+      dictatingRef.current = null;
+    },
+    [],
+  );
+  const toggleDictation = async () => {
+    if (dictation?.state === "listening" && dictatingRef.current) {
+      const dictating = dictatingRef.current;
+      dictatingRef.current = null;
+      setDictation((now) => (now ? { ...now, state: "cleaning" } : now));
+      const result = await dictating.finish();
+      // The box as it is now: the user may have typed meanwhile.
+      const draft = readTerminalComposerDraft(draftKey);
+      const selection = readTerminalComposerSelection(draftKey) ?? {
+        start: draft.length,
+        end: draft.length,
+      };
+      const next = insertDictation(
+        draft,
+        selection.start,
+        selection.end,
+        result.text,
+      );
+      writeTerminalComposerDraft(draftKey, next.value);
+      writeTerminalComposerSelection(draftKey, next.caret, next.caret);
+      setDictation(null);
+      return;
+    }
+    if (dictation) return;
+    const draft = readTerminalComposerDraft(draftKey);
+    const selection = readTerminalComposerSelection(draftKey) ?? {
+      start: draft.length,
+      end: draft.length,
+    };
+    setDictation({ state: "starting", heard: "" });
+    try {
+      dictatingRef.current = await startDictation(
+        {
+          kind: shellMode ? "code" : "chat",
+          before: draft.slice(0, selection.start),
+          after: draft.slice(selection.end),
+        },
+        (heard) => setDictation((now) => (now ? { ...now, heard } : now)),
+      );
+      setDictation((now) => (now ? { ...now, state: "listening" } : now));
+    } catch (error) {
+      setDictation({
+        state: "starting",
+        heard: "",
+        error: (error as Error).message || "Dictation failed",
+      });
+      setTimeout(() => setDictation(null), 3000);
+    }
+  };
   const shellCommand = shellMode ? shellLine(text) : null;
   const shellHost = shell?.host?.trim() || "this host";
   const shellCwd = shell?.cwd ? shortCwd(shell.cwd) : null;
@@ -663,6 +729,21 @@ export function AgentHistoryComposer({
           </button>
         </div>
       ) : null}
+      {dictation ? (
+        <div
+          className={`agent-history-composer-dictation${dictation.error ? " is-error" : ""}`}
+          role="status"
+        >
+          {dictation.error ??
+            (dictation.heard ||
+              (dictation.state === "starting"
+                ? "Opening the microphone..."
+                : dictation.state === "cleaning"
+                  ? "Cleaning..."
+                  : "Listening: speak, then press the button again"))}
+          {dictation.heard && dictation.state === "cleaning" ? " ..." : null}
+        </div>
+      ) : null}
       {voice?.held.length ? (
         <ul className="agent-history-composer-held" aria-label="Not sent">
           {voice.held.map((said, index) => (
@@ -821,6 +902,31 @@ export function AgentHistoryComposer({
             onClick={() => fileInputRef.current?.click()}
           >
             <ImagePlus size={17} aria-hidden="true" />
+          </button>
+        ) : null}
+        {voice?.listen && voice.state === "off" ? (
+          // Never during a voice chat: the helper listens to one at a time.
+          <button
+            type="button"
+            className={`agent-history-composer-attach agent-history-composer-dictate${dictation?.state === "listening" ? " is-listening" : ""}`}
+            aria-label={
+              dictation?.state === "listening"
+                ? "Stop dictating and put the text in the box"
+                : "Dictate into the box"
+            }
+            aria-pressed={dictation?.state === "listening"}
+            title={
+              dictation?.state === "listening"
+                ? "Stop: the cleaned text goes in the box"
+                : "Dictate: what you say is cleaned and put in the box"
+            }
+            disabled={
+              dictation?.state === "starting" || dictation?.state === "cleaning"
+            }
+            onMouseDown={keepTextareaFocus}
+            onClick={() => void toggleDictation()}
+          >
+            <AudioLines size={17} aria-hidden="true" />
           </button>
         ) : null}
         {vimKeys && touch ? (

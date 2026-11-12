@@ -449,6 +449,12 @@ Inspector state is scoped to each checkout; see
   was meant. Words said to someone else in the room are held, greyed above
   the box, with a tap to send them after all; a cleaned message's voice
   label shows what was heard.
+  Dictate, beside the message box, types what you say there instead of
+  sending it: the words show as they are heard, and when you press it again
+  the cleaned text (fillers, false starts and self-corrections gone, spoken
+  punctuation written, each language kept) goes in at the cursor. The
+  Android dictation app uses the same server side to type into any app
+  ([protocol](docs/ARCHITECTURE.md#dictation)).
   With a router set up, voice chat reaches every agent session: each thing
   said goes to the agent on screen unless it asks for another session, by
   what it is about ("go to the tracer session in gst-plugins-rs", "tell

@@ -95,6 +95,14 @@ export type VoiceConfig = {
    */
   clean_model?: string;
   /**
+   * The Claude model that cleans dictated text before it is typed
+   * (voice-dictation.ts): "opus" (at low effort) by default, "off" to type
+   * the words as heard.
+   */
+  dictation_model?: string;
+  /** The Claude Code command for `dictation_model`; `claude_command` by default. */
+  dictation_command?: string;
+  /**
    * A Claude model ("haiku") that decides who each thing said is for: the
    * agent on screen, another session, or nobody (voice-router.ts).
    */
@@ -298,6 +306,8 @@ export function readVoiceConfig(
   }
   for (const key of [
     "clean_model",
+    "dictation_model",
+    "dictation_command",
     "route_model",
     "front_model",
     "research_model",
