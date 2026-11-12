@@ -1105,6 +1105,15 @@ export async function mountClassicReview(
       return stored === null ? undefined : stored === "true";
     },
 
+    reviewInPreference() {
+      try {
+        return JSON.parse(roamgateLocalStorage.getItem("reviewPrefs") ?? "{}")
+          .reviewIn;
+      } catch {
+        return undefined;
+      }
+    },
+
     // The comment editor.
     editorOpen() {
       return host.querySelector(".rc-editor") !== null;

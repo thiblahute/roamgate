@@ -522,6 +522,30 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test(":set reviewin=changes and =classic choose where reviews open, say so and are remembered; :set reviewin says where", async () => {
+        const review = await mount({ files: [added("a.ts", 4)] });
+        expect(review.reviewInPreference()).toBeUndefined();
+        await review.command(":set reviewin");
+        expect(review.notice()).toBe(
+          "Reviews open in the review pane (reviewin=classic)",
+        );
+        await review.command(":set reviewin=changes");
+        expect(review.notice()).toBe(
+          "Reviews open in Changes (reviewin=changes)",
+        );
+        expect(review.reviewInPreference()).toBe("changes");
+        // The other preferences are kept.
+        await review.command(":novim");
+        await review.command(":set reviewin=classic");
+        expect(review.reviewInPreference()).toBe("classic");
+        expect(review.vimPreference()).toBe(false);
+        await review.reload();
+        expect(review.reviewInPreference()).toBe("classic");
+        // The review itself stays where it is.
+        expect(review.closes()).toBe(0);
+        await review.unmount();
+      });
+
       test("Tab completes the command typed, Shift+Tab goes back, Enter runs it", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });
         await review.typeCommand("co");

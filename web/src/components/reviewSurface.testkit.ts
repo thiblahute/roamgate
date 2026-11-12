@@ -342,6 +342,8 @@ export interface ReviewSurface {
   filterShortcuts(text: string): Promise<void>;
   /** The Vim preference for comments, as remembered. */
   vimPreference(): boolean | undefined;
+  /** Where reviews open (`:set reviewin=`), as remembered. */
+  reviewInPreference(): string | undefined;
 
   // The comment editor.
   /** A comment editor is open. */

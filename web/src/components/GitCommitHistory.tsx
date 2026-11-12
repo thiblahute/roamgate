@@ -10,6 +10,7 @@ import {
 import type { ConnectionClient } from "../api";
 import type { FilePreview, GitDiffEntry, GitDiffFile } from "../types";
 import { gitDiffCode } from "../gitDiffStatus";
+import { roamgateLocalStorage } from "../browserStorage";
 import { useSystemBack } from "../systemBack";
 import { store } from "../store";
 import { useInspectorCommands } from "../useInspectorCommands";
@@ -17,6 +18,8 @@ import { failedForConnection } from "../useReloadOnReconnect";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { DiffContentView } from "./DiffContentView";
 import "./GitCommitHistory.css";
+
+const COMMITS_LIST_HIDDEN_KEY = "inspectorCommitsListHidden";
 
 type CommitItem = {
   sha: string;
@@ -65,6 +68,26 @@ export function GitCommitHistory({
   active: boolean;
 }) {
   const [page, setPage] = useState<CommitPage | null>(null);
+  /** The commit list hidden beside the commit (`:files`), remembered. */
+  const [listHidden, setListHidden] = useState(() => {
+    try {
+      return roamgateLocalStorage.getItem(COMMITS_LIST_HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleList = () =>
+    setListHidden((hidden) => {
+      try {
+        roamgateLocalStorage.setItem(
+          COMMITS_LIST_HIDDEN_KEY,
+          hidden ? "0" : "1",
+        );
+      } catch {
+        /* Kept for this page only. */
+      }
+      return !hidden;
+    });
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -345,6 +368,17 @@ export function GitCommitHistory({
               description: "refresh the commits (the Refresh button)",
               run: refreshCommits,
             },
+            ...(!compact
+              ? [
+                  {
+                    name: "files",
+                    description: listHidden
+                      ? "show the commit list again"
+                      : "hide the commit list beside the commit",
+                    run: toggleList,
+                  },
+                ]
+              : []),
             ...(page?.commits.length
               ? [
                   {
@@ -411,7 +445,9 @@ export function GitCommitHistory({
   return (
     <div
       ref={rootRef}
-      className={`git-commit-history ${compact ? "is-compact" : ""}`}
+      className={`git-commit-history ${compact ? "is-compact" : ""} ${
+        !compact && listHidden ? "is-list-hidden" : ""
+      }`}
       data-page={compactPage}
       style={
         {

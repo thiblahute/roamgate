@@ -1,9 +1,20 @@
 /*
- * The inspector's `:` commands: each view lists the ones it has (name,
- * aliases, what it does, how it runs) and the one prompt completes and runs
- * them. Pure, as reviewNavigation's REVIEW_COMMANDS and parseReviewCommand,
- * which the review pane still keeps as they are.
+ * The `:` commands: each view lists the ones it has (name, aliases, what it
+ * does, how it runs) and the one prompt completes and runs them. The
+ * inspector's views and the classic review pane (reviewCommands.ts) give
+ * theirs in this form. Pure: testable without a DOM.
  */
+
+/** What a command can tell the prompt while it runs. */
+export type InspectorCommandRun = {
+  /** A message to show (a toast). */
+  say: (message: string) => void;
+  /**
+   * What was typed is not a command after all (`:set` with an option it
+   * does not know): the prompt says so as it does for an unknown name.
+   */
+  unknown: () => void;
+};
 
 export type InspectorCommand = {
   name: string;
@@ -12,9 +23,11 @@ export type InspectorCommand = {
   /** What it does, shown beside the completion. */
   description: string;
   /** `argument`: the words typed after the name, trimmed. */
-  run: (argument: string) => void;
+  run: (argument: string, how: InspectorCommandRun) => void;
   /** The words its argument can be, as [word, note], for Tab. */
   complete?: () => readonly (readonly [string, string])[];
+  /** Run but not offered by Tab (default: offered). */
+  listed?: boolean;
 };
 
 /** The commands Tab completes for what is typed, as [name, description]. */
@@ -41,7 +54,11 @@ export function inspectorCompletions(
   const seen = new Set<string>();
   return commands
     .filter((command) => {
-      if (!command.name.startsWith(word) || seen.has(command.name))
+      if (
+        command.listed === false ||
+        !command.name.startsWith(word) ||
+        seen.has(command.name)
+      )
         return false;
       seen.add(command.name);
       return true;
@@ -65,12 +82,17 @@ export function findInspectorCommand(
 
 /**
  * Runs `input`: a command of `commands`, or `:N` given to `line` when the
- * view has lines. Returns what to tell when it is none of them, else null.
+ * view has lines. Returns what to tell: what the command said, or that it is
+ * none of them (`unknown` words it, default "Not a command here"); else null.
  */
 export function runInspectorCommand(
   commands: readonly InspectorCommand[],
   input: string,
   line?: (line: number) => void,
+  unknown: (
+    text: string,
+    commands: readonly InspectorCommand[],
+  ) => string = notACommand,
 ): string | null {
   const text = input.trim().replace(/^:/, "").trim();
   if (!text) return null;
@@ -79,11 +101,32 @@ export function runInspectorCommand(
     return null;
   }
   const found = findInspectorCommand(commands, text);
-  if (found) {
-    found.command.run(found.argument);
-    return null;
-  }
-  const some = [...new Set(commands.map((command) => command.name))]
+  if (!found) return unknown(text, commands);
+  let said: string | null = null;
+  let notOne = false;
+  found.command.run(found.argument, {
+    say: (message) => {
+      said = message;
+    },
+    unknown: () => {
+      notOne = true;
+    },
+  });
+  return notOne ? unknown(text, commands) : said;
+}
+
+/** "Not a command here: :X (try ...)", naming a few of `commands`. */
+export function notACommand(
+  text: string,
+  commands: readonly InspectorCommand[],
+): string {
+  const some = [
+    ...new Set(
+      commands
+        .filter((command) => command.listed !== false)
+        .map((command) => command.name),
+    ),
+  ]
     .slice(0, 4)
     .map((name) => `:${name}`)
     .join(", ");
@@ -133,6 +176,9 @@ export const INSPECTOR_COMMAND_WORDS: readonly string[] = [
   "browse",
   "search",
   "find",
+  "vim",
+  "novim",
+  "help",
 ];
 
 /** The views `:view` goes to, in the tab strip's order. */

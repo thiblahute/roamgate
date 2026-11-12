@@ -1110,29 +1110,6 @@
   min-height: 64px;
 }
 
-/* Shortcuts overlay */
-.review-keys {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 8vh;
-  background: rgb(0 0 0 / 0.45);
-}
-
-.review-keys-panel {
-  width: min(640px, calc(100vw - 32px));
-  max-height: 76vh;
-  overflow: auto;
-  padding: 14px 18px;
-  border: 1px solid var(--rv-border);
-  border-radius: 10px;
-  background: var(--rv-surface);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
-}
-
 .review-overlay .settings-head,
 .review-list-overlay .settings-head {
   display: flex;
@@ -1143,37 +1120,6 @@
 .review-overlay .settings-head h2 {
   margin: 0;
   font-size: 1.5em;
-}
-
-#review-keys-filter {
-  width: 100%;
-  margin: 6px 0 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--rv-border);
-  border-radius: 8px;
-  background: var(--rv-surface-2);
-}
-
-.review-overlay .keys {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 6px 16px;
-  margin: 0 0 16px;
-  font-size: 13px;
-}
-
-.review-overlay .keys-row {
-  display: contents;
-}
-
-.review-overlay .keys dt {
-  display: flex;
-  gap: 4px;
-}
-
-.review-overlay .keys dd {
-  margin: 0;
-  color: var(--rv-muted);
 }
 
 /* Reviews in progress */

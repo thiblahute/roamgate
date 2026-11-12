@@ -54,9 +54,16 @@ import {
 import {
   readReviewPrefs,
   reviewSplitDefault,
+  reviewSurfaceChoice,
+  reviewSurfaceMessage,
   writeReviewPrefs,
 } from "../reviewPrefs";
 import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
+import {
+  inspectorCompletions,
+  runInspectorCommand,
+} from "../inspectorCommands";
+import { notAReviewCommand, reviewInspectorCommands } from "../reviewCommands";
 import { repoLabel, useWorkspaceRepos, worktreeOnly } from "../reviewRepos";
 import {
   heldCommentCount,
@@ -110,7 +117,6 @@ import {
   type WorkspaceRepo,
 } from "../reviewModel";
 import {
-  commandCompletions,
   EMPTY_KEY_STATE,
   feedKey,
   findFile,
@@ -124,7 +130,7 @@ import {
   type Match,
   nextMatch,
   nextUnreviewedHunk,
-  parseReviewCommand,
+  type ReviewCommand,
   type ReviewedFile,
   reviewedState,
   searchRegExp,
@@ -173,6 +179,7 @@ import {
   unresolvedPosition,
 } from "../unresolvedThreads";
 import { CommandLine } from "./CommandLine";
+import { ShortcutList } from "./ShortcutList";
 import { ReviewMenu } from "./ReviewMenu";
 import { ZenDock } from "./ZenIsland";
 import {
@@ -402,21 +409,6 @@ const REVIEW_KEYS: [string, string][] = [
   ["?", "this list"],
   ["Esc :q", "close the review (it is kept)"],
 ];
-
-function matchesFilter(keys: string, label: string, filter: string): boolean {
-  const plain = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const normal = (value: string) => plain(value).toLowerCase();
-  const query = normal(filter).trim();
-  if (!query) return true;
-  // One key: the rows holding it, when it is a key of the list.
-  const key = plain(filter).trim();
-  const holds = (row: string) =>
-    row.split(" ").some((each) => plain(each) === key);
-  if (key.length === 1 && REVIEW_KEYS.some(([row]) => holds(row)))
-    return holds(keys);
-  const haystack = normal(`${keys} ${label}`);
-  return query.split(/\s+/).every((word) => haystack.includes(word));
-}
 
 export function ReviewOverlay({
   snapshot,
@@ -3743,8 +3735,23 @@ export function ReviewOverlay({
 
   // ---- Command line -------------------------------------------------------
 
+  /**
+   * The review's commands, as the inspector's prompt has them (the same
+   * registry and completion: reviewCommands.ts).
+   */
+  const reviewCommands = reviewInspectorCommands(runReviewCommand);
+
   function runCommand(text: string) {
-    const command = parseReviewCommand(text);
+    const problem = runInspectorCommand(
+      reviewCommands,
+      text,
+      (line) => jumpTo(line - 1, 0),
+      notAReviewCommand,
+    );
+    if (problem) notify(problem, "info", 2500);
+  }
+
+  function runReviewCommand(command: ReviewCommand) {
     switch (command.type) {
       case "line":
         jumpTo(command.line - 1, 0);
@@ -3826,12 +3833,16 @@ export function ReviewOverlay({
         // The one Vim keys setting, for every editor and device.
         setVimKeys(command.on ?? !vimKeys());
         break;
-      default:
+      case "reviewIn":
+        if (command.surface) writeReviewPrefs({ reviewIn: command.surface });
         notify(
-          `Not a review command: :${command.text} (try :q, :w, :diff, :files)`,
+          reviewSurfaceMessage(command.surface ?? reviewSurfaceChoice()),
           "info",
           2500,
         );
+        break;
+      default:
+        notify(notAReviewCommand(command.text), "info", 2500);
     }
   }
 
@@ -5687,10 +5698,6 @@ export function ReviewOverlay({
     (match) => match.at === cursor && match.start === col,
   );
 
-  const keysList = REVIEW_KEYS.filter(([keys, label]) =>
-    matchesFilter(keys, label, keysFilter),
-  );
-
   return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: the review takes the keys
     <div
@@ -6363,7 +6370,7 @@ export function ReviewOverlay({
         <CommandLine
           key={prompt.kind}
           kind={prompt.kind}
-          completions={commandCompletions}
+          completions={(typed) => inspectorCompletions(reviewCommands, typed)}
           onBlur={() => setPrompt(null)}
           onSubmit={(text) => {
             const { kind } = prompt;
@@ -6552,58 +6559,18 @@ export function ReviewOverlay({
         </div>
       ) : null}
       {keysOpen ? (
-        // biome-ignore lint/a11y/useKeyWithClickEvents: Esc closes it
-        <div
-          className="review-keys"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setKeysOpen(false);
+        <ShortcutList
+          title="Review shortcuts"
+          rows={REVIEW_KEYS}
+          filter={keysFilter}
+          onFilter={setKeysFilter}
+          filterId="review-keys-filter"
+          placeholder="Search shortcuts (comment, hunk, gitlab...)"
+          onClose={() => {
+            setKeysOpen(false);
+            rootRef.current?.focus({ preventScroll: true });
           }}
-        >
-          <div className="review-keys-panel">
-            <div className="settings-head">
-              <h2>Review shortcuts</h2>
-              <button
-                type="button"
-                className="icon-btn"
-                title="Close (Esc)"
-                onClick={() => setKeysOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <input
-              id="review-keys-filter"
-              type="search"
-              // biome-ignore lint/a11y/noAutofocus: filtering is the point
-              autoFocus
-              placeholder="Search shortcuts (comment, hunk, gitlab...)"
-              value={keysFilter}
-              onChange={(event) => setKeysFilter(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setKeysOpen(false);
-                  rootRef.current?.focus({ preventScroll: true });
-                }
-              }}
-            />
-            <dl className="keys">
-              {keysList.map(([keys, label]) => (
-                <div key={keys} className="keys-row">
-                  <dt>
-                    {keys.split(" ").map((key, index) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: a row may hold a key twice (Esc Esc)
-                      <kbd key={index}>{key}</kbd>
-                    ))}
-                  </dt>
-                  <dd>{label}</dd>
-                </div>
-              ))}
-            </dl>
-            {keysList.length ? null : <p className="note">Nothing matches.</p>}
-          </div>
-        </div>
+        />
       ) : null}
     </div>
   );
