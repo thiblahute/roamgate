@@ -254,12 +254,29 @@
 /* A part's + sits in a gutter its message (or thread card) keeps for it,
    inside the bubble's padding: in the margin it straddled the bubble's
    border, half outside. A table's cells keep theirs inside. */
+.chat-review {
+  --rc-add-size: 18px;
+  --rc-add-gap: 6px;
+  --rc-gutter: calc(var(--rc-add-size) + var(--rc-add-gap));
+}
+
+/* Every body that hosts + parts reserves --rc-gutter at its left, at any
+   depth (a message, a thread card's reply, a comment on a comment); its +
+   is drawn in that gutter, add-gap short of the text, whatever the part
+   holds. */
 .chat-review .rc-text:has(.rc-part-add) {
-  padding-left: 16px;
+  padding-left: var(--rc-gutter);
 }
 
 .chat-review .rc-part > .rc-part-add {
-  left: -20px;
+  left: calc(-1 * var(--rc-gutter));
+  width: var(--rc-add-size);
+  height: var(--rc-add-size);
+}
+
+/* A code line's + sits left of its block (padding 8px), in the gutter too. */
+.chat-review .rc-code-line > .rc-part-add {
+  left: calc(-1 * var(--rc-gutter) - 8px);
 }
 
 .chat-review .rc-table .rc-part > .rc-part-add {

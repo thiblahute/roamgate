@@ -104,22 +104,35 @@ test("only the part tapped has a + to hit; none waits invisible over the text", 
   ).toBe("visible");
 });
 
-test("with a mouse the + sits in the message's gutter, inside the bubble, beside the text", () => {
+test("with a mouse the + sits in the gutter every + host keeps, inside the bubble, beside the text", () => {
   const outside = threads.slice(0, threads.indexOf(TOUCH));
-  const size = px(rule(notes, ".rc-part-add"), "width");
-  const gutter = px(
-    rule(outside, ".chat-review .rc-text:has(.rc-part-add)"),
-    "padding-left",
+  const token = rule(outside, ".chat-review");
+  const size = px(token, "--rc-add-size");
+  const gap = px(token, "--rc-add-gap");
+  expect(value(token, "--rc-gutter")).toBe(
+    "calc(var(--rc-add-size) + var(--rc-add-gap))",
   );
-  const left = px(
-    rule(outside, ".chat-review .rc-part > .rc-part-add"),
-    "left",
-  );
-  // From the bubble's text box: its padding (11px on a desktop chat, a
-  // thread card's 8px) is room enough, its border is not crossed.
-  expect(gutter + left).toBeGreaterThanOrEqual(-8);
-  // It ends before the part's text starts.
-  expect(gutter + left + size).toBeLessThanOrEqual(gutter);
+  // The chat sizes the + as the review does.
+  expect(px(rule(notes, ".rc-part-add"), "width")).toBe(size);
+  const gutter = size + gap;
+  // The container applies the token, not a width of its own.
+  expect(
+    value(
+      rule(outside, ".chat-review .rc-text:has(.rc-part-add)"),
+      "padding-left",
+    ),
+  ).toBe("var(--rc-gutter)");
+  const add = rule(outside, ".chat-review .rc-part > .rc-part-add");
+  expect(value(add, "left")).toBe("calc(-1 * var(--rc-gutter))");
+  expect(value(add, "width")).toBe("var(--rc-add-size)");
+  // It ends add-gap before the part's text starts, from the host's edge.
+  expect(-gutter + size).toBe(-gap);
+  expect(gap).toBeGreaterThanOrEqual(4);
+  // A code line's + clears its block's 8px padding and stays in the gutter.
+  expect(
+    value(rule(outside, ".chat-review .rc-code-line > .rc-part-add"), "left"),
+  ).toBe("calc(-1 * var(--rc-gutter) - 8px)");
+  expect(8 + gutter - size).toBeGreaterThan(8);
   // A table's cell keeps its + inside (the table clips what overflows).
   expect(
     px(rule(outside, ".chat-review .rc-table .rc-part > .rc-part-add"), "left"),
@@ -147,4 +160,37 @@ test("the comments' buttons and Comment on a selection take a finger's 44px", ()
   expect(value(target, "inset")).toBe("-12px -2px");
   expect(px(rule(block, ".chat-thread-select"), "min-height")).toBe(44);
   expect(px(rule(block, ".chat-thread.is-folded"), "min-height")).toBe(44);
+});
+
+test("the gutter belongs to the + host, not to a kind of message", () => {
+  // One rule for every body with + parts: a message, a thread card's reply, a
+  // comment on a comment, at any depth. No rule restricts it to one of them
+  // or sets a width of its own.
+  const bare = threads.replace(/\/\*[\s\S]*?\*\//g, "");
+  const gutters = [
+    ...bare.matchAll(/^[ ]*([^\n{}@]*\.rc-text[^\n{}]*)\{/gm),
+  ].map((found) => found[1]!.trim());
+  expect(gutters).toEqual([
+    ".chat-review .rc-text:has(.rc-part-add)",
+    ".chat-review .rc-text:has(.rc-part-add)",
+  ]);
+  // Nested hosts add up their own gutters: a part's thread cards sit in its
+  // notes, each reply's body being a host of its own.
+  expect(threads).not.toMatch(/\.chat-thread[^{}]*\.rc-text/);
+  // On a phone only the part tapped makes room, as deep as it is.
+  const phone = touchBlock();
+  expect(
+    value(
+      rule(phone, ".chat-review .rc-text:has(.rc-part-add)"),
+      "padding-left",
+    ),
+  ).toBe("0");
+  const room = Number(
+    /\+ (\d+)px\)$/.exec(
+      value(rule(phone, ".chat-review .rc-part.is-focused"), "padding-left"),
+    )![1],
+  );
+  const target = rule(phone, ".chat-review .rc-part > .rc-part-add");
+  const visibleEnd = px(target, "--rc-add-left") + 44 - 12 - 12;
+  expect(room - visibleEnd).toBeGreaterThanOrEqual(4);
 });
