@@ -394,7 +394,7 @@ Inspector state is scoped to each checkout; see
   _Dismissed_. A conversation-mode pane shown as a terminal says when Claude
   waits on a question, with **Show the question** and **Dismiss it**; on a
   call, "dismiss it" (or "laisse tomber la question") does the same.
-  With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the microphone
+  With [voice chat](docs/DEPLOYMENT.md#voice-chat) set up, the call button
   beside the message box talks hands-free: speak, and what you said is sent
   once you pause; the agent's answer is read aloud by the engine Speak uses
   (as Speak cleans it), in its language with the server's voices (English,
@@ -449,10 +449,12 @@ Inspector state is scoped to each checkout; see
   was meant. Words said to someone else in the room are held, greyed above
   the box, with a tap to send them after all; a cleaned message's voice
   label shows what was heard.
-  Dictate, beside the message box, types what you say there instead of
-  sending it: the words show as they are heard, and when you press it again
-  the cleaned text (fillers, false starts and self-corrections gone, spoken
-  punctuation written, each language kept) goes in at the cursor. The
+  Dictate, the microphone on the message box, types what you say there
+  instead of sending it: the words show as they are heard, and when you
+  press it again the cleaned text (fillers, false starts and
+  self-corrections gone, spoken punctuation written, each language kept)
+  goes in at the cursor. It hides during a voice call, which listens
+  instead. The
   Android dictation app uses the same server side to type into any app
   ([protocol](docs/ARCHITECTURE.md#dictation)).
   With a router set up, voice chat reaches every agent session: each thing
@@ -481,7 +483,7 @@ Inspector state is scoped to each checkout; see
   request's CI) and nothing is sent. It never works, approves or answers for
   an agent. With a front, a call is with it: **Call the companion** in the
   application menu or the command menu (`Cmd+Option+V`, `Ctrl+Alt+V`), or
-  an agent chat's voice button, whose session is then only where work goes
+  an agent chat's call button, whose session is then only where work goes
   by default. The call lives in the top bar, wherever you go: the
   companion's chip (Speech settings name it) says what it does (idle,
   listening, thinking, speaking, jobs running) with the call's timer,

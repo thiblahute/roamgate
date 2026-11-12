@@ -449,7 +449,7 @@
   background: transparent;
 }
 
-.agent-history-composer-inline .agent-history-composer-voice:not(.is-off) {
+.agent-history-composer-inline .agent-history-composer-dictate.is-listening {
   border-color: var(--accent);
 }
 
