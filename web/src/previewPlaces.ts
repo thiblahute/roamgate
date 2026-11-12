@@ -40,8 +40,20 @@ function validPlace(value: unknown): value is PreviewPlace {
     typeof place.scroll === "number" &&
     Number.isFinite(place.scroll) &&
     (place.fragment === undefined || typeof place.fragment === "string") &&
-    (place.frameUrl === undefined || typeof place.frameUrl === "string")
+    (place.framePage === undefined || typeof place.framePage === "string")
   );
+}
+
+/**
+ * A place as kept, without what an older build kept beside it: a frame's
+ * URL under the token it was shown in (`frameUrl`), which a token serving
+ * another directory read as another page, its path doubled.
+ */
+function keptPlace(place: PreviewPlace): PreviewPlace {
+  if (!("frameUrl" in place)) return place;
+  const kept: PreviewPlace & { frameUrl?: unknown } = { ...place };
+  delete kept.frameUrl;
+  return kept;
 }
 
 /** A kept tab's place as read back, or null when it is not one. */
@@ -60,7 +72,7 @@ export function parsePreviewTabPlace(value: unknown): PreviewTabPlace | null {
   )
     return null;
   return {
-    history: { places: history.places, at: history.at },
+    history: { places: history.places.map(keptPlace), at: history.at },
     cursor: typeof raw.cursor === "string" ? raw.cursor : null,
     flipped: Array.isArray(raw.flipped)
       ? raw.flipped.filter((id): id is string => typeof id === "string")

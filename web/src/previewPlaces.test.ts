@@ -80,3 +80,27 @@ test("what is not a place is not read back", () => {
   roamgateLocalStorage.setItem("roamgate.previewPlaces.v1:c5", "not json");
   expect(readPreviewTabPlace("c5", "a.md")).toBeNull();
 });
+
+test("a frame URL kept by an older build is dropped, not shown doubled", () => {
+  const kept = parsePreviewTabPlace({
+    history: {
+      places: [
+        {
+          path: "cancun/index.html",
+          scroll: 40,
+          frameUrl: "cancun/index.html",
+        },
+        { path: "cancun/index.html", scroll: 0, framePage: "day.html" },
+      ],
+      at: 0,
+    },
+    cursor: null,
+    flipped: [],
+    mode: "rendered",
+    threadsOpen: false,
+  });
+  expect(kept?.history.places).toEqual([
+    { path: "cancun/index.html", scroll: 40 },
+    { path: "cancun/index.html", scroll: 0, framePage: "day.html" },
+  ]);
+});
