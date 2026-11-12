@@ -69,6 +69,21 @@
  * until its end is heard here (that much later than the answer, with the
  * playout's delay, the output's latency and RELEASE_MARGIN_MS), and
  * stopping it drops what the helper still had to send of it (`call_hush`).
+ *
+ * The phone's screen: Chrome on Android gives a page silence from its
+ * microphone once the screen is off or another app is in front, its track
+ * still live and unmuted (Android lets only the app in front, or one with
+ * a microphone foreground service, capture; Chrome starts that service
+ * only behind its AndroidEnableBackgroundMediaCapturing feature, off by
+ * default). So the call holds a screen wake lock while it lasts, taken
+ * again each time the page shows (the browser lets it go when hidden),
+ * and the screen does not turn off by itself. Pressing the power button
+ * still turns it off: the microphone is then watched. Its track muted or
+ * ended, or its capture exactly silent SILENT_MS while listening (a real
+ * microphone never is), the call says it is paused by the phone (trace,
+ * notice, `microphonePaused`); once the page shows, a microphone still
+ * paused REOPEN_MS later is opened again and replaces the old one, the
+ * call going on.
  */
 
 import type { ChannelEvent } from "./voiceChannel";
@@ -193,6 +208,14 @@ export const BACKOFF_MS = [5000, 15_000, 30_000, 60_000];
 export const MICROPHONE_TRIES = 5;
 /** How often the microphone's echo statistics are traced. */
 const ECHO_TRACE_MS = 15_000;
+/** How often the microphone's capture is checked while listening. */
+export const MICROPHONE_CHECK_MS = 1000;
+/** Its capture exactly silent this long, listening: paused by the phone. */
+export const SILENT_MS = 3000;
+/** Shown again, a microphone still paused this long is opened again. */
+export const REOPEN_MS = 1500;
+/** What the call says while the phone keeps the microphone from it. */
+export const MICROPHONE_PAUSED = "Microphone paused by the phone";
 
 let active: WebRtcCall | null = null;
 const callListeners = new Set<() => void>();
@@ -420,7 +443,50 @@ export type CallOptions = {
    * `online`, its connection's `change`); gives what stops that.
    */
   networkChanges?: (changed: () => void) => () => void;
+  /** The page's visibility and the screen wake lock (the browser's). */
+  screen?: CallScreen;
+  /**
+   * Told when the phone pauses the call's microphone (true) and when it
+   * is back (false): with the screen off, only a spoken word reaches.
+   */
+  microphonePaused?: (paused: boolean) => void;
 };
+
+/** A held screen wake lock (WakeLockSentinel). */
+export type ScreenLock = {
+  release(): Promise<void>;
+  addEventListener(type: "release", listener: () => void): void;
+};
+
+/** What of the page's visibility and screen the call uses. */
+export type CallScreen = {
+  /** Whether the page is hidden (screen off, another app in front). */
+  hidden(): boolean;
+  /** Calls `changed` when the page is hidden or shown; gives what stops it. */
+  visibility(changed: () => void): () => void;
+  /** Keeps the screen on (the Screen Wake Lock API); null where there is none. */
+  wakeLock: (() => Promise<ScreenLock>) | null;
+};
+
+/** The browser's document and navigator.wakeLock. */
+function browserScreen(): CallScreen {
+  const doc = (globalThis as { document?: Document }).document;
+  const wakeLock = (
+    globalThis as {
+      navigator?: {
+        wakeLock?: { request(type: "screen"): Promise<ScreenLock> };
+      };
+    }
+  ).navigator?.wakeLock;
+  return {
+    hidden: () => doc?.visibilityState === "hidden",
+    visibility: (changed) => {
+      doc?.addEventListener("visibilitychange", changed);
+      return () => doc?.removeEventListener("visibilitychange", changed);
+    },
+    wakeLock: wakeLock ? () => wakeLock.request("screen") : null,
+  };
+}
 
 /** The browser's word that its network changed. */
 function browserNetworkChanges(changed: () => void): () => void {
@@ -545,6 +611,23 @@ export class WebRtcCall {
   private repliesStream: MediaStream | null = null;
   /** Moving to another mode: the microphone and the replies are off. */
   private switching = false;
+  /** The screen wake lock held, and whether one is being asked for. */
+  private screenLock: ScreenLock | null = null;
+  private locking = false;
+  private screenTold = false;
+  /** Why the phone keeps the microphone from the call now, if it does. */
+  private microphonePause: string | null = null;
+  /** The microphone's running energy at its last check, while listening. */
+  private captured: { energy: number; seconds: number } | null = null;
+  /** Checks in a row its capture was exactly silent. */
+  private silentChecks = 0;
+  private microphoneTimer: ReturnType<typeof setInterval> | null = null;
+  private reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  private reopening = false;
+  /** Tries to open the paused microphone again, since it was paused. */
+  private reopenTries = 0;
+  /** Stops watching the microphone's track (mute, unmute, ended). */
+  private unwatchTrack: (() => void) | null = null;
 
   private constructor(
     readonly id: number,
@@ -568,6 +651,8 @@ export class WebRtcCall {
         | "networkChanges"
         | "microphone"
         | "devices"
+        | "screen"
+        | "microphonePaused"
       >
     >,
   ) {}
@@ -654,6 +739,8 @@ export class WebRtcCall {
         networkChanges: options.networkChanges ?? browserNetworkChanges,
         microphone: openMicrophone,
         devices,
+        screen: options.screen ?? browserScreen(),
+        microphonePaused: options.microphonePaused ?? (() => {}),
       },
     );
     channel.holdCall?.(call.id, call.token);
@@ -662,6 +749,8 @@ export class WebRtcCall {
     void call.traceOutputs();
     call.listen();
     call.musicWaits(musicWaiting);
+    void call.holdScreen();
+    call.watchMicrophone();
     trace(`call ${call.id}: started, its signalling opens`);
     await call.connect();
     return call;
@@ -685,6 +774,9 @@ export class WebRtcCall {
   private listen() {
     this.unlisten.push(
       this.options.networkChanges(() => this.networkChanged()),
+    );
+    this.unlisten.push(
+      this.options.screen.visibility(() => this.visibilityChanged()),
     );
     this.unlisten.push(
       this.channel.listen((event) => {
@@ -721,6 +813,269 @@ export class WebRtcCall {
         }
       }),
     );
+  }
+
+  /**
+   * The page was hidden or shown: traced (what the phone did, for the
+   * log); shown, the screen is held again and a paused microphone opened
+   * again if it does not come back by itself.
+   */
+  private visibilityChanged() {
+    if (this.stopped) return;
+    if (this.options.screen.hidden()) {
+      this.trace(
+        "the page is hidden (the screen off, or another app in front)",
+      );
+      return;
+    }
+    this.trace("the page shows again");
+    void this.holdScreen();
+    if (this.microphonePause) this.reopenLater();
+  }
+
+  /**
+   * Keeps the screen on while the call lasts, when the page shows (a
+   * hidden page gets no wake lock, and loses the one it had).
+   */
+  async holdScreen() {
+    const request = this.options.screen.wakeLock;
+    if (
+      !request ||
+      this.stopped ||
+      this.screenLock ||
+      this.locking ||
+      this.options.screen.hidden()
+    )
+      return;
+    this.locking = true;
+    try {
+      const lock = await request();
+      if (this.stopped) {
+        void lock.release().catch(() => {});
+        return;
+      }
+      this.screenLock = lock;
+      lock.addEventListener("release", () => {
+        if (this.screenLock === lock) this.screenLock = null;
+      });
+      if (!this.screenTold) {
+        this.screenTold = true;
+        this.trace("the screen stays on during the call (a wake lock)");
+      }
+    } catch (error) {
+      this.trace(`the screen may turn off: no wake lock (${error})`);
+    } finally {
+      this.locking = false;
+    }
+  }
+
+  /** Whether the call holds a screen wake lock now. */
+  holdsScreen(): boolean {
+    return this.screenLock !== null;
+  }
+
+  /** Watches the microphone: its track, and its capture while listening. */
+  watchMicrophone() {
+    this.watchTrack();
+    if (this.microphoneTimer) clearInterval(this.microphoneTimer);
+    this.microphoneTimer = setInterval(
+      () => void this.checkMicrophone(),
+      MICROPHONE_CHECK_MS,
+    );
+  }
+
+  /** The microphone's track now: muted, unmuted or ended, the call says it. */
+  private watchTrack() {
+    this.unwatchTrack?.();
+    this.unwatchTrack = null;
+    const track = this.microphone?.getAudioTracks()[0] as
+      | (MediaStreamTrack & Partial<EventTarget>)
+      | undefined;
+    if (!track?.addEventListener) return;
+    const current = () =>
+      !this.stopped && this.microphone?.getAudioTracks()[0] === track;
+    const muted = () => {
+      if (current()) this.pauseMicrophone("its track muted");
+    };
+    const unmuted = () => {
+      if (current() && this.microphonePause === "its track muted")
+        this.microphoneBack("its track unmuted");
+    };
+    const ended = () => {
+      if (current()) this.pauseMicrophone("its track ended");
+    };
+    track.addEventListener("mute", muted);
+    track.addEventListener("unmute", unmuted);
+    track.addEventListener("ended", ended);
+    this.unwatchTrack = () => {
+      track.removeEventListener?.("mute", muted);
+      track.removeEventListener?.("unmute", unmuted);
+      track.removeEventListener?.("ended", ended);
+    };
+    if (track.muted) this.pauseMicrophone("its track muted");
+  }
+
+  /**
+   * While listening, whether the microphone's capture is exactly silent
+   * (its running energy as sent does not grow): SILENT_MS of it, the
+   * phone gives the page silence; growing again, the microphone is back.
+   */
+  private async checkMicrophone() {
+    const connection = this.microphoneLeg.connection;
+    if (
+      this.stopped ||
+      this.switching ||
+      !connection ||
+      !this.listeningNow ||
+      !this.sending?.enabled
+    ) {
+      this.captured = null;
+      this.silentChecks = 0;
+      return;
+    }
+    let now: { energy: number; seconds: number } | null;
+    try {
+      now = microphoneEnergy(await connection.getStats());
+    } catch {
+      return;
+    }
+    if (this.stopped || this.microphoneLeg.connection !== connection) return;
+    const before = this.captured;
+    this.captured = now;
+    if (!now || !before) return;
+    if (now.energy > before.energy) {
+      this.silentChecks = 0;
+      if (this.microphonePause === "its capture went silent")
+        this.microphoneBack("its capture has sound again");
+      return;
+    }
+    this.silentChecks += 1;
+    if (this.silentChecks * MICROPHONE_CHECK_MS >= SILENT_MS)
+      this.pauseMicrophone("its capture went silent");
+  }
+
+  /** Why the phone keeps the microphone from the call, or null. */
+  microphonePausedByPhone(): string | null {
+    return this.microphonePause;
+  }
+
+  /**
+   * The phone keeps the microphone from the call: said (trace, notice,
+   * `microphonePaused`), never silently dropped; opened again once the
+   * page shows.
+   */
+  private pauseMicrophone(why: string) {
+    if (this.stopped || this.microphonePause) return;
+    this.microphonePause = why;
+    this.reopenTries = 0;
+    const hidden = this.options.screen.hidden();
+    this.trace(
+      `the microphone is paused by the phone: ${why}${hidden ? ", the page hidden" : ""}`,
+    );
+    this.options.notice(
+      hidden ? `${MICROPHONE_PAUSED}: turn the screen on.` : MICROPHONE_PAUSED,
+    );
+    this.options.microphonePaused(true);
+    callChanged();
+    if (!hidden) this.reopenLater();
+  }
+
+  /** The microphone reaches the call again. */
+  private microphoneBack(how: string) {
+    if (!this.microphonePause) return;
+    this.microphonePause = null;
+    this.silentChecks = 0;
+    if (this.reopenTimer) clearTimeout(this.reopenTimer);
+    this.reopenTimer = null;
+    this.trace(`the microphone is back: ${how}`);
+    this.options.microphonePaused(false);
+    callChanged();
+  }
+
+  /** A paused microphone, still paused REOPEN_MS later, opened again. */
+  private reopenLater() {
+    if (this.reopenTimer || this.stopped) return;
+    this.reopenTimer = setTimeout(() => {
+      this.reopenTimer = null;
+      void this.reopenMicrophone();
+    }, REOPEN_MS);
+  }
+
+  /**
+   * Opens the paused microphone again, in the call's mode and on its
+   * device, replacing the old one on the microphone's leg: the call goes
+   * on. Tried MICROPHONE_TRIES times at most while it stays paused.
+   */
+  private async reopenMicrophone() {
+    const stream = this.microphone;
+    if (
+      !stream ||
+      !this.microphonePause ||
+      this.stopped ||
+      this.switching ||
+      this.reopening ||
+      this.options.screen.hidden()
+    )
+      return;
+    this.reopening = true;
+    this.reopenTries += 1;
+    const deviceId = stream.getAudioTracks()[0]?.getSettings?.().deviceId;
+    try {
+      const opened = await this.options.microphone({
+        mode: this.mode,
+        ...(deviceId ? { deviceId } : {}),
+      });
+      const track = opened.getAudioTracks()[0];
+      if (!track || this.stopped || this.switching) {
+        for (const each of opened.getTracks()) each.stop();
+        return;
+      }
+      await this.replaceMicrophone(stream, track);
+      this.microphoneBack("opened again");
+    } catch (error) {
+      this.trace(`the microphone did not open again: ${error}`);
+      if (this.reopenTries < MICROPHONE_TRIES) this.reopenLater();
+    } finally {
+      this.reopening = false;
+    }
+  }
+
+  /**
+   * `track` replaces the microphone's in its stream and on its leg (or
+   * the leg is published again from it); the old one stops.
+   */
+  private async replaceMicrophone(
+    stream: MediaStream,
+    track: MediaStreamTrack,
+  ) {
+    const old = stream.getAudioTracks();
+    stream.addTrack(track);
+    for (const each of old) {
+      stream.removeTrack(each);
+      each.stop();
+    }
+    this.watchTrack();
+    this.captured = null;
+    this.silentChecks = 0;
+    const sending = track.clone();
+    sending.enabled = this.listeningNow;
+    const sender = this.microphoneLeg.connection
+      ?.getSenders?.()
+      .find((each) => each.track?.kind === "audio");
+    const replaced = sender
+      ? await sender.replaceTrack(sending).then(
+          () => true,
+          () => false,
+        )
+      : false;
+    if (replaced && !this.stopped) {
+      this.sending?.stop();
+      this.sending = sending;
+    } else {
+      sending.stop();
+      // Published again from the new track.
+      if (!this.stopped) this.publish();
+    }
   }
 
   /**
@@ -1291,31 +1646,8 @@ export class WebRtcCall {
       for (const each of opened.getTracks()) each.stop();
       return false;
     }
-    const old = stream.getAudioTracks();
-    stream.addTrack(track);
-    for (const each of old) {
-      stream.removeTrack(each);
-      each.stop();
-    }
-    const sending = track.clone();
-    sending.enabled = this.listeningNow;
-    const sender = this.microphoneLeg.connection
-      ?.getSenders?.()
-      .find((each) => each.track?.kind === "audio");
-    const replaced = sender
-      ? await sender.replaceTrack(sending).then(
-          () => true,
-          () => false,
-        )
-      : false;
-    if (replaced && !this.stopped) {
-      this.sending?.stop();
-      this.sending = sending;
-    } else {
-      sending.stop();
-      // Published again from the new track.
-      if (!this.stopped) this.publish();
-    }
+    await this.replaceMicrophone(stream, track);
+    this.microphoneBack("opened again on another output");
     this.trace(`moved to the ${output.kind}`);
     callChanged();
     return true;
@@ -1373,6 +1705,8 @@ export class WebRtcCall {
       return false;
     }
     stream.addTrack(track);
+    this.watchTrack();
+    this.microphoneBack("opened again on another output");
     this.playReplies();
     // Published again: call_microphone tells the helper the new mode.
     this.publish();
@@ -1383,6 +1717,11 @@ export class WebRtcCall {
 
   /** Lets the microphone out while listening, and only then. */
   listening(on: boolean) {
+    if (on !== this.listeningNow) {
+      // Its capture is measured from the next check on.
+      this.captured = null;
+      this.silentChecks = 0;
+    }
     this.listeningNow = on;
     if (this.sending) this.sending.enabled = on;
   }
@@ -1567,6 +1906,18 @@ export class WebRtcCall {
     if (this.retry) clearTimeout(this.retry);
     if (this.republishing) clearTimeout(this.republishing);
     if (this.echoTimer) clearInterval(this.echoTimer);
+    if (this.microphoneTimer) clearInterval(this.microphoneTimer);
+    if (this.reopenTimer) clearTimeout(this.reopenTimer);
+    this.unwatchTrack?.();
+    this.unwatchTrack = null;
+    // The screen may turn off again at hang-up.
+    const lock = this.screenLock;
+    this.screenLock = null;
+    void lock?.release().catch(() => {});
+    if (this.microphonePause) {
+      this.microphonePause = null;
+      this.options.microphonePaused(false);
+    }
     for (const stop of this.unlisten.splice(0)) stop();
     this.channel.send({ op: "call_audio", on: false, call: this.id });
     // Its end sent: a link let go may close its socket.
@@ -1701,6 +2052,13 @@ export type EchoLevels = {
   echoReturnLoss?: number;
   echoReturnLossEnhancement?: number;
 };
+
+/** The microphone leg's running energy as sent, when reported. */
+export function microphoneEnergy(
+  stats: Stats,
+): { energy: number; seconds: number } | null {
+  return echoLevels(stats, new Map()).microphone;
+}
 
 /** What `heard` (the microphone leg) and `played` (the replies) report. */
 export function echoLevels(heard: Stats, played: Stats): EchoLevels {

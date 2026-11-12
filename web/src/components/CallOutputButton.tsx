@@ -47,6 +47,23 @@ function useCallOutputs(): CallOutputs {
 }
 
 /**
+ * Whether the phone keeps the call's microphone from it now (the screen
+ * off, another app in front): the call shows MICROPHONE_PAUSED meanwhile.
+ */
+export function useMicrophonePausedByPhone(): boolean {
+  const [paused, setPaused] = useState(
+    () => activeCall()?.microphonePausedByPhone() != null,
+  );
+  useEffect(() => {
+    const read = () =>
+      setPaused(activeCall()?.microphonePausedByPhone() != null);
+    read();
+    return subscribeActiveCall(read);
+  }, []);
+  return paused;
+}
+
+/**
  * The call's output on a phone: a tap moves it to the next one (the
  * loudspeaker, the earpiece, a headset). The loudspeaker plays the
  * replies as media, the others as a phone call (webrtcCall.ts's modes):

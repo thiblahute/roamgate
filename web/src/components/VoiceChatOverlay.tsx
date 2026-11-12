@@ -9,7 +9,11 @@ import {
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { AgentIcon } from "./AgentIcon";
-import { CallOutputButton } from "./CallOutputButton";
+import { MICROPHONE_PAUSED } from "../webrtcCall";
+import {
+  CallOutputButton,
+  useMicrophonePausedByPhone,
+} from "./CallOutputButton";
 import {
   type ActiveVoiceState,
   formatCallDuration,
@@ -114,6 +118,7 @@ export function VoiceChatOverlay({
   const view = voiceControlView(state, muted, level, reader);
   const name = voiceCallName(agent, place);
   const duration = useCallDuration();
+  const microphonePaused = useMicrophonePausedByPhone();
   const rate =
     speechRate === undefined || !onCycleSpeechRate
       ? null
@@ -159,7 +164,7 @@ export function VoiceChatOverlay({
                   )}
                 </span>
                 <span className="voice-chat-overlay-label" aria-live="polite">
-                  {view.label}
+                  {microphonePaused ? MICROPHONE_PAUSED : view.label}
                 </span>
                 {view.level === null ? null : (
                   <span className="voice-chat-overlay-meter" aria-hidden="true">
