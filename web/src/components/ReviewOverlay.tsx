@@ -5749,7 +5749,9 @@ export function ReviewOverlay({
               ? `GitLab merge request ${gitlabMr?.url ?? ""}`
               : session.target.kind === "worktree"
                 ? "Working tree"
-                : `Branch ${session.root}`
+                : session.target.kind === "range"
+                  ? `Branch ${session.root}, against ${session.target.base}`
+                  : `Branch ${session.root}`
           }`}
         >
           {gitlabMr?.title || session.title}

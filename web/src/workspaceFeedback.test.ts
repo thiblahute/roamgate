@@ -4,7 +4,7 @@ import type {
   ReviewSnapshot,
   ReviewThread,
 } from "../../shared/review";
-import type { ReviewAnnotation } from "./annotations";
+import { parseReviewAnnotation, type ReviewAnnotation } from "./annotations";
 import {
   feedbackRoute,
   feedbackThreadId,
@@ -77,6 +77,26 @@ describe("feedbackRoute", () => {
       side: "new",
       text: "const a = 1;",
     });
+  });
+
+  test("a Branch comment under a base picked in Compare against opens that base's review, kept with the note", () => {
+    const route = feedbackRoute(diffNote("branch", { base: "develop" }), place);
+    expect(route.open).toEqual({
+      path: "/repo",
+      target: { kind: "range", base: "develop", head: "HEAD" },
+    });
+    // The base survives the note's record (anchor.feedback) and is only a
+    // branch name: nothing else is kept.
+    expect(
+      parseReviewAnnotation({ ...diffNote("branch"), base: "origin/develop" }),
+    ).toMatchObject({ base: "origin/develop" });
+    for (const base of ["--help", "a..b", "HEAD~1", "x y", ""])
+      expect(
+        parseReviewAnnotation({ ...diffNote("branch"), base }),
+      ).not.toHaveProperty("base");
+    expect(
+      parseReviewAnnotation({ ...diffNote("unstaged"), base: "develop" }),
+    ).not.toHaveProperty("base");
   });
 
   test("a Last step comment opens the worktree review (today)", () => {

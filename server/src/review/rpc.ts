@@ -202,6 +202,7 @@ export async function handleReviewRpc(
         workspaceId,
         root,
         target,
+        automatic: !raw.target && !!defaultBase,
         title: raw.title,
         // The workspace's agent, so comments can go to it from the start.
         agent: raw.agent,

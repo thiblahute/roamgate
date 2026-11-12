@@ -111,5 +111,37 @@ if (process.env.ROAMGATE_CHANGES_COMMANDS_DOM_TEST !== "1") {
       // Gone, its commands go too.
       expect(prompt.views()).toEqual([]);
     });
+
+    test("the Branch scope names Automatic's base; a base picked in Compare against goes with its selection, for its own review", async () => {
+      const prompt = inspector();
+      const changes = await mountChangesTree({
+        entries: { "branch-main": [entry("b.ts", "branch", "M")] },
+        scope: "branch-main",
+        automaticBase: "refs/remotes/origin/main",
+        inspectorCommands: prompt.registry,
+      });
+      try {
+        await changes.settle();
+        // Automatic picked origin/main (a stale local main): it says so.
+        expect(changes.branchBase()).toEqual({
+          scope: "Against origin/main",
+          compare: "Automatic (origin/main)",
+        });
+        expect(changes.selection()?.pickedBase).toBeUndefined();
+        await prompt.run("base refs/heads/develop");
+        await changes.settle();
+        expect(changes.branchBase()).toEqual({
+          scope: "Against develop",
+          compare: "develop",
+        });
+        // Its comments go to develop's review (workspaceFeedback's route).
+        expect(changes.selection()?.pickedBase).toBe("develop");
+        await prompt.run("base auto");
+        await changes.settle();
+        expect(changes.selection()?.pickedBase).toBeUndefined();
+      } finally {
+        await changes.unmount();
+      }
+    });
   });
 }

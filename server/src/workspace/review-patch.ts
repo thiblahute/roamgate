@@ -6,6 +6,7 @@ import type {
   ReviewTarget,
 } from "../../../shared/review";
 import { parseUnifiedDiff } from "../review/patch";
+import { resolveDefaultBase, shortRefName } from "./diff-base";
 import { gitShellCommandArgv } from "./git-shell";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 
@@ -248,8 +249,10 @@ export async function readReviewRoot(args: {
 }
 
 /**
- * The branch a review compares against when the agent names none: the
- * remote's default branch, else main or master.
+ * The branch a review compares against when none is named: Automatic's
+ * base, the one Changes' Branch scope draws against (resolveDefaultBase:
+ * the newer of the local default branch and its remote counterpart), as
+ * the review writes it (`origin/main`, `main`).
  */
 export async function readDefaultBase(args: {
   root: string;
@@ -257,21 +260,12 @@ export async function readDefaultBase(args: {
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<string> {
-  const script = [
-    `cd ${args.shQuote(args.root)} || exit 2`,
-    'for r in "$(git symbolic-ref -q --short refs/remotes/origin/HEAD)" origin/main origin/master main master; do',
-    '  [ -n "$r" ] && git rev-parse --verify -q "$r^{commit}" >/dev/null && { printf %s "$r"; exit 0; }',
-    "done",
-    "exit 3",
-  ].join("\n");
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.base")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 10_000);
-  const base = result.stdout.trim();
-  if (result.code !== 0 || !base)
+  const { base } = await resolveDefaultBase(args).catch(() => ({
+    base: undefined,
+  }));
+  if (!base)
     throw new Error("cannot find the default branch; pass --range BASE..HEAD");
-  return base;
+  return shortRefName(base);
 }
 
 /** A repository a workspace's session may have changed. */

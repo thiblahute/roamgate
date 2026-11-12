@@ -46,6 +46,8 @@ export type ChangesOptions = {
   onOpenFile?: (entry: GitDiffEntry) => void;
   /** The inspector's `:` prompt, given the tree's commands as Changes'. */
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
+  /** The base Automatic resolves (default: refs/heads/main). */
+  automaticBase?: string;
 };
 
 /** One row of the changed-files tree, as a user reads it. */
@@ -69,6 +71,8 @@ export interface ChangesTree {
   summaryModes(): string[];
   /** The scope shown as picked. */
   scope(): ChangesScope | null;
+  /** The Branch scope's toggle and Compare against, as they read. */
+  branchBase(): { scope: string; compare: string };
   pickScope(scope: ChangesScope): Promise<void>;
   rows(): TreeRow[];
   clickRow(name: string): Promise<void>;
@@ -268,7 +272,10 @@ export async function mountChangesTree(
           mode,
           ...(mode === "branch-main"
             ? {
-                base: params.base_branch ?? "refs/heads/main",
+                base:
+                  params.base_branch ??
+                  options.automaticBase ??
+                  "refs/heads/main",
                 base_branches: ["refs/heads/main", "refs/heads/develop"],
               }
             : {}),
@@ -422,6 +429,16 @@ export async function mountChangesTree(
       if (label.startsWith("Against")) return "branch-main";
       return null;
     },
+    branchBase: () => ({
+      scope:
+        [...container.querySelectorAll(".diff-scope-toggle button")]
+          .map((button) => button.getAttribute("aria-label") ?? "")
+          .find((label) => label.startsWith("Against")) ?? "",
+      compare:
+        container
+          .querySelector('.diff-base-selector [aria-label="Comparison branch"]')
+          ?.textContent?.trim() ?? "",
+    }),
     async pickScope(scope) {
       const buttons = [
         ...container.querySelectorAll<HTMLButtonElement>(

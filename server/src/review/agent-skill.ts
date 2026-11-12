@@ -68,7 +68,10 @@ then sends it to GitLab as drafts and submits the review themselves.
 
     roamgate-review --agent Claude open --message "Ready for review"
 
-Without a target it reviews \`<default branch>..HEAD\`. Others:
+Without a target it reviews \`<default branch>..HEAD\`. The default branch
+is the newer of the local one and its remote counterpart (\`origin/main\`
+when the local \`main\` is behind), the base the user's Changes view
+shows. Others:
 \`--range main..HEAD\` (use branch names, never SHAs, so it follows rebases),
 \`--worktree\`, \`--mr URL\`. The overlay pops up in the user's browser.
 
