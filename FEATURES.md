@@ -1025,9 +1025,32 @@ requested reviewer, an assignee or mentioned (a pending GitLab to-do, a
 GitHub mention); **Suggested** lists those Claude picked from the projects
 you follow, each with why. A row shows the state, the pipeline, what changed
 since you last looked (new commits, new comments) and how many drafts you
-have pending on the forge. `j`/`k` move, `Enter` opens its review, `i`
-shows its details, `o` opens it on the forge, `x` says not interested and `+` more like this on a suggestion, `r`
-refreshes, `Esc` steps back. On a phone it fills the screen.
+have pending on the forge. On a phone it fills the screen.
+
+The list is in your order: drag a request by its grip, or select it and
+use its up and down buttons (on a phone) or `J`/`K`, within its section.
+Your order is kept in Roamgate's settings (`mr_reviews.order` in
+`settings.json`), so it is the same after a reload and on every device; a
+new request comes first, one no longer listed drops out of it. The search
+box (`/`) narrows the list to the requests whose title, project, author,
+number (`!123`, `#45`) or branches hold every word typed. The keys, as in
+Roamgate's other lists (`?` lists them):
+
+| Key                      | Action                                                   |
+| ------------------------ | -------------------------------------------------------- |
+| `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)          |
+| `gg`/`G`, Home/End       | First / last (`2G`: the second)                          |
+| `Enter`                  | Open its review                                          |
+| `i`                      | Its details                                              |
+| `c`                      | Its Claude session                                       |
+| `o`                      | Open it on GitLab or GitHub                              |
+| `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                   |
+| `/`                      | Search; in the box Enter opens, Esc clears and goes back |
+| `x` / `+`                | Not interested / more like this (a suggestion)           |
+| `r`                      | Refresh                                                  |
+| `a`                      | Ask the reviews agent                                    |
+| `?`                      | List the keys                                            |
+| `Esc`                    | Step back: the key list, the search, then the panel      |
 
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**

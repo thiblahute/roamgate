@@ -17,10 +17,13 @@ export type StoredMrReviewsSettings = {
   hints?: string;
   tree_groups?: Record<string, string[]>;
   clones?: Record<string, { connection_id: string; path: string }>;
+  order?: string[];
 };
 
 export const MAX_HOSTS = 10;
 export const MAX_FOLLOWED = 30;
+/** Requests kept in the user's order. */
+export const MAX_ORDER = 500;
 
 function provider(value: unknown): ForgeProvider | null {
   return value === "gitlab" || value === "github" ? value : null;
@@ -118,6 +121,16 @@ export function normalizeStoredMrReviews(
         out.clones[key.toLowerCase()] = { connection_id: connection, path };
     }
   }
+  if (Array.isArray(value.order)) {
+    const seen = new Set<string>();
+    out.order = value.order
+      .filter(
+        (key): key is string =>
+          typeof key === "string" && !!key && key.length <= 600,
+      )
+      .filter((key) => !seen.has(key) && !!seen.add(key))
+      .slice(0, MAX_ORDER);
+  }
   return out;
 }
 
@@ -141,6 +154,7 @@ export function mrReviewsSettings(
         { connectionId: clone.connection_id, path: clone.path },
       ]),
     ),
+    order: stored?.order ?? base.order,
   };
 }
 
@@ -163,5 +177,6 @@ export function storedMrReviews(
         { connection_id: clone.connectionId, path: clone.path },
       ]),
     ),
+    ...(settings.order.length ? { order: settings.order } : {}),
   };
 }

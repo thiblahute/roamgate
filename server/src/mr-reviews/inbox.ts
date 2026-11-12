@@ -345,6 +345,7 @@ export function createMrInbox(deps: MrInboxDeps) {
           ? { refreshedAt: new Date(lastRefresh).toISOString() }
           : {}),
         refreshing: refreshing !== null,
+        ...(settings.order.length ? { order: settings.order } : {}),
       };
     },
     refresh,

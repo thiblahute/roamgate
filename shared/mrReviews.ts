@@ -102,6 +102,8 @@ export type MrInbox = {
   refreshedAt?: string;
   /** A refresh is running. */
   refreshing: boolean;
+  /** The user's order (the settings' `order`), when they set one. */
+  order?: string[];
 };
 
 export type MrVerdict = "not_interested" | "more_like_this";
@@ -150,6 +152,11 @@ export type MrReviewsSettings = {
   treeGroups: Record<string, string[]>;
   /** Clones picked by the user: "host/project" -> where. */
   clones: Record<string, { connectionId: string; path: string }>;
+  /**
+   * The inbox in the user's order, as request keys; requests not in it come
+   * first, in the inbox's own order. Empty: the inbox's order.
+   */
+  order: string[];
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -167,6 +174,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   hints: "",
   treeGroups: {},
   clones: {},
+  order: [],
 };
 
 /** "host/project", lower case: a project's key in the settings and state. */

@@ -663,6 +663,13 @@ reviewed in Roamgate, when the request changed or hourly. A host that fails keep
 time it was seen merged or closed, and each project's review worktree. The
 inbox never writes to a forge.
 
+The user's order of the list is the settings' `mr_reviews.order` (request
+keys, at most 500), returned with each `bridge.mr_reviews.inbox` as `order`
+so every device follows it; `settings.update {settings: {order}}` saves it
+alone, without the refresh other settings start. The panel lists requests
+not in it first (the inbox's order), then the others in it, per section,
+and saves only the keys listed, so gone requests drop out.
+
 `bridge.mr_reviews.open {key, checkout?}` finds the project's clone (its
 recorded review worktree, the settings' `clones`, else, connections in
 order default first, then this machine, then the others, a scan of the connections' workspace and pane
