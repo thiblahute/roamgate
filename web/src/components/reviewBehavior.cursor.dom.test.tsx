@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -38,8 +38,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       ),
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
-    describe(name, () => {
+  for (const surface of reviewSurfacesWith("cursor"))
+    describe(surface.name, () => {
+      const { mount } = surface;
       test("j and k move a line, Down and Up too; a count moves that many", async () => {
         const review = await mount({ files: [added("a.ts", 12)] });
         const at = () => review.cursorLine()?.text;

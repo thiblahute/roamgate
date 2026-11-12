@@ -95,6 +95,8 @@ export type DiffViewerPanelHandle = {
   selectWorkingEntries: (entries: GitDiffEntry[]) => void;
   /** The changes read again, as the Refresh button does. */
   refresh: () => void;
+  /** The paths the diff's search (the review cursor's) has hits in. */
+  markSearchMatches: (paths: readonly string[]) => void;
 };
 
 export type DiffViewerPanelProps = {
@@ -1048,6 +1050,9 @@ export function DiffViewerPanel({
     () => new Set([""]),
   );
   const [visibleEntryKey, setVisibleEntryKey] = useState<string | null>(null);
+  const [searchMatches, setSearchMatches] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const treeRef = useRef<HTMLDivElement>(null);
   const runtimeContextKey = diffRuntimeContextKey(
     connectionClient,
@@ -1612,6 +1617,13 @@ export function DiffViewerPanel({
       selectWorkingEntry: (target) => selectWorkingEntries([target]),
       selectWorkingEntries,
       refresh: () => refreshRef.current(),
+      markSearchMatches: (paths) =>
+        setSearchMatches((current) =>
+          current.size === paths.length &&
+          paths.every((path) => current.has(path))
+            ? current
+            : new Set(paths),
+        ),
     };
   }, [setDiffScope]);
 
@@ -1993,7 +2005,7 @@ export function DiffViewerPanel({
         <button
           type="button"
           key={child.path}
-          className={`diff-tree-row diff-tree-file ${selected ? "is-selected" : ""}`}
+          className={`diff-tree-row diff-tree-file ${selected ? "is-selected" : ""} ${searchMatches.has(child.path) ? "is-search-hit" : ""}`}
           aria-current={selected ? "true" : undefined}
           style={{
             paddingLeft: DIFF_TREE_BASE_INDENT + depth * DIFF_TREE_INDENT,
@@ -2031,7 +2043,13 @@ export function DiffViewerPanel({
         >
           <span className="diff-tree-twisty" />
           <File size={15} />
-          <span className="diff-tree-name">{child.name}</span>
+          <span className="diff-tree-name">
+            {searchMatches.has(child.path) ? (
+              <mark>{child.name}</mark>
+            ) : (
+              child.name
+            )}
+          </span>
           <span className="diff-tree-badges">
             {statusCodes.map((code) => (
               <span

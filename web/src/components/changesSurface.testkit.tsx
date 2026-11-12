@@ -628,6 +628,8 @@ export type ChangesDiffOptions = {
   onEditAnnotation?: (id: string) => void;
   /** The inspector's `:` prompt, given the diff's commands as Changes'. */
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
+  /** The review's Vim cursor ("in Changes", Vim keys on). */
+  reviewCursor?: boolean;
 };
 
 export interface ChangesDiff {
@@ -831,6 +833,7 @@ export async function mountChangesDiff(
             ...(options.onEditAnnotation
               ? { onEditAnnotation: options.onEditAnnotation }
               : {}),
+            reviewCursor: options.reviewCursor ?? false,
           }),
         ),
       ),

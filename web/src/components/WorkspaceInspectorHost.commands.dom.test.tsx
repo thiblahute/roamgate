@@ -115,8 +115,13 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
       );
     },
   }));
+  /** What the inspector gave Changes' diff, last. */
+  let diffProps: { reviewCursor?: boolean } | null = null;
   mock.module("./DiffContentView", () => ({
-    DiffContentView: () => null,
+    DiffContentView: (props: { reviewCursor?: boolean }) => {
+      diffProps = props;
+      return null;
+    },
   }));
   mock.module("./GitCommitHistory", () => ({
     GitCommitHistory: part("commits", "commit"),
@@ -558,6 +563,7 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
           "Inspector shortcuts",
         );
         expect(rows()).toEqual([
+          "gt gT",
           ":",
           "?",
           "← → Home End",
@@ -665,6 +671,77 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         } finally {
           await inspector.unmount();
         }
+      }
+    });
+
+    test("gt and gT go to the next and previous view, 2gt to the second; never in a text field", async () => {
+      const inspector = await mountInspector({ view: "files" });
+      try {
+        const item = inspector.place("tree");
+        item.focus();
+        await inspector.press(item, "g");
+        await inspector.press(item, "t");
+        expect(inspector.views.slice(-1)[0]).toBe("changes");
+        expect(document.activeElement).toBe(inspector.tab("Changes"));
+        const tab = inspector.tab("Changes");
+        await inspector.press(tab, "g");
+        await inspector.press(tab, "t");
+        expect(inspector.views.slice(-1)[0]).toBe("commits");
+        // Past the last view, the first.
+        await inspector.press(inspector.tab("Commits"), "g");
+        await inspector.press(inspector.tab("Commits"), "t");
+        expect(inspector.views.slice(-1)[0]).toBe("files");
+        await inspector.press(inspector.tab("Files"), "g");
+        await inspector.press(inspector.tab("Files"), "T");
+        expect(inspector.views.slice(-1)[0]).toBe("commits");
+        await inspector.press(inspector.tab("Commits"), "2");
+        await inspector.press(inspector.tab("Commits"), "g");
+        await inspector.press(inspector.tab("Commits"), "t");
+        expect(inspector.views.slice(-1)[0]).toBe("changes");
+        // g then another key is the view's: no view change.
+        const count = inspector.views.length;
+        await inspector.press(inspector.tab("Changes"), "g");
+        await inspector.press(inspector.tab("Changes"), "g");
+        expect(inspector.views.length).toBe(count);
+        // Typed in a field, g and t are text.
+        const field = inspector.host.querySelector<HTMLElement>(
+          "[aria-label='changes field']",
+        )!;
+        await inspector.press(field, "g");
+        await inspector.press(field, "t");
+        expect(inspector.views.length).toBe(count);
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("Changes gets the review's cursor only on `:set reviewin=changes` with Vim keys on", async () => {
+      const { writeReviewPrefs } = await import("../reviewPrefs");
+      writeReviewPrefs({ vim: undefined, reviewIn: undefined });
+      const inspector = await mountInspector({ view: "changes" });
+      try {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        });
+        // On classic (the default), Changes keeps its own keys.
+        expect(diffProps?.reviewCursor).toBe(false);
+        await inspector.command(
+          inspector.place("changes"),
+          "set reviewin=changes",
+        );
+        expect(diffProps?.reviewCursor).toBe(true);
+        await inspector.command(inspector.place("changes"), "novim");
+        expect(diffProps?.reviewCursor).toBe(false);
+        await inspector.command(inspector.place("changes"), "vim");
+        expect(diffProps?.reviewCursor).toBe(true);
+        await inspector.command(
+          inspector.place("changes"),
+          "set reviewin=classic",
+        );
+        expect(diffProps?.reviewCursor).toBe(false);
+      } finally {
+        await inspector.unmount();
+        writeReviewPrefs({ vim: undefined, reviewIn: undefined });
       }
     });
   });

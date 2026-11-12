@@ -332,3 +332,45 @@
 .diff-content-view.is-mobile .diff-hunk-navigation span {
   min-width: 0;
 }
+
+/* The review cursor's search and Visual line status, at the bottom. */
+.diff-cursor-status {
+  flex: none;
+  padding: 3px 10px;
+  border-top: 1px solid var(--viewer-border);
+  background: var(--viewer-header-bg);
+  color: var(--muted);
+  font:
+    12px / 1.5 ui-monospace,
+    "SF Mono",
+    Menlo,
+    monospace;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-cursor-status mark {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.diff-cursor-label {
+  color: var(--text);
+}
+
+.diff-file-section.is-cursor-search-hit .diff-file-section-title strong {
+  background: var(--accent-soft);
+  border-radius: 3px;
+}
+
+/* The search prompt (`/`) at the diff's bottom edge. */
+.diff-content-view > .review-cmdline {
+  flex: none;
+  background: var(--viewer-header-bg);
+  color: var(--text);
+}
+
+.diff-content-view > .review-cmdline .review-cmd {
+  color: inherit;
+}

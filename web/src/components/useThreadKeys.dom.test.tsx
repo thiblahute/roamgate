@@ -67,7 +67,10 @@ if (process.env.ROAMGATE_THREAD_KEYS_DOM_TEST !== "1") {
    * A list with the keys whose stops are in `scroller`: the list itself
    * (a chat), or a scroller inside a list that clips (the Files preview).
    */
-  const mount = async (markup: string) => {
+  const mount = async (
+    markup: string,
+    extra: Partial<Parameters<typeof useThreadKeys>[2]> = {},
+  ) => {
     const host = document.createElement("div");
     document.body.append(host);
     host.innerHTML = markup;
@@ -94,6 +97,7 @@ if (process.env.ROAMGATE_THREAD_KEYS_DOM_TEST !== "1") {
         remove: () => {},
         reply: () => {},
         comment: () => false,
+        ...extra,
       });
       return null;
     }
@@ -175,6 +179,36 @@ if (process.env.ROAMGATE_THREAD_KEYS_DOM_TEST !== "1") {
     expect(list.style.paddingBottom).toBe("600px");
     await act(async () => root.unmount());
     expect(list.style.paddingBottom).toBe("");
+    host.remove();
+  });
+
+  test("one key machine: Shift for gN keeps the g, and gc (no sequence here) is c", async () => {
+    const steps: number[] = [];
+    const commented: string[] = [];
+    const { host, root, keys } = await mount(
+      `<div class="list">
+        <p data-stop="s1">One</p>
+        <p data-stop="s2">Two</p>
+        <p data-stop="s3">Three</p>
+        <p data-stop="s4">Four</p>
+      </div>`,
+      {
+        jumpUnresolved: (direction) => steps.push(direction),
+        comment: (here) => {
+          commented.push(here.dataset.stop ?? "");
+          return true;
+        },
+      },
+    );
+    // A real keyboard: Shift goes down before N.
+    keys("g", "Shift", "N");
+    expect(steps).toEqual([-1]);
+    keys("g", "n");
+    expect(steps).toEqual([-1, 1]);
+    // Not a sequence of the threads' (the review's commit picker): c.
+    keys("g", "c");
+    expect(commented).toEqual(["s2"]);
+    await act(async () => root.unmount());
     host.remove();
   });
 }
