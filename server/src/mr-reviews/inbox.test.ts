@@ -8,6 +8,7 @@ import {
 } from "../../../shared/mrReviews";
 import { NotSignedInError, type InboxFetchers } from "./fetchers";
 import { createMrInbox } from "./inbox";
+import { createMrOrder } from "./order";
 import { handleMrReviewsRpc } from "./rpc";
 import { normalizeStoredMrReviews, mrReviewsSettings } from "./settings";
 import { openMrStore } from "./store";
@@ -319,6 +320,11 @@ describe("settings", () => {
           saved = next;
           return next;
         },
+        order: createMrOrder({
+          inbox,
+          settings: async () => DEFAULT_MR_REVIEWS_SETTINGS,
+          save: async (next) => next,
+        }),
       },
       "bridge.mr_reviews.settings.update",
       {
@@ -338,6 +344,11 @@ describe("settings", () => {
           inbox,
           settings: async () => settings,
           saveSettings: async (next) => next,
+          order: createMrOrder({
+            inbox,
+            settings: async () => settings,
+            save: async (next) => next,
+          }),
         },
         "bridge.mr_reviews.feedback",
         { key: "k", verdict: "submit" },
@@ -369,6 +380,14 @@ describe("settings", () => {
         current = next;
         return next;
       },
+      order: createMrOrder({
+        inbox,
+        settings: async () => current,
+        save: async (next) => {
+          current = next;
+          return next;
+        },
+      }),
     };
     await handleMrReviewsRpc(deps, "bridge.mr_reviews.settings.update", {
       settings: { order: ["b", "a"] },

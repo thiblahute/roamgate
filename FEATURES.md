@@ -1032,8 +1032,11 @@ have pending on the forge. On a phone it fills the screen.
 The list is in your order: drag a request by its grip, or select it and
 use its up and down buttons (on a phone) or `J`/`K`, within its section.
 Your order is kept in Roamgate's settings (`mr_reviews.order` in
-`settings.json`), so it is the same after a reload and on every device; a
-new request comes first, one no longer listed drops out of it. The search
+`settings.json`), so it is the same after a reload and on every device, and
+it wins over the inbox's own sort in every section, Suggested included. A
+change made on any device (a drag, `J`/`K`, or the reviews agent) shows on
+all the others at once, without losing your selection, scroll or a drag in
+progress; a new request comes first. The search
 box (`/`) narrows the list to the requests whose title, project, author,
 number (`!123`, `#45`) or branches hold every word typed.
 
@@ -1143,7 +1146,12 @@ was picked, your history in your clones, your hints and feedback, and
 read-only searches on the forges, and shows what it looked at under **Work
 performed**. Asked to, it suggests a request, records your x / +, changes
 your hints, or opens a request's review; it never comments, drafts or
-approves anything on a forge. In the chat `i` (or Enter) goes to the message
+approves anything on a forge. It can also arrange your list: "put aisuneko's
+MRs at the top" moves just those to the top of their section (Pinned, For
+you and Suggested stay separate lists; pinning puts one above all), and
+"sort the suggestions by score", "after !123" and add, remove or restore
+requests work the same. A toast says what moved ("Claude moved 3 requests to
+the top") with Undo (`u`), on every device that shows the panel. In the chat `i` (or Enter) goes to the message
 box and Escape back to the inbox; questions sent while it answers wait their
 turn; **New chat** starts over. With the voice companion, say "ask the
 reviews agent..." (or just ask about requests to review): its answer is

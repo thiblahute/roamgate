@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import type { MrInbox, MrReviewsSettings } from "../../shared/mrReviews";
+import type {
+  MrInbox,
+  MrReviewsPush,
+  MrReviewsSettings,
+} from "../../shared/mrReviews";
 import { bridge } from "./api";
 
 /**
@@ -25,13 +29,54 @@ export function latestMrInbox(): MrInbox | null {
   return latest;
 }
 
+function publish(inbox: MrInbox) {
+  latest = inbox;
+  for (const listener of listeners) listener(inbox);
+}
+
 export async function loadMrInbox(
   options: { fresh?: boolean; viewer?: boolean } = {},
 ): Promise<MrInbox> {
-  const inbox = await mrReviewsCall<MrInbox>("inbox", options);
-  latest = inbox;
-  for (const listener of listeners) listener(inbox);
+  let inbox = await mrReviewsCall<MrInbox>("inbox", options);
+  // An answer older than a change pushed meanwhile never takes it back.
+  if (latest && (inbox.orderVersion ?? 0) < (latest.orderVersion ?? 0))
+    inbox = {
+      ...inbox,
+      order: latest.order ?? [],
+      orderVersion: latest.orderVersion ?? 0,
+    };
+  publish(inbox);
   return inbox;
+}
+
+const changeListeners = new Set<(push: MrReviewsPush) => void>();
+let following = false;
+
+/** What the agent changed in the user's list, to say so (and offer Undo). */
+export function onMrReviewsChange(
+  listener: (push: MrReviewsPush) => void,
+): () => void {
+  follow();
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
+/**
+ * The server pushes every change of the order, the pins and the removals:
+ * the list follows at once (the order alone needs no new read), wherever
+ * the change was made.
+ */
+function follow() {
+  if (following) return;
+  following = true;
+  bridge.onMrReviews((push) => {
+    if (latest && push.version <= (latest.orderVersion ?? 0)) return;
+    if (latest)
+      publish({ ...latest, order: push.order, orderVersion: push.version });
+    if (push.changed.some((kind) => kind !== "order"))
+      void loadMrInbox({ viewer: false }).catch(() => {});
+    for (const listener of changeListeners) listener(push);
+  });
 }
 
 /** How often a shown inbox asks the bridge (it answers from its cache). */
@@ -56,6 +101,7 @@ export function useMrInbox(): {
     }
   };
   useEffect(() => {
+    follow();
     listeners.add(setInbox);
     let timer: ReturnType<typeof setTimeout> | null = null;
     let live = true;
@@ -91,6 +137,16 @@ export function saveMrReviewsSettings(
 /** Pins a request by URL (or `project!12`): it stays listed. */
 export function pinMrRequest(text: string): Promise<{ key: string }> {
   return mrReviewsCall<{ key: string }>("pin", { text });
+}
+
+/** An operation on the latest order: move requests, or undo a change. */
+export function orderMrRequests(
+  operation:
+    | { op: "top" | "bottom" | "arrange"; keys: string[] }
+    | { op: "before" | "after"; keys: string[]; target: string }
+    | { op: "undo"; version: number },
+): Promise<{ version: number }> {
+  return mrReviewsCall<{ version: number }>("order", operation);
 }
 
 /** Takes a request out of the view; a pinned one is unpinned. */

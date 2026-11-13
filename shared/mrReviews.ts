@@ -122,6 +122,11 @@ export type MrInbox = {
   refreshing: boolean;
   /** The user's order (the settings' `order`), when they set one. */
   order?: string[];
+  /**
+   * Counts every change of the order, the pins and the removals: a page
+   * keeps what has the higher one.
+   */
+  orderVersion?: number;
   /** Removed by the user and quiet since: the "N hidden" list. */
   hidden: MrHiddenEntry[];
 };
@@ -177,6 +182,8 @@ export type MrReviewsSettings = {
    * first, in the inbox's own order. Empty: the inbox's order.
    */
   order: string[];
+  /** Read only: counts the changes of `order`, `pinned` and `hidden`. */
+  orderVersion?: number;
   /** Requests the user added by URL, newest first. */
   pinned: ForgeRef[];
   /**
@@ -204,6 +211,21 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   order: [],
   pinned: [],
   hidden: [],
+};
+
+/**
+ * Pushed to every page when the order, the pins or the removals change
+ * (`{mr_reviews: ...}`): the order itself, so the list follows at once.
+ */
+export type MrReviewsPush = {
+  version: number;
+  order: string[];
+  changed: ("order" | "pinned" | "hidden")[];
+  by: "user" | "agent";
+  /** What the agent did, in a few words, for a toast with Undo. */
+  summary?: string;
+  /** The version Undo takes back. */
+  undo?: number;
 };
 
 /**

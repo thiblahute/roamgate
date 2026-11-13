@@ -9,6 +9,7 @@ import {
 } from "../../../shared/mrReviews";
 import type { InboxFetchers } from "./fetchers";
 import { createMrInbox } from "./inbox";
+import { createMrOrder } from "./order";
 import { handleMrReviewsRpc } from "./rpc";
 import {
   MAX_HIDDEN,
@@ -92,13 +93,19 @@ function setup() {
     settings: async () => current,
     store: openMrStore(join(dir, "state.json")),
   });
+  const saveSettings = async (next: MrReviewsSettings) => {
+    current = next;
+    return next;
+  };
   const deps = {
     inbox,
     settings: async () => current,
-    saveSettings: async (next: MrReviewsSettings) => {
-      current = next;
-      return next;
-    },
+    saveSettings,
+    order: createMrOrder({
+      inbox,
+      settings: async () => current,
+      save: saveSettings,
+    }),
   };
   const call = (method: string, params: Record<string, unknown> = {}) =>
     handleMrReviewsRpc(deps, `bridge.mr_reviews.${method}`, params);

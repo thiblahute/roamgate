@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Value } from "typebox/value";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,9 +7,17 @@ import type { MrItem, MrReviewsSettings } from "../../../shared/mrReviews";
 import { DEFAULT_MR_REVIEWS_SETTINGS } from "../../../shared/mrReviews";
 import type { ClaudeCodeProcess } from "../assistant/claude-driver";
 import { createMrAgent } from "./agent";
-import { FORGE_CALLS_PER_TURN } from "./agent-tools";
+import {
+  createReviewsAgentTools,
+  FORGE_CALLS_PER_TURN,
+  type MrAgentToolDeps,
+  reviewsAgentSystemPrompt,
+  reviewsAgentToolSchemas,
+} from "./agent-tools";
 import type { FetchCall, InboxFetchers } from "./fetchers";
 import { createMrInbox } from "./inbox";
+import { createMrOrder } from "./order";
+import { handleMrReviewsRpc } from "./rpc";
 import { openMrStore } from "./store";
 
 const HOST = "gl.example";
@@ -208,7 +217,24 @@ function setup(turns: { steps: Step[]; answer: string }[]) {
     store,
   });
   const fake = fakeClaude(turns);
+  const saveSettings = async (next: MrReviewsSettings) => {
+    settings = { ...next, orderVersion: (settings.orderVersion ?? 0) + 1 };
+    return settings;
+  };
+  const order = createMrOrder({
+    inbox,
+    settings: async () => settings,
+    save: saveSettings,
+  });
+  const rpc = (method: string, params: Record<string, unknown>) =>
+    handleMrReviewsRpc(
+      { inbox, settings: async () => settings, saveSettings, order },
+      method,
+      params,
+    );
   const agent = createMrAgent({
+    order,
+    rpc,
     fetchers,
     settings: async () => settings,
     inbox,
@@ -441,5 +467,200 @@ describe("reviews agent", () => {
     } finally {
       await t.done();
     }
+  });
+});
+
+describe("the reviews agent orders the user's list", () => {
+  /** Suggestions 2, 4 and 5 (scores 80, 60, 40), the user's request 1. */
+  function moreRequests(t: { store: ReturnType<typeof openMrStore> }) {
+    t.store.update((state) => {
+      state.items.push(item(4), item(5));
+      for (const [n, score] of [
+        [4, 60],
+        [5, 40],
+      ] as const)
+        state.ranked[item(n).key] = {
+          updatedAt: item(n).updatedAt,
+          version: `${"a".repeat(40)}\nMR ${n}`,
+          pick: true,
+          score,
+          reason: `reason ${n}`,
+          at: "t",
+        };
+    });
+  }
+  const json = (text: string) => JSON.parse(text.split("\n").at(-1)!);
+
+  test("reviews_list shows the list as the user sees it, with positions", async () => {
+    const t = setup([
+      { steps: [{ tool: "reviews_list", arguments: {} }], answer: "ok" },
+    ]);
+    moreRequests(t);
+    try {
+      t.agent.send("what is on my list");
+      await t.answered();
+      const list = json(t.fake.seen[0]!.results[0]!.text);
+      expect(
+        list.requests.map((row: any) => [row["#"], row.section, row.ref]),
+      ).toEqual([
+        [1, "for_you", "g/p!1"],
+        [2, "suggested", "g/p!2"],
+        [3, "suggested", "g/p!4"],
+        [4, "suggested", "g/p!5"],
+      ]);
+      expect(list.requests[1]).toMatchObject({
+        n: 1,
+        score: 80,
+        reason: "touches src/f2.c you changed",
+        unread: "new",
+      });
+      expect(list.order_version).toBe(0);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("reviews_order moves only what was asked, reports unknown keys, and the user can see the new top", async () => {
+    const t = setup([
+      {
+        steps: [
+          {
+            tool: "reviews_order",
+            arguments: { keys: ["g/p!5", "nowhere!9"], place: "top" },
+          },
+          {
+            tool: "reviews_order",
+            arguments: { keys: [item(2).key], place: "after", target: "!4" },
+          },
+          {
+            tool: "reviews_order",
+            arguments: { keys: ["g/p!1"], place: "before", target: "ghost" },
+          },
+        ],
+        answer: "done",
+      },
+    ]);
+    moreRequests(t);
+    try {
+      t.agent.send("put 5 at the top, then 2 after 4");
+      await t.answered();
+      const [first, second, third] = t.fake.seen[0]!.results.map((result) =>
+        json(result.text),
+      );
+      expect(first).toMatchObject({
+        changed: true,
+        moved: ["g/p!5"],
+        unknown: ["nowhere!9"],
+        now_first: { suggested: ["g/p!5", "g/p!2", "g/p!4"] },
+      });
+      expect(second).toMatchObject({ changed: true, moved: ["g/p!2"] });
+      expect(second.now_first.suggested).toEqual(["g/p!5", "g/p!4", "g/p!2"]);
+      expect(third).toMatchObject({ changed: false, unknown: ["ghost"] });
+      // The user's order, saved: the others keep their place.
+      expect(t.settings().order.slice(0, 4)).toEqual([
+        item(1).key,
+        item(5).key,
+        item(4).key,
+        item(2).key,
+      ]);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("reviews_sort sets the order once", async () => {
+    const t = setup([
+      {
+        steps: [
+          { tool: "reviews_order", arguments: { keys: ["!5"], place: "top" } },
+          {
+            tool: "reviews_sort",
+            arguments: { by: "score", section: "suggested" },
+          },
+        ],
+        answer: "sorted",
+      },
+    ]);
+    moreRequests(t);
+    try {
+      t.agent.send("sort the suggestions by score");
+      await t.answered();
+      const sorted = json(t.fake.seen[0]!.results[1]!.text);
+      expect(sorted).toMatchObject({
+        changed: true,
+        sorted: ["suggested"],
+        now_first: { suggested: ["g/p!2", "g/p!4", "g/p!5"] },
+      });
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("reviews_pin, hide and unhide are the panel's own", async () => {
+    const t = setup([
+      {
+        steps: [
+          { tool: "reviews_hide", arguments: { request: "!4" } },
+          { tool: "reviews_unhide", arguments: { request: "!4" } },
+          { tool: "reviews_unpin", arguments: { request: "!4" } },
+          { tool: "reviews_pin", arguments: { request: "not a request" } },
+        ],
+        answer: "ok",
+      },
+    ]);
+    moreRequests(t);
+    try {
+      t.agent.send("remove 4, bring it back");
+      await t.answered();
+      const results = t.fake.seen[0]!.results;
+      expect(results[0]!.text).toContain("Removed g/p!4");
+      expect(results[1]!.text).toContain("Restored g/p!4");
+      expect(results[2]!.error).toBe(true);
+      expect(results[2]!.text).toContain("not pinned");
+      expect(results[3]!.error).toBe(true);
+      expect(t.settings().hidden).toEqual([]);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("the tools are described and the writing ones are not replayed", () => {
+    const tools = createReviewsAgentTools({} as MrAgentToolDeps);
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    for (const name of [
+      "reviews_list",
+      "reviews_order",
+      "reviews_pin",
+      "reviews_unpin",
+      "reviews_hide",
+      "reviews_unhide",
+      "reviews_sort",
+    ]) {
+      const tool = byName.get(name);
+      expect(tool).toBeDefined();
+      expect(tool!.description.length).toBeGreaterThan(40);
+    }
+    expect(byName.get("reviews_list")!.replay).toBe("safe");
+    expect(byName.get("reviews_order")!.replay).toBe("unsafe");
+    expect(byName.get("reviews_order")!.description).toContain("shared live");
+    expect(
+      Value.Check(reviewsAgentToolSchemas.reviews_order, {
+        keys: ["ab"],
+        place: "top",
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(reviewsAgentToolSchemas.reviews_order, {
+        keys: [],
+        place: "top",
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(reviewsAgentToolSchemas.reviews_order, {
+        keys: ["ab"],
+        place: "middle",
+      }),
+    ).toBe(false);
+    expect(reviewsAgentSystemPrompt()).toContain("reviews_order");
   });
 });

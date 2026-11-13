@@ -17,6 +17,7 @@ import {
   type RpcLane,
 } from "./rpcLanes";
 import { clearSavedTerminalComposerDrafts } from "./terminalComposer";
+import type { MrReviewsPush } from "../../shared/mrReviews";
 import type { ReviewPush } from "../../shared/review";
 import { isReviewSnapshot } from "./reviewValidate";
 
@@ -426,6 +427,29 @@ function wsUrl(): string {
   return `${proto}://${location.host}/ws`;
 }
 
+function parseMrReviewsPush(value: unknown): MrReviewsPush | null {
+  if (!value || typeof value !== "object") return null;
+  const push = value as Record<string, unknown>;
+  const kinds = ["order", "pinned", "hidden"];
+  if (
+    typeof push.version !== "number" ||
+    !Array.isArray(push.order) ||
+    push.order.some((key) => typeof key !== "string") ||
+    !Array.isArray(push.changed) ||
+    push.changed.some((kind) => !kinds.includes(kind as string)) ||
+    (push.by !== "user" && push.by !== "agent")
+  )
+    return null;
+  return {
+    version: push.version,
+    order: push.order as string[],
+    changed: push.changed as MrReviewsPush["changed"],
+    by: push.by,
+    ...(typeof push.summary === "string" ? { summary: push.summary } : {}),
+    ...(typeof push.undo === "number" ? { undo: push.undo } : {}),
+  };
+}
+
 function parseUiSettingPush(value: unknown): UiSettingPush | null {
   if (!value || typeof value !== "object") return null;
   const push = value as Record<string, unknown>;
@@ -543,6 +567,7 @@ export class Bridge {
   private popupHandlers = new Set<(popup: PopupStatePush) => void>();
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
   private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
+  private mrReviewsHandlers = new Set<(push: MrReviewsPush) => void>();
   private forwardsHandlers = new Set<(forwards: ForwardRecord[]) => void>();
   private reviewHandlers = new Set<(push: ReviewPush) => void>();
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
@@ -1203,6 +1228,7 @@ export class Bridge {
     const hasPopup = owns("popup");
     const hasUiSettings = owns("ui_settings");
     const hasWorkspaceTree = owns("workspace_tree");
+    const hasMrReviews = owns("mr_reviews");
     const hasForwards = owns("forwards");
     const hasReview = owns("review");
     const hasControl = owns("control");
@@ -1218,6 +1244,7 @@ export class Bridge {
       hasPopup,
       hasUiSettings,
       hasWorkspaceTree,
+      hasMrReviews,
       hasForwards,
       hasReview,
       hasControl,
@@ -1493,6 +1520,14 @@ export class Bridge {
       return;
     }
 
+    if (hasMrReviews) {
+      // Server-wide: the user's order of the reviews inbox, whichever
+      // connection this page shows.
+      const push = parseMrReviewsPush(msg.mr_reviews);
+      if (push) this.mrReviewsHandlers.forEach((handler) => handler(push));
+      return;
+    }
+
     if (hasWorkspaceTree) {
       // Server-wide, like interface preferences: whichever connection shows.
       this.workspaceTreeHandlers.forEach((handler) =>
@@ -1763,6 +1798,12 @@ export class Bridge {
   onForwards(cb: (forwards: ForwardRecord[]) => void): () => void {
     this.forwardsHandlers.add(cb);
     return () => this.forwardsHandlers.delete(cb);
+  }
+
+  /** The user's order, pins or removals of the reviews inbox changed. */
+  onMrReviews(cb: (push: MrReviewsPush) => void): () => void {
+    this.mrReviewsHandlers.add(cb);
+    return () => this.mrReviewsHandlers.delete(cb);
   }
 
   /** The Workspaces arrangement changed (unvalidated: the reader parses it). */

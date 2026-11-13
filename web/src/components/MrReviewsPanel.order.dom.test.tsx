@@ -102,11 +102,10 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
           refreshing: false,
           ...(order.length ? { order } : {}),
         };
-      if (method === "bridge.mr_reviews.settings.update") {
-        const settings = params.settings as { order: string[] };
-        saves.push(settings.order);
-        order = settings.order;
-        return { order };
+      if (method === "bridge.mr_reviews.order") {
+        order = fakeOrderRpc(listed, order, params);
+        saves.push(order);
+        return { ok: true, version: saves.length };
       }
       return { ok: true };
     };
@@ -116,6 +115,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
       windowOpened.push(url);
       return null;
     };
+    const { fakeOrderRpc } = await import("./mrReviewsFakeOrder");
     const { MrReviewsPanel } = await import("./MrReviewsPanel");
     const host = document.createElement("div");
     document.body.append(host);
@@ -353,7 +353,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
     act(() => root3.unmount());
     host.remove();
     expect(
-      calls.filter((method) => method.endsWith("settings.update")),
+      calls.filter((method) => method.endsWith("mr_reviews.order")),
     ).not.toHaveLength(0);
   });
 }
