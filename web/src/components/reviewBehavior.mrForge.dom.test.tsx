@@ -282,6 +282,34 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await none.unmount();
       });
 
+      test("in a request's review no control labelled Send reaches the forge: the agent's Send is Send to Claude, and nothing submits or publishes", async () => {
+        const held = thread("t1", "discussion", [note("t1a", "you", "Why?")]);
+        const review = await mount({
+          files,
+          ...requestReview(),
+          session: {
+            ...requestReview().session,
+            agent: { name: "Claude", paneId: "w1:p1" },
+            autoSend: false,
+          },
+          threads: [held],
+        });
+        const labels = review.buttons();
+        expect(labels).toContain("Send 1 to Claude");
+        for (const label of labels) {
+          expect(label).not.toMatch(/^(Send|Submit|Publish)( \d+)?$/);
+          expect(label).not.toMatch(/\b(submit|publish)\b/i);
+        }
+        await review.clickButton("Send 1 to Claude");
+        expect(review.calls("review.handoff")).toHaveLength(1);
+        // Nothing of it went to the forge: no submit, publish or resolve call.
+        const methods = review.calls().map((call) => call.method);
+        expect(
+          methods.filter((m) => /submit|publish|forge|resolve/.test(m)),
+        ).toEqual([]);
+        await review.unmount();
+      });
+
       test("Make it mine turns an agent's comment into your forge draft (review.adopt)", async () => {
         const agentDraft = thread("t1", "draft", [
           note("t1a", "Claude", "This loop never ends"),

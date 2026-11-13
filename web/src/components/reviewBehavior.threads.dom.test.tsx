@@ -380,11 +380,11 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.push({ session: { autoSend: false } });
         expect(marks()).toEqual(["for Claude, not sent"]);
         expect(shown(review, "t1")?.messages[1]?.buttons).toEqual([
-          "Send",
+          "Send to Claude",
           "Edit",
         ]);
-        expect(review.buttons()).toContain("Send 1");
-        await review.threadButton("t1", "Send", 1);
+        expect(review.buttons()).toContain("Send 1 to Claude");
+        await review.threadButton("t1", "Send to Claude", 1);
         expect(review.calls("review.handoff")).toHaveLength(1);
         await review.unmount();
       });

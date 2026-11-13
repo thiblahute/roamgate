@@ -172,3 +172,16 @@ test("the client's help says it talks to the review pane", async () => {
     '"""roamgate-review: talk to the Roamgate review pane.',
   );
 });
+
+test("the skill and the tools never offer to publish to a forge: drafts only (user decision 2026-11-13)", () => {
+  expect(REVIEW_SKILL).toContain(
+    "Never offer to publish, submit, resolve or post",
+  );
+  // Where it mentions GitLab, nothing of the agent's goes there but as drafts
+  // the user puts and submits.
+  expect(REVIEW_SKILL).not.toMatch(/sends? (it|them) to GitLab/);
+  for (const tool of ROAMGATE_TOOLS)
+    expect(tool.description).not.toMatch(
+      /\b(publish|submit)\b(?! (the|your) review (on|there))(?!ted)/i,
+    );
+});

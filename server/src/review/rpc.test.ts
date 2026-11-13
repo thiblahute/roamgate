@@ -258,3 +258,25 @@ test("a rendered review's page comes from the connection, only for its own revie
     }),
   ).rejects.toThrow("invalid page");
 });
+
+test("no review method submits, publishes, resolves or posts on a forge: user decision 2026-11-13, drafts only", async () => {
+  const service = setup();
+  for (const method of [
+    "review.gitlab.submit",
+    "review.gitlab.publish",
+    "review.gitlab.send",
+    "review.gitlab.resolve",
+    "review.gitlab.reply",
+    "review.github.submit",
+    "review.github.publish",
+    "review.github.resolve",
+    "review.forge.submit",
+    "review.forge.publish",
+    "review.submit",
+    "review.publish",
+    "review.send",
+  ])
+    await expect(
+      handleReviewRpc(service, local, method, { session_id: "x" }),
+    ).rejects.toThrow(/unknown review method/);
+});

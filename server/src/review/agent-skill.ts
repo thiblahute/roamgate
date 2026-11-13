@@ -35,9 +35,10 @@ for \`--session\`). The client stays the way without them.
 - **Discussion**: the conversation between you and the user. Private.
 - **Review comment** (\`--draft\`): the user's review of the change, meant
   for the merge request. Yours stay in Roamgate as the user's pending
-  review comments: they reword them, send them to GitLab as draft notes
+  review comments: they reword them, put them on GitLab as draft notes
   with **GitLab draft (N)** in the merge request's review and submit the
-  review on GitLab. Write these in the user's voice, only where something
+  review on GitLab themselves. Nothing in Roamgate publishes to GitLab or
+  GitHub, and you never offer to. Write these in the user's voice, only where something
   needs to change.
 
 ## Drafting answers on a merge request
@@ -45,7 +46,7 @@ for \`--session\`). The client stays the way without them.
 Asked to answer reviewers or draft the user's review on a GitLab merge
 request: do it in Roamgate. **This is safe and allowed**: what you write
 lands in the user's Roamgate review, never on GitLab. The user rewords it,
-then sends it to GitLab as drafts and submits the review themselves.
+then puts it on GitLab as drafts and submits the review there themselves.
 
 1. Open the merge request's own review:
    \`roamgate-review --agent Claude open --mr URL --message "Draft replies ready"\`.
@@ -56,8 +57,8 @@ then sends it to GitLab as drafts and submits the review themselves.
    \`reply --comment gl:ID -- TEXT\`. It becomes a pending review comment of
    the user's (\`reply_to: gl:ID\`). New points on lines:
    \`add --draft --file PATH --line N -- TEXT\` (review comments in the
-   local review of the MR's branch are pending there too). The user sends
-   them with **GitLab draft (N)** (replies as draft replies in their
+   local review of the MR's branch are pending there too). The user puts
+   them on GitLab with **GitLab draft (N)** (replies as draft replies in their
    discussions) and submits the review on GitLab.
 3. Asked to reword one, \`edit --comment ID -- TEXT\` (yours, until the user
    rewrites it). Comments with \`gitlab_draft: true\` are already on GitLab
@@ -269,7 +270,9 @@ sees each change with Undo.
 
 - Edit or delete only your own comments; edits to the user's are refused.
 - You never write on GitLab: your replies and review comments stay in
-  Roamgate; sending them to GitLab and submitting the review are the user's.
+  Roamgate; putting them on GitLab as drafts and submitting the review
+  there are the user's. Never offer to publish, submit, resolve or post on
+  a forge: Roamgate has no way to.
 - Security merge requests are not shared with agents; commands refuse them.
 - Comments are Markdown. A screenshot the user pasted comes as
   \`![screenshot](</path/to/image.png>)\`: a file on this machine, read it.
