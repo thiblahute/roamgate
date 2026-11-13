@@ -1448,7 +1448,13 @@ export function createReviewService(args: {
     if (!gitlabMode(target))
       throw new ReviewError("this is not a merge request's review");
     const id = text(params.threadId, "thread", 200);
-    const thread = threadsOf(target.id).get(id);
+    // Its own, or one a local review of the branch wrote and this merge
+    // request's review shows (pending for it, as pendingDrafts tells).
+    const thread = [
+      ...threadsOf(target.id).values(),
+      ...pendingDrafts(target),
+    ].find((each) => each.id === id);
+    const owner = (thread && sessions.get(thread.sessionId)) ?? target;
     if (!thread || thread.kind === "merge-request")
       throw new ReviewError("no such thread of an agent", 404);
     const theirs = [...thread.comments]
@@ -1467,13 +1473,14 @@ export function createReviewService(args: {
       text: wording,
     });
     if (thread.kind === "draft") {
-      threadsOf(target.id).delete(thread.id);
+      threadsOf(owner.id).delete(thread.id);
       storage.deleteThread(thread.id);
     } else {
       thread.resolved = true;
       thread.updatedAt = now();
       storage.saveThread(thread);
     }
+    if (owner !== target) changed(owner);
     changed(target);
     return snapshot(target);
   }

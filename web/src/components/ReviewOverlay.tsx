@@ -797,6 +797,10 @@ export function ReviewOverlay({
   const [editor, setEditor] = useState<Editor | null>(null);
   const editorHandle = useRef<CommentEditorHandle | null>(null);
   const [status, setStatus] = useState("");
+  /** Why "Make it mine" failed, by thread: shown on the thread. */
+  const [adoptFailures, setAdoptFailures] = useState<Record<string, string>>(
+    {},
+  );
   const [search, setSearch] = useState<{
     pattern: string;
     wholeWord: boolean;
@@ -5481,17 +5485,35 @@ export function ReviewOverlay({
   /** "Make it mine": the agent's words become the user's forge draft. */
   function adoptButton(thread: ReviewThread): ReactNode {
     if (!adoptable(thread)) return null;
+    const failure = adoptFailures[thread.id];
     return (
-      <button
-        type="button"
-        className="btn ghost"
-        title={`Its text becomes your draft on ${forge}; you submit your review there. Edit it there or here after.`}
-        onClick={() =>
-          void run(() => call("review.adopt", { thread_id: thread.id }))
-        }
-      >
-        Make it mine
-      </button>
+      <>
+        {failure ? (
+          <span className="rc-kind rc-failed" role="alert">
+            Not made yours: {failure}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          className="btn ghost"
+          title={`Its text becomes your draft on ${forge}; you submit your review there. Edit it there or here after.`}
+          onClick={() => {
+            setAdoptFailures((failures) => {
+              const kept = { ...failures };
+              delete kept[thread.id];
+              return kept;
+            });
+            call("review.adopt", { thread_id: thread.id }).catch((error) =>
+              setAdoptFailures((failures) => ({
+                ...failures,
+                [thread.id]: errorText(error),
+              })),
+            );
+          }}
+        >
+          Make it mine
+        </button>
+      </>
     );
   }
 
