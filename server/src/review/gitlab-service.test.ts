@@ -6,6 +6,7 @@ import type { ReviewDiff } from "../../../shared/review";
 import { parseUnifiedDiff } from "./patch";
 import { createReviewService, type ReviewService } from "./service";
 import { openReviewStorage } from "./storage";
+import { handleReviewRpc } from "./rpc";
 
 /** The merge request reviews of GitLab mode, against a fake glab. */
 
@@ -531,4 +532,39 @@ test("make it mine: an agent's thread becomes the user's draft, on the user's wo
   expect(local.map((each) => [each.id, each.resolved])).toEqual([
     [talk.id, true],
   ]);
+});
+
+test("make it mine takes an agent's draft of a local review, shown in the merge request's review", async () => {
+  const { service, drafts } = make({ webProject: "g/p" });
+  const review = openMr(service, "g/p");
+  await service.refreshGitlab({ sessionId: review.id });
+  const local = service.open({
+    connectionId: "c",
+    root: "/repo",
+    target: { kind: "worktree" },
+    raise: false,
+  }).session;
+  const draft = await service.addThread({
+    sessionId: local.id,
+    ...agent,
+    kind: "draft",
+    anchor: { path: "a.c", line: 2, side: "new" },
+    text: "Check the error path",
+  });
+  // Pending for the merge request of its branch: shown in the review.
+  draft.pendingFor = "https://gitlab.example/g/p/-/merge_requests/3";
+  expect(
+    service.get({ sessionId: review.id }).threads.map((each) => each.id),
+  ).toContain(draft.id);
+  // Through the RPC dispatcher the browser calls, as the review pane does.
+  await handleReviewRpc(
+    service,
+    { id: "c", resolveRoot: async () => "/repo" },
+    "review.adopt",
+    { session_id: review.id, thread_id: draft.id },
+  );
+  expect(drafts.map((each) => each.note)).toEqual(["Check the error path"]);
+  expect(
+    service.get({ sessionId: local.id }).threads.map((each) => each.id),
+  ).not.toContain(draft.id);
 });

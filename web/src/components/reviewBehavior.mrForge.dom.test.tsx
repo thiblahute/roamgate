@@ -313,6 +313,23 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(local.buttons()).not.toContain("Make it mine");
         await local.unmount();
       });
+      test("Make it mine that fails says why, on its thread", async () => {
+        const agentDraft = thread("t1", "draft", [
+          note("t1a", "Claude", "This loop never ends"),
+        ]);
+        const review = await mount({
+          files,
+          ...requestReview(),
+          threads: [agentDraft],
+        });
+        review.failBridge(["review.adopt"], "no such thread of an agent");
+        await review.clickButton("Make it mine");
+        expect(review.calls("review.adopt")).toHaveLength(1);
+        expect(review.text()).toContain(
+          "Not made yours: no such thread of an agent",
+        );
+        await review.unmount();
+      });
       test("r on a selected forge discussion only folds it: nothing is resolved on the forge", async () => {
         const review = await mount({
           files: [added("a.ts", 4)],
