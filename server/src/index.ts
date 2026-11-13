@@ -955,6 +955,12 @@ function getMrReviews(): MrReviews {
   if (mrReviews) return mrReviews;
   mrReviews = createMrReviews({
     run: runProcessWithCodeTimeout,
+    // The order, pins and removals belong to this server: every page
+    // follows them at once, whichever connection it shows.
+    publish: (push) => {
+      const line = JSON.stringify({ mr_reviews: push });
+      for (const ws of clients) safeSend(ws, line, "mr-reviews");
+    },
     connections: mrReviewConnections,
     tree: {
       read: () => readWorkspaceTree(),

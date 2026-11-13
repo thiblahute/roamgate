@@ -34,8 +34,9 @@ import { useLayoutPreferences } from "../layoutPreferences";
 import {
   hideMrRequest,
   mrReviewsCall,
+  onMrReviewsChange,
+  orderMrRequests,
   pinMrRequest,
-  saveMrReviewsSettings,
   unhideMrRequest,
   useMrInbox,
 } from "../mrReviews";
@@ -900,13 +901,26 @@ export function MrReviewsPanel({
     setSelected(ordered[next]!.key);
   };
 
-  /** Saves the user's order: every request listed, the gone ones left out. */
+  /**
+   * Moves a request in the user's order: shown here at once, and sent as an
+   * operation on the server's latest order (never a whole list that another
+   * device or the agent may have changed since). Every device follows by push.
+   */
   const saveSeq = useRef(0);
-  const saveOrder = (next: string[]) => {
-    setLocalOrder(next);
+  const reorder = (key: string, target: string, place: "before" | "after") => {
+    const section = entries.find((entry) => entry.key === key)?.section;
+    const other = entries.find((entry) => entry.key === target)?.section;
+    if (!section || section !== other) return;
+    const keys = (list: MrInboxEntry[]) => list.map((entry) => entry.key);
+    const moved = moveMrKey(keys(bySection[section]), key, target, place);
+    setLocalOrder(
+      SECTIONS.flatMap((each) =>
+        each === section ? moved : keys(bySection[each]),
+      ),
+    );
     setOrderError(null);
     const seq = ++saveSeq.current;
-    void saveMrReviewsSettings({ order: next })
+    void orderMrRequests({ op: place, keys: [key], target })
       .then(() => reload())
       .then(
         () => {
@@ -917,20 +931,6 @@ export function MrReviewsPanel({
             `Your order was not saved: ${cause instanceof Error ? cause.message : String(cause)}`,
           ),
       );
-  };
-
-  /** `key` just before or after `target`, in their section. */
-  const reorder = (key: string, target: string, place: "before" | "after") => {
-    const section = entries.find((entry) => entry.key === key)?.section;
-    const other = entries.find((entry) => entry.key === target)?.section;
-    if (!section || section !== other) return;
-    const keys = (list: MrInboxEntry[]) => list.map((entry) => entry.key);
-    const moved = moveMrKey(keys(bySection[section]), key, target, place);
-    saveOrder(
-      SECTIONS.flatMap((each) =>
-        each === section ? moved : keys(bySection[each]),
-      ),
-    );
   };
 
   /** The selected request `step` places down (up when negative), as shown. */
@@ -1026,7 +1026,8 @@ export function MrReviewsPanel({
   const [undo, setUndo] = useState<{
     label: string;
     key: string;
-    run: () => Promise<unknown>;
+    /** Absent: only said (the agent's pin, which has no Undo). */
+    run?: () => Promise<unknown>;
   } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -1086,14 +1087,36 @@ export function MrReviewsPanel({
       );
   };
 
+  // What the agent changed in the list, here and on the user's other
+  // devices: said, with Undo when it can be taken back.
+  useEffect(
+    () =>
+      onMrReviewsChange((push) => {
+        if (push.by !== "agent" || !push.summary) return;
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        const version = push.undo;
+        setUndo({
+          label: push.summary,
+          key: "",
+          ...(version === undefined
+            ? {}
+            : { run: () => orderMrRequests({ op: "undo", version }) }),
+        });
+        undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+      }),
+    [],
+  );
+
   const undoRemoval = () => {
-    if (!undo) return;
+    if (!undo?.run) return;
     const { run, key } = undo;
     if (undoTimer.current) clearTimeout(undoTimer.current);
     setUndo(null);
     void run()
       .then(() => reload())
-      .then(() => setSelected(key))
+      .then(() => {
+        if (key) setSelected(key);
+      })
       .catch((cause) =>
         setOrderError(
           `Could not undo it: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -1242,7 +1265,7 @@ export function MrReviewsPanel({
       addRef.current?.focus();
     } else if ((fed.key === "dd" || event.key === "Delete") && current) {
       remove(current);
-    } else if (event.key === "u" && undo) {
+    } else if (event.key === "u" && undo?.run) {
       undoRemoval();
     } else if (event.key === "H") {
       setHiddenOpen((open) => !open);
@@ -1776,9 +1799,15 @@ export function MrReviewsPanel({
               {undo ? (
                 <div className="mr-reviews-undo" role="status">
                   <span>{undo.label}.</span>
-                  <button type="button" className="ghost" onClick={undoRemoval}>
-                    Undo (u)
-                  </button>
+                  {undo.run ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={undoRemoval}
+                    >
+                      Undo (u)
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </>

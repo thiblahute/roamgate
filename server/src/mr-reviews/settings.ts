@@ -1,5 +1,6 @@
 import type { ForgeProvider, ForgeRef } from "../../../shared/forge";
 import { forgeRefKey, validHost, validProject } from "../../../shared/forge";
+import { MAX_ORDER } from "../../../shared/mrReviewsOrder";
 import {
   DEFAULT_MR_REVIEWS_SETTINGS,
   type MrReviewsSettings,
@@ -18,14 +19,14 @@ export type StoredMrReviewsSettings = {
   tree_groups?: Record<string, string[]>;
   clones?: Record<string, { connection_id: string; path: string }>;
   order?: string[];
+  order_version?: number;
   pinned?: ForgeRef[];
   hidden?: { key: string; marker: string }[];
 };
 
 export const MAX_HOSTS = 10;
 export const MAX_FOLLOWED = 30;
-/** Requests kept in the user's order. */
-export const MAX_ORDER = 500;
+export { MAX_ORDER };
 /** Requests the user added by URL. */
 export const MAX_PINNED = 100;
 /** Requests the user removed from the view (the oldest forgotten first). */
@@ -137,6 +138,8 @@ export function normalizeStoredMrReviews(
       .filter((key) => !seen.has(key) && !!seen.add(key))
       .slice(0, MAX_ORDER);
   }
+  const version = Number(value.order_version);
+  if (Number.isSafeInteger(version) && version > 0) out.order_version = version;
   if (Array.isArray(value.pinned)) {
     const seen = new Set<string>();
     out.pinned = list(value.pinned)
@@ -205,6 +208,7 @@ export function mrReviewsSettings(
       ]),
     ),
     order: stored?.order ?? base.order,
+    orderVersion: stored?.order_version ?? 0,
     pinned: stored?.pinned ?? base.pinned,
     hidden: stored?.hidden ?? base.hidden,
   };
@@ -230,6 +234,7 @@ export function storedMrReviews(
       ]),
     ),
     ...(settings.order.length ? { order: settings.order } : {}),
+    ...(settings.orderVersion ? { order_version: settings.orderVersion } : {}),
     ...(settings.pinned.length ? { pinned: settings.pinned } : {}),
     ...(settings.hidden.length ? { hidden: settings.hidden } : {}),
   };

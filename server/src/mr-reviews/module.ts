@@ -1,4 +1,7 @@
-import type { MrReviewsSettings } from "../../../shared/mrReviews";
+import type {
+  MrReviewsPush,
+  MrReviewsSettings,
+} from "../../../shared/mrReviews";
 import {
   type GuiSettings,
   readGuiSettings,
@@ -25,6 +28,7 @@ import {
   MrReviewsError,
   type MrReviewsRpcDeps,
 } from "./rpc";
+import { type MrChangeMeta, createMrOrder } from "./order";
 import { mrReviewsSettings, storedMrReviews } from "./settings";
 import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
 
@@ -75,6 +79,8 @@ export function createMrReviews(options: {
   /** The reviews agent (tests: one on a fake driver). */
   agent?: (deps: Parameters<typeof createMrAgent>[0]) => MrAgent;
   more?: MrReviewsRpcDeps["more"];
+  /** Tells every page the order, pins or removals changed. */
+  publish?: (push: MrReviewsPush) => void;
 }) {
   const logger = serverLogger.child("mr-reviews");
   const store = options.store ?? openMrStore();
@@ -94,6 +100,50 @@ export function createMrReviews(options: {
     if (!discovered || Date.now() - discovered.at > HOSTS_TTL_MS)
       discovered = { at: Date.now(), hosts: discover() };
     return { ...value, hosts: discovered.hosts };
+  }
+
+  /**
+   * Saves the settings. A change of the order, the pins or the removals
+   * takes the next version (in the same write) and is pushed to every page.
+   */
+  async function saveSettings(
+    next: MrReviewsSettings,
+    meta: MrChangeMeta = { by: "user" },
+  ): Promise<MrReviewsSettings> {
+    let changed: MrReviewsPush["changed"] = [];
+    const written = await updateGuiSettings((current) => {
+      const before = mrReviewsSettings(current.mr_reviews);
+      const same = (a: unknown, b: unknown) =>
+        JSON.stringify(a) === JSON.stringify(b);
+      changed = [
+        ...(same(before.order, next.order) ? [] : ["order" as const]),
+        ...(same(before.pinned, next.pinned) ? [] : ["pinned" as const]),
+        ...(same(before.hidden, next.hidden) ? [] : ["hidden" as const]),
+      ];
+      return {
+        ...current,
+        mr_reviews: storedMrReviews({
+          ...next,
+          orderVersion: (before.orderVersion ?? 0) + (changed.length ? 1 : 0),
+        }),
+      };
+    });
+    discovered = null;
+    const saved = mrReviewsSettings(written.mr_reviews);
+    if (changed.length) {
+      order.remember(saved);
+      options.publish?.({
+        version: saved.orderVersion ?? 0,
+        order: saved.order,
+        changed,
+        by: meta.by,
+        ...(meta.summary ? { summary: meta.summary } : {}),
+        ...(meta.undoable && changed.includes("order")
+          ? { undo: saved.orderVersion ?? 0 }
+          : {}),
+      });
+    }
+    return saved;
   }
 
   const clones = createCloneFinder();
@@ -128,6 +178,7 @@ export function createMrReviews(options: {
     },
     curation: () => curation.state(),
   });
+  const order = createMrOrder({ inbox, settings: saved, save: saveSettings });
   opener = createMrOpener({
     inbox,
     store,
@@ -246,6 +297,8 @@ export function createMrReviews(options: {
       inbox,
       store,
       signals: () => curation.signals(inbox.items()),
+      order,
+      rpc: (method, params) => rpc(method, params),
       saveHints: async (hints) => {
         await updateGuiSettings((current) => ({
           ...current,
@@ -451,6 +504,33 @@ export function createMrReviews(options: {
     }
   };
 
+  const rpc = (method: string, params: Record<string, unknown>) =>
+    handleMrReviewsRpc(
+      {
+        inbox,
+        settings: async () => {
+          // The settings page shows what is saved, and the hosts found.
+          const value = await saved();
+          return {
+            ...value,
+            discoveredHosts: value.hosts.length ? [] : (await settings()).hosts,
+            reviewWorktrees: Object.entries(store.get().projects).map(
+              ([project, record]) => ({
+                project,
+                connectionId: record.connectionId,
+                path: record.worktree,
+              }),
+            ),
+          };
+        },
+        saveSettings,
+        order,
+        more,
+      },
+      method,
+      params,
+    );
+
   return {
     inbox,
     store,
@@ -459,41 +539,8 @@ export function createMrReviews(options: {
     claude,
     curation,
     lifecycle,
-    handle(method: string, params: Record<string, unknown>) {
-      return handleMrReviewsRpc(
-        {
-          inbox,
-          settings: async () => {
-            // The settings page shows what is saved, and the hosts found.
-            const value = await saved();
-            return {
-              ...value,
-              discoveredHosts: value.hosts.length
-                ? []
-                : (await settings()).hosts,
-              reviewWorktrees: Object.entries(store.get().projects).map(
-                ([project, record]) => ({
-                  project,
-                  connectionId: record.connectionId,
-                  path: record.worktree,
-                }),
-              ),
-            };
-          },
-          saveSettings: async (next) => {
-            const written = await updateGuiSettings((current) => ({
-              ...current,
-              mr_reviews: storedMrReviews(next),
-            }));
-            discovered = null;
-            return mrReviewsSettings(written.mr_reviews);
-          },
-          more,
-        },
-        method,
-        params,
-      );
-    },
+    handle: rpc,
+    order,
     agent: reviewsAgent,
     start: () => inbox.start(),
     stop: () => {

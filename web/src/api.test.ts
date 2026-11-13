@@ -297,6 +297,69 @@ test.each([undefined, false, true])(
   },
 );
 
+test("the reviews order push is server-wide and checked", () => {
+  class OrderSocket extends HangingWebSocket {
+    static instance: OrderSocket;
+    constructor() {
+      super();
+      OrderSocket.instance = this;
+    }
+  }
+  installBrowserGlobals(OrderSocket as unknown as typeof WebSocket);
+  const bridge = createTestBridge(1000);
+  bridge.connect();
+  const socket = OrderSocket.instance;
+  socket.readyState = WebSocket.OPEN;
+  const received: unknown[] = [];
+  const unsubscribe = bridge.onMrReviews((push) => received.push(push));
+  const push = (value: unknown) =>
+    socket.onmessage?.({ data: JSON.stringify(value) } as MessageEvent);
+  const change = {
+    version: 3,
+    order: ["a", "b"],
+    changed: ["order"],
+    by: "agent",
+    summary: "Claude moved 1 request to the top",
+    undo: 3,
+  };
+  // Not before the hello.
+  push({ mr_reviews: change });
+  expect(received).toEqual([]);
+  push({
+    hello: true,
+    bridge_protocol_version: 2,
+    default_connection_id: "alpha",
+    capabilities: { connection_id: true },
+  });
+  for (const invalid of [
+    null,
+    { ...change, version: "3" },
+    { ...change, order: [1] },
+    { ...change, changed: ["settings"] },
+    { ...change, by: "someone" },
+  ])
+    push({ mr_reviews: invalid });
+  expect(received).toEqual([]);
+  push({ mr_reviews: change });
+  // Whichever connection the page shows.
+  bridge.setActiveConnection("beta");
+  push({ mr_reviews: { ...change, version: 4, by: "user" } });
+  expect(received).toEqual([
+    change,
+    {
+      version: 4,
+      order: ["a", "b"],
+      changed: ["order"],
+      by: "user",
+      summary: change.summary,
+      undo: 3,
+    },
+  ]);
+  unsubscribe();
+  push({ mr_reviews: change });
+  expect(received).toHaveLength(2);
+});
+
 describe("bridge connection lifecycle", () => {
   test("marks the bridge connected only after a valid hello", async () => {
     class OpeningWebSocket extends HangingWebSocket {

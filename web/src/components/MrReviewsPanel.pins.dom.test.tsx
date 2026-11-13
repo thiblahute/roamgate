@@ -145,13 +145,21 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
         case "bridge.mr_reviews.unhide":
           hiddenKeys = hiddenKeys.filter((each) => each !== params.key);
           return { ok: true };
-        case "bridge.mr_reviews.settings.update":
-          order = (params.settings as { order: string[] }).order;
-          return { order };
+        case "bridge.mr_reviews.order":
+          order = fakeOrderRpc(
+            [
+              ...pins,
+              ...listed.filter((each) => !hiddenKeys.includes(each.key)),
+            ],
+            order,
+            params,
+          );
+          return { ok: true };
         default:
           return { ok: true };
       }
     };
+    const { fakeOrderRpc } = await import("./mrReviewsFakeOrder");
     const { MrReviewsPanel } = await import("./MrReviewsPanel");
     const host = document.createElement("div");
     document.body.append(host);

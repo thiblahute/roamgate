@@ -664,11 +664,37 @@ time it was seen merged or closed, and each project's review worktree. The
 inbox never writes to a forge.
 
 The user's order of the list is the settings' `mr_reviews.order` (request
-keys, at most 500), returned with each `bridge.mr_reviews.inbox` as `order`
-so every device follows it; `settings.update {settings: {order}}` saves it
-alone, without the refresh other settings start. The panel lists requests
-not in it first (the inbox's order), then the others in it, per section,
-and saves only the keys listed, so gone requests drop out.
+keys, at most 500), one flat list applied within each section (pinned, mine,
+suggested), requests not in it first; it wins over the inbox's own sort in
+every section. It is server state, with a version: `mr_reviews.order_version`
+(`orderVersion` in the settings, returned with each
+`bridge.mr_reviews.inbox` as `orderVersion` beside `order`) counts every save
+that changes the order, the pins or the removals, bumped inside the same
+atomic `settings.json` write (`saveSettings` in `module.ts`). A change is an
+operation on the latest order, never a list written over it:
+`bridge.mr_reviews.order {op: top|bottom|before|after|arrange, keys,
+target?}` (`shared/mrReviewsOrder.ts` applies it to the displayed sections;
+before/after act in the target's section, keys of another section are
+reported as `elsewhere`, unlisted ones as `unknown`) and `{op: "undo",
+version}`; all changes run one at a time (`mr-reviews/order.ts`). A whole
+list saved with `settings.update {settings: {order, orderVersion}}` by a page
+that has fallen behind is rebased onto the latest order (what it moved,
+against the list shown at its version, which the server keeps for the last 40
+versions) instead of replacing it; without a version it replaces. The panel
+sends its moves and drags as `before`/`after` operations.
+
+Every save that changes the order, the pins or the removals is pushed to
+every socket, whichever connection a page shows, as
+`{"mr_reviews": {version, order, changed: ["order"|"pinned"|"hidden"], by:
+"user"|"agent", summary?, undo?}}` (like `workspace_tree`; the page parses it
+in `api.ts` as `onMrReviews`). A page keeps the highest version: it applies
+the order at once (an order-only change needs no read), reads the inbox again
+for pins and removals, and an inbox answer older than a push never takes the
+order back. The agent's changes carry a `summary` ("Claude moved 3 requests
+to the top"), and `undo` (the version Undo takes back) for an order change:
+the panel shows them in its removal toast, `u` sends the `undo` operation,
+which restores the previous order when nothing changed since and otherwise
+undoes only what that change moved.
 
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and
@@ -794,7 +820,16 @@ read; `suggest` (a pick in `ranked`, `by: "agent"`; a request found outside
 the inbox's lists is kept in `found` for 14 days so the inbox shows it),
 `feedback` (the inbox's x / +), `set_hints` (the `hints` setting) and
 `open_review` (the browser that asked opens it through the panel's own
-flow) only change the user's own lists, settings or screen. Forge access is
+flow) only change the user's own lists, settings or screen. `reviews_list`
+reads the list as the user sees it (position overall and in the section,
+section, state, pipeline, unread, score and reason, pinned, plus the removed
+ones, and the order version). `reviews_order {keys, place: top|bottom|
+before|after|exact, target?}` applies an order operation as `agent` (keys
+are inbox keys, references or URLs; unknown ones are reported, never fail the
+call) and `reviews_sort {by: score|updated|project|unread, section?}` sets the
+order once from a sort; `reviews_pin|unpin|hide|unhide` call the panel's own
+RPCs with `by: "agent"`. All of them change the shared, pushed order, so a
+move is on every device at once and carries the summary for the toast. Forge access is
 read only: each query is built by `agent-search.ts` as one GraphQL `query`
 (model-given values JSON-quoted, dates checked), sent through the forge
 gate as feature `reviews-agent`, an identical one shared for 2 minutes, at
