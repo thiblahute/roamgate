@@ -1052,8 +1052,8 @@ again, and comments follow their code or show as outdated.
 - Comment a line with `c` (to the agent while **Comments → Agent** is on,
   else a review comment) or `C` (always a discussion with the agent working
   on the code; with no agent pane in the workspace, it waits in
-  [Workspace threads](#workspace-threads)' To send). A message to the agent or a GitLab reply leaves only when
-  you send it (`Cmd+Enter`, Save, `:w`); Esc or moving away keeps it unsent
+  [Workspace threads](#workspace-threads)' To send). A message to the agent or a draft reply on the forge leaves only when
+  you save it (`Cmd+Enter`, Save, `:w`); Esc or moving away keeps it unsent
   until you reopen it. Unsent text, and text whose save failed, stays in this
   browser through reloads and connection switches. `t` hides every comment until you show them again, click a
   marked line, or the agent answers; each review opens with them shown.
@@ -1165,8 +1165,11 @@ again, and comments follow their code or show as outdated.
   moved to today's code), and your review comments and overall comment as
   GitLab draft notes, shared with any other tool that writes them. Review
   comments written in the local review (and the agent's draft replies) wait
-  there until **GitLab draft (N)** sends them; you submit the review on
-  GitLab. **Local** goes back to the local review; each keeps its own place.
+  there until **GitLab draft (N)** puts them on GitLab as draft notes; you
+  submit the review on GitLab. In this mode the head's **Send** (and each
+  held comment's) reads **Send to Claude** (the agent's name): it only
+  hands your comments and the open discussions to the agent, and nothing
+  labelled Send reaches GitLab or GitHub. **Local** goes back to the local review; each keeps its own place.
   A GitHub pull request's conversation comments show as discussions of the
   whole request; GitHub keeps no draft of a reply to them, so they are
   answered on GitHub. Replies to discussions are draft replies too, published only when you

@@ -5008,7 +5008,9 @@ export function ReviewOverlay({
                           title={`Send your held comments to ${delivery.agentName} (:send)`}
                           onClick={() => void handoff()}
                         >
-                          Send
+                          {session.gitlab
+                            ? `Send to ${delivery.agentName}`
+                            : "Send"}
                         </button>
                       </>
                     ) : delivery.talk && delivery.undeliveredReason ? (
@@ -5039,7 +5041,9 @@ export function ReviewOverlay({
                           title={`Send your comments to ${delivery.agentName} (:send)`}
                           onClick={() => void handoff()}
                         >
-                          Send
+                          {session.gitlab
+                            ? `Send to ${delivery.agentName}`
+                            : "Send"}
                         </button>
                       </>
                     ) : (
@@ -5826,7 +5830,7 @@ export function ReviewOverlay({
         ) : session.gitlab ? (
           <span
             className="rv-mr-chip rv-mode"
-            title={`Reviewing the request on ${forge}`}
+            title={`Reviewing the request on ${forge}: your comments are drafts there until you submit the review on ${forge}; Roamgate never publishes`}
           >
             {forge}
           </span>
@@ -5845,7 +5849,13 @@ export function ReviewOverlay({
             onClick={() => void handoff()}
           >
             <Send size={14} />
-            {waitingCount ? `Send ${waitingCount}` : "Send"}
+            {session.gitlab
+              ? waitingCount
+                ? `Send ${waitingCount} to ${agentName}`
+                : `Send to ${agentName}`
+              : waitingCount
+                ? `Send ${waitingCount}`
+                : "Send"}
           </button>
         ) : null}
         {modeSwitch ? (
@@ -6034,7 +6044,7 @@ export function ReviewOverlay({
           <button
             type="button"
             className="btn primary rv-sm"
-            title="Send the review comments waiting here (the local review's and the agent's drafts) to GitLab as draft notes; you submit the review there"
+            title="Put the review comments waiting here (the local review's and the agent's drafts) on GitLab as draft notes, not published; you submit the review there"
             onClick={() =>
               void run(async () =>
                 rememberReviewSnapshot(

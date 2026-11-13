@@ -612,8 +612,8 @@ review of the merge request (target `mr`, opened from the local review by
 are GitLab draft notes read and written through `glab api` on the checkout
 host, and nothing of them is kept locally. Review comments written in a
 local review of the same checkout on the merge request's branch, and
-agents' draft replies, are shown there as pending and sent by
-`review.gitlab.push`. A local review comment records the merge request found
+agents' draft replies, are shown there as pending and put on GitLab as
+draft notes by `review.gitlab.push` (a draft, never published). A local review comment records the merge request found
 for its branch when it is written (`pendingFor`), so a later checkout of
 another branch does not move it; one written before any merge request was
 found follows its review's branch, checked again before sending. Local from
@@ -1314,7 +1314,11 @@ A reply to a forge discussion is a draft too: a GitLab draft note with
 `in_reply_to_discussion_id`, or `addPullRequestReviewThreadReply` with the
 pending review's id on GitHub (checked to stay in that review). The review
 code has no call that publishes: no note or comment POST, no resolve, no
-submit (`forge-writes.test.ts` checks its sources).
+submit (`forge-writes.test.ts` checks its sources, and `rpc.test.ts` that
+no `review.*` method for submitting, publishing or resolving on a forge
+exists). In a request's review the head's **Send** (`:send`) only hands
+comments and open discussions to the agent: it reads **Send to <agent>**
+there, and nothing labelled Send reaches the forge.
 
 `mr-reviews/curation.ts`: after an inbox refresh, at most every 20
 minutes and one at a time, the followed projects' open requests not yet
