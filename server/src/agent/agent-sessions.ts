@@ -2,11 +2,14 @@ import { isRecord } from "./session-utils";
 import { SessionImageGoneError, sessionImage } from "./session-images";
 import {
   type AgentTask,
+  commandOutputsToWatch,
   subagentsToWatch,
   type WorkflowAgentView,
   type WorkflowView,
+  withCommandActivity,
   withSubagentActivity,
 } from "./session-tasks";
+import { heldOpenFiles } from "./task-output-holders";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { enrichAgentActivity } from "./agent-activity";
@@ -46,40 +49,80 @@ const TASK_ENTRIES = 200;
 const SUBAGENT_STAT_MS = 5000;
 
 /**
- * What the session's subagents' own conversations say of their tasks
- * (session-tasks.ts `withSubagentActivity`): only those that may say more
- * than the transcript are looked at, each at most every few seconds, as
- * the Tasks sheet and the Workspaces list poll.
+ * What the session's subagents' own conversations, and its background
+ * commands' output files, say of their tasks (session-tasks.ts
+ * `withSubagentActivity`, `withCommandActivity`): only those that may say
+ * more than the transcript are looked at, each at most every few seconds,
+ * as the Tasks sheet and the Workspaces list poll.
  */
-function createSubagentWatcher(files: AgentSessionFileAccess) {
+export function createTaskWatcher(
+  files: AgentSessionFileAccess,
+  clock: () => number = Date.now,
+) {
   const seen = new Map<
     string,
     { at: number; file: { mtimeMs: number } | null }
   >();
+  // Which output files a process holds open, looked up every few seconds.
+  let held: {
+    at: number;
+    checked: Set<string>;
+    open: Set<string> | null;
+  } | null = null;
+  const stat = async (path: string, now: number) => {
+    let entry = seen.get(path);
+    if (!entry) {
+      const file = await files.statFile(path).catch(() => null);
+      entry = { at: now, file: file ? { mtimeMs: file.mtimeMs } : null };
+      seen.set(path, entry);
+    }
+    return entry.file;
+  };
+  const holds = async (paths: string[], now: number) => {
+    if (files.remote) return null;
+    const fresh =
+      held &&
+      now - held.at < SUBAGENT_STAT_MS &&
+      paths.every((path) => held!.checked.has(path));
+    if (!fresh)
+      held = {
+        at: now,
+        checked: new Set(paths),
+        open: await heldOpenFiles(paths),
+      };
+    return held!.open;
+  };
   return async (
     sessionPath: string,
     tasks: AgentTask[],
   ): Promise<AgentTask[]> => {
-    const now = Date.now();
+    const now = clock();
     const ids = subagentsToWatch(tasks, now);
-    if (!ids.length) return tasks;
+    const outputs = commandOutputsToWatch(tasks, now);
+    if (!ids.length && !outputs.length) return tasks;
     const dir = `${sessionPath.replace(/\.jsonl$/, "")}/subagents`;
     for (const [path, entry] of seen)
       if (now - entry.at >= SUBAGENT_STAT_MS) seen.delete(path);
     const activity = new Map<string, { mtimeMs: number } | null>();
     await Promise.all(
       ids.map(async (id) => {
-        const path = `${dir}/agent-${id}.jsonl`;
-        let entry = seen.get(path);
-        if (!entry) {
-          const file = await files.statFile(path).catch(() => null);
-          entry = { at: now, file: file ? { mtimeMs: file.mtimeMs } : null };
-          seen.set(path, entry);
-        }
-        activity.set(id, entry.file);
+        activity.set(id, await stat(`${dir}/agent-${id}.jsonl`, now));
       }),
     );
-    return withSubagentActivity(tasks, activity, now);
+    let next = withSubagentActivity(tasks, activity, now);
+    if (outputs.length) {
+      const outputActivity = new Map<string, { mtimeMs: number } | null>();
+      await Promise.all(
+        outputs.map(async (path) => {
+          outputActivity.set(path, await stat(path, now));
+        }),
+      );
+      const open = await holds(outputs, now);
+      next = withCommandActivity(next, outputActivity, now, (path) =>
+        open ? open.has(path) : null,
+      );
+    }
+    return next;
   };
 }
 const TASK_ENTRY_CHARS = 4000;
@@ -285,7 +328,7 @@ export function createAgentSessionHandlers(args: {
   const cache = createSessionProjectionCache(args.files, undefined, {
     store: args.indexStore ?? null,
   });
-  const subagentActivity = createSubagentWatcher(args.files);
+  const taskActivity = createTaskWatcher(args.files);
   return {
     /** The pane's session file now, for the history watcher. */
     resolvePath: async (params: Record<string, unknown>) =>
@@ -515,7 +558,7 @@ export function createAgentSessionHandlers(args: {
       const projection = await cache.aggregates(resolved);
       // The session they belong to: its transcript's name, its id for Claude.
       return {
-        tasks: await subagentActivity(resolved.file.path, projection.tasks),
+        tasks: await taskActivity(resolved.file.path, projection.tasks),
         session: basename(resolved.file.path).replace(/\.jsonl$/, ""),
         ...(isPartial(projection) ? { partial: true } : {}),
       };
@@ -540,7 +583,7 @@ export function createAgentSessionHandlers(args: {
         task = projection.tasks.find((each) => each.id === params.task_id);
       }
       if (!task) throw new Error("That task is no longer in the session");
-      [task] = await subagentActivity(resolved.file.path, [task]);
+      [task] = await taskActivity(resolved.file.path, [task]);
       if (!task) throw new Error("That task is no longer in the session");
       const sessionDir = resolved.file.path.replace(/\.jsonl$/, "");
       // A conversation beside the session: a subagent's, a teammate's, or
