@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { AssistantMentionTarget } from "../../shared/assistant";
 import {
   adjustAssistantMentions,
   assistantMentionKey,
+  collapseMentionErrors,
   assistantMentionQuery,
   insertAssistantMention,
 } from "./assistantMentions";
@@ -130,4 +131,20 @@ test("native edit ranges preserve the correct identity when equal tokens are del
   );
   expect(replaced.mentions[0]?.connection_id).toBe("third");
   expect(replaced.mentions).toHaveLength(2);
+});
+
+describe("collapseMentionErrors", () => {
+  test("folds an older bridge's line per pane into one and keeps other errors", () => {
+    expect(
+      collapseMentionErrors([
+        "Agent unavailable in a / w1:p1",
+        "Mac is not reachable",
+        "Agent unavailable in b / w2:p1",
+      ]),
+    ).toEqual(["Mac is not reachable", "2 agents could not be read"]);
+    expect(collapseMentionErrors(["Agent unavailable in a / w1:p1"])).toEqual([
+      "1 agent could not be read",
+    ]);
+    expect(collapseMentionErrors([])).toEqual([]);
+  });
 });

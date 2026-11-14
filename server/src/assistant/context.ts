@@ -162,6 +162,13 @@ async function mapScopeReads<T, R>(
   }
 }
 
+/** A pane whose agent has no session to bind a mention to. */
+class MentionUnavailable extends Error {
+  constructor() {
+    super("Agent session is not available for mention");
+  }
+}
+
 export function createAssistantContext(args: {
   catalog(): { id: string; label: string }[];
   lease(connectionId: string): RuntimeLease | null;
@@ -285,6 +292,31 @@ export function createAssistantContext(args: {
     };
   }
 
+  /** A conversation-mode session's title, when it has one; never an error. */
+  async function sessionTitle(
+    lease: RuntimeLease,
+    target: AssistantWorkspace,
+    paneId: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    const read = lease.runtime.agentSessions?.readSummary;
+    if (!read) return null;
+    try {
+      const summary = await readLeased(
+        lease,
+        () => read({ pane_id: paneId, workspace_id: target.workspace_id }),
+        `agent title for pane ${paneId}`,
+        signal,
+      );
+      return isRecord(summary) && typeof summary.title === "string"
+        ? summary.title
+        : null;
+    } catch {
+      signal?.throwIfAborted();
+      return null;
+    }
+  }
+
   async function agentMention(
     target: AssistantWorkspace,
     lease: RuntimeLease,
@@ -302,26 +334,49 @@ export function createAssistantContext(args: {
       target.workspace_id,
       paneId,
     );
+    // Conversation mode holds the pane: Herdr names the agent but not its
+    // session, so the session Roamgate drives there is the identity.
+    const owned = lease.runtime.conversation?.ownedSession(paneId) ?? null;
+    const agentIdentity =
+      occupant.agentIdentity ??
+      (owned && typeof occupant.agent.agent === "string" && occupant.agent.agent
+        ? createHash("sha256")
+            .update(
+              JSON.stringify({
+                terminal_id: occupant.pane.terminal_id,
+                agent: occupant.agent.agent,
+                session: {
+                  source: "roamgate:conversation",
+                  kind: "id",
+                  value: owned.session_id,
+                },
+              }),
+            )
+            .digest("hex")
+        : null);
     if (
-      !occupant.agentIdentity ||
+      !agentIdentity ||
       typeof occupant.agent.agent !== "string" ||
       !occupant.agent.agent
     )
-      throw new Error("Agent session is not available for mention");
+      throw new MentionUnavailable();
+    // The session's title names it better than "claude" does.
+    const title = owned
+      ? await sessionTitle(lease, target, paneId, signal)
+      : null;
     const result = {
       ...workspaceMention(target),
       kind: "agent" as const,
       pane_id: identifier(paneId, "pane_id"),
       terminal_id: identifier(occupant.pane.terminal_id, "terminal_id"),
       agent: occupant.agent.agent,
-      agent_identity: occupant.agentIdentity,
+      agent_identity: agentIdentity,
       label: mentionLabel(
-        occupant.agent.name || occupant.pane.label,
+        occupant.agent.name || occupant.pane.label || title,
         occupant.agent.agent,
       ),
     };
-    if (!isAssistantMentionTarget(result))
-      throw new Error("Agent session is not available for mention");
+    if (!isAssistantMentionTarget(result)) throw new MentionUnavailable();
     return result;
   }
 
@@ -405,18 +460,18 @@ export function createAssistantContext(args: {
     );
     const candidates = lists.flat();
     truncated ||= candidates.length > 200;
+    let unreadable = 0;
     const agents = await mapScopeReads(
       candidates.slice(0, 200),
       async ({ target, paneId }, _index, readSignal) => {
         const lease = leases.get(target.connection_id)!;
         try {
           return await agentMention(target, lease, paneId, readSignal);
-        } catch {
+        } catch (cause) {
           readSignal.throwIfAborted();
           assertCurrent(lease, readSignal);
-          errors.push(
-            `Agent unavailable in ${mentionLabel(target.label, target.workspace_id)} / ${paneId}`,
-          );
+          // A pane with no session to bind is no failure: it is left out.
+          if (!(cause instanceof MentionUnavailable)) unreadable++;
           return null;
         }
       },
@@ -424,6 +479,10 @@ export function createAssistantContext(args: {
     );
     for (const lease of leases.values()) assertCurrent(lease, signal);
     targets.push(...agents.filter((target) => target !== null));
+    if (unreadable)
+      errors.push(
+        `${unreadable} agent${unreadable === 1 ? "" : "s"} could not be read`,
+      );
     return { targets, errors, ...(truncated ? { truncated: true } : {}) };
   }
 
