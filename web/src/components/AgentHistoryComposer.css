@@ -451,6 +451,101 @@
 }
 
 /*
+ * A narrow box (Ranger docked on the side, a small pane): the message box
+ * keeps the whole width of its own line, with a few lines of height, and
+ * the buttons (attach, call, Esc, then Stop, Queue and Send) make a
+ * toolbar under it that wraps. The box is measured, not the screen: the
+ * same panel is wide when maximised. A phone's bottom bar docks the box
+ * with its own layout (`.is-mobile`).
+ */
+.agent-history-composer {
+  container: agent-composer / inline-size;
+}
+
+@container agent-composer (max-width: 719px) {
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-row
+    > .agent-history-composer-field {
+    order: -1;
+    flex: 1 0 100%;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-row
+    > textarea {
+    order: -1;
+    flex: 1 0 100%;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-field
+    textarea {
+    min-height: 52px;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-editor
+    .cm-editor {
+    min-height: 52px;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-editor
+    .cm-content {
+    min-height: 38px;
+  }
+
+  /* The right group (Stop, Queue, Send) sits at the toolbar's end. */
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-stop,
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-queue,
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-send {
+    margin-left: auto;
+  }
+
+  .agent-history-composer:not(.is-mobile)
+    :is(.agent-history-composer-stop, .agent-history-composer-queue)
+    + :is(.agent-history-composer-queue, .agent-history-composer-send) {
+    margin-left: 0;
+  }
+
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-stop {
+    margin-bottom: 6px;
+  }
+}
+
+/* Too narrow for words: the icons say it, and the buttons have titles. */
+@container agent-composer (max-width: 339px) {
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-queue
+    .agent-history-composer-label {
+    display: none;
+  }
+
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-queue {
+    min-width: 36px;
+    padding: 0;
+  }
+}
+
+@container agent-composer (max-width: 259px) {
+  .agent-history-composer:not(.is-mobile)
+    .agent-history-composer-send
+    .agent-history-composer-label {
+    display: none;
+  }
+
+  .agent-history-composer:not(.is-mobile) .agent-history-composer-send {
+    min-width: 36px;
+    padding: 0;
+  }
+}
+
+/*
  * Shell mode: the box starts with `!` (Claude Code's bash mode). Its own
  * colour on the box, the `!` and Run, a monospace font, and where it runs
  * above the box.
