@@ -61,6 +61,7 @@ import type {
   ThreadToolHandler,
   WorkspaceToolResult,
 } from "./tools";
+import type { ArchiveToolHandler } from "./archive-tools";
 import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
 import {
   createAssistantTasks,
@@ -454,6 +455,8 @@ export function createAssistantService(options: {
   globalApprovalMode?(): AssistantConfig["approval_mode"];
   /** Ranger's Workspaces arrangement tools (workspace-tree-tools.ts). */
   workspaceTree?: WorkspaceTreeToolHandler;
+  /** Searches and reads the session archive. */
+  archive?: ArchiveToolHandler;
   /**
    * Answers a comment thread on the messages of Ranger chat `sessionId`
    * (shared/rangerChat.ts): its `chat_thread_reply` tool.
@@ -2183,6 +2186,18 @@ export function createAssistantService(options: {
                   return options.chatThreads!(turnSession, params, combined);
                 }
               : undefined,
+          // Read-only archive search and reading: runs at once, in any mode.
+          archive: options.archive
+            ? async (kind, params, signal) => {
+                const combined = signal
+                  ? AbortSignal.any([signal, controller.signal])
+                  : controller.signal;
+                combined.throwIfAborted();
+                if (disposed || activeRun !== pending || !state.running)
+                  throw new Error("This Ranger turn is no longer active.");
+                return options.archive!(kind, params, combined);
+              }
+            : undefined,
           // Reversible sidebar arrangement: runs at once, in any mode.
           arrange: options.workspaceTree
             ? async (kind, params, signal) => {
@@ -3305,6 +3320,7 @@ export function createAssistantService(options: {
           refreshGlobalScope: workspaceCatalog,
           globalApprovalMode: () => state.config.approval_mode,
           workspaceTree: options.workspaceTree,
+          archive: options.archive,
           sendNotification: options.notify
             ? (notification, signal) =>
                 tasks!.notifyRun(

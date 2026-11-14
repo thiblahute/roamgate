@@ -28,6 +28,7 @@ import type {
   ThreadToolHandler,
 } from "./tools";
 import { rangerSystemPrompt, rangerTools } from "./ranger-tools";
+import type { ArchiveToolHandler } from "./archive-tools";
 import type { WorkspaceTreeToolHandler } from "./workspace-tree-tools";
 import { AssistantUserError, surfaceAssistantUserError } from "./errors";
 import {
@@ -119,6 +120,8 @@ export type AssistantDriver = {
     arrange?: WorkspaceTreeToolHandler;
     /** Answers comment threads on this chat's messages. */
     threads?: ThreadToolHandler;
+    /** Searches and reads the session archive. */
+    archive?: ArchiveToolHandler;
     delta(text: string): void;
     message(text: string): void;
     tool(

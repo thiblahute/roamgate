@@ -564,6 +564,124 @@ and `session` (checkout and agent path). Values are what the UI shows, with
   forge. `git.pull_request` takes `refresh: true`, `forge.status` `fresh: true`
   and `forge.session` `fresh: true` to bypass the cache.
 
+## Session archive
+
+`roamgate archive` keeps the session files of Claude Code, Codex and Pi in
+one central, searchable, compressed archive, so the agents' own cleanup can
+run without losing history. It runs without the server (the standalone
+binary works from a timer). Code: `server/src/archive/`, CLI
+`server/src/cli/archive.ts`.
+
+### Layout
+
+The archive directory defaults to `<data root>/claude-archive` (setting
+`archive.dir`, `--dir` or `ROAMGATE_ARCHIVE_DIR`), mode 0700, files 0600:
+
+- `raw/<host>/<agent>/<relative path under the agent's root>.zst`: one zstd
+  file per session file, the source of truth. A file only grows by appended
+  frames (each with a content checksum, verified by decompressing it against
+  the SHA-256 of the input before it counts); a source that shrank keeps its
+  old copy as `.zst.<mtime>`. Nothing in `raw/` is ever deleted.
+- `mirror/<host>/<agent>/{tree,extra}/`: for an ssh host, a plain rsync copy
+  of its session files, synced like a local directory. Never deleted either.
+- `index.sqlite`: the derived index, rebuilt from `raw/` by
+  `rebuild-index` (also done automatically when `PRAGMA user_version` is not
+  the one this code knows). WAL is required. Tables: `files(host, agent,
+  relpath, kind, project, session, subagent, title, cost_usd, cwd, src_size,
+  src_mtime, archived_size, zst_size, indexed_bytes, index_level, first_ts,
+  last_ts)`, `docs(file_id, ts, role, kind, tool)` with `fts` (trigram, so a
+  substring and case-insensitive match) or `fts_words` (unicode61) holding the
+  text, and `history` with `hist_fts` (`~/.claude/history.jsonl` prompts).
+- `locks/<host>.lock`: one lock per host; a second sync of the same host
+  reports `locked` and does nothing.
+
+Session files are append-only JSONL. `indexed_bytes` is how far the index has
+read; only complete lines are indexed, so an unfinished last line is archived
+at once and indexed when it is complete. Reading streams: memory is the
+longest line, not the corpus.
+
+### Hosts
+
+A host is this machine (read in place) or an ssh destination. The registry is
+seeded from Roamgate's `connections.json` (the local profile names this
+machine, ssh profiles become pullable hosts) and extended or overridden by
+`archive.hosts`, so it works without the server. The home of an archive pulls
+every reachable ssh host on its timer: `rsync -rt --inplace` over its own ssh
+connection (`BatchMode`, `ConnectTimeout`, `ControlMaster=no`), then indexes
+the mirror. An unreachable host is recorded (`last_attempt`, `last_error`)
+and skipped, never a failed run. A machine that sleeps pushes instead:
+`archive sync --push` (or `archive.push`) rsyncs its files into the home's
+mirror and runs `archive ingest <host>` there over ssh with a POSIX `sh`
+command line. Pull and push write the same layout and are safe together.
+A Windows host is not supported yet; the adapter interface is path-style
+neutral so a powershell path can be added.
+
+The same session can exist on two hosts (a resumed copy). Files are never
+merged: the index is keyed by `(host, agent, relpath)` and `session` shows
+every copy, describing the largest one.
+
+### Agents
+
+An adapter per agent says where its sessions are, how a file maps to a
+session, and how to read its records:
+
+| Agent                   | Root                                                                    | Indexed                                                                                       | Resume                               |
+| ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ |
+| claude                  | `~/.claude/projects/<project>/<uuid>.jsonl`, `<uuid>/subagents/*.jsonl` | yes (as the Rust `carchive` crate)                                                            | restore, then `claude --resume <id>` |
+| codex                   | `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-*-<uuid>.jsonl`    | yes                                                                                           | not restored                         |
+| pi                      | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/--<cwd>--/*.jsonl`        | yes                                                                                           | restore, then `pi --session <id>`    |
+| grok, muse, antigravity | their session directories                                               | archived raw only (stubs); sqlite files are snapshotted with `VACUUM INTO`, never copied live | no                                   |
+
+Only agents listed in `archive.agents` are archived (default claude, codex,
+pi); unknown directories are never guessed. Retention: Claude Code deletes
+transcripts `cleanupPeriodDays` after their mtime (default 30). Codex and Pi
+were not found to delete sessions by themselves in the installed versions;
+the archive does not depend on that, and never deletes.
+
+### What is indexed
+
+User prompts, assistant text, tool call inputs (command, path, pattern, url,
+description and similar), tool results (the first 6000 and last 2000
+characters), titles, queued prompts, system text, merge request links, frame
+links, workflow results, `history.jsonl`. Not indexed: thinking (opt-in with
+`archive.thinking`), images and any run of 200 or more non-space characters,
+`api-request*` mirrors, file history and bookkeeping records. Record types
+the adapter does not know are counted and reported at the end of each sync
+and by `health`.
+
+`archive.index` sets a level per host, agent and project: `full` (trigram),
+`words` (whole words, a smaller index) or `none` (archived, not indexed).
+`archive.exclude` rules keep matching sessions out of the archive;
+`archive.hide` rules archive them but leave them out of search.
+
+### Restoring
+
+`resume <id>` finds the session (any host, copies listed), and writes its
+files into this machine's agent directory only where they do not exist
+(a link at the end, so it never overwrites), mapping the project directory
+across homes (`/Users/x` to `/var/home/x`; Claude names a directory after the
+working directory with every non-alphanumeric character replaced by `-`).
+For Claude it appends a visible user message saying the session was restored
+from another computer. `cat <id>` prints the decompressed file, byte-identical
+to the original. Command output is documented in `roamgate archive --help`.
+
+### Integration
+
+- Ranger gets read-only tools `archive_search`, `archive_session` and
+  `archive_read` (`server/src/assistant/archive-tools.ts`): short bounded
+  results, `archive_read` by record range (at most 40 records and about 20000
+  characters per call, with `next_line`). They run in any approval mode, are
+  reachable only through the authenticated assistant, and never show a
+  session matching `archive.hide`.
+- A transcript missing from its agent's directory is read from the archive:
+  `localAgentSessionFiles` (the `AgentSessionFileAccess` seam) falls back on
+  ENOENT to the archived copy for `statFile`, `readText`, `readPrefix`,
+  `readRange` and `readTail` (`server/src/archive/file-access.ts`, installed
+  at server start). Sessions matching `archive.hide` are not served.
+- `roamgate doctor` has an Archive check that warns when a host's last sync
+  is older than `archive.stale_hours`, a sync failed or the disk is low.
+- The archive has no HTTP surface of its own.
+
 ## Agent integrations
 
 `integration.list` uses Herdr's RPC as the source of truth. Missing versions are

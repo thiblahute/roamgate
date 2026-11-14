@@ -1,0 +1,10 @@
+[Unit]
+Description=Roamgate session archive sync
+Documentation=https://github.com/powerfooI/roamgate
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/roamgate/roamgate.env
+ExecStart=%h/.local/bin/roamgate archive sync
+Nice=10
+IOSchedulingClass=idle

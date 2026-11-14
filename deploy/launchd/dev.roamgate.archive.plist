@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Pushes this Mac's agent sessions to the archive home (archive.push in
+       settings.json) every hour and at login. launchd runs a missed interval
+       once the Mac wakes. -->
+  <key>Label</key>
+  <string>dev.roamgate.archive</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; if [ -f "$HOME/.config/roamgate/roamgate.env" ]; then . "$HOME/.config/roamgate/roamgate.env"; fi; set +a; exec "$HOME/.local/bin/roamgate" archive sync --push</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/roamgate-archive.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/roamgate-archive.stderr.log</string>
+</dict>
+</plist>

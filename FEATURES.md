@@ -2298,6 +2298,18 @@ is kept, and hints for the suggestions.
 - **Configuration > Instance > Title suffix** names each server (for example
   `Roamgate · Home`); see [instance naming](docs/DEPLOYMENT.md#pwa-instance-names).
 
+## Session archive
+
+`roamgate archive sync|search|cat|session|resume|health|rebuild-index` keeps
+every Claude Code, Codex and Pi session from every machine in one compressed,
+searchable archive, so the agents' own cleanup can run without losing history.
+It works without the server. `search` finds a substring in prompts, answers,
+tool calls and results across all hosts and agents (`--agent`, `--host`,
+`--project`, `--since`, `--json`); `cat <id>` prints a session byte-identical
+to the original; `resume <id>` restores it on this machine where it does not
+exist (never overwriting) and says what to run to continue it. See
+[Session archive](docs/DEPLOYMENT.md#session-archive).
+
 ## Remote, Multi-Client, and Operations
 
 - Save local and SSH connection profiles; each browser selects independently

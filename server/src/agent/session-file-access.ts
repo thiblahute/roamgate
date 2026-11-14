@@ -118,6 +118,47 @@ async function findLocalCodexSession(id: string) {
   return found ? localSessionFile(found) : null;
 }
 
+/**
+ * Where a session file the agent already deleted is read from instead: the
+ * session archive (server/src/archive), installed by the server at startup.
+ */
+export type ArchivedSessionFiles = {
+  stat(path: string): Promise<SessionFile | null>;
+  range(path: string, start: number, end: number): Promise<Uint8Array | null>;
+};
+let archivedSessionFiles: ArchivedSessionFiles | null = null;
+
+export function useArchivedSessionFiles(files: ArchivedSessionFiles | null) {
+  archivedSessionFiles = files;
+}
+
+function missing(error: unknown) {
+  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
+/** `read` on the file; when it is gone, the archived copy's bytes. */
+async function readOrArchived<T>(
+  path: string,
+  read: () => Promise<T>,
+  fromArchive: (bytes: Uint8Array) => T,
+  start: number,
+  end: number,
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (!missing(error) || !archivedSessionFiles) throw error;
+    let bytes: Uint8Array | null = null;
+    try {
+      bytes = await archivedSessionFiles.range(path, start, end);
+    } catch {
+      // The archive is unreadable: report the original error.
+    }
+    if (!bytes) throw error;
+    return fromArchive(bytes);
+  }
+}
+
 async function localSessionFile(path: string): Promise<SessionFile | null> {
   try {
     const info = await stat(path);
@@ -129,8 +170,13 @@ async function localSessionFile(path: string): Promise<SessionFile | null> {
       identity: `${info.dev}:${info.ino}`,
       changeToken: String(info.ctimeMs),
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (!missing(error) || !archivedSessionFiles) return null;
+    try {
+      return await archivedSessionFiles.stat(path);
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -179,25 +225,60 @@ function validClaudeSessionId(id: string): boolean {
 export const localAgentSessionFiles: AgentSessionFileAccess = {
   remote: false,
   statFile: localSessionFile,
-  readText: (path) => Bun.file(path).text(),
+  readText: (path) =>
+    readOrArchived(
+      path,
+      () => Bun.file(path).text(),
+      (bytes) => new TextDecoder().decode(bytes),
+      0,
+      Number.POSITIVE_INFINITY,
+    ),
   async readPrefix(path, byteLimit) {
-    return new Uint8Array(
-      await Bun.file(path).slice(0, byteLimit).arrayBuffer(),
+    return readOrArchived(
+      path,
+      async () =>
+        new Uint8Array(await Bun.file(path).slice(0, byteLimit).arrayBuffer()),
+      (bytes) => bytes,
+      0,
+      byteLimit,
     );
   },
   async readRange(path, start, end) {
     if (end <= start) return new Uint8Array(0);
-    return new Uint8Array(await Bun.file(path).slice(start, end).arrayBuffer());
+    return readOrArchived(
+      path,
+      async () =>
+        new Uint8Array(await Bun.file(path).slice(start, end).arrayBuffer()),
+      (bytes) => bytes,
+      start,
+      end,
+    );
   },
   async readDownloadBody(path) {
     return Bun.file(path);
   },
   async readTail(path, byteLimit) {
-    const file = Bun.file(path);
-    const size = file.size;
-    return new Uint8Array(
-      await file.slice(Math.max(0, size - byteLimit), size).arrayBuffer(),
-    );
+    try {
+      const file = Bun.file(path);
+      if (archivedSessionFiles && !(await file.exists()))
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      const size = file.size;
+      return new Uint8Array(
+        await file.slice(Math.max(0, size - byteLimit), size).arrayBuffer(),
+      );
+    } catch (error) {
+      if (!missing(error) || !archivedSessionFiles) throw error;
+      const archived = await archivedSessionFiles.stat(path).catch(() => null);
+      const size = archived?.size;
+      const bytes =
+        size === undefined
+          ? null
+          : await archivedSessionFiles
+              .range(path, Math.max(0, size - byteLimit), size)
+              .catch(() => null);
+      // Not archived either: a missing file reads as empty, as before.
+      return bytes ?? new Uint8Array(0);
+    }
   },
   async findPiSessionById() {
     return null;

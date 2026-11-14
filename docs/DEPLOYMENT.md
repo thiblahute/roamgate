@@ -1588,6 +1588,62 @@ the log.
 To report the logged time somewhere, configure a
 [time-report provider](./time-report.md) (`time_report.command`).
 
+## Session archive
+
+`roamgate archive` archives the session files of Claude Code, Codex and Pi
+(contract: [Session archive](ARCHITECTURE.md#session-archive)). Claude Code
+deletes a transcript `cleanupPeriodDays` after its last modification (30 by
+default, in `~/.claude/settings.json`); the archive keeps them so that value
+can stay low.
+
+Settings, under `archive` in `settings.json` (all optional):
+
+```json
+{
+  "archive": {
+    "dir": "/path/to/archive",
+    "host": "desktop",
+    "agents": ["claude", "codex", "pi"],
+    "stale_hours": 48,
+    "min_free_gb": 20,
+    "thinking": false,
+    "hosts": {
+      "mac": { "ssh": "mac", "roots": { "claude": "~/.claude/projects" } }
+    },
+    "index": {
+      "default": "full",
+      "rules": [{ "agent": "codex", "level": "words" }]
+    },
+    "exclude": [{ "project": "private-client" }],
+    "hide": [{ "host": "mac", "project": "secrets" }],
+    "push": { "target": "desktop", "binary": "$HOME/.local/bin/roamgate" }
+  }
+}
+```
+
+The machine that holds the archive pulls the others on a timer; a machine
+that sleeps (a laptop) pushes. Each machine runs its own OS timer:
+
+- Linux: `deploy/systemd/roamgate-archive.service` and `.timer` (a user
+  timer, hourly, `Persistent=true`):
+  `systemctl --user enable --now roamgate-archive.timer`.
+- macOS: `deploy/launchd/dev.roamgate.archive.plist` runs
+  `roamgate archive sync --push` hourly and at login. Replace `__HOME__`,
+  copy it to `~/Library/LaunchAgents/`, then
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.roamgate.archive.plist`.
+
+For a push, set `archive.push.target` to the ssh destination of the archive
+home. The home needs the `roamgate` binary (`archive.push.binary` when it is
+not `~/.local/bin/roamgate`, for example a `toolbox run ... bun .../index.ts`
+command line) and rsync on both ends. `roamgate archive health --check`
+exits 1 when a host's last sync is older than `stale_hours`, a sync failed or
+the disk under the archive is low; run it from a status check.
+
+Disk: the compressed copies are about a fifth of the transcripts, the
+trigram index a quarter to a half of them again, and an ssh host's mirror is
+a plain copy of its session files. Use `archive.index` levels or `exclude`
+rules to shrink them.
+
 ## Merge and pull request cache
 
 The server keeps one cache of what Roamgate shows of merge and pull requests

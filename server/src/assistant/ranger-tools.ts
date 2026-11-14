@@ -20,6 +20,11 @@ import {
   workspaceTools,
 } from "./tools";
 import {
+  type ArchiveToolHandler,
+  archiveTools,
+  callArchiveTool,
+} from "./archive-tools";
+import {
   callWorkspaceTreeTool,
   type WorkspaceTreeToolHandler,
   workspaceTreeTools,
@@ -77,6 +82,8 @@ export function rangerTools(
     arrange?: WorkspaceTreeToolHandler;
     /** Answers comment threads on this chat's messages. */
     threads?: ThreadToolHandler;
+    /** Searches and reads the session archive; read-only. */
+    archive?: ArchiveToolHandler;
   },
   automatic: boolean,
 ): RangerTool[] {
@@ -86,6 +93,7 @@ export function rangerTools(
   const show = input.show;
   const arrange = input.arrange;
   const threads = input.threads;
+  const archive = input.archive;
   return [
     ...workspaceTools.map((tool) => ({
       ...tool,
@@ -143,6 +151,15 @@ export function rangerTools(
           replay: tool.kind === "get" ? ("safe" as const) : ("unsafe" as const),
           call: (params: unknown, signal?: AbortSignal) =>
             callWorkspaceTreeTool(tool.name, params, arrange, signal),
+        }))
+      : []),
+    // Read-only: past sessions of every machine, bounded results.
+    ...(archive
+      ? archiveTools.map((tool) => ({
+          ...tool,
+          replay: "safe" as const,
+          call: (params: unknown, signal?: AbortSignal) =>
+            callArchiveTool(tool.name, params, archive, signal),
         }))
       : []),
     // An answer in a thread of this chat: shown there, nothing else runs.
