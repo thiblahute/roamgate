@@ -185,6 +185,10 @@ import { readActivityTimeline } from "./activity/timeline-rpc";
 import { subjectsFromSettings } from "./activity/subject-settings";
 import { openActivityReader } from "./activity/reader";
 import { createTimeReport, TimeReportError } from "./time-report/rpc";
+import { createArchiveToolHandler } from "./assistant/archive-tools";
+import { createArchivedSessionReader } from "./archive/file-access";
+import { normalizeArchiveSettings } from "./archive/settings";
+import { useArchivedSessionFiles } from "./agent/session-file-access";
 import { dataRoot } from "./config/data-paths";
 import { join } from "node:path";
 import {
@@ -1099,6 +1103,38 @@ const assistantWorkspaceTree = createWorkspaceTreeToolHandler({
   read: () => readWorkspaceTree(),
   apply: (ops) => applyWorkspaceTreeOps(ops),
 });
+// Ranger searches and reads the session archive (`roamgate archive`), read-only.
+// A transcript the agent deleted is read from the archive instead.
+useArchivedSessionFiles(
+  createArchivedSessionReader({
+    settings: async () =>
+      (await readGuiSettings()).archive ?? normalizeArchiveSettings(undefined),
+    archiveDir: (settings) =>
+      process.env.ROAMGATE_ARCHIVE_DIR?.trim() ||
+      settings.dir ||
+      join(dataRoot(), "claude-archive"),
+    runtime: () => ({
+      homeDir: homedir(),
+      platform: process.platform,
+      env: process.env,
+      dataDir: dataRoot(),
+    }),
+  }),
+);
+const assistantArchive = createArchiveToolHandler({
+  settings: async () =>
+    (await readGuiSettings()).archive ?? normalizeArchiveSettings(undefined),
+  archiveDir: (settings) =>
+    process.env.ROAMGATE_ARCHIVE_DIR?.trim() ||
+    settings.dir ||
+    join(dataRoot(), "claude-archive"),
+  runtime: () => ({
+    homeDir: homedir(),
+    platform: process.platform,
+    env: process.env,
+    dataDir: dataRoot(),
+  }),
+});
 let assistantServiceTask: Promise<
   Awaited<
     ReturnType<typeof import("./assistant/service").createAssistantService>
@@ -1110,6 +1146,7 @@ function getAssistantService() {
       createAssistantService({
         context: assistantContext,
         workspaceTree: assistantWorkspaceTree,
+        archive: assistantArchive,
         // Ranger answers the comments on its chat's messages in their
         // threads, as an agent does with roamgate-review reply.
         chatThreads: async (sessionId, params) => {

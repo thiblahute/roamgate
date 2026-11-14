@@ -3,6 +3,10 @@ import {
   normalizeSiteRoots,
 } from "../../../shared/renderedPage";
 import {
+  type GuiArchiveSettings,
+  normalizeArchiveSettings,
+} from "../archive/settings";
+import {
   DEFAULT_MR_CACHE_SETTINGS,
   normalizeMrCacheSettings,
   type MrCacheSettings,
@@ -235,6 +239,8 @@ export function activitySettings(settings: GuiSettings): GuiActivitySettings {
 
 export type GuiSettings = {
   version: 1;
+  /** Absent until set: the Claude, Codex and Pi session archive. */
+  archive?: GuiArchiveSettings;
   title_suffix?: string;
   auto_rename_agent_tabs?: boolean;
   /** Default worktree command for repositories without their own. */
@@ -493,6 +499,10 @@ export function normalizeGuiSettings(raw: unknown): GuiSettings {
           : [],
       ),
     ),
+    archive:
+      obj.archive === undefined
+        ? undefined
+        : normalizeArchiveSettings(obj.archive),
     activity:
       obj.activity === undefined
         ? undefined

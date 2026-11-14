@@ -6,6 +6,7 @@ import { resolveLegacyServicePaths } from "../config/service-definitions";
 import { testConnectionSockets } from "../connections/profile-service";
 import { ConnectionProfileStore } from "../connections/profiles";
 import { herdrServiceStatus } from "../herdr/service";
+import { archiveCheck } from "./archive";
 import {
   compareVersion,
   fetchLatestUpdateManifest,
@@ -556,6 +557,7 @@ export async function runDoctorChecks(
     herdr,
     connectionsCheck(context, setup),
     pushCheck(context, setup),
+    archiveCheck(context, now()),
     await update,
   );
   return checks;
