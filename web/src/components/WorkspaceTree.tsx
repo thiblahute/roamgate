@@ -361,8 +361,16 @@ function workspaceCard({
 
 function PullRequestBadge({
   review,
+  provider,
+  connectionId,
+  workspaceId,
+  path,
 }: {
   review: NonNullable<ReturnType<typeof workspacePullRequest>>;
+  provider?: string;
+  connectionId: string;
+  workspaceId: string;
+  path?: string;
 }) {
   const Icon = {
     open: GitPullRequest,
@@ -370,18 +378,55 @@ function PullRequestBadge({
     merged: GitMerge,
     closed: GitPullRequestClosed,
   }[review.state];
+  const url = review.request.url;
+  const forge = provider === "github" ? "GitHub" : "GitLab";
+  // Reviews open for GitLab requests only, as in the chats.
+  const canReview = provider === "gitlab";
+  const hint = canReview
+    ? `Click: open on ${forge}, Option+click: review here`
+    : `Click: open on ${forge}`;
+  const open = (event: { altKey: boolean }) => {
+    if (event.altKey && canReview) {
+      void import("./ForgeChip").then((module) =>
+        module.openForgeReviewIn(connectionId, workspaceId, url, path),
+      );
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  const stop = (event: { stopPropagation(): void }) => event.stopPropagation();
+  const label = `${review.title}\n${hint}`;
   return (
-    <span
+    <a
       className="git-badge workspace-review"
       data-state={review.state}
       data-stale={review.stale || undefined}
-      title={review.title}
-      aria-label={review.title}
-      role="img"
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={label}
+      aria-label={label}
+      onPointerDown={stop}
+      onPointerMove={stop}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onClick={(event) => {
+        // Never the row's: the workspace stays where it is.
+        event.preventDefault();
+        event.stopPropagation();
+        open(event);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          open(event);
+        }
+      }}
     >
       <Icon size={12} aria-hidden="true" />
       {review.id}
-    </span>
+    </a>
   );
 }
 
@@ -2511,7 +2556,17 @@ function WorkspaceRow({
                   <span>{branch}</span>
                 </span>
               ) : null}
-              {review ? <PullRequestBadge review={review} /> : null}
+              {review ? (
+                <PullRequestBadge
+                  review={review}
+                  provider={view.reviews[w.workspace_id]?.provider}
+                  connectionId={view.connectionId}
+                  workspaceId={w.workspace_id}
+                  {...(w.worktree?.checkout_path
+                    ? { path: w.worktree.checkout_path }
+                    : {})}
+                />
+              ) : null}
               {tabChipsVisible ? (
                 <WorkspaceTabChips
                   chips={tabChips}

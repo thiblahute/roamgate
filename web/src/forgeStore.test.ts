@@ -7,8 +7,10 @@ import {
   FORGE_ERROR_MS,
   FORGE_OPEN_MS,
   FORGE_RUNNING_MS,
+  FORGE_STALE_MS,
   FORGE_SETTLED_MS,
   FORGE_UNAVAILABLE_MS,
+  forgeAgeLabel,
   forgeRefreshDelay,
 } from "./forgeStore";
 
@@ -318,5 +320,57 @@ describe("the request cache", () => {
     await settle();
     expect(calls).toHaveLength(2);
     store.clear();
+  });
+});
+
+describe("answers the server caches", () => {
+  test("a stale answer is asked again soon, a pushed one is shown at once", async () => {
+    jest.useFakeTimers();
+    const store = createForgeStore({ pageVisible: () => true });
+    const { client, calls } = fakeClient([
+      async () => ({ ...ready("open", "success"), stale: true }),
+      async () => ready("open", "success"),
+    ]);
+    const held = store.hold(client, ref);
+    held.setVisible(true);
+    await settle();
+    expect(store.get(client, ref).status?.stale).toBe(true);
+    expect(calls).toHaveLength(1);
+    // A second device refreshed it: pushed to this one, no new call.
+    store.applyPush(ready("merged", null));
+    expect(store.get(client, ref).status?.request?.state).toBe("merged");
+    expect(calls).toHaveLength(1);
+    jest.advanceTimersByTime(FORGE_STALE_MS);
+    await settle();
+    expect(calls).toHaveLength(1);
+    held.release();
+    store.clear();
+  });
+
+  test("a stale answer without a push is looked at again", async () => {
+    jest.useFakeTimers();
+    const store = createForgeStore({ pageVisible: () => true });
+    const { client, calls } = fakeClient([
+      async () => ({ ...ready("open", "success"), stale: true }),
+      async () => ready("open", "success"),
+    ]);
+    const held = store.hold(client, ref);
+    held.setVisible(true);
+    await settle();
+    jest.advanceTimersByTime(FORGE_STALE_MS);
+    await settle();
+    expect(calls).toHaveLength(2);
+    expect(store.get(client, ref).status?.stale).toBeUndefined();
+    held.release();
+    store.clear();
+  });
+
+  test("how old an answer is, in words", () => {
+    const at = Date.parse("2026-11-14T12:00:00Z");
+    expect(forgeAgeLabel("2026-11-14T11:59:40Z", at)).toBe("just now");
+    expect(forgeAgeLabel("2026-11-14T11:57:00Z", at)).toBe("3 min ago");
+    expect(forgeAgeLabel("2026-11-14T09:00:00Z", at)).toBe("3 h ago");
+    expect(forgeAgeLabel("2026-11-10T12:00:00Z", at)).toBe("4 d ago");
+    expect(forgeAgeLabel("", at)).toBe("");
   });
 });

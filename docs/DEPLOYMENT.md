@@ -1588,6 +1588,43 @@ the log.
 To report the logged time somewhere, configure a
 [time-report provider](./time-report.md) (`time_report.command`).
 
+## Merge and pull request cache
+
+The server keeps one cache of what Roamgate shows of merge and pull requests
+(the workspace badges' card, the chats' chips and their lists of requests),
+shared by every browser and device. A known answer is shown at once and read
+again from GitLab or GitHub in the background only when it is older than its
+state allows; it survives restarts in `mr-cache/state.json` next to
+`settings.json`. Tune it with `mr_cache` in `settings.json` (seconds):
+
+```json
+"mr_cache": {
+  "running_seconds": 75,
+  "open_seconds": 600,
+  "settled_seconds": 21600,
+  "none_seconds": 900,
+  "unavailable_seconds": 600,
+  "budget_per_minute": 20,
+  "max_entries": 1000
+}
+```
+
+| Key                   | Default | Meaning                                                          |
+| --------------------- | ------- | ---------------------------------------------------------------- |
+| `running_seconds`     | `75`    | An open request whose pipeline runs.                             |
+| `open_seconds`        | `600`   | An open request at rest.                                         |
+| `settled_seconds`     | `21600` | Merged, closed or gone.                                          |
+| `none_seconds`        | `900`   | A branch without a request (a new commit on it is read at once). |
+| `unavailable_seconds` | `600`   | No login, no CLI, an unsupported host.                           |
+| `budget_per_minute`   | `20`    | Background reads started per minute, all forges together.        |
+| `max_entries`         | `1000`  | Answers kept; the oldest are forgotten first.                    |
+
+Only valid fields are used (seconds from 5, the budget from 1 to 600). The
+per-host call gate (60 calls a minute, `Retry-After` and 429 pauses) still
+applies underneath. The refresh buttons (card, chip hover, request lists) read
+one request now, whatever these say. Delete `mr-cache/state.json` (Roamgate
+stopped) to start cold.
+
 ## Worktree location
 
 By default Herdr chooses where a new worktree is created. Set a repository's

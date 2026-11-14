@@ -335,7 +335,7 @@ describe("GitHub pull request status", () => {
 });
 
 describe("the shared cache", () => {
-  test("coalesces identical requests and keeps an answer a few seconds", async () => {
+  test("coalesces identical requests and keeps an answer until its state allows another read", async () => {
     let now = 0;
     const cache = createForgeCache(() => now);
     const { context, calls } = fakeGlab(fullAnswers);
@@ -348,11 +348,18 @@ describe("the shared cache", () => {
       cache.status(context, { ...gitlabRef, project: "GST/gstreamer" }),
     ]);
     expect(count()).toBe(1);
-    now += 10_000;
-    await cache.status(context, gitlabRef);
+    now += 60_000;
+    const known = await cache.status(context, gitlabRef);
     expect(count()).toBe(1);
-    now += 10_000;
-    await cache.status(context, gitlabRef);
+    expect(known.stale).toBeUndefined();
+    // Past what an open request at rest allows: the known answer at once,
+    // and one read in the background.
+    now += 10 * 60_000;
+    const old = await cache.status(context, gitlabRef);
+    expect(old.stale).toBe(true);
+    await Bun.sleep(300);
+    expect(count()).toBe(2);
+    expect((await cache.status(context, gitlabRef)).stale).toBeUndefined();
     expect(count()).toBe(2);
   });
 });

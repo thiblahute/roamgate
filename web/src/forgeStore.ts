@@ -5,7 +5,7 @@ import {
   type ForgeStatus,
   forgeRefKey,
 } from "../../shared/forge";
-import type { ConnectionClient } from "./api";
+import { type ConnectionClient, bridge } from "./api";
 
 /**
  * One cache of merge and pull request statuses for every chip, header and
@@ -25,6 +25,8 @@ export const FORGE_UNAVAILABLE_MS = 10 * 60_000;
 /** After a failure: doubling from this, up to FORGE_ERROR_MAX_MS. */
 export const FORGE_ERROR_MS = 30_000;
 export const FORGE_ERROR_MAX_MS = 10 * 60_000;
+/** An answer the server marked stale is being read again: ask again soon. */
+export const FORGE_STALE_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 65_000;
 /** Entries nothing shows are forgotten past this many. */
 const KEPT = 300;
@@ -60,6 +62,7 @@ export function forgeRefreshDelay(entry: ForgeEntry): number {
       FORGE_ERROR_MAX_MS,
     );
   if (!status) return 0;
+  if (status.stale) return FORGE_STALE_MS;
   if (status.state === "not_signed_in" || status.state === "unavailable")
     return FORGE_UNAVAILABLE_MS;
   if (status.state !== "ready" || !status.request) return FORGE_SETTLED_MS;
@@ -199,6 +202,7 @@ export function createForgeStore(
      * kept fresh. Returns the holder's setter and its release.
      */
     hold(client: ConnectionClient, ref: ForgeRef, path = "") {
+      if (typeof document !== "undefined") followForgePushes();
       const slot = slotFor(client, ref, path);
       const holder: Holder = { visible: false };
       slot.holders.add(holder);
@@ -216,6 +220,19 @@ export function createForgeStore(
           }
         },
       };
+    },
+    /**
+     * The server learned a newer answer (it read the forge for someone,
+     * perhaps on another device): every slot of that request shows it.
+     */
+    applyPush(status: ForgeStatus) {
+      const key = forgeRefKey(status.ref);
+      for (const slot of slots.values()) {
+        if (forgeRefKey(slot.ref) !== key || slot.entry.loading) continue;
+        slot.askedAt = now();
+        publish(slot, { status, loading: false, failures: 0 });
+        schedule(slot);
+      }
     },
     /** Every request status known now, as last answered. */
     known(): ForgeStatus[] {
@@ -244,6 +261,28 @@ export function createForgeStore(
 export type ForgeStore = ReturnType<typeof createForgeStore>;
 
 export const forgeStore = createForgeStore();
+
+/** How old an answer is, in words: "just now", "3 min ago". */
+export function forgeAgeLabel(fetchedAt: string, at = Date.now()): string {
+  const time = Date.parse(fetchedAt);
+  if (!Number.isFinite(time)) return "";
+  const minutes = Math.floor(Math.max(0, at - time) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+}
+
+let following = false;
+/** Follows the server's pushes of its MR cache, once. */
+function followForgePushes() {
+  if (following) return;
+  following = true;
+  bridge.onForgeCache((push) => {
+    if (push.kind === "status") forgeStore.applyPush(push.status);
+    else if (push.kind === "session") refreshSessions();
+  });
+}
 
 if (typeof document !== "undefined")
   document.addEventListener("visibilitychange", () => {
@@ -353,10 +392,28 @@ function sessionKey(
   ]);
 }
 
+/** Who shows each session now, to ask again when the server pushes one. */
+const sessionSources = new Map<
+  string,
+  { client: ConnectionClient; params: SessionParams; users: number }
+>();
+
+function refreshSessions() {
+  for (const [key, source] of sessionSources)
+    void askSession(source.client, key, source.params);
+}
+
+type SessionParams = {
+  workspaceId?: string;
+  path?: string;
+  agentPath?: string;
+};
+
 function askSession(
   client: ConnectionClient,
   key: string,
-  params: { workspaceId?: string; path?: string; agentPath?: string },
+  params: SessionParams,
+  fresh = false,
 ) {
   const known = sessionAsks.get(key);
   if (known) return known;
@@ -368,6 +425,7 @@ function askSession(
           ...(params.workspaceId ? { workspace_id: params.workspaceId } : {}),
           ...(params.path ? { path: params.path } : {}),
           ...(params.agentPath ? { agent_path: params.agentPath } : {}),
+          ...(fresh ? { fresh: true } : {}),
         },
         REQUEST_TIMEOUT_MS,
         { lane: "background" },
@@ -375,6 +433,11 @@ function askSession(
       if (session && Array.isArray(session.repos)) {
         sessions.set(key, { at: Date.now(), session });
         for (const listener of sessionListeners.get(key) ?? []) listener();
+        // Known but old for the server: it is reading again; ask soon.
+        if (session.stale)
+          setTimeout(() => {
+            if (sessionSources.has(key)) void askSession(client, key, params);
+          }, FORGE_STALE_MS);
       }
     } catch {
       // The next round asks again.
@@ -412,6 +475,11 @@ export function useForgeSession(
   );
   useEffect(() => {
     if (!client || !enabled || (!params.path && !params.workspaceId)) return;
+    if (typeof document !== "undefined") followForgePushes();
+    const source = sessionSources.get(key) ?? { client, params, users: 0 };
+    source.client = client;
+    source.users++;
+    sessionSources.set(key, source);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let live = true;
     const round = async () => {
@@ -431,6 +499,7 @@ export function useForgeSession(
       live = false;
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      if (--source.users <= 0) sessionSources.delete(key);
     };
     // The key names the session.
     // eslint-disable-next-line react-hooks/exhaustive-deps

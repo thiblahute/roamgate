@@ -6,6 +6,7 @@ import {
   shQuote,
   type runProcessWithCodeTimeout,
 } from "../utils/process-utils";
+import { createMrCache } from "../mr-cache/cache";
 import {
   githubChecks,
   gitlabApprovals,
@@ -145,8 +146,10 @@ function fixture(
       return ok({ head_pipeline: { status: "manual" } });
     throw new Error(`Unexpected command: ${command}`);
   };
+  const cache = createMrCache({ path: null });
   return {
     commands,
+    cache,
     shared: (params: Record<string, unknown> = {}) =>
       sharedPullRequestStatus(
         {
@@ -156,6 +159,7 @@ function fixture(
           runProcessWithCodeTimeout: run,
         },
         params,
+        cache,
       ),
     read: (params: Record<string, unknown> = {}) =>
       readPullRequestStatus(
@@ -1232,11 +1236,15 @@ describe("shared PR/MR status", () => {
     }
   });
 
-  test("a card is always read afresh, and refreshes the badges", async () => {
+  test("a card is served from the cache, a refresh reads it afresh and replaces the badges", async () => {
     const setup = sharedFixture();
     await setup.shared({ summary: true });
+    const card = await setup.shared({});
     await setup.shared({});
-    await setup.shared({});
+    expect(card.cached?.stale).toBe(false);
+    expect(setup.lookups()).toBe(2);
+    // A click on refresh reads again, whatever the TTL says.
+    await setup.shared({ refresh: true });
     expect(setup.lookups()).toBe(3);
     // The card read dropped the badge's answer.
     await setup.shared({ summary: true });

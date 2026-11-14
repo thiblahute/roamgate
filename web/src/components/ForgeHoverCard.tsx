@@ -1,10 +1,11 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   type ForgeStatus,
   forgeKind,
   forgeRefLabel,
 } from "../../../shared/forge";
+import { forgeAgeLabel } from "../forgeStore";
 import { formatUiDateTime } from "../uiLocale";
 import { PipelineIcon, pipelineLabel } from "./ForgeChip";
 
@@ -22,12 +23,17 @@ export function ForgeHoverCard({
   onEnter,
   onLeave,
   onReview,
+  onRefresh,
+  refreshing,
 }: {
   status: ForgeStatus;
   anchor: DOMRect;
   onEnter: () => void;
   onLeave: () => void;
   onReview?: () => void;
+  /** Reads the request from the forge now, whatever the cache says. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(anchor.bottom + 6);
@@ -162,6 +168,16 @@ export function ForgeHoverCard({
                 Review in Roamgate
               </button>
             ) : null}
+            {onRefresh ? (
+              <button type="button" onClick={onRefresh} disabled={refreshing}>
+                <RefreshCw size={12} aria-hidden /> Refresh
+              </button>
+            ) : null}
+            <span className="forge-card-age">
+              {refreshing || status.stale
+                ? "Refreshing"
+                : `Checked ${forgeAgeLabel(status.fetchedAt)}`}
+            </span>
           </div>
         </>
       ) : (

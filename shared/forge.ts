@@ -1,3 +1,4 @@
+import type { PullRequestStatus } from "./pullRequest";
 /**
  * Merge requests (GitLab) and pull requests (GitHub) as the agent chats show
  * them: chips for references in messages, the session's own in the header,
@@ -70,6 +71,8 @@ export type ForgeStatus = {
   message?: string;
   request?: ForgeRequest;
   fetchedAt: string;
+  /** Older than its state allows: a read is under way, an update follows. */
+  stale?: boolean;
 };
 
 /** A repository the session works in, and its branch's request. */
@@ -87,6 +90,8 @@ export type ForgeSession = {
   defaultProject: ForgeProject | null;
   repos: ForgeSessionRepo[];
   refreshedAt: string;
+  /** Older than allowed: a read is under way, an update follows. */
+  stale?: boolean;
 };
 
 export function forgeRefKey(ref: ForgeRef): string {
@@ -180,3 +185,9 @@ export function ownRequestUrl(ref: ForgeRef, value: unknown): string | null {
     return null;
   }
 }
+
+/** What the clients are told when the server's MR cache learns something. */
+export type MrCachePush =
+  | { kind: "status"; status: ForgeStatus }
+  | { kind: "card"; status: PullRequestStatus; fetchedAt: string }
+  | { kind: "session"; session: ForgeSession };

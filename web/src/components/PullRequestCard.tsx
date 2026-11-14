@@ -11,11 +11,22 @@ import {
   pullRequestUnavailable,
   type PullRequestStatus,
 } from "../../../shared/pullRequest";
-import type { ConnectionClient } from "../api";
+import { type ConnectionClient, bridge } from "../api";
 import { useConnectionReady } from "../useConnectionClient";
 import { ThemedSelect } from "./ThemedSelect";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import "./PullRequestCard.css";
+
+/** The last status each branch's card showed, for the next time it opens. */
+const cardMemo = new Map<string, PullRequestStatus>();
+const CARD_MEMO_KEPT = 100;
+
+function rememberCard(key: string, status: PullRequestStatus) {
+  cardMemo.delete(key);
+  cardMemo.set(key, status);
+  if (cardMemo.size > CARD_MEMO_KEPT)
+    cardMemo.delete(cardMemo.keys().next().value as string);
+}
 
 export function PullRequestCard({
   client,
@@ -39,15 +50,44 @@ export function PullRequestCard({
   const [remote, setRemote] = useState("");
   const [match, setMatch] = useState("");
   const [refresh, setRefresh] = useState(0);
-  const [status, setStatus] = useState<PullRequestStatus | null>(null);
+  // What this branch's card showed last time is shown at once, whatever
+  // the server needs to read again; the answer replaces it.
+  const memoKey = `${client.connectionId}\u0000${workspaceId}\u0000${branch ?? ""}`;
+  const [remembered] = useState(() => cardMemo.get(memoKey) ?? null);
+  const [status, setStatus] = useState<PullRequestStatus | null>(remembered);
   const [stale, setStale] = useState<PullRequestStale | null>(null);
   const [error, setError] = useState("");
-  const [finishedAt, setFinishedAt] = useState("");
+  const [finishedAt, setFinishedAt] = useState(remembered?.refreshedAt ?? "");
   const [loading, setLoading] = useState(true);
   const sequence = useRef(0);
+  // A click on refresh reads the forge now, whatever the cache says.
+  const forced = useRef(false);
   // The host remounts this card when its workspace, branch or connection
   // changes; remote/match selections reset this explicitly.
-  const lastGood = useRef<PullRequestStatus | null>(null);
+  const lastGood = useRef<PullRequestStatus | null>(
+    remembered?.state === "ready" ? remembered : null,
+  );
+  // What another device or a background read taught the server is pushed.
+  useEffect(
+    () =>
+      bridge.onForgeCache((push) => {
+        if (push.kind !== "card" || remote || match) return;
+        const value = push.status;
+        if (value.state !== "ready" && value.state !== "no_match") return;
+        if (value.branch !== (branch ?? value.branch)) return;
+        if (!status?.root || value.root !== status.root) return;
+        const known = {
+          ...value,
+          cached: { fetchedAt: push.fetchedAt, stale: false },
+        };
+        if (value.state === "ready") lastGood.current = known;
+        rememberCard(memoKey, known);
+        setStatus(known);
+        setStale(null);
+        setFinishedAt(push.fetchedAt);
+      }),
+    [memoKey, branch, remote, match, status?.root],
+  );
   useEffect(() => {
     const request = ++sequence.current;
     setLoading(true);
@@ -61,6 +101,9 @@ export function PullRequestCard({
       setFinishedAt(good.refreshedAt);
       return true;
     };
+    const force = forced.current;
+    forced.current = false;
+    let again: ReturnType<typeof setTimeout> | undefined;
     void client
       .call(
         "git.pull_request",
@@ -69,6 +112,7 @@ export function PullRequestCard({
           ...(branch ? { branch } : {}),
           ...(remote ? { remote } : {}),
           ...(match ? { match } : {}),
+          ...(force ? { refresh: true } : {}),
         },
         65_000,
       )
@@ -81,9 +125,15 @@ export function PullRequestCard({
         )
           return;
         lastGood.current = value.state === "ready" ? value : null;
+        if (!remote && !match && !pullRequestUnavailable(value))
+          rememberCard(memoKey, value);
         setStatus(value);
         setStale(null);
-        setFinishedAt(value.refreshedAt);
+        setFinishedAt(value.cached?.fetchedAt ?? value.refreshedAt);
+        // Known but old for the server, which is reading again: look again
+        // soon in case the push got lost.
+        if (value.cached?.stale)
+          again = setTimeout(() => setRefresh((n) => n + 1), 15_000);
       })
       .catch(() => {
         if (sequence.current !== request || !client.isCurrent()) return;
@@ -98,8 +148,9 @@ export function PullRequestCard({
       });
     return () => {
       sequence.current = request + 1;
+      clearTimeout(again);
     };
-  }, [client, ready, workspaceId, branch, remote, match, refresh]);
+  }, [client, ready, workspaceId, branch, remote, match, refresh, memoKey]);
 
   const current = client.isCurrent() ? status : null;
   const requestUrl =
@@ -127,7 +178,10 @@ export function PullRequestCard({
         client.isCurrent() ? error : "Waiting for the connection to recover."
       }
       finishedAt={finishedAt}
-      onRefresh={() => setRefresh((value) => value + 1)}
+      onRefresh={() => {
+        forced.current = true;
+        setRefresh((value) => value + 1);
+      }}
       onRemoteChange={(value) => {
         reset();
         setRemote(value);

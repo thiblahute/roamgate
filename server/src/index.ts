@@ -264,6 +264,8 @@ import {
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
 import { createForgeCache, parseForgeRefParam } from "./review/forge";
+import { mrCachePush } from "./mr-cache/push";
+import { onMrCacheChange, sharedMrCache } from "./mr-cache/shared";
 import { SessionImageGoneError } from "./agent/session-images";
 import {
   type GlabContext,
@@ -1254,7 +1256,15 @@ function getAssistantService() {
 }
 
 /** Merge and pull requests the chats show, shared by every browser. */
-const forgeCache = createForgeCache();
+const forgeCache = createForgeCache(Date.now, sharedMrCache());
+// Every client learns when an answer of the MR cache changes, whichever
+// surface or device asked for the read.
+onMrCacheChange((change) => {
+  const push = mrCachePush(change);
+  if (!push) return;
+  const line = JSON.stringify({ forge_cache: push });
+  for (const ws of clients) safeSend(ws, line, "forge-cache");
+});
 
 /**
  * The ready connections for the reviews module: the default connection
@@ -3664,7 +3674,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           typeof raw.agent_path === "string" && isHostPath(raw.agent_path)
             ? raw.agent_path
             : undefined;
-        result = await forgeCache.session(context(root), agentPath);
+        result = await forgeCache.session(context(root), agentPath, {
+          fresh: raw.fresh === true,
+        });
       }
       sendReply({ id, result }, "forge");
     } catch (e) {

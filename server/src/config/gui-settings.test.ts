@@ -5,7 +5,9 @@ import { join } from "node:path";
 import {
   claudeStartMode,
   DEFAULT_ACTIVITY_SETTINGS,
+  mrCacheSettings,
   normalizeActivitySettings,
+  normalizeGuiSettings,
   normalizeWorktreeDirectory,
   normalizeWorktreeCommand,
   repoSettingsKey,
@@ -358,4 +360,22 @@ test("a claude started by hand stays in the terminal unless set; bad values are 
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test("mr_cache keeps each valid field in settings.json and falls back to defaults", () => {
+  const settings = normalizeGuiSettings({
+    version: 1,
+    mr_cache: {
+      running_seconds: 45,
+      budget_per_minute: "many",
+      open_seconds: 900,
+    },
+  });
+  expect(settings.mr_cache).toEqual({ running_seconds: 45, open_seconds: 900 });
+  expect(mrCacheSettings(settings)).toMatchObject({
+    runningMs: 45_000,
+    openMs: 900_000,
+    budgetPerMinute: 20,
+  });
+  expect(mrCacheSettings(null).settledMs).toBe(6 * 60 * 60_000);
 });
