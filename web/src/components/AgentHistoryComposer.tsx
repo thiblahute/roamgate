@@ -1144,7 +1144,7 @@ export function AgentHistoryComposer({
             {...touchSubmit.buttonProps(() => void send(false, true))}
           >
             <ListPlus size={13} aria-hidden="true" />
-            Queue
+            <span className="agent-history-composer-label">Queue</span>
           </button>
         ) : null}
         <button
@@ -1173,17 +1173,19 @@ export function AgentHistoryComposer({
           ) : (
             <Send size={13} aria-hidden="true" />
           )}
-          {uploadCount > 0
-            ? "Uploading..."
-            : submissionPending
-              ? shellMode
-                ? "Starting..."
-                : "Sending..."
-              : shellMode
-                ? "Run"
-                : onQueue
-                  ? "Steer"
-                  : "Send"}
+          <span className="agent-history-composer-label">
+            {uploadCount > 0
+              ? "Uploading..."
+              : submissionPending
+                ? shellMode
+                  ? "Starting..."
+                  : "Sending..."
+                : shellMode
+                  ? "Run"
+                  : onQueue
+                    ? "Steer"
+                    : "Send"}
+          </span>
         </button>
         <input
           ref={fileInputRef}
