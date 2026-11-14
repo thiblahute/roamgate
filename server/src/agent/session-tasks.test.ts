@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { parseSessionTasks } from "./session-tasks";
+import {
+  type AgentTask,
+  commandOutputsToWatch,
+  parseSessionTasks,
+  withCommandActivity,
+} from "./session-tasks";
 
 const use = (id: string, name: string, input: Record<string, unknown>) => ({
   type: "assistant",
@@ -219,4 +224,134 @@ test("a stopped workflow or command ends, a teammate works until idle", () => {
     result("s1", "No such task", {}, true),
   ]);
   expect(failed[0]?.status).toBe("running");
+});
+
+test("request records replaying a task's call do not restart it", () => {
+  const replay = {
+    type: "api-request-blob",
+    timestamp: "2026-10-24T10:09:00.000Z",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "Bash",
+          input: { command: "make", run_in_background: true },
+        },
+      ],
+    },
+  };
+  const tasks = parseSessionTasks([
+    use("t1", "Bash", {
+      command: "make",
+      description: "Build",
+      run_in_background: true,
+    }),
+    result(
+      "t1",
+      "Command running in background with ID: b1. Output is being written to: /tmp/tasks/b1.output.",
+      { backgroundTaskId: "b1" },
+    ),
+    notification(
+      '<task-id>b1</task-id>\n<tool-use-id>t1</tool-use-id>\n<output-file>/tmp/tasks/b1.output</output-file>\n<status>completed</status>\n<summary>Background command "Build" completed (exit code 0)</summary>',
+    ),
+    replay,
+  ]);
+  expect(tasks).toHaveLength(1);
+  expect(tasks[0]!.status).toBe("completed");
+  expect(tasks[0]!.endedAt).toBe("2026-10-24T10:05:00.000Z");
+});
+
+test("a background command the permission check refused never runs", () => {
+  const refusal = {
+    type: "user",
+    timestamp: "2026-10-24T10:00:01.000Z",
+    toolUseResult:
+      "Error: Permission for this action was denied by the Claude Code auto mode classifier.",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "t9",
+          content:
+            "Permission for this action was denied by the Claude Code auto mode classifier.",
+          is_error: false,
+        },
+      ],
+    },
+  };
+  const tasks = parseSessionTasks([
+    use("t9", "Bash", {
+      command: "gen --yes",
+      description: "Regenerate",
+      run_in_background: true,
+    }),
+    refusal,
+  ]);
+  expect(tasks[0]!.status).toBe("failed");
+  expect(tasks[0]!.summary).toContain("denied");
+});
+
+const NOW = Date.parse("2026-10-24T12:00:00.000Z");
+const minutesAgo = (minutes: number) =>
+  new Date(NOW - minutes * 60_000).toISOString();
+const runningCommand = (startedMinutesAgo: number): AgentTask => ({
+  id: "t1",
+  kind: "command",
+  title: "Build",
+  status: "running",
+  startedAt: minutesAgo(startedMinutesAgo),
+  outputFile: "/tmp/tasks/b1.output",
+});
+const outputAt = (minutes: number) =>
+  new Map([["/tmp/tasks/b1.output", { mtimeMs: NOW - minutes * 60_000 }]]);
+const nobody = () => false;
+
+test("a silent command runs on only while a process holds its output", () => {
+  const task = runningCommand(120);
+  const silent = outputAt(30);
+  // Held: still running, however long it has been silent.
+  expect(withCommandActivity([task], silent, NOW, () => true)[0]!.status).toBe(
+    "running",
+  );
+  // Nothing holds it: lost, ended at its last write.
+  const lost = withCommandActivity([task], silent, NOW, nobody)[0]!;
+  expect(lost.status).toBe("lost");
+  expect(lost.endedAt).toBe(minutesAgo(30));
+  expect(lost.summary).toContain("ended without a result");
+  // The given task is not changed.
+  expect(task.status).toBe("running");
+});
+
+test("a command that writes again stays running; a fresh one is not looked at", () => {
+  const task = runningCommand(120);
+  expect(withCommandActivity([task], outputAt(2), NOW, nobody)[0]!.status).toBe(
+    "running",
+  );
+  expect(commandOutputsToWatch([task], NOW)).toEqual(["/tmp/tasks/b1.output"]);
+  expect(commandOutputsToWatch([runningCommand(3)], NOW)).toEqual([]);
+});
+
+test("where no process list is available, silence must last an hour", () => {
+  const task = runningCommand(180);
+  const unknown = () => null;
+  expect(
+    withCommandActivity([task], outputAt(30), NOW, unknown)[0]!.status,
+  ).toBe("running");
+  expect(
+    withCommandActivity([task], outputAt(61), NOW, unknown)[0]!.status,
+  ).toBe("lost");
+});
+
+test("a command with an end notice, or an unknown output, is left alone", () => {
+  const done = { ...runningCommand(120), status: "completed" as const };
+  const unseen = runningCommand(120);
+  expect(
+    withCommandActivity([done], outputAt(30), NOW, nobody)[0]!.status,
+  ).toBe("completed");
+  expect(withCommandActivity([unseen], new Map(), NOW, nobody)[0]!.status).toBe(
+    "running",
+  );
 });
