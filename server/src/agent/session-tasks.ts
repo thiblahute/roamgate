@@ -13,7 +13,11 @@ export type AgentTask = {
   title: string;
   /** The command, or the subagent's type. */
   detail?: string;
-  /** Lost: still running a day on, with no end notice (gone with its session). */
+  /**
+   * Lost: no end notice, and nothing runs it any more: still running a day on
+   * (gone with its session), or a command whose output has gone silent with
+   * no process holding it open.
+   */
   status: "running" | "completed" | "failed" | "stopped" | "lost";
   /** A teammate's name. */
   name?: string;
@@ -56,6 +60,16 @@ export type WorkflowView = {
 const MAX_TASKS = 50;
 /** A task with no end notice this long after it started is taken as lost. */
 const LOST_AFTER_MS = 24 * 60 * 60 * 1000;
+/**
+ * Records of the transcript that replay what was sent to the model (the
+ * request and its messages): their tool calls and texts repeat ones the
+ * conversation already has, and must not start or end a task again.
+ */
+const REQUEST_RECORD_TYPES = new Set([
+  "api-request",
+  "api-request-blob",
+  "api-request-shape",
+]);
 
 function tag(text: string, name: string): string | undefined {
   const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text);
@@ -153,6 +167,11 @@ export function parseSessionTasks(
   };
 
   for (const record of records) {
+    if (
+      typeof record.type === "string" &&
+      REQUEST_RECORD_TYPES.has(record.type)
+    )
+      continue;
     const at = stringValue(record.timestamp) || undefined;
     const attachment = isRecord(record.attachment) ? record.attachment : null;
     if (attachment?.type === "queued_command")
@@ -304,9 +323,14 @@ export function parseSessionTasks(
           stringValue(result.outputFile) ||
           /Output is being written to: (\S+?)\.?(?:\s|$)/.exec(text)?.[1] ||
           task.outputFile;
-        if (part.is_error === true) {
+        // A call the permission check refused never started: no task id, and
+        // its result is an error string (no is_error flag).
+        const refused =
+          typeof record.toolUseResult === "string" &&
+          /^Error:/.test(record.toolUseResult);
+        if (part.is_error === true || (refused && !taskId)) {
           task.status = "failed";
-          task.summary = text.slice(0, 500);
+          task.summary = (text || String(record.toolUseResult)).slice(0, 500);
           task.endedAt = at;
         } else if (
           (task.kind === "agent" || task.kind === "teammate") &&
@@ -341,4 +365,74 @@ export function parseSessionTasks(
     }
   }
   return [...tasks.values()].reverse().slice(0, MAX_TASKS);
+}
+
+/**
+ * A background command whose output file has not been written this long is
+ * looked at: while a process still holds that file open it runs on, and
+ * once none does it is taken as lost (its end notice never came).
+ */
+export const COMMAND_SILENT_MS = 10 * 60 * 1000;
+/**
+ * Where nothing can tell whether a process holds the output open, a command
+ * silent this long is taken as lost.
+ */
+export const COMMAND_SILENT_UNCHECKED_MS = 60 * 60 * 1000;
+
+/** A command's output file, as last written: `null` when it is gone. */
+export type CommandOutputActivity = ReadonlyMap<
+  string,
+  { mtimeMs: number } | null
+>;
+
+/**
+ * The output files of the running commands that have been silent long
+ * enough to be looked at (see `withCommandActivity`).
+ */
+export function commandOutputsToWatch(
+  tasks: readonly AgentTask[],
+  now: number,
+): string[] {
+  const paths: string[] = [];
+  for (const task of tasks) {
+    if (task.kind !== "command" || task.status !== "running") continue;
+    if (!task.outputFile) continue;
+    const started = Date.parse(task.resumedAt ?? task.startedAt ?? "");
+    if (Number.isFinite(started) && now - started < COMMAND_SILENT_MS) continue;
+    paths.push(task.outputFile);
+  }
+  return [...new Set(paths)];
+}
+
+/**
+ * The running commands whose output has been silent past `COMMAND_SILENT_MS`
+ * and that no process holds open (`held` says: true, false, or null when it
+ * cannot tell) are taken as lost, ended at their output's last write. Copies,
+ * never the tasks given; a command that writes again is running again on the
+ * next read, since this is computed from the output on every read.
+ */
+export function withCommandActivity(
+  tasks: readonly AgentTask[],
+  activity: CommandOutputActivity,
+  now: number,
+  held: (path: string) => boolean | null,
+): AgentTask[] {
+  return tasks.map((task) => {
+    if (task.kind !== "command" || task.status !== "running") return task;
+    if (!task.outputFile) return task;
+    const file = activity.get(task.outputFile);
+    if (!file || !Number.isFinite(file.mtimeMs)) return task;
+    const silent = now - file.mtimeMs;
+    if (silent < COMMAND_SILENT_MS) return task;
+    const open = held(task.outputFile);
+    if (open === true) return task;
+    if (open === null && silent < COMMAND_SILENT_UNCHECKED_MS) return task;
+    const minutes = Math.round(silent / 60_000);
+    return {
+      ...task,
+      status: "lost",
+      endedAt: new Date(file.mtimeMs).toISOString(),
+      summary: `No output for ${minutes} minutes and no process writes it: it ended without a result.`,
+    };
+  });
 }
