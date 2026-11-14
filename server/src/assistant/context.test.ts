@@ -1554,7 +1554,88 @@ describe("Ranger structured mention targets", () => {
     Object.assign(f.panes[0]!, { agent_session: null });
     const catalog = await f.context.mentionCatalog(captured);
     expect(catalog.targets.map((target) => target.kind)).toEqual(["workspace"]);
-    expect(catalog.errors).toHaveLength(1);
+    // No session to bind is no failure: the pane is left out, silently.
+    expect(catalog.errors).toEqual([]);
+  });
+
+  test("a conversation-mode pane is mentioned by the session Roamgate drives there, guarded by it", async () => {
+    const f = fixture();
+    let session = "session-one";
+    (f.runtime as any).conversation = {
+      ownedSession: (paneId: string) =>
+        paneId === "w1:p1" ? { session_id: session, cwd: "/secret" } : null,
+    };
+    (f.runtime as any).agentSessions.readSummary = async () => ({
+      title: "Prores-fixes session",
+    });
+    // Herdr names the agent there, but holds no session for it.
+    Object.assign(f.panes[0]!, { agent: "claude", agent_session: null });
+    const captured = await f.context.captureScope([first]);
+    const catalog = await f.context.mentionCatalog(captured);
+    expect(catalog.errors).toEqual([]);
+    const agent = catalog.targets.find((target) => target.kind === "agent");
+    expect(agent).toMatchObject({
+      kind: "agent",
+      pane_id: "w1:p1",
+      terminal_id: "term1",
+      agent: "claude",
+      label: "Agent",
+    });
+    expect(agent!.kind === "agent" && agent!.agent_identity).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+    expect(isAssistantMentionCatalog(catalog)).toBe(true);
+    // Bound, it is readable like any mentioned agent.
+    const bound = await f.context.bindMentions(captured, [agent!]);
+    expect(bound).toHaveLength(1);
+    // The session changing (/clear, another takeover) breaks the binding.
+    session = "session-two";
+    const again = await f.context.mentionCatalog(captured);
+    const changed = again.targets.find((target) => target.kind === "agent");
+    expect(changed).toMatchObject({ kind: "agent", pane_id: "w1:p1" });
+    expect(changed!.kind === "agent" && changed!.agent_identity).not.toBe(
+      agent!.kind === "agent" && agent!.agent_identity,
+    );
+    await expect(f.context.bindMentions(captured, [agent!])).rejects.toThrow();
+  });
+
+  test("a conversation-mode pane without a name or label takes its session's title", async () => {
+    const f = fixture();
+    (f.runtime as any).conversation = {
+      ownedSession: () => ({ session_id: "s", cwd: "/x" }),
+    };
+    (f.runtime as any).agentSessions.readSummary = async () => ({
+      title: "Prores-fixes session",
+    });
+    Object.assign(f.panes[0]!, {
+      agent: "claude",
+      agent_session: null,
+      label: undefined,
+    });
+    const captured = await f.context.captureScope([first]);
+    const catalog = await f.context.mentionCatalog(captured);
+    expect(catalog.targets[1]).toMatchObject({
+      label: "Prores-fixes session",
+    });
+  });
+
+  test("agents that cannot be read make one error line, not one per pane", async () => {
+    const f = fixture();
+    const captured = await f.context.captureScope([
+      first,
+      { ...first, workspace_id: "w2" },
+    ]);
+    const original = f.call.getMockImplementation()!;
+    f.call.mockImplementation(async (method, params) => {
+      if (method === "pane.process_info") throw new Error("socket closed");
+      return original(method, params);
+    });
+    const catalog = await f.context.mentionCatalog(captured);
+    expect(catalog.errors).toEqual(["2 agents could not be read"]);
+    expect(catalog.targets.map((target) => target.kind)).toEqual([
+      "workspace",
+      "workspace",
+    ]);
   });
 
   test("workspace rename and bridge reconnect preserve concrete agent identity without relaxing generation checks", async () => {

@@ -114,3 +114,17 @@ export function insertAssistantMention(
     caret: start + token.length + 1,
   };
 }
+
+/**
+ * A catalog's errors with the per-pane lines of an older bridge folded into
+ * one: a long list of them filled the phone.
+ */
+export function collapseMentionErrors(errors: string[]): string[] {
+  const panes = errors.filter((error) =>
+    /^Agent unavailable in /.test(error),
+  ).length;
+  const rest = errors.filter((error) => !/^Agent unavailable in /.test(error));
+  return panes
+    ? [...rest, `${panes} agent${panes === 1 ? "" : "s"} could not be read`]
+    : rest;
+}

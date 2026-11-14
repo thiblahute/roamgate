@@ -20,6 +20,7 @@ import { getAssistantMentions } from "../assistant";
 import {
   assistantMentionKey,
   assistantMentionQuery,
+  collapseMentionErrors,
   insertAssistantMention,
 } from "../assistantMentions";
 import "./MessageMentions.css";
@@ -162,8 +163,9 @@ export function useMentionPicker({
             (target) => !listed.has(assistantMentionKey(target)),
           ),
         ]);
-        setErrors(catalog.errors);
-        if (catalog.errors.length) errorRef.current(catalog.errors.join("\n"));
+        const errors = collapseMentionErrors(catalog.errors);
+        setErrors(errors);
+        if (errors.length) errorRef.current(errors.join("\n"));
         setTruncated(catalog.truncated ?? false);
         setLoading(false);
       },

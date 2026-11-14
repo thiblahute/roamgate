@@ -636,6 +636,27 @@ if (process.env.ROAMGATE_RANGER_CHAT_DOM_TEST !== "1") {
         async () => new Promise((resolve) => setTimeout(resolve, 0)),
       );
       expect(errors).toContain("Mac is not reachable");
+      await key("Escape");
+      // An older bridge's line per unreadable pane folds into one line, in
+      // the picker and as the error: never list items.
+      errors.length = 0;
+      catalog.mockResolvedValueOnce({
+        targets: [],
+        errors: [
+          "Agent unavailable in sequence / w1F:p2",
+          "Agent unavailable in gstreamer-ocio / w27:p1",
+          "Agent unavailable in clauth / wJ:p3",
+        ],
+      });
+      await fill("@Pro");
+      await React.act(
+        async () => new Promise((resolve) => setTimeout(resolve, 0)),
+      );
+      expect(errors).toEqual(["3 agents could not be read"]);
+      expect(
+        container.querySelectorAll(".assistant-mention-notice"),
+      ).toHaveLength(1);
+      expect(options().join("|")).not.toContain("Agent unavailable");
     } finally {
       catalog.mockRestore();
       await React.act(async () => root.unmount());
