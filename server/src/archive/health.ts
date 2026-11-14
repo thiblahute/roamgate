@@ -1,4 +1,5 @@
 import { statfsSync } from "node:fs";
+import { legacyArchiveWarning } from "./dir";
 import { resolveHosts, type ArchiveRuntime } from "./hosts";
 import type { GuiArchiveSettings } from "./settings";
 import { type ArchiveDb, getMeta } from "./store";
@@ -124,6 +125,8 @@ export function archiveHealth(
       return null;
     }
   })();
+  const legacy = legacyArchiveWarning(archiveDir);
+  if (legacy) warnings.push(legacy);
   const low = freeGb !== null && freeGb < settings.min_free_gb;
   if (low)
     warnings.push(

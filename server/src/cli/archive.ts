@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ADAPTERS } from "../archive/adapters";
+import { resolveArchiveDir } from "../archive/dir";
 import {
   type ArchiveRuntime,
   defaultExec,
@@ -123,11 +124,10 @@ function archiveDirFor(
   settings: GuiArchiveSettings,
   flag?: string,
 ): string {
-  return (
-    flag ??
-    context.runtime.env.ROAMGATE_ARCHIVE_DIR?.trim() ??
-    settings.dir ??
-    join(runtimeDataRoot(context.runtime), "claude-archive")
+  return resolveArchiveDir(
+    flag ?? context.runtime.env.ROAMGATE_ARCHIVE_DIR?.trim() ?? settings.dir,
+    runtimeDataRoot(context.runtime),
+    (message) => context.log(message),
   );
 }
 

@@ -190,6 +190,7 @@ import { createArchivedSessionReader } from "./archive/file-access";
 import { normalizeArchiveSettings } from "./archive/settings";
 import { useArchivedSessionFiles } from "./agent/session-file-access";
 import { dataRoot } from "./config/data-paths";
+import { resolveArchiveDir } from "./archive/dir";
 import { join } from "node:path";
 import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
@@ -1110,9 +1111,11 @@ useArchivedSessionFiles(
     settings: async () =>
       (await readGuiSettings()).archive ?? normalizeArchiveSettings(undefined),
     archiveDir: (settings) =>
-      process.env.ROAMGATE_ARCHIVE_DIR?.trim() ||
-      settings.dir ||
-      join(dataRoot(), "claude-archive"),
+      resolveArchiveDir(
+        process.env.ROAMGATE_ARCHIVE_DIR?.trim() || settings.dir,
+        dataRoot(),
+        console.log,
+      ),
     runtime: () => ({
       homeDir: homedir(),
       platform: process.platform,
@@ -1125,9 +1128,11 @@ const assistantArchive = createArchiveToolHandler({
   settings: async () =>
     (await readGuiSettings()).archive ?? normalizeArchiveSettings(undefined),
   archiveDir: (settings) =>
-    process.env.ROAMGATE_ARCHIVE_DIR?.trim() ||
-    settings.dir ||
-    join(dataRoot(), "claude-archive"),
+    resolveArchiveDir(
+      process.env.ROAMGATE_ARCHIVE_DIR?.trim() || settings.dir,
+      dataRoot(),
+      console.log,
+    ),
   runtime: () => ({
     homeDir: homedir(),
     platform: process.platform,

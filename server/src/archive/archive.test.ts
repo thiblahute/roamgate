@@ -90,7 +90,7 @@ beforeEach(() => {
     env: {},
     dataDir: join(root, ".config", "roamgate"),
   };
-  archiveDir = join(root, ".config", "roamgate", "claude-archive");
+  archiveDir = join(root, ".config", "roamgate", "archive");
   mkdirSync(join(claudeDir(), SESSION, "subagents"), { recursive: true });
 });
 
