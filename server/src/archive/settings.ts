@@ -27,7 +27,7 @@ export type ArchiveHostSpec = {
 };
 
 export type GuiArchiveSettings = {
-  /** Archive directory; default `<data root>/claude-archive`. */
+  /** Archive directory; default `<data root>/archive`. */
   dir?: string;
   /** This machine's name in the archive; default from connections, else hostname. */
   host?: string;

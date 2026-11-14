@@ -574,8 +574,10 @@ binary works from a timer). Code: `server/src/archive/`, CLI
 
 ### Layout
 
-The archive directory defaults to `<data root>/claude-archive` (setting
-`archive.dir`, `--dir` or `ROAMGATE_ARCHIVE_DIR`), mode 0700, files 0600:
+The archive directory defaults to `<data root>/archive` (setting
+`archive.dir`, `--dir` or `ROAMGATE_ARCHIVE_DIR`), mode 0700, files 0600. A
+`claude-archive` directory from before the rename is moved to `archive` on first
+use; `health` warns when both exist:
 
 - `raw/<host>/<agent>/<relative path under the agent's root>.zst`: one zstd
   file per session file, the source of truth. A file only grows by appended

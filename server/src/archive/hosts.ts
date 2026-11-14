@@ -291,7 +291,7 @@ export async function pushAgent(
   root: string,
   extras: Array<{ path: string; relpath: string }>,
 ): Promise<void> {
-  const remote = push.archive_dir ?? "~/.config/roamgate/claude-archive";
+  const remote = push.archive_dir ?? "~/.config/roamgate/archive";
   const mirror = `${remote}/mirror/${hostId}/${adapter.id}`;
   const base = [
     "rsync",
