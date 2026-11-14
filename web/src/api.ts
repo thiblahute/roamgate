@@ -17,6 +17,7 @@ import {
   type RpcLane,
 } from "./rpcLanes";
 import { clearSavedTerminalComposerDrafts } from "./terminalComposer";
+import type { MrCachePush } from "../../shared/forge";
 import { MR_PUSH_KINDS, type MrReviewsPush } from "../../shared/mrReviews";
 import type { ReviewPush } from "../../shared/review";
 import { isReviewSnapshot } from "./reviewValidate";
@@ -394,6 +395,17 @@ function wsUrl(): string {
   return `${proto}://${location.host}/ws`;
 }
 
+function parseForgeCachePush(value: unknown): MrCachePush | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const push = value as Record<string, any>;
+  if (push.kind === "status" && push.status && typeof push.status === "object")
+    return push as MrCachePush;
+  if (push.kind === "card" && push.status && typeof push.status === "object")
+    return push as MrCachePush;
+  if (push.kind === "session" && push.session) return push as MrCachePush;
+  return null;
+}
+
 function parseMrReviewsPush(value: unknown): MrReviewsPush | null {
   if (!value || typeof value !== "object") return null;
   const push = value as Record<string, unknown>;
@@ -544,6 +556,7 @@ export class Bridge {
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
   private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
   private mrReviewsHandlers = new Set<(push: MrReviewsPush) => void>();
+  private forgeCacheHandlers = new Set<(push: MrCachePush) => void>();
   private forwardsHandlers = new Set<(forwards: ForwardRecord[]) => void>();
   private reviewHandlers = new Set<(push: ReviewPush) => void>();
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
@@ -1078,6 +1091,7 @@ export class Bridge {
     const hasUiSettings = owns("ui_settings");
     const hasWorkspaceTree = owns("workspace_tree");
     const hasMrReviews = owns("mr_reviews");
+    const hasForgeCache = owns("forge_cache");
     const hasForwards = owns("forwards");
     const hasReview = owns("review");
     const hasControl = owns("control");
@@ -1094,6 +1108,7 @@ export class Bridge {
       hasUiSettings,
       hasWorkspaceTree,
       hasMrReviews,
+      hasForgeCache,
       hasForwards,
       hasReview,
       hasControl,
@@ -1365,6 +1380,13 @@ export class Bridge {
       return;
     }
 
+    if (hasForgeCache) {
+      // Server-wide: what one device refreshed, every device shows.
+      const push = parseForgeCachePush(msg.forge_cache);
+      if (push) this.forgeCacheHandlers.forEach((handler) => handler(push));
+      return;
+    }
+
     if (hasWorkspaceTree) {
       // Server-wide, like interface preferences: whichever connection shows.
       this.workspaceTreeHandlers.forEach((handler) =>
@@ -1601,6 +1623,12 @@ export class Bridge {
   onForwards(cb: (forwards: ForwardRecord[]) => void): () => void {
     this.forwardsHandlers.add(cb);
     return () => this.forwardsHandlers.delete(cb);
+  }
+
+  /** The server's MR cache learned a new answer (a chip, card or session). */
+  onForgeCache(cb: (push: MrCachePush) => void): () => void {
+    this.forgeCacheHandlers.add(cb);
+    return () => this.forgeCacheHandlers.delete(cb);
   }
 
   /** The user's order, pins or removals of the reviews inbox changed. */

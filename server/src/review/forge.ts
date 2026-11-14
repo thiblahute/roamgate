@@ -16,6 +16,7 @@ import {
   validProject,
 } from "../../../shared/forge";
 import { sshCommandArgv, sshReadCommandArgv } from "../bridge/ssh-command";
+import { type MrCache, createMrCache } from "../mr-cache/cache";
 import { forgeGate } from "../workspace/forge-calls";
 import { gitShellCommandArgv } from "../workspace/git-shell";
 import { readPullRequestStatus } from "../workspace/pull-request";
@@ -63,6 +64,34 @@ export function forgeAnswerTtl(status: ForgeStatus): number {
   const pipeline = status.request.pipeline?.status;
   return pipeline === "running" || pipeline === "pending" ? 45_000 : 150_000;
 }
+/** How long a chip's answer stands in the MR cache, by what it says. */
+export function forgeCacheTtl(
+  status: ForgeStatus,
+  settings: ReturnType<MrCache["settings"]>,
+): number {
+  switch (status.state) {
+    case "error":
+      return 0;
+    case "not_signed_in":
+    case "unavailable":
+      return settings.unavailableMs;
+    case "security":
+      return settings.settledMs;
+    case "not_found":
+      return settings.noneMs;
+    default: {
+      const request = status.request;
+      if (!request) return settings.noneMs;
+      if (request.state !== "open" && request.state !== "locked")
+        return settings.settledMs;
+      const pipeline = request.pipeline?.status;
+      return pipeline === "running" || pipeline === "pending"
+        ? settings.runningMs
+        : settings.openMs;
+    }
+  }
+}
+
 /** What `!N` and `#N` mean in a checkout (its project, or its fork's parent). */
 const DEFAULT_PROJECT_TTL_MS = 30 * 60_000;
 /** Repositories of one session whose branch's request is looked up. */
@@ -774,9 +803,10 @@ type Cached<T> = { until: number; value: Promise<T> };
  * number) in flight, and each answer for a few seconds, whichever chips
  * and browsers ask.
  */
-export function createForgeCache(clock: () => number = Date.now) {
-  const statuses = new Map<string, Cached<ForgeStatus>>();
-  const sessions = new Map<string, Cached<ForgeSession>>();
+export function createForgeCache(
+  clock: () => number = Date.now,
+  mrCache: MrCache = createMrCache({ path: null, now: clock }),
+) {
   const projects = new Map<string, Cached<ForgeProject | null>>();
   const projectIds = new Map<string, number>();
   function remember<T>(
@@ -937,43 +967,71 @@ export function createForgeCache(clock: () => number = Date.now) {
       };
     }
   }
+  const pausedUntil = (context: ForgeContext, host: string) =>
+    forgeGate.pausedUntil(
+      context.runProcessWithCodeTimeout,
+      context.host ?? "",
+      host,
+    );
   return {
-    /** `fresh`: a click on refresh, not answered from what is known. */
-    status(
+    /**
+     * The status of a request, from the MR cache: known answers at once
+     * (marked stale, and read again in the background, once older than
+     * their state allows); `fresh`: a click on refresh, read now.
+     */
+    async status(
       context: ForgeContext,
       ref: ForgeRef,
       options: { fresh?: boolean } = {},
     ): Promise<ForgeStatus> {
-      const key = `${context.host ?? ""}\n${forgeRefKey(ref)}`;
       const fresh = options.fresh === true;
-      if (fresh && statuses.get(key)?.until !== Number.POSITIVE_INFINITY)
-        statuses.delete(key);
-      return remember(statuses, key, FORGE_STATUS_TTL_MS, () =>
-        ref.provider === "gitlab"
-          ? gitlabStatus(context, ref, fresh)
-          : githubStatus(context, ref, fresh),
+      const answer = await mrCache.get<ForgeStatus>(
+        `chip\0${context.host ?? ""}\0${forgeRefKey(ref)}`,
+        {
+          ttl: (status) => forgeCacheTtl(status, mrCache.settings()),
+          fresh,
+          failed: (status) => status.state === "error",
+          pausedUntil: () => pausedUntil(context, ref.host),
+          load: () =>
+            ref.provider === "gitlab"
+              ? gitlabStatus(context, ref, fresh)
+              : githubStatus(context, ref, fresh),
+        },
       );
+      return {
+        ...answer.value,
+        ref,
+        ...(answer.stale ? { stale: true } : {}),
+      };
     },
-    session(
+    /** A session's repositories and their requests, the same way. */
+    async session(
       context: ForgeContext,
       agentPath: string | undefined,
+      options: { fresh?: boolean } = {},
     ): Promise<ForgeSession> {
-      return remember(
-        sessions,
-        `${context.host ?? ""}\n${context.root}\n${agentPath ?? ""}`,
-        FORGE_SESSION_TTL_MS,
-        () =>
-          readForgeSession(context, agentPath, {
-            defaultProject: (root) =>
-              remember(
-                projects,
-                `${context.host ?? ""}\n${root}`,
-                DEFAULT_PROJECT_TTL_MS,
-                () => readDefaultProject({ ...context, root }),
-              ),
-            projectIds,
-          }),
+      const answer = await mrCache.get<ForgeSession>(
+        `session\0${context.host ?? ""}\0${context.root}\0${agentPath ?? ""}`,
+        {
+          ttl: () => FORGE_SESSION_TTL_MS,
+          fresh: options.fresh === true,
+          load: () =>
+            readForgeSession(context, agentPath, {
+              defaultProject: (root) =>
+                remember(
+                  projects,
+                  `${context.host ?? ""}\n${root}`,
+                  DEFAULT_PROJECT_TTL_MS,
+                  () => readDefaultProject({ ...context, root }),
+                ),
+              projectIds,
+            }),
+        },
       );
+      return {
+        ...answer.value,
+        ...(answer.stale ? { stale: true } : {}),
+      };
     },
   };
 }

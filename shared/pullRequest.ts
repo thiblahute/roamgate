@@ -48,6 +48,12 @@ export type PullRequestStatus = {
   request?: PullRequest;
   ci?: string;
   review?: string;
+  /**
+   * Served from the server's cache: when the forge was read, and whether
+   * that is older than its state allows (a read is then under way, and the
+   * answer is pushed when it changes).
+   */
+  cached?: { fetchedAt: string; stale: boolean };
 };
 
 export type PullRequestSummary = Pick<

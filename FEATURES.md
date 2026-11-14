@@ -13,7 +13,10 @@ A Web/PWA client for a running [Herdr](https://herdr.dev) server.
   number (`#N` for GitHub, `!N` for GitLab) and an open, draft, merged, or closed
   icon, preserving the workspace name. When several requests match, the sidebar
   shows the most recently created one. The workspace menu opens that request
-  directly. Status refreshes every
+  directly. Clicking the badge (or Enter or Space on it, or a tap on a phone)
+  opens the request on its forge in a new tab without selecting the workspace;
+  Option+click opens a GitLab request's review in Roamgate. The badge uses the
+  status already loaded and asks the forge nothing. Status refreshes every
   minute after each check; unresolved requests keep the branch label. A
   refresh keeps the current badge visible, and a failed refresh keeps the last
   known request dimmed with its last successful check time. A rebase stopped on
@@ -524,7 +527,11 @@ Inspector state is scoped to each checkout; see
   and the agent's, never inside code. A chip shows the number, state (open,
   draft, merged, closed), pipeline or checks, approvals and unresolved
   threads; hovering it shows the title, author, branches, failed jobs and when
-  it last changed. A click opens its page; **Review** opens a GitLab merge
+  it last changed (and when the forge was last read, with a Refresh button).
+  Known requests show at once when you switch workspaces: the server keeps
+  them (across restarts, for every device) and reads GitLab or GitHub again
+  only when they are older than their state allows (see `mr_cache` in
+  [deployment](docs/DEPLOYMENT.md#merge-and-pull-request-cache)). A click opens its page; **Review** opens a GitLab merge
   request's review in Changes. The chat's header shows the request of each
   repository the session works on (the pane's checkout, its `subprojects/` on
   a branch, and repositories the agent worked in), folded into one "3 MRs"

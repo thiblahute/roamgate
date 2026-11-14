@@ -534,6 +534,36 @@ excluded connections and subjects turned into anonymous excluded gaps.
 `submit` is forwarded only with `confirmed: true` and a `confirm_token` from a
 `submit-preview` this bridge ran for the same day in the last 15 minutes, once.
 
+## Merge and pull request cache
+
+`server/src/mr-cache` is the one cache of what the UI shows of merge and pull
+requests. Keys name the surface and the subject: `chip` (checkout host, forge
+host, project, number), `card` (checkout and the branch lookup's parameters)
+and `session` (checkout and agent path). Values are what the UI shows, with
+`fetchedAt`; cards also keep the checkout's HEAD (`ref\ncommit`).
+
+- **Stale-while-revalidate.** `get` serves a known answer at once. Older than
+  its TTL (by state, from `mr_cache`; see `cardAnswerTtl` and `forgeCacheTtl`)
+  or with a new commit on the same ref, it is marked `stale` and read again in
+  the background; an unknown answer, another ref, or `fresh` (a refresh click,
+  that key only) waits for the read.
+- **One read per key** serves every waiting surface and client. Background
+  reads obey `budget_per_minute`, a backoff after a failure (the known answer
+  stays) and the forge gate's pause (429, `Retry-After`); the gate's own call
+  budget is never bypassed.
+- **Persistence.** The map is written to `mr-cache/state.json`, capped by
+  `max_entries` (oldest first), and loaded at start. Tests never write it.
+- **Push.** A new answer is sent to every client as
+  `{"forge_cache": {kind: "status" | "card" | "session", ...}}` (the
+  `MrCachePush` type in `shared/forge.ts`). Clients replace the chip's slot or
+  the card's status (matched on root and branch), and ask sessions again
+  (answered from the cache). A `stale` answer is asked again after 15 s in
+  case the push was lost.
+- **Clients.** The chip store keeps its slots across workspace switches, and
+  the PR card shows the branch's last status at once; neither waits for the
+  forge. `git.pull_request` takes `refresh: true`, `forge.status` `fresh: true`
+  and `forge.session` `fresh: true` to bypass the cache.
+
 ## Agent integrations
 
 `integration.list` uses Herdr's RPC as the source of truth. Missing versions are

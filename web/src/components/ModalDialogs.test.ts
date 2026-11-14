@@ -557,6 +557,142 @@ async function registerDomTests() {
     }
   });
 
+  test("the sidebar request chip opens the request, or its review with Option, without selecting the workspace", async () => {
+    const previousState = store.get();
+    const gitlab: PullRequestStatus = {
+      ...mergedStatus,
+      provider: "gitlab",
+      request: {
+        ...mergedStatus.request!,
+        state: "opened",
+        url: "https://git.example.com/a/r/-/merge_requests/7",
+      },
+    };
+    let status: PullRequestStatus = gitlab;
+    const call = spyOn(client, "call").mockImplementation(async () => status);
+    const open = spyOn(window, "open").mockReturnValue(null);
+    const focus = spyOn(store, "focusWorkspace").mockImplementation(
+      () => undefined as never,
+    );
+    const forgeChip = await import("./ForgeChip");
+    const review = spyOn(forgeChip, "openForgeReviewIn").mockResolvedValue();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    let revision = 0;
+    const render = async () =>
+      act(async () => {
+        __storeTesting.replaceState({
+          ...previousState,
+          status: "connected",
+          workspaces: [
+            {
+              ...sidebarWorkspace,
+              worktree: {
+                ...sidebarWorkspace.worktree!,
+                repo_key: `chip-${revision++}`,
+              },
+            },
+          ],
+          tabs: [],
+          panes: [],
+        });
+        root!.render(h(WorkspaceCreation));
+      });
+    const chip = () =>
+      container.querySelector<HTMLAnchorElement>(
+        ".tree-row .ws-sub > a.workspace-review",
+      )!;
+    try {
+      await render();
+      expect(chip().getAttribute("href")).toBe(
+        "https://git.example.com/a/r/-/merge_requests/7",
+      );
+      expect(chip().getAttribute("rel")).toBe("noopener noreferrer");
+      expect(chip().title).toContain(
+        "Click: open on GitLab, Option+click: review here",
+      );
+      // A tap (pointer events, then click) on a phone is the same.
+      await act(async () => {
+        chip().dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        chip().dispatchEvent(new Event("pointerup", { bubbles: true }));
+        chip().click();
+      });
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenLastCalledWith(
+        "https://git.example.com/a/r/-/merge_requests/7",
+        "_blank",
+        "noopener,noreferrer",
+      );
+      expect(focus).not.toHaveBeenCalled();
+      for (const key of ["Enter", " "]) {
+        await act(async () => {
+          chip().dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+      }
+      expect(open).toHaveBeenCalledTimes(3);
+      expect(focus).not.toHaveBeenCalled();
+      expect(review).not.toHaveBeenCalled();
+      await act(async () => {
+        chip().dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            altKey: true,
+          }),
+        );
+        await Promise.resolve();
+      });
+      expect(review).toHaveBeenCalledWith(
+        expect.any(String),
+        "review-workspace",
+        "https://git.example.com/a/r/-/merge_requests/7",
+        "/repo/topic-0",
+      );
+      expect(open).toHaveBeenCalledTimes(3);
+      expect(focus).not.toHaveBeenCalled();
+      // The rest of the row still selects.
+      await act(async () =>
+        container.querySelector<HTMLElement>(".ws-label")!.click(),
+      );
+      expect(focus).toHaveBeenCalledTimes(1);
+      // GitHub has no review here: Option opens the page.
+      status = mergedStatus;
+      await render();
+      expect(chip().title).toContain("Click: open on GitHub");
+      expect(chip().title).not.toContain("Option");
+      await act(async () => {
+        chip().dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            altKey: true,
+          }),
+        );
+      });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledTimes(4);
+      // Not loaded yet: no chip, so nothing to click.
+      status = { ...mergedStatus, request: undefined };
+      await render();
+      expect(container.querySelector(".workspace-review")).toBeNull();
+    } finally {
+      await act(async () => root!.unmount());
+      root = null;
+      call.mockRestore();
+      open.mockRestore();
+      focus.mockRestore();
+      review.mockRestore();
+      __storeTesting.replaceState(previousState);
+    }
+  });
+
   test("sidebar reviews poll after completion, ignore ordinary metadata updates, and clear stale associations", async () => {
     let calls = 0;
     let pending: Array<(status: PullRequestStatus) => void> = [];

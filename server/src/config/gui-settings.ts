@@ -3,6 +3,12 @@ import {
   normalizeSiteRoots,
 } from "../../../shared/renderedPage";
 import {
+  DEFAULT_MR_CACHE_SETTINGS,
+  normalizeMrCacheSettings,
+  type MrCacheSettings,
+  type StoredMrCacheSettings,
+} from "../mr-cache/cache";
+import {
   parseWorkspaceTree,
   type WorkspaceTree,
 } from "../../../shared/workspaceTree";
@@ -256,6 +262,8 @@ export type GuiSettings = {
   limit_resume?: Partial<LimitResumeSettings>;
   /** The reviews inbox (absent: its defaults). */
   mr_reviews?: StoredMrReviewsSettings;
+  /** How long merge and pull request answers stand (absent: defaults). */
+  mr_cache?: StoredMrCacheSettings;
   /**
    * Agent profiles (shared/agentProfiles.ts): how agents are started.
    * Absent: the built-in Claude only, as before profiles.
@@ -390,7 +398,7 @@ export function worktreeRemoveCommandFor(
   );
 }
 
-function normalizeGuiSettings(raw: unknown): GuiSettings {
+export function normalizeGuiSettings(raw: unknown): GuiSettings {
   const obj = raw && typeof raw === "object" ? (raw as any) : {};
   const repositories =
     obj.repositories && typeof obj.repositories === "object"
@@ -500,6 +508,9 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
     ...(obj.profiles !== undefined
       ? { profiles: normalizeProfilesSettings(obj.profiles) }
       : {}),
+    ...(obj.mr_cache && typeof obj.mr_cache === "object"
+      ? { mr_cache: storedMrCache(obj.mr_cache) }
+      : {}),
     ...(normalizeStoredMrReviews(obj.mr_reviews)
       ? { mr_reviews: normalizeStoredMrReviews(obj.mr_reviews) }
       : {}),
@@ -534,6 +545,32 @@ function normalizeGuiSettings(raw: unknown): GuiSettings {
         }
       : {}),
   };
+}
+
+/** Only the valid fields of `mr_cache`, in the units settings.json uses. */
+function storedMrCache(raw: object): StoredMrCacheSettings {
+  const d = DEFAULT_MR_CACHE_SETTINGS;
+  const n = normalizeMrCacheSettings(raw);
+  const given = raw as Record<string, unknown>;
+  const out: StoredMrCacheSettings = {};
+  const pairs = [
+    ["running_seconds", n.runningMs / 1000, d.runningMs / 1000],
+    ["open_seconds", n.openMs / 1000, d.openMs / 1000],
+    ["settled_seconds", n.settledMs / 1000, d.settledMs / 1000],
+    ["none_seconds", n.noneMs / 1000, d.noneMs / 1000],
+    ["unavailable_seconds", n.unavailableMs / 1000, d.unavailableMs / 1000],
+    ["budget_per_minute", n.budgetPerMinute, d.budgetPerMinute],
+    ["max_entries", n.maxEntries, d.maxEntries],
+  ] as const;
+  for (const [key, value, fallback] of pairs)
+    if (key in given && (value !== fallback || given[key] === value))
+      out[key] = value;
+  return out;
+}
+
+/** The cache settings in effect, defaults included. */
+export function mrCacheSettings(settings: GuiSettings | null): MrCacheSettings {
+  return normalizeMrCacheSettings(settings?.mr_cache);
 }
 
 function workspaceTreeField(value: unknown): {

@@ -166,7 +166,7 @@ if (
       expect(card?.textContent).toContain("work → main");
       expect(
         [...(card?.querySelectorAll("button") ?? [])].map((b) => b.textContent),
-      ).toEqual(["Review in Roamgate"]);
+      ).toEqual(["Review in Roamgate", " Refresh"]);
       expect(
         [...(card?.querySelectorAll("a") ?? [])].map((a) =>
           a.getAttribute("href"),
@@ -179,6 +179,60 @@ if (
       expect(container.querySelector("p")?.textContent).toStartWith(
         "Opened !42",
       );
+    } finally {
+      await React.act(async () => root.unmount());
+    }
+  });
+
+  test("switching away and back shows the known chips at once, without asking again", async () => {
+    const { root, container, render, chips, calls } = setup((ref) =>
+      ready(ref),
+    );
+    try {
+      const view = <MarkdownPreview text="Opened !42 and !43." breaks />;
+      await render(view);
+      expect(calls).toHaveLength(2);
+      // Another workspace is shown, then this one again.
+      await render(<p>elsewhere</p>);
+      expect(chips()).toEqual([]);
+      await render(view);
+      // In the first render, before any answer could come: no spinner.
+      expect(chips().map((chip) => chip.state)).toEqual(["open", "open"]);
+      expect(container.querySelector(".forge-chip-loading")).toBeNull();
+      expect(calls).toHaveLength(2);
+    } finally {
+      await React.act(async () => root.unmount());
+    }
+  });
+
+  test("an answer another device caused the server to read is shown, marked stale until then", async () => {
+    const { root, container, render, chips } = setup((ref) => ({
+      ...ready(ref),
+      stale: true,
+      fetchedAt: new Date().toISOString(),
+    }));
+    try {
+      await render(<MarkdownPreview text="Opened !42." breaks />);
+      const chip = () => container.querySelector(".forge-chip")!;
+      expect(chip().classList.contains("is-stale")).toBe(true);
+      expect(chip().querySelector("a")?.getAttribute("title")).toContain(
+        "refreshing",
+      );
+      await React.act(async () => {
+        forgeStore.applyPush(
+          ready(
+            {
+              provider: "gitlab",
+              host: "gitlab.example",
+              project: "gst/gstreamer",
+              number: 42,
+            },
+            { state: "merged", pipeline: null },
+          ),
+        );
+      });
+      expect(chips()[0]?.state).toBe("merged");
+      expect(chip().classList.contains("is-stale")).toBe(false);
     } finally {
       await React.act(async () => root.unmount());
     }

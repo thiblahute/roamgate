@@ -1,4 +1,4 @@
-import { ChevronDown, GitPullRequest } from "lucide-react";
+import { ChevronDown, GitPullRequest, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type ForgePipelineStatus,
@@ -11,6 +11,8 @@ import type {
   ConversationRequestGroup,
 } from "../forgeRefs";
 import {
+  forgeAgeLabel,
+  forgeStore,
   useForgeHolds,
   useForgePipelines,
   useForgeStatus,
@@ -110,15 +112,25 @@ function ForgeRow({
   const status = entry.status;
   const request = status?.state === "ready" ? status.request : undefined;
   const state = forgeChipState(entry);
+  const checked = status?.fetchedAt ? forgeAgeLabel(status.fetchedAt) : "";
+  const note = [
+    state.detail ?? request?.title,
+    checked ? `checked ${checked}${status?.stale ? ", refreshing" : ""}` : "",
+  ]
+    .filter(Boolean)
+    .join(" - ");
   return (
-    <li ref={element} className="forge-row">
+    <li
+      ref={element}
+      className={`forge-row${status?.stale ? " is-stale" : ""}`}
+    >
       <a
         className="forge-row-main"
         href={request?.url}
         target="_blank"
         rel="noopener noreferrer"
         aria-disabled={!request}
-        title={state.detail ?? request?.title}
+        title={note}
       >
         <span className="forge-row-line">
           {repoLabel ? (
@@ -260,6 +272,7 @@ export function ForgeRequestsMenu({
   groups: ConversationRequestGroup[];
 }) {
   const { place, rootRef, toggle } = usePopover();
+  const chat = useForgeChat();
   const count = groups.reduce((sum, group) => sum + group.requests.length, 0);
   if (!count) return null;
   const noun = requestsNoun(
@@ -274,7 +287,23 @@ export function ForgeRequestsMenu({
         role="menu"
         style={{ top: place.top, right: place.right, width: MENU_WIDTH }}
       >
-        <h3>{noun} of this conversation</h3>
+        <div className="forge-menu-head">
+          <h3>{noun} of this conversation</h3>
+          <button
+            type="button"
+            className="forge-menu-refresh"
+            title="Read these from the forge now"
+            aria-label={`Refresh the ${noun} of this conversation`}
+            onClick={() => {
+              if (!chat?.client) return;
+              for (const group of groups)
+                for (const request of group.requests)
+                  forgeStore.refresh(chat.client, request.ref);
+            }}
+          >
+            <RefreshCw size={12} aria-hidden />
+          </button>
+        </div>
         {groups.map((group) => (
           <section key={group.key} className="forge-menu-group">
             <h4 title={`${group.project.host}/${group.project.project}`}>

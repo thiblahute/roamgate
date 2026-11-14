@@ -238,6 +238,39 @@ a.forge-chip-main:hover .forge-chip-ref {
   text-transform: uppercase;
 }
 
+.forge-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.forge-menu-refresh {
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.forge-menu-refresh:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.forge-row.is-stale .forge-row-main,
+.forge-chip.is-stale .forge-chip-main {
+  opacity: 0.8;
+}
+
+.forge-card-age {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .forge-menu h4 {
   display: flex;
   align-items: baseline;

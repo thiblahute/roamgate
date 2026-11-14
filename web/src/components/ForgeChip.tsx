@@ -43,7 +43,12 @@ import {
   ForgeSlotsContext,
   type ForgeSlotTarget,
 } from "../forgeSlots";
-import { type ForgeEntry, useForgeStatus } from "../forgeStore";
+import {
+  type ForgeEntry,
+  forgeAgeLabel,
+  forgeStore,
+  useForgeStatus,
+} from "../forgeStore";
 import { lazyWithReload } from "../lazyWithReload";
 import {
   rememberReviewSnapshot,
@@ -394,6 +399,16 @@ export async function openForgeReview(
   const workspaceId =
     chat?.workspaceId ??
     state.workspaces.find((workspace) => workspace.focused)?.workspace_id;
+  return openForgeReviewIn(connectionId, workspaceId, url, root ?? chat?.path);
+}
+
+/** Opens a request's review in `workspaceId` of one server. */
+export async function openForgeReviewIn(
+  connectionId: string | null | undefined,
+  workspaceId: string | undefined,
+  url: string,
+  path?: string,
+): Promise<void> {
   if (!connectionId || !workspaceId) {
     store.notify({
       kind: "error",
@@ -410,7 +425,7 @@ export async function openForgeReview(
       "review.open",
       {
         workspace_id: workspaceId,
-        ...((root ?? chat?.path) ? { path: root ?? chat?.path } : {}),
+        ...(path ? { path } : {}),
         target: { kind: "mr", url },
       },
     );
@@ -487,6 +502,13 @@ export function ForgeChip({
   const canReview =
     forgeRef.provider === "gitlab" && !!request && status?.state === "ready";
   const title = request?.title;
+  const checked = status?.fetchedAt ? forgeAgeLabel(status.fetchedAt) : "";
+  const detail = [
+    state.detail,
+    checked ? `Checked ${checked}${status?.stale ? ", refreshing" : ""}` : "",
+  ]
+    .filter(Boolean)
+    .join(" - ");
   const body = (
     <>
       <StateIcon status={status} />
@@ -533,7 +555,7 @@ export function ForgeChip({
   return (
     <span
       ref={element}
-      className={`forge-chip is-${variant} is-${state.tone}`}
+      className={`forge-chip is-${variant} is-${state.tone}${status?.stale ? " is-stale" : ""}`}
       data-forge-ref={`${forgeRef.provider}:${forgeRef.host}/${forgeRef.project}#${forgeRef.number}`}
       onMouseEnter={show}
       onMouseLeave={hide}
@@ -546,12 +568,12 @@ export function ForgeChip({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          title={state.detail}
+          title={detail || undefined}
         >
           {body}
         </a>
       ) : (
-        <span className="forge-chip-main" title={state.detail}>
+        <span className="forge-chip-main" title={detail || undefined}>
           {body}
         </span>
       )}
@@ -563,6 +585,12 @@ export function ForgeChip({
                 anchor={card}
                 onEnter={() => clearTimeout(timer.current)}
                 onLeave={hide}
+                onRefresh={
+                  chat?.client
+                    ? () => forgeStore.refresh(chat.client, forgeRef)
+                    : undefined
+                }
+                refreshing={entry.loading}
                 onReview={
                   canReview
                     ? () => void openForgeReview(chat, request.url, root)

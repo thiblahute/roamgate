@@ -14,6 +14,8 @@ import {
   forgeGate,
 } from "./forge-calls";
 import type { GitActionContext } from "./git-actions";
+import type { MrCache } from "../mr-cache/cache";
+import { sharedMrCache } from "../mr-cache/shared";
 
 /** What the CLIs say of their hosts and logins: rarely changes. */
 const HOSTS_REUSE_MS = 10 * 60_000;
@@ -405,17 +407,100 @@ async function readHead(context: GitActionContext): Promise<string | null> {
   }
 }
 
+/** How long a card's answer stands, by what it says. */
+export function cardAnswerTtl(
+  status: PullRequestStatus,
+  settings: {
+    runningMs: number;
+    openMs: number;
+    noneMs: number;
+    settledMs: number;
+    unavailableMs: number;
+  },
+): number {
+  if (status.state === "error" || status.retryable === true) return 0;
+  switch (status.state) {
+    case "ready":
+      if (!status.request) return settings.noneMs;
+      if (!["open", "opened", "locked"].includes(status.request.state))
+        return settings.settledMs;
+      return /running|pending|progress|queued|waiting|created/i.test(
+        status.ci ?? "",
+      )
+        ? settings.runningMs
+        : settings.openMs;
+    case "no_match":
+    case "detached":
+      return settings.noneMs;
+    case "select_match":
+    case "select_remote":
+      return settings.openMs;
+    default:
+      return settings.unavailableMs;
+  }
+}
+
+/**
+ * A card's status: the known answer at once (marked stale when it is older
+ * than its state allows, and then read again in the background, the clients
+ * told when it changes), read before answering only when nothing is known,
+ * HEAD is on another branch, or `refresh` asks for it.
+ */
+async function cardStatus(
+  context: GitActionContext,
+  params: Record<string, unknown>,
+  cache: MrCache,
+  state: SharedAnswers,
+  checkout: string,
+  key: string,
+): Promise<PullRequestStatus> {
+  const answer = await cache.get<PullRequestStatus>(`card\0${key}`, {
+    ttl: (status) => cardAnswerTtl(status, cache.settings()),
+    head: () => readHead(context),
+    fresh: params.refresh === true,
+    failed: (status) => status.state === "error" || status.retryable === true,
+    pausedUntil: (status) => {
+      try {
+        return status?.request
+          ? forgeGate.pausedUntil(
+              context.runProcessWithCodeTimeout,
+              context.host ?? "",
+              new URL(status.request.url).host,
+            )
+          : 0;
+      } catch {
+        return 0;
+      }
+    },
+    load: async () => {
+      const status = await readPullRequestStatus(context, params);
+      // The badges of this checkout learn what the card just read.
+      for (const each of state.answers.keys())
+        if (each.startsWith(`${checkout}\0`)) state.answers.delete(each);
+      return status;
+    },
+  });
+  return {
+    ...answer.value,
+    cached: {
+      fetchedAt: new Date(answer.fetchedAt).toISOString(),
+      stale: answer.stale,
+    },
+  };
+}
+
 /**
  * A checkout's pull or merge request status, shared by every browser
  * asking: identical lookups in flight are one, and a badge's answer is
  * reused for SHARED_SUMMARY_MS while HEAD is on the same ref and commit
  * (the forge lists behind it are reused that long anyway). A card's
- * lookup (not a summary) is always read afresh, and replaces what the
- * badges of that checkout knew.
+ * lookup (not a summary) is served from the MR cache (see cardStatus), and
+ * replaces what the badges of that checkout knew when it is read.
  */
 export function sharedPullRequestStatus(
   context: GitActionContext,
   params: Record<string, unknown>,
+  cache: MrCache = sharedMrCache(),
 ): Promise<PullRequestStatus> {
   const owner = context.runProcessWithCodeTimeout;
   let shared = sharedAnswers.get(owner);
@@ -426,12 +511,18 @@ export function sharedPullRequestStatus(
   const state = shared;
   const checkout = JSON.stringify([context.host ?? "", context.root]);
   const asked = Object.entries(params)
-    .filter(([name]) => name !== "workspace_id" && name !== "worktree_path")
+    .filter(
+      ([name]) =>
+        name !== "workspace_id" &&
+        name !== "worktree_path" &&
+        name !== "refresh",
+    )
     .toSorted(([a], [b]) => a.localeCompare(b));
   const key = `${checkout}\0${JSON.stringify(asked)}`;
+  const summary = params.summary === true;
+  if (!summary) return cardStatus(context, params, cache, state, checkout, key);
   const flying = state.inFlight.get(key);
   if (flying) return flying;
-  const summary = params.summary === true;
   const task = (async () => {
     const known = summary ? state.answers.get(key) : undefined;
     const fresh = known && Date.now() - known.at < SHARED_SUMMARY_MS;

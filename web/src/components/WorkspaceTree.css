@@ -470,3 +470,24 @@
   vertical-align: -1px;
   color: var(--accent);
 }
+
+a.workspace-review {
+  position: relative;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.workspace-review:hover,
+a.workspace-review:focus-visible {
+  text-decoration: underline;
+}
+
+/* A 44px target on touch without making the row taller. */
+@media (pointer: coarse) {
+  a.workspace-review::after {
+    content: "";
+    position: absolute;
+    inset-block: -14px;
+    inset-inline: -8px;
+  }
+}
