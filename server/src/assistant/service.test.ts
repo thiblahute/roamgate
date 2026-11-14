@@ -40,6 +40,7 @@ import {
 import type { PreparedAssistantAction } from "./actions";
 import { createClaudeCodeDriver } from "./claude-driver";
 import { createRangerMcp } from "./claude-mcp";
+import { rangerSystemPrompt } from "./ranger-tools";
 
 const workspace: AssistantWorkspace = {
   connection_id: "local",
@@ -5521,6 +5522,160 @@ describe("Ranger mentions", () => {
       .sessions!.find((session) => session.message_count > 0)!;
     await f.service.handle("select_session", { session_id: original.id });
     expect(f.service.peek().messages[0]!.mentions).toEqual([agentMarker]);
+  });
+
+  describe("addressed messages", () => {
+    const addressedAgent: AssistantMention = {
+      ...mentionedAgent,
+      start: 0,
+      end: 6,
+    };
+    const addressedWorkspace: AssistantMention = {
+      ...workspace,
+      workspace_label: workspace.label,
+      kind: "workspace",
+      label: "Space",
+      start: 0,
+      end: 6,
+    };
+    const sendArgs = {
+      connection_id: "local",
+      workspace_id: "ws",
+      pane_id: "pane",
+      prompt: "run the tests",
+    };
+
+    async function send(
+      text: string,
+      mention: AssistantMention,
+      run?: (input: Parameters<AssistantDriver["run"]>[0]) => Promise<void>,
+      approval?: "auto",
+    ) {
+      const inputs: Parameters<AssistantDriver["run"]>[0][] = [];
+      const sent: string[] = [];
+      const f = setup({
+        run: async (input) => {
+          inputs.push(input);
+          await run?.(input);
+          return [];
+        },
+      });
+      f.context.bindMentions = async (_scope, targets) =>
+        structuredClone(targets);
+      f.context.prepareAction = async () => ({
+        preview: {
+          ...workspace,
+          workspace_label: workspace.label,
+          kind: "send_prompt",
+          summary: "Send a prompt",
+          params: { pane_id: "pane", prompt: sendArgs.prompt },
+        },
+        execute: async () => {
+          sent.push(sendArgs.prompt);
+          return { status: "succeeded", detail: "Herdr accepted the prompt" };
+        },
+      });
+      await f.service.handle("configure", { config: configured });
+      if (approval)
+        await f.service.handle("configure_approval", {
+          approval_mode: approval,
+        });
+      await f.service.handle("send", {
+        request_id: "addressed",
+        text,
+        mentions: [mention],
+      });
+      await until(() => !f.service.peek().running);
+      return { f, inputs, sent };
+    }
+
+    test("tell the model to send the text after the mention to that agent", async () => {
+      const { inputs } = await send("@Codex run the tests", addressedAgent);
+      expect(inputs[0]!.text).toContain(
+        "addressed to @Codex, the first referenced object",
+      );
+      expect(inputs[0]!.text).toContain(
+        'Call propose_agent_prompt with the exact prompt "run the tests"',
+      );
+    });
+
+    test("a question or a mention inside the message stays a reference", async () => {
+      const question = await send("@Codex what are you doing?", addressedAgent);
+      expect(question.inputs[0]!.text).not.toContain(
+        "This message is addressed",
+      );
+      const inside = await send("Ask @Codex to run", {
+        ...mentionedAgent,
+        start: 4,
+        end: 10,
+      });
+      expect(inside.inputs[0]!.text).not.toContain("This message is addressed");
+      const reference = await send("What is @Codex doing", {
+        ...mentionedAgent,
+        start: 8,
+        end: 14,
+      });
+      expect(reference.inputs[0]!.text).not.toContain(
+        "This message is addressed",
+      );
+    });
+
+    test("a pending prompt waits for the confirmation, a full access one is sent", async () => {
+      const call = async (input: Parameters<AssistantDriver["run"]>[0]) => {
+        input.message("Prepared.");
+        await input.propose!("send_prompt", sendArgs);
+      };
+      const manual = await send("@Codex run the tests", addressedAgent, call);
+      expect(manual.sent).toEqual([]);
+      expect(
+        manual.f.service.peek().messages.at(-1)!.actions![0],
+      ).toMatchObject({ kind: "send_prompt", status: "pending" });
+      expect(manual.f.service.peek().messages.at(-1)!.text).toBe("Prepared.");
+      const auto = await send(
+        "@Codex run the tests",
+        addressedAgent,
+        call,
+        "auto",
+      );
+      expect(auto.sent).toEqual(["run the tests"]);
+    });
+
+    test("an addressed agent message with no prompt gets one plain answer", async () => {
+      const { f } = await send(
+        "@Codex run the tests",
+        addressedAgent,
+        async (input) => {
+          input.delta("Hello! Ranger is connected.");
+          input.message("Hello! Ranger is connected.");
+        },
+      );
+      const reply = f.service.peek().messages.at(-1)!;
+      expect(reply.text).toContain("Nothing was sent to @Codex");
+      expect(reply.text).not.toContain("Hello");
+    });
+
+    test("a workspace mention names workspace_status and never forces the answer", async () => {
+      const { f, inputs } = await send(
+        "@Space run the tests",
+        addressedWorkspace,
+        async (input) => {
+          input.message("Which agent do you mean?");
+        },
+      );
+      expect(inputs[0]!.text).toContain("if exactly one Agent runs there");
+      expect(f.service.peek().messages.at(-1)!.text).toBe(
+        "Which agent do you mean?",
+      );
+    });
+  });
+
+  test("the system prompt says how mentions work and that the open workspace is unknown", () => {
+    for (const automatic of [false, true]) {
+      const prompt = rangerSystemPrompt(automatic);
+      expect(prompt).toContain("addressed to that Agent");
+      expect(prompt).toContain("propose_agent_prompt");
+      expect(prompt).toContain("Never claim a current workspace");
+    }
   });
 
   test("invalid spans and changed sessions fail without admitting the model or losing the retry", async () => {
