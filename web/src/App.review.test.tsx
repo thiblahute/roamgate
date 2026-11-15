@@ -217,9 +217,13 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       );
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
-      // Inspector closed: the toggle opens Changes, expanded the first time.
+      // Inspector closed: the toggle opens Changes, expanded the first time,
+      // on the review the classic toggle would show (its uncommitted work:
+      // the Working scope).
       await app.toggleReview();
-      expect(app.openCalls()).toBe(0);
+      await app.settle(50);
+      expect(app.openCalls()).toBe(1);
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
       expect(app.inspector()).toMatchObject({
         open: true,
@@ -232,10 +236,12 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       expect(app.inspector()).toMatchObject({ open: false, expanded: false });
       // From Files, docked: Changes at its own size, then back to Files.
       await app.toggleReview();
+      await app.settle(50);
       await app.run(() => app.inspectorView("files"));
       expect(app.inspector()).toMatchObject({ open: true, view: "files" });
       expect(app.inspector()?.expanded).toBe(false);
       await app.toggleReview();
+      await app.settle(50);
       expect(app.inspector()).toMatchObject({
         open: true,
         view: "changes",
@@ -251,10 +257,10 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       const button = app.tabBarReview();
       expect(button).not.toBeNull();
       await app.click(button!);
+      await app.settle(50);
       expect(app.inspector()).toMatchObject({ view: "changes" });
       await app.click(button!);
       expect(app.inspector()).toMatchObject({ view: "files" });
-      expect(app.openCalls()).toBe(0);
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
@@ -272,9 +278,11 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       );
       app.setNextOpened("r1");
       await app.toggleReview();
+      await app.settle(50);
       await app.run(() => app.inspectorView("files"));
+      const opened = app.openCalls();
       await app.run(() => app.inspectorShowInReview("/repo/r1/src/a.ts", 12));
-      expect(app.openCalls()).toBe(0);
+      expect(app.openCalls()).toBe(opened);
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({
@@ -285,6 +293,75 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       await app.run(() => app.inspectorShowInReview("/repo/r1/src/a.ts", 3));
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({ line: 3 });
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, a workspace with several repositories keeps the classic pane, which switches between them, and says so", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      app.setRepos(["/repo/r1", "/repo/other"]);
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
+      expect(app.inspector()?.open ?? false).toBe(false);
+      expect(
+        app.notices().some((text) => text.includes("Several repositories")),
+      ).toBe(true);
+      // The toggle hides it again, as on classic.
+      await app.toggleReview();
+      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, a branch review opens Changes on the Branch scope", async () => {
+    const branch = reviewOf("r1", "w1");
+    branch.session.target = {
+      kind: "range",
+      base: "origin/main",
+      head: "HEAD",
+    };
+    const app = await mountAppWithReviews({ reviews: [branch] });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "branch-main" });
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, a review of another repository than the checkout keeps the classic pane", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r2", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r2");
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: ["r2"], shownId: "r2" });
+      expect(app.inspector()?.open ?? false).toBe(false);
     } finally {
       await app.unmount();
     }

@@ -39,7 +39,7 @@ export function scanRepos(
     undefined,
     { lane: "background" },
   ).then(
-    (result) => result.repos,
+    (result) => result.repos ?? [],
     () => [],
   );
   repoScans.set(key, repos);
