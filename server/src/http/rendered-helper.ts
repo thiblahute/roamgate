@@ -479,6 +479,80 @@ function renderedHelper(
     },
     true,
   );
+  // The empty overlay link ignores the mouse (above), so a plain click on a
+  // card follows it here instead: the smallest empty link under the point,
+  // after a short delay, so a double or triple click keeps selecting a word
+  // or paragraph for a comment, and only while nothing is selected.
+  const INTERACTIVE =
+    "a, button, input, select, textarea, summary, label, [role=button], [contenteditable]";
+  let followTimer = 0;
+  const cardLinkAt = (x: number, y: number) => {
+    let best: HTMLElement | null = null;
+    let bestArea = Infinity;
+    const links = d.querySelectorAll<HTMLElement>("a:empty[href]");
+    for (let i = 0; i < links.length; i++) {
+      const rect = links[i].getBoundingClientRect();
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom)
+        continue;
+      const area = rect.width * rect.height;
+      if (area < bestArea) {
+        best = links[i];
+        bestArea = area;
+      }
+    }
+    return best;
+  };
+  const hasSelectedText = () => {
+    const selection = w.getSelection();
+    return (
+      !!selection && !selection.isCollapsed && !!selection.toString().trim()
+    );
+  };
+  d.addEventListener(
+    "click",
+    (event) => {
+      if (event.detail > 1 && followTimer) {
+        w.clearTimeout(followTimer);
+        followTimer = 0;
+      }
+      if (event.altKey || pointMode) return;
+      if (
+        event.button !== 0 ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      )
+        return;
+      if (hasSelectedText() || event.detail > 1) return;
+      const target = event.target as Element | null;
+      if (target && target.closest && target.closest(INTERACTIVE)) return;
+      const link = cardLinkAt(event.clientX, event.clientY);
+      if (!link) return;
+      if (followTimer) w.clearTimeout(followTimer);
+      followTimer = w.setTimeout(() => {
+        followTimer = 0;
+        if (!hasSelectedText()) link.click();
+      }, 250);
+    },
+    true,
+  );
+  // A pointer over a followable card, unless the mouse is down (dragging a
+  // selection), text is selected, or Point mode has its crosshair.
+  let cardCursor = false;
+  d.addEventListener(
+    "mousemove",
+    (event) => {
+      if (pointMode) return;
+      const over =
+        event.buttons === 0 &&
+        !hasSelectedText() &&
+        !!cardLinkAt(event.clientX, event.clientY);
+      if (over === cardCursor) return;
+      cardCursor = over;
+      d.documentElement.style.cursor = over ? "pointer" : "";
+    },
+    true,
+  );
 
   const flash = (element: Element) => {
     element.scrollIntoView({ block: "center" });
