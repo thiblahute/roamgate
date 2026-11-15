@@ -365,6 +365,107 @@ export function rewriteRootUrls(
   );
 }
 
+/** Whether a URL's host is the machine's own: localhost, 127.x, [::1]. */
+function isLoopbackOrigin(url: URL): boolean {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
+  );
+}
+
+/**
+ * A page built by a dev server (Hugo's `baseURL = http://localhost:1315/`)
+ * links to itself by that origin, which would take its frame to the live
+ * server. The page names its own origin in `rel=canonical` or `og:url`;
+ * only when that is a loopback address, the URLs under it are written as
+ * root-absolute paths, which `rewriteRootUrls` then puts under the token.
+ * Other origins, and other loopback ports, are left alone.
+ */
+export function localizeLoopbackOrigin(
+  html: string,
+  map: (path: string) => string | null = () => null,
+): string {
+  let origin: string | null = null;
+  for (const tag of html.match(/<(?:link|meta)\b[^>]*>/gi) ?? []) {
+    const named =
+      /\brel\s*=\s*["']?canonical\b/i.test(tag) ||
+      /\bproperty\s*=\s*["']?og:url\b/i.test(tag);
+    if (!named) continue;
+    const value =
+      /\b(?:href|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+    const raw = value?.[1] ?? value?.[2] ?? value?.[3];
+    if (!raw) continue;
+    try {
+      const url = new URL(raw.replace(/&amp;/gi, "&"));
+      if (!isLoopbackOrigin(url)) continue;
+      origin = url.origin;
+      break;
+    } catch {
+      // not a URL: try the next one
+    }
+  }
+  if (!origin) return html;
+  const prefix = origin;
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const under = (url: string) =>
+    url.startsWith(`${prefix}/`)
+      ? url.slice(prefix.length)
+      : url === prefix
+        ? "/"
+        : url;
+  const attrs =
+    "src|href|action|poster|data|formaction|data-src|data-href|data-url|data-poster";
+  return html
+    .replace(
+      new RegExp(
+        `(\\s(?:${attrs})\\s*=\\s*)(["'])(${escaped}(?:/[^"']*)?)\\2`,
+        "gi",
+      ),
+      (_all, lead: string, quote: string, url: string) =>
+        `${lead}${quote}${under(url)}${quote}`,
+    )
+    .replace(
+      new RegExp(
+        `(\\s(?:${attrs})\\s*=\\s*)(${escaped}(?:/[^\\s>"']*)?)(?=[\\s>])`,
+        "gi",
+      ),
+      (_all, lead: string, url: string) => `${lead}"${under(url)}"`,
+    )
+    .replace(
+      /(\s(?:srcset|data-srcset)\s*=\s*)(["'])([^"']*)\2/gi,
+      (_all, lead: string, quote: string, set: string) =>
+        `${lead}${quote}${set
+          .split(",")
+          .map((part) =>
+            part.replace(
+              /^(\s*)(\S+)/,
+              (_m, space: string, url: string) => `${space}${under(url)}`,
+            ),
+          )
+          .join(",")}${quote}`,
+    )
+    .replace(/<meta\b[^>]*>/gi, (tag) =>
+      /\b(?:property|name)\s*=\s*["']?(?:og|twitter):/i.test(tag)
+        ? tag.replace(
+            /(\scontent\s*=\s*)(["'])([^"']*)\2/i,
+            (_all, lead: string, quote: string, url: string) => {
+              const path = under(url);
+              return `${lead}${quote}${path === url ? path : (map(path) ?? path)}${quote}`;
+            },
+          )
+        : tag,
+    )
+    .replace(
+      new RegExp(`url\\(\\s*(["']?)(${escaped}/[^"')\\s]*)\\1\\s*\\)`, "gi"),
+      (_all, quote: string, url: string) =>
+        `url(${quote}${under(url)}${quote})`,
+    );
+}
+
 /** Request headers passed to a site; never cookies, credentials, origin. */
 const FORWARDED_REQUEST_HEADERS = [
   "accept",
@@ -607,14 +708,19 @@ export function createRenderedPages(args: {
     nonce: string,
     token: string,
   ): Promise<Response> {
-    const html = rewriteRootUrls(decoded(body), "html", (path) =>
-      rootPath(token, path),
+    const found = entry(token);
+    const text = decoded(body);
+    const html = rewriteRootUrls(
+      found?.source.kind === "files"
+        ? localizeLoopbackOrigin(text, (path) => rootPath(token, path))
+        : text,
+      "html",
+      (path) => rootPath(token, path),
     );
     headers.set("content-type", "text/html; charset=utf-8");
     headers.delete("content-length");
     headers.delete("content-range");
     headers.delete("accept-ranges");
-    const found = entry(token);
     return new Response(
       injectHelper(
         html,

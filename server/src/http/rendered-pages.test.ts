@@ -13,6 +13,7 @@ import {
   renderedSvgPage,
   renderedCsp,
   renderedStray,
+  localizeLoopbackOrigin,
   rewriteRootUrls,
   SITE_ROOT_MAX_LEVELS,
   siteRootCandidates,
@@ -837,6 +838,65 @@ describe("rewriteRootUrls", () => {
     const html = await (await pages.handle(new Request(url), url))!.text();
     expect(html).toContain(`href="/rendered/${token}/b.html"`);
     expect(html).toContain(`href="/other"`);
+  });
+});
+
+describe("a dev server's own origin", () => {
+  const page = (canonical: string) =>
+    `<!doctype html><html><head>${canonical}<link rel="icon" href="http://localhost:1315/favicon.ico"><link rel="stylesheet" href="http://localhost:1315/css/a.css" integrity="sha256-x" crossorigin="anonymous"><meta property="og:image" content="http://localhost:1315/i.png"></head><body><a class="entry-link" href='http://localhost:1315/2019/04/slug/'>c</a><a href="http://localhost:9999/x/">other</a><a href="https://example.org/y">ext</a><img srcset="http://localhost:1315/a.png 1x, http://localhost:1315/b.png 2x"><div style="background:url(http://localhost:1315/bg.png)"></div></body></html>`;
+
+  async function serve(html: string) {
+    const pages = createRenderedPages({
+      readFile: async (): Promise<RenderedFile> => ({
+        body: html,
+        size: Buffer.byteLength(html),
+        contentType: "application/octet-stream",
+      }),
+    });
+    const token = pages.mint({
+      connectionId: "c",
+      mode: "static",
+      source: { kind: "files", root: "/site" },
+    });
+    const url = new URL(`https://r.example/rendered/${token}/index.html`);
+    const text = await (await pages.handle(new Request(url), url))!.text();
+    return { token, text };
+  }
+
+  test("a loopback canonical's URLs go under the token", async () => {
+    const { token, text } = await serve(
+      page(`<link rel="canonical" href="http://localhost:1315/">`),
+    );
+    const at = `/rendered/${token}`;
+    expect(text).toContain(`href='${at}/2019/04/slug/'`);
+    expect(text).toContain(`href="${at}/favicon.ico"`);
+    expect(text).toContain(`href="${at}/css/a.css"`);
+    expect(text).toContain(`content="${at}/i.png"`);
+    expect(text).toContain(`srcset="${at}/a.png 1x, ${at}/b.png 2x"`);
+    expect(text).toContain(`url(${at}/bg.png)`);
+    // The canonical itself, other ports and other hosts stay.
+    expect(text).toContain(`href="${at}/"`);
+    expect(text).toContain(`href="http://localhost:9999/x/"`);
+    expect(text).toContain(`href="https://example.org/y"`);
+  });
+
+  test("og:url counts, with other attribute orders", () => {
+    const out = localizeLoopbackOrigin(
+      `<meta content="http://127.0.0.1:8080/" property="og:url"><a href=http://127.0.0.1:8080/p>p</a>`,
+    );
+    expect(out).toContain(`<a href="/p">`);
+  });
+
+  test("a canonical elsewhere leaves the page alone", async () => {
+    const html = page(`<link rel="canonical" href="https://example.org/">`);
+    expect(localizeLoopbackOrigin(html)).toBe(html);
+    const { text } = await serve(html);
+    expect(text).toContain(`href="http://localhost:1315/favicon.ico"`);
+  });
+
+  test("a page without a canonical is unchanged", () => {
+    const html = page("");
+    expect(localizeLoopbackOrigin(html)).toBe(html);
   });
 });
 
