@@ -128,6 +128,10 @@ export type AppWithReviews = {
   focusWorkspace(id: string): Promise<void>;
   /** The review `openWorkspaceReview` finds or makes next (Option+R). */
   setNextOpened(id: string | null): void;
+  /** The notices shown since the mount. */
+  notices(): string[];
+  /** The repositories `review.repos` finds in the workspace. */
+  setRepos(roots: string[]): void;
   /** Calls App made to `openWorkspaceReview`. */
   openCalls(): number;
   /** Panes App was asked to focus. */
@@ -165,6 +169,8 @@ type Page = {
   };
   nextOpened: string | null;
   openCalls: number;
+  /** What `review.repos` finds in the workspace (one repository: none). */
+  repos: { root: string }[];
   highlighterPreloads: number;
   focusedPanes: string[];
   mountCount: Map<string, number>;
@@ -209,6 +215,14 @@ function stateWith(base: object, focused: string) {
       tab_count: 1,
       agent_status: "idle",
       active_tab_id: `tab-${id}`,
+      // Each workspace is the checkout of its review (/repo/r1, /repo/r2).
+      worktree: {
+        repo_key: `repo-${index + 1}`,
+        repo_name: `r${index + 1}`,
+        repo_root: `/repo/r${index + 1}`,
+        checkout_path: `/repo/r${index + 1}`,
+        is_linked_worktree: false,
+      },
     })),
     tabs: ["w1", "w2"].map((id) => ({
       tab_id: `tab-${id}`,
@@ -283,7 +297,8 @@ async function mockApp(before?: () => Promise<void> | void) {
     loadReviews: async () => {},
     loadedReviewConnections: () => new Set(["local"]),
     startReviewClient: () => {},
-    reviewCall: async () => ({}),
+    reviewCall: async (_connection: string, method: string) =>
+      method === "review.repos" ? { repos: now().repos } : {},
     rememberReviewSnapshot: () => {},
   }));
   const reviewOpenModule = await import("./reviewOpen");
@@ -398,6 +413,9 @@ async function mockApp(before?: () => Promise<void> | void) {
  * (pane `b`), the reviews given known to the review state, as a fresh
  * page: no pins, closed reviews or preferences stored.
  */
+// The store's own notify, wrapped once per mount for `notices()`.
+const notifyOf = new WeakMap<object, (notice: never) => unknown>();
+
 export async function mountAppWithReviews(options: {
   reviews: ReviewSnapshot[];
   /**
@@ -422,6 +440,7 @@ export async function mountAppWithReviews(options: {
     sessions,
     reviewState: { sessions, openRequest: null },
     nextOpened: null,
+    repos: [],
     openCalls: 0,
     highlighterPreloads: 0,
     focusedPanes: [],
@@ -430,6 +449,18 @@ export async function mountAppWithReviews(options: {
     inspectorProps: null,
   };
   await mockApp(options.before);
+  const notices: string[] = [];
+  // Each mount scans its own repositories.
+  (await import("./reviewRepos")).clearRepoScans();
+  {
+    const { store } = await import("./store");
+    const real = notifyOf.get(store) ?? store.notify.bind(store);
+    notifyOf.set(store, real);
+    store.notify = ((notice: { message: string }) => {
+      notices.push(notice.message);
+      return real(notice as Parameters<typeof store.notify>[0]);
+    }) as typeof store.notify;
+  }
   page.snapshot = stateWith(initialState, "w1");
   const current = page;
   const { default: App } = await import("./App");
@@ -511,6 +542,10 @@ export async function mountAppWithReviews(options: {
     },
     setNextOpened(id) {
       current.nextOpened = id;
+    },
+    notices: () => [...notices],
+    setRepos(roots) {
+      current.repos = roots.map((root) => ({ root }));
     },
     openCalls: () => current.openCalls,
     focusedPanes: () => [...current.focusedPanes],

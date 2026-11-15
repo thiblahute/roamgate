@@ -2990,7 +2990,13 @@ export default function App() {
     [reviewState.sessions, setReviewSessionId],
   );
   // Set below, once the inspector's callbacks exist (D6).
-  const toggleReviewInChangesRef = useRef<() => void>(() => {});
+  const toggleReviewInChangesRef = useRef<
+    (goTo?: {
+      path?: string;
+      line?: number;
+      scope?: "working" | "branch-main";
+    }) => void
+  >(() => {});
   const toggleReview = useCallback(async () => {
     // On "in Changes" the review is the inspector's Changes view.
     if (reviewSurfaceChoice() === "changes" && !reviewSessionId) {
@@ -3842,12 +3848,17 @@ export default function App() {
   const changesExpandedRef = useRef(new Map<string, boolean>());
   const otherExpandedRef = useRef(new Map<string, boolean>());
   const [changesGoTo, setChangesGoTo] = useState<{
-    path: string;
+    path?: string;
     line?: number;
+    scope?: "working" | "branch-main";
     at: number;
   } | null>(null);
   const toggleReviewInChanges = useCallback(
-    (goTo?: { path: string; line?: number }) => {
+    (goTo?: {
+      path?: string;
+      line?: number;
+      scope?: "working" | "branch-main";
+    }) => {
       const workspace = store.get().workspaces.find((each) => each.focused);
       if (!workspace) {
         openDiffViewer();
@@ -3862,6 +3873,47 @@ export default function App() {
       const sameOwner = !!current && sameResourceOwner(current.scope, scope);
       const onChanges =
         !!current?.open && sameOwner && current.view === "changes";
+      // The toggle shows what the classic one would (the pinned review,
+      // else the workspace's), in Changes' scope for it; what Changes
+      // cannot show yet stays in the classic pane.
+      if (!goTo && !onChanges) {
+        const sessionId = pinnedSessionId;
+        void (async () => {
+          const { openWorkspaceReview } = await import("./reviewOpen");
+          const picked =
+            sessionId ?? (await openWorkspaceReview(reviewState.sessions));
+          const snapshot = picked ? getReviewSnapshot(picked) : undefined;
+          // No review to pick (it said why): Changes as it was left.
+          if (!picked || !snapshot) {
+            toggleReviewInChangesRef.current({});
+            return;
+          }
+          const { changesReviewChoice } = await import("./changesReviewOpen");
+          const choice = await changesReviewChoice({
+            snapshot,
+            checkoutRoot: scope.kind === "worktree" ? scope.checkoutPath : null,
+            connectionId: connectionClient.connectionId,
+            panes: store
+              .get()
+              .panes.filter(
+                (pane) => pane.workspace_id === workspace.workspace_id,
+              ),
+            sessions: reviewState.sessions.values(),
+          });
+          if (choice.kind === "classic") {
+            preloadReviewCode();
+            store.notify({
+              kind: "info",
+              message: choice.reason,
+              autoDismissMs: 4000,
+            });
+            setReviewSessionId(choice.sessionId);
+            return;
+          }
+          toggleReviewInChangesRef.current({ scope: choice.scope });
+        })();
+        return;
+      }
       // Files' Review: Changes at that file and line, shown or not.
       if (goTo) setChangesGoTo({ ...goTo, at: Date.now() });
       if (onChanges && current && !goTo) {
@@ -3935,7 +3987,10 @@ export default function App() {
       connectionClient.connectionId,
       mobile,
       openDiffViewer,
+      pinnedSessionId,
+      reviewState.sessions,
       setInspectorExpanded,
+      setReviewSessionId,
     ],
   );
   toggleReviewInChangesRef.current = toggleReviewInChanges;

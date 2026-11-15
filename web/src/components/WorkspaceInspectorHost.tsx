@@ -153,6 +153,30 @@ function readTreeHidden(key: string): boolean {
   }
 }
 
+/**
+ * What Changes shows, in a line (the review in Changes): the repository,
+ * then the scope, its branch and base.
+ */
+export function changesScopeLabel({
+  mode,
+  base,
+  repo,
+  branch,
+}: {
+  mode?: "working" | "branch-main" | "last-step";
+  base?: string;
+  repo?: string;
+  branch?: string;
+}): string {
+  const what =
+    mode === "branch-main"
+      ? `${branch ? `branch ${branch}` : "this branch"} vs ${base ?? "its base"}`
+      : mode === "last-step"
+        ? "Last step: what the agent's last step changed"
+        : "Working tree: uncommitted changes";
+  return repo ? `${repo} · ${what}` : what;
+}
+
 /** A diff entry's path (from the checkout) and a path Files gave. */
 export function sameDiffPath(entryPath: string, path: string): boolean {
   const relative = entryPath.replace(/^\.?\//, "");
@@ -221,7 +245,12 @@ export function WorkspaceInspectorHost({
    * On "in Changes", Files' Review: the file (absolute or relative) and
    * line Changes' cursor goes to; `at` tells requests apart.
    */
-  reviewGoTo?: { path: string; line?: number; at: number } | null;
+  reviewGoTo?: {
+    path?: string;
+    line?: number;
+    scope?: "working" | "branch-main";
+    at: number;
+  } | null;
   onReanchorFileAnnotations: (path: string, text: string) => void;
   onReanchorDiffAnnotations: (
     path: string,
@@ -343,8 +372,14 @@ export function WorkspaceInspectorHost({
   }, [reviewGoTo]);
   useEffect(() => {
     if (!pendingGoTo) return;
+    if (pendingGoTo.scope) diffViewerRef.current?.showScope(pendingGoTo.scope);
+    const path = pendingGoTo.path;
+    if (path === undefined) {
+      setPendingGoTo(null);
+      return;
+    }
     const target = diffSelection.entries.find((entry) =>
-      sameDiffPath(entry.path, pendingGoTo.path),
+      sameDiffPath(entry.path, path),
     );
     if (!target) {
       if (diffSelection.summaryLoading) return;
@@ -1312,7 +1347,17 @@ export function WorkspaceInspectorHost({
                         key={contentResourceKey}
                         showFileSelector={false}
                         selectionRevision={diffSelection.selectionRevision}
-                        cursorGoTo={reviewGoTo}
+                        cursorGoTo={
+                          reviewGoTo?.path === undefined
+                            ? null
+                            : {
+                                path: reviewGoTo.path,
+                                at: reviewGoTo.at,
+                                ...(reviewGoTo.line !== undefined
+                                  ? { line: reviewGoTo.line }
+                                  : {}),
+                              }
+                        }
                         entry={diffSelection.entry}
                         file={diffSelection.file}
                         loading={diffSelection.loading}
@@ -1350,6 +1395,18 @@ export function WorkspaceInspectorHost({
                         }
                         onOpenFile={onOpenDiffFile}
                         reviewCursor={reviewInChanges}
+                        {...(reviewInChanges
+                          ? {
+                              scopeLabel: changesScopeLabel({
+                                mode: diffSelection.scopeMode,
+                                base: diffSelection.scopeBase,
+                                repo:
+                                  diffSelection.repoName ??
+                                  workspace?.worktree?.repo_name,
+                                branch: workspace?.worktree?.git_status?.branch,
+                              }),
+                            }
+                          : {})}
                         onGitAction={(action, path) =>
                           diffViewerRef.current?.runFileAction(action, path) ??
                           false

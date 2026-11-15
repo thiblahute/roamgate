@@ -88,6 +88,10 @@ export type ActiveDiffSelection = {
    * Branch scope shows one: its comments go to that base's review.
    */
   pickedBase?: string;
+  /** What is shown, for the review's scope line: scope, base, repository. */
+  scopeMode?: "working" | "branch-main" | "last-step";
+  scopeBase?: string;
+  repoName?: string;
 };
 
 export type DiffSelectionMeta = {
@@ -131,6 +135,8 @@ export type DiffViewerPanelHandle = {
   selectWorkingEntries: (entries: GitDiffEntry[]) => void;
   /** The changes read again, as the Refresh button does. */
   refresh: () => void;
+  /** The scope shown (the review toggle picks the review's). */
+  showScope: (scope: "working" | "branch-main") => void;
   /** The paths the diff's search (the review cursor's) has hits in. */
   markSearchMatches: (paths: readonly string[]) => void;
   /** The files' reviewed chunks (the review in Changes), for the tree. */
@@ -1323,6 +1329,17 @@ export function DiffViewerPanel({
         ...(diffScope === "branch-main" && baseBranch
           ? { pickedBase: comparisonBranchLabel(baseBranch) }
           : {}),
+        scopeMode: diffScope,
+        ...(diffScope === "branch-main" && (baseBranch || source.summary?.base)
+          ? {
+              scopeBase: comparisonBranchLabel(
+                baseBranch || source.summary?.base || "",
+              ),
+            }
+          : {}),
+        ...(source.summary?.repo_name
+          ? { repoName: source.summary.repo_name }
+          : {}),
       };
     },
     [
@@ -1670,6 +1687,7 @@ export function DiffViewerPanel({
       selectWorkingEntry: (target) => selectWorkingEntries([target]),
       selectWorkingEntries,
       refresh: () => refreshRef.current(),
+      showScope: (scope) => setDiffScope(scope),
       runFileAction: (action, path) => runFileActionRef.current(action, path),
       markReviewProgress: (progress) =>
         setReviewProgress((current) =>

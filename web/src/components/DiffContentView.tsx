@@ -936,6 +936,7 @@ function sameRange(
 export function DiffContentView({
   selectionRevision = 0,
   cursorGoTo = null,
+  scopeLabel,
   entry,
   file,
   loading,
@@ -970,6 +971,8 @@ export function DiffContentView({
   onGitAction,
 }: {
   selectionRevision?: number;
+  /** On "in Changes", what is shown: repository, scope, branch and base. */
+  scopeLabel?: string;
   /** Files' Review on "in Changes": the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;
   entry: GitDiffEntry | null;
@@ -2980,13 +2983,22 @@ export function DiffContentView({
         ) : null}
         {embedded ? null : (
           <div className="diff-content-title">
-            <strong>
-              {changedFileCount
-                ? `${changedFileCount} changed file${
-                    changedFileCount === 1 ? "" : "s"
-                  }`
-                : "Diff Viewer"}
-            </strong>
+            {scopeLabel ? (
+              <strong className="diff-content-scope" title={scopeLabel}>
+                {scopeLabel}
+                {changedFileCount
+                  ? ` · ${changedFileCount} file${changedFileCount === 1 ? "" : "s"}`
+                  : ""}
+              </strong>
+            ) : (
+              <strong>
+                {changedFileCount
+                  ? `${changedFileCount} changed file${
+                      changedFileCount === 1 ? "" : "s"
+                    }`
+                  : "Diff Viewer"}
+              </strong>
+            )}
           </div>
         )}
         {!embedded && showFileSelector && visibleEntries.length > 1 ? (
