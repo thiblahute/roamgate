@@ -20,10 +20,16 @@ export function PullRequestCard({
   client,
   workspaceId,
   branch,
+  compact = false,
 }: {
   client: ConnectionClient;
   workspaceId: string;
   branch?: string;
+  /**
+   * The review in Changes: one slim line, and nothing at all when there
+   * is no provider, no request or no branch to tell about.
+   */
+  compact?: boolean;
 }) {
   const ready = useConnectionReady(client);
   const [remote, setRemote] = useState("");
@@ -102,6 +108,7 @@ export function PullRequestCard({
   };
   return (
     <PullRequestCardView
+      compact={compact}
       current={current}
       loading={loading}
       stale={current ? stale : null}
@@ -126,6 +133,7 @@ export function PullRequestCard({
 type PullRequestStale = { failedAt: string; message?: string };
 
 export function PullRequestCardView({
+  compact = false,
   current,
   loading,
   stale = null,
@@ -135,6 +143,8 @@ export function PullRequestCardView({
   onRemoteChange,
   onMatchChange,
 }: {
+  /** One slim line; nothing when there is nothing to tell (Changes' review). */
+  compact?: boolean;
   current: PullRequestStatus | null;
   /** A request is pending; a shown status stays visible while it refreshes. */
   loading: boolean;
@@ -147,6 +157,13 @@ export function PullRequestCardView({
   onMatchChange: (value: string) => void;
 }) {
   const pr = current?.state === "ready" ? current.request : undefined;
+  if (
+    compact &&
+    !error &&
+    (!current ||
+      ["unsupported", "no_match", "detached"].includes(current.state))
+  )
+    return null;
   const provider =
     current?.provider === "github"
       ? "GitHub"
@@ -180,7 +197,7 @@ export function PullRequestCardView({
     : "";
   return (
     <section
-      className="pull-request-card"
+      className={`pull-request-card${compact ? " is-compact" : ""}`}
       aria-label="Pull or merge request status"
       aria-busy={loading || undefined}
       data-attention={needsAttention || undefined}

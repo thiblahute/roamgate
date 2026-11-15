@@ -157,3 +157,44 @@ test("stale cards keep the request link and show both refresh times", () => {
   expect(markup).toContain(`dateTime="${current.refreshedAt}"`);
   expect(markup).toContain("feature/review</code> (rebase in progress)");
 });
+
+test("compact (the review in Changes): nothing without a provider or a request, one slim line with one", () => {
+  const card = (current: PullRequestStatus | null, error = "") =>
+    renderToStaticMarkup(
+      createElement(PullRequestCardView, {
+        compact: true,
+        current,
+        loading: false,
+        error,
+        finishedAt: "",
+        onRefresh() {},
+        onRemoteChange() {},
+        onMatchChange() {},
+      }),
+    );
+  expect(card({ ...base, state: "unsupported" })).toBe("");
+  expect(card({ ...base, state: "no_match" })).toBe("");
+  expect(card({ ...base, state: "detached" })).toBe("");
+  expect(card(null)).toBe("");
+  // Something to act on, or an error, still shows, slim.
+  expect(card({ ...base, state: "select_remote" })).toContain("is-compact");
+  expect(card(null, "boom")).toContain("Status unavailable");
+  const ready = card({
+    ...base,
+    state: "ready",
+    provider: "github",
+    request: {
+      id: "team/project#2",
+      number: 2,
+      title: "A focused request",
+      author: "alice",
+      source: "feature",
+      target: "main",
+      state: "open",
+      draft: false,
+      url: "https://github.com/team/project/pull/2",
+    },
+  });
+  expect(ready).toContain("is-compact");
+  expect(ready).toContain("https://github.com/team/project/pull/2");
+});

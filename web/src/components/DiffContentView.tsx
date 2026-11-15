@@ -777,6 +777,7 @@ const DiffFileSection = memo(function DiffFileSection({
             type="button"
             className="diff-file-open"
             aria-label={openFileLabel}
+            title={openFileLabel}
             onClick={() => onOpenFile?.(section.entry)}
             disabled={!onOpenFile}
           >

@@ -1085,6 +1085,7 @@ export function WorkspaceInspectorHost({
             client={connectionClient}
             workspaceId={workspace.workspace_id}
             branch={workspace.worktree?.git_status?.branch}
+            compact={reviewInChanges}
           />
         ) : null}
 
