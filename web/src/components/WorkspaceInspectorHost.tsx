@@ -1595,6 +1595,23 @@ export function WorkspaceInspectorHost({
                                   workspace?.worktree?.git_status?.branch,
                               }),
                               scopeControls: changesScopeBar(),
+                              ...(changesOnly
+                                ? {
+                                    headEnd: (
+                                      <div className="diff-review-only-end">
+                                        <button
+                                          type="button"
+                                          className="diff-review-only-exit"
+                                          title="Show the inspector again (:only or Esc)"
+                                          onClick={toggleChangesOnly}
+                                        >
+                                          Show all
+                                        </button>
+                                        <ZenDock iconSize={14} />
+                                      </div>
+                                    ),
+                                  }
+                                : {}),
                             }
                           : {})}
                         onGitAction={(action, path) =>
@@ -1687,7 +1704,7 @@ export function WorkspaceInspectorHost({
             </InspectorViewContext.Provider>
           </div>
         )}
-        {changesOnly && state.view === "changes" ? (
+        {changesOnly && state.view === "changes" && !reviewInChanges ? (
           <div className="inspector-review-only-hint">
             <button
               type="button"
