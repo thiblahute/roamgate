@@ -60,6 +60,11 @@ export type ChangesAgent = {
   toggleHold: () => void;
   send: () => void;
   review: (focus?: string) => void;
+  /**
+   * Writes reviewed marks (`session.reviewed` changes: null drops one),
+   * opening the checkout's review for the first mark as a comment does.
+   */
+  markReviewed: (changes: Record<string, string | null>) => Promise<void>;
   /** Saves the overall comment, sent to the agent as it is saved when live. */
   saveOverall: (text: string) => Promise<void>;
   summary: string;
@@ -69,6 +74,7 @@ export type ChangesAgent = {
 export function useChangesAgent(
   connectionId: string,
   root: string | null | undefined,
+  workspaceId?: string | null,
 ): ChangesAgent {
   const { sessions } = useReviewState();
   const snapshot = useMemo(
@@ -157,6 +163,30 @@ export function useChangesAgent(
           ...(focus?.trim() ? { focus: focus.trim() } : {}),
         },
         `${name} could not review`,
+      );
+    },
+    markReviewed: async (changes) => {
+      if (!Object.keys(changes).length) return;
+      let id = sessionId;
+      if (!id) {
+        if (!workspaceId || !root) throw new Error("no checkout to review");
+        const opened = await reviewCall<ReviewSnapshot>(
+          connectionId,
+          "review.open",
+          {
+            workspace_id: workspaceId,
+            path: root,
+            target: { kind: "worktree" },
+          },
+        );
+        rememberReviewSnapshot(opened);
+        id = opened.session.id;
+      }
+      rememberReviewSnapshot(
+        await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
+          session_id: id,
+          reviewed: changes,
+        }),
       );
     },
     saveOverall: async (text) => {

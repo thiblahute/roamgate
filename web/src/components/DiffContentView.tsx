@@ -94,6 +94,22 @@ import {
 } from "../changesThreads";
 import { latestComment } from "../reviewNavigation";
 import { useChangesAgent } from "../changesReview";
+import {
+  CHANGES_REVIEW_VIEW,
+  type ChunkSpan,
+  changesReviewed,
+  chunkSpans,
+  markChunks,
+  reviewedLayout,
+} from "../changesReviewed";
+import { nextUnreviewedHunk } from "../reviewNavigation";
+import {
+  fileToggleChanges,
+  fileToggleNotice,
+  hunkToggle,
+  hunkToggleNotice,
+  pickHunks,
+} from "../reviewToggle";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
 import { stepNotice, stepUnresolved } from "../unresolvedThreads";
@@ -408,6 +424,7 @@ type DiffThreads = {
   nested: ReadonlyMap<string, ReviewThread[]>;
 };
 
+const NO_MARKS: Readonly<Record<string, string>> = {};
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
@@ -575,6 +592,8 @@ type DiffFileSectionProps = {
   cursorSelection?: SelectedLineRange | null;
   /** The review cursor's search has a hit in this file. */
   searchHit?: boolean;
+  /** Each chunk's staged state and reviewed mark (the review in Changes). */
+  chunkSpans?: readonly ChunkSpan[];
 };
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -598,6 +617,7 @@ const DiffFileSection = memo(function DiffFileSection({
   onLineClick,
   cursorSelection,
   searchHit = false,
+  chunkSpans,
 }: DiffFileSectionProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const measuredHeightRef = useRef<number | null>(null);
@@ -665,6 +685,13 @@ const DiffFileSection = memo(function DiffFileSection({
             onInstance(sectionKey, instance)
         : undefined,
     [onInstance, sectionKey],
+  );
+  const decorateChunks = useMemo(
+    () =>
+      chunkSpans
+        ? (node: HTMLElement) => markChunks(node.shadowRoot ?? node, chunkSpans)
+        : undefined,
+    [chunkSpans],
   );
   const lineClick = useMemo(
     () =>
@@ -842,6 +869,7 @@ const DiffFileSection = memo(function DiffFileSection({
               selectionActive={annotationSelectionActive}
               onInstance={surfaceInstance}
               onLineClick={lineClick}
+              {...(decorateChunks ? { decorate: decorateChunks } : {})}
               {...(cursorSelection !== undefined
                 ? { selectedLines: cursorSelection }
                 : {})}
@@ -886,7 +914,8 @@ function areDiffFileSectionPropsEqual(
     previous.onInstance === next.onInstance &&
     previous.onLineClick === next.onLineClick &&
     sameRange(previous.cursorSelection, next.cursorSelection) &&
-    previous.searchHit === next.searchHit
+    previous.searchHit === next.searchHit &&
+    previous.chunkSpans === next.chunkSpans
   );
 }
 
@@ -1136,6 +1165,7 @@ export function DiffContentView({
   const changesAgent = useChangesAgent(
     connectionClient.connectionId,
     reviewEditor ? (Object.values(filesByKey)[0]?.root ?? file?.root) : null,
+    Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
   );
   const shownThreads = useMemo(
     () =>
@@ -1420,7 +1450,13 @@ export function DiffContentView({
     ) => boolean;
     threadKey: (key: string, count: number | null) => boolean;
     move: (direction: 1 | -1, count: number) => number | null;
-  }>({ comment: () => false, threadKey: () => false, move: () => null });
+    markFile: () => void;
+  }>({
+    comment: () => false,
+    threadKey: () => false,
+    move: () => null,
+    markFile: () => {},
+  });
   const cursor = useDiffCursor({
     enabled: reviewCursor && !embedded,
     sections: cursorSections,
@@ -1449,11 +1485,26 @@ export function DiffContentView({
             reviewHandlers.current.threadKey(key, count),
           threadMove: (direction: 1 | -1, count: number) =>
             reviewHandlers.current.move(direction, count),
+          onMarkFile: () => reviewHandlers.current.markFile(),
         }
       : {}),
   });
   const cursorHandle = useRef<DiffCursor>(cursor);
   cursorHandle.current = cursor;
+  // The review's reviewed marks on the rows shown (phase 5).
+  const reviewLayout = useMemo(
+    () => reviewedLayout(cursor.model),
+    [cursor.model],
+  );
+  const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
+  const reviewState = useMemo(
+    () => changesReviewed(reviewLayout, reviewedMarks),
+    [reviewLayout, reviewedMarks],
+  );
+  const chunkSpansByKey = useMemo(
+    () => chunkSpans(cursor.model, reviewLayout, reviewState),
+    [cursor.model, reviewLayout, reviewState],
+  );
   const cursorMatching = useMemo(
     () => new Set(cursor.matchingPaths),
     [cursor.matchingPaths],
@@ -1771,6 +1822,104 @@ export function DiffContentView({
     return true;
   };
 
+  /** Writes reviewed marks; says how it went when it did not. */
+  const writeMarks = (
+    changes: Record<string, string | null>,
+    said: () => string,
+  ) => {
+    changesAgent.markReviewed(changes).then(
+      () => say(said()),
+      (error) =>
+        say(
+          `Not marked: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+    );
+  };
+  const reviewedFileCount = reviewState.files.size;
+  const reviewedChunkRows = (file: number, hunk: number) =>
+    reviewState.hunks[file]?.has(hunk) ?? false;
+  /** Option+V, v: the cursor's file reviewed, every chunk of it, or not. */
+  const toggleFile = () => {
+    const unit = reviewLayout.units[cursorHandle.current.rowIndex()];
+    const info = unit ? reviewLayout.files[unit.file] : undefined;
+    if (!unit || !info) return;
+    const marking = !reviewState.files.has(unit.file);
+    const to = marking
+      ? nextUnreviewedHunk(
+          reviewLayout.units,
+          (file, hunk) => file === unit.file || reviewedChunkRows(file, hunk),
+          cursorHandle.current.rowIndex(),
+          1,
+        )
+      : null;
+    writeMarks(
+      fileToggleChanges(info, marking, CHANGES_REVIEW_VIEW, reviewedMarks),
+      () =>
+        fileToggleNotice(marking, reviewedFileCount, reviewLayout.files.length),
+    );
+    if (to !== null) cursorHandle.current.moveTo(to);
+  };
+  /** r (no thread): the cursor's chunk, or those V covers, reviewed or not. */
+  const toggleChunks = () => {
+    const cursorRow = cursorHandle.current.rowIndex();
+    const selection = cursorHandle.current.selection();
+    const picked = pickHunks(
+      reviewLayout.units,
+      cursorRow,
+      selection,
+      (at) => reviewLayout.units[at] ?? null,
+    );
+    if (!picked.size) {
+      toggleFile();
+      return true;
+    }
+    cursorHandle.current.clearSelection();
+    const toggle = hunkToggle(
+      picked,
+      reviewLayout.files,
+      reviewState.hunks,
+      CHANGES_REVIEW_VIEW,
+      reviewedMarks,
+    );
+    const isPicked = (file: number, hunk: number) =>
+      picked.get(file)?.has(hunk) ?? false;
+    const to = toggle.marking
+      ? nextUnreviewedHunk(
+          reviewLayout.units,
+          (file, hunk) => isPicked(file, hunk) || reviewedChunkRows(file, hunk),
+          Math.max(selection ?? cursorRow, cursorRow),
+          1,
+        )
+      : null;
+    writeMarks(toggle.changes, () =>
+      hunkToggleNotice(toggle, reviewedFileCount, reviewLayout.files.length),
+    );
+    if (to !== null) cursorHandle.current.moveTo(to);
+    return true;
+  };
+  /** gu / gU: the next or previous chunk not reviewed, in any file. */
+  const jumpUnreviewed = (direction: 1 | -1) => {
+    const cursorRow = cursorHandle.current.rowIndex();
+    const to = nextUnreviewedHunk(
+      reviewLayout.units,
+      reviewedChunkRows,
+      cursorRow,
+      direction,
+    );
+    if (to === null) {
+      const unit = reviewLayout.units[cursorRow];
+      say(
+        unit && !reviewedChunkRows(unit.file, unit.hunk)
+          ? "This is the last chunk not reviewed."
+          : "Every chunk shown is reviewed.",
+      );
+      return true;
+    }
+    cursorHandle.current.moveTo(to);
+    return true;
+  };
+  reviewHandlers.current.markFile = toggleFile;
+
   reviewHandlers.current.threadKey = (key) => {
     const spot = spotAtCursor();
     const here = spot ? threadsAtCursor(readingOrder, spot) : [];
@@ -1850,9 +1999,23 @@ export function DiffContentView({
         threadView.toggleFold(first.thread);
         return true;
       case "r":
-        if (!first || !diffThreads) return false;
-        diffThreads.api.resolve(first.thread);
+        // A thread here (resolved ones too) before the chunk.
+        if (
+          first &&
+          diffThreads &&
+          (focused ||
+            (cursorHandle.current.selection() === null && here.length))
+        ) {
+          diffThreads.api.resolve(first.thread);
+          return true;
+        }
+        return toggleChunks();
+      case "v":
+        toggleFile();
         return true;
+      case "gu":
+      case "gU":
+        return jumpUnreviewed(key === "gu" ? 1 : -1);
       case "e": {
         // Your last comment on the line, rewritten in place.
         const written = (focused ? [{ thread: focused }] : here)
@@ -2489,6 +2652,9 @@ export function DiffContentView({
                 onLineClick: cursorLineClick,
                 cursorSelection: cursor.selectionIn(section.key),
                 searchHit: cursorMatching.has(section.entry.path),
+                ...(reviewEditor
+                  ? { chunkSpans: chunkSpansByKey.get(section.key) }
+                  : {}),
               }
             : {})}
         />

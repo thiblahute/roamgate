@@ -630,6 +630,8 @@ export type ChangesDiffOptions = {
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
   /** The review's Vim cursor ("in Changes", Vim keys on). */
   reviewCursor?: boolean;
+  /** The connection's id (default: one of its own per mount). */
+  connectionId?: string;
   /** A git action on a file (`gs`, `:stage`). */
   onGitAction?: (
     action: import("../gitActions").GitFileAction,
@@ -757,7 +759,7 @@ export async function mountChangesDiff(
     "../useInspectorCommands"
   );
   mounted += 1;
-  const connectionId = `changes-diff-${mounted}`;
+  const connectionId = initial.connectionId ?? `changes-diff-${mounted}`;
   const client: ConnectionClient = {
     connectionId,
     generation: 1,

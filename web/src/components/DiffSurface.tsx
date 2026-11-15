@@ -96,6 +96,21 @@ const DIFF_SELECTION_CSS = `
     color: var(--diffs-fg) !important;
     font-weight: 800;
   }
+  [data-column-number][data-chunk-stage="staged"] {
+    box-shadow: inset 3px 0 0 #3fb950;
+  }
+  [data-column-number][data-chunk-stage="unstaged"] {
+    box-shadow: inset 3px 0 0 #d29922;
+  }
+  [data-column-number][data-chunk-stage="partly"] {
+    box-shadow:
+      inset 3px 0 0 #d29922,
+      inset 6px 0 0 #3fb950;
+  }
+  [data-line][data-chunk-reviewed],
+  [data-column-number][data-chunk-reviewed] {
+    opacity: 0.55;
+  }
   ::highlight(roamgate-diff-cursor) {
     background-color: var(--diffs-selection-base);
     color: var(--diffs-bg);

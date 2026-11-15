@@ -100,7 +100,15 @@ export const DIFF_REVIEW_KEYS: readonly ShortcutRow[] = [
   ["j k", "into the messages (and the parts) of the comments under a line"],
   ["u", "bring back the comment dd deleted"],
   ["za", "fold / unfold the thread on the line"],
-  ["r", "resolve or reopen the thread on the line"],
+  [
+    "r",
+    "resolve or reopen the thread on the line; elsewhere mark the chunk reviewed (V: the chunks selected), again unmarks",
+  ],
+  [
+    "v Alt+V",
+    "mark the cursor's file reviewed, every chunk of it, or unmark it",
+  ],
+  ["gu gU", "next / previous chunk not reviewed, in any file (wrapping)"],
   ["e", "edit your last comment on the line"],
   ["dd", "delete your lone comment on the line"],
   ["T :conversations", "every comment, open ones first"],
@@ -165,6 +173,13 @@ export type DiffCursor = {
   selectedPaths: () => string[];
   /** Puts the cursor on a file's line (a thread's, say), scrolling to it. */
   goTo: (key: string, line: number, side: "old" | "new") => boolean;
+  /** The cursor's row of the model, and the Visual selection's other end. */
+  rowIndex: () => number;
+  selection: () => number | null;
+  /** Cancels the Visual selection. */
+  clearSelection: () => void;
+  /** Puts the cursor on a row of the model, scrolling to it. */
+  moveTo: (row: number) => void;
 };
 
 /** The cursor's line, as the review's anchors name it. */
@@ -192,6 +207,7 @@ export function useDiffCursor({
   onComment,
   threadKey,
   threadMove,
+  onMarkFile,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -229,6 +245,8 @@ export function useDiffCursor({
    * move once it stepped, or null when it took no step.
    */
   threadMove?: (direction: 1 | -1, count: number) => number | null;
+  /** Option+V (Alt+V): the cursor's file reviewed, or no longer. */
+  onMarkFile?: () => void;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -810,6 +828,21 @@ export function useDiffCursor({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (!enabled || event.defaultPrevented || !rows.length) return;
     if (isTypingTarget(event.target) || searchPrompt) return;
+    // Option+V (Alt+V): read by the key's code, as a Mac types "√".
+    if (
+      onMarkFile &&
+      event.altKey &&
+      event.code === "KeyV" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      machine.reset();
+      onMarkFile();
+      return;
+    }
     if (event.metaKey || event.altKey) return;
     if (event.ctrlKey) {
       const half = halfScreen();
@@ -986,6 +1019,10 @@ export function useDiffCursor({
     where,
     selectedPaths,
     goTo,
+    rowIndex: () => at,
+    selection: () => anchor,
+    clearSelection: () => setAnchor(null),
+    moveTo: (row) => jumpTo(row, undefined, "center"),
   };
 }
 
