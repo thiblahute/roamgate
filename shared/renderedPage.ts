@@ -152,6 +152,13 @@ export type RenderedFrameMessage =
   | { roamgate: "rendered"; type: "scroll"; y: number }
   /** The page's script went to `url` without loading a page (pushState). */
   | { roamgate: "rendered"; type: "location"; url: string }
+  /**
+   * Roamgate's not-found page for `url` (path and query under the token),
+   * shown in the frame instead of a page.
+   */
+  | { roamgate: "rendered"; type: "missing"; url: string }
+  /** Its link back: the frame shows again the page it was opened on. */
+  | { roamgate: "rendered"; type: "home" }
   /** How tall the page's content is, for a frame sized to it. */
   | { roamgate: "rendered"; type: "size"; height: number }
   /** A write of a listed site's page to its localStorage (see below). */
@@ -307,6 +314,7 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
   const raw = data as Record<string, unknown>;
   if (raw.roamgate !== "rendered") return null;
   if (raw.type === "clear") return { roamgate: "rendered", type: "clear" };
+  if (raw.type === "home") return { roamgate: "rendered", type: "home" };
   if (raw.type === "storage") {
     const write = parseStorageWrite(raw);
     return write ? { roamgate: "rendered", type: "storage", ...write } : null;
@@ -366,6 +374,8 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
   }
   if (raw.type === "location")
     return { roamgate: "rendered", type: "location", url };
+  if (raw.type === "missing")
+    return { roamgate: "rendered", type: "missing", url };
   if (raw.type === "stray")
     return url.startsWith("/") && !url.startsWith("//")
       ? { roamgate: "rendered", type: "stray", url }

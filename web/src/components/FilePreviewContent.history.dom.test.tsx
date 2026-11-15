@@ -100,6 +100,8 @@ if (process.env.ROAMGATE_PREVIEW_HISTORY_DOM_TEST !== "1") {
     "b.md": "# B\n\nWords of B. [to C](c.md)\n",
     "c.md": "# C\n\nWords of C.\n",
     "page.html": "<p>Page</p>",
+    "out/b.html": "<p>B, a 3D model</p>",
+    "paneles/a.html": "<p>A, never opened before</p>",
   };
   const preview = (path: string) => ({
     workspace_id: "w1",
@@ -411,6 +413,88 @@ if (process.env.ROAMGATE_PREVIEW_HISTORY_DOM_TEST !== "1") {
     });
     await again.say({ type: "history", step: -1 });
     expect(again.went[1]).toBe(`http://localhost/rendered/${T2}/page.html`);
+    await view.unmount();
+  });
+
+  /** The preview's frame now, as the sandbox gives it: navigated and told. */
+  const frameNow = (host: HTMLElement) => {
+    const frame = host.querySelector<HTMLIFrameElement>(
+      "iframe.file-preview-html",
+    )!;
+    const went: string[] = [];
+    const win = {
+      location: { replace: (url: string) => went.push(url) },
+      postMessage: () => {},
+    };
+    Object.defineProperty(frame, "contentWindow", {
+      value: win,
+      configurable: true,
+    });
+    const say = (data: Record<string, unknown>) =>
+      act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { roamgate: "rendered", ...data },
+            source: win as unknown as Window,
+          }),
+        );
+        await settle();
+      });
+    return { frame, went, say };
+  };
+
+  test("a tab shown again, its page not yet reported, never sends the next tab's frame to that page", async () => {
+    // Two listed folders, each a token serving its own: both pages are
+    // paths from their token's top (out/b.html is b.html, paneles/a.html
+    // is a.html).
+    const view = await mount("out/b.html");
+    const b = frameNow(view.host);
+    await b.say({
+      type: "ready",
+      url: "b.html",
+      title: "",
+      root: { base: "/", to: `/rendered/${"1".repeat(32)}/` },
+    });
+    await view.show("c.md");
+    // b.html's tab again: its page is to be shown again once its frame
+    // says it is there; a file never opened is picked before it does.
+    await view.show("out/b.html");
+    await view.show("paneles/a.html");
+    const a = frameNow(view.host);
+    await a.say({
+      type: "ready",
+      url: "a.html",
+      title: "",
+      root: { base: "/", to: `/rendered/${"2".repeat(32)}/` },
+    });
+    // Not paneles/b.html, which is not there.
+    expect(a.went).toEqual([]);
+    expect(view.button("Back").disabled).toBe(true);
+    await view.unmount();
+  });
+
+  test("a page kept that is not there any more: the tab's own page, the place dropped", async () => {
+    const view = await mount("page.html");
+    const first = frameNow(view.host);
+    await first.say({ type: "ready", url: "page.html", title: "" });
+    await first.say({ type: "ready", url: "docs/a.html", title: "" });
+    await view.show("a.md");
+    await view.show("page.html");
+    const again = frameNow(view.host);
+    await again.say({ type: "ready", url: "page.html", title: "" });
+    expect(again.went).toEqual(["http://localhost/rendered/tok/docs/a.html"]);
+    // Roamgate's not-found page in its place: the file's page instead.
+    await again.say({ type: "missing", url: "docs/a.html" });
+    expect(again.went[1]).toBe(again.frame.src);
+    await again.say({ type: "ready", url: "page.html", title: "" });
+    expect(view.button("Back").disabled).toBe(true);
+    expect(view.button("Forward").disabled).toBe(true);
+    // A link of the page's own to a page that is not there stays, with
+    // the not-found page's link back to the file.
+    await again.say({ type: "missing", url: "nowhere.html" });
+    expect(again.went.length).toBe(2);
+    await again.say({ type: "home" });
+    expect(again.went[2]).toBe(again.frame.src);
     await view.unmount();
   });
 }

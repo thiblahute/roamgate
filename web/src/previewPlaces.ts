@@ -40,7 +40,8 @@ function validPlace(value: unknown): value is PreviewPlace {
     typeof place.scroll === "number" &&
     Number.isFinite(place.scroll) &&
     (place.fragment === undefined || typeof place.fragment === "string") &&
-    (place.framePage === undefined || typeof place.framePage === "string")
+    (place.framePage === undefined || typeof place.framePage === "string") &&
+    (place.frameRoot === undefined || typeof place.frameRoot === "string")
   );
 }
 

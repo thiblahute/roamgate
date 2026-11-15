@@ -15,6 +15,12 @@ export type PreviewPlace = {
    * (pageFromHome): the same page whatever directory its token serves.
    */
   framePage?: string;
+  /**
+   * The directory `framePage` is a path from: the tab's file's, absolute
+   * on its host, or its URL's. A page is shown again only in a frame of
+   * that directory, never read from another's.
+   */
+  frameRoot?: string;
   /** How far down it was read, in CSS pixels. */
   scroll: number;
 };
@@ -77,12 +83,59 @@ export function keepScroll(
 export function settleFrame(
   history: PreviewHistory,
   framePage: string,
+  frameRoot?: string,
 ): PreviewHistory {
   const place = currentPlace(history);
-  if (place.framePage === framePage) return history;
+  if (place.framePage === framePage && place.frameRoot === frameRoot)
+    return history;
   const places = history.places.slice();
-  places[history.at] = { ...place, framePage };
+  const next: PreviewPlace = { ...place, framePage };
+  if (frameRoot === undefined) delete next.frameRoot;
+  else next.frameRoot = frameRoot;
+  places[history.at] = next;
   return { ...history, places };
+}
+
+/**
+ * The page `place` shows again in the frame of the tab `path`, whose
+ * pages are paths from `frameRoot` (when known yet): none for another
+ * tab's place, nor for a page kept from another directory.
+ */
+export function framePageFor(
+  place: PreviewPlace,
+  path: string,
+  frameRoot?: string,
+): string | undefined {
+  if (place.framePage === undefined || place.path !== path) return undefined;
+  if (
+    place.frameRoot !== undefined &&
+    frameRoot !== undefined &&
+    place.frameRoot !== frameRoot
+  )
+    return undefined;
+  return place.framePage;
+}
+
+/**
+ * The page the place shown went to is not there: the place is its tab's
+ * own page again, from its top.
+ */
+export function dropFramePage(history: PreviewHistory): PreviewHistory {
+  const place = currentPlace(history);
+  if (place.framePage === undefined) return history;
+  const own: PreviewPlace = { ...place, scroll: 0 };
+  delete own.framePage;
+  delete own.frameRoot;
+  const places = history.places.slice();
+  places[history.at] = own;
+  return { ...history, places };
+}
+
+/** The place shown, once when it is the one before it again. */
+export function dropRepeat(history: PreviewHistory): PreviewHistory {
+  const { at, places } = history;
+  if (at === 0 || !samePlace(places[at - 1]!, places[at]!)) return history;
+  return { places: places.filter((_, index) => index !== at), at: at - 1 };
 }
 
 export function canStep(history: PreviewHistory, step: -1 | 1): boolean {

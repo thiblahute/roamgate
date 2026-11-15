@@ -104,3 +104,16 @@ test("a frame URL kept by an older build is dropped, not shown doubled", () => {
     { path: "cancun/index.html", scroll: 0, framePage: "day.html" },
   ]);
 });
+
+test("a frame's page is read back with the directory it is a path from", () => {
+  const page = {
+    path: "/casa/paneles/a.html",
+    scroll: 0,
+    framePage: "a.html",
+    frameRoot: "/casa/paneles/",
+  };
+  const kept = (places: unknown[]) =>
+    parsePreviewTabPlace({ history: { places, at: 0 } });
+  expect(kept([page])?.history.places).toEqual([page]);
+  expect(kept([{ ...page, frameRoot: 3 }])).toBeNull();
+});
