@@ -36,6 +36,7 @@ if (process.env.ROAMGATE_ACTIVITY_ACCESS_DOM_TEST !== "1") {
       MouseEvent: browser.MouseEvent,
       getComputedStyle: browser.getComputedStyle.bind(browser),
       requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
       IS_REACT_ACT_ENVIRONMENT: true,
     }))
       Object.defineProperty(globalThis, key, {

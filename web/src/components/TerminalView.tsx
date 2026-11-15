@@ -237,6 +237,7 @@ import { AgentPermissionCard } from "./AgentPermissionCard";
 import { TerminalModeStrip } from "./TerminalModeStrip";
 import { takeVoiceHandoff, voiceHandoffPending } from "../voiceRoute";
 import { ConfirmDialog, MessageDialog } from "./ModalDialogs";
+import { ZenDock } from "./ZenIsland";
 import {
   readTerminalComposerShortcutsOpen,
   TerminalComposer,
@@ -4675,6 +4676,10 @@ export function TerminalView({
             >
               <X size={14} />
             </button>
+          ) : null}
+          {/* Over a chat it ends the chat's header: Zen's way out joins it. */}
+          {chatShown ? (
+            <ZenDock buttonClassName="terminal-pane-action" />
           ) : null}
         </div>
         {s.connectionPaused ? (

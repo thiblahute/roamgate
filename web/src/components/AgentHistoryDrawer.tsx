@@ -196,6 +196,7 @@ import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
 import { paneChatSource } from "../chatSource";
 import { ConfirmDialog } from "./ModalDialogs";
+import { ZenDock } from "./ZenIsland";
 import "./AgentHistoryDrawer.css";
 
 function formatRelativeTime(timestamp: string) {
@@ -3407,6 +3408,9 @@ export function AgentHistoryDrawer({
                 <X size={14} />
               </button>
             ) : null}
+            {/* A pane's chat: its header ends with the pane's own buttons,
+                which take Zen's way out (TerminalView). */}
+            {paneChat ? null : <ZenDock buttonClassName="agent-history-icon" />}
           </div>
         </div>
 
