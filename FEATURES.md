@@ -217,6 +217,14 @@ Inspector button, shortcuts, or workspace/agent menus.
   `:unstage`, `:discard` and `:delete` act on the file at the cursor or the
   files `V` selected, with the same confirmations as the tree's menus (a
   discard or a delete asks first). There is no single-letter staging key.
+- On the working changes `r` marks the chunk at the cursor reviewed (or the
+  chunks `V` selected; on a line with a comment it resolves the thread
+  first), then goes on to the next chunk not reviewed, and `r` again unmarks
+  it. `v` and `Option+V` (`Alt+V`) mark the file, every chunk of it. `gu` and
+  `gU` jump to the next and previous chunk not reviewed. The marks are the
+  checkout review's, so a chunk keeps its mark when it is staged. Every chunk
+  carries its state in the margin: green staged, amber unstaged, both when it
+  is partly staged; a reviewed chunk is dimmed.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes
