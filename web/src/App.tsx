@@ -2955,8 +2955,16 @@ export default function App() {
    * else a new one), at the file and line: its threads are the rendered
    * file's too.
    */
+  // Set below with the review toggle on "in Changes".
+  const openReviewInChangesAtRef = useRef<
+    (path: string, line?: number) => void
+  >(() => {});
   const showFileInReview = useCallback(
     async (path: string, line?: number) => {
+      if (reviewSurfaceChoice() === "changes") {
+        openReviewInChangesAtRef.current(path, line);
+        return;
+      }
       const { fileReviewRoot, openWorkspaceReview, pathInReview } =
         await import("./reviewOpen");
       const root = fileReviewRoot(
@@ -3833,88 +3841,106 @@ export default function App() {
   // Changes' own expanded flag and the other views' one, per checkout.
   const changesExpandedRef = useRef(new Map<string, boolean>());
   const otherExpandedRef = useRef(new Map<string, boolean>());
-  const toggleReviewInChanges = useCallback(() => {
-    const workspace = store.get().workspaces.find((each) => each.focused);
-    if (!workspace) {
-      openDiffViewer();
-      return;
-    }
-    const scope = resourceScopeForWorkspace(
-      connectionClient.connectionId,
-      workspace,
-    );
-    const owner = resourceOwnerKey(scope);
-    const current = inspectorStateRef.current;
-    const sameOwner = !!current && sameResourceOwner(current.scope, scope);
-    if (current?.open && sameOwner && current.view === "changes") {
-      changesExpandedRef.current.set(owner, current.expanded);
-      const back = reviewToggleReturnRef.current;
-      reviewToggleReturnRef.current = null;
-      const returning = back?.owner === owner ? back : null;
-      if (returning?.open) {
-        const next = {
-          ...current,
-          view: returning.view,
-          expanded: returning.expanded,
-        };
-        commitInspectorState(next);
-        writeInspectorPreferences(roamgateLocalStorage, next);
-        if (mobile) setMobileView(returning.view);
+  const [changesGoTo, setChangesGoTo] = useState<{
+    path: string;
+    line?: number;
+    at: number;
+  } | null>(null);
+  const toggleReviewInChanges = useCallback(
+    (goTo?: { path: string; line?: number }) => {
+      const workspace = store.get().workspaces.find((each) => each.focused);
+      if (!workspace) {
+        openDiffViewer();
         return;
       }
-      if (returning && returning.expanded !== current.expanded)
-        setInspectorExpanded(returning.expanded);
-      closeInspector();
-      return;
-    }
-    if (sameOwner && current && (!current.open || current.view !== "changes"))
-      otherExpandedRef.current.set(owner, current.expanded);
-    reviewToggleReturnRef.current = {
-      owner,
-      open: !!current?.open && sameOwner,
-      view: sameOwner && current ? current.view : "changes",
-      expanded: sameOwner && current ? current.expanded : false,
-    };
-    const returnFocus =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    // Focused below, on the diff rather than the view's tab.
-    openDiffViewer(workspace.workspace_id, false);
-    inspectorReturnFocusRef.current = returnFocus;
-    const expanded = changesExpandedRef.current.get(owner) ?? true;
-    if (inspectorStateRef.current?.expanded !== expanded)
-      setInspectorExpanded(expanded);
-    // The keys go to the diff (its Vim cursor), once Changes has drawn it.
-    const opened = inspectorStateRef.current;
-    const vim = vimKeys();
-    let frames = 0;
-    const focusDiff = () => {
-      if (inspectorStateRef.current !== opened) return;
-      // With ":novim" there is no cursor: the view's tab, as elsewhere.
-      const target = [
-        ...document.querySelectorAll<HTMLElement>(
-          vim
-            ? ".workspace-inspector-slot .diff-content-view[data-review-cursor]"
-            : '.workspace-inspector-tabs [role="tab"][aria-selected="true"]',
-        ),
-      ].find((element) => element.getClientRects().length > 0);
-      if (target) {
-        target.focus({ preventScroll: true });
-        const slot = target.closest(".workspace-inspector-slot");
-        if (slot) holdFocus(target, slot);
-      } else if (frames++ < 120) requestAnimationFrame(focusDiff);
-    };
-    requestAnimationFrame(focusDiff);
-  }, [
-    closeInspector,
-    commitInspectorState,
-    connectionClient.connectionId,
-    mobile,
-    openDiffViewer,
-    setInspectorExpanded,
-  ]);
+      const scope = resourceScopeForWorkspace(
+        connectionClient.connectionId,
+        workspace,
+      );
+      const owner = resourceOwnerKey(scope);
+      const current = inspectorStateRef.current;
+      const sameOwner = !!current && sameResourceOwner(current.scope, scope);
+      const onChanges =
+        !!current?.open && sameOwner && current.view === "changes";
+      // Files' Review: Changes at that file and line, shown or not.
+      if (goTo) setChangesGoTo({ ...goTo, at: Date.now() });
+      if (onChanges && current && !goTo) {
+        changesExpandedRef.current.set(owner, current.expanded);
+        const back = reviewToggleReturnRef.current;
+        reviewToggleReturnRef.current = null;
+        const returning = back?.owner === owner ? back : null;
+        if (returning?.open) {
+          const next = {
+            ...current,
+            view: returning.view,
+            expanded: returning.expanded,
+          };
+          commitInspectorState(next);
+          writeInspectorPreferences(roamgateLocalStorage, next);
+          if (mobile) setMobileView(returning.view);
+          return;
+        }
+        if (returning && returning.expanded !== current.expanded)
+          setInspectorExpanded(returning.expanded);
+        closeInspector();
+        return;
+      }
+      if (!onChanges) {
+        if (sameOwner && current)
+          otherExpandedRef.current.set(owner, current.expanded);
+        reviewToggleReturnRef.current = {
+          owner,
+          open: !!current?.open && sameOwner,
+          view: sameOwner && current ? current.view : "changes",
+          expanded: sameOwner && current ? current.expanded : false,
+        };
+      }
+      const returnFocus =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      if (!onChanges) {
+        // Focused below, on the diff rather than the view's tab.
+        openDiffViewer(workspace.workspace_id, false);
+        inspectorReturnFocusRef.current = returnFocus;
+        const expanded = changesExpandedRef.current.get(owner) ?? true;
+        if (inspectorStateRef.current?.expanded !== expanded)
+          setInspectorExpanded(expanded);
+      }
+      // The keys go to the diff (its Vim cursor), once Changes has drawn it.
+      const opened = inspectorStateRef.current;
+      const vim = vimKeys();
+      let frames = 0;
+      const focusDiff = () => {
+        if (inspectorStateRef.current !== opened) return;
+        // With ":novim" there is no cursor: the view's tab, as elsewhere.
+        const target = [
+          ...document.querySelectorAll<HTMLElement>(
+            vim
+              ? ".workspace-inspector-slot .diff-content-view[data-review-cursor]"
+              : '.workspace-inspector-tabs [role="tab"][aria-selected="true"]',
+          ),
+        ].find((element) => element.getClientRects().length > 0);
+        if (target) {
+          target.focus({ preventScroll: true });
+          const slot = target.closest(".workspace-inspector-slot");
+          if (slot) holdFocus(target, slot);
+        } else if (frames++ < 120) requestAnimationFrame(focusDiff);
+      };
+      requestAnimationFrame(focusDiff);
+    },
+    [
+      closeInspector,
+      commitInspectorState,
+      connectionClient.connectionId,
+      mobile,
+      openDiffViewer,
+      setInspectorExpanded,
+    ],
+  );
   toggleReviewInChangesRef.current = toggleReviewInChanges;
+  openReviewInChangesAtRef.current = (path, line) =>
+    toggleReviewInChanges({ path, ...(line !== undefined ? { line } : {}) });
   const keepInspectorForWorkspace = useCallback(
     (workspaceId: string, originPane?: Pane) => {
       const current = inspectorStateRef.current;
@@ -6745,6 +6771,7 @@ export default function App() {
                       onShowInReview={(path, line) =>
                         void showFileInReview(path, line)
                       }
+                      reviewGoTo={changesGoTo}
                       onReanchorFileAnnotations={reanchorFileAnnotations}
                       onReanchorDiffAnnotations={reanchorDiffAnnotations}
                       onEditAnnotation={(id) => {

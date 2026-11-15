@@ -98,6 +98,8 @@ type HostProps = {
 type InspectorProps = {
   fileSelection?: unknown;
   onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
+  onShowInReview?: (path: string, line?: number) => void;
+  reviewGoTo?: { path: string; line?: number; at: number } | null;
   state: {
     open: boolean;
     view: string;
@@ -136,6 +138,10 @@ export type AppWithReviews = {
   inspector(): InspectorProps["state"] | null;
   /** The file the inspector previews, as App last gave it. */
   inspectorFile(): unknown;
+  /** Files' Review, as the inspector's Files preview calls it. */
+  inspectorShowInReview(path: string, line?: number): void;
+  /** Where App last asked Changes' cursor to go. */
+  inspectorGoTo(): { path: string; line?: number; at: number } | null;
   /** Switches the shown inspector's view, as its tab strip does. */
   inspectorView(view: Parameters<InspectorProps["onViewChange"]>[0]): void;
   /** The tab bar's Review button, or null. */
@@ -511,6 +517,12 @@ export async function mountAppWithReviews(options: {
     highlighterPreloads: () => current.highlighterPreloads,
     inspector: () => current.inspectorProps?.state ?? null,
     inspectorFile: () => current.inspectorProps?.fileSelection ?? null,
+    inspectorShowInReview(path, line) {
+      if (!current.inspectorProps?.onShowInReview)
+        throw new Error("no Review in the inspector");
+      current.inspectorProps.onShowInReview(path, line);
+    },
+    inspectorGoTo: () => current.inspectorProps?.reviewGoTo ?? null,
     inspectorView(view) {
       if (!current.inspectorProps) throw new Error("no inspector shown");
       current.inspectorProps.onViewChange(view);

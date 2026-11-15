@@ -209,6 +209,7 @@ export function useDiffCursor({
   threadMove,
   onMarkFile,
   onScrollTo,
+  goTo: lineGoTo = null,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -254,6 +255,11 @@ export function useDiffCursor({
    * putting the files back where they were.
    */
   onScrollTo?: () => void;
+  /**
+   * Files' Review: the cursor to that file's line (the nearest one shown),
+   * once the file is drawn; `at` tells requests apart.
+   */
+  goTo?: { path: string; line?: number; at: number } | null;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -373,6 +379,47 @@ export function useDiffCursor({
     const file = model.files.find((each) => each.key === selectedKey);
     if (file && file.end > file.start) jumpTo(file.start, 0, "none");
   }, [selectionRevision, selectedKey, model, jumpTo]);
+
+  // Files' Review: the file's line, once its rows are in the model.
+  // A request a few seconds old is not taken again by a new surface.
+  const goToDone = useRef(0);
+  useEffect(() => {
+    if (!enabled || !lineGoTo || lineGoTo.at === goToDone.current) return;
+    if (Date.now() - lineGoTo.at > 10_000) return;
+    const rows = model.rows;
+    const relative = (path: string) => path.replace(/^\.?\//, "");
+    let best = -1;
+    let distance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]!;
+      const path = relative(row.path);
+      if (
+        lineGoTo.path !== row.path &&
+        !lineGoTo.path.endsWith(`/${path}`) &&
+        lineGoTo.path !== path
+      )
+        continue;
+      if (lineGoTo.line === undefined) {
+        best = index;
+        break;
+      }
+      const line = row.new ?? row.old;
+      if (line === null) continue;
+      const away = Math.abs(line - lineGoTo.line);
+      if (away < distance) {
+        distance = away;
+        best = index;
+      }
+    }
+    // Once the tree picked the file (its first line, its scroll to the
+    // top), the line, centered.
+    if (best < 0 || rows[best]!.key !== selectedKey) return;
+    goToDone.current = lineGoTo.at;
+    const target = best;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => jumpTo(target, 0, "center")),
+    );
+  }, [enabled, lineGoTo, model, jumpTo, selectedKey, selectionRevision]);
 
   // ---- Drawing: Pierre's active line and selection, the column ----------
 

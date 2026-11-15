@@ -935,6 +935,7 @@ function sameRange(
 
 export function DiffContentView({
   selectionRevision = 0,
+  cursorGoTo = null,
   entry,
   file,
   loading,
@@ -969,6 +970,8 @@ export function DiffContentView({
   onGitAction,
 }: {
   selectionRevision?: number;
+  /** Files' Review on "in Changes": the cursor to that file and line. */
+  cursorGoTo?: { path: string; line?: number; at: number } | null;
   entry: GitDiffEntry | null;
   file: GitDiffFile | null;
   loading: boolean;
@@ -1481,6 +1484,7 @@ export function DiffContentView({
     onScrollTo: () => {
       userScrollUntilRef.current = performance.now() + 150;
     },
+    goTo: cursorGoTo,
     ...(reviewEditor
       ? {
           onComment: (

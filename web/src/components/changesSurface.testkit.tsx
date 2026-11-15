@@ -633,6 +633,8 @@ export type ChangesDiffOptions = {
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
   /** The review's Vim cursor ("in Changes", Vim keys on). */
   reviewCursor?: boolean;
+  /** Files' Review on "in Changes": the cursor to that file and line. */
+  cursorGoTo?: { path: string; line?: number; at: number } | null;
   /** The connection's id (default: one of its own per mount). */
   connectionId?: string;
   /** A git action on a file (`gs`, `:stage`). */
@@ -853,6 +855,7 @@ export async function mountChangesDiff(
               ? { onEditAnnotation: options.onEditAnnotation }
               : {}),
             reviewCursor: options.reviewCursor ?? false,
+            ...(options.cursorGoTo ? { cursorGoTo: options.cursorGoTo } : {}),
             ...(options.onGitAction
               ? { onGitAction: options.onGitAction }
               : {}),

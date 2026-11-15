@@ -153,6 +153,14 @@ function readTreeHidden(key: string): boolean {
   }
 }
 
+/** A diff entry's path (from the checkout) and a path Files gave. */
+export function sameDiffPath(entryPath: string, path: string): boolean {
+  const relative = entryPath.replace(/^\.?\//, "");
+  return (
+    path === entryPath || path === relative || path.endsWith(`/${relative}`)
+  );
+}
+
 export function WorkspaceInspectorHost({
   state,
   onReady,
@@ -172,6 +180,7 @@ export function WorkspaceInspectorHost({
   onCreateAnnotation,
   onAddReviewImage,
   onShowInReview,
+  reviewGoTo = null,
   onReanchorFileAnnotations,
   onReanchorDiffAnnotations,
   onEditAnnotation,
@@ -208,6 +217,11 @@ export function WorkspaceInspectorHost({
   onAddReviewImage?: (file: File) => Promise<string>;
   /** Shows a file of a checkout (absolute path) in its code review. */
   onShowInReview?: (path: string, line?: number) => void;
+  /**
+   * On "in Changes", Files' Review: the file (absolute or relative) and
+   * line Changes' cursor goes to; `at` tells requests apart.
+   */
+  reviewGoTo?: { path: string; line?: number; at: number } | null;
   onReanchorFileAnnotations: (path: string, text: string) => void;
   onReanchorDiffAnnotations: (
     path: string,
@@ -318,6 +332,33 @@ export function WorkspaceInspectorHost({
   const vim = useVimKeys();
   const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes" && vim;
   /** The files in the tree's groups when Changes is the review. */
+  // Files' Review on "in Changes": that file's entry picked in the tree.
+  const lastGoTo = useRef(0);
+  const [pendingGoTo, setPendingGoTo] = useState<typeof reviewGoTo>(null);
+  useEffect(() => {
+    if (!reviewGoTo || reviewGoTo.at === lastGoTo.current) return;
+    if (Date.now() - reviewGoTo.at > 10_000) return;
+    lastGoTo.current = reviewGoTo.at;
+    setPendingGoTo(reviewGoTo);
+  }, [reviewGoTo]);
+  useEffect(() => {
+    if (!pendingGoTo) return;
+    const target = diffSelection.entries.find((entry) =>
+      sameDiffPath(entry.path, pendingGoTo.path),
+    );
+    if (!target) {
+      if (diffSelection.summaryLoading) return;
+      store.notify({
+        kind: "info",
+        message: "This file has no change: it is not in Changes",
+        autoDismissMs: 3000,
+      });
+      setPendingGoTo(null);
+      return;
+    }
+    diffViewerRef.current?.selectWorkingEntry(target);
+    setPendingGoTo(null);
+  }, [pendingGoTo, diffSelection.entries, diffSelection.summaryLoading]);
   const shownDiffEntries = useMemo(
     () =>
       reviewInChanges
@@ -1271,6 +1312,7 @@ export function WorkspaceInspectorHost({
                         key={contentResourceKey}
                         showFileSelector={false}
                         selectionRevision={diffSelection.selectionRevision}
+                        cursorGoTo={reviewGoTo}
                         entry={diffSelection.entry}
                         file={diffSelection.file}
                         loading={diffSelection.loading}
