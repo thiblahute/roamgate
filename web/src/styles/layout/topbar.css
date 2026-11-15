@@ -206,6 +206,13 @@
   transition: none;
 }
 
+/* The menu opened from a header Zen's way out docks in (the review, Review
+   only) comes over that view, with the top bar, while it is open. */
+.app.zen .topbar:has(.config-dropdown) {
+  z-index: 5600;
+  visibility: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app.zen .topbar {
     transition: none;

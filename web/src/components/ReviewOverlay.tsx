@@ -136,6 +136,7 @@ import {
   unresolvedPosition,
 } from "../unresolvedThreads";
 import { ReviewMenu } from "./ReviewMenu";
+import { ZenDock } from "./ZenIsland";
 import {
   ChevronDown,
   Columns2,
@@ -6369,6 +6370,7 @@ export function ReviewOverlay({
         >
           <X size={16} />
         </button>
+        <ZenDock buttonClassName="icon-btn" iconSize={16} />
       </div>
       {repos.length > 1 ? (
         <div className="review-repos">
@@ -6530,6 +6532,7 @@ export function ReviewOverlay({
         >
           ×
         </button>
+        <ZenDock labels iconSize={13} />
       </div>
       <div className="review-body">
         {threadsOpen ? (

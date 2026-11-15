@@ -195,6 +195,30 @@
   }
 }
 
+/* Docked (ZenDock): a header at the top of the screen holds the way out and
+   the menu at the end of its right-hand group, as that group's own buttons,
+   so nothing hangs over it. The dock and the pair add no box of their own;
+   the header's button styles apply. */
+.zen-dock,
+.zen-dock-island {
+  display: contents;
+}
+
+.zen-dock-island > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.zen-dock-divider {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
 .pane-jump-backdrop {
   position: fixed;
   inset: 0;
