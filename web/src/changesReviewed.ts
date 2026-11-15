@@ -174,6 +174,11 @@ export type ChunkSpan = {
   removed: [number, number] | null;
   stage: ChunkStage;
   reviewed: boolean;
+  /** The chunk's id (hunkIds) and its first and last row of the model. */
+  id: string;
+  rows: [number, number];
+  /** Reviewed and folded away to one line (no thread on it, not peeked). */
+  folded?: boolean;
 };
 
 /**
@@ -208,6 +213,8 @@ export function chunkSpans(
         removed,
         stage: stages.get(chunkStageKey(chunk.key, chunk.hunk)) ?? "unstaged",
         reviewed: state.hunks[file]?.has(chunk.index) ?? false,
+        id: chunk.id,
+        rows: [chunk.start, chunk.end],
       });
       spans.set(chunk.key, list);
     }
@@ -227,6 +234,8 @@ const STAGE_TITLE: Record<ChunkStage, string> = {
  * on a reviewed one). Called after each of Pierre's renders.
  */
 export function markChunks(root: ParentNode, spans: readonly ChunkSpan[]) {
+  // A folded chunk keeps its first line in each column, as its placeholder.
+  const heads = new Map<Element | null, Set<ChunkSpan>>();
   for (const element of root.querySelectorAll<HTMLElement>(
     "[data-line][data-line-type], [data-column-number]",
   )) {
@@ -242,6 +251,9 @@ export function markChunks(root: ParentNode, spans: readonly ChunkSpan[]) {
       const range = deletions ? each.removed : each.added;
       return !!range && number >= range[0] && number <= range[1];
     });
+    element.removeAttribute("data-chunk-folded");
+    element.removeAttribute("data-chunk-fold-head");
+    element.removeAttribute("data-chunk-fold-label");
     if (!span) {
       element.removeAttribute("data-chunk-stage");
       element.removeAttribute("data-chunk-reviewed");
@@ -252,5 +264,35 @@ export function markChunks(root: ParentNode, spans: readonly ChunkSpan[]) {
     else element.removeAttribute("data-chunk-reviewed");
     if (element.hasAttribute("data-column-number"))
       element.setAttribute("title", STAGE_TITLE[span.stage]);
+    if (span.folded) {
+      element.setAttribute("data-chunk-folded", "");
+      const column = element.parentElement;
+      const shown = heads.get(column) ?? new Set<ChunkSpan>();
+      heads.set(column, shown);
+      if (!shown.has(span)) {
+        shown.add(span);
+        element.setAttribute("data-chunk-fold-head", "");
+        element.setAttribute("data-chunk-fold-label", foldLabel(span));
+      }
+    }
   }
+  // Side by side, the filler rows of a folded chunk fold with it.
+  for (const buffer of root.querySelectorAll<HTMLElement>(
+    "[data-gutter-buffer], [data-content-buffer]",
+  )) {
+    const before = buffer.previousElementSibling;
+    const after = buffer.nextElementSibling;
+    const folded =
+      !!before?.hasAttribute("data-chunk-folded") &&
+      (!after || after.hasAttribute("data-chunk-folded"));
+    if (folded) buffer.setAttribute("data-chunk-folded", "");
+    else buffer.removeAttribute("data-chunk-folded");
+  }
+}
+
+/** A folded chunk's line: what it holds and how to see it. */
+export function foldLabel(span: ChunkSpan): string {
+  const added = span.added ? span.added[1] - span.added[0] + 1 : 0;
+  const removed = span.removed ? span.removed[1] - span.removed[0] + 1 : 0;
+  return `✓ reviewed: ${Math.max(added, removed)} lines, za shows them`;
 }

@@ -1467,6 +1467,8 @@ export function DiffContentView({
     move: () => null,
     markFile: () => {},
   });
+  // The rows of folded reviewed chunks (set once they are known, below).
+  const foldedRowsRef = useRef<ReadonlySet<number>>(new Set());
   const cursor = useDiffCursor({
     enabled: reviewCursor && !embedded,
     sections: cursorSections,
@@ -1488,6 +1490,7 @@ export function DiffContentView({
       userScrollUntilRef.current = performance.now() + 150;
     },
     goTo: cursorGoTo,
+    skipRow: (row: number) => foldedRowsRef.current.has(row),
     ...(reviewEditor
       ? {
           onComment: (
@@ -1551,10 +1554,14 @@ export function DiffContentView({
       shift: boolean,
     ) => {
       sectionRef.current?.focus({ preventScroll: true });
-      return cursorLineClickRef.current(key, line, side, shift);
+      const taken = cursorLineClickRef.current(key, line, side, shift);
+      // A click on a folded reviewed chunk's line shows the chunk.
+      requestAnimationFrame(() => peekFoldedRef.current());
+      return taken;
     },
     [],
   );
+  const peekFoldedRef = useRef(() => {});
   // The cursor's keys keep the focus: a browser can hand it to the page's
   // first control after a key the cursor took (seen in Chrome after zz and
   // after the review toggle's chord); with no key or press since, it comes
@@ -1655,6 +1662,74 @@ export function DiffContentView({
       placement ? threadReadingOrder(placement.placed, drawingSections) : [],
     [drawingSections, placement],
   );
+  // Reviewed chunks fold to one line, as in the review pane, unless a
+  // thread is on them or they are peeked at (za, a click on the line).
+  const [peekedChunks, setPeekedChunks] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const foldedSpansByKey = useMemo(() => {
+    // The same spans when nothing folds: Pierre is not drawn again for it.
+    let any = false;
+    const folded = new Map<string, ChunkSpan[]>();
+    for (const [key, spans] of chunkSpansByKey) {
+      let changed = false;
+      const next = spans.map((span) => {
+        if (!span.reviewed || peekedChunks.has(`${key}\n${span.id}`))
+          return span;
+        const talked = readingOrder.some((placed) => {
+          if (placed.key !== key) return false;
+          const range = placed.side === "old" ? span.removed : span.added;
+          return !!range && placed.line >= range[0] && placed.line <= range[1];
+        });
+        if (talked) return span;
+        changed = true;
+        return { ...span, folded: true };
+      });
+      if (changed) any = true;
+      folded.set(key, changed ? next : spans);
+    }
+    return any ? folded : chunkSpansByKey;
+  }, [chunkSpansByKey, peekedChunks, readingOrder]);
+  // The cursor steps over a folded chunk's lines but its first.
+  foldedRowsRef.current = (() => {
+    const hidden = new Set<number>();
+    for (const spans of foldedSpansByKey.values())
+      for (const span of spans)
+        if (span.folded)
+          for (let at = span.rows[0] + 1; at <= span.rows[1]; at++)
+            hidden.add(at);
+    return hidden;
+  })();
+  // A chunk folded under the cursor: the cursor goes on past it.
+  useEffect(() => {
+    const at = cursorHandle.current.rowIndex();
+    if (foldedRowsRef.current.has(at)) cursorHandle.current.goToLine(at + 1);
+  }, [foldedSpansByKey]);
+  /** The reviewed chunk at a row of the cursor's model, folded or peeked. */
+  const reviewedSpanAt = (row: number) => {
+    for (const [key, spans] of foldedSpansByKey)
+      for (const span of spans)
+        if (span.reviewed && row >= span.rows[0] && row <= span.rows[1])
+          return { key, span };
+    return null;
+  };
+  const togglePeek = (row: number): boolean => {
+    const found = reviewedSpanAt(row);
+    if (!found) return false;
+    const id = `${found.key}\n${found.span.id}`;
+    setPeekedChunks((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    return true;
+  };
+  peekFoldedRef.current = () => {
+    const at = cursorHandle.current.rowIndex();
+    const found = reviewedSpanAt(at);
+    if (found?.span.folded && found.span.rows[0] === at) togglePeek(at);
+  };
   /** What each file's Pierre draws under its lines: threads, notes, the box. */
   const drawnByKey = useMemo(() => {
     if (!placement) return annotationsByPath;
@@ -2076,7 +2151,8 @@ export function DiffContentView({
         return true;
       }
       case "za":
-        if (!first) return false;
+        // A thread's fold first, else a reviewed chunk's.
+        if (!first) return togglePeek(cursorHandle.current.rowIndex());
         threadView.toggleFold(first.thread);
         return true;
       case "r":
@@ -2744,7 +2820,7 @@ export function DiffContentView({
                 cursorSelection: cursor.selectionIn(section.key),
                 searchHit: cursorMatching.has(section.entry.path),
                 ...(reviewEditor
-                  ? { chunkSpans: chunkSpansByKey.get(section.key) }
+                  ? { chunkSpans: foldedSpansByKey.get(section.key) }
                   : {}),
               }
             : {})}

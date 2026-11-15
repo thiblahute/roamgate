@@ -218,6 +218,51 @@ if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
       }
     });
 
+    test("a reviewed chunk folds to one line saying so; the cursor steps over it, za shows it and folds it back", async () => {
+      reset();
+      const diff = await mount();
+      const shadowOf = () =>
+        document
+          .querySelector('[data-diff-entry-key="unstaged:a.ts"]')
+          ?.querySelector("diffs-container")?.shadowRoot;
+      const folded = () =>
+        [
+          ...(shadowOf()?.querySelectorAll(
+            "[data-content] [data-line][data-chunk-folded]",
+          ) ?? []),
+        ].map(
+          (line) =>
+            `${line.getAttribute("data-line")}${line.hasAttribute("data-chunk-fold-head") ? `:${line.getAttribute("data-chunk-fold-label")}` : ""}`,
+        );
+      try {
+        await keys("jj");
+        await press("r");
+        for (let i = 0; i < 3; i++) await diff.settle();
+        // The chunk's lines are folded under its first, which says so.
+        const lines = folded();
+        expect(lines.length).toBeGreaterThan(1);
+        expect(lines.some((line) => line.includes("za shows them"))).toBe(true);
+        // The cursor went on; k comes back onto the folded line only.
+        expect(cursorAt()).toBe("unstaged:a.ts:context:20");
+        await press("k");
+        expect(cursorAt()).toBe("unstaged:a.ts:context:1");
+        // j from the folded line goes past the chunk.
+        await press("j");
+        expect(cursorAt()).toBe("unstaged:a.ts:context:20");
+        // za on it shows the chunk, still reviewed; za folds it back.
+        await press("k");
+        await keys("za");
+        for (let i = 0; i < 3; i++) await diff.settle();
+        expect(folded()).toEqual([]);
+        expect(marked("unstaged:a.ts")).toContain("2:unstaged:reviewed");
+        await keys("za");
+        for (let i = 0; i < 3; i++) await diff.settle();
+        expect(folded().length).toBeGreaterThan(1);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("v marks the file reviewed, every chunk of it; v again unmarks it and its chunks", async () => {
       reset();
       const diff = await mount();
