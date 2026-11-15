@@ -657,7 +657,22 @@ export function createRenderedPages(args: {
         (error as { status?: unknown } | null)?.status !== 413
       ) {
         const next = await findSiteRoot(found, path);
-        if (next) return redirect(`${RENDERED_PREFIX}${next}/${rest}${search}`);
+        if (next) {
+          // A page needs the new token for its relative links; anything
+          // else is served from the site's root at once, as a redirect
+          // would break a stylesheet loaded with CORS and an integrity
+          // hash from the sandboxed page's opaque origin.
+          const nextEntry = isHtml(renderedMime(path)) ? null : entry(next);
+          if (nextEntry && nextEntry.source.kind === "files")
+            return serveFile(
+              nextEntry as RenderedEntry & { source: { kind: "files" } },
+              next,
+              rest,
+              search,
+              req,
+            );
+          return redirect(`${RENDERED_PREFIX}${next}/${rest}${search}`);
+        }
       }
       // A file read over SSH and over its limit.
       if ((error as { status?: unknown } | null)?.status === 413)
