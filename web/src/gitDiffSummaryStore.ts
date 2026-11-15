@@ -1,3 +1,4 @@
+import { repoRootOf } from "./changesRepo";
 import { useSyncExternalStore } from "react";
 import type { ConnectionClient } from "./api";
 import type { GitDiffSummary } from "./types";
@@ -217,6 +218,7 @@ export function refreshGitDiffSummary(
       workspace_id: workspaceId,
       mode,
       ...(baseBranch ? { base_branch: baseBranch } : {}),
+      ...(repoRootOf(resourceKey) ? { root: repoRootOf(resourceKey) } : {}),
     }) as Promise<GitDiffSummary>
   )
     .then((summary) => {

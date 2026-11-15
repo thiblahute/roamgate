@@ -938,6 +938,7 @@ export function DiffContentView({
   selectionRevision = 0,
   cursorGoTo = null,
   scopeLabel,
+  scopeControls,
   entry,
   file,
   loading,
@@ -974,6 +975,8 @@ export function DiffContentView({
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
   scopeLabel?: string;
+  /** The scope line as controls (the review in Changes), for scopeLabel. */
+  scopeControls?: ReactNode;
   /** Files' Review on "in Changes": the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;
   entry: GitDiffEntry | null;
@@ -1586,6 +1589,9 @@ export function DiffContentView({
       if (lastKey === null || lastKey !== cursorKeyRef.current) return;
       const slot = section.closest(".workspace-inspector-slot") ?? section;
       if (slot.contains(next)) return;
+      // A picker the key opened (p: the repositories) has the keys.
+      if (next.closest("[data-radix-popper-content-wrapper], [role='dialog']"))
+        return;
       setTimeout(() => {
         if (document.activeElement === next && section.isConnected)
           section.focus({ preventScroll: true });
@@ -3060,7 +3066,9 @@ export function DiffContentView({
         ) : null}
         {embedded ? null : (
           <div className="diff-content-title">
-            {scopeLabel ? (
+            {scopeControls ? (
+              scopeControls
+            ) : scopeLabel ? (
               <strong className="diff-content-scope" title={scopeLabel}>
                 {scopeLabel}
                 {changedFileCount

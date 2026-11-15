@@ -180,6 +180,7 @@ import {
 import { agentStateKind, paneHasAgentHistory } from "./components/agentSession";
 import { CloseButton } from "./components/CloseButton";
 import { Toast } from "./components/Toast";
+import { lastChangesRepo } from "./changesRepo";
 import {
   focusIfUnchanged,
   focusReturnTarget,
@@ -3880,6 +3881,7 @@ export default function App() {
     path?: string;
     line?: number;
     scope?: "working" | "branch-main";
+    root?: string;
     at: number;
   } | null>(null);
   const toggleReviewInChanges = useCallback(
@@ -3974,11 +3976,13 @@ export default function App() {
                 (pane) => pane.workspace_id === workspace.workspace_id,
               ),
             sessions: reviewState.sessions.values(),
-            changed: (mode) =>
+            lastRoot: lastChangesRepo(owner),
+            changed: (mode, root) =>
               (
                 connectionClient.call("git.diff_summary", {
                   workspace_id: workspace.workspace_id,
                   mode,
+                  ...(root ? { root } : {}),
                 }) as Promise<{ entries?: unknown[] }>
               ).then(
                 (summary) => (summary.entries?.length ?? 0) > 0,
@@ -3998,7 +4002,11 @@ export default function App() {
             setReviewSessionId(choice.sessionId);
             return;
           }
-          setChangesGoTo({ scope: choice.scope, at: Date.now() });
+          setChangesGoTo({
+            ...(choice.scope ? { scope: choice.scope } : {}),
+            ...(choice.root !== undefined ? { root: choice.root } : {}),
+            at: Date.now(),
+          });
         })();
         return;
       }

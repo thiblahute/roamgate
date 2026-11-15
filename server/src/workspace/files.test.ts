@@ -248,6 +248,61 @@ describe("workspace file handlers", () => {
     ]);
   });
 
+  test("reads another repository of the workspace when asked by its root, and no other", async () => {
+    const calls: string[][] = [];
+    const handlers = createFileHandlers({
+      herdr: {
+        call: async (method: string) => {
+          if (method === "workspace.get")
+            return { workspace: { workspace_id: "w1", label: "Repo" } };
+          if (method === "pane.list")
+            return {
+              panes: [
+                { workspace_id: "w1", focused: true, cwd: "/ws/app" },
+                { workspace_id: "w2", cwd: "/elsewhere" },
+              ],
+            };
+          throw new Error(`unexpected call ${method}`);
+        },
+      } as any,
+      sshHost: () => undefined,
+      runProcessWithCodeTimeout: async (argv) => {
+        calls.push(argv);
+        const at = argv.indexOf("-C");
+        const dir = argv[at + 1] ?? "";
+        // /ws/app/lib is a subdirectory of /ws/app, not a repository.
+        return {
+          code: 0,
+          stdout: `${dir === "/ws/app/lib" ? "/ws/app" : dir}\n`,
+          stderr: "",
+        };
+      },
+      shQuote,
+    });
+    // Under a pane's directory, or holding it: read there.
+    for (const root of ["/ws/app/vendor/sub", "/ws"]) {
+      calls.length = 0;
+      await expect(
+        handlers.resolveWorkspaceGitRoot({ workspace_id: "w1", root }),
+      ).resolves.toMatchObject({ root });
+      expect(calls).toEqual([
+        ["git", "-C", root, "rev-parse", "--show-toplevel"],
+      ]);
+    }
+    // Another workspace's directory, a relative path, not a top level.
+    for (const root of ["/elsewhere", "ws/app", "/ws/app/../../etc"]) {
+      await expect(
+        handlers.resolveWorkspaceGitRoot({ workspace_id: "w1", root }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      handlers.resolveWorkspaceGitRoot({
+        workspace_id: "w1",
+        root: "/ws/app/lib",
+      }),
+    ).rejects.toThrow("top level");
+  });
+
   test("returns download responses with safe headers", async () => {
     await withTempDir(async (root) => {
       await writeFile(join(root, "测试.txt"), "hello");

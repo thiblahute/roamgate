@@ -1,5 +1,6 @@
 import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
+import { workspaceRepoDirs } from "./changesRepo";
 import { workspaceRepos, scanRepos } from "./reviewRepos";
 
 /*
@@ -7,14 +8,21 @@ import { workspaceRepos, scanRepos } from "./reviewRepos";
  * it shows what the classic toggle would (the pinned review, else the one
  * `openWorkspaceReview` picks: the repository with work, its branch review
  * against the base, or its uncommitted work), in Changes' matching scope.
- * What Changes cannot show yet goes to the classic pane: a review of
- * another repository than the inspector's checkout, a merge request, and
- * a workspace with several repositories (the classic pane's series, until
- * Changes can switch repositories).
+ * A workspace with several repositories (the classic pane's series) shows
+ * the one Changes showed last, else the review's, picked in Changes' scope
+ * line. What Changes cannot show yet goes to the classic pane: a merge
+ * request, and a review of a repository the workspace does not hold.
  */
 
 export type ChangesReviewChoice =
-  | { kind: "changes"; sessionId: string; scope: "working" | "branch-main" }
+  | {
+      kind: "changes";
+      sessionId: string;
+      /** Absent: as Changes last showed that repository. */
+      scope?: "working" | "branch-main";
+      /** The repository, when another than the inspector's ("": its own). */
+      root?: string;
+    }
   | { kind: "classic"; sessionId: string; reason: string };
 
 function sameRoot(a: string, b: string): boolean {
@@ -30,6 +38,7 @@ export async function changesReviewChoice({
   panes,
   sessions,
   changed,
+  lastRoot,
 }: {
   snapshot: ReviewSnapshot;
   /** The inspector's checkout, null when it is the workspace's own. */
@@ -39,8 +48,16 @@ export async function changesReviewChoice({
   panes: readonly Pane[];
   /** Every review known: the workspace's others name repositories too. */
   sessions: Iterable<ReviewSnapshot>;
-  /** Whether a Changes scope holds anything (null: not known). */
-  changed: (mode: "working" | "branch-main") => Promise<boolean | null>;
+  /**
+   * Whether a Changes scope holds anything (null: not known), in the
+   * repository `root` (absent: the checkout's).
+   */
+  changed: (
+    mode: "working" | "branch-main",
+    root?: string,
+  ) => Promise<boolean | null>;
+  /** The repository Changes showed last here ("": the checkout's). */
+  lastRoot?: string;
 }): Promise<ChangesReviewChoice> {
   const { session } = snapshot;
   const classic = (reason: string): ChangesReviewChoice => ({
@@ -60,32 +77,42 @@ export async function changesReviewChoice({
   const here = checkoutRoot
     ? sameRoot(session.root, checkoutRoot)
     : !!focused && inside(dirOf(focused));
-  if (!here)
+  const { dirs, agentDirs } = workspaceRepoDirs(panes);
+  const scanned = await scanRepos(
+    connectionId,
+    [session.root, ...dirs],
+    agentDirs,
+  );
+  const repos = workspaceRepos(scanned, sessions, session);
+  // Found in the workspace, not only listed for being this review's.
+  const held = (root: string) =>
+    scanned.some((repo) => sameRoot(repo.root, root));
+  if (!here && !held(session.root))
     return classic(
       "This review is of another repository: it shows in the review pane.",
     );
-  const dirs = panes.map(dirOf).filter((dir) => dir.startsWith("/"));
-  const agentDirs = panes
-    .filter((pane) => pane.agent)
-    .map((pane) => pane.cwd ?? dirOf(pane))
-    .filter((dir) => dir.startsWith("/"));
-  const scanned = await scanRepos(
-    connectionId,
-    [session.root, ...new Set(dirs)],
-    [...new Set(agentDirs)],
-  );
-  if (workspaceRepos(scanned, sessions, session).length > 1)
-    return classic(
-      "Several repositories here: the review pane switches between them (p, ( and )).",
-    );
+  // Several repositories: the one shown last, as it was left.
+  if (
+    repos.length > 1 &&
+    lastRoot !== undefined &&
+    (lastRoot === "" || held(lastRoot))
+  )
+    return { kind: "changes", sessionId: session.id, root: lastRoot };
+  const root = here ? undefined : session.root;
+  const at = root ? { root } : {};
   if (session.target.kind === "worktree")
-    return { kind: "changes", sessionId: session.id, scope: "working" };
+    return { kind: "changes", sessionId: session.id, scope: "working", ...at };
   // Nothing beyond the base (the default branch itself, say): the
   // uncommitted work, else the review pane, which lists the commits.
-  if ((await changed("branch-main")) !== false)
-    return { kind: "changes", sessionId: session.id, scope: "branch-main" };
-  if ((await changed("working")) !== false)
-    return { kind: "changes", sessionId: session.id, scope: "working" };
+  if ((await changed("branch-main", root)) !== false)
+    return {
+      kind: "changes",
+      sessionId: session.id,
+      scope: "branch-main",
+      ...at,
+    };
+  if ((await changed("working", root)) !== false)
+    return { kind: "changes", sessionId: session.id, scope: "working", ...at };
   return classic(
     "Nothing beyond the default branch: the review pane lists its commits.",
   );

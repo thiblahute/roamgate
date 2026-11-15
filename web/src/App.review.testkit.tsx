@@ -100,7 +100,13 @@ type InspectorProps = {
   onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
   onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;
-  reviewGoTo?: { path: string; line?: number; at: number } | null;
+  reviewGoTo?: {
+    path?: string;
+    line?: number;
+    scope?: string;
+    root?: string;
+    at: number;
+  } | null;
   state: {
     open: boolean;
     view: string;
@@ -148,7 +154,13 @@ export type AppWithReviews = {
   /** Files' Review, as the inspector's Files preview calls it. */
   inspectorShowInReview(path: string, line?: number): void;
   /** Where App last asked Changes' cursor to go. */
-  inspectorGoTo(): { path: string; line?: number; at: number } | null;
+  inspectorGoTo(): {
+    path?: string;
+    line?: number;
+    scope?: string;
+    root?: string;
+    at: number;
+  } | null;
   /** Switches the shown inspector's view, as its tab strip does. */
   inspectorView(view: Parameters<InspectorProps["onViewChange"]>[0]): void;
   /** Docks or expands the shown inspector, as its header's button does. */

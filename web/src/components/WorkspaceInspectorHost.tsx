@@ -97,6 +97,12 @@ import { CommandLine } from "./CommandLine";
 import { type ShortcutRow, ShortcutList } from "./ShortcutList";
 import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
+import { ChangesScopeBar, useChangesRepos } from "./ChangesScopeBar";
+import {
+  lastChangesRepo,
+  rememberChangesRepo,
+  repoResourceKey,
+} from "../changesRepo";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
@@ -250,6 +256,8 @@ export function WorkspaceInspectorHost({
     path?: string;
     line?: number;
     scope?: "working" | "branch-main";
+    /** The repository to show ("": the workspace's own). */
+    root?: string;
     at: number;
   } | null;
   onReanchorFileAnnotations: (path: string, text: string) => void;
@@ -362,6 +370,123 @@ export function WorkspaceInspectorHost({
   const vim = useVimKeys();
   const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes" && vim;
   /** The files in the tree's groups when Changes is the review. */
+  const resourceKey = resourceOwnerKey(state.scope);
+  /*
+   * The repository Changes shows: the workspace's own, or another of its
+   * repositories picked in the scope line (p, ( and )); the review toggle
+   * shows the last one again.
+   */
+  const [changesRepo, setChangesRepo] = useState<{
+    key: string;
+    root: string | undefined;
+  }>(() => ({
+    key: resourceKey,
+    root: lastChangesRepo(resourceKey) || undefined,
+  }));
+  const changesRoot =
+    changesRepo.key === resourceKey
+      ? changesRepo.root
+      : lastChangesRepo(resourceKey) || undefined;
+  const ownRootRef = useRef<{ key: string; root?: string }>({
+    key: resourceKey,
+  });
+  if (ownRootRef.current.key !== resourceKey)
+    ownRootRef.current = { key: resourceKey };
+  if (!changesRoot && diffSelection.root)
+    ownRootRef.current.root = diffSelection.root;
+  const ownRoot =
+    ownRootRef.current.root ??
+    (state.scope.kind === "worktree" ? state.scope.checkoutPath : undefined);
+  const shownRoot = changesRoot ?? ownRoot;
+  const changesRepos = useChangesRepos(
+    connectionClient.connectionId,
+    workspace?.workspace_id ?? "",
+    ownRoot,
+    reviewInChanges && visible && state.open && state.view === "changes",
+  );
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
+  /**
+   * The keys to Changes' diff; with `frames`, to the one drawn anew (another
+   * repository's), within that many frames.
+   */
+  const focusChangesDiff = (frames = 1) => {
+    const query = () =>
+      hostRef.current?.querySelector<HTMLElement>(
+        ".inspector-changes-resource .diff-content-view[data-review-cursor]",
+      );
+    const before = frames > 1 ? query() : null;
+    let left = frames;
+    const step = () => {
+      const diff = query();
+      if (diff && diff !== before) diff.focus({ preventScroll: true });
+      else if (--left > 0) requestAnimationFrame(step);
+      else
+        (
+          diff ??
+          hostRef.current?.querySelector<HTMLElement>(
+            ".inspector-changes-resource .diff-content-view",
+          )
+        )?.focus({ preventScroll: true });
+    };
+    requestAnimationFrame(step);
+  };
+  const pickChangesRepo = (root: string) => {
+    const other = root && root !== ownRoot ? root : undefined;
+    // The diff is drawn again for the repository: the keys stay on it.
+    const active = document.activeElement;
+    if (
+      active === document.body ||
+      !!active?.closest(
+        ".inspector-changes-resource, [data-radix-popper-content-wrapper]",
+      )
+    )
+      focusChangesDiff(180);
+    rememberChangesRepo(resourceKey, other);
+    setChangesRepo({ key: resourceKey, root: other });
+  };
+  const pickChangesRepoRef = useRef(pickChangesRepo);
+  pickChangesRepoRef.current = pickChangesRepo;
+  const stepChangesRepo = (step: number) => {
+    const at = changesRepos.findIndex((repo) => repo.root === shownRoot);
+    const next = changesRepos[at + step];
+    if (next) pickChangesRepo(next.root);
+    else
+      store.notify({
+        kind: "info",
+        message:
+          changesRepos.length < 2
+            ? "This workspace has a single repository here."
+            : step > 0
+              ? "The last repository"
+              : "The first repository",
+        autoDismissMs: 1800,
+      });
+  };
+  const changesScopeBar = () => (
+    <ChangesScopeBar
+      repos={changesRepos}
+      root={shownRoot}
+      repoName={diffSelection.repoName ?? workspace?.worktree?.repo_name}
+      mode={diffSelection.scopeMode ?? "working"}
+      branch={diffSelection.branch ?? workspace?.worktree?.git_status?.branch}
+      base={diffSelection.scopeBase}
+      baseBranch={diffSelection.baseBranch ?? ""}
+      baseBranches={diffSelection.baseBranches ?? []}
+      commits={diffSelection.commits}
+      files={diffSelection.entries.length}
+      untracked={diffSelection.untracked}
+      pickerOpen={repoPickerOpen}
+      onPickerOpen={setRepoPickerOpen}
+      onPickRepo={pickChangesRepo}
+      onScope={(mode) => diffViewerRef.current?.showScope(mode)}
+      onBase={(branch) => diffViewerRef.current?.showBase(branch)}
+      onDone={() => focusChangesDiff()}
+    />
+  );
+  const contentResourceKey = repoResourceKey(
+    resourceStateKey(state.scope),
+    changesRoot,
+  );
   // Files' Review on "in Changes": that file's entry picked in the tree.
   const lastGoTo = useRef(0);
   const [pendingGoTo, setPendingGoTo] = useState<typeof reviewGoTo>(null);
@@ -373,6 +498,13 @@ export function WorkspaceInspectorHost({
   }, [reviewGoTo]);
   useEffect(() => {
     if (!pendingGoTo) return;
+    if (
+      pendingGoTo.root !== undefined &&
+      (pendingGoTo.root || ownRoot) !== shownRoot
+    ) {
+      pickChangesRepoRef.current(pendingGoTo.root);
+      return;
+    }
     if (pendingGoTo.scope) diffViewerRef.current?.showScope(pendingGoTo.scope);
     const path = pendingGoTo.path;
     if (path === undefined) {
@@ -394,7 +526,13 @@ export function WorkspaceInspectorHost({
     }
     diffViewerRef.current?.selectWorkingEntry(target);
     setPendingGoTo(null);
-  }, [pendingGoTo, diffSelection.entries, diffSelection.summaryLoading]);
+  }, [
+    pendingGoTo,
+    diffSelection.entries,
+    diffSelection.summaryLoading,
+    shownRoot,
+    ownRoot,
+  ]);
   const shownDiffEntries = useMemo(
     () =>
       reviewInChanges
@@ -415,8 +553,6 @@ export function WorkspaceInspectorHost({
     commits: false,
     history: false,
   }));
-  const resourceKey = resourceOwnerKey(state.scope);
-  const contentResourceKey = resourceStateKey(state.scope);
   const [commitsVisitedKey, setCommitsVisitedKey] = useState("");
   useEffect(() => {
     if (state.view === "commits") setCommitsVisitedKey(contentResourceKey);
@@ -696,6 +832,54 @@ export function WorkspaceInspectorHost({
                   ?.focus({ preventScroll: true });
             },
           },
+        ]
+      : []),
+    ...(state.view === "changes" && reviewInChanges
+      ? [
+          {
+            name: "repo",
+            aliases: ["p"],
+            description:
+              "the workspace's repositories, searched as you type (p)",
+            run: () => {
+              if (changesRepos.length < 2) {
+                store.notify({
+                  kind: "info",
+                  message: "This workspace has a single repository here.",
+                  autoDismissMs: 1800,
+                });
+                return;
+              }
+              setRepoPickerOpen(true);
+            },
+          },
+          {
+            name: "nextrepo",
+            description: "the next repository ())",
+            run: () => stepChangesRepo(1),
+          },
+          {
+            name: "prevrepo",
+            description: "the previous repository (()",
+            run: () => stepChangesRepo(-1),
+          },
+          ...(["working", "branch", "last"] as const).map((name) => ({
+            name,
+            description:
+              name === "working"
+                ? "the working tree: uncommitted changes"
+                : name === "branch"
+                  ? "the branch against its base"
+                  : "the agent's last step",
+            run: () =>
+              diffViewerRef.current?.showScope(
+                name === "working"
+                  ? "working"
+                  : name === "branch"
+                    ? "branch-main"
+                    : "last-step",
+              ),
+          })),
         ]
       : []),
     ...(state.view === "changes"
@@ -1300,6 +1484,12 @@ export function WorkspaceInspectorHost({
                     ref={diffViewerRef}
                     workspaceId={workspace.workspace_id}
                     resourceKey={resourceKey}
+                    {...(reviewInChanges && changesRoot
+                      ? { repoRoot: changesRoot }
+                      : {})}
+                    {...(reviewInChanges && compact
+                      ? { header: changesScopeBar() }
+                      : {})}
                     groupByStatus={reviewInChanges}
                     onOpenFile={onOpenDiffFile}
                     onSelectionChange={(selection, meta) => {
@@ -1400,8 +1590,11 @@ export function WorkspaceInspectorHost({
                                 repo:
                                   diffSelection.repoName ??
                                   workspace?.worktree?.repo_name,
-                                branch: workspace?.worktree?.git_status?.branch,
+                                branch:
+                                  diffSelection.branch ??
+                                  workspace?.worktree?.git_status?.branch,
                               }),
+                              scopeControls: changesScopeBar(),
                             }
                           : {})}
                         onGitAction={(action, path) =>

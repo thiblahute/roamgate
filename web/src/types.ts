@@ -221,6 +221,10 @@ export interface GitDiffSummary {
   mode?: "working" | "branch-main" | "last-step";
   base?: string;
   base_branches?: string[];
+  /** The checkout's branch (absent when detached). */
+  branch?: string;
+  /** On the Branch scope: the commits beyond the base. */
+  commits?: number;
   baseline_available?: boolean;
   snapshot_id?: string;
   entries: GitDiffEntry[];

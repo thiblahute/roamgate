@@ -4370,6 +4370,8 @@ export const store = {
     workspaceId: string,
     gitAction: GitFileAction,
     entry: Pick<GitDiffEntry, "path" | "old_path" | "mtime_ms" | "size">,
+    /** Another repository of the workspace than its own. */
+    root?: string,
   ) {
     const label = gitFileActionLabel(gitAction);
     return action(
@@ -4377,6 +4379,7 @@ export const store = {
         const result = await lease.client.call("git.file_action", {
           workspace_id: workspaceId,
           action: gitAction,
+          ...(root ? { root } : {}),
           path: entry.path,
           old_path: entry.old_path,
           mtime_ms: entry.mtime_ms,
@@ -4408,6 +4411,8 @@ export const store = {
     workspaceId: string,
     gitAction: GitFileAction,
     entries: Pick<GitDiffEntry, "path" | "old_path" | "mtime_ms" | "size">[],
+    /** Another repository of the workspace than its own. */
+    root?: string,
   ) {
     const label = gitFileActionLabel(gitAction);
     let completed = 0;
@@ -4418,6 +4423,7 @@ export const store = {
             await lease.client.call("git.file_action", {
               workspace_id: workspaceId,
               action: gitAction,
+              ...(root ? { root } : {}),
               path: entry.path,
               old_path: entry.old_path,
               mtime_ms: entry.mtime_ms,

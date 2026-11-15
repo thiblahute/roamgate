@@ -605,6 +605,53 @@ export function createFileHandlers({
     throw new Error(lastError);
   }
 
+  /**
+   * Another repository of the workspace than its own (Changes' repository
+   * picker): a repository's top level that the workspace's checkout or one
+   * of its panes' directories is in, or that is under one of them.
+   */
+  async function workspaceRepoRoot(
+    workspaceId: string,
+    workspace: any,
+    wanted: string,
+  ) {
+    const trim = (path: string) => path.replace(/\/+$/, "") || "/";
+    const root = trim(wanted);
+    if (!root.startsWith("/") || root.split("/").includes(".."))
+      throw new Error("root must be an absolute path");
+    const paneResult = await herdr.call("pane.list");
+    const panes = Array.isArray((paneResult as any)?.panes)
+      ? (paneResult as any).panes
+      : [];
+    const dirs = [
+      getCheckoutPath(workspace),
+      ...panes
+        .filter((pane: any) => pane?.workspace_id === workspaceId)
+        .flatMap((pane: any) => [pane?.cwd, pane?.foreground_cwd]),
+    ]
+      .filter(
+        (dir): dir is string => typeof dir === "string" && dir.startsWith("/"),
+      )
+      .map(trim);
+    const related = (dir: string) =>
+      dir === root ||
+      dir.startsWith(`${root === "/" ? "" : root}/`) ||
+      root.startsWith(`${dir === "/" ? "" : dir}/`);
+    if (!dirs.some(related))
+      throw new Error("root is not a repository of this workspace");
+    const host = sshHost();
+    const argv = host
+      ? sshReadCommandArgv(
+          host,
+          `git -C ${shQuote(root)} rev-parse --show-toplevel`,
+        )
+      : ["git", "-C", root, "rev-parse", "--show-toplevel"];
+    const result = await runProcessWithCodeTimeout(argv, GIT_DIFF_TIMEOUT_MS);
+    if (result.code !== 0 || trim(result.stdout.trim()) !== root)
+      throw new Error("root is not a repository's top level");
+    return root;
+  }
+
   async function workspaceAndGitRoot(
     params: Record<string, unknown>,
     method = "git diff",
@@ -612,13 +659,16 @@ export function createFileHandlers({
     const workspaceId = String(params.workspace_id ?? "");
     if (!workspaceId) throw new Error(`${method} requires workspace_id`);
     const workspace = await getWorkspace(workspaceId);
-    const root = await gitRoot(workspaceId, workspace);
+    const root =
+      typeof params.root === "string" && params.root
+        ? await workspaceRepoRoot(workspaceId, workspace, params.root)
+        : await gitRoot(workspaceId, workspace);
     return { workspaceId, workspace, root };
   }
 
   async function readGitDiffSummary(params: Record<string, unknown>) {
     const { workspaceId, workspace, root } = await workspaceAndGitRoot(params);
-    return readDiffSummary({
+    const summary = await readDiffSummary({
       workspaceId,
       workspace,
       root,
@@ -628,6 +678,10 @@ export function createFileHandlers({
       runProcessWithCodeTimeout,
       lastStepBaselines,
     });
+    // Another repository than the workspace's own goes by its own name.
+    return typeof params.root === "string" && params.root
+      ? { ...summary, repo_name: root.split("/").pop() || root }
+      : summary;
   }
 
   async function readWorkspacePullRequest(params: Record<string, unknown>) {
