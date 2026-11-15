@@ -371,27 +371,16 @@ export function rewriteRootUrls(
   );
 }
 
-/** Whether a URL's host is the machine's own: localhost, 127.x, [::1]. */
-function isLoopbackOrigin(url: URL): boolean {
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  const host = url.hostname.toLowerCase();
-  return (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "[::1]" ||
-    /^127(?:\.\d{1,3}){3}$/.test(host)
-  );
-}
-
 /**
- * A page built by a dev server (Hugo's `baseURL = http://localhost:1315/`)
- * links to itself by that origin, which would take its frame to the live
- * server. The page names its own origin in `rel=canonical` or `og:url`;
- * only when that is a loopback address, the URLs under it are written as
- * root-absolute paths, which `rewriteRootUrls` then puts under the token.
- * Other origins, and other loopback ports, are left alone.
+ * A page of a site built for an origin (Hugo's `baseURL`, a dev server's
+ * `http://localhost:1315/` or the published `https://blog.example/`) links to
+ * itself by that origin, which would take its frame out of the files shown
+ * here, to the live site. The page names its own origin in `rel=canonical`
+ * or `og:url`: the URLs under it are written as root-absolute paths, which
+ * `rewriteRootUrls` then puts under the token, so its links, styles and
+ * images come from these files. Other origins are left alone.
  */
-export function localizeLoopbackOrigin(
+export function localizeOwnOrigin(
   html: string,
   map: (path: string) => string | null = () => null,
 ): string {
@@ -407,7 +396,7 @@ export function localizeLoopbackOrigin(
     if (!raw) continue;
     try {
       const url = new URL(raw.replace(/&amp;/gi, "&"));
-      if (!isLoopbackOrigin(url)) continue;
+      if (url.protocol !== "http:" && url.protocol !== "https:") continue;
       origin = url.origin;
       break;
     } catch {
@@ -762,7 +751,7 @@ export function createRenderedPages(args: {
     const text = decoded(body);
     const html = rewriteRootUrls(
       found?.source.kind === "files"
-        ? localizeLoopbackOrigin(text, (path) => rootPath(token, path))
+        ? localizeOwnOrigin(text, (path) => rootPath(token, path))
         : text,
       "html",
       (path) => rootPath(token, path),
