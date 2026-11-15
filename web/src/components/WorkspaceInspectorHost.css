@@ -388,11 +388,43 @@
   background: var(--viewer-panel-bg);
 }
 
-/* Review only: the toolbar down to the line saying what is shown. */
+/*
+ * Review only: one row, the line saying what is shown, the diff's own
+ * controls, then Show all and Zen's way out docked at its end.
+ */
+.inspector-changes-resource.is-review-only .diff-content-head {
+  flex-wrap: nowrap;
+}
+
 .inspector-changes-resource.is-review-only
   .diff-content-head
-  > :not(.diff-content-title) {
+  > :is(.diff-file-index, .diff-wrap-toggle, .diff-content-back) {
   display: none;
+}
+
+.diff-review-only-end {
+  order: 4;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.diff-review-only-exit {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.diff-review-only-exit:hover {
+  background: var(--input-bg);
 }
 
 body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {

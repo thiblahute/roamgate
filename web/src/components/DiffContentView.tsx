@@ -939,6 +939,7 @@ export function DiffContentView({
   cursorGoTo = null,
   scopeLabel,
   scopeControls,
+  headEnd,
   entry,
   file,
   loading,
@@ -977,6 +978,8 @@ export function DiffContentView({
   scopeLabel?: string;
   /** The scope line as controls (the review in Changes), for scopeLabel. */
   scopeControls?: ReactNode;
+  /** At the toolbar's end (Review only: Show all, Zen's way out). */
+  headEnd?: ReactNode;
   /** Files' Review on "in Changes": the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;
   entry: GitDiffEntry | null;
@@ -3273,6 +3276,7 @@ export function DiffContentView({
             </button>
           </div>
         ) : null}
+        {headEnd}
       </div>
 
       {error && !visibleEntries.length ? (
