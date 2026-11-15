@@ -267,6 +267,69 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("on reviewin=changes, Changes opened by hand is not the review: the toggle shows the review there, then goes back with the keys", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      // Leave the inspector docked on Changes, opened by hand.
+      await app.toggleReview();
+      await app.settle(50);
+      await app.toggleReview();
+      await app.settle(50);
+      await app.run(() => app.inspectorView("changes"));
+      await app.run(() => app.inspectorExpand(false));
+      const terminal = document.createElement("div");
+      terminal.tabIndex = 0;
+      document.body.append(terminal);
+      terminal.focus();
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      // Every press does something: the review, expanded, with the keys.
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      expect(
+        document.activeElement?.classList.contains("diff-content-view"),
+      ).toBe(true);
+      // The keys away from it (a click), the toggle takes them back to the
+      // review.
+      terminal.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      terminal.focus();
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, expanded: true });
+      expect(
+        document.activeElement?.classList.contains("diff-content-view"),
+      ).toBe(true);
+      // With the keys: back to Changes as it was, the keys where they were.
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      expect(document.activeElement).toBe(terminal);
+      terminal.remove();
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=changes, Files' Review opens Changes at that file and line, not the classic pane", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],

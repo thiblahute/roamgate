@@ -180,7 +180,11 @@ import {
 import { agentStateKind, paneHasAgentHistory } from "./components/agentSession";
 import { CloseButton } from "./components/CloseButton";
 import { Toast } from "./components/Toast";
-import { focusIfUnchanged, holdFocus } from "./components/dialogFocus";
+import {
+  focusIfUnchanged,
+  focusReturnTarget,
+  holdFocus,
+} from "./components/dialogFocus";
 import {
   COMMAND_MENU_OPENING,
   CommandCombobox,
@@ -2475,6 +2479,16 @@ export default function App() {
     [selectAnnotationDraft],
   );
 
+  // What the review toggle on "in Changes" opened Changes over (D6, D4):
+  // set while Changes shows the review the toggle put there, dropped as
+  // soon as the inspector leaves that Changes by any other way.
+  const reviewToggleReturnRef = useRef<{
+    owner: string;
+    open: boolean;
+    view: InspectorView;
+    expanded: boolean;
+    focus: HTMLElement | null;
+  } | null>(null);
   const commitInspectorState = useCallback(
     (
       next: WorkspaceInspectorState | null,
@@ -2485,6 +2499,14 @@ export default function App() {
       const previous = inspectorStateRef.current;
       inspectorStateRef.current = next;
       setInspectorState(next);
+      const toggled = reviewToggleReturnRef.current;
+      if (
+        toggled &&
+        (!next?.open ||
+          next.view !== "changes" ||
+          resourceOwnerKey(next.scope) !== toggled.owner)
+      )
+        reviewToggleReturnRef.current = null;
       // Shown or hidden by the user: in that workspace only.
       if (
         remember &&
@@ -3833,17 +3855,24 @@ export default function App() {
     },
     [commitInspectorState],
   );
-  // The review toggle on "in Changes" (D6, D4): it opens the focused
-  // workspace's Changes, focused, expanded the first time for that checkout
-  // and then as Changes was last left there; pressed on that Changes, it
-  // goes back to what the inspector showed before (closed, or another view
-  // at its own size).
-  const reviewToggleReturnRef = useRef<{
-    owner: string;
-    open: boolean;
-    view: InspectorView;
-    expanded: boolean;
-  } | null>(null);
+  // The review toggle on "in Changes" (D6, D4): it shows the review in the
+  // focused workspace's Changes, focused, expanded the first time for that
+  // checkout and then as Changes was last left there; pressed while Changes
+  // shows that review with the keys, it goes back to what the inspector
+  // showed before (closed, or another view at its own size) and gives the
+  // keys back to where they were. Changes opened by hand is not the review:
+  // the toggle shows the review there.
+  const reviewFocusHoldRef = useRef<(() => void) | null>(null);
+  // Chrome may hand the focus to the page's first control once the
+  // toggle's modifiers are released: the keys stay where they went back.
+  const keepFocusBack = (target: HTMLElement) =>
+    requestAnimationFrame(() => {
+      if (!target.isConnected) return;
+      target.focus({ preventScroll: true });
+      const container =
+        target.closest(".terminal-shell") ?? target.parentElement;
+      if (container) holdFocus(target, container);
+    });
   // Changes' own expanded flag and the other views' one, per checkout.
   const changesExpandedRef = useRef(new Map<string, boolean>());
   const otherExpandedRef = useRef(new Map<string, boolean>());
@@ -3873,10 +3902,59 @@ export default function App() {
       const sameOwner = !!current && sameResourceOwner(current.scope, scope);
       const onChanges =
         !!current?.open && sameOwner && current.view === "changes";
+      const toggled =
+        reviewToggleReturnRef.current?.owner === owner
+          ? reviewToggleReturnRef.current
+          : null;
+      // The review the toggle put in Changes, with the keys there.
+      const active = document.activeElement;
+      const showing =
+        onChanges &&
+        !!toggled &&
+        active instanceof HTMLElement &&
+        !!active.closest(".workspace-inspector-slot");
+      // Back to what the inspector showed before the toggle, the keys back
+      // where they were.
+      const goBack = (
+        from: WorkspaceInspectorState,
+        back: NonNullable<typeof toggled>,
+      ) => {
+        changesExpandedRef.current.set(owner, from.expanded);
+        reviewToggleReturnRef.current = null;
+        // The diff no longer keeps the keys; where they go back does.
+        reviewFocusHoldRef.current?.();
+        reviewFocusHoldRef.current = null;
+        const focusBack = focusReturnTarget(
+          back.focus,
+          ".workspace-inspector-slot",
+          activePaneIdForSnapshot(store.get()),
+        );
+        if (back.open) {
+          const next = { ...from, view: back.view, expanded: back.expanded };
+          commitInspectorState(next);
+          writeInspectorPreferences(roamgateLocalStorage, next);
+          if (mobile) setMobileView(back.view);
+        } else {
+          if (back.expanded !== from.expanded)
+            setInspectorExpanded(back.expanded);
+          inspectorReturnFocusRef.current = null;
+          closeInspector();
+        }
+        if (focusBack) keepFocusBack(focusBack);
+      };
+      if (showing && current && !goTo) {
+        goBack(current, toggled);
+        return;
+      }
       // The toggle shows what the classic one would (the pinned review,
       // else the workspace's), in Changes' scope for it; what Changes
-      // cannot show yet stays in the classic pane.
-      if (!goTo && !onChanges) {
+      // cannot show yet stays in the classic pane. Changes shows at once,
+      // in the review's scope once that is known.
+      if (!goTo) {
+        toggleReviewInChangesRef.current({});
+        const shown = reviewToggleReturnRef.current;
+        const stillShown = () =>
+          !!shown && reviewToggleReturnRef.current === shown;
         const sessionId = pinnedSessionId;
         void (async () => {
           const { openWorkspaceReview } = await import("./reviewOpen");
@@ -3884,10 +3962,7 @@ export default function App() {
             sessionId ?? (await openWorkspaceReview(reviewState.sessions));
           const snapshot = picked ? getReviewSnapshot(picked) : undefined;
           // No review to pick (it said why): Changes as it was left.
-          if (!picked || !snapshot) {
-            toggleReviewInChangesRef.current({});
-            return;
-          }
+          if (!picked || !snapshot || !stillShown()) return;
           const { changesReviewChoice } = await import("./changesReviewOpen");
           const choice = await changesReviewChoice({
             snapshot,
@@ -3910,7 +3985,10 @@ export default function App() {
                 () => null,
               ),
           });
+          if (!stillShown() || !shown) return;
           if (choice.kind === "classic") {
+            const from = inspectorStateRef.current;
+            if (from) goBack(from, shown);
             preloadReviewCode();
             store.notify({
               kind: "info",
@@ -3920,51 +3998,39 @@ export default function App() {
             setReviewSessionId(choice.sessionId);
             return;
           }
-          toggleReviewInChangesRef.current({ scope: choice.scope });
+          setChangesGoTo({ scope: choice.scope, at: Date.now() });
         })();
         return;
       }
       // Files' Review: Changes at that file and line, shown or not.
-      if (goTo) setChangesGoTo({ ...goTo, at: Date.now() });
-      if (onChanges && current && !goTo) {
-        changesExpandedRef.current.set(owner, current.expanded);
-        const back = reviewToggleReturnRef.current;
-        reviewToggleReturnRef.current = null;
-        const returning = back?.owner === owner ? back : null;
-        if (returning?.open) {
-          const next = {
-            ...current,
-            view: returning.view,
-            expanded: returning.expanded,
-          };
-          commitInspectorState(next);
-          writeInspectorPreferences(roamgateLocalStorage, next);
-          if (mobile) setMobileView(returning.view);
-          return;
-        }
-        if (returning && returning.expanded !== current.expanded)
-          setInspectorExpanded(returning.expanded);
-        closeInspector();
-        return;
-      }
-      if (!onChanges) {
-        if (sameOwner && current)
+      if (goTo.path !== undefined || goTo.scope)
+        setChangesGoTo({ ...goTo, at: Date.now() });
+      const returnFocus =
+        document.activeElement instanceof HTMLElement &&
+        !document.activeElement.closest(".workspace-inspector-slot")
+          ? document.activeElement
+          : null;
+      if (!toggled || !onChanges) {
+        if (
+          sameOwner &&
+          current &&
+          !(current.open && current.view === "changes")
+        )
           otherExpandedRef.current.set(owner, current.expanded);
         reviewToggleReturnRef.current = {
           owner,
           open: !!current?.open && sameOwner,
           view: sameOwner && current ? current.view : "changes",
           expanded: sameOwner && current ? current.expanded : false,
+          focus: returnFocus,
         };
-      }
-      const returnFocus =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
+      } else if (returnFocus) toggled.focus = returnFocus;
       if (!onChanges) {
         // Focused below, on the diff rather than the view's tab.
         openDiffViewer(workspace.workspace_id, false);
         inspectorReturnFocusRef.current = returnFocus;
+      }
+      if (!onChanges || !toggled) {
         const expanded = changesExpandedRef.current.get(owner) ?? true;
         if (inspectorStateRef.current?.expanded !== expanded)
           setInspectorExpanded(expanded);
@@ -3986,7 +4052,10 @@ export default function App() {
         if (target) {
           target.focus({ preventScroll: true });
           const slot = target.closest(".workspace-inspector-slot");
-          if (slot) holdFocus(target, slot);
+          if (slot) {
+            reviewFocusHoldRef.current?.();
+            reviewFocusHoldRef.current = holdFocus(target, slot);
+          }
         } else if (frames++ < 120) requestAnimationFrame(focusDiff);
       };
       requestAnimationFrame(focusDiff);
