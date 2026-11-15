@@ -1085,8 +1085,33 @@ describe("a listed directory's site root", () => {
       pages,
       `/rendered/${token}/.roamgate-root/assets/s.css`,
     );
-    expect(other.status).toBe(307);
+    // A style sheet is served from the root at once, not redirected.
+    expect(other.status).toBe(200);
+    expect(other.headers.get("content-type")).toStartWith("text/css");
+    expect(other.headers.get("location")).toBeNull();
+    expect(await other.text()).toBe("body{}");
     expect(finds).toHaveLength(1);
+  });
+
+  test("a root-absolute style sheet above the folder is served, a page redirects", async () => {
+    const { pages, open } = sitePages();
+    const { token } = open();
+    const css = await got(
+      pages,
+      `/rendered/${token}/.roamgate-root/assets/s.css`,
+    );
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toStartWith("text/css");
+    expect(css.headers.get("location")).toBeNull();
+    expect(await css.text()).toBe("body{}");
+    const page = await got(
+      pages,
+      `/rendered/${token}/.roamgate-root/documentation/libs.html`,
+    );
+    expect(page.status).toBe(307);
+    expect(page.headers.get("location")).toMatch(
+      /^\/rendered\/[0-9a-f]{32}\/documentation\/libs\.html$/,
+    );
   });
 
   test("clicking through the site stays under a token, never Roamgate's root", async () => {
