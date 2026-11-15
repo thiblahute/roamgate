@@ -197,7 +197,16 @@ Inspector button, shortcuts, or workspace/agent menus.
   going, go thread to thread), `gH` shows only the unresolved ones, `g;` the
   comment written last, `za` folds the thread on the line, `r` resolves or
   reopens it, `e` rewrites your last comment on the line, `dd` deletes a lone
-  comment of yours, `T` lists the comments, `t` hides them all. A comment
+  comment of yours, `T` lists the comments, `t` hides them all. `j` / `k` step into the messages drawn under a line, and the parts of a
+  message, before going on to the next line (`k` up onto a line lands on its
+  last message); `n` / `N` go message to message, `gl` to the thread's last
+  message, `c` on a message answers it (on a part, comments on that part),
+  `u` brings back the comment `dd` deleted, and the `+` in a message's margin
+  comments on its part. A comment on its way shows "Sending..." under its
+  line, then "Not saved" with Retry and Discard if the server refused it
+  (it is also kept in this browser). Comments on the whole review or on code
+  the diff no longer shows are listed above the diff, the forge's under
+  GitLab. A comment
   written on a staged or unstaged entry is drawn on the line that still
   reads as it did, in whichever entry of the file has it. Once the checkout's
   review has an agent, the diff's head gets its agent group: **Live**

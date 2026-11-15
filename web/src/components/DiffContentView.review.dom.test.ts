@@ -440,6 +440,177 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
+    test("j and k step into the messages drawn under a line before the next line; n and N go message to message, gl to the last, and c on a message answers", async () => {
+      const talk = {
+        ...open,
+        comments: [
+          ...open.comments,
+          {
+            id: "t1d",
+            author: "agent",
+            body: "Because of the cache",
+            createdAt: "2026-11-10T10:05:00Z",
+            updatedAt: "2026-11-10T10:05:00Z",
+          },
+          {
+            id: "t1e",
+            author: "you",
+            body: "Thanks",
+            createdAt: "2026-11-10T10:06:00Z",
+            updatedAt: "2026-11-10T10:06:00Z",
+          },
+        ],
+      } as Thread;
+      const focusedMessage = () =>
+        document
+          .querySelector<HTMLElement>(".diff-review-thread .is-focused")
+          ?.getAttribute("data-chat-stop") ?? null;
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        threads: [talk],
+        annotations: [feedbackNote(talk)],
+      });
+      try {
+        await keys("jj");
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        expect(focusedMessage()).toBeNull();
+        // j goes into the thread, message by message, then on down.
+        await press("j");
+        expect(focusedMessage()).toBe("m:t1c");
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        await press("j");
+        expect(focusedMessage()).toBe("m:t1d");
+        await press("k");
+        expect(focusedMessage()).toBe("m:t1c");
+        // k off the first message is back on the line.
+        await press("k");
+        expect(focusedMessage()).toBeNull();
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        await press("g");
+        await press("l");
+        expect(focusedMessage()).toBe("m:t1e");
+        await press("N");
+        expect(focusedMessage()).toBe("m:t1d");
+        await press("n");
+        expect(focusedMessage()).toBe("m:t1e");
+        // Past the last message, j goes on to the next line.
+        await press("j");
+        expect(cursorAt()).toBe("unstaged:a.ts:context:3");
+        expect(focusedMessage()).toBeNull();
+        // k comes up onto the thread's last message.
+        await press("k");
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        expect(focusedMessage()).toBe("m:t1e");
+        await press("c");
+        await diff.settle();
+        expect(
+          document.querySelector(
+            ".diff-review-thread textarea, .diff-review-thread .cm-content",
+          ),
+        ).not.toBeNull();
+      } finally {
+        await diff.unmount();
+      }
+    });
+
+    test("a comment on its way is drawn under its line as Sending..., then Not saved with Retry and Discard", async () => {
+      const { pendingFeedback } = await import("../feedbackPending");
+      const note = {
+        id: "n-wait",
+        source: "diff",
+        path: "a.ts",
+        kind: "unstaged",
+        side: "new",
+        line: 2,
+        hunk: "",
+        quote: "deux",
+        comment: "Why two?",
+        createdAt: 1,
+      } as unknown as NewNote & { id: string };
+      const calls: string[] = [];
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+      });
+      try {
+        await act(async () =>
+          pendingFeedback.start(note as never, {
+            retry: () => calls.push("retry"),
+            discard: () => calls.push("discard"),
+          }),
+        );
+        await diff.settle();
+        const bar = () =>
+          document.querySelector(".diff-review-pending")?.textContent ?? "";
+        expect(bar()).toContain("Why two?");
+        expect(bar()).toContain("Sending...");
+        await act(async () => pendingFeedback.fail("n-wait", "offline"));
+        await diff.settle();
+        expect(bar()).toContain("Not saved: offline");
+        const button = (label: string) =>
+          [
+            ...document.querySelectorAll<HTMLButtonElement>(
+              ".diff-review-pending button",
+            ),
+          ].find((each) => each.textContent === label)!;
+        await act(async () => button("Retry").click());
+        await act(async () => button("Discard").click());
+        expect(calls).toEqual(["retry", "discard"]);
+        await act(async () => pendingFeedback.done("n-wait"));
+        await diff.settle();
+        expect(document.querySelector(".diff-review-pending")).toBeNull();
+      } finally {
+        pendingFeedback.done("n-wait");
+        await diff.unmount();
+      }
+    });
+
+    test("a comment whose code is nowhere in the diff, and one on the whole review, are drawn above the diff; the forge's under GitLab", async () => {
+      const lost = thread(
+        "t9",
+        { kind: "unstaged", line: 90, side: "new" },
+        "gone line",
+      );
+      const whole = {
+        ...thread("t8", { kind: "unstaged", line: 1, side: "new" }, "x"),
+        anchor: { feedback: "{}" },
+      } as unknown as Thread;
+      const forge = {
+        ...thread("t7", { kind: "unstaged", line: 1, side: "new" }, "x"),
+        kind: "merge-request",
+        anchor: { feedback: "{}" },
+      } as unknown as Thread;
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        threads: [lost, whole, forge],
+        annotations: [feedbackNote(lost)],
+      });
+      try {
+        const block = document.querySelector(".diff-review-general");
+        expect(block).not.toBeNull();
+        const text = block!.textContent ?? "";
+        expect(text).toContain("About gone line");
+        expect(text).toContain("GitLab");
+        expect(
+          [...block!.querySelectorAll("[data-thread-id]")].map(
+            (each) => (each as HTMLElement).dataset.threadId,
+          ),
+        ).toEqual(expect.arrayContaining(["t9", "t8", "t7"]));
+        // gH leaves only the unresolved ones: none resolved here, all stay.
+        expect(diff.comments("unstaged:a.ts")).toHaveLength(0);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("a thread written on a staged entry is drawn where its line is read now: under the unstaged entry's, found by its text", async () => {
       // Written on the staged entry (line 2 there read "one"): the staged
       // diff is not loaded here, the unstaged one has "one" on line 1.
