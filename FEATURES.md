@@ -186,6 +186,24 @@ Inspector button, shortcuts, or workspace/agent menus.
   (Cmd+F still finds on a Mac) and `:split` / `:unified` switch, as in the
   review pane. On the classic setting (the default), Changes keeps its own
   keys and mouse.
+- The same setting gives Changes the review's comments. `c`, Enter, `i` or
+  `a` comment on the cursor's line, or on the lines `V` selected, in the
+  review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc
+  keeps what you wrote as a draft that comes back, a key or two is a stray
+  and is not sent, an image pasted in is stored with the review, `s` or
+  `:suggest` starts a suggestion with the line as it reads). On a line with an
+  open discussion `c` answers it; `C` asks anew. `gn` / `gN` go to the next /
+  previous unresolved thread through every file (`n` / `N`, with no search
+  going, go thread to thread), `gH` shows only the unresolved ones, `g;` the
+  comment written last, `za` folds the thread on the line, `r` resolves or
+  reopens it, `e` rewrites your last comment on the line, `dd` deletes a lone
+  comment of yours, `T` lists the comments, `t` hides them all. A comment
+  written on a staged or unstaged entry is drawn on the line that still
+  reads as it did, in whichever entry of the file has it. Once the checkout's
+  review has an agent, the diff's head gets its agent group: **Live**
+  (comments go to the agent as you write them), **Hold**, **Send**,
+  **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
+  `:overall`.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes

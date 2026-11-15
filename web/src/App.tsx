@@ -25,6 +25,7 @@ import {
   migrateFeedback,
   paneChat,
   workspaceFeedback,
+  addFeedbackImage,
   writeFeedback,
   type FeedbackCapture,
   type FeedbackPlace,
@@ -3328,6 +3329,20 @@ export default function App() {
       updateAnnotationDraft,
     ],
   );
+  /** An image pasted in the review's comment box in Changes. */
+  const addReviewImage = useCallback(
+    async (file: File) => {
+      const place = inspectorState ? feedbackPlace(inspectorState.scope) : null;
+      if (!place) throw new Error("no checkout to keep the image with");
+      return addFeedbackImage(
+        <T,>(method: string, params: Record<string, unknown>) =>
+          reviewCall<T>(connectionClient.connectionId, method, params),
+        place,
+        file,
+      );
+    },
+    [connectionClient, feedbackPlace, inspectorState],
+  );
   const addAnnotation = useCallback(
     (
       input: NewReviewAnnotation,
@@ -6583,6 +6598,7 @@ export default function App() {
                       ]}
                       feedbackThreads={inspectorFeedbackThreads}
                       onCreateAnnotation={addAnnotation}
+                      onAddReviewImage={addReviewImage}
                       onShowInReview={(path, line) =>
                         void showFileInReview(path, line)
                       }

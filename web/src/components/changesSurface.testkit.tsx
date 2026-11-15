@@ -720,6 +720,15 @@ export async function selectDiffLines(
 
 /** The comment composer shown anywhere on the page, or null. */
 export function shownComposer() {
+  // The review's comment editor, under its line ("in Changes").
+  const box = document.querySelector<HTMLElement>(".diff-review-composer");
+  if (box)
+    return {
+      title:
+        box.closest<HTMLElement>("[data-diff-entry-key]")?.dataset
+          .diffEntryKey ?? "",
+      quote: "",
+    };
   const form = document.querySelector<HTMLFormElement>(
     ".annotation-composer-popover",
   );
@@ -852,7 +861,9 @@ export async function mountChangesDiff(
   const shadow = (key: string) =>
     section(key).querySelector("diffs-container")?.shadowRoot ?? null;
   const composerForm = () =>
-    document.querySelector<HTMLFormElement>(".annotation-composer-popover");
+    document.querySelector<HTMLElement>(
+      ".annotation-composer-popover, .diff-review-composer",
+    );
 
   const diff: ChangesDiff = {
     sections: () =>
@@ -933,7 +944,10 @@ export async function mountChangesDiff(
       const button = [
         ...(composerForm()?.querySelectorAll<HTMLButtonElement>("button") ??
           []),
-      ].find((each) => each.textContent === "Add comment");
+      ].find(
+        (each) =>
+          each.textContent === "Add comment" || each.textContent === "Save",
+      );
       if (!button) throw new Error("no Add comment");
       await act(async () => button.click());
       await settle();

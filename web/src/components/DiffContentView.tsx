@@ -15,6 +15,7 @@ import {
 import {
   createContext,
   memo,
+  type ReactNode,
   useCallback,
   useContext,
   useDeferredValue,
@@ -24,7 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ReviewThread } from "../../../shared/review";
+import { REVIEW_USER, type ReviewThread } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import {
   diffReviewLineLabel,
@@ -76,11 +77,32 @@ import {
   useFileThreadView,
 } from "./FileThreads";
 import { ThreadsChip } from "./ThreadsPanel";
+import {
+  changesDraftSession,
+  ReviewDiffComposer,
+  suggestionBlock,
+} from "./ReviewDiffComposer";
+import {
+  cursorThreadPlace,
+  type PlacedThread,
+  placeDiffThreads,
+  threadReadingOrder,
+  threadsAtCursor,
+} from "../changesThreads";
+import { latestComment } from "../reviewNavigation";
+import { useChangesAgent } from "../changesReview";
+import { ChangesAgentBar } from "./ChangesAgentBar";
+import { stepNotice, stepUnresolved } from "../unresolvedThreads";
 import { useReviewState } from "../review";
 import { useInspectorCommands } from "../useInspectorCommands";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
-import { DIFF_CURSOR_KEYS, useDiffCursor } from "./useDiffCursor";
+import {
+  type DiffCursor,
+  DIFF_CURSOR_KEYS,
+  DIFF_REVIEW_KEYS,
+  useDiffCursor,
+} from "./useDiffCursor";
 import "./DiffContentView.css";
 
 export { highlightedPatch } from "./DiffSurface";
@@ -381,6 +403,23 @@ type DiffThreads = {
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
 
+/** The id of the comment box drawn as an annotation under its line. */
+const COMPOSER_ID = "\u0000composer";
+
+/**
+ * The review's comment box (reviewin Changes), what the annotation of
+ * COMPOSER_ID draws; hidden comments and the threads only the unresolved
+ * ones: what `t` and `gH` set.
+ */
+type DiffDrawing = {
+  composer: ReactNode;
+  composerKey: string;
+  hideComments: boolean;
+  openOnly: boolean;
+};
+
+const DiffDrawingContext = createContext<DiffDrawing | null>(null);
+
 /**
  * The threads of the comments on the files a diff view shows, in their
  * order: what its Comments panel lists.
@@ -389,12 +428,20 @@ export function diffViewThreads(
   annotations: readonly ReviewAnnotation[],
   threads: readonly ReviewThread[],
   entries: readonly GitDiffEntry[],
+  /**
+   * By path alone: the review's threads belong to the combined diff, not to
+   * the staged or unstaged entry they were written on (plan D8).
+   */
+  byPath = false,
 ): ReviewThread[] {
   const byId = new Map(threads.map((each) => [each.id, each]));
-  const shown = new Set(entries.map((each) => `${each.kind}:${each.path}`));
+  const shown = new Set(
+    entries.map((each) => (byPath ? each.path : `${each.kind}:${each.path}`)),
+  );
   return annotations.flatMap((note) => {
     const thread =
-      note.source === "diff" && shown.has(`${note.kind}:${note.path}`)
+      note.source === "diff" &&
+      shown.has(byPath ? note.path : `${note.kind}:${note.path}`)
         ? byId.get(note.id)
         : undefined;
     return thread ? [thread] : [];
@@ -410,7 +457,15 @@ function DiffAnnotation({
   onEdit?: (id: string) => void;
 }) {
   const threads = useContext(DiffThreadsContext);
+  const drawing = useContext(DiffDrawingContext);
+  if (annotation.id === COMPOSER_ID) return <>{drawing?.composer}</>;
   const thread = threads?.byId.get(annotation.id);
+  if (
+    drawing &&
+    thread &&
+    (drawing.hideComments || (drawing.openOnly && thread.resolved))
+  )
+    return null;
   if (threads && thread)
     return (
       <div className="chat-review diff-review-thread">
@@ -830,6 +885,7 @@ export function DiffContentView({
   backAction,
   reviewCursor = false,
   onSearchMatchesChange,
+  onAddReviewImage,
 }: {
   selectionRevision?: number;
   entry: GitDiffEntry | null;
@@ -872,6 +928,8 @@ export function DiffContentView({
   reviewCursor?: boolean;
   /** The files with a hit of the cursor's search, for the tree to mark. */
   onSearchMatchesChange?: (paths: readonly string[]) => void;
+  /** Stores an image pasted in the review's comment box; Markdown for it. */
+  onAddReviewImage?: (file: File) => Promise<string>;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1016,9 +1074,21 @@ export function DiffContentView({
   const threadView = useFileThreadView(() => sectionRef.current);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const { sessions: reviewSessions } = useReviewState();
+  /** The review's comment box and thread keys, "in Changes" (plan phase 4). */
+  const reviewEditor = reviewCursor && !embedded;
+  /** `t`: every comment hidden (their margin markers stay). */
+  const [hideComments, setHideComments] = useState(false);
+  /** A suggestion asked for with `s`, the comment box's first words. */
+  const [composerSeed, setComposerSeed] = useState<string | undefined>();
+  const [overallOpen, setOverallOpen] = useState(false);
+  const changesAgent = useChangesAgent(
+    connectionClient.connectionId,
+    reviewEditor ? (Object.values(filesByKey)[0]?.root ?? file?.root) : null,
+  );
   const shownThreads = useMemo(
-    () => diffViewThreads(annotations, threads ?? [], visibleEntries),
-    [annotations, threads, visibleEntries],
+    () =>
+      diffViewThreads(annotations, threads ?? [], visibleEntries, reviewEditor),
+    [annotations, reviewEditor, threads, visibleEntries],
   );
   const diffThreads = useMemo<DiffThreads | null>(() => {
     if (!threads?.length) return null;
@@ -1283,6 +1353,14 @@ export function DiffContentView({
     [renderedSections],
   );
   const inspectorRunRef = useRef<((input: string) => void) | null>(null);
+  const reviewHandlers = useRef<{
+    comment: (
+      key: string,
+      range: SelectedLineRange,
+      mode: "comment" | "suggest" | "new",
+    ) => boolean;
+    threadKey: (key: string, count: number | null) => boolean;
+  }>({ comment: () => false, threadKey: () => false });
   const cursor = useDiffCursor({
     enabled: reviewCursor && !embedded,
     sections: cursorSections,
@@ -1300,7 +1378,20 @@ export function DiffContentView({
       store.notify({ kind: "info", message, autoDismissMs: 2000 }),
     selectionRevision,
     selectedKey: activeEntryKey || null,
+    ...(reviewEditor
+      ? {
+          onComment: (
+            key: string,
+            range: SelectedLineRange,
+            mode: "comment" | "suggest" | "new",
+          ) => reviewHandlers.current.comment(key, range, mode),
+          threadKey: (key: string, count: number | null) =>
+            reviewHandlers.current.threadKey(key, count),
+        }
+      : {}),
   });
+  const cursorHandle = useRef<DiffCursor>(cursor);
+  cursorHandle.current = cursor;
   const cursorMatching = useMemo(
     () => new Set(cursor.matchingPaths),
     [cursor.matchingPaths],
@@ -1327,12 +1418,308 @@ export function DiffContentView({
   const cursorLineClickRef = useRef(cursor.onLineClick);
   cursorLineClickRef.current = cursor.onLineClick;
 
+  // ---- The review's threads and comment box (reviewin Changes) ----------
+
+  const drawingSections = useMemo(
+    () =>
+      renderedSections.map((section) => ({
+        key: section.key,
+        path: section.entry.path,
+      })),
+    [renderedSections],
+  );
+  const diffNotes = useMemo(
+    () =>
+      annotations.filter(
+        (note): note is DiffReviewAnnotation => note.source === "diff",
+      ),
+    [annotations],
+  );
+  const placement = useMemo(
+    () =>
+      reviewEditor
+        ? placeDiffThreads(
+            diffNotes,
+            diffThreads?.byId ?? new Map(),
+            drawingSections,
+            cursor.model.rows,
+          )
+        : null,
+    [cursor.model.rows, diffNotes, diffThreads, drawingSections, reviewEditor],
+  );
+  const readingOrder = useMemo<PlacedThread[]>(
+    () =>
+      placement ? threadReadingOrder(placement.placed, drawingSections) : [],
+    [drawingSections, placement],
+  );
+  /** What each file's Pierre draws under its lines: threads, notes, the box. */
+  const drawnByKey = useMemo(() => {
+    if (!placement) return annotationsByPath;
+    const grouped = new Map<string, DiffReviewAnnotation[]>();
+    const add = (key: string, note: DiffReviewAnnotation) => {
+      const list = grouped.get(key);
+      if (list) list.push(note);
+      else grouped.set(key, [note]);
+    };
+    const spots = new Map(
+      placement.placed.map((spot) => [spot.thread.id, spot]),
+    );
+    const gone = new Set(placement.unplaced.map((thread) => thread.id));
+    for (const note of diffNotes) {
+      if (gone.has(note.id)) continue;
+      const spot = spots.get(note.id);
+      if (spot) add(spot.key, { ...note, side: spot.side, line: spot.line });
+      // Not a thread (yet): a note kept in this browser, where it was.
+      else if (!diffThreads?.byId.has(note.id))
+        add(`${note.kind}:${note.path}`, note);
+    }
+    if (pendingAnnotation) {
+      const atEnd =
+        pendingAnnotation.endLine !== undefined &&
+        (pendingAnnotation.endSide ?? pendingAnnotation.side) ===
+          pendingAnnotation.side;
+      add(`${pendingAnnotation.kind}:${pendingAnnotation.path}`, {
+        id: COMPOSER_ID,
+        source: "diff",
+        path: pendingAnnotation.path,
+        kind: pendingAnnotation.kind,
+        side: pendingAnnotation.side,
+        line: atEnd ? pendingAnnotation.endLine! : pendingAnnotation.line,
+        hunk: pendingAnnotation.hunk,
+        quote: "",
+        comment: "",
+        createdAt: 0,
+      });
+    }
+    return grouped;
+  }, [annotationsByPath, diffNotes, diffThreads, pendingAnnotation, placement]);
+
+  const spotAtCursor = () => {
+    const where = cursorHandle.current.where();
+    return where
+      ? {
+          key: where.key,
+          old: where.old,
+          new: where.new,
+          side: where.side,
+        }
+      : null;
+  };
+  /** Shows a thread to be read: unfolded, its line in view. */
+  const showThread = (spot: PlacedThread) => {
+    if (threadView.folded(spot.thread)) threadView.unfold([spot.thread.id]);
+    cursorHandle.current.goTo(spot.key, spot.line, spot.side);
+  };
+  const say = (message: string) =>
+    store.notify({ kind: "info", message, autoDismissMs: 2500 });
+
+  reviewHandlers.current.comment = (key, range, mode) => {
+    const section = renderedSectionsRef.current.find(
+      (candidate) => candidate.key === key,
+    );
+    if (!section?.file?.diff || !onCreateAnnotation) return false;
+    const target = findDiffReviewSelection(
+      section.file.diff,
+      range,
+      effectiveViewMode === "split" ? "split" : "unified",
+    );
+    if (!target) return false;
+    // A line being discussed: c answers there; C asks anew.
+    if (mode !== "new" && target.endLine === undefined) {
+      const spot = spotAtCursor();
+      const open =
+        spot &&
+        threadsAtCursor(readingOrder, spot).find(
+          (each) => !each.thread.resolved && each.thread.kind === "discussion",
+        );
+      if (open) {
+        if (threadView.folded(open.thread)) threadView.unfold([open.thread.id]);
+        threadView.setReplying(open.thread.id);
+        return true;
+      }
+    }
+    setComposerSeed(
+      mode === "suggest" &&
+        target.side === "new" &&
+        target.endLine === undefined
+        ? suggestionBlock(target.quote)
+        : undefined,
+    );
+    setPendingAnnotation({
+      x: 0,
+      y: 0,
+      path: section.entry.path,
+      kind: section.entry.kind,
+      ...target,
+    });
+    return true;
+  };
+
+  reviewHandlers.current.threadKey = (key) => {
+    const spot = spotAtCursor();
+    const here = spot ? threadsAtCursor(readingOrder, spot) : [];
+    const first = here[0];
+    switch (key) {
+      case "gn":
+      case "gN":
+      case "n":
+      case "N": {
+        const direction = key === "gn" || key === "n" ? 1 : -1;
+        const order = readingOrder.map((each) => each.thread);
+        // n / N go thread to thread, resolved ones too; gn / gN skip them.
+        const walk =
+          key === "n" || key === "N"
+            ? order.map((t) => ({ ...t, resolved: false }))
+            : order;
+        const place = spot
+          ? cursorThreadPlace(readingOrder, drawingSections, spot, direction)
+          : { index: direction === 1 ? 0 : readingOrder.length, on: false };
+        const step = stepUnresolved(walk, place, direction);
+        if (!step) {
+          say(
+            key === "gn" || key === "gN"
+              ? "No unresolved comment here."
+              : "No comment here.",
+          );
+          return true;
+        }
+        if (key === "gn" || key === "gN" || step.wrapped)
+          say(stepNotice(step, direction));
+        showThread(readingOrder[step.index]!);
+        return true;
+      }
+      case "gH":
+        threadView.setOpenOnly(!threadView.openOnly);
+        say(
+          threadView.openOnly
+            ? "All the comments shown"
+            : "Only the unresolved comments shown",
+        );
+        return true;
+      case "g;": {
+        const latest = latestComment(readingOrder.map((each) => each.thread));
+        if (!latest) {
+          say("No comment yet.");
+          return true;
+        }
+        const spotOf = readingOrder.find(
+          (each) => each.thread.id === latest.thread.id,
+        );
+        if (spotOf) showThread(spotOf);
+        return true;
+      }
+      case "za":
+        if (!first) return false;
+        threadView.toggleFold(first.thread);
+        return true;
+      case "r":
+        if (!first || !diffThreads) return false;
+        diffThreads.api.resolve(first.thread);
+        return true;
+      case "e": {
+        // Your last comment on the line, rewritten in place.
+        const written = here
+          .flatMap((each) =>
+            each.thread.comments.map((comment) => ({ each, comment })),
+          )
+          .filter(({ comment }) => comment.author === REVIEW_USER);
+        const mine = written[written.length - 1];
+        if (!mine) return false;
+        if (threadView.folded(mine.each.thread))
+          threadView.unfold([mine.each.thread.id]);
+        threadView.setEditing(mine.comment.id);
+        return true;
+      }
+      case "dd": {
+        if (!first || !diffThreads) return false;
+        const [only, ...rest] = first.thread.comments;
+        if (!only || rest.length || only.author !== REVIEW_USER) {
+          say("Delete a comment with its Delete button.");
+          return true;
+        }
+        diffThreads.api.remove(first.thread);
+        return true;
+      }
+      case "T":
+        if (shownThreads.length) setThreadsOpen((open) => !open);
+        else say("No comments yet.");
+        return true;
+      case "t":
+        setHideComments((hidden) => !hidden);
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const closeReviewComposer = () => {
+    setPendingAnnotation(null);
+    setComposerSeed(undefined);
+    sectionRef.current?.focus({ preventScroll: true });
+  };
+  const composerNode: ReactNode =
+    reviewEditor && pendingAnnotation ? (
+      <ReviewDiffComposer
+        key={`${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}`}
+        anchor={{
+          path: pendingAnnotation.path,
+          line: pendingAnnotation.line,
+          side: pendingAnnotation.side,
+          text: pendingAnnotation.quote.split("\n", 1)[0] ?? "",
+        }}
+        suggestable={
+          pendingAnnotation.side === "new" &&
+          pendingAnnotation.endLine === undefined
+            ? pendingAnnotation.quote
+            : null
+        }
+        {...(composerSeed !== undefined ? { initial: composerSeed } : {})}
+        draftSession={changesDraftSession(resourceKey)}
+        onSave={(text) => {
+          if (hideComments) setHideComments(false);
+          saveAnnotation(text);
+          setComposerSeed(undefined);
+          sectionRef.current?.focus({ preventScroll: true });
+        }}
+        onClose={closeReviewComposer}
+        {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+        notify={say}
+        coarse={
+          typeof window !== "undefined" &&
+          !!window.matchMedia?.("(pointer: coarse)").matches
+        }
+      />
+    ) : null;
+  // The box is drawn anew only as it opens or closes (or its target moves):
+  // its words are typed into the editor, not rendered here.
+  const composerRef = useRef<ReactNode>(null);
+  composerRef.current = composerNode;
+  const composerKey = pendingAnnotation
+    ? `${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}:${composerSeed ?? ""}`
+    : "";
+  const drawing = useMemo<DiffDrawing | null>(
+    () =>
+      reviewEditor
+        ? {
+            get composer() {
+              return composerRef.current;
+            },
+            composerKey,
+            hideComments,
+            openOnly: threadView.openOnly,
+          }
+        : null,
+    [composerKey, hideComments, reviewEditor, threadView.openOnly],
+  );
+
   useEffect(() => {
     hunkIndexRef.current = -1;
     hunkNavigationRevisionRef.current += 1;
     setHunkIndex(-1);
-    setPendingAnnotation(null);
-  }, [activeEntryKey, file?.diff]);
+    // The review's comment box stays through a reload (it keeps its words
+    // as it goes); the popover closes as it did.
+    if (!reviewEditor) setPendingAnnotation(null);
+  }, [activeEntryKey, file?.diff, reviewEditor]);
 
   useEffect(() => {
     if (!onReanchorAnnotations) return;
@@ -1751,7 +2138,7 @@ export function DiffContentView({
           embedded={embedded}
           mobile={mobile}
           annotations={
-            annotationsByPath.get(section.key) ?? EMPTY_DIFF_REVIEW_ANNOTATIONS
+            drawnByKey.get(section.key) ?? EMPTY_DIFF_REVIEW_ANNOTATIONS
           }
           annotationSelectionActive={
             pendingAnnotation?.path === section.entry.path &&
@@ -1856,6 +2243,49 @@ export function DiffContentView({
           ? setMobileWrap((value) => !value)
           : setDesktopWrap((value) => !value),
     },
+    ...(reviewEditor
+      ? [
+          {
+            name: "comments",
+            aliases: ["hidecomments"],
+            description: "show / hide every comment (t)",
+            run: () => setHideComments((hidden) => !hidden),
+          },
+          {
+            name: "unresolved",
+            aliases: ["openonly"],
+            description: "show only the unresolved comments, or all (gH)",
+            run: () => threadView.setOpenOnly(!threadView.openOnly),
+          },
+        ]
+      : []),
+    ...(reviewEditor && changesAgent.agentName
+      ? [
+          {
+            name: "send",
+            aliases: ["handoff"],
+            description: `send the held comments, or the open discussions, to ${changesAgent.agentName}`,
+            run: () => changesAgent.send(),
+          },
+          {
+            name: "hold",
+            description:
+              "hold your comments until :send, or send each as written",
+            run: () => changesAgent.toggleHold(),
+          },
+          {
+            name: "review",
+            description: `${changesAgent.agentName} reviews the changes: :review [focus]`,
+            run: (argument: string) => changesAgent.review(argument),
+          },
+          {
+            name: "overall",
+            aliases: ["summary"],
+            description: "write the overall comment on the review",
+            run: () => setOverallOpen(true),
+          },
+        ]
+      : []),
     ...(shownThreads.length
       ? [
           {
@@ -1873,7 +2303,12 @@ export function DiffContentView({
       : {
           commands: diffCommands,
           ...(cursor.active
-            ? { line: cursor.goToLine, keys: DIFF_CURSOR_KEYS }
+            ? {
+                line: cursor.goToLine,
+                keys: reviewEditor
+                  ? [...DIFF_CURSOR_KEYS, ...DIFF_REVIEW_KEYS]
+                  : DIFF_CURSOR_KEYS,
+              }
             : {}),
         },
   );
@@ -1962,6 +2397,13 @@ export function DiffContentView({
           >
             Wrap
           </button>
+        ) : null}
+        {reviewEditor ? (
+          <ChangesAgentBar
+            agent={changesAgent}
+            overallOpen={overallOpen}
+            onOverall={setOverallOpen}
+          />
         ) : null}
         <div className="diff-content-actions">
           {hunkTargets.length ? (
@@ -2129,7 +2571,9 @@ export function DiffContentView({
         <div className="diff-content-state">No changed files.</div>
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
-        {diffList}
+        <DiffDrawingContext.Provider value={drawing}>
+          {diffList}
+        </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>
       {threadsOpen && shownThreads.length && diffThreads ? (
         <ThreadsList
@@ -2160,7 +2604,7 @@ export function DiffContentView({
         />
       ) : null}
       <AnnotationComposerPopover
-        draft={annotationComposerDraft}
+        draft={reviewEditor ? null : annotationComposerDraft}
         onSave={saveAnnotation}
         onClose={closeAnnotationComposer}
       />

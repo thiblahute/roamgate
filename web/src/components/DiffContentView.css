@@ -374,3 +374,99 @@
 .diff-content-view > .review-cmdline .review-cmd {
   color: inherit;
 }
+
+/* The review's comment editor, under the line it comments. */
+.diff-review-composer {
+  max-width: min(640px, 100%);
+  margin: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--rv-border);
+  border-left: 3px solid var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-surface, transparent);
+  font-family: var(--sans-font);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.diff-review-composer .rc-editor {
+  min-width: 0;
+  min-height: 64px;
+}
+
+.diff-review-composer-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.diff-review-composer-bar .spacer {
+  flex: 1;
+}
+
+.diff-review-composer-bar .btn {
+  padding: 2px 8px;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rv-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The review's agent group in Changes. */
+.diff-agent-bar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.diff-agent-name {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.diff-agent-mode {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.diff-agent-bar button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-agent-bar button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.diff-agent-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.diff-agent-status {
+  flex: 1 1 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diff-agent-overall {
+  flex: 1 1 100%;
+  max-width: 640px;
+}

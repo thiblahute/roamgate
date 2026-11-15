@@ -6,6 +6,7 @@ import type {
 } from "../../shared/review";
 import { parseReviewAnnotation, type ReviewAnnotation } from "./annotations";
 import {
+  addFeedbackImage,
   feedbackRoute,
   feedbackThreadId,
   paneChat,
@@ -512,5 +513,71 @@ describe("workspaceFeedback", () => {
     expect(workspaceFeedback(sessions, "other", "w1")).toEqual([]);
     expect(workspaceFeedback(sessions, null, "w1")).toEqual([]);
     expect(workspaceFeedback(sessions, "local", undefined)).toEqual([]);
+  });
+});
+
+describe("an image pasted in a comment in Changes", () => {
+  test("is stored with the checkout's worktree review, opened for it, and linked as Markdown", async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    const call = async <T>(method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      return (
+        method === "review.open"
+          ? { session: { id: "s9" } }
+          : { path: "/store/shot.png" }
+      ) as T;
+    };
+    const file = new File([new Uint8Array([1, 2, 3])], "shot one.png", {
+      type: "image/png",
+    });
+    const markdown = await addFeedbackImage(
+      call,
+      { ...place, agent: { paneId: "p1", name: "Claude" } },
+      file,
+    );
+    expect(markdown).toBe("![shot one.png](</store/shot.png>)");
+    expect(calls).toEqual([
+      {
+        method: "review.open",
+        params: {
+          workspace_id: "w1",
+          path: "/repo",
+          target: { kind: "worktree" },
+          agent_pane: "p1",
+          agent: "Claude",
+        },
+      },
+      {
+        method: "review.image.add",
+        params: { session_id: "s9", type: "image/png", data: "AQID" },
+      },
+    ]);
+  });
+
+  test("a screenshot pasted without a name is called screenshot; one over 10 MiB is refused before anything is opened", async () => {
+    const calls: string[] = [];
+    const call = async <T>(method: string) => {
+      calls.push(method);
+      return (
+        method === "review.open"
+          ? { session: { id: "s9" } }
+          : { path: "/p.png" }
+      ) as T;
+    };
+    expect(
+      await addFeedbackImage(
+        call,
+        place,
+        new File([new Uint8Array([1])], "image.png", { type: "image/png" }),
+      ),
+    ).toBe("![screenshot](</p.png>)");
+    calls.length = 0;
+    const big = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.png", {
+      type: "image/png",
+    });
+    await expect(addFeedbackImage(call, place, big)).rejects.toThrow(
+      "at most 10 MiB",
+    );
+    expect(calls).toEqual([]);
   });
 });

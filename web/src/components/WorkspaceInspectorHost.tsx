@@ -169,6 +169,7 @@ export function WorkspaceInspectorHost({
   annotations,
   feedbackThreads,
   onCreateAnnotation,
+  onAddReviewImage,
   onShowInReview,
   onReanchorFileAnnotations,
   onReanchorDiffAnnotations,
@@ -202,6 +203,8 @@ export function WorkspaceInspectorHost({
   /** The threads the annotations written as comments are, by their id. */
   feedbackThreads?: readonly ReviewThread[];
   onCreateAnnotation: (input: NewReviewAnnotation) => void;
+  /** Stores an image pasted in the review's comment box in Changes. */
+  onAddReviewImage?: (file: File) => Promise<string>;
   /** Shows a file of a checkout (absolute path) in its code review. */
   onShowInReview?: (path: string, line?: number) => void;
   onReanchorFileAnnotations: (path: string, text: string) => void;
@@ -1295,6 +1298,7 @@ export function WorkspaceInspectorHost({
                         }
                         onOpenFile={onOpenDiffFile}
                         reviewCursor={reviewInChanges}
+                        {...(onAddReviewImage ? { onAddReviewImage } : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)
                         }

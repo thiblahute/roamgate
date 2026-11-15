@@ -209,6 +209,41 @@ export function feedbackKind(session: ReviewSession): "discussion" | "draft" {
     : "draft";
 }
 
+/** The most an image pasted in a comment can be. */
+export const FEEDBACK_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * An image pasted in a comment written in Changes, stored with the
+ * checkout's worktree review (opened for it, as the first comment opens
+ * it); Markdown linking its file, as the review pane's editor writes it.
+ */
+export async function addFeedbackImage(
+  call: FeedbackCall,
+  place: FeedbackPlace,
+  file: File,
+): Promise<string> {
+  if (file.size > FEEDBACK_IMAGE_MAX_BYTES)
+    throw new Error("an image is at most 10 MiB");
+  const opened = await call<ReviewSnapshot>("review.open", {
+    workspace_id: place.workspaceId,
+    path: place.root,
+    target: { kind: "worktree" },
+    ...(place.agent
+      ? { agent_pane: place.agent.paneId, agent: place.agent.name }
+      : {}),
+  });
+  const { path } = await call<{ path: string }>("review.image.add", {
+    session_id: opened.session.id,
+    type: file.type,
+    data: await blobBase64(file),
+  });
+  const name =
+    file.name && file.name !== "image.png"
+      ? file.name.replace(/[[\]]/g, "")
+      : "screenshot";
+  return `![${name}](<${path}>)`;
+}
+
 /**
  * Writes a note as a thread of the review of what it is on, given the
  * workspace's agent when it has none (a terminal's goes to its pane's

@@ -84,6 +84,30 @@ export const DIFF_CURSOR_KEYS: readonly ShortcutRow[] = [
   ["o", "Review only: the diff alone (:only)"],
 ];
 
+/** The comment keys, listed too once Changes has the review's comments. */
+export const DIFF_REVIEW_KEYS: readonly ShortcutRow[] = [
+  [
+    "c Enter i a",
+    "comment on the line (or the lines V selected); on a discussion, answer it",
+  ],
+  ["C", "ask the agent about the line, as a new discussion"],
+  ["s", "suggest a change on the line"],
+  ["gn gN", "next / previous unresolved thread, in any file (wrapping)"],
+  ["n N", "with no search going: next / previous thread"],
+  ["gH :unresolved", "show only the unresolved threads, or all again"],
+  ["g;", "the comment written last"],
+  ["za", "fold / unfold the thread on the line"],
+  ["r", "resolve or reopen the thread on the line"],
+  ["e", "edit your last comment on the line"],
+  ["dd", "delete your lone comment on the line"],
+  ["T :conversations", "every comment, open ones first"],
+  ["t :comments", "show / hide every comment"],
+  [
+    ":send :hold :review :overall",
+    "the agent group: send, hold, review, overall comment",
+  ],
+];
+
 /** Pierre's parsed patch, read once per patch text. */
 const parsedPatches = new Map<string, ReturnType<typeof getSingularPatch>>();
 function parsedPatch(patch: string) {
@@ -131,6 +155,21 @@ export type DiffCursor = {
   goToLine: (line: number) => void;
   /** The paths with a search hit, for the tree to mark. */
   matchingPaths: readonly string[];
+  /** The line the cursor is on, as a file's line numbers. */
+  where: () => CursorWhere | null;
+  /** Puts the cursor on a file's line (a thread's, say), scrolling to it. */
+  goTo: (key: string, line: number, side: "old" | "new") => boolean;
+};
+
+/** The cursor's line, as the review's anchors name it. */
+export type CursorWhere = {
+  /** The file's section of the diff. */
+  key: string;
+  path: string;
+  old: number | null;
+  new: number | null;
+  /** The side the cursor is on: where its comments are written. */
+  side: "old" | "new";
 };
 
 export function useDiffCursor({
@@ -144,6 +183,8 @@ export function useDiffCursor({
   notify,
   selectionRevision,
   selectedKey,
+  onComment,
+  threadKey,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -160,6 +201,21 @@ export function useDiffCursor({
   /** A file picked in the tree: the cursor goes to its first line. */
   selectionRevision: number;
   selectedKey: string | null;
+  /**
+   * `c`, Enter, `i`, `a` (a comment) and `s` (a suggestion): on the
+   * cursor's line, or on the lines selected with `V` in one file. False:
+   * there is no way to comment here.
+   */
+  onComment?: (
+    key: string,
+    range: SelectedLineRange,
+    mode: "comment" | "suggest" | "new",
+  ) => boolean;
+  /**
+   * The thread keys (gn, gN, gH, g;, gl, za, r, e, dd, u, T, t) of the
+   * file's comments, given the line the cursor is on; true when taken.
+   */
+  threadKey?: (key: string, count: number | null) => boolean;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -680,7 +736,9 @@ export function useDiffCursor({
       }
       case "n":
       case "N":
-        if (!search && !fileSearch.current) return false;
+        // No search going: n / N go thread to thread, as in the review.
+        if (!search && !fileSearch.current)
+          return threadKey ? threadKey(key, count) : false;
         repeatSearch(key === "n" ? 1 : -1);
         return true;
       case "/":
@@ -697,6 +755,23 @@ export function useDiffCursor({
         if (!onReload) return false;
         onReload();
         return true;
+      case "c":
+      case "C":
+      case "Enter":
+      case "i":
+      case "a":
+      case "s": {
+        if (!onComment) return false;
+        const range = commentRange();
+        if (!range) return false;
+        const opened = onComment(
+          range.key,
+          range.range,
+          key === "s" ? "suggest" : key === "C" ? "new" : "comment",
+        );
+        if (opened) setAnchor(null);
+        return opened;
+      }
       case "f":
         return runCommand("files");
       case "o":
@@ -709,7 +784,7 @@ export function useDiffCursor({
         } else return false;
         return true;
       default:
-        return false;
+        return threadKey ? threadKey(key, count) : false;
     }
   };
 
@@ -772,6 +847,54 @@ export function useDiffCursor({
     return again;
   };
 
+  /** The lines a comment would be on: the cursor's, or the selection's. */
+  const commentRange = (): { key: string; range: SelectedLineRange } | null => {
+    const last = rows[at];
+    if (!last) return null;
+    const first = anchor === null ? last : (rows[anchor] ?? last);
+    const [from, to] = at < (anchor ?? at) ? [last, first] : [first, last];
+    const same = from.key === to.key;
+    const start = rowLine(from, from.kind === "-" ? "left" : "right");
+    const end = same ? rowLine(to, to.kind === "-" ? "left" : "right") : start;
+    return {
+      key: from.key,
+      range: {
+        start: start.line,
+        side: start.side,
+        end: end.line,
+        endSide: end.side,
+      },
+    };
+  };
+
+  const where = (): CursorWhere | null => {
+    const here = rows[at];
+    if (!here) return null;
+    return {
+      key: here.key,
+      path: here.path,
+      old: here.old,
+      new: here.new,
+      side:
+        here.kind === "-" || (split && splitSide.current === "left")
+          ? "old"
+          : "new",
+    };
+  };
+
+  const goTo = (key: string, line: number, side: "old" | "new"): boolean => {
+    const target = rowAt(
+      modelRef.current,
+      key,
+      line,
+      side === "old" ? "deletions" : "additions",
+    );
+    if (target < 0) return false;
+    setAnchor(null);
+    jumpTo(target, 0, "center");
+    return true;
+  };
+
   const selectionIn = (key: string): SelectedLineRange | null | undefined => {
     if (!enabled) return undefined;
     if (anchor === null) return null;
@@ -831,6 +954,8 @@ export function useDiffCursor({
     status: enabled ? status : null,
     goToLine: (line) => jumpTo(line - 1, 0),
     matchingPaths,
+    where,
+    goTo,
   };
 }
 
