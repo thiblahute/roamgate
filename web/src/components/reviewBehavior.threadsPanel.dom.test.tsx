@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
   type ReviewThread = import("../../../shared/review").ReviewThread;
 
   /** `count` added lines `${path} line N`. */
@@ -67,14 +67,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     } as ReviewThread;
   };
 
-  type Surface = Awaited<ReturnType<(typeof REVIEW_SURFACES)[0]["mount"]>>;
+  type Surface = Awaited<
+    ReturnType<ReturnType<typeof reviewSurfacesWith>[0]["mount"]>
+  >;
   /** The last call the bridge had of a method. */
   const lastCall = (review: Surface, method: string) => {
     const calls = review.calls(method);
     return calls[calls.length - 1];
   };
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const surface of reviewSurfacesWith("threads-panel")) {
+    const { name, mount } = surface;
     describe(name, () => {
       /** Three open threads, the latest answered first, and a resolved one. */
       const four = () => [
@@ -192,4 +195,5 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
     });
+  }
 }

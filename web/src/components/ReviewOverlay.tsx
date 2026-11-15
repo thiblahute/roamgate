@@ -167,6 +167,8 @@ import {
 import {
   ThreadsChip,
   ThreadsPanel,
+  conversationOrder,
+  lastMessageAt,
   UnresolvedNav,
   useOpenOnly,
 } from "./ThreadsPanel";
@@ -234,16 +236,6 @@ function notify(message: string, kind: "info" | "error" = "info", ms = 4000) {
     message,
     autoDismissMs: kind === "error" ? Math.max(ms, 7000) : ms,
   });
-}
-
-/** When the thread's latest message was written or rewritten. */
-function lastMessageAt(thread: ReviewThread): string {
-  let last = "";
-  for (const comment of thread.comments) {
-    if (comment.createdAt > last) last = comment.createdAt;
-    if (comment.updatedAt > last) last = comment.updatedAt;
-  }
-  return last || thread.createdAt;
 }
 
 /** How long since `iso`: "12 s", "3 min", "2 h". */
@@ -1540,20 +1532,7 @@ export function ReviewOverlay({
    * the latest message (written or rewritten; resolving or moving a thread
    * is not one).
    */
-  const conversations = useMemo(
-    () =>
-      threads
-        .filter((thread) => thread.kind !== "merge-request")
-        .map((thread) => ({ thread, last: lastMessageAt(thread) }))
-        .sort(
-          (a, b) =>
-            Number(a.thread.resolved) - Number(b.thread.resolved) ||
-            b.last.localeCompare(a.last) ||
-            b.thread.updatedAt.localeCompare(a.thread.updatedAt),
-        )
-        .map(({ thread }) => thread),
-    [threads],
-  );
+  const conversations = useMemo(() => conversationOrder(threads), [threads]);
 
   /** A thread's view, in words. */
   function viewLabel(thread: ReviewThread): string {

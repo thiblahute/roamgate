@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ReviewThread } from "../../../shared/review";
 import { roamgateLocalStorage } from "../browserStorage";
 import "./ThreadsPanel.css";
 
@@ -37,6 +38,35 @@ function writeShowResolved(show: boolean) {
   } catch {
     /* The choice only lasts for this panel when storage is not writable. */
   }
+}
+
+/** When the thread's latest message was written or rewritten. */
+export function lastMessageAt(thread: ReviewThread): string {
+  let last = "";
+  for (const comment of thread.comments) {
+    if (comment.createdAt > last) last = comment.createdAt;
+    if (comment.updatedAt > last) last = comment.updatedAt;
+  }
+  return last || thread.createdAt;
+}
+
+/**
+ * A review's conversations as its comments panel lists them: the open
+ * ones first, the latest written first; the forge's discussions left out.
+ */
+export function conversationOrder(
+  threads: readonly ReviewThread[],
+): ReviewThread[] {
+  return threads
+    .filter((thread) => thread.kind !== "merge-request")
+    .map((thread) => ({ thread, last: lastMessageAt(thread) }))
+    .sort(
+      (a, b) =>
+        Number(a.thread.resolved) - Number(b.thread.resolved) ||
+        b.last.localeCompare(a.last) ||
+        b.thread.updatedAt.localeCompare(a.thread.updatedAt),
+    )
+    .map(({ thread }) => thread);
 }
 
 /**

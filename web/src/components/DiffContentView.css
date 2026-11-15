@@ -389,9 +389,77 @@
   white-space: normal;
 }
 
-.diff-review-composer .rc-editor {
+.diff-review-composer .rc-editor,
+.diff-review-reply .rc-editor {
   min-width: 0;
   min-height: 64px;
+}
+
+/* A reply or a rewrite in a thread: the review's editor, in the card. */
+.diff-review-reply {
+  margin: 4px 0 0;
+  white-space: normal;
+}
+
+/* The review's bar under a message of a thread in Changes. */
+.diff-review-thread .rc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.diff-review-thread .rc-bar .spacer {
+  flex: 1;
+}
+
+.diff-review-thread .rc-kind.rc-failed {
+  color: var(--rv-danger, #c0392b);
+}
+
+.diff-review-thread .rc-bar .btn {
+  padding: 1px 6px;
+  border: 1px solid var(--rv-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rv-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-review-thread .is-pending .chat-thread-body {
+  opacity: 0.7;
+}
+
+/* The view button that shows or hides every comment (t, :comments). */
+.diff-comments-toggle {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rv-muted, inherit);
+  cursor: pointer;
+}
+
+.diff-comments-toggle.is-active {
+  color: var(--rv-accent, inherit);
+}
+
+.diff-comments-toggle .rv-badge {
+  font-size: 10px;
+}
+
+.changes-review-status {
+  overflow: hidden;
+  color: var(--rv-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-review-composer-bar {

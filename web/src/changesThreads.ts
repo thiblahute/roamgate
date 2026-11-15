@@ -209,3 +209,30 @@ export function cursorThreadPlace(
   );
   return { index: after < 0 ? order.length : after, on: false };
 }
+
+/**
+ * Marks the lines a thread is on (`data-thread-mark`) among a file's drawn
+ * lines, as the review pane marks them in its margin: shown while the
+ * comments are hidden too. `marks` are "old:N" / "new:N".
+ */
+export function markThreadLines(root: ParentNode, marks: ReadonlySet<string>) {
+  for (const element of root.querySelectorAll<HTMLElement>(
+    "[data-line][data-line-type], [data-column-number]",
+  )) {
+    const number =
+      element.getAttribute("data-line") ??
+      element.getAttribute("data-column-number");
+    const type = element.getAttribute("data-line-type") ?? "";
+    const old =
+      type === "change-deletion" ||
+      element.closest("[data-deletions]") !== null;
+    const own = marks.has(`${old ? "old" : "new"}:${number}`);
+    // A line on both sides (unchanged) is marked from either.
+    const either =
+      !own &&
+      (type === "context" || type === "context-expanded") &&
+      marks.has(`${old ? "new" : "old"}:${number}`);
+    if (own || either) element.setAttribute("data-thread-mark", "");
+    else element.removeAttribute("data-thread-mark");
+  }
+}

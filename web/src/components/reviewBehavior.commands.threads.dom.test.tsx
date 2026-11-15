@@ -26,7 +26,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -39,7 +39,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       ),
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const surface of reviewSurfacesWith("threads")) {
+    const { name, mount } = surface;
     describe(name, () => {
       test(":unresolved and :openonly show only the unresolved threads, and all again", async () => {
         const review = await mount({
@@ -68,4 +69,5 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
     });
+  }
 }

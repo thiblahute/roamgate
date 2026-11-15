@@ -4,19 +4,28 @@
  * on Pierre) with the review's cursor on ("in Changes", Vim keys), mounted
  * on the review's files written as patches. It reads Pierre's drawing: the
  * line Pierre marks active is the cursor's, the lines it marks selected the
- * Visual selection's. What Changes does not do yet (threads, reviewed
- * marks, commits, ...: phases 4 to 8) throws, and the tests that need it
- * run on the classic pane only (`needs` in reviewSurfaces.testkit.ts).
+ * Visual selection's; its threads are the review's cards Changes draws,
+ * fed from the classic kit's bridge as the host feeds them. What Changes
+ * does not do yet (commits, the forge, ...: phases 5 to 8) throws, and the
+ * tests that need it run on the classic pane only (`CHANGES_FEATURES` in
+ * reviewSurfaces.testkit.ts).
  *
  * Not a test file: imported by `reviewBehavior.*.dom.test.tsx`, whose child
  * installed happy-dom (`installReviewDom`) first.
  */
-import type { ReviewDiffFile } from "../../../shared/review";
+import type {
+  ReviewDiffFile,
+  ReviewSnapshot,
+  ReviewThread,
+} from "../../../shared/review";
 import type { GitDiffEntry, GitDiffFile } from "../types";
 import {
+  type BridgeUpdate,
   parseKeys,
   type ReviewSurface,
   type ShownLine,
+  type ShownMessage,
+  type ShownThread,
   type SurfaceOptions,
 } from "./reviewSurface.testkit";
 
@@ -132,7 +141,8 @@ export async function mountChangesReview(
     "./reviewSurface.classic.testkit"
   );
   mockClassicBackend();
-  const { act, createElement } = await import("react");
+  const { act, createElement, useState } = await import("react");
+  type ReactNode = import("react").ReactNode;
   const { createRoot } = await import("react-dom/client");
   const { spyOn } = await import("bun:test");
   const { store } = await import("../store");
@@ -147,53 +157,115 @@ export async function mountChangesReview(
   mounted += 1;
   const connectionId = `changes-review-${mounted}`;
   const { feedbackNote } = await import("../workspaceFeedback");
-  const sessionId = "s1";
+  const { CommandLine } = await import("./CommandLine");
+  const { inspectorCompletions, opensCommandLine } = await import(
+    "../inspectorCommands"
+  );
+  // The browser storage it opens with, as the classic kit's.
+  if (options.storage !== "keep") {
+    localStorage.clear();
+    for (const [key, value] of Object.entries(options.storage ?? {}))
+      localStorage.setItem(key, value);
+  }
+  // The bridge, from a clean slate.
+  backend.files = options.files;
+  backend.calls = [];
+  backend.answers = options.answers ?? {};
+  backend.failing.clear();
+  backend.connected = true;
+  backend.held.clear();
+  backend.holds = null;
+  const sessionId = options.sessionId ?? "s1";
   let marks: Record<string, string> = { ...(options.reviewed ?? {}) };
   let applied = 0;
-  backend.calls.length = 0;
-  // Threads as Changes' comments are: written on the unstaged entry.
-  const threads = (options.threads ?? []).map((thread) => ({
-    ...thread,
-    sessionId,
-    anchor: {
-      ...thread.anchor,
-      feedback: JSON.stringify({
-        source: "diff",
-        path: thread.anchor.path,
-        kind: "unstaged",
-        side: thread.anchor.side ?? "new",
-        line: thread.anchor.line,
-        quote: "",
-        hunk: "",
-      }),
-    },
-  }));
-  const annotations = threads.map((thread) => feedbackNote(thread));
+  let sessionFields: Record<string, unknown> = { ...(options.session ?? {}) };
+  let ownThreads: ReviewThread[] = options.threads ?? [];
+  const otherReviews = options.otherReviews ?? [];
+  /**
+   * A thread as Changes' comments are: written on the unstaged entry; one
+   * on the whole review with no line.
+   */
+  const asFeedback = (thread: ReviewThread, session: string): ReviewThread =>
+    ({
+      ...thread,
+      sessionId: session,
+      anchor: {
+        ...thread.anchor,
+        feedback: thread.anchor.path
+          ? JSON.stringify({
+              source: "diff",
+              path: thread.anchor.path,
+              kind: "unstaged",
+              side: thread.anchor.side ?? "new",
+              line: thread.anchor.line,
+              quote: "",
+              hunk: "",
+            })
+          : "{}",
+      },
+    }) as ReviewThread;
+  const ownSession = () => ({
+    id: sessionId,
+    connectionId,
+    workspaceId: "workspace",
+    root: "/repo",
+    title: "repo",
+    target: { kind: "worktree" },
+    gitlab: false,
+    summary: "",
+    agent: {},
+    createdAt: "2026-11-04T14:11:18Z",
+    updatedAt: "2026-11-04T14:11:18Z",
+    ...sessionFields,
+    reviewed: marks,
+  });
+  /** What the bridge holds: this review, and the checkout's others. */
   const publishSession = () => {
     backend.sessions = new Map([
       [
         sessionId,
         {
-          session: {
-            id: sessionId,
-            connectionId,
-            workspaceId: "workspace",
-            root: "/repo",
-            title: "repo",
-            target: { kind: "worktree" },
-            gitlab: false,
-            summary: "",
-            agent: {},
-            reviewed: marks,
-            createdAt: "2026-11-04T14:11:18Z",
-            updatedAt: "2026-11-04T14:11:18Z",
-          },
-          threads,
+          session: ownSession() as Record<string, unknown>,
+          threads: ownThreads.map((thread) => asFeedback(thread, sessionId)),
         },
       ],
+      ...otherReviews.map(
+        (session) =>
+          [
+            String(session.id),
+            {
+              session: { workspaceId: "workspace", ...session } as Record<
+                string,
+                unknown
+              >,
+              threads: (options.shared ?? [])
+                .filter((thread) => thread.sessionId === session.id)
+                .map((thread) => asFeedback(thread, String(session.id))),
+            },
+          ] as const,
+      ),
     ]);
   };
   publishSession();
+  /** The comments the host gives Changes: every review's, as App does. */
+  const feedback = () => {
+    const threads = [...backend.sessions.values()].flatMap((snapshot) =>
+      ((snapshot as { threads?: ReviewThread[] }).threads ?? []).filter(
+        (thread) =>
+          thread.held === undefined && thread.anchor.feedback !== undefined,
+      ),
+    );
+    return { threads, annotations: threads.map(feedbackNote) };
+  };
+  /** A snapshot of this review read back: shown once the surface settles. */
+  let remembered: ReviewSnapshot | null = null;
+  backend.remember = (read) => {
+    if ((read.session as { id?: string }).id === sessionId) remembered = read;
+  };
+  const apply = (update: BridgeUpdate) => {
+    if (update.threads) ownThreads = update.threads;
+    if (update.session) sessionFields = { ...sessionFields, ...update.session };
+  };
   /** Each file's chunk progress as Changes reports it to its tree. */
   let progress: ReadonlyMap<
     string,
@@ -259,6 +331,42 @@ export async function mountChangesReview(
 
   // The inspector's prompt, as WorkspaceInspectorHost runs it.
   const parts = new Map<string, CommandSet>();
+  /** The inspector's `:` prompt over Changes, with its completions. */
+  const PromptHost = ({ children }: { children: ReactNode }) => {
+    const [open, setOpen] = useState(false);
+    return (
+      <InspectorViewContext.Provider value="changes">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: the inspector's keys */}
+        <div
+          onKeyDown={(event) => {
+            if (open || event.defaultPrevented || !opensCommandLine(event))
+              return;
+            event.preventDefault();
+            setOpen(true);
+          }}
+        >
+          {children}
+          {open ? (
+            <CommandLine
+              kind=":"
+              completions={(typed) =>
+                inspectorCompletions(
+                  [...parts.values()].flatMap((set) => set.commands),
+                  typed,
+                )
+              }
+              onBlur={() => setOpen(false)}
+              onSubmit={(text) => {
+                setOpen(false);
+                registry.run(text);
+              }}
+              onCancel={() => setOpen(false)}
+            />
+          ) : null}
+        </div>
+      </InspectorViewContext.Provider>
+    );
+  };
   const registry = {
     set: (id: string, _view: string, set: CommandSet | null) => {
       if (set) parts.set(id, set);
@@ -297,6 +405,16 @@ export async function mountChangesReview(
   /** The marks each review.update wrote, applied as the bridge does. */
   const settleAll = async () => {
     await settleOnly();
+    const readBack = remembered as ReviewSnapshot | null;
+    if (readBack) {
+      remembered = null;
+      ownThreads = readBack.threads;
+      const fields = { ...(readBack.session as Record<string, unknown>) };
+      delete fields.reviewed;
+      sessionFields = { ...sessionFields, ...fields };
+      publishSession();
+      await render();
+    }
     const updates = backend.calls.filter((c) => c.method === "review.update");
     if (updates.length === applied) return;
     for (const update of updates.slice(applied)) {
@@ -315,14 +433,15 @@ export async function mountChangesReview(
     await render();
   };
   const render = async () => {
+    const { threads, annotations } = feedback();
     await act(async () =>
       root.render(
         createElement(
           InspectorCommandsContext.Provider,
           { value: registry },
           createElement(
-            InspectorViewContext.Provider,
-            { value: "changes" },
+            PromptHost,
+            null,
             createElement(DiffContentView, {
               entry: entries[0] ?? null,
               file: entries[0]
@@ -579,6 +698,103 @@ export async function mountChangesReview(
       await settleAll();
     }
   };
+  // Threads as drawn: the review's cards (ThreadCard with the review's
+  // bars), under their lines and above the diff.
+  const threadCards = () =>
+    [
+      ...host.querySelectorAll<HTMLElement>(".chat-thread[data-thread-id]"),
+    ].filter(
+      (card) =>
+        !card.parentElement?.closest(".chat-thread") &&
+        !card.closest(".threads-panel"),
+    );
+  const barOf = (element: Element) => element.querySelector(":scope > .rc-bar");
+  const readMessage = (element: Element): ShownMessage => {
+    const bar = barOf(element);
+    const body = element.querySelector(".chat-thread-body");
+    const copy = body?.cloneNode(true) as Element | undefined;
+    for (const add of copy?.querySelectorAll(".rc-part-add") ?? [])
+      add.remove();
+    return {
+      id: (element.getAttribute("data-chat-stop") ?? "").replace(/^m:/, ""),
+      text: (copy?.textContent ?? "").trim(),
+      marks: [...(bar?.querySelectorAll(".rc-kind") ?? [])].map(
+        (mark) => mark.textContent ?? "",
+      ),
+      buttons: [...(bar?.querySelectorAll("button") ?? [])].map(
+        (button) => button.textContent ?? "",
+      ),
+      selected: element.classList.contains("is-focused"),
+      pending: !element.classList.contains("is-pending")
+        ? null
+        : bar?.querySelector(".rc-failed")
+          ? "failed"
+          : "sending",
+    };
+  };
+  const readThread = (card: HTMLElement): ShownThread => {
+    const general = card.closest(".diff-review-general") !== null;
+    const id = card.dataset.threadId ?? null;
+    if (card.classList.contains("is-folded"))
+      return {
+        id,
+        general,
+        folded: true,
+        resolved: (
+          card.querySelector(".chat-thread-mark")?.textContent ?? ""
+        ).startsWith("\u2713"),
+        summary: card.querySelector(".chat-thread-summary")?.textContent ?? "",
+        messages: [],
+        buttons: [],
+        working: null,
+      };
+    return {
+      id,
+      general,
+      folded: false,
+      resolved: card.classList.contains("is-resolved"),
+      summary: "",
+      messages: [...card.querySelectorAll(":scope > .chat-thread-message")].map(
+        readMessage,
+      ),
+      buttons: [
+        ...card.querySelectorAll(":scope > .chat-thread-bar button"),
+      ].map((button) => button.textContent ?? ""),
+      working: null,
+    };
+  };
+  const threadCard = (threadId: string) => {
+    const card = threadCards().find(
+      (each) => each.dataset.threadId === threadId,
+    );
+    if (!card) throw new Error(`no thread ${threadId} shown`);
+    return card;
+  };
+  const clickOn = async (element: Element) => {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settleAll();
+  };
+  /** The view button that shows or hides every comment. */
+  const commentsButton = () =>
+    [...host.querySelectorAll("button")].find((button) =>
+      button.getAttribute("title")?.includes("(t, :comments)"),
+    );
+  // The open comment editor: the review's (CodeMirror) under its line.
+  const editorBox = () =>
+    host.querySelector<HTMLElement>("[data-review-editor]");
+  const editorView = async () => {
+    const content = editorBox()?.querySelector<HTMLElement>(".cm-content");
+    if (!content) return null;
+    const { EditorView } = await import("@codemirror/view");
+    return EditorView.findFromDOM(content);
+  };
+  const editorBarButtons = () => [
+    ...(editorBox()?.querySelectorAll<HTMLButtonElement>(
+      ".diff-review-composer-bar button",
+    ) ?? []),
+  ];
   const typeInto = async (input: HTMLInputElement, text: string) => {
     await act(async () => {
       Object.getOwnPropertyDescriptor(
@@ -753,8 +969,226 @@ export async function mountChangesReview(
       return "";
     },
     editorOpen() {
-      // Changes' comment box (the popover until the review's editor comes).
-      return document.querySelector(".annotation-composer-popover") !== null;
+      // The review's editor, else the popover (Changes not "in Changes").
+      return (
+        editorBox() !== null ||
+        document.querySelector(".annotation-composer-popover") !== null
+      );
+    },
+    editorText() {
+      const content = editorBox()?.querySelector(".cm-content");
+      return content ? (content.textContent ?? "") : null;
+    },
+    async writeInEditor(text) {
+      // The editor loads lazily: let it come.
+      for (let round = 0; round < 20 && !(await editorView()); round++)
+        await settleOnly();
+      const view = await editorView();
+      if (!view) throw new Error("no comment editor open");
+      await act(async () =>
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: text },
+        }),
+      );
+      await settleAll();
+    },
+    editorButtons() {
+      return editorBarButtons().map((button) => button.textContent ?? "");
+    },
+    async editorButton(label) {
+      const button = editorBarButtons().find(
+        (each) => each.textContent === label,
+      );
+      if (!button) throw new Error(`no editor button ${label}`);
+      await act(async () => button.click());
+      await settleAll();
+    },
+
+    // Threads.
+    shownThreads() {
+      return threadCards().map(readThread);
+    },
+    async threadButton(threadId, label, message) {
+      const card = threadCard(threadId);
+      const scope =
+        message === undefined
+          ? card.querySelector(":scope > .chat-thread-bar")
+          : barOf(
+              card.querySelectorAll(":scope > .chat-thread-message")[message]!,
+            );
+      const button = [
+        ...(scope?.querySelectorAll<HTMLButtonElement>("button") ?? []),
+      ].find((each) => each.textContent === label);
+      if (!button) throw new Error(`no button ${label} on ${threadId}`);
+      await act(async () => button.click());
+      await settleAll();
+    },
+    async clickThread(threadId, message = 0) {
+      const card = threadCard(threadId);
+      if (card.classList.contains("is-folded")) return clickOn(card);
+      const target = card.querySelectorAll(":scope > .chat-thread-message")[
+        message
+      ];
+      if (!target) throw new Error(`no message ${message} on ${threadId}`);
+      await clickOn(target);
+    },
+    commentsShown() {
+      return !(commentsButton()?.getAttribute("aria-pressed") === "false");
+    },
+    commentsHidden() {
+      return commentsButton()?.getAttribute("aria-pressed") === "false";
+    },
+    hiddenBadge() {
+      const badge = commentsButton()?.querySelector(".rv-badge")?.textContent;
+      return badge ? Number(badge) : null;
+    },
+    markedLines() {
+      return unique(drawn("[data-thread-mark]").map(({ line }) => line)).sort(
+        (a, b) => rank(a) - rank(b),
+      );
+    },
+    status() {
+      return host.querySelector(".changes-review-status")?.textContent ?? "";
+    },
+    buttons() {
+      return [...host.querySelectorAll("button, a")].map(
+        (element) =>
+          (element.textContent ?? "").trim() ||
+          element.getAttribute("aria-label") ||
+          "",
+      );
+    },
+    threadsPanel() {
+      const panel = host.querySelector(".threads-panel");
+      if (!panel) return null;
+      const items = [...panel.querySelectorAll("[data-panel-thread]")];
+      return {
+        ids: items.map((item) => item.getAttribute("data-panel-thread") ?? ""),
+        selected:
+          items
+            .find((item) => item.classList.contains("is-selected"))
+            ?.getAttribute("data-panel-thread") ?? null,
+        unfolded: items
+          .filter(
+            (item) =>
+              item
+                .querySelector(".threads-panel-summary")
+                ?.getAttribute("aria-expanded") === "true",
+          )
+          .map((item) => item.getAttribute("data-panel-thread") ?? ""),
+        searching:
+          document.activeElement !== null &&
+          panel.contains(document.activeElement) &&
+          document.activeElement instanceof HTMLInputElement,
+        text: panel.textContent ?? "",
+      };
+    },
+    threadsChip() {
+      return host.querySelector(".threads-chip")?.textContent ?? null;
+    },
+    async clickThreadsChip() {
+      const chip = host.querySelector<HTMLButtonElement>(".threads-chip");
+      if (!chip) throw new Error("no comments chip");
+      await act(async () => chip.click());
+      await settleAll();
+    },
+    unresolvedNav() {
+      const nav = host.querySelector('[aria-label="Unresolved threads"]');
+      if (!nav) return null;
+      return {
+        label: nav.querySelector('[aria-live="polite"]')?.textContent ?? "",
+        disabled:
+          nav.querySelector<HTMLButtonElement>(
+            'button[aria-label="Next unresolved thread"]',
+          )?.disabled === true,
+      };
+    },
+    async unresolvedStep(which) {
+      const label =
+        which === "next"
+          ? "Next unresolved thread"
+          : which === "previous"
+            ? "Previous unresolved thread"
+            : "Unresolved only";
+      const button = host.querySelector<HTMLButtonElement>(
+        `[aria-label="Unresolved threads"] button[aria-label="${label}"]`,
+      );
+      if (!button) throw new Error(`no ${label} button`);
+      await act(async () => button.click());
+      await settleAll();
+    },
+
+    // The bridge: the classic kit's, this review in it.
+    calls(method) {
+      return backend.calls
+        .filter((call) => method === undefined || call.method === method)
+        .map((call) => ({ ...call }));
+    },
+    async push(update) {
+      apply(update);
+      publishSession();
+      await render();
+      await settleAll();
+    },
+    bridgeHolds(next) {
+      backend.holds = () => {
+        const update = typeof next === "function" ? next() : next;
+        const session = { ...ownSession(), ...(update.session ?? {}) };
+        delete (session as { reviewed?: unknown }).reviewed;
+        return {
+          session,
+          threads: update.threads ?? ownThreads,
+        } as unknown as ReviewSnapshot;
+      };
+    },
+    failBridge(methods, error = "not connected to bridge") {
+      backend.failing.clear();
+      for (const method of methods) backend.failing.set(method, error);
+    },
+    holdBridge(method) {
+      let release: (failure?: string) => void = () => {};
+      const waiting = new Promise<void>((resolve) => {
+        release = (failure) => {
+          backend.held.delete(method);
+          if (failure !== undefined) backend.failing.set(method, failure);
+          resolve();
+        };
+      });
+      backend.held.set(method, waiting);
+      return {
+        async release(failure) {
+          await act(async () => {
+            release(failure);
+            await settleOnly();
+          });
+          backend.failing.delete(method);
+          await settleAll();
+        },
+      };
+    },
+    async typeCommand(text) {
+      await press(":");
+      const input = host.querySelector<HTMLInputElement>(
+        'input[aria-label="Command"]',
+      );
+      if (!input) throw new Error("no command prompt");
+      await act(async () => input.focus());
+      await typeInto(input, text.replace(/^:/, ""));
+      await settleAll();
+    },
+    prompt() {
+      const line = host.querySelector(".review-cmdline");
+      const input = line?.querySelector("input");
+      if (!line || !input) return null;
+      return {
+        kind: (line.firstChild?.textContent ?? "").trim(),
+        text: input.value,
+        completions: [...line.querySelectorAll(".wild-item")].map((item) => ({
+          name: item.firstChild?.textContent ?? "",
+          description: (item.querySelector(".note")?.textContent ?? "").trim(),
+          on: item.classList.contains("on"),
+        })),
+      };
     },
     notice() {
       return notices[notices.length - 1] ?? null;
