@@ -11,6 +11,7 @@ import {
   type RenderedMode,
   type RenderedParentMessage,
   type RenderedRootMap,
+  type RenderedStorageWrite,
   strayTarget,
 } from "../../../shared/renderedPage";
 import { reviewCall } from "../review";
@@ -50,7 +51,7 @@ export function RenderedFrame({
   onMessage: (
     message: Exclude<
       RenderedFrameMessage,
-      { type: "ready" | "size" | "stray" }
+      { type: "ready" | "size" | "stray" | "storage" }
     >,
     box: DOMRect,
     frame: HTMLIFrameElement,
@@ -113,6 +114,14 @@ export function RenderedFrame({
   // Where the page shown last sends its root-absolute URLs: a navigation
   // its script made off the token comes back here once (renderedStray).
   const rootRef = useRef<RenderedRootMap | null>(null);
+  // The token of the page framed, which the page cannot name itself.
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current =
+    page?.mode === "site"
+      ? (/^\/rendered\/([0-9a-f]{32})\//.exec(page.src)?.[1] ?? null)
+      : null;
+  const connectionIdRef = useRef(connectionId);
+  connectionIdRef.current = connectionId;
   useEffect(() => {
     const listen = (event: MessageEvent) => {
       const frame = frameRef.current;
@@ -121,6 +130,24 @@ export function RenderedFrame({
       if (!message) return;
       if (message.type === "size") {
         setHeight(message.height);
+        return;
+      }
+      if (message.type === "storage") {
+        // A listed site's page wrote to its localStorage: the server keeps
+        // it, under the frame's token (its site is the token's).
+        const token = tokenRef.current;
+        if (token) {
+          const write: RenderedStorageWrite =
+            message.op === "clear"
+              ? { op: "clear" }
+              : message.op === "remove"
+                ? { op: "remove", key: message.key }
+                : { op: "set", key: message.key, value: message.value };
+          void reviewCall(connectionIdRef.current, "review.rendered.storage", {
+            token,
+            write,
+          }).catch(() => undefined);
+        }
         return;
       }
       if (message.type === "stray") {

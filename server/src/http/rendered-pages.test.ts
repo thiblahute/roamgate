@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { renderedHelperSource } from "./rendered-helper";
 import { renderedFileTarget } from "../review/rendered-target";
 import {
+  RENDERED_STORAGE_MAX_CHARS,
+  RENDERED_STORAGE_MAX_KEYS,
+} from "../../../shared/renderedPage";
+import { createSiteStorage, StorageQuotaError } from "./rendered-storage";
+import {
   connectionFileReader,
   connectionRootFinder,
   createRenderedPages,
@@ -769,7 +774,11 @@ describe("renderedAddress", () => {
       }),
     ).toEqual({
       mode: "site",
-      source: { kind: "url", base: "http://localhost:8080/" },
+      source: {
+        kind: "url",
+        base: "http://localhost:8080/",
+        site: "http://localhost:8080/",
+      },
       rest: "docs/c.html",
       site: "http://localhost:8080/",
     });
@@ -1558,5 +1567,292 @@ describe("a listed directory's site root", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a listed site's localStorage", () => {
+  const PAGE =
+    "<!doctype html><html><head><title>t</title></head><body>x</body></html>";
+  function storagePages(storage = createSiteStorage()) {
+    const pages = createRenderedPages({
+      storage,
+      readFile: async (): Promise<RenderedFile> => ({
+        body: PAGE,
+        size: PAGE.length,
+        contentType: "text/html",
+      }),
+    });
+    return { pages, storage };
+  }
+  const mintFiles = (
+    pages: ReturnType<typeof storagePages>["pages"],
+    mode: "static" | "site",
+    site?: string,
+  ) =>
+    pages.mint({
+      connectionId: "c",
+      mode,
+      source: { kind: "files", root: "/site", ...(site ? { site } : {}) },
+    });
+  const html = async (
+    pages: ReturnType<typeof storagePages>["pages"],
+    token: string,
+  ) => {
+    const url = new URL(`https://roamgate.example/rendered/${token}/`);
+    const response = await pages.handle(new Request(url), url);
+    return response!.text();
+  };
+
+  test("is written into the pages of the listed site, with its own items only", async () => {
+    const { pages, storage } = storagePages();
+    storage.write("/site/", { op: "set", key: "pref-theme", value: "dark" });
+    storage.write("/other/", { op: "set", key: "secret", value: "nope" });
+    const text = await html(pages, mintFiles(pages, "site", "/site/"));
+    expect(text).toContain('{"pref-theme":"dark"}');
+    expect(text).not.toContain("secret");
+    expect(text).not.toContain("nope");
+  });
+
+  test("is not given to a static page, a page with scripts on once, or without storage", async () => {
+    const { pages, storage } = storagePages();
+    storage.write("/site/", { op: "set", key: "k", value: "VALUE" });
+    expect(
+      await html(pages, mintFiles(pages, "static", "/site/")),
+    ).not.toContain("VALUE");
+    // Scripts turned on for a file, its directory not listed: no site.
+    const once = await html(pages, mintFiles(pages, "site"));
+    expect(once).not.toContain("VALUE");
+    expect(once).toContain("null, {");
+    const plain = createRenderedPages({
+      readFile: async () => ({
+        body: PAGE,
+        size: PAGE.length,
+        contentType: "text/html",
+      }),
+    });
+    const token = plain.mint({
+      connectionId: "c",
+      mode: "site",
+      source: { kind: "files", root: "/site", site: "/site/" },
+    });
+    expect(await html(plain as never, token)).not.toContain("VALUE");
+  });
+
+  test("a value cannot close the script", async () => {
+    const { pages, storage } = storagePages();
+    const evil = "</script><script>alert(1)</script>\u2028<!--";
+    storage.write("/site/", { op: "set", key: "</script>", value: evil });
+    const text = await html(pages, mintFiles(pages, "site", "/site/"));
+    expect(text.match(/<\/script>/g)?.length).toBe(1);
+    expect(text).not.toContain("alert(1)</script>");
+    expect(text).not.toContain("\u2028");
+    expect(text).toContain("\\u003c/script>");
+  });
+
+  test("a url site is keyed by its listed entry", async () => {
+    const storage = createSiteStorage();
+    storage.write("http://blog.test/", { op: "set", key: "a", value: "b" });
+    const pages = createRenderedPages({
+      storage,
+      readFile: async () => {
+        throw new Error("no files");
+      },
+      fetch: async () =>
+        new Response(PAGE, { headers: { "content-type": "text/html" } }),
+    });
+    const token = pages.mint({
+      connectionId: "c",
+      mode: "site",
+      source: {
+        kind: "url",
+        base: "http://blog.test/",
+        site: "http://blog.test/",
+      },
+    });
+    expect(await html(pages as never, token)).toContain('{"a":"b"}');
+  });
+
+  test("writes go to the token's site only, from its connection", () => {
+    const { pages, storage } = storagePages();
+    const token = mintFiles(pages, "site", "/site/");
+    expect(
+      pages.writeStorage("c", token, { op: "set", key: "k", value: "v" }),
+    ).toBe(true);
+    expect(storage.get("/site/")).toEqual({ k: "v" });
+    expect(storage.get("/other/")).toEqual({});
+    // Another connection, an unknown token, a static or unlisted page.
+    expect(
+      pages.writeStorage("d", token, { op: "set", key: "x", value: "y" }),
+    ).toBe(false);
+    expect(
+      pages.writeStorage("c", "0".repeat(32), {
+        op: "set",
+        key: "x",
+        value: "y",
+      }),
+    ).toBe(false);
+    expect(
+      pages.writeStorage("c", mintFiles(pages, "static", "/site/"), {
+        op: "set",
+        key: "x",
+        value: "y",
+      }),
+    ).toBe(false);
+    expect(
+      pages.writeStorage("c", mintFiles(pages, "site"), {
+        op: "set",
+        key: "x",
+        value: "y",
+      }),
+    ).toBe(false);
+    pages.writeStorage("c", token, { op: "remove", key: "k" });
+    expect(storage.get("/site/")).toEqual({});
+  });
+
+  test("is bounded: too many keys, too many characters", () => {
+    const storage = createSiteStorage();
+    for (let i = 0; i < RENDERED_STORAGE_MAX_KEYS; i += 1)
+      storage.write("/s/", { op: "set", key: `k${i}`, value: "v" });
+    expect(() =>
+      storage.write("/s/", { op: "set", key: "more", value: "v" }),
+    ).toThrow(StorageQuotaError);
+    // An existing key can still change, and room comes back with a removal.
+    storage.write("/s/", { op: "set", key: "k0", value: "w" });
+    storage.write("/s/", { op: "remove", key: "k1" });
+    storage.write("/s/", { op: "set", key: "more", value: "v" });
+    const big = createSiteStorage();
+    big.write("/s/", {
+      op: "set",
+      key: "a",
+      value: "x".repeat(RENDERED_STORAGE_MAX_CHARS - 10),
+    });
+    expect(() =>
+      big.write("/s/", { op: "set", key: "b", value: "y".repeat(20) }),
+    ).toThrow(StorageQuotaError);
+    big.clear("/s/");
+    expect(big.get("/s/")).toEqual({});
+  });
+
+  test("survives a restart", async () => {
+    const dir = (await import("node:fs")).mkdtempSync("/tmp/rg-rstore-");
+    const file = `${dir}/rendered-storage.json`;
+    try {
+      const first = createSiteStorage(file);
+      first.write("/s/", { op: "set", key: "pref-theme", value: "dark" });
+      await first.flush();
+      expect(createSiteStorage(file).get("/s/")).toEqual({
+        "pref-theme": "dark",
+      });
+    } finally {
+      (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the helper's storage shim", () => {
+  async function page(seed: Record<string, string> | null) {
+    const { Window } = await import("happy-dom");
+    const win = new Window({
+      settings: {
+        disableJavaScriptEvaluation: true,
+        disableJavaScriptFileLoading: true,
+        disableCSSFileLoading: true,
+      },
+    });
+    const posted: Array<Record<string, unknown>> = [];
+    Object.defineProperty(win, "parent", {
+      value: { postMessage: (m: Record<string, unknown>) => posted.push(m) },
+    });
+    new Function(
+      "window",
+      `with (window) { ${renderedHelperSource("/p/", undefined, seed)} }`,
+    )(win);
+    const store = (name: "localStorage" | "sessionStorage") =>
+      (win as unknown as Record<string, Storage>)[name]!;
+    return { win, posted, store };
+  }
+  const writes = (posted: Array<Record<string, unknown>>) =>
+    posted.filter((m) => m.type === "storage");
+
+  test("a synchronous script finds the seeded items", async () => {
+    const { store } = await page({ "pref-theme": "dark" });
+    expect(store("localStorage").getItem("pref-theme")).toBe("dark");
+    expect(store("localStorage").getItem("none")).toBeNull();
+    expect(store("localStorage").length).toBe(1);
+    expect(store("localStorage").key(0)).toBe("pref-theme");
+    expect(store("localStorage").key(1)).toBeNull();
+  });
+
+  test("setItem, removeItem and clear post to the parent", async () => {
+    const { store, posted } = await page({ a: "1" });
+    const local = store("localStorage");
+    local.setItem("b", "2");
+    local.setItem("b", "2");
+    local.removeItem("a");
+    local.removeItem("a");
+    local.clear();
+    local.clear();
+    expect(writes(posted)).toEqual([
+      {
+        roamgate: "rendered",
+        type: "storage",
+        op: "set",
+        key: "b",
+        value: "2",
+      },
+      { roamgate: "rendered", type: "storage", op: "remove", key: "a" },
+      { roamgate: "rendered", type: "storage", op: "clear" },
+    ]);
+    expect(local.length).toBe(0);
+  });
+
+  test("values are strings, and properties act as items", async () => {
+    const { store, posted } = await page({ a: "1" });
+    const local = store("localStorage") as unknown as Record<string, unknown>;
+    expect(local.a).toBe("1");
+    expect(local.missing).toBeUndefined();
+    local.n = 5;
+    expect(local.n).toBe("5");
+    expect((local as unknown as Storage).getItem("n")).toBe("5");
+    expect("n" in local).toBe(true);
+    expect(Object.keys(local)).toEqual(["a", "n"]);
+    delete local.a;
+    expect(local.a).toBeUndefined();
+    expect(writes(posted).map((m) => m.op)).toEqual(["set", "remove"]);
+  });
+
+  test("a write over the quota is refused", async () => {
+    const { store, posted } = await page({});
+    const local = store("localStorage");
+    expect(() =>
+      local.setItem("big", "x".repeat(RENDERED_STORAGE_MAX_CHARS)),
+    ).toThrow();
+    try {
+      local.setItem("big", "x".repeat(RENDERED_STORAGE_MAX_CHARS));
+    } catch (error) {
+      expect((error as Error).name).toBe("QuotaExceededError");
+    }
+    for (let i = 0; i < RENDERED_STORAGE_MAX_KEYS; i += 1)
+      local.setItem(`k${i}`, "v");
+    expect(() => local.setItem("extra", "v")).toThrow();
+    expect(local.getItem("extra")).toBeNull();
+    expect(writes(posted).length).toBe(RENDERED_STORAGE_MAX_KEYS);
+  });
+
+  test("sessionStorage lives in the page and posts nothing", async () => {
+    const { store, posted } = await page({ a: "1" });
+    const session = store("sessionStorage");
+    expect(session.getItem("a")).toBeNull();
+    session.setItem("s", "1");
+    expect(session.getItem("s")).toBe("1");
+    expect(store("localStorage").getItem("s")).toBeNull();
+    expect(writes(posted)).toEqual([]);
+  });
+
+  test("a page without storage keeps what the browser gives", async () => {
+    const { win } = await page(null);
+    const desc = Object.getOwnPropertyDescriptor(win, "localStorage");
+    expect(desc?.get?.toString() ?? "").not.toContain("storage");
+    expect(renderedHelperSource("/p/")).toContain("null, {");
   });
 });

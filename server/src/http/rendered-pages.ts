@@ -7,8 +7,10 @@ import {
   RENDERED_TOKEN,
   type RenderedMode,
   type RenderedRootMap,
+  type RenderedStorageWrite,
 } from "../../../shared/renderedPage";
 import { renderedHelperSource } from "./rendered-helper";
+import type { SiteStorage } from "./rendered-storage";
 
 /**
  * Pages of rendered reviews, served under `/rendered/<token>/<path>`: an
@@ -29,8 +31,11 @@ export type RenderedSource =
    * the site's root in the directories above it (findRoot).
    */
   | { kind: "files"; root: string; site?: string; walk?: boolean }
-  /** A site: pages under `base` (an http(s) URL ending in `/`). */
-  | { kind: "url"; base: string }
+  /**
+   * A site: pages under `base` (an http(s) URL ending in `/`). `site`: the
+   * listed entry the pages are of.
+   */
+  | { kind: "url"; base: string; site?: string }
   /** One page held here, whole: an SVG drawn by renderedSvgPage. */
   | { kind: "inline"; body: string };
 
@@ -201,8 +206,9 @@ export function injectHelper(
   nonce: string,
   prefix: string,
   rootMap?: RenderedRootMap,
+  storage?: Record<string, string> | null,
 ): string {
-  const tag = `<script nonce="${nonce}">${renderedHelperSource(prefix, rootMap)}</script>`;
+  const tag = `<script nonce="${nonce}">${renderedHelperSource(prefix, rootMap, storage)}</script>`;
   const head = /<head(?:\s[^>]*)?>/i.exec(html);
   if (head)
     return (
@@ -505,6 +511,12 @@ export function createRenderedPages(args: {
     path: string,
   ) => Promise<string | null>;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /**
+   * What the listed sites' pages keep in `localStorage`: written into each
+   * of their pages, and updated by the page's writes (writeStorage). Absent:
+   * pages have none, as a static page's.
+   */
+  storage?: SiteStorage;
   now?: () => number;
   ttlMs?: number;
   maxTokens?: number;
@@ -537,7 +549,7 @@ export function createRenderedPages(args: {
       source.kind === "files"
         ? [source.root, source.site ?? null, source.walk === true]
         : source.kind === "url"
-          ? source.base
+          ? [source.base, source.site ?? null]
           : createHash("sha256").update(source.body).digest("hex"),
     ]);
   }
@@ -593,6 +605,36 @@ export function createRenderedPages(args: {
       return null;
     }
     return found;
+  }
+
+  /**
+   * The listed site whose pages keep a `localStorage` under `found`: only
+   * the pages of a listed site with its scripts on, never a page the user
+   * turned scripts on for once.
+   */
+  function storageSite(found: RenderedEntry): string | null {
+    if (!args.storage || found.mode !== "site") return null;
+    const { source } = found;
+    if (source.kind === "inline") return null;
+    return source.site ?? null;
+  }
+
+  /**
+   * A write of the frame of `token`'s page to its site's storage. Only a
+   * token of this connection, of a listed site; the site is the token's,
+   * never one the page names. Throws StorageQuotaError over the bounds.
+   */
+  function writeStorage(
+    connectionId: string,
+    token: string,
+    write: RenderedStorageWrite,
+  ): boolean {
+    const found = entry(token);
+    if (!found || found.connectionId !== connectionId) return false;
+    const site = storageSite(found);
+    if (!site) return false;
+    args.storage!.write(site, write);
+    return true;
   }
 
   function revoke(token: string) {
@@ -701,6 +743,14 @@ export function createRenderedPages(args: {
     );
   }
 
+  /** The items of the page's site, or null: no storage for this page. */
+  function storageSiteItems(
+    found: RenderedEntry,
+  ): Record<string, string> | null {
+    const site = storageSite(found);
+    return site ? args.storage!.get(site) : null;
+  }
+
   async function finishHtml(
     body: Uint8Array | string,
     status: number,
@@ -727,6 +777,7 @@ export function createRenderedPages(args: {
         nonce,
         `${RENDERED_PREFIX}${token}/`,
         found ? rootMap(token, found) : undefined,
+        found ? storageSiteItems(found) : undefined,
       ),
       { status, headers },
     );
@@ -1018,7 +1069,7 @@ export function createRenderedPages(args: {
     );
   }
 
-  return { mint, entry, revoke, handle, siteRoot };
+  return { mint, entry, revoke, handle, siteRoot, writeStorage };
 }
 
 const NOT_PART = "not part of this site";
@@ -1377,7 +1428,7 @@ export function renderedAddress(params: {
   }
   return {
     mode: site || scripts ? "site" : "static",
-    source: { kind: "url", base },
+    source: { kind: "url", base, ...(site ? { site } : {}) },
     rest: at.slice(base.length),
     ...(site ? { site } : {}),
   };

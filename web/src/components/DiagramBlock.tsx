@@ -123,7 +123,7 @@ export const DiagramFrameContext = createContext<{
   onMessage: (
     message: Exclude<
       RenderedFrameMessage,
-      { type: "ready" | "size" | "stray" }
+      { type: "ready" | "size" | "stray" | "storage" }
     >,
     box: DOMRect,
     frame: HTMLIFrameElement,
