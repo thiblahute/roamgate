@@ -94,6 +94,7 @@ import {
 } from "../changesThreads";
 import { latestComment } from "../reviewNavigation";
 import { useChangesAgent } from "../changesReview";
+import type { ReviewProgress } from "./DiffViewerPanel";
 import {
   CHANGES_REVIEW_VIEW,
   type ChunkSpan,
@@ -963,6 +964,7 @@ export function DiffContentView({
   backAction,
   reviewCursor = false,
   onSearchMatchesChange,
+  onReviewProgress,
   onAddReviewImage,
   onGitAction,
 }: {
@@ -1007,6 +1009,8 @@ export function DiffContentView({
   reviewCursor?: boolean;
   /** The files with a hit of the cursor's search, for the tree to mark. */
   onSearchMatchesChange?: (paths: readonly string[]) => void;
+  /** The files' reviewed chunks, for the tree (the review in Changes). */
+  onReviewProgress?: (progress: ReadonlyMap<string, ReviewProgress>) => void;
   /** Stores an image pasted in the review's comment box; Markdown for it. */
   onAddReviewImage?: (file: File) => Promise<string>;
   /** A git action on a file of the working changes (`:stage`, `gs`). */
@@ -1509,6 +1513,21 @@ export function DiffContentView({
     () => new Set(cursor.matchingPaths),
     [cursor.matchingPaths],
   );
+  const reviewProgressRef = useRef(onReviewProgress);
+  reviewProgressRef.current = onReviewProgress;
+  useEffect(() => {
+    if (!reviewEditor) return;
+    const progress = new Map<string, ReviewProgress>();
+    reviewLayout.files.forEach((info, index) => {
+      if (!info.hunks.length) return;
+      progress.set(info.path, {
+        done: reviewState.hunks[index]?.size ?? 0,
+        total: info.hunks.length,
+        reviewed: reviewState.files.has(index),
+      });
+    });
+    reviewProgressRef.current?.(progress);
+  }, [reviewEditor, reviewLayout, reviewState]);
   const searchMatchesChangeRef = useRef(onSearchMatchesChange);
   searchMatchesChangeRef.current = onSearchMatchesChange;
   useEffect(() => {

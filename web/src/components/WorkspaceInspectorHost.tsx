@@ -82,6 +82,7 @@ import {
   DiffViewerPanel,
   type DiffViewerPanelHandle,
   type DiffViewerPanelProps,
+  orderByStatus,
 } from "./DiffViewerPanel";
 import { FileExplorerPanel } from "./FileExplorerDialog";
 import {
@@ -316,6 +317,14 @@ export function WorkspaceInspectorHost({
   const reviewPrefs = useReviewPrefs();
   const vim = useVimKeys();
   const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes" && vim;
+  /** The files in the tree's groups when Changes is the review. */
+  const shownDiffEntries = useMemo(
+    () =>
+      reviewInChanges
+        ? orderByStatus(diffSelection.entries)
+        : diffSelection.entries,
+    [diffSelection.entries, reviewInChanges],
+  );
   /** The shortcut list (`?`, `:help`), with what its filter starts with. */
   const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
   const [drillInByView, setDrillInByView] = useState<
@@ -1218,6 +1227,7 @@ export function WorkspaceInspectorHost({
                     ref={diffViewerRef}
                     workspaceId={workspace.workspace_id}
                     resourceKey={resourceKey}
+                    groupByStatus={reviewInChanges}
                     onOpenFile={onOpenDiffFile}
                     onSelectionChange={(selection, meta) => {
                       if (selection.entry && meta?.userInitiated) {
@@ -1265,7 +1275,7 @@ export function WorkspaceInspectorHost({
                         file={diffSelection.file}
                         loading={diffSelection.loading}
                         error={diffSelection.error}
-                        entries={diffSelection.entries}
+                        entries={shownDiffEntries}
                         files={diffSelection.files}
                         fileErrors={diffSelection.fileErrors}
                         loadingKeys={diffSelection.loadingKeys}
@@ -1305,6 +1315,9 @@ export function WorkspaceInspectorHost({
                         {...(onAddReviewImage ? { onAddReviewImage } : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)
+                        }
+                        onReviewProgress={(progress) =>
+                          diffViewerRef.current?.markReviewProgress(progress)
                         }
                         backAction={
                           compact && hasDetail
