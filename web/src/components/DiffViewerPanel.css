@@ -730,3 +730,27 @@
   color: inherit;
   border-radius: 3px;
 }
+
+.diff-tree-group-head {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.diff-tree-count {
+  margin-left: auto;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-tree-progress {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.diff-tree-progress.is-reviewed {
+  opacity: 1;
+  color: var(--git-added, #3fb950);
+}

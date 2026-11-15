@@ -21,7 +21,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { ConnectionClient } from "../api";
-import type { GitDiffEntry, GitDiffFile, GitDiffSummary } from "../types";
+import type {
+  GitDiffEntry,
+  GitDiffFile,
+  GitDiffKind,
+  GitDiffSummary,
+} from "../types";
 import { useStoreSelector } from "../store";
 import { connectionClientScopeKey } from "../useConnectionClient";
 import { useLiveConnectionClient } from "../useReloadOnReconnect";
@@ -89,6 +94,35 @@ export type DiffSelectionMeta = {
   userInitiated?: boolean;
 };
 
+/** A file's reviewed chunks, as the tree shows them. */
+export type ReviewProgress = {
+  done: number;
+  total: number;
+  reviewed: boolean;
+};
+
+/** The working changes' groups, in the order the tree and the diff show. */
+const STATUS_GROUPS: readonly { kind: GitDiffKind; label: string }[] = [
+  { kind: "conflicted", label: "Conflicts" },
+  { kind: "staged", label: "Staged" },
+  { kind: "unstaged", label: "Changes" },
+  { kind: "untracked", label: "Untracked" },
+];
+
+/**
+ * The entries grouped by status, as `git status` does (the review in
+ * Changes, D8): each group keeps the tree's order.
+ */
+export function orderByStatus(entries: GitDiffEntry[]): GitDiffEntry[] {
+  return STATUS_GROUPS.flatMap(({ kind }) =>
+    treeOrderedDiffEntries(entries.filter((entry) => entry.kind === kind)),
+  ).concat(
+    entries.filter(
+      (entry) => !STATUS_GROUPS.some(({ kind }) => kind === entry.kind),
+    ),
+  );
+}
+
 export type DiffViewerPanelHandle = {
   highlightEntry: (entry: GitDiffEntry | null) => void;
   loadNearbyEntries: (entries: GitDiffEntry[]) => void;
@@ -99,6 +133,8 @@ export type DiffViewerPanelHandle = {
   refresh: () => void;
   /** The paths the diff's search (the review cursor's) has hits in. */
   markSearchMatches: (paths: readonly string[]) => void;
+  /** The files' reviewed chunks (the review in Changes), for the tree. */
+  markReviewProgress: (progress: ReadonlyMap<string, ReviewProgress>) => void;
   /**
    * A git action on a file of the working changes, as its menu does it
    * (`:stage`, `gs`): confirmed when it destroys work. False, said, when
@@ -109,6 +145,8 @@ export type DiffViewerPanelHandle = {
 
 export type DiffViewerPanelProps = {
   ref?: Ref<DiffViewerPanelHandle>;
+  /** The working changes in status groups (Staged, Changes, Untracked). */
+  groupByStatus?: boolean;
   workspaceId?: string;
   resourceKey?: string;
   onSelectionChange?: (
@@ -948,6 +986,7 @@ type DiffConfirmState = {
 };
 
 export function DiffViewerPanel({
+  groupByStatus = false,
   workspaceId,
   resourceKey,
   onSelectionChange,
@@ -1059,6 +1098,12 @@ export function DiffViewerPanel({
   );
   const [visibleEntryKey, setVisibleEntryKey] = useState<string | null>(null);
   const [searchMatches, setSearchMatches] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [reviewProgress, setReviewProgress] = useState<
+    ReadonlyMap<string, ReviewProgress>
+  >(() => new Map());
+  const [foldedGroups, setFoldedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const treeRef = useRef<HTMLDivElement>(null);
@@ -1626,6 +1671,21 @@ export function DiffViewerPanel({
       selectWorkingEntries,
       refresh: () => refreshRef.current(),
       runFileAction: (action, path) => runFileActionRef.current(action, path),
+      markReviewProgress: (progress) =>
+        setReviewProgress((current) =>
+          current.size === progress.size &&
+          [...progress].every(([path, each]) => {
+            const was = current.get(path);
+            return (
+              was &&
+              was.done === each.done &&
+              was.total === each.total &&
+              was.reviewed === each.reviewed
+            );
+          })
+            ? current
+            : new Map(progress),
+        ),
       markSearchMatches: (paths) =>
         setSearchMatches((current) =>
           current.size === paths.length &&
@@ -1746,6 +1806,18 @@ export function DiffViewerPanel({
   const tree = useMemo(
     () => buildDiffTree(cache.summary?.entries ?? []),
     [cache.summary?.entries],
+  );
+  const groupTrees = useMemo(
+    () =>
+      groupByStatus && diffScope === "working"
+        ? STATUS_GROUPS.map(({ kind, label }) => {
+            const entries = (cache.summary?.entries ?? []).filter(
+              (entry) => entry.kind === kind,
+            );
+            return { kind, label, entries, tree: buildDiffTree(entries) };
+          }).filter((group) => group.entries.length > 0)
+        : null,
+    [cache.summary?.entries, diffScope, groupByStatus],
   );
   const workingCounts = useMemo(
     () => countWorkingEntries(cache.summary?.entries ?? []),
@@ -1946,7 +2018,11 @@ export function DiffViewerPanel({
     });
   };
 
-  const renderTreeNode = (node: DiffTreeNode, depth: number): ReactNode[] => {
+  const renderTreeNode = (
+    node: DiffTreeNode,
+    depth: number,
+    group = "",
+  ): ReactNode[] => {
     const items: ReactNode[] = [];
     const children = sortDiffTreeChildren(node.children.values());
 
@@ -1961,7 +2037,7 @@ export function DiffViewerPanel({
             style={{
               paddingLeft: DIFF_TREE_BASE_INDENT + depth * DIFF_TREE_INDENT,
             }}
-            key={child.path}
+            key={`${group}${child.path}`}
             onClick={() => {
               if (longPressTriggeredRef.current) {
                 longPressTriggeredRef.current = false;
@@ -2022,7 +2098,7 @@ export function DiffViewerPanel({
             <span className="diff-tree-name">{child.name}</span>
           </button>,
         );
-        if (open) items.push(...renderTreeNode(child, depth + 1));
+        if (open) items.push(...renderTreeNode(child, depth + 1, group));
         continue;
       }
 
@@ -2037,7 +2113,7 @@ export function DiffViewerPanel({
       items.push(
         <button
           type="button"
-          key={child.path}
+          key={`${group}${child.path}`}
           className={`diff-tree-row diff-tree-file ${selected ? "is-selected" : ""} ${searchMatches.has(child.path) ? "is-search-hit" : ""}`}
           aria-current={selected ? "true" : undefined}
           style={{
@@ -2096,6 +2172,20 @@ export function DiffViewerPanel({
               </span>
             ))}
           </span>
+          {reviewProgress.get(child.path) ? (
+            <span
+              className={`diff-tree-progress ${reviewProgress.get(child.path)!.reviewed ? "is-reviewed" : ""}`}
+              title={
+                reviewProgress.get(child.path)!.reviewed
+                  ? "Reviewed"
+                  : "Chunks reviewed"
+              }
+            >
+              {reviewProgress.get(child.path)!.reviewed ? "✓ " : ""}
+              {reviewProgress.get(child.path)!.done}/
+              {reviewProgress.get(child.path)!.total}
+            </span>
+          ) : null}
           {stats.hasStats ? (
             <span className="diff-tree-stats" aria-label="Line changes">
               <span className="diff-stat-add">+{stats.additions}</span>
@@ -2312,7 +2402,40 @@ export function DiffViewerPanel({
         {summaryLoading && !cache.summary ? (
           <DiffSkeleton />
         ) : cache.summary?.entries.length ? (
-          renderTreeNode(tree, 0)
+          groupTrees ? (
+            groupTrees.map(({ kind, label, entries, tree: groupTree }) => (
+              <div className="diff-tree-group" key={kind}>
+                <button
+                  type="button"
+                  className="diff-tree-row diff-tree-group-head"
+                  aria-expanded={!foldedGroups.has(kind)}
+                  onClick={() =>
+                    setFoldedGroups((current) => {
+                      const next = new Set(current);
+                      if (next.has(kind)) next.delete(kind);
+                      else next.add(kind);
+                      return next;
+                    })
+                  }
+                >
+                  <span className="diff-tree-twisty">
+                    {foldedGroups.has(kind) ? (
+                      <ChevronRight size={13} />
+                    ) : (
+                      <ChevronDown size={13} />
+                    )}
+                  </span>
+                  <span className="diff-tree-name">{label}</span>
+                  <span className="diff-tree-count">{entries.length}</span>
+                </button>
+                {foldedGroups.has(kind)
+                  ? null
+                  : renderTreeNode(groupTree, 0, `${kind}:`)}
+              </div>
+            ))
+          ) : (
+            renderTreeNode(tree, 0)
+          )
         ) : (
           <div className="diff-empty">
             <FileDiff size={18} />

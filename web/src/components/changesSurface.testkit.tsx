@@ -48,6 +48,8 @@ export type ChangesOptions = {
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
   /** The base Automatic resolves (default: refs/heads/main). */
   automaticBase?: string;
+  /** The working changes in status groups (the review in Changes). */
+  groupByStatus?: boolean;
 };
 
 /** One row of the changed-files tree, as a user reads it. */
@@ -365,6 +367,7 @@ export async function mountChangesTree(
       ref,
       workspaceId,
       resourceKey: workspaceId,
+      ...(options.groupByStatus ? { groupByStatus: true } : {}),
       onSelectionChange: (next: ActiveDiffSelection) => {
         selection = next;
         selections.push(next);

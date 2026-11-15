@@ -225,6 +225,9 @@ Inspector button, shortcuts, or workspace/agent menus.
   checkout review's, so a chunk keeps its mark when it is staged. Every chunk
   carries its state in the margin: green staged, amber unstaged, both when it
   is partly staged; a reviewed chunk is dimmed.
+  The tree lists the working changes in groups, **Staged**, **Changes** and
+  **Untracked**, a file changed twice in both, with its reviewed chunks
+  (`3/7`, a check once every chunk is) beside its name.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes
