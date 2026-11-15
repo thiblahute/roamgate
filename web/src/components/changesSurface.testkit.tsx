@@ -622,6 +622,8 @@ export type ChangesDiffOptions = {
   embedded?: boolean;
   annotations?: readonly import("../annotations").ReviewAnnotation[];
   threads?: readonly import("../../../shared/review").ReviewThread[];
+  /** The repository shown (default: none named, every comment drawn). */
+  repo?: import("../changesRepo").ShownRepo;
   /** Commenting is on when given (Changes); off without (Commits). */
   onCreateAnnotation?: (
     note: import("../annotations").NewReviewAnnotation,
@@ -796,7 +798,7 @@ export async function mountChangesDiff(
   let options = initial;
   const fileOf = (each: GitDiffEntry): GitDiffFile => ({
     workspace_id: "workspace",
-    root: "/repo",
+    root: options.repo?.root ?? "/repo",
     path: each.path,
     kind: each.kind,
     diff: options.patches[`${each.kind}:${each.path}`] ?? "",
@@ -847,6 +849,7 @@ export async function mountChangesDiff(
             embedded: options.embedded ?? false,
             annotations: options.annotations ?? [],
             ...(options.threads ? { threads: options.threads } : {}),
+            ...(options.repo ? { repo: options.repo } : {}),
             ...(options.onCreateAnnotation
               ? { onCreateAnnotation: options.onCreateAnnotation }
               : {}),

@@ -383,6 +383,60 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
+    test("another repository's thread on a file of the same path is not drawn, walked, counted or listed", async () => {
+      const { rememberReviewSnapshot } = await import("../review");
+      const session = (id: string, root: string) =>
+        ({
+          session: {
+            id,
+            connectionId: "repos-diff",
+            workspaceId: "workspace",
+            root,
+            title: root,
+            target: { kind: "worktree" },
+            gitlab: false,
+            summary: "",
+            agent: {},
+            createdAt: "2026-11-10T10:00:00Z",
+            updatedAt: "2026-11-10T10:00:00Z",
+          },
+          threads: [],
+        }) as unknown as import("../../../shared/review").ReviewSnapshot;
+      rememberReviewSnapshot(session("in-a", "/w/a"));
+      const onA = {
+        ...thread("ta", { kind: "unstaged", line: 2 }, "deux"),
+        sessionId: "in-a",
+      };
+      notices.length = 0;
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        threads: [onA],
+        annotations: [feedbackNote(onA)],
+        connectionId: "repos-diff",
+        repo: { root: "/w/b", own: false },
+      });
+      try {
+        // Repository b shown: a's thread on its own a.ts stays off b's.
+        expect(diff.comments("unstaged:a.ts")).toHaveLength(0);
+        expect(document.querySelector(".diff-threads-chip")).toBeNull();
+        await press("g");
+        await press("n");
+        expect(notices[notices.length - 1]).toBe("No unresolved comment here.");
+        // Repository a shown: drawn, counted and walked.
+        await diff.update({ repo: { root: "/w/a", own: true } });
+        expect(diff.comments("unstaged:a.ts")).toHaveLength(1);
+        expect(document.querySelector(".diff-threads-chip")).not.toBeNull();
+        await press("g");
+        await press("n");
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("gH shows the unresolved only; t hides every comment and shows them again", async () => {
       const threads = [open, done];
       const diff = await mountChangesDiff({

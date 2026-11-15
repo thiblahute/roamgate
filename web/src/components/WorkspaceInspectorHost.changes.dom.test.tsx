@@ -50,8 +50,19 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     ...preview,
     FilePreviewContent: stub("file-preview"),
   }));
+  const { useContext } = await import("react");
+  const { InspectorCommandsContext } = await import("../useInspectorCommands");
+  /** What the host last gave Changes' diff, and its `:` commands. */
+  const diffSeen: {
+    repo?: { root: string; own: boolean };
+    run?: (input: string) => void;
+  } = {};
   mock.module("./DiffContentView", () => ({
-    DiffContentView: stub("changes-diff"),
+    DiffContentView: (props: { repo?: { root: string; own: boolean } }) => {
+      diffSeen.repo = props.repo;
+      diffSeen.run = useContext(InspectorCommandsContext)?.run;
+      return <div data-stub="changes-diff" aria-label="changes-diff" />;
+    },
   }));
   mock.module("./GitCommitHistory", () => ({
     GitCommitHistory: stub("commits"),
@@ -92,6 +103,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     view?: View;
     workspace?: Workspace;
     agentPane?: boolean;
+    /** The checkout's root, as Changes' summary gives it. */
+    root?: string;
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -142,6 +155,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
                 entries: [],
                 files: {},
                 fileErrors: {},
+                ...(options.root ? { root: options.root } : {}),
               } as unknown as Props["diffSelection"]
             }
             connectionClient={client}
@@ -291,6 +305,47 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(inspector.views.length).toBe(count);
       } finally {
         await inspector.unmount();
+      }
+    });
+
+    test("Changes' diff is given the repository shown, so only its threads are drawn; ( and ) switch it", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      const { rememberReviewSnapshot } = await import("../review");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      // Two repositories of the workspace, each with a review.
+      for (const root of ["/repo", "/repo2"])
+        rememberReviewSnapshot({
+          session: {
+            id: `s${root}`,
+            connectionId: "local",
+            workspaceId: "w1",
+            root,
+            title: root,
+            target: { kind: "worktree" },
+            gitlab: false,
+            summary: "",
+            agent: {},
+            createdAt: "2026-11-10T10:00:00Z",
+            updatedAt: "2026-11-10T10:00:00Z",
+          },
+          threads: [],
+        } as unknown as import("../../../shared/review").ReviewSnapshot);
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({ root: "/repo", own: true });
+        await act(async () => diffSeen.run?.("nextrepo"));
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({ root: "/repo2", own: false });
+        await act(async () => diffSeen.run?.("prevrepo"));
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({ root: "/repo", own: true });
+      } finally {
+        await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
       }
     });
 

@@ -402,6 +402,14 @@ export function WorkspaceInspectorHost({
     ownRootRef.current.root ??
     (state.scope.kind === "worktree" ? state.scope.checkoutPath : undefined);
   const shownRoot = changesRoot ?? ownRoot;
+  /** Its comments only: another repository's threads of a same path stay off. */
+  const changesRepoShown = useMemo(
+    () =>
+      reviewInChanges && shownRoot
+        ? { root: shownRoot, own: !changesRoot || changesRoot === ownRoot }
+        : undefined,
+    [changesRoot, ownRoot, reviewInChanges, shownRoot],
+  );
   const changesRepos = useChangesRepos(
     connectionClient.connectionId,
     workspace?.workspace_id ?? "",
@@ -1563,12 +1571,23 @@ export function WorkspaceInspectorHost({
                         connectionClient={connectionClient}
                         annotations={annotations}
                         threads={feedbackThreads}
+                        {...(changesRepoShown
+                          ? { repo: changesRepoShown }
+                          : {})}
                         onCreateAnnotation={(input) =>
                           onCreateAnnotation(
-                            input.source === "diff" &&
-                              input.kind === "branch" &&
-                              diffSelection.pickedBase
-                              ? { ...input, base: diffSelection.pickedBase }
+                            input.source === "diff"
+                              ? {
+                                  ...input,
+                                  ...(input.kind === "branch" &&
+                                  diffSelection.pickedBase
+                                    ? { base: diffSelection.pickedBase }
+                                    : {}),
+                                  // Drawn only on its repository's diff.
+                                  ...(reviewInChanges && changesRoot
+                                    ? { root: changesRoot }
+                                    : {}),
+                                }
                               : input,
                             // Another repository's comments go to its review.
                             reviewInChanges && changesRoot

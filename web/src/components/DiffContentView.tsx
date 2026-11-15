@@ -92,6 +92,7 @@ import {
   threadReadingOrder,
   threadsAtCursor,
 } from "../changesThreads";
+import { repoFeedback, type ShownRepo } from "../changesRepo";
 import { latestComment } from "../reviewNavigation";
 import { useChangesAgent } from "../changesReview";
 import type { ReviewProgress } from "./DiffViewerPanel";
@@ -426,6 +427,7 @@ type DiffThreads = {
 };
 
 const NO_MARKS: Readonly<Record<string, string>> = {};
+const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
@@ -952,8 +954,9 @@ export function DiffContentView({
   mobile = false,
   resourceKey = "default",
   connectionClient,
-  annotations = [],
-  threads,
+  annotations: givenAnnotations = NO_ANNOTATIONS,
+  threads: givenThreads,
+  repo,
   onSelectFile,
   onRetry,
   onNearbyFilesChange,
@@ -997,6 +1000,11 @@ export function DiffContentView({
   annotations?: readonly ReviewAnnotation[];
   /** The threads the comments written here are, by the annotations' ids. */
   threads?: readonly ReviewThread[];
+  /**
+   * The repository shown (the review in Changes): only its comments and
+   * threads are drawn, walked, counted and listed.
+   */
+  repo?: ShownRepo;
   onSelectFile?: (entry: GitDiffEntry) => void;
   /** Read the changes again, offered on an error reading them. */
   onRetry?: () => void;
@@ -1030,6 +1038,23 @@ export function DiffContentView({
   onGitAction?: (action: GitFileAction, path: string) => boolean;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
+  const { sessions: reviewSessions } = useReviewState();
+  // Only the shown repository's: another one's file of the same path never
+  // gets its threads.
+  const repoRoot = repo?.root;
+  const repoOwn = repo?.own;
+  const scoped = useMemo(
+    () =>
+      repoFeedback(
+        givenAnnotations,
+        givenThreads ?? [],
+        (sessionId) => reviewSessions.get(sessionId)?.session.root,
+        repoRoot === undefined ? undefined : { root: repoRoot, own: !!repoOwn },
+      ),
+    [givenAnnotations, givenThreads, repoOwn, repoRoot, reviewSessions],
+  );
+  const annotations = scoped.annotations;
+  const threads = givenThreads ? scoped.threads : undefined;
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectFileRef = useRef(onSelectFile);
   const openFileRef = useRef(onOpenFile);
@@ -1171,7 +1196,6 @@ export function DiffContentView({
   // listed in the Comments panel, as in the Files preview.
   const threadView = useFileThreadView(() => sectionRef.current);
   const [threadsOpen, setThreadsOpen] = useState(false);
-  const { sessions: reviewSessions } = useReviewState();
   /** The review's comment box and thread keys, "in Changes" (plan phase 4). */
   const reviewEditor = reviewCursor && !embedded;
   /** `t`: every comment hidden (their margin markers stay). */
@@ -1635,9 +1659,18 @@ export function DiffContentView({
     // it did not get there.
     const known = new Set(notes.map((note) => note.id));
     for (const { note } of pendingNotes.values())
-      if (note.source === "diff" && !known.has(note.id)) notes.push(note);
+      if (
+        note.source === "diff" &&
+        !known.has(note.id) &&
+        (repoRoot === undefined ||
+          repoFeedback([note], [], () => undefined, {
+            root: repoRoot,
+            own: !!repoOwn,
+          }).annotations.length > 0)
+      )
+        notes.push(note);
     return notes;
-  }, [annotations, pendingNotes, reviewEditor]);
+  }, [annotations, pendingNotes, repoOwn, repoRoot, reviewEditor]);
   /** The threads drawn inside the message they comment on a part of. */
   const partThreadIds = useMemo(
     () =>
