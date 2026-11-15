@@ -1,3 +1,5 @@
+import type { ReviewThread } from "../../shared/review";
+import type { ReviewAnnotation } from "./annotations";
 import type { Pane } from "./types";
 
 /*
@@ -58,4 +60,47 @@ export function rememberChangesRepo(
   root: string | undefined,
 ) {
   lastRepos.set(resourceKey, root ?? "");
+}
+
+const trimRoot = (root: string) => root.replace(/\/+$/, "") || "/";
+
+/** The repository Changes shows, and whether it is the workspace's own. */
+export type ShownRepo = { root: string; own: boolean };
+
+/**
+ * The comments of the repository Changes shows: a thread is its review's
+ * repository's (the session's root), a comment not yet a thread the one it
+ * names (`root`), else the workspace's own. Threads are matched by their
+ * file's path within a repository, so another repository's file of the
+ * same path never gets them. Without a repository named, all of them.
+ */
+export function repoFeedback(
+  annotations: readonly ReviewAnnotation[],
+  threads: readonly ReviewThread[],
+  sessionRoot: (sessionId: string) => string | undefined,
+  repo: ShownRepo | undefined,
+): { annotations: ReviewAnnotation[]; threads: ReviewThread[] } {
+  if (!repo) return { annotations: [...annotations], threads: [...threads] };
+  const shown = trimRoot(repo.root);
+  const noteRoot = (note: ReviewAnnotation) =>
+    note.source === "diff" ? note.root : undefined;
+  const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  const isShown = (root: string | undefined) =>
+    root === undefined ? repo.own : trimRoot(root) === shown;
+  const threadShown = (thread: ReviewThread, note?: ReviewAnnotation) => {
+    const root = sessionRoot(thread.sessionId);
+    return root !== undefined
+      ? trimRoot(root) === shown
+      : isShown(note && noteRoot(note));
+  };
+  const notes = new Map(annotations.map((note) => [note.id, note]));
+  return {
+    annotations: annotations.filter((note) => {
+      const thread = byId.get(note.id);
+      return thread ? threadShown(thread, note) : isShown(noteRoot(note));
+    }),
+    threads: threads.filter((thread) =>
+      threadShown(thread, notes.get(thread.id)),
+    ),
+  };
 }

@@ -27,6 +27,11 @@ export type DiffReviewAnnotation = ReviewAnnotationBase & {
    * goes to that base's review. Absent under Automatic.
    */
   base?: string;
+  /**
+   * The repository it is on (Changes' scope line), when not the
+   * workspace's checkout: drawn only while Changes shows that repository.
+   */
+  root?: string;
 };
 
 export type FileLineReviewAnnotation = ReviewAnnotationBase & {
@@ -225,6 +230,11 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
       hunk,
       ...(candidate.kind === "branch" && validBase(candidate.base)
         ? { base: candidate.base }
+        : {}),
+      ...(typeof candidate.root === "string" &&
+      candidate.root.startsWith("/") &&
+      candidate.root.length <= 4096
+        ? { root: candidate.root }
         : {}),
     };
   }
