@@ -1143,24 +1143,44 @@ export async function readDiffSummary({
               },
             ]
           : [];
-  const [stats, generatedPaths, fingerprints, fileSizes] = await Promise.all([
-    statsTask,
-    collectGeneratedPaths({
+  // What the scope line says: the branch, and its commits beyond the base.
+  const gitLine = (command: string) =>
+    runGitShellCommand({
       root,
-      entries,
+      command,
       host,
       shQuote,
       runProcessWithCodeTimeout,
-    }),
-    fingerprintTask,
-    collectDiffFileSizes({
-      root,
-      diffs: sizeDiffs,
-      host,
-      shQuote,
-      runProcessWithCodeTimeout,
-    }),
-  ]);
+    }).then(
+      (out) => (out.code === 0 ? out.stdout.trim() : ""),
+      () => "",
+    );
+  const branchTask = gitLine("rev-parse --abbrev-ref HEAD");
+  const commitsTask =
+    mode === "branch-main"
+      ? gitLine(`rev-list --count ${shQuote(base ?? "main")}..HEAD`)
+      : Promise.resolve("");
+  const [stats, generatedPaths, fingerprints, fileSizes, branch, commits] =
+    await Promise.all([
+      statsTask,
+      collectGeneratedPaths({
+        root,
+        entries,
+        host,
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+      fingerprintTask,
+      collectDiffFileSizes({
+        root,
+        diffs: sizeDiffs,
+        host,
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+      branchTask,
+      commitsTask,
+    ]);
   const entriesWithStats = entries.map((entry) => {
     const fingerprint = fingerprints.get(entry.path);
     const blobSize = fileSizes.get(entryKeyForStats(entry));
@@ -1198,6 +1218,8 @@ export async function readDiffSummary({
     mode,
     base: mode === "last-step" ? lastStepRange?.baseline : base,
     base_branches: comparison?.branches,
+    ...(branch && branch !== "HEAD" ? { branch } : {}),
+    ...(/^\d+$/.test(commits) ? { commits: Number(commits) } : {}),
     baseline_available: mode !== "last-step" || lastStepRange !== null,
     snapshot_id: lastStepSnapshotId,
     entries: entriesWithStats,

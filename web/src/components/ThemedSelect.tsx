@@ -1,5 +1,11 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLayoutPreferences } from "../layoutPreferences";
 import { useSystemBack } from "../systemBack";
 import { cn } from "../utils";
@@ -39,6 +45,8 @@ export function ThemedSelect({
   side,
   contentClassName,
   onSelectedClose,
+  open: openProp,
+  onOpenChange,
 }: {
   value: string;
   options: ThemedSelectOption[];
@@ -55,8 +63,18 @@ export function ThemedSelect({
   side?: "top" | "bottom";
   contentClassName?: string;
   onSelectedClose?: () => void;
+  /** Opened and closed from outside too (a key that opens it). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const setOpen = useCallback((next: boolean) => {
+    setOwnOpen(next);
+    onOpenChangeRef.current?.(next);
+  }, []);
   const [highlighted, setHighlighted] = useState(value);
   const selected = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -67,10 +85,10 @@ export function ThemedSelect({
     const close = () => setOpen(false);
     window.addEventListener("popstate", close);
     return () => window.removeEventListener("popstate", close);
-  }, [mobile]);
+  }, [mobile, setOpen]);
   useEffect(() => {
     if (disabled) setOpen(false);
-  }, [disabled]);
+  }, [disabled, setOpen]);
   const current = options.find((option) => option.value === value);
   return (
     <Popover

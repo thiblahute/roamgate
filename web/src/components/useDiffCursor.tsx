@@ -82,6 +82,8 @@ export const DIFF_CURSOR_KEYS: readonly ShortcutRow[] = [
   ["R gr", "reload the changes"],
   ["f", "show / hide the file tree (:files)"],
   ["o", "Review only: the diff alone (:only)"],
+  ["p", "the workspace's repositories, searched as you type (:repo)"],
+  ["( )", "the previous / next repository (:prevrepo :nextrepo)"],
 ];
 
 /** The comment keys, listed too once Changes has the review's comments. */
@@ -892,6 +894,12 @@ export function useDiffCursor({
         return runCommand("files");
       case "o":
         return runCommand("only");
+      case "p":
+        return runCommand("repo");
+      case "(":
+        return runCommand("prevrepo");
+      case ")":
+        return runCommand("nextrepo");
       case "Escape":
         if (anchor !== null) setAnchor(null);
         else if (search || fileSearch.current) {

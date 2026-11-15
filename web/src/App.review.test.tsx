@@ -362,7 +362,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=changes, a workspace with several repositories keeps the classic pane, which switches between them, and says so", async () => {
+  test("on reviewin=changes, a workspace with several repositories shows the review's in Changes, which switches between them", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
@@ -376,14 +376,36 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       app.setRepos(["/repo/r1", "/repo/other"]);
       await app.toggleReview();
       await app.settle(50);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
-      expect(app.inspector()?.open ?? false).toBe(false);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
       expect(
         app.notices().some((text) => text.includes("Several repositories")),
-      ).toBe(true);
-      // The toggle hides it again, as on classic.
+      ).toBe(false);
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, a review of another repository of the workspace shows in Changes, on that repository", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r2", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r2");
+      app.setRepos(["/repo/r1", "/repo/r2"]);
       await app.toggleReview();
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({
+        scope: "working",
+        root: "/repo/r2",
+      });
     } finally {
       await app.unmount();
     }

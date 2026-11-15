@@ -1,0 +1,87 @@
+/* Changes' scope line: one row of controls, the longest gives way first. */
+.changes-scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.changes-scope-bar .themed-select-trigger {
+  flex: 0 1 auto;
+  min-width: 3em;
+  height: 22px;
+  padding: 0 5px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+}
+
+.changes-scope-bar .themed-select-trigger:hover,
+.changes-scope-bar .themed-select-trigger:focus-visible,
+.changes-scope-bar .themed-select-trigger[data-state="open"] {
+  border-color: var(--border);
+  background: var(--input-bg);
+}
+
+.changes-scope-bar .themed-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changes-scope-repo,
+.changes-scope-name {
+  font-weight: 600;
+}
+
+.changes-scope-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-inline: 5px;
+}
+
+.changes-scope-sep {
+  flex: none;
+  color: var(--muted);
+}
+
+.changes-scope-facts {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+/* In the toolbar the line comes first: the actions give way to it. */
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-title:has(> .changes-scope-bar) {
+  flex: 0 1 auto;
+  min-width: min(30em, 55%);
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-head:has(.changes-scope-bar)
+  .diff-content-actions {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.changes-scope-bar .changes-scope-repo {
+  flex-shrink: 0;
+  max-width: 14em;
+}
+
+.changes-scope-bar .changes-scope-mode {
+  flex: 0 1 auto;
+}
+
+/* Over the changes list (narrow inspector, phone): the line on its own. */
+.diff-panel-header {
+  padding: 4px 6px 0;
+  min-width: 0;
+}

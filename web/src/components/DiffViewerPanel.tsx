@@ -71,6 +71,7 @@ import { ActionsMenu } from "./ActionsMenu";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ThemedSelect } from "./ThemedSelect";
 import "./DiffViewerPanel.css";
+import { repoResourceKey, repoRootOf } from "../changesRepo";
 
 export type ActiveDiffSelection = {
   selectionRevision?: number;
@@ -92,6 +93,15 @@ export type ActiveDiffSelection = {
   scopeMode?: "working" | "branch-main" | "last-step";
   scopeBase?: string;
   repoName?: string;
+  /** The repository shown, its branch, and the commits beyond the base. */
+  root?: string;
+  branch?: string;
+  commits?: number;
+  /** The working tree's untracked files. */
+  untracked?: number;
+  /** Compare against: the branch picked ("": automatic) and the choices. */
+  baseBranch?: string;
+  baseBranches?: string[];
 };
 
 export type DiffSelectionMeta = {
@@ -136,7 +146,9 @@ export type DiffViewerPanelHandle = {
   /** The changes read again, as the Refresh button does. */
   refresh: () => void;
   /** The scope shown (the review toggle picks the review's). */
-  showScope: (scope: "working" | "branch-main") => void;
+  showScope: (scope: "working" | "branch-main" | "last-step") => void;
+  /** The branch the Branch scope compares against ("": automatic). */
+  showBase: (branch: string) => void;
   /** The paths the diff's search (the review cursor's) has hits in. */
   markSearchMatches: (paths: readonly string[]) => void;
   /** The files' reviewed chunks (the review in Changes), for the tree. */
@@ -155,6 +167,10 @@ export type DiffViewerPanelProps = {
   groupByStatus?: boolean;
   workspaceId?: string;
   resourceKey?: string;
+  /** Another repository of the workspace than its own, shown instead. */
+  repoRoot?: string;
+  /** Drawn above the scope switch (the phone's scope line). */
+  header?: ReactNode;
   onSelectionChange?: (
     selection: ActiveDiffSelection,
     meta?: DiffSelectionMeta,
@@ -656,6 +672,8 @@ function requestDiffFile(
   priority = true,
   automatic = false,
   baseBranch?: string,
+  /** Another repository of the workspace than its own. */
+  root?: string,
 ) {
   if (!client.isCurrent()) {
     return Promise.reject(new Error("connection changed during diff request"));
@@ -667,7 +685,7 @@ function requestDiffFile(
   }
   const requestKey = diffFileRequestKey(
     client,
-    workspaceId,
+    root ? `${workspaceId}\n${root}` : workspaceId,
     scope,
     entry,
     revision,
@@ -693,6 +711,7 @@ function requestDiffFile(
         ...(scope === "branch-main" && baseBranch
           ? { base_branch: baseBranch }
           : {}),
+        ...(root ? { root } : {}),
       }) as Promise<GitDiffFile>,
     () => client.isCurrent() && wanted(),
     priority,
@@ -765,6 +784,7 @@ export function prefetchDiffFilesInBatches(
           false,
           true,
           cached.summary?.base,
+          repoRootOf(resourceKey),
         );
         if (!client.isCurrent() || diffCacheRevision(key) !== revision) return;
         cacheDiffFile(
@@ -995,6 +1015,8 @@ export function DiffViewerPanel({
   groupByStatus = false,
   workspaceId,
   resourceKey,
+  repoRoot,
+  header,
   onSelectionChange,
   onOpenFile,
   ref,
@@ -1013,7 +1035,10 @@ export function DiffViewerPanel({
     ? workspaces.find((w) => w.workspace_id === workspaceId)
     : focusedWorkspace;
   const cacheWorkspaceId = workspace?.workspace_id;
-  const repositoryResourceKey = resourceKey ?? cacheWorkspaceId;
+  const repositoryResourceKey = repoResourceKey(
+    resourceKey ?? cacheWorkspaceId,
+    repoRoot,
+  );
   const preferenceKey = connectionStorageKey(
     connectionClient.connectionId,
     repositoryResourceKey ?? "focused",
@@ -1049,6 +1074,7 @@ export function DiffViewerPanel({
     diffScope === "branch-main"
       ? comparisonResourceKey(repositoryResourceKey, baseBranch)
       : repositoryResourceKey;
+  const setBaseBranchRef = useRef<(value: string) => void>(() => {});
   const setBaseBranch = (value: string) => {
     if (repositoryResourceKey)
       roamgateLocalStorage.setItem(
@@ -1060,6 +1086,7 @@ export function DiffViewerPanel({
       );
     setBasePreference({ key: preferenceKey, value });
   };
+  setBaseBranchRef.current = setBaseBranch;
   const completionKey = lastStepCompletionKey(
     connectionClient.connectionId,
     cacheWorkspaceId,
@@ -1340,6 +1367,20 @@ export function DiffViewerPanel({
         ...(source.summary?.repo_name
           ? { repoName: source.summary.repo_name }
           : {}),
+        ...(source.summary
+          ? {
+              root: source.summary.root,
+              untracked: source.summary.counts?.untracked ?? 0,
+              baseBranches: source.summary.base_branches ?? [],
+              ...(source.summary.branch
+                ? { branch: source.summary.branch }
+                : {}),
+              ...(source.summary.commits !== undefined
+                ? { commits: source.summary.commits }
+                : {}),
+            }
+          : {}),
+        baseBranch,
       };
     },
     [
@@ -1542,6 +1583,7 @@ export function DiffViewerPanel({
         select,
         automatic,
         cache.summary?.base,
+        repoRootOf(repositoryResourceKey),
       );
       if (
         !isCurrentContext(workspaceId, scope) ||
@@ -1688,6 +1730,7 @@ export function DiffViewerPanel({
       selectWorkingEntries,
       refresh: () => refreshRef.current(),
       showScope: (scope) => setDiffScope(scope),
+      showBase: (branch) => setBaseBranchRef.current(branch),
       runFileAction: (action, path) => runFileActionRef.current(action, path),
       markReviewProgress: (progress) =>
         setReviewProgress((current) =>
@@ -1957,6 +2000,7 @@ export function DiffViewerPanel({
           actionWorkspaceId,
           item.action,
           targets,
+          repoRoot,
         );
         // A failed batch can still have changed earlier files.
       } else {
@@ -1964,6 +2008,7 @@ export function DiffViewerPanel({
           actionWorkspaceId,
           item.action,
           targets[0],
+          repoRoot,
         );
         if (!result) return;
       }
@@ -2310,6 +2355,7 @@ export function DiffViewerPanel({
 
   return (
     <aside className="diff-viewer-side" aria-label="Diff Viewer">
+      {header ? <div className="diff-panel-header">{header}</div> : null}
       <div className="diff-panel-toolbar">
         <div className="diff-scope-toggle" aria-label="Diff scope">
           <button
