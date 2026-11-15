@@ -243,7 +243,11 @@ export function WorkspaceInspectorHost({
   annotations: readonly ReviewAnnotation[];
   /** The threads the annotations written as comments are, by their id. */
   feedbackThreads?: readonly ReviewThread[];
-  onCreateAnnotation: (input: NewReviewAnnotation) => void;
+  /** `root`: the repository the comment is on, when not the checkout's. */
+  onCreateAnnotation: (
+    input: NewReviewAnnotation,
+    capture?: { root?: string },
+  ) => void;
   /** Stores an image pasted in the review's comment box in Changes. */
   onAddReviewImage?: (file: File) => Promise<string>;
   /** Shows a file of a checkout (absolute path) in its code review. */
@@ -1566,6 +1570,10 @@ export function WorkspaceInspectorHost({
                               diffSelection.pickedBase
                               ? { ...input, base: diffSelection.pickedBase }
                               : input,
+                            // Another repository's comments go to its review.
+                            reviewInChanges && changesRoot
+                              ? { root: changesRoot }
+                              : undefined,
                           )
                         }
                         onReanchorAnnotations={onReanchorDiffAnnotations}
