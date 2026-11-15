@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { renderedHelperSource } from "./rendered-helper";
 import { renderedFileTarget } from "../review/rendered-target";
 import {
   connectionFileReader,
@@ -302,6 +303,159 @@ describe("the helper and links", () => {
     expect(source).toContain("data-roamgate-point");
     expect(source).toContain("cursor: crosshair !important");
     expect(source).toContain("selection.isCollapsed");
+  });
+
+  test("a click on a card follows its empty link after a delay, mousemove shows a pointer", () => {
+    const source = injectHelper("<p>x</p>", "n", "/p/");
+    expect(source).toContain('"a:empty[href]"');
+    expect(source).toContain("event.detail > 1");
+    expect(source).toContain("}, 250)");
+    expect(source).toContain("[role=button], [contenteditable]");
+    expect(source).toContain('style.cursor = over ? "pointer" : ""');
+  });
+
+  describe("following a card", () => {
+    async function setup() {
+      const { Window } = await import("happy-dom");
+      const win = new Window({
+        settings: {
+          disableJavaScriptEvaluation: true,
+          disableJavaScriptFileLoading: true,
+          disableCSSFileLoading: true,
+        },
+      });
+      const timers = new Map<number, () => void>();
+      let next = 1;
+      const view = win as unknown as {
+        setTimeout: (fn: () => void) => number;
+        clearTimeout: (id: number) => void;
+        getSelection: () => unknown;
+        parent: unknown;
+      };
+      view.setTimeout = (fn) => {
+        timers.set(next, fn);
+        return next++;
+      };
+      view.clearTimeout = (id) => {
+        timers.delete(id);
+      };
+      let selected = "";
+      view.getSelection = () => ({
+        isCollapsed: !selected,
+        toString: () => selected,
+      });
+      Object.defineProperty(win, "parent", { value: {} });
+      win.document.body.innerHTML =
+        '<article><p id="t">Card text</p><a class="entry-link" href="/post/"></a>' +
+        '<button id="b">b</button></article>';
+      const link = win.document.querySelector("a") as unknown as HTMLElement;
+      link.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: 0,
+          right: 100,
+          bottom: 100,
+          width: 100,
+          height: 100,
+        }) as DOMRect;
+      let follows = 0;
+      link.addEventListener("click", () => {
+        follows++;
+      });
+      const script = renderedHelperSource("/p/");
+      new Function("window", `with (window) { ${script} }`)(win);
+      const click = (target: Element, init: Record<string, unknown> = {}) =>
+        (
+          target as unknown as { dispatchEvent(e: unknown): void }
+        ).dispatchEvent(
+          new win.MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 10,
+            clientY: 10,
+            button: 0,
+            detail: 1,
+            ...init,
+          }) as never,
+        );
+      const fire = () => {
+        for (const [id, fn] of [...timers]) {
+          timers.delete(id);
+          fn();
+        }
+      };
+      return {
+        win,
+        text: win.document.getElementById("t") as unknown as Element,
+        button: win.document.getElementById("b") as unknown as Element,
+        click,
+        fire,
+        select: (text: string) => {
+          selected = text;
+        },
+        follows: () => follows,
+        point: (on: boolean) =>
+          win.dispatchEvent(
+            Object.assign(new win.Event("message"), {
+              source: (win as unknown as { parent: unknown }).parent,
+              data: { roamgate: "rendered", type: "pointMode", on },
+            }),
+          ),
+      };
+    }
+
+    test("a plain click follows the card after the delay", async () => {
+      const s = await setup();
+      s.click(s.text);
+      expect(s.follows()).toBe(0);
+      s.fire();
+      expect(s.follows()).toBe(1);
+      await s.win.happyDOM.close();
+    });
+
+    test("a double click does not", async () => {
+      const s = await setup();
+      s.click(s.text, { detail: 1 });
+      s.click(s.text, { detail: 2 });
+      s.fire();
+      expect(s.follows()).toBe(0);
+      await s.win.happyDOM.close();
+    });
+
+    test("a click with text selected, or on a button, does not", async () => {
+      const s = await setup();
+      s.select("Card");
+      s.click(s.text);
+      s.fire();
+      expect(s.follows()).toBe(0);
+      s.select("");
+      s.click(s.button);
+      s.fire();
+      expect(s.follows()).toBe(0);
+      await s.win.happyDOM.close();
+    });
+
+    test("a selection made during the delay stops it", async () => {
+      const s = await setup();
+      s.click(s.text);
+      s.select("Card");
+      s.fire();
+      expect(s.follows()).toBe(0);
+      await s.win.happyDOM.close();
+    });
+
+    test("Point mode and modifier clicks do not", async () => {
+      const s = await setup();
+      s.click(s.text, { ctrlKey: true });
+      s.click(s.text, { button: 1 });
+      s.fire();
+      expect(s.follows()).toBe(0);
+      s.point(true);
+      s.click(s.text);
+      s.fire();
+      expect(s.follows()).toBe(0);
+      await s.win.happyDOM.close();
+    });
   });
 });
 
