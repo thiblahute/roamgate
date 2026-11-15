@@ -206,11 +206,11 @@
   transition: none;
 }
 
-/* The menu opened from a header Zen's way out docks in (the review, Review
-   only) comes over that view, with the top bar, while it is open. */
-.app.zen .topbar:has(.config-dropdown) {
-  z-index: 5600;
-  visibility: visible;
+/* The menu opened from Zen's own menu button opens under that button, out
+   of the top bar, which stays hidden while it is open (even with the tab
+   hovered or focused). */
+.app.zen:has(.config-dropdown.is-anchored) .topbar {
+  transform: translateY(-100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -21,6 +21,16 @@
   box-shadow: var(--shadow-lg);
 }
 
+/* Opened from a button outside the top bar (Zen's): under it, over every
+   view (the review), placed by ConfigMenu. */
+.config-dropdown.is-anchored {
+  position: fixed;
+  z-index: 5600;
+  top: 0;
+  right: auto;
+  left: 0;
+}
+
 .config-dropdown-content {
   overflow: auto;
   overscroll-behavior: contain;

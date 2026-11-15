@@ -191,4 +191,200 @@ if (process.env.ROAMGATE_ZEN_ISLAND_DOM_TEST !== "1") {
       root.unmount();
     });
   });
+
+  test("the menu from Zen's button opens under it, the top bar left hidden", async () => {
+    const { Window } = await import("happy-dom");
+    const browser = new Window({
+      url: "http://localhost/",
+      width: 1024,
+      height: 768,
+    });
+    for (const [key, value] of Object.entries({
+      window: browser,
+      document: browser.document,
+      navigator: browser.navigator,
+      HTMLElement: browser.HTMLElement,
+      Element: browser.Element,
+      Node: browser.Node,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      MutationObserver: browser.MutationObserver,
+      Event: browser.Event,
+      MouseEvent: browser.MouseEvent,
+      KeyboardEvent: browser.KeyboardEvent,
+      CustomEvent: browser.CustomEvent,
+      getComputedStyle: browser.getComputedStyle.bind(browser),
+      requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
+      IS_REACT_ACT_ENVIRONMENT: true,
+    }))
+      Object.defineProperty(globalThis, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    globalThis.fetch = (async () =>
+      new Response(null, { status: 404 })) as unknown as typeof fetch;
+    const React = await import("react");
+    const { act } = React;
+    const { createRoot } = await import("react-dom/client");
+    const { ConfigMenu } = await import("./ConfigMenu");
+    const { ZenDock, ZenIsland } = await import("./ZenIsland");
+
+    // Zen's menu buttons sit at the top right; the menu is 380 wide.
+    const box = (left: number, top: number, width: number, height: number) => ({
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      toJSON() {},
+    });
+    Object.defineProperty(
+      browser.HTMLElement.prototype,
+      "getBoundingClientRect",
+      {
+        configurable: true,
+        value(this: HTMLElement) {
+          if (this.classList.contains("zen-island-menu"))
+            return box(900, 0, 28, 26);
+          if (this.classList.contains("config-dropdown"))
+            return box(0, 0, 380, 500);
+          return box(0, 0, 1024, 32);
+        },
+      },
+    );
+    document.elementFromPoint = () => null;
+
+    const configuration = {} as React.ComponentProps<typeof ConfigMenu>;
+    const App = ({
+      zen,
+      docked = false,
+    }: {
+      zen: boolean;
+      docked?: boolean;
+    }) => (
+      <div className={`app${zen ? " zen" : ""}`}>
+        <header className="topbar">
+          <ConfigMenu
+            {...configuration}
+            zenMode={zen}
+            onZenModeChange={() => {}}
+            onShowShortcuts={() => {}}
+          />
+        </header>
+        {zen ? <ZenIsland onExit={() => {}} /> : null}
+        {docked ? (
+          <header className="inspector-head">
+            <div className="group inspector">
+              <button type="button">Close</button>
+              <ZenDock />
+            </div>
+          </header>
+        ) : null}
+        <main tabIndex={-1}>terminal</main>
+      </div>
+    );
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const settle = async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+    };
+    const menu = () => document.getElementById("roamgate-config-menu");
+    const topbar = () => document.querySelector(".topbar")!;
+    const escape = async () => {
+      await act(async () => {
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+      await settle();
+    };
+
+    for (const docked of [false, true]) {
+      await act(async () => {
+        root.render(<App zen docked={docked} />);
+      });
+      await settle();
+      const button = document.querySelector<HTMLButtonElement>(
+        docked
+          ? ".group.inspector .zen-dock-island .zen-island-menu"
+          : ".app > .zen-island .zen-island-menu",
+      )!;
+      expect(button).not.toBeNull();
+      expect(button.getAttribute("aria-haspopup")).toBe("dialog");
+      button.focus();
+      await act(async () => {
+        button.click();
+      });
+      await settle();
+      // The same menu, out of the top bar, which nothing focuses: it stays
+      // hidden (the top bar shows on focus within it).
+      const opened = menu()!;
+      expect(opened).not.toBeNull();
+      expect(opened.classList.contains("is-anchored")).toBe(true);
+      expect(topbar().contains(opened)).toBe(false);
+      expect(opened.parentElement).toBe(document.querySelector(".app"));
+      expect(topbar().contains(document.activeElement)).toBe(false);
+      expect(document.activeElement).toBe(button);
+      expect(opened.textContent).toContain("Configuration");
+      expect(opened.textContent).toContain("Zen mode");
+      // Under the button, its right edge on the button's.
+      expect(opened.style.left).toBe(`${928 - 380}px`);
+      expect(opened.style.top).toBe(`${26 + 6}px`);
+      // A click in it is not a click outside.
+      await act(async () => {
+        opened
+          .querySelector(".config-summary")!
+          .dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      });
+      expect(menu()).not.toBeNull();
+      // Escape closes it, and the focus is back on the button.
+      (opened.querySelector("button") as HTMLButtonElement).focus();
+      await escape();
+      expect(menu()).toBeNull();
+      expect(document.activeElement).toBe(button);
+    }
+
+    // The CSS keeps the top bar hidden while that menu is open, with no
+    // raised top bar to show it.
+    const css = await Bun.file(
+      new URL("../styles/layout/topbar.css", import.meta.url),
+    ).text();
+    expect(css).toMatch(
+      /\.app\.zen:has\(\.config-dropdown\.is-anchored\) \.topbar\s*\{[^}]*transform: translateY\(-100%\);/,
+    );
+    expect(css).not.toContain("z-index: 5600");
+
+    // Outside Zen the top bar's button opens it in the top bar, as ever.
+    await act(async () => {
+      root.render(<App zen={false} />);
+    });
+    await settle();
+    const menuButton =
+      document.querySelector<HTMLButtonElement>(".menu-button")!;
+    await act(async () => {
+      menuButton.click();
+    });
+    expect(menu()).not.toBeNull();
+    expect(menu()!.classList.contains("is-anchored")).toBe(false);
+    expect(topbar().contains(menu())).toBe(true);
+    await escape();
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(menuButton);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 }
