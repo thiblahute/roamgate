@@ -53,8 +53,10 @@ import {
   buildGitFileMenuItems,
   buildGitRepoMenuItems,
   countWorkingEntries,
+  gitFileActionLabel,
   gitFileConfirmCopy,
   gitFolderConfirmCopy,
+  type GitFileAction,
   gitRepoConfirmCopy,
   type GitFileMenuItem,
   type GitRepoMenuItem,
@@ -97,6 +99,12 @@ export type DiffViewerPanelHandle = {
   refresh: () => void;
   /** The paths the diff's search (the review cursor's) has hits in. */
   markSearchMatches: (paths: readonly string[]) => void;
+  /**
+   * A git action on a file of the working changes, as its menu does it
+   * (`:stage`, `gs`): confirmed when it destroys work. False, said, when
+   * the action does not apply there.
+   */
+  runFileAction: (action: GitFileAction, path: string) => boolean;
 };
 
 export type DiffViewerPanelProps = {
@@ -1617,6 +1625,7 @@ export function DiffViewerPanel({
       selectWorkingEntry: (target) => selectWorkingEntries([target]),
       selectWorkingEntries,
       refresh: () => refreshRef.current(),
+      runFileAction: (action, path) => runFileActionRef.current(action, path),
       markSearchMatches: (paths) =>
         setSearchMatches((current) =>
           current.size === paths.length &&
@@ -1880,6 +1889,30 @@ export function DiffViewerPanel({
       }
     }
     void execute();
+  };
+
+  const runFileActionRef = useRef<
+    (action: GitFileAction, path: string) => boolean
+  >(() => false);
+  runFileActionRef.current = (action, path) => {
+    const say = (message: string) =>
+      store.notify({ kind: "info", message, autoDismissMs: 3000 });
+    if (diffScope !== "working") {
+      say("Git actions apply to the working changes.");
+      return false;
+    }
+    const entries = (cache.summary?.entries ?? []).filter(
+      (entry) => entry.path === path,
+    );
+    const item = buildGitFileMenuItems(entries).find(
+      (each) => each.action === action,
+    );
+    if (!item) {
+      say(`${gitFileActionLabel(action)}: nothing to do for ${path}.`);
+      return false;
+    }
+    runGitFileMenuAction(item, { x: 0, y: 0, path, entries });
+    return true;
   };
 
   const runGitRepoMenuAction = (item: GitRepoMenuItem) => {

@@ -1298,6 +1298,10 @@ export function WorkspaceInspectorHost({
                         }
                         onOpenFile={onOpenDiffFile}
                         reviewCursor={reviewInChanges}
+                        onGitAction={(action, path) =>
+                          diffViewerRef.current?.runFileAction(action, path) ??
+                          false
+                        }
                         {...(onAddReviewImage ? { onAddReviewImage } : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)

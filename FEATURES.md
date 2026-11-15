@@ -204,6 +204,10 @@ Inspector button, shortcuts, or workspace/agent menus.
   (comments go to the agent as you write them), **Hold**, **Send**,
   **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
   `:overall`.
+- On the working changes, `gs` stages the file at the cursor, and `:stage`,
+  `:unstage`, `:discard` and `:delete` act on the file at the cursor or the
+  files `V` selected, with the same confirmations as the tree's menus (a
+  discard or a delete asks first). There is no single-letter staging key.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes
