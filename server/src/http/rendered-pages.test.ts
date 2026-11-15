@@ -293,6 +293,17 @@ describe("serving files", () => {
   });
 });
 
+describe("the helper and links", () => {
+  test("a link neither drags nor swallows a selection, Point mode keeps its crosshair", () => {
+    const source = injectHelper("<p>x</p>", "n", "/p/");
+    expect(source).toContain("-webkit-user-drag: none");
+    expect(source).toContain("user-select: text");
+    expect(source).toContain("data-roamgate-point");
+    expect(source).toContain("cursor: crosshair !important");
+    expect(source).toContain("selection.isCollapsed");
+  });
+});
+
 describe("large files", () => {
   /**
    * Pages serving one HTML file, plan.html, of about `pageBytes`; its read

@@ -454,10 +454,25 @@ function renderedHelper(
     },
     true,
   );
+  // A link or card must not get in the way of commenting: text inside it
+  // selects by dragging (a link is not dragged away), and the click that
+  // ends such a selection does not follow the link. Point mode shows its
+  // crosshair over everything, the page's own pointer cursors included.
+  const style = d.createElement("style");
+  style.textContent =
+    "a, a * { -webkit-user-drag: none; user-select: text; }" +
+    "html[data-roamgate-point], html[data-roamgate-point] * { cursor: crosshair !important; }";
+  (d.head ?? d.documentElement).appendChild(style);
   d.addEventListener(
     "click",
     (event) => {
-      if (event.altKey || pointMode) event.preventDefault();
+      if (event.altKey || pointMode) {
+        event.preventDefault();
+        return;
+      }
+      const selection = w.getSelection();
+      if (selection && !selection.isCollapsed && selection.toString().trim())
+        event.preventDefault();
     },
     true,
   );
@@ -490,6 +505,8 @@ function renderedHelper(
     if (data.type === "pointMode") {
       pointMode = data.on === true;
       d.documentElement.style.cursor = pointMode ? "crosshair" : "";
+      if (pointMode) d.documentElement.setAttribute("data-roamgate-point", "");
+      else d.documentElement.removeAttribute("data-roamgate-point");
       return;
     }
     if (data.type === "resume") {
