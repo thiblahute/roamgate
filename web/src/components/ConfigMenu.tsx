@@ -38,6 +38,7 @@ import { ConfigurationLoadingDialog } from "./ConfigurationLoadingDialog";
 import { HerdrSetupCard } from "./HerdrSetupCard";
 import { MobileSheetHandle } from "./MobileSheetHandle";
 import "./ConfigMenu.css";
+import { type ComponentPropsWithRef, useLayoutEffect } from "react";
 
 const ConfigurationDialog = lazyWithReload("configuration", () =>
   import("./ConfigurationDialog").then((module) => ({
@@ -47,6 +48,44 @@ const ConfigurationDialog = lazyWithReload("configuration", () =>
 const APP_VERSION = packageJson.version;
 const RELEASES_URL = "https://github.com/powerfooI/roamgate/releases";
 export const CONFIG_MENU_ID = "roamgate-config-menu";
+
+/** The gap between the menu and the button it opens under, and the screen's edges. */
+const ANCHOR_GAP = 6;
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Where the menu opened from another button (Zen's) goes: under it, its
+ * right edge on the button's, kept inside the viewport. Boxes in the
+ * viewport's pixels; `zoom` is the page's zoom (the UI scale), which a
+ * fixed box's own coordinates are multiplied by.
+ */
+export function anchoredMenuPosition(
+  anchor: { top: number; bottom: number; left: number; right: number },
+  menu: { width: number },
+  viewport: { width: number; height: number },
+  zoom = 1,
+) {
+  const width = Math.min(menu.width, viewport.width - 2 * VIEWPORT_MARGIN);
+  const left = Math.min(
+    Math.max(anchor.right - width, VIEWPORT_MARGIN),
+    viewport.width - VIEWPORT_MARGIN - width,
+  );
+  const top = Math.min(anchor.bottom + ANCHOR_GAP, viewport.height / 2);
+  return {
+    left: left / zoom,
+    top: top / zoom,
+    maxHeight: (viewport.height - top - VIEWPORT_MARGIN) / zoom,
+  };
+}
+
+/** The menu's box, in the top bar, or portaled to `portal` (anchored). */
+function MenuSurface({
+  portal,
+  ...props
+}: ComponentPropsWithRef<"div"> & { portal: Element | null }) {
+  const surface = <div {...props} />;
+  return portal ? createPortal(surface, portal) : surface;
+}
 
 export function reloadApplicationPage(
   target: Pick<Location, "reload"> = window.location,
@@ -89,6 +128,9 @@ export function ConfigMenu({
       ? s.bridgeStatus?.clients
       : null;
   const [open, setOpen] = useState(false);
+  // The button outside the top bar the menu was opened from (Zen's): the
+  // menu opens under it, over everything, and the top bar stays hidden.
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   useCloseGlobalMenuForDialog(open, setOpen);
   const [expanded, setExpanded] = useState(false);
   const [configurationTab, setConfigurationTab] =
@@ -104,15 +146,20 @@ export function ConfigMenu({
     return () => window.removeEventListener(OPEN_CONFIGURATION, show);
   }, []);
   useEffect(() => {
-    // Zen's tab opens (or closes) this menu without the hidden top bar's
-    // button; focus goes to that button so the top bar shows while it is open.
-    const show = () => {
+    // Zen's menu button opens (or closes) this menu without the hidden top
+    // bar: under that button, which keeps the focus. Without one, focus goes
+    // to the top bar's button, which shows the top bar while it is open.
+    const show = (event: Event) => {
+      const from = (event as CustomEvent<HTMLElement | null>).detail;
+      const anchored = from instanceof HTMLElement ? from : null;
       setExpanded(false);
       setLogoutError("");
+      setAnchor(anchored);
       setOpen((value) => !value);
-      window.requestAnimationFrame(() =>
-        triggerRef.current?.focus({ preventScroll: true }),
-      );
+      if (!anchored)
+        window.requestAnimationFrame(() =>
+          triggerRef.current?.focus({ preventScroll: true }),
+        );
     };
     window.addEventListener(OPEN_APP_MENU, show);
     return () => window.removeEventListener(OPEN_APP_MENU, show);
@@ -130,15 +177,54 @@ export function ConfigMenu({
   } | null>(null);
   const [herdrUnavailable, setHerdrUnavailable] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const anchorRef = useRef<HTMLElement | null>(null);
+  anchorRef.current = anchor;
+  /** Focus back on the button the menu was opened from. */
+  const refocus = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const from = anchorRef.current;
+      if (from?.isConnected) from.focus({ preventScroll: true });
+      else triggerRef.current?.focus();
+    });
+  }, []);
   const closeMenu = () => {
     setOpen(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
+    refocus();
   };
   const closeConfiguration = useCallback(() => {
     setConfigurationTab(null);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
-  }, []);
+    refocus();
+  }, [refocus]);
+  // Opened from Zen's button: under it, out of the hidden top bar (a phone
+  // keeps its bottom sheet).
+  const anchored = open && !!anchor && !layout.mobile;
+
+  useLayoutEffect(() => {
+    if (!anchored || !anchor) return;
+    const position = () => {
+      const menu = dropdownRef.current;
+      if (!menu || !anchor.isConnected) return;
+      const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
+      const { left, top, maxHeight } = anchoredMenuPosition(
+        anchor.getBoundingClientRect(),
+        menu.getBoundingClientRect(),
+        { width: window.innerWidth, height: window.innerHeight },
+        zoom,
+      );
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+      menu.style.maxHeight = `${maxHeight}px`;
+    };
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [anchored, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -176,6 +262,7 @@ export function ConfigMenu({
       // Zen's menu button toggles the menu itself (OPEN_APP_MENU).
       if (target instanceof Element && target.closest(".zen-island-menu"))
         return;
+      if (dropdownRef.current?.contains(target)) return;
       if (ref.current && !ref.current.contains(target)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
@@ -183,7 +270,7 @@ export function ConfigMenu({
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
-      window.requestAnimationFrame(() => triggerRef.current?.focus());
+      refocus();
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey, { capture: true });
@@ -192,7 +279,7 @@ export function ConfigMenu({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, { capture: true });
     };
-  }, [connectionClient, open]);
+  }, [connectionClient, open, refocus]);
 
   return (
     <>
@@ -203,6 +290,7 @@ export function ConfigMenu({
           onClick={() => {
             setExpanded(false);
             setLogoutError("");
+            setAnchor(null);
             setOpen((value) => !value);
           }}
           aria-label={updateAvailable ? "Menu, update available" : "Menu"}
@@ -213,9 +301,13 @@ export function ConfigMenu({
           Menu{updateAvailable ? <span className="menu-update-dot" /> : null}
         </button>
         {open ? (
-          <div
+          <MenuSurface
+            portal={
+              anchored ? (anchor?.closest(".app") ?? document.body) : null
+            }
             id={CONFIG_MENU_ID}
-            className={`config-dropdown mobile-sheet${expanded ? " is-expanded" : ""}`}
+            ref={dropdownRef}
+            className={`config-dropdown mobile-sheet${expanded ? " is-expanded" : ""}${anchored ? " is-anchored" : ""}`}
             role="dialog"
             aria-label="Application menu"
           >
@@ -464,7 +556,7 @@ export function ConfigMenu({
                 </div>
               ) : null}
             </div>
-          </div>
+          </MenuSurface>
         ) : null}
       </div>
       {/* Escape both topbar120 and the transformed phone app context. This

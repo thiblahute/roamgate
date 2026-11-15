@@ -15,7 +15,13 @@ export function openConfiguration(tab: ConfigurationTab = "Appearance") {
 /** The event the application menu answers by opening. */
 export const OPEN_APP_MENU = "roamgate:open-app-menu";
 
-/** Opens the application menu from outside the top bar (Zen's tab). */
-export function openAppMenu() {
-  window.dispatchEvent(new CustomEvent(OPEN_APP_MENU));
+/**
+ * Opens (or closes) the application menu from outside the top bar. From a
+ * button (Zen's), the menu opens under it and the hidden top bar stays
+ * hidden; focus comes back to it when the menu closes.
+ */
+export function openAppMenu(anchor?: HTMLElement) {
+  window.dispatchEvent(
+    new CustomEvent(OPEN_APP_MENU, { detail: anchor ?? null }),
+  );
 }

@@ -166,7 +166,8 @@ export function ZenIsland({ onExit }: { onExit: () => void }) {
           className={`${buttonClass} zen-island-menu`.trim()}
           title="Menu"
           aria-label="Menu"
-          onClick={openAppMenu}
+          aria-haspopup="dialog"
+          onClick={(event) => openAppMenu(event.currentTarget)}
         >
           <Menu size={dock.iconSize} aria-hidden="true" />
         </button>
@@ -192,7 +193,8 @@ export function ZenIsland({ onExit }: { onExit: () => void }) {
         className="zen-island-button zen-island-menu"
         title="Menu"
         aria-label="Menu"
-        onClick={openAppMenu}
+        aria-haspopup="dialog"
+        onClick={(event) => openAppMenu(event.currentTarget)}
       >
         <Menu size={13} aria-hidden="true" />
       </button>
