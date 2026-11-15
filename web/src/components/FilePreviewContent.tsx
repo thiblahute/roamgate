@@ -106,6 +106,7 @@ import {
 } from "./AnnotationComposerPopover";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { ImagePreview } from "./ImagePreview";
+import { ZenDock } from "./ZenIsland";
 import { lazyWithReload } from "../lazyWithReload";
 import {
   handlePreviewEditorCopy,
@@ -453,6 +454,8 @@ export function FilePreviewContent({
   const [urlText, setUrlText] = useState("http://localhost:");
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [zen, toggleZen] = useZenMode();
+  /** Review only's bar: the page's banner shows at its start. */
+  const [zenBanner, setZenBanner] = useState<HTMLElement | null>(null);
   useZenEscape(zen, toggleZen);
   /** The paused graphic while its comment is written. */
   const heldGraphic = useRef<HeldGraphic | null>(null);
@@ -1532,6 +1535,7 @@ export function FilePreviewContent({
                 pointMode={pointMode}
                 onMessage={frameMessage}
                 frameRef={frameRef}
+                bannerIn={zen ? zenBanner : null}
               />
             ) : null}
             {!loading && !error && drawSvgFramed && svgText !== null ? (
@@ -1628,6 +1632,7 @@ export function FilePreviewContent({
                 pointMode={pointMode}
                 onMessage={frameMessage}
                 frameRef={frameRef}
+                bannerIn={zen ? zenBanner : null}
               />
             ) : null}
             {!loading &&
@@ -1718,6 +1723,7 @@ export function FilePreviewContent({
       {pointing.box}
       {zen ? (
         <div className="file-preview-zen-hint">
+          <span ref={setZenBanner} className="file-preview-zen-banner-slot" />
           <button
             type="button"
             title="Show the chrome again (o or Esc)"
@@ -1754,6 +1760,7 @@ export function FilePreviewContent({
               {unresolvedNav}
             </>
           ) : null}
+          <ZenDock labels iconSize={13} />
         </div>
       ) : null}
       {markdownSelection &&
