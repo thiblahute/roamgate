@@ -180,13 +180,22 @@
 /* The chat's comments: the chip at the top right of the chat, their panel
    under it (ThreadsPanel). */
 .chat-threads-corner {
-  position: absolute;
-  top: 8px;
-  right: 24px;
-  z-index: 3;
+  order: -1;
+  flex: none;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  padding: 4px 24px 4px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* The chip is in a thin row of its own at the top of the chat's frame, so it
+   covers none of the conversation. */
+.agent-history-chat-frame:has(> .chat-threads-corner) {
+  flex-direction: column;
 }
 
 /* Open comments on messages not shown: they are in the panel. */
