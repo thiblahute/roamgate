@@ -115,7 +115,7 @@ import {
   overlayPaneInput,
 } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
-import { reviewSurfaceChoice } from "./reviewPrefs";
+import { reviewSurfaceChoice, reviewVimKeys } from "./reviewPrefs";
 import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
@@ -179,7 +179,7 @@ import {
 import { agentStateKind, paneHasAgentHistory } from "./components/agentSession";
 import { CloseButton } from "./components/CloseButton";
 import { Toast } from "./components/Toast";
-import { focusIfUnchanged } from "./components/dialogFocus";
+import { focusIfUnchanged, holdFocus } from "./components/dialogFocus";
 import {
   COMMAND_MENU_OPENING,
   CommandCombobox,
@@ -3879,10 +3879,37 @@ export default function App() {
       view: sameOwner && current ? current.view : "changes",
       expanded: sameOwner && current ? current.expanded : false,
     };
-    openDiffViewer(workspace.workspace_id);
+    const returnFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    // Focused below, on the diff rather than the view's tab.
+    openDiffViewer(workspace.workspace_id, false);
+    inspectorReturnFocusRef.current = returnFocus;
     const expanded = changesExpandedRef.current.get(owner) ?? true;
     if (inspectorStateRef.current?.expanded !== expanded)
       setInspectorExpanded(expanded);
+    // The keys go to the diff (its Vim cursor), once Changes has drawn it.
+    const opened = inspectorStateRef.current;
+    const vim = reviewVimKeys();
+    let frames = 0;
+    const focusDiff = () => {
+      if (inspectorStateRef.current !== opened) return;
+      // With ":novim" there is no cursor: the view's tab, as elsewhere.
+      const target = [
+        ...document.querySelectorAll<HTMLElement>(
+          vim
+            ? ".workspace-inspector-slot .diff-content-view[data-review-cursor]"
+            : '.workspace-inspector-tabs [role="tab"][aria-selected="true"]',
+        ),
+      ].find((element) => element.getClientRects().length > 0);
+      if (target) {
+        target.focus({ preventScroll: true });
+        const slot = target.closest(".workspace-inspector-slot");
+        if (slot) holdFocus(target, slot);
+      } else if (frames++ < 120) requestAnimationFrame(focusDiff);
+    };
+    requestAnimationFrame(focusDiff);
   }, [
     closeInspector,
     commitInspectorState,

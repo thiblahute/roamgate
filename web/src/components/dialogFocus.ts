@@ -45,3 +45,42 @@ export function focusDialogElement(
     for (const timer of timers) window.clearTimeout(timer);
   };
 }
+
+/**
+ * Keeps the focus inside `container` for `ms` after `element` took it: a
+ * focus that moves out without the user (no pointer press, no key pressed
+ * outside) goes back to `element`. A browser can hand the focus to the
+ * page's first control once a shortcut's modifiers are released; a view
+ * opened by that shortcut keeps the keys. Returns the cancel.
+ */
+export function holdFocus(
+  element: HTMLElement,
+  container: Element,
+  ms = 1500,
+): () => void {
+  const document = element.ownerDocument;
+  let done = false;
+  const stop = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    document.removeEventListener("focusin", onFocusIn, true);
+    document.removeEventListener("pointerdown", stop, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!(event.target instanceof Node) || !container.contains(event.target))
+      stop();
+  };
+  const onFocusIn = (event: FocusEvent) => {
+    const target = event.target;
+    if (target instanceof Node && container.contains(target)) return;
+    if (!element.isConnected) return stop();
+    element.focus({ preventScroll: true });
+  };
+  const timer = setTimeout(stop, ms);
+  document.addEventListener("focusin", onFocusIn, true);
+  document.addEventListener("pointerdown", stop, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  return stop;
+}
