@@ -1418,7 +1418,9 @@ A tab is shown again as it was left: back from Changes, Commits or History,
 from another workspace, or after a page reload, the preview has the same
 file at the same scroll (a page's frame too), with its cursor, its threads
 folded or opened, the Comments panel, the Source switch and its Back /
-Forward history.
+Forward history. A page the frame had gone to that is not there any more
+gives way to the tab's own file, and that place leaves the history; a link
+to a page that is not there shows why, with a link back to the tab's file.
 
 Scripts are one choice for every format (Markdown, HTML, SVG, sites): off by
 default, always shown in the preview. **Scripts off** in the preview turns them

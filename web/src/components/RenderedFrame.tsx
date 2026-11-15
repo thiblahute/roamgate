@@ -32,6 +32,7 @@ export function RenderedFrame({
   pointMode,
   onMessage,
   onPage,
+  onMissing,
   scripts = false,
   autoHeight = false,
   frameRef: givenRef,
@@ -54,7 +55,7 @@ export function RenderedFrame({
   onMessage: (
     message: Exclude<
       RenderedFrameMessage,
-      { type: "ready" | "size" | "stray" | "storage" }
+      { type: "ready" | "size" | "stray" | "storage" | "missing" | "home" }
     >,
     box: DOMRect,
     frame: HTMLIFrameElement,
@@ -65,6 +66,11 @@ export function RenderedFrame({
    * its token's root map (with the frame's home under it).
    */
   onPage?: (url: string, first: boolean, root?: RenderedRootMap) => void;
+  /**
+   * The frame went to a page that is not there (`url` under its token):
+   * Roamgate's not-found page shows, with a link back to the frame's own.
+   */
+  onMissing?: (url: string) => void;
   frameRef?: RefObject<HTMLIFrameElement | null>;
   className?: string;
   /**
@@ -128,6 +134,8 @@ export function RenderedFrame({
   onMessageRef.current = onMessage;
   const onPageRef = useRef(onPage);
   onPageRef.current = onPage;
+  const onMissingRef = useRef(onMissing);
+  onMissingRef.current = onMissing;
   const pointRef = useRef(pointMode);
   pointRef.current = pointMode;
   // Where the page shown last sends its root-absolute URLs: a navigation
@@ -181,6 +189,15 @@ export function RenderedFrame({
           )
             frame.contentWindow?.location.replace(next.href);
         }
+        return;
+      }
+      if (message.type === "missing") {
+        onMissingRef.current?.(message.url);
+        return;
+      }
+      if (message.type === "home") {
+        // The not-found page's link: the page the frame was opened on.
+        frame.contentWindow?.location.replace(frame.src);
         return;
       }
       if (message.type === "ready") {

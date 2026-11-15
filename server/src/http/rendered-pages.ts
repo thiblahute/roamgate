@@ -208,6 +208,41 @@ function plain(
   return new Response(text, { status, headers });
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+};
+
+/**
+ * A page the frame went to that is not there: plain text, but for the
+ * frame's own navigation a page saying so too, which tells the preview
+ * (it shows the tab's own page again when it was restoring this one) and
+ * links back to the page the frame was opened on.
+ */
+export function notFound(
+  text: string,
+  page: string,
+  mode: RenderedMode,
+  req: Request,
+): Response {
+  const dest = req.headers.get("sec-fetch-dest");
+  if (dest !== "iframe" && dest !== "document") return plain(404, text, mode);
+  const nonce = randomBytes(16).toString("base64");
+  const headers = baseHeaders(mode, nonce);
+  headers.set("content-type", "text/html; charset=utf-8");
+  const said = JSON.stringify({
+    roamgate: "rendered",
+    type: "missing",
+    url: page,
+  })
+    // Inside a script element: never its end.
+    .replace(/</g, "\\u003c");
+  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Not found</title></head><body style="font:14px/1.5 system-ui,sans-serif;margin:16px;color-scheme:light dark"><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px">${text.replace(/[&<>"]/g, (c) => HTML_ESCAPES[c]!)}</pre><a id="roamgate-home" href="#">Back to the file of this tab</a><script nonce="${nonce}">parent.postMessage(${said},"*");document.getElementById("roamgate-home").addEventListener("click",function(e){e.preventDefault();parent.postMessage({roamgate:"rendered",type:"home"},"*")});</script></body></html>`;
+  return new Response(body, { status: 404, headers });
+}
+
 /** The helper's tag, right after `<head>` (or `<html>`, or first). */
 export function injectHelper(
   html: string,
@@ -857,10 +892,11 @@ export function createRenderedPages(args: {
         );
       // Which file was tried, and why, so the frame says it.
       const reason = error instanceof Error ? error.message.split("\n")[0] : "";
-      return plain(
-        404,
+      return notFound(
         `not found: ${found.source.root.replace(/\/+$/, "")}/${path}${reason ? `\n${reason}` : ""}`,
+        `${rawRest}${search}`,
         found.mode,
+        req,
       );
     }
     // A directory reads as an archive: its index instead.

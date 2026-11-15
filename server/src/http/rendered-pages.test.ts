@@ -258,6 +258,37 @@ describe("serving files", () => {
     );
   });
 
+  test("in the frame, a page saying so: it tells the preview and links back", async () => {
+    const { pages } = filePages();
+    const token = pages.mint({
+      connectionId: "c",
+      mode: "static",
+      source: { kind: "files", root: "/site/" },
+    });
+    const response = (await get(
+      pages,
+      `/rendered/${token}/out/%3Cb%3E.html?x=1`,
+      {
+        "sec-fetch-dest": "iframe",
+      },
+    ))!;
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toBe(
+      "text/html; charset=utf-8",
+    );
+    const csp = response.headers.get("content-security-policy")!;
+    const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+    const html = await response.text();
+    // Text, never markup.
+    expect(html).toContain("not found: /site/out/&lt;b&gt;.html\nno such file");
+    expect(html).toContain(`<script nonce="${nonce}">`);
+    expect(html).toContain(
+      '{"roamgate":"rendered","type":"missing","url":"out/%3Cb%3E.html?x=1"}',
+    );
+    expect(html).toContain('type:"home"');
+    expect(html).toContain("Back to the file of this tab");
+  });
+
   test("refuses escapes, writes, and sends directories to their index", async () => {
     const { pages, reads } = filePages();
     const token = pages.mint({

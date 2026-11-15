@@ -137,9 +137,13 @@ import { detectShortcutPlatform } from "../shortcutBindings";
 import {
   canStep,
   currentPlace,
+  dropFramePage,
+  dropRepeat,
+  framePageFor,
   historyKeyStep,
   keepScroll,
   type PreviewHistory,
+  type PreviewPlace,
   pushPlace,
   settleFrame,
   startHistory,
@@ -940,9 +944,40 @@ export function FilePreviewContent({
   };
   /** The tab a link or Back / Forward goes to, with its history there. */
   const going = useRef<{ to: string; history: PreviewHistory } | null>(null);
-  /** Where to scroll the file once drawn; the page a frame must show. */
+  /**
+   * Where to scroll the file once drawn; the page a frame must show, for
+   * the tab `key` (a page from the directory `root`), as kept.
+   */
   const pendingScroll = useRef<number | null>(null);
-  const pendingFrame = useRef<{ page: string; scroll: number } | null>(null);
+  const pendingFrame = useRef<{
+    key: string;
+    page: string;
+    scroll: number;
+    root?: string;
+  } | null>(null);
+  /** The tab whose frame went back to its own page, a kept one missing. */
+  const frameFellBack = useRef<string | null>(null);
+  /**
+   * The directory the frame's pages are kept as paths from: the file's,
+   * or the site URL's.
+   */
+  const frameRoot = siteUrl
+    ? siteUrl.replace(/[?#].*$/, "").replace(/[^/]*$/, "")
+    : absolutePath
+      ? absolutePath.slice(0, absolutePath.lastIndexOf("/") + 1)
+      : undefined;
+  /** The page `place` shows again in this tab's frame, kept from its own. */
+  const restoreFrame = (place: PreviewPlace, key: string) => {
+    const page = framePageFor(place, key);
+    return page === undefined
+      ? null
+      : {
+          key,
+          page,
+          scroll: place.scroll,
+          ...(place.frameRoot !== undefined ? { root: place.frameRoot } : {}),
+        };
+  };
   /** The frame's page's token and the frame's home under it. */
   const frameAt = useRef<{ prefix: string; home: string } | null>(null);
   const shownKey = useRef("");
@@ -958,6 +993,10 @@ export function FilePreviewContent({
         : undefined);
     const arrived =
       arriving && arriving.to === historyKey ? arriving.history : kept;
+    // Nothing the last tab still waited for is this one's.
+    pendingScroll.current = null;
+    pendingFrame.current = null;
+    frameFellBack.current = null;
     if (arrived) {
       histories.current.set(historyKey, arrived);
       const place = currentPlace(arrived);
@@ -966,9 +1005,7 @@ export function FilePreviewContent({
         arriving && arriving.to === historyKey
           ? place.scroll
           : place.scroll || null;
-      pendingFrame.current = place.framePage
-        ? { page: place.framePage, scroll: place.scroll }
-        : null;
+      pendingFrame.current = restoreFrame(place, historyKey);
     } else histories.current.set(historyKey, startHistory(historyKey));
   }
   /** The scroller of the file shown; a page's frame says its own. */
@@ -1026,9 +1063,10 @@ export function FilePreviewContent({
       return;
     }
     setHistory(historyKey, moved.history);
-    if (isPageFrame && place.framePage) {
-      pendingFrame.current = { page: place.framePage, scroll: place.scroll };
-      if (!framePage(place.framePage)) pendingFrame.current = null;
+    const again = isPageFrame ? restoreFrame(place, historyKey) : null;
+    if (again && (again.root ?? frameRoot) === frameRoot) {
+      pendingFrame.current = again;
+      if (!framePage(again.page)) pendingFrame.current = null;
       return;
     }
     pendingScroll.current = place.scroll;
@@ -1089,14 +1127,32 @@ export function FilePreviewContent({
       : null;
     // Kept from the frame's home: the same page under any of its tokens.
     const url = homePage(shown);
+    // Its own page again, a kept one missing: the place is that page now.
+    if (frameFellBack.current === historyKey) {
+      frameFellBack.current = null;
+      pendingFrame.current = null;
+      setHistory(historyKey, dropRepeat(settleFrame(live(), url, frameRoot)));
+      return;
+    }
+    // Only this tab's, and from this frame's directory: a page kept for
+    // another tab or another directory would be a page that is not there.
+    const ours = (want: { key: string; root?: string } | null) =>
+      !!want &&
+      want.key === historyKey &&
+      (want.root === undefined ||
+        frameRoot === undefined ||
+        want.root === frameRoot);
+    if (!ours(pendingFrame.current)) pendingFrame.current = null;
     const pending = pendingFrame.current;
-    const wanted =
-      pending?.page ?? (first ? currentPlace(live()).framePage : undefined);
+    const kept = first ? restoreFrame(currentPlace(live()), historyKey) : null;
+    const wanted = pending?.page ?? (ours(kept) ? kept?.page : undefined);
     if (wanted !== undefined && wanted !== url) {
       if (first || pending) {
         pendingFrame.current = {
+          key: historyKey,
           page: wanted,
           scroll: pending?.scroll ?? currentPlace(live()).scroll,
+          ...(frameRoot !== undefined ? { root: frameRoot } : {}),
         };
         if (framePage(wanted)) return;
       }
@@ -1111,16 +1167,34 @@ export function FilePreviewContent({
           "*",
         );
       if (first || pending) {
-        setHistory(historyKey, settleFrame(live(), url));
+        setHistory(historyKey, settleFrame(live(), url, frameRoot));
         return;
       }
     }
     setHistory(
       historyKey,
       first
-        ? settleFrame(live(), url)
-        : pushPlace(live(), { path: historyKey, framePage: url }),
+        ? settleFrame(live(), url, frameRoot)
+        : pushPlace(live(), {
+            path: historyKey,
+            framePage: url,
+            ...(frameRoot !== undefined ? { frameRoot } : {}),
+          }),
     );
+  };
+  /**
+   * The frame shows Roamgate's not-found page: when it was a page kept
+   * for this tab, shown again, the tab's own page instead, the place
+   * dropped. A link of the page's own leaves it there, with its link back.
+   */
+  const onFrameMissing = () => {
+    const pending = pendingFrame.current;
+    const frame = frameRef.current;
+    pendingFrame.current = null;
+    if (!pending || pending.key !== historyKey || !frame) return;
+    frameFellBack.current = historyKey;
+    setHistory(historyKey, dropFramePage(live()));
+    frame.contentWindow?.location.replace(frame.src);
   };
   /** The page's Back / Forward keys, scroll and own navigation. */
   const frameHistory = (
@@ -1147,6 +1221,7 @@ export function FilePreviewContent({
         pushPlace(live(), {
           path: historyKey,
           framePage: homePage(message.url),
+          ...(frameRoot !== undefined ? { frameRoot } : {}),
         }),
       );
   };
@@ -1159,6 +1234,9 @@ export function FilePreviewContent({
       onFramePageRef.current(url, first, root),
     [],
   );
+  const onFrameMissingRef = useRef(onFrameMissing);
+  onFrameMissingRef.current = onFrameMissing;
+  const reportFrameMissing = useCallback(() => onFrameMissingRef.current(), []);
   const mac = detectShortcutPlatform() === "mac";
   const historyButtons = (
     <>
@@ -1188,7 +1266,7 @@ export function FilePreviewContent({
     (
       message: Exclude<
         RenderedFrameMessage,
-        { type: "ready" | "size" | "stray" | "storage" }
+        { type: "ready" | "size" | "stray" | "storage" | "missing" | "home" }
       >,
       box: DOMRect,
       frame: HTMLIFrameElement,
@@ -2266,6 +2344,7 @@ export function FilePreviewContent({
                 pointMode={pointMode}
                 onMessage={frameMessage}
                 onPage={reportFramePage}
+                onMissing={reportFrameMissing}
                 frameRef={frameRef}
                 bannerIn={zen ? zenBanner : null}
               />
@@ -2364,6 +2443,7 @@ export function FilePreviewContent({
                 pointMode={pointMode}
                 onMessage={frameMessage}
                 onPage={reportFramePage}
+                onMissing={reportFrameMissing}
                 frameRef={frameRef}
                 bannerIn={zen ? zenBanner : null}
               />
