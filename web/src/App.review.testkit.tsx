@@ -132,6 +132,8 @@ export type AppWithReviews = {
   notices(): string[];
   /** The repositories `review.repos` finds in the workspace. */
   setRepos(roots: string[]): void;
+  /** The paths a Changes scope holds ("working", "branch-main"). */
+  setChanged(mode: string, paths: string[]): void;
   /** Calls App made to `openWorkspaceReview`. */
   openCalls(): number;
   /** Panes App was asked to focus. */
@@ -171,6 +173,8 @@ type Page = {
   openCalls: number;
   /** What `review.repos` finds in the workspace (one repository: none). */
   repos: { root: string }[];
+  /** The paths each Changes scope holds (git.diff_summary's mode). */
+  changed: Record<string, string[]>;
   highlighterPreloads: number;
   focusedPanes: string[];
   mountCount: Map<string, number>;
@@ -364,7 +368,18 @@ async function mockApp(before?: () => Promise<void> | void) {
     connectionId: "local",
     generation: 1,
     isCurrent: () => true,
-    call: async () => ({}),
+    // What Changes' scopes hold (git.diff_summary), per mode.
+    call: async (method: string, params?: { mode?: string }) =>
+      method === "git.diff_summary"
+        ? {
+            workspace_id: "w1",
+            root: "/repo/r1",
+            entries: (now().changed[params?.mode ?? "working"] ?? []).map(
+              (path) => ({ path, kind: "unstaged", status: "M" }),
+            ),
+            counts: {},
+          }
+        : {},
   };
   mock.module("./useConnectionClient", () => ({
     useConnectionClient: () => client,
@@ -441,6 +456,7 @@ export async function mountAppWithReviews(options: {
     reviewState: { sessions, openRequest: null },
     nextOpened: null,
     repos: [],
+    changed: { working: ["a.ts"], "branch-main": ["a.ts"] },
     openCalls: 0,
     highlighterPreloads: 0,
     focusedPanes: [],
@@ -544,6 +560,9 @@ export async function mountAppWithReviews(options: {
       current.nextOpened = id;
     },
     notices: () => [...notices],
+    setChanged(mode, paths) {
+      current.changed[mode] = paths;
+    },
     setRepos(roots) {
       current.repos = roots.map((root) => ({ root }));
     },

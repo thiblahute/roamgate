@@ -3904,6 +3904,16 @@ export default function App() {
                 (pane) => pane.workspace_id === workspace.workspace_id,
               ),
             sessions: reviewState.sessions.values(),
+            changed: (mode) =>
+              (
+                connectionClient.call("git.diff_summary", {
+                  workspace_id: workspace.workspace_id,
+                  mode,
+                }) as Promise<{ entries?: unknown[] }>
+              ).then(
+                (summary) => (summary.entries?.length ?? 0) > 0,
+                () => null,
+              ),
           });
           if (choice.kind === "classic") {
             preloadReviewCode();
@@ -3989,7 +3999,7 @@ export default function App() {
     [
       closeInspector,
       commitInspectorState,
-      connectionClient.connectionId,
+      connectionClient,
       mobile,
       openDiffViewer,
       pinnedSessionId,
