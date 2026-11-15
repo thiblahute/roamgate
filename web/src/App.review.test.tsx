@@ -206,6 +206,75 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("on reviewin=changes, Option+R opens Changes expanded and focused, and goes back to what the inspector showed", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      // Inspector closed: the toggle opens Changes, expanded the first time.
+      await app.toggleReview();
+      expect(app.openCalls()).toBe(0);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      expect(app.inspector()?.scope.workspaceId).toBe("w1");
+      // Again: closed, as it was.
+      await app.toggleReview();
+      expect(app.inspector()).toMatchObject({ open: false, expanded: false });
+      // From Files, docked: Changes at its own size, then back to Files.
+      await app.toggleReview();
+      await app.run(() => app.inspectorView("files"));
+      expect(app.inspector()).toMatchObject({ open: true, view: "files" });
+      expect(app.inspector()?.expanded).toBe(false);
+      await app.toggleReview();
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      await app.toggleReview();
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "files",
+        expanded: false,
+      });
+      // The tab bar's Review does the same.
+      const button = app.tabBarReview();
+      expect(button).not.toBeNull();
+      await app.click(button!);
+      expect(app.inspector()).toMatchObject({ view: "changes" });
+      await app.click(button!);
+      expect(app.inspector()).toMatchObject({ view: "files" });
+      expect(app.openCalls()).toBe(0);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=classic, Option+R leaves the inspector alone", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem("reviewPrefs", JSON.stringify({ vim: true }));
+      app.setNextOpened("r1");
+      await app.toggleReview();
+      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
+      expect(app.inspector()?.open ?? false).toBe(false);
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("the review's code loads 3 s after the page shows, and the last 6 reviews shown stay mounted", async () => {
     const reviews = Array.from({ length: 8 }, (_, index) =>
       reviewOf(`r${index + 1}`, "w1"),

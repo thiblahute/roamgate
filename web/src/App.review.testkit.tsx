@@ -97,6 +97,7 @@ type HostProps = {
 
 type InspectorProps = {
   fileSelection?: unknown;
+  onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
   state: {
     open: boolean;
     view: string;
@@ -135,6 +136,8 @@ export type AppWithReviews = {
   inspector(): InspectorProps["state"] | null;
   /** The file the inspector previews, as App last gave it. */
   inspectorFile(): unknown;
+  /** Switches the shown inspector's view, as its tab strip does. */
+  inspectorView(view: Parameters<InspectorProps["onViewChange"]>[0]): void;
   /** The tab bar's Review button, or null. */
   tabBarReview(): HTMLButtonElement | null;
   click(button: HTMLElement): Promise<void>;
@@ -508,6 +511,10 @@ export async function mountAppWithReviews(options: {
     highlighterPreloads: () => current.highlighterPreloads,
     inspector: () => current.inspectorProps?.state ?? null,
     inspectorFile: () => current.inspectorProps?.fileSelection ?? null,
+    inspectorView(view) {
+      if (!current.inspectorProps) throw new Error("no inspector shown");
+      current.inspectorProps.onViewChange(view);
+    },
     tabBarReview() {
       return (
         [

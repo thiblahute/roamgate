@@ -115,6 +115,7 @@ import {
   overlayPaneInput,
 } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
+import { reviewSurfaceChoice } from "./reviewPrefs";
 import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
@@ -2979,7 +2980,14 @@ export default function App() {
     },
     [reviewState.sessions, setReviewSessionId],
   );
+  // Set below, once the inspector's callbacks exist (D6).
+  const toggleReviewInChangesRef = useRef<() => void>(() => {});
   const toggleReview = useCallback(async () => {
+    // On "in Changes" the review is the inspector's Changes view.
+    if (reviewSurfaceChoice() === "changes" && !reviewSessionId) {
+      toggleReviewInChangesRef.current();
+      return;
+    }
     if (reviewSessionId) {
       setReviewSessionId(null);
       return;
@@ -3810,6 +3818,75 @@ export default function App() {
     },
     [commitInspectorState],
   );
+  // The review toggle on "in Changes" (D6, D4): it opens the focused
+  // workspace's Changes, focused, expanded the first time for that checkout
+  // and then as Changes was last left there; pressed on that Changes, it
+  // goes back to what the inspector showed before (closed, or another view
+  // at its own size).
+  const reviewToggleReturnRef = useRef<{
+    owner: string;
+    open: boolean;
+    view: InspectorView;
+    expanded: boolean;
+  } | null>(null);
+  // Changes' own expanded flag and the other views' one, per checkout.
+  const changesExpandedRef = useRef(new Map<string, boolean>());
+  const otherExpandedRef = useRef(new Map<string, boolean>());
+  const toggleReviewInChanges = useCallback(() => {
+    const workspace = store.get().workspaces.find((each) => each.focused);
+    if (!workspace) {
+      openDiffViewer();
+      return;
+    }
+    const scope = resourceScopeForWorkspace(
+      connectionClient.connectionId,
+      workspace,
+    );
+    const owner = resourceOwnerKey(scope);
+    const current = inspectorStateRef.current;
+    const sameOwner = !!current && sameResourceOwner(current.scope, scope);
+    if (current?.open && sameOwner && current.view === "changes") {
+      changesExpandedRef.current.set(owner, current.expanded);
+      const back = reviewToggleReturnRef.current;
+      reviewToggleReturnRef.current = null;
+      const returning = back?.owner === owner ? back : null;
+      if (returning?.open) {
+        const next = {
+          ...current,
+          view: returning.view,
+          expanded: returning.expanded,
+        };
+        commitInspectorState(next);
+        writeInspectorPreferences(roamgateLocalStorage, next);
+        if (mobile) setMobileView(returning.view);
+        return;
+      }
+      if (returning && returning.expanded !== current.expanded)
+        setInspectorExpanded(returning.expanded);
+      closeInspector();
+      return;
+    }
+    if (sameOwner && current && (!current.open || current.view !== "changes"))
+      otherExpandedRef.current.set(owner, current.expanded);
+    reviewToggleReturnRef.current = {
+      owner,
+      open: !!current?.open && sameOwner,
+      view: sameOwner && current ? current.view : "changes",
+      expanded: sameOwner && current ? current.expanded : false,
+    };
+    openDiffViewer(workspace.workspace_id);
+    const expanded = changesExpandedRef.current.get(owner) ?? true;
+    if (inspectorStateRef.current?.expanded !== expanded)
+      setInspectorExpanded(expanded);
+  }, [
+    closeInspector,
+    commitInspectorState,
+    connectionClient.connectionId,
+    mobile,
+    openDiffViewer,
+    setInspectorExpanded,
+  ]);
+  toggleReviewInChangesRef.current = toggleReviewInChanges;
   const keepInspectorForWorkspace = useCallback(
     (workspaceId: string, originPane?: Pane) => {
       const current = inspectorStateRef.current;
@@ -5557,10 +5634,25 @@ export default function App() {
     if (view === "history" && !paneHasAgentHistory(inspectorHistoryPane)) {
       return;
     }
+    // On "in Changes", Changes keeps its own size (D4).
+    let expanded = current.expanded;
+    if (
+      reviewSurfaceChoice() === "changes" &&
+      (view === "changes") !== (current.view === "changes")
+    ) {
+      const owner = resourceOwnerKey(current.scope);
+      const [leaving, entering] =
+        view === "changes"
+          ? [otherExpandedRef, changesExpandedRef]
+          : [changesExpandedRef, otherExpandedRef];
+      leaving.current.set(owner, current.expanded);
+      expanded = entering.current.get(owner) ?? current.expanded;
+    }
     const next = {
       ...current,
       open: true,
       view,
+      expanded,
       originPaneId:
         view === "history"
           ? inspectorHistoryPane?.pane_id
