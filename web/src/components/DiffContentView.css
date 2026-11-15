@@ -484,3 +484,66 @@
   font-weight: 600;
   color: var(--muted);
 }
+
+/* The review in Changes (its Vim cursor on): slim chrome, the diff first. */
+.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-head {
+  min-height: 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 2px 8px;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-head
+  :is(button, input, select) {
+  min-height: 22px;
+  height: 22px;
+  padding-block: 0;
+  font-size: 11px;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-title
+  strong {
+  font-size: 12px;
+}
+
+.diff-content-view[data-review-cursor] .diff-file-section-head {
+  min-height: 0;
+  padding: 1px 8px;
+}
+
+.diff-content-view[data-review-cursor] .diff-file-collapse {
+  width: 20px;
+  height: 20px;
+}
+
+.diff-content-view[data-review-cursor] .diff-file-open {
+  min-height: 20px;
+  padding: 0 4px;
+}
+
+.diff-content-view[data-review-cursor] .diff-file-open span {
+  display: none;
+}
+
+/* What is shown stays readable: the find box gives way first. */
+.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-title {
+  flex: 1 1 14em;
+  min-width: 10em;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-actions {
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-search-controls {
+  flex: 0 1 10em;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-search {
+  flex-basis: 7em;
+  min-width: 4em;
+  height: 22px;
+}

@@ -388,6 +388,13 @@
   background: var(--viewer-panel-bg);
 }
 
+/* Review only: the toolbar down to the line saying what is shown. */
+.inspector-changes-resource.is-review-only
+  .diff-content-head
+  > :not(.diff-content-title) {
+  display: none;
+}
+
 body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   visibility: hidden;
 }

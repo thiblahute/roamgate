@@ -359,3 +359,26 @@
     transition: none;
   }
 }
+
+/* The review in Changes: one slim line. */
+.pull-request-card.is-compact .pull-request-card-summary {
+  min-height: 0;
+  gap: 6px;
+  padding: 2px 6px 2px 10px;
+}
+
+.pull-request-card.is-compact .pull-request-card-icon {
+  flex-basis: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.pull-request-card.is-compact .pull-request-card-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
