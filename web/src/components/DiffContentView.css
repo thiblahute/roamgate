@@ -547,3 +547,31 @@
   min-width: 4em;
   height: 22px;
 }
+
+/* The review in Changes: reviewed files folded to their header, and the
+   count of files reviewed beside the comments chip. */
+.diff-file-section-meta.diff-file-reviewed {
+  color: var(--success-text);
+}
+
+.diff-file-show-reviewed {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: var(--viewer-content-bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diff-file-show-reviewed:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+.diff-reviewed-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}

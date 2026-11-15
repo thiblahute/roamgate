@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** a.ts: two chunks; b.ts and c.ts: one each. */
   const files = () => [
@@ -40,7 +40,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   const texts = (review: { lines(path?: string): { text: string }[] }) =>
     review.lines().map((line) => line.text);
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("reviewed"))
     describe(name, () => {
       test("v marks the file under the cursor reviewed, every chunk folded with it; v again unmarks it", async () => {
         const review = await mount({ files: files() });

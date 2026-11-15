@@ -27,6 +27,8 @@ export type SurfaceFeature =
   | "editor"
   /** The window's width picks side by side (classic; D4 for Changes). */
   | "window-width"
+  /** Reviewed chunks and files: r, v, folds, the counts (phase 5). */
+  | "reviewed"
   /** A file's header folds it; large files start folded (phase 5). */
   | "file-folds"
   /** Open on a file's header, to the Files preview (phase 8). */
@@ -43,6 +45,7 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "search",
   "sides",
   "mouse",
+  "reviewed",
 ]);
 
 export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [

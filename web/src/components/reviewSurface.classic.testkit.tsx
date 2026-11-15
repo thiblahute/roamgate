@@ -23,7 +23,7 @@ import {
 type Call = { method: string; params: Record<string, unknown> };
 
 /** What the in-memory bridge answers, for the review mounted now. */
-const backend = {
+export const backend = {
   files: [] as SurfaceOptions["files"],
   texts: {} as Record<string, string>,
   calls: [] as Call[],
