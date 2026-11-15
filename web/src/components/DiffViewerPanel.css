@@ -732,8 +732,15 @@
 }
 
 .diff-tree-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   opacity: 0.85;
+}
+
+.diff-tree-group-head .diff-tree-name {
+  flex: 0 1 auto;
 }
 
 .diff-tree-count {
