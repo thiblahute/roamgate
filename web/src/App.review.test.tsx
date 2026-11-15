@@ -261,6 +261,35 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("on reviewin=changes, Files' Review opens Changes at that file and line, not the classic pane", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      await app.toggleReview();
+      await app.run(() => app.inspectorView("files"));
+      await app.run(() => app.inspectorShowInReview("/repo/r1/src/a.ts", 12));
+      expect(app.openCalls()).toBe(0);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({
+        path: "/repo/r1/src/a.ts",
+        line: 12,
+      });
+      // Pressed again on Changes, Review goes to the new line, Changes stays.
+      await app.run(() => app.inspectorShowInReview("/repo/r1/src/a.ts", 3));
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ line: 3 });
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=classic, Option+R leaves the inspector alone", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],

@@ -562,6 +562,28 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
+    test("Files' Review puts the cursor on that file's line, the nearest one shown, centered", async () => {
+      const b = entry("b.ts", "unstaged", "M");
+      const diff = await mountChangesDiff({
+        entries: [a, b],
+        entry: b,
+        patches: {
+          ...patches,
+          "unstaged:b.ts":
+            "diff --git a/b.ts b/b.ts\n--- a/b.ts\n+++ b/b.ts\n@@ -8,4 +8,4 @@\n eight\n-nine\n+neuf\n ten\n eleven\n",
+        },
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        cursorGoTo: { path: "/repo/b.ts", line: 10, at: Date.now() },
+      });
+      try {
+        for (let i = 0; i < 5; i++) await diff.settle();
+        expect(cursorAt()).toBe("unstaged:b.ts:context:10");
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("a focus the cursor's key did not ask for comes back to the diff; a press elsewhere keeps it where it went", async () => {
       const diff = await mountChangesDiff({
         entries: [a],
