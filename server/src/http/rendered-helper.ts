@@ -457,10 +457,13 @@ function renderedHelper(
   // A link or card must not get in the way of commenting: text inside it
   // selects by dragging (a link is not dragged away), and the click that
   // ends such a selection does not follow the link. Point mode shows its
-  // crosshair over everything, the page's own pointer cursors included.
+  // crosshair over everything, the page's own pointer cursors included. An
+  // empty link stretched over a card as its click target must not hide the
+  // text under it from selection and commenting, so it ignores the mouse.
   const style = d.createElement("style");
   style.textContent =
     "a, a * { -webkit-user-drag: none; user-select: text; }" +
+    "a:empty { pointer-events: none; }" +
     "html[data-roamgate-point], html[data-roamgate-point] * { cursor: crosshair !important; }";
   (d.head ?? d.documentElement).appendChild(style);
   d.addEventListener(

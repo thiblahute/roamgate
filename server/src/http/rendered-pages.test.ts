@@ -298,6 +298,7 @@ describe("the helper and links", () => {
     const source = injectHelper("<p>x</p>", "n", "/p/");
     expect(source).toContain("-webkit-user-drag: none");
     expect(source).toContain("user-select: text");
+    expect(source).toContain("a:empty { pointer-events: none; }");
     expect(source).toContain("data-roamgate-point");
     expect(source).toContain("cursor: crosshair !important");
     expect(source).toContain("selection.isCollapsed");
