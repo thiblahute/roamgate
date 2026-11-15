@@ -337,22 +337,47 @@
   display: none;
 }
 
+/* Review only's one bar, at the top in the preview's flow so the file starts
+   below it: the page's banner at its start, then its controls, then Zen's
+   way out when the app is in Zen (ZenDock). */
 .file-preview-zen-hint {
-  position: fixed;
-  top: 8px;
-  right: 12px;
-  z-index: 1150;
-  /* On a phone it wraps rather than pushing Show all off the left edge. */
-  max-width: calc(100vw - 24px);
+  order: -1;
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  padding: 3px 6px;
-  border-radius: 8px;
+  min-width: 0;
+  padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 12px;
+  border-bottom: 1px solid var(--viewer-border);
   background: var(--viewer-header-bg);
-  border: 1px solid var(--viewer-border);
+  white-space: nowrap;
+}
+
+.file-preview-zen-hint > * {
+  flex: none;
+}
+
+/* The banner's place: it takes the room left, so the controls stay at the
+   end, and is cut short with the whole of it in its tooltip. */
+.file-preview-zen-hint > .file-preview-zen-banner-slot {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+}
+
+.file-preview-zen-banner {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+/* On a phone it wraps rather than pushing Show all off the left edge. */
+:where(html[data-layout="mobile"]) .file-preview-zen-hint {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .file-preview-changed {

@@ -14,6 +14,7 @@ import {
   type RenderedStorageWrite,
   strayTarget,
 } from "../../../shared/renderedPage";
+import { createPortal } from "react-dom";
 import { reviewCall } from "../review";
 
 /*
@@ -34,6 +35,7 @@ export function RenderedFrame({
   autoHeight = false,
   frameRef: givenRef,
   className = "file-preview-html",
+  bannerIn = null,
 }: {
   connectionId: string;
   /** Absolute path on the host, or the site's URL. */
@@ -58,6 +60,11 @@ export function RenderedFrame({
   ) => void;
   frameRef?: RefObject<HTMLIFrameElement | null>;
   className?: string;
+  /**
+   * Where the banner goes instead of its own row above the page: the
+   * preview's Review only bar, one line with its controls.
+   */
+  bannerIn?: HTMLElement | null;
 }) {
   const ownRef = useRef<HTMLIFrameElement | null>(null);
   const frameRef = givenRef ?? ownRef;
@@ -196,14 +203,23 @@ export function RenderedFrame({
     />
   );
   if (svg !== undefined) return frame;
+  const banner = `${
+    page.mode === "site"
+      ? `Scripts on${page.site ? `: ${page.site} is in Sites we work on` : " for this page"}. Sandboxed, without access to Roamgate.`
+      : "Static preview: scripts are blocked."
+  }${shown ? ` (${shown})` : ""}`;
   return (
     <>
-      <div className="file-preview-banner">
-        {page.mode === "site"
-          ? `Scripts on${page.site ? `: ${page.site} is in Sites we work on` : " for this page"}. Sandboxed, without access to Roamgate.`
-          : "Static preview: scripts are blocked."}
-        {shown ? ` (${shown})` : ""}
-      </div>
+      {bannerIn ? (
+        createPortal(
+          <span className="file-preview-zen-banner" title={banner}>
+            {banner}
+          </span>,
+          bannerIn,
+        )
+      ) : (
+        <div className="file-preview-banner">{banner}</div>
+      )}
       {frame}
     </>
   );
