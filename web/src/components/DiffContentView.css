@@ -470,3 +470,17 @@
   flex: 1 1 100%;
   max-width: 640px;
 }
+
+.diff-review-general {
+  display: grid;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-review-general-part h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}

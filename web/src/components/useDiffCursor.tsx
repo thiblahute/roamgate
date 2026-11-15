@@ -96,6 +96,9 @@ export const DIFF_REVIEW_KEYS: readonly ShortcutRow[] = [
   ["n N", "with no search going: next / previous thread"],
   ["gH :unresolved", "show only the unresolved threads, or all again"],
   ["g;", "the comment written last"],
+  ["gl", "the last message of the thread on the line"],
+  ["j k", "into the messages (and the parts) of the comments under a line"],
+  ["u", "bring back the comment dd deleted"],
   ["za", "fold / unfold the thread on the line"],
   ["r", "resolve or reopen the thread on the line"],
   ["e", "edit your last comment on the line"],
@@ -188,6 +191,7 @@ export function useDiffCursor({
   selectedKey,
   onComment,
   threadKey,
+  threadMove,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -219,6 +223,12 @@ export function useDiffCursor({
    * file's comments, given the line the cursor is on; true when taken.
    */
   threadKey?: (key: string, count: number | null) => boolean;
+  /**
+   * j / k step into the messages drawn under a line (and the parts of a
+   * message) before going to the next line: how many lines are left to
+   * move once it stepped, or null when it took no step.
+   */
+  threadMove?: (direction: 1 | -1, count: number) => number | null;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -615,13 +625,19 @@ export function useDiffCursor({
     const side = split ? splitSide.current : null;
     switch (key) {
       case "j":
-      case "ArrowDown":
-        jumpTo(stepRows(model, at, n, side), undefined, "nearest");
+      case "ArrowDown": {
+        const rest = threadMove ? threadMove(1, n) : null;
+        if (rest === 0) return true;
+        jumpTo(stepRows(model, at, rest ?? n, side), undefined, "nearest");
         return true;
+      }
       case "k":
-      case "ArrowUp":
-        jumpTo(stepRows(model, at, -n, side), undefined, "nearest");
+      case "ArrowUp": {
+        const rest = threadMove ? threadMove(-1, n) : null;
+        if (rest === 0) return true;
+        jumpTo(stepRows(model, at, -(rest ?? n), side), undefined, "nearest");
         return true;
+      }
       case "J":
         jumpTo(stepRows(model, at, 10 * n, side));
         return true;

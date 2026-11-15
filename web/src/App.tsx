@@ -20,6 +20,7 @@ import {
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 import { useReviewAnnotationDraft } from "./useReviewAnnotationDraft";
 import { useHeldFeedback } from "./useHeldFeedback";
+import { pendingFeedback } from "./feedbackPending";
 import {
   feedbackThreadsTrailer,
   migrateFeedback,
@@ -3295,6 +3296,18 @@ export default function App() {
       const connectionId = connectionClient.connectionId;
       const call = <T,>(method: string, params: Record<string, unknown>) =>
         reviewCall<T>(connectionId, method, params);
+      // A comment drawn in a view is "Sending..." under its line until the
+      // server has it (Retry and Discard once it refused).
+      if (!terminal)
+        pendingFeedback.start(note, {
+          retry: () => void addFeedback(scope, note, capture, preferredPaneId),
+          discard: () => {
+            updateAnnotationDraft(scope, (current) =>
+              current.filter((item) => item.id !== note.id),
+            );
+            pendingFeedback.done(note.id);
+          },
+        });
       try {
         const place = await notePlace(note, base);
         const written = await writeFeedback(
@@ -3313,8 +3326,18 @@ export default function App() {
           setAnnotationDraftScope(scope, true, preferredPaneId);
           setFocusedAnnotationId(written.threadId);
         }
+        // Written after a refusal (Retry): no longer kept in this browser.
+        if (pendingFeedback.get(note.id)?.kept)
+          updateAnnotationDraft(scope, (current) =>
+            current.filter((item) => item.id !== note.id),
+          );
+        pendingFeedback.done(note.id);
         return written.held;
       } catch (error) {
+        pendingFeedback.fail(
+          note.id,
+          error instanceof Error ? error.message : String(error),
+        );
         // Refused: saved on the next load, not tried again in this one.
         migratedScopes.current.add(annotationDraftStorageKey(scope));
         keepLocally();

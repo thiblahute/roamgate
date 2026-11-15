@@ -70,6 +70,9 @@ import {
 import {
   FileThread,
   type FileThreadView,
+  fileStopKey,
+  fileStops,
+  nestThreads,
   reviewsUndelivered,
   threadWrites,
   ThreadsList,
@@ -94,6 +97,7 @@ import { useChangesAgent } from "../changesReview";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
 import { stepNotice, stepUnresolved } from "../unresolvedThreads";
+import { usePendingFeedback } from "../feedbackPending";
 import { useReviewState } from "../review";
 import { useInspectorCommands } from "../useInspectorCommands";
 import type { InspectorCommand } from "../inspectorCommands";
@@ -400,7 +404,11 @@ type DiffThreads = {
   api: ReturnType<typeof threadWrites>;
   view: FileThreadView;
   undelivered: Undelivered;
+  /** The threads on parts of a message, by that message (drawn in it). */
+  nested: ReadonlyMap<string, ReviewThread[]>;
 };
+
+const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
 
@@ -459,6 +467,7 @@ function DiffAnnotation({
 }) {
   const threads = useContext(DiffThreadsContext);
   const drawing = useContext(DiffDrawingContext);
+  const pending = usePendingFeedback();
   if (annotation.id === COMPOSER_ID) return <>{drawing?.composer}</>;
   const thread = threads?.byId.get(annotation.id);
   if (
@@ -475,7 +484,46 @@ function DiffAnnotation({
           api={threads.api}
           view={threads.view}
           undelivered={threads.undelivered}
+          nested={threads.nested}
         />
+      </div>
+    );
+  const waiting = drawing ? pending.get(annotation.id) : undefined;
+  if (waiting)
+    return (
+      <div
+        className="chat-review diff-review-thread diff-review-pending"
+        data-pending-id={annotation.id}
+      >
+        <div className="chat-thread is-draft">
+          <div className="rc-text">{annotation.comment}</div>
+          {waiting.error === undefined ? (
+            <div className="rc-bar" role="status">
+              <span className="rc-kind">Sending...</span>
+            </div>
+          ) : (
+            <div className="rc-bar" role="alert">
+              <span className="rc-kind rc-failed">
+                Not saved: {waiting.error}
+              </span>
+              <span className="spacer" />
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={waiting.retry}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={waiting.discard}
+              >
+                Discard
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   return (
@@ -1100,13 +1148,20 @@ export function DiffContentView({
       byId: new Map(threads.map((each) => [each.id, each])),
       api: threadWrites(connectionClient.connectionId),
       view: threadView,
+      nested: reviewEditor ? nestThreads(threads).nested : NO_NESTED,
       undelivered: reviewsUndelivered(
         [...new Set(threads.map((each) => each.sessionId))].map((id) =>
           reviewSessions.get(id),
         ),
       ),
     };
-  }, [connectionClient.connectionId, reviewSessions, threadView, threads]);
+  }, [
+    connectionClient.connectionId,
+    reviewEditor,
+    reviewSessions,
+    threadView,
+    threads,
+  ]);
   /** A thread of the Comments panel, shown under its line. */
   const goToThread = useCallback(
     (thread: ReviewThread) => {
@@ -1364,7 +1419,8 @@ export function DiffContentView({
       mode: "comment" | "suggest" | "new",
     ) => boolean;
     threadKey: (key: string, count: number | null) => boolean;
-  }>({ comment: () => false, threadKey: () => false });
+    move: (direction: 1 | -1, count: number) => number | null;
+  }>({ comment: () => false, threadKey: () => false, move: () => null });
   const cursor = useDiffCursor({
     enabled: reviewCursor && !embedded,
     sections: cursorSections,
@@ -1391,6 +1447,8 @@ export function DiffContentView({
           ) => reviewHandlers.current.comment(key, range, mode),
           threadKey: (key: string, count: number | null) =>
             reviewHandlers.current.threadKey(key, count),
+          threadMove: (direction: 1 | -1, count: number) =>
+            reviewHandlers.current.move(direction, count),
         }
       : {}),
   });
@@ -1432,24 +1490,47 @@ export function DiffContentView({
       })),
     [renderedSections],
   );
-  const diffNotes = useMemo(
+  const pendingNotes = usePendingFeedback();
+  const diffNotes = useMemo(() => {
+    const notes = annotations.filter(
+      (note): note is DiffReviewAnnotation => note.source === "diff",
+    );
+    if (!reviewEditor) return notes;
+    // A comment on its way to the server is drawn too: Sending..., or why
+    // it did not get there.
+    const known = new Set(notes.map((note) => note.id));
+    for (const { note } of pendingNotes.values())
+      if (note.source === "diff" && !known.has(note.id)) notes.push(note);
+    return notes;
+  }, [annotations, pendingNotes, reviewEditor]);
+  /** The threads drawn inside the message they comment on a part of. */
+  const partThreadIds = useMemo(
     () =>
-      annotations.filter(
-        (note): note is DiffReviewAnnotation => note.source === "diff",
+      new Set(
+        [...(diffThreads?.nested.values() ?? [])]
+          .flat()
+          .map((thread) => thread.id),
       ),
-    [annotations],
+    [diffThreads],
   );
   const placement = useMemo(
     () =>
       reviewEditor
         ? placeDiffThreads(
-            diffNotes,
+            diffNotes.filter((note) => !partThreadIds.has(note.id)),
             diffThreads?.byId ?? new Map(),
             drawingSections,
             cursor.model.rows,
           )
         : null,
-    [cursor.model.rows, diffNotes, diffThreads, drawingSections, reviewEditor],
+    [
+      cursor.model.rows,
+      diffNotes,
+      diffThreads,
+      drawingSections,
+      partThreadIds,
+      reviewEditor,
+    ],
   );
   const readingOrder = useMemo<PlacedThread[]>(
     () =>
@@ -1498,6 +1579,8 @@ export function DiffContentView({
     return grouped;
   }, [annotationsByPath, diffNotes, diffThreads, pendingAnnotation, placement]);
 
+  /** The thread dd deleted last: what u brings back. */
+  const lastDeleted = useRef<ReviewThread | null>(null);
   const spotAtCursor = () => {
     const where = cursorHandle.current.where();
     return where
@@ -1511,13 +1594,142 @@ export function DiffContentView({
   };
   /** Shows a thread to be read: unfolded, its line in view. */
   const showThread = (spot: PlacedThread) => {
-    if (threadView.folded(spot.thread)) threadView.unfold([spot.thread.id]);
+    const folded = threadView.folded(spot.thread);
+    if (folded) threadView.unfold([spot.thread.id]);
     cursorHandle.current.goTo(spot.key, spot.line, spot.side);
+    // j / k are on its first message, as n / N land in the review.
+    const first = spot.thread.comments[0];
+    if (first) threadView.setCursor(`m:${first.id}`);
+    requestAnimationFrame(() =>
+      sectionRef.current
+        ?.querySelector(`[data-chat-stop="m:${CSS.escape(first?.id ?? "")}"]`)
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+  };
+
+  // ---- Message stops: j / k into the messages and their parts ------------
+
+  /** The outermost thread card a stop is drawn in. */
+  const topThreadOf = (stop: HTMLElement): string | undefined => {
+    let id: string | undefined;
+    for (
+      let card = stop.closest<HTMLElement>(".chat-thread[data-thread-id]");
+      card;
+      card =
+        card.parentElement?.closest<HTMLElement>(
+          ".chat-thread[data-thread-id]",
+        ) ?? null
+    )
+      id = card.dataset.threadId;
+    return id;
+  };
+  /** Every message (and part of one) drawn under the cursor's line. */
+  const stopsHere = (): HTMLElement[] => {
+    const root = sectionRef.current;
+    const spot = spotAtCursor();
+    if (!root || !spot || hideComments) return [];
+    const ids = new Set(
+      threadsAtCursor(readingOrder, spot)
+        .filter((each) => !(threadView.openOnly && each.thread.resolved))
+        .map((each) => each.thread.id),
+    );
+    return fileStops(root).filter((stop) => {
+      const id = topThreadOf(stop);
+      return !!id && ids.has(id);
+    });
+  };
+  const stopOfKey = (key: string | null): HTMLElement | undefined => {
+    const root = sectionRef.current;
+    return key && root
+      ? fileStops(root).find((stop) => fileStopKey(stop) === key)
+      : undefined;
+  };
+  /** The thread j / k are on: the nearest card around the stop. */
+  const focusedThread = (): ReviewThread | undefined => {
+    const stop = stopOfKey(threadView.cursor);
+    const id = stop?.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
+    return id ? diffThreads?.byId.get(id) : undefined;
+  };
+  /** After k came up onto a line with messages: on its last one. */
+  const enterLast = useRef(false);
+  const whereKey = (() => {
+    const at = cursorHandle.current.where();
+    return at ? `${at.key}:${at.old}:${at.new}:${at.side}` : "";
+  })();
+  useEffect(() => {
+    if (!reviewEditor) return;
+    if (enterLast.current) {
+      enterLast.current = false;
+      const stops = stopsHere();
+      const last = stops[stops.length - 1];
+      if (last) {
+        threadView.setCursor(fileStopKey(last));
+        last.scrollIntoView?.({ block: "nearest" });
+        return;
+      }
+    }
+    // Off the line: off its messages (one still drawn elsewhere stays).
+    const stop = stopOfKey(threadView.cursor);
+    if (threadView.cursor && stop && !stopsHere().includes(stop))
+      threadView.setCursor(null);
+    // Only a move of the cursor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whereKey]);
+  reviewHandlers.current.move = (direction, count) => {
+    if (direction === 1) enterLast.current = false;
+    const stops = stopsHere();
+    const at = threadView.cursor
+      ? stops.findIndex((stop) => fileStopKey(stop) === threadView.cursor)
+      : -1;
+    let index = at;
+    let left = count;
+    while (left > 0) {
+      if (direction === 1 && index + 1 < stops.length) index += 1;
+      else if (direction === -1 && index >= 0) index -= 1;
+      else break;
+      left -= 1;
+    }
+    if (index === at && left === count) {
+      // Nothing to step through here: k up onto a line with messages
+      // lands on its last one.
+      if (direction === -1) enterLast.current = true;
+      return null;
+    }
+    const stop = stops[index];
+    threadView.setCursor(stop ? fileStopKey(stop) : null);
+    stop?.scrollIntoView?.({ block: "nearest" });
+    if (left > 0 && direction === -1) enterLast.current = true;
+    return left;
   };
   const say = (message: string) =>
     store.notify({ kind: "info", message, autoDismissMs: 2500 });
 
   reviewHandlers.current.comment = (key, range, mode) => {
+    // j / k are on a message: c on one of its parts comments on that part,
+    // else it answers the thread (C asks anew, on the line).
+    const stop = mode === "new" ? undefined : stopOfKey(threadView.cursor);
+    const owner = focusedThread();
+    if (stop && owner) {
+      if (stop.dataset.part !== undefined) {
+        const message =
+          stop.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
+        if (message) {
+          const add = stop.querySelector(":scope > .rc-part-add");
+          threadView.setPartDraft({
+            thread: owner.id,
+            comment: message,
+            quote: (stop.textContent ?? "")
+              .replace(add?.textContent ?? "", "")
+              .trim()
+              .slice(0, 4000),
+          });
+          return true;
+        }
+      }
+      if (threadView.folded(owner)) threadView.unfold([owner.id]);
+      threadView.setReplying(owner.id);
+      return true;
+    }
     const section = renderedSectionsRef.current.find(
       (candidate) => candidate.key === key,
     );
@@ -1562,13 +1774,34 @@ export function DiffContentView({
   reviewHandlers.current.threadKey = (key) => {
     const spot = spotAtCursor();
     const here = spot ? threadsAtCursor(readingOrder, spot) : [];
-    const first = here[0];
+    // The thread j / k are on, else the first one on the line.
+    const focused = focusedThread();
+    const first = focused
+      ? { thread: focused }
+      : here.length
+        ? here[0]
+        : undefined;
     switch (key) {
       case "gn":
       case "gN":
       case "n":
       case "N": {
         const direction = key === "gn" || key === "n" ? 1 : -1;
+        // n / N go message to message: within the thread j / k are on first.
+        if ((key === "n" || key === "N") && focused) {
+          const current = (threadView.cursor ?? "").split(":")[1];
+          const index = focused.comments.findIndex(
+            (comment) => comment.id === current,
+          );
+          const next = index >= 0 ? focused.comments[index + direction] : null;
+          if (next && !threadView.folded(focused)) {
+            threadView.setCursor(`m:${next.id}`);
+            requestAnimationFrame(() =>
+              stopOfKey(`m:${next.id}`)?.scrollIntoView?.({ block: "nearest" }),
+            );
+            return true;
+          }
+        }
         const order = readingOrder.map((each) => each.thread);
         // n / N go thread to thread, resolved ones too; gn / gN skip them.
         const walk =
@@ -1622,7 +1855,7 @@ export function DiffContentView({
         return true;
       case "e": {
         // Your last comment on the line, rewritten in place.
-        const written = here
+        const written = (focused ? [{ thread: focused }] : here)
           .flatMap((each) =>
             each.thread.comments.map((comment) => ({ each, comment })),
           )
@@ -1641,7 +1874,36 @@ export function DiffContentView({
           say("Delete a comment with its Delete button.");
           return true;
         }
+        lastDeleted.current = first.thread;
         diffThreads.api.remove(first.thread);
+        say("Comment deleted (u undoes)");
+        return true;
+      }
+      case "u": {
+        const thread = lastDeleted.current;
+        if (!thread) return false;
+        lastDeleted.current = null;
+        void diffThreads?.api.restore(thread);
+        return true;
+      }
+      case "gl": {
+        // The last message of the thread j / k are on, or of the first
+        // open one on the line: where its latest answer is.
+        const thread =
+          first?.thread ?? here.find((each) => !each.thread.resolved)?.thread;
+        const last = thread?.comments[thread.comments.length - 1];
+        if (!thread || !last) {
+          say("No thread here.");
+          return true;
+        }
+        if (threadView.folded(thread)) {
+          say("That thread is folded (za opens it).");
+          return true;
+        }
+        threadView.setCursor(`m:${last.id}`);
+        requestAnimationFrame(() =>
+          stopOfKey(`m:${last.id}`)?.scrollIntoView?.({ block: "nearest" }),
+        );
         return true;
       }
       case "gs": {
@@ -1662,6 +1924,64 @@ export function DiffContentView({
         return false;
     }
   };
+
+  /**
+   * Comments on the whole review, or on code this view does not show (not
+   * found by their text), drawn above the diff; the forge's discussions
+   * under their own heading.
+   */
+  const generalThreads = useMemo<ReviewThread[]>(() => {
+    if (!reviewEditor || !diffThreads || !placement) return [];
+    const seen = new Set<string>();
+    const found: ReviewThread[] = [];
+    const add = (thread: ReviewThread) => {
+      if (seen.has(thread.id) || partThreadIds.has(thread.id)) return;
+      seen.add(thread.id);
+      found.push(thread);
+    };
+    for (const thread of placement.unplaced) add(thread);
+    const placed = new Set(placement.placed.map((spot) => spot.thread.id));
+    for (const thread of diffThreads.byId.values())
+      if (!thread.anchor.path && !placed.has(thread.id)) add(thread);
+    return found;
+  }, [diffThreads, partThreadIds, placement, reviewEditor]);
+  const generalBlock =
+    reviewEditor && diffThreads && !hideComments && generalThreads.length ? (
+      <div className="diff-review-general" data-testid="diff-review-general">
+        {(
+          [
+            [
+              "Comments on the review, or on code not shown here",
+              generalThreads.filter((each) => each.kind !== "merge-request"),
+            ],
+            [
+              "GitLab",
+              generalThreads.filter((each) => each.kind === "merge-request"),
+            ],
+          ] as const
+        ).map(([title, list]) => {
+          const shown = list.filter(
+            (thread) => !(threadView.openOnly && thread.resolved),
+          );
+          return shown.length ? (
+            <section key={title} className="diff-review-general-part">
+              <h3>{title}</h3>
+              {shown.map((thread) => (
+                <div key={thread.id} className="chat-review diff-review-thread">
+                  <FileThread
+                    thread={thread}
+                    api={diffThreads.api}
+                    view={diffThreads.view}
+                    undelivered={diffThreads.undelivered}
+                    nested={diffThreads.nested}
+                  />
+                </div>
+              ))}
+            </section>
+          ) : null;
+        })}
+      </div>
+    ) : null;
 
   const closeReviewComposer = () => {
     setPendingAnnotation(null);
@@ -2617,6 +2937,7 @@ export function DiffContentView({
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
         <DiffDrawingContext.Provider value={drawing}>
+          {generalBlock}
           {diffList}
         </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>

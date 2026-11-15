@@ -65,6 +65,8 @@ export type ThreadWrites = {
   ) => Promise<void>;
   /** Deletes one comment of a thread (a draft reply on the forge). */
   removeComment?: (thread: ReviewThread, comment: ReviewComment) => void;
+  /** Brings a deleted thread back (a forge draft is written again). */
+  restore?: (thread: ReviewThread) => Promise<void>;
   /**
    * A thread on a part of a thread's message, quoting it: in that
    * thread's review, its anchor the thread's own, as the review pane's.
@@ -324,6 +326,20 @@ export function threadWrites(connectionId: string): Required<ThreadWrites> {
         session_id: thread.sessionId,
         comment_id: comment.id,
       }).then(() => readBack(thread.sessionId)),
+    restore: async (thread) => {
+      await (thread.gitlab
+        ? reviewCall(connectionId, "review.thread.add", {
+            session_id: thread.sessionId,
+            kind: "draft",
+            anchor: thread.anchor,
+            text: thread.comments[0]?.body ?? "",
+          })
+        : reviewCall(connectionId, "review.restore", {
+            session_id: thread.sessionId,
+            thread,
+          }));
+      await readBack(thread.sessionId);
+    },
     addPart: async (thread, part, text, id) => {
       await reviewCall(connectionId, "review.thread.add", {
         session_id: thread.sessionId,
