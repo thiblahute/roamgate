@@ -111,6 +111,22 @@ const DIFF_SELECTION_CSS = `
   [data-column-number][data-chunk-reviewed] {
     opacity: 0.55;
   }
+  /* A reviewed chunk folded to its first line, which says so (Changes). */
+  [data-chunk-folded]:not([data-chunk-fold-head]) {
+    display: none !important;
+  }
+  [data-line][data-chunk-fold-head] > *,
+  [data-column-number][data-chunk-fold-head] > * {
+    display: none !important;
+  }
+  [data-line][data-chunk-fold-head]::after {
+    content: attr(data-chunk-fold-label);
+    font-style: italic;
+    color: var(--diffs-fg-number, inherit);
+  }
+  [data-column-number][data-chunk-fold-head]::after {
+    content: "✓";
+  }
   ::highlight(roamgate-diff-cursor) {
     background-color: var(--diffs-selection-base);
     color: var(--diffs-bg);

@@ -210,6 +210,7 @@ export function useDiffCursor({
   onMarkFile,
   onScrollTo,
   goTo: lineGoTo = null,
+  skipRow,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -260,6 +261,8 @@ export function useDiffCursor({
    * once the file is drawn; `at` tells requests apart.
    */
   goTo?: { path: string; line?: number; at: number } | null;
+  /** Rows the cursor steps over (a folded reviewed chunk's but its first). */
+  skipRow?: (row: number) => boolean;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -350,11 +353,25 @@ export function useDiffCursor({
   }, [row]);
 
   /** Moves the cursor; the line goes to the middle unless told. */
+  const skipRowRef = useRef(skipRow);
+  skipRowRef.current = skipRow;
   const jumpTo = useCallback(
     (target: number, column?: number, scroll: ScrollTo = "center") => {
       const current = modelRef.current;
       if (!current.rows.length) return;
-      const next = clampRow(current, target, anchorRef.current);
+      let next = clampRow(current, target, anchorRef.current);
+      // In a folded chunk: on its one line, or past it when the cursor
+      // was on that line already.
+      const skip = skipRowRef.current;
+      if (skip?.(next)) {
+        let head = next;
+        while (head > 0 && skip(head)) head -= 1;
+        if (cursorRef.current.at === head && next > head) {
+          let past = next;
+          while (past < current.rows.length - 1 && skip(past)) past += 1;
+          next = skip(past) ? head : past;
+        } else next = head;
+      }
       const length = current.rows[next]!.text.length;
       if (column !== undefined) wantCol.current = column;
       const col = Math.max(
@@ -499,6 +516,8 @@ export function useDiffCursor({
     };
   }, [cursor, split, model, drawCursor, drawColumn]);
 
+  const drawColumnRef = useRef(drawColumn);
+  drawColumnRef.current = drawColumn;
   const onInstance = useCallback(
     (key: string, instance: DiffSurfaceInstance | null) => {
       if (instance) {
@@ -510,6 +529,8 @@ export function useDiffCursor({
             splitRef.current ? splitSide.current : "right",
           );
           instance.setEditorActiveLine(line, { side });
+          // Drawn again (a chunk folded, say): the column with it.
+          requestAnimationFrame(() => drawColumnRef.current());
         }
       } else instances.current.delete(key);
     },
