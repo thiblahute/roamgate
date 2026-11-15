@@ -213,6 +213,24 @@ Inspector button, shortcuts, or workspace/agent menus.
   (comments go to the agent as you write them), **Hold**, **Send**,
   **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
   `:overall`.
+- Threads in Changes are drawn as the review pane draws them: under each of
+  your messages how it goes to the agent (sent, on its way, held, not
+  delivered with Retry, not sent with Send, for another review's thread that
+  review's way), "edited" and forge draft marks, Edit and Delete (`u` brings
+  a deleted one back); Reply, Resolve or Reopen, and Fold on a resolved one,
+  in the thread's bar; a reply or a rewrite in the review's editor, shown at
+  once with "Sending...", then "Not saved" with Retry and Discard (its text
+  comes back in the reply). `n` / `N` and Tab / Shift+Tab go message by
+  message through every thread, the review's own above the diff first, and
+  around past either end; `j` / `k` go through the review's own messages and
+  down to the first line. The head has a comments button (`t`,
+  `:comments`) with the hidden count, the unresolved threads' arrows (where
+  you are among them, and only them), and the review's status line (the
+  agent waiting for an answer, not delivered, reviewing, working, what a
+  review pass left, unsent drafts kept). Lines with a thread keep a dot in
+  their margin while the comments are hidden; a click on one shows them, and
+  so do the agent's new answers and a comment you write. `T` lists the
+  comments, open ones first, the latest written first.
 - On the working changes, `gs` stages the file at the cursor, and `:stage`,
   `:unstage`, `:discard` and `:delete` act on the file at the cursor or the
   files `V` selected, with the same confirmations as the tree's menus (a

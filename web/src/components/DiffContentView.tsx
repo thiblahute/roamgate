@@ -8,6 +8,8 @@ import {
   ChevronRight,
   ChevronUp,
   FolderOpen,
+  MessageSquare,
+  MessageSquareOff,
   MessageSquareText,
   Search,
   X,
@@ -25,7 +27,24 @@ import {
   useRef,
   useState,
 } from "react";
-import { REVIEW_USER, type ReviewThread } from "../../../shared/review";
+import {
+  REVIEW_USER,
+  type ReviewComment,
+  type ReviewThread,
+} from "../../../shared/review";
+import { reviewCall, useReviewState } from "../review";
+import {
+  latestAnswerAt,
+  reviewAgent,
+  sharedThreadDelivery,
+  type ThreadDelivery,
+} from "../reviewDelivery";
+import { newClientId } from "../reviewPending";
+import { editorKey } from "../reviewSave";
+import { useReviewSessionCall } from "../reviewSessionCall";
+import { usePendingWrites } from "../usePendingWrites";
+import { useReviewStatusLine } from "../reviewStatusLine";
+import { ReviewMessageBar } from "./ReviewMessageBar";
 import type { ConnectionClient } from "../api";
 import {
   diffReviewLineLabel,
@@ -73,19 +92,21 @@ import {
   fileStopKey,
   fileStops,
   nestThreads,
+  type ReviewThreadLook,
   reviewsUndelivered,
   threadWrites,
   ThreadsList,
   type Undelivered,
   useFileThreadView,
 } from "./FileThreads";
-import { ThreadsChip } from "./ThreadsPanel";
+import { conversationOrder, ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
 import {
   changesDraftSession,
   ReviewDiffComposer,
   suggestionBlock,
 } from "./ReviewDiffComposer";
 import {
+  markThreadLines,
   cursorThreadPlace,
   type PlacedThread,
   placeDiffThreads,
@@ -114,9 +135,12 @@ import {
 } from "../reviewToggle";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
-import { stepNotice, stepUnresolved } from "../unresolvedThreads";
+import {
+  stepNotice,
+  stepUnresolved,
+  unresolvedPosition,
+} from "../unresolvedThreads";
 import { usePendingFeedback } from "../feedbackPending";
-import { useReviewState } from "../review";
 import { useInspectorCommands } from "../useInspectorCommands";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
@@ -424,10 +448,13 @@ type DiffThreads = {
   undelivered: Undelivered;
   /** The threads on parts of a message, by that message (drawn in it). */
   nested: ReadonlyMap<string, ReviewThread[]>;
+  /** Drawn as the review pane draws them (the review in Changes). */
+  review?: ReviewThreadLook;
 };
 
 const NO_MARKS: Readonly<Record<string, string>> = {};
 const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
+const NO_THREADS: ReviewThread[] = [];
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
@@ -505,6 +532,7 @@ function DiffAnnotation({
           view={threads.view}
           undelivered={threads.undelivered}
           nested={threads.nested}
+          {...(threads.review ? { review: threads.review } : {})}
         />
       </div>
     );
@@ -597,6 +625,8 @@ type DiffFileSectionProps = {
   searchHit?: boolean;
   /** Each chunk's staged state and reviewed mark (the review in Changes). */
   chunkSpans?: readonly ChunkSpan[];
+  /** The lines with a thread ("old:N" / "new:N", by commas): marked. */
+  threadMarks?: string;
   /**
    * The file is reviewed (every chunk) and folded to its header, as the
    * review pane folds it; `onShowReviewed` shows it again.
@@ -627,6 +657,7 @@ const DiffFileSection = memo(function DiffFileSection({
   cursorSelection,
   searchHit = false,
   chunkSpans,
+  threadMarks,
   reviewedFolded = false,
   onShowReviewed,
 }: DiffFileSectionProps) {
@@ -699,10 +730,18 @@ const DiffFileSection = memo(function DiffFileSection({
   );
   const decorateChunks = useMemo(
     () =>
-      chunkSpans
-        ? (node: HTMLElement) => markChunks(node.shadowRoot ?? node, chunkSpans)
+      chunkSpans || threadMarks !== undefined
+        ? (node: HTMLElement) => {
+            const root = node.shadowRoot ?? node;
+            if (chunkSpans) markChunks(root, chunkSpans);
+            if (threadMarks !== undefined)
+              markThreadLines(
+                root,
+                new Set(threadMarks ? threadMarks.split(",") : []),
+              );
+          }
         : undefined,
-    [chunkSpans],
+    [chunkSpans, threadMarks],
   );
   const lineClick = useMemo(
     () =>
@@ -953,6 +992,7 @@ function areDiffFileSectionPropsEqual(
     sameRange(previous.cursorSelection, next.cursorSelection) &&
     previous.searchHit === next.searchHit &&
     previous.chunkSpans === next.chunkSpans &&
+    previous.threadMarks === next.threadMarks &&
     previous.reviewedFolded === next.reviewedFolded &&
     previous.onShowReviewed === next.onShowReviewed
   );
@@ -1243,31 +1283,313 @@ export function DiffContentView({
     reviewEditor ? (Object.values(filesByKey)[0]?.root ?? file?.root) : null,
     Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
   );
+  // ---- The review's threads drawn as the review pane draws them ---------
+
+  /** The checkout's review the comments here are in, once there is one. */
+  const ownSnapshot = reviewEditor ? changesAgent.snapshot : null;
+  const ownSessionId = ownSnapshot?.session.id ?? "";
+  const ownCall = useReviewSessionCall(
+    connectionClient.connectionId,
+    ownSessionId,
+  );
+  /** What the review last said: a write not saved, a review pass done. */
+  const [reviewStatus, setReviewStatus] = useState("");
+  // Replies on their way: shown at once, pending, until the review has them.
+  const pendingWrites = usePendingWrites({
+    threads: (reviewEditor && threads) || NO_THREADS,
+    sessionId: changesDraftSession(resourceKey),
+    call: ownCall,
+    setStatus: setReviewStatus,
+    notify: (message) =>
+      store.notify({ kind: "info", message, autoDismissMs: 3000 }),
+  });
+  const drawnThreads =
+    reviewEditor && threads ? pendingWrites.threads : threads;
+  const setStatusWith = useCallback(
+    (update: (current: string) => string) => setReviewStatus(update),
+    [],
+  );
+  const statusLine = useReviewStatusLine({
+    session: ownSnapshot?.session ?? null,
+    threads: drawnThreads ?? NO_THREADS,
+    agentName: ownSnapshot ? reviewAgent(ownSnapshot, []).agentName : "Agent",
+    draftSession: changesDraftSession(resourceKey),
+    status: reviewStatus,
+    setStatus: setStatusWith,
+  });
+  // Resolved or reopened, a thread folds as its new state does: a fold
+  // flipped by hand is for the state it was flipped in.
+  const resolvedBefore = useRef(new Map<string, boolean>());
+  useEffect(() => {
+    if (!reviewEditor) return;
+    const changed = new Set<string>();
+    for (const thread of drawnThreads ?? []) {
+      const resolved = !!thread.resolved;
+      const before = resolvedBefore.current.get(thread.id);
+      if (before !== undefined && before !== resolved) changed.add(thread.id);
+      resolvedBefore.current.set(thread.id, resolved);
+    }
+    if ([...changed].some((id) => threadView.flipped.has(id)))
+      threadView.setFlipped(
+        new Set([...threadView.flipped].filter((id) => !changed.has(id))),
+      );
+    // Only on new threads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawnThreads, reviewEditor]);
+  // A new answer in a discussion shows the comments: it is never missed.
+  const latestAnswer = reviewEditor ? latestAnswerAt(drawnThreads ?? []) : "";
+  const seenAnswer = useRef(latestAnswer);
+  useEffect(() => {
+    if (latestAnswer <= seenAnswer.current) return;
+    seenAnswer.current = latestAnswer;
+    setHideComments(false);
+  }, [latestAnswer]);
+  /** The thread dd or Delete deleted last: what u brings back. */
+  const lastDeleted = useRef<ReviewThread | null>(null);
+  const ownAgent = ownSnapshot ? reviewAgent(ownSnapshot, []) : null;
+  /**
+   * How a thread's comments go to its agent: the checkout's review's way,
+   * or, for a thread of another review (a rendered file's), that review's.
+   */
+  const deliveryOf = (
+    thread: ReviewThread,
+  ): { delivery: ThreadDelivery; canSend: boolean; gitlab: boolean } => {
+    const snapshot = reviewSessions.get(thread.sessionId);
+    const session = snapshot?.session ?? ownSnapshot?.session;
+    if (snapshot && thread.sessionId !== ownSessionId && ownAgent) {
+      const own = snapshot.session;
+      return {
+        delivery: {
+          ...sharedThreadDelivery(own, ownAgent.agentName),
+          retry: () =>
+            void reviewCall(connectionClient.connectionId, "review.retry", {
+              session_id: own.id,
+            }).catch((error) =>
+              setReviewStatus(
+                error instanceof Error ? error.message : String(error),
+              ),
+            ),
+        },
+        canSend: false,
+        gitlab: own.gitlab,
+      };
+    }
+    const agent = snapshot ? reviewAgent(snapshot, []) : null;
+    return {
+      delivery: {
+        review: session ?? ({ agent: {} } as ThreadDelivery["review"]),
+        talk: agent?.talk ?? false,
+        held: agent?.held ?? false,
+        undeliveredReason: agent?.undeliveredReason ?? null,
+        agentName: agent?.agentName ?? "Agent",
+        retry: () => changesAgent.send(),
+      },
+      canSend:
+        !!agent?.agentAllowed && (!!session?.agent.name || !!agent.agentPaneId),
+      gitlab: !!session?.gitlab,
+    };
+  };
+  const forgeOfThread = (thread: ReviewThread) => {
+    const target = reviewSessions.get(thread.sessionId)?.session.target;
+    return target?.kind === "mr" && /\/pull\/\d+/.test(target.url)
+      ? "GitHub"
+      : "GitLab";
+  };
+  /** The keys back where the editor was opened from: the panel, the diff. */
+  const backFromComposer = (inPanel: boolean) => {
+    if (!inPanel) return focusDiffAfterEditor();
+    requestAnimationFrame(() =>
+      sectionRef.current
+        ?.querySelector<HTMLElement>(".threads-panel")
+        ?.focus({ preventScroll: true }),
+    );
+  };
+  /** A reply or a rewrite in the review's editor, under its thread. */
+  const threadComposer = (
+    thread: ReviewThread,
+    comment: ReviewComment | null,
+    /** Closes a reply written elsewhere than under its thread (the panel). */
+    done?: () => void,
+  ) => (
+    <ReviewDiffComposer
+      key={comment ? `edit:${comment.id}` : `reply:${thread.id}`}
+      anchor={{
+        path: thread.anchor.path ?? "",
+        line: thread.anchor.line ?? 0,
+        side: thread.anchor.side ?? "new",
+        text: thread.anchor.text ?? "",
+      }}
+      suggestable={null}
+      {...(comment
+        ? { commentId: comment.id, initial: comment.body }
+        : { replyTo: thread.id })}
+      placeholder={comment ? "Your comment..." : "Reply..."}
+      draftSession={changesDraftSession(resourceKey)}
+      onSave={(text) => {
+        const api = threadWrites(connectionClient.connectionId);
+        if (comment) {
+          threadView.setEditing(null);
+          void api
+            .edit(thread, comment, text)
+            .catch((error) =>
+              setReviewStatus(
+                `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            );
+        } else {
+          if (done) done();
+          else threadView.setReplying(null);
+          if (thread.sessionId === ownSessionId)
+            pendingWrites.sendWrite(
+              {
+                id: newClientId(),
+                sessionId: thread.sessionId,
+                replyTo: thread.id,
+                kind: "discussion",
+                anchor: thread.anchor,
+                text,
+                at: new Date().toISOString(),
+              },
+              editorKey({
+                at: 0,
+                file: 0,
+                kind: "discussion",
+                anchor: thread.anchor,
+                replyTo: thread.id,
+                text: "",
+                version: 0,
+              }),
+            );
+          else void api.reply(thread, text, newClientId());
+        }
+        backFromComposer(!!done);
+      }}
+      onClose={() => {
+        if (comment) threadView.setEditing(null);
+        else if (done) done();
+        else threadView.setReplying(null);
+        backFromComposer(!!done);
+      }}
+      {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+      notify={(message) =>
+        store.notify({ kind: "info", message, autoDismissMs: 2500 })
+      }
+    />
+  );
+  /** Deletes a thread, said with how to bring it back. */
+  const deleteThread = (thread: ReviewThread) => {
+    lastDeleted.current = thread;
+    threadWrites(connectionClient.connectionId).remove(thread);
+    store.notify({
+      kind: "info",
+      message: "Comment deleted (u undoes)",
+      autoDismissMs: 2500,
+    });
+  };
+  const pendingOf = (
+    thread: ReviewThread,
+    comment: ReviewComment,
+    index: number,
+  ) =>
+    pendingWrites.pendingById.get(comment.id) ??
+    (index === 0 ? pendingWrites.pendingById.get(thread.id) : undefined);
+  const reviewLook: ReviewThreadLook | undefined = reviewEditor
+    ? {
+        messageClass: (thread, comment, index) =>
+          pendingOf(thread, comment, index) ? " is-pending" : "",
+        messageEditor: (thread, comment) =>
+          threadView.editing === comment.id
+            ? threadComposer(thread, comment)
+            : null,
+        messageBar: (thread, comment, index) => {
+          const { delivery, canSend, gitlab } = deliveryOf(thread);
+          return (
+            <ReviewMessageBar
+              thread={thread}
+              comment={comment}
+              index={index}
+              delivery={delivery}
+              canSend={canSend}
+              sendLabel={gitlab ? `Send to ${delivery.agentName}` : "Send"}
+              onSend={() => changesAgent.send()}
+              forge={forgeOfThread(thread)}
+              {...(() => {
+                const pending = pendingOf(thread, comment, index);
+                return pending ? { pending } : {};
+              })()}
+              onRetryWrite={pendingWrites.retryWrite}
+              onDiscardWrite={pendingWrites.discardWrite}
+              onEdit={() => {
+                if (threadView.folded(thread)) threadView.unfold([thread.id]);
+                threadView.setEditing(comment.id);
+              }}
+              onDelete={() => deleteThread(thread)}
+            />
+          );
+        },
+        threadBar: (thread) => {
+          if (pendingWrites.pendingById.has(thread.id)) return null;
+          if (thread.kind !== "discussion" && thread.comments.length < 2)
+            return null;
+          if (threadView.replying === thread.id)
+            return threadComposer(thread, null);
+          return (
+            <div className="chat-thread-bar">
+              <button
+                type="button"
+                onClick={() => {
+                  threadView.setEditing(null);
+                  threadView.setReplying(thread.id);
+                }}
+              >
+                Reply
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  threadWrites(connectionClient.connectionId).resolve(thread)
+                }
+              >
+                {thread.resolved ? "Reopen" : "Resolve"}
+              </button>
+              {thread.resolved ? (
+                <button
+                  type="button"
+                  onClick={() => threadView.toggleFold(thread)}
+                >
+                  Fold
+                </button>
+              ) : null}
+            </div>
+          );
+        },
+      }
+    : undefined;
   const shownThreads = useMemo(
     () =>
-      diffViewThreads(annotations, threads ?? [], visibleEntries, reviewEditor),
-    [annotations, reviewEditor, threads, visibleEntries],
+      diffViewThreads(
+        annotations,
+        drawnThreads ?? [],
+        visibleEntries,
+        reviewEditor,
+      ),
+    [annotations, reviewEditor, drawnThreads, visibleEntries],
   );
-  const diffThreads = useMemo<DiffThreads | null>(() => {
-    if (!threads?.length) return null;
+  const diffThreads: DiffThreads | null = (() => {
+    if (!drawnThreads?.length) return null;
     return {
-      byId: new Map(threads.map((each) => [each.id, each])),
+      byId: new Map(drawnThreads.map((each) => [each.id, each])),
       api: threadWrites(connectionClient.connectionId),
       view: threadView,
-      nested: reviewEditor ? nestThreads(threads).nested : NO_NESTED,
+      nested: reviewEditor ? nestThreads(drawnThreads).nested : NO_NESTED,
       undelivered: reviewsUndelivered(
-        [...new Set(threads.map((each) => each.sessionId))].map((id) =>
+        [...new Set(drawnThreads.map((each) => each.sessionId))].map((id) =>
           reviewSessions.get(id),
         ),
       ),
+      ...(reviewLook ? { review: reviewLook } : {}),
     };
-  }, [
-    connectionClient.connectionId,
-    reviewEditor,
-    reviewSessions,
-    threadView,
-    threads,
-  ]);
+  })();
   /** A thread of the Comments panel, shown under its line. */
   const goToThread = useCallback(
     (thread: ReviewThread) => {
@@ -1620,6 +1942,11 @@ export function DiffContentView({
       shift: boolean,
     ) => {
       sectionRef.current?.focus({ preventScroll: true });
+      // Hidden, a click on a commented line shows the comments.
+      if (revealHiddenRef.current(key, line, side)) {
+        cursorLineClickRef.current(key, line, side, shift);
+        return false;
+      }
       const taken = cursorLineClickRef.current(key, line, side, shift);
       // A click on a folded reviewed chunk's line shows the chunk.
       requestAnimationFrame(() => peekFoldedRef.current());
@@ -1628,6 +1955,9 @@ export function DiffContentView({
     [],
   );
   const peekFoldedRef = useRef(() => {});
+  const revealHiddenRef = useRef<
+    (key: string, line: number, side: "deletions" | "additions") => boolean
+  >(() => false);
   // The cursor's keys keep the focus: a browser can hand it to the page's
   // first control after a key the cursor took (seen in Chrome after zz and
   // after the review toggle's chord); with no key or press since, it comes
@@ -1740,6 +2070,18 @@ export function DiffContentView({
       placement ? threadReadingOrder(placement.placed, drawingSections) : [],
     [drawingSections, placement],
   );
+  /** Each file's lines with a thread, marked in their margin. */
+  const threadMarksByKey = useMemo(() => {
+    const marks = new Map<string, string[]>();
+    for (const placed of readingOrder) {
+      const list = marks.get(placed.key) ?? [];
+      list.push(`${placed.side}:${placed.line}`);
+      marks.set(placed.key, list);
+    }
+    return new Map(
+      [...marks].map(([key, list]) => [key, [...new Set(list)].join(",")]),
+    );
+  }, [readingOrder]);
   // Reviewed chunks fold to one line, as in the review pane, unless a
   // thread is on them or they are peeked at (za, a click on the line).
   const [peekedChunks, setPeekedChunks] = useState<ReadonlySet<string>>(
@@ -1877,6 +2219,14 @@ export function DiffContentView({
     const found = reviewedSpanAt(at);
     if (found?.span.folded && found.span.rows[0] === at) togglePeek(at);
   };
+  revealHiddenRef.current = (key, line, side) => {
+    if (!hideComments) return false;
+    const marked = threadMarksByKey.get(key)?.split(",") ?? [];
+    const own = `${side === "deletions" ? "old" : "new"}:${line}`;
+    if (!marked.includes(own)) return false;
+    setHideComments(false);
+    return true;
+  };
   /** What each file's Pierre draws under its lines: threads, notes, the box. */
   const drawnByKey = useMemo(() => {
     if (!placement) return annotationsByPath;
@@ -1919,8 +2269,16 @@ export function DiffContentView({
     return grouped;
   }, [annotationsByPath, diffNotes, diffThreads, pendingAnnotation, placement]);
 
-  /** The thread dd deleted last: what u brings back. */
-  const lastDeleted = useRef<ReviewThread | null>(null);
+  /** gH, :unresolved: only the unresolved threads drawn, or all again. */
+  const toggleOpenOnly = () => {
+    const on = !threadView.openOnly;
+    threadView.setOpenOnly(on);
+    say(
+      on
+        ? "Only the unresolved threads (gH shows them all)"
+        : "All the threads, resolved ones folded",
+    );
+  };
   const spotAtCursor = () => {
     const where = cursorHandle.current.where();
     return where
@@ -1932,6 +2290,24 @@ export function DiffContentView({
         }
       : null;
   };
+  /** The unresolved threads, and the one the cursor is on (from 1). */
+  const unresolvedTotal = readingOrder.filter(
+    (each) => !each.thread.resolved,
+  ).length;
+  const unresolvedAt = (() => {
+    const spot = spotAtCursor();
+    const here = spot
+      ? threadsAtCursor(readingOrder, spot).find(
+          (each) => !each.thread.resolved,
+        )
+      : undefined;
+    return here
+      ? unresolvedPosition(
+          readingOrder.map((each) => each.thread),
+          here.thread.id,
+        )
+      : null;
+  })();
   /** Shows a thread to be read: unfolded, its line in view. */
   const showThread = (spot: PlacedThread) => {
     // In a folded reviewed file: the file opens, as the review pane's gn;
@@ -2025,8 +2401,100 @@ export function DiffContentView({
     // Only a move of the cursor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whereKey]);
+  /** The messages of the threads above the diff, as j / k stop on them. */
+  const generalStops = (): HTMLElement[] => {
+    const block = sectionRef.current?.querySelector<HTMLElement>(
+      ".diff-review-general",
+    );
+    return block && !hideComments ? fileStops(block) : [];
+  };
+  /**
+   * n / N: the next or previous message of every thread, the review's own
+   * first, then the lines' in their order; around past either end.
+   */
+  const walkMessages = (direction: 1 | -1) => {
+    const shown = (thread: ReviewThread) =>
+      !(threadView.openOnly && thread.resolved);
+    const placed = readingOrder.filter((each) => shown(each.thread));
+    const general = generalThreads.filter(
+      (thread) => shown(thread) && thread.kind !== "merge-request",
+    );
+    const order = [
+      ...general.map((thread) => ({ thread, spot: null })),
+      ...placed.map((spot) => ({ thread: spot.thread, spot })),
+    ];
+    const stops = order.flatMap((entry, at) =>
+      entry.thread.comments.map((comment) => ({ ...entry, comment, at })),
+    );
+    if (!stops.length) {
+      say("No comment here.");
+      return;
+    }
+    const current = threadView.cursor?.startsWith("m:")
+      ? threadView.cursor.slice(2)
+      : null;
+    const selected = current
+      ? stops.findIndex((stop) => stop.comment.id === current)
+      : -1;
+    let next: number;
+    if (selected >= 0) next = selected + direction;
+    else {
+      // From the cursor's line: the first message from it on, or the last
+      // before it.
+      const spot = spotAtCursor();
+      const place = spot
+        ? cursorThreadPlace(placed, drawingSections, spot, 1)
+        : { index: 0, on: false };
+      const onLine = spot ? threadsAtCursor(placed, spot) : [];
+      const from =
+        general.length +
+        (place.on && onLine[0] ? placed.indexOf(onLine[0]) : place.index);
+      next =
+        direction === 1
+          ? stops.findIndex((stop) => stop.at >= from)
+          : stops.filter((stop) => stop.at < from).length - 1;
+      if (direction === 1 && next < 0) next = stops.length;
+    }
+    if (next >= stops.length) next = 0;
+    if (next < 0) next = stops.length - 1;
+    const stop = stops[next]!;
+    if (stop.spot) showThread(stop.spot);
+    else if (threadView.folded(stop.thread))
+      threadView.unfold([stop.thread.id]);
+    threadView.setCursor(`m:${stop.comment.id}`);
+    requestAnimationFrame(() =>
+      stopOfKey(`m:${stop.comment.id}`)?.scrollIntoView?.({
+        block: "nearest",
+      }),
+    );
+  };
   reviewHandlers.current.move = (direction, count) => {
     if (direction === 1) enterLast.current = false;
+    // On the review's own messages, above the diff: j / k go through them,
+    // j past the last one down to the first line.
+    const above = generalStops();
+    const on = above.findIndex(
+      (stop) => fileStopKey(stop) === threadView.cursor,
+    );
+    if (on >= 0) {
+      const to = on + direction * count;
+      if (to >= 0 && to < above.length)
+        threadView.setCursor(fileStopKey(above[to]!));
+      else if (direction === 1) {
+        threadView.setCursor(null);
+        cursorHandle.current.moveTo(0);
+      }
+      return 0;
+    }
+    if (
+      direction === -1 &&
+      above.length &&
+      !threadView.cursor &&
+      cursorHandle.current.rowIndex() === 0
+    ) {
+      threadView.setCursor(fileStopKey(above[above.length - 1]!));
+      return 0;
+    }
     const stops = stopsHere();
     const at = threadView.cursor
       ? stops.findIndex((stop) => fileStopKey(stop) === threadView.cursor)
@@ -2230,11 +2698,20 @@ export function DiffContentView({
         ? here[0]
         : undefined;
     switch (key) {
+      case "Tab":
+      case "S-Tab":
       case "gn":
       case "gN":
       case "n":
       case "N": {
-        const direction = key === "gn" || key === "n" ? 1 : -1;
+        const direction = key === "gn" || key === "n" || key === "Tab" ? 1 : -1;
+        // n / N, Tab / Shift+Tab: message by message through every thread,
+        // the review's own (above the diff) first.
+        if (key !== "gn" && key !== "gN" && !hideComments) {
+          walkMessages(direction);
+          return true;
+        }
+        if (key === "Tab" || key === "S-Tab") key = direction === 1 ? "n" : "N";
         // n / N go message to message: within the thread j / k are on first.
         if ((key === "n" || key === "N") && focused) {
           const current = (threadView.cursor ?? "").split(":")[1];
@@ -2274,12 +2751,7 @@ export function DiffContentView({
         return true;
       }
       case "gH":
-        threadView.setOpenOnly(!threadView.openOnly);
-        say(
-          threadView.openOnly
-            ? "All the comments shown"
-            : "Only the unresolved comments shown",
-        );
+        toggleOpenOnly();
         return true;
       case "g;": {
         const latest = latestComment(readingOrder.map((each) => each.thread));
@@ -2309,7 +2781,11 @@ export function DiffContentView({
       }
       case "za":
         // A thread's fold first, else a reviewed chunk's.
-        if (!first) return togglePeek(cursorHandle.current.rowIndex());
+        if (!first) {
+          if (togglePeek(cursorHandle.current.rowIndex())) return true;
+          say("No comment to fold on this line.");
+          return true;
+        }
         threadView.toggleFold(first.thread);
         return true;
       case "r":
@@ -2351,9 +2827,7 @@ export function DiffContentView({
           say("Delete a comment with its Delete button.");
           return true;
         }
-        lastDeleted.current = first.thread;
-        diffThreads.api.remove(first.thread);
-        say("Comment deleted (u undoes)");
+        deleteThread(first.thread);
         return true;
       }
       case "u": {
@@ -2451,6 +2925,9 @@ export function DiffContentView({
                     view={diffThreads.view}
                     undelivered={diffThreads.undelivered}
                     nested={diffThreads.nested}
+                    {...(diffThreads.review
+                      ? { review: diffThreads.review }
+                      : {})}
                   />
                 </div>
               ))}
@@ -2979,6 +3456,7 @@ export function DiffContentView({
                 ...(reviewEditor
                   ? {
                       chunkSpans: foldedSpansByKey.get(section.key),
+                      threadMarks: threadMarksByKey.get(section.key) ?? "",
                       reviewedFolded: foldedFiles.has(section.entry.path),
                       onShowReviewed: showReviewed,
                     }
@@ -3079,8 +3557,8 @@ export function DiffContentView({
           {
             name: "unresolved",
             aliases: ["openonly"],
-            description: "show only the unresolved comments, or all (gH)",
-            run: () => threadView.setOpenOnly(!threadView.openOnly),
+            description: "show only the unresolved threads, or all again (gH)",
+            run: () => toggleOpenOnly(),
           },
         ]
       : []),
@@ -3283,6 +3761,11 @@ export function DiffContentView({
             onOverall={setOverallOpen}
           />
         ) : null}
+        {reviewEditor && statusLine ? (
+          <span className="changes-review-status" aria-live="polite">
+            {statusLine}
+          </span>
+        ) : null}
         <div className="diff-content-actions">
           {hunkTargets.length ? (
             <div
@@ -3389,6 +3872,48 @@ export function DiffContentView({
             {reviewedFileCount}/{reviewLayout.files.length} reviewed
           </span>
         ) : null}
+        {reviewEditor && shownThreads.length ? (
+          <button
+            type="button"
+            className={`diff-comments-toggle${hideComments ? "" : " is-active"}`}
+            aria-pressed={!hideComments}
+            aria-label="Comments"
+            title={
+              hideComments
+                ? `Show the ${shownThreads.length} hidden comment${shownThreads.length === 1 ? "" : "s"} (t, :comments)`
+                : "Show / hide every comment (t, :comments)"
+            }
+            onClick={() => setHideComments((hidden) => !hidden)}
+          >
+            {hideComments ? (
+              <MessageSquareOff size={14} />
+            ) : (
+              <MessageSquare size={14} />
+            )}
+            {hideComments ? (
+              <span className="rv-badge">{shownThreads.length}</span>
+            ) : null}
+          </button>
+        ) : null}
+        {reviewEditor && readingOrder.length ? (
+          <UnresolvedNav
+            className="diff-unresolved-nav"
+            total={unresolvedTotal}
+            position={unresolvedAt}
+            openOnly={threadView.openOnly}
+            onStep={(direction) => {
+              reviewHandlers.current.threadKey?.(
+                direction === 1 ? "gn" : "gN",
+                null,
+              );
+              sectionRef.current?.focus({ preventScroll: true });
+            }}
+            onOpenOnly={() => {
+              toggleOpenOnly();
+              sectionRef.current?.focus({ preventScroll: true });
+            }}
+          />
+        ) : null}
         {shownThreads.length ? (
           <ThreadsChip
             className="diff-threads-chip"
@@ -3466,10 +3991,35 @@ export function DiffContentView({
       {threadsOpen && shownThreads.length && diffThreads ? (
         <ThreadsList
           className="diff-threads"
-          threads={shownThreads}
+          threads={
+            reviewEditor ? conversationOrder(shownThreads) : shownThreads
+          }
           api={diffThreads.api}
-          onGo={goToThread}
-          onClose={() => setThreadsOpen(false)}
+          onGo={
+            reviewEditor
+              ? (thread) => {
+                  // On its line, the panel closed, as the review pane goes.
+                  setThreadsOpen(false);
+                  const spot = readingOrder.find(
+                    (each) => each.thread.id === thread.id,
+                  );
+                  if (spot) showThread(spot);
+                  else goToThread(thread);
+                  sectionRef.current?.focus({ preventScroll: true });
+                }
+              : goToThread
+          }
+          onClose={() => {
+            setThreadsOpen(false);
+            if (reviewEditor)
+              sectionRef.current?.focus({ preventScroll: true });
+          }}
+          {...(reviewEditor
+            ? {
+                editor: (thread: ReviewThread, close: () => void) =>
+                  threadComposer(thread, null, close),
+              }
+            : {})}
         />
       ) : null}
       {cursor.status ? (

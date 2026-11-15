@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
   type ReviewThread = import("../../../shared/review").ReviewThread;
 
   /** `count` added lines `${path} line N`. */
@@ -67,14 +67,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     } as ReviewThread;
   };
 
-  type Surface = Awaited<ReturnType<(typeof REVIEW_SURFACES)[0]["mount"]>>;
+  type Surface = Awaited<
+    ReturnType<ReturnType<typeof reviewSurfacesWith>[0]["mount"]>
+  >;
   /** A thread as shown, or null when it is not. */
   const shown = (review: Surface, id: string) =>
     review.shownThreads().find((each) => each.id === id) ?? null;
   /** The agent the comments go to: Claude, in the workspace's pane. */
   const claude = { agent: { name: "Claude", paneId: "w1:p1" } };
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const surface of reviewSurfacesWith("threads-shared")) {
+    const { name, mount } = surface;
     describe(name, () => {
       test("a thread shared from a rendered file's review says how it goes to that review's agent; Retry asks that review again", async () => {
         const rendered = {
@@ -127,4 +130,5 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
     });
+  }
 }

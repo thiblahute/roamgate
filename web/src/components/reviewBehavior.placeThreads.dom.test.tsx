@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   const files = [
     file(
@@ -42,7 +42,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     { ...thread("t2", "a.ts", 5, "Settled long ago"), resolved: true },
   ];
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const surface of reviewSurfacesWith("threads")) {
+    const { name, mount } = surface;
     describe(name, () => {
       test("gH shows only the unresolved threads, remembered across a reload, and all again", async () => {
         const review = await mount({ files, threads });
@@ -75,4 +76,5 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await later.unmount();
       });
     });
+  }
 }

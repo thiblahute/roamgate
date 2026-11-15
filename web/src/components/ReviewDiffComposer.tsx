@@ -50,6 +50,11 @@ export type ReviewDiffComposerProps = {
   notify: (message: string) => void;
   /** A phone's keyboard has no Esc: a button for Vim's. */
   coarse?: boolean;
+  /** Answers this thread (its own draft key). */
+  replyTo?: string;
+  /** Rewrites this comment, `initial` its words (its own draft key). */
+  commentId?: string;
+  placeholder?: string;
 };
 
 /**
@@ -66,12 +71,20 @@ export function ReviewDiffComposer({
   onAddImage,
   notify,
   coarse = false,
+  replyTo,
+  commentId,
+  placeholder = "Your comment on this line (Cmd+Enter saves, Esc closes)",
 }: ReviewDiffComposerProps) {
+  const target = {
+    ...(replyTo ? { replyTo } : {}),
+    ...(commentId ? { commentId } : {}),
+  };
   const key = editorKey({
     at: 0,
     file: 0,
     kind: "discussion",
     anchor,
+    ...target,
     text: "",
     version: 0,
   });
@@ -79,6 +92,8 @@ export function ReviewDiffComposer({
     const kept = takeReviewDraft(draftSession, key);
     if (kept !== undefined)
       notify("Your unsent text is back. Cmd+Enter sends it.");
+    // A rewrite's kept words are its new text.
+    if (commentId && kept !== undefined) return kept;
     return initial !== undefined && !kept
       ? initial
       : initial !== undefined && kept
@@ -98,6 +113,7 @@ export function ReviewDiffComposer({
       file: 0,
       kind: "discussion",
       anchor,
+      ...target,
       text: text.current,
       version,
     };
@@ -106,7 +122,7 @@ export function ReviewDiffComposer({
       explicit,
       uploading: imageUploadPending(text.current),
       lineText: suggestable ?? undefined,
-      original: "",
+      original: commentId ? (initial ?? "") : "",
       gitlab: false,
       talk: true,
       agentNamed: true,
@@ -168,13 +184,20 @@ export function ReviewDiffComposer({
   };
 
   return (
-    <div className="chat-review diff-review-composer" data-review-editor>
+    <div
+      className={
+        replyTo || commentId
+          ? "diff-review-reply"
+          : "chat-review diff-review-composer"
+      }
+      data-review-editor
+    >
       <Suspense fallback={null}>
         <ReviewCommentEditorLazy
           key={version}
           value={text.current}
           vimMode={vim}
-          placeholder="Your comment on this line (Cmd+Enter saves, Esc closes)"
+          placeholder={placeholder}
           handleRef={handle}
           onChange={(value) => {
             text.current = value;

@@ -32,7 +32,18 @@ export type SurfaceFeature =
   /** A file's header folds it; large files start folded (phase 5). */
   | "file-folds"
   /** Open on a file's header, to the Files preview (phase 8). */
-  | "open-files";
+  | "open-files"
+  /**
+   * The review's threads: their cards, folds, writes on their way, the
+   * delivery to the agent, the status line, t, gH, n / N (phase 4).
+   */
+  | "threads"
+  /** The comments panel (T), its chip and the unresolved arrows (phase 4). */
+  | "threads-panel"
+  /** Threads of the checkout's other reviews (a rendered file's, phase 4). */
+  | "threads-shared"
+  /** A merge request's review: its forge, drafts and discussions (phase 7). */
+  | "forge";
 
 export type SurfaceEntry = {
   name: string;
@@ -46,6 +57,9 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "sides",
   "mouse",
   "reviewed",
+  "threads",
+  "threads-panel",
+  "threads-shared",
 ]);
 
 export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [

@@ -26,7 +26,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith, testWith } = await import(
+    "./reviewSurfaces.testkit"
+  );
   type ReviewThread = import("../../../shared/review").ReviewThread;
 
   /** `count` added lines `${path} line N`. */
@@ -68,7 +70,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     } as ReviewThread;
   };
 
-  type Surface = Awaited<ReturnType<(typeof REVIEW_SURFACES)[0]["mount"]>>;
+  type Surface = Awaited<
+    ReturnType<ReturnType<typeof reviewSurfacesWith>[0]["mount"]>
+  >;
   /** A thread as shown, or null when it is not. */
   const shown = (review: Surface, id: string) =>
     review.shownThreads().find((each) => each.id === id) ?? null;
@@ -89,7 +93,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   /** The agent the comments go to: Claude, in the workspace's pane. */
   const claude = { agent: { name: "Claude", paneId: "w1:p1" } };
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const surface of reviewSurfacesWith("threads")) {
+    const { name, mount } = surface;
     describe(name, () => {
       test("resolved threads start folded to a line; za and a click fold and unfold a thread", async () => {
         const review = await mount({
@@ -347,80 +352,86 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("a merge request's review sends your discussions with the agent as written; held back, each says not sent with a Send, and the head has one", async () => {
-        const url = "https://gitlab.example/group/project/-/merge_requests/7";
-        const mr = {
-          target: { kind: "mr" as const, url },
-          gitlab: true,
-          ...claude,
-        };
-        const mergeRequest = {
-          url,
-          title: "Fix",
-          state: "opened",
-          headSha: "h",
-          security: false,
-        };
-        const review = await mount({
-          files: [added("a.ts", 12)],
-          session: mr as never,
-          mergeRequest,
-          threads: [
-            conversation("t1", 3, [
-              ["Claude", "Why one?"],
-              ["you", "Two.", "2026-11-04T14:11:00Z"],
-            ]),
-          ],
-        });
-        const marks = () => shown(review, "t1")?.messages[1]?.marks;
-        // As in a branch's review: on its way to the agent.
-        expect(marks()).toEqual(["→ Claude..."]);
-        // Held back (sending off, as these reviews once started): not sent,
-        // with a Send on the comment and one in the head.
-        await review.push({ session: { autoSend: false } });
-        expect(marks()).toEqual(["for Claude, not sent"]);
-        expect(shown(review, "t1")?.messages[1]?.buttons).toEqual([
-          "Send to Claude",
-          "Edit",
-        ]);
-        expect(review.buttons()).toContain("Send 1 to Claude");
-        await review.threadButton("t1", "Send to Claude", 1);
-        expect(review.calls("review.handoff")).toHaveLength(1);
-        await review.unmount();
-      });
-
-      test("a merge request's review with no agent in its workspace says so on a comment not sent, with no Send", async () => {
-        const url = "https://gitlab.example/group/project/-/merge_requests/7";
-        const review = await mount({
-          files: [added("a.ts", 12)],
-          session: {
+      testWith(surface, "forge")(
+        "a merge request's review sends your discussions with the agent as written; held back, each says not sent with a Send, and the head has one",
+        async () => {
+          const url = "https://gitlab.example/group/project/-/merge_requests/7";
+          const mr = {
             target: { kind: "mr" as const, url },
             gitlab: true,
-            agent: {},
-          } as never,
-          mergeRequest: {
+            ...claude,
+          };
+          const mergeRequest = {
             url,
             title: "Fix",
             state: "opened",
             headSha: "h",
             security: false,
-          },
-          threads: [
-            conversation("t1", 3, [
-              ["Claude", "Why one?"],
-              ["you", "Two.", "2026-11-04T14:11:00Z"],
-            ]),
-          ],
-        });
-        expect(shown(review, "t1")?.messages[1]?.marks).toEqual([
-          "No agent in this workspace: Copy or pick one",
-        ]);
-        expect(shown(review, "t1")?.messages[1]?.buttons).toEqual(["Edit"]);
-        expect(review.buttons().some((label) => label.startsWith("Send"))).toBe(
-          false,
-        );
-        await review.unmount();
-      });
+          };
+          const review = await mount({
+            files: [added("a.ts", 12)],
+            session: mr as never,
+            mergeRequest,
+            threads: [
+              conversation("t1", 3, [
+                ["Claude", "Why one?"],
+                ["you", "Two.", "2026-11-04T14:11:00Z"],
+              ]),
+            ],
+          });
+          const marks = () => shown(review, "t1")?.messages[1]?.marks;
+          // As in a branch's review: on its way to the agent.
+          expect(marks()).toEqual(["→ Claude..."]);
+          // Held back (sending off, as these reviews once started): not sent,
+          // with a Send on the comment and one in the head.
+          await review.push({ session: { autoSend: false } });
+          expect(marks()).toEqual(["for Claude, not sent"]);
+          expect(shown(review, "t1")?.messages[1]?.buttons).toEqual([
+            "Send to Claude",
+            "Edit",
+          ]);
+          expect(review.buttons()).toContain("Send 1 to Claude");
+          await review.threadButton("t1", "Send to Claude", 1);
+          expect(review.calls("review.handoff")).toHaveLength(1);
+          await review.unmount();
+        },
+      );
+
+      testWith(surface, "forge")(
+        "a merge request's review with no agent in its workspace says so on a comment not sent, with no Send",
+        async () => {
+          const url = "https://gitlab.example/group/project/-/merge_requests/7";
+          const review = await mount({
+            files: [added("a.ts", 12)],
+            session: {
+              target: { kind: "mr" as const, url },
+              gitlab: true,
+              agent: {},
+            } as never,
+            mergeRequest: {
+              url,
+              title: "Fix",
+              state: "opened",
+              headSha: "h",
+              security: false,
+            },
+            threads: [
+              conversation("t1", 3, [
+                ["Claude", "Why one?"],
+                ["you", "Two.", "2026-11-04T14:11:00Z"],
+              ]),
+            ],
+          });
+          expect(shown(review, "t1")?.messages[1]?.marks).toEqual([
+            "No agent in this workspace: Copy or pick one",
+          ]);
+          expect(shown(review, "t1")?.messages[1]?.buttons).toEqual(["Edit"]);
+          expect(
+            review.buttons().some((label) => label.startsWith("Send")),
+          ).toBe(false);
+          await review.unmount();
+        },
+      );
 
       test("a write on its way says Sending...; failed, Not saved with Retry and Discard, the text kept", async () => {
         const review = await mount({
@@ -811,4 +822,5 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
     });
+  }
 }

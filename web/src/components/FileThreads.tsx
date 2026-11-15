@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -371,12 +372,37 @@ function forgeOf(
  * messages take threads of their own (+, words selected, c on a part), as
  * in the review pane and a chat, drawn under the part they quote.
  */
+/**
+ * A thread drawn as the review pane draws it (the review in Changes): its
+ * marks and buttons under each message, its own bar, its editors in place.
+ */
+export type ReviewThreadLook = {
+  messageBar: (
+    thread: ReviewThread,
+    message: ReviewComment,
+    index: number,
+  ) => ReactNode;
+  /** In place of the thread's buttons: the review's, an editor, or none. */
+  threadBar: (thread: ReviewThread) => ReactNode;
+  /** A message being rewritten: its editor, in its place. */
+  messageEditor: (
+    thread: ReviewThread,
+    message: ReviewComment,
+  ) => ReactNode | null;
+  messageClass: (
+    thread: ReviewThread,
+    message: ReviewComment,
+    index: number,
+  ) => string;
+};
+
 export function FileThread({
   thread,
   api,
   view,
   undelivered,
   nested,
+  review,
 }: {
   thread: ReviewThread;
   api: ThreadWrites;
@@ -384,6 +410,7 @@ export function FileThread({
   undelivered?: Undelivered;
   /** Threads on parts of messages, by the message. */
   nested?: ReadonlyMap<string, ReviewThread[]>;
+  review?: ReviewThreadLook;
 }) {
   const { sessions } = useReviewState();
   const close = () => {
@@ -448,6 +475,7 @@ export function FileThread({
             view={view}
             undelivered={undelivered}
             nested={nested}
+            {...(review ? { review } : {})}
           />
         ),
       }));
@@ -516,8 +544,16 @@ export function FileThread({
           ) : null}
         </>
       }
+      {...(review
+        ? {
+            messageBar: (message: ReviewComment, index: number) =>
+              review.messageBar(thread, message, index),
+            messageClass: (message: ReviewComment, index: number) =>
+              review.messageClass(thread, message, index),
+          }
+        : {})}
       authorExtra={(message) =>
-        held ? (
+        review ? null : held ? (
           <span className="chat-thread-pending"> {HELD_FOR_SEND}</span>
         ) : undelivered?.ids.has(message.id) ? (
           <span className="chat-thread-pending is-failed" role="status">
@@ -525,65 +561,69 @@ export function FileThread({
           </span>
         ) : null
       }
-      body={(message) => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: words selected offer a comment
-        <div
-          onMouseUp={(event) => {
-            if (forgeDraft || !api.addPart) return;
-            const body =
-              event.currentTarget.querySelector<HTMLElement>(".rc-text") ??
-              event.currentTarget;
-            const target = markdownSelectionTarget(body);
-            view.setPartSelection(
-              target
-                ? {
-                    thread: thread.id,
-                    comment: message.id,
-                    quote: target.quote,
-                    x: target.x,
-                    y: target.y,
-                  }
-                : null,
-            );
-          }}
-        >
-          <NoteBody
-            text={message.body}
-            path={thread.anchor.path}
-            parts={partsOf(message.id)}
-          />
-          {view.partSelection?.comment === message.id &&
-          view.partSelection.thread === thread.id
-            ? createPortal(
-                <button
-                  type="button"
-                  className="chat-thread-select"
-                  style={{
-                    left: view.partSelection.x,
-                    top: view.partSelection.y,
-                  }}
-                  // Keeps the selection while the button is pressed.
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const { quote } = view.partSelection!;
-                    view.setPartSelection(null);
-                    window.getSelection()?.removeAllRanges();
-                    view.setPartDraft({
+      body={(message) =>
+        review?.messageEditor(thread, message) ?? (
+          // biome-ignore lint/a11y/noStaticElementInteractions: words selected offer a comment
+          <div
+            onMouseUp={(event) => {
+              if (forgeDraft || !api.addPart) return;
+              const body =
+                event.currentTarget.querySelector<HTMLElement>(".rc-text") ??
+                event.currentTarget;
+              const target = markdownSelectionTarget(body);
+              view.setPartSelection(
+                target
+                  ? {
                       thread: thread.id,
                       comment: message.id,
-                      quote: quote.trim().slice(0, 4000),
-                    });
-                  }}
-                >
-                  Comment
-                </button>,
-                document.body,
-              )
-            : null}
-        </div>
-      )}
+                      quote: target.quote,
+                      x: target.x,
+                      y: target.y,
+                    }
+                  : null,
+              );
+            }}
+          >
+            <NoteBody
+              text={message.body}
+              path={thread.anchor.path}
+              parts={partsOf(message.id)}
+            />
+            {view.partSelection?.comment === message.id &&
+            view.partSelection.thread === thread.id
+              ? createPortal(
+                  <button
+                    type="button"
+                    className="chat-thread-select"
+                    style={{
+                      left: view.partSelection.x,
+                      top: view.partSelection.y,
+                    }}
+                    // Keeps the selection while the button is pressed.
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      const { quote } = view.partSelection!;
+                      view.setPartSelection(null);
+                      window.getSelection()?.removeAllRanges();
+                      view.setPartDraft({
+                        thread: thread.id,
+                        comment: message.id,
+                        quote: quote.trim().slice(0, 4000),
+                      });
+                    }}
+                  >
+                    Comment
+                  </button>,
+                  document.body,
+                )
+              : null}
+          </div>
+        )
+      }
       footer={
-        held ? null : forgeDraft && first ? (
+        review ? (
+          (review.threadBar(thread) ?? null)
+        ) : held ? null : forgeDraft && first ? (
           view.editing === first.id && api.edit ? (
             <ThreadEditor
               kept={{ text: first.body }}
@@ -1194,6 +1234,7 @@ export function ThreadsList({
   onClose,
   className,
   title = "Comments",
+  editor,
 }: {
   threads: readonly ReviewThread[];
   api: Pick<FileThreadsApi, "reply" | "resolve">;
@@ -1201,6 +1242,8 @@ export function ThreadsList({
   onClose: () => void;
   className?: string;
   title?: string;
+  /** The reply's editor, in place of the chat's (the review's, in Changes). */
+  editor?: (thread: ReviewThread, close: () => void) => ReactNode;
 }) {
   const [replying, setReplying] = useState<string | null>(null);
   const byId = useMemo(
@@ -1239,7 +1282,9 @@ export function ThreadsList({
         replying && byId.has(replying)
           ? {
               id: replying,
-              editor: (
+              editor: editor ? (
+                editor(byId.get(replying)!, () => setReplying(null))
+              ) : (
                 <ThreadEditor
                   placeholder="Reply..."
                   onLeave={() => {}}

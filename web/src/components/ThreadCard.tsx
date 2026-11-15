@@ -25,6 +25,7 @@ export function ThreadCard({
   messageClass,
   authorExtra,
   body,
+  messageBar,
 }: {
   thread: ReviewThread;
   folded: boolean;
@@ -42,6 +43,8 @@ export function ThreadCard({
   messageClass?: (message: ReviewComment, index: number) => string;
   authorExtra?: (message: ReviewComment, index: number) => ReactNode;
   body: (message: ReviewComment) => ReactNode;
+  /** Under a message: its marks and buttons (the review's, in Changes). */
+  messageBar?: (message: ReviewComment, index: number) => ReactNode;
 }) {
   const first = thread.comments[0];
   if (folded)
@@ -86,6 +89,7 @@ export function ThreadCard({
           <div className="chat-thread-body" data-message-id={message.id}>
             {body(message)}
           </div>
+          {messageBar?.(message, index)}
         </div>
       ))}
       {footer !== undefined ? (

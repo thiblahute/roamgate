@@ -96,6 +96,20 @@ const DIFF_SELECTION_CSS = `
     color: var(--diffs-fg) !important;
     font-weight: 800;
   }
+  [data-column-number][data-thread-mark] {
+    position: relative;
+  }
+  [data-column-number][data-thread-mark]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    width: 5px;
+    height: 5px;
+    margin-top: -2.5px;
+    border-radius: 50%;
+    background: var(--diffs-selection-base);
+  }
   [data-column-number][data-chunk-stage="staged"] {
     box-shadow: inset 3px 0 0 #3fb950;
   }

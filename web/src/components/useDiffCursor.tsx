@@ -953,6 +953,16 @@ export function useDiffCursor({
       jumpTo(at + delta);
       return;
     }
+    // Tab / Shift+Tab: the next or previous message, as n / N with no
+    // search; left to the page when there is none.
+    if (event.key === "Tab") {
+      if (threadKey?.(event.shiftKey ? "S-Tab" : "Tab", null)) {
+        event.preventDefault();
+        event.stopPropagation();
+        machine.reset();
+      }
+      return;
+    }
     const result = machine.feed(event.key);
     if (result.type === "wait") {
       if (event.key.length === 1) {
