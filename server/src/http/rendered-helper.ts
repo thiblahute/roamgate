@@ -1,4 +1,6 @@
 import {
+  RENDERED_STORAGE_MAX_CHARS,
+  RENDERED_STORAGE_MAX_KEYS,
   RENDERED_THREAD_KEYS,
   type RenderedRootMap,
 } from "../../../shared/renderedPage";
@@ -13,13 +15,17 @@ import { svgAsDrawn } from "../../../shared/svgAsDrawn";
  *
  * Plain ES2017, no dependencies; `PREFIX` is the token's path prefix, and
  * `ROOT` where the page's root-absolute URLs go: a path under `base` is
- * written under `to` instead (rendered-pages.ts rootPath).
+ * written under `to` instead (rendered-pages.ts rootPath). `STORE`: for a
+ * listed site's pages, what the site stored in `localStorage` (the page's
+ * sandbox has none of its own), `LIMITS` its bounds; null for any other.
  */
 function renderedHelper(
   PREFIX: string,
   asDrawn: (svg: SVGSVGElement) => string,
   KEYS: readonly string[],
   ROOT: RenderedRootMap,
+  STORE: Record<string, string> | null,
+  LIMITS: { chars: number; keys: number },
 ) {
   const w = window;
   const d = document;
@@ -27,6 +33,139 @@ function renderedHelper(
     return;
   (w as unknown as { __roamgateRendered?: boolean }).__roamgateRendered = true;
   const parentWindow = w.parent;
+  // A listed site's pages get a `localStorage` and a `sessionStorage`
+  // before any of their scripts run: the sandbox refuses the real ones. The
+  // first is held in memory, seeded by the server, every write handed to
+  // the parent to keep; the second lives as long as the page.
+  if (STORE) {
+    const makeStorage = (seed: Record<string, string>, persist: boolean) => {
+      const items = new Map<string, string>(Object.entries(seed));
+      const chars = () => {
+        let total = 0;
+        items.forEach((value, key) => {
+          total += key.length + value.length;
+        });
+        return total;
+      };
+      const send = (write: Record<string, unknown>) => {
+        if (!persist || !parentWindow || parentWindow === w) return;
+        try {
+          parentWindow.postMessage(
+            { roamgate: "rendered", type: "storage", ...write },
+            "*",
+          );
+        } catch {
+          /* The parent is gone. */
+        }
+      };
+      const quota = () => {
+        const message = "The quota has been exceeded.";
+        if (typeof DOMException === "function")
+          return new DOMException(message, "QuotaExceededError");
+        const error = new Error(message);
+        error.name = "QuotaExceededError";
+        return error;
+      };
+      const api = {
+        getItem(key: unknown) {
+          const value = items.get(String(key));
+          return value === undefined ? null : value;
+        },
+        setItem(key: unknown, value: unknown) {
+          const name = String(key);
+          const text = String(value);
+          const before = items.get(name);
+          if (before === text) return;
+          const grown =
+            chars() - (before === undefined ? 0 : name.length + before.length);
+          if (
+            name.length === 0 ||
+            grown + name.length + text.length > LIMITS.chars ||
+            (before === undefined && items.size >= LIMITS.keys)
+          )
+            throw quota();
+          items.set(name, text);
+          send({ op: "set", key: name, value: text });
+        },
+        removeItem(key: unknown) {
+          const name = String(key);
+          if (!items.delete(name)) return;
+          send({ op: "remove", key: name });
+        },
+        clear() {
+          if (!items.size) return;
+          items.clear();
+          send({ op: "clear" });
+        },
+        key(index: unknown) {
+          const found = Array.from(items.keys())[Number(index)];
+          return found === undefined ? null : found;
+        },
+      };
+      const target: Record<string, unknown> = {};
+      for (const name of Object.keys(api))
+        Object.defineProperty(target, name, {
+          value: api[name as keyof typeof api],
+          configurable: true,
+          writable: true,
+        });
+      Object.defineProperty(target, "length", {
+        get: () => items.size,
+        configurable: true,
+      });
+      return new Proxy(target, {
+        get(self, name, receiver) {
+          if (typeof name === "symbol") {
+            return name === Symbol.toStringTag
+              ? "Storage"
+              : Reflect.get(self, name, receiver);
+          }
+          if (Object.prototype.hasOwnProperty.call(self, name))
+            return Reflect.get(self, name, receiver);
+          return items.get(name);
+        },
+        set(_self, name, value) {
+          if (typeof name === "symbol") return false;
+          api.setItem(name, value);
+          return true;
+        },
+        deleteProperty(_self, name) {
+          if (typeof name === "symbol") return false;
+          api.removeItem(name);
+          return true;
+        },
+        has(self, name) {
+          return (typeof name === "string" && items.has(name)) || name in self;
+        },
+        ownKeys() {
+          return Array.from(items.keys());
+        },
+        getOwnPropertyDescriptor(self, name) {
+          if (typeof name === "string" && items.has(name))
+            return {
+              value: items.get(name),
+              writable: true,
+              enumerable: true,
+              configurable: true,
+            };
+          return Reflect.getOwnPropertyDescriptor(self, name);
+        },
+      });
+    };
+    const install = (name: string, storage: object) => {
+      try {
+        Object.defineProperty(w, name, {
+          get: () => storage,
+          configurable: true,
+          enumerable: true,
+        });
+      } catch {
+        /* Not replaceable here: the page keeps what the browser gives. */
+      }
+    };
+    install("localStorage", makeStorage(STORE, true));
+    install("sessionStorage", makeStorage({}, false));
+  }
   if (!parentWindow || parentWindow === w) return;
   let pointMode = false;
   let selected = false;
@@ -612,11 +751,22 @@ function renderedHelper(
 export function renderedHelperSource(
   prefix: string,
   root: RenderedRootMap = { base: "/", to: prefix },
+  storage: Record<string, string> | null = null,
 ): string {
   // `<` cannot occur in the prefix (a token path), so the script cannot be
   // closed early; escape it anyway.
   const quoted = JSON.stringify(prefix).replace(/</g, "\\u003c");
   const keys = JSON.stringify(RENDERED_THREAD_KEYS).replace(/</g, "\\u003c");
   const rooted = JSON.stringify(root).replace(/</g, "\\u003c");
-  return `(${renderedHelper.toString()})(${quoted}, ${svgAsDrawn.toString()}, ${keys}, ${rooted});`;
+  // The items are the page's own, untrusted text: `<` (a `</script>`) and the
+  // line separators are escaped so no value can end or break the script.
+  const stored = JSON.stringify(storage)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  const limits = JSON.stringify({
+    chars: RENDERED_STORAGE_MAX_CHARS,
+    keys: RENDERED_STORAGE_MAX_KEYS,
+  });
+  return `(${renderedHelper.toString()})(${quoted}, ${svgAsDrawn.toString()}, ${keys}, ${rooted}, ${stored}, ${limits});`;
 }

@@ -160,6 +160,48 @@ test("the browser finds a review's merge request on its own connection only", as
   ).rejects.toThrow("no such review");
 });
 
+test("a page's storage write reaches the connection with its token, checked", async () => {
+  const service = setup();
+  const written: unknown[] = [];
+  const withStorage = {
+    ...local,
+    renderedStorage: (token: string, write: unknown) => {
+      written.push([token, write]);
+      if ((write as { key?: string }).key === "full") {
+        const error = new Error("full");
+        error.name = "QuotaExceededError";
+        throw error;
+      }
+      return true;
+    },
+  };
+  expect(
+    await handleReviewRpc(service, withStorage, "review.rendered.storage", {
+      token: "t",
+      write: { op: "set", key: "k", value: "v" },
+    }),
+  ).toEqual({ stored: true });
+  expect(written).toEqual([["t", { op: "set", key: "k", value: "v" }]]);
+  await expect(
+    handleReviewRpc(service, withStorage, "review.rendered.storage", {
+      token: "t",
+      write: { op: "set", key: "", value: "v" },
+    }),
+  ).rejects.toThrow("invalid storage write");
+  await expect(
+    handleReviewRpc(service, withStorage, "review.rendered.storage", {
+      token: "t",
+      write: { op: "set", key: "full", value: "v" },
+    }),
+  ).rejects.toThrow("full");
+  await expect(
+    handleReviewRpc(service, local, "review.rendered.storage", {
+      token: "t",
+      write: { op: "clear" },
+    }),
+  ).rejects.toThrow("invalid storage write");
+});
+
 test("a rendered review's page comes from the connection, only for its own reviews", async () => {
   const service = setup();
   const asked: { root: string; target: unknown; page?: string }[] = [];

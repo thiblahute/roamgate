@@ -1,4 +1,8 @@
-import type { RenderedMode } from "../../../shared/renderedPage";
+import {
+  parseStorageWrite,
+  type RenderedMode,
+  type RenderedStorageWrite,
+} from "../../../shared/renderedPage";
 import { REVIEW_USER, type ReviewTarget } from "../../../shared/review";
 import { isHostPath, type ReviewRepo } from "../workspace/review-patch";
 import { RENDERED_SVG_MAX_BYTES } from "../http/rendered-pages";
@@ -30,6 +34,14 @@ export type ReviewRpcConnection = {
     color?: string,
     scripts?: boolean,
   ) => RenderedPageAddress;
+  /**
+   * A write of a listed site's page to its `localStorage`, under the
+   * token of the page's frame: false when the token is not a listed
+   * site's. Throws a quota error over the bounds.
+   */
+  renderedStorage?: (token: string, write: RenderedStorageWrite) => boolean;
+  /** Forgets what a listed site's pages stored. */
+  clearRenderedStorage?: (site: string) => void;
 };
 
 /** A page to frame: its `/rendered/<token>/...` path and mode. */
@@ -231,6 +243,28 @@ export async function handleReviewRpc(
           Buffer.from(data, "base64"),
         ),
       };
+    }
+    case "review.rendered.storage": {
+      const write = parseStorageWrite(raw.write);
+      if (
+        !connection.renderedStorage ||
+        typeof raw.token !== "string" ||
+        !write
+      )
+        throw new ReviewError("invalid storage write");
+      try {
+        return { stored: connection.renderedStorage(raw.token, write) };
+      } catch (error) {
+        if (error instanceof Error && error.name === "QuotaExceededError")
+          throw new ReviewError("the site's storage is full", 413);
+        throw error;
+      }
+    }
+    case "review.rendered.storage.clear": {
+      if (!connection.clearRenderedStorage || typeof raw.site !== "string")
+        throw new ReviewError("invalid site");
+      connection.clearRenderedStorage(raw.site);
+      return { cleared: true };
     }
     case "review.rendered.page": {
       // A page shown in the Files preview, which may have no review yet.

@@ -161,6 +161,10 @@ import {
   renderedStray,
   RENDERED_BODY_MAX_BYTES,
 } from "./http/rendered-pages";
+import {
+  createSiteStorage,
+  renderedStoragePath,
+} from "./http/rendered-storage";
 import { RENDERED_PREFIX } from "../../shared/renderedPage";
 import { downloadLocalFile } from "./workspace/local-files";
 import { downloadRemoteFile } from "./workspace/remote-files";
@@ -1402,7 +1406,9 @@ async function serveReviewImage(url: URL): Promise<Response> {
  * under `/rendered/<token>/` before the authentication gate: the token is
  * their credential (server/src/http/rendered-pages.ts).
  */
+const renderedStorage = createSiteStorage(renderedStoragePath());
 const renderedPages = createRenderedPages({
+  storage: renderedStorage,
   findRoot: connectionRootFinder({
     sshHost: (connectionId) =>
       resolveReadyConnection(connectionManager, connectionId).runtime.sshHost(),
@@ -3317,6 +3323,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           readRoot: (path) => connection.files.readReviewRoot(path),
           scanRepos: (paths, agentPaths) =>
             connection.files.scanReviewRepos(paths, agentPaths),
+          renderedStorage: (token, write) =>
+            renderedPages.writeStorage(connection.identity.id, token, write),
+          clearRenderedStorage: (site) => renderedStorage.clear(site),
           renderedSvg: (svg, color, scripts) => {
             const mode = scripts ? "site" : "static";
             return {

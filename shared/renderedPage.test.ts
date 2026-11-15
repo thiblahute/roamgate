@@ -163,6 +163,33 @@ describe("a frame off its token", () => {
   });
 });
 
+describe("a page's storage write", () => {
+  test("is exactly a set, remove or clear within the bounds", () => {
+    const msg = { roamgate: "rendered", type: "storage" };
+    expect(
+      parseFrameMessage({ ...msg, op: "set", key: "k", value: "v" }),
+    ).toEqual({ ...msg, op: "set", key: "k", value: "v" });
+    expect(parseFrameMessage({ ...msg, op: "remove", key: "k" })).toEqual({
+      ...msg,
+      op: "remove",
+      key: "k",
+    });
+    expect(parseFrameMessage({ ...msg, op: "clear" })).toEqual({
+      ...msg,
+      op: "clear",
+    });
+    for (const bad of [
+      { op: "set", key: "k" },
+      { op: "set", key: 5, value: "v" },
+      { op: "set", key: "", value: "v" },
+      { op: "set", key: "k", value: "x".repeat(300 * 1024) },
+      { op: "remove" },
+      { op: "other", key: "k" },
+    ])
+      expect(parseFrameMessage({ ...msg, ...bad })).toBeNull();
+  });
+});
+
 describe("sites we work on", () => {
   test("are kept as http(s) prefixes or absolute directories", () => {
     expect(

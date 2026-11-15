@@ -89,7 +89,55 @@ export type RenderedFrameMessage =
   /** A key of the threads pressed in the page (RENDERED_THREAD_KEYS). */
   | { roamgate: "rendered"; type: "key"; key: string }
   /** How tall the page's content is, for a frame sized to it. */
-  | { roamgate: "rendered"; type: "size"; height: number };
+  | { roamgate: "rendered"; type: "size"; height: number }
+  /** A write of a listed site's page to its localStorage (see below). */
+  | ({ roamgate: "rendered"; type: "storage" } & RenderedStorageWrite);
+
+/**
+ * What a listed site's pages keep in `localStorage`: their sandbox has no
+ * storage of its own (an opaque origin), so the helper holds it in memory,
+ * seeded by the server with what the site stored, and hands every write to
+ * the parent, which sends it to the server. Bounded like a real Storage:
+ * a write over it is refused as a QuotaExceededError.
+ */
+export const RENDERED_STORAGE_MAX_CHARS = 256 * 1024;
+export const RENDERED_STORAGE_MAX_KEYS = 200;
+
+export type RenderedStorageWrite =
+  | { op: "set"; key: string; value: string }
+  | { op: "remove"; key: string }
+  | { op: "clear" };
+
+/** The characters a Storage holds: its keys and values, together. */
+export function storageChars(items: Record<string, string>): number {
+  let chars = 0;
+  for (const [key, value] of Object.entries(items))
+    chars += key.length + value.length;
+  return chars;
+}
+
+/** A write checked, or null when it is not exactly one of the shapes. */
+export function parseStorageWrite(raw: unknown): RenderedStorageWrite | null {
+  if (!raw || typeof raw !== "object") return null;
+  const write = raw as Record<string, unknown>;
+  if (write.op === "clear") return { op: "clear" };
+  const key = write.key;
+  if (
+    typeof key !== "string" ||
+    key.length === 0 ||
+    key.length > RENDERED_STORAGE_MAX_CHARS
+  )
+    return null;
+  if (write.op === "remove") return { op: "remove", key };
+  if (write.op !== "set") return null;
+  const value = write.value;
+  if (
+    typeof value !== "string" ||
+    key.length + value.length > RENDERED_STORAGE_MAX_CHARS
+  )
+    return null;
+  return { op: "set", key, value };
+}
 
 /**
  * The keys of the threads drawn in the Files preview (useThreadKeys: j / k,
@@ -176,6 +224,10 @@ export function parseFrameMessage(data: unknown): RenderedFrameMessage | null {
   const raw = data as Record<string, unknown>;
   if (raw.roamgate !== "rendered") return null;
   if (raw.type === "clear") return { roamgate: "rendered", type: "clear" };
+  if (raw.type === "storage") {
+    const write = parseStorageWrite(raw);
+    return write ? { roamgate: "rendered", type: "storage", ...write } : null;
+  }
   if (raw.type === "key")
     return typeof raw.key === "string" && RENDERED_THREAD_KEYS.includes(raw.key)
       ? { roamgate: "rendered", type: "key", key: raw.key }
