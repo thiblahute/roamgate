@@ -597,6 +597,12 @@ type DiffFileSectionProps = {
   searchHit?: boolean;
   /** Each chunk's staged state and reviewed mark (the review in Changes). */
   chunkSpans?: readonly ChunkSpan[];
+  /**
+   * The file is reviewed (every chunk) and folded to its header, as the
+   * review pane folds it; `onShowReviewed` shows it again.
+   */
+  reviewedFolded?: boolean;
+  onShowReviewed?: (path: string) => void;
 };
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -621,6 +627,8 @@ const DiffFileSection = memo(function DiffFileSection({
   cursorSelection,
   searchHit = false,
   chunkSpans,
+  reviewedFolded = false,
+  onShowReviewed,
 }: DiffFileSectionProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const measuredHeightRef = useRef<number | null>(null);
@@ -712,6 +720,11 @@ const DiffFileSection = memo(function DiffFileSection({
     [onLineClick, sectionKey, selectLines],
   );
   const toggle = () => {
+    // A reviewed file folded on its own opens, as in the review pane.
+    if (reviewedFolded) {
+      onShowReviewed?.(section.entry.path);
+      return;
+    }
     onToggle(section.key, section.collapsed);
     if (section.collapsed && (!section.file || !section.active))
       onSelectFile?.(section.entry);
@@ -745,11 +758,13 @@ const DiffFileSection = memo(function DiffFileSection({
               type="button"
               className="diff-file-collapse"
               onClick={toggle}
-              aria-expanded={!section.collapsed}
-              aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.entry.path}`}
-              title={section.collapsed ? "Expand" : "Collapse"}
+              aria-expanded={!section.collapsed && !reviewedFolded}
+              aria-label={`${section.collapsed || reviewedFolded ? "Expand" : "Collapse"} ${section.entry.path}`}
+              title={
+                section.collapsed || reviewedFolded ? "Expand" : "Collapse"
+              }
             >
-              {section.collapsed ? (
+              {section.collapsed || reviewedFolded ? (
                 <ChevronRight size={14} />
               ) : (
                 <ChevronDown size={14} />
@@ -760,7 +775,7 @@ const DiffFileSection = memo(function DiffFileSection({
             type="button"
             className="diff-file-section-title is-toggle"
             onClick={toggle}
-            aria-expanded={!section.collapsed}
+            aria-expanded={!section.collapsed && !reviewedFolded}
           >
             <strong>{section.entry.path}</strong>
             <span
@@ -774,7 +789,22 @@ const DiffFileSection = memo(function DiffFileSection({
             {metaNote ? (
               <span className="diff-file-section-meta">{metaNote}</span>
             ) : null}
+            {reviewedFolded ? (
+              <span className="diff-file-section-meta diff-file-reviewed">
+                ✓ reviewed
+              </span>
+            ) : null}
           </button>
+          {reviewedFolded ? (
+            <button
+              type="button"
+              className="diff-file-show-reviewed"
+              title="Show the reviewed file again, until it is unmarked"
+              onClick={() => onShowReviewed?.(section.entry.path)}
+            >
+              Show
+            </button>
+          ) : null}
           <button
             type="button"
             className="diff-file-open"
@@ -808,6 +838,9 @@ const DiffFileSection = memo(function DiffFileSection({
         <div
           ref={bodyRef}
           className="diff-file-section-body"
+          // Folded reviewed: kept drawn (its lines stay the cursor's, which
+          // steps over them), only hidden.
+          hidden={reviewedFolded}
           style={!section.file ? { minHeight: placeholderHeight } : undefined}
         >
           {mobile ? (
@@ -919,7 +952,9 @@ function areDiffFileSectionPropsEqual(
     previous.onLineClick === next.onLineClick &&
     sameRange(previous.cursorSelection, next.cursorSelection) &&
     previous.searchHit === next.searchHit &&
-    previous.chunkSpans === next.chunkSpans
+    previous.chunkSpans === next.chunkSpans &&
+    previous.reviewedFolded === next.reviewedFolded &&
+    previous.onShowReviewed === next.onShowReviewed
   );
 }
 
@@ -1733,9 +1768,59 @@ export function DiffContentView({
     }
     return any ? folded : chunkSpansByKey;
   }, [chunkSpansByKey, peekedChunks, readingOrder]);
-  // The cursor steps over a folded chunk's lines but its first.
+  // Reviewed files fold to their header, as in the review pane, until
+  // shown again (Show, a click on the name, gn to a thread there); shown,
+  // a file stays open until it is unmarked.
+  const [shownReviewed, setShownReviewed] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const foldedFiles = useMemo(() => {
+    const folded = new Set<string>();
+    if (!reviewEditor) return folded;
+    reviewLayout.files.forEach((info, index) => {
+      if (reviewState.files.has(index) && !shownReviewed.has(info.path))
+        folded.add(info.path);
+    });
+    return folded;
+  }, [reviewEditor, reviewLayout, reviewState, shownReviewed]);
+  useEffect(() => {
+    // Unmarked: the next mark folds it again.
+    const reviewedPaths = new Set(
+      reviewLayout.files
+        .filter((_, index) => reviewState.files.has(index))
+        .map((info) => info.path),
+    );
+    setShownReviewed((current) => {
+      const kept = [...current].filter((path) => reviewedPaths.has(path));
+      return kept.length === current.size ? current : new Set(kept);
+    });
+  }, [reviewLayout, reviewState]);
+  const foldedFilesRef = useRef(foldedFiles);
+  foldedFilesRef.current = foldedFiles;
+  /** Shows a folded reviewed file (only a folded one: kept open till unmarked). */
+  const showReviewed = useCallback((path: string) => {
+    if (!foldedFilesRef.current.has(path)) return;
+    setShownReviewed((current) =>
+      current.has(path) ? current : new Set(current).add(path),
+    );
+  }, []);
+  // Picked in the tree, or gone to from Files' Review: a folded reviewed
+  // file shows, as the review pane's file list shows it.
+  const pickedPath = selectionRevision > 0 ? (entry?.path ?? null) : null;
+  useEffect(() => {
+    if (pickedPath) showReviewed(pickedPath);
+  }, [pickedPath, selectionRevision, showReviewed]);
+  useEffect(() => {
+    if (cursorGoTo?.path) showReviewed(cursorGoTo.path);
+  }, [cursorGoTo?.path, cursorGoTo?.at, showReviewed]);
+  // The cursor steps over a folded chunk's lines but its first, and over
+  // every line of a folded reviewed file.
   foldedRowsRef.current = (() => {
     const hidden = new Set<number>();
+    if (foldedFiles.size)
+      cursor.model.rows.forEach((row, at) => {
+        if (foldedFiles.has(row.path)) hidden.add(at);
+      });
     for (const spans of foldedSpansByKey.values())
       for (const span of spans)
         if (span.folded)
@@ -1743,11 +1828,21 @@ export function DiffContentView({
             hidden.add(at);
     return hidden;
   })();
-  // A chunk folded under the cursor: the cursor goes on past it.
+  // A chunk or file folded under the cursor: the cursor goes on past it
+  // (back before it at the end).
   useEffect(() => {
     const at = cursorHandle.current.rowIndex();
-    if (foldedRowsRef.current.has(at)) cursorHandle.current.goToLine(at + 1);
-  }, [foldedSpansByKey]);
+    const hidden = foldedRowsRef.current;
+    if (!hidden.has(at)) return;
+    const rows = cursor.model.rows.length;
+    let next = at + 1;
+    while (next < rows && hidden.has(next)) next += 1;
+    if (next >= rows) {
+      next = at - 1;
+      while (next >= 0 && hidden.has(next)) next -= 1;
+    }
+    if (next >= 0) cursorHandle.current.goToLine(next + 1);
+  }, [foldedSpansByKey, foldedFiles]);
   /** The reviewed chunk at a row of the cursor's model, folded or peeked. */
   const reviewedSpanAt = (row: number) => {
     for (const [key, spans] of foldedSpansByKey)
@@ -1830,6 +1925,16 @@ export function DiffContentView({
   };
   /** Shows a thread to be read: unfolded, its line in view. */
   const showThread = (spot: PlacedThread) => {
+    // In a folded reviewed file: the file opens, as the review pane's gn;
+    // its lines are the cursor's again at once.
+    if (foldedFiles.has(spot.path)) {
+      showReviewed(spot.path);
+      const hidden = new Set(foldedRowsRef.current);
+      cursorHandle.current.model.rows.forEach((row, at) => {
+        if (row.path === spot.path) hidden.delete(at);
+      });
+      foldedRowsRef.current = hidden;
+    }
     const folded = threadView.folded(spot.thread);
     if (folded) threadView.unfold([spot.thread.id]);
     cursorHandle.current.goTo(spot.key, spot.line, spot.side);
@@ -2863,7 +2968,11 @@ export function DiffContentView({
                 cursorSelection: cursor.selectionIn(section.key),
                 searchHit: cursorMatching.has(section.entry.path),
                 ...(reviewEditor
-                  ? { chunkSpans: foldedSpansByKey.get(section.key) }
+                  ? {
+                      chunkSpans: foldedSpansByKey.get(section.key),
+                      reviewedFolded: foldedFiles.has(section.entry.path),
+                      onShowReviewed: showReviewed,
+                    }
                   : {}),
               }
             : {})}

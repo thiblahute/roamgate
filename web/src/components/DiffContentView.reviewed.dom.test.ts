@@ -275,12 +275,93 @@ if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
         expect(Object.keys(first)).toHaveLength(3);
         expect(notices).toContain("Reviewed (1/2)");
         await diff.settle();
+        // Folded to its header, as in the review pane; the cursor goes on
+        // to what is left to review, and gg too.
+        const section = document.querySelector<HTMLElement>(
+          '[data-diff-entry-key="unstaged:a.ts"]',
+        )!;
+        expect(section.textContent).toContain("✓ reviewed");
+        expect(
+          section.querySelector<HTMLElement>(".diff-file-section-body")?.hidden,
+        ).toBe(true);
+        expect(cursorAt()?.startsWith("unstaged:b.ts")).toBe(true);
+        await keys("gg");
+        expect(cursorAt()?.startsWith("unstaged:b.ts")).toBe(true);
+        // Shown again, v unmarks it.
+        await act(async () =>
+          section
+            .querySelector<HTMLButtonElement>(".diff-file-show-reviewed")!
+            .click(),
+        );
+        await diff.settle();
+        expect(
+          section.querySelector<HTMLElement>(".diff-file-section-body")?.hidden,
+        ).toBe(false);
         await keys("kkkk");
+        expect(cursorAt()?.startsWith("unstaged:a.ts")).toBe(true);
         await press("v");
         await diff.settle();
         expect(notices).toContain("No longer reviewed, nor its chunks");
         // Unmarked here (kept as ""), none reviewed.
         expect(Object.values(marks).every((value) => value === "")).toBe(true);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
+    test("gn to a thread in a folded reviewed file shows the file", async () => {
+      reset();
+      const { feedbackNote } = await import("../workspaceFeedback");
+      const note = {
+        source: "diff",
+        path: "a.ts",
+        kind: "unstaged",
+        side: "new",
+        line: 2,
+        quote: "deux",
+        hunk: "",
+      };
+      const thread = {
+        id: "t1",
+        sessionId: "s1",
+        kind: "discussion",
+        anchor: {
+          path: "a.ts",
+          line: 2,
+          side: "new",
+          text: "deux",
+          feedback: JSON.stringify(note),
+        },
+        comments: [
+          {
+            id: "t1c",
+            author: "you",
+            body: "Why deux?",
+            createdAt: "2026-11-10T10:00:00Z",
+            updatedAt: "2026-11-10T10:00:00Z",
+          },
+        ],
+        resolved: false,
+        createdAt: "2026-11-10T10:00:00Z",
+        updatedAt: "2026-11-10T10:00:00Z",
+      } as unknown as import("../../../shared/review").ReviewThread;
+      const diff = await mount({
+        threads: [thread],
+        annotations: [feedbackNote(thread)],
+      });
+      try {
+        await press("v");
+        await diff.settle();
+        const body = () =>
+          document.querySelector<HTMLElement>(
+            '[data-diff-entry-key="unstaged:a.ts"] .diff-file-section-body',
+          );
+        expect(body()?.hidden).toBe(true);
+        await press("g");
+        await press("n");
+        await diff.settle();
+        expect(body()?.hidden).toBe(false);
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
       } finally {
         await diff.unmount();
       }

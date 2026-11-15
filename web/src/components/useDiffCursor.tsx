@@ -368,11 +368,13 @@ export function useDiffCursor({
       if (skip?.(next)) {
         let head = next;
         while (head > 0 && skip(head)) head -= 1;
-        if (cursorRef.current.at === head && next > head) {
-          let past = next;
-          while (past < current.rows.length - 1 && skip(past)) past += 1;
+        let past = next;
+        while (past < current.rows.length - 1 && skip(past)) past += 1;
+        // Nothing to stop on before it (a folded file first): past it.
+        if (skip(head)) next = skip(past) ? next : past;
+        else if (cursorRef.current.at === head && next > head)
           next = skip(past) ? head : past;
-        } else next = head;
+        else next = head;
       }
       const length = current.rows[next]!.text.length;
       if (column !== undefined) wantCol.current = column;
