@@ -96,6 +96,7 @@ import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { CommandLine } from "./CommandLine";
 import { type ShortcutRow, ShortcutList } from "./ShortcutList";
 import { useLiveClient } from "../useReloadOnReconnect";
+import { ZenDock } from "./ZenIsland";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
@@ -495,6 +496,9 @@ export function WorkspaceInspectorHost({
     }) as CSSProperties;
   const changeCount = changedCount(workspace);
   const historyAvailable = paneHasAgentHistory(historyPane);
+  const repoName =
+    workspace?.worktree?.repo_name || workspace?.label || "Workspace";
+  const checkout = checkoutLabel(workspace);
   const detailAvailable =
     state.view === "files"
       ? !!fileSelection.entry
@@ -933,30 +937,20 @@ export function WorkspaceInspectorHost({
     >
       <InspectorCommandsContext.Provider value={commandRegistry}>
         <header className="workspace-inspector-head">
-          <div className="workspace-inspector-identity">
-            <span className="workspace-inspector-repo">
-              {workspace?.worktree?.repo_name ||
-                workspace?.label ||
-                "Workspace"}
-            </span>
-            <span className="workspace-inspector-checkout">
-              {checkoutLabel(workspace)}
-              {workspace?.worktree?.is_linked_worktree ? (
-                <span
-                  className="workspace-inspector-wt"
-                  title="Linked worktree"
-                >
-                  <GitFork size={11} aria-hidden="true" /> Worktree
-                </span>
-              ) : null}
-            </span>
-            {workspace?.worktree?.checkout_path || workspace?.cwd ? (
-              <code
-                className="workspace-inspector-path"
-                title={workspace.worktree?.checkout_path ?? workspace.cwd}
-              >
-                {workspace.worktree?.checkout_path ?? workspace.cwd}
-              </code>
+          {/* One line: the repository when the checkout is not named after
+              it, the checkout; its path in the tooltip. */}
+          <div
+            className="workspace-inspector-identity"
+            title={workspace?.worktree?.checkout_path ?? workspace?.cwd}
+          >
+            {repoName !== checkout ? (
+              <span className="workspace-inspector-repo">{repoName}</span>
+            ) : null}
+            <span className="workspace-inspector-checkout">{checkout}</span>
+            {workspace?.worktree?.is_linked_worktree ? (
+              <span className="workspace-inspector-wt" title="Linked worktree">
+                <GitFork size={11} aria-hidden="true" /> Worktree
+              </span>
             ) : null}
           </div>
           <div className="workspace-inspector-tabs" role="tablist">
@@ -1069,6 +1063,8 @@ export function WorkspaceInspectorHost({
             >
               <X size={16} />
             </button>
+            {/* Expanded, it is the screen's top in Zen: the way out joins it. */}
+            {state.expanded ? <ZenDock iconSize={15} /> : null}
           </div>
         </header>
 
