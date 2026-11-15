@@ -126,6 +126,12 @@ export async function mountChangesReview(
   options: SurfaceOptions,
 ): Promise<ReviewSurface> {
   const restoreGlobals = installPierreGlobals();
+  // The bridge the classic pane's tests hold: the checkout's worktree
+  // review, its reviewed marks written by review.update.
+  const { backend, mockClassicBackend } = await import(
+    "./reviewSurface.classic.testkit"
+  );
+  mockClassicBackend();
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { spyOn } = await import("bun:test");
@@ -140,6 +146,59 @@ export async function mountChangesReview(
 
   mounted += 1;
   const connectionId = `changes-review-${mounted}`;
+  const { feedbackNote } = await import("../workspaceFeedback");
+  const sessionId = "s1";
+  let marks: Record<string, string> = { ...(options.reviewed ?? {}) };
+  let applied = 0;
+  backend.calls.length = 0;
+  // Threads as Changes' comments are: written on the unstaged entry.
+  const threads = (options.threads ?? []).map((thread) => ({
+    ...thread,
+    sessionId,
+    anchor: {
+      ...thread.anchor,
+      feedback: JSON.stringify({
+        source: "diff",
+        path: thread.anchor.path,
+        kind: "unstaged",
+        side: thread.anchor.side ?? "new",
+        line: thread.anchor.line,
+        quote: "",
+        hunk: "",
+      }),
+    },
+  }));
+  const annotations = threads.map((thread) => feedbackNote(thread));
+  const publishSession = () => {
+    backend.sessions = new Map([
+      [
+        sessionId,
+        {
+          session: {
+            id: sessionId,
+            connectionId,
+            workspaceId: "workspace",
+            root: "/repo",
+            title: "repo",
+            target: { kind: "worktree" },
+            gitlab: false,
+            summary: "",
+            agent: {},
+            reviewed: marks,
+            createdAt: "2026-11-04T14:11:18Z",
+            updatedAt: "2026-11-04T14:11:18Z",
+          },
+          threads,
+        },
+      ],
+    ]);
+  };
+  publishSession();
+  /** Each file's chunk progress as Changes reports it to its tree. */
+  let progress: ReadonlyMap<
+    string,
+    { done: number; total: number; reviewed: boolean }
+  > = new Map();
   // Side by side as the classic pane would open it: as told, else by width.
   const split = options.split ?? (options.width ?? 1024) >= 1100;
   roamgateLocalStorage.setItem("diffViewMode", split ? "split" : "unified");
@@ -229,11 +288,31 @@ export async function mountChangesReview(
       throw new Error(`no backend here: ${method}`);
     },
   };
-  const settleAll = async () => {
+  const settleOnly = async () => {
     for (let round = 0; round < 8; round++)
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 2));
       });
+  };
+  /** The marks each review.update wrote, applied as the bridge does. */
+  const settleAll = async () => {
+    await settleOnly();
+    const updates = backend.calls.filter((c) => c.method === "review.update");
+    if (updates.length === applied) return;
+    for (const update of updates.slice(applied)) {
+      const changes = (update.params.reviewed ?? {}) as Record<
+        string,
+        string | null
+      >;
+      const next = { ...marks };
+      for (const [key, value] of Object.entries(changes))
+        if (value === null) delete next[key];
+        else next[key] = value;
+      marks = next;
+    }
+    applied = updates.length;
+    publishSession();
+    await render();
   };
   const render = async () => {
     await act(async () =>
@@ -255,16 +334,23 @@ export async function mountChangesReview(
               error: null,
               resourceKey: connectionId,
               connectionClient: client as never,
-              annotations: [],
+              annotations,
+              threads,
               reviewCursor: true,
               showFileSelector: false,
+              onCreateAnnotation: () => {},
+              onReviewProgress: (next: typeof progress) => {
+                progress = next;
+              },
+              ...(goTo ? { cursorGoTo: goTo } : {}),
             }),
           ),
         ),
       ),
     );
-    await settleAll();
+    await settleOnly();
   };
+  let goTo: { path: string; at: number } | null = null;
   /** Drawn side by side now (S may have switched it since mounting). */
   const drawnSplit = () =>
     sections().some(
@@ -312,10 +398,28 @@ export async function mountChangesReview(
     for (const section of sections()) {
       const path = pathOf(section);
       if (only !== undefined && path !== only) continue;
+      // A reviewed file folded to its header shows no line.
+      if (section.querySelector<HTMLElement>(".diff-file-section-body")?.hidden)
+        continue;
       for (const element of shadowOf(section)?.querySelectorAll(
         `[data-content] [data-line][data-line-type]${selector}`,
-      ) ?? [])
+      ) ?? []) {
+        // A folded reviewed chunk: its one line says so, the rest hidden.
+        if (element.hasAttribute("data-chunk-folded")) {
+          if (!element.hasAttribute("data-chunk-fold-head")) continue;
+          const line = shown(element, path);
+          found.push({
+            line: {
+              ...line,
+              kind: "reviewed",
+              text: element.getAttribute("data-chunk-fold-label") ?? "",
+            },
+            element,
+          });
+          continue;
+        }
         found.push({ line: shown(element, path), element });
+      }
     }
     return found;
   };
@@ -521,7 +625,11 @@ export async function mountChangesReview(
       return files
         .filter((file) => path === undefined || file.path === path)
         .flatMap((file) => fileRows(file).flat())
-        .filter((line) => shown.some((each) => sameLine(each, line)));
+        .flatMap((line) => {
+          // As drawn: a folded chunk's line is "reviewed".
+          const drawnLine = shown.find((each) => sameLine(each, line));
+          return drawnLine ? [drawnLine] : [];
+        });
     },
     sideBySide() {
       return sections().some(
@@ -534,6 +642,25 @@ export async function mountChangesReview(
     text() {
       return host.textContent ?? "";
     },
+    async goToFile(path) {
+      // Picked in the tree: Changes' cursor goes to it, shown.
+      goTo = { path, at: Math.max(Date.now(), (goTo?.at ?? 0) + 1) };
+      await render();
+      await settleAll();
+    },
+    fileReviewed(path) {
+      return progress.get(path)?.reviewed ?? false;
+    },
+    chunkProgress(path) {
+      // As the review pane's list: a count while partly reviewed.
+      const own = progress.get(path);
+      return own && !own.reviewed && own.done > 0
+        ? `${own.done}/${own.total}`
+        : null;
+    },
+    reviewedMarks() {
+      return { ...marks };
+    },
     press,
     async command(text) {
       await act(async () => registry.run(text));
@@ -545,7 +672,8 @@ export async function mountChangesReview(
           each.path === line.path &&
           (line.new === undefined || each.new === line.new) &&
           (line.old === undefined || each.old === line.old) &&
-          (line.text === undefined || each.text === line.text),
+          (line.text === undefined || each.text === line.text) &&
+          (line.kind === undefined || each.kind === line.kind),
       );
       if (!target) throw new Error(`no line ${JSON.stringify(line)}`);
       const event = new PointerEvent("pointerdown", {

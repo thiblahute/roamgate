@@ -1774,32 +1774,39 @@ export function DiffContentView({
   const [shownReviewed, setShownReviewed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const reviewedPaths = useMemo(
+    () =>
+      new Set(
+        reviewLayout.files
+          .filter((_, index) => reviewState.files.has(index))
+          .map((info) => info.path),
+      ),
+    [reviewLayout, reviewState],
+  );
+  // Files' Review or a tree pick to a folded file: open before the cursor
+  // goes there (its lines must be the cursor's when it moves).
+  const goToDone = useRef<number | null>(null);
+  const goToReveal =
+    cursorGoTo && goToDone.current !== cursorGoTo.at ? cursorGoTo.path : null;
   const foldedFiles = useMemo(() => {
     const folded = new Set<string>();
     if (!reviewEditor) return folded;
-    reviewLayout.files.forEach((info, index) => {
-      if (reviewState.files.has(index) && !shownReviewed.has(info.path))
-        folded.add(info.path);
-    });
+    for (const path of reviewedPaths)
+      if (!shownReviewed.has(path) && path !== goToReveal) folded.add(path);
     return folded;
-  }, [reviewEditor, reviewLayout, reviewState, shownReviewed]);
+  }, [goToReveal, reviewEditor, reviewedPaths, shownReviewed]);
   useEffect(() => {
     // Unmarked: the next mark folds it again.
-    const reviewedPaths = new Set(
-      reviewLayout.files
-        .filter((_, index) => reviewState.files.has(index))
-        .map((info) => info.path),
-    );
     setShownReviewed((current) => {
       const kept = [...current].filter((path) => reviewedPaths.has(path));
       return kept.length === current.size ? current : new Set(kept);
     });
-  }, [reviewLayout, reviewState]);
-  const foldedFilesRef = useRef(foldedFiles);
-  foldedFilesRef.current = foldedFiles;
-  /** Shows a folded reviewed file (only a folded one: kept open till unmarked). */
+  }, [reviewedPaths]);
+  const reviewedPathsRef = useRef(reviewedPaths);
+  reviewedPathsRef.current = reviewedPaths;
+  /** Shows a reviewed file (only a reviewed one: kept open till unmarked). */
   const showReviewed = useCallback((path: string) => {
-    if (!foldedFilesRef.current.has(path)) return;
+    if (!reviewedPathsRef.current.has(path)) return;
     setShownReviewed((current) =>
       current.has(path) ? current : new Set(current).add(path),
     );
@@ -1811,7 +1818,9 @@ export function DiffContentView({
     if (pickedPath) showReviewed(pickedPath);
   }, [pickedPath, selectionRevision, showReviewed]);
   useEffect(() => {
-    if (cursorGoTo?.path) showReviewed(cursorGoTo.path);
+    if (!cursorGoTo?.path) return;
+    showReviewed(cursorGoTo.path);
+    goToDone.current = cursorGoTo.at;
   }, [cursorGoTo?.path, cursorGoTo?.at, showReviewed]);
   // The cursor steps over a folded chunk's lines but its first, and over
   // every line of a folded reviewed file.
@@ -3372,6 +3381,14 @@ export function DiffContentView({
             </div>
           ) : null}
         </div>
+        {reviewEditor && reviewLayout.files.length ? (
+          <span
+            className="diff-reviewed-count"
+            title="Files reviewed (r a chunk, v a file)"
+          >
+            {reviewedFileCount}/{reviewLayout.files.length} reviewed
+          </span>
+        ) : null}
         {shownThreads.length ? (
           <ThreadsChip
             className="diff-threads-chip"
