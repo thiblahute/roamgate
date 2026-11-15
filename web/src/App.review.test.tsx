@@ -351,6 +351,61 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("on reviewin=changes, on the default branch with commits and uncommitted work, the toggle shows the work, never an empty Branch scope; pressed again it closes", async () => {
+    const branch = reviewOf("r1", "w1");
+    branch.session.target = { kind: "range", base: "main", head: "HEAD" };
+    const app = await mountAppWithReviews({ reviews: [branch] });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      app.setChanged("branch-main", []);
+      app.setChanged("working", ["notes.txt"]);
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()?.open).toBe(false);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      // And again: open, then closed.
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()?.open).toBe(false);
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, with nothing beyond the default branch and no work, the toggle shows the review pane's commits", async () => {
+    const branch = reviewOf("r1", "w1");
+    branch.session.target = { kind: "range", base: "main", head: "HEAD" };
+    const app = await mountAppWithReviews({ reviews: [branch] });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      app.setNextOpened("r1");
+      app.setChanged("branch-main", []);
+      app.setChanged("working", []);
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
+      expect(app.inspector()?.open ?? false).toBe(false);
+      await app.toggleReview();
+      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=changes, a review of another repository than the checkout keeps the classic pane", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r2", "w1")],

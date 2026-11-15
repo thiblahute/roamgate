@@ -29,6 +29,7 @@ export async function changesReviewChoice({
   connectionId,
   panes,
   sessions,
+  changed,
 }: {
   snapshot: ReviewSnapshot;
   /** The inspector's checkout, null when it is the workspace's own. */
@@ -38,6 +39,8 @@ export async function changesReviewChoice({
   panes: readonly Pane[];
   /** Every review known: the workspace's others name repositories too. */
   sessions: Iterable<ReviewSnapshot>;
+  /** Whether a Changes scope holds anything (null: not known). */
+  changed: (mode: "working" | "branch-main") => Promise<boolean | null>;
 }): Promise<ChangesReviewChoice> {
   const { session } = snapshot;
   const classic = (reason: string): ChangesReviewChoice => ({
@@ -75,9 +78,15 @@ export async function changesReviewChoice({
     return classic(
       "Several repositories here: the review pane switches between them (p, ( and )).",
     );
-  return {
-    kind: "changes",
-    sessionId: session.id,
-    scope: session.target.kind === "worktree" ? "working" : "branch-main",
-  };
+  if (session.target.kind === "worktree")
+    return { kind: "changes", sessionId: session.id, scope: "working" };
+  // Nothing beyond the base (the default branch itself, say): the
+  // uncommitted work, else the review pane, which lists the commits.
+  if ((await changed("branch-main")) !== false)
+    return { kind: "changes", sessionId: session.id, scope: "branch-main" };
+  if ((await changed("working")) !== false)
+    return { kind: "changes", sessionId: session.id, scope: "working" };
+  return classic(
+    "Nothing beyond the default branch: the review pane lists its commits.",
+  );
 }
