@@ -102,6 +102,7 @@ export const DIFF_REVIEW_KEYS: readonly ShortcutRow[] = [
   ["dd", "delete your lone comment on the line"],
   ["T :conversations", "every comment, open ones first"],
   ["t :comments", "show / hide every comment"],
+  ["gs", "stage the file at the cursor (:stage :unstage :discard :delete)"],
   [
     ":send :hold :review :overall",
     "the agent group: send, hold, review, overall comment",
@@ -157,6 +158,8 @@ export type DiffCursor = {
   matchingPaths: readonly string[];
   /** The line the cursor is on, as a file's line numbers. */
   where: () => CursorWhere | null;
+  /** The files the cursor's line, or the Visual selection, touches. */
+  selectedPaths: () => string[];
   /** Puts the cursor on a file's line (a thread's, say), scrolling to it. */
   goTo: (key: string, line: number, side: "old" | "new") => boolean;
 };
@@ -261,7 +264,7 @@ export function useDiffCursor({
   const wantCol = useRef(0);
   /** Side by side, the side j / k stay on. */
   const splitSide = useRef<"left" | "right">("right");
-  const machine = useKeyMachine();
+  const machine = useKeyMachine(["gs"]);
   const instances = useRef(new Map<string, DiffSurfaceInstance>());
   /** The cursor's row as a place, to find it again in a new model. */
   const place = useRef<{
@@ -882,6 +885,16 @@ export function useDiffCursor({
     };
   };
 
+  const selectedPaths = (): string[] => {
+    const last = rows[at];
+    if (!last) return [];
+    const first = anchor === null ? last : (rows[anchor] ?? last);
+    const lo = Math.min(at, anchor ?? at);
+    const hi = Math.max(at, anchor ?? at);
+    void first;
+    return [...new Set(rows.slice(lo, hi + 1).map((each) => each.path))];
+  };
+
   const goTo = (key: string, line: number, side: "old" | "new"): boolean => {
     const target = rowAt(
       modelRef.current,
@@ -955,6 +968,7 @@ export function useDiffCursor({
     goToLine: (line) => jumpTo(line - 1, 0),
     matchingPaths,
     where,
+    selectedPaths,
     goTo,
   };
 }

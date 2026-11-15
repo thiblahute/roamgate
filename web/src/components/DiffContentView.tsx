@@ -91,6 +91,7 @@ import {
 } from "../changesThreads";
 import { latestComment } from "../reviewNavigation";
 import { useChangesAgent } from "../changesReview";
+import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
 import { stepNotice, stepUnresolved } from "../unresolvedThreads";
 import { useReviewState } from "../review";
@@ -886,6 +887,7 @@ export function DiffContentView({
   reviewCursor = false,
   onSearchMatchesChange,
   onAddReviewImage,
+  onGitAction,
 }: {
   selectionRevision?: number;
   entry: GitDiffEntry | null;
@@ -930,6 +932,8 @@ export function DiffContentView({
   onSearchMatchesChange?: (paths: readonly string[]) => void;
   /** Stores an image pasted in the review's comment box; Markdown for it. */
   onAddReviewImage?: (file: File) => Promise<string>;
+  /** A git action on a file of the working changes (`:stage`, `gs`). */
+  onGitAction?: (action: GitFileAction, path: string) => boolean;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1640,6 +1644,13 @@ export function DiffContentView({
         diffThreads.api.remove(first.thread);
         return true;
       }
+      case "gs": {
+        // Stage the file at the cursor: a two-key chord, never `s` alone.
+        const path = cursorHandle.current.where()?.path;
+        if (!path || !onGitAction) return false;
+        onGitAction("stage", path);
+        return true;
+      }
       case "T":
         if (shownThreads.length) setThreadsOpen((open) => !open);
         else say("No comments yet.");
@@ -2258,6 +2269,40 @@ export function DiffContentView({
             run: () => threadView.setOpenOnly(!threadView.openOnly),
           },
         ]
+      : []),
+    ...(reviewEditor && onGitAction
+      ? (
+          [
+            [
+              "stage",
+              "stage the file at the cursor, or the files V selected (gs)",
+              "stage",
+            ],
+            ["unstage", "unstage them", "unstage"],
+            [
+              "discard",
+              "discard their unstaged changes (asks first)",
+              "discard_unstaged",
+            ],
+            [
+              "delete",
+              "delete their untracked files (asks first)",
+              "delete_untracked",
+            ],
+          ] as const
+        ).map(([name, description, action]) => ({
+          name,
+          description,
+          run: () => {
+            const paths = cursorHandle.current.selectedPaths();
+            if (!paths.length) {
+              say("No file under the cursor.");
+              return;
+            }
+            // Destructive actions ask once per file, as the menus do.
+            for (const path of paths) onGitAction(action, path);
+          },
+        }))
       : []),
     ...(reviewEditor && changesAgent.agentName
       ? [

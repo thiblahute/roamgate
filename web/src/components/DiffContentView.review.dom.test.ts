@@ -294,6 +294,50 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
     });
   });
 
+  describe("git actions from the diff", () => {
+    test("gs stages the file at the cursor; s alone is not staging; on classic gs does nothing", async () => {
+      const done: string[] = [];
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        onGitAction: (action, path) => {
+          done.push(`${action} ${path}`);
+          return true;
+        },
+      });
+      try {
+        await keys("jj");
+        await press("g");
+        await press("s");
+        expect(done).toEqual(["stage a.ts"]);
+        await press("s");
+        await diff.settle();
+        expect(done).toEqual(["stage a.ts"]);
+      } finally {
+        await diff.unmount();
+      }
+      const classic = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: false,
+        onCreateAnnotation: () => {},
+        onGitAction: (action, path) => {
+          done.push(`${action} ${path}`);
+          return true;
+        },
+      });
+      try {
+        await press("g");
+        await press("s");
+        expect(done).toEqual(["stage a.ts"]);
+      } finally {
+        await classic.unmount();
+      }
+    });
+  });
+
   describe("the review's threads in Changes", () => {
     const open = thread(
       "t1",
