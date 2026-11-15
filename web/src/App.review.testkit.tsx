@@ -98,6 +98,7 @@ type HostProps = {
 type InspectorProps = {
   fileSelection?: unknown;
   onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
+  onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;
   reviewGoTo?: { path: string; line?: number; at: number } | null;
   state: {
@@ -150,6 +151,8 @@ export type AppWithReviews = {
   inspectorGoTo(): { path: string; line?: number; at: number } | null;
   /** Switches the shown inspector's view, as its tab strip does. */
   inspectorView(view: Parameters<InspectorProps["onViewChange"]>[0]): void;
+  /** Docks or expands the shown inspector, as its header's button does. */
+  inspectorExpand(expanded: boolean): void;
   /** The tab bar's Review button, or null. */
   tabBarReview(): HTMLButtonElement | null;
   click(button: HTMLElement): Promise<void>;
@@ -398,7 +401,10 @@ async function mockApp(before?: () => Promise<void> | void) {
     ...inspectorModule,
     WorkspaceInspectorHost: (props: InspectorProps) => {
       now().inspectorProps = props;
-      return null;
+      // Changes' diff, which the review toggle gives the keys to.
+      return props.state?.open && props.state.view === "changes" ? (
+        <div className="diff-content-view" data-review-cursor tabIndex={0} />
+      ) : null;
     },
   }));
   for (const name of [
@@ -580,6 +586,10 @@ export async function mountAppWithReviews(options: {
     inspectorView(view) {
       if (!current.inspectorProps) throw new Error("no inspector shown");
       current.inspectorProps.onViewChange(view);
+    },
+    inspectorExpand(expanded) {
+      if (!current.inspectorProps) throw new Error("no inspector shown");
+      current.inspectorProps.onExpandedChange(expanded);
     },
     tabBarReview() {
       return (

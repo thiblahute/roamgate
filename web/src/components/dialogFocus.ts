@@ -84,3 +84,32 @@ export function holdFocus(
   document.addEventListener("keydown", onKeyDown, true);
   return stop;
 }
+
+/**
+ * Where the keys go back once a view that took them closes: the element
+ * they came from while it is still on the page, not the body and not inside
+ * `away` (the closing view), else the input of the pane `paneId` (its
+ * terminal, or its chat's message box), else nothing.
+ */
+export function focusReturnTarget(
+  from: HTMLElement | null,
+  away: string,
+  paneId: string | undefined,
+  root: ParentNode = document,
+): HTMLElement | null {
+  if (
+    from?.isConnected &&
+    from !== from.ownerDocument.body &&
+    !from.closest(away)
+  )
+    return from;
+  if (!paneId) return null;
+  const shell = [
+    ...root.querySelectorAll<HTMLElement>(".terminal-shell[data-pane-id]"),
+  ].find((each) => each.dataset.paneId === paneId);
+  return (
+    shell?.querySelector<HTMLElement>(".xterm-helper-textarea") ??
+    shell?.querySelector<HTMLElement>("textarea") ??
+    null
+  );
+}
