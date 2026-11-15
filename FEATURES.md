@@ -31,9 +31,9 @@ A Web/PWA client for a running [Herdr](https://herdr.dev) server.
   agents, and opens typed file paths.
 - Desktop **Zen mode** hides app chrome so the terminal fills the window. The
   small tab at the top edge exits Zen or opens the application menu in place.
-  When a view with its own header fills the top of the screen (the review, a
-  pane's chat, a file's Review only bar), those two buttons sit at the end of
-  that header instead of hanging over it.
+  When a view with its own header fills the top of the screen (the expanded
+  inspector, the review, a pane's chat, a file's Review only bar), those two
+  buttons sit at the end of that header instead of hanging over it.
 - **Configuration > Integrations > Automatic tab renaming** names default tabs
   from the focused agent's bound session title, or its own terminal title.
   Existing custom labels are preserved. After a bridge restart, previously named
