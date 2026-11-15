@@ -1478,6 +1478,9 @@ export function DiffContentView({
       store.notify({ kind: "info", message, autoDismissMs: 2000 }),
     selectionRevision,
     selectedKey: activeEntryKey || null,
+    onScrollTo: () => {
+      userScrollUntilRef.current = performance.now() + 150;
+    },
     ...(reviewEditor
       ? {
           onComment: (
@@ -1545,6 +1548,44 @@ export function DiffContentView({
     },
     [],
   );
+  // The cursor's keys keep the focus: a browser can hand it to the page's
+  // first control after a key the cursor took (seen in Chrome after zz and
+  // after the review toggle's chord); with no key or press since, it comes
+  // back to the diff. A key or a press elsewhere moves it as usual.
+  const cursorKeyRef = useRef<KeyboardEvent | null>(null);
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!cursor.active || !section) return;
+    let lastKey: KeyboardEvent | null = null;
+    let pressed = false;
+    const onKey = (event: KeyboardEvent) => {
+      lastKey = event;
+      pressed = false;
+    };
+    const onPress = () => {
+      pressed = true;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget;
+      if (!(next instanceof HTMLElement) || pressed) return;
+      if (lastKey === null || lastKey !== cursorKeyRef.current) return;
+      const slot = section.closest(".workspace-inspector-slot") ?? section;
+      if (slot.contains(next)) return;
+      setTimeout(() => {
+        if (document.activeElement === next && section.isConnected)
+          section.focus({ preventScroll: true });
+      }, 0);
+    };
+    const doc = section.ownerDocument;
+    doc.addEventListener("keydown", onKey, true);
+    doc.addEventListener("pointerdown", onPress, true);
+    section.addEventListener("focusout", onFocusOut);
+    return () => {
+      doc.removeEventListener("keydown", onKey, true);
+      doc.removeEventListener("pointerdown", onPress, true);
+      section.removeEventListener("focusout", onFocusOut);
+    };
+  }, [cursor.active]);
   const cursorActiveRef = useRef(cursor.active);
   cursorActiveRef.current = cursor.active;
   const cursorLineClickRef = useRef(cursor.onLineClick);
@@ -2013,6 +2054,20 @@ export function DiffContentView({
         if (spotOf) showThread(spotOf);
         return true;
       }
+      case "zz":
+      case "z.":
+      case "zt":
+      case "zb": {
+        // The message j / k are on, placed on the screen as Vim places a
+        // line; on a line, the cursor's row (false).
+        const stop = threadView.cursor ? stopOfKey(threadView.cursor) : null;
+        if (!stop) return false;
+        userScrollUntilRef.current = performance.now() + 150;
+        stop.scrollIntoView?.({
+          block: key === "zt" ? "start" : key === "zb" ? "end" : "center",
+        });
+        return true;
+      }
       case "za":
         if (!first) return false;
         threadView.toggleFold(first.thread);
@@ -2165,10 +2220,20 @@ export function DiffContentView({
       </div>
     ) : null;
 
+  // Back to the diff once the editor is gone: its Vim `:w` / `:q` hand the
+  // focus back to the editor after they ran.
+  const focusDiffAfterEditor = () => {
+    sectionRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected)
+        sectionRef.current?.focus({ preventScroll: true });
+    });
+  };
   const closeReviewComposer = () => {
     setPendingAnnotation(null);
     setComposerSeed(undefined);
-    sectionRef.current?.focus({ preventScroll: true });
+    focusDiffAfterEditor();
   };
   const composerNode: ReactNode =
     reviewEditor && pendingAnnotation ? (
@@ -2192,7 +2257,7 @@ export function DiffContentView({
           if (hideComments) setHideComments(false);
           saveAnnotation(text);
           setComposerSeed(undefined);
-          sectionRef.current?.focus({ preventScroll: true });
+          focusDiffAfterEditor();
         }}
         onClose={closeReviewComposer}
         {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
@@ -2872,7 +2937,15 @@ export function DiffContentView({
       aria-label={embedded ? "File changes" : "Diff Viewer content"}
       tabIndex={-1}
       data-review-cursor={cursor.active ? "" : undefined}
-      onKeyDown={cursor.active ? cursor.onKeyDown : undefined}
+      onKeyDown={
+        cursor.active
+          ? (event) => {
+              cursor.onKeyDown(event);
+              if (event.defaultPrevented)
+                cursorKeyRef.current = event.nativeEvent;
+            }
+          : undefined
+      }
       onKeyDownCapture={(e) => {
         if (
           !embedded &&

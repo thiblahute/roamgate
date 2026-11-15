@@ -208,6 +208,7 @@ export function useDiffCursor({
   threadKey,
   threadMove,
   onMarkFile,
+  onScrollTo,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -247,6 +248,12 @@ export function useDiffCursor({
   threadMove?: (direction: 1 | -1, count: number) => number | null;
   /** Option+V (Alt+V): the cursor's file reviewed, or no longer. */
   onMarkFile?: () => void;
+  /**
+   * Just before the cursor scrolls the diff (zz, zt, zb, a jump): the
+   * scroll is the user's, so the view's file anchor follows it rather than
+   * putting the files back where they were.
+   */
+  onScrollTo?: () => void;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -553,6 +560,8 @@ export function useDiffCursor({
     return found;
   }, [fileTops, rowBox, scroller]);
 
+  const onScrollToRef = useRef(onScrollTo);
+  onScrollToRef.current = onScrollTo;
   const scrollToRow = useCallback(
     (index: number, mode: ScrollTo) => {
       if (mode === "none") return;
@@ -570,6 +579,7 @@ export function useDiffCursor({
       else if (place.top + place.height > top + height)
         next = place.top + place.height - height;
       if (Math.abs(next - top) < 1) return;
+      onScrollToRef.current?.();
       box.scrollTo({ top: Math.max(0, next) });
     },
     [rowBox, scroller],
@@ -690,13 +700,14 @@ export function useDiffCursor({
       }
       case "zz":
       case "z.":
-        scrollToRow(at, "center");
-        return true;
       case "zt":
-        scrollToRow(at, "start");
-        return true;
       case "zb":
-        scrollToRow(at, "end");
+        // A message j / k are on is placed itself, else the cursor's row.
+        if (threadKey?.(key, count)) return true;
+        scrollToRow(
+          at,
+          key === "zt" ? "start" : key === "zb" ? "end" : "center",
+        );
         return true;
       case "}":
         jumpTo(

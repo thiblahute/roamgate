@@ -516,6 +516,79 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
+    test("zz, zt, zb and z. reach the diff's cursor on a line, and place the message j / k are on when one is", async () => {
+      const placed: string[] = [];
+      const realScroll = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = function (
+        this: HTMLElement,
+        options?: boolean | ScrollIntoViewOptions,
+      ) {
+        const stop = this.getAttribute("data-chat-stop");
+        // The cursor's own "nearest" steps are not placements.
+        if (stop && typeof options === "object" && options.block !== "nearest")
+          placed.push(`${stop}:${options.block}`);
+      };
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        threads: [open],
+        annotations: [feedbackNote(open)],
+      });
+      try {
+        await keys("jj");
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        // On a line: the cursor's scroll, no message moved, keys taken.
+        for (const pair of ["zz", "zt", "zb", "z."]) {
+          const events: KeyboardEvent[] = [];
+          const record = (event: Event) => events.push(event as KeyboardEvent);
+          document.addEventListener("keydown", record);
+          await keys(pair);
+          document.removeEventListener("keydown", record);
+          expect(events.every((event) => event.defaultPrevented)).toBe(true);
+        }
+        expect(placed).toEqual([]);
+        expect(cursorAt()).toBe("unstaged:a.ts:change-addition:2");
+        // On a message: that message is placed.
+        await press("j");
+        await keys("zz");
+        await keys("zt");
+        await keys("zb");
+        expect(placed).toEqual(["m:t1c:center", "m:t1c:start", "m:t1c:end"]);
+      } finally {
+        HTMLElement.prototype.scrollIntoView = realScroll;
+        await diff.unmount();
+      }
+    });
+
+    test("a focus the cursor's key did not ask for comes back to the diff; a press elsewhere keeps it where it went", async () => {
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+      });
+      const outside = document.createElement("button");
+      document.body.prepend(outside);
+      try {
+        await keys("zz");
+        // The browser hands the focus to the page's first control.
+        outside.focus();
+        await diff.settle();
+        expect(document.activeElement).toBe(view());
+        // A press there is the user's: it stays.
+        await keys("zz");
+        outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        outside.focus();
+        await diff.settle();
+        expect(document.activeElement).toBe(outside);
+      } finally {
+        outside.remove();
+        await diff.unmount();
+      }
+    });
+
     test("a comment on its way is drawn under its line as Sending..., then Not saved with Retry and Discard", async () => {
       const { pendingFeedback } = await import("../feedbackPending");
       const note = {
