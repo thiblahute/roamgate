@@ -8,7 +8,7 @@ import {
 } from "../../shared/review";
 import { reviewDiffAsChanges, stepView, viewName } from "./changesViews";
 import { reviewCall } from "./review";
-import { ReviewDiffs } from "./reviewDiffLoad";
+import { ReviewDiffs, ViewLoad } from "./reviewDiffLoad";
 import { followCommit } from "./reviewFollow";
 import { type CommitChoice, commitChoices, searchCommits } from "./reviewModel";
 import { findFile } from "./reviewNavigation";
@@ -51,7 +51,25 @@ export type ChangesViews = {
    * The view's files when Changes' own are not what it shows (a commit, or
    * a review whose all-changes view is not the scope's).
    */
-  shown: { entries: GitDiffEntry[]; files: Record<string, GitDiffFile> } | null;
+  shown: {
+    entries: GitDiffEntry[];
+    files: Record<string, GitDiffFile>;
+    /** Files being read, and why one failed (by `branch:path`). */
+    loadingKeys: string[];
+    fileErrors: Record<string, string>;
+  } | null;
+  /**
+   * A file of the view wanted now (picked, Load diff, Retry): its patch
+   * read next, large or generated as it may be.
+   */
+  loadFile: (path: string) => void;
+  /**
+   * The file the reader was left in is listed but not read yet: the
+   * place waits for it (it is read first).
+   */
+  placePending: boolean;
+  /** The files near the reader (and the next few): read soon. */
+  loadNearby: (paths: readonly string[]) => void;
   loading: boolean;
   /** What the views said last: loading a commit, why one failed. */
   status: string;
@@ -126,7 +144,9 @@ export function useChangesViews({
   const [sha, setSha] = useState<string | null>(null);
   /** A commit shown that is no longer in the review (a thread's). */
   const [goneCommit, setGoneCommit] = useState<ReviewCommit | null>(null);
-  const [diff, setDiff] = useState<ReviewDiff | null>(null);
+  /** The view shown's diff, read file by file; `drawn` its version. */
+  const [diff, setDiff] = useState<ViewLoad | null>(null);
+  const [drawn, setDrawn] = useState(0);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   /** Why the last read failed; null once one succeeds. */
@@ -145,7 +165,20 @@ export function useChangesViews({
     query: string;
     at: number;
   } | null>(null);
-  const diffs = useRef(new ReviewDiffs<ReviewDiff>());
+  const diffs = useRef(new ReviewDiffs<ViewLoad>());
+  /**
+   * The view whose files are read: the one shown, or the one about to be
+   * (shown once the reader's file is read); null for Changes' own.
+   */
+  const diffRef = useRef<ViewLoad | null>(null);
+  /**
+   * The view a review opens on, asked with its commits rather than after
+   * them (as the review pane did): its place, and the answer.
+   */
+  const firstRead = useRef<{
+    placeKey: string;
+    answer: Promise<ReviewDiff | null>;
+  } | null>(null);
   const shaRef = useRef(sha);
   shaRef.current = sha;
   const commitsRef = useRef(commits);
@@ -174,6 +207,7 @@ export function useChangesViews({
   // biome-ignore lint/correctness/useExhaustiveDependencies: by its key
   useEffect(() => {
     diffs.current.clear();
+    diffRef.current = null;
     setDiff(null);
     setChanged(false);
     setPickerState(null);
@@ -212,6 +246,16 @@ export function useChangesViews({
               : {}),
           };
         })();
+    // Nothing remembered: the view it opens on (the oldest commit, else
+    // all the changes) is read with the commits, not after them.
+    if (!was && !diffs.current.get(""))
+      firstRead.current = {
+        placeKey,
+        answer: call<ReviewDiff>("review.diff", {
+          summary: true,
+          first: true,
+        }).catch(() => null),
+      };
     void call<{
       commits: ReviewCommit[];
       patchIds?: Record<string, string>;
@@ -280,29 +324,96 @@ export function useChangesViews({
   /** The view comes from the review's diff, not Changes' own files. */
   const own = !active || commits === null || (sha === null && native);
 
-  // The view's diff, when not Changes' own; the latest request wins.
+  /**
+   * Reads a view's files still to read while it is the one shown (and
+   * `current` holds), drawing each answer.
+   */
+  const pumpView = useCallback(
+    (
+      view: ViewLoad,
+      commit: string | null,
+      current: () => boolean,
+      read?: () => void,
+    ) =>
+      view.pump(
+        (files) =>
+          call<ReviewDiff>("review.diff", {
+            ...(commit ? { commit } : {}),
+            base: view.diff.baseSha,
+            head: view.diff.headSha,
+            files: files.map(({ path, oldPath }) => ({ path, oldPath })),
+          }).then((read) => read.files),
+        () => current() && diffRef.current === view,
+        () => {
+          read?.();
+          if (diffRef.current === view) setDrawn(view.version);
+        },
+      ),
+    [call],
+  );
+
+  // The view's diff, when not Changes' own; the latest request wins. Its
+  // files are listed at once, their patches read a few at a time after.
   useEffect(() => {
     if (own) {
+      diffRef.current = null;
       setDiff(null);
       setLoading(false);
       return;
     }
-    const request = diffs.current.begin(sha ?? "");
+    const key = sha ?? "";
+    const request = diffs.current.begin(key);
+    const show = (view: ViewLoad) => {
+      diffRef.current = view;
+      // The file the reader was left in, read first; the view shows once it
+      // is (a reload keeps the one read before till then), so the cursor
+      // stays on its line.
+      const left = readReviewPlace(placeKey)?.path;
+      const waiting = left && view.ask(left) ? left : null;
+      let shown = false;
+      const reveal = () => {
+        if (shown || diffRef.current !== view) return;
+        if (waiting && !view.files.has(waiting) && !view.errors.has(waiting))
+          return;
+        shown = true;
+        setDiff(view);
+        setDrawn(view.version);
+      };
+      reveal();
+      pumpView(view, sha, () => request.current(), reveal);
+    };
     if (request.cached) {
-      setDiff(request.cached);
       setLoading(false);
+      show(request.cached);
       return;
     }
     setLoading(true);
     if (sha) setStatus(`Loading commit ${sha.slice(0, 8)}...`);
-    void call<ReviewDiff>("review.diff", sha ? { commit: sha } : {}).then(
+    const early = firstRead.current;
+    firstRead.current = null;
+    const answer =
+      early && early.placeKey === placeKey
+        ? early.answer.then((first) =>
+            first && (first.view ?? null) === (sha ?? null)
+              ? first
+              : call<ReviewDiff>("review.diff", {
+                  summary: true,
+                  ...(sha ? { commit: sha } : {}),
+                }),
+          )
+        : call<ReviewDiff>("review.diff", {
+            summary: true,
+            ...(sha ? { commit: sha } : {}),
+          });
+    void answer.then(
       (loaded) => {
-        if (!request.done(loaded)) return;
-        setDiff(loaded);
+        const view = new ViewLoad(loaded);
+        if (!request.done(view)) return;
         setStatus("");
         setFailure(null);
         setGoneCode(null);
         setLoading(false);
+        show(view);
       },
       (error: unknown) => {
         if (!request.current()) return;
@@ -310,7 +421,7 @@ export function useChangesViews({
         failWith(error);
       },
     );
-  }, [call, own, sha, generation, failWith]);
+  }, [call, own, sha, generation, failWith, placeKey, pumpView]);
 
   // The view shown is remembered with the review.
   useEffect(() => {
@@ -357,10 +468,22 @@ export function useChangesViews({
     };
   }, [active, call, generation]);
 
+  // Drawn again as each file arrives (`drawn`, the view's version).
   const shown = useMemo(
-    () => (own || !diff ? null : reviewDiffAsChanges(diff, where, current)),
-    [own, diff, where, current],
+    () =>
+      own || !diff || drawn < 0
+        ? null
+        : reviewDiffAsChanges(diff.diff, where, current, diff),
+    [own, diff, drawn, where, current],
   );
+
+  const leftIn = diff && !own ? readReviewPlace(placeKey)?.path : undefined;
+  const placePending =
+    !!leftIn &&
+    !!diff &&
+    diff.diff.files.some((file) => file.path === leftIn) &&
+    !diff.files.has(leftIn) &&
+    !diff.errors.has(leftIn);
 
   const choices = useMemo(
     () => commitChoices(commits ?? [], !history),
@@ -409,17 +532,17 @@ export function useChangesViews({
     if (sha !== null && !history) views.push(null);
     for (const view of views) {
       const request = diffs.current.begin(view ?? "", { shown: false });
-      let viewDiff = request.cached;
+      let viewDiff = request.cached?.diff;
       if (!viewDiff) {
         try {
-          viewDiff = await call<ReviewDiff>(
-            "review.diff",
-            view ? { commit: view } : {},
-          );
+          viewDiff = await call<ReviewDiff>("review.diff", {
+            summary: true,
+            ...(view ? { commit: view } : {}),
+          });
         } catch {
           continue;
         }
-        if (!request.done(viewDiff)) return null;
+        if (!request.done(new ViewLoad(viewDiff))) return null;
       }
       const at = findFile(
         viewDiff.files.map((file) => (file.commitMessage ? null : file.path)),
@@ -439,6 +562,26 @@ export function useChangesViews({
     }
     return null;
   };
+
+  const shaNow = useRef(sha);
+  shaNow.current = sha;
+  const loadNearby = useCallback(
+    (paths: readonly string[]) => {
+      const view = diffRef.current;
+      if (!view?.near(paths)) return;
+      pumpView(view, shaNow.current, () => true);
+    },
+    [pumpView],
+  );
+  const loadFile = useCallback(
+    (path: string) => {
+      const view = diffRef.current;
+      if (!view?.ask(path)) return;
+      setDrawn(++view.version);
+      pumpView(view, shaNow.current, () => true);
+    },
+    [pumpView],
+  );
 
   // A read the lost connection failed: read again once it is back (one
   // try each time it comes back; another failure waits for Retry).
@@ -507,10 +650,13 @@ export function useChangesViews({
     },
     reload: reloadViews,
     searchElsewhere,
-    headSha: diff?.headSha ?? null,
+    headSha: diff?.diff.headSha ?? null,
+    loadFile,
+    loadNearby,
+    placePending,
     readFile: async (path) => {
       // The view's head: a commit's own, else the review's head.
-      const rev = diff?.headSha ?? (sha || "HEAD");
+      const rev = diff?.diff.headSha ?? (sha || "HEAD");
       const { text } = await call<{ text: string }>("review.file", {
         path,
         rev,

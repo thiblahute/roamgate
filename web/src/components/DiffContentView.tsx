@@ -6153,6 +6153,17 @@ export function DiffContentView({
     viewCommits,
     showView,
   ]);
+  // The file gone to is read first (set below, once the view is known).
+  const pickedUnreadRef = useRef<string | null>(null);
+  const pickedAsked = useRef<string | null>(null);
+  const loadViewFile = views.loadFile;
+  useEffect(() => {
+    const wanted = pickedUnreadRef.current;
+    // Once per go-to: a file that fails waits for Retry.
+    if (!wanted || wanted === pickedAsked.current) return;
+    pickedAsked.current = wanted;
+    loadViewFile(wanted.slice(0, wanted.lastIndexOf("\n")));
+  });
   if (!reviewing) return <DiffContentViewInner {...props} />;
 
   const { onRetry, onCreateAnnotation, cursorGoTo } = props;
@@ -6179,7 +6190,12 @@ export function DiffContentView({
       ? reviewScope.kind === "review"
       : !(views.sha === null && reviewScope.kind === "branch"));
   const shown = foreign
-    ? (views.shown ?? { entries: [], files: NO_FILES })
+    ? (views.shown ?? {
+        entries: [],
+        files: NO_FILES,
+        loadingKeys: [],
+        fileErrors: {},
+      })
     : null;
   // The file a search found in another view is the one picked there, as
   // the tree's pick would: the cursor goes there once it is drawn.
@@ -6190,6 +6206,13 @@ export function DiffContentView({
   const picked =
     (goTo && shown?.entries.find((each) => each.path === goTo.path)) ??
     shown?.entries[0];
+  // The file gone to is read first, large or generated as it may be.
+  const pickedUnread =
+    picked && shown && !shown.files[`branch:${picked.path}`]
+      ? picked.path
+      : null;
+  pickedUnreadRef.current =
+    pickedUnread && goTo ? `${pickedUnread}\n${goTo.at}` : null;
   const focusDiff = () =>
     sectionKeys.current
       ?.closest<HTMLElement>(".diff-content-view")
@@ -6288,9 +6311,17 @@ export function DiffContentView({
               : null,
             loading: false,
             error: null,
-            fileErrors: {},
-            loadingKeys: [],
+            fileErrors: shown.fileErrors,
+            loadingKeys: shown.loadingKeys,
             summaryLoading: !views.shown,
+            // The view's files near the reader are read, not Changes'.
+            onNearbyFilesChange: (entries: GitDiffEntry[]) =>
+              views.loadNearby(entries.map((entry) => entry.path)),
+            // A file not read yet (large, generated, failed): read now.
+            onSelectFile: (entry: GitDiffEntry) => {
+              views.loadFile(entry.path);
+              props.onSelectFile?.(entry);
+            },
           }
         : {})}
       cursorGoTo={goTo ?? null}
@@ -6300,6 +6331,7 @@ export function DiffContentView({
       placeSettled={
         !views.active ||
         (views.ready &&
+          !views.placePending &&
           (!!views.shown ||
             (views.current === null && reviewScope.kind === "branch")))
       }

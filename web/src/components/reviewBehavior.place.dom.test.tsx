@@ -465,19 +465,32 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           },
         });
         expect(review.calls("review.commits")).toHaveLength(1);
-        // Read in order: the view once its commits say which it is.
-        expect(review.calls("review.diff")).toEqual([]);
+        // Read with its commits, not after them: the view it opens on (the
+        // oldest commit, the server says), its files listed.
+        const views = () =>
+          review
+            .calls("review.diff")
+            .filter((call) => call.params.files === undefined)
+            .map((call) => call.params);
+        expect(views()).toEqual([
+          { session_id: "s1", summary: true, first: true },
+        ]);
         answerCommits();
         await review.press("<Esc>");
-        // Its answer shows: no second read of the same view.
-        expect(review.calls("review.diff").map((call) => call.params)).toEqual([
-          { session_id: "s1", commit: one.sha },
-        ]);
+        // Its answer shows: no second read of the same view; its file's
+        // patch read on its own.
+        expect(views()).toHaveLength(1);
+        expect(
+          review
+            .calls("review.diff")
+            .filter((call) => call.params.files !== undefined)
+            .map((call) => call.params.files),
+        ).toEqual([[{ path: "a.ts", oldPath: "a.ts" }]]);
         expect(review.lines("a.ts").map((line) => line.text)).toContain(
           "a.ts line 1",
         );
         await review.press("j");
-        expect(review.calls("review.diff")).toHaveLength(1);
+        expect(views()).toHaveLength(1);
         await review.unmount();
       });
 

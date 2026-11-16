@@ -487,3 +487,77 @@ test("the browser opens a review of a Windows path it picked", async () => {
   expect(asked).toEqual(["C:\\work\\repo"]);
   expect(opened.session.root).toBe("C:/work/repo");
 });
+
+test("a review's diff asked as a summary reads its files' list, and its files a few at a time against the summary's commits", async () => {
+  const calls: string[] = [];
+  const base = "a".repeat(40);
+  const head = "b".repeat(40);
+  const { service } = setup(undefined, {
+    loadDiff: async () => {
+      calls.push("whole");
+      return { files: [], truncated: false, headSha: head };
+    },
+    loadSummary: async (_session, commit) => {
+      calls.push(`summary ${commit ?? "all"}`);
+      return {
+        files: [
+          { path: "a.ts", oldPath: "a.ts", hunks: [], status: "modified" },
+        ],
+        baseSha: base,
+        headSha: head,
+        truncated: false,
+        summary: true,
+      };
+    },
+    loadFiles: async (_session, ends, files) => {
+      calls.push(
+        `files ${ends.base.slice(0, 1)}..${ends.head.slice(0, 1)} ${files.map((f) => `${f.oldPath ?? ""}>${f.path}`).join(",")}`,
+      );
+      return files.map((f) => ({
+        path: f.path,
+        oldPath: f.oldPath ?? f.path,
+        hunks: [],
+      }));
+    },
+  });
+  const session = openSession(service);
+  const summary = await service.diff({ sessionId: session.id, summary: true });
+  expect(summary.summary).toBe(true);
+  // The head the user saw is recorded from the summary too.
+  expect(service.get({ sessionId: session.id }).session.seenHeadSha).toBe(head);
+  await service.diff({
+    sessionId: session.id,
+    summary: true,
+    commit: "c0ffee1",
+  });
+  const read = await service.diff({
+    sessionId: session.id,
+    base,
+    head,
+    files: [{ path: "a.ts" }, { path: "b.ts", oldPath: "old/b.ts" }],
+  });
+  expect(read.files.map((file) => file.path)).toEqual(["a.ts", "b.ts"]);
+  // Without `summary`, the whole diff as before.
+  await service.diff({ sessionId: session.id });
+  expect(calls).toEqual([
+    "summary all",
+    "summary c0ffee1",
+    "files a..b >a.ts,old/b.ts>b.ts",
+    "whole",
+  ]);
+  // Paths out of the checkout, names that are not commits, too many files.
+  for (const bad of [
+    { base, head, files: [{ path: "../x" }] },
+    { base: "main", head, files: [{ path: "a.ts" }] },
+    { base, head, files: [] },
+    {
+      base,
+      head,
+      files: Array.from({ length: 33 }, (_, i) => ({ path: `f${i}` })),
+    },
+  ])
+    await expect(
+      service.diff({ sessionId: session.id, ...bad }),
+    ).rejects.toThrow();
+  expect(calls).toHaveLength(4);
+});

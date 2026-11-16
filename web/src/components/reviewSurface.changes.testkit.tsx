@@ -209,6 +209,7 @@ export async function mountChangesReview(
   backend.repos = options.repos ?? [];
   backend.calls = [];
   backend.failing.clear();
+  backend.summaries = options.wholeDiffs !== true;
   backend.connected = true;
   backend.held.clear();
   backend.holds = null;

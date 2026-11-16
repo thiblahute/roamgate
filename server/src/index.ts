@@ -1636,6 +1636,50 @@ function getReviewService(): ReviewService {
       );
       return runtime.files.readReviewPatchIds(session.root, shas);
     },
+    loadSummary: async (session, commit) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      if (commit) {
+        try {
+          return await runtime.files.readReviewSummary(session.root, {
+            commit,
+          });
+        } catch (error) {
+          if (session.target.kind !== "mr") throw error;
+          // Not in the checkout: GitLab's diff of the commit, whole.
+          const context = reviewGlabContext(runtime, session.root);
+          const mr = await readMergeRequest(context, session.target.url);
+          const listed = (await readMergeRequestCommits(context, mr)).find(
+            (entry) => entry.sha.startsWith(commit),
+          );
+          return readCommitDiff(context, mr, commit, listed?.parent ?? null);
+        }
+      }
+      if (session.target.kind !== "mr")
+        return runtime.files.readReviewSummary(session.root, {
+          target: session.target,
+        });
+      // A merge request: its files from the checkout when it has its
+      // commits, else GitLab's whole diff.
+      const context = reviewGlabContext(runtime, session.root);
+      const mr = await readMergeRequest(context, session.target.url);
+      try {
+        return await runtime.files.readReviewSummary(session.root, {
+          target: { kind: "range", base: mr.baseSha, head: mr.headSha },
+        });
+      } catch {
+        return readMergeRequestDiff(context, mr);
+      }
+    },
+    loadFiles: (session, ends, files) => {
+      const { runtime } = resolveReadyConnection(
+        connectionManager,
+        session.connectionId,
+      );
+      return runtime.files.readReviewFiles(session.root, ends, files);
+    },
     loadDiff: async (session, commit, options) => {
       const { runtime } = resolveReadyConnection(
         connectionManager,

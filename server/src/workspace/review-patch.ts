@@ -11,20 +11,20 @@ import { gitShellCommandArgv } from "./git-shell";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 
 /** The review's scripts run Git and POSIX tools only: no login shell. */
-const GIT_ONLY = { login: false } as const;
+export const GIT_ONLY = { login: false } as const;
 
 export const REVIEW_PATCH_MAX_BYTES = 4 * 1024 * 1024;
 const REVIEW_PATCH_TIMEOUT_MS = 30_000;
 const MAX_UNTRACKED_FILES = 200;
-const SHAS_MARKER = "ROAMGATE-REVIEW-SHAS";
+export const SHAS_MARKER = "ROAMGATE-REVIEW-SHAS";
 /**
  * git with the user's settings that change how a diff reads pinned:
  * real UTF-8 names, `a/` and `b/` prefixes, blank context lines kept.
  */
-const GIT =
+export const GIT =
   "git -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.suppressBlankEmpty=false";
 /** Diff options that keep the output a plain patch of the files. */
-const DIFF_OPTIONS =
+export const DIFF_OPTIONS =
   "--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/";
 /** An absolute path on the host: POSIX, or a Windows drive (Git Bash). */
 export function isHostPath(path: string): boolean {
@@ -95,7 +95,7 @@ export function reviewScriptError(
  * A root commit's parent (`SHA^`, `SHA~1`, `SHA~`, as Review this commit
  * and agents name one commit) is the empty tree: the commit adds it all.
  */
-function resolveBase(base: string, shQuote: (value: string) => string) {
+export function resolveBase(base: string, shQuote: (value: string) => string) {
   return `b=$(${baseRevision(base, shQuote)}) || { echo "unknown revision: ${base.replace(/["$`\\]/g, "")}" >&2; exit 3; }`;
 }
 

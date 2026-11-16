@@ -1,3 +1,9 @@
+import {
+  readReviewFiles,
+  readReviewSummary,
+  type ReviewFileRequest,
+  type ReviewSummaryOf,
+} from "./review-files";
 import type { HerdrClient } from "../bridge/herdr-client";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import { checkoutPath as getCheckoutPath } from "./utils";
@@ -868,6 +874,27 @@ export function createFileHandlers({
         root,
         target,
         paths,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewSummary: (root: string, of: ReviewSummaryOf) =>
+      readReviewSummary({
+        root,
+        of,
+        host: sshHost(),
+        shQuote,
+        runProcessWithCodeTimeout,
+      }),
+    readReviewFiles: (
+      root: string,
+      ends: { base: string; head: string },
+      files: readonly ReviewFileRequest[],
+    ) =>
+      readReviewFiles({
+        root,
+        ...ends,
+        files,
         host: sshHost(),
         shQuote,
         runProcessWithCodeTimeout,
