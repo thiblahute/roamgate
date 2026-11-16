@@ -8,7 +8,7 @@ import {
 import { LARGE_DIFF_PATCH_BYTES } from "../../../shared/gitDiffLimits";
 import { worktreeSnapshotCommand } from "./git-snapshot";
 import { gitShellCommandArgv } from "./git-shell";
-import { readCombinedDiffFile } from "./git-combined";
+import { combinedDiffScript, parseCombinedDiffOutput } from "./git-combined";
 import { collectWorktreeFingerprints } from "./git-actions";
 import {
   GIT_DIFF_MAX_BYTES,
@@ -542,15 +542,14 @@ function runGitShellCommand({
 
 // Keep full patches out of bridge/SSH memory, including explicitly opened
 // oversized files. mktemp creates a private file and the trap removes it.
-export async function readGitPatch({
-  root,
-  command,
-  host,
-  shQuote,
-  runProcessWithCodeTimeout,
-  automatic = false,
-}: { root: string; command: string; automatic?: boolean } & GitCommandContext) {
-  const script = `
+/** The script that writes one patch's size line, then its capped bytes. */
+function gitPatchScript(
+  root: string,
+  command: string,
+  shQuote: (value: string) => string,
+  automatic: boolean,
+) {
+  return `
 patch_file=$(mktemp "\${TMPDIR:-/tmp}/roamgate-diff.XXXXXX") || exit 1
 trap 'rm -f "$patch_file"' 0
 trap 'exit 1' HUP INT TERM
@@ -564,10 +563,12 @@ if [ ${automatic ? "1" : "0"} -eq 0 ] || [ "$patch_size" -lt ${LARGE_DIFF_PATCH_
 fi
 exit "$git_code"
 `;
-  const result = await runProcessWithCodeTimeout(
-    gitShellCommandArgv(script, host),
-    GIT_DIFF_TIMEOUT_MS,
-  );
+}
+
+function parseGitPatchOutput(
+  result: { code: number; stdout: string; stderr: string },
+  automatic: boolean,
+) {
   if (result.code !== 0 && result.code !== 1)
     return {
       ...result,
@@ -593,6 +594,96 @@ exit "$git_code"
     truncated,
     deferred: automatic && patchSize >= LARGE_DIFF_PATCH_BYTES,
   };
+}
+
+// Keep full patches out of bridge/SSH memory, including explicitly opened
+// oversized files. mktemp creates a private file and the trap removes it.
+export async function readGitPatch({
+  root,
+  command,
+  host,
+  shQuote,
+  runProcessWithCodeTimeout,
+  automatic = false,
+}: { root: string; command: string; automatic?: boolean } & GitCommandContext) {
+  const result = await runProcessWithCodeTimeout(
+    gitShellCommandArgv(
+      gitPatchScript(root, command, shQuote, automatic),
+      host,
+    ),
+    GIT_DIFF_TIMEOUT_MS,
+  );
+  return parseGitPatchOutput(result, automatic);
+}
+
+/**
+ * Runs several self-contained scripts as one shell command (one process, or
+ * one SSH round trip, instead of one per script) and gives back each one's
+ * exit code, output and error output.
+ */
+export async function runScriptBatch({
+  scripts,
+  host,
+  runProcessWithCodeTimeout,
+  timeoutMs = GIT_DIFF_TIMEOUT_MS,
+}: {
+  scripts: string[];
+  host?: string;
+  runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
+  timeoutMs?: number;
+}): Promise<{ code: number; stdout: string; stderr: string }[]> {
+  // One script runs as it is, with no framing to send.
+  if (scripts.length === 1)
+    return [
+      await runProcessWithCodeTimeout(
+        gitShellCommandArgv(scripts[0]!, host),
+        timeoutMs,
+      ),
+    ];
+  const marker = `ROAMGATE-BATCH-${randomUUID()}`;
+  const blocks = scripts.map(
+    (script, index) => `printf '\\n%s B ${index}\\n' "$batch_marker"
+(
+${script}
+) 2>"$batch_err"
+batch_code=$?
+printf '\\n%s E ${index} %s\\n' "$batch_marker" "$batch_code"
+head -c 2000 "$batch_err"`,
+  );
+  const command = `batch_marker='${marker}'
+batch_err=$(mktemp "\${TMPDIR:-/tmp}/roamgate-batch.XXXXXX") || exit 1
+trap 'rm -f "$batch_err"' 0
+trap 'exit 1' HUP INT TERM
+${blocks.join("\n")}
+printf '\\n%s Z\\n' "$batch_marker"
+exit 0
+`;
+  const result = await runProcessWithCodeTimeout(
+    gitShellCommandArgv(command, host),
+    timeoutMs,
+  );
+  const outputs = scripts.map(() => ({ code: -1, stdout: "", stderr: "" }));
+  const parts = result.stdout.split(`\n${marker} `);
+  for (const part of parts.slice(1)) {
+    const newline = part.indexOf("\n");
+    const head = (newline < 0 ? part : part.slice(0, newline)).split(" ");
+    const body = newline < 0 ? "" : part.slice(newline + 1);
+    const index = Number(head[1]);
+    const output = outputs[index];
+    if (!output) continue;
+    if (head[0] === "B") output.stdout = body;
+    else if (head[0] === "E") {
+      output.code = Number(head[2]);
+      output.stderr = body;
+    }
+  }
+  const failure = (result.stderr || result.stdout || "").trim().slice(0, 1000);
+  for (const output of outputs)
+    if (output.code === -1) {
+      output.code = result.code || 1;
+      output.stderr ||= failure || "git diff did not answer";
+    }
+  return outputs;
 }
 
 export async function snapshotWorktreeTree(
@@ -1507,15 +1598,44 @@ export async function readDiffSummary({
   };
 }
 
-export async function readDiffFile({
-  workspaceId,
-  root,
-  params,
-  host,
-  shQuote,
-  runProcessWithCodeTimeout,
-  lastStepBaselines,
-}: {
+/**
+ * How long a branch review's base, once resolved, serves the next file
+ * reads: a review loads its files in several batches, and resolving the base
+ * again for each costs a few Git commands (a few SSH round trips remote).
+ */
+export const COMPARISON_BASE_REUSE_MS = 5000;
+const recentComparisonBases = new Map<
+  string,
+  { at: number; base: ReturnType<typeof resolveComparisonBase> }
+>();
+
+function recentComparisonBase(
+  args: Parameters<typeof resolveComparisonBase>[0],
+) {
+  const key = JSON.stringify([
+    args.host ?? "",
+    args.root,
+    args.requested ?? "",
+  ]);
+  const now = Date.now();
+  const kept = recentComparisonBases.get(key);
+  if (kept && now - kept.at < COMPARISON_BASE_REUSE_MS) return kept.base;
+  for (const [each, value] of recentComparisonBases)
+    if (now - value.at >= COMPARISON_BASE_REUSE_MS)
+      recentComparisonBases.delete(each);
+  const base = resolveComparisonBase(args);
+  recentComparisonBases.set(key, { at: now, base });
+  base.catch(() => {
+    if (recentComparisonBases.get(key)?.base === base)
+      recentComparisonBases.delete(key);
+  });
+  return base;
+}
+
+/** Most files one git.diff_files call reads (one shell command). */
+export const GIT_DIFF_FILES_MAX = 32;
+
+type DiffFileArgs = {
   workspaceId: string;
   root: string;
   params: Record<string, unknown>;
@@ -1523,12 +1643,45 @@ export async function readDiffFile({
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   lastStepBaselines?: LastStepBaselineStore;
-}) {
-  const path = sanitizeExplorerPath(params.path);
+};
+
+export async function readDiffFile(args: DiffFileArgs) {
+  const path = sanitizeExplorerPath(args.params.path);
   if (!path) throw new Error("git.diff_file requires path");
-  const oldPath = sanitizeExplorerPath(params.old_path);
-  const diffPaths = oldPath && oldPath !== path ? [oldPath, path] : [path];
-  const pathspec = diffPaths.map(shQuote).join(" ");
+  const [file] = (
+    await readDiffFiles({
+      ...args,
+      params: {
+        ...args.params,
+        entries: [
+          { path, old_path: args.params.old_path, kind: args.params.kind },
+        ],
+      },
+    })
+  ).files;
+  if (!file) throw new Error("git.diff_file requires path");
+  if ("error" in file) throw new Error(file.error);
+  return file;
+}
+
+/**
+ * Several files' diffs of one scope, read with one shell command (one SSH
+ * round trip on a remote checkout): the scope's base or Last step range is
+ * resolved once, not once per file. A file that fails carries its `error`.
+ */
+export async function readDiffFiles({
+  workspaceId,
+  root,
+  params,
+  host,
+  shQuote,
+  runProcessWithCodeTimeout,
+  lastStepBaselines,
+}: DiffFileArgs) {
+  const requested = Array.isArray(params.entries) ? params.entries : [];
+  if (!requested.length) throw new Error("git.diff_files requires entries");
+  if (requested.length > GIT_DIFF_FILES_MAX)
+    throw new Error(`git.diff_files reads at most ${GIT_DIFF_FILES_MAX} files`);
   const mode = diffMode(params);
   const snapshotId =
     typeof params.snapshot_id === "string" && params.snapshot_id
@@ -1537,9 +1690,23 @@ export async function readDiffFile({
   if (mode === "last-step" && !snapshotId) {
     throw new Error("last-step diff requires a fresh summary snapshot");
   }
+  const automatic = params.automatic === true;
+  const entries = requested.map((each) => {
+    const entry = (each ?? {}) as Record<string, unknown>;
+    const path = sanitizeExplorerPath(entry.path);
+    if (!path) throw new Error("git.diff_file requires path");
+    const oldPath = sanitizeExplorerPath(entry.old_path) || undefined;
+    const diffPaths = oldPath && oldPath !== path ? [oldPath, path] : [path];
+    return {
+      path,
+      oldPath,
+      pathspec: diffPaths.map(shQuote).join(" "),
+      kind: diffFileKind(mode, entry.kind),
+    };
+  });
   const comparison =
     mode === "branch-main"
-      ? await resolveComparisonBase({
+      ? await recentComparisonBase({
           root,
           requested: params.base_branch,
           host,
@@ -1566,105 +1733,143 @@ export async function readDiffFile({
           runProcessWithCodeTimeout,
         })
       : null;
-  const kind = diffFileKind(mode, params.kind);
-  // The review's reading of the working changes: one diff per file, its
-  // staged lines told exactly (plan D8, phase 5s).
-  if (kind === "combined") {
-    const combined = await readCombinedDiffFile({
-      root,
-      path,
-      oldPath,
-      automatic: params.automatic === true,
-      host,
-      shQuote,
-      runProcessWithCodeTimeout,
-    });
-    return {
-      workspace_id: workspaceId,
-      root,
-      path,
-      kind,
-      diff: combined.diff,
-      patch_size: combined.patch_size,
-      truncated: combined.truncated,
-      ...(combined.deferred ? { deferred: true } : {}),
-      ...(combined.untracked ? { untracked: true } : {}),
-      ...(combined.unmerged ? { unmerged: true } : {}),
-      ...(combined.staged ? { staged: combined.staged } : {}),
-    };
-  }
-  let gitCommand: string | null = null;
-  if (mode === "branch-main") {
-    gitCommand = `diff --no-ext-diff --find-renames ${shQuote(base ?? "main")}...HEAD -- ${pathspec}`;
-  } else if (mode === "last-step" && lastStepRange) {
-    gitCommand = `diff --no-ext-diff --find-renames ${shQuote(lastStepRange.baseline)} ${shQuote(lastStepRange.current)} -- ${pathspec}`;
-  } else if (mode === "working") {
-    gitCommand = workingDiffFileCommand(kind, path, pathspec, shQuote);
-  }
-
-  let result = {
-    code: 0,
-    stdout: "",
-    stderr: "",
-    diff: "",
-    patch_size: 0,
-    truncated: false,
-    deferred: false,
-  };
-  if (gitCommand) {
-    result = await readGitPatch({
-      root,
-      command: gitCommand,
-      automatic: params.automatic === true,
-      host,
-      shQuote,
-      runProcessWithCodeTimeout,
-    });
-  }
-  const diffExitOk =
-    kind === "untracked"
-      ? result.code === 0 ||
-        (result.code === 1 && (result.patch_size > 0 || !result.stderr.trim()))
-      : result.code === 0;
-  if (!diffExitOk) {
-    if (mode === "last-step" && snapshotId && lastStepRange) {
-      const [baselineExists, currentExists] = await Promise.all([
-        treeExists({
-          root,
-          tree: lastStepRange.baseline,
-          host,
-          shQuote,
-          runProcessWithCodeTimeout,
-        }),
-        treeExists({
-          root,
-          tree: lastStepRange.current,
-          host,
-          shQuote,
-          runProcessWithCodeTimeout,
-        }),
-      ]);
-      if (!baselineExists || !currentExists) {
-        lastStepBaselines?.deleteSnapshot(snapshotId);
-        throw new Error("last-step snapshot expired; refresh Changes");
-      }
+  const markers = entries.map(() => `ROAMGATE-COMBINED-${randomUUID()}`);
+  const scripts = entries.map((entry, index) => {
+    // The review's reading of the working changes: one diff per file, its
+    // staged lines told exactly (plan D8, phase 5s).
+    if (entry.kind === "combined")
+      return combinedDiffScript(
+        root,
+        entry.path,
+        entry.oldPath,
+        markers[index],
+        shQuote,
+        automatic,
+      );
+    let gitCommand: string | null = null;
+    if (mode === "branch-main") {
+      gitCommand = `diff --no-ext-diff --find-renames ${shQuote(base ?? "main")}...HEAD -- ${entry.pathspec}`;
+    } else if (mode === "last-step" && lastStepRange) {
+      gitCommand = `diff --no-ext-diff --find-renames ${shQuote(lastStepRange.baseline)} ${shQuote(lastStepRange.current)} -- ${entry.pathspec}`;
+    } else if (mode === "working") {
+      gitCommand = workingDiffFileCommand(
+        entry.kind,
+        entry.path,
+        entry.pathspec,
+        shQuote,
+      );
     }
-    throw new Error(
-      (result.stderr || result.stdout || `git diff exited ${result.code}`)
-        .trim()
-        .slice(0, 1000),
-    );
-  }
-  return {
-    workspace_id: workspaceId,
-    root,
-    path,
-    kind,
-    diff: result.diff,
-    patch_size: result.patch_size,
-    truncated: result.truncated,
-    ...(result.deferred ? { deferred: true } : {}),
-  };
+    return gitCommand
+      ? gitPatchScript(root, gitCommand, shQuote, automatic)
+      : null;
+  });
+  const runnable = scripts.filter((each): each is string => each !== null);
+  const outputs = runnable.length
+    ? await runScriptBatch({
+        scripts: runnable,
+        host,
+        runProcessWithCodeTimeout,
+        timeoutMs: GIT_DIFF_TIMEOUT_MS + 1000 * (runnable.length - 1),
+      })
+    : [];
+  let next = 0;
+  let expired: Promise<boolean> | null = null;
+  const files = await Promise.all(
+    entries.map(async (entry, index) => {
+      const head = {
+        workspace_id: workspaceId,
+        root,
+        path: entry.path,
+        kind: entry.kind,
+      };
+      const failed = (result: {
+        code: number;
+        stdout: string;
+        stderr: string;
+      }) =>
+        (result.stderr || result.stdout || `git diff exited ${result.code}`)
+          .trim()
+          .slice(0, 1000);
+      try {
+        if (scripts[index] === null)
+          return {
+            ...head,
+            diff: "",
+            patch_size: 0,
+            truncated: false,
+          };
+        const output = outputs[next++]!;
+        if (entry.kind === "combined") {
+          if (output.code !== 0) return { ...head, error: failed(output) };
+          // Whatever a login profile printed before the script's output goes.
+          const start = output.stdout.search(/^\d+ [01] [01]\n/m);
+          const combined = parseCombinedDiffOutput(
+            start > 0 ? output.stdout.slice(start) : output.stdout,
+            markers[index],
+            entry.path,
+            automatic,
+          );
+          return {
+            ...head,
+            diff: combined.diff,
+            patch_size: combined.patch_size,
+            truncated: combined.truncated,
+            ...(combined.deferred ? { deferred: true } : {}),
+            ...(combined.untracked ? { untracked: true } : {}),
+            ...(combined.unmerged ? { unmerged: true } : {}),
+            ...(combined.staged ? { staged: combined.staged } : {}),
+          };
+        }
+        const result = parseGitPatchOutput(output, automatic);
+        const diffExitOk =
+          entry.kind === "untracked"
+            ? result.code === 0 ||
+              (result.code === 1 &&
+                (result.patch_size > 0 || !result.stderr.trim()))
+            : result.code === 0;
+        if (!diffExitOk) {
+          if (mode === "last-step" && snapshotId && lastStepRange) {
+            expired ??= Promise.all([
+              treeExists({
+                root,
+                tree: lastStepRange.baseline,
+                host,
+                shQuote,
+                runProcessWithCodeTimeout,
+              }),
+              treeExists({
+                root,
+                tree: lastStepRange.current,
+                host,
+                shQuote,
+                runProcessWithCodeTimeout,
+              }),
+            ]).then(([baselineExists, currentExists]) => {
+              if (baselineExists && currentExists) return false;
+              lastStepBaselines?.deleteSnapshot(snapshotId);
+              return true;
+            });
+            if (await expired)
+              return {
+                ...head,
+                error: "last-step snapshot expired; refresh Changes",
+              };
+          }
+          return { ...head, error: failed(result) };
+        }
+        return {
+          ...head,
+          diff: result.diff,
+          patch_size: result.patch_size,
+          truncated: result.truncated,
+          ...(result.deferred ? { deferred: true } : {}),
+        };
+      } catch (error) {
+        return { ...head, error: (error as Error).message };
+      }
+    }),
+  );
+  return { workspace_id: workspaceId, root, files };
 }
 
 export async function pullGit({

@@ -268,6 +268,12 @@ export type DiffViewerPanelProps = {
   onPickOtherFile?: (path: string) => void;
   /** The working changes in status groups (Staged, Changes, Untracked). */
   groupByStatus?: boolean;
+  /**
+   * Changes shows the review: every file's diff loads as it nears the
+   * viewport, also on an SSH connection (upstream loads only the picked
+   * file there).
+   */
+  review?: boolean;
   workspaceId?: string;
   resourceKey?: string;
   /** Another repository of the workspace than its own, shown instead. */
@@ -291,6 +297,8 @@ export type DiffViewerPanelProps = {
 };
 
 type DiffCache = {
+  /** The review's cache: bounded by the review's larger limits. */
+  review?: boolean;
   summary: GitDiffSummary | null;
   selected: GitDiffEntry | null;
   files: Record<string, GitDiffFile>;
@@ -334,6 +342,35 @@ const LONG_PRESS_MS = 550;
 const LONG_PRESS_MOVE_PX = 10;
 const MAX_CACHED_DIFF_FILES = 24;
 const MAX_CACHED_DIFF_BYTES = 8 * 1024 * 1024;
+// Enough for a whole review of a few hundred files: the review keeps every
+// file it has loaded, as its cursor, folds and counts read them.
+const MAX_REVIEW_CACHED_DIFF_FILES = 400;
+const MAX_REVIEW_CACHED_DIFF_BYTES = 16 * 1024 * 1024;
+/** Files the review loads past the nearby ones, in list order. */
+export const DIFF_PREFETCH_AHEAD = 16;
+
+/**
+ * The entries after the last of `nearby` in `entries`' order: at least
+ * `count`, to the end of a block of `count` (blocks start at 0), so that
+ * scrolling a file further asks for nothing new until the next block, and
+ * then for a whole block in one request.
+ */
+export function diffEntriesAhead(
+  entries: readonly GitDiffEntry[],
+  nearby: readonly GitDiffEntry[],
+  count: number,
+) {
+  const keys = new Set(nearby.map(diffEntryKey));
+  let last = -1;
+  entries.forEach((entry, index) => {
+    if (keys.has(diffEntryKey(entry))) last = index;
+  });
+  if (last < 0) return [];
+  const end = (Math.floor((last + 1) / count) + 2) * count;
+  return entries
+    .slice(last + 1, end)
+    .filter((entry) => !keys.has(diffEntryKey(entry)));
+}
 const MAX_DIFF_CACHE_CONTEXTS = 8;
 const MAX_TOTAL_CACHED_DIFF_BYTES = 24 * 1024 * 1024;
 const DIFF_SCOPE_KEY = "diffViewerScope";
@@ -426,7 +463,14 @@ function setDiffCache(key: string, cache: DiffCache) {
 function boundedDiffFiles(
   files: Record<string, GitDiffFile>,
   selected: GitDiffEntry | null,
+  review = false,
 ) {
+  const maxFiles = review
+    ? MAX_REVIEW_CACHED_DIFF_FILES
+    : MAX_CACHED_DIFF_FILES;
+  const maxBytes = review
+    ? MAX_REVIEW_CACHED_DIFF_BYTES
+    : MAX_CACHED_DIFF_BYTES;
   const selectedKey = selected ? diffEntryKey(selected) : null;
   const keptNewestFirst: string[] = [];
   let cachedBytes = 0;
@@ -440,12 +484,9 @@ function boundedDiffFiles(
   for (let index = keys.length - 1; index >= 0; index -= 1) {
     const key = keys[index];
     if (key === selectedKey) continue;
-    if (keptNewestFirst.length >= MAX_CACHED_DIFF_FILES) break;
+    if (keptNewestFirst.length >= maxFiles) break;
     const fileBytes = estimatedDiffBytes(files[key]);
-    if (
-      keptNewestFirst.length > 0 &&
-      cachedBytes + fileBytes > MAX_CACHED_DIFF_BYTES
-    ) {
+    if (keptNewestFirst.length > 0 && cachedBytes + fileBytes > maxBytes) {
       continue;
     }
     keptNewestFirst.push(key);
@@ -467,7 +508,7 @@ export function beginDiffFileSelection(
   return {
     ...current,
     selected: entry,
-    files: boundedDiffFiles(current.files, entry),
+    files: boundedDiffFiles(current.files, entry, current.review),
     fileErrors,
     error: null,
   };
@@ -487,7 +528,11 @@ export function mergeResolvedDiffFile(
   return {
     ...current,
     selected,
-    files: boundedDiffFiles({ ...current.files, [key]: file }, selected),
+    files: boundedDiffFiles(
+      { ...current.files, [key]: file },
+      selected,
+      current.review,
+    ),
     fileErrors: Object.fromEntries(
       Object.entries(current.fileErrors).filter(
         ([errorKey]) => errorKey !== key,
@@ -743,7 +788,11 @@ function writeDiffCache(
     ...current,
     ...patch,
     selected,
-    files: boundedDiffFiles(patch.files ?? current.files, selected),
+    files: boundedDiffFiles(
+      patch.files ?? current.files,
+      selected,
+      patch.review ?? current.review,
+    ),
     fileErrors: patch.fileErrors
       ? { ...patch.fileErrors }
       : { ...current.fileErrors },
@@ -786,6 +835,8 @@ function requestDiffFile(
   baseBranch?: string,
   /** Another repository of the workspace than its own. */
   root?: string,
+  /** Files asked together go as one git.diff_files request (the review). */
+  batched = false,
 ) {
   if (!client.isCurrent()) {
     return Promise.reject(new Error("connection changed during diff request"));
@@ -810,25 +861,66 @@ function requestDiffFile(
     if (priority) diffLoadQueue(client).prioritize(requestKey);
     return running;
   }
-  const task = diffLoadQueue(client).request(
-    () =>
-      client.call("git.diff_file", {
-        workspace_id: workspaceId,
-        mode: scope,
-        path: entry.path,
-        old_path: entry.old_path,
-        kind: entry.kind,
-        snapshot_id: snapshotId,
-        automatic,
-        ...(scope === "branch-main" && baseBranch
-          ? { base_branch: baseBranch }
-          : {}),
-        ...(root ? { root } : {}),
-      }) as Promise<GitDiffFile>,
-    () => client.isCurrent() && wanted(),
-    priority,
-    requestKey,
-  );
+  const params = {
+    workspace_id: workspaceId,
+    mode: scope,
+    snapshot_id: snapshotId,
+    automatic,
+    ...(scope === "branch-main" && baseBranch
+      ? { base_branch: baseBranch }
+      : {}),
+    ...(root ? { root } : {}),
+  };
+  const item = { path: entry.path, old_path: entry.old_path, kind: entry.kind };
+  // Files asked together go in one request (one SSH round trip on a remote
+  // checkout), several of them at once.
+  const queue = diffLoadQueue(client);
+  const wantedNow = () => client.isCurrent() && wanted();
+  const task = batched
+    ? queue.requestBatched<GitDiffFile>(
+        {
+          key: JSON.stringify([
+            workspaceId,
+            root ?? "",
+            scope,
+            snapshotId ?? "",
+            automatic,
+            params.base_branch ?? "",
+          ]),
+          item,
+          run: async (items) => {
+            if (items.length === 1)
+              return [
+                (await client.call("git.diff_file", {
+                  ...params,
+                  ...(items[0] as typeof item),
+                })) as GitDiffFile,
+              ];
+            const read = (await client.call("git.diff_files", {
+              ...params,
+              entries: items,
+            })) as { files?: Array<GitDiffFile | { error: string }> };
+            return items.map((_, index) => {
+              const file = read.files?.[index];
+              if (!file) return new Error("git.diff_files answered no file");
+              return "error" in file ? new Error(file.error) : file;
+            });
+          },
+        },
+        wantedNow,
+        priority,
+        requestKey,
+      )
+    : queue.request(
+        () =>
+          client.call("git.diff_file", {
+            ...params,
+            ...item,
+          }) as Promise<GitDiffFile>,
+        wantedNow,
+        priority,
+        requestKey,
+      );
   diffFileRequests.set(
     requestKey,
     task
@@ -1125,6 +1217,7 @@ type DiffConfirmState = {
 
 export function DiffViewerPanel({
   groupByStatus = false,
+  review = false,
   workspaceId,
   resourceKey,
   repoRoot,
@@ -1140,12 +1233,13 @@ export function DiffViewerPanel({
   const workspaces = useStoreSelector((state) => state.workspaces);
   const connectionClient = useLiveConnectionClient();
   const canReveal = useCanRevealInFileManager();
-  const continuousReview = useStoreSelector(
-    (state) =>
-      state.connections.find(
-        (item) => item.id === connectionClient.connectionId,
-      )?.type !== "ssh",
-  );
+  const continuousReview =
+    useStoreSelector(
+      (state) =>
+        state.connections.find(
+          (item) => item.id === connectionClient.connectionId,
+        )?.type !== "ssh",
+    ) || review;
   const focusedWorkspace = workspaces.find((w) => w.focused);
   const workspace = workspaceId
     ? workspaces.find((w) => w.workspace_id === workspaceId)
@@ -1291,6 +1385,7 @@ export function DiffViewerPanel({
   });
   const selectionRevisionRef = useRef(0);
   const nearbyEntryKeysRef = useRef(new Set<string>());
+  const answeredKeysRef = useRef(new Set<string>());
   const explicitEntryKeysRef = useRef(new Set<string>());
   const pendingFileKeysRef = useRef(new Map<string, number>());
   const [loadingKeys, setLoadingKeys] = useState<string[]>([]);
@@ -1345,7 +1440,7 @@ export function DiffViewerPanel({
         ...current,
         ...patch,
         selected,
-        files: boundedDiffFiles(patch.files ?? current.files, selected),
+        files: boundedDiffFiles(patch.files ?? current.files, selected, review),
         fileErrors: patch.fileErrors
           ? { ...patch.fileErrors }
           : { ...current.fileErrors },
@@ -1415,6 +1510,7 @@ export function DiffViewerPanel({
           ? boundedDiffFiles(
               { ...previousFilesRef.current.files, ...cache.files },
               selected,
+              review,
             )
           : {};
     }
@@ -1489,6 +1585,7 @@ export function DiffViewerPanel({
           ].filter(([key]) => entryKeys.has(key) && !fileErrors[key]),
         ),
         selected,
+        review,
       );
       if (source.summary === previousFilesRef.current.summary)
         previousFilesRef.current.files = Object.fromEntries(
@@ -1542,6 +1639,7 @@ export function DiffViewerPanel({
       diffScope,
       fileLoadingKey,
       loadingKeys,
+      review,
       runtimeContextKey,
       summaryLoading,
     ],
@@ -1670,11 +1768,14 @@ export function DiffViewerPanel({
       (selectedEntryKeyRef.current === key ||
         nearbyEntryKeysRef.current.has(key) ||
         selectedBatchEntryKeysRef.current.has(key));
+    // The review's answers, until the next render shows them in `cache`.
+    const answered = `${cacheKey}\n${revision}\n${key}`;
     if (
       !select &&
       (pendingFileKeysRef.current.has(key) ||
         cache.files[key] ||
-        cache.fileErrors[key])
+        cache.fileErrors[key] ||
+        answeredKeysRef.current.has(answered))
     )
       return;
     const automatic =
@@ -1683,7 +1784,7 @@ export function DiffViewerPanel({
       if (meta.userInitiated) setVisibleEntryKey(null);
       selectedEntryKeyRef.current = key;
       setCache((current) => {
-        const next = beginDiffFileSelection(current, entry);
+        const next = beginDiffFileSelection({ ...current, review }, entry);
         writeDiffCache(
           connectionClient,
           cacheWorkspaceId,
@@ -1745,6 +1846,7 @@ export function DiffViewerPanel({
         automatic,
         cache.summary?.base,
         repoRootOf(repositoryResourceKey),
+        review,
       );
       if (
         !isCurrentContext(workspaceId, scope) ||
@@ -1752,9 +1854,10 @@ export function DiffViewerPanel({
       ) {
         return;
       }
+      if (review) answeredKeysRef.current.add(answered);
       setCache((current) => {
         if (diffCacheRevision(cacheKey) !== revision) return current;
-        const next = mergeResolvedDiffFile(current, entry, file);
+        const next = mergeResolvedDiffFile({ ...current, review }, entry, file);
         writeDiffCache(
           connectionClient,
           cacheWorkspaceId,
@@ -1773,7 +1876,11 @@ export function DiffViewerPanel({
           diffSelection(cache, {
             entry,
             file,
-            files: boundedDiffFiles({ ...cache.files, [key]: file }, entry),
+            files: boundedDiffFiles(
+              { ...cache.files, [key]: file },
+              entry,
+              review,
+            ),
             fileErrors: Object.fromEntries(
               Object.entries(cache.fileErrors).filter(
                 ([errorKey]) => errorKey !== key,
@@ -1844,10 +1951,22 @@ export function DiffViewerPanel({
     () => {},
   );
   loadNearbyEntriesRef.current = (entries) => {
-    nearbyEntryKeysRef.current = new Set(entries.map(diffEntryKey));
+    const summaryEntries = cache.summary?.entries ?? [];
+    // The review reads ahead: the files after the nearby ones load too, so
+    // scrolling meets them drawn.
+    const ahead = review
+      ? diffEntriesAhead(summaryEntries, entries, DIFF_PREFETCH_AHEAD)
+      : [];
+    // The review keeps wanting what it asked for (until the context
+    // changes): a file scrolled past while queued is not dropped and asked
+    // again.
+    nearbyEntryKeysRef.current = new Set([
+      ...(review ? nearbyEntryKeysRef.current : []),
+      ...[...entries, ...ahead].map(diffEntryKey),
+    ]);
     if (!continuousReview || !cache.summary) return;
-    for (const entry of entries.slice(0, 12)) {
-      const current = cache.summary.entries.find(
+    for (const entry of [...entries.slice(0, 12), ...ahead]) {
+      const current = summaryEntries.find(
         (candidate) => diffEntryKey(candidate) === diffEntryKey(entry),
       );
       if (
@@ -1957,6 +2076,7 @@ export function DiffViewerPanel({
       files: {},
     };
     nearbyEntryKeysRef.current.clear();
+    answeredKeysRef.current.clear();
     explicitEntryKeysRef.current.clear();
     pendingFileKeysRef.current = new Map();
     setLoadingKeys([]);

@@ -404,4 +404,81 @@ if (process.env.ROAMGATE_CHANGES_TREE_DOM_TEST !== "1") {
       }
     });
   });
+
+  describe("Changes as the review", () => {
+    test("on SSH the review loads the files near the view and the next blocks after them, at most 16 per request", async () => {
+      const files = Array.from({ length: 40 }, (_, index) =>
+        entry(`src/f${String(index).padStart(2, "0")}.ts`, "branch", "M"),
+      );
+      const changes = await mountChangesTree({
+        entries: { "branch-main": files },
+        scope: "branch-main",
+        connectionType: "ssh",
+        review: true,
+      });
+      try {
+        const { act } = await import("react");
+        await act(async () =>
+          changes.handle().loadNearbyEntries(files.slice(0, 4)),
+        );
+        await changes.settle();
+        const batches = changes.calls.filter(
+          (call) => call.method === "git.diff_files",
+        );
+        const asked = batches.flatMap((call) =>
+          (call.params.entries as { path: string }[]).map((each) => each.path),
+        );
+        // The 4 near the view and those after them to the end of the next
+        // block of 16 (32 here), none twice.
+        expect(new Set(asked).size).toBe(asked.length);
+        // (The first file may come alone, as the picked one.)
+        expect(asked.length).toBeGreaterThanOrEqual(31);
+        for (const each of files.slice(0, 32))
+          if (!changes.selection()?.files[`branch:${each.path}`])
+            expect(asked).toContain(each.path);
+        expect(asked).not.toContain(files[32].path);
+        // Few round trips: at most 16 files each.
+        expect(batches.length).toBeLessThanOrEqual(3);
+        for (const call of batches) {
+          expect((call.params.entries as unknown[]).length).toBeLessThanOrEqual(
+            16,
+          );
+          expect(call.params).toMatchObject({ mode: "branch-main" });
+        }
+        for (const each of files.slice(0, 32))
+          expect(
+            changes.selection()?.files[`branch:${each.path}`]?.diff,
+          ).toBeTruthy();
+      } finally {
+        await changes.unmount();
+      }
+    });
+
+    test("upstream Changes on SSH still loads only what is picked, one file per request", async () => {
+      const files = Array.from({ length: 6 }, (_, index) =>
+        entry(`src/f${index}.ts`, "branch", "M"),
+      );
+      const changes = await mountChangesTree({
+        entries: { "branch-main": files },
+        scope: "branch-main",
+        connectionType: "ssh",
+      });
+      try {
+        const { act } = await import("react");
+        await act(async () =>
+          changes.handle().loadNearbyEntries(files.slice(0, 4)),
+        );
+        await changes.settle();
+        expect(
+          changes.calls.filter((call) => call.method === "git.diff_files"),
+        ).toHaveLength(0);
+        expect(
+          changes.calls.filter((call) => call.method === "git.diff_file")
+            .length,
+        ).toBeLessThanOrEqual(1);
+      } finally {
+        await changes.unmount();
+      }
+    });
+  });
 }

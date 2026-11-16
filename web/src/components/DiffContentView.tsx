@@ -1530,7 +1530,9 @@ function DiffContentViewInner({
         (connection) => connection.id === connectionClient.connectionId,
       )?.type,
   );
-  const continuous = !embedded && connectionType !== "ssh";
+  // The review draws every file, on SSH too (upstream draws only the picked
+  // file there).
+  const continuous = !embedded && (reviewCursor || connectionType !== "ssh");
   const [nearbyKeys, setNearbyKeys] = useState<readonly string[]>([]);
   const updateNearbyRef = useRef<(() => void) | null>(null);
   const scrollAnchorRef = useRef<{

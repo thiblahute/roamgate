@@ -40,6 +40,7 @@ import {
 import {
   pullGit,
   readDiffFile,
+  readDiffFiles,
   readDiffSummary,
   type LastStepBaselineStore,
 } from "./git-diff";
@@ -740,6 +741,19 @@ export function createFileHandlers({
     });
   }
 
+  async function readGitDiffFiles(params: Record<string, unknown>) {
+    const { workspaceId, root } = await workspaceAndGitRoot(params);
+    return readDiffFiles({
+      workspaceId,
+      root,
+      params,
+      host: sshHost(),
+      shQuote,
+      runProcessWithCodeTimeout,
+      lastStepBaselines,
+    });
+  }
+
   async function gitHistoryContext(params: Record<string, unknown>) {
     const { workspaceId, root } = await workspaceAndGitRoot(
       params,
@@ -831,6 +845,7 @@ export function createFileHandlers({
     readGitDiffSummary,
     readWorkspacePullRequest,
     readGitDiffFile,
+    readGitDiffFiles,
     readGitCommits,
     readGitCommit,
     readGitCommitFile,
