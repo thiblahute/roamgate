@@ -715,7 +715,7 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
       }
     });
 
-    test("Changes gets the review's cursor only on `:set reviewin=changes` with Vim keys on", async () => {
+    test("Changes gets the review's cursor only on `:set reviewin=changes`, with Vim keys on or off", async () => {
       const { writeReviewPrefs } = await import("../reviewPrefs");
       const { setVimKeys } = await import("../vimKeys");
       writeReviewPrefs({ reviewIn: undefined });
@@ -732,8 +732,9 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
           "set reviewin=changes",
         );
         expect(diffProps?.reviewCursor).toBe(true);
+        // `:novim` keeps the review: only the editor is a plain one.
         await inspector.command(inspector.place("changes"), "novim");
-        expect(diffProps?.reviewCursor).toBe(false);
+        expect(diffProps?.reviewCursor).toBe(true);
         await inspector.command(inspector.place("changes"), "vim");
         expect(diffProps?.reviewCursor).toBe(true);
         await inspector.command(
