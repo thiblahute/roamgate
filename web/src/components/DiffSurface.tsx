@@ -121,6 +121,13 @@ const DIFF_SELECTION_CSS = `
       inset 3px 0 0 #d29922,
       inset 6px 0 0 #3fb950;
   }
+  /* Side by side, what the old side draws under a line is above both
+     sides' numbers (z-index 3) and the new side's empty row there: a
+     gap's row (the review in Changes) is drawn from it across the two
+     sides. The row is a grid item: its z-index orders it. */
+  [data-diff-type="split"] [data-deletions] [data-line-annotation] {
+    z-index: 4;
+  }
   [data-line][data-chunk-reviewed],
   [data-column-number][data-chunk-reviewed] {
     opacity: 0.55;

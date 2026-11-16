@@ -94,3 +94,34 @@ test("the comment editor in Changes reads as the classic review's: its sans at 1
     '--sans-font: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;',
   );
 });
+
+test("side by side, a gap's row drawn from the old side spans the diff's width; a commit's message is one centered column", async () => {
+  const css = (
+    await Bun.file(new URL("./DiffContentView.css", import.meta.url)).text()
+  ).replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = (selector: string) => {
+    const at = css.lastIndexOf(`\n${selector} {`);
+    expect(at).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  // The diff's surface is the query container its width is read from.
+  expect(
+    rule(".diff-content-view[data-review-cursor] .pierre-diff-surface"),
+  ).toContain("container-type: inline-size;");
+  const across = rule('[slot^="annotation-deletions"] > .diff-gap');
+  expect(across).toContain("margin-right: calc(-50cqw);");
+  expect(across).toContain("margin-left: calc(100% - 50cqw);");
+  // Pierre's own CSS puts the old side's rows above the numbers and the
+  // new side's empty row.
+  const surface = await Bun.file(
+    new URL("./DiffSurface.tsx", import.meta.url),
+  ).text();
+  expect(surface).toContain(
+    '[data-diff-type="split"] [data-deletions] [data-line-annotation] {\n    z-index: 4;',
+  );
+  const message = rule(
+    ".diff-file-section.is-commit-message .pierre-diff-surface",
+  );
+  expect(message).toContain("margin-inline: auto;");
+  expect(message).toContain("max-width: min(100%, 88ch);");
+});

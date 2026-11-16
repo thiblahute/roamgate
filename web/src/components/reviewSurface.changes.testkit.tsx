@@ -1511,6 +1511,31 @@ export async function mountChangesReview(
     text() {
       return host.textContent ?? "";
     },
+    gapRows(path) {
+      const section = sections().find((each) => pathOf(each) === path);
+      const split =
+        shadowOf(section!)?.querySelector("pre")?.getAttribute(
+          "data-diff-type",
+        ) === "split";
+      return [...(section?.querySelectorAll<HTMLElement>(".rd-expand") ?? [])]
+        .sort((a, b) => Number(a.dataset.gap) - Number(b.dataset.gap))
+        .map((row) => {
+          if (!split) return "one" as const;
+          // From the old side, the row is drawn across both (its CSS).
+          return row.parentElement
+            ?.getAttribute("slot")
+            ?.startsWith("annotation-deletions")
+            ? ("across" as const)
+            : ("new side" as const);
+        });
+    },
+    fileColumns(path) {
+      const section = sections().find((each) => pathOf(each) === path);
+      const type = section
+        ? shadowOf(section)?.querySelector("pre")?.getAttribute("data-diff-type")
+        : undefined;
+      return type === "split" ? 2 : type ? 1 : null;
+    },
     gaps(path) {
       const section = sections().find((each) => pathOf(each) === path);
       return [...(section?.querySelectorAll<HTMLElement>(".rd-expand") ?? [])]

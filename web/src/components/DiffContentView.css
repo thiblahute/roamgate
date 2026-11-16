@@ -771,6 +771,30 @@
   font-size: 12px;
 }
 
+/* Side by side, a gap's row is drawn from the old side (its annotation
+   there) across both sides, as one row: as wide as the diff (its surface,
+   the query container, C), from its left edge. Margins, not a width: the
+   row then does not widen the old side's column. With the old side's
+   content W and its numbers about half of C - 2W, the left margin is
+   W - C/2 and the right one -C/2. Pierre's own CSS (DiffSurface) puts the
+   old side's annotations above the numbers and the new side's empty row. */
+.diff-content-view[data-review-cursor] .pierre-diff-surface {
+  container-type: inline-size;
+}
+
+[slot^="annotation-deletions"] > .diff-gap {
+  margin-right: calc(-50cqw);
+  margin-left: calc(100% - 50cqw);
+  background: var(--diff-bg);
+}
+
+/* A commit's message, drawn once (one column), centered at a readable
+   width, as the review pane drew it. */
+.diff-file-section.is-commit-message .pierre-diff-surface {
+  max-width: min(100%, 88ch);
+  margin-inline: auto;
+}
+
 .diff-gap button {
   padding: 1px 8px;
   border: 1px solid var(--border);

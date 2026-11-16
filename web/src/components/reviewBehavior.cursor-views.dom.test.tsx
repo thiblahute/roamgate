@@ -97,5 +97,39 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(review.gaps(":commit-message")).toEqual([]);
         await review.unmount();
       });
+
+      test("side by side, a commit's message is drawn once, in one column; the cursor and a comment work on it", async () => {
+        const a = added("a.ts", 2);
+        const review = await mount({
+          split: true,
+          files: [a],
+          commits: [
+            { sha: "a".repeat(40), subject: "One line", files: [a] },
+            { sha: "b".repeat(40), subject: "Other", files: [a] },
+          ],
+        });
+        expect(review.view()).toBe("1/2 aaaaaaaa One line");
+        expect(review.fileColumns("a.ts")).toBe(2);
+        // Not on both sides: the message is words, not a change.
+        expect(review.fileColumns(":commit-message")).toBe(1);
+        await review.press("gg");
+        expect(review.cursorLine()).toMatchObject({
+          path: ":commit-message",
+          text: "One line",
+        });
+        await review.press("j");
+        expect(review.cursorLine()?.path).toBe("a.ts");
+        await review.press("k");
+        expect(review.cursorLine()?.path).toBe(":commit-message");
+        await review.press("c");
+        await review.type("Say why");
+        await review.editorPress("<C-Enter>");
+        expect(review.calls("review.thread.add")[0]?.params).toMatchObject({
+          anchor: { path: ":commit-message", line: 1, text: "One line" },
+          text: "Say why",
+        });
+        expect(review.commentTexts().join("\n")).toContain("Say why");
+        await review.unmount();
+      });
     });
 }
