@@ -156,6 +156,29 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("the editor under a line is the page's, not the diff's: its root is the document, its caret drawn, its words the review's", async () => {
+        const review = await mount({ files: [code()] });
+        await review.press("jc");
+        const content = document.querySelector<HTMLElement>(
+          "[data-review-editor] .cm-content",
+        );
+        expect(content).not.toBeNull();
+        const { EditorView } = await import("@codemirror/view");
+        const view = EditorView.findFromDOM(content!);
+        // Slotted into the diff's shadow DOM, CodeMirror took the diff's
+        // shadow root: never focused there, its caret stayed behind after
+        // Enter and its theme (caret, font, box) styled nothing.
+        expect(view?.root).toBe(document);
+        expect(view?.hasFocus).toBe(true);
+        expect(
+          content!.closest("[data-review-editor]")?.closest("[slot]"),
+        ).not.toBeNull();
+        // The caret is drawn by the editor (a bar while typing).
+        expect(view?.dom.querySelector(".cm-cursorLayer")).not.toBeNull();
+        await review.editorCommand(":q");
+        await review.unmount();
+      });
+
       test("V then C asks the agent about the lines selected, as one discussion; with no agent it is held for Send in the workspace's threads", async () => {
         const review = await mount({ files: [code()] });
         await review.press("2jVj");

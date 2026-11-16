@@ -18,6 +18,9 @@
   --accent-soft: rgba(122, 162, 247, 0.18);
   --accent-hover: rgba(122, 162, 247, 0.28);
   --accent-active: rgba(122, 162, 247, 0.45);
+  /* Words written and read in the review (comments, their editor): the
+     classic review's sans, never the diff's code font around them. */
+  --sans-font: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
   --shell-bg: var(--bg);
   --shell-panel: var(--panel);
   --shell-topbar: var(--topbar);
