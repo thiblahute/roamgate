@@ -363,3 +363,83 @@
   background: var(--panel, var(--bg));
   font-size: 12px;
 }
+
+/* One of the user's own requests: where it stands, what changed since. */
+.mr-reviews-own {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mr-reviews-chip {
+  border: 1px solid var(--viewer-border);
+  border-radius: 5px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.mr-reviews-chip.is-good {
+  color: var(--success-text, #3fb950);
+}
+
+.mr-reviews-chip.is-bad {
+  border-color: var(--danger-border, var(--viewer-border));
+  color: var(--danger-text, #f85149);
+}
+
+.mr-reviews-chip.is-wait {
+  color: var(--warning-text, #d29922);
+}
+
+/* Changed since the user looked: marked until they look. */
+.mr-reviews-chip.is-changed {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.mr-reviews-filter {
+  align-self: flex-start;
+}
+
+.mr-reviews-filter span {
+  margin-left: 4px;
+  color: var(--muted);
+}
+
+.mr-reviews-workspace small {
+  margin-left: 1px;
+  font-size: 10px;
+}
+
+.mr-reviews-links {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mr-reviews-links small {
+  color: var(--muted);
+}
+
+.mr-reviews-command {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--viewer-border);
+  font-family: var(--font-mono, monospace);
+}
+
+.mr-reviews-command input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  outline: none;
+}

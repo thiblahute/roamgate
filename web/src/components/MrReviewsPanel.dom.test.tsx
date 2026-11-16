@@ -116,7 +116,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_DOM_TEST !== "1") {
     const titles = [...host.querySelectorAll(".mr-reviews-section-title")].map(
       (node) => node.textContent,
     );
-    expect(titles).toEqual(["For you2", "Suggested1"]);
+    expect(titles).toEqual(["To review2", "Mine0", "Suggested1"]);
     expect(host.textContent).toContain("2 drafts on GitLab");
     expect(host.textContent).toContain("new commits");
     expect(host.textContent).toContain("touches ges-timeline.c");

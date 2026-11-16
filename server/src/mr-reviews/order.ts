@@ -80,6 +80,7 @@ export function createMrOrder(deps: MrOrderDeps) {
     const sections: MrOrderView["sections"] = {
       pinned: [],
       mine: [],
+      authored: [],
       suggested: [],
     };
     for (const name of MR_SECTION_ORDER)
@@ -94,6 +95,7 @@ export function createMrOrder(deps: MrOrderDeps) {
     return {
       pinned: shown.sections.pinned.map((entry) => entry.key),
       mine: shown.sections.mine.map((entry) => entry.key),
+      authored: shown.sections.authored.map((entry) => entry.key),
       suggested: shown.sections.suggested.map((entry) => entry.key),
     };
   }

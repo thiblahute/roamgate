@@ -13,8 +13,34 @@ import type {
  * draft, and nothing is ever submitted from Roamgate.
  */
 
-/** Why a request is in the "For you" section. */
-export type MrReason = "review_requested" | "assigned" | "mentioned";
+/**
+ * Why a request is the user's: in "To review" (review requested, assigned,
+ * mentioned), or in "Mine" (authored by the user).
+ */
+export type MrReason =
+  | "review_requested"
+  | "assigned"
+  | "mentioned"
+  | "authored";
+
+/**
+ * Where one of the user's own requests stands, from the same list query
+ * (no call per request): reviews, threads and whether it merges cleanly.
+ */
+export type MrOwnStatus = {
+  /** Who approved it. */
+  approvedBy: string[];
+  /** Approved as the forge requires (null: the forge did not say). */
+  approved: boolean | null;
+  /** GitHub: who asked for changes. */
+  changesRequested: string[];
+  /** Threads still to resolve (null: unknown). */
+  unresolved: number | null;
+  /** Conflicts with its target branch. */
+  conflicts: boolean;
+  /** GitLab: the target moved on and it must be rebased to merge. */
+  needsRebase: boolean;
+};
 
 /** One merge or pull request as the inbox lists it. */
 export type MrItem = ForgeRef & {
@@ -43,6 +69,8 @@ export type MrItem = ForgeRef & {
    * GitLab only on a read of the merge request's draft notes.
    */
   drafts?: number;
+  /** The user's own request: where it stands. */
+  own?: MrOwnStatus;
 };
 
 /** What the user saw last time they looked. */
@@ -51,6 +79,12 @@ export type MrSeen = {
   updatedAt: string;
   headSha: string;
   notes: number;
+  /** Absent in records from before they were kept: no change said. */
+  state?: ForgeRequestState;
+  pipeline?: ForgePipelineStatus | null;
+  approvedBy?: string[];
+  unresolved?: number | null;
+  conflicts?: boolean;
 };
 
 export type MrUnread = {
@@ -60,10 +94,24 @@ export type MrUnread = {
   newNotes: number;
   /** Anything changed since (a new note, a push, a state change). */
   changed: boolean;
+  /** Merged or closed since. */
+  state?: ForgeRequestState;
+  /** The pipeline's status since, when it changed. */
+  pipeline?: ForgePipelineStatus | null;
+  /** Who approved it since. */
+  newApprovals?: string[];
+  /** Conflicts appeared (true) or went (false). */
+  conflicts?: boolean;
+  /** Threads to resolve now, when their number changed. */
+  unresolved?: number;
 };
 
-/** "pinned": added by the user (by URL), listed whether or not a query finds it. */
-export type MrSection = "pinned" | "mine" | "suggested";
+/**
+ * "pinned": added by the user (by URL, or pinned from the list), listed
+ * whether or not a query finds it; "mine": to review (requested, assigned,
+ * mentioned); "authored": the user's own requests.
+ */
+export type MrSection = "pinned" | "mine" | "authored" | "suggested";
 
 export type MrInboxEntry = MrItem & {
   section: MrSection;
@@ -83,6 +131,18 @@ export type MrInboxEntry = MrItem & {
    * only the remove button works.
    */
   unavailable?: string;
+};
+
+/**
+ * A workspace that is a request's (`bridge.mr_reviews.links`): on its
+ * branch, named after it, or its review workspace, on any connection.
+ */
+export type MrWorkspaceLink = {
+  connectionId: string;
+  connectionLabel: string;
+  workspaceId: string;
+  label: string;
+  why: ("branch" | "name" | "review")[];
 };
 
 /** A request the user removed from the view, for the Restore list. */
@@ -243,19 +303,78 @@ export function mrProjectKey(ref: { host: string; project: string }): string {
   return `${ref.host.toLowerCase()}/${ref.project.toLowerCase()}`;
 }
 
+/** What the user sees of a request now, to tell what changes after. */
+export function mrSeenOf(
+  item: Pick<
+    MrItem,
+    "updatedAt" | "headSha" | "notes" | "state" | "pipeline" | "own"
+  >,
+  at: string,
+): MrSeen {
+  return {
+    at,
+    updatedAt: item.updatedAt,
+    headSha: item.headSha,
+    notes: item.notes,
+    state: item.state,
+    pipeline: item.pipeline,
+    ...(item.own
+      ? {
+          approvedBy: item.own.approvedBy,
+          unresolved: item.own.unresolved,
+          conflicts: item.own.conflicts,
+        }
+      : {}),
+  };
+}
+
 /** What changed since the user looked, or null when they never did. */
 export function mrUnread(
-  item: Pick<MrItem, "updatedAt" | "headSha" | "notes">,
+  item: Pick<MrItem, "updatedAt" | "headSha" | "notes"> &
+    Partial<Pick<MrItem, "state" | "pipeline" | "own">>,
   seen: MrSeen | undefined,
 ): MrUnread | null {
   if (!seen) return null;
   const newCommits = !!item.headSha && item.headSha !== seen.headSha;
   const newNotes = Math.max(0, item.notes - seen.notes);
-  return {
+  const out: MrUnread = {
     newCommits,
     newNotes,
     changed: newCommits || newNotes > 0 || item.updatedAt > seen.updatedAt,
   };
+  // What a record from before these were kept does not hold is not said.
+  if (seen.state && item.state && item.state !== seen.state)
+    out.state = item.state;
+  if (
+    seen.pipeline !== undefined &&
+    item.pipeline !== undefined &&
+    item.pipeline !== seen.pipeline
+  )
+    out.pipeline = item.pipeline;
+  const own = item.own;
+  if (own && seen.approvedBy) {
+    const before = new Set(seen.approvedBy);
+    const added = own.approvedBy.filter((name) => !before.has(name));
+    if (added.length) out.newApprovals = added;
+  }
+  if (own && seen.conflicts !== undefined && own.conflicts !== seen.conflicts)
+    out.conflicts = own.conflicts;
+  if (
+    own &&
+    own.unresolved !== null &&
+    typeof seen.unresolved === "number" &&
+    own.unresolved !== seen.unresolved
+  )
+    out.unresolved = own.unresolved;
+  if (
+    out.state ||
+    "pipeline" in out ||
+    out.newApprovals ||
+    out.conflicts !== undefined ||
+    out.unresolved !== undefined
+  )
+    out.changed = true;
+  return out;
 }
 
 /**

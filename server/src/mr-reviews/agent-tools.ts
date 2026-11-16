@@ -103,6 +103,7 @@ export const reviewsAgentToolSchemas = {
       section: Type.Optional(
         Type.Union([
           Type.Literal("for_you"),
+          Type.Literal("authored"),
           Type.Literal("suggested"),
           Type.Literal("not_suggested"),
           Type.Literal("all"),
@@ -205,6 +206,7 @@ export const reviewsAgentToolSchemas = {
           Type.Literal("all"),
           Type.Literal("pinned"),
           Type.Literal("for_you"),
+          Type.Literal("authored"),
           Type.Literal("suggested"),
           Type.Literal("hidden"),
         ]),
@@ -278,6 +280,7 @@ export const reviewsAgentToolSchemas = {
           Type.Literal("all"),
           Type.Literal("pinned"),
           Type.Literal("for_you"),
+          Type.Literal("authored"),
           Type.Literal("suggested"),
         ]),
       ),
@@ -303,7 +306,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   set_hints:
     "Change the user's own hints for the suggestions (areas they maintain, people they work with), in their words. Only when the user asked; returns the previous hints.",
   reviews_list:
-    'The inbox exactly as the user sees it, in their order: for each request its position (# overall, n in its section), section (pinned, for_you, suggested), key, reference, title, author, state, pipeline, updated, what is new (unread: new commits and comments, or new when never opened), the suggestion\'s score and reason, and the pinned flag; plus the removed (hidden) requests. Use it before reordering, and to answer "what is on my list". No forge call.',
+    'The inbox exactly as the user sees it, in their order: for each request its position (# overall, n in its section), section (pinned, for_you: to review, authored: their own, suggested), key, reference, title, author, state, pipeline, updated, what is new (unread: new commits and comments, or new when never opened), the suggestion\'s score and reason, and the pinned flag; plus the removed (hidden) requests. Use it before reordering, and to answer "what is on my list". No forge call.',
   reviews_order:
     "Reorder the user's list. The order is the user's own and shared live by all their devices (desktop, phone, app), so move only what they asked and leave the rest. Moves apply to the latest order, so a change the user just made is kept. place top / bottom puts the requests at the top / bottom of their own section (Pinned, For you, Suggested are separate lists: to put one above all of them, pin it with reviews_pin); before / after place them beside target (in its section); exact puts the listed ones first, in the order given. keys and target are keys from a tool result, references (project!123, owner/repo#123) or URLs of requests in the list. Returns what moved, keys not in the list (unknown) and keys in another section than the target (elsewhere), and the new top of each section changed. The user is told and can undo it. Only when the user asked for an order.",
   reviews_pin:
@@ -389,9 +392,10 @@ function matches(item: MrItem, terms: string[], labels: string[] = []) {
 const SECTION_NAMES: Record<MrSection, string> = {
   pinned: "pinned",
   mine: "for_you",
+  authored: "authored",
   suggested: "suggested",
 };
-const SECTION_LIST = ["pinned", "mine", "suggested"] as const;
+const SECTION_LIST = ["pinned", "mine", "authored", "suggested"] as const;
 /** Rows reviews_list gives. */
 const LIST_ROWS = 120;
 
@@ -594,11 +598,13 @@ export function createReviewsAgentTools(deps: MrAgentToolDeps): RangerTool[] {
         if (!matches(item, terms)) continue;
         const entry = shown.get(item.key);
         const ranked = state.ranked[item.key];
-        const kind = item.reasons.length
-          ? "for_you"
-          : entry
-            ? "suggested"
-            : "not_suggested";
+        const kind = item.reasons.includes("authored")
+          ? "authored"
+          : item.reasons.length
+            ? "for_you"
+            : entry
+              ? "suggested"
+              : "not_suggested";
         if (section !== "all" && section !== kind) continue;
         out.push(
           itemLine(item, {
@@ -764,7 +770,13 @@ export function createReviewsAgentTools(deps: MrAgentToolDeps): RangerTool[] {
           return itemLine(entry.item, {
             ...(entry.labels.length ? { labels: entry.labels } : {}),
             ...(listed.get(entry.item.key)?.reasons.length
-              ? { in_inbox: "for_you" }
+              ? {
+                  in_inbox: listed
+                    .get(entry.item.key)!
+                    .reasons.includes("authored")
+                    ? "authored"
+                    : "for_you",
+                }
               : rank?.pick && rankedCurrent(rank, entry.item)
                 ? { in_inbox: "suggested", reason: rank.reason }
                 : {}),

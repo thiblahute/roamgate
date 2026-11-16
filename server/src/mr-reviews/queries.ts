@@ -5,7 +5,7 @@ import {
   ownRequestUrl,
   validProject,
 } from "../../../shared/forge";
-import type { MrItem, MrReason } from "../../../shared/mrReviews";
+import type { MrItem, MrOwnStatus, MrReason } from "../../../shared/mrReviews";
 import { githubPipelineStatus, gitlabPipelineStatus } from "../review/forge";
 
 /**
@@ -278,6 +278,132 @@ export function parseGithubInbox(
     followed: [...followedItems.values()],
     missing,
   };
+}
+
+/** The user's own requests asked per host: the open ones and the latest settled. */
+export const OWN_PAGE = 30;
+
+/**
+ * What GitLab says of the user's own merge requests besides the list's
+ * fields. "full" also asks fields some GitLab versions lack; a host that
+ * refuses them is asked "basic" from then on.
+ */
+const GITLAB_OWN_FIELDS = {
+  full: "conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount",
+  basic: "conflicts shouldBeRebased",
+} as const;
+
+export type OwnFields = keyof typeof GITLAB_OWN_FIELDS;
+
+/**
+ * The user's own merge requests on a GitLab host, latest first, whatever
+ * their state (merged and closed ones are shown a few days): a query of
+ * their own, so that a field a host lacks never empties the inbox.
+ */
+export function gitlabOwnQuery(fields: OwnFields = "full"): string {
+  return `query { currentUser { username au: authoredMergeRequests(sort: UPDATED_DESC, first: ${OWN_PAGE}) { nodes { ${GITLAB_FIELDS} ${GITLAB_OWN_FIELDS[fields]} } } } }`;
+}
+
+/** The user's own pull requests on a GitHub host, latest first. */
+export function githubOwnQuery(): string {
+  return `query { viewer { login } au: search(type: ISSUE, query: ${JSON.stringify("is:pr author:@me archived:false sort:updated-desc")}, first: ${OWN_PAGE}) { nodes { ... on PullRequest { ${GITHUB_FIELDS} mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } } } } }`;
+}
+
+function names(list: unknown, field: (node: any) => unknown): string[] {
+  return [
+    ...new Set(
+      nodes(list)
+        .map((node) => text(field(node), 100))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** A GitLab own merge request's status, from gitlabOwnQuery's fields. */
+export function gitlabOwnStatus(node: any): MrOwnStatus {
+  const resolvable = Number(node?.resolvableDiscussionsCount);
+  const resolved = Number(node?.resolvedDiscussionsCount);
+  const merge = text(node?.detailedMergeStatus, 60).toUpperCase();
+  return {
+    approvedBy: names(node?.approvedBy, (user) => user?.username),
+    approved: typeof node?.approved === "boolean" ? node.approved : null,
+    changesRequested: [],
+    unresolved:
+      Number.isSafeInteger(resolvable) && Number.isSafeInteger(resolved)
+        ? Math.max(0, resolvable - resolved)
+        : null,
+    conflicts: node?.conflicts === true || merge === "CONFLICT",
+    needsRebase: node?.shouldBeRebased === true || merge === "NEED_REBASE",
+  };
+}
+
+/** A GitHub own pull request's status, from githubOwnQuery's fields. */
+export function githubOwnStatus(node: any): MrOwnStatus {
+  const reviews = nodes(node?.latestOpinionatedReviews);
+  const by = (state: string) =>
+    names(
+      { nodes: reviews.filter((review: any) => review?.state === state) },
+      (review) => review?.author?.login,
+    );
+  const threads = node?.openThreads ? nodes(node.openThreads) : null;
+  return {
+    approvedBy: by("APPROVED"),
+    approved:
+      node?.reviewDecision === "APPROVED"
+        ? true
+        : node?.reviewDecision
+          ? false
+          : null,
+    changesRequested: by("CHANGES_REQUESTED"),
+    unresolved: threads
+      ? threads.filter((thread: any) => thread?.isResolved === false).length
+      : null,
+    conflicts: node?.mergeable === "CONFLICTING",
+    needsRebase: false,
+  };
+}
+
+/**
+ * A host's answer to its own-requests query: the open ones, and those
+ * merged or closed since `settledSince` (ISO).
+ */
+export function parseOwnRequests(
+  provider: "gitlab" | "github",
+  host: string,
+  answer: unknown,
+  settledSince: string,
+): MrItem[] {
+  const data = (answer as { data?: Record<string, any> } | null)?.data;
+  if (!data || typeof data !== "object")
+    throw new Error(
+      `${provider === "gitlab" ? "GitLab" : "GitHub"}: ${graphqlError(answer) ?? "no data in the answer"}`,
+    );
+  const list =
+    provider === "gitlab" ? data.currentUser?.au : (data.au ?? undefined);
+  const out: MrItem[] = [];
+  for (const node of nodes(list)) {
+    const item =
+      provider === "gitlab" ? gitlabItem(host, node) : githubItem(host, node);
+    if (!item) continue;
+    if (item.state !== "open" && item.updatedAt < settledSince) continue;
+    out.push({
+      ...item,
+      reasons: ["authored"],
+      own:
+        provider === "gitlab" ? gitlabOwnStatus(node) : githubOwnStatus(node),
+    });
+  }
+  return out;
+}
+
+/** Whether a GraphQL answer refused a field (an older or smaller forge). */
+export function unknownFieldError(answer: unknown): boolean {
+  const message = graphqlError(answer);
+  return (
+    !!message &&
+    !(answer as { data?: unknown } | null)?.data &&
+    /field|doesn't exist|does not exist|undefined/i.test(message)
+  );
 }
 
 /** The first GraphQL error's message, if the answer has one. */

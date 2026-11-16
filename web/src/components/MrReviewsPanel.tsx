@@ -5,19 +5,24 @@ import {
   EyeOff,
   ExternalLink,
   GripVertical,
+  House,
   Keyboard,
   LoaderCircle,
   Maximize2,
   Minimize2,
+  Pin,
+  PinOff,
   Plus,
   RefreshCw,
   Settings,
   X,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type DragEvent,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -29,7 +34,9 @@ import type {
   MrItem,
   MrReason,
   MrSection,
+  MrWorkspaceLink,
 } from "../../../shared/mrReviews";
+import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   hideMrRequest,
@@ -38,7 +45,9 @@ import {
   orderMrRequests,
   pinMrRequest,
   unhideMrRequest,
+  unpinMrRequest,
   useMrInbox,
+  useMrWorkspaceLinks,
 } from "../mrReviews";
 import { mrAgentItem, setMrAgentOpener } from "../mrReviewsAgent";
 import {
@@ -57,6 +66,7 @@ import {
   orderMrEntries,
 } from "../mrReviewsOrder";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
+import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
@@ -78,7 +88,11 @@ type View = "list" | "settings" | "chat";
 function entryOf(item: MrItem): MrInboxEntry {
   return {
     ...item,
-    section: item.reasons.length ? "mine" : "suggested",
+    section: item.reasons.includes("authored")
+      ? "authored"
+      : item.reasons.length
+        ? "mine"
+        : "suggested",
     unread: null,
     isNew: false,
   };
@@ -309,15 +323,56 @@ const REASON_LABEL: Record<MrReason, string> = {
   review_requested: "review requested",
   assigned: "assigned",
   mentioned: "mentioned",
+  authored: "yours",
 };
 
-const SECTIONS = ["pinned", "mine", "suggested"] as const;
+const SECTIONS = ["pinned", "mine", "authored", "suggested"] as const;
 
 const SECTION_TITLE: Record<MrSection, string> = {
   pinned: "Pinned",
-  mine: "For you",
+  mine: "To review",
+  authored: "Mine",
   suggested: "Suggested",
 };
+
+/** What the list shows: everything, the requests to review, or the user's own. */
+export type MrFilter = "all" | "review" | "mine";
+const FILTERS: MrFilter[] = ["all", "review", "mine"];
+const FILTER_TITLE: Record<MrFilter, string> = {
+  all: "All",
+  review: "To review",
+  mine: "Mine",
+};
+const FILTER_KEY = "mrReviewsFilter";
+const MAXIMIZED_KEY = "mrReviewsMaximized";
+
+function storedFilter(): MrFilter {
+  try {
+    const value = roamgateLocalStorage.getItem(FILTER_KEY);
+    return FILTERS.includes(value as MrFilter) ? (value as MrFilter) : "all";
+  } catch {
+    return "all";
+  }
+}
+
+function keep(key: string, value: string) {
+  try {
+    roamgateLocalStorage.setItem(key, value);
+  } catch {
+    // Kept for this page only when the browser keeps nothing.
+  }
+}
+
+/** Whether a request is the user's own (pinned or not). */
+function isOwn(entry: MrInboxEntry): boolean {
+  return entry.reasons.includes("authored");
+}
+
+/** Whether a section's request is shown under a filter. */
+function filtered(entry: MrInboxEntry, filter: MrFilter): boolean {
+  if (filter === "all") return true;
+  return filter === "mine" ? isOwn(entry) : !isOwn(entry);
+}
 
 function relative(iso: string): string {
   const at = Date.parse(iso);
@@ -330,18 +385,106 @@ function relative(iso: string): string {
   return `${Math.round(hours / 24)} d ago`;
 }
 
-/** What changed since the user looked, in a few words; null when nothing. */
-export function unreadLabel(entry: MrInboxEntry): string | null {
-  if (entry.isNew) return "new";
+/** What changed since the user looked, each in a few words. */
+export function changeLabels(entry: MrInboxEntry): string[] {
+  if (entry.isNew) return ["new"];
   const unread = entry.unread;
-  if (!unread?.changed) return null;
+  if (!unread?.changed) return [];
   const parts = [
+    ...(unread.state ? [unread.state] : []),
+    ...("pipeline" in unread ? [`pipeline ${unread.pipeline ?? "gone"}`] : []),
+    ...(unread.newApprovals?.length
+      ? [`approved by ${unread.newApprovals.join(", ")}`]
+      : []),
+    ...(unread.conflicts === true
+      ? ["conflicts"]
+      : unread.conflicts === false
+        ? ["conflicts gone"]
+        : []),
+    ...(unread.unresolved !== undefined
+      ? [`${unread.unresolved} unresolved`]
+      : []),
     ...(unread.newCommits ? ["new commits"] : []),
     ...(unread.newNotes
       ? [`${unread.newNotes} new comment${unread.newNotes === 1 ? "" : "s"}`]
       : []),
   ];
-  return parts.length ? parts.join(", ") : "updated";
+  return parts.length ? parts : ["updated"];
+}
+
+/** What changed since the user looked, in a few words; null when nothing. */
+export function unreadLabel(entry: MrInboxEntry): string | null {
+  const parts = changeLabels(entry);
+  return parts.length ? parts.join(", ") : null;
+}
+
+/** Where one of the user's own requests stands, as chips. */
+export function ownChips(
+  entry: MrInboxEntry,
+): { label: string; tone: "good" | "bad" | "wait"; changed: boolean }[] {
+  const own = entry.own;
+  if (!own) return [];
+  const unread = entry.unread?.changed ? entry.unread : null;
+  const chips: {
+    label: string;
+    tone: "good" | "bad" | "wait";
+    changed: boolean;
+  }[] = [];
+  if (entry.pipeline)
+    chips.push({
+      label: `pipeline ${entry.pipeline}`,
+      tone:
+        entry.pipeline === "success"
+          ? "good"
+          : entry.pipeline === "failed"
+            ? "bad"
+            : "wait",
+      changed: !!unread && "pipeline" in unread,
+    });
+  if (own.changesRequested.length)
+    chips.push({
+      label: `changes requested by ${own.changesRequested.join(", ")}`,
+      tone: "bad",
+      changed: false,
+    });
+  if (own.approvedBy.length || own.approved)
+    chips.push({
+      label: own.approvedBy.length
+        ? `approved by ${own.approvedBy.join(", ")}`
+        : "approved",
+      tone: "good",
+      changed: !!unread?.newApprovals?.length,
+    });
+  else if (entry.state === "open" && !own.changesRequested.length)
+    chips.push({ label: "no approval yet", tone: "wait", changed: false });
+  if (own.unresolved)
+    chips.push({
+      label: `${own.unresolved} unresolved`,
+      tone: "wait",
+      changed: unread?.unresolved !== undefined,
+    });
+  if (own.conflicts)
+    chips.push({
+      label: "conflicts",
+      tone: "bad",
+      changed: unread?.conflicts === true,
+    });
+  else if (own.needsRebase)
+    chips.push({ label: "needs rebase", tone: "wait", changed: false });
+  return chips;
+}
+
+function linkTitle(link: MrWorkspaceLink): string {
+  const why = link.why
+    .map((each) =>
+      each === "branch"
+        ? "on its branch"
+        : each === "name"
+          ? "named after it"
+          : "its review workspace",
+    )
+    .join(", ");
+  return `${link.label || link.workspaceId} on ${link.connectionLabel} (${why})`;
 }
 
 function draftsLabel(entry: MrInboxEntry): string | null {
@@ -397,6 +540,9 @@ export function MrReviewRow({
   onOpen,
   move,
   onRemove,
+  links,
+  onGoWorkspace,
+  onTogglePin,
 }: {
   entry: MrInboxEntry;
   selected: boolean;
@@ -405,9 +551,16 @@ export function MrReviewRow({
   move?: MrRowMove;
   /** Takes it out of the view (d); on the selected row, always on a broken pin. */
   onRemove?: () => void;
+  /** Its workspaces, on every connection. */
+  links?: MrWorkspaceLink[];
+  onGoWorkspace?: (link: MrWorkspaceLink) => void;
+  /** Pins it on top, or unpins it (P); on the selected row. */
+  onTogglePin?: () => void;
 }) {
   const unread = unreadLabel(entry);
   const drafts = draftsLabel(entry);
+  const chips = ownChips(entry);
+  const first = links?.[0];
   const drag = move?.drag;
   return (
     <li
@@ -461,16 +614,73 @@ export function MrReviewRow({
         )}
         {entry.section === "suggested" && entry.reason ? (
           <small className="mr-reviews-reason">{entry.reason}</small>
-        ) : entry.reasons.length ? (
-          <small>{entry.reasons.map((r) => REASON_LABEL[r]).join(", ")}</small>
+        ) : entry.reasons.some((reason) => reason !== "authored") ? (
+          <small>
+            {entry.reasons
+              .filter((reason) => reason !== "authored")
+              .map((reason) => REASON_LABEL[reason])
+              .join(", ")}
+          </small>
+        ) : null}
+        {chips.length ? (
+          <small className="mr-reviews-own" aria-label="Where it stands">
+            {chips.map((chip) => (
+              <span
+                key={chip.label}
+                className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+              >
+                {chip.label}
+              </span>
+            ))}
+          </small>
         ) : null}
         {unread || drafts ? (
           <small className="mr-reviews-badges">
-            {unread ? <em className="mr-reviews-unread">{unread}</em> : null}
+            {unread ? (
+              <em className="mr-reviews-unread" title="Since you last looked">
+                {unread}
+              </em>
+            ) : null}
             {drafts ? <em className="mr-reviews-drafts">{drafts}</em> : null}
           </small>
         ) : null}
       </button>
+      {first && onGoWorkspace ? (
+        <span className="mr-reviews-move">
+          <button
+            type="button"
+            className="assistant-icon-button mr-reviews-workspace"
+            aria-label={`Go to its workspace ${first.label || first.workspaceId}`}
+            title={`${linkTitle(first)} (w)${links!.length > 1 ? `; ${links!.length - 1} more in its details` : ""}`}
+            onClick={() => onGoWorkspace(first)}
+          >
+            <House size={14} />
+            {links!.length > 1 ? <small>{links!.length}</small> : null}
+          </button>
+        </span>
+      ) : null}
+      {selected && onTogglePin && !entry.unavailable ? (
+        <span className="mr-reviews-move">
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label={entry.section === "pinned" ? "Unpin" : "Pin"}
+            title={
+              entry.section === "pinned"
+                ? "Unpin it (P, :unpin)"
+                : "Pin it on top (P, :pin)"
+            }
+            aria-pressed={entry.section === "pinned"}
+            onClick={onTogglePin}
+          >
+            {entry.section === "pinned" ? (
+              <PinOff size={14} />
+            ) : (
+              <Pin size={14} />
+            )}
+          </button>
+        </span>
+      ) : null}
       {onRemove && (selected || entry.unavailable) ? (
         <span className="mr-reviews-move">
           <button
@@ -524,11 +734,16 @@ function MrDetail({
   entry,
   onBack,
   actions,
+  links,
+  onGoWorkspace,
 }: {
   entry: MrInboxEntry;
   onBack: () => void;
   actions?: ReactNode;
+  links?: MrWorkspaceLink[];
+  onGoWorkspace?: (link: MrWorkspaceLink) => void;
 }) {
+  const chips = ownChips(entry);
   const unread = unreadLabel(entry);
   const drafts = draftsLabel(entry);
   const kind = forgeKind(entry.provider);
@@ -579,9 +794,59 @@ function MrDetail({
               <dd>{entry.reasons.map((r) => REASON_LABEL[r]).join(", ")}</dd>
             </div>
           ) : null}
+          {chips.length ? (
+            <div>
+              <dt>Where it stands</dt>
+              <dd className="mr-reviews-own">
+                {chips.map((chip) => (
+                  <span
+                    key={chip.label}
+                    className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+                  >
+                    {chip.label}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Since you looked</dt>
             <dd>{unread ?? "nothing new"}</dd>
+          </div>
+          <div>
+            <dt>Workspaces</dt>
+            <dd>
+              {links?.length ? (
+                <ul className="mr-reviews-links" aria-label="Its workspaces">
+                  {links.map((link, index) => (
+                    <li key={`${link.connectionId}\n${link.workspaceId}`}>
+                      <button
+                        type="button"
+                        className="ghost"
+                        title={`${linkTitle(link)} (${index ? `${index + 1}w` : "w"})`}
+                        onClick={() => onGoWorkspace?.(link)}
+                      >
+                        <House size={13} /> {link.label || link.workspaceId}
+                      </button>{" "}
+                      <small>
+                        {link.connectionLabel} ·{" "}
+                        {link.why
+                          .map((each) =>
+                            each === "branch"
+                              ? "on its branch"
+                              : each === "name"
+                                ? "named after it"
+                                : "review workspace",
+                          )
+                          .join(", ")}
+                      </small>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                "none of your workspaces is on its branch or named after it"
+              )}
+            </dd>
           </div>
           <div>
             <dt>Your drafts</dt>
@@ -615,6 +880,71 @@ function MrDetail({
   );
 }
 
+/** Where the workspace's surfaces are: Ranger's panel fills their height. */
+type SurfaceRect = { top: number; right: number; bottom: number; left: number };
+
+/**
+ * The page's workspace surfaces (where Ranger's panel sits), as distances
+ * from the window's edges, followed as the window and the page move. Null
+ * while there are none (a phone, a test): the stylesheet's place then.
+ */
+export function useSurfaceRect(enabled: boolean): SurfaceRect | null {
+  const [rect, setRect] = useState<SurfaceRect | null>(null);
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setRect(null);
+      return;
+    }
+    let observed: Element | null = null;
+    const measure = () => {
+      const surfaces = document.querySelector(".workspace-surfaces");
+      if (surfaces !== observed) {
+        if (observed) observer?.unobserve(observed);
+        if (surfaces) observer?.observe(surfaces);
+        observed = surfaces;
+      }
+      if (!surfaces) {
+        setRect(null);
+        return;
+      }
+      const box = surfaces.getBoundingClientRect();
+      if (!box.width || !box.height) {
+        setRect(null);
+        return;
+      }
+      const next = {
+        top: box.top,
+        left: box.left,
+        right: window.innerWidth - box.right,
+        bottom: window.innerHeight - box.bottom,
+      };
+      setRect((current) =>
+        current &&
+        current.top === next.top &&
+        current.left === next.left &&
+        current.right === next.right &&
+        current.bottom === next.bottom
+          ? current
+          : next,
+      );
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => measure());
+    measure();
+    window.addEventListener("resize", measure);
+    // The sidebar or a bar may come and go without a resize of the window.
+    const timer = setInterval(measure, 1_000);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      clearInterval(timer);
+    };
+  }, [enabled]);
+  return rect;
+}
+
 export function MrReviewsPanel({
   onClose,
   initialSelect,
@@ -639,7 +969,26 @@ export function MrReviewsPanel({
   const { mobile } = useLayoutPreferences();
   const { inbox, error, reload } = useMrInbox();
   const [view, setView] = useState<View>(initialView ?? "list");
-  const [maximized, setMaximized] = useState(false);
+  // Kept in the browser: shown again as it was left, full or beside the page.
+  const [maximized, setMaximizedState] = useState(() => {
+    try {
+      return roamgateLocalStorage.getItem(MAXIMIZED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setMaximized = (next: boolean | ((current: boolean) => boolean)) =>
+    setMaximizedState((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      keep(MAXIMIZED_KEY, value ? "1" : "0");
+      return value;
+    });
+  const [filter, setFilterState] = useState<MrFilter>(storedFilter);
+  const setFilter = (next: MrFilter) => {
+    setFilterState(next);
+    keep(FILTER_KEY, next);
+  };
+  const surface = useSurfaceRect(!mobile);
   const [selected, setSelected] = useState<string | null>(
     initialSelect ?? null,
   );
@@ -657,27 +1006,34 @@ export function MrReviewsPanel({
     const groups: Record<MrSection, MrInboxEntry[]> = {
       pinned: [],
       mine: [],
+      authored: [],
       suggested: [],
     };
     for (const entry of entries) groups[entry.section].push(entry);
     return {
       pinned: orderMrEntries(groups.pinned, order),
       mine: orderMrEntries(groups.mine, order),
+      authored: orderMrEntries(groups.authored, order),
       suggested: orderMrEntries(groups.suggested, order),
     };
   }, [entries, order]);
   /** The search (/): the requests shown, each section narrowed. */
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const shown = useMemo(
-    () => ({
-      pinned: bySection.pinned.filter((entry) => mrMatches(entry, query)),
-      mine: bySection.mine.filter((entry) => mrMatches(entry, query)),
-      suggested: bySection.suggested.filter((entry) => mrMatches(entry, query)),
-    }),
-    [bySection, query],
+  const shown = useMemo(() => {
+    const wanted = (entry: MrInboxEntry) =>
+      filtered(entry, filter) && mrMatches(entry, query);
+    return {
+      pinned: bySection.pinned.filter(wanted),
+      mine: bySection.mine.filter(wanted),
+      authored: bySection.authored.filter(wanted),
+      suggested: bySection.suggested.filter(wanted),
+    };
+  }, [bySection, query, filter]);
+  const ordered = SECTIONS.flatMap((section) => shown[section]);
+  const links = useMrWorkspaceLinks(
+    useMemo(() => entries.map((entry) => entry.key), [entries]),
   );
-  const ordered = [...shown.pinned, ...shown.mine, ...shown.suggested];
   const [helpOpen, setHelpOpen] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const detailEntry = detail
@@ -714,10 +1070,24 @@ export function MrReviewsPanel({
     return () => timers.forEach(clearTimeout);
   }, []);
 
+  const markSeen = (entry: MrInboxEntry) =>
+    void mrReviewsCall("seen", { key: entry.key })
+      .then(() => reload())
+      .catch(() => {});
+
   const showDetail = (entry: MrInboxEntry) => {
     setSelected(entry.key);
     setDetail(entry.key);
-    void mrReviewsCall("seen", { key: entry.key }).catch(() => {});
+    markSeen(entry);
+  };
+
+  /** Its workspace, on its connection: the panel steps aside. */
+  const goWorkspace = (entry: MrInboxEntry, link: MrWorkspaceLink) => {
+    markSeen(entry);
+    void store
+      .jumpToConnectionWorkspace(link.connectionId, link.workspaceId)
+      .catch(() => {});
+    onClose({ keepFocus: true });
   };
 
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -1087,6 +1457,36 @@ export function MrReviewsPanel({
       );
   };
 
+  /**
+   * Pins a request on top (every device follows), or unpins it: it goes
+   * back to the section a query lists it in. Undo takes it back.
+   */
+  const togglePin = (entry: MrInboxEntry, want?: boolean) => {
+    const pinned = entry.section === "pinned";
+    const pin = want ?? !pinned;
+    if (pin === pinned || entry.unavailable) return;
+    setOrderError(null);
+    const label = forgeRefLabel(entry, true);
+    void (pin ? pinMrRequest(entry.url) : unpinMrRequest(entry.key))
+      .then(() => {
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        setUndo({
+          label: `${pin ? "Pinned" : "Unpinned"} ${label}`,
+          key: entry.key,
+          run: () =>
+            pin ? unpinMrRequest(entry.key) : pinMrRequest(entry.url),
+        });
+        undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+        return reload();
+      })
+      .then(() => setSelected(entry.key))
+      .catch((cause) =>
+        setOrderError(
+          `Could not ${pin ? "pin" : "unpin"} it: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+      );
+  };
+
   // What the agent changed in the list, here and on the user's other
   // devices: said, with Undo when it can be taken back.
   useEffect(
@@ -1136,6 +1536,58 @@ export function MrReviewsPanel({
   /** A count and the g of gg, as the review pane reads them. */
   const keyState = useRef(EMPTY_KEY_STATE);
 
+  /** Says something for a few seconds where Undo shows. */
+  const say = (label: string) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndo({ label, key: "" });
+    undoTimer.current = setTimeout(() => setUndo(null), 6_000);
+  };
+
+  /** The selected request in the middle of the list, or at its top or bottom. */
+  const placeSelected = (where: "center" | "start" | "end") => {
+    if (!selected) return;
+    const row = panelRef.current
+      ?.querySelector<HTMLElement>(`[data-mr-key="${CSS.escape(selected)}"]`)
+      ?.closest<HTMLElement>(".mr-reviews-item");
+    row?.scrollIntoView({ block: where });
+  };
+
+  /** Its n-th workspace (w, 2w). */
+  const goNthWorkspace = (entry: MrInboxEntry, n: number) => {
+    const found = links[entry.key] ?? [];
+    const link = found[n - 1];
+    if (link) goWorkspace(entry, link);
+    else
+      say(
+        found.length
+          ? `${forgeRefLabel(entry, true)} has ${found.length} workspace${found.length === 1 ? "" : "s"}`
+          : `None of your workspaces is on ${forgeRefLabel(entry, true)}'s branch or named after it`,
+      );
+  };
+
+  // The command line (:), as the review pane's.
+  const [command, setCommand] = useState<string | null>(null);
+  const commandRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (command !== null && document.activeElement !== commandRef.current)
+      commandRef.current?.focus();
+  }, [command]);
+  const runCommand = (text: string) => {
+    const [name = "", ...rest] = text.trim().replace(/^:/, "").split(/\s+/);
+    const current = ordered.find((entry) => entry.key === selected);
+    setCommand(null);
+    panelRef.current?.focus({ preventScroll: true });
+    if (!name) return;
+    if (name === "pin" || name === "unpin") {
+      if (!current) say("Select a request first");
+      else togglePin(current, name === "pin");
+    } else if (name === "all" || name === "review" || name === "mine")
+      setFilter(name);
+    else if (name === "refresh" || name === "e") void reload(true);
+    else if (name === "help" || name === "h") setHelpOpen(true);
+    else say(`Not a command: ${[name, ...rest].join(" ")}`);
+  };
+
   /** One key in the panel; true when the panel took it. */
   const onKey = (event: KeyboardEvent): boolean => {
     // Another handler may have marked it (a chat's Escape, say): the panel
@@ -1174,6 +1626,15 @@ export function MrReviewsPanel({
       }
       return false;
     }
+    // The command line: Enter runs it, Esc leaves it.
+    if (event.target === commandRef.current) {
+      if (event.key === "Escape") {
+        setCommand(null);
+        panelRef.current?.focus({ preventScroll: true });
+      } else if (event.key === "Enter") runCommand(command ?? "");
+      else return false;
+      return true;
+    }
     // The add box: Enter pins what it holds, Esc empties it.
     if (event.target === addRef.current) {
       if (event.key === "Escape") {
@@ -1210,7 +1671,7 @@ export function MrReviewsPanel({
       else if (hiddenOpen) setHiddenOpen(false);
       else if (helpOpen) setHelpOpen(false);
       else if (query) setQuery("");
-      else if (maximized && !mobile) setMaximized(false);
+      // Hidden as it is: brought back full screen when it was.
       else onClose();
       return true;
     }
@@ -1240,6 +1701,10 @@ export function MrReviewsPanel({
     } else if (fed.key === "G" || fed.key === "End") {
       const at = Math.min(ordered.length, fed.count ?? ordered.length) - 1;
       if (at >= 0) setSelected(ordered[at]!.key);
+    } else if (fed.key === "zz" || fed.key === "zt" || fed.key === "zb") {
+      placeSelected(
+        fed.key === "zz" ? "center" : fed.key === "zt" ? "start" : "end",
+      );
     } else if (fed.key === "J") {
       shiftSelected(count);
     } else if (fed.key === "K") {
@@ -1257,6 +1722,15 @@ export function MrReviewsPanel({
       void withClaude(current, false);
     } else if (event.key === "o" && current) {
       window.open(current.url, "_blank", "noopener");
+      markSeen(current);
+    } else if (event.key === "w" && current) {
+      goNthWorkspace(current, count);
+    } else if (event.key === "P" && current) {
+      togglePin(current);
+    } else if (event.key === "f") {
+      setFilter(FILTERS[(FILTERS.indexOf(filter) + 1) % FILTERS.length]!);
+    } else if (event.key === ":") {
+      setCommand("");
     } else if (event.key === "r") {
       void reload(true);
     } else if (event.key === "a") {
@@ -1347,6 +1821,16 @@ export function MrReviewsPanel({
       tabIndex={-1}
       className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}`}
       aria-label="Reviews"
+      style={
+        surface && !mobile
+          ? ({
+              top: surface.top,
+              bottom: surface.bottom,
+              right: surface.right,
+              ...(maximized ? { left: surface.left } : {}),
+            } satisfies CSSProperties)
+          : undefined
+      }
       onKeyDown={(event) => {
         // The chat's Vim editor keeps an Escape it takes (insert mode);
         // one it leaves gives the keys back to the panel.
@@ -1576,6 +2060,8 @@ export function MrReviewsPanel({
           {detailEntry ? (
             <MrDetail
               entry={detailEntry}
+              links={links[detailEntry.key]}
+              onGoWorkspace={(link) => goWorkspace(detailEntry, link)}
               onBack={() => setDetail(null)}
               actions={
                 <>
@@ -1614,12 +2100,22 @@ export function MrReviewsPanel({
                   >
                     Ask Claude
                   </button>
+                  {detailEntry.section !== "pinned" ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      title="Pin it on top (P, :pin)"
+                      onClick={() => togglePin(detailEntry, true)}
+                    >
+                      <Pin size={13} /> Pin
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="ghost"
                     title={
                       detailEntry.section === "pinned"
-                        ? "Unpin it (dd)"
+                        ? "Unpin it (P, dd)"
                         : "Remove it from the view (dd)"
                     }
                     onClick={() => remove(detailEntry)}
@@ -1708,6 +2204,37 @@ export function MrReviewsPanel({
                   }}
                 />
               ) : null}
+              {entries.length ? (
+                <nav
+                  className="assistant-primary-nav mr-reviews-filter"
+                  aria-label="Show"
+                >
+                  {FILTERS.map((each) => (
+                    <button
+                      key={each}
+                      type="button"
+                      className="ghost"
+                      aria-pressed={filter === each}
+                      title={`${FILTER_TITLE[each]} (f, :${each})`}
+                      onClick={() => setFilter(each)}
+                    >
+                      {FILTER_TITLE[each]}
+                      {each === "all" ? null : (
+                        <span>
+                          {
+                            entries.filter(
+                              (entry) =>
+                                filtered(entry, each) &&
+                                (entry.section !== "suggested" ||
+                                  each === "review"),
+                            ).length
+                          }
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
               {hidden.length ? (
                 <div className="mr-reviews-hidden">
                   <button
@@ -1743,7 +2270,15 @@ export function MrReviewsPanel({
                 </div>
               ) : null}
               {SECTIONS.filter(
-                (section) => section !== "pinned" || bySection.pinned.length,
+                (section) =>
+                  (section !== "pinned" || bySection.pinned.length) &&
+                  (filter === "all" ||
+                    (filter === "mine"
+                      ? section === "authored" ||
+                        (section === "pinned" && bySection.pinned.some(isOwn))
+                      : section !== "authored" &&
+                        (section !== "pinned" ||
+                          bySection.pinned.some((entry) => !isOwn(entry))))),
               ).map((section) => (
                 <section
                   key={section}
@@ -1753,7 +2288,7 @@ export function MrReviewsPanel({
                   <h3 className="mr-reviews-section-title">
                     {SECTION_TITLE[section]}
                     <span>
-                      {query
+                      {query || filter !== "all"
                         ? `${shown[section].length} of ${bySection[section].length}`
                         : bySection[section].length}
                     </span>
@@ -1769,6 +2304,9 @@ export function MrReviewsPanel({
                           onOpen={() => void open(entry)}
                           move={rowMove(entry)}
                           onRemove={() => remove(entry)}
+                          links={links[entry.key]}
+                          onGoWorkspace={(link) => goWorkspace(entry, link)}
+                          onTogglePin={() => togglePin(entry)}
                         />
                       ))}
                     </ul>
@@ -1780,20 +2318,24 @@ export function MrReviewsPanel({
                         ? inbox.refreshedAt
                           ? "Nothing waits for you."
                           : "Reading the forges..."
-                        : inbox.curation.state === "off"
-                          ? "Follow projects in the settings to get suggestions."
-                          : inbox.curation.state === "running"
-                            ? "Claude is picking suggestions..."
-                            : "No suggestion right now."}
+                        : section === "authored"
+                          ? inbox.refreshedAt
+                            ? "No request of yours is open."
+                            : "Reading the forges..."
+                          : inbox.curation.state === "off"
+                            ? "Follow projects in the settings to get suggestions."
+                            : inbox.curation.state === "running"
+                              ? "Claude is picking suggestions..."
+                              : "No suggestion right now."}
                     </p>
                   )}
                 </section>
               ))}
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter review · i details · c Claude · o on the
-                  forge · J/K reorder · / search · p add · dd remove · r refresh
-                  · a ask the reviews agent · ? all keys
+                  j/k move · Enter review · i details · w workspace · P pin · f
+                  all, to review, mine · c Claude · o on the forge · J/K reorder
+                  · / search · : command · dd remove · ? all keys
                 </p>
               ) : null}
               {undo ? (
@@ -1814,6 +2356,22 @@ export function MrReviewsPanel({
           )}
         </div>
       )}
+      {command !== null ? (
+        <div className="mr-reviews-command">
+          <span aria-hidden="true">:</span>
+          <input
+            ref={commandRef}
+            type="text"
+            aria-label="Command"
+            placeholder="pin, unpin, all, review, mine, refresh"
+            autoComplete="off"
+            spellCheck={false}
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+            onBlur={() => setCommand(null)}
+          />
+        </div>
+      ) : null}
       {helpOpen ? (
         <div className="agent-tasks-help" role="note" aria-label="Keys">
           <dl>

@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
+import { MR_REVIEWS_KEYS } from "./mrReviewsKeys";
 import { defaultShortcutBindings } from "./shortcutBindings";
 import { SHORTCUT_CATALOG } from "./shortcutCatalog";
-import { shortcutCheatSheet, shortcutKeyCaps } from "./shortcutCheatSheet";
+import {
+  REVIEWS_INBOX_GROUP,
+  shortcutCheatSheet,
+  shortcutKeyCaps,
+} from "./shortcutCheatSheet";
 
 const rows = (groups: ReturnType<typeof shortcutCheatSheet>) =>
   groups.flatMap((group) => group.rows);
@@ -30,7 +35,37 @@ test("numbered tab and command shortcuts collapse into ranges", () => {
     ["Option", "1-9"],
   ]);
   expect(sheet.some((row) => /^(tab|command)\.\d$/.test(row.key))).toBe(false);
-  expect(sheet).toHaveLength(SHORTCUT_CATALOG.length - 16);
+  expect(sheet).toHaveLength(
+    SHORTCUT_CATALOG.length - 16 + MR_REVIEWS_KEYS.length,
+  );
+});
+
+test("the reviews inbox: its toggle and its own keys, pin and zz included", () => {
+  const groups = shortcutCheatSheet(defaultShortcutBindings("mac"), "mac");
+  const all = rows(groups);
+  expect(all.find((row) => row.key === "reviews.inbox")?.combos).toEqual([
+    ["Option", "M"],
+  ]);
+  const inbox = groups.find((group) => group.group === REVIEWS_INBOX_GROUP);
+  const pin = inbox?.rows.find((row) => row.combos.some((c) => c[0] === "P"));
+  expect(pin?.label).toContain(":pin");
+  expect(
+    inbox?.rows.find((row) => row.combos.some((c) => c[0] === "zz"))?.label,
+  ).toContain("middle");
+  expect(
+    inbox?.rows.find((row) => row.combos.some((c) => c[0] === "Option"))
+      ?.combos,
+  ).toContainEqual(["Option", "Down"]);
+  // Found by a search.
+  expect(
+    rows(
+      shortcutCheatSheet(
+        defaultShortcutBindings("linux"),
+        "linux",
+        "pin it on top",
+      ),
+    ),
+  ).toHaveLength(1);
 });
 
 test("customized numbered shortcuts stay listed individually", () => {

@@ -226,7 +226,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
 
     // Nothing pinned: no Pinned section, the Add box is there.
     panel.focus();
-    expect(titles()).toEqual(["For you", "Suggested"]);
+    expect(titles()).toEqual(["To review", "Mine", "Suggested"]);
     expect(addBox()).not.toBeNull();
     expect(button("Add")?.hasAttribute("disabled")).toBe(true);
 
@@ -241,7 +241,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
     expect(pinCalls().map(([, params]) => params.text)).toEqual([
       "https://gitlab.example.org/group/app/-/merge_requests/7",
     ]);
-    expect(titles()).toEqual(["Pinned", "For you", "Suggested"]);
+    expect(titles()).toEqual(["Pinned", "To review", "Mine", "Suggested"]);
     expect(rows()).toEqual([keyOf(7), keyOf(1), keyOf(2), keyOf(3)]);
     expect(selected()).toBe(keyOf(7));
     expect(addBox().value).toBe("");
@@ -340,12 +340,12 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
     expect(selected()).toBe(keyOf(7));
     await key("d");
     await key("d");
-    expect(titles()).toEqual(["For you", "Suggested"]);
+    expect(titles()).toEqual(["To review", "Mine", "Suggested"]);
     expect(host.querySelector(".mr-reviews-undo")?.textContent).toContain(
       "Unpinned !7",
     );
     await key("u");
-    expect(titles()).toEqual(["Pinned", "For you", "Suggested"]);
+    expect(titles()).toEqual(["Pinned", "To review", "Mine", "Suggested"]);
     expect(pinCalls()[pinCalls().length - 1]?.[1].text).toBe(
       "https://gitlab.example.org/group/app/-/merge_requests/7",
     );

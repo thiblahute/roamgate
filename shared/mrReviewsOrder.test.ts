@@ -11,6 +11,7 @@ import {
 const sections = (): MrOrderSections => ({
   pinned: ["p1"],
   mine: ["m1", "m2", "m3"],
+  authored: [],
   suggested: ["s1", "s2", "s3", "s4"],
 });
 
@@ -23,6 +24,7 @@ describe("order operations", () => {
     expect(top.sections).toEqual({
       pinned: ["p1"],
       mine: ["m3", "m1", "m2"],
+      authored: [],
       suggested: ["s3", "s4", "s1", "s2"],
     });
     expect(top.moved.sort()).toEqual(["m3", "s3", "s4"]);
