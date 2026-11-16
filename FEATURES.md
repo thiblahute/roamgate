@@ -229,6 +229,25 @@ Inspector button, shortcuts, or workspace/agent menus.
   (comments go to the agent as you write them), **Hold**, **Send**,
   **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
   `:overall`.
+- With reviews in Changes, Files and Changes are one review of the checkout.
+  A comment written in Files, on the source or the rendered Markdown, HTML
+  or diagram, is a thread of the checkout's review, the one Changes writes
+  to: Changes draws it on its file's diff at its source line (words of a
+  rendered file with no source line found, at the file's head), lists it in
+  the comments (`T`) and walks it with `gn` / `gN`; a comment written in
+  Changes shows in Files at its line. Send, Hold and the agent group act on
+  all of them, wherever each was written. The reviewed tick is the same
+  mark in both trees: Files' tree ticks the review's reviewed files, and the
+  preview's **Reviewed** button (or `:reviewed`) ticks or unticks the file
+  shown. A file with no change joins the review when you comment on it or
+  tick it in Files (opening it does not): Changes lists it under **Other
+  files**, below the changed files in its tree and under the diff, with its
+  threads (each saying its line; **Open in Files** shows them in place) and
+  its tick, and Files' tree marks it with a dot (a tick once reviewed).
+  Unticking it and resolving or deleting its threads takes it out. Its tick
+  is a tick only: chunk counts are the changed files'. Comments made in
+  Files before this are kept in their file's own review: Files shows them,
+  and Changes too on a file with a change.
 - Threads in Changes are drawn as the review pane draws them: under each of
   your messages how it goes to the agent (sent, on its way, held, not
   delivered with Retry, not sent with Send, for another review's thread that
@@ -1415,6 +1434,7 @@ The Files preview, for the file shown (from the tree too):
 | `:scripts` (`on` / `off`)              | **Scripts off** / **Scripts on**                                  |
 | `:point`                               | **Point**                                                         |
 | `:review`                              | **Review**: the file in its checkout's code review, at the line   |
+| `:reviewed`                            | **Reviewed**: ticks or unticks the file in its checkout's review  |
 | `:reload` (`:refresh`, `:e`, `:edit`)  | the refresh button (`R`); `:refresh` here with the focus in it    |
 | `:copy`                                | **Copy**                                                          |
 | `:url` (`ADDRESS`)                     | **URL**: its form, or that page opened                            |

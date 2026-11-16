@@ -126,6 +126,7 @@ import {
 } from "./previewSelection";
 import { highlightCodeTokens } from "./syntaxHighlighting";
 import { store, useStoreSelector } from "../store";
+import type { ReviewFileMarks } from "../useReviewFileMarks";
 import {
   directoryPreviewName,
   directoryPreviewPath,
@@ -278,6 +279,7 @@ export const PREVIEW_COMMAND_WORDS: readonly string[] = [
   "scripts",
   "point",
   "review",
+  "reviewed",
   "url",
   "copy",
   "q",
@@ -400,6 +402,7 @@ export function FilePreviewContent({
   onClosePreview,
   onCreateAnnotation,
   onShowInReview,
+  reviewFiles,
   onReanchorAnnotations,
   rendered: renderedAtLine = false,
   placeScope,
@@ -432,6 +435,11 @@ export function FilePreviewContent({
    * its checkout, at a line.
    */
   onShowInReview?: (path: string, line?: number) => void;
+  /**
+   * The checkout's review (reviews in Changes, D16): the file's reviewed
+   * tick, toggled here as in Changes; an unchanged file joins the review.
+   */
+  reviewFiles?: ReviewFileMarks;
   /** `line` shown as rendered (Show rendered), not in the source. */
   rendered?: boolean;
   /**
@@ -829,6 +837,36 @@ export function FilePreviewContent({
         ? previewPath
         : `${preview.root.replace(/\/+$/, "")}/${previewPath}`
       : undefined;
+  /** The file's path in the review's repository, when it is in it. */
+  const reviewPath = (() => {
+    const root = reviewFiles?.root?.replace(/\/+$/, "");
+    return root && absolutePath?.startsWith(`${root}/`)
+      ? absolutePath.slice(root.length + 1)
+      : undefined;
+  })();
+  const reviewTick = reviewPath
+    ? reviewFiles?.marks.get(reviewPath)
+    : undefined;
+  const toggleReviewed = () => {
+    if (!reviewFiles || !reviewPath) return;
+    const was = reviewTick?.reviewed ?? false;
+    reviewFiles.toggle(reviewPath).then(
+      () =>
+        store.notify({
+          kind: "info",
+          message: was
+            ? `${reviewPath} no longer reviewed`
+            : `${reviewPath} reviewed`,
+          autoDismissMs: 2500,
+        }),
+      (error) =>
+        store.notify({
+          kind: "error",
+          message: "Not marked",
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+    );
+  };
   const fileThreads = useFileThreads(
     connectionClient.connectionId,
     siteUrl ? { url: siteUrl } : { absolute: absolutePath },
@@ -1850,6 +1888,16 @@ export function FilePreviewContent({
           },
         ]
       : []),
+    ...(fileShown && reviewPath
+      ? [
+          {
+            name: "reviewed",
+            description:
+              "this file reviewed in the checkout's review, or not (its tick)",
+            run: toggleReviewed,
+          },
+        ]
+      : []),
     ...(fileShown && entry && onRefresh
       ? [
           {
@@ -2219,6 +2267,21 @@ export function FilePreviewContent({
                 onClick={() => onShowInReview(absolutePath, cursorLine())}
               >
                 Review
+              </button>
+            ) : null}
+            {!showingChanges && reviewPath ? (
+              <button
+                type="button"
+                className={`file-preview-copy file-preview-reviewed ${reviewTick?.reviewed ? "is-reviewed" : ""}`}
+                aria-pressed={reviewTick?.reviewed ?? false}
+                title={
+                  reviewTick?.reviewed
+                    ? "Reviewed in the checkout's review: unmark it (:reviewed)"
+                    : "Mark this file reviewed in the checkout's review (:reviewed)"
+                }
+                onClick={toggleReviewed}
+              >
+                {reviewTick?.reviewed ? "\u2713 Reviewed" : "Reviewed"}
               </button>
             ) : null}
             {changesAvailable ? (

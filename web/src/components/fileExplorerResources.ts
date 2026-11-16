@@ -352,7 +352,7 @@ function relativeDisplayPath(from: string, to: string) {
   return target.startsWith(`${base}/`) ? target.slice(base.length + 1) : null;
 }
 
-function mapGitPathToExplorerPath(
+export function mapGitPathToExplorerPath(
   gitRoot: string,
   explorerRoot: string,
   gitPath: string,

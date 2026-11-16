@@ -208,6 +208,110 @@ describe("feedbackRoute", () => {
   });
 });
 
+describe("one review across Files and Changes (D16)", () => {
+  const rendered: ReviewAnnotation = {
+    id: "rendered",
+    source: "file",
+    anchor: "quote",
+    path: "docs/guide.md",
+    section: ["Title"],
+    line: 3,
+    endLine: 4,
+    quote: "the words",
+    render: { quote: "the words" },
+    comment: "Clearer?",
+    createdAt: 1,
+  };
+  test("reviews in Changes: a file comment opens the checkout's worktree review, its rendered anchor kept", () => {
+    const route = feedbackRoute(rendered, { ...place, oneReview: true });
+    expect(route.open).toEqual({
+      path: "/repo",
+      target: { kind: "worktree" },
+    });
+    expect(route.anchor(session({ kind: "worktree" } as never))).toEqual({
+      path: "docs/guide.md",
+      line: 3,
+      endLine: 4,
+      side: "new",
+      text: "the words",
+      render: { quote: "the words" },
+    });
+  });
+  test("the path is the repository's, when the checkout is a directory of it", () => {
+    const route = feedbackRoute(
+      { ...rendered, path: "guide.md" },
+      { ...place, root: "/repo/docs/", oneReview: true },
+    );
+    expect(route.open).toEqual({
+      path: "/repo/docs/",
+      target: { kind: "worktree" },
+    });
+    expect(route.anchor(session({ kind: "worktree" } as never)).path).toBe(
+      "docs/guide.md",
+    );
+  });
+  test("a file outside the checkout, and a site, keep their rendered review", () => {
+    expect(
+      feedbackRoute(
+        { ...rendered, path: "/elsewhere/notes.md" },
+        { ...place, oneReview: true },
+      ).open,
+    ).toEqual({
+      file: "/elsewhere/notes.md",
+      target: { kind: "rendered" },
+      title: "notes.md",
+    });
+    expect(
+      feedbackRoute(
+        { ...rendered, path: "https://example.com/page" },
+        { ...place, oneReview: true },
+      ).open,
+    ).toEqual({
+      target: { kind: "rendered", url: "https://example.com/page" },
+      title: "https://example.com/page",
+    });
+  });
+  test("writeFeedback writes it in the worktree review, as the review's settings say", async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    const call = async <T>(method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      return (
+        method === "review.open"
+          ? {
+              session: {
+                ...session({ kind: "worktree" } as never),
+                agent: { paneId: "p1", name: "claude" },
+              },
+              threads: [],
+            }
+          : {}
+      ) as T;
+    };
+    await writeFeedback(
+      call,
+      { ...rendered, anchor: "line", line: 3 } as ReviewAnnotation,
+      { ...place, oneReview: true },
+      1,
+      { lineText: "the source line" },
+    );
+    expect(calls[0]!.params).toEqual({
+      workspace_id: "w1",
+      path: "/repo",
+      target: { kind: "worktree" },
+    });
+    const added = calls[1]!.params;
+    expect(added.session_id).toBe("s1");
+    // Sent to the review's agent, as a comment written in Changes is.
+    expect(added.kind).toBe("discussion");
+    expect(added.anchor).toMatchObject({
+      path: "docs/guide.md",
+      line: 3,
+      side: "new",
+      text: "the source line",
+    });
+  });
+});
+
 describe("terminal comments", () => {
   const note: ReviewAnnotation = {
     id: "t1",

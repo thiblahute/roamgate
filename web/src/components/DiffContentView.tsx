@@ -136,6 +136,12 @@ import { latestComment } from "../reviewNavigation";
 import { useChangesAgent, worktreeReview } from "../changesReview";
 import type { ReviewProgress } from "./DiffViewerPanel";
 import {
+  fileNoteAsDiff,
+  type OtherFile,
+  otherFileMarks,
+  otherReviewFiles,
+} from "../reviewFiles";
+import {
   CHANGES_REVIEW_VIEW,
   type ChunkSpan,
   changesReviewed,
@@ -473,6 +479,7 @@ type DiffThreads = {
 };
 
 const NO_MARKS: Readonly<Record<string, string>> = {};
+const NO_OTHER_FILES: readonly OtherFile[] = [];
 const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
 const NO_THREADS: ReviewThread[] = [];
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
@@ -1151,6 +1158,8 @@ export function DiffContentView({
   reviewCursor = false,
   onSearchMatchesChange,
   onReviewProgress,
+  onOtherFiles,
+  otherFileGoTo = null,
   onAddReviewImage,
   onGitAction,
 }: {
@@ -1218,6 +1227,13 @@ export function DiffContentView({
   onSearchMatchesChange?: (paths: readonly string[]) => void;
   /** The files' reviewed chunks, for the tree (the review in Changes). */
   onReviewProgress?: (progress: ReadonlyMap<string, ReviewProgress>) => void;
+  /**
+   * The review's files with no change (D16, "Other files"), for the tree:
+   * each with its tick and its open threads.
+   */
+  onOtherFiles?: (files: readonly OtherFile[]) => void;
+  /** One of the Other files picked in the tree: shown; `at` tells apart. */
+  otherFileGoTo?: { path: string; at: number } | null;
   /** Stores an image pasted in the review's comment box; Markdown for it. */
   onAddReviewImage?: (file: File) => Promise<string>;
   /** A git action on a file of the working changes (`:stage`, `gs`). */
@@ -1261,8 +1277,18 @@ export function DiffContentView({
       ),
     [givenAnnotations, givenThreads, held, repoOwn, repoRoot, reviewSessions],
   );
-  const annotations = scoped.annotations;
   const threads = givenThreads || held.length ? scoped.threads : undefined;
+  // One review across Files and Changes (D16): a comment written in Files
+  // is drawn on its file's combined diff, at its source line.
+  const annotations = useMemo(() => {
+    if (!reviewCursor || embedded) return scoped.annotations;
+    if (!scoped.annotations.some((note) => note.source === "file"))
+      return scoped.annotations;
+    const byId = new Map(scoped.threads.map((thread) => [thread.id, thread]));
+    return scoped.annotations.map((note) =>
+      fileNoteAsDiff(note, byId.get(note.id)),
+    );
+  }, [embedded, reviewCursor, scoped]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectFileRef = useRef(onSelectFile);
   const openFileRef = useRef(onOpenFile);
@@ -1421,7 +1447,9 @@ export function DiffContentView({
   const [overallOpen, setOverallOpen] = useState(false);
   const changesAgent = useChangesAgent(
     connectionClient.connectionId,
-    reviewEditor ? (Object.values(filesByKey)[0]?.root ?? file?.root) : null,
+    reviewEditor
+      ? (Object.values(filesByKey)[0]?.root ?? file?.root ?? repo?.root)
+      : null,
     Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
   );
   // ---- The review's threads drawn as the review pane draws them ---------
@@ -2172,10 +2200,56 @@ export function DiffContentView({
     [cursor.model],
   );
   const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
+  const ownReviewId = changesAgent.snapshot?.session.id;
   const reviewState = useMemo(
     () => changesReviewed(reviewLayout, reviewedMarks),
     [reviewLayout, reviewedMarks],
   );
+  /**
+   * The review's files with no change (D16): commented on or ticked in
+   * Files (or here), listed under the changed files with their threads.
+   */
+  const otherFiles = useMemo(
+    () =>
+      reviewEditor
+        ? otherReviewFiles(
+            // The worktree review's own: an older rendered file's review
+            // keeps its threads (shown in Files, and here on a change).
+            (drawnThreads ?? NO_THREADS).filter(
+              (thread) => thread.sessionId === ownReviewId,
+            ),
+            reviewedMarks,
+            new Set(entries.map((each) => each.path)),
+          )
+        : NO_OTHER_FILES,
+    [drawnThreads, entries, ownReviewId, reviewEditor, reviewedMarks],
+  );
+  /**
+   * The threads the Comments panel lists, and the head counts: those on
+   * the files shown, then the Other files' (D16).
+   */
+  const listedThreads = useMemo(() => {
+    if (!otherFiles.length) return shownThreads;
+    const listed = new Set(shownThreads.map((thread) => thread.id));
+    return [
+      ...shownThreads,
+      ...otherFiles
+        .flatMap((other) => other.threads)
+        .filter((thread) => !listed.has(thread.id)),
+    ];
+  }, [otherFiles, shownThreads]);
+  const otherFileOf = (thread: ReviewThread) =>
+    otherFiles.find((other) => other.threads.includes(thread))?.path;
+  /** Shows an Other file's block (its threads), from the panel or the tree. */
+  const showOtherFile = (path: string) =>
+    sectionRef.current
+      ?.querySelector<HTMLElement>(`[data-other-file="${CSS.escape(path)}"]`)
+      ?.scrollIntoView?.({ block: "start" });
+  const otherFilesRef = useRef(onOtherFiles);
+  otherFilesRef.current = onOtherFiles;
+  useEffect(() => {
+    if (reviewEditor) otherFilesRef.current?.(otherFiles);
+  }, [otherFiles, reviewEditor]);
   /** Each combined section's staged lines, as the server told them (D8). */
   const stagedLinesByKey = useMemo(() => {
     const staged = new Map<string, GitDiffFile["staged"]>();
@@ -3442,7 +3516,7 @@ export function DiffContentView({
       case "zR":
         return expandAroundCursor("file", 1);
       case "T":
-        if (shownThreads.length) setThreadsOpen((open) => !open);
+        if (listedThreads.length) setThreadsOpen((open) => !open);
         else say("No comments yet.");
         return true;
       case "t":
@@ -3630,6 +3704,112 @@ export function DiffContentView({
         })}
       </div>
     ) : null;
+
+  /**
+   * The review's files with no change (D16), under the changed files: each
+   * with its tick (a tick only: no chunks to count) and its threads, on
+   * the file as a whole, saying the line each is on. Open in Files shows
+   * the file's text with them at their lines.
+   */
+  const otherFilesBlock =
+    reviewEditor && otherFiles.length ? (
+      <section
+        className="diff-other-files"
+        data-testid="diff-other-files"
+        aria-label="Other files"
+      >
+        <h3>Other files</h3>
+        {otherFiles.map((other) => {
+          const shown = other.threads.filter(
+            (thread) => !(threadView.openOnly && thread.resolved),
+          );
+          return (
+            <div
+              key={other.path}
+              className="diff-other-file"
+              data-other-file={other.path}
+            >
+              <div className="diff-other-file-head">
+                <span className="diff-other-file-name">{other.path}</span>
+                <span className="diff-other-file-note">no change</span>
+                <button
+                  type="button"
+                  className={`diff-other-file-tick ${other.reviewed ? "is-reviewed" : ""}`}
+                  aria-pressed={other.reviewed}
+                  title={
+                    other.reviewed
+                      ? "Reviewed: unmark it"
+                      : "Mark this file reviewed"
+                  }
+                  onClick={() =>
+                    writeMarks(
+                      otherFileMarks(other.path, !other.reviewed),
+                      () =>
+                        other.reviewed
+                          ? `${other.path} no longer reviewed`
+                          : `${other.path} reviewed`,
+                    )
+                  }
+                >
+                  {other.reviewed ? "\u2713 Reviewed" : "Mark reviewed"}
+                </button>
+                {onOpenFile ? (
+                  <button
+                    type="button"
+                    className="diff-other-file-open"
+                    onClick={() =>
+                      onOpenFile({
+                        path: other.path,
+                        kind: "unstaged",
+                        status: "M",
+                        additions: 0,
+                        deletions: 0,
+                      } as GitDiffEntry)
+                    }
+                  >
+                    {openFileLabel}
+                  </button>
+                ) : null}
+              </div>
+              {diffThreads && !hideComments
+                ? shown.map((thread) => (
+                    <div
+                      key={thread.id}
+                      className="chat-review diff-review-thread"
+                    >
+                      {thread.anchor.line ? (
+                        <span className="diff-other-file-line">
+                          line {thread.anchor.line}
+                          {thread.anchor.endLine &&
+                          thread.anchor.endLine > thread.anchor.line
+                            ? `-${thread.anchor.endLine}`
+                            : ""}
+                        </span>
+                      ) : null}
+                      <FileThread
+                        thread={thread}
+                        api={diffThreads.api}
+                        view={diffThreads.view}
+                        undelivered={diffThreads.undelivered}
+                        nested={diffThreads.nested}
+                        {...(diffThreads.review
+                          ? { review: diffThreads.review }
+                          : {})}
+                      />
+                    </div>
+                  ))
+                : null}
+            </div>
+          );
+        })}
+      </section>
+    ) : null;
+  // Picked in the tree's Other files: shown.
+  const showOtherFileRef = useRef(showOtherFile);
+  showOtherFileRef.current = showOtherFile;
+  useEffect(() => {
+    if (otherFileGoTo) showOtherFileRef.current(otherFileGoTo.path);
+  }, [otherFileGoTo]);
 
   // Back to the diff once the editor is gone: its Vim `:w` / `:q` hand the
   // focus back to the editor after they ran.
@@ -4350,7 +4530,7 @@ export function DiffContentView({
           },
         ]
       : []),
-    ...(shownThreads.length
+    ...(listedThreads.length
       ? [
           {
             name: "conversations",
@@ -4612,7 +4792,7 @@ export function DiffContentView({
             {reviewedFileCount}/{reviewLayout.files.length} reviewed
           </span>
         ) : null}
-        {reviewEditor && shownThreads.length ? (
+        {reviewEditor && listedThreads.length ? (
           <button
             type="button"
             className={`diff-comments-toggle${hideComments ? "" : " is-active"}`}
@@ -4620,7 +4800,7 @@ export function DiffContentView({
             aria-label="Comments"
             title={
               hideComments
-                ? `Show the ${shownThreads.length} hidden comment${shownThreads.length === 1 ? "" : "s"} (t, :comments)`
+                ? `Show the ${listedThreads.length} hidden comment${listedThreads.length === 1 ? "" : "s"} (t, :comments)`
                 : "Show / hide every comment (t, :comments)"
             }
             onClick={() => setHideComments((hidden) => !hidden)}
@@ -4631,7 +4811,7 @@ export function DiffContentView({
               <MessageSquare size={14} />
             )}
             {hideComments ? (
-              <span className="rv-badge">{shownThreads.length}</span>
+              <span className="rv-badge">{listedThreads.length}</span>
             ) : null}
           </button>
         ) : null}
@@ -4654,10 +4834,10 @@ export function DiffContentView({
             }}
           />
         ) : null}
-        {shownThreads.length ? (
+        {listedThreads.length ? (
           <ThreadsChip
             className="diff-threads-chip"
-            threads={shownThreads}
+            threads={listedThreads}
             undelivered={
               diffThreads?.undelivered
                 ? {
@@ -4720,20 +4900,25 @@ export function DiffContentView({
         </div>
       ) : null}
       {!summaryLoading && !error && !visibleEntries.length ? (
-        <div className="diff-content-state">No changed files.</div>
+        <div className="diff-content-state">
+          {otherFiles.length
+            ? "No changed files; other files of the review below."
+            : "No changed files."}
+        </div>
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
         <DiffDrawingContext.Provider value={drawing}>
           {overallBlock}
           {generalBlock}
           {diffList}
+          {otherFilesBlock}
         </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>
-      {threadsOpen && shownThreads.length && diffThreads ? (
+      {threadsOpen && listedThreads.length && diffThreads ? (
         <ThreadsList
           className="diff-threads"
           threads={
-            reviewEditor ? conversationOrder(shownThreads) : shownThreads
+            reviewEditor ? conversationOrder(listedThreads) : listedThreads
           }
           api={diffThreads.api}
           onGo={
@@ -4744,7 +4929,9 @@ export function DiffContentView({
                   const spot = readingOrder.find(
                     (each) => each.thread.id === thread.id,
                   );
+                  const other = spot ? undefined : otherFileOf(thread);
                   if (spot) showThread(spot);
+                  else if (other) showOtherFile(other);
                   else goToThread(thread);
                   sectionRef.current?.focus({ preventScroll: true });
                 }

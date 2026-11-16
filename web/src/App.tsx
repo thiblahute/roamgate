@@ -3267,6 +3267,8 @@ export default function App() {
             workspaceId: workspace.workspace_id,
             root: base,
             ...(agent ? { agent } : {}),
+            // Reviews in Changes: Files' comments are the checkout's review's.
+            ...(reviewSurfaceChoice() === "changes" ? { oneReview: true } : {}),
           }
         : null;
     },
