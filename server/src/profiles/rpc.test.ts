@@ -373,6 +373,15 @@ describe("model continuity across a switch", () => {
     owned = "s-1";
     live = "claude-sonnet-5-5";
     expect(await model()).toBe("claude-sonnet-5-5");
+    // A terminal's Claude mod says what its status line shows.
+    owned = null;
+    live = null;
+    d.modUsage = () => ({
+      at: "2026-11-06T10:00:00.000Z",
+      model: "claude-opus-5-5[1m]",
+    });
+    expect(await model()).toBe("claude-opus-5-5[1m]");
+    d.modUsage = undefined;
     // Nothing answered yet: the profile's own model.
     owned = null;
     live = null;

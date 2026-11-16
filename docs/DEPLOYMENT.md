@@ -602,6 +602,41 @@ before (the claude the holder resumes on a hand-back has that variable
 set, so it is never taken again at once). Enter in the pane, or the
 chat's switch, takes a session back to the terminal as usual.
 
+### Claude Code mod
+
+**Configuration > Integrations > Claude Code mod** installs Roamgate's
+Claude Code mod on the connection's host (this machine, or the SSH host).
+It needs Claude Code 2.1.304 or newer (`claude update`) and a Unix host.
+**Install** runs Claude Code's own command there:
+
+```sh
+claude plugin install roamgate --marketplace ~/.cache/roamgate/claude-plugins --scope user
+```
+
+Roamgate keeps that folder up to date (it writes it at start, beside the
+review client); Claude Code reads the plugin from it in place, so a Roamgate
+update reaches a session when it starts or at `/reload-plugins`. **Remove**
+runs `claude plugin uninstall roamgate@roamgate` and removes the
+marketplace. The same commands can be run by hand.
+
+With the mod, a Claude session in a Herdr pane receives what Roamgate has
+for it (review and chat comments, other sessions' messages, companion
+errands, the usage-limit resume, Retry) as prompts submitted once Claude is
+idle, instead of typed into the terminal; a message for a session you
+stopped with Esc waits until your next prompt's turn ends. Roamgate also
+learns exactly when turns start and end, when Claude waits on you, and its
+model, context and plan usage (shown by the profile chip). A session
+without the mod (another agent, an older Claude, the mod not installed) is
+typed into as before. Every session with the mod, conversation mode
+included, also has Roamgate's tools (`mcp__roamgate__*`: `review_reply`,
+`review_add`, `agent_message`...) and the commands `/rg-review` and
+`/threads`; Claude prefers the tools to the `roamgate-review` client, which
+stays for other agents. To allow the tools explicitly in your permission
+rules, add `mcp__roamgate__*`. A running session takes a new version of the
+mod at `/reload-plugins`. Start one claude without it with
+`ROAMGATE_CLAUDE_MOD=off claude`. An organization policy that admits only
+its own mods keeps it from loading; Roamgate then types as before.
+
 ### Stopping idle conversations
 
 **Configuration > Integrations > Stop idle conversations** (the
@@ -1032,7 +1067,11 @@ With a front, a call can be with the companion itself rather than a pane
 the session as a job (`POST /api/voice/forward`; the words as said, only
 the session they address dropped when the front gives them so and the
 server finds the rest word for word but for verb forms, else whole; the
-whole answer followed as an errand's) and comes back through it.
+whole answer followed as an errand's) and comes back through it. A session
+in terminal mode takes a job as one in conversation mode does, the way
+`roamgate-review message` reaches it: its Claude mod, else typed through
+Herdr once it is idle (waiting up to 30 minutes, never into a busy or
+blocked one), and the answer is read from its history.
 
 A front also answers general questions itself, and looks up on the web what
 needs fresh or checked information: its `"web"` route starts a search in the

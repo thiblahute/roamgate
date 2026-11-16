@@ -747,6 +747,9 @@ Inspector state is scoped to each checkout; see
   after the reset. On a narrow header only the icons stay, their words in
   the titles and the menu. The agent launcher offers **Agent: <profile>**
   for a new session. See [Agent profiles](docs/DEPLOYMENT.md#agent-profiles).
+  With Roamgate's Claude Code mod the chip's title and menu also show the
+  session's context and plan usage ("Context 34% · 5-hour 61% · weekly
+  15%").
   **Resume after a usage limit**: a Claude session that stopped on a usage
   limit (5-hour or weekly; terminal or conversation mode, asleep or not,
   on any connection) shows **Paused · 1:41 AM** in its pane's toolbar, on
@@ -827,6 +830,24 @@ Inspector state is scoped to each checkout; see
   Idle, with what runs in its tooltip; clicking it opens the list. An idle
   teammate waiting for a message does not count. Herdr's own status is left
   as it is.
+- **Claude Code mod**: Configuration > Integrations > Claude Code mod
+  installs, on this machine or an SSH host, a Claude Code mod that runs
+  inside each Claude session in a Herdr pane. What Roamgate has for a
+  session (review and chat comments, other sessions' messages, companion
+  errands, the usage-limit resume, Retry) then arrives as a prompt once
+  Claude is idle, never typed into a permission prompt, a menu or your
+  draft; a session you stopped with Esc gets it after your next prompt's
+  turn. Its status (working, waiting on you, idle), session, model and
+  usage come from Claude itself instead of the screen. Sessions without it
+  are typed into as before. Every Claude session with the mod, conversation
+  mode included, also gets tools to answer review and chat comments, leave
+  review comments, tell you to act and message other sessions: Markdown goes
+  as written, with no shell quoting, and the comments it gets name the tools
+  instead of `roamgate-review` command lines. In Claude, `/rg-review` opens
+  Roamgate's review of the branch (or `worktree`, `BASE..HEAD`, `compare OLD
+  NEW`, a merge request URL) and `/threads` lists the threads waiting for
+  that session's answer. See [Claude Code
+  mod](docs/DEPLOYMENT.md#claude-code-mod).
 - **Menu > Configuration > Integrations** installs, updates, or removes Herdr's
   bundled agent integrations (not the agents themselves). See
   [version lookup](docs/ARCHITECTURE.md#agent-integrations).
@@ -1152,9 +1173,10 @@ Agent sessions talk to each other through the same client, across every
 connection: `roamgate-review sessions` lists the sessions Roamgate manages
 (name, workspace, connection, agent, mode, state, and an address such as
 `desktop/w17:p1`), and `roamgate-review message ADDRESS -- TEXT` sends one a
-message. A session in conversation mode gets it through Roamgate's queue; one
-in a terminal gets it typed in once it is idle (never while it asks you
-something). The receiver is told it comes from another agent, not from you,
+message. A session in conversation mode gets it through Roamgate's queue; a
+terminal Claude running Roamgate's Claude Code mod through the mod, as a
+prompt once it is idle; another terminal session gets it typed in once it
+is idle (never while it asks you something). The receiver is told it comes from another agent, not from you,
 that it carries none of your authority and approves nothing, and how to
 reply. Both chats show it: **From NAME** in the receiver's, **To NAME** in the
 sender's. Only sessions Roamgate manages can send or be addressed, and a

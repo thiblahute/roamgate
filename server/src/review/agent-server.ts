@@ -23,6 +23,7 @@ import {
   type ReviewTarget,
   type ReviewThread,
   REVIEW_USER,
+  threadNeedsAnswer,
 } from "../../../shared/review";
 import { type Logger, silentLogger } from "../utils/logger";
 import { HOLD_CLIENT_INSTALLED_SCRIPT } from "../conversation/holder-script";
@@ -41,6 +42,9 @@ import {
   type AgentMessenger,
 } from "../agent/agent-messenger";
 import { agentAddress } from "../../../shared/agentMessage";
+import { ClaudeModError, type ClaudeModHub } from "../agent/claude-mod";
+import { writeClaudeModPlugin } from "../agent/claude-mod-plugin";
+import { MOD_VIA } from "../../claude-mod/hooks/tools";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
 
 /** What the agent server needs to know about a ready connection. */
@@ -341,6 +345,13 @@ export function createReviewAgentServer(args: {
     sessionId: string;
     source: string;
   }) => Promise<Record<string, unknown>>;
+  /**
+   * Roamgate's Claude Code mod (server/claude-mod): its inbox long-poll
+   * (`mod_poll`), acknowledgements (`mod_ack`), session events
+   * (`mod_event`), and a session saying it has the mod's tools
+   * (`mod_tools`).
+   */
+  claudeMod?: Pick<ClaudeModHub, "poll" | "ack" | "event" | "tools">;
   /** A start prepared for a pane (roamgate-hold --launch), taken once. */
   launch?: (input: {
     connectionId: string;
@@ -489,8 +500,18 @@ export function createReviewAgentServer(args: {
     }
   }
 
-  function agentName(form: URLSearchParams): string {
-    const name = (form.get("agent") ?? "").trim() || "agent";
+  /**
+   * Who writes. The client always says; the mod's tools leave it out: the
+   * review's own agent when it runs in the asking pane, else Claude.
+   */
+  function agentName(form: URLSearchParams, session?: ReviewSession): string {
+    let name = (form.get("agent") ?? "").trim();
+    if (!name && form.get("via") === MOD_VIA)
+      name =
+        session?.agent.name && session.agent.paneId === form.get("pane")
+          ? session.agent.name
+          : "Claude";
+    name ||= "agent";
     if (name === REVIEW_USER)
       throw new ReviewError(`"${REVIEW_USER}" is the user's name`);
     return name;
@@ -639,6 +660,14 @@ export function createReviewAgentServer(args: {
             sessionId,
           });
     }
+    if (
+      command === "mod_poll" ||
+      command === "mod_ack" ||
+      command === "mod_event" ||
+      command === "mod_tools"
+    )
+      return claudeModRequest(connection.id, command, form, signal);
+    if (command === "waiting") return waiting(connection.id, form);
     if (command === "launch") {
       const paneId = form.get("pane");
       const token = form.get("token") ?? "";
@@ -816,7 +845,7 @@ export function createReviewAgentServer(args: {
         params,
       });
     }
-    const agent = agentName(form);
+    let agent = agentName(form);
     const pane = form.get("pane") || undefined;
     const text = form.get("text") ?? undefined;
     const comment = form.get("comment") ?? undefined;
@@ -909,6 +938,7 @@ export function createReviewAgentServer(args: {
     }
     const session = await sessionFor(connection, form);
     const sessionId = session.id;
+    agent = agentName(form, session);
     if (session.gitlab && (command === "get" || command === "comments"))
       await args.service.refreshGitlab({ sessionId });
     await args.service.assertAgentAllowed({ sessionId, author: agent });
@@ -1046,6 +1076,110 @@ export function createReviewAgentServer(args: {
     }
   }
 
+  /**
+   * The threads waiting for the asking session's answer (`/threads`): in
+   * the reviews and chats whose agent runs in its pane or is its session.
+   */
+  function waiting(connectionId: string, form: URLSearchParams) {
+    const paneId = form.get("pane") ?? "";
+    const claude = form.get("claude_session") ?? "";
+    if (!paneId && !claude)
+      throw new ReviewError("waiting runs inside an agent session");
+    const reviews = args.service
+      .list({ connectionId, chats: true })
+      .filter(({ session }) => {
+        const agentSession =
+          session.target.kind === "chat"
+            ? session.target.chat
+            : session.agent.sessionId;
+        return (
+          ((paneId && session.agent.paneId === paneId) ||
+            (claude && agentSession === claude)) &&
+          args.service.agentMayRead({ sessionId: session.id })
+        );
+      })
+      .map(({ session, threads }) => ({
+        session: sessionOutput(session),
+        threads: threads
+          .filter((thread) =>
+            threadNeedsAnswer(thread, session.agent.name ?? "agent", {
+              suggestions: !session.gitlab,
+            }),
+          )
+          .map(threadOutput),
+      }))
+      .filter((review) => review.threads.length > 0);
+    return { reviews };
+  }
+
+  /** A request of the Claude mod running in one of the connection's panes. */
+  async function claudeModRequest(
+    connectionId: string,
+    command: "mod_poll" | "mod_ack" | "mod_event" | "mod_tools",
+    form: URLSearchParams,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    const paneId = form.get("pane");
+    if (!paneId)
+      throw new ReviewError("the Claude mod runs inside a Herdr pane");
+    if (!args.claudeMod)
+      throw new ReviewError("the Claude mod is unavailable", 503);
+    const session = form.get("session") ?? "";
+    const sessionId = /^[0-9a-f-]{8,64}$/i.test(session) ? session : "";
+    const client = (form.get("client") ?? "").slice(0, 64);
+    try {
+      if (command === "mod_tools")
+        return args.claudeMod.tools({
+          connectionId,
+          paneId,
+          sessionId,
+          client,
+          headless: form.get("headless") === "1",
+          gone: form.get("gone") === "1",
+        });
+      if (command === "mod_poll")
+        return await args.claudeMod.poll({
+          connectionId,
+          paneId,
+          sessionId,
+          client,
+          claude: form.get("claude") ?? "",
+          protocol: Number(form.get("protocol")),
+          after: Number(form.get("after") ?? 0),
+          waitMs: Number(form.get("wait_ms") ?? 0),
+          signal,
+        });
+      if (command === "mod_ack")
+        return args.claudeMod.ack({
+          connectionId,
+          paneId,
+          client,
+          id: Number(form.get("id")),
+          outcome: form.get("outcome") ?? "",
+          reason: form.get("reason") ?? "",
+        });
+      let event: unknown;
+      try {
+        event = JSON.parse(form.get("event") ?? "");
+      } catch {
+        throw new ReviewError("invalid event");
+      }
+      if (!event || typeof event !== "object" || Array.isArray(event))
+        throw new ReviewError("invalid event");
+      return args.claudeMod.event({
+        connectionId,
+        paneId,
+        client,
+        sessionId,
+        event: event as Record<string, unknown>,
+      });
+    } catch (error) {
+      if (error instanceof ClaudeModError)
+        throw new ReviewError(error.message, error.status);
+      throw error;
+    }
+  }
+
   function listen(socketKey: string): string {
     const existing = servers.get(socketKey);
     if (existing) return existing.path;
@@ -1144,6 +1278,14 @@ export function createReviewAgentServer(args: {
       join(home, ".claude", "skills", "roamgate-review"),
     );
     linkIfFree(client, join(home, ".local", "bin", "roamgate-review"));
+    // The Claude mod's marketplace: installed only if the user asks.
+    try {
+      writeClaudeModPlugin(home);
+    } catch (error) {
+      logger.warn("claude mod files not written", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     const link = join(base, "review.sock");
     let current: string | null = null;
     try {

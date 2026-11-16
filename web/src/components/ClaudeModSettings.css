@@ -1,0 +1,17 @@
+/* The row's action: install or remove the mod on this host. */
+.claude-mod-action {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+}
+
+.claude-mod-action:hover:not(:disabled) {
+  background: var(--border-soft);
+}
+
+.claude-mod-action:disabled {
+  opacity: 0.6;
+}

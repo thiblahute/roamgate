@@ -196,15 +196,31 @@ function shellWords(command: string): {
 /** Options of the client that take a value. */
 const VALUE_OPTIONS = new Set(["--agent", "--session"]);
 
+/** The tool Roamgate's Claude Code mod gives Claude to message a session. */
+export const AGENT_MESSAGE_TOOL = "mcp__roamgate__agent_message";
+
 /**
  * A message the agent sent another session, from its Bash tool call
- * (`roamgate-review message ADDRESS -- TEXT`); null for any other call.
- * `text` is empty when it cannot be read from the command (a file piped in).
+ * (`roamgate-review message ADDRESS -- TEXT`) or its Roamgate tool call;
+ * null for any other call. `text` is empty when it cannot be read from the
+ * command (a file piped in).
  */
 export function outgoingAgentMessage(
   toolName: string | undefined,
   input: string,
 ): { to: string; text: string } | null {
+  if (toolName === AGENT_MESSAGE_TOOL) {
+    let args: unknown;
+    try {
+      args = JSON.parse(input);
+    } catch {
+      return null;
+    }
+    const { to, text } = (args ?? {}) as Record<string, unknown>;
+    return typeof to === "string" && parseAgentAddress(to)
+      ? { to: to.trim(), text: typeof text === "string" ? text.trim() : "" }
+      : null;
+  }
   if (toolName !== "Bash" || !input.includes("roamgate-review")) return null;
   let command: unknown;
   try {

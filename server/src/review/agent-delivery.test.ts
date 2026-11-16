@@ -50,6 +50,8 @@ function deliverySetup(
     retryDelayMs?: number;
     sessionPane?: (sessionId: string) => Promise<string | null>;
     paneSession?: (paneId: string) => Promise<string | null>;
+    /** Panes whose agent has Roamgate's tools. */
+    tools?: string[];
     loadDiff?: () => Promise<{
       files: [];
       truncated: false;
@@ -73,6 +75,12 @@ function deliverySetup(
       retryDelayMs: options.retryDelayMs ?? 10,
       agentSearchMs: 15,
       agentChannel: options.agentChannel,
+      ...(options.tools
+        ? {
+            agentTools: (_connection: string, pane: string) =>
+              options.tools!.includes(pane),
+          }
+        : {}),
       promptAgent: async (_connection, pane, text) => {
         if (options.promptAgent) await options.promptAgent(pane, text);
         prompts.push(text);
@@ -147,6 +155,46 @@ test("a long batch is cut, pointing the agent to the rest", async () => {
   expect(prompts).toHaveLength(1);
   expect(prompts[0]!.length).toBeLessThan(16_500);
   expect(prompts[0]).toContain("[Cut here: read every comment with");
+});
+
+test("an agent with Roamgate's tools is told to use them, not the client", async () => {
+  const { service, prompts } = deliverySetup({ tools: ["w1:p2"] });
+  const session = openSession(service);
+  const id = session.id.slice(0, 8);
+  await service.addThread({ sessionId: session.id, text: "Why `x`?" });
+  await Bun.sleep(40);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain("Why `x`?");
+  expect(prompts[0]).toContain(
+    "answer each with your `review_reply` tool (comment_id: the bracketed ID), saying what you changed.",
+  );
+  expect(prompts[0]).toContain("your `review_working` tool");
+  expect(prompts[0]).not.toContain("roamgate-review");
+  // The overall comment and a handoff name them too.
+  await service.update({ sessionId: session.id, summary: "Ship it" });
+  await service.handoff({ sessionId: session.id });
+  await Bun.sleep(40);
+  const handed = prompts.slice(1).join("\n");
+  expect(handed).toContain(
+    `your \`review_working\` tool (review: ${id}, done: true`,
+  );
+  expect(handed).not.toContain("roamgate-review");
+  // Asked to review: read, comment and finish with the tools.
+  await service.requestAgentReview({ sessionId: session.id });
+  expect(prompts.at(-1)).toContain(`your \`review_add\` tool (review: ${id}`);
+  expect(prompts.at(-1)).toContain(`your \`review_summary\` tool`);
+  expect(prompts.at(-1)).not.toContain("roamgate-review");
+});
+
+test("an agent without the tools keeps the client's commands", async () => {
+  const { service, prompts } = deliverySetup({ tools: ["w9:p9"] });
+  const session = openSession(service);
+  await service.addThread({ sessionId: session.id, text: "Hello" });
+  await Bun.sleep(40);
+  expect(prompts[0]).toContain(
+    `roamgate-review --session ${session.id.slice(0, 8)} --agent 'Claude' reply --comment ID -- TEXT`,
+  );
+  expect(prompts[0]).not.toContain("review_reply");
 });
 
 test("an imported review keeps a plain agent name only", () => {

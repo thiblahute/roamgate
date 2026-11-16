@@ -167,6 +167,7 @@ import { subjectsFromSettings } from "./activity/subject-settings";
 import { openActivityReader } from "./activity/reader";
 import { createTimeReport, TimeReportError } from "./time-report/rpc";
 import { dataRoot } from "./config/data-paths";
+import { join } from "node:path";
 import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
   terminalUploadRequestBodyLimit,
@@ -256,6 +257,16 @@ import {
 } from "./limit-resume/scheduler";
 import { limitResumeStore } from "./limit-resume/store";
 import { LIMIT_PAUSES_EVENT } from "../../shared/limitResume";
+import {
+  type ClaudeModTypeResult,
+  createClaudeModHub,
+} from "./agent/claude-mod";
+import {
+  type ClaudeModInstallState,
+  claudeModHostScript,
+  claudeModStateOf,
+  parseClaudeModHostOutput,
+} from "./agent/claude-mod-plugin";
 import { inspectWorkspacePath } from "./workspace/path";
 import {
   removeWorktreeWithRecovery,
@@ -397,8 +408,16 @@ const voiceErrands = new VoiceErrands({
   prompt: async (connectionId, paneId, text) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) throw new Error(`${connectionId} is not connected`);
-    if (await runtime.conversation.prompt(paneId, text)) return;
-    await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+    // Windows hosts: the messenger does not reach them.
+    if (runtime.remotePlatform === "windows") {
+      if (await runtime.conversation.prompt(paneId, text)) return;
+      if (runtime.claudeMod.deliver(paneId, text, "companion")) return;
+      await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+      return;
+    }
+    // Any mode, as `roamgate-review message` reaches a session: conversation
+    // queue, else its Claude mod, else typed once the terminal is idle.
+    await getAgentMessenger().deliver(agentAddress(connectionId, paneId), text);
   },
   // What it does now: what it asks the user (a permission or question
   // card), its status, and the messages queued for it.
@@ -558,6 +577,125 @@ const { handleUpdateCheck, handleUpdateInstall } = createUpdateHandlers({
 const clients = new Set<ServerWebSocket<unknown>>();
 /** Resumes the sessions a usage limit stopped (set once connections exist). */
 let limitResumer: LimitResumer | null = null;
+/**
+ * Roamgate's Claude mods (agent/claude-mod.ts): the inbox of each pane whose
+ * Claude runs one, and what each says of its session.
+ */
+const claudeModHub = createClaudeModHub({
+  file: join(dataRoot(), "claude-mod-inbox.json"),
+  log: (message, fields) => logger.child("claude-mod").info(message, fields),
+  debug: (message, fields) => logger.child("claude-mod").debug(message, fields),
+  type: typeForClaudeMod,
+  onChange: (connectionId, paneId, change) => {
+    // The browsers read the panes again, with the mod's state laid over.
+    let generation: number | undefined;
+    try {
+      generation =
+        connectionManager.readyRuntimeLease(connectionId)?.generation;
+    } catch {
+      generation = undefined;
+    }
+    try {
+      const line = serializeHerdrEventEnvelope(
+        connectionId,
+        { event: "roamgate.claude_mod", data: { pane_id: paneId, change } },
+        generation,
+      );
+      for (const ws of clients) safeSend(ws, line, "claude-mod");
+    } catch {}
+    // A turn ended (on a usage limit, maybe).
+    if (change !== "usage") limitResumer?.poke(connectionId, paneId);
+  },
+});
+
+/**
+ * A message a pane's Claude mod left when it went away: typed as for a
+ * session without one, through Herdr once its agent is idle.
+ */
+async function typeForClaudeMod(
+  connectionId: string,
+  paneId: string,
+  text: string,
+): Promise<ClaudeModTypeResult> {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime) return "wait";
+  if (await runtime.conversation.prompt(paneId, text)) return "typed";
+  let info: unknown;
+  try {
+    info = await runtime.herdr.call("agent.get", { target: paneId }, 5000);
+  } catch (error) {
+    if (/not[_ ]found/i.test(String(error))) return "gone";
+    throw error;
+  }
+  const agent = (info as { agent?: { agent_status?: unknown } } | null)?.agent;
+  if (!agent) return "gone";
+  if (agent.agent_status !== "idle" && agent.agent_status !== "done")
+    return "wait";
+  await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+  return "typed";
+}
+
+/**
+ * Configuration > Integrations: Roamgate's Claude mod on a connection's
+ * host. Claude Code's own plugin commands install and remove it.
+ */
+async function claudeModIntegration(
+  connectionId: string,
+  action: "status" | "install" | "uninstall",
+): Promise<ClaudeModInstallState> {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime) throw new Error("this connection is not ready");
+  const sessions = claudeModHub.panes(connectionId).length;
+  const host = runtime.sshHost();
+  // The review socket and its client are Unix-only.
+  if (
+    runtime.remotePlatform === "windows" ||
+    (!host && process.platform === "win32")
+  )
+    return {
+      available: false,
+      reason: "The Claude mod needs a Unix host",
+      min_claude: "",
+      installed: false,
+      enabled: false,
+      from_roamgate: false,
+      sessions,
+    };
+  const run = async (which: typeof action) => {
+    const script = claudeModHostScript(which);
+    const argv = host
+      ? sshReadCommandArgv(host, script, [], "claude.mod")
+      : ["/bin/sh", "-lc", script];
+    const result = await runProcessWithCodeTimeout(argv, 120_000);
+    return `${result.stdout}\n${result.code !== 0 ? `ROAMGATE_SCRIPT_FAILED ${result.stderr}` : ""}`;
+  };
+  if (action === "status")
+    return claudeModStateOf(await run("status"), sessions);
+  const before = claudeModStateOf(await run("status"), sessions);
+  if (action === "install" && !before.available) return before;
+  const output = await run(action);
+  const state = claudeModStateOf(output, sessions);
+  const parsed = parseClaudeModHostOutput(output);
+  logger.info("claude mod " + action, {
+    connection: connectionId,
+    exit: parsed.exit,
+    installed: state.installed,
+    enabled: state.enabled,
+  });
+  if (parsed.exit !== 0) {
+    let reason = parsed.actionOutput;
+    try {
+      const line = parsed.actionOutput.trim().split("\n").at(-1) ?? "";
+      const json = JSON.parse(line) as { error?: unknown; message?: unknown };
+      reason = String(json.error ?? json.message ?? reason);
+    } catch {}
+    return {
+      ...state,
+      reason: `claude plugin ${action} failed${reason ? `: ${reason.slice(0, 300)}` : ""}`,
+    };
+  }
+  return state;
+}
 const clientIds = new WeakMap<ServerWebSocket<unknown>, number>();
 const clientSessions = new WeakMap<ServerWebSocket<unknown>, string | null>();
 interface WebSocketCleanupSnapshot {
@@ -1350,6 +1488,9 @@ function getReviewService(): ReviewService {
       rangerChatSession(session.target.chat) !== null
         ? `your \`${RANGER_THREAD_TOOL}\` tool (comment_id: the bracketed ID, text: your answer)`
         : undefined,
+    // A Claude whose Roamgate mod said it has the tools answers with them.
+    agentTools: (connectionId, paneId) =>
+      claudeModHub.hasTools(connectionId, paneId),
     onDeliveryError: (session, reason) =>
       logger.warn("review comments not delivered", {
         connection: session.connectionId,
@@ -1370,7 +1511,7 @@ function getReviewService(): ReviewService {
         connectionManager,
         connectionId,
       );
-      await promptPaneAgent(runtime, paneId, text);
+      await promptPaneAgent(runtime, paneId, text, "review");
     },
     // The comments follow the agent's session to the pane it runs in now.
     sessionPane: async (connectionId, sessionId) => {
@@ -1510,6 +1651,7 @@ function getAgentMessenger(): AgentMessenger {
               peer: true,
             }),
         },
+        claudeMod: runtime.claudeMod,
         herdr: runtime.herdr,
         read: async () => {
           const [workspaces, tabs, panes, agents] = await Promise.all([
@@ -1564,6 +1706,7 @@ function getReviewAgent(): ReviewAgentServer {
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
     messages: getAgentMessenger(),
+    claudeMod: claudeModHub,
     // The Reviews board's tools, for any agent session.
     reviews: async ({ connectionId, workspaceId, agent, tool, params }) =>
       getMrReviews().boardTool(
@@ -2003,6 +2146,7 @@ function runtimeFactoryForProfile(
         taskNotificationSource: config.taskNotificationSource,
         conversationLeaseFile: defaultLeaseFile(),
         conversationKeepAwake,
+        claudeMod: claudeModHub,
         sessionIndexDir: defaultSessionIndexDir(),
         // No terminal to fall back on: the prompt waits for a browser, and
         // its timeout denies.
@@ -2890,6 +3034,28 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     }
     return;
   }
+  if (
+    method === "claude_mod.status" ||
+    method === "claude_mod.install" ||
+    method === "claude_mod.uninstall"
+  ) {
+    try {
+      const action = method.slice("claude_mod.".length) as
+        | "status"
+        | "install"
+        | "uninstall";
+      sendReply(
+        {
+          id,
+          result: await claudeModIntegration(connection.identity.id, action),
+        },
+        method,
+      );
+    } catch (e) {
+      sendError(`${method}-error`, e);
+    }
+    return;
+  }
   if (method.startsWith("limit_resume.")) {
     try {
       const connectionId = connection.identity.id;
@@ -3458,6 +3624,8 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     let result = (await withOwnedSessions(
       (...args) => herdr.call(...args),
       () => connection.conversation.ownedPanes(),
+      // What each pane's live Claude mod says, over Herdr's screen reading.
+      () => connection.claudeMod.panes(),
     )(method, params ?? {}, undefined, () => {
       if (isPaneInput && !requestIsCurrent())
         throw new Error(CONNECTION_CHANGED_DURING_REQUEST);
@@ -4129,6 +4297,7 @@ function scheduleManagedShutdown(): void {
 }
 
 process.on("exit", () => {
+  claudeModHub.flush();
   voiceHelper.stop();
   activity.stopNow();
   void stopManagerOnce();

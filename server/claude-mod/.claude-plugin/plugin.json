@@ -1,0 +1,9 @@
+{
+  "name": "roamgate",
+  "version": "1.0.0",
+  "description": "Roamgate's link to Claude Code sessions: tools to answer review and chat comments and message other sessions, and in Herdr panes, messages as prompts once Claude is idle and exact turns, waits, model and usage.",
+  "author": {
+    "name": "Roamgate"
+  },
+  "license": "MIT"
+}

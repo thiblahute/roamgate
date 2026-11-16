@@ -27,11 +27,40 @@ export type SessionProfile = {
    * ("claude-opus-5-5"); other agents' (Pi, Codex) too.
    */
   model?: string;
+  /** Exact usage, from the session's Claude mod (when it runs one). */
+  usage?: SessionUsage;
 };
 
+/** What a session's Claude mod last said of its usage. */
+export type SessionUsage = {
+  model?: string;
+  context?: { tokens?: number; window?: number; percent?: number };
+  rate_limits?: { kind: string; percent_used: number; resets_at?: string }[];
+  cost_usd?: number;
+  at?: string;
+};
+
+const WINDOW_NAMES: Record<string, string> = {
+  five_hour: "5-hour",
+  seven_day: "weekly",
+};
+
+/** "Context 34% · 5-hour 61% · weekly 15%", or null without figures. */
+export function usageSummary(usage: SessionUsage | undefined): string | null {
+  if (!usage) return null;
+  const parts: string[] = [];
+  if (typeof usage.context?.percent === "number")
+    parts.push(`Context ${Math.round(usage.context.percent)}%`);
+  for (const each of usage.rate_limits ?? [])
+    parts.push(
+      `${WINDOW_NAMES[each.kind] ?? each.kind.replace(/_/g, " ")} ${Math.round(each.percent_used)}%`,
+    );
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /**
- * What a model chip's title says: the model's whole id, then the
- * session's profile.
+ * What a model chip's title says: the model's whole id, the session's
+ * profile, and the context and plan usage its Claude mod reports.
  */
 export function modelTitle(data: SessionProfile): string {
   const lines = data.model ? [`Model: ${data.model}`] : [];
@@ -41,6 +70,8 @@ export function modelTitle(data: SessionProfile): string {
       `Profile: ${current}${current === data.default ? " (default)" : ""}`,
     );
   }
+  const usage = usageSummary(data.usage);
+  if (usage) lines.push(usage);
   return lines.join("\n");
 }
 

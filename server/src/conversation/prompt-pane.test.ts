@@ -42,6 +42,29 @@ describe("text for a pane's agent", () => {
     ]);
   });
 
+  test("a Claude running Roamgate's mod: handed to the mod, nothing typed", async () => {
+    const rt = runtime(false);
+    const handed: [string, string, string | undefined][] = [];
+    const withMod = {
+      ...rt,
+      claudeMod: {
+        deliver(paneId: string, text: string, kind?: string) {
+          handed.push([paneId, text, kind]);
+          return { id: 1 };
+        },
+      },
+    };
+    expect(await promptPaneAgent(withMod, "w1:p1", "A comment", "review")).toBe(
+      "mod",
+    );
+    expect(handed).toEqual([["w1:p1", "A comment", "review"]]);
+    expect(rt.calls).toEqual([]);
+    // No live mod there: typed as before.
+    withMod.claudeMod.deliver = () => null as unknown as { id: number };
+    expect(await promptPaneAgent(withMod, "w1:p1", "Another")).toBe("terminal");
+    expect(rt.calls).toHaveLength(1);
+  });
+
   test("a failure says so: the review records it as not delivered", async () => {
     const rt = runtime(false);
     rt.herdr.call = async () => {

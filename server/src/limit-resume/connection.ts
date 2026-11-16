@@ -1,4 +1,8 @@
-import { promptPaneAgent } from "../conversation/prompt-pane";
+import type { ClaudeModPane } from "../agent/claude-mod";
+import {
+  type ClaudeModDelivery,
+  promptPaneAgent,
+} from "../conversation/prompt-pane";
 import type { LimitConnection, LimitPane } from "./scheduler";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,6 +30,10 @@ export type LimitRuntime = {
     prompt(paneId: string, text: string): Promise<boolean>;
   };
   transcriptTail: (paneId: string) => Promise<string | null>;
+  /** The connection's Claude mods: exact status, and delivery. */
+  claudeMod?: ClaudeModDelivery & {
+    pane(paneId: string): ClaudeModPane | null;
+  };
 };
 
 /**
@@ -53,12 +61,17 @@ export function limitConnection(runtime: LimitRuntime): LimitConnection {
           : null;
         if (session?.kind !== "id" || typeof session.value !== "string")
           continue;
+        // A live Claude mod knows when the turn really ended.
+        const mod = runtime.claudeMod?.pane(agent.pane_id);
         panes.push({
           paneId: agent.pane_id,
-          sessionId: session.value,
+          sessionId: mod?.session_id || session.value,
           owner: "terminal",
-          status:
-            typeof agent.agent_status === "string" ? agent.agent_status : "",
+          status: mod
+            ? mod.status
+            : typeof agent.agent_status === "string"
+              ? agent.agent_status
+              : "",
         });
       }
       for (const pane of owned) {
@@ -75,7 +88,7 @@ export function limitConnection(runtime: LimitRuntime): LimitConnection {
     },
     transcriptTail: (paneId) => runtime.transcriptTail(paneId),
     async deliver(pane, text) {
-      await promptPaneAgent(runtime, pane.paneId, text);
+      await promptPaneAgent(runtime, pane.paneId, text, "limit-resume");
     },
   };
 }

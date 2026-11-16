@@ -1,4 +1,5 @@
 import { isRecord } from "./session-utils";
+import { type ClaudeModPane, overlayModPanes } from "./claude-mod";
 import { SessionImageGoneError, sessionImage } from "./session-images";
 import {
   type AgentTask,
@@ -294,11 +295,13 @@ export function overlaySuspendedPanes(
 /**
  * Herdr's calls, with the session conversation mode owns in a pane: while
  * its holder runs, the pane's claude is headless and Herdr does not know
- * the agent (`agent.get` answers not found).
+ * the agent (`agent.get` answers not found). With `mods`, what each pane's
+ * live Claude mod says is laid over Herdr's screen detection too.
  */
 export function withOwnedSessions(
   herdrCall: HerdrCall,
   owned: () => readonly OwnedPane[],
+  mods?: () => readonly ClaudeModPane[],
 ): HerdrCall {
   return async (method, params, ...rest) => {
     let result: unknown;
@@ -314,7 +317,14 @@ export function withOwnedSessions(
         throw error;
       result = {};
     }
-    return overlayOwnedPanes(method, params, result, owned());
+    const held = owned();
+    const overlaid = overlayOwnedPanes(method, params, result, held);
+    if (!mods) return overlaid;
+    // Conversation mode's panes are its own (the mod is idle there).
+    const live = mods().filter(
+      (mod) => !held.some((each) => each.pane_id === mod.pane_id),
+    );
+    return overlayModPanes(method, params, overlaid, live);
   };
 }
 

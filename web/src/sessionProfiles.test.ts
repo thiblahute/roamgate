@@ -9,6 +9,7 @@ import {
   retrySession,
   sessionProfileOf,
   switchSessionProfile,
+  usageSummary,
 } from "./sessionProfiles";
 
 function client(answer: (method: string, params: any) => unknown) {
@@ -176,4 +177,19 @@ describe("usage limit notice", () => {
     });
     expect(profileParts(90, false, true, true).chipLabel).toBe(true);
   });
+});
+
+test("a Claude mod's usage reads as one short line", () => {
+  expect(usageSummary(undefined)).toBeNull();
+  expect(usageSummary({ model: "opus" })).toBeNull();
+  expect(
+    usageSummary({
+      context: { percent: 33.6 },
+      rate_limits: [
+        { kind: "five_hour", percent_used: 61 },
+        { kind: "seven_day", percent_used: 15.2 },
+        { kind: "spend_limit", percent_used: 3 },
+      ],
+    }),
+  ).toBe("Context 34% · 5-hour 61% · weekly 15% · spend limit 3%");
 });

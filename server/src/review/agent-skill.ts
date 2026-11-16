@@ -16,6 +16,17 @@ also \`roamgate-review\` when \`~/.local/bin\` is on PATH). Run it from the
 repository's directory. Pass \`--agent NAME\` (your name, e.g. "Claude"),
 always the same; in Claude Code it defaults to "Claude".
 
+**Prefer Roamgate's tools when you have them.** In Claude Code with
+Roamgate's mod, the review and messaging commands below are also tools
+(\`mcp__roamgate__*\`):
+\`review_get\`, \`review_reply\`, \`review_add\`, \`review_working\`,
+\`review_update\`, \`review_resolve\`, \`review_reopen\`, \`review_edit\`,
+\`review_notify\`, \`agent_message\`, \`agent_sessions\`, and behind tool
+search \`review_open\`, \`review_summary\`, \`review_threads\`. They take
+Markdown as written (no shell quoting) and know your pane and name; their
+arguments are the options below (\`comment_id\` for \`--comment\`, \`review\`
+for \`--session\`). The client stays the way without them.
+
 ## Two kinds of comment
 
 - **Discussion**: the conversation between you and the user. Private.
