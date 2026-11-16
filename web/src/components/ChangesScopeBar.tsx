@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { workspaceRepoDirs } from "../changesRepo";
+import type { InspectorCommand } from "../inspectorCommands";
 import { useReviewState } from "../review";
 import type { ReviewSnapshot } from "../../../shared/review";
 import type { WorkspaceRepo } from "../reviewModel";
-import { repoLabel, scanRepos, workspaceRepos } from "../reviewRepos";
-import { useStoreSelector } from "../store";
+import {
+  repoLabel,
+  scanRepos,
+  workspaceRepos,
+  worktreeOnly,
+} from "../reviewRepos";
+import { store, useStoreSelector } from "../store";
 import { ThemedSelect } from "./ThemedSelect";
 import "./ChangesScopeBar.css";
 
@@ -18,25 +24,37 @@ import "./ChangesScopeBar.css";
 
 export type ChangesScope = "working" | "branch-main" | "last-step";
 
-/**
- * The workspace's repositories, as the review pane lists them: those its
- * panes' directories hold (and their subprojects), those its agents edit,
- * and those with a review; scanned while `shown`.
- */
-export function useChangesRepos(
-  connectionId: string,
-  workspaceId: string,
-  ownRoot: string | undefined,
-  shown: boolean,
-): WorkspaceRepo[] {
+/** The workspace's panes' directories, and its agents'. */
+export function useWorkspaceRepoDirs(workspaceId: string): {
+  dirs: string[];
+  agentDirs: string[];
+} {
   const panes = useStoreSelector((state) => state.panes);
-  const { dirs, agentDirs } = useMemo(
+  return useMemo(
     () =>
       workspaceRepoDirs(
         panes.filter((pane) => pane.workspace_id === workspaceId),
       ),
     [panes, workspaceId],
   );
+}
+
+/**
+ * The workspace's repositories, as the review pane lists them: those its
+ * panes' directories hold (and their subprojects), those its agents edit
+ * (`dirs`, `agentDirs`: useWorkspaceRepoDirs), and those with a review;
+ * scanned while `shown`.
+ */
+export function useChangesRepos(
+  connectionId: string,
+  workspaceId: string,
+  ownRoot: string | undefined,
+  shown: boolean,
+  {
+    dirs,
+    agentDirs,
+  }: { dirs: readonly string[]; agentDirs: readonly string[] },
+): WorkspaceRepo[] {
   const dirsKey = dirs.join("\n");
   const agentKey = agentDirs.join("\n");
   const [scanned, setScanned] = useState<WorkspaceRepo[]>([]);
@@ -65,6 +83,80 @@ export function useChangesRepos(
     } as ReviewSnapshot["session"];
     return workspaceRepos(scanned, sessions.values(), own);
   }, [connectionId, ownRoot, scanned, sessions, workspaceId]);
+}
+
+/**
+ * Changes' series (plan phases 7 and 8): the workspace's repositories as
+ * the review pane goes through them, `p` (`:repo`) searching them, `(` and
+ * `)` (`:prevrepo`, `:nextrepo`) the previous and next by path, never
+ * wrapping. A repository picked comes with whether it has only uncommitted
+ * work (its Working scope), as the review pane opens its worktree review.
+ */
+export function useChangesSeries({
+  repos,
+  shownRoot,
+  onPick,
+}: {
+  repos: readonly WorkspaceRepo[];
+  shownRoot: string | undefined;
+  onPick: (root: string, worktree: boolean) => void;
+}): {
+  pickerOpen: boolean;
+  setPickerOpen: (open: boolean) => void;
+  pick: (root: string) => void;
+  step: (step: number) => void;
+  commands: InspectorCommand[];
+} {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const say = (message: string) =>
+    store.notify({ kind: "info", message, autoDismissMs: 1800 });
+  const pick = (root: string) => {
+    const repo = repos.find((each) => each.root === root);
+    onPick(root, repo ? worktreeOnly(repo) : false);
+  };
+  const step = (by: number) => {
+    const at = repos.findIndex((repo) => repo.root === shownRoot);
+    const next = repos[at + by];
+    if (next && at >= 0) pick(next.root);
+    else
+      say(
+        repos.length < 2
+          ? "This workspace has a single repository here."
+          : by > 0
+            ? "The last repository"
+            : "The first repository",
+      );
+  };
+  return {
+    pickerOpen,
+    setPickerOpen,
+    pick,
+    step,
+    commands: [
+      {
+        name: "repo",
+        aliases: ["p"],
+        description: "the workspace's repositories, searched as you type (p)",
+        run: () => {
+          if (repos.length < 2) {
+            say("This workspace has a single repository here.");
+            return;
+          }
+          setPickerOpen(true);
+        },
+      },
+      {
+        name: "nextrepo",
+        description: "the next repository ())",
+        run: () => step(1),
+      },
+      {
+        name: "prevrepo",
+        description: "the previous repository (()",
+        run: () => step(-1),
+      },
+    ],
+  };
 }
 
 const plural = (count: number, word: string) =>
@@ -217,26 +309,32 @@ export function ChangesScopeBar({
           </span>
         </>
       ) : repos.length > 1 ? (
-        <ThemedSelect
-          className="changes-scope-repo"
-          aria-label="Repository (p; ( and ) the previous and next)"
-          title="Repository (p; ( and ) the previous and next)"
-          value={root ?? ""}
-          placeholder={name}
-          open={pickerOpen}
-          onOpenChange={onPickerOpen}
-          searchPlaceholder="Repository: name, branch or path"
-          emptyText="No repository matches."
-          options={repos.map((repo) => ({
-            value: repo.root,
-            label: repo.root.split("/").pop() || repo.root,
-            detail:
-              `${repoLabel(repo).split(" · ").slice(1).join(" · ")} ${repo.root}`.trim(),
-            keywords: [repo.root, repo.branch ?? ""],
-          }))}
-          onChange={onPickRepo}
-          onSelectedClose={onDone}
-        />
+        <>
+          <ThemedSelect
+            className="changes-scope-repo"
+            aria-label="Repository (p; ( and ) the previous and next)"
+            title="Repository (p; ( and ) the previous and next)"
+            value={root ?? ""}
+            placeholder={name}
+            open={pickerOpen}
+            onOpenChange={onPickerOpen}
+            searchPlaceholder="Repository: name, branch or path"
+            emptyText="No repository matches."
+            options={repos.map((repo) => ({
+              value: repo.root,
+              label: repo.root.split("/").pop() || repo.root,
+              detail:
+                `${repoLabel(repo).split(" · ").slice(1).join(" · ")} ${repo.root}`.trim(),
+              keywords: [repo.root, repo.branch ?? ""],
+            }))}
+            onChange={onPickRepo}
+            onSelectedClose={onDone}
+          />
+          <span className="changes-scope-hint">
+            {repos.length} repositories in this workspace; p searches, ( )
+            switch
+          </span>
+        </>
       ) : (
         <strong className="changes-scope-name" title={root}>
           {name}

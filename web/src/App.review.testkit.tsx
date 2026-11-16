@@ -100,6 +100,7 @@ type InspectorProps = {
   onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
   onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;
+  onReviewCommit?: (sha: string) => void;
   reviewGoTo?: {
     path?: string;
     line?: number;
@@ -107,6 +108,7 @@ type InspectorProps = {
     root?: string;
     review?: string;
     elsewhere?: boolean;
+    commit?: string;
     at: number;
   } | null;
   state: {
@@ -157,6 +159,15 @@ export type AppWithReviews = {
   inspectorFile(): unknown;
   /** Files' Review, as the inspector's Files preview calls it. */
   inspectorShowInReview(path: string, line?: number): void;
+  /** Commits' Review this commit, as the inspector's Commits calls it. */
+  inspectorReviewCommit(sha: string): Promise<void>;
+  /** The commits `openCommitReview` was asked to review. */
+  commitReviews(): string[];
+  /**
+   * An agent's `review_open` (or `/rg-review`) reaching the page: the
+   * review raised for its workspace.
+   */
+  agentOpens(sessionId: string): Promise<void>;
   /** Where App last asked Changes' cursor to go. */
   inspectorGoTo(): {
     path?: string;
@@ -165,6 +176,7 @@ export type AppWithReviews = {
     root?: string;
     review?: string;
     elsewhere?: boolean;
+    commit?: string;
     at: number;
   } | null;
   /** Switches the shown inspector's view, as its tab strip does. */
@@ -188,8 +200,9 @@ type Page = {
   sessions: Map<string, ReviewSnapshot>;
   reviewState: {
     sessions: Map<string, ReviewSnapshot>;
-    openRequest: null;
+    openRequest: { sessionId: string; connectionId: string } | null;
   };
+  commitReviews: string[];
   nextOpened: string | null;
   openCalls: number;
   /** What `review.repos` finds in the workspace (one repository: none). */
@@ -332,6 +345,17 @@ async function mockApp(before?: () => Promise<void> | void) {
     openWorkspaceReview: async () => {
       now().openCalls++;
       return now().nextOpened;
+    },
+    // Review this commit: the commit's own review, of the focused
+    // workspace.
+    openCommitReview: async (sha: string) => {
+      const current = now();
+      current.commitReviews.push(sha);
+      const id = `commit-${sha}`;
+      const review = reviewOf(id, "w1");
+      review.session.target = { kind: "range", base: `${sha}^`, head: sha };
+      current.sessions.set(id, review);
+      return id;
     },
   }));
   const highlighting = await import("./components/syntaxHighlighting");
@@ -496,6 +520,7 @@ export async function mountAppWithReviews(options: {
     listeners: new Set(),
     sessions,
     reviewState: { sessions, openRequest: null },
+    commitReviews: [],
     nextOpened: null,
     repos: [],
     changed: { working: ["a.ts"], "branch-main": ["a.ts"] },
@@ -625,6 +650,28 @@ export async function mountAppWithReviews(options: {
       if (!current.inspectorProps?.onShowInReview)
         throw new Error("no Review in the inspector");
       current.inspectorProps.onShowInReview(path, line);
+    },
+    async inspectorReviewCommit(sha) {
+      if (!current.inspectorProps?.onReviewCommit)
+        throw new Error("no Review this commit in the inspector");
+      const review = current.inspectorProps.onReviewCommit;
+      await React.act(async () => review(sha));
+      await settle(50);
+    },
+    commitReviews: () => [...current.commitReviews],
+    async agentOpens(sessionId) {
+      await React.act(async () => {
+        current.reviewState = {
+          ...current.reviewState,
+          openRequest: { sessionId, connectionId: "local" },
+        };
+        // A new snapshot: App renders again and reads the request.
+        current.snapshot = { ...current.snapshot };
+        publish();
+      });
+      await settle(50);
+      // Taken: the next one is another request.
+      current.reviewState = { ...current.reviewState, openRequest: null };
     },
     inspectorGoTo: () => current.inspectorProps?.reviewGoTo ?? null,
     inspectorView(view) {

@@ -74,6 +74,7 @@ import {
   pinHolds,
   REVIEW_MEMORY_KEPT,
   reviewPinKey as makeReviewPinKey,
+  withLatest,
 } from "./reviewPins";
 import { takeVoiceArrival } from "./voiceArrival";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
@@ -384,6 +385,8 @@ const AssistantPanel = lazyWithReload("assistant", () =>
 /** Reviews kept mounted besides the pinned ones. */
 const REVIEWS_KEPT = 6;
 const REVIEW_PINS_KEY = "reviewPins";
+/** The reviews pinned to workspaces' Changes, on "in Changes". */
+const CHANGES_PINS_KEY = "reviewChangesPins";
 const REVIEW_CLOSED_KEY = "reviewClosed";
 
 function readStoredJson<T>(key: string, fallback: T): T {
@@ -1918,6 +1921,14 @@ export default function App() {
   useEffect(() => {
     writeStoredJson(REVIEW_PINS_KEY, reviewPins);
   }, [reviewPins]);
+  // On "in Changes", each workspace's review is its Changes' own: never
+  // mounted in the classic pane.
+  const [changesPins, setChangesPins] = useState<Record<string, string>>(() =>
+    readStoredJson<Record<string, string>>(CHANGES_PINS_KEY, {}),
+  );
+  useEffect(() => {
+    writeStoredJson(CHANGES_PINS_KEY, changesPins);
+  }, [changesPins]);
   useEffect(() => {
     writeStoredJson(REVIEW_CLOSED_KEY, [...reviewClosed]);
   }, [reviewClosed]);
@@ -1945,7 +1956,20 @@ export default function App() {
     setReviewPins((pins) =>
       livePins(pins, reviewState.sessions, loadedReviewConnections()),
     );
+    setChangesPins((pins) =>
+      livePins(pins, reviewState.sessions, loadedReviewConnections()),
+    );
   }, [reviewState.sessions]);
+  const changesPinned = changesPins[reviewPinKey];
+  const changesPinnedSnapshot = changesPinned
+    ? reviewState.sessions.get(changesPinned)
+    : undefined;
+  const changesPinnedId =
+    changesPinned &&
+    changesPinnedSnapshot &&
+    pinHolds(reviewPinKey, changesPinnedSnapshot)
+      ? changesPinned
+      : null;
   const reviewSessionId =
     reviewSuspended || reviewClosed.has(reviewPinKey) ? null : pinnedSessionId;
   const reviewSnapshot = reviewSessionId
@@ -1991,14 +2015,67 @@ export default function App() {
     },
     [],
   );
+  /**
+   * On "in Changes": a review pinned to its workspace's Changes as the
+   * classic pane pins one (the toggle there shows it). Returns the pin's
+   * key.
+   */
+  const pinReviewForChanges = useCallback((sessionId: string) => {
+    const current = store.get();
+    const focused =
+      current.workspaces.find((w) => w.focused)?.workspace_id ?? "";
+    const snapshot = getReviewSnapshot(sessionId);
+    const key = makeReviewPinKey(
+      snapshot?.session.connectionId ?? current.activeConnectionId ?? "",
+      snapshot?.session.workspaceId || focused,
+    );
+    setChangesPins((pins) =>
+      pins[key] === sessionId ? pins : withLatest(pins, key, sessionId),
+    );
+    return key;
+  }, []);
+  /**
+   * Workspaces an agent opened a review in while you were elsewhere, on
+   * "in Changes": arriving there shows it in Changes, as the classic pane
+   * shows its pin.
+   */
+  const changesArrivalsRef = useRef(new Set<string>());
+  const changesPinsRef = useRef(changesPins);
+  changesPinsRef.current = changesPins;
+  // Set below, once the inspector's callbacks exist.
+  const showReviewInChangesRef = useRef<(sessionId: string) => void>(() => {});
+  /**
+   * The review steps aside (Cmd+K, voice arrival, Go to the agent's pane):
+   * the classic pane hides; on "in Changes" an expanded inspector on the
+   * review is collapsed, a docked one left as it is (plan section 6). Set
+   * below with the inspector's callbacks.
+   */
+  const stepReviewAsideRef = useRef<() => void>(() => setReviewSuspended(true));
   // Arriving in a workspace shows its pinned review, if any, unless voice
   // chat brought you there: the agent's chat shows, the review steps aside
   // (Option+R brings it back).
   // biome-ignore lint/correctness/useExhaustiveDependencies: on change only
   useEffect(() => {
-    setReviewSuspended(
-      takeVoiceArrival(s.activeConnectionId ?? "", focusedWorkspaceId),
+    const voice = takeVoiceArrival(
+      s.activeConnectionId ?? "",
+      focusedWorkspaceId,
     );
+    setReviewSuspended(voice);
+    const key = makeReviewPinKey(
+      s.activeConnectionId ?? "",
+      focusedWorkspaceId,
+    );
+    const arrived = changesArrivalsRef.current.delete(key);
+    if (!voice && !arrived) return;
+    // Once the inspector has followed the workspace (its effect runs
+    // later in this commit).
+    window.setTimeout(() => {
+      if (voice) stepReviewAsideRef.current();
+      else if (reviewSurfaceChoice() === "changes") {
+        const pinned = changesPinsRef.current[key];
+        if (pinned) showReviewInChangesRef.current(pinned);
+      }
+    }, 0);
   }, [focusedWorkspaceId, s.activeConnectionId]);
   useEffect(() => {
     if (annotationsOpen) setAssistantOpen(false);
@@ -2925,7 +3002,7 @@ export default function App() {
   // steps aside (it is kept; Option+R brings it back).
   useEffect(() => {
     const leave = () => {
-      setReviewSuspended(true);
+      stepReviewAsideRef.current();
       setReviewListOpen(false);
     };
     window.addEventListener(COMMAND_MENU_OPENING, leave);
@@ -2955,20 +3032,26 @@ export default function App() {
    * A review shown in Changes as the toggle shows one: in its workspace's
    * inspector, else (its workspace gone, or none) the focused one's (D3).
    */
-  const showReviewInChanges = useCallback(async (sessionId: string) => {
-    const snapshot = getReviewSnapshot(sessionId);
-    const workspaceId = snapshot?.session.workspaceId;
-    const { workspaces } = store.get();
-    if (
-      workspaceId &&
-      !workspaces.find(
-        (each) => each.focused && each.workspace_id === workspaceId,
-      ) &&
-      workspaces.some((each) => each.workspace_id === workspaceId)
-    )
-      await store.focusWorkspace(workspaceId);
-    toggleReviewInChangesRef.current({ sessionId });
-  }, []);
+  const showReviewInChanges = useCallback(
+    async (sessionId: string) => {
+      const snapshot = getReviewSnapshot(sessionId);
+      const workspaceId = snapshot?.session.workspaceId;
+      const { workspaces } = store.get();
+      if (
+        workspaceId &&
+        !workspaces.find(
+          (each) => each.focused && each.workspace_id === workspaceId,
+        ) &&
+        workspaces.some((each) => each.workspace_id === workspaceId)
+      )
+        await store.focusWorkspace(workspaceId);
+      pinReviewForChanges(sessionId);
+      toggleReviewInChangesRef.current({ sessionId });
+    },
+    [pinReviewForChanges],
+  );
+  showReviewInChangesRef.current = (sessionId) =>
+    void showReviewInChanges(sessionId);
   // An agent raised a review: show it here when this tab is on its
   // connection; otherwise it opens once the user switches there.
   useEffect(() => {
@@ -2984,7 +3067,8 @@ export default function App() {
       }
       // On "in Changes", a review asked for in this workspace (the
       // Reviews inbox jumps there first), or of none left (D3), shows in
-      // its Changes (plan phase 7).
+      // its Changes (plan phase 7); another workspace's waits there in its
+      // Changes (plan phase 8).
       if (
         snapshot &&
         snapshot.session.target.kind !== "chat" &&
@@ -3001,6 +3085,10 @@ export default function App() {
           void showReviewInChanges(sessionId);
           return;
         }
+        // Another workspace's: pinned to its Changes, shown on arriving
+        // there, as the classic pane shows its pin.
+        changesArrivalsRef.current.add(pinReviewForChanges(sessionId));
+        return;
       }
       setReviewSessionId(sessionId);
     });
@@ -3010,6 +3098,7 @@ export default function App() {
     setReviewSessionId,
     showRenderedInFiles,
     showReviewInChanges,
+    pinReviewForChanges,
   ]);
   /** Show in code review: a file and line asked from the Files preview. */
   const [reviewGoTo, setReviewGoTo] = useState<{
@@ -3065,8 +3154,32 @@ export default function App() {
       line?: number;
       scope?: "working" | "branch-main";
       sessionId?: string;
+      root?: string;
+      commit?: string;
     }) => void
   >(() => {});
+  /**
+   * Commits' Review this commit (plan phase 8): on "in Changes", the
+   * Branch scope on that commit (a review of the commit alone when the
+   * branch does not hold it); on classic, the commit's review in the pane.
+   */
+  const reviewCommit = useCallback(
+    async (sha: string) => {
+      if (reviewSurfaceChoice() === "changes") {
+        toggleReviewInChangesRef.current({
+          scope: "branch-main",
+          root: "",
+          commit: sha,
+        });
+        return;
+      }
+      preloadReviewCode();
+      const { openCommitReview } = await import("./reviewOpen");
+      const sessionId = await openCommitReview(sha);
+      if (sessionId) setReviewSessionId(sessionId);
+    },
+    [setReviewSessionId],
+  );
   const toggleReview = useCallback(async () => {
     // On "in Changes" the review is the inspector's Changes view.
     if (reviewSurfaceChoice() === "changes" && !reviewSessionId) {
@@ -3905,6 +4018,17 @@ export default function App() {
     },
     [commitInspectorState],
   );
+  /** The checkout whose expanded Changes stepped aside: the toggle expands it again. */
+  const reviewAsideRef = useRef<string | null>(null);
+  stepReviewAsideRef.current = () => {
+    setReviewSuspended(true);
+    if (reviewSurfaceChoice() !== "changes") return;
+    const current = inspectorStateRef.current;
+    if (!current?.open || !current.expanded || current.view !== "changes")
+      return;
+    reviewAsideRef.current = resourceOwnerKey(current.scope);
+    setInspectorExpanded(false);
+  };
   // The review toggle on "in Changes" (D6, D4): it shows the review in the
   // focused workspace's Changes, focused, expanded the first time for that
   // checkout and then as Changes was last left there; pressed while Changes
@@ -3935,6 +4059,8 @@ export default function App() {
     root?: string;
     /** Of a repository the workspace does not hold (D3). */
     elsewhere?: boolean;
+    /** Commits' Review this commit: that commit in the Branch scope. */
+    commit?: string;
     at: number;
   } | null>(null);
   const toggleReviewInChanges = useCallback(
@@ -3944,6 +4070,10 @@ export default function App() {
       scope?: "working" | "branch-main";
       /** This review, shown as the toggle shows one (the reviews list's). */
       sessionId?: string;
+      /** The repository ("": the checkout's). */
+      root?: string;
+      /** Commits' Review this commit: that commit in the Branch scope. */
+      commit?: string;
     }) => {
       const workspace = store.get().workspaces.find((each) => each.focused);
       if (!workspace) {
@@ -4016,7 +4146,7 @@ export default function App() {
         const shown = reviewToggleReturnRef.current;
         const stillShown = () =>
           !!shown && reviewToggleReturnRef.current === shown;
-        const sessionId = picked ?? pinnedSessionId;
+        const sessionId = picked ?? changesPinnedId ?? pinnedSessionId;
         void (async () => {
           const { openWorkspaceReview } = await import("./reviewOpen");
           const picked =
@@ -4099,7 +4229,10 @@ export default function App() {
         openDiffViewer(workspace.workspace_id, false);
         inspectorReturnFocusRef.current = returnFocus;
       }
-      if (!onChanges || !toggled) {
+      // Stepped aside (Cmd+K, the agent's pane, voice): expanded again.
+      const aside = reviewAsideRef.current === owner;
+      reviewAsideRef.current = null;
+      if (!onChanges || !toggled || aside) {
         const expanded = changesExpandedRef.current.get(owner) ?? true;
         if (inspectorStateRef.current?.expanded !== expanded)
           setInspectorExpanded(expanded);
@@ -4136,6 +4269,7 @@ export default function App() {
       mobile,
       openDiffViewer,
       pinnedSessionId,
+      changesPinnedId,
       reviewState.sessions,
       setInspectorExpanded,
       setReviewSessionId,
@@ -6991,6 +7125,11 @@ export default function App() {
                       onShowInReview={(path, line) =>
                         void showFileInReview(path, line)
                       }
+                      onReviewCommit={(sha) => void reviewCommit(sha)}
+                      onFocusAgentPane={(paneId) => {
+                        stepReviewAsideRef.current();
+                        void store.focusPane(paneId);
+                      }}
                       reviewGoTo={changesGoTo}
                       onReanchorFileAnnotations={reanchorFileAnnotations}
                       onReanchorDiffAnnotations={reanchorDiffAnnotations}

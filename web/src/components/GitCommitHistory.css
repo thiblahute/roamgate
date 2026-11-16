@@ -177,6 +177,18 @@
   color: var(--muted);
   font-size: 11px;
 }
+.git-commit-review {
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 11px;
+}
+.git-commit-review:hover {
+  background: var(--viewer-content-bg);
+}
 .git-commit-metadata summary {
   margin: 10px 0;
   cursor: pointer;

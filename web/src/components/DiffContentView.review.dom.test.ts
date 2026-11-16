@@ -515,7 +515,7 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
-    test("c on a line being discussed answers there; C asks anew", async () => {
+    test("c and C on a line being discussed answer there, as the review pane's do", async () => {
       const diff = await mountChangesDiff({
         entries: [a],
         patches,
@@ -536,8 +536,15 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
           ),
         ).not.toBeNull();
         await press("Escape");
+        await diff.settle();
         await press("C");
-        expect(await waitForEditor(diff)).not.toBeNull();
+        await diff.settle();
+        expect(editor()).toBeNull();
+        expect(
+          document.querySelector(
+            ".diff-review-thread textarea, .diff-review-thread .cm-content",
+          ),
+        ).not.toBeNull();
       } finally {
         await diff.unmount();
       }

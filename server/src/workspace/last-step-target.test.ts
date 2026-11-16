@@ -254,6 +254,26 @@ test("a step whose refs were dropped and trees collected expires: its review say
   await restarted.dispose();
 });
 
+test("an untracked file of 20 MB is in the snapshots: only those over 50 MB are left out (D15)", async () => {
+  const root = await repository();
+  const store = createLastStepBaselineStore(context, { refs: true });
+  const done = await step(store, root, async () => {
+    await writeFile(join(root, "big.bin"), "");
+    await truncate(join(root, "big.bin"), 20 * 1024 * 1024);
+  });
+  expect(done.skipped ?? []).toEqual([]);
+  const summary = await readDiffSummary({
+    workspaceId: "w1",
+    workspace: {},
+    root,
+    params: { mode: "last-step" },
+    ...context,
+    lastStepBaselines: store,
+  });
+  expect(summary.entries.map((entry) => entry.path)).toEqual(["big.bin"]);
+  await store.dispose();
+});
+
 test("an untracked file over 50 MB is left out of the snapshots and named; the step goes on", async () => {
   const root = await repository();
   const store = createLastStepBaselineStore(context, { refs: true });

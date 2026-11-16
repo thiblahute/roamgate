@@ -1091,6 +1091,31 @@ export function createReviewService(args: {
     const from = session(params.sessionId);
     if (isGitlabTarget(from.target))
       return { mergeRequest: null, snapshot: snapshot(from) };
+    // The request the user picked (Changes' card, its chosen remote):
+    // that one, no lookup.
+    if (params.url !== undefined) {
+      const picked = parseReviewTarget({ kind: "mr", url: params.url });
+      if (picked.kind !== "mr")
+        throw new ReviewError("invalid merge request URL");
+      const number = Number(
+        /\/(?:-\/merge_requests|pull)\/(\d+)/.exec(picked.url)?.[1] ?? 0,
+      );
+      const opened = open({
+        connectionId: from.connectionId,
+        root: from.root,
+        workspaceId: from.workspaceId,
+        target: picked,
+        agent: from.agent.name,
+        paneId: from.agent.paneId,
+        raise: false,
+      });
+      const target = session(opened.session.id);
+      linkReviews(target, await linkedReviews(target));
+      return {
+        mergeRequest: { url: picked.url, title: "", number },
+        snapshot: snapshot(target),
+      };
+    }
     const result = await findMergeRequest(from, true);
     if ("error" in result) throw new ReviewError(result.error);
     if (!result.link) return { mergeRequest: null };

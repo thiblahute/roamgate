@@ -96,3 +96,13 @@
   color: var(--muted);
   font-size: 11px;
 }
+
+/* The repositories' keys, said to screen readers (the title shows them). */
+.changes-scope-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -2640,7 +2640,11 @@ export function DiffViewerPanel({
         <p className="modal-error">No workspace is focused.</p>
       ) : null}
 
-      {cache.error ? <p className="modal-error">{cache.error}</p> : null}
+      {/* A review's own files listed (a commit, a review from elsewhere):
+          the scope's read, failed or not, is not what is shown. */}
+      {cache.error && !viewFiles ? (
+        <p className="modal-error">{cache.error}</p>
+      ) : null}
 
       <div
         ref={treeRef}

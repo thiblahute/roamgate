@@ -81,4 +81,21 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
     });
+
+  for (const { name, mount } of reviewSurfacesWith("commits", "expand"))
+    describe(name, () => {
+      test("a commit's message is drawn whole: no gap row offers more lines of it", async () => {
+        const a = added("a.ts", 2);
+        const review = await mount({
+          files: [a],
+          commits: [
+            { sha: "a".repeat(40), subject: "One line", files: [a] },
+            { sha: "b".repeat(40), subject: "Other", files: [a] },
+          ],
+        });
+        expect(review.view()).toBe("1/2 aaaaaaaa One line");
+        expect(review.gaps(":commit-message")).toEqual([]);
+        await review.unmount();
+      });
+    });
 }

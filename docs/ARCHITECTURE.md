@@ -253,10 +253,21 @@ shows in that view only. `review.state` is polled while shown: a change
 offers a reload (R, gr, `:e`) beside the commit bar.
 
 Where a review shows with reviews in Changes (`changesReviewOpen.ts`
-`changesReviewChoice`, used by the review toggle, the reviews list and a
-review asked for by the inbox or an agent in the focused workspace): every
-diff review (worktree, range, step, merge request) shows in Changes; only
-chats and rendered files keep their homes. A review of a repository the
+`changesReviewChoice`, used by the review toggle, the reviews list, the
+inbox, an agent's `review_open` and `/rg-review`): every diff review
+(worktree, range, step, merge request) shows in Changes; only chats and
+rendered files keep their homes. A review shown in Changes is pinned to its
+workspace in the browser (`reviewChangesPins`, apart from the classic
+pane's `reviewPins`, so the pane never mounts it); an agent's review of a
+workspace that is not focused waits there and shows on arrival. Commits'
+Review this commit asks Changes for the Branch scope on that commit
+(`reviewGoTo.commit`), else opens the commit's own range review
+(`SHA^..SHA`, `openCommitReview`). The review stepping aside (Cmd+K, voice
+arrival, Go to the agent's pane) docks an expanded inspector on Changes
+(section 6 of the plan); keys that are the app's (`reviewKeyRoute`) are
+left by Changes' cursor to App's capture listener. `review.gitlab.open`
+takes an optional `url`: the request the PR/MR card shows (its chosen
+remote), opened without the branch lookup. A review of a repository the
 workspace does not hold is shown in the focused workspace's Changes on its
 root, `elsewhere` marking the scope line (D3). Git actions act on the
 inspector's checkout only: on another repository (`ShownRepo.own` false, or
@@ -379,9 +390,9 @@ completed workspace activity period, not a new Git snapshot, so Files can
 refresh independently of Last step availability.
 
 An untracked file over 50 MB is left out of the snapshot and named with it
-(`skipped`); the step's review says so. Any other capture is refused entirely
-when a file exceeds 8 MiB, content exceeds 32 MiB
-in total, or there are more than 10,000 files. It is also refused for symlinks,
+(`skipped`); the step's review says so (D15). Any other capture is refused
+entirely when a tracked file exceeds 50 MB, content exceeds 128 MiB in total,
+or there are more than 10,000 files. It is also refused for symlinks,
 special or unreadable files, newline/tab filenames, applicable `filter`
 attributes, shared repositories (`core.sharedRepository` other than unset,
 `false`, `0`, or `umask`), files on a different filesystem from the Git

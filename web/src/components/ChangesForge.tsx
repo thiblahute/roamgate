@@ -30,6 +30,11 @@ export type ForgeHost = {
   onShowReview?: (snapshot: ReviewSnapshot) => void;
   /** Shows the checkout's local review (one of `reviews`, or a new one). */
   onOpenLocal?: (root: string, reviews: string[]) => void;
+  /**
+   * The request the merge request card shows (its chosen remote): the
+   * switch opens that one rather than looking the branch's up.
+   */
+  requestUrl?: string;
 };
 
 const say = (message: string) =>
@@ -99,7 +104,10 @@ export function useForgeMode({
       const { mergeRequest, snapshot: opened } = await reviewCall<{
         mergeRequest: ReviewMergeRequestLink | null;
         snapshot?: ReviewSnapshot;
-      }>(connectionId, "review.gitlab.open", { session_id: id });
+      }>(connectionId, "review.gitlab.open", {
+        session_id: id,
+        ...(host.requestUrl ? { url: host.requestUrl } : {}),
+      });
       setFound(mergeRequest);
       if (!mergeRequest || !opened) {
         notifyNoMr();

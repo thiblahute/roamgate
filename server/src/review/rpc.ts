@@ -416,8 +416,12 @@ export async function handleReviewRpc(
       // Reads only: the branch's merge request, to offer its review.
       return service.findGitlab(params);
     case "review.gitlab.open":
-      // The review of the branch's merge request, opened or raised.
-      return service.openGitlab(params);
+      // The review of the branch's merge request, opened or raised; `url`:
+      // the one the user picked (Changes' card's remote).
+      return service.openGitlab({
+        ...params,
+        ...(raw.url !== undefined ? { url: raw.url } : {}),
+      });
     case "review.gitlab.push":
       return service.pushLocalDrafts(params);
     case "review.adopt":

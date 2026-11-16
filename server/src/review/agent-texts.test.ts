@@ -23,8 +23,11 @@ import { openReviewStorage } from "./storage";
  * What agents are told about the review (plan: review into the inspector,
  * phase 8): the skill, the client's help and the Claude mod's tool
  * descriptions. Each claim they make about where and how the user sees a
- * review is pinned here with the behavior that makes it true today (the
- * classic review pane), so a change of surface has to update both.
+ * review is pinned here with the behavior that makes it true: the bridge
+ * raises the review in the user's browser, which shows it in the review
+ * pane or the workspace's Changes view as the user set it (both opened
+ * from that one request: App.reviewEntry.test.tsx), so a change of
+ * surface has to update both.
  */
 
 const cleanups: (() => void)[] = [];
@@ -96,19 +99,26 @@ function setup() {
 test("the skill and the review_open tool say a review opens on the branch against its default branch, popping up for the user", async () => {
   // What they say.
   expect(REVIEW_SKILL).toContain(
-    "Use Roamgate's review pane (review overlay) to go through code with the user",
+    "Use Roamgate's reviews (its review pane, or the workspace's Changes view) to go through code with the user",
   );
   expect(REVIEW_SKILL).toContain(
-    "The user reads diffs in Roamgate's review overlay and comments on lines.",
+    "The user reads diffs in a Roamgate review and comments on lines, in\nRoamgate's review pane or in the workspace's Changes view, as they chose.",
   );
   expect(REVIEW_SKILL).toContain(
     "Without a target it reviews `<default branch>..HEAD`.",
   );
-  expect(REVIEW_SKILL).toContain("The overlay pops up in the user's browser.");
-  expect(REVIEW_SKILL).toContain("between them in the overlay.");
+  expect(REVIEW_SKILL).toContain(
+    "It opens in the user's browser, in the review pane or the workspace's\nChanges view; in a workspace the user is not in, it waits there for them.",
+  );
+  expect(REVIEW_SKILL).toContain("between them in the review.");
+  // Neither setting's surface is named alone.
+  expect(REVIEW_SKILL).not.toContain("overlay");
   const open = roamgateTool("review_open")!;
   expect(open.description).toStartWith(
     "Open a Roamgate review for the user: by default the branch here against its default branch.",
+  );
+  expect(open.description).toContain(
+    "It opens in the user's browser, in the review pane or the workspace's Changes view as they set it; in a workspace they are not in, it waits there.",
   );
 
   // What it does: the default branch..HEAD, raised in the user's browser
@@ -167,9 +177,12 @@ test("the client's help says it talks to the review pane", async () => {
     new Response(proc.stdout).text(),
   ]);
   expect(code).toBe(0);
-  expect(stdout).toContain("Talk to the Roamgate review pane. Output is JSON.");
+  // argparse wraps the description at the terminal's width.
+  expect(stdout.replace(/\s+/g, " ")).toContain(
+    "Talk to Roamgate's reviews, shown in its review pane or the Changes view. Output is JSON.",
+  );
   expect(REVIEW_CLIENT_SCRIPT).toContain(
-    '"""roamgate-review: talk to the Roamgate review pane.',
+    '"""roamgate-review: talk to Roamgate\'s reviews (its review pane or Changes view).',
   );
 });
 

@@ -33,8 +33,10 @@ import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import {
   type NewReviewAnnotation,
   type ReviewAnnotation,
+  reviewAgentPanes,
 } from "../annotations";
 import { lazyWithReload } from "../lazyWithReload";
+import { useSystemBack } from "../systemBack";
 import {
   INSPECTOR_VIEW_NAMES,
   type InspectorCommand,
@@ -54,7 +56,7 @@ import {
 import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
 import { useZenEscape, useZenMode } from "../useZenMode";
 import { resetKeyMachines, useKeyMachine } from "../keyMachine";
-import { store } from "../store";
+import { store, useStoreSelector } from "../store";
 import {
   type InspectorCommandRegistry,
   type InspectorCommandSet,
@@ -101,7 +103,12 @@ import { CommandLine } from "./CommandLine";
 import { type ShortcutRow, ShortcutList } from "./ShortcutList";
 import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
-import { ChangesScopeBar, useChangesRepos } from "./ChangesScopeBar";
+import {
+  ChangesScopeBar,
+  useChangesRepos,
+  useChangesSeries,
+  useWorkspaceRepoDirs,
+} from "./ChangesScopeBar";
 import { useReviewFileMarks } from "../useReviewFileMarks";
 import {
   lastChangesRepo,
@@ -220,6 +227,8 @@ export function WorkspaceInspectorHost({
   onCreateAnnotation,
   onAddReviewImage,
   onShowInReview,
+  onReviewCommit,
+  onFocusAgentPane,
   reviewGoTo = null,
   onReanchorFileAnnotations,
   onReanchorDiffAnnotations,
@@ -281,8 +290,14 @@ export function WorkspaceInspectorHost({
      * agent's review without one): shown here, marked "from elsewhere" (D3).
      */
     elsewhere?: boolean;
+    /** Commits' Review this commit: that commit in the Branch scope. */
+    commit?: string;
     at: number;
   } | null;
+  /** Commits' Review this commit (plan phase 8). */
+  onReviewCommit?: (sha: string) => void;
+  /** The review's agent menu: Go to the agent's pane, the review kept. */
+  onFocusAgentPane?: (paneId: string) => void;
   onReanchorFileAnnotations: (path: string, text: string) => void;
   onReanchorDiffAnnotations: (
     path: string,
@@ -444,13 +459,24 @@ export function WorkspaceInspectorHost({
     path: string;
     at: number;
   } | null>(null);
+  /** The workspace's agent panes: the review's agent when none is bound. */
+  const allPanes = useStoreSelector((current) => current.panes);
+  const agentPanes = useMemo(
+    () =>
+      reviewAgentPanes(allPanes, workspace?.workspace_id ?? "").map((pane) => ({
+        paneId: pane.pane_id,
+        agent: pane.agent ?? "agent",
+      })),
+    [allPanes, workspace?.workspace_id],
+  );
+  const repoDirs = useWorkspaceRepoDirs(workspace?.workspace_id ?? "");
   const changesRepos = useChangesRepos(
     connectionClient.connectionId,
     workspace?.workspace_id ?? "",
     ownRoot,
     reviewInChanges && visible && state.open && state.view === "changes",
+    repoDirs,
   );
-  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   /**
    * The keys to Changes' diff; with `frames`, to the one drawn anew (another
    * repository's), within that many frames.
@@ -492,22 +518,26 @@ export function WorkspaceInspectorHost({
   };
   const pickChangesRepoRef = useRef(pickChangesRepo);
   pickChangesRepoRef.current = pickChangesRepo;
-  const stepChangesRepo = (step: number) => {
-    const at = changesRepos.findIndex((repo) => repo.root === shownRoot);
-    const next = changesRepos[at + step];
-    if (next) pickChangesRepo(next.root);
-    else
-      store.notify({
-        kind: "info",
-        message:
-          changesRepos.length < 2
-            ? "This workspace has a single repository here."
-            : step > 0
-              ? "The last repository"
-              : "The first repository",
-        autoDismissMs: 1800,
+  // A repository with only uncommitted work shows its Working scope, as
+  // the review pane opens its worktree review.
+  const series = useChangesSeries({
+    repos: changesRepos,
+    shownRoot,
+    onPick: (root, worktree) => {
+      if (!worktree) {
+        pickChangesRepo(root);
+        return;
+      }
+      const trimmed = root.replace(/\/+$/, "");
+      setPendingGoTo({
+        root: trimmed === ownRoot ? "" : trimmed,
+        scope: "working",
+        at: Date.now(),
       });
-  };
+    },
+  });
+  const repoPickerOpen = series.pickerOpen;
+  const setRepoPickerOpen = series.setPickerOpen;
   /**
    * A review shown as Changes' scope (a range or compare opened by name,
    * an older step), until a scope is picked (plan phase 6).
@@ -543,7 +573,7 @@ export function WorkspaceInspectorHost({
       untracked={diffSelection.untracked}
       pickerOpen={repoPickerOpen}
       onPickerOpen={setRepoPickerOpen}
-      onPickRepo={pickChangesRepo}
+      onPickRepo={series.pick}
       elsewhere={!!elsewhereRoot && elsewhereRoot === shownRoot}
       {...(shownReviewSnapshot
         ? {
@@ -569,8 +599,11 @@ export function WorkspaceInspectorHost({
    * shown as Changes' review scope, on its repository; back, the checkout's
    * branch review.
    */
+  /** The request the card shows, its remote as chosen there. */
+  const [cardRequest, setCardRequest] = useState<string | null>(null);
   const forgeHost = useMemo(
     () => ({
+      ...(cardRequest ? { requestUrl: cardRequest } : {}),
       onShowReview: (snapshot: ReviewSnapshot) => {
         const root = snapshot.session.root.replace(/\/+$/, "");
         const same = root === (shownRoot ?? "").replace(/\/+$/, "");
@@ -589,7 +622,7 @@ export function WorkspaceInspectorHost({
         });
       },
     }),
-    [ownRoot, shownRoot],
+    [ownRoot, shownRoot, cardRequest],
   );
   const contentResourceKey = repoResourceKey(
     resourceStateKey(state.scope),
@@ -622,6 +655,8 @@ export function WorkspaceInspectorHost({
       setShownReview(null);
       diffViewerRef.current?.showScope(pendingGoTo.scope);
     }
+    if (pendingGoTo.commit)
+      setShowCommit({ sha: pendingGoTo.commit, at: pendingGoTo.at });
     const path = pendingGoTo.path;
     if (path === undefined) {
       setPendingGoTo(null);
@@ -649,6 +684,27 @@ export function WorkspaceInspectorHost({
     shownRoot,
     ownRoot,
   ]);
+  /** Review this commit: the commit the Branch scope's bar shows. */
+  const [showCommit, setShowCommit] = useState<{
+    sha: string;
+    at: number;
+  } | null>(null);
+  /**
+   * A commit the Branch scope does not hold (older than the branch, on
+   * another one): its own review, `SHA^..SHA`, shown as Changes' scope.
+   */
+  const reviewCommitApart = useCallback(
+    (sha: string) => {
+      void import("../reviewOpen").then(async ({ openCommitReview }) => {
+        const sessionId = await openCommitReview(sha, {
+          workspaceId: workspace?.workspace_id,
+          ...(ownRoot ? { path: ownRoot } : {}),
+        });
+        if (sessionId) setPendingGoTo({ review: sessionId, at: Date.now() });
+      });
+    },
+    [workspace?.workspace_id, ownRoot],
+  );
   /** The review the scope shown is (plan phase 6): a read-only binding. */
   const changesScope = useMemo<ChangesScope>(
     () =>
@@ -977,33 +1033,7 @@ export function WorkspaceInspectorHost({
       : []),
     ...(state.view === "changes" && reviewInChanges
       ? [
-          {
-            name: "repo",
-            aliases: ["p"],
-            description:
-              "the workspace's repositories, searched as you type (p)",
-            run: () => {
-              if (changesRepos.length < 2) {
-                store.notify({
-                  kind: "info",
-                  message: "This workspace has a single repository here.",
-                  autoDismissMs: 1800,
-                });
-                return;
-              }
-              setRepoPickerOpen(true);
-            },
-          },
-          {
-            name: "nextrepo",
-            description: "the next repository ())",
-            run: () => stepChangesRepo(1),
-          },
-          {
-            name: "prevrepo",
-            description: "the previous repository (()",
-            run: () => stepChangesRepo(-1),
-          },
+          ...series.commands,
           ...(["working", "branch", "last"] as const).map((name) => ({
             name,
             description:
@@ -1201,6 +1231,23 @@ export function WorkspaceInspectorHost({
     const back = from?.isConnected ? from : tabRefs[state.view].current;
     back?.focus({ preventScroll: true });
   };
+  /*
+   * The phone's Back over the review in Changes (plan section 6): the
+   * prompt, then the conversations (Changes' diff), Review only, the diff
+   * back to its tree, then the view (App).
+   */
+  const changesShown =
+    reviewInChanges && visible && state.open && state.view === "changes";
+  useSystemBack(changesShown && !!commandLine, leaveCommandLine, "popup");
+  useSystemBack(changesShown && changesOnly, toggleChangesOnly, "navigation");
+  useSystemBack(
+    changesShown && compact && !!drillInByView.changes && !!diffSelection.entry,
+    () => {
+      setDrillInByView((current) => ({ ...current, changes: false }));
+      onBack();
+    },
+    "navigation",
+  );
 
   useEffect(() => {
     const refresh = () =>
@@ -1396,6 +1443,8 @@ export function WorkspaceInspectorHost({
         {visible &&
         state.open &&
         workspace &&
+        // Review only shows the diff alone: no request card under it.
+        !(changesOnly && state.view === "changes") &&
         (state.view === "changes" || state.view === "commits") ? (
           <PullRequestCard
             key={connectionClientScopeKey(
@@ -1411,6 +1460,7 @@ export function WorkspaceInspectorHost({
             workspaceId={workspace.workspace_id}
             branch={workspace.worktree?.git_status?.branch}
             compact={reviewInChanges}
+            onRequest={setCardRequest}
           />
         ) : null}
 
@@ -1716,6 +1766,8 @@ export function WorkspaceInspectorHost({
                                 }
                         }
                         onViewEntries={setViewTree}
+                        showCommit={showCommit}
+                        onCommitAbsent={reviewCommitApart}
                         entry={diffSelection.entry}
                         file={diffSelection.file}
                         loading={diffSelection.loading}
@@ -1820,6 +1872,8 @@ export function WorkspaceInspectorHost({
                           false
                         }
                         forgeHost={forgeHost}
+                        agentPanes={agentPanes}
+                        {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
                         {...(onAddReviewImage ? { onAddReviewImage } : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)
@@ -1885,6 +1939,7 @@ export function WorkspaceInspectorHost({
                       resourceKey={contentResourceKey}
                       compact={compact || hostWidth < 960}
                       active={visible && state.open && state.view === "commits"}
+                      {...(onReviewCommit ? { onReviewCommit } : {})}
                     />
                   </Suspense>
                 ) : null}

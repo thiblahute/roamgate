@@ -28,6 +28,10 @@ export const SCOPE_LABEL: Record<ChangesScope, string> = {
 type Call = { method: string; params: Record<string, unknown> };
 
 export type ChangesOptions = {
+  /** git.diff_summary refused with this (another workspace's root). */
+  summaryError?: string;
+  /** A review's own files listed in the tree (a commit, a review). */
+  viewFiles?: { label: string; entries: GitDiffEntry[] };
   /** Each scope's changed files. */
   entries: Partial<Record<ChangesScope, GitDiffEntry[]>>;
   /** A file's patch by `${kind}:${path}` (default: a one-line patch). */
@@ -263,6 +267,8 @@ export async function mountChangesTree(
     acceptsServerGeneration: () => true,
     call: async (method, params = {}) => {
       calls.push({ method, params });
+      if (method === "git.diff_summary" && options.summaryError)
+        throw new Error(options.summaryError);
       if (method === "git.diff_summary") {
         const mode = String(params.mode ?? "working") as ChangesScope;
         const listed = (options.entries[mode] ?? []).map((each) => ({
@@ -368,6 +374,7 @@ export async function mountChangesTree(
       workspaceId,
       resourceKey: workspaceId,
       ...(options.groupByStatus ? { groupByStatus: true } : {}),
+      ...(options.viewFiles ? { viewFiles: options.viewFiles } : {}),
       onSelectionChange: (next: ActiveDiffSelection) => {
         selection = next;
         selections.push(next);

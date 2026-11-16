@@ -677,6 +677,20 @@ export async function mountClassicReview(
       }
       await settleAll();
     },
+    async keyTaken(keys) {
+      const [stroke] = parseKeys(keys);
+      const active = document.activeElement;
+      const target =
+        active && host.contains(active) && active !== document.body
+          ? active
+          : overlay();
+      let taken = false;
+      await act(async () => {
+        taken = !keydown(target, stroke!);
+      });
+      await settleAll();
+      return taken;
+    },
     async command(text) {
       await surface.press(":");
       const input = host.querySelector<HTMLInputElement>(

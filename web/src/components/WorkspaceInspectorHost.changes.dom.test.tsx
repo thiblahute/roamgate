@@ -41,9 +41,19 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     PullRequestCard: stub("pull-request"),
   }));
   const diffPanel = await import("./DiffViewerPanel");
+  /** The tree's last props: a file picked there drills in to its diff. */
+  const treeSeen: {
+    onSelectionChange?: (
+      selection: { entry: unknown },
+      meta?: { userInitiated?: boolean },
+    ) => void;
+  } = {};
   mock.module("./DiffViewerPanel", () => ({
     ...diffPanel,
-    DiffViewerPanel: stub("changes-tree"),
+    DiffViewerPanel: (props: typeof treeSeen) => {
+      treeSeen.onSelectionChange = props.onSelectionChange;
+      return <div data-stub="changes-tree" aria-label="changes-tree" />;
+    },
   }));
   const preview = await import("./FilePreviewContent");
   mock.module("./FilePreviewContent", () => ({
@@ -142,6 +152,10 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     reviewGoTo?: Props["reviewGoTo"];
     /** The comments the host writes. */
     created?: Record<string, unknown>[];
+    /** The file Changes shows. */
+    entry?: { path: string; kind: string };
+    /** Calls of the host's onBack (the diff back to its tree). */
+    backs?: string[];
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -185,7 +199,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
             previewRequestRef={{ current: 0 }}
             diffSelection={
               {
-                entry: null,
+                entry: options.entry ?? null,
                 file: null,
                 loading: false,
                 error: null,
@@ -222,7 +236,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
             onDockChange={() => {}}
             onExpandedChange={() => {}}
             onClose={() => {}}
-            onBack={() => {}}
+            onBack={() => options.backs?.push("back")}
           />,
         ),
       );
@@ -580,6 +594,158 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(inspector.host.querySelector("[data-stub=head-end]")).toBeNull();
       } finally {
         await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("in Changes, Review only hides the merge request card; Show all brings it back", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        const card = () =>
+          inspector.host.querySelector("[data-stub=pull-request]");
+        expect(card()).not.toBeNull();
+        await act(async () => diffSeen.run?.("only"));
+        await act(async () => {});
+        expect(card()).toBeNull();
+        await act(async () =>
+          inspector.host
+            .querySelector<HTMLButtonElement>(
+              "[data-stub=head-end] .diff-review-only-exit",
+            )
+            ?.click(),
+        );
+        await act(async () => {});
+        expect(card()).not.toBeNull();
+      } finally {
+        await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("on a phone, Back over the review in Changes leaves the prompt, then Review only, then the diff for its tree", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      // The phone: mobile mode and a session history Back walks.
+      const entries: unknown[] = [null];
+      let index = 0;
+      const fake = {
+        get state() {
+          return entries[index];
+        },
+        get length() {
+          return entries.length;
+        },
+        pushState(value: unknown) {
+          entries.splice(index + 1);
+          entries.push(value);
+          index++;
+        },
+        replaceState(value: unknown) {
+          entries[index] = value;
+        },
+        back() {
+          setTimeout(() => {
+            if (index === 0) return;
+            index--;
+            window.dispatchEvent(
+              new PopStateEvent("popstate", { state: entries[index] }),
+            );
+          }, 0);
+        },
+        forward() {},
+      };
+      const historyBefore = Object.getOwnPropertyDescriptor(window, "history");
+      Object.defineProperty(window, "history", {
+        value: fake,
+        configurable: true,
+      });
+      const { initializeLayoutPreferences, updateLayoutPreferences } =
+        await import("../layoutPreferences");
+      initializeLayoutPreferences();
+      updateLayoutPreferences({ mode: "mobile" });
+      // A phone-wide inspector: compact, the tree or the diff.
+      const widthBefore = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        "clientWidth",
+      );
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+        get: () => 390,
+        configurable: true,
+      });
+      const settle = () =>
+        act(async () => {
+          for (let turn = 0; turn < 6; turn++)
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      const back = async () => {
+        await act(async () => window.history.back());
+        await settle();
+      };
+      const backs: string[] = [];
+      const inspector = await mountInspector({
+        root: "/repo",
+        entry: { path: "a.ts", kind: "unstaged" },
+        backs,
+      });
+      try {
+        // A file picked in the tree: its diff, then Review only, then `:`.
+        await act(async () =>
+          treeSeen.onSelectionChange?.(
+            { entry: { path: "a.ts", kind: "unstaged" } },
+            { userInitiated: true },
+          ),
+        );
+        await act(async () => diffSeen.run?.("only"));
+        await settle();
+        const onlyShown = () =>
+          inspector.host.querySelector("[data-stub=head-end]") !== null;
+        expect(onlyShown()).toBe(true);
+        const tab = inspector.host.querySelector<HTMLElement>(
+          ".inspector-changes-resource [data-stub=changes-diff]",
+        );
+        await act(async () => {
+          (tab ?? inspector.host).dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: ":",
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+        await settle();
+        const prompt = () =>
+          inspector.host.querySelector('input[aria-label="Command"]');
+        expect(prompt()).not.toBeNull();
+        await back();
+        expect(prompt()).toBeNull();
+        expect(onlyShown()).toBe(true);
+        await back();
+        expect(onlyShown()).toBe(false);
+        expect(backs).toEqual([]);
+        await back();
+        expect(backs).toEqual(["back"]);
+      } finally {
+        await inspector.unmount();
+        updateLayoutPreferences({ mode: "auto" });
+        if (widthBefore)
+          Object.defineProperty(
+            HTMLElement.prototype,
+            "clientWidth",
+            widthBefore,
+          );
+        else
+          delete (HTMLElement.prototype as { clientWidth?: number })
+            .clientWidth;
+        if (historyBefore)
+          Object.defineProperty(window, "history", historyBefore);
         localStorage.removeItem(PREFS_KEY);
       }
     });

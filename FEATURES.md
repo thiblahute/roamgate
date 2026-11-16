@@ -197,8 +197,8 @@ Inspector button, shortcuts, or workspace/agent menus.
   goes, as the review pane's: a review comment, for the agent as you save, or
   held until Send; a review comment (no agent the comments go to) is saved by
   Esc too. On a line with an open discussion `c` answers it; on your review
-  comment there `c` rewrites it; `C` asks the agent anew, and `:ask` answers
-  where the line is discussed, else asks. With no agent to ask, the question
+  comment there `c` rewrites it; `C` and `:ask` answer where the line is
+  discussed, else ask the agent, as in the review pane. With no agent to ask, the question
   is held for Send in the workspace's threads, and drawn on its line saying
   so. `gn` / `gN` go to the next /
   previous unresolved thread through every file (`n` / `N`, with no search
@@ -228,7 +228,10 @@ Inspector button, shortcuts, or workspace/agent menus.
   review has an agent, the diff's head gets its agent group: **Live**
   (comments go to the agent as you write them), **Hold**, **Send**,
   **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
-  `:overall`.
+  `:overall`. The agent's name opens its menu, as the review pane's: how
+  comments reach it, **Ask Claude about this line** (`C`), its review, and
+  **Go to Claude's pane** (the review is kept). With no agent bound to the
+  review, the workspace's agent pane is its agent.
 - With reviews in Changes, Files and Changes are one review of the checkout.
   A comment written in Files, on the source or the rendered Markdown, HTML
   or diagram, is a thread of the checkout's review, the one Changes writes
@@ -263,8 +266,21 @@ Inspector button, shortcuts, or workspace/agent menus.
   its history, latest first. After a rebase or an amend the commit shown is
   followed (by its patch, else its subject), and the view shown is kept per
   review. When the code changes, the bar offers to reload (R, gr, `:e`).
-  The review toggle and the reviews list (Option+Shift+R) open every review
-  in Changes: a range of other ends, two versions compared, an older step's
+  Every way a review opens lands in Changes: the review toggle, the tab
+  bar's and the phone's Review, the reviews list (Option+Shift+R), the
+  Reviews inbox, an agent's `review_open` and `/rg-review` (in a workspace
+  you are not in, it waits in that workspace's Changes and shows when you
+  get there), Files' Review, and Commits' **Review this commit**
+  (`:reviewcommit`: the Branch scope on that commit, or the commit's own
+  review when the branch does not hold it). Rendered reviews of a file or a
+  site keep their home in Files. Changes opens expanded the first time;
+  Cmd+K, arriving by voice and Go to the agent's pane dock an expanded
+  Changes (a docked one stays), and the toggle expands it again. Review only
+  also hides the merge request card. On a phone, Back closes the `:`
+  prompt, then the comments list, then Review only, then the diff for its
+  tree, then Changes. With several repositories, `p`, `(` and `)` go
+  through them as in the review pane; one with only uncommitted work shows
+  its Working scope. They open in Changes: a range of other ends, two versions compared, an older step's
   review and a merge or pull request's review show as a scope of their own,
   named in the scope line, until you pick another scope. A review of a
   repository the workspace does not hold (its workspace closed, an agent's
@@ -290,14 +306,19 @@ Inspector button, shortcuts, or workspace/agent menus.
   agent's comment has **Make it mine**, which makes it your forge draft.
   The agent's Send reads **Send to Claude**: nothing labelled Send reaches
   the forge. A security merge request (or one not read yet) is kept from
-  agents: no agent group, `C` refused, comments are your drafts. `gf` opens
+  agents: no agent group, `C` refused, comments are your drafts. The
+  **Local / GitLab** switch opens the request the PR/MR card shows (its
+  remote as chosen there). `gn` / `gN` reach a thread written on a commit
+  since rewritten out of the review, shown on that commit, "(no longer in
+  the review)". `gf` opens
   the file at the cursor in Files; on a request's review worktree that
   follows on demand it is checked out first, never over local changes.
 - A comment on the Last step goes to that step's own review (agents open it
   with `roamgate-review open --last-step` or `review_open` with
   `last_step`), drawn on that step only. A step's snapshots are kept while
   its review has comments, and for the last 5 steps, across restarts;
-  untracked files over 50 MB are left out of them, and the step says so.
+  untracked files over 50 MB are left out of them, and the step says so;
+  nothing smaller keeps a step from its snapshot.
 - Threads in Changes are drawn as the review pane draws them: under each of
   your messages how it goes to the agent (sent, on its way, held, not
   delivered with Retry, not sent with Send, for another review's thread that
@@ -1552,6 +1573,7 @@ Commits:
 | `:commit N` / `WORDS`                 | the commit of row N, or whose subject or sha has the words     |
 | `:more`                               | **Load more commits**                                          |
 | `:preview`, `:diff`                   | **Preview at commit** for the file shown, **Back to diff**     |
+| `:reviewcommit`                       | **Review this commit**: in Changes, or the review pane         |
 
 History:
 
