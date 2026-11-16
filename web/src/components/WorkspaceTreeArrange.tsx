@@ -1,3 +1,4 @@
+import { headedGroupOf, setGroupHeaded, useUpstreamMarks } from "../mrUpstream";
 /**
  * The user's arrangement of the Workspaces list: label groups, workspaces
  * that are gone or on a connection that is down, the menu and dialog that
@@ -685,7 +686,15 @@ export function writeExpandedTaskLines(keys: readonly string[]) {
 
 export type NodeMenuState = { nodeId: string; x: number; y: number };
 
-type MenuItem = { label: string; danger?: boolean; action: () => void };
+type MenuItem = {
+  label: string;
+  danger?: boolean;
+  /** A toggle: shown checked or not. */
+  checked?: boolean;
+  disabled?: boolean;
+  title?: string;
+  action: () => void;
+};
 
 /** The menu of a group or an unavailable workspace. */
 export function ArrangeNodeMenu({
@@ -700,6 +709,7 @@ export function ArrangeNodeMenu({
   onNewGroup: (parent: WorkspaceTreeTarget | null) => void;
 }) {
   const arrange = useArrange();
+  const marks = useUpstreamMarks();
   const ref = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState<WorkspaceTreeGroupNode | null>(null);
   const node = state
@@ -760,6 +770,23 @@ export function ArrangeNodeMenu({
         action: () => onNewGroup({ node: node.id }),
       },
     );
+    // Reviews lists the branches of its workspaces until their request
+    // opens; a group inside a marked one is headed upstream with it.
+    const headed = arrange ? headedGroupOf(arrange.tree, marks, node.id) : null;
+    const inherited = !!headed && headed !== node.id;
+    const from = inherited
+      ? arrange?.tree.nodes.find((each) => each.id === headed)
+      : undefined;
+    items.push({
+      label: inherited
+        ? `Headed upstream (as ${from && from.kind === "group" ? from.label : "its group"})`
+        : "Headed upstream",
+      checked: !!headed,
+      disabled: inherited,
+      title:
+        "Workspaces here hold work meant to go upstream: Reviews lists their branches until their request opens",
+      action: () => void setGroupHeaded(node.id, !headed).catch(() => {}),
+    });
   }
   items.push({
     label: "Move into…",
@@ -824,8 +851,15 @@ export function ArrangeNodeMenu({
             <button
               key={item.label}
               type="button"
-              role="menuitem"
-              className={`context-menu-item ${item.danger ? "is-danger" : ""}`}
+              role={
+                item.checked === undefined ? "menuitem" : "menuitemcheckbox"
+              }
+              {...(item.checked === undefined
+                ? {}
+                : { "aria-checked": item.checked })}
+              disabled={item.disabled}
+              title={item.title}
+              className={`context-menu-item ${item.danger ? "is-danger" : ""}${item.checked ? " is-checked" : ""}`}
               onClick={() => {
                 onClose();
                 item.action();

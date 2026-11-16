@@ -1,4 +1,6 @@
 import type { AssistantSource } from "./assistant";
+import { forgeRefLabel } from "./forge";
+import type { WorkspaceRef } from "./workspaceTree";
 import type {
   ForgePipelineStatus,
   ForgeProvider,
@@ -156,9 +158,77 @@ export type MrInboxEntry = MrItem & {
   parent?: string;
   /** A branch the user said will be a request (not proposed yet). */
   unsent?: boolean;
+  /**
+   * A branch headed upstream (no request yet): its key is
+   * `branch:<provider>:<host>/<project>@<branch>`, its project the target's.
+   */
+  branch?: MrBranchInfo;
+  /** A request opened from a branch headed upstream: that branch. */
+  fromBranch?: string;
+  /** Its checkout here: commits not pushed, local changes. */
+  local?: { unpushed: number; dirty: number; workspace: string };
   /** The upstreaming effort it is a part of (its name). */
   effort?: string;
 };
+
+/** A branch headed upstream, as its workspace's checkout has it. */
+export type MrBranchInfo = {
+  name: string;
+  connectionId: string;
+  connectionLabel: string;
+  workspaceId: string;
+  workspaceLabel: string;
+  path: string;
+  /** The target it is compared with ("origin/main"). */
+  target: string;
+  ahead: number;
+  behind: number;
+  /** Files changed and not committed. */
+  dirty: number;
+  /** Commits not pushed to its own upstream branch. */
+  unpushed?: number;
+  /** Its commits beyond the target, newest first (at most 50 here). */
+  commits: { sha: string; subject: string; at: string }[];
+  /** The Headed upstream group it is in. */
+  group: string;
+};
+
+/** A branch's key: the target project and the branch name (D6). */
+export function mrBranchKey(ref: {
+  provider: ForgeProvider;
+  host: string;
+  project: string;
+  branch: string;
+}): string {
+  return `branch:${ref.provider}:${ref.host.toLowerCase()}/${ref.project.toLowerCase()}@${ref.branch}`;
+}
+
+/** How a row is named: a request's reference, or a branch's name. */
+export function mrRefLabel(
+  entry: ForgeRef & Pick<MrInboxEntry, "branch">,
+  short = false,
+): string {
+  if (entry.branch)
+    return short ? entry.branch.name : `${entry.project}@${entry.branch.name}`;
+  return forgeRefLabel(entry, short);
+}
+
+/** A branch key's parts; null for any other key. */
+export function parseBranchKey(key: string): {
+  provider: ForgeProvider;
+  host: string;
+  project: string;
+  branch: string;
+} | null {
+  const match = /^branch:(gitlab|github):([^/]+)\/([^@]+)@(.+)$/.exec(key);
+  if (!match) return null;
+  return {
+    provider: match[1] as ForgeProvider,
+    host: match[2]!,
+    project: match[3]!,
+    branch: match[4]!,
+  };
+}
 
 /** Whose move it is on one's own request. */
 export type MrWhose = "me" | "reviewer" | "external" | { person: string };
@@ -378,6 +448,12 @@ export type MrReviewsSettings = {
   staleDays: number;
   /** Saved searches, shown as chips after All / To review / Mine. */
   views: MrSavedView[];
+  /** Workspaces-tree groups headed upstream (node ids; nested ones too). */
+  upstreamGroups: string[];
+  /** Workspaces in such a group that are not (the tree's references). */
+  upstreamSkip: WorkspaceRef[];
+  /** Branches said to be requests, not proposed yet (D25: "not sent"). */
+  unsent: MrUnsent[];
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -401,6 +477,18 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   overrides: {},
   staleDays: 90,
   views: [],
+  upstreamGroups: [],
+  upstreamSkip: [],
+  unsent: [],
+};
+
+/** A branch said to be a request before it is one. */
+export type MrUnsent = {
+  key: string;
+  title?: string;
+  /** Its target branch, when not the default one. */
+  target?: string;
+  at: string;
 };
 
 /** A saved search: its name and its query (section 5's tokens and words). */

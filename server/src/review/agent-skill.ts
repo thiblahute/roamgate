@@ -206,7 +206,10 @@ Tools: \`reviews_list\` (lanes, next steps, overrides, paged),
 \`reviews_override\` (set or clear whose move, next step, the requests it
 waits for, labels, a link, stale), \`reviews_order\`, \`reviews_sort\`,
 \`reviews_pin\`, \`reviews_unpin\`, \`reviews_hide\`, \`reviews_unhide\`,
-\`reviews_view\` (saved views). \`reviews_list\`'s \`filter\` takes the
+\`reviews_view\` (saved views), \`upstream_group\` / \`upstream_workspace\`
+(which Workspaces-tree groups and workspaces hold work headed upstream:
+their branches show as "Not proposed upstream yet"), \`upstream_unsent\`
+(a branch that will be a request). \`reviews_list\`'s \`filter\` takes the
 panel's search: \`project:group/*\`, \`label:x\`, \`lane:your-move\`,
 \`waiting:NAME\`, \`state:draft\`, \`-key:value\`, words, or \`view:NAME\`.
 \`roamgate-review reviews help\` lists each tool's parameters. Change the board when

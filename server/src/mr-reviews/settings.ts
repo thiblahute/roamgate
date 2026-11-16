@@ -5,8 +5,14 @@ import {
   DEFAULT_MR_REVIEWS_SETTINGS,
   type MrOverride,
   type MrReviewsSettings,
+  type MrUnsent,
   mrProjectKey,
 } from "../../../shared/mrReviews";
+import {
+  parseWorkspaceRef,
+  type WorkspaceRef,
+  workspaceRefKey,
+} from "../../../shared/workspaceTree";
 import { normalizeOverride, type StoredMrOverride } from "./overrides";
 
 /** The reviews settings, as settings.json keeps them (`mr_reviews`). */
@@ -27,6 +33,9 @@ export type StoredMrReviewsSettings = {
   overrides?: Record<string, StoredMrOverride>;
   stale_days?: number;
   views?: { name: string; query: string }[];
+  upstream_groups?: string[];
+  upstream_skip?: WorkspaceRef[];
+  unsent?: MrUnsent[];
 };
 
 export const MAX_HOSTS = 10;
@@ -42,6 +51,9 @@ export const MAX_OVERRIDES = 500;
 export const MAX_VIEWS = 20;
 export const VIEW_NAME_MAX = 40;
 export const VIEW_QUERY_MAX = 500;
+export const MAX_UPSTREAM_GROUPS = 50;
+export const MAX_UPSTREAM_SKIP = 200;
+export const MAX_UNSENT = 200;
 
 /** A view's name: a few words, no colon (`:view NAME` reads it). */
 export function viewName(value: unknown): string | null {
@@ -232,6 +244,58 @@ export function normalizeStoredMrReviews(
       })
       .slice(0, MAX_VIEWS);
   }
+  if (Array.isArray(value.upstream_groups))
+    out.upstream_groups = [
+      ...new Set(
+        value.upstream_groups.filter(
+          (id): id is string =>
+            typeof id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(id),
+        ),
+      ),
+    ].slice(0, MAX_UPSTREAM_GROUPS);
+  if (Array.isArray(value.upstream_skip)) {
+    const seen = new Set<string>();
+    out.upstream_skip = value.upstream_skip
+      .flatMap((raw) => {
+        const ref = parseWorkspaceRef(raw);
+        if (!ref || seen.has(workspaceRefKey(ref))) return [];
+        seen.add(workspaceRefKey(ref));
+        return [ref];
+      })
+      .slice(0, MAX_UPSTREAM_SKIP);
+  }
+  if (Array.isArray(value.unsent)) {
+    const seen = new Set<string>();
+    out.unsent = list(value.unsent)
+      .flatMap((entry) => {
+        const key = entry.key;
+        if (
+          typeof key !== "string" ||
+          !key.startsWith("branch:") ||
+          key.length > 600 ||
+          seen.has(key)
+        )
+          return [];
+        seen.add(key);
+        const title =
+          typeof entry.title === "string"
+            ? entry.title.replace(/\s+/g, " ").trim().slice(0, 300)
+            : "";
+        const target =
+          typeof entry.target === "string"
+            ? entry.target.trim().slice(0, 200)
+            : "";
+        return [
+          {
+            key,
+            ...(title ? { title } : {}),
+            ...(target ? { target } : {}),
+            at: typeof entry.at === "string" ? entry.at.slice(0, 40) : "",
+          },
+        ];
+      })
+      .slice(0, MAX_UNSENT);
+  }
   const stale = Number(value.stale_days);
   if (Number.isInteger(stale) && stale >= 1 && stale <= 3650)
     out.stale_days = stale;
@@ -298,6 +362,9 @@ export function mrReviewsSettings(
     ),
     staleDays: stored?.stale_days ?? base.staleDays,
     views: stored?.views ?? base.views,
+    upstreamGroups: stored?.upstream_groups ?? base.upstreamGroups,
+    upstreamSkip: stored?.upstream_skip ?? base.upstreamSkip,
+    unsent: stored?.unsent ?? base.unsent,
   };
 }
 
@@ -335,6 +402,13 @@ export function storedMrReviews(
         }
       : {}),
     ...(settings.views.length ? { views: settings.views } : {}),
+    ...(settings.upstreamGroups.length
+      ? { upstream_groups: settings.upstreamGroups }
+      : {}),
+    ...(settings.upstreamSkip.length
+      ? { upstream_skip: settings.upstreamSkip }
+      : {}),
+    ...(settings.unsent.length ? { unsent: settings.unsent } : {}),
     ...(settings.staleDays !== DEFAULT_MR_REVIEWS_SETTINGS.staleDays
       ? { stale_days: settings.staleDays }
       : {}),

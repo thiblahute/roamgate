@@ -1050,6 +1050,7 @@ function getMrReviews(): MrReviews {
     tree: {
       read: () => readWorkspaceTree(),
       apply: (ops) => applyWorkspaceTreeOps(ops),
+      onChanged: onWorkspaceTreeChanged,
     },
     defaultConnection: () => {
       const status = connectionManager.list().find((each) => each.is_default);

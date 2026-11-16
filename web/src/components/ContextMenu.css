@@ -134,3 +134,14 @@
     min-height: 44px;
   }
 }
+
+/* A toggle: a check before it when on. */
+.context-menu-item[role="menuitemcheckbox"]::before {
+  display: inline-block;
+  width: 1.2em;
+  content: "";
+}
+
+.context-menu-item[role="menuitemcheckbox"][aria-checked="true"]::before {
+  content: "\2713";
+}

@@ -17,8 +17,15 @@ import {
   sameOverride,
 } from "./overrides";
 import {
+  parseWorkspaceRef,
+  workspaceRefKey,
+} from "../../../shared/workspaceTree";
+import {
   MAX_HIDDEN,
   MAX_PINNED,
+  MAX_UNSENT,
+  MAX_UPSTREAM_GROUPS,
+  MAX_UPSTREAM_SKIP,
   MAX_VIEWS,
   VIEW_NAME_MAX,
   VIEW_QUERY_MAX,
@@ -53,6 +60,8 @@ export type MrReviewsRpcDeps = {
   ) => Promise<MrReviewsSettings>;
   /** The user's order of the inbox. */
   order: MrOrder;
+  /** The Headed upstream marks changed: the branches are read again. */
+  upstreamChanged?: () => Promise<void>;
   /** The rest of the methods (open, checkout, Claude), when set up. */
   more?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 };
@@ -379,7 +388,12 @@ export async function handleMrReviewsRpc(
       // Whose move, next step, dependencies, labels, link, stale: set by
       // hand on one of the user's requests (or cleared).
       const target = key(params);
-      const item = deps.inbox.item(target);
+      // A request, or a branch headed upstream (a row with no request).
+      const item =
+        deps.inbox.item(target) ??
+        deps.inbox
+          .snapshot(await deps.settings())
+          .entries.find((entry) => entry.key === target && entry.branch);
       if (!item) throw new MrReviewsError("no such request", "not_found");
       const hosts = await deps.inbox.hosts();
       const items = deps.inbox.items();
@@ -460,6 +474,128 @@ export async function handleMrReviewsRpc(
         return { changed: true, version: saved.orderVersion ?? 0 };
       });
       return { ok: true, name, ...result };
+    }
+    case "bridge.mr_reviews.unsent": {
+      // A branch headed upstream said to be a request, not proposed yet
+      // (or back to a plain branch).
+      const target = key(params);
+      if (!target.startsWith("branch:"))
+        throw new MrReviewsError("only a branch can be not proposed yet");
+      const want = params.unsent !== false;
+      const title =
+        typeof params.title === "string"
+          ? params.title.trim().slice(0, 300)
+          : "";
+      const goal =
+        typeof params.target === "string"
+          ? params.target.trim().slice(0, 200)
+          : "";
+      const meta = change(params);
+      const result = await editSettings(async () => {
+        const current = await deps.settings();
+        const existing = current.unsent.find((each) => each.key === target);
+        if (want) {
+          const row = deps.inbox
+            .snapshot(current)
+            .entries.find((entry) => entry.key === target);
+          if (!row && !existing)
+            throw new MrReviewsError(
+              "no such branch headed upstream",
+              "not_found",
+            );
+          if (current.unsent.length >= MAX_UNSENT && !existing)
+            throw new MrReviewsError(
+              `At most ${MAX_UNSENT} requests not proposed yet.`,
+            );
+        } else if (!existing)
+          return { changed: false, version: current.orderVersion ?? 0 };
+        const entry = {
+          key: target,
+          ...(title || existing?.title
+            ? { title: title || existing!.title }
+            : {}),
+          ...(goal || existing?.target
+            ? { target: goal || existing!.target }
+            : {}),
+          at: existing?.at ?? new Date().toISOString(),
+        };
+        const unsent = want
+          ? [...current.unsent.filter((each) => each.key !== target), entry]
+          : current.unsent.filter((each) => each.key !== target);
+        if (JSON.stringify(unsent) === JSON.stringify(current.unsent))
+          return { changed: false, version: current.orderVersion ?? 0 };
+        const saved = await deps.saveSettings({ ...current, unsent }, meta);
+        return { changed: true, version: saved.orderVersion ?? 0 };
+      });
+      deps.inbox.changed();
+      return { ok: true, key: target, unsent: want, ...result };
+    }
+    case "bridge.mr_reviews.upstream.marks": {
+      const current = await deps.settings();
+      return {
+        groups: current.upstreamGroups,
+        skip: current.upstreamSkip,
+      };
+    }
+    case "bridge.mr_reviews.upstream.group":
+    case "bridge.mr_reviews.upstream.workspace": {
+      // A Workspaces-tree group headed upstream (D5), or one of its
+      // workspaces that is not.
+      const headed = params.headed !== false;
+      const meta = change(params);
+      const isGroup = method === "bridge.mr_reviews.upstream.group";
+      const group =
+        typeof params.group === "string" &&
+        /^[A-Za-z0-9_-]{1,64}$/.test(params.group)
+          ? params.group
+          : null;
+      const ref = isGroup ? null : parseWorkspaceRef(params.ref);
+      if (isGroup ? !group : !ref)
+        throw new MrReviewsError(
+          isGroup
+            ? "group (a node id) is required"
+            : "ref (a workspace) is required",
+        );
+      const result = await editSettings(async () => {
+        const current = await deps.settings();
+        let next: MrReviewsSettings;
+        if (isGroup) {
+          const has = current.upstreamGroups.includes(group!);
+          if (has === headed)
+            return { changed: false, version: current.orderVersion ?? 0 };
+          if (headed && current.upstreamGroups.length >= MAX_UPSTREAM_GROUPS)
+            throw new MrReviewsError(
+              `At most ${MAX_UPSTREAM_GROUPS} groups headed upstream.`,
+            );
+          next = {
+            ...current,
+            upstreamGroups: headed
+              ? [...current.upstreamGroups, group!]
+              : current.upstreamGroups.filter((id) => id !== group),
+          };
+        } else {
+          const id = workspaceRefKey(ref!);
+          const has = current.upstreamSkip.some(
+            (each) => workspaceRefKey(each) === id,
+          );
+          // Headed: not skipped.
+          if (has !== headed)
+            return { changed: false, version: current.orderVersion ?? 0 };
+          next = {
+            ...current,
+            upstreamSkip: headed
+              ? current.upstreamSkip.filter(
+                  (each) => workspaceRefKey(each) !== id,
+                )
+              : [...current.upstreamSkip, ref!].slice(-MAX_UPSTREAM_SKIP),
+          };
+        }
+        const saved = await deps.saveSettings(next, meta);
+        return { changed: true, version: saved.orderVersion ?? 0 };
+      });
+      if (result.changed) await deps.upstreamChanged?.();
+      deps.inbox.changed();
+      return { ok: true, headed, ...result };
     }
     case "bridge.mr_reviews.settings.get":
       return deps.settings();

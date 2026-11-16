@@ -1,11 +1,10 @@
-import { forgeRefLabel } from "../../../shared/forge";
 import type {
   MrInboxEntry,
   MrLane,
   MrNextStep,
   MrOverride,
 } from "../../../shared/mrReviews";
-import { mrWhoseLabel } from "../../../shared/mrReviews";
+import { mrRefLabel, mrWhoseLabel } from "../../../shared/mrReviews";
 
 /**
  * Lanes of one's own work: whose move it is, and the next step. An
@@ -22,6 +21,7 @@ export function ruleLane(
   entry: MrInboxEntry,
   options: { staleDays: number; now: number; waitingFor: MrInboxEntry[] },
 ): { lane: MrLane; why: string; next: string } {
+  if (entry.branch) return branchLane(entry, options);
   if (entry.state === "merged" || entry.state === "closed")
     return {
       lane: "done",
@@ -30,7 +30,7 @@ export function ruleLane(
     };
   const open = options.waitingFor.filter((each) => each.state === "open");
   if (open.length) {
-    const names = open.map((each) => forgeRefLabel(each, true)).join(", ");
+    const names = open.map((each) => mrRefLabel(each, true)).join(", ");
     return {
       lane: "blocked",
       why: `after ${names}`,
@@ -99,6 +99,38 @@ export function ruleLane(
       next: "Pipeline running",
     };
   return { lane: "waiting", why: "in review", next: "Waiting for review" };
+}
+
+/** A branch headed upstream: not proposed yet, unless quiet for long. */
+function branchLane(
+  entry: MrInboxEntry,
+  options: { staleDays: number; now: number },
+): { lane: MrLane; why: string; next: string } {
+  const branch = entry.branch!;
+  const updated = Date.parse(entry.updatedAt);
+  if (
+    Number.isFinite(updated) &&
+    options.now - updated > options.staleDays * DAY_MS
+  ) {
+    const days = Math.floor((options.now - updated) / DAY_MS);
+    return {
+      lane: "stale",
+      why: `quiet ${days} days`,
+      next: `No commit for ${days} days: propose it, rebase or drop it`,
+    };
+  }
+  const commits = `${branch.ahead} commit${branch.ahead === 1 ? "" : "s"}`;
+  return {
+    lane: "not_sent",
+    why: entry.unsent ? "not proposed yet" : "branch",
+    next: branch.dirty
+      ? `Commit or stash ${branch.dirty} changed file${branch.dirty === 1 ? "" : "s"}`
+      : branch.behind > 50
+        ? `Rebase on ${branch.target} (${branch.behind} behind), then propose it`
+        : entry.unsent
+          ? `Open the request (${commits})`
+          : `Propose ${commits} upstream`,
+  };
 }
 
 /**

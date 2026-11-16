@@ -1,4 +1,5 @@
 import { forgeRefKey } from "../../../shared/forge";
+import { workspaceRefKey } from "../../../shared/workspaceTree";
 import type {
   MrHiddenEntry,
   MrInboxEntry,
@@ -61,7 +62,14 @@ export function editSettings<T>(change: () => Promise<T>): Promise<T> {
 const HISTORY = 40;
 
 /** Lists Undo restores element by element (by their key). */
-const UNDO_LISTS = ["pinned", "hidden", "views"] as const;
+const UNDO_LISTS = [
+  "pinned",
+  "hidden",
+  "views",
+  "unsent",
+  "upstreamGroups",
+  "upstreamSkip",
+] as const;
 const UNDO_LIST_KEY: {
   [field in (typeof UNDO_LISTS)[number]]: (
     value: MrReviewsSettings[field][number],
@@ -70,6 +78,9 @@ const UNDO_LIST_KEY: {
   pinned: (ref) => forgeRefKey(ref),
   hidden: (entry) => entry.key,
   views: (view) => view.name.toLowerCase(),
+  unsent: (entry) => entry.key,
+  upstreamGroups: (id) => id,
+  upstreamSkip: (ref) => workspaceRefKey(ref),
 };
 /** Records Undo restores key by key. */
 const UNDO_RECORDS = ["overrides"] as const;

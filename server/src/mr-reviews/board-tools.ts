@@ -8,6 +8,10 @@ import type {
 } from "../../../shared/mrReviews";
 import { mrWhoseLabel } from "../../../shared/mrReviews";
 import {
+  type WorkspaceTree,
+  workspaceTreeGroupPaths,
+} from "../../../shared/workspaceTree";
+import {
   mrFilterMatches,
   parseMrFilter,
 } from "../../../shared/mrReviewsFilter";
@@ -106,7 +110,29 @@ const requestParam = Type.String({
 /** What the board says of a row: lane, next step, overrides, nesting. */
 export function boardFields(entry: MrInboxEntry): Record<string, unknown> {
   const override = entry.override;
+  const branch = entry.branch;
   return {
+    ...(branch
+      ? {
+          ref: `${entry.project}@${branch.name}`,
+          branch: {
+            name: branch.name,
+            workspace: branch.workspaceLabel,
+            connection: branch.connectionLabel,
+            target: branch.target,
+            ahead: branch.ahead,
+            behind: branch.behind,
+            ...(branch.dirty ? { dirty: branch.dirty } : {}),
+            ...(branch.unpushed ? { unpushed: branch.unpushed } : {}),
+            commits: branch.commits
+              .slice(0, 10)
+              .map((commit) => commit.subject),
+          },
+          ...(entry.unsent ? { not_proposed_yet: true } : {}),
+        }
+      : {}),
+    ...(entry.fromBranch ? { from_branch: entry.fromBranch } : {}),
+    ...(entry.local ? { local: entry.local } : {}),
     ...(entry.lane ? { lane: entry.lane, lane_why: entry.laneWhy } : {}),
     ...(entry.next
       ? {
@@ -139,6 +165,51 @@ export function boardFields(entry: MrInboxEntry): Record<string, unknown> {
 }
 
 export const boardToolSchemas = {
+  upstream_group: Type.Object(
+    {
+      group: Type.String({
+        minLength: 1,
+        maxLength: 400,
+        description:
+          'A Workspaces-tree group: its path of names ("Upstream/Media"), its name when only one group has it, or its id.',
+      }),
+      headed: Type.Boolean(),
+    },
+    { additionalProperties: false },
+  ),
+  upstream_workspace: Type.Object(
+    {
+      workspace: Type.String({
+        minLength: 1,
+        maxLength: 4096,
+        description:
+          "A workspace in a group headed upstream: its name or its checkout path.",
+      }),
+      headed: Type.Boolean({
+        description: "false: not headed upstream (skipped); true: back.",
+      }),
+    },
+    { additionalProperties: false },
+  ),
+  upstream_unsent: Type.Object(
+    {
+      branch: Type.String({
+        minLength: 1,
+        maxLength: 600,
+        description:
+          "A branch headed upstream: its key from reviews_list, or its branch name when only one has it.",
+      }),
+      unsent: Type.Boolean({
+        description:
+          "true: it will be a request (not proposed yet); false: a plain branch again.",
+      }),
+      title: Type.Optional(Type.String({ maxLength: 300 })),
+      target: Type.Optional(
+        Type.String({ maxLength: 200, description: "Its target branch." }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
   reviews_view: Type.Object(
     {
       action: Type.Union([Type.Literal("create"), Type.Literal("delete")]),
@@ -325,6 +396,12 @@ const OVERRIDE_WORDS: Record<string, string> = {
 export type BoardToolName = keyof typeof boardToolSchemas;
 
 export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
+  upstream_group:
+    "Mark a Workspaces-tree group as headed upstream (its workspaces, and those of the groups inside it, hold work meant to go upstream: their branches show in Reviews, lane Not proposed upstream yet, until their request opens), or unmark it. Only when the user asked.",
+  upstream_workspace:
+    "Say one workspace of a group headed upstream is not (headed: false), or is again. Only when the user asked.",
+  upstream_unsent:
+    "Turn a branch headed upstream into a request not proposed yet (with a title and target branch, the first commit's subject and the default branch otherwise), or back into a plain branch. When its request opens on the forge it takes the request's place, order and what was set by hand. Never opens anything on a forge.",
   reviews_view:
     "Create (or change the query of) a saved view of the user's Reviews list, a chip after All / To review / Mine on every device, or delete one. The query is reviews_list's filter (tokens and words). Only when the user asked for it.",
   reviews_list:
@@ -347,6 +424,9 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
 
 /** The tools that change the user's list. */
 export const BOARD_WRITING: BoardToolName[] = [
+  "upstream_group",
+  "upstream_workspace",
+  "upstream_unsent",
   "reviews_view",
   "reviews_order",
   "reviews_pin",
@@ -366,6 +446,8 @@ export type BoardToolDeps = {
   order: MrOrder;
   /** The panel's own methods, as the panel calls them. */
   rpc: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+  /** The Workspaces tree, for the upstream tools. */
+  tree?: () => Promise<WorkspaceTree>;
 };
 
 /**
@@ -712,6 +794,115 @@ export function createBoardTools(
         summary: `${caller} restored ${forgeRefLabel(entry, true)}`,
       });
       return `Restored ${forgeRefLabel(entry)} to the view.`;
+    },
+
+    async upstream_group(params: { group: string; headed: boolean }) {
+      const tree = (await deps.tree?.()) ?? null;
+      if (!tree)
+        throw new AssistantUserError("The Workspaces tree is not available.");
+      const groups = workspaceTreeGroupPaths(tree).filter(
+        (each) => each.kind === "group",
+      );
+      const wanted = params.group.trim();
+      const lower = wanted.toLowerCase();
+      const found = groups.filter(
+        (each) =>
+          each.node === wanted ||
+          each.names.join("/").toLowerCase() === lower ||
+          each.names[each.names.length - 1]!.toLowerCase() === lower,
+      );
+      if (found.length !== 1)
+        throw new AssistantUserError(
+          found.length
+            ? `"${wanted}" fits several groups: ${found.map((each) => each.names.join("/")).join(", ")}.`
+            : `No group "${wanted}": ${groups.map((each) => each.names.join("/")).join(", ") || "there is none"}.`,
+        );
+      const group = found[0]!;
+      const done = (await panel("upstream.group", {
+        group: group.node,
+        headed: params.headed,
+        by: "agent",
+        summary: `${caller} ${params.headed ? "marked" : "unmarked"} ${group.names.join("/")} as headed upstream`,
+      })) as { changed?: boolean };
+      return JSON.stringify({
+        changed: !!done.changed,
+        group: group.names.join("/"),
+        headed: params.headed,
+      });
+    },
+
+    async upstream_workspace(params: { workspace: string; headed: boolean }) {
+      const tree = (await deps.tree?.()) ?? null;
+      if (!tree)
+        throw new AssistantUserError("The Workspaces tree is not available.");
+      let wanted = params.workspace.trim();
+      // A checkout path names the workspace whose branch is read there.
+      const view = await deps.order.view();
+      const byPath = SECTION_LIST.flatMap((section) => view.sections[section])
+        .map((entry) => entry.branch)
+        .find((branch) => branch?.path === wanted);
+      if (byPath) wanted = byPath.workspaceLabel;
+      const found = tree.nodes.filter(
+        (node): node is Extract<typeof node, { kind: "workspace" }> =>
+          node.kind === "workspace" &&
+          (node.ref.path === wanted ||
+            node.ref.label?.toLowerCase() === wanted.toLowerCase()),
+      );
+      if (found.length !== 1)
+        throw new AssistantUserError(
+          found.length
+            ? `"${wanted}" fits several workspaces: ${found.map((node) => `${node.ref.label ?? ""} (${node.ref.path ?? node.ref.connection_id})`).join(", ")}.`
+            : `No workspace of the Workspaces tree is "${wanted}" (a name or a checkout path).`,
+        );
+      const ref = found[0]!.ref;
+      const done = (await panel("upstream.workspace", {
+        ref,
+        headed: params.headed,
+        by: "agent",
+        summary: `${caller} said ${ref.label ?? ref.path} is ${params.headed ? "" : "not "}headed upstream`,
+      })) as { changed?: boolean };
+      return JSON.stringify({
+        changed: !!done.changed,
+        workspace: ref.label ?? ref.path,
+        headed: params.headed,
+      });
+    },
+
+    async upstream_unsent(params: {
+      branch: string;
+      unsent: boolean;
+      title?: string;
+      target?: string;
+    }) {
+      const view = await deps.order.view();
+      const rows = SECTION_LIST.flatMap(
+        (section) => view.sections[section],
+      ).filter((entry) => entry.branch);
+      const wanted = params.branch.trim();
+      const found = rows.filter(
+        (entry) => entry.key === wanted || entry.branch!.name === wanted,
+      );
+      if (found.length !== 1)
+        throw new AssistantUserError(
+          found.length
+            ? `"${wanted}" fits several branches: ${found.map((entry) => entry.key).join(", ")}.`
+            : `No branch headed upstream is "${wanted}": ${rows.map((entry) => entry.branch!.name).join(", ") || "there is none"}.`,
+        );
+      const entry = found[0]!;
+      const done = (await panel("unsent", {
+        key: entry.key,
+        unsent: params.unsent,
+        ...(params.title ? { title: params.title } : {}),
+        ...(params.target ? { target: params.target } : {}),
+        by: "agent",
+        summary: `${caller} ${params.unsent ? "made" : "unmade"} ${entry.branch!.name} a request not proposed yet`,
+      })) as { changed?: boolean };
+      return JSON.stringify({
+        changed: !!done.changed,
+        branch: entry.branch!.name,
+        key: entry.key,
+        unsent: params.unsent,
+      });
     },
 
     async reviews_view(params: {
