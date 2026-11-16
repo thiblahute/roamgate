@@ -21,7 +21,8 @@ import type {
   FileResolution,
   RunProcessWithCodeTimeout,
 } from "./file-types";
-import { FileDownloadError } from "./file-download";
+import { downloadContentTypeForPath, FileDownloadError } from "./file-download";
+import { spawnStreamingProcess } from "./process";
 import {
   deleteLocalFile,
   downloadLocalFile,
@@ -42,6 +43,7 @@ import {
   resolveRemoteFilePaths,
   uploadRemoteFile,
   mutateRemoteFile,
+  type StreamProcess,
 } from "./remote-files";
 import {
   pullGit,
@@ -94,6 +96,7 @@ export function createFileHandlers({
   lastStepBaselines,
   revealPath = revealLocalPath,
   reviewRoots = () => [],
+  streamProcess = spawnStreamingProcess,
 }: {
   herdr: HerdrClient;
   sshHost: () => string | undefined;
@@ -103,6 +106,8 @@ export function createFileHandlers({
   revealPath?: typeof revealLocalPath;
   /** The roots of the connection's review sessions (a review from elsewhere). */
   reviewRoots?: () => string[];
+  /** Runs the SSH command a whole file is downloaded by, as it comes. */
+  streamProcess?: StreamProcess;
 }) {
   async function explorerRoot(
     workspaceId: string,
@@ -445,6 +450,7 @@ export function createFileHandlers({
             runProcessWithCodeTimeout,
             shQuote,
             options,
+            streamProcess,
           })
         : await downloadLocalFile(checkoutPath, path, options);
     } catch (error) {
@@ -465,7 +471,11 @@ export function createFileHandlers({
         ? inlinePreviewMimeForPath(download.path)
         : null;
     const headers: Record<string, string> = {
-      "content-type": inlineMime ?? download.contentType,
+      "content-type":
+        inlineMime ??
+        (download.contentType === "application/octet-stream"
+          ? downloadContentTypeForPath(download.filename)
+          : download.contentType),
       "content-length": String(download.size),
       "content-disposition": inlineMime
         ? inlineContentDisposition(download.filename)

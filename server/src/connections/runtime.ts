@@ -110,7 +110,10 @@ import {
   type LastStepBaselineStore,
 } from "../workspace/git-diff";
 import { createLastStepTurnTracker } from "../workspace/last-step-turns";
-import { runBinaryProcessWithTimeout as runBinaryProcessWithTimeoutBase } from "../workspace/process";
+import {
+  runBinaryProcessWithTimeout as runBinaryProcessWithTimeoutBase,
+  spawnStreamingProcess,
+} from "../workspace/process";
 import { createStatusEnricher } from "../workspace/status";
 import { createWorktreeHookRunner } from "../worktree/worktree-hooks";
 import { createWorktreeParentStore } from "../worktree/parents";
@@ -627,6 +630,7 @@ export function createLegacyConnectionRuntime(args: {
       ...(args.reviewRoots
         ? { reviewRoots: () => args.reviewRoots!(identity.id) }
         : {}),
+      streamProcess: (argv) => spawnStreamingProcess(forConnection(argv)),
     }),
   );
   const status = createStatusEnricher({

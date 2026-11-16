@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runBinaryProcessWithTimeout } from "./process";
+import { runBinaryProcessWithTimeout, spawnStreamingProcess } from "./process";
 import { IMAGE_MIME_TYPES } from "../../../shared/filePreview";
 import { PREVIEW_IMAGE_MAX_BYTES, PREVIEW_MAX_BYTES } from "./file-constants";
 import { FileDownloadError } from "./file-download";
@@ -227,6 +227,47 @@ test("remote downloads refuse a file over maxBytes before sending it", async () 
     expect(refused.status).toBe(413);
     expect(refused.size).toBe(1001);
     expect(sent).toBe(0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a remote file that changes size while it is sent is never sent short or long", async () => {
+  const root = await mkdtemp(join(tmpdir(), "roamgate-download-stream-"));
+  try {
+    await writeFile(join(root, "app.apk"), Buffer.alloc(1000, 1));
+    const shQuote = (value: string) =>
+      "'" + value.replace(/'/g, "'\"'\"'") + "'";
+    const read = (rewrite: Buffer) =>
+      downloadRemoteFile({
+        host: "example.invalid",
+        rootPath: root,
+        requestedPath: "app.apk",
+        shQuote,
+        runProcessWithCodeTimeout: async (argv, timeout) => {
+          const result = await runBinaryProcessWithTimeout(
+            ["bash", "-c", argv[argv.length - 1]!],
+            timeout,
+          );
+          return { ...result, stdout: result.stdout.toString("utf8") };
+        },
+        streamProcess: async (argv) => {
+          // Rebuilt between its metadata and its bytes.
+          await writeFile(join(root, "app.apk"), rewrite);
+          return spawnStreamingProcess(["bash", "-c", argv[argv.length - 1]!]);
+        },
+      });
+    const same = await read(Buffer.alloc(1000, 2));
+    expect(same.size).toBe(1000);
+    expect(
+      Buffer.from(await new Response(same.body).arrayBuffer()).equals(
+        Buffer.alloc(1000, 2),
+      ),
+    ).toBe(true);
+    await writeFile(join(root, "app.apk"), Buffer.alloc(1000, 1));
+    const changed = await read(Buffer.alloc(2000, 3)).catch((error) => error);
+    expect(changed).toBeInstanceOf(Error);
+    expect((changed as Error).message).toBe("File changed during download");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

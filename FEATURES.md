@@ -1242,6 +1242,11 @@ conflicts are aborted, and nothing is ever pushed.
 - Upload by drag and drop, download files or folders (`.tar.gz`), copy paths,
   create folders, move files by dragging, and delete with confirmation. All of
   this works over SSH (moves need `python3` on the remote host).
+- The preview's Download button, and the one a binary file shows under
+  "Binary file cannot be previewed", download the whole file, never the
+  preview's first 512 KB, streamed from the host with no size limit (over
+  SSH too). An `.apk` comes as an Android package, so a phone offers to
+  install it.
 - With [host file reveal](docs/DEPLOYMENT.md#host-file-reveal) enabled, local
   loopback clients can open files in the host's Finder/File Explorer.
 - Drag a file into a terminal or the composer to insert its path.

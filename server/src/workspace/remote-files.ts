@@ -405,6 +405,80 @@ export function parseRemoteFileDownload(stdout: string, requestedPath: string) {
   };
 }
 
+/** A process whose output is read as it comes, such as a file sent whole. */
+export type StreamedProcess = {
+  stdout: ReadableStream<Uint8Array>;
+  exited: Promise<number>;
+  stderr: Promise<string>;
+  kill: () => void;
+};
+
+export type StreamProcess = (argv: string[]) => Promise<StreamedProcess>;
+
+/**
+ * The bytes of a file a process prints, exactly `size` of them: it fails
+ * before the response starts when the process does before its first byte,
+ * and errors the body (the browser then drops the download) when the file
+ * changed while it was sent.
+ */
+async function streamedFile(
+  proc: StreamedProcess,
+  size: number,
+): Promise<ReadableStream<Uint8Array>> {
+  const reader = proc.stdout.getReader();
+  const failure = async () => {
+    const code = await proc.exited;
+    const stderr = (await proc.stderr.catch(() => "")).trim();
+    return new Error(
+      code === 16 || code === 0
+        ? "File changed during download"
+        : (stderr || `file download exited ${code}`).slice(0, 1000),
+    );
+  };
+  let first: Awaited<ReturnType<typeof reader.read>>;
+  try {
+    first = await reader.read();
+  } catch (error) {
+    proc.kill();
+    throw error;
+  }
+  if (first.done && (size > 0 || (await proc.exited) !== 0))
+    throw await failure();
+  let sent = 0;
+  const take = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    chunk: Uint8Array,
+  ) => {
+    sent += chunk.byteLength;
+    if (sent > size) {
+      proc.kill();
+      controller.error(new Error("File changed during download"));
+      return;
+    }
+    controller.enqueue(chunk);
+  };
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (first.done) controller.close();
+      else take(controller, first.value);
+    },
+    async pull(controller) {
+      const next = await reader.read().catch(() => null);
+      if (next && !next.done) {
+        take(controller, next.value);
+        return;
+      }
+      const code = await proc.exited;
+      if (next && code === 0 && sent === size) controller.close();
+      else controller.error(await failure());
+    },
+    cancel() {
+      proc.kill();
+      void reader.cancel().catch(() => {});
+    },
+  });
+}
+
 export async function downloadRemoteFile({
   host,
   rootPath,
@@ -412,6 +486,7 @@ export async function downloadRemoteFile({
   runProcessWithCodeTimeout,
   shQuote,
   options = {},
+  streamProcess,
 }: {
   host: string;
   rootPath: string;
@@ -419,13 +494,24 @@ export async function downloadRemoteFile({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
   options?: FileDownloadOptions;
+  /**
+   * Runs the command a whole file is sent by, its bytes streamed as they
+   * come. Without it the file is read whole, in base64, before it is sent.
+   */
+  streamProcess?: StreamProcess;
 }): Promise<FileDownloadResult> {
   const blockSize = 64 * 1024;
-  async function readDownload(
+  /**
+   * The script finding the file (in the checkout unless asked by absolute
+   * path) and printing it: its metadata line then its base64, a slice of
+   * it, or only its raw bytes (`stream`, once its size is known).
+   */
+  function downloadCommand(
     metadataOnly = false,
     slice?: { start: number; end: number; size: number },
+    stream?: { size: number },
   ) {
-    const command = `
+    return `
 set -euo pipefail
 root=${shQuote(rootPath)}
 request=${shQuote(requestedPath)}
@@ -448,7 +534,7 @@ else
   rel="\${target_real#"$root_real"/}"
 fi
 name="\${target_real##*/}"
-${slice ? '[ -f "$target_real" ] || { echo "file changed during download" >&2; exit 16; }' : ""}
+${slice || stream ? '[ -f "$target_real" ] || { echo "file changed during download" >&2; exit 16; }' : ""}
 if [ -d "$target_real" ]; then
   parent="$(dirname "$target_real")"
   archive_name="$name.tar.gz"
@@ -468,6 +554,12 @@ else
   }
   ${options.maxBytes !== undefined ? `[ "$size" -le ${Math.floor(options.maxBytes)} ] || { printf '%s' "$size" >&2; exit 17; }` : ""}
   ${slice ? `[ "$size" -eq ${slice.size} ] || { echo "file changed during download" >&2; exit 16; }` : ""}
+  ${
+    stream
+      ? `[ "$size" -eq ${Math.floor(stream.size)} ] || { echo "file changed during download" >&2; exit 16; }
+  exec cat -- "$target_real"`
+      : ""
+  }
   content_type="application/octet-stream"
   printf 'META\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" "$(printf '%s' "$name" | base64 | tr -d '\\n')" "$(printf '%s' "$content_type" | base64 | tr -d '\\n')"
   ${metadataOnly ? "exit 0" : ""}
@@ -475,6 +567,12 @@ else
 fi
 printf '\\n'
 `;
+  }
+  async function readDownload(
+    metadataOnly = false,
+    slice?: { start: number; end: number; size: number },
+  ) {
+    const command = downloadCommand(metadataOnly, slice);
     const result = await runProcessWithCodeTimeout(
       sshReadCommandArgv(
         host,
@@ -512,11 +610,26 @@ printf '\\n'
     return parseRemoteFileDownload(result.stdout, requestedPath);
   }
 
-  if (!options.inline && !options.range) return readDownload();
+  if (!options.inline && !options.range && !streamProcess)
+    return readDownload();
   const metadata = await readDownload(true);
   if (metadata.contentType === "application/gzip") return readDownload();
   if (!Number.isSafeInteger(metadata.size) || metadata.size < 0) {
     throw new Error("Invalid file download size");
+  }
+  if (!options.inline && !options.range && streamProcess) {
+    // A whole file goes out as the host sends it: no size limit, no
+    // deadline, and no copy of it held here.
+    const argv = sshReadCommandArgv(
+      host,
+      `bash -lc ${shQuote(downloadCommand(false, undefined, { size: metadata.size }))}`,
+      [],
+      "files.download",
+    );
+    return {
+      ...metadata,
+      body: await streamedFile(await streamProcess(argv), metadata.size),
+    };
   }
   const range = fileDownloadRange(metadata.path, metadata.size, options);
   const start = range?.start ?? 0;

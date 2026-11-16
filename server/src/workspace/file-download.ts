@@ -11,6 +11,21 @@ export type FileDownloadOptions = {
   maxBytes?: number;
 };
 
+/**
+ * Content types a download is given by its extension, where a plain
+ * application/octet-stream would not do: Android installs an APK only when
+ * it comes as one.
+ */
+const DOWNLOAD_MIME_TYPES = new Map([
+  ["apk", "application/vnd.android.package-archive"],
+]);
+
+/** The content type of a file downloaded whole, by its name. */
+export function downloadContentTypeForPath(path: string): string {
+  const extension = /\.([^./\\]+)$/.exec(path)?.[1]?.toLowerCase() ?? "";
+  return DOWNLOAD_MIME_TYPES.get(extension) ?? "application/octet-stream";
+}
+
 export class FileDownloadError extends Error {
   constructor(
     message: string,

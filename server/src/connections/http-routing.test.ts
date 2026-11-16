@@ -3,6 +3,7 @@ import {
   connectionRoutingErrorResponse,
   parseConnectionHttpRoute,
   publishConnectionHttpResponse,
+  publishLocalFileResponse,
   rawRequestPathname,
   resolveConnectionHttpRoute,
   withConnectionResponseHeader,
@@ -409,6 +410,28 @@ describe("connection HTTP routing", () => {
       "connection changed during request",
     );
     expect(cancellations).toEqual(["connection changed during request"]);
+  });
+
+  test("tags a local file's response in place, so Bun sends its length", async () => {
+    const original = new Response(new Blob(["apk bytes"]), {
+      headers: { "content-length": "9" },
+    });
+    let current = true;
+    const lease = {
+      connectionId: "legacy-default",
+      generation: 3,
+      isCurrent: () => current,
+    };
+    const response = publishLocalFileResponse(lease, original);
+    expect(response).toBe(original);
+    expect(response.headers.get("X-Herdr-Connection-Id")).toBe(
+      "legacy-default",
+    );
+    expect(response.headers.get("X-Herdr-Connection-Generation")).toBe("3");
+    expect(await response.text()).toBe("apk bytes");
+    current = false;
+    const stale = publishLocalFileResponse(lease, new Response("old"));
+    expect(stale.status).toBe(409);
   });
 
   test("keeps routing error statuses and tags syntactically valid ids", async () => {

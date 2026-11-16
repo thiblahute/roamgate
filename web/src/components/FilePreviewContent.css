@@ -413,3 +413,42 @@ body:has(.file-preview.is-zen) .topbar {
 .file-preview-copy.file-preview-reviewed.is-reviewed {
   color: var(--git-added, #3fb950);
 }
+
+/* A binary file: what it is, then the way to get it whole. */
+.file-preview-state.is-binary {
+  flex-direction: column;
+}
+
+.file-preview-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.file-preview-download > span:not(.file-preview-download-size) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-download-size {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-preview-banner-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.file-preview-banner-link:hover:not(:disabled) {
+  background: none;
+}

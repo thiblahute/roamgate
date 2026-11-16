@@ -294,6 +294,30 @@ export function publishConnectionHttpResponse(
   });
 }
 
+/**
+ * A local file's response, tagged in place rather than through
+ * publishConnectionHttpResponse's guarded stream: Bun sends a file body
+ * itself, with its Content-Length (a download's progress, the share sheet's
+ * size check), and drops that header for any stream it is given. A local
+ * file's bytes do not depend on the connection once it is open.
+ */
+export function publishLocalFileResponse(
+  lease: { connectionId: string; generation: number; isCurrent(): boolean },
+  response: Response,
+): Response {
+  if (!lease.isCurrent()) return publishConnectionHttpResponse(lease, response);
+  const id = validateConnectionId(lease.connectionId);
+  const generation = String(validateConnectionGeneration(lease.generation));
+  try {
+    response.headers.set("X-Herdr-Connection-Id", id);
+    response.headers.set("X-Herdr-Connection-Generation", generation);
+    return response;
+  } catch {
+    // Immutable headers (a fetched response): tag a copy.
+    return publishConnectionHttpResponse(lease, response);
+  }
+}
+
 export function connectionRoutingErrorResponse(
   error: ConnectionRoutingError,
 ): Response {

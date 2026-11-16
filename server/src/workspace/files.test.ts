@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { shQuote } from "../utils/process-utils";
 import { createFileHandlers } from "./files";
+import { runBinaryProcessWithTimeout, spawnStreamingProcess } from "./process";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>) {
   const dir = await mkdtemp(join(tmpdir(), "herdr-gui-handler-test-"));
@@ -426,6 +427,74 @@ describe("workspace file handlers", () => {
         "nosniff",
       );
       expect(await audioResponse.text()).toBe("RIFF");
+    });
+  });
+
+  test("downloads a large APK whole and streamed, as an Android package, locally and over SSH", async () => {
+    await withTempDir(async (root) => {
+      await mkdir(join(root, "app", "build"), { recursive: true });
+      // Far past the 512 KB preview and the old base64 read over SSH.
+      const size = 20 * 1024 * 1024 + 123;
+      const bytes = Buffer.alloc(size);
+      for (let i = 0; i < size; i += 4096) bytes[i] = (i / 4096) & 0xff;
+      await writeFile(join(root, "app", "build", "app-debug.apk"), bytes);
+      const digest = (data: ArrayBuffer | Buffer) =>
+        new Bun.CryptoHasher("sha256").update(data).digest("hex");
+      for (const host of [undefined, "user@server"]) {
+        const streamed: string[][] = [];
+        const runLocally = (argv: string[]) => [
+          "bash",
+          "-c",
+          argv[argv.length - 1]!,
+        ];
+        const handlers = createFileHandlers({
+          herdr: {
+            call: async (method: string) => {
+              if (method === "workspace.get")
+                return {
+                  workspace: {
+                    workspace_id: "w1",
+                    worktree: { checkout_path: root, repo_name: "Repo" },
+                  },
+                };
+              throw new Error(`unexpected call ${method}`);
+            },
+          } as any,
+          sshHost: () => host,
+          // Over SSH only the metadata is read this way: never the file.
+          runProcessWithCodeTimeout: async (argv, timeout) => {
+            const result = await runBinaryProcessWithTimeout(
+              runLocally(argv),
+              timeout,
+            );
+            expect(result.stdout.length).toBeLessThan(4096);
+            return { ...result, stdout: result.stdout.toString("utf8") };
+          },
+          streamProcess: async (argv) => {
+            expect(argv[0]).toBe("ssh");
+            streamed.push(argv);
+            return spawnStreamingProcess(runLocally(argv));
+          },
+          shQuote,
+        });
+        const response = await handlers.downloadWorkspaceFile({
+          workspace_id: "w1",
+          path: "app/build/app-debug.apk",
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe(
+          "application/vnd.android.package-archive",
+        );
+        expect(response.headers.get("content-length")).toBe(String(size));
+        expect(response.headers.get("content-disposition")).toContain(
+          'filename="app-debug.apk"',
+        );
+        expect(response.body).toBeInstanceOf(ReadableStream);
+        const body = await response.arrayBuffer();
+        expect(body.byteLength).toBe(size);
+        expect(digest(body)).toBe(digest(bytes));
+        expect(streamed).toHaveLength(host ? 1 : 0);
+      }
     });
   });
 

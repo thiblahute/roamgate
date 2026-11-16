@@ -70,6 +70,7 @@ import {
   type ParsedConnectionHttpRoute,
   parseConnectionHttpRoute,
   publishConnectionHttpResponse,
+  publishLocalFileResponse,
   rawRequestPathname,
   resolveConnectionHttpRoute,
 } from "./connections/http-routing";
@@ -3902,6 +3903,7 @@ async function handleConnectionHttpRequest(
   }
   try {
     let response: Response;
+    let localFile = false;
     if (endpoint === "herdr-info") {
       response = await connection.handleHerdrInfo();
     } else if (endpoint === "upload-image") {
@@ -3922,6 +3924,7 @@ async function handleConnectionHttpRequest(
         agent: url.searchParams.get("agent"),
       });
     } else if (endpoint === "file-download") {
+      localFile = !connection.sshHost();
       try {
         response = await connection.files.downloadWorkspaceFile({
           workspace_id: url.searchParams.get("workspace_id"),
@@ -3965,7 +3968,9 @@ async function handleConnectionHttpRequest(
         );
       }
     }
-    return publishConnectionHttpResponse(resolved, response);
+    return localFile
+      ? publishLocalFileResponse(resolved, response)
+      : publishConnectionHttpResponse(resolved, response);
   } catch (error) {
     return publishConnectionHttpResponse(
       resolved,
@@ -4161,10 +4166,12 @@ function main() {
             if (
               connectionRoute.kind === "connection" &&
               connectionRoute.endpoint === "file-download" &&
-              url.searchParams.get("inline") === "1" &&
-              isHtmlPath(url.searchParams.get("path") ?? "")
+              (url.searchParams.get("inline") !== "1" ||
+                isHtmlPath(url.searchParams.get("path") ?? ""))
             ) {
-              // HTML preparation can require several bounded SSH resource reads.
+              // HTML preparation can require several bounded SSH resource
+              // reads; a download's first byte waits for SSH, and a
+              // directory's for its archive.
               server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
             }
             return handleConnectionHttpRequest(connectionRoute, url, req);
