@@ -9,7 +9,7 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
     "zz zt zb",
     "show the selected request in the middle, at the top, at the bottom",
   ],
-  ["Enter", "review it"],
+  ["Enter", "go to its workspace (as w); with none, review it"],
   ["i", "its details"],
   ["c", "its Claude session"],
   ["o", "open it on GitLab or GitHub"],

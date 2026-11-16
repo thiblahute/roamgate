@@ -177,6 +177,14 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
             ],
           },
         };
+      if (method === "bridge.mr_reviews.open")
+        return {
+          needClone: {
+            host: "gitlab.example.org",
+            project: "group/app",
+            connections: [],
+          },
+        };
       if (method === "bridge.mr_reviews.pin") {
         pinned = true;
         return { ok: true, key: "gitlab:gitlab.example.org/group/app#1" };
@@ -316,6 +324,16 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
     )!;
     await act(async () => button.click());
     expect(jumps[jumps.length - 1]).toEqual(["mac", "w-pitch"]);
+    // Enter with a workspace: the first one, as w.
+    await toggle();
+    await keys("jj");
+    expect(selected()).toEndWith("#5");
+    await press("Enter");
+    expect(jumps.slice(1)).toEqual([
+      ["mac", "w-pitch"],
+      ["mac", "w-pitch"],
+    ]);
+    expect(panel()).toBeNull();
     // One with none says so, and goes nowhere.
     await toggle();
     await keys("j");
@@ -324,7 +342,22 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
     expect(document.body.textContent).toContain(
       "None of your workspaces is on !1's branch or named after it",
     );
-    expect(jumps).toHaveLength(2);
+    expect(jumps).toHaveLength(3);
+    // Enter without a workspace: its review, as before.
+    await press("Enter");
+    await wait(30);
+    expect(
+      calls.filter(([method]) => method === "bridge.mr_reviews.open"),
+    ).toEqual([
+      [
+        "bridge.mr_reviews.open",
+        { key: "gitlab:gitlab.example.org/group/app#1" },
+      ],
+    ]);
+    expect(jumps).toHaveLength(3);
+    expect(document.body.textContent).toContain("Where is your clone?");
+    await press("Escape");
+    expect(document.body.textContent).not.toContain("Where is your clone?");
 
     // P pins the selected request on top, P again unpins it; :pin, :unpin.
     await press("P");

@@ -963,7 +963,7 @@ export function MrReviewsPanel({
   initialView?: "chat";
   /** Step (b) on: the buttons of a request's detail (Review...). */
   renderActions?: (entry: MrInboxEntry) => ReactNode;
-  /** Enter on a request: its review (else its detail). */
+  /** Opening a request (Enter without a workspace, a click): its review (else its detail). */
   onOpenEntry?: (entry: MrInboxEntry) => void;
 }) {
   const { mobile } = useLayoutPreferences();
@@ -1565,6 +1565,16 @@ export function MrReviewsPanel({
       );
   };
 
+  /**
+   * Enter: the request's workspace when it has one (the first, as w),
+   * else its review.
+   */
+  const enter = (entry: MrInboxEntry) => {
+    const link = links[entry.key]?.[0];
+    if (link) goWorkspace(entry, link);
+    else void open(entry);
+  };
+
   // The command line (:), as the review pane's.
   const [command, setCommand] = useState<string | null>(null);
   const commandRef = useRef<HTMLInputElement>(null);
@@ -1646,8 +1656,9 @@ export function MrReviewsPanel({
       } else return false;
       return true;
     }
-    // The search box: Enter reviews the selected (or first) request
-    // found, the arrows move, Esc clears it and goes back to the list.
+    // The search box: Enter goes to the selected (or first) request
+    // found (its workspace, else its review), the arrows move, Esc clears
+    // it and goes back to the list.
     if (event.target === searchRef.current) {
       const key = event.ctrlKey ? `C-${event.key}` : event.key;
       if (key === "Escape") {
@@ -1659,7 +1670,7 @@ export function MrReviewsPanel({
         const found =
           ordered.find((entry) => entry.key === selected) ?? ordered[0];
         panelRef.current?.focus({ preventScroll: true });
-        if (found) void open(found);
+        if (found) enter(found);
       } else return false;
       return true;
     }
@@ -1715,7 +1726,7 @@ export function MrReviewsPanel({
     } else if (fed.key === "?") {
       setHelpOpen((open) => !open);
     } else if (event.key === "Enter" && current) {
-      void open(current);
+      enter(current);
     } else if (event.key === "i" && current) {
       showDetail(current);
     } else if (event.key === "c" && current) {
@@ -2333,9 +2344,10 @@ export function MrReviewsPanel({
               ))}
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter review · i details · w workspace · P pin · f
-                  all, to review, mine · c Claude · o on the forge · J/K reorder
-                  · / search · : command · dd remove · ? all keys
+                  j/k move · Enter its workspace, else review · i details · w
+                  workspace · P pin · f all, to review, mine · c Claude · o on
+                  the forge · J/K reorder · / search · : command · dd remove · ?
+                  all keys
                 </p>
               ) : null}
               {undo ? (

@@ -1049,8 +1049,9 @@ is asked the basic ones (pipeline, conflicts, rebase).
 
 A request's own workspaces, on every connection, are a click away: the
 house button on its row (with their count when there are several), its
-details' **Workspaces** (each with its connection and why), or `w` (`2w`
-for the second). A workspace is a request's when its checkout is on the
+details' **Workspaces** (each with its connection and why), `w` (`2w`
+for the second), or Enter, which goes to the first one and opens the
+request's review only when it has none. A workspace is a request's when its checkout is on the
 request's source branch, or tracks it, in a clone of the project (or of a
 fork of it), when its name carries the request's number (`!12`, `#12`,
 `mr-12`) or branch, or when it is the request's review workspace. The
@@ -1095,7 +1096,7 @@ does the shortcut cheat sheet):
 | `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)                                   |
 | `gg`/`G`, Home/End       | First / last (`2G`: the second)                                                   |
 | `zz` / `zt` / `zb`       | Show the selected request in the middle, at the top, at the bottom of the list    |
-| `Enter`                  | Open its review                                                                   |
+| `Enter`                  | Go to its workspace (the first, as `w`); with none, open its review               |
 | `i`                      | Its details                                                                       |
 | `c`                      | Its Claude session                                                                |
 | `o`                      | Open it on GitLab or GitHub                                                       |
