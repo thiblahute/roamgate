@@ -92,9 +92,20 @@ export function reviewScriptError(
 /**
  * A review's base into $b: a commit, or a tree such as git's empty tree
  * (4b825dc...), which agents use to review a repository from its start.
+ * A root commit's parent (`SHA^`, `SHA~1`, `SHA~`, as Review this commit
+ * and agents name one commit) is the empty tree: the commit adds it all.
  */
 function resolveBase(base: string, shQuote: (value: string) => string) {
-  return `b=$(git rev-parse --verify --quiet ${shQuote(`${base}^{commit}`)} 2>/dev/null || git rev-parse --verify --quiet ${shQuote(`${base}^{tree}`)}) || { echo "unknown revision: ${base.replace(/["$`\\]/g, "")}" >&2; exit 3; }`;
+  return `b=$(${baseRevision(base, shQuote)}) || { echo "unknown revision: ${base.replace(/["$`\\]/g, "")}" >&2; exit 3; }`;
+}
+
+/** The commands printing a review base's object name; false when none. */
+function baseRevision(base: string, shQuote: (value: string) => string) {
+  const parent = /^(.+?)(?:\^|~1?)$/.exec(base)?.[1];
+  const root = parent
+    ? ` || { c=$(git rev-parse --verify --quiet ${shQuote(`${parent}^{commit}`)}) && ! git rev-parse --verify --quiet "$c^1" >/dev/null && git hash-object -t tree /dev/null; }`
+    : "";
+  return `git rev-parse --verify --quiet ${shQuote(`${base}^{commit}`)} 2>/dev/null || git rev-parse --verify --quiet ${shQuote(`${base}^{tree}`)}${root}`;
 }
 
 /**
@@ -242,7 +253,7 @@ export function reviewStateScript(
   const lines = [enterCheckout(root, shQuote)];
   if (target.kind === "range")
     lines.push(
-      `git rev-parse --verify --quiet ${shQuote(`${target.base}^{commit}`)} 2>/dev/null || git rev-parse --verify --quiet ${shQuote(`${target.base}^{tree}`)}`,
+      baseRevision(target.base, shQuote),
       `git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}`,
     );
   else if (target.kind === "step")

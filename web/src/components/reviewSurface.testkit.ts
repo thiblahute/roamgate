@@ -450,7 +450,7 @@ export interface ReviewSurface {
    */
   bridgeHolds(update: BridgeUpdate | (() => BridgeUpdate)): void;
   /** Make the bridge fail these methods (none: answer them again). */
-  failBridge(methods: string[], error?: string): void;
+  failBridge(methods: string[], error?: string | Error): void;
   /**
    * The connection goes down (false), every call failing meanwhile as the
    * bridge's socket does ("bridge hello is unavailable"), or comes back.

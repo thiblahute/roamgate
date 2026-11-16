@@ -210,6 +210,7 @@ export function WorkspaceInspectorHost({
   onAddReviewImage,
   onShowInReview,
   onReviewCommit,
+  onReviewGone,
   onFocusAgentPane,
   reviewGoTo = null,
   onReanchorFileAnnotations,
@@ -284,6 +285,11 @@ export function WorkspaceInspectorHost({
   } | null;
   /** Commits' Review this commit (plan phase 8). */
   onReviewCommit?: (sha: string) => void;
+  /**
+   * A review shown in Changes whose code is gone from its checkout: it is
+   * no longer the one the toggle shows (its pin let go).
+   */
+  onReviewGone?: (sessionId: string) => void;
   /** The review's agent menu: Go to the agent's pane, the review kept. */
   onFocusAgentPane?: (paneId: string) => void;
   onReanchorFileAnnotations: (path: string, text: string) => void;
@@ -715,6 +721,26 @@ export function WorkspaceInspectorHost({
       });
     },
     [workspace?.workspace_id, ownRoot],
+  );
+  /**
+   * The review shown cannot be read, its code gone from the checkout: no
+   * longer pinned; one with no thread goes, Changes back on its own
+   * scope (its threads keep one shown, with Retry). It stays in Reviews.
+   */
+  const reviewGone = useCallback(
+    (sessionId: string, message: string) => {
+      onReviewGone?.(sessionId);
+      const snapshot = reviewSessions.get(sessionId);
+      if (snapshot?.threads.length) return;
+      setShownReview((shown) => (shown === sessionId ? null : shown));
+      setLeftReview((left) => (left === sessionId ? null : left));
+      store.notify({
+        kind: "info",
+        message: `${snapshot?.session.title ?? "This review"}: nothing to show`,
+        detail: `${message.replace(/^Cannot load the diff: /, "")}. It stays in Reviews.`,
+      });
+    },
+    [onReviewGone, reviewSessions],
   );
   /** The review the scope shown is (plan phase 6): a read-only binding. */
   const changesScope = useMemo<ChangesScope>(
@@ -1693,6 +1719,7 @@ export function WorkspaceInspectorHost({
                         onViewEntries={setViewTree}
                         showCommit={showCommit}
                         onCommitAbsent={reviewCommitApart}
+                        onReviewGone={reviewGone}
                         entry={diffSelection.entry}
                         file={diffSelection.file}
                         loading={diffSelection.loading}

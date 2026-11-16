@@ -367,6 +367,31 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("a review whose code is gone from its checkout tells the host, once; another failure does not", async () => {
+        const { RpcError } = await import("../api");
+        const review = await mount({ files: [added("a.ts", 3)], ...ownLoad });
+        review.failBridge(
+          ["review.diff", "review.commits"],
+          "fatal: bad object",
+        );
+        await review.command("reload");
+        expect(review.status()).toContain("fatal: bad object");
+        expect(review.hostCalls("reviewGone")).toEqual([]);
+        review.failBridge(
+          ["review.diff", "review.commits"],
+          new RpcError(
+            "The review's base c0ffee^ is gone from this checkout",
+            "base-gone",
+          ),
+        );
+        await review.command("reload");
+        expect(review.status()).toContain("is gone from this checkout");
+        expect(review.hostCalls("reviewGone")).toHaveLength(1);
+        expect(review.hostCalls("reviewGone")[0]!.args[0]).toBe("s1");
+        review.failBridge([]);
+        await review.unmount();
+      });
+
       test("Retry loads a review that failed, and another failure is not tried again on its own", async () => {
         const files = [added("a.ts", 3)];
         const review = await mount({ files, ...ownLoad });

@@ -88,6 +88,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       onOpenLocal?: (root: string) => void;
     };
     cursorGoTo?: unknown;
+    onReviewGone?: (sessionId: string, message: string) => void;
     /** How often the diff was mounted, and unmounted. */
     mounts: number;
     unmounts: number;
@@ -109,6 +110,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         | "onFocusAgentPane"
         | "forgeHost"
         | "cursorGoTo"
+        | "onReviewGone"
       >,
     ) => {
       useEffect(() => {
@@ -124,6 +126,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       diffSeen.onFocusAgentPane = props.onFocusAgentPane;
       diffSeen.forgeHost = props.forgeHost;
       diffSeen.cursorGoTo = props.cursorGoTo;
+      diffSeen.onReviewGone = props.onReviewGone;
       diffSeen.repo = props.repo;
       diffSeen.reviewScope = props.reviewScope;
       diffSeen.onCreateAnnotation = props.onCreateAnnotation;
@@ -222,6 +225,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     onCloseReview?: Props["onCloseReview"];
     onShowReviews?: Props["onShowReviews"];
     onFocusAgentPane?: Props["onFocusAgentPane"];
+    onReviewGone?: Props["onReviewGone"];
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -293,6 +297,9 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
               : {})}
             {...(options.onFocusAgentPane
               ? { onFocusAgentPane: options.onFocusAgentPane }
+              : {})}
+            {...(options.onReviewGone
+              ? { onReviewGone: options.onReviewGone }
               : {})}
             annotations={[]}
             onCreateAnnotation={(input) =>
@@ -624,6 +631,85 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           "repo \u00b7 topic-old vs topic",
         );
       } finally {
+        await shown.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("a review shown whose code is gone lets go of its pin; with no thread Changes goes back to its own scope and says so, with threads it stays", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      const { rememberReviewSnapshot } = await import("../review");
+      const { store } = await import("../store");
+      const review = (id: string, threads: unknown[]) =>
+        rememberReviewSnapshot({
+          session: {
+            id,
+            connectionId: "local",
+            workspaceId: "w1",
+            root: "/repo",
+            title: `${id}^..${id}`,
+            target: { kind: "range", base: `${id}^`, head: id },
+            gitlab: false,
+            summary: "",
+            agent: {},
+            createdAt: "2026-11-16T10:00:00Z",
+            updatedAt: "2026-11-16T10:00:00Z",
+          },
+          threads,
+        } as unknown as import("../../../shared/review").ReviewSnapshot);
+      review("c0ffee1", []);
+      review("c0ffee2", [{ id: "t1", messages: [] }]);
+      const gone: string[] = [];
+      const notices: string[] = [];
+      const notify = store.notify;
+      store.notify = (notice) => {
+        notices.push(notice.message);
+        return notify.call(store, notice);
+      };
+      const shown = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+        reviewGoTo: { review: "c0ffee1", at: Date.now() },
+        onReviewGone: (id) => gone.push(id),
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "c0ffee1",
+        });
+        await act(async () =>
+          diffSeen.onReviewGone?.(
+            "c0ffee1",
+            "Cannot load the diff: The review's base c0ffee1^ is gone",
+          ),
+        );
+        expect(gone).toEqual(["c0ffee1"]);
+        expect(diffSeen.reviewScope).not.toEqual({
+          kind: "review",
+          sessionId: "c0ffee1",
+        });
+        expect(notices).toEqual(["c0ffee1^..c0ffee1: nothing to show"]);
+        // One with threads: unpinned, still shown (they are read there).
+        await shown.set({
+          reviewGoTo: { review: "c0ffee2", at: Date.now() + 1 },
+        });
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "c0ffee2",
+        });
+        await act(async () =>
+          diffSeen.onReviewGone?.("c0ffee2", "Cannot load the diff: gone"),
+        );
+        expect(gone).toEqual(["c0ffee1", "c0ffee2"]);
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "c0ffee2",
+        });
+        expect(notices).toHaveLength(1);
+      } finally {
+        store.notify = notify;
         await shown.unmount();
         localStorage.removeItem(PREFS_KEY);
       }

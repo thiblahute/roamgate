@@ -393,6 +393,43 @@ test("a review from the empty tree covers the whole repository", async () => {
   expect(commits.some((c) => c.history)).toBe(false);
 });
 
+test("a review of a root commit as ROOT^..ROOT compares it with the empty tree", async () => {
+  // Review this commit and agents build `SHA^..SHA`; a root commit has no
+  // parent, so its base is git's empty tree (the commit bar's --root).
+  const root = repository();
+  const first = git(root, "rev-list", "--max-parents=0", "HEAD");
+  for (const base of [`${first}^`, `${first}~1`, `${first}~`]) {
+    const target = { kind: "range" as const, base, head: first };
+    const diff = await readReviewPatch({ ...run, root, target });
+    expect(diff.files.map((f) => f.path)).toEqual(["a.txt"]);
+    expect(diff.files[0]!.hunks[0]!.header).toMatch(/^@@ -0,0 \+1,3 @@/);
+    const commits = await readReviewCommits({
+      ...run,
+      root,
+      base,
+      head: first,
+    });
+    expect(commits.map((c) => c.subject)).toEqual(["base"]);
+    expect(await readReviewState({ ...run, root, target })).toBeTruthy();
+  }
+  // A commit with a parent keeps it: only the change itself.
+  const second = git(root, "rev-parse", "HEAD");
+  const diff = await readReviewPatch({
+    ...run,
+    root,
+    target: { kind: "range", base: `${second}^`, head: second },
+  });
+  expect(diff.files[0]!.hunks[0]!.header).toMatch(/^@@ -1,3 \+1,3 @@/);
+  // A base that names no commit at all is still gone.
+  await expect(
+    readReviewPatch({
+      ...run,
+      root,
+      target: { kind: "range", base: "nothing-here^", head: second },
+    }),
+  ).rejects.toBeInstanceOf(ReviewGoneError);
+});
+
 test("a review's state changes when its code does", async () => {
   const root = repository();
   const range = { kind: "range" as const, base: "main", head: "HEAD" };
