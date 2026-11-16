@@ -700,4 +700,48 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       jest.useRealTimers();
     }
   });
+
+  test("Esc with a notice shown is a field's own: it reaches the comment box or prompt (the notice goes), elsewhere it only takes the notice", async () => {
+    const app = await mountAppWithReviews({ reviews: [reviewOf("r1", "w1")] });
+    try {
+      const box = document.createElement("div");
+      box.contentEditable = "true";
+      box.tabIndex = 0;
+      const prompt = document.createElement("input");
+      app.container.append(box, prompt);
+      const seen: { field: string; prevented: boolean }[] = [];
+      for (const [field, element] of [
+        ["box", box],
+        ["prompt", prompt],
+      ] as const)
+        element.addEventListener("keydown", (event) =>
+          seen.push({ field, prevented: event.defaultPrevented }),
+        );
+      for (const element of [box, prompt]) {
+        await app.showNotice("Vim keys are off in comments");
+        element.focus();
+        await app.key({ key: "Escape", code: "Escape" });
+      }
+      // Each field had its Esc, untouched (a `:novim` notice took the
+      // comment box's first Esc).
+      expect(seen).toEqual([
+        { field: "box", prevented: false },
+        { field: "prompt", prevented: false },
+      ]);
+      // Outside a field, Esc still only takes the notice away.
+      await app.showNotice("Saved");
+      (document.activeElement as HTMLElement | null)?.blur();
+      let prevented = false;
+      const onKey = (event: KeyboardEvent) => {
+        prevented = event.defaultPrevented;
+      };
+      // After App's own (capture on the window, as it listens).
+      window.addEventListener("keydown", onKey, true);
+      await app.key({ key: "Escape", code: "Escape" });
+      window.removeEventListener("keydown", onKey, true);
+      expect(prevented).toBe(true);
+    } finally {
+      await app.unmount();
+    }
+  });
 }

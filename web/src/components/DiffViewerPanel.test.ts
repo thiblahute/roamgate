@@ -997,4 +997,34 @@ describe("connection-scoped diff identity", () => {
     await prefetchDiffViewerWorkspace("same", client);
     expect(diffCalls).toBe(2);
   });
+
+  test("a warmup keeps Working as Changes shows it: one combined entry per file, so the panel draws no section anew", async () => {
+    const files: Record<string, unknown>[] = [];
+    const client: ConnectionClient = {
+      connectionId: "warm-combined",
+      generation: 1,
+      serverRuntimeGeneration: 1,
+      isCurrent: () => true,
+      acceptsServerGeneration: () => true,
+      call: async (method, params) => {
+        if (method === "git.diff_summary")
+          return {
+            root: "/tmp/repo",
+            entries: [
+              { path: "a.ts", kind: "staged", status: "M" },
+              { path: "a.ts", kind: "unstaged", status: "M" },
+            ],
+          };
+        files.push(params as Record<string, unknown>);
+        return { path: "a.ts", text: "diff" };
+      },
+    };
+    await prefetchDiffViewerWorkspace("warm", client);
+    // The file loaded ahead is the combined one the panel shows (its key
+    // `combined:a.ts`), not a status entry's (`staged:a.ts`): a comment box
+    // opened right after the review shows was otherwise drawn anew.
+    expect(files.map((each) => [each.path, each.kind])).toEqual([
+      ["a.ts", "combined"],
+    ]);
+  });
 });

@@ -7,7 +7,7 @@ import {
   placeholder as placeholderText,
 } from "@codemirror/view";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useLayoutEffect, useRef } from "react";
 import { defineExCommands, vimExEditors } from "./vimEx";
 import "./ReviewCard.css";
 
@@ -114,6 +114,52 @@ function addImage(
   return true;
 }
 
+/**
+ * The document or shadow root the editor's own nodes live in. CodeMirror
+ * finds its root through `assignedSlot`: an editor slotted into the diff's
+ * shadow DOM (a comment under a line in Changes) took the diff's shadow
+ * root, whose `activeElement` never is the editor. It then thought itself
+ * unfocused: the caret stayed behind after Enter (the next key typed before
+ * the line break), and its theme went into the shadow root, where it styles
+ * nothing of the editor (no caret, the diff's font).
+ */
+export function editorRoot(host: HTMLElement): Document | ShadowRoot {
+  const root = host.getRootNode();
+  // A document (9) or a shadow root (11); detached, the page.
+  return root.nodeType === 9 || root.nodeType === 11
+    ? (root as Document | ShadowRoot)
+    : host.ownerDocument;
+}
+
+/**
+ * Focuses a new editor. Slotted into the diff's shadow DOM, it is not drawn
+ * until the diff makes its slot, in the same commit but after the editor's
+ * own effect: the focus is tried again once the commit is done (before the
+ * next key), then on the next frames, while it is still where it was when
+ * the editor opened (a click elsewhere wins). Returns the cancel.
+ */
+export function takeFocus(view: EditorView): () => void {
+  const document = view.dom.ownerDocument;
+  const win = document.defaultView ?? window;
+  const from = document.activeElement;
+  let done = false;
+  let frame = 0;
+  let frames = 10;
+  const take = () => {
+    if (done || !view.dom.isConnected) return;
+    if (document.activeElement !== from && !view.hasFocus) return;
+    view.focus();
+    if (view.contentDOM.ownerDocument.activeElement === view.contentDOM) return;
+    if (frames-- > 0) frame = win.requestAnimationFrame(take);
+  };
+  view.focus();
+  if (document.activeElement !== view.contentDOM) queueMicrotask(take);
+  return () => {
+    done = true;
+    win.cancelAnimationFrame(frame);
+  };
+}
+
 export function ReviewCommentEditor({
   value,
   vimMode,
@@ -186,7 +232,9 @@ export function ReviewCommentEditor({
     maxLength,
   });
 
-  useEffect(() => {
+  // In the commit that draws it: the focus is the editor's before the
+  // next key, not after a paint (a key typed at once went to the diff).
+  useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const {
@@ -209,6 +257,7 @@ export function ReviewCommentEditor({
     };
     const view = new EditorView({
       parent: host,
+      root: editorRoot(host),
       state: EditorState.create({
         doc: value,
         selection: { anchor: value.length },
@@ -317,9 +366,10 @@ export function ReviewCommentEditor({
     const typeOnFocus = () => {
       if (cm && !cm.state.vim?.insertMode) Vim.handleKey(cm, "i", "mapping");
     };
+    let stopTaking = () => {};
     if (autoFocus) {
-      view.focus();
       if (vimMode && cm) Vim.handleKey(cm, "A", "mapping");
+      stopTaking = takeFocus(view);
     } else if (vimMode && cm)
       view.contentDOM.addEventListener("focus", typeOnFocus, { once: true });
     // A phone's keyboard opening shrinks the screen: keep the editor in view.
@@ -328,6 +378,7 @@ export function ReviewCommentEditor({
     };
     window.visualViewport?.addEventListener("resize", keepInView);
     return () => {
+      stopTaking();
       window.visualViewport?.removeEventListener("resize", keepInView);
       view.contentDOM.removeEventListener("focus", typeOnFocus);
       host.removeEventListener("keydown", onCaptureKey, true);

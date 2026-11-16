@@ -124,6 +124,7 @@ import { conversationOrder, ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
 import {
   changesDraftSession,
   type ComposerDelivery,
+  preloadReviewCommentEditor,
   ReviewDiffComposer,
   saveOpenComposer,
   suggestionBlock,
@@ -1765,6 +1766,9 @@ function DiffContentViewInner({
   );
   /** The review's comment box and thread keys, "in Changes" (plan phase 4). */
   const reviewEditor = reviewCursor && !embedded;
+  useEffect(() => {
+    if (reviewEditor) preloadReviewCommentEditor();
+  }, [reviewEditor]);
   /** `t`: every comment hidden (their margin markers stay). */
   const [hideComments, setHideComments] = useState(false);
   /** A suggestion asked for with `s`, the comment box's first words. */

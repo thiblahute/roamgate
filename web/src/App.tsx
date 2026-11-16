@@ -5314,8 +5314,13 @@ export default function App() {
         const canDismissUpdate =
           current.updateInfo?.update_available && !current.updateInstalling;
         if (current.notice || canDismissUpdate) {
-          e.preventDefault();
-          e.stopPropagation();
+          // In a field (a comment box, a prompt) Esc is the field's too:
+          // taken here, a notice left by a `:` command cost the comment
+          // box's first Esc.
+          if (!isEditableElement(e.target)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           if (current.notice) store.clearNotice();
           if (canDismissUpdate) store.dismissUpdate();
           return;
