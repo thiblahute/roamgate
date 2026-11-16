@@ -659,15 +659,26 @@ followed repository's open pull requests, with the viewer's pending review
 conditional read of a request's `draft_notes`, only for requests
 reviewed in Roamgate, when the request changed or hourly. A host that fails keeps its last answer.
 
-The user's own requests are a second query per host and refresh (kind
-`own`): GitLab `currentUser.authoredMergeRequests` and GitHub `search`
-`is:pr author:@me`, latest 30 in any state, of which the open ones and those
-updated within `retentionDays` are kept, with `reasons: ["authored"]` and
-`own` (`MrOwnStatus`: approvers, approved, changes requested, unresolved
-threads, conflicts, needs rebase). A GitLab host whose schema refuses one of
-the full fields (`approved`, `approvedBy`, `detailedMergeStatus`, the
-discussion counts) is asked the basic ones (`conflicts`, `shouldBeRebased`)
-from then on; an own query that fails keeps the host's last own items.
+The user's own requests are read per host and refresh in two steps. A
+light list (kind `own`: number, project, title, state, updatedAt, head,
+branches): GitLab `currentUser.authoredMergeRequests(state: opened)` and
+GitHub `search` `is:pr is:open author:@me`, by creation, 100 a page and
+paged to the end (10 pages at most, logged when cut), whose first page also
+asks the latest 10 merged and closed (GitLab: 10 of each); settled ones
+older than `retentionDays` are dropped. Then the details (kind
+`own-details`: pipeline, notes, base, pending review, and `own`,
+`MrOwnStatus`: approvers, approved, changes requested, unresolved threads,
+conflicts, needs rebase), 40 requests per query, one alias per project,
+only for a request new, updated or with a new head since its details were
+read, still settling (pipeline running or pending, mergeability being
+computed), or, for up to 10 open ones per refresh, read over an hour ago.
+The others keep the details in the store (`ownDetails`, by key, dropped
+once the request leaves the list). Every listed item has `reasons:
+["authored"]`. A GitLab host whose schema refuses one of the full fields
+(`approved`, `approvedBy`, `detailedMergeStatus`, the discussion counts) is
+asked the basic ones (`conflicts`, `shouldBeRebased`) from then on; a list
+that fails keeps the host's last own items, details that fail keep those
+known.
 Their entries get the section `authored` (after `mine`; pinned wins), and
 they are seen (never `isNew`) when first listed. `MrSeen` keeps the state,
 pipeline, approvers, unresolved count and conflicts too (`mrSeenOf`), so

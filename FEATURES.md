@@ -1042,9 +1042,11 @@ failed, approved by bob, 2 new comments", "merged"): a pipeline that changed,
 new approvals, conflicts, threads to resolve, a merge or close, new commits
 and comments. It stays marked until you look: its details (`i`), its review,
 `o` or its workspace. Your requests are never shown "new": only what happens
-on them after they first show is. They come from one more query per host and
-refresh (no call per request), served from the inbox's store at once and read
-again in the background as the inbox is; a host that lacks some of the fields
+on them after they first show is. Every open one shows, however old.
+They come from a light list per host and refresh, with the costly details read
+only for those that changed since (or whose pipeline is still running), served
+from the inbox's store at once and read again in the background as the inbox
+is; a host that lacks some of the fields
 is asked the basic ones (pipeline, conflicts, rebase).
 
 A request's own workspaces, on every connection, are a click away: the

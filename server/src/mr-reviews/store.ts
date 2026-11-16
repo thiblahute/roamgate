@@ -7,6 +7,7 @@ import type {
   MrSeen,
   MrVerdict,
 } from "../../../shared/mrReviews";
+import type { OwnDetails } from "./queries";
 
 /**
  * The reviews module's own state, in `<data>/mr-reviews/state.json`: what
@@ -101,6 +102,11 @@ export type MrState = {
   found: Record<string, MrFound>;
   /** The pinned requests the inbox's lists lack, by key. */
   pins: Record<string, MrPinRead>;
+  /**
+   * The details last read of the user's own requests, by key: read again
+   * only when the request changed (or they were still settling).
+   */
+  ownDetails: Record<string, OwnDetails & { at: string }>;
 };
 
 export const FEEDBACK_KEPT = 200;
@@ -119,6 +125,7 @@ function empty(): MrState {
     drafts: {},
     found: {},
     pins: {},
+    ownDetails: {},
   };
 }
 
@@ -147,6 +154,7 @@ export function normalizeState(raw: unknown): MrState {
     drafts: record(value.drafts),
     found: record(value.found),
     pins: record(value.pins),
+    ownDetails: record(value.ownDetails),
   };
 }
 

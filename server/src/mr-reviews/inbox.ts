@@ -30,15 +30,21 @@ import {
 } from "./fetchers";
 import {
   type HostAnswer,
+  OWN_DETAILS_BATCH,
+  OWN_MAX_PAGES,
+  type OwnDetails,
   type OwnFields,
   githubInboxQuery,
-  githubOwnQuery,
+  githubOwnListQuery,
   gitlabInboxQuery,
-  gitlabOwnQuery,
+  gitlabOwnListQuery,
+  ownDetailsQuery,
   parseGithubInbox,
   parseGitlabInbox,
-  parseOwnRequests,
+  parseOwnDetails,
+  parseOwnList,
   unknownFieldError,
+  withOwnDetails,
 } from "./queries";
 import type { MrStore } from "./store";
 
@@ -71,6 +77,17 @@ const PINS_PER_REFRESH = 20;
 const PIN_TTL_MS = 60 * 60_000;
 const PIN_CALL: FetchCall = { feature: "inbox", kind: "pinned" };
 const OWN_CALL: FetchCall = { feature: "inbox", kind: "own" };
+const OWN_DETAILS_CALL: FetchCall = { feature: "inbox", kind: "own-details" };
+/**
+ * An open own request's details are read again after this even when it
+ * did not change: what moves without touching it (its target branch, so
+ * its conflicts) shows within it.
+ */
+export const OWN_DETAILS_TTL_MS = 60 * 60_000;
+/** Unchanged own requests read again for their age per refresh, at most. */
+const OWN_AGED_PER_REFRESH = 10;
+/** Own requests whose details are read per refresh and host, at most. */
+const OWN_DETAILS_PER_REFRESH = 200;
 
 /** The page a request has on its forge, for a pin not read. */
 function requestUrl(ref: ForgeRef): string {
@@ -195,21 +212,70 @@ export function createMrInbox(deps: MrInboxDeps) {
     for (const ref of due) await readPin(ref);
   }
 
+  type Host = { host: string; provider: "gitlab" | "github" };
+
   /**
-   * The user's own requests on a host: open, or settled since
-   * `settledSince`. A GitLab host that refuses a field is asked the basic
-   * ones from then on.
+   * The light list of the user's own requests on a host: every open one,
+   * paged to the end (OWN_MAX_PAGES at most), and the latest settled.
    */
-  async function readOwn(
-    host: { host: string; provider: "gitlab" | "github" },
-    settledSince: string,
-  ): Promise<MrItem[]> {
+  async function listOwn(host: Host): Promise<MrItem[]> {
+    const items = new Map<string, MrItem>();
+    let after: string | undefined;
+    for (let page = 0; page < OWN_MAX_PAGES; page++) {
+      const answer =
+        host.provider === "gitlab"
+          ? await deps.fetchers.gitlab(
+              host.host,
+              gitlabOwnListQuery(after),
+              OWN_CALL,
+            )
+          : await deps.fetchers.github(
+              host.host,
+              githubOwnListQuery(after),
+              OWN_CALL,
+            );
+      const read = parseOwnList(host.provider, host.host, answer);
+      for (const item of read.items)
+        if (!items.has(item.key)) items.set(item.key, item);
+      if (!read.next) return [...items.values()];
+      after = read.next;
+    }
+    logger.warn("own open requests cut at the page cap", {
+      host: host.host,
+      pages: OWN_MAX_PAGES,
+      read: items.size,
+    });
+    return [...items.values()];
+  }
+
+  /** Details of some own requests, in batches; a host refusing fields gets the basic ones. */
+  async function readOwnDetails(
+    host: Host,
+    due: MrItem[],
+  ): Promise<Map<string, OwnDetails>> {
+    const found = new Map<string, OwnDetails>();
+    const sorted = [...due].sort((a, b) => a.project.localeCompare(b.project));
+    for (let index = 0; index < sorted.length; index += OWN_DETAILS_BATCH) {
+      const batch = sorted.slice(index, index + OWN_DETAILS_BATCH);
+      for (const [key, details] of await readOwnBatch(host, batch))
+        found.set(key, details);
+    }
+    return found;
+  }
+
+  async function readOwnBatch(
+    host: Host,
+    batch: MrItem[],
+  ): Promise<Map<string, OwnDetails>> {
     if (host.provider === "github")
-      return parseOwnRequests(
+      return parseOwnDetails(
         "github",
         host.host,
-        await deps.fetchers.github(host.host, githubOwnQuery(), OWN_CALL),
-        settledSince,
+        await deps.fetchers.github(
+          host.host,
+          ownDetailsQuery("github", batch),
+          OWN_DETAILS_CALL,
+        ),
       );
     const fields = ownFields.get(host.host) ?? "full";
     const fallBack = () => {
@@ -217,14 +283,14 @@ export function createMrInbox(deps: MrInboxDeps) {
       logger.info("own requests read with the basic fields", {
         host: host.host,
       });
-      return readOwn(host, settledSince);
+      return readOwnBatch(host, batch);
     };
     let answer: unknown;
     try {
       answer = await deps.fetchers.gitlab(
         host.host,
-        gitlabOwnQuery(fields),
-        OWN_CALL,
+        ownDetailsQuery("gitlab", batch, fields),
+        OWN_DETAILS_CALL,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -232,7 +298,71 @@ export function createMrInbox(deps: MrInboxDeps) {
       throw error;
     }
     if (fields === "full" && unknownFieldError(answer)) return fallBack();
-    return parseOwnRequests("gitlab", host.host, answer, settledSince);
+    return parseOwnDetails("gitlab", host.host, answer);
+  }
+
+  /**
+   * The user's own requests on a host: open, or settled since
+   * `settledSince`. Their details are read only when new, changed since
+   * last read, still settling, or (a few per refresh) old; the others keep
+   * the details known.
+   */
+  async function readOwn(host: Host, settledSince: string): Promise<MrItem[]> {
+    const listed = (await listOwn(host)).filter(
+      (item) => item.state === "open" || item.updatedAt >= settledSince,
+    );
+    const known = deps.store.get().ownDetails;
+    const changed: MrItem[] = [];
+    const aged: MrItem[] = [];
+    for (const item of listed) {
+      const details = known[item.key];
+      if (
+        !details ||
+        item.updatedAt > details.updatedAt ||
+        item.headSha !== details.headSha ||
+        (item.state === "open" && details.settling)
+      )
+        changed.push(item);
+      else if (
+        item.state === "open" &&
+        now() - Date.parse(details.at) >= OWN_DETAILS_TTL_MS
+      )
+        aged.push(item);
+    }
+    aged.sort((a, b) =>
+      (known[a.key]?.at ?? "").localeCompare(known[b.key]?.at ?? ""),
+    );
+    const due = [...changed, ...aged.slice(0, OWN_AGED_PER_REFRESH)].slice(
+      0,
+      OWN_DETAILS_PER_REFRESH,
+    );
+    let fresh = new Map<string, OwnDetails>();
+    if (due.length)
+      try {
+        fresh = await readOwnDetails(host, due);
+      } catch (error) {
+        // The list stands; the details known stay, read again next time.
+        logger.debug("own request details not read", {
+          host: host.host,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    // Kept for the requests listed; the others (gone, settled long ago) go.
+    const keys = new Set(listed.map((item) => item.key));
+    const prefix = `${host.provider}:${host.host.toLowerCase()}/`;
+    const gone = Object.keys(known).filter(
+      (key) => key.startsWith(prefix) && !keys.has(key),
+    );
+    if (fresh.size || gone.length) {
+      const at = iso();
+      deps.store.update((state) => {
+        for (const [key, details] of fresh)
+          if (keys.has(key)) state.ownDetails[key] = { ...details, at };
+        for (const key of gone) delete state.ownDetails[key];
+      });
+    }
+    const details = deps.store.get().ownDetails;
+    return listed.map((item) => withOwnDetails(item, details[item.key]));
   }
 
   async function readHost(
