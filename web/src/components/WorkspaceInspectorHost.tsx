@@ -47,7 +47,6 @@ import {
   runInspectorCommand,
 } from "../inspectorCommands";
 import { reviewSurfaceChoice, useReviewPrefs } from "../reviewPrefs";
-import { useVimKeys } from "../vimKeys";
 import { useZenEscape, useZenMode } from "../useZenMode";
 import { resetKeyMachines, useKeyMachine } from "../keyMachine";
 import { store, useStoreSelector } from "../store";
@@ -383,12 +382,13 @@ export function WorkspaceInspectorHost({
   const [changesOnly, toggleChangesOnly] = useZenMode();
   useZenEscape(changesOnly, toggleChangesOnly);
   /**
-   * The review in Changes (`:set reviewin=changes`, Vim keys on): its Vim
-   * cursor and keys there. On classic, Changes keeps upstream's.
+   * The review in Changes (`:set reviewin=changes`): its cursor, keys,
+   * threads and controls there, with Vim keys on or off (`:novim` only
+   * makes the comment editor a plain one, as in the classic pane). On
+   * classic, Changes keeps upstream's.
    */
   const reviewPrefs = useReviewPrefs();
-  const vim = useVimKeys();
-  const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes" && vim;
+  const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes";
   /** The files in the tree's groups when Changes is the review. */
   const resourceKey = resourceOwnerKey(state.scope);
   /*

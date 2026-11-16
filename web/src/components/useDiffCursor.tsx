@@ -42,8 +42,9 @@ import type { ShortcutRow } from "./ShortcutList";
  * (diffCursor.ts), never on the DOM; Pierre draws it (setEditorActiveLine,
  * the Visual lines as its selected lines) and scrolls to it through its
  * line positions. Keys go through the one key machine (keyMachine.ts).
- * Only on "in Changes" (`:set reviewin=changes`) with Vim keys on: on
- * classic, Changes keeps upstream's keys and mouse.
+ * Only on "in Changes" (`:set reviewin=changes`), with Vim keys on or off
+ * (they only change the comment editor): on classic, Changes keeps
+ * upstream's keys and mouse.
  */
 
 /** A file of the diff shown, as the cursor reads it. */
