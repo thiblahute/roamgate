@@ -87,6 +87,7 @@ export function createFileHandlers({
   shQuote,
   lastStepBaselines,
   revealPath = revealLocalPath,
+  reviewRoots = () => [],
 }: {
   herdr: HerdrClient;
   sshHost: () => string | undefined;
@@ -94,6 +95,8 @@ export function createFileHandlers({
   shQuote: (value: string) => string;
   lastStepBaselines?: LastStepBaselineStore;
   revealPath?: typeof revealLocalPath;
+  /** The roots of the connection's review sessions (a review from elsewhere). */
+  reviewRoots?: () => string[];
 }) {
   async function explorerRoot(
     workspaceId: string,
@@ -638,7 +641,9 @@ export function createFileHandlers({
       dir === root ||
       dir.startsWith(`${root === "/" ? "" : root}/`) ||
       root.startsWith(`${dir === "/" ? "" : dir}/`);
-    if (!dirs.some(related))
+    // A review's own repository is shown in any workspace (a review from
+    // elsewhere, plan D3): its exact root, nothing below or above it.
+    if (!dirs.some(related) && !reviewRoots().map(trim).includes(root))
       throw new Error("root is not a repository of this workspace");
     const host = sshHost();
     const argv = host

@@ -1876,7 +1876,27 @@ export async function mountChangesReview(
           (element.textContent ?? "").trim() === label ||
           element.getAttribute("aria-label") === label,
       )[index];
-      if (!found) throw new Error(`no button ${label}`);
+      if (!found) {
+        // In the agent chip's menu.
+        const chip = [
+          ...host.querySelectorAll<HTMLElement>(".diff-agent-name"),
+        ].find((menu) =>
+          (menu.dataset.menuItems ?? "").split("\n").includes(label),
+        );
+        if (!chip) throw new Error(`no button ${label}`);
+        await act(async () =>
+          chip.querySelector<HTMLButtonElement>(".rv-menu-button")!.click(),
+        );
+        const item = [
+          ...chip.querySelectorAll<HTMLButtonElement>(".rv-menu button"),
+        ].find(
+          (each) => each.querySelector(".rv-menu-label")?.textContent === label,
+        );
+        if (!item) throw new Error(`no button ${label}`);
+        await act(async () => item.click());
+        await settleAll();
+        return;
+      }
       await act(async () => found.click());
       await settleAll();
     },
@@ -2021,12 +2041,18 @@ export async function mountChangesReview(
       }
     },
     buttons() {
-      return [...host.querySelectorAll("button, a")].map(
-        (element) =>
-          (element.textContent ?? "").trim() ||
-          element.getAttribute("aria-label") ||
-          "",
-      );
+      return [
+        ...[...host.querySelectorAll("button, a")].map(
+          (element) =>
+            (element.textContent ?? "").trim() ||
+            element.getAttribute("aria-label") ||
+            "",
+        ),
+        // The agent chip's menu: Live, Hold, Send, Review, Overall.
+        ...[...host.querySelectorAll<HTMLElement>(".diff-agent-name")].flatMap(
+          (menu) => (menu.dataset.menuItems ?? "").split("\n").filter(Boolean),
+        ),
+      ];
     },
     threadsPanel() {
       const panel = host.querySelector(".threads-panel");

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { workspaceRepoDirs } from "../changesRepo";
 import type { InspectorCommand } from "../inspectorCommands";
 import { useReviewState } from "../review";
@@ -199,6 +199,65 @@ export function changesScopeChoice(
   return "Working tree: uncommitted changes";
 }
 
+/**
+ * What the scope picker offers: the review shown, the working changes, the
+ * branch against its automatic base and each other base, and Last step,
+ * which a review from elsewhere does not have (no step of another
+ * repository is taken).
+ */
+export function changesScopeOptions({
+  review,
+  branch,
+  base,
+  baseBranch,
+  baseBranches,
+  elsewhere,
+}: {
+  review?: { label: string } | undefined;
+  branch?: string | undefined;
+  base?: string | undefined;
+  baseBranch: string;
+  baseBranches: readonly string[];
+  elsewhere: boolean;
+}) {
+  const branchValue = (each: string) => `branch:${each}`;
+  return [
+    ...(review
+      ? [{ value: "review", label: review.label, detail: "the review shown" }]
+      : []),
+    {
+      value: "working",
+      label: changesScopeChoice("working", branch, base),
+    },
+    {
+      value: branchValue(""),
+      label: changesScopeChoice(
+        "branch-main",
+        branch,
+        baseBranch ? undefined : base,
+      ),
+      detail: "against its base, found automatically",
+    },
+    ...[...new Set([...baseBranches, ...(baseBranch ? [baseBranch] : [])])]
+      .filter((each) => each)
+      .map((each) => ({
+        value: branchValue(each),
+        label: changesScopeChoice("branch-main", branch, each),
+        detail: "Compare against",
+      })),
+    // Last step is the workspace's own agent's work: no step of another
+    // repository's (a review from elsewhere) is taken.
+    ...(elsewhere
+      ? []
+      : [
+          {
+            value: "last-step",
+            label: changesScopeChoice("last-step", branch, base),
+          },
+        ]),
+  ];
+}
+
 export function ChangesScopeBar({
   repos,
   root,
@@ -219,6 +278,7 @@ export function ChangesScopeBar({
   onDone,
   review,
   elsewhere = false,
+  request,
 }: {
   repos: readonly WorkspaceRepo[];
   /** The repository shown. */
@@ -251,38 +311,19 @@ export function ChangesScopeBar({
    * gone, an agent's without one), shown here all the same (D3).
    */
   elsewhere?: boolean;
+  /** The shown review's own pull or merge request, as a chip. */
+  request?: ReactNode;
 }) {
   const name = repoName || root?.split("/").pop() || "Repository";
   const branchValue = (each: string) => `branch:${each}`;
-  const scopeOptions = [
-    ...(review
-      ? [{ value: "review", label: review.label, detail: "the review shown" }]
-      : []),
-    {
-      value: "working",
-      label: changesScopeChoice("working", branch, base),
-    },
-    {
-      value: branchValue(""),
-      label: changesScopeChoice(
-        "branch-main",
-        branch,
-        baseBranch ? undefined : base,
-      ),
-      detail: "against its base, found automatically",
-    },
-    ...[...new Set([...baseBranches, ...(baseBranch ? [baseBranch] : [])])]
-      .filter((each) => each)
-      .map((each) => ({
-        value: branchValue(each),
-        label: changesScopeChoice("branch-main", branch, each),
-        detail: "Compare against",
-      })),
-    {
-      value: "last-step",
-      label: changesScopeChoice("last-step", branch, base),
-    },
-  ];
+  const scopeOptions = changesScopeOptions({
+    review,
+    branch,
+    base,
+    baseBranch,
+    baseBranches,
+    elsewhere,
+  });
   const scopeValue = review
     ? "review"
     : mode === "branch-main"
@@ -298,15 +339,18 @@ export function ChangesScopeBar({
     <div className="changes-scope-bar" title={label} aria-label={label}>
       {elsewhere ? (
         <>
-          <strong className="changes-scope-name" title={root}>
-            {name}
-          </strong>
-          <span
-            className="changes-scope-elsewhere"
-            title={`Not a repository of this workspace: ${root ?? ""}. Git actions are not offered here.`}
+          <strong
+            className="changes-scope-name"
+            title={`${name}, from elsewhere: not a repository of this workspace (${root ?? ""}). Git actions are not offered here.`}
           >
-            from elsewhere
-          </span>
+            {name}
+            <span
+              className="changes-scope-elsewhere"
+              aria-label="from elsewhere"
+            >
+              {" ↗"}
+            </span>
+          </strong>
         </>
       ) : repos.length > 1 ? (
         <>
@@ -359,6 +403,7 @@ export function ChangesScopeBar({
         onSelectedClose={onDone}
       />
       <span className="changes-scope-facts">{facts}</span>
+      {request}
     </div>
   );
 }

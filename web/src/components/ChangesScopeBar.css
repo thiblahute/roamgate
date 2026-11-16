@@ -89,12 +89,44 @@
 
 /* A review of a repository the workspace does not hold (D3). */
 .changes-scope-elsewhere {
-  flex: none;
-  padding: 0 6px;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+/* The shown review's own pull or merge request: a chip in the scope's row,
+   its details opening below as the card's do. */
+.changes-request-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 22em;
+  position: relative;
+}
+
+.changes-request-chip .pull-request-card {
   border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--muted);
-  font-size: 11px;
+  background: none;
+  margin: 0;
+  padding: 0;
+}
+
+.changes-request-chip .pull-request-card-summary {
+  min-height: 20px;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.changes-request-chip .pull-request-card[open] > :not(summary) {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  width: min(36em, 80vw);
+  background: var(--viewer-header-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 /* The repositories' keys, said to screen readers (the title shows them). */

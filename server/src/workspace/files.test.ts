@@ -303,6 +303,42 @@ describe("workspace file handlers", () => {
     ).rejects.toThrow("top level");
   });
 
+  test("reads the repository of a review held for the connection in any workspace, exactly its root", async () => {
+    const calls: string[][] = [];
+    const handlers = createFileHandlers({
+      herdr: {
+        call: async (method: string) => {
+          if (method === "workspace.get")
+            return { workspace: { workspace_id: "w1", label: "Repo" } };
+          if (method === "pane.list")
+            return { panes: [{ workspace_id: "w1", cwd: "/ws/app" }] };
+          throw new Error(`unexpected call ${method}`);
+        },
+      } as any,
+      sshHost: () => undefined,
+      runProcessWithCodeTimeout: async (argv) => {
+        calls.push(argv);
+        const at = argv.indexOf("-C");
+        return { code: 0, stdout: `${argv[at + 1] ?? ""}\n`, stderr: "" };
+      },
+      shQuote,
+      // A review from elsewhere (plan D3): its repository is no pane's.
+      reviewRoots: () => ["/reviews/other/"],
+    });
+    await expect(
+      handlers.resolveWorkspaceGitRoot({
+        workspace_id: "w1",
+        root: "/reviews/other",
+      }),
+    ).resolves.toMatchObject({ root: "/reviews/other" });
+    // Not what lies below or above it, nor anything else.
+    for (const root of ["/reviews/other/sub", "/reviews", "/elsewhere"]) {
+      await expect(
+        handlers.resolveWorkspaceGitRoot({ workspace_id: "w1", root }),
+      ).rejects.toThrow("not a repository of this workspace");
+    }
+  });
+
   test("returns download responses with safe headers", async () => {
     await withTempDir(async (root) => {
       await writeFile(join(root, "测试.txt"), "hello");

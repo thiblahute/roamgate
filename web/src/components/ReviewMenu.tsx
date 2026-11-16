@@ -48,7 +48,12 @@ export function ReviewMenu({
   }, [open]);
 
   return (
-    <span ref={rootRef} className={`rv-menu-root ${className}`}>
+    <span
+      ref={rootRef}
+      className={`rv-menu-root ${className}`}
+      // What the menu holds, for tests reading every reachable control.
+      data-menu-items={shown.map((item) => item.label).join("\n")}
+    >
       <button
         type="button"
         className={`btn ghost rv-sm rv-menu-button${open ? " on" : ""}`}

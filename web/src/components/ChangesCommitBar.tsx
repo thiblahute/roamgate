@@ -1,4 +1,9 @@
-import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
 import type { ChangesViews } from "../useChangesViews";
 import "./ChangesCommitBar.css";
 
@@ -41,11 +46,16 @@ export function ChangesCommitBar({
           <button
             type="button"
             className="diff-commit-name"
-            title="Pick a commit by its subject (gc)"
+            title={`${name.head} ${name.subject}${
+              views.history && commits
+                ? `\nNothing beyond the default branch: its ${plural(commits.length, "commit")}, latest first (> goes back)`
+                : ""
+            }\nPick a commit by its subject (gc)`}
             onClick={() => views.openPicker()}
           >
             <span className="note">{name.head}</span>
-            <span>{name.subject}</span>
+            <span className="diff-commit-subject">{name.subject}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -57,7 +67,7 @@ export function ChangesCommitBar({
             <ChevronRight size={14} aria-hidden="true" />
           </button>
           {views.history && commits ? (
-            <span className="note">
+            <span className="note diff-commit-history">
               Nothing beyond the default branch: its{" "}
               {plural(commits.length, "commit")}, latest first (&gt; goes back)
             </span>

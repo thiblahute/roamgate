@@ -5,6 +5,7 @@ import { useSystemBack } from "../systemBack";
 import type { SelectedLineRange } from "@pierre/diffs";
 import {
   ChevronDown,
+  Columns2,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -170,6 +171,8 @@ import {
 } from "../reviewToggle";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
+import { ReviewMenu } from "./ReviewMenu";
+import { plainDiffError } from "./diffErrors";
 import {
   ChangesForgeHead,
   ChangesForgeSection,
@@ -1268,6 +1271,7 @@ function DiffContentViewInner({
   scopeLabel,
   scopeControls,
   headEnd,
+  errorBack,
   entry,
   file,
   loading,
@@ -1327,6 +1331,8 @@ function DiffContentViewInner({
   scopeLabel?: string;
   /** The scope line as controls (the review in Changes), for scopeLabel. */
   scopeControls?: ReactNode;
+  /** A scope that cannot load: the way back to the review it replaced. */
+  errorBack?: { label: string; run: () => void };
   /** At the toolbar's end (Review only: Show all, Zen's way out). */
   headEnd?: ReactNode;
   /** Files' Review on "in Changes": the cursor to that file and line. */
@@ -5342,7 +5348,7 @@ function DiffContentViewInner({
         }
       }}
     >
-      <div className="diff-content-head">
+      <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
         {mobile && backAction ? (
           <button
             type="button"
@@ -5376,6 +5382,8 @@ function DiffContentViewInner({
             )}
           </div>
         )}
+        {/* The review's commit bar joins the head's row (no row of its own). */}
+        {reviewEditor ? viewBar : null}
         {!embedded && showFileSelector && visibleEntries.length > 1 ? (
           <label className="diff-file-index">
             <span>File</span>
@@ -5419,6 +5427,7 @@ function DiffContentViewInner({
             onOverall={setOverallOpen}
             onAsk={() => cursorHandle.current.comment("ask")}
             {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
+            status={agentSaid || statusLine || ""}
           />
         ) : null}
         {reviewEditor ? (
@@ -5440,11 +5449,16 @@ function DiffContentViewInner({
             title="An overall comment on the review (:overall)"
             onClick={() => setOverallOpen(true)}
           >
-            Overall comment
+            Overall<span className="diff-head-word"> comment</span>
           </button>
         ) : null}
         {reviewEditor && (statusLine || agentSaid) ? (
-          <span className="changes-review-status" aria-live="polite">
+          // With an agent, its chip's tooltip says it; else one short line.
+          <span
+            className={`changes-review-status${changesAgent.agentName ? " sr-only" : ""}`}
+            aria-live="polite"
+            title={agentSaid || statusLine}
+          >
             {agentSaid || statusLine}
           </span>
         ) : null}
@@ -5500,9 +5514,13 @@ function DiffContentViewInner({
               </button>
               <span>
                 {hunkIndex < 0 ? "–" : hunkIndex + 1}/{hunkTargets.length}
-                {mobile
-                  ? ""
-                  : ` ${hunkTargets.length === 1 ? "change" : "changes"}`}
+                {mobile ? (
+                  ""
+                ) : (
+                  <span className="diff-head-word">
+                    {` ${hunkTargets.length === 1 ? "change" : "changes"}`}
+                  </span>
+                )}
               </span>
               <button
                 type="button"
@@ -5515,7 +5533,9 @@ function DiffContentViewInner({
             </div>
           ) : null}
           {!embedded && !mobile ? (
-            <div className="diff-search-controls">
+            <div
+              className={`diff-search-controls${searchQuery ? " has-query" : ""}`}
+            >
               <label className="diff-search">
                 <Search size={13} />
                 <input
@@ -5587,7 +5607,8 @@ function DiffContentViewInner({
             className="diff-reviewed-count"
             title="Files reviewed (r a chunk, v a file)"
           >
-            {reviewedFileCount}/{reviewLayout.files.length} reviewed
+            {reviewedFileCount}/{reviewLayout.files.length}
+            <span className="diff-head-word"> reviewed</span>
           </span>
         ) : null}
         {reviewEditor && listedThreads.length ? (
@@ -5648,7 +5669,43 @@ function DiffContentViewInner({
             onToggle={() => setThreadsOpen((open) => !open)}
           />
         ) : null}
-        {!mobile ? (
+        {!mobile && reviewEditor ? (
+          // The review's one view menu: side by side, unified, wrapped
+          // (S and :set stay).
+          <ReviewMenu
+            className="diff-view-menu"
+            title="How the diff is drawn: side by side or unified, lines wrapped (S, :set)"
+            label={
+              <>
+                <Columns2 size={13} aria-hidden="true" />
+                <span className="diff-head-word">
+                  {viewMode === "split" ? "Split" : "Unified"}
+                  {desktopWrap ? " · Wrap" : ""}
+                </span>
+                <ChevronDown size={12} />
+              </>
+            }
+            items={[
+              {
+                label: "Split",
+                hint: "S",
+                checked: viewMode === "split",
+                onSelect: () => setViewMode("split"),
+              },
+              {
+                label: "Unified",
+                hint: "S",
+                checked: viewMode === "unified",
+                onSelect: () => setViewMode("unified"),
+              },
+              {
+                label: "Wrap",
+                checked: desktopWrap,
+                onSelect: () => setDesktopWrap((value) => !value),
+              },
+            ]}
+          />
+        ) : !mobile ? (
           <div className="diff-display-controls">
             <div className="diff-view-toggle" aria-label="Diff view mode">
               <button
@@ -5680,14 +5737,19 @@ function DiffContentViewInner({
         ) : null}
         {headEnd}
       </div>
-      {viewBar}
+      {reviewEditor ? null : viewBar}
 
       {error && !visibleEntries.length ? (
         <div className="diff-content-state is-error">
-          <span>{error}</span>
+          <span>{plainDiffError(error)}</span>
           {onRetry ? (
             <button type="button" onClick={onRetry}>
               Retry
+            </button>
+          ) : null}
+          {errorBack ? (
+            <button type="button" onClick={errorBack.run}>
+              {errorBack.label}
             </button>
           ) : null}
         </div>

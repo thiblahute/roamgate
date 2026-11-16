@@ -1497,6 +1497,17 @@ export function createReviewService(args: {
     changed(session);
   }
 
+  /** The repositories the connection's reviews are of (no read, no side effect). */
+  function roots(connectionId: string): string[] {
+    return [
+      ...new Set(
+        [...sessions.values()]
+          .filter((s) => s.connectionId === connectionId && !!s.root)
+          .map((s) => s.root),
+      ),
+    ];
+  }
+
   function list(params: Record<string, unknown> = {}): ReviewSnapshot[] {
     const connectionId =
       typeof params.connectionId === "string" ? params.connectionId : undefined;
@@ -3907,6 +3918,7 @@ export function createReviewService(args: {
     previewFile: async (params: Record<string, unknown>) =>
       fileOf(preview(params), params),
     list,
+    roots,
     refreshGitlab,
     findGitlab,
     openGitlab,

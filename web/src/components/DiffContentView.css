@@ -769,3 +769,152 @@
   font: inherit;
   cursor: pointer;
 }
+
+/* The review's head is one row (user, 2026-11-16): the commit bar, the
+   agent's chip, the view menu and an expanding find join the scope; what
+   does not fit shrinks or goes to tooltips, never to a second row. */
+.diff-content-view:not(.is-mobile) .diff-content-head.is-review {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.diff-content-head.is-review > * {
+  flex-shrink: 0;
+}
+
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-head.is-review
+  .diff-content-title {
+  flex: 0 1 auto;
+  min-width: 6em;
+  overflow: hidden;
+}
+
+.diff-content-head .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.diff-content-head.is-review .changes-review-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 18em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The commit bar: "1/3 38d19192 ▾" with < >, its subject in the tooltip. */
+.diff-content-head.is-review .diff-review-views {
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  min-width: 0;
+}
+
+.diff-content-head.is-review .diff-commit-bar {
+  flex: 0 0 auto;
+}
+
+.diff-content-head.is-review :is(.diff-commit-subject, .diff-commit-history) {
+  display: none;
+}
+
+.diff-content-head.is-review .diff-review-views-status,
+.diff-content-head.is-review .diff-review-changed {
+  min-width: 0;
+  max-width: 22em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-content-head.is-review .diff-agent-bar {
+  flex: 0 0 auto;
+}
+
+.diff-content-head.is-review .diff-agent-name .rv-badge {
+  margin-left: 4px;
+}
+
+/* Find: an icon until it is used. */
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-content-head.is-review
+  .diff-search-controls {
+  flex: 0 0 auto;
+}
+
+.diff-content-head.is-review
+  .diff-search-controls:not(:focus-within, .has-query)
+  :is(.diff-search-count, .diff-search-button) {
+  display: none;
+}
+
+.diff-content-head.is-review
+  .diff-search-controls:not(:focus-within, .has-query)
+  .diff-search {
+  flex-basis: auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.diff-content-head.is-review
+  .diff-search-controls:not(:focus-within, .has-query)
+  .diff-search
+  input {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Local / GitLab: the More menu and gm switch it; the head only says
+   GitLab, as a chip, while the merge request's mode is on. */
+.diff-content-head.is-review .rv-mode-switch {
+  display: none;
+}
+
+.diff-content-head.is-review .rv-mode-switch:has(> button:last-child.on) {
+  display: inline-flex;
+}
+
+.diff-content-head.is-review .rv-mode-switch > button:not(.on) {
+  display: none;
+}
+
+.diff-content-head.is-review {
+  container-type: inline-size;
+  container-name: review-head;
+}
+
+.diff-content-head.is-review .diff-review-views {
+  flex: 0 0 auto;
+}
+
+/* A narrow head keeps the numbers and drops the words (titles say them). */
+@container review-head (max-width: 760px) {
+  .diff-head-word,
+  .changes-scope-facts,
+  .changes-scope-hint {
+    display: none;
+  }
+}
+
+/* Narrower still: the scope's name gives way before any control. */
+@container review-head (max-width: 640px) {
+  .diff-content-view[data-review-cursor]:not(.is-mobile)
+    .diff-content-head.is-review
+    .diff-content-title {
+    min-width: 3em;
+  }
+  .diff-content-head.is-review .changes-request-chip {
+    max-width: 8em;
+  }
+}
