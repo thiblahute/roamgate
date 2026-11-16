@@ -782,6 +782,33 @@ returned with the inbox as `views`, changed by
 `bridge.mr_reviews.view {action: save|delete, name, query?}` (a save of an
 existing name replaces its query) and pushed as `changed: ["views"]`.
 
+Branches headed upstream (`mr-reviews/upstream.ts`): settings
+`mr_reviews.upstream_groups` (Workspaces-tree group ids, at most 50; groups
+below them count, ids of deleted groups are dropped on each tree change)
+and `upstream_skip` (`WorkspaceRef`s, at most 200), changed by
+`bridge.mr_reviews.upstream.group {group, headed}` and
+`upstream.workspace {ref, headed}` and read by `upstream.marks`; pushed as
+`changed: ["upstream"]`. Members are the workspace nodes under such a group
+resolved to live workspaces (`resolveWorkspaceTree`). One script per
+connection (`upstreamScanScript`, kept a minute) reads each checkout's
+branch, head, dirty and unpushed counts, remotes, and for `upstream` then
+`origin` the default branch with ahead/behind; the commits and their patch
+ids (`branchCommitsScript`, at most 200) only when the head or the target
+moved. The target project is the first of those remotes on a configured
+host. A branch is a request's when an own, not closed request of that
+project has it as source branch, or holds all its commits by patch id
+(`requestPatchIdsScript` fetches the request's head into
+`refs/roamgate/mr/<n>` only when that ref is not at the inbox's
+`headSha`); that request carries `fromBranch` and `local`. Other branches
+are entries keyed `branch:<provider>:<host>/<project>@<branch>` (D6) with
+`branch` (`MrBranchInfo`), `number` 0, section `authored`, lane `not_sent`
+by rule. `mr_reviews.unsent` (`{key, title?, target?, at}`, at most 200)
+marks those said to be requests (`bridge.mr_reviews.unsent {key, unsent,
+title?, target?}`, push `unsent`). After each inbox refresh, any branch key
+in `order`, `overrides` (keys and `dependsOn`) or `unsent` whose request is
+now listed is renamed to the request's key in one settings write.
+`bridge.mr_reviews.links` answers a branch key with its workspace.
+
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and
 `mr_reviews.hidden` (`{key, marker}`, at most 300, the oldest forgotten

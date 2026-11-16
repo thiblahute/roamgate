@@ -1,3 +1,9 @@
+import {
+  headedGroupOf,
+  isSkipped,
+  setWorkspaceHeaded,
+  useUpstreamMarks,
+} from "../mrUpstream";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import { useOverlayTabMarks } from "../overlayTabs";
 import type { PullRequestSummary } from "../../../shared/pullRequest";
@@ -487,6 +493,7 @@ export function WorkspaceTree({
   const allServers = useShowAllConnections();
   const setAllServers = setShowAllConnections;
   const tree = useWorkspaceTree();
+  const upstreamMarks = useUpstreamMarks();
   const overlayMarks = useOverlayTabMarks();
   // Children placed from other connections need those connections read
   // even while only the active one is listed.
@@ -1546,6 +1553,23 @@ export function WorkspaceTree({
               },
             }),
         },
+        // In a group headed upstream: this one may not be.
+        ...(menuNode &&
+        menuNode.kind === "workspace" &&
+        headedGroupOf(tree, upstreamMarks, menuNode.parent)
+          ? [
+              {
+                label: isSkipped(upstreamMarks, menuNode.ref)
+                  ? "Headed upstream again"
+                  : "Not headed upstream",
+                action: () =>
+                  void setWorkspaceHeaded(
+                    menuNode.ref,
+                    isSkipped(upstreamMarks, menuNode.ref),
+                  ).catch(() => {}),
+              },
+            ]
+          : []),
       ]
     : [];
   useEffect(

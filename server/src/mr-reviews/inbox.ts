@@ -110,6 +110,16 @@ export type MrInboxDeps = {
   afterRefresh?: (items: MrItem[]) => void;
   /** Curation's state, shown in the inbox. */
   curation?: () => MrCurationState;
+  /**
+   * Branches headed upstream (rows of their own) and the requests that
+   * branches are (by key), as last read.
+   */
+  upstream?: (settings: MrReviewsSettings) => {
+    rows: MrInboxEntry[];
+    covered: Map<string, Pick<MrInboxEntry, "fromBranch" | "local">>;
+  };
+  /** Someone looks at the inbox: the branches may be read again. */
+  onViewer?: () => void;
 };
 
 type HostResult = {
@@ -585,6 +595,7 @@ export function createMrInbox(deps: MrInboxDeps) {
     );
     const out: MrInboxEntry[] = [];
     const listed = new Set<string>();
+    const upstream = deps.upstream?.(settings);
     for (const item of items()) {
       listed.add(item.key);
       const section = pinned.has(item.key)
@@ -635,6 +646,7 @@ export function createMrInbox(deps: MrInboxDeps) {
           ? { reason: ranked.reason }
           : {}),
         ...(verdict ? { feedback: verdict } : {}),
+        ...(upstream?.covered.get(item.key) ?? {}),
         ...(override
           ? {
               override,
@@ -680,6 +692,23 @@ export function createMrInbox(deps: MrInboxDeps) {
         unavailable: state.pins[key]?.error ?? "Not read yet",
       });
     }
+    // Branches headed upstream with no request yet: one's own work too.
+    for (const row of upstream?.rows ?? []) {
+      if (listed.has(row.key)) continue;
+      listed.add(row.key);
+      const override = settings.overrides[row.key];
+      out.push({
+        ...row,
+        ...(override
+          ? {
+              override,
+              ...(overrideOutdated(override, mrActivityMarker(row))
+                ? { overrideOutdated: true }
+                : {}),
+            }
+          : {}),
+      });
+    }
     const rank = { pinned: 0, mine: 1, authored: 2, suggested: 3 } as const;
     const unreadFirst = (entry: MrInboxEntry) =>
       entry.isNew || entry.unread?.changed ? 0 : 1;
@@ -699,6 +728,7 @@ export function createMrInbox(deps: MrInboxDeps) {
     /** The inbox as known, without waiting; asks a refresh when stale. */
     async get(options: { fresh?: boolean; viewer?: boolean } = {}) {
       if (options.viewer !== false) {
+        deps.onViewer?.();
         const wasWatched = now() - lastViewer < VIEWER_MS;
         lastViewer = now();
         if (!wasWatched) schedule();

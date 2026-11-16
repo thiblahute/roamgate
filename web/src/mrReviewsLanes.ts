@@ -1,8 +1,8 @@
-import { forgeRefLabel } from "../../shared/forge";
 import {
   MR_LANES,
   type MrInboxEntry,
   type MrLane,
+  mrRefLabel,
 } from "../../shared/mrReviews";
 import { roamgateLocalStorage } from "./browserStorage";
 
@@ -76,7 +76,7 @@ export function mrLaneGroups(
         children: under.length,
         collapsed,
         last,
-        ...(parent ? { after: `after ${forgeRefLabel(parent, true)}` } : {}),
+        ...(parent ? { after: `after ${mrRefLabel(parent, true)}` } : {}),
       });
       if (collapsed) return;
       under.forEach((child, index) =>

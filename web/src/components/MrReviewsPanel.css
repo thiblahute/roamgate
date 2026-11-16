@@ -710,3 +710,16 @@
 .mr-reviews-view-chip {
   font-style: italic;
 }
+
+/* A branch headed upstream: its commits in its details. */
+.mr-branch-commits {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 11px;
+}
+
+.mr-branch-commits code {
+  color: var(--muted);
+}

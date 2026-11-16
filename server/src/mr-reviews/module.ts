@@ -1,7 +1,9 @@
-import type {
-  MrPushKind,
-  MrReviewsPush,
-  MrReviewsSettings,
+import {
+  type MrInboxEntry,
+  type MrPushKind,
+  type MrReviewsPush,
+  type MrReviewsSettings,
+  parseBranchKey,
 } from "../../../shared/mrReviews";
 import {
   type GuiSettings,
@@ -19,6 +21,13 @@ import { createWorkspaceLinker } from "./links";
 import { Value } from "typebox/value";
 import { AssistantUserError } from "../assistant/errors";
 import { createMrAgent, type MrAgent } from "./agent";
+import {
+  branchEntry,
+  createUpstreamScanner,
+  requestOfBranch,
+} from "./upstream";
+import { renameOverrideKeys } from "./overrides";
+import { emptyWorkspaceTree } from "../../../shared/workspaceTree";
 import {
   BOARD_DESCRIPTIONS,
   BOARD_WRITING,
@@ -39,7 +48,7 @@ import {
   MrReviewsError,
   type MrReviewsRpcDeps,
 } from "./rpc";
-import { type MrChangeMeta, createMrOrder } from "./order";
+import { type MrChangeMeta, createMrOrder, editSettings } from "./order";
 import { mrReviewsSettings, storedMrReviews } from "./settings";
 import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
 
@@ -60,6 +69,9 @@ const PUSHED_FIELDS: [keyof MrReviewsSettings, MrPushKind][] = [
   ["hidden", "hidden"],
   ["overrides", "overrides"],
   ["views", "views"],
+  ["unsent", "unsent"],
+  ["upstreamGroups", "upstream"],
+  ["upstreamSkip", "upstream"],
 ];
 
 export function createMrReviews(options: {
@@ -94,6 +106,8 @@ export function createMrReviews(options: {
   tree?: {
     read: () => Promise<WorkspaceTree>;
     apply: (ops: WorkspaceTreeOp[]) => Promise<unknown>;
+    /** Called with the tree after each change. */
+    onChanged?: (listener: (tree: WorkspaceTree) => void) => () => void;
   };
   /** The model runner (tests). */
   runModel?: RunModel;
@@ -140,9 +154,13 @@ export function createMrReviews(options: {
       previous = before;
       const same = (a: unknown, b: unknown) =>
         JSON.stringify(a) === JSON.stringify(b);
-      changed = PUSHED_FIELDS.filter(
-        ([field]) => !same(before[field], next[field]),
-      ).map(([, kind]) => kind);
+      changed = [
+        ...new Set(
+          PUSHED_FIELDS.filter(
+            ([field]) => !same(before[field], next[field]),
+          ).map(([, kind]) => kind),
+        ),
+      ];
       return {
         ...current,
         mr_reviews: storedMrReviews({
@@ -192,12 +210,52 @@ export function createMrReviews(options: {
     logger,
   });
   const fetchers = options.fetchers ?? createInboxFetchers(options.run);
+  // Branches headed upstream, read from the marked groups' workspaces.
+  const upstream = createUpstreamScanner({
+    connections: options.connections ?? (() => []),
+    tree: options.tree?.read ?? (async () => emptyWorkspaceTree()),
+    settings,
+    items: () => inbox.items(),
+  });
+  function upstreamRows(value: MrReviewsSettings) {
+    const items = inbox.items();
+    const users = inbox.users();
+    const ids = upstream.patchIds();
+    const rows: MrInboxEntry[] = [];
+    const covered = new Map<
+      string,
+      Pick<MrInboxEntry, "fromBranch" | "local">
+    >();
+    for (const branch of upstream.branches()) {
+      const request = requestOfBranch(branch, items, ids);
+      if (request) {
+        covered.set(request.key, {
+          fromBranch: branch.branch,
+          ...(branch.dirty || branch.unpushed
+            ? {
+                local: {
+                  unpushed: branch.unpushed ?? 0,
+                  dirty: branch.dirty,
+                  workspace: branch.member.label,
+                },
+              }
+            : {}),
+        });
+        continue;
+      }
+      rows.push(branchEntry(branch, value, users.get(branch.host) ?? ""));
+    }
+    return { rows, covered };
+  }
   const inbox = createMrInbox({
     fetchers,
     settings,
     store,
     logger,
+    upstream: upstreamRows,
+    onViewer: () => void upstream.refresh(),
     afterRefresh: (items) => {
+      void upstream.refresh().then(() => rekeyBranches());
       void opener?.prefetch(items);
       void lifecycle();
       void curation.maybeRun(items);
@@ -313,6 +371,73 @@ export function createMrReviews(options: {
     });
     logger.info("closed requests' reviews dropped", { count: gone.length });
   }
+
+  /**
+   * A branch headed upstream whose request opened takes the request's key
+   * everywhere the user's state names it (order, what was set by hand,
+   * dependencies), in one settings write; its "not proposed yet" goes
+   * (D6).
+   */
+  async function rekeyBranches() {
+    const items = inbox.items();
+    await editSettings(async () => {
+      const current = await saved();
+      const named = new Set([
+        ...current.order,
+        ...current.unsent.map((each) => each.key),
+        ...Object.keys(current.overrides),
+        ...Object.values(current.overrides).flatMap(
+          (each) => each.dependsOn ?? [],
+        ),
+      ]);
+      const renames = new Map<string, string>();
+      for (const key of named) {
+        const branch = parseBranchKey(key);
+        if (!branch) continue;
+        const request = items.find(
+          (item) =>
+            item.reasons.includes("authored") &&
+            item.state !== "closed" &&
+            item.provider === branch.provider &&
+            item.host.toLowerCase() === branch.host &&
+            item.project.toLowerCase() === branch.project &&
+            item.sourceBranch === branch.branch,
+        );
+        if (request) renames.set(key, request.key);
+      }
+      if (!renames.size) return;
+      let overrides = current.overrides;
+      for (const [from, to] of renames)
+        overrides = renameOverrideKeys(overrides, from, to);
+      const order: string[] = [];
+      for (const key of current.order) {
+        const next = renames.get(key) ?? key;
+        if (!order.includes(next)) order.push(next);
+      }
+      await saveSettings({
+        ...current,
+        order,
+        overrides,
+        unsent: current.unsent.filter((each) => !renames.has(each.key)),
+      });
+      logger.info("branches took their requests' keys", {
+        count: renames.size,
+      });
+    });
+  }
+
+  // A group deleted from the tree is no longer headed upstream (D5).
+  options.tree?.onChanged?.((tree) => {
+    void editSettings(async () => {
+      const current = await saved();
+      const groups = new Set(
+        tree.nodes.flatMap((node) => (node.kind === "group" ? [node.id] : [])),
+      );
+      const kept = current.upstreamGroups.filter((id) => groups.has(id));
+      if (kept.length !== current.upstreamGroups.length)
+        await saveSettings({ ...current, upstreamGroups: kept });
+    }).then(() => upstream.refresh(true));
+  });
 
   /** The reviews agent's chat, made on first use. */
   let agent: MrAgent | null = null;
@@ -474,7 +599,21 @@ export function createMrReviews(options: {
               connectionId: record.connectionId,
               workspaceId: record.workspaceId,
             };
-        return { links: await linker.links(items, reviews) };
+        const links = await linker.links(items, reviews);
+        // A branch headed upstream: its own workspace.
+        const rows = upstreamRows(await settings()).rows;
+        for (const row of rows)
+          if (row.branch && (!wanted || wanted.has(row.key)))
+            links[row.key] = [
+              {
+                connectionId: row.branch.connectionId,
+                connectionLabel: row.branch.connectionLabel,
+                workspaceId: row.branch.workspaceId,
+                label: row.branch.workspaceLabel,
+                why: ["branch"],
+              },
+            ];
+        return { links };
       }
       case "bridge.mr_reviews.forget_worktree": {
         // The project's next review makes its worktree anew (on the
@@ -580,6 +719,7 @@ export function createMrReviews(options: {
         saveSettings,
         order,
         more,
+        upstreamChanged: () => upstream.refresh(true),
       },
       method,
       params,
@@ -619,7 +759,14 @@ export function createMrReviews(options: {
     }
     try {
       return await createBoardTools(
-        { settings, inbox, store, order, rpc: (method, p) => rpc(method, p) },
+        {
+          settings,
+          inbox,
+          store,
+          order,
+          rpc: (method, p) => rpc(method, p),
+          ...(options.tree ? { tree: options.tree.read } : {}),
+        },
         caller,
       )[name](params);
     } catch (error) {
@@ -634,6 +781,8 @@ export function createMrReviews(options: {
     store,
     settings,
     boardTool,
+    upstream,
+    rekeyBranches,
     opener,
     claude,
     curation,

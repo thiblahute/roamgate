@@ -1051,6 +1051,25 @@ folds them. `J`/`K` and drags move a request within its lane (or among the
 requests under the same parent); a request changes lane when its whose-move
 changes, not by a drag.
 
+**Branches headed upstream** show before any request exists. A group of
+the Workspaces tree marked **Headed upstream** (its menu; groups inside it
+are too) says its workspaces hold work meant to go upstream; a workspace
+there can say **Not headed upstream** (its menu), and a checkout with no
+remote on one of your forge hosts is left out. Each such workspace's branch
+with commits beyond its target (the `upstream`, else `origin` remote's
+default branch) is a row in **Not proposed upstream yet**: its commits,
+how far behind it is, changed and unpushed files, and its next step
+("Propose 3 commits upstream", "Commit or stash 2 changed files", "Rebase
+on origin/main"). `b` (or `:unsent [TITLE]`, or **Will be a request** in its
+details) says it will be a request, **not proposed yet**, titled after its
+first commit unless you name it; when the request opens on that project
+from that branch it takes the row's place in your order and what you set
+on it. A branch whose request is open (same branch, or one holding all its
+commits by patch id) shows no row: its request says "from BRANCH" and what
+is not pushed. Enter and `w` go to its workspace. Branches are read from
+the checkouts, at most once a minute; a request's head is fetched into the
+clone (`refs/roamgate/mr/N`, never your own branches) only when it moved.
+
 **Set it by hand** when you know better: `e` (or **Set by hand** in its
 details) edits whose move it is (yours, the reviewer's, external, or a
 person's), the next step, the requests it waits for, labels, a link (a URL,
@@ -1152,6 +1171,7 @@ does the shortcut cheat sheet):
 | `w`                      | Go to its workspace (`2w`: the second), on its connection                         |
 | `P`                      | Pin it on top, or unpin it                                                        |
 | `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it           |
+| `b`                      | A branch headed upstream will be a request (not proposed yet), or back            |
 | `za`                     | Fold the requests under it, or its lane                                           |
 | `gx`                     | Open its link (a URL, or a file in its workspace)                                 |
 | `f` / `F`                 | Next / previous of all, to review, mine and your saved views                      |

@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { forgeKind, forgeRefLabel } from "../../../shared/forge";
+import { forgeKind } from "../../../shared/forge";
 import {
   MR_LANE_TITLE,
   type MrHostState,
@@ -40,6 +40,7 @@ import {
   type MrSavedView,
   type MrSection,
   type MrWorkspaceLink,
+  mrRefLabel,
 } from "../../../shared/mrReviews";
 import {
   mrFilterCompletions,
@@ -153,7 +154,7 @@ function MrPrompt({
   );
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const label = forgeRefLabel(prompt.entry);
+  const label = mrRefLabel(prompt.entry);
   return (
     <section
       className="assistant-task-overview mr-reviews-prompt"
@@ -586,6 +587,39 @@ export type MrRowMove = {
 
 type MrChip = ReturnType<typeof ownChips>[number];
 
+/**
+ * A branch headed upstream: its commits, how far behind, local changes,
+ * "not proposed yet"; a request from one: that branch and what is not
+ * pushed there.
+ */
+export function branchChips(
+  entry: MrInboxEntry,
+): { label: string; tone: "good" | "bad" | "wait" | "tree" }[] {
+  const chips: { label: string; tone: "good" | "bad" | "wait" | "tree" }[] = [];
+  const branch = entry.branch;
+  if (branch) {
+    if (entry.unsent) chips.push({ label: "not proposed yet", tone: "wait" });
+    chips.push({
+      label: `${branch.ahead} commit${branch.ahead === 1 ? "" : "s"}`,
+      tone: "tree",
+    });
+    if (branch.behind)
+      chips.push({ label: `${branch.behind} behind`, tone: "wait" });
+    if (branch.dirty)
+      chips.push({ label: `${branch.dirty} changed`, tone: "wait" });
+    if (branch.unpushed)
+      chips.push({ label: `${branch.unpushed} unpushed`, tone: "wait" });
+    return chips;
+  }
+  if (entry.fromBranch)
+    chips.push({ label: `from ${entry.fromBranch}`, tone: "tree" });
+  if (entry.local?.unpushed)
+    chips.push({ label: `${entry.local.unpushed} unpushed`, tone: "wait" });
+  if (entry.local?.dirty)
+    chips.push({ label: `${entry.local.dirty} changed`, tone: "wait" });
+  return chips;
+}
+
 /** A request's row as it always was: others' requests, suggestions. */
 function MrRowBody({
   entry,
@@ -602,9 +636,7 @@ function MrRowBody({
     <>
       <div>
         <strong>
-          <span className="mr-reviews-number">
-            {forgeRefLabel(entry, true)}
-          </span>{" "}
+          <span className="mr-reviews-number">{mrRefLabel(entry, true)}</span>{" "}
           {entry.title}
         </strong>
         {entry.unavailable ? null : (
@@ -684,9 +716,7 @@ function MrDenseRow({
     <>
       <div className="mr-reviews-dense-head">
         <strong>
-          <span className="mr-reviews-number">
-            {forgeRefLabel(entry, true)}
-          </span>{" "}
+          <span className="mr-reviews-number">{mrRefLabel(entry, true)}</span>{" "}
           {entry.title}
         </strong>
         <span className="mr-reviews-dense-chips" aria-label="Where it stands">
@@ -705,6 +735,14 @@ function MrDenseRow({
             <span
               key={chip.label}
               className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+            >
+              {chip.label}
+            </span>
+          ))}
+          {branchChips(entry).map((chip) => (
+            <span
+              key={`branch:${chip.label}`}
+              className={`mr-reviews-chip is-${chip.tone}`}
             >
               {chip.label}
             </span>
@@ -740,7 +778,9 @@ function MrDenseRow({
         ) : null}
         <small className="mr-reviews-dense-meta">
           <PipelineDot status={entry.pipeline} />
-          {entry.project} · {relative(entry.updatedAt)}
+          {entry.project}
+          {entry.branch ? ` · ${entry.branch.workspaceLabel}` : ""} ·{" "}
+          {relative(entry.updatedAt)}
           {entry.override?.link ? " · link (gx)" : ""}
         </small>
         {unread ? (
@@ -879,7 +919,7 @@ export function MrReviewRow({
           </button>
         </span>
       ) : null}
-      {selected && onTogglePin && !entry.unavailable ? (
+      {selected && onTogglePin && !entry.unavailable && !entry.branch ? (
         <span className="mr-reviews-move">
           <button
             type="button"
@@ -901,7 +941,7 @@ export function MrReviewRow({
           </button>
         </span>
       ) : null}
-      {onRemove && (selected || entry.unavailable) ? (
+      {onRemove && !entry.branch && (selected || entry.unavailable) ? (
         <span className="mr-reviews-move">
           <button
             type="button"
@@ -973,6 +1013,18 @@ function MrDetail({
   const unread = unreadLabel(entry);
   const drafts = draftsLabel(entry);
   const kind = forgeKind(entry.provider);
+  if (entry.branch)
+    return (
+      <MrBranchDetail
+        entry={entry}
+        onBack={onBack}
+        actions={actions}
+        board={board}
+        editor={editor}
+        links={links}
+        onGoWorkspace={onGoWorkspace}
+      />
+    );
   return (
     <>
       <div className="assistant-section-heading">
@@ -983,7 +1035,7 @@ function MrDetail({
       <section className="assistant-task-overview mr-reviews-detail">
         <div className="assistant-task-heading">
           <h3>
-            <span className="mr-reviews-number">{forgeRefLabel(entry)}</span>{" "}
+            <span className="mr-reviews-number">{mrRefLabel(entry)}</span>{" "}
             {entry.title}
           </h3>
           <span className={`assistant-task-state is-${stateLabel(entry)}`}>
@@ -1103,6 +1155,110 @@ function MrDetail({
             {entry.provider === "gitlab" ? "GitLab" : "GitHub"}
           </a>
         </div>
+      </section>
+    </>
+  );
+}
+
+/** A branch headed upstream: its checkout, its commits, its next step. */
+function MrBranchDetail({
+  entry,
+  onBack,
+  actions,
+  board,
+  editor,
+  links,
+  onGoWorkspace,
+}: {
+  entry: MrInboxEntry;
+  onBack: () => void;
+  actions?: ReactNode;
+  board?: ReactNode;
+  editor?: ReactNode;
+  links?: MrWorkspaceLink[];
+  onGoWorkspace?: (link: MrWorkspaceLink) => void;
+}) {
+  const branch = entry.branch!;
+  const link = links?.[0];
+  return (
+    <>
+      <div className="assistant-section-heading">
+        <button type="button" className="ghost" onClick={onBack}>
+          <ChevronLeft size={13} /> All reviews
+        </button>
+      </div>
+      <section className="assistant-task-overview mr-reviews-detail">
+        <div className="assistant-task-heading">
+          <h3>
+            <span className="mr-reviews-number">{branch.name}</span>{" "}
+            {entry.title}
+          </h3>
+          <span className="assistant-task-state is-draft">
+            {entry.unsent ? "not proposed yet" : "branch"}
+          </span>
+        </div>
+        {editor}
+        <dl className="assistant-task-metadata">
+          {board}
+          <div>
+            <dt>Headed to</dt>
+            <dd>
+              {entry.project} {entry.targetBranch} ({branch.target}):{" "}
+              {branch.ahead} ahead, {branch.behind} behind
+            </dd>
+          </div>
+          <div>
+            <dt>Workspace</dt>
+            <dd>
+              <button
+                type="button"
+                className="ghost"
+                title="Go to it (w, Enter)"
+                onClick={() => link && onGoWorkspace?.(link)}
+              >
+                <House size={13} /> {branch.workspaceLabel}
+              </button>{" "}
+              <small>
+                {branch.connectionLabel} · {branch.path}
+              </small>
+            </dd>
+          </div>
+          {branch.dirty || branch.unpushed ? (
+            <div>
+              <dt>Local</dt>
+              <dd>
+                {[
+                  branch.dirty
+                    ? `${branch.dirty} file${branch.dirty === 1 ? "" : "s"} changed`
+                    : "",
+                  branch.unpushed ? `${branch.unpushed} not pushed` : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Commits</dt>
+            <dd>
+              <ol className="mr-branch-commits" aria-label="Its commits">
+                {branch.commits.map((commit) => (
+                  <li key={commit.sha}>
+                    <code>{commit.sha.slice(0, 10)}</code> {commit.subject}
+                  </li>
+                ))}
+                {branch.ahead > branch.commits.length ? (
+                  <li>
+                    <small>
+                      and {branch.ahead - branch.commits.length} more
+                    </small>
+                  </li>
+                ) : null}
+              </ol>
+            </dd>
+          </div>
+        </dl>
+        <div className="assistant-task-buttons">{actions}</div>
       </section>
     </>
   );
@@ -1393,6 +1549,10 @@ export function MrReviewsPanel({
   /** Its review, in the project's review workspace. */
   const open = async (entry: MrInboxEntry, checkout?: "now" | "later") => {
     setSelected(entry.key);
+    if (entry.branch) {
+      showDetail(entry);
+      return;
+    }
     if (onOpenEntry) {
       onOpenEntry(entry);
       return;
@@ -1488,6 +1648,10 @@ export function MrReviewsPanel({
 
   /** Review with Claude, or Ask Claude (its session, shown). */
   const withClaude = async (entry: MrInboxEntry, review: boolean) => {
+    if (entry.branch) {
+      say("A branch has no request yet: c works once it is proposed");
+      return;
+    }
     setOpening(entry.key);
     try {
       // Its review first: the workspace, the checkout, the session.
@@ -1727,6 +1891,12 @@ export function MrReviewsPanel({
 
   /** Out of the view: a pinned request is unpinned, another one hidden. */
   const remove = (entry: MrInboxEntry) => {
+    if (entry.branch) {
+      say(
+        "A branch leaves Reviews when its workspace is not headed upstream (its menu in Workspaces)",
+      );
+      return;
+    }
     const at = ordered.findIndex((each) => each.key === entry.key);
     const next = ordered[at + 1] ?? ordered[at - 1];
     if (selected === entry.key) setSelected(next?.key ?? null);
@@ -1738,7 +1908,7 @@ export function MrReviewsPanel({
       .then(({ action }) => {
         if (undoTimer.current) clearTimeout(undoTimer.current);
         setUndo({
-          label: `${action === "unpinned" ? "Unpinned" : "Removed"} ${forgeRefLabel(entry, true)}`,
+          label: `${action === "unpinned" ? "Unpinned" : "Removed"} ${mrRefLabel(entry, true)}`,
           key: entry.key,
           run: () =>
             action === "unpinned"
@@ -1762,9 +1932,9 @@ export function MrReviewsPanel({
   const togglePin = (entry: MrInboxEntry, want?: boolean) => {
     const pinned = entry.section === "pinned";
     const pin = want ?? !pinned;
-    if (pin === pinned || entry.unavailable) return;
+    if (pin === pinned || entry.unavailable || entry.branch) return;
     setOrderError(null);
-    const label = forgeRefLabel(entry, true);
+    const label = mrRefLabel(entry, true);
     void (pin ? pinMrRequest(entry.url) : unpinMrRequest(entry.key))
       .then(() => {
         if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -1848,8 +2018,8 @@ export function MrReviewsPanel({
       const version = result.version;
       setUndo({
         label: result.changed
-          ? `${label} on ${forgeRefLabel(entry, true)}`
-          : `Nothing changed on ${forgeRefLabel(entry, true)}`,
+          ? `${label} on ${mrRefLabel(entry, true)}`
+          : `Nothing changed on ${mrRefLabel(entry, true)}`,
         key: entry.key,
         ...(result.changed && version
           ? { run: () => orderMrRequests({ op: "undo", version }) }
@@ -1901,7 +2071,7 @@ export function MrReviewsPanel({
   const openLink = (entry: MrInboxEntry) => {
     const link = entry.override?.link;
     if (!link) {
-      say(`${forgeRefLabel(entry, true)} has no link: set one with e or :link`);
+      say(`${mrRefLabel(entry, true)} has no link: set one with e or :link`);
       return;
     }
     if (/^https?:\/\//i.test(link)) {
@@ -1910,7 +2080,7 @@ export function MrReviewsPanel({
     }
     const where = links[entry.key]?.[0];
     if (!where) {
-      say(`No workspace of ${forgeRefLabel(entry, true)} to show ${link} in`);
+      say(`No workspace of ${mrRefLabel(entry, true)} to show ${link} in`);
       return;
     }
     requestMrFileOpen({
@@ -1920,6 +2090,38 @@ export function MrReviewsPanel({
     });
     goWorkspace(entry, where);
   };
+  /** A branch will be a request (not proposed yet), or is a branch again (b). */
+  const toggleUnsent = (entry: MrInboxEntry, title?: string) => {
+    if (!entry.branch) {
+      say("b works on a branch headed upstream");
+      return;
+    }
+    const want = title !== undefined || !entry.unsent;
+    void mrReviewsCall<{ changed: boolean; version?: number }>("unsent", {
+      key: entry.key,
+      unsent: want,
+      ...(title ? { title } : {}),
+    })
+      .then((result) => {
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        const version = result.version;
+        setUndo({
+          label: want
+            ? `${entry.branch!.name} will be a request`
+            : `${entry.branch!.name} is a branch again`,
+          key: entry.key,
+          ...(result.changed && version
+            ? { run: () => orderMrRequests({ op: "undo", version }) }
+            : {}),
+        });
+        undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+        return reload();
+      })
+      .catch((cause) =>
+        say(cause instanceof Error ? cause.message : String(cause)),
+      );
+  };
+
   /** Starts editing what is set by hand on a request (e). */
   const edit = (entry: MrInboxEntry) => {
     showDetail(entry);
@@ -1931,7 +2133,7 @@ export function MrReviewsPanel({
     field: MrOverrideField | "all",
   ) => {
     if (!entry.override) {
-      say(`Nothing is set by hand on ${forgeRefLabel(entry, true)}`);
+      say(`Nothing is set by hand on ${mrRefLabel(entry, true)}`);
       return;
     }
     void setOverride(
@@ -1968,8 +2170,8 @@ export function MrReviewsPanel({
     else
       say(
         found.length
-          ? `${forgeRefLabel(entry, true)} has ${found.length} workspace${found.length === 1 ? "" : "s"}`
-          : `None of your workspaces is on ${forgeRefLabel(entry, true)}'s branch or named after it`,
+          ? `${mrRefLabel(entry, true)} has ${found.length} workspace${found.length === 1 ? "" : "s"}`
+          : `None of your workspaces is on ${mrRefLabel(entry, true)}'s branch or named after it`,
       );
   };
 
@@ -2102,6 +2304,11 @@ export function MrReviewsPanel({
           );
         else clearOverride(current, field ?? "all");
       }
+      return;
+    }
+    if (name === "unsent") {
+      if (!current) say("Select a branch first");
+      else toggleUnsent(current, argument || undefined);
       return;
     }
     if (name === "view" || name === "save" || name === "delview") {
@@ -2258,6 +2465,7 @@ export function MrReviewsPanel({
       keyState.current = fed.state;
       if (fed.type === "wait") return fed.state.pending === "g";
       if (fed.key === "e") edit(detailEntry);
+      else if (fed.key === "b") toggleUnsent(detailEntry);
       else if (fed.key === "E") clearOverride(detailEntry, "all");
       else if (fed.key === "gx") openLink(detailEntry);
       else if (fed.key === ":") setCommand("");
@@ -2309,6 +2517,8 @@ export function MrReviewsPanel({
       showDetail(current);
     } else if (event.key === "c" && current) {
       void withClaude(current, false);
+    } else if (event.key === "o" && current?.branch) {
+      say(`${current.branch.name} is not on the forge yet`);
     } else if (event.key === "o" && current) {
       window.open(current.url, "_blank", "noopener");
       markSeen(current);
@@ -2316,6 +2526,8 @@ export function MrReviewsPanel({
       goNthWorkspace(current, count);
     } else if (event.key === "P" && current) {
       togglePin(current);
+    } else if (fed.key === "b" && current) {
+      toggleUnsent(current);
     } else if (fed.key === "e" && current) {
       edit(current);
     } else if (fed.key === "E" && current) {
@@ -2736,96 +2948,129 @@ export function MrReviewsPanel({
                 ) : null
               }
               actions={
-                <>
-                  {editing !== detailEntry.key ? (
+                detailEntry.branch ? (
+                  <>
                     <button
                       type="button"
-                      className="ghost"
-                      title="Set whose move, the next step, what it waits for, labels, a link (e)"
-                      onClick={() => edit(detailEntry)}
+                      className="primary"
+                      title="It will be a request: listed as not proposed yet until it opens (b, :unsent)"
+                      onClick={() => toggleUnsent(detailEntry)}
                     >
-                      Set by hand
+                      {detailEntry.unsent
+                        ? "Back to a branch"
+                        : "Will be a request"}
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={opening === detailEntry.key}
-                    onClick={() => void open(detailEntry)}
-                  >
-                    {opening === detailEntry.key ? "Opening..." : "Review"}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    disabled={opening === detailEntry.key}
-                    title="Check out its head in the project's review worktree"
-                    onClick={() => void open(detailEntry, "now")}
-                  >
-                    Check out
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    disabled={opening === detailEntry.key}
-                    title="Claude reads the request and leaves its threads in the review pane; nothing goes to the forge"
-                    onClick={() => void withClaude(detailEntry, true)}
-                  >
-                    Review with Claude
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    disabled={opening === detailEntry.key}
-                    title="This request's own Claude session, in its review workspace"
-                    onClick={() => void withClaude(detailEntry, false)}
-                  >
-                    Ask Claude
-                  </button>
-                  {detailEntry.section !== "pinned" ? (
-                    <button
-                      type="button"
-                      className="ghost"
-                      title="Pin it on top (P, :pin)"
-                      onClick={() => togglePin(detailEntry, true)}
-                    >
-                      <Pin size={13} /> Pin
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="ghost"
-                    title={
-                      detailEntry.section === "pinned"
-                        ? "Unpin it (P, dd)"
-                        : "Remove it from the view (dd)"
-                    }
-                    onClick={() => remove(detailEntry)}
-                  >
-                    {detailEntry.section === "pinned" ? "Unpin" : "Remove"}
-                  </button>
-                  {renderActions?.(detailEntry)}
-                  {detailEntry.section === "suggested" ? (
-                    <>
+                    {editing !== detailEntry.key ? (
                       <button
                         type="button"
                         className="ghost"
-                        aria-pressed={detailEntry.feedback === "more_like_this"}
-                        onClick={() => feedback(detailEntry, "more_like_this")}
+                        title="Set whose move, the next step, what it waits for, labels, a link (e)"
+                        onClick={() => edit(detailEntry)}
                       >
-                        More like this
+                        Set by hand
                       </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {editing !== detailEntry.key ? (
                       <button
                         type="button"
                         className="ghost"
-                        aria-pressed={detailEntry.feedback === "not_interested"}
-                        onClick={() => feedback(detailEntry, "not_interested")}
+                        title="Set whose move, the next step, what it waits for, labels, a link (e)"
+                        onClick={() => edit(detailEntry)}
                       >
-                        Not interested
+                        Set by hand
                       </button>
-                    </>
-                  ) : null}
-                </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={opening === detailEntry.key}
+                      onClick={() => void open(detailEntry)}
+                    >
+                      {opening === detailEntry.key ? "Opening..." : "Review"}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={opening === detailEntry.key}
+                      title="Check out its head in the project's review worktree"
+                      onClick={() => void open(detailEntry, "now")}
+                    >
+                      Check out
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={opening === detailEntry.key}
+                      title="Claude reads the request and leaves its threads in the review pane; nothing goes to the forge"
+                      onClick={() => void withClaude(detailEntry, true)}
+                    >
+                      Review with Claude
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={opening === detailEntry.key}
+                      title="This request's own Claude session, in its review workspace"
+                      onClick={() => void withClaude(detailEntry, false)}
+                    >
+                      Ask Claude
+                    </button>
+                    {detailEntry.section !== "pinned" ? (
+                      <button
+                        type="button"
+                        className="ghost"
+                        title="Pin it on top (P, :pin)"
+                        onClick={() => togglePin(detailEntry, true)}
+                      >
+                        <Pin size={13} /> Pin
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ghost"
+                      title={
+                        detailEntry.section === "pinned"
+                          ? "Unpin it (P, dd)"
+                          : "Remove it from the view (dd)"
+                      }
+                      onClick={() => remove(detailEntry)}
+                    >
+                      {detailEntry.section === "pinned" ? "Unpin" : "Remove"}
+                    </button>
+                    {renderActions?.(detailEntry)}
+                    {detailEntry.section === "suggested" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ghost"
+                          aria-pressed={
+                            detailEntry.feedback === "more_like_this"
+                          }
+                          onClick={() =>
+                            feedback(detailEntry, "more_like_this")
+                          }
+                        >
+                          More like this
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost"
+                          aria-pressed={
+                            detailEntry.feedback === "not_interested"
+                          }
+                          onClick={() =>
+                            feedback(detailEntry, "not_interested")
+                          }
+                        >
+                          Not interested
+                        </button>
+                      </>
+                    ) : null}
+                  </>
+                )
               }
             />
           ) : !inbox ? (
@@ -2968,7 +3213,7 @@ export function MrReviewsPanel({
                         <li key={each.key}>
                           <span>
                             <span className="mr-reviews-number">
-                              {forgeRefLabel(each, true)}
+                              {mrRefLabel(each, true)}
                             </span>{" "}
                             {each.title}
                           </span>

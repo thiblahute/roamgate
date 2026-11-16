@@ -62,8 +62,12 @@ async function setup() {
   const store = openMrStore(join(dir, `state-${Math.random()}.json`));
   store.update((state) => {
     state.items = [
-      item(1, { pipeline: "failed", labels: ["audio"] }),
-      item(2),
+      item(1, {
+        pipeline: "failed",
+        labels: ["audio"],
+        updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+      item(2, { updatedAt: new Date(Date.now() - 120_000).toISOString() }),
       item(3, { reasons: ["review_requested"], author: "bob" }),
     ];
   });
