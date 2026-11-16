@@ -525,6 +525,11 @@ export function WorkspaceInspectorHost({
    * an older step), until a scope is picked (plan phase 6).
    */
   const [shownReview, setShownReview] = useState<string | null>(null);
+  /** The review last shown as the scope: a scope that fails offers it back. */
+  const [leftReview, setLeftReview] = useState<string | null>(null);
+  useEffect(() => {
+    if (shownReview) setLeftReview(shownReview);
+  }, [shownReview]);
   /** A repository the workspace does not hold, shown from elsewhere (D3). */
   const [elsewhereRoot, setElsewhereRoot] = useState<string | null>(null);
   const { sessions: reviewSessions } = useReviewState();
@@ -557,6 +562,38 @@ export function WorkspaceInspectorHost({
       onPickerOpen={setRepoPickerOpen}
       onPickRepo={series.pick}
       elsewhere={!!elsewhereRoot && elsewhereRoot === shownRoot}
+      {...(workspace &&
+      !changesOnly &&
+      // The checkout's request, over the checkout's own review only: never
+      // the workspace's pull request over another repository's review.
+      (!changesRoot || changesRoot === ownRoot) &&
+      !(elsewhereRoot && elsewhereRoot === shownRoot) &&
+      (!shownReviewSnapshot ||
+        !ownRoot ||
+        shownReviewSnapshot.session.root === ownRoot)
+        ? {
+            request: (
+              <span className="changes-request-chip">
+                <PullRequestCard
+                  key={connectionClientScopeKey(
+                    connectionClient,
+                    connectionClient.serverRuntimeGeneration,
+                    contentResourceKey,
+                    workspace.workspace_id,
+                    workspace.worktree?.checkout_path,
+                    workspace.cwd,
+                    workspace.worktree?.git_status?.branch,
+                  )}
+                  client={connectionClient}
+                  workspaceId={workspace.workspace_id}
+                  branch={workspace.worktree?.git_status?.branch}
+                  compact
+                  onRequest={setCardRequest}
+                />
+              </span>
+            ),
+          }
+        : {})}
       {...(shownReviewSnapshot
         ? {
             review: {
@@ -1346,6 +1383,9 @@ export function WorkspaceInspectorHost({
         workspace &&
         // Review only shows the diff alone: no request card under it.
         !(changesOnly && state.view === "changes") &&
+        // The review in Changes has it as a chip in its head's row, and
+        // only for the checkout's own review.
+        !(reviewInChanges && state.view === "changes") &&
         (state.view === "changes" || state.view === "commits") ? (
           <PullRequestCard
             key={connectionClientScopeKey(
@@ -1726,6 +1766,14 @@ export function WorkspaceInspectorHost({
                           diffViewerRef.current?.selectEntry(target)
                         }
                         onRetry={() => diffViewerRef.current?.refresh()}
+                        {...(reviewInChanges && leftReview && !shownReview
+                          ? {
+                              errorBack: {
+                                label: "Back to the review",
+                                run: () => setShownReview(leftReview),
+                              },
+                            }
+                          : {})}
                         onNearbyFilesChange={(targets) =>
                           diffViewerRef.current?.loadNearbyEntries(targets)
                         }

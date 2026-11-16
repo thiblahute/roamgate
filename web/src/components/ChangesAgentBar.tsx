@@ -4,12 +4,11 @@ import { ReviewMenu } from "./ReviewMenu";
 
 /**
  * The review's agent group in Changes (plan: review into the inspector,
- * phase 4), for the checkout's review: Comments go to the agent (Live),
- * Hold, Send, Agent review and the overall comment (its editor is the
- * review's, drawn above the diff). Shown once the review has an agent to
- * talk to. The agent's name opens its menu, as the review pane's does:
- * how comments reach it, asking it about the line, its review, going to
- * its pane.
+ * phase 4), for the checkout's review: one chip, the agent's name, its
+ * mode and the held comments' count, whose menu holds Live, Hold, Send,
+ * its Review, the overall comment, asking it about the line and going to
+ * its pane. What it said is the chip's tooltip, never a line of its own.
+ * Shown once the review has an agent to talk to.
  */
 export function ChangesAgentBar({
   agent,
@@ -17,6 +16,7 @@ export function ChangesAgentBar({
   onOverall,
   onAsk,
   onFocusAgentPane,
+  status,
 }: {
   agent: ChangesAgent;
   overallOpen: boolean;
@@ -25,10 +25,23 @@ export function ChangesAgentBar({
   onAsk: () => void;
   /** Go to the agent's pane, the review kept; absent: no such entry. */
   onFocusAgentPane?: (paneId: string) => void;
+  /** The review's own status line, shown in the chip's tooltip. */
+  status?: string;
 }) {
   if (!agent.agentName) return null;
   const name = agent.agentName;
   const mode = agent.talk ? (agent.held ? "holding" : "live") : "manual";
+  const sendCount = agent.heldCount || agent.waiting;
+  const sendLabel = agent.gitlab
+    ? // A merge request's review: the Send is the agent's, never the
+      // forge's (user decision 2026-11-13).
+      sendCount
+      ? `Send ${sendCount} to ${name}`
+      : `Send to ${name}`
+    : agent.heldCount
+      ? `Send (${agent.heldCount})`
+      : "Send";
+  const said = [agent.status, status].filter(Boolean).join(" · ");
   return (
     <>
       <div
@@ -39,17 +52,22 @@ export function ChangesAgentBar({
       >
         <ReviewMenu
           className="rv-agent diff-agent-name"
-          title={`${name}: how your comments reach it, and asking it`}
+          title={`${name}, ${mode}: how your comments reach it, sending them, its review${said ? `\n${said}` : ""}`}
           label={
             <>
               {name}
               <span className="diff-agent-mode">{mode}</span>
+              {agent.heldCount ? (
+                <span className="rv-badge" title="Comments held until Send">
+                  {agent.heldCount}
+                </span>
+              ) : null}
               <ChevronDown size={12} />
             </>
           }
           items={[
             {
-              label: `Comments go to ${name}`,
+              label: "Live",
               title: agent.talk
                 ? `Your comments go to ${name} as you write them; uncheck to hold them until you Send them`
                 : `Send your comments to ${name} as you write them`,
@@ -57,7 +75,7 @@ export function ChangesAgentBar({
               onSelect: () => agent.setTalk(!agent.talk),
             },
             agent.talk && {
-              label: "Hold until Send",
+              label: "Hold",
               hint: ":hold",
               title: agent.held
                 ? `Your comments wait until you Send them to ${name}; uncheck to send each as you write it`
@@ -66,17 +84,31 @@ export function ChangesAgentBar({
               onSelect: agent.toggleHold,
             },
             {
+              label: sendLabel,
+              hint: ":send",
+              title: `Send the held comments, or the open discussions, to ${name}`,
+              disabled: !agent.heldCount && !agent.waiting,
+              onSelect: agent.send,
+            },
+            {
+              label: agent.reviewing ? "Reviewing..." : "Review",
+              hint: ":review",
+              title: `${name} reviews the changes, line by line, reading the checkout`,
+              disabled: agent.reviewing,
+              onSelect: () => agent.review(),
+            },
+            {
+              label: "Overall",
+              hint: ":overall",
+              title: "An overall comment on the review",
+              checked: overallOpen,
+              onSelect: () => onOverall(!overallOpen),
+            },
+            {
               label: `Ask ${name} about this line`,
               hint: "C",
               title: `A discussion with ${name} on the line your cursor is on (:ask)`,
               onSelect: onAsk,
-            },
-            {
-              label: `${name} reviews the changes`,
-              hint: ":review",
-              title: `${name} reviews line by line, reading the checkout`,
-              disabled: agent.reviewing,
-              onSelect: () => agent.review(),
             },
             !!agent.agentPaneId &&
               !!onFocusAgentPane && {
@@ -86,68 +118,15 @@ export function ChangesAgentBar({
               },
           ]}
         />
-        <button
-          type="button"
-          aria-pressed={agent.talk}
-          title={
-            agent.talk
-              ? `Your comments go to ${name} as you write them; click to hold them until you Send`
-              : `Send your comments to ${name} as you write them`
-          }
-          onClick={() => agent.setTalk(!agent.talk)}
-        >
-          Live
-        </button>
-        {agent.talk ? (
-          <button
-            type="button"
-            aria-pressed={agent.held}
-            title={
-              agent.held
-                ? `Your comments wait until you Send them to ${name} (:hold)`
-                : `Hold your comments and Send them to ${name} when you are done (:hold)`
-            }
-            onClick={agent.toggleHold}
-          >
-            Hold
-          </button>
-        ) : null}
-        <button
-          type="button"
-          disabled={!agent.heldCount && !agent.waiting}
-          title={`Send the held comments, or the open discussions, to ${name} (:send)`}
-          onClick={agent.send}
-        >
-          {agent.gitlab
-            ? // A merge request's review: the Send is the agent's, never
-              // the forge's (user decision 2026-11-13).
-              agent.heldCount || agent.waiting
-              ? `Send ${agent.heldCount || agent.waiting} to ${name}`
-              : `Send to ${name}`
-            : agent.heldCount
-              ? `Send (${agent.heldCount})`
-              : "Send"}
-        </button>
-        <button
-          type="button"
-          disabled={agent.reviewing}
-          title={`${name} reviews the changes, line by line (:review [focus])`}
-          onClick={() => agent.review()}
-        >
-          {agent.reviewing ? "Reviewing..." : "Review"}
-        </button>
-        <button
-          type="button"
-          aria-pressed={overallOpen}
-          title="An overall comment on the review (:overall)"
-          onClick={() => onOverall(!overallOpen)}
-        >
-          Overall
-        </button>
       </div>
-      {agent.status ? (
-        <span className="diff-agent-status" role="status" aria-live="polite">
-          {agent.status}
+      {/* What the agent and the review said: the chip's tooltip, read out. */}
+      {said ? (
+        <span
+          className="diff-agent-status sr-only"
+          role="status"
+          aria-live="polite"
+        >
+          {said}
         </span>
       ) : null}
     </>

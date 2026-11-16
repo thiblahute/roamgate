@@ -103,28 +103,51 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
       });
     };
     await act(async () => root.render(createElement(Bar)));
+    const chip = () =>
+      host.querySelector<HTMLButtonElement>(".diff-agent-name > button") ??
+      host.querySelector<HTMLButtonElement>(".diff-agent-name");
+    const menuItems = async () => {
+      if (!host.querySelector(".rv-menu"))
+        await act(async () => chip()!.click());
+      return [...host.querySelectorAll<HTMLButtonElement>(".rv-menu button")];
+    };
+    const closeMenu = async () => {
+      if (host.querySelector(".rv-menu"))
+        await act(async () => chip()!.click());
+    };
     return {
       host,
-      // The bar's own buttons; the agent's name is its menu's.
-      buttons: () =>
-        [
-          ...host.querySelectorAll<HTMLButtonElement>(
-            ".diff-agent-bar > button",
-          ),
-        ].map((each) => each.textContent ?? ""),
+      // The agent's controls: its chip's menu (Live, Hold, Send, Review,
+      // Overall), before the line and pane entries.
+      buttons: async () => {
+        const items = await menuItems();
+        const labels = items
+          .map(
+            (each) => each.querySelector(".rv-menu-label")?.textContent ?? "",
+          )
+          .filter((label) => !/^Ask |^Go to /.test(label));
+        await closeMenu();
+        return labels;
+      },
       click: async (label: string) => {
-        const button = [
-          ...host.querySelectorAll<HTMLButtonElement>("button"),
-        ].find((each) => each.textContent === label);
+        const button = (await menuItems()).find(
+          (each) => each.querySelector(".rv-menu-label")?.textContent === label,
+        );
         if (!button) throw new Error(`no ${label}`);
         await act(async () => button.click());
+        await closeMenu();
       },
       mode: () =>
         host.querySelector(".diff-agent-bar")?.getAttribute("data-mode"),
-      disabled: (label: string) =>
-        [...host.querySelectorAll<HTMLButtonElement>("button")].find((each) =>
-          each.textContent?.startsWith(label),
-        )?.disabled,
+      disabled: async (label: string) => {
+        const item = (await menuItems()).find((each) =>
+          each.querySelector(".rv-menu-label")?.textContent?.startsWith(label),
+        );
+        await closeMenu();
+        return item?.disabled;
+      },
+      badge: () =>
+        host.querySelector(".diff-agent-name .rv-badge")?.textContent ?? null,
       unmount: async () => {
         await act(async () => root.unmount());
         host.remove();
@@ -148,14 +171,14 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
     snapshots = new Map([["a", snapshot("a")]]);
     const bar = await mount();
     expect(bar.mode()).toBe("live");
-    expect(bar.buttons()).toEqual([
+    expect(await bar.buttons()).toEqual([
       "Live",
       "Hold",
       "Send",
       "Review",
       "Overall",
     ]);
-    expect(bar.disabled("Send")).toBe(true);
+    expect(await bar.disabled("Send")).toBe(true);
     await bar.click("Hold");
     await bar.click("Live");
     await bar.click("Review");
@@ -196,7 +219,9 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
     snapshots = new Map([["a", snapshot("a", { holdComments: true }, [held])]]);
     const bar = await mount();
     expect(bar.mode()).toBe("holding");
-    expect(bar.buttons()).toContain("Send (1)");
+    expect(await bar.buttons()).toContain("Send (1)");
+    // The held count shows on the chip itself.
+    expect(bar.badge()).toBe("1");
     await bar.click("Send (1)");
     expect(calls).toEqual([
       { method: "review.handoff", params: { session_id: "a" } },
@@ -212,7 +237,7 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
     snapshots = new Map([["a", snapshot("a", { autoSend: false })]]);
     const bar = await mount();
     expect(bar.mode()).toBe("manual");
-    expect(bar.buttons()).toEqual(["Live", "Send", "Review", "Overall"]);
+    expect(await bar.buttons()).toEqual(["Live", "Send", "Review", "Overall"]);
     await bar.click("Live");
     expect(calls).toEqual([
       { method: "review.update", params: { session_id: "a", autoSend: true } },

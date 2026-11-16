@@ -2240,6 +2240,7 @@ function runtimeFactoryForProfile(
         sessionIndexDir: defaultSessionIndexDir(),
         // No terminal to fall back on: the prompt waits for a browser, and
         // its timeout denies.
+        reviewRoots: (connectionId) => getReviewService().roots(connectionId),
         askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
           getReviewService().prompts.request({
             ...prompt,

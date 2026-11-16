@@ -235,6 +235,12 @@ export function createLegacyConnectionRuntime(args: {
   /** Test seam for deterministic shutdown coverage. */
   lastStepBaselines?: LastStepBaselineStore;
   resolveLastStepWorkspaceGitRoot?: (workspaceId: string) => Promise<string>;
+  /**
+   * The roots of the review sessions held for this connection: Changes may
+   * show such a review in any workspace ("from elsewhere", plan D3), so its
+   * repository is a root the workspace's Git reads accept.
+   */
+  reviewRoots?: (connectionId: string) => string[];
   lastStepTransitionDebounceMs?: number;
   /** Test seam for the background git status reads. */
   runGitStatusProcess?: typeof runProcessWithCodeTimeoutBase;
@@ -618,6 +624,9 @@ export function createLegacyConnectionRuntime(args: {
       runProcessWithCodeTimeout,
       shQuote,
       lastStepBaselines,
+      ...(args.reviewRoots
+        ? { reviewRoots: () => args.reviewRoots!(identity.id) }
+        : {}),
     }),
   );
   const status = createStatusEnricher({
