@@ -671,6 +671,81 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
+    // Ported from reviewStops.dom.test.ts (the review pane's comment stops,
+    // retired with it): where j / k stop in Changes' messages.
+    test("j stops on a message of several parts, then on each part followed by the comments on it; a folded thread is one stop", async () => {
+      const long = {
+        ...open,
+        comments: [
+          {
+            ...open.comments[0]!,
+            body: "First paragraph here.\n\nSecond paragraph there.",
+          },
+        ],
+      } as Thread;
+      const onPart = {
+        ...thread("n1", { kind: "unstaged", line: 2, side: "new" }, "deux"),
+        anchor: {
+          path: "a.ts",
+          line: 2,
+          side: "new",
+          message: {
+            thread: "t1",
+            comment: "t1c",
+            quote: "Second paragraph there.",
+          },
+        },
+      } as unknown as Thread;
+      // Resolved: folded to its line, two messages in it.
+      const folded = {
+        ...done,
+        comments: [
+          done.comments[0]!,
+          { ...done.comments[0]!, id: "t3d", body: "Second message" },
+        ],
+      } as Thread;
+      const stopAt = () =>
+        document
+          .querySelector<HTMLElement>(".diff-review-thread .is-focused")
+          ?.closest<HTMLElement>("[data-chat-stop], [data-part]") ?? null;
+      const stopKey = () => {
+        const stop = stopAt();
+        if (!stop) return null;
+        if (stop.dataset.chatStop) return stop.dataset.chatStop;
+        return `part ${stop.dataset.part}`;
+      };
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        threads: [long, onPart, folded],
+        annotations: [long, folded].map((each) => feedbackNote(each)),
+      });
+      try {
+        const seen: (string | null)[] = [];
+        await keys("jj");
+        for (let i = 0; i < 7; i++) {
+          await press("j");
+          seen.push(`${cursorAt()?.split(":").pop()} ${stopKey() ?? "line"}`);
+        }
+        expect(seen).toEqual([
+          // The message whole, then each part, the comment on the second
+          // part after it.
+          "2 m:t1c",
+          "2 part 0",
+          "2 part 1",
+          "2 m:n1c",
+          "3 line",
+          // Folded: one stop, the thread's line.
+          "3 t:t3",
+          "4 line",
+        ]);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("zz, zt, zb and z. reach the diff's cursor on a line, and place the message j / k are on when one is", async () => {
       const placed: string[] = [];
       const realScroll = HTMLElement.prototype.scrollIntoView;

@@ -14,7 +14,6 @@ import {
   startFrontendFreshness,
   TYPING_QUIET_MS,
 } from "./frontendFreshness";
-import { reviewDialogRole } from "./reviewDialog";
 
 test("the entry script is the hashed index chunk", () => {
   expect(
@@ -177,20 +176,20 @@ test("an unfocused API key survives a stale build until its dialog closes", asyn
   }
 });
 
-test("a pinned review kept hidden does not hold back a reload", async () => {
+test("a dialog kept mounted but hidden does not hold back a reload", async () => {
   const tab = page("/assets/index-old.js");
   const review = document.createElement("div");
+  // A dialog only while shown (as the retired review pane's role was).
   const show = (hidden: boolean) => {
     review.hidden = hidden;
-    const role = reviewDialogRole(hidden);
-    if (role) review.setAttribute("role", role);
-    else review.removeAttribute("role");
+    if (hidden) review.removeAttribute("role");
+    else review.setAttribute("role", "dialog");
   };
   show(false);
   document.body.append(review);
   tab.serve("/assets/index-new.js");
   await tab.reconnect();
-  // Shown: the review may hold unsaved work.
+  // Shown: the dialog may hold unsaved work.
   expect(tab.reloads()).toBe(0);
   show(true);
   tab.box.dispatchEvent(new BrowserEvent("input", { bubbles: true }));

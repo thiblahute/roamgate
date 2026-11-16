@@ -75,7 +75,6 @@ export function TabBar({
   mobile = false,
   inspectorOpen = false,
   annotationsOpen = false,
-  reviewOpen = false,
   onToggleReview,
   annotationCount = 0,
   onToggleInspector,
@@ -84,7 +83,7 @@ export function TabBar({
   mobile?: boolean;
   inspectorOpen?: boolean;
   annotationsOpen?: boolean;
-  reviewOpen?: boolean;
+  /** The review toggle: Changes on the workspace's review, or back. */
   onToggleReview?: () => void;
   annotationCount?: number;
   onToggleInspector?: () => void;
@@ -423,12 +422,7 @@ export function TabBar({
             {onToggleReview ? (
               <button
                 type="button"
-                className={reviewOpen ? "is-active" : ""}
-                aria-expanded={reviewOpen}
-                title={shortcutTitle(
-                  reviewOpen ? "Close the review" : "Review this branch",
-                  "review.toggle",
-                )}
+                title={shortcutTitle("Review this branch", "review.toggle")}
                 onClick={onToggleReview}
               >
                 <GitPullRequestArrow size={14} />
