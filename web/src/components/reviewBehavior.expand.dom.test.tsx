@@ -96,6 +96,54 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("side by side, each gap row is one row across both sides, as the review pane drew it; in one column, in it", async () => {
+        const review = await mount({ ...options(), split: true });
+        expect(review.sideBySide()).toBe(true);
+        expect(review.gapRows("a.ts")).toEqual(["across", "across", "across"]);
+        // Its buttons still show the lines.
+        await review.expandGap("a.ts", 1, "↓ 20");
+        expect(review.gaps("a.ts")[1]?.label).toBe("17 hidden lines");
+        expect(review.gapRows("a.ts")).toEqual(["across", "across", "across"]);
+        await review.unmount();
+        // A comment under that row: the gap stays on the new side, under
+        // it, not drawn over it.
+        const commented = await mount({
+          ...options(),
+          split: true,
+          threads: [
+            {
+              id: "t1",
+              sessionId: "s1",
+              kind: "draft",
+              anchor: { path: "a.ts", line: 32, side: "new", text: "line 32" },
+              comments: [
+                {
+                  id: "t1c",
+                  author: "you",
+                  body: "Here",
+                  createdAt: "2026-11-04T14:11:18Z",
+                  updatedAt: "2026-11-04T14:11:18Z",
+                },
+              ],
+              resolved: false,
+              createdAt: "2026-11-04T14:11:18Z",
+              updatedAt: "2026-11-04T14:11:18Z",
+            } as unknown as import("../../../shared/review").ReviewThread,
+          ],
+        });
+        expect(commented.commentTexts().join("\n")).toContain("Here");
+        expect(commented.gapRows("a.ts")).toEqual([
+          "across",
+          "new side",
+          "across",
+        ]);
+        await commented.unmount();
+        const unified = await mount({ ...options(), split: false });
+        expect(unified.sideBySide()).toBe(false);
+        expect(unified.gapRows("a.ts")).toEqual(["one", "one", "one"]);
+        await unified.unmount();
+      });
+
       test("zo and x show 20 more lines on both sides of the hunk under the cursor", async () => {
         const review = await mount(options());
         await review.press("zo");

@@ -77,7 +77,15 @@ export function parsePatch(patch: string): ParsedPatch | null {
 /** Where a gap's controls are drawn: under this line (0: above the file). */
 export type GapAnchor = { side: "old" | "new"; line: number };
 
-export type ChangesGap = GapInfo & { anchor: GapAnchor };
+export type ChangesGap = GapInfo & {
+  anchor: GapAnchor;
+  /**
+   * Side by side: under this old-side line, from where the row is drawn
+   * across both sides (the hunk above ends on a line of both); null when
+   * it cannot be (the hunk ends on added lines).
+   */
+  across: GapAnchor | null;
+};
 
 function range(header: string) {
   const match = HUNK.exec(header);
@@ -199,14 +207,22 @@ export function expandPatch(
   const shown: ChangesGap[] = [...gaps.values()]
     .sort((a, b) => a.gap - b.gap)
     .map((gap) => {
-      if (gap.gap === 0) return { ...gap, anchor: { side: "new", line: 0 } };
+      if (gap.gap === 0)
+        return {
+          ...gap,
+          anchor: { side: "new", line: 0 },
+          across: { side: "old", line: 0 },
+        };
       const above = hunks[gap.gap - 1]!.lines;
       const lastNew = [...above].reverse().find((line) => line.new !== null);
+      const last = above[above.length - 1];
       return {
         ...gap,
         anchor: lastNew
           ? { side: "new", line: lastNew.new! }
-          : { side: "old", line: above[above.length - 1]?.old ?? 0 },
+          : { side: "old", line: last?.old ?? 0 },
+        across:
+          last && last.old !== null ? { side: "old", line: last.old } : null,
       };
     });
   return { patch: `${text.join("\n")}\n`, gaps: shown };

@@ -228,6 +228,13 @@ export interface ReviewSurface {
   ): Promise<void>;
   /** The gap buttons between hunks of a file and at its ends, in order. */
   gaps(path: string): { label: string; buttons: string[] }[];
+  /**
+   * Where each gap row of a file is drawn, in order: "across" (one row over
+   * both sides, side by side), "one" (the one column).
+   */
+  gapRows(path: string): ("across" | "new side" | "one")[];
+  /** How a file is drawn: in two columns (side by side) or one. */
+  fileColumns(path: string): 1 | 2 | null;
   /** Press a gap's button (`gaps(path)[index]`, by its label). */
   expandGap(path: string, index: number, button: string): Promise<void>;
   /** Pick a file in the file list: the cursor goes to it, shown. */

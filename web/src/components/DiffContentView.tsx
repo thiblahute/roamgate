@@ -862,7 +862,7 @@ const DiffFileSection = memo(function DiffFileSection({
   loading,
   nearby,
   imagePreviewState,
-  options,
+  options: givenOptions,
   currentSearchMatch,
   embedded,
   mobile,
@@ -885,6 +885,18 @@ const DiffFileSection = memo(function DiffFileSection({
   onShowReviewed,
   fileThreadIds,
 }: DiffFileSectionProps) {
+  /**
+   * A commit's message is words, not a change: drawn once, one column
+   * (the review pane's), even side by side.
+   */
+  const message = section.entry.path === COMMIT_MESSAGE_PATH;
+  const options = useMemo(
+    () =>
+      message && givenOptions.diffStyle !== "unified"
+        ? { ...givenOptions, diffStyle: "unified" as const }
+        : givenOptions,
+    [givenOptions, message],
+  );
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const measuredHeightRef = useRef<number | null>(null);
   const placeholderHeight =
@@ -1004,7 +1016,7 @@ const DiffFileSection = memo(function DiffFileSection({
 
   return (
     <article
-      className={`diff-file-section ${embedded ? "is-embedded" : ""} ${currentSearchMatch ? "is-search-current" : ""} ${searchHit ? "is-cursor-search-hit" : ""}`}
+      className={`diff-file-section ${message ? "is-commit-message" : ""} ${embedded ? "is-embedded" : ""} ${currentSearchMatch ? "is-search-current" : ""} ${searchHit ? "is-cursor-search-hit" : ""}`}
       data-diff-entry-key={section.key}
       aria-current={currentSearchMatch ? "true" : undefined}
       onPointerDownCapture={(event) => {
@@ -1706,6 +1718,7 @@ function DiffContentViewInner({
   >(() => new Map(readDiffCollapseState(resourceKey)));
   const theme = useDocumentTheme();
   const effectiveViewMode: DiffViewMode = mobile ? "unified" : viewMode;
+  const splitView = effectiveViewMode === "split";
   const wrapEnabled = mobile ? mobileWrap : desktopWrap;
   const activeEntryKey = entry ? diffEntryKey(entry) : "";
   useEffect(() => {
@@ -3247,22 +3260,44 @@ function DiffContentViewInner({
         add(`${note.kind}:${note.path}`, note);
     }
     // The gaps still hidden, under the line above each (0: atop the file).
+    // Side by side, from the old side: its row is drawn across both
+    // (.diff-gap), as the review pane drew it; on the new side when a
+    // comment (or the box) is drawn under that row, which it would cover.
+    const composerAt =
+      pendingAnnotation &&
+      `${pendingAnnotation.kind}:${pendingAnnotation.path}`;
+    const commented = (key: string, side: string, line: number) =>
+      (grouped.get(key) ?? []).some(
+        (note) => note.side === side && note.line === line,
+      ) ||
+      (composerAt === key &&
+        pendingAnnotation!.side === side &&
+        (pendingAnnotation!.endLine ?? pendingAnnotation!.line) === line);
     for (const [key, gaps] of gapsByKey) {
       const section = renderedSections.find((each) => each.key === key);
       if (!section) continue;
-      for (const gap of gaps)
+      for (const gap of gaps) {
+        const across =
+          splitView &&
+          gap.across &&
+          !commented(key, gap.across.side, gap.across.line) &&
+          !commented(key, gap.anchor.side, gap.anchor.line)
+            ? gap.across
+            : null;
+        const at = across ?? gap.anchor;
         add(key, {
           id: `${GAP_ID}${gap.gap}`,
           source: "diff",
           path: section.entry.path,
           kind: section.entry.kind,
-          side: gap.anchor.side,
-          line: gap.anchor.line,
+          side: at.side,
+          line: at.line,
           hunk: "",
           quote: "",
           comment: "",
           createdAt: 0,
         });
+      }
     }
     if (pendingAnnotation) {
       const atEnd =
@@ -3292,6 +3327,7 @@ function DiffContentViewInner({
     placement,
     renderedSections,
     reviewEditor,
+    splitView,
   ]);
 
   /** gH, :unresolved: only the unresolved threads drawn, or all again. */
