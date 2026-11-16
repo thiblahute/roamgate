@@ -280,8 +280,28 @@ export function parseGithubInbox(
   };
 }
 
-/** The user's own requests asked per host: the open ones and the latest settled. */
-export const OWN_PAGE = 30;
+/**
+ * The user's own requests are read in two steps, so that a refresh costs
+ * little whatever their number: a light list of every open one (paged to
+ * its end) and a few recently settled ones, then the costly details
+ * (pipeline, approvals, threads, conflicts, notes) only for those new or
+ * changed since they were last read.
+ */
+
+/** Open own requests asked per page (the forges' maximum). */
+export const OWN_PAGE = 100;
+/** Pages of open own requests read per host at most; logged when hit. */
+export const OWN_MAX_PAGES = 10;
+/** Recently merged or closed own requests asked (each state on GitLab). */
+export const OWN_SETTLED_PAGE = 10;
+/** Requests whose details one query asks at most. */
+export const OWN_DETAILS_BATCH = 40;
+
+/** What a row needs of an own merge request, cheap for GitLab to answer. */
+const GITLAB_OWN_LIST =
+  "iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username }";
+const GITLAB_OWN_DETAILS =
+  "iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha }";
 
 /**
  * What GitLab says of the user's own merge requests besides the list's
@@ -295,18 +315,197 @@ const GITLAB_OWN_FIELDS = {
 
 export type OwnFields = keyof typeof GITLAB_OWN_FIELDS;
 
+const GITHUB_OWN_LIST =
+  "number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login }";
+const GITHUB_OWN_DETAILS =
+  "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } }";
+
+const PAGE_INFO = "pageInfo { hasNextPage endCursor }";
+
 /**
- * The user's own merge requests on a GitLab host, latest first, whatever
- * their state (merged and closed ones are shown a few days): a query of
- * their own, so that a field a host lacks never empties the inbox.
+ * One page of the user's open merge requests on a GitLab host, newest
+ * first by creation (an order that holds while paging); the first page also
+ * asks the latest merged and closed ones.
  */
-export function gitlabOwnQuery(fields: OwnFields = "full"): string {
-  return `query { currentUser { username au: authoredMergeRequests(sort: UPDATED_DESC, first: ${OWN_PAGE}) { nodes { ${GITLAB_FIELDS} ${GITLAB_OWN_FIELDS[fields]} } } } }`;
+export function gitlabOwnListQuery(after?: string): string {
+  const open = `op: authoredMergeRequests(state: opened, sort: CREATED_DESC, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ${GITLAB_OWN_LIST} } }`;
+  const settled = after
+    ? ""
+    : [
+        ["mg", "merged"],
+        ["cl", "closed"],
+      ]
+        .map(
+          ([alias, state]) =>
+            ` ${alias}: authoredMergeRequests(state: ${state}, sort: UPDATED_DESC, first: ${OWN_SETTLED_PAGE}) { nodes { ${GITLAB_OWN_LIST} } }`,
+        )
+        .join("");
+  return `query { currentUser { username ${open}${settled} } }`;
 }
 
-/** The user's own pull requests on a GitHub host, latest first. */
-export function githubOwnQuery(): string {
-  return `query { viewer { login } au: search(type: ISSUE, query: ${JSON.stringify("is:pr author:@me archived:false sort:updated-desc")}, first: ${OWN_PAGE}) { nodes { ... on PullRequest { ${GITHUB_FIELDS} mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } } } } }`;
+/** One page of the user's open pull requests on a GitHub host, and on the first the latest closed. */
+export function githubOwnListQuery(after?: string): string {
+  const open = `op: search(type: ISSUE, query: ${JSON.stringify("is:pr is:open author:@me archived:false sort:created-desc")}, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`;
+  const settled = after
+    ? ""
+    : ` st: search(type: ISSUE, query: ${JSON.stringify("is:pr is:closed author:@me archived:false sort:updated-desc")}, first: ${OWN_SETTLED_PAGE}) { nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`;
+  return `query { viewer { login } ${open}${settled} }`;
+}
+
+export type OwnListPage = {
+  /** The page's requests, open and settled, without their details. */
+  items: MrItem[];
+  /** The cursor of the next page of open ones, when there is one. */
+  next: string | null;
+};
+
+/** A page of gitlabOwnListQuery or githubOwnListQuery. */
+export function parseOwnList(
+  provider: "gitlab" | "github",
+  host: string,
+  answer: unknown,
+): OwnListPage {
+  const data = (answer as { data?: Record<string, any> } | null)?.data;
+  if (!data || typeof data !== "object")
+    throw new Error(
+      `${provider === "gitlab" ? "GitLab" : "GitHub"}: ${graphqlError(answer) ?? "no data in the answer"}`,
+    );
+  const root = provider === "gitlab" ? data.currentUser : data;
+  if (!root) throw new Error("GitLab: not signed in");
+  const lists =
+    provider === "gitlab" ? [root.op, root.mg, root.cl] : [root.op, root.st];
+  const items: MrItem[] = [];
+  for (const list of lists)
+    for (const node of nodes(list)) {
+      const item =
+        provider === "gitlab" ? gitlabItem(host, node) : githubItem(host, node);
+      if (item) items.push({ ...item, reasons: ["authored"] });
+    }
+  const info = root.op?.pageInfo;
+  const next =
+    info?.hasNextPage === true && typeof info.endCursor === "string"
+      ? info.endCursor.slice(0, 500)
+      : null;
+  return { items, next };
+}
+
+/**
+ * The details of some own requests (at most OWN_DETAILS_BATCH): one alias
+ * per project, its requests by number.
+ */
+export function ownDetailsQuery(
+  provider: "gitlab" | "github",
+  items: Pick<MrItem, "project" | "number">[],
+  fields: OwnFields = "full",
+): string {
+  const byProject = new Map<string, number[]>();
+  for (const item of items)
+    byProject.set(item.project, [
+      ...(byProject.get(item.project) ?? []),
+      item.number,
+    ]);
+  const parts = [...byProject].flatMap(([project, numbers], index) => {
+    if (provider === "gitlab")
+      return [
+        `p${index}: project(fullPath: ${JSON.stringify(project)}) { mergeRequests(iids: ${JSON.stringify(numbers.map(String))}, first: ${numbers.length}) { nodes { ${GITLAB_OWN_DETAILS} ${GITLAB_OWN_FIELDS[fields]} } } }`,
+      ];
+    const [owner, name, ...rest] = project.split("/");
+    if (!owner || !name || rest.length) return [];
+    const pulls = numbers
+      .map(
+        (number) =>
+          `n${number}: pullRequest(number: ${number}) { ${GITHUB_OWN_DETAILS} }`,
+      )
+      .join(" ");
+    return [
+      `p${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ${pulls} }`,
+    ];
+  });
+  return `query { ${parts.join(" ")} }`;
+}
+
+/** What the costly fields say of an own request, kept between refreshes. */
+export type OwnDetails = {
+  /** The request's updatedAt and head when they were read. */
+  updatedAt: string;
+  headSha: string;
+  pipeline: ForgePipelineStatus | null;
+  notes: number;
+  baseSha?: string;
+  /** GitHub: the comments of the user's pending review. */
+  drafts?: number;
+  own: MrOwnStatus;
+  /**
+   * Something the forge settles later without touching updatedAt (a
+   * pipeline running, mergeability being computed): read again next time.
+   */
+  settling: boolean;
+};
+
+const GITLAB_MERGE_SETTLING = new Set([
+  "CHECKING",
+  "UNCHECKED",
+  "PREPARING",
+  "CI_STILL_RUNNING",
+]);
+
+/** The answer to ownDetailsQuery, by request key. */
+export function parseOwnDetails(
+  provider: "gitlab" | "github",
+  host: string,
+  answer: unknown,
+): Map<string, OwnDetails> {
+  const data = (answer as { data?: Record<string, any> } | null)?.data;
+  if (!data || typeof data !== "object")
+    throw new Error(
+      `${provider === "gitlab" ? "GitLab" : "GitHub"}: ${graphqlError(answer) ?? "no data in the answer"}`,
+    );
+  const found = new Map<string, OwnDetails>();
+  for (const entry of Object.values(data)) {
+    if (!entry || typeof entry !== "object") continue;
+    const list =
+      provider === "gitlab"
+        ? nodes((entry as any).mergeRequests)
+        : Object.values(entry as Record<string, unknown>);
+    for (const node of list) {
+      const item =
+        provider === "gitlab" ? gitlabItem(host, node) : githubItem(host, node);
+      if (!item) continue;
+      const running =
+        item.pipeline === "running" || item.pipeline === "pending";
+      const settling =
+        provider === "gitlab"
+          ? GITLAB_MERGE_SETTLING.has(
+              text((node as any).detailedMergeStatus, 60).toUpperCase(),
+            )
+          : (node as any).mergeable === "UNKNOWN";
+      found.set(item.key, {
+        updatedAt: item.updatedAt,
+        headSha: item.headSha,
+        pipeline: item.pipeline,
+        notes: item.notes,
+        ...(item.baseSha ? { baseSha: item.baseSha } : {}),
+        ...(item.drafts !== undefined ? { drafts: item.drafts } : {}),
+        own:
+          provider === "gitlab" ? gitlabOwnStatus(node) : githubOwnStatus(node),
+        settling: running || settling,
+      });
+    }
+  }
+  return found;
+}
+
+/** A listed own request with its details, as the inbox shows it. */
+export function withOwnDetails(item: MrItem, details?: OwnDetails): MrItem {
+  if (!details) return item;
+  return {
+    ...item,
+    pipeline: details.pipeline,
+    notes: details.notes,
+    ...(details.baseSha ? { baseSha: details.baseSha } : {}),
+    ...(details.drafts !== undefined ? { drafts: details.drafts } : {}),
+    own: details.own,
+  };
 }
 
 function names(list: unknown, field: (node: any) => unknown): string[] {
@@ -319,7 +518,7 @@ function names(list: unknown, field: (node: any) => unknown): string[] {
   ];
 }
 
-/** A GitLab own merge request's status, from gitlabOwnQuery's fields. */
+/** A GitLab own merge request's status, from the details' fields. */
 export function gitlabOwnStatus(node: any): MrOwnStatus {
   const resolvable = Number(node?.resolvableDiscussionsCount);
   const resolved = Number(node?.resolvedDiscussionsCount);
@@ -337,7 +536,7 @@ export function gitlabOwnStatus(node: any): MrOwnStatus {
   };
 }
 
-/** A GitHub own pull request's status, from githubOwnQuery's fields. */
+/** A GitHub own pull request's status, from the details' fields. */
 export function githubOwnStatus(node: any): MrOwnStatus {
   const reviews = nodes(node?.latestOpinionatedReviews);
   const by = (state: string) =>
@@ -361,39 +560,6 @@ export function githubOwnStatus(node: any): MrOwnStatus {
     conflicts: node?.mergeable === "CONFLICTING",
     needsRebase: false,
   };
-}
-
-/**
- * A host's answer to its own-requests query: the open ones, and those
- * merged or closed since `settledSince` (ISO).
- */
-export function parseOwnRequests(
-  provider: "gitlab" | "github",
-  host: string,
-  answer: unknown,
-  settledSince: string,
-): MrItem[] {
-  const data = (answer as { data?: Record<string, any> } | null)?.data;
-  if (!data || typeof data !== "object")
-    throw new Error(
-      `${provider === "gitlab" ? "GitLab" : "GitHub"}: ${graphqlError(answer) ?? "no data in the answer"}`,
-    );
-  const list =
-    provider === "gitlab" ? data.currentUser?.au : (data.au ?? undefined);
-  const out: MrItem[] = [];
-  for (const node of nodes(list)) {
-    const item =
-      provider === "gitlab" ? gitlabItem(host, node) : githubItem(host, node);
-    if (!item) continue;
-    if (item.state !== "open" && item.updatedAt < settledSince) continue;
-    out.push({
-      ...item,
-      reasons: ["authored"],
-      own:
-        provider === "gitlab" ? gitlabOwnStatus(node) : githubOwnStatus(node),
-    });
-  }
-  return out;
 }
 
 /** Whether a GraphQL answer refused a field (an older or smaller forge). */
