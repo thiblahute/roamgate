@@ -496,8 +496,12 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=changes, a range of other ends, a compare and a step's review open in Changes as the review scope, never the classic pane", async () => {
+  test("on reviewin=changes, a range of other ends, a compare, a step's review and a merge request's open in Changes as the review scope, never the classic pane", async () => {
     for (const target of [
+      {
+        kind: "mr",
+        url: "https://gitlab.example/group/project/-/merge_requests/7",
+      },
       { kind: "range", base: "v1.0", head: "topic" },
       { kind: "range", base: "topic-old", head: "topic", compare: true },
       {
@@ -528,7 +532,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=changes, a review of another repository than the checkout keeps the classic pane", async () => {
+  test("on reviewin=changes, a review of a repository the workspace does not hold shows in its Changes, from elsewhere, never the classic pane", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r2", "w1")],
     });
@@ -541,8 +545,42 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       app.setNextOpened("r2");
       await app.toggleReview();
       await app.settle(50);
-      expect(app.shown()).toEqual({ mounted: ["r2"], shownId: "r2" });
-      expect(app.inspector()?.open ?? false).toBe(false);
+      // D3: in the focused workspace's Changes, on that repository, marked.
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({
+        scope: "working",
+        root: "/repo/r2",
+        elsewhere: true,
+      });
+    } finally {
+      await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, the review picked in the reviews list shows in Changes, a merge request's too, never the classic pane", async () => {
+    const mr = reviewOf("m1", "w1");
+    mr.session.root = "/repo/r1";
+    mr.session.target = {
+      kind: "mr",
+      url: "https://gitlab.example/group/project/-/merge_requests/7",
+    };
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1"), mr],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      await app.toggleList();
+      expect(app.listShown()).toBe(true);
+      await app.pickFromList("m1");
+      await app.settle(50);
+      expect(app.listShown()).toBe(false);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ review: "m1" });
     } finally {
       await app.unmount();
     }

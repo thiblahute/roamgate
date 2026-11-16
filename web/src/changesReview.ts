@@ -180,8 +180,15 @@ export function scopeOpenTarget(
 export type ChangesAgent = {
   /** The review the comments are in, once there is one. */
   snapshot: ReviewSnapshot | null;
-  /** The agent's name; null when the review has none to talk to. */
+  /**
+   * The agent's name; null when the review has none to talk to (or keeps
+   * agents out: a security merge request, one not read yet).
+   */
   agentName: string | null;
+  /** A merge request's review: its Send is the agent's, said so. */
+  gitlab: boolean;
+  /** The scope's review, opened for a first write when it is not yet. */
+  open: () => Promise<string>;
   /** Comments go to the agent as they are written. */
   talk: boolean;
   held: boolean;
@@ -286,7 +293,9 @@ export function useChangesAgent(
     ).length;
   return {
     snapshot,
-    agentName: agent?.agentPaneId ? name : null,
+    agentName: agent?.agentPaneId && agent.agentAllowed ? name : null,
+    gitlab: !!session?.gitlab,
+    open: opened,
     talk: agent?.talk ?? false,
     held: agent?.held ?? false,
     heldCount:

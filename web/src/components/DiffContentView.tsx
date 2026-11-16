@@ -30,10 +30,11 @@ import {
 import {
   REVIEW_USER,
   type ReviewComment,
+  type ReviewSnapshot,
   type ReviewThread,
   type ReviewThreadKind,
 } from "../../../shared/review";
-import { reviewCall, useReviewState } from "../review";
+import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import {
   latestAnswerAt,
   reviewAgent,
@@ -166,6 +167,23 @@ import {
 } from "../reviewToggle";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
+import {
+  ChangesForgeHead,
+  ChangesForgeSection,
+  type ForgeHost,
+  openMergeRequest,
+  useForgeMode,
+} from "./ChangesForge";
+import {
+  adoptable,
+  agentsKeptReason,
+  type ForgeRelocation,
+  forgeName,
+  forgeOutside,
+  placeForgeThread,
+  useForgePoll,
+  useForgeRelocations,
+} from "../changesForge";
 import { NoteBody } from "./ReviewNoteBody";
 import {
   stepNotice,
@@ -491,6 +509,7 @@ const NO_MARKS: Readonly<Record<string, string>> = {};
 const NO_OTHER_FILES: readonly OtherFile[] = [];
 const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
 const NO_THREADS: ReviewThread[] = [];
+const NO_FORGE_HOST: ForgeHost = {};
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
 const DiffThreadsContext = createContext<DiffThreads | null>(null);
@@ -527,6 +546,22 @@ function scopeLineThread(thread: ReviewThread): boolean {
   return (
     !!anchor.path &&
     anchor.line !== undefined &&
+    !anchor.message &&
+    !anchor.chat &&
+    !anchor.render &&
+    !anchor.terminal
+  );
+}
+
+/**
+ * A thread of the scope's review on the whole review (a merge request's
+ * discussion on the request), not on a message, a chat, a rendered page or
+ * a terminal.
+ */
+function scopeGeneralThread(thread: ReviewThread): boolean {
+  const { anchor } = thread;
+  return (
+    !anchor.path &&
     !anchor.message &&
     !anchor.chat &&
     !anchor.render &&
@@ -1220,6 +1255,8 @@ function DiffContentViewInner({
   viewSingleCommit = false,
   onSearchElsewhere,
   readViewFile,
+  forge: forgeView,
+  forgeHost,
 }: {
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
@@ -1301,6 +1338,8 @@ function DiffContentViewInner({
    * lookup; the worktree review when absent.
    */
   reviewScope?: ChangesScope;
+  /** What the page does for the Local / GitLab switch (plan phase 7). */
+  forgeHost?: ForgeHost;
 } & ViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const { sessions: reviewSessions } = useReviewState();
@@ -1326,19 +1365,36 @@ function DiffContentViewInner({
       shownScope,
     );
     const given = new Set((givenThreads ?? []).map((thread) => thread.id));
-    return (own?.threads ?? []).filter(
-      (thread) =>
-        !given.has(thread.id) &&
-        (thread.held !== undefined
-          ? thread.anchor.feedback !== undefined
-          : thread.anchor.feedback === undefined && scopeLineThread(thread)),
-    );
+    return (own?.threads ?? [])
+      .filter(
+        (thread) =>
+          !given.has(thread.id) &&
+          (thread.held !== undefined
+            ? thread.anchor.feedback !== undefined
+            : thread.anchor.feedback === undefined &&
+              (scopeLineThread(thread) ||
+                // A merge request's: on the whole request too.
+                (!!forgeView && scopeGeneralThread(thread)))),
+      )
+      .flatMap((thread) => {
+        // A forge discussion: on its line, found again, on the whole
+        // request, or not in this commit's view.
+        if (!forgeView) return [thread];
+        const placed = placeForgeThread(thread, {
+          viewCommit,
+          headSha: forgeView.headSha,
+          relocations: forgeView.relocations,
+        });
+        return placed ? [placed] : [];
+      });
   }, [
     connectionClient.connectionId,
     givenThreads,
     heldRoot,
     reviewSessions,
     shownScope,
+    forgeView,
+    viewCommit,
   ]);
   const scopeNoteKind: GitDiffKind =
     reviewScope.kind === "working"
@@ -1352,7 +1408,9 @@ function DiffContentViewInner({
         held.length
           ? [
               ...givenAnnotations,
-              ...held.map((thread) => scopeNote(thread, scopeNoteKind)),
+              ...held
+                .filter((thread) => thread.anchor.path)
+                .map((thread) => scopeNote(thread, scopeNoteKind)),
             ]
           : givenAnnotations,
         held.length ? [...(givenThreads ?? []), ...held] : (givenThreads ?? []),
@@ -1391,8 +1449,17 @@ function DiffContentViewInner({
       )
         hidden.add(thread.id);
     }
+    // A forge discussion's view is its head's (placeForgeThread).
+    const forgeIds = new Set(
+      forgeView
+        ? scoped.threads
+            .filter((thread) => thread.kind === "merge-request")
+            .map((thread) => thread.id)
+        : [],
+    );
     for (const note of scoped.annotations) {
       if (note.source !== "diff" || viewCommit === undefined) continue;
+      if (forgeIds.has(note.id)) continue;
       const own = note.commit?.sha ?? null;
       const shows =
         own === null
@@ -1408,7 +1475,14 @@ function DiffContentViewInner({
       annotations: scoped.annotations.filter((note) => !hidden.has(note.id)),
       threads: scoped.threads.filter((thread) => !hidden.has(thread.id)),
     };
-  }, [scoped, viewCommit, viewSingleCommit, reviewSessions, shownScope]);
+  }, [
+    scoped,
+    viewCommit,
+    viewSingleCommit,
+    reviewSessions,
+    shownScope,
+    forgeView,
+  ]);
   const threads = givenThreads || held.length ? viewed.threads : undefined;
   // One review across Files and Changes (D16): a comment written in Files
   // is drawn on its file's combined diff, at its source line.
@@ -1585,6 +1659,37 @@ function DiffContentViewInner({
     Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
     reviewScope,
   );
+  /**
+   * Why git actions are refused here: the review shown is of another
+   * repository than the inspector's checkout (a series repository, a merge
+   * request's review worktree, a review from elsewhere), where stage and
+   * discard would act on the wrong files. Null: they act here.
+   */
+  const gitElsewhere = (() => {
+    if (!reviewEditor) return null;
+    const scopeRoot =
+      reviewScope.kind === "review"
+        ? changesAgent.snapshot?.session.root
+        : undefined;
+    const other =
+      repo && !repo.own
+        ? repo.root
+        : scopeRoot &&
+            repo?.root &&
+            scopeRoot.replace(/\/+$/, "") !== repo.root.replace(/\/+$/, "")
+          ? scopeRoot
+          : null;
+    if (!other) return null;
+    const name = other.replace(/\/+$/, "").split("/").pop() || other;
+    return `Not on this review: it is of ${name}, not this checkout; stage and discard act on the checkout's files.`;
+  })();
+  // The Local / GitLab switch (gm, :switch), as the review pane's.
+  const forgeMode = useForgeMode({
+    connectionId: connectionClient.connectionId,
+    snapshot: reviewEditor ? changesAgent.snapshot : null,
+    open: changesAgent.open,
+    host: forgeHost ?? NO_FORGE_HOST,
+  });
   // ---- The review's threads drawn as the review pane draws them ---------
 
   /** The checkout's review the comments here are in, once there is one. */
@@ -1833,9 +1938,132 @@ function DiffContentViewInner({
       if (row.path === path && row.new !== null) lines.set(row.new, row.text);
     return lines;
   };
+  const forge = forgeName(ownSnapshot?.session);
+  /** Why "Make it mine" failed, by thread: shown on the thread. */
+  const [adoptFailures, setAdoptFailures] = useState<
+    Readonly<Record<string, string>>
+  >({});
+  /** "Make it mine": the agent's words become the user's forge draft. */
+  const adoptBar = (thread: ReviewThread) => {
+    if (thread.sessionId !== ownSessionId) return null;
+    if (!adoptable(ownSnapshot?.session, thread)) return null;
+    const failure = adoptFailures[thread.id];
+    return (
+      <div className="chat-thread-bar">
+        {failure ? (
+          <span className="rc-kind rc-failed" role="alert">
+            Not made yours: {failure}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          title={`Its text becomes your draft on ${forge}; you submit your review there. Edit it there or here after.`}
+          onClick={() => {
+            setAdoptFailures((failures) => {
+              const kept = { ...failures };
+              delete kept[thread.id];
+              return kept;
+            });
+            ownCall("review.adopt", { thread_id: thread.id })
+              .then(() => ownCall<ReviewSnapshot>("review.get"))
+              .then(rememberReviewSnapshot)
+              .catch((error: unknown) =>
+                setAdoptFailures((failures) => ({
+                  ...failures,
+                  [thread.id]:
+                    error instanceof Error ? error.message : String(error),
+                })),
+              );
+          }}
+        >
+          Make it mine
+        </button>
+      </div>
+    );
+  };
+  /** A draft reply to a forge discussion, or its rewrite, in the editor. */
+  const forgeComposer = (
+    thread: ReviewThread,
+    comment: ReviewComment | null,
+  ) => (
+    <ReviewDiffComposer
+      key={comment ? `edit:${comment.id}` : `reply:${thread.id}`}
+      anchor={{
+        path: thread.anchor.path ?? "",
+        line: thread.anchor.line ?? 0,
+        side: thread.anchor.side ?? "new",
+        text: thread.anchor.text ?? "",
+      }}
+      suggestable={null}
+      {...(comment
+        ? { commentId: comment.id, initial: comment.body }
+        : { replyTo: thread.id })}
+      placeholder={editorPlaceholder(
+        comment
+          ? { kind: "merge-request", commentId: comment.id }
+          : { kind: "merge-request", replyTo: thread.id, publicReply: true },
+        {
+          ...ownDelivery,
+          agentName: ownAgent?.agentName ?? "Agent",
+          forge,
+        },
+      )}
+      kind="merge-request"
+      delivery={ownDelivery}
+      draftSession={changesDraftSession(resourceKey)}
+      onSave={(text, plan) => {
+        if (comment) threadView.setEditing(null);
+        else threadView.setReplying(null);
+        if (plan.kind === "write" && plan.action !== "none") {
+          const params =
+            plan.action === "reply"
+              ? { comment_id: thread.id, text }
+              : plan.action === "delete"
+                ? { comment_id: comment?.id }
+                : { comment_id: comment?.id, text };
+          const method =
+            plan.action === "reply"
+              ? "review.reply"
+              : plan.action === "delete"
+                ? "review.delete"
+                : "review.edit";
+          void reviewCall(connectionClient.connectionId, method, {
+            session_id: thread.sessionId,
+            ...params,
+          })
+            .then(() =>
+              reviewCall<ReviewSnapshot>(
+                connectionClient.connectionId,
+                "review.get",
+                { session_id: thread.sessionId },
+              ),
+            )
+            .then(rememberReviewSnapshot)
+            .catch((error: unknown) =>
+              setReviewStatus(
+                `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            );
+        }
+        focusDiffAfterEditor();
+      }}
+      onClose={() => {
+        if (comment) threadView.setEditing(null);
+        else threadView.setReplying(null);
+        focusDiffAfterEditor();
+      }}
+      {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+      notify={say}
+    />
+  );
   const reviewLook: ReviewThreadLook | undefined = reviewEditor
     ? {
         newLines: newLinesOf,
+        forge: {
+          outdatedLine: (thread) =>
+            forgeView?.relocations.get(thread.id)?.wasLine,
+          editor: forgeComposer,
+        },
         partEditor: (thread, part, done) => (
           <ReviewDiffComposer
             key={`part:${part.comment}:${part.quote}`}
@@ -1905,7 +2133,7 @@ function DiffContentViewInner({
         threadBar: (thread) => {
           if (pendingWrites.pendingById.has(thread.id)) return null;
           if (thread.kind !== "discussion" && thread.comments.length < 2)
-            return null;
+            return adoptBar(thread);
           if (threadView.replying === thread.id)
             return threadComposer(thread, null);
           return (
@@ -3049,6 +3277,12 @@ function DiffContentViewInner({
     store.notify({ kind: "info", message, autoDismissMs: 2500 });
 
   reviewHandlers.current.comment = (key, range, mode) => {
+    // A security merge request (or one not read yet) is kept from agents.
+    const kept = agentsKeptReason(ownSnapshot);
+    if (kept && (mode === "new" || mode === "ask")) {
+      say(kept);
+      return true;
+    }
     // j / k are on a message: c on one of its parts comments on that part,
     // else it answers the thread (C asks anew, on the line).
     const stop = mode === "new" ? undefined : stopOfKey(threadView.cursor);
@@ -3529,7 +3763,24 @@ function DiffContentViewInner({
           (focused ||
             (cursorHandle.current.selection() === null && here.length))
         ) {
-          diffThreads.api.resolve(first.thread);
+          const thread =
+            focused ??
+            here.find((each) => each.thread.kind !== "merge-request")?.thread ??
+            first.thread;
+          if (thread.kind === "merge-request") {
+            // Resolving on the forge is public: here it is only folded.
+            const open =
+              (thread.anchor.path
+                ? !thread.resolved && !forgeView?.relocations.has(thread.id)
+                : !thread.resolved) !== threadView.flipped.has(thread.id);
+            threadView.toggleFold(thread);
+            if (open)
+              say(
+                `Folded here; ${forge} discussions are resolved on ${forge}.`,
+              );
+            return true;
+          }
+          diffThreads.api.resolve(thread);
           return true;
         }
         return toggleChunks();
@@ -3638,6 +3889,10 @@ function DiffContentViewInner({
         // Stage the file at the cursor: a two-key chord, never `s` alone.
         const path = cursorHandle.current.where()?.path;
         if (!path || !onGitAction) return false;
+        if (gitElsewhere) {
+          say(gitElsewhere);
+          return true;
+        }
         onGitAction("stage", path);
         return true;
       }
@@ -3655,6 +3910,25 @@ function DiffContentViewInner({
         return true;
       case "t":
         setHideComments((hidden) => !hidden);
+        return true;
+      case "gf": {
+        // The file at the cursor in Files (a request's review worktree is
+        // checked out for browsing first, on demand).
+        const path = cursorHandle.current.where()?.path;
+        const target = path
+          ? visibleEntries.find((each) => each.path === path)
+          : undefined;
+        if (!target || !onOpenFile) return false;
+        onOpenFile(target);
+        return true;
+      }
+      case "O":
+        // The merge request's changes on its forge, in a new tab.
+        openMergeRequest(ownSnapshot);
+        return true;
+      case "gm":
+        // The local review and the merge request's, both ways.
+        forgeMode.switchMode();
         return true;
       default:
         // The review's views: < > gc (the commit bar).
@@ -3799,8 +4073,60 @@ function DiffContentViewInner({
         )}
       </div>
     ) : null;
+  // A merge request's review: the forge's section above the diff, as the
+  // review pane's (plan phase 7).
+  const forgeShown =
+    reviewEditor && forgeView && ownSnapshot?.session.gitlab
+      ? viewed.threads.filter((thread) => thread.kind === "merge-request")
+      : null;
+  const forgeSection =
+    forgeShown && ownSnapshot ? (
+      <ChangesForgeSection
+        snapshot={ownSnapshot}
+        forge={forge}
+        shown={forgeShown}
+        placed={
+          new Set(
+            (placement?.placed ?? [])
+              .filter((spot) => spot.thread.kind === "merge-request")
+              .map((spot) => spot.thread.id),
+          ).size
+        }
+        general={
+          hideComments
+            ? []
+            : generalThreads.filter(
+                (thread) =>
+                  thread.kind === "merge-request" &&
+                  !(threadView.openOnly && thread.resolved),
+              )
+        }
+        outside={forgeOutside(ownSnapshot.threads, viewCommit)}
+        onAllChanges={forgeView!.onAllChanges}
+        renderThread={(thread) =>
+          diffThreads ? (
+            <div className="chat-review diff-review-thread">
+              <FileThread
+                thread={thread}
+                api={diffThreads.api}
+                view={diffThreads.view}
+                undelivered={diffThreads.undelivered}
+                nested={diffThreads.nested}
+                top
+                {...(diffThreads.review ? { review: diffThreads.review } : {})}
+              />
+            </div>
+          ) : null
+        }
+      />
+    ) : null;
   const generalBlock =
-    reviewEditor && diffThreads && !hideComments && generalThreads.length ? (
+    reviewEditor &&
+    diffThreads &&
+    !hideComments &&
+    generalThreads.some(
+      (thread) => !forgeSection || thread.kind !== "merge-request",
+    ) ? (
       <div className="diff-review-general" data-testid="diff-review-general">
         {(
           [
@@ -3810,7 +4136,11 @@ function DiffContentViewInner({
             ],
             [
               "GitLab",
-              generalThreads.filter((each) => each.kind === "merge-request"),
+              forgeSection
+                ? []
+                : generalThreads.filter(
+                    (each) => each.kind === "merge-request",
+                  ),
             ],
           ] as const
         ).map(([title, list]) => {
@@ -4634,6 +4964,12 @@ function DiffContentViewInner({
           name,
           description,
           run: () => {
+            // Another repository's review: the checkout's git acts on the
+            // checkout only (plan section 2).
+            if (gitElsewhere) {
+              say(gitElsewhere);
+              return;
+            }
             const paths = cursorHandle.current.selectedPaths();
             if (!paths.length) {
               say("No file under the cursor.");
@@ -4643,6 +4979,23 @@ function DiffContentViewInner({
             for (const path of paths) onGitAction(action, path);
           },
         }))
+      : []),
+    ...(reviewEditor
+      ? [
+          {
+            name: "open",
+            aliases: ["gitlab"],
+            description:
+              "the merge request's changes on its forge, in a new tab (O)",
+            run: () => openMergeRequest(ownSnapshot),
+          },
+          {
+            name: "switch",
+            description:
+              "the local review and the merge request's, both ways (gm)",
+            run: () => forgeMode.switchMode(),
+          },
+        ]
       : []),
     ...(reviewEditor && changesAgent.agentName
       ? [
@@ -4803,6 +5156,15 @@ function DiffContentViewInner({
             agent={changesAgent}
             overallOpen={overallOpen}
             onOverall={setOverallOpen}
+          />
+        ) : null}
+        {reviewEditor ? (
+          <ChangesForgeHead
+            connectionId={connectionClient.connectionId}
+            snapshot={ownSnapshot}
+            forge={forge}
+            mode={forgeMode}
+            threads={drawnThreads ?? NO_THREADS}
           />
         ) : null}
         {reviewEditor &&
@@ -5047,6 +5409,7 @@ function DiffContentViewInner({
       <DiffThreadsContext.Provider value={diffThreads}>
         <DiffDrawingContext.Provider value={drawing}>
           {overallBlock}
+          {forgeSection}
           {generalBlock}
           {diffList}
           {otherFilesBlock}
@@ -5135,6 +5498,15 @@ type ViewProps = {
   onSearchElsewhere?: (pattern: string) => Promise<string | null>;
   /** A file as the view shows it, for the lines revealed around a hunk. */
   readViewFile?: (path: string) => Promise<string>;
+  /**
+   * A merge request's review (plan phase 7): its discussions found again
+   * in today's file, the head they are on, all the changes shown.
+   */
+  forge?: {
+    relocations: ReadonlyMap<string, ForgeRelocation>;
+    headSha: string | null;
+    onAllChanges: () => void;
+  };
 };
 
 type DiffContentViewProps = Omit<
@@ -5215,6 +5587,26 @@ export function DiffContentView({
     native: reviewScope.kind === "branch",
     placeKey,
     where,
+  });
+  // A merge request's review: its discussions read again while shown, an
+  // older head's found again in today's file (plan phase 7).
+  const forgeSnapshot =
+    reviewScope.kind === "review"
+      ? (sessions.get(reviewScope.sessionId) ?? null)
+      : null;
+  const forgeOn = reviewing && !!forgeSnapshot?.session.gitlab;
+  useForgePoll(
+    connectionId,
+    forgeOn && forgeSnapshot ? forgeSnapshot.session.id : null,
+    forgeOn,
+  );
+  const relocations = useForgeRelocations({
+    connectionId,
+    sessionId: forgeSnapshot?.session.id ?? null,
+    threads: forgeSnapshot?.threads ?? NO_THREADS,
+    headSha: views.headSha,
+    enabled: forgeOn && views.sha === null,
+    worktree: forgeSnapshot?.session.target.kind === "worktree",
   });
   const [viewGoTo, setViewGoTo] = useState<{
     path: string;
@@ -5380,6 +5772,15 @@ export function DiffContentView({
         return true;
       }}
       viewCommands={commands}
+      {...(forgeOn
+        ? {
+            forge: {
+              relocations,
+              headSha: views.headSha,
+              onAllChanges: () => views.show(null),
+            },
+          }
+        : {})}
       {...(views.active && views.commits?.length
         ? {
             viewCommit: views.sha,

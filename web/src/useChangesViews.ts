@@ -52,6 +52,8 @@ export type ChangesViews = {
   status: string;
   /** The code changed since it was read: a reload shows it. */
   changed: boolean;
+  /** The head the view's diff was read at (the review's, for all changes). */
+  headSha: string | null;
   picker: { query: string; at: number; choices: CommitChoice[] } | null;
   show: (sha: string | null) => void;
   step: (direction: 1 | -1) => void;
@@ -438,6 +440,7 @@ export function useChangesViews({
       setGeneration((value) => value + 1);
     },
     searchElsewhere,
+    headSha: diff?.headSha ?? null,
     readFile: async (path) => {
       // The view's head: a commit's own, else the review's head.
       const rev = diff?.headSha ?? (sha || "HEAD");

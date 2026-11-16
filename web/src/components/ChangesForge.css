@@ -1,0 +1,100 @@
+/* A review's forge in Changes: the Local / GitLab switch, the drafts, More. */
+.diff-content-view {
+  container-type: inline-size;
+}
+
+.diff-content-head .rv-mode-switch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.diff-content-head .rv-mode-mr {
+  padding: 0 4px;
+  color: var(--muted);
+}
+
+.diff-content-head .rv-mode-switch button {
+  padding: 1px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-content-head .rv-mode-switch button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* As in the review pane: the switch is in the More menu when narrow. */
+@container (max-width: 1100px) {
+  .diff-content-head .rv-mode-switch {
+    display: none;
+  }
+}
+
+.diff-content-head .diff-forge-drafts,
+.diff-content-head .diff-forge-push {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.diff-content-head .rv-menu-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.diff-forge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-forge-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diff-forge h4,
+.diff-forge summary {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diff-forge .link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

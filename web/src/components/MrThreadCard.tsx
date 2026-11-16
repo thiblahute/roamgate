@@ -111,6 +111,7 @@ export function MrThreadCard({
             <div
               key={comment.id}
               data-comment-id={comment.id}
+              data-chat-stop={`m:${comment.id}`}
               className={`mr-note${comment.id === focusedComment ? " focused" : ""}`}
             >
               <div className="mr-who">
@@ -126,6 +127,7 @@ export function MrThreadCard({
           <div
             key={comment.id}
             data-comment-id={comment.id}
+            data-chat-stop={`m:${comment.id}`}
             className={`mr-note mr-draft${comment.id === focusedComment ? " focused" : ""}`}
           >
             <div className="mr-who">

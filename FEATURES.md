@@ -263,10 +263,36 @@ Inspector button, shortcuts, or workspace/agent menus.
   its history, latest first. After a rebase or an amend the commit shown is
   followed (by its patch, else its subject), and the view shown is kept per
   review. When the code changes, the bar offers to reload (R, gr, `:e`).
-  The review toggle opens every review but a merge request's in Changes: a
-  range of other ends, two versions compared and an older step's review
-  show as a scope of their own, named in the scope line, until you pick
-  another scope.
+  The review toggle and the reviews list (Option+Shift+R) open every review
+  in Changes: a range of other ends, two versions compared, an older step's
+  review and a merge or pull request's review show as a scope of their own,
+  named in the scope line, until you pick another scope. A review of a
+  repository the workspace does not hold (its workspace closed, an agent's
+  without one) shows in the focused workspace's Changes, marked **from
+  elsewhere**. On a review of another repository than the inspector's
+  checkout (a series repository, a request's review worktree, one from
+  elsewhere) the tree offers no git actions and `:stage`, `gs` and
+  `:discard` say why they do not act there.
+- A merge or pull request's review in Changes is the review pane's: its
+  GitLab or GitHub discussions are drawn on their lines (one written on an
+  older head is found again in today's file, folded, "outdated (was line
+  N)") and above the diff (on the whole request, open ones and a folded
+  Resolved list), with a line counting them, those on code outside the
+  commit shown linking to all the changes; they are read again every minute
+  while shown and as soon as the page is back. **Draft reply** writes a
+  draft on the forge, never published from Roamgate; your draft replies
+  have Edit and Delete; `r` only folds a discussion (it is resolved on the
+  forge). The head has the **Local / GitLab** switch (`gm`, `:switch`; in
+  the **More** menu, with **GitLab mode**, when Changes is 1100 px wide or
+  less), a link counting your drafts on the forge, **GitLab draft (N)** to
+  put the comments waiting here there as drafts, and in More, **Open the
+  merge request** (`O`, `:open`) and **Copy the review as Markdown**. An
+  agent's comment has **Make it mine**, which makes it your forge draft.
+  The agent's Send reads **Send to Claude**: nothing labelled Send reaches
+  the forge. A security merge request (or one not read yet) is kept from
+  agents: no agent group, `C` refused, comments are your drafts. `gf` opens
+  the file at the cursor in Files; on a request's review worktree that
+  follows on demand it is checked out first, never over local changes.
 - A comment on the Last step goes to that step's own review (agents open it
   with `roamgate-review open --last-step` or `review_open` with
   `last_step`), drawn on that step only. A step's snapshots are kept while
@@ -1927,9 +1953,10 @@ top, the efforts' cards too. Narrow panes and phones keep the one list.
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**
 workspace, and opens the request's review there, GitLab merge requests and
-GitHub pull requests alike. The worktree checks out the request's head,
-detached, at once or only when you browse its files (a setting); nothing is
-built. If it has local changes you are asked: keep them as a WIP commit on
+GitHub pull requests alike (with reviews in Changes, in that workspace's
+Changes). The worktree checks out the request's head,
+detached, at once or only when you browse its files (`gf`, Open in Files;
+a setting); nothing is built. If it has local changes you are asked: keep them as a WIP commit on
 a `review/<number>` branch, or discard them; leaving it as it is changes
 nothing. Your clone is found among your workspaces' checkouts by its
 remote, on the default connection first (the review worktree and its

@@ -252,6 +252,33 @@ view names the commit (`anchor.commit`, `commitSubject`, `commitParent`) and
 shows in that view only. `review.state` is polled while shown: a change
 offers a reload (R, gr, `:e`) beside the commit bar.
 
+Where a review shows with reviews in Changes (`changesReviewOpen.ts`
+`changesReviewChoice`, used by the review toggle, the reviews list and a
+review asked for by the inbox or an agent in the focused workspace): every
+diff review (worktree, range, step, merge request) shows in Changes; only
+chats and rendered files keep their homes. A review of a repository the
+workspace does not hold is shown in the focused workspace's Changes on its
+root, `elsewhere` marking the scope line (D3). Git actions act on the
+inspector's checkout only: on another repository (`ShownRepo.own` false, or
+a review whose root is not the shown checkout) the tree offers none and
+`:stage`, `gs`, `:discard` are refused with a message.
+
+A merge request's review in Changes (`changesForge.ts`,
+`ChangesForge.tsx`) is the review pane's: `review.gitlab.refresh` with
+`poll` every minute while shown and on the page's return (not within 30 s
+of the last), forge discussions written on an older head found again by
+their text in today's file (`relocateLine`, both versions read once per
+head with `review.file`), placed per view (`placeForgeThread`: in a
+commit's view only those on that commit's head, counted as outside
+otherwise; in all the changes, an older head's not found again on the
+whole request). Draft replies are `review.reply` (drafts on the forge,
+never published), "Make it mine" `review.adopt`, the GitLab draft button
+`review.gitlab.push` (draft notes, not submitted). The Local / GitLab switch
+uses `review.gitlab.open` (shown as Changes' review scope) and
+`review.gitlab.find` with `local` (back to the checkout's branch scope).
+Agents are kept from a merge request until it is read and not confidential
+(`reviewAgent` `agentAllowed`).
+
 Browser preferences live in namespaced `localStorage` and sync across tabs on the
 same origin. Navigation, open files, live draft edits, and focus stay per tab.
 

@@ -66,7 +66,15 @@ export function ChangesAgentBar({
           title={`Send the held comments, or the open discussions, to ${name} (:send)`}
           onClick={agent.send}
         >
-          {agent.heldCount ? `Send (${agent.heldCount})` : "Send"}
+          {agent.gitlab
+            ? // A merge request's review: the Send is the agent's, never
+              // the forge's (user decision 2026-11-13).
+              agent.heldCount || agent.waiting
+              ? `Send ${agent.heldCount || agent.waiting} to ${name}`
+              : `Send to ${name}`
+            : agent.heldCount
+              ? `Send (${agent.heldCount})`
+              : "Send"}
         </button>
         <button
           type="button"

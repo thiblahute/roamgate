@@ -105,6 +105,8 @@ type InspectorProps = {
     line?: number;
     scope?: string;
     root?: string;
+    review?: string;
+    elsewhere?: boolean;
     at: number;
   } | null;
   state: {
@@ -125,6 +127,8 @@ export type AppWithReviews = {
   listShown(): boolean;
   /** Close the reviews list with its own close. */
   closeList(): Promise<void>;
+  /** Open a review from the reviews list (its Enter on a row). */
+  pickFromList(id: string): Promise<void>;
   /** A key on the focused element (else the page), in App's notation. */
   key(init: KeyboardEventInit): Promise<void>;
   /** Option+R (`review.toggle`): Ctrl+Alt+R off a Mac. */
@@ -159,6 +163,8 @@ export type AppWithReviews = {
     line?: number;
     scope?: string;
     root?: string;
+    review?: string;
+    elsewhere?: boolean;
     at: number;
   } | null;
   /** Switches the shown inspector's view, as its tab strip does. */
@@ -370,11 +376,29 @@ async function mockApp(before?: () => Promise<void> | void) {
     },
   }));
   mock.module("./components/ReviewList", () => ({
-    ReviewList: ({ onClose }: { onClose: () => void }) => (
+    ReviewList: ({
+      onClose,
+      onOpen,
+      sessions,
+    }: {
+      onClose: () => void;
+      onOpen: (sessionId: string) => void;
+      sessions: ReviewSnapshot[];
+    }) => (
       <div className="review-list-overlay" data-review-list="">
         <button type="button" onClick={onClose}>
           Close the list
         </button>
+        {sessions.map((snapshot) => (
+          <button
+            key={snapshot.session.id}
+            type="button"
+            data-review-pick={snapshot.session.id}
+            onClick={() => onOpen(snapshot.session.id)}
+          >
+            {snapshot.session.title}
+          </button>
+        ))}
       </div>
     ),
   }));
@@ -548,6 +572,14 @@ export async function mountAppWithReviews(options: {
       return current.hostProps;
     },
     listShown: () => container.querySelector("[data-review-list]") !== null,
+    async pickFromList(id) {
+      const button = container.querySelector<HTMLButtonElement>(
+        `[data-review-pick="${id}"]`,
+      );
+      if (!button) throw new Error(`no ${id} in the reviews list`);
+      await React.act(async () => button.click());
+      await settle();
+    },
     async closeList() {
       const button = container.querySelector<HTMLButtonElement>(
         "[data-review-list] button",
