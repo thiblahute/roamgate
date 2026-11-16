@@ -4,18 +4,22 @@ import { readFileSync } from "node:fs";
 const css = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
 
+/** The z-index of the first rule for `selector` that sets one. */
 function zIndexOf(source: string, selector: string) {
-  const at = source.indexOf(`${selector} {`);
+  let at = source.indexOf(`${selector} {`);
   if (at < 0) throw new Error(`no rule for ${selector}`);
-  const body = source.slice(at, source.indexOf("}", at));
-  const match = /z-index:\s*(\d+)/.exec(body);
-  if (!match) throw new Error(`no z-index for ${selector}`);
-  return Number(match[1]);
+  while (at >= 0) {
+    const body = source.slice(at, source.indexOf("}", at));
+    const match = /z-index:\s*(\d+)/.exec(body);
+    if (match) return Number(match[1]);
+    at = source.indexOf(`${selector} {`, at + 1);
+  }
+  throw new Error(`no z-index for ${selector}`);
 }
 
-test("an overlay shown from the review floats above it, below dialogs", () => {
+test("an overlay shown from the reviews list floats above it, below dialogs", () => {
   const overlay = css("./OverlayTab.css");
-  const review = zIndexOf(css("./ReviewOverlay.css"), ".review-overlay");
+  const review = zIndexOf(css("./ReviewList.css"), ".review-list-overlay");
   const dialogs = zIndexOf(
     css("./ConfigurationDialog.css"),
     ".popover-content.configuration-help-content",

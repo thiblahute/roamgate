@@ -72,9 +72,6 @@ const WORDS = [
   "novim",
   "set vim",
   "set novim",
-  "set reviewin=changes",
-  "set reviewin=classic",
-  "set reviewin",
 ];
 
 function ran(input: string): ReviewCommand[] {
@@ -137,7 +134,8 @@ test(":s is side by side, never :stage or :scope; unknown words and :set options
   expect(ran(":help")).toEqual([
     { type: "unknown", text: notAReviewCommand("help") },
   ]);
+  // The retired switch (`reviewin`) is no setting now.
   expect(ran(":set reviewin=changes")).toEqual([
-    { type: "reviewIn", surface: "changes" },
+    { type: "unknown", text: notAReviewCommand("set reviewin=changes") },
   ]);
 });

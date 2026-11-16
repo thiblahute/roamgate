@@ -1,17 +1,17 @@
 /**
- * Every review surface the behavior tests run against: the classic review
- * pane, and the review in Changes (plan: review into the inspector), which
- * runs the tests of what it does so far. A test needing what a surface does
- * not do yet is not registered for it (it is neither run nor skipped there).
+ * The review surface the behavior tests run against: the review in Changes
+ * (plan: review into the inspector; the classic review pane they also ran
+ * against retired in phase 9). Each test says what it needs of the
+ * surface; one needing what it does not do is not registered (neither run
+ * nor skipped).
  */
 import { test } from "bun:test";
 import { mountChangesReview } from "./reviewSurface.changes.testkit";
-import { mountClassicReview } from "./reviewSurface.classic.testkit";
 import type { ReviewSurface, SurfaceOptions } from "./reviewSurface.testkit";
 
 /** What a test needs of a surface, beyond the diff it draws. */
 export type SurfaceFeature =
-  /** Everything the classic pane does: every file is now sorted by feature. */
+  /** The whole review: every file is now sorted by feature. */
   | "review"
   /** The review's `:` commands and its shortcut list (`?`, `:help`). */
   | "commands"
@@ -39,7 +39,7 @@ export type SurfaceFeature =
   | "commits"
   /** The comment editor (phase 4). */
   | "editor"
-  /** The window's width picks side by side (classic; D4 for Changes). */
+  /** The window's width picks side by side (D4). */
   | "window-width"
   /** The code checked every 5 s while shown; a change offers a reload. */
   | "reload-offer"
@@ -68,10 +68,7 @@ export type SurfaceFeature =
   | "agent-menu"
   /** A thread on a commit rewritten out of the review: gn shows it. */
   | "gone-commits"
-  /**
-   * The checkout's git actions on the review (:stage, gs, :discard): Changes
-   * only, the classic pane has none.
-   */
+  /** The checkout's git actions on the review (:stage, gs, :discard). */
   | "git-actions";
 
 export type SurfaceEntry = {
@@ -112,11 +109,6 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
 
 export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [
   {
-    name: "classic",
-    mount: mountClassicReview,
-    has: (feature) => feature !== "git-actions",
-  },
-  {
     name: "changes",
     mount: mountChangesReview,
     has: (feature) => CHANGES_FEATURES.has(feature),
@@ -132,7 +124,7 @@ export function reviewSurfacesWith(
   );
 }
 
-/** The surfaces with the whole review: the classic pane and Changes. */
+/** The surfaces with the whole review: Changes. */
 export const REVIEW_SURFACES = reviewSurfacesWith("review");
 
 /**

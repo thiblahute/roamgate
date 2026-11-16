@@ -918,3 +918,20 @@
     max-width: 8em;
   }
 }
+
+/* The more-lines row between hunks (context expansion). */
+.rd-expand {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 8px;
+  border-top: 1px dashed var(--rv-border);
+  border-bottom: 1px dashed var(--rv-border);
+  background: var(--rv-surface-2);
+  font-size: 12px;
+}
+
+.rd-expand .btn {
+  padding: 1px 8px;
+  font-size: 12px;
+}

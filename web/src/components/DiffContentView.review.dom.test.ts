@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 /**
  * The review's comment editor, thread keys and thread placing in Changes
- * (plan: review into the inspector, phase 4), "in Changes" with Vim keys
- * on (`reviewCursor`). On classic, Changes keeps its popover and its keys
- * (DiffContentView.cursor.dom.test.ts).
+ * (plan: review into the inspector, phase 4), with the review's cursor
+ * (`reviewCursor`). Without the review (a commit's diff, Files' changes),
+ * the diff keeps its popover and its keys (DiffContentView.cursor.dom).
  */
 if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
   test("Changes' review editor and thread keys in an isolated DOM runtime", async () => {
@@ -325,7 +325,7 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
       }
     });
 
-    test("on classic, c is nothing and a second click opens upstream's popover", async () => {
+    test("without the review (a commit's diff in Commits, Files' changes), c is nothing and a second click opens upstream's popover", async () => {
       const diff = await mountChangesDiff({
         entries: [a],
         patches,
@@ -343,8 +343,53 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
     });
   });
 
+  describe("the review's comment editor in Changes, as you type", () => {
+    test("typing a comment renders the editor alone, not the review", async () => {
+      const big = entry("big.ts", "unstaged", "A");
+      const added = Array.from(
+        { length: 40 },
+        (_, i) => `+const line${i} = ${i};`,
+      );
+      let commits = 0;
+      const diff = await mountChangesDiff({
+        entries: [big],
+        patches: {
+          "unstaged:big.ts": `diff --git a/big.ts b/big.ts\n--- /dev/null\n+++ b/big.ts\n@@ -0,0 +1,40 @@\n${added.join("\n")}\n`,
+        },
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        onRender: () => {
+          commits++;
+        },
+      });
+      try {
+        expect(diff.lines("unstaged:big.ts").length).toBeGreaterThanOrEqual(40);
+        await press("c");
+        const box = await waitForEditor(diff);
+        expect(box).not.toBeNull();
+        await diff.settle();
+        // The Profiler sees the diff's renders: opening the editor was one.
+        expect(commits).toBeGreaterThan(0);
+        commits = 0;
+        for (const key of "Looks good")
+          await act(async () =>
+            box!.dispatch({
+              changes: { from: box!.state.doc.length, insert: key },
+            }),
+          );
+        await diff.settle();
+        // Each key re-rendered every diff line and thread before.
+        expect(commits).toBe(0);
+        // What was typed is still what the editor keeps and saves.
+        expect(editor()?.state.doc.toString()).toBe("Looks good");
+      } finally {
+        await diff.unmount();
+      }
+    });
+  });
+
   describe("git actions from the diff", () => {
-    test("gs stages the file at the cursor; s alone is not staging; on classic gs does nothing", async () => {
+    test("gs stages the file at the cursor; s alone is not staging; without the review (a commit's diff in Commits, Files' changes) gs does nothing", async () => {
       const done: string[] = [];
       const diff = await mountChangesDiff({
         entries: [a],

@@ -18,11 +18,11 @@ import "./ChatThreads.css";
 
 /*
  * The review's comment editor in Changes (plan: review into the inspector,
- * phase 4): the review pane's Vim editor drawn under the line, with its
+ * phase 4): the review's Vim editor drawn under the line, with its
  * save policy (reviewSave: only an explicit save sends, Esc keeps a draft,
  * a key or two is a stray, an unchanged suggestion is empty, a save waits
  * for images) and its unsent text kept (reviewDrafts). It replaces the
- * popover on "in Changes"; the popover stays for Files and Terminal.
+ * popover in Changes; the popover stays for Files and Terminal.
  */
 
 const ReviewCommentEditorLazy = lazyWithReload("review-comment-editor", () =>

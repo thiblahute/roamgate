@@ -3,8 +3,6 @@ import {
   PREFS_KEY,
   readReviewPrefs,
   reviewSplitDefault,
-  reviewSurfaceChoice,
-  reviewSurfaceMessage,
   SPLIT_MIN_WIDTH,
   writeReviewPrefs,
 } from "./reviewPrefs";
@@ -93,16 +91,14 @@ test("side by side as chosen, else from a wide enough window", () => {
   expect(reviewSplitDefault({}, undefined)).toBe(false);
 });
 
-test("reviews open in the classic pane unless set to Changes; a write tells who listens", () => {
-  expect(reviewSurfaceChoice()).toBe("classic");
-  writeReviewPrefs({ reviewIn: "changes" });
-  expect(reviewSurfaceChoice()).toBe("changes");
-  // Anything else stored reads as the classic pane.
-  expect(reviewSurfaceChoice({ reviewIn: "nowhere" as never })).toBe("classic");
-  expect(reviewSurfaceMessage("changes")).toBe(
-    "Reviews open in Changes (reviewin=changes)",
-  );
-  expect(reviewSurfaceMessage("classic")).toBe(
-    "Reviews open in the review pane (reviewin=classic)",
-  );
+test("a stored reviewin (the retired switch) is kept as it is and read by nothing", () => {
+  // What an older build stored stays, read by nothing: reviews open in
+  // Changes whatever it says.
+  values.set(`roamgate:${PREFS_KEY}`, JSON.stringify({ reviewIn: "classic" }));
+  expect(readReviewPrefs()).toEqual({ reviewIn: "classic" } as never);
+  writeReviewPrefs({ split: true });
+  expect(readReviewPrefs()).toEqual({
+    reviewIn: "classic",
+    split: true,
+  } as never);
 });

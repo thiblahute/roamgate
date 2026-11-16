@@ -10,8 +10,7 @@ import {
  * (inspectorCommands.ts): one entry per name Tab offers (REVIEW_COMMANDS,
  * in its order), with the other words of parseReviewCommand as its
  * aliases, and the words Tab never offers (`:novim`, `:set ...`) as
- * entries of their own. Each runs what parseReviewCommand reads, so the
- * classic pane and Changes mean the same by every word.
+ * entries of their own. Each runs what parseReviewCommand reads.
  */
 
 /** Words run but not offered, by the listed name they mean the same as. */
@@ -79,7 +78,7 @@ export function reviewInspectorCommands(
       entry(name, description, true),
     ),
     entry("novim", "Vim keys in comments off", false),
-    entry("set", "set vim, novim, reviewin=classic|changes", false),
+    entry("set", "set vim, novim", false),
   ];
 }
 

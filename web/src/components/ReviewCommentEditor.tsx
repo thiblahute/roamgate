@@ -9,6 +9,7 @@ import {
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
 import { defineExCommands, vimExEditors } from "./vimEx";
+import "./ReviewCard.css";
 
 /** What the overlay can do to an open editor. */
 export type CommentEditorHandle = {

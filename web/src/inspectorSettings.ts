@@ -1,22 +1,15 @@
 import type { InspectorCommand } from "./inspectorCommands";
 import { parseReviewCommand } from "./reviewNavigation";
-import {
-  reviewSurfaceChoice,
-  reviewSurfaceMessage,
-  writeReviewPrefs,
-} from "./reviewPrefs";
 import { store } from "./store";
 import { setVimKeys, vimKeys } from "./vimKeys";
 
 /*
  * The inspector's own settings at its `:` prompt: `:vim`, `:novim`,
- * `:set vim|novim` (the one Vim keys setting), `:set reviewin=...` (the
- * review's preferences, as the review pane's prompt sets them) and `:help`,
- * the shortcut list.
+ * `:set vim|novim` (the one Vim keys setting) and `:help`, the shortcut list.
  */
 
 /**
- * `:vim`, `:novim`, `:set ...`: the review's preferences, said as set.
+ * `:vim`, `:novim`, `:set ...`: the one Vim keys setting, said as set.
  * False when the words are not a setting.
  */
 export function runReviewSetting(words: string): boolean {
@@ -28,15 +21,6 @@ export function runReviewSetting(words: string): boolean {
       kind: "info",
       message: on ? "Vim keys on" : "Vim keys off",
       autoDismissMs: 1800,
-    });
-    return true;
-  }
-  if (command.type === "reviewIn") {
-    if (command.surface) writeReviewPrefs({ reviewIn: command.surface });
-    store.notify({
-      kind: "info",
-      message: reviewSurfaceMessage(command.surface ?? reviewSurfaceChoice()),
-      autoDismissMs: 2500,
     });
     return true;
   }
@@ -61,12 +45,10 @@ export function inspectorSettingCommands(
     },
     {
       name: "set",
-      description: "set vim, novim, reviewin=classic|changes",
+      description: "set vim, novim",
       complete: () => [
         ["vim", "Vim keys on"],
         ["novim", "Vim keys off"],
-        ["reviewin=classic", "reviews open in the review pane"],
-        ["reviewin=changes", "reviews open in Changes"],
       ],
       run: (argument, how) => {
         if (!runReviewSetting(`set ${argument}`)) how.unknown();

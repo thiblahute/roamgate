@@ -4,8 +4,7 @@ import { expect, test } from "bun:test";
  * Where reviews open from (plan: review into the inspector, phase 8): an
  * agent's `review_open` (and `/rg-review`, which raises the same request),
  * Commits' Review this commit, and the review stepping aside (Cmd+K, voice
- * arrival, Go to the agent's pane) on both switch settings: the classic
- * pane on "classic", the workspace's Changes on "in Changes".
+ * arrival, Go to the agent's pane): the workspace's Changes.
  */
 if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   test("where reviews open from, in an isolated DOM runtime", async () => {
@@ -28,25 +27,33 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   );
   await installAppReviewDom();
 
-  const inChanges = () =>
-    localStorage.setItem(
-      "reviewPrefs",
-      JSON.stringify({ reviewIn: "changes", vim: true }),
-    );
+  // Vim keys on, as the review's tests set them.
+  const withVim = () => localStorage.setItem("reviewPrefs", "{}");
+  localStorage.setItem("vimKeys", "true");
 
-  test("on reviewin=classic, an agent's review of the focused workspace shows in the review pane; of another, it waits pinned there", async () => {
+  test("an agent's review of the focused workspace shows in its Changes; of another, it waits pinned there while this one keeps its own", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1"), reviewOf("r2", "w2")],
     });
     try {
+      withVim();
       await app.agentOpens("r1");
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.inspector()?.open ?? false).toBe(false);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspector()?.scope.workspaceId).toBe("w1");
+      const own = app.inspectorGoTo();
+      expect(own).toMatchObject({ scope: "working" });
       await app.agentOpens("r2");
       // Not here: w1 keeps its own.
-      expect(app.shown().shownId).toBe("r1");
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspector()?.scope.workspaceId).toBe("w1");
+      expect(app.inspectorGoTo()).toBe(own);
       await app.focusWorkspace("w2");
-      expect(app.shown().shownId).toBe("r2");
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspector()?.scope.workspaceId).toBe("w2");
+      expect(app.inspectorGoTo()).not.toBe(own);
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
@@ -57,7 +64,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      inChanges();
+      withVim();
       await app.agentOpens("r1");
       // Never mounted in the classic pane.
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
@@ -87,7 +94,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1"), reviewOf("r2", "w2")],
     });
     try {
-      inChanges();
+      withVim();
       await app.agentOpens("r2");
       // Nothing moves here.
       expect(app.inspector()?.open ?? false).toBe(false);
@@ -111,28 +118,28 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("Review this commit: on reviewin=changes, Changes' Branch scope on that commit; on classic, the commit's review in the pane", async () => {
+  test("Review this commit: Changes' Branch scope on that commit, each time, never the commit's own review", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
       // The inspector's Commits (opened through Changes).
-      inChanges();
+      withVim();
       app.setNextOpened("r1");
       await app.toggleReview();
       await app.settle(50);
       await app.run(() => app.inspectorView("commits"));
       expect(app.inspector()).toMatchObject({ open: true, view: "commits" });
-      // Classic: the commit's own review, in the review pane.
-      const { writeReviewPrefs } = await import("./reviewPrefs");
-      writeReviewPrefs({ reviewIn: "classic" });
       await app.inspectorReviewCommit("abc123");
-      expect(app.commitReviews()).toEqual(["abc123"]);
-      expect(app.shown().shownId).toBe("commit-abc123");
-      await app.run(() => app.host().onClose());
-      expect(app.shown().shownId).toBe(null);
-      // In Changes: the Branch scope, at that commit, on the checkout.
-      writeReviewPrefs({ reviewIn: "changes" });
+      expect(app.commitReviews()).toEqual([]);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({
+        scope: "branch-main",
+        root: "",
+        commit: "abc123",
+      });
+      // Back in Commits, another commit: the Branch scope on that one.
+      await app.run(() => app.inspectorView("commits"));
       await app.inspectorReviewCommit("def456");
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({
@@ -140,8 +147,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
         root: "",
         commit: "def456",
       });
-      expect(app.commitReviews()).toEqual(["abc123"]);
-      expect(app.shown().shownId).toBe(null);
+      expect(app.commitReviews()).toEqual([]);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
@@ -155,7 +162,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      inChanges();
+      withVim();
       app.setNextOpened("r1");
       await app.toggleReview();
       await app.settle(50);
@@ -202,7 +209,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1"), reviewOf("r2", "w2")],
     });
     try {
-      inChanges();
+      withVim();
       await app.focusWorkspace("w2");
       app.setNextOpened("r2");
       await app.toggleReview();

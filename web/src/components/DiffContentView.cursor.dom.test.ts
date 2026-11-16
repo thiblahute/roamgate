@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 /*
  * The review's Vim cursor in Changes (plan: review into the inspector,
- * phase 3, D10): on "in Changes" with Vim keys on, Changes takes the
- * review's keys and mouse; on classic it keeps upstream's. The shared
- * behavior tests (reviewBehavior.*) cover the motions on both surfaces;
- * these cover what is Changes' own.
+ * phase 3, D10): Changes takes the review's keys and mouse; a diff without
+ * the review (a commit's in Commits, Files' changes) keeps upstream's. The
+ * shared behavior tests (reviewBehavior.*) cover the motions; these cover
+ * what is Changes' own.
  */
 if (process.env.ROAMGATE_CHANGES_CURSOR_DOM_TEST !== "1") {
   test("Changes' review cursor in an isolated DOM runtime", async () => {
@@ -123,7 +123,7 @@ if (process.env.ROAMGATE_CHANGES_CURSOR_DOM_TEST !== "1") {
   };
 
   describe("the review's cursor in Changes", () => {
-    test("on classic, Changes keeps its keys: no cursor, j is nothing, Ctrl+F finds, :split and :unified pick, no :N", async () => {
+    test("without the review (a commit's diff in Commits, Files' changes), the diff keeps its keys: no cursor, j is nothing, Ctrl+F finds, :split and :unified pick, no :N", async () => {
       const prompt = inspector();
       const diff = await mountChangesDiff({
         entries: [a, b],

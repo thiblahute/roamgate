@@ -667,6 +667,8 @@ export type ChangesDiffOptions = {
     action: import("../gitActions").GitFileAction,
     path: string,
   ) => boolean;
+  /** Called on each commit React renders of the diff (a Profiler's). */
+  onRender?: () => void;
 };
 
 export interface ChangesDiff {
@@ -780,7 +782,7 @@ export function shownComposer() {
 export async function mountChangesDiff(
   initial: ChangesDiffOptions,
 ): Promise<ChangesDiff> {
-  const { act, createElement } = await import("react");
+  const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { spyOn } = await import("bun:test");
   const { store } = await import("../store");
@@ -850,6 +852,14 @@ export async function mountChangesDiff(
       ]),
     );
     const selected = options.entry ?? options.entries[0] ?? null;
+    const profiled = (view: ReturnType<typeof createElement>) =>
+      options.onRender
+        ? createElement(
+            Profiler,
+            { id: "changes-diff", onRender: options.onRender },
+            view,
+          )
+        : view;
     const inInspector = (view: ReturnType<typeof createElement>) =>
       options.inspectorCommands
         ? createElement(
@@ -865,39 +875,43 @@ export async function mountChangesDiff(
     await act(async () =>
       root.render(
         inInspector(
-          createElement(DiffContentView, {
-            ...(options.selectionRevision !== undefined
-              ? { selectionRevision: options.selectionRevision }
-              : {}),
-            entry: selected,
-            file: selected ? files[`${selected.kind}:${selected.path}`]! : null,
-            entries: options.entries,
-            files,
-            loading: false,
-            error: null,
-            resourceKey: connectionId,
-            connectionClient: client,
-            mobile: options.mobile ?? false,
-            embedded: options.embedded ?? false,
-            annotations: options.annotations ?? [],
-            ...(options.threads ? { threads: options.threads } : {}),
-            ...(options.repo ? { repo: options.repo } : {}),
-            ...(options.reviewScope
-              ? { reviewScope: options.reviewScope }
-              : {}),
-            ...(options.onCreateAnnotation
-              ? { onCreateAnnotation: options.onCreateAnnotation }
-              : {}),
-            ...(options.backAction ? { backAction: options.backAction } : {}),
-            ...(options.onEditAnnotation
-              ? { onEditAnnotation: options.onEditAnnotation }
-              : {}),
-            reviewCursor: options.reviewCursor ?? false,
-            ...(options.cursorGoTo ? { cursorGoTo: options.cursorGoTo } : {}),
-            ...(options.onGitAction
-              ? { onGitAction: options.onGitAction }
-              : {}),
-          }),
+          profiled(
+            createElement(DiffContentView, {
+              ...(options.selectionRevision !== undefined
+                ? { selectionRevision: options.selectionRevision }
+                : {}),
+              entry: selected,
+              file: selected
+                ? files[`${selected.kind}:${selected.path}`]!
+                : null,
+              entries: options.entries,
+              files,
+              loading: false,
+              error: null,
+              resourceKey: connectionId,
+              connectionClient: client,
+              mobile: options.mobile ?? false,
+              embedded: options.embedded ?? false,
+              annotations: options.annotations ?? [],
+              ...(options.threads ? { threads: options.threads } : {}),
+              ...(options.repo ? { repo: options.repo } : {}),
+              ...(options.reviewScope
+                ? { reviewScope: options.reviewScope }
+                : {}),
+              ...(options.onCreateAnnotation
+                ? { onCreateAnnotation: options.onCreateAnnotation }
+                : {}),
+              ...(options.backAction ? { backAction: options.backAction } : {}),
+              ...(options.onEditAnnotation
+                ? { onEditAnnotation: options.onEditAnnotation }
+                : {}),
+              reviewCursor: options.reviewCursor ?? false,
+              ...(options.cursorGoTo ? { cursorGoTo: options.cursorGoTo } : {}),
+              ...(options.onGitAction
+                ? { onGitAction: options.onGitAction }
+                : {}),
+            }),
+          ),
         ),
       ),
     );

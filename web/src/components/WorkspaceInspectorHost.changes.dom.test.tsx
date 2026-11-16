@@ -61,7 +61,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     ...preview,
     FilePreviewContent: stub("file-preview"),
   }));
-  const { useContext } = await import("react");
+  const { useContext, useEffect } = await import("react");
   const { InspectorCommandsContext } = await import("../useInspectorCommands");
   type ReactNode = import("react").ReactNode;
   /** What the host last gave Changes' diff, and its `:` commands. */
@@ -74,15 +74,56 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     /** The review the scope is (plan phase 6), and the comment writer. */
     reviewScope?: unknown;
     onCreateAnnotation?: (input: Record<string, unknown>) => void;
-  } = {};
+    /** What the review in Changes is handed from the host (its jobs). */
+    agentPanes?: readonly { paneId: string; agent: string }[];
+    onOpenFile?: (
+      entry: unknown,
+      at?: { line?: number; rendered?: boolean },
+    ) => void;
+    onCloseReview?: (how: "command" | "escape") => void;
+    onShowReviews?: () => void;
+    onFocusAgentPane?: (paneId: string) => void;
+    forgeHost?: {
+      onShowReview?: (snapshot: unknown) => void;
+      onOpenLocal?: (root: string) => void;
+    };
+    cursorGoTo?: unknown;
+    /** How often the diff was mounted, and unmounted. */
+    mounts: number;
+    unmounts: number;
+  } = { mounts: 0, unmounts: 0 };
   mock.module("./DiffContentView", () => ({
-    DiffContentView: (props: {
-      repo?: { root: string; own: boolean };
-      headEnd?: ReactNode;
-      scopeControls?: ReactNode;
-      reviewScope?: unknown;
-      onCreateAnnotation?: (input: Record<string, unknown>) => void;
-    }) => {
+    DiffContentView: (
+      props: {
+        repo?: { root: string; own: boolean };
+        headEnd?: ReactNode;
+        scopeControls?: ReactNode;
+        reviewScope?: unknown;
+        onCreateAnnotation?: (input: Record<string, unknown>) => void;
+      } & Pick<
+        typeof diffSeen,
+        | "agentPanes"
+        | "onOpenFile"
+        | "onCloseReview"
+        | "onShowReviews"
+        | "onFocusAgentPane"
+        | "forgeHost"
+        | "cursorGoTo"
+      >,
+    ) => {
+      useEffect(() => {
+        diffSeen.mounts += 1;
+        return () => {
+          diffSeen.unmounts += 1;
+        };
+      }, []);
+      diffSeen.agentPanes = props.agentPanes;
+      diffSeen.onOpenFile = props.onOpenFile;
+      diffSeen.onCloseReview = props.onCloseReview;
+      diffSeen.onShowReviews = props.onShowReviews;
+      diffSeen.onFocusAgentPane = props.onFocusAgentPane;
+      diffSeen.forgeHost = props.forgeHost;
+      diffSeen.cursorGoTo = props.cursorGoTo;
       diffSeen.repo = props.repo;
       diffSeen.reviewScope = props.reviewScope;
       diffSeen.onCreateAnnotation = props.onCreateAnnotation;
@@ -104,6 +145,20 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   }));
   mock.module("./GitCommitHistory", () => ({
     GitCommitHistory: stub("commits"),
+  }));
+  /** The directories Changes' repository scan was asked about. */
+  const scans: { dirs: string[]; agentDirs: string[] }[] = [];
+  const reviewRepos = await import("../reviewRepos");
+  mock.module("../reviewRepos", () => ({
+    ...reviewRepos,
+    scanRepos: async (
+      _connection: string,
+      dirs: string[],
+      agentDirs: string[],
+    ) => {
+      scans.push({ dirs, agentDirs });
+      return [];
+    },
   }));
 
   const { act } = await import("react");
@@ -160,6 +215,13 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     /** The inspector expanded; its onExpandedChange and onClose calls. */
     expanded?: boolean;
     calls?: string[];
+    /** The page shows the inspector's workspace (default: yes). */
+    visible?: boolean;
+    /** The host's callbacks for the review in Changes. */
+    onOpenDiffFile?: Props["onOpenDiffFile"];
+    onCloseReview?: Props["onCloseReview"];
+    onShowReviews?: Props["onShowReviews"];
+    onFocusAgentPane?: Props["onFocusAgentPane"];
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -191,7 +253,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
               size: 480,
               expanded: options.expanded ?? false,
             }}
-            visible
+            visible={options.visible ?? true}
             workspace={"workspace" in options ? options.workspace : workspace}
             historyPane={
               options.agentPane
@@ -222,7 +284,16 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
             connectionClient={client}
             onFileSelectionChange={() => {}}
             onDiffSelectionChange={() => {}}
-            onOpenDiffFile={() => {}}
+            onOpenDiffFile={options.onOpenDiffFile ?? (() => {})}
+            {...(options.onCloseReview
+              ? { onCloseReview: options.onCloseReview }
+              : {})}
+            {...(options.onShowReviews
+              ? { onShowReviews: options.onShowReviews }
+              : {})}
+            {...(options.onFocusAgentPane
+              ? { onFocusAgentPane: options.onFocusAgentPane }
+              : {})}
             annotations={[]}
             onCreateAnnotation={(input) =>
               options.created?.push(input as Record<string, unknown>)
@@ -255,6 +326,13 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       host,
       views,
       tab,
+      /** Drawn again with these options changed (the view too). */
+      async set(next: Partial<typeof options>) {
+        Object.assign(options, next);
+        if (next.view) view = next.view;
+        await render();
+        await act(async () => {});
+      },
       tabs: () =>
         [...host.querySelectorAll<HTMLButtonElement>("[role=tab]")].map(
           (each) => ({
@@ -376,10 +454,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     test("Changes' diff is given the repository shown, so only its threads are drawn; ( and ) switch it", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       const { rememberReviewSnapshot } = await import("../review");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       // Two repositories of the workspace, each with a review.
       for (const root of ["/repo", "/repo2"])
         rememberReviewSnapshot({
@@ -416,10 +491,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, the scope line is the host's controls: the repository picker, what is compared and the counts", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       // Two repositories of the workspace, each with a review.
       const { rememberReviewSnapshot } = await import("../review");
       for (const root of ["/repo", "/repo2"])
@@ -479,10 +551,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, each scope is its review by a lookup: the Last step's comments go to that step's review; a review asked for is the scope, named in the scope line", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       const step = {
         step: "1763200000000-abcdef01",
         before: "a".repeat(40),
@@ -562,10 +631,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, Review only gives the diff's one-row header Show all and Zen's docked way out; Show all brings the inspector back", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       const inspector = await mountInspector({ root: "/repo" });
       try {
         await act(async () => diffSeen.run?.("only"));
@@ -610,7 +676,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("expanded, the review's row ends with the inspector's header (shown in the app's Zen): the other views, Restore, Close and Zen's way out", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ reviewIn: "changes" }));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({}));
       const calls: string[] = [];
       const inspector = await mountInspector({
         root: "/repo",
@@ -678,10 +744,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       // Docked, the inspector's own header is the way: no end.
       const docked = await mountInspector({ root: "/repo" });
       try {
-        localStorage.setItem(
-          PREFS_KEY,
-          JSON.stringify({ reviewIn: "changes" }),
-        );
+        localStorage.setItem(PREFS_KEY, JSON.stringify({}));
         expect(docked.host.querySelector(".diff-inspector-end")).toBeNull();
       } finally {
         await docked.unmount();
@@ -706,17 +769,14 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       ).toContain("display: flex");
       expect(
         rule(
-          '.app.zen .workspace-inspector.is-expanded[data-view="changes"]:has( .diff-inspector-end ) > .workspace-inspector-head',
+          ".app.zen .workspace-inspector.has-zen-end > .workspace-inspector-head",
         ),
       ).toContain("display: none");
     });
 
     test("in Changes, Review only hides the merge request card; Show all brings it back", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       const inspector = await mountInspector({ root: "/repo" });
       try {
         const card = () =>
@@ -742,10 +802,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("on a phone, Back over the review in Changes leaves the prompt, then Review only, then the diff for its tree", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
       // The phone: mobile mode and a session history Back walks.
       const entries: unknown[] = [null];
       let index = 0;
@@ -863,7 +920,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
-    test("on classic Changes the host gives no scope controls nor header end; Review only floats its Show all", async () => {
+    test("a stored reviewin=classic (the retired switch) changes nothing: Changes has its scope controls and Review only its header end, no floating Show all", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       const { roamgateLocalStorage } = await import("../browserStorage");
       roamgateLocalStorage.setItem(
@@ -872,14 +929,13 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       );
       const inspector = await mountInspector({ root: "/repo" });
       try {
-        expect(diffSeen.scopeControls).toBeUndefined();
+        expect(diffSeen.scopeControls).toBeDefined();
         await act(async () => diffSeen.run?.("only"));
         await act(async () => {});
-        expect(diffSeen.headEnd).toBeUndefined();
-        const hint = inspector.host.querySelector(
-          ".inspector-review-only-hint",
-        );
-        expect(hint?.textContent).toBe("Show all");
+        expect(diffSeen.headEnd).toBeDefined();
+        expect(
+          inspector.host.querySelector(".inspector-review-only-hint"),
+        ).toBeNull();
       } finally {
         await inspector.unmount();
         roamgateLocalStorage.removeItem(PREFS_KEY);
@@ -897,6 +953,319 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(inspector.host.querySelector("[data-stub]")).toBeNull();
         // The tabs stay, without a count.
         expect(inspector.tab("Changes").textContent?.trim()).toBe("Changes");
+      } finally {
+        await inspector.unmount();
+      }
+    });
+  });
+
+  /**
+   * The review pane's host's jobs (ReviewHost, retired in phase 9), now the
+   * inspector's around the review in Changes: what the review is given from
+   * the workspace's panes, where its files open, its close, reviews list
+   * and Go to agent's pane, the review shown as Changes' scope.
+   */
+  describe("the review's host in Changes", () => {
+    type Snapshot = import("../../../shared/review").ReviewSnapshot;
+    type Pane = import("../types").Pane;
+    const review = (id: string, fields: Record<string, unknown> = {}) =>
+      ({
+        session: {
+          id,
+          connectionId: "local",
+          workspaceId: "w1",
+          root: "/repo",
+          title: id,
+          target: { kind: "worktree" },
+          gitlab: false,
+          summary: "",
+          agent: {},
+          reviewed: {},
+          createdAt: "2026-11-10",
+          updatedAt: "2026-11-10",
+          ...fields,
+        },
+        threads: [],
+      }) as unknown as Snapshot;
+    const pane = (
+      paneId: string,
+      workspaceId: string,
+      fields: Partial<Pane> = {},
+    ): Pane => ({
+      pane_id: paneId,
+      terminal_id: `t-${paneId}`,
+      workspace_id: workspaceId,
+      tab_id: "tab",
+      focused: false,
+      agent_status: "idle",
+      revision: 1,
+      ...fields,
+    });
+    /** The store's panes, for the inspector's selectors. */
+    const withPanes = async (panes: Pane[]) => {
+      const { spyOn } = await import("bun:test");
+      const { store } = await import("../store");
+      const state = { ...store.get(), panes } as ReturnType<typeof store.get>;
+      return spyOn(store, "get").mockImplementation(() => state);
+    };
+    const remember = async (...snapshots: Snapshot[]) => {
+      const { rememberReviewSnapshot } = await import("../review");
+      for (const snapshot of snapshots) rememberReviewSnapshot(snapshot);
+    };
+
+    test("a review out of sight draws no diff and loads nothing until shown; another view puts it away", async () => {
+      await remember(review("r1"));
+      const before = { mounts: diffSeen.mounts, unmounts: diffSeen.unmounts };
+      const inspector = await mountInspector({
+        root: "/repo",
+        view: "files",
+        reviewGoTo: { review: "r1", at: Date.now() },
+      });
+      try {
+        // On another view: no diff, so nothing of the review is read.
+        expect(
+          inspector.host.querySelector("[data-stub=changes-diff]"),
+        ).toBeNull();
+        expect(diffSeen.mounts).toBe(before.mounts);
+        // Shown: one diff, of that review.
+        await inspector.set({ view: "changes" });
+        expect(
+          inspector.host.querySelector("[data-stub=changes-diff]"),
+        ).not.toBeNull();
+        expect(diffSeen.mounts).toBe(before.mounts + 1);
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "r1",
+        });
+        // Put away again: no diff left to read anything.
+        await inspector.set({ view: "files" });
+        expect(
+          inspector.host.querySelector("[data-stub=changes-diff]"),
+        ).toBeNull();
+        expect(diffSeen.unmounts).toBe(before.unmounts + 1);
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("every review shown is Changes' one diff, kept mounted from one to the next and while the workspace is out of sight", async () => {
+      await remember(review("r1"), review("r2"));
+      const inspector = await mountInspector({
+        root: "/repo",
+        reviewGoTo: { review: "r2", at: Date.now() },
+      });
+      try {
+        const mounted = diffSeen.mounts;
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "r2",
+        });
+        await inspector.set({
+          reviewGoTo: { review: "r1", at: Date.now() + 1 },
+        });
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "r1",
+        });
+        // The workspace out of sight: hidden, not unmounted.
+        const unmounted = diffSeen.unmounts;
+        await inspector.set({ visible: false });
+        expect(
+          inspector.host.querySelector("[data-stub=changes-diff]"),
+        ).not.toBeNull();
+        expect(diffSeen.mounts).toBe(mounted);
+        expect(diffSeen.unmounts).toBe(unmounted);
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("a review is given its workspace's pane directories and its agents' directories, absolute and once each", async () => {
+      const restore = await withPanes([
+        pane("p1", "w1", { cwd: "/repo", foreground_cwd: "/repo/sub" }),
+        pane("p2", "w1", { cwd: "/repo/sub" }),
+        pane("p3", "w1", { cwd: "relative" }),
+        pane("p4", "w1", {
+          cwd: "/agent/home",
+          foreground_cwd: "/agent/now",
+          agent: "claude",
+        }),
+        pane("p5", "w1", { foreground_cwd: "/agent/only-fg", agent: "pi" }),
+        pane("p6", "w2", { cwd: "/elsewhere", agent: "claude" }),
+        pane("p7", "w1"),
+      ]);
+      scans.length = 0;
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        await act(async () => {});
+        // The checkout first, then each pane's directory (where it is).
+        expect(scans[scans.length - 1]?.dirs).toEqual([
+          "/repo",
+          "/repo/sub",
+          "/agent/now",
+          "/agent/only-fg",
+        ]);
+        // An agent's directory is where it started (cwd), else where it is.
+        expect(scans[scans.length - 1]?.agentDirs).toEqual([
+          "/agent/home",
+          "/agent/only-fg",
+        ]);
+      } finally {
+        await inspector.unmount();
+        restore.mockRestore();
+      }
+    });
+
+    test("a review's agents are its workspace's agent panes: the focused one first, then by id; its own agent's pane, when it names one, is its agent", async () => {
+      const { reviewAgent } = await import("../reviewDelivery");
+      const restore = await withPanes([
+        pane("p3", "w1", { agent: "claude" }),
+        pane("p1", "w1", { agent: "codex" }),
+        pane("p2", "w1", { agent: "pi", focused: true }),
+        pane("p9", "w1", { agent: "claude" }),
+        pane("p4", "w1", { agent: "  " }),
+        pane("p5", "w1"),
+        pane("p6", "w2", { agent: "claude" }),
+      ]);
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        expect(diffSeen.agentPanes).toEqual([
+          { paneId: "p2", agent: "pi" },
+          { paneId: "p1", agent: "codex" },
+          { paneId: "p3", agent: "claude" },
+          { paneId: "p9", agent: "claude" },
+        ]);
+        const panes = diffSeen.agentPanes ?? [];
+        // A review naming its agent's pane talks to that one, first.
+        expect(
+          reviewAgent(review("r1", { agent: { paneId: "p9" } }), panes)
+            .agentPaneId,
+        ).toBe("p9");
+        // One naming none, to the workspace's first.
+        expect(reviewAgent(review("r2"), panes).agentPaneId).toBe("p2");
+      } finally {
+        await inspector.unmount();
+        restore.mockRestore();
+      }
+    });
+
+    test("close, the reviews list and Go to agent's pane go straight to the host", async () => {
+      const calls: { name: string; args: unknown[] }[] = [];
+      const record =
+        (name: string) =>
+        (...args: unknown[]) =>
+          calls.push({ name, args });
+      const inspector = await mountInspector({
+        root: "/repo",
+        onCloseReview: record("close"),
+        onShowReviews: record("list"),
+        onFocusAgentPane: record("focusPane"),
+      });
+      try {
+        diffSeen.onCloseReview?.("command");
+        diffSeen.onShowReviews?.();
+        diffSeen.onFocusAgentPane?.("p1");
+        expect(calls).toEqual([
+          { name: "close", args: ["command"] },
+          { name: "list", args: [] },
+          { name: "focusPane", args: ["p1"] },
+        ]);
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("a file opened from a review opens in its workspace; with no workspace, no review and no file", async () => {
+      const opened: unknown[][] = [];
+      const inspector = await mountInspector({
+        root: "/repo",
+        onOpenDiffFile: (...args) => opened.push(args),
+      });
+      try {
+        const entry = { path: "a.ts", kind: "unstaged", status: "M" };
+        diffSeen.onOpenFile?.(entry, { line: 12 });
+        expect(opened).toEqual([[entry, { line: 12 }]]);
+      } finally {
+        await inspector.unmount();
+      }
+      // The inspector's workspace gone: no review drawn to open files from.
+      const mounted = diffSeen.mounts;
+      const gone = await mountInspector({
+        workspace: undefined,
+        onOpenDiffFile: (...args) => opened.push(args),
+      });
+      try {
+        expect(gone.host.querySelector("[data-stub=changes-diff]")).toBeNull();
+        expect(diffSeen.mounts).toBe(mounted);
+        expect(opened).toHaveLength(1);
+      } finally {
+        await gone.unmount();
+      }
+    });
+
+    test("another repository, a checkout's local review or a merge request's review open in the workspace and show", async () => {
+      const mr = review("mr", {
+        target: {
+          kind: "mr",
+          url: "https://gitlab.example/g/p/-/merge_requests/7",
+        },
+        gitlab: true,
+      });
+      await remember(
+        review("s/repo"),
+        review("s/repo2", { root: "/repo2" }),
+        mr,
+      );
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        await act(async () => {});
+        // A merge request's review shown from the local one: Changes' scope.
+        await act(async () => diffSeen.forgeHost?.onShowReview?.(mr));
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "mr",
+        });
+        // The checkout's local review: its branch, the review shown dropped.
+        await act(async () => diffSeen.forgeHost?.onOpenLocal?.("/repo"));
+        await act(async () => {});
+        expect(diffSeen.reviewScope).not.toEqual({
+          kind: "review",
+          sessionId: "mr",
+        });
+        expect(diffSeen.repo).toEqual({ root: "/repo", own: true });
+        // Another repository's local review: shown on that repository.
+        await act(async () => diffSeen.forgeHost?.onOpenLocal?.("/repo2"));
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({ root: "/repo2", own: false });
+      } finally {
+        await inspector.unmount();
+      }
+    });
+
+    test("Show in code review goes to its review only; a file opened rendered says so", async () => {
+      await remember(review("r1"), review("r2"));
+      const opened: unknown[][] = [];
+      const inspector = await mountInspector({
+        root: "/repo",
+        reviewGoTo: { review: "r2", path: "a.ts", line: 4, at: Date.now() },
+        onOpenDiffFile: (...args) => opened.push(args),
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "r2",
+        });
+        expect(diffSeen.cursorGoTo).toMatchObject({ path: "a.ts", line: 4 });
+        const readme = { path: "README.md", kind: "unstaged", status: "M" };
+        const code = { path: "a.ts", kind: "unstaged", status: "M" };
+        diffSeen.onOpenFile?.(readme, { line: 3, rendered: true });
+        diffSeen.onOpenFile?.(code);
+        expect(opened).toEqual([
+          [readme, { line: 3, rendered: true }],
+          [code, undefined],
+        ]);
       } finally {
         await inspector.unmount();
       }

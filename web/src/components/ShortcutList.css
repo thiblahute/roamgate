@@ -1,7 +1,6 @@
 /*
- * The filterable shortcut list (`?`, `:help`), in the review pane and in
- * the inspector. Inside the review pane it takes the pane's colors; in the
- * inspector the app's.
+ * The filterable shortcut list (`?`, `:help`), in the inspector and the
+ * Files preview, in the app's colors.
  */
 .review-keys {
   --sl-surface: var(--rv-surface, var(--shell-panel));

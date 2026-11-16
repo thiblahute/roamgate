@@ -100,7 +100,7 @@ export function useChangesViews({
 }: {
   connectionId: string;
   source: ViewsSource | null;
-  /** The views apply (a review of commits, on "in Changes"). */
+  /** The views apply (a review of commits). */
   enabled: boolean;
   /** Changes' own files are the all-changes view (the Branch scope). */
   native: boolean;

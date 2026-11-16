@@ -67,7 +67,7 @@ export function GitCommitHistory({
   resourceKey: string;
   compact: boolean;
   active: boolean;
-  /** Review this commit: in Changes, or the review pane (plan phase 8). */
+  /** Review this commit: in Changes (plan phase 8). */
   onReviewCommit?: (sha: string) => void;
 }) {
   const [page, setPage] = useState<CommitPage | null>(null);

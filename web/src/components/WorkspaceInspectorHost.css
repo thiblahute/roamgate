@@ -441,28 +441,12 @@ body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   visibility: hidden;
 }
 
-.workspace-inspector:has(
-    .inspector-changes-resource.is-review-only:not(.is-hidden)
-  )
-  > .review-cmdline {
+.workspace-inspector.is-review-only > .review-cmdline {
   position: fixed;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 1160;
-}
-
-.inspector-review-only-hint {
-  position: fixed;
-  top: 8px;
-  right: 12px;
-  z-index: 1150;
-  display: flex;
-  gap: 6px;
-  padding: 3px 6px;
-  border-radius: 8px;
-  background: var(--viewer-header-bg);
-  border: 1px solid var(--viewer-border);
 }
 
 /*
@@ -484,9 +468,7 @@ body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   display: flex;
 }
 
-.app.zen
-  .workspace-inspector.is-expanded[data-view="changes"]:has(.diff-inspector-end)
-  > .workspace-inspector-head {
+.app.zen .workspace-inspector.has-zen-end > .workspace-inspector-head {
   display: none;
 }
 

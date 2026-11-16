@@ -42,9 +42,8 @@ import type { ShortcutRow } from "./ShortcutList";
  * (diffCursor.ts), never on the DOM; Pierre draws it (setEditorActiveLine,
  * the Visual lines as its selected lines) and scrolls to it through its
  * line positions. Keys go through the one key machine (keyMachine.ts).
- * Only on "in Changes" (`:set reviewin=changes`), with Vim keys on or off
- * (they only change the comment editor): on classic, Changes keeps
- * upstream's keys and mouse.
+ * With Vim keys on or off (they only change the comment editor); not on
+ * an embedded diff, which keeps its own keys and mouse.
  */
 
 /** A file of the diff shown, as the cursor reads it. */
@@ -144,7 +143,7 @@ function parsedPatch(patch: string) {
 }
 
 export type DiffCursor = {
-  /** The cursor is on (in Changes, "in Changes", Vim keys). */
+  /** The cursor is on (the review in Changes). */
   active: boolean;
   model: DiffCursorModel;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;

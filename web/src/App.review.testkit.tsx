@@ -3,9 +3,10 @@
  * inspector, gate 3): Option+R, the reviews list, Cmd+K, voice arrival, Go
  * to agent's pane, focus back to the chat, the code preload. It mounts the
  * real App on a store held here, with two workspaces, and stands a stub in
- * for the review surface: the tests read which review App shows, keeps
- * mounted or puts away, never how a review draws itself (the review's own
- * behavior is reviewBehavior.*.dom.test.tsx's).
+ * for the workspace inspector, where reviews show (its Changes): the tests
+ * read what App asks the inspector to show and call the props it gives it,
+ * never how a review draws itself (the review's own behavior is
+ * reviewBehavior.*.dom.test.tsx's).
  *
  * Not a test file: imported by `App.review*.test.tsx`, in an isolated child.
  * `installAppReviewDom` must run first, before React or App is imported.
@@ -72,27 +73,16 @@ export function reviewOf(id: string, workspaceId: string): ReviewSnapshot {
   } as unknown as ReviewSnapshot;
 }
 
-/** What the stub review surface was given on its last render. */
+/**
+ * Review panes in the page (`[data-review]`): none ever, the classic pane
+ * being gone; kept so the Changes tests still say no other surface shows a
+ * review.
+ */
 export type ShownReviews = {
-  /** The reviews kept mounted, in order. */
+  /** The review panes mounted, in order. */
   mounted: string[];
-  /** The one showing, or null. */
+  /** The one visible, or null. */
   shownId: string | null;
-};
-
-type HostProps = {
-  pinned: ReviewSnapshot[];
-  shownId: string | null;
-  onClose: () => void;
-  onShow: (sessionId: string) => void;
-  onShowList: () => void;
-  onFocusAgentPane: (paneId: string) => void;
-  onOpenFile: (
-    workspaceId: string,
-    path: string,
-    line?: number,
-    rendered?: boolean,
-  ) => void;
 };
 
 type InspectorProps = {
@@ -101,6 +91,17 @@ type InspectorProps = {
   onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;
   onReviewCommit?: (sha: string) => void;
+  /** Changes' Go to the agent's pane. */
+  onFocusAgentPane?: (paneId: string) => void;
+  /** Changes' own close of the review (`:q`, Esc). */
+  onCloseReview?: (how: "command" | "escape") => void;
+  /** Changes' way to the reviews list (`:reviews`). */
+  onShowReviews?: () => void;
+  /** Changes' gf: a changed file in Files, at a line. */
+  onOpenDiffFile: (
+    entry: { path: string } | null,
+    at?: { line?: number; rendered?: boolean },
+  ) => void;
   reviewGoTo?: {
     path?: string;
     line?: number;
@@ -119,12 +120,10 @@ type InspectorProps = {
 };
 
 export type AppWithReviews = {
-  /** Reviews mounted and the one shown. */
+  /** Review panes in the page besides Changes (none). */
   shown(): ShownReviews;
-  /** How many times each review's surface was mounted. */
-  mounts(id: string): number;
-  /** The last props App gave the review surface. */
-  host(): HostProps;
+  /** The last props App gave the inspector (its callbacks). */
+  inspectorProps(): InspectorProps;
   /** Whether the reviews list shows. */
   listShown(): boolean;
   /** Close the reviews list with its own close. */
@@ -186,7 +185,7 @@ export type AppWithReviews = {
   /** The tab bar's Review button, or null. */
   tabBarReview(): HTMLButtonElement | null;
   click(button: HTMLElement): Promise<void>;
-  /** Run a call App's review surface makes (its props), then settle. */
+  /** Run a call the inspector makes (its props), then settle. */
   run(call: () => void): Promise<void>;
   container: HTMLElement;
   settle(ms?: number): Promise<void>;
@@ -211,8 +210,6 @@ type Page = {
   changed: Record<string, string[]>;
   highlighterPreloads: number;
   focusedPanes: string[];
-  mountCount: Map<string, number>;
-  hostProps: HostProps | null;
   inspectorProps: InspectorProps | null;
 };
 
@@ -290,7 +287,7 @@ function publish() {
 let mocked = false;
 
 /**
- * Replace App's store, review state, review surface and heavy views with
+ * Replace App's store, review state, inspector and heavy views with
  * ones reading `page`. Once per process: App keeps the modules it loaded.
  */
 async function mockApp(before?: () => Promise<void> | void) {
@@ -366,39 +363,6 @@ async function mockApp(before?: () => Promise<void> | void) {
     },
   }));
 
-  // The review surface: one element per review kept mounted, the shown one
-  // visible and holding the keys, as the classic pane does.
-  function Review({ id, shown }: { id: string; shown: boolean }) {
-    const ref = React.useRef<HTMLDivElement>(null);
-    React.useEffect(() => {
-      const counts = now().mountCount;
-      counts.set(id, (counts.get(id) ?? 0) + 1);
-    }, [id]);
-    React.useEffect(() => {
-      if (shown) ref.current?.focus();
-    }, [shown]);
-    return (
-      <div
-        ref={ref}
-        className="review-overlay"
-        data-review={id}
-        hidden={!shown}
-        tabIndex={-1}
-      />
-    );
-  }
-  mock.module("./components/ReviewHost", () => ({
-    ReviewHost: (props: HostProps) => {
-      now().hostProps = props;
-      return props.pinned.map((review) => (
-        <Review
-          key={review.session.id}
-          id={review.session.id}
-          shown={review.session.id === props.shownId}
-        />
-      ));
-    },
-  }));
   mock.module("./components/ReviewList", () => ({
     ReviewList: ({
       onClose,
@@ -527,8 +491,6 @@ export async function mountAppWithReviews(options: {
     openCalls: 0,
     highlighterPreloads: 0,
     focusedPanes: [],
-    mountCount: new Map(),
-    hostProps: null,
     inspectorProps: null,
   };
   await mockApp(options.before);
@@ -586,15 +548,14 @@ export async function mountAppWithReviews(options: {
       const mounted = [
         ...container.querySelectorAll<HTMLElement>("[data-review]"),
       ].map((element) => element.dataset.review!);
-      return {
-        mounted,
-        shownId: mounted.length ? (current.hostProps?.shownId ?? null) : null,
-      };
+      const visible = container.querySelector<HTMLElement>(
+        "[data-review]:not([hidden])",
+      );
+      return { mounted, shownId: visible?.dataset.review ?? null };
     },
-    mounts: (id) => current.mountCount.get(id) ?? 0,
-    host() {
-      if (!current.hostProps) throw new Error("no review surface mounted");
-      return current.hostProps;
+    inspectorProps() {
+      if (!current.inspectorProps) throw new Error("no inspector shown");
+      return current.inspectorProps;
     },
     listShown: () => container.querySelector("[data-review-list]") !== null,
     async pickFromList(id) {

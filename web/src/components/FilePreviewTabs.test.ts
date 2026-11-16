@@ -466,9 +466,18 @@ function registerDomTests() {
           }),
         ),
       );
-      expect(container.querySelectorAll(".pull-request-card").length).toBe(
-        view === "changes" || view === "commits" ? 1 : 0,
-      );
+      // Commits keeps the request's card, slim; Changes has it as a chip
+      // in its review's scope row (WorkspaceInspectorHost.changes), drawn
+      // only over the checkout's own review; Files and History none.
+      expect([
+        view,
+        [...container.querySelectorAll(".pull-request-card")].map(
+          (card) => card.className,
+        ),
+      ]).toEqual([
+        view,
+        view === "commits" ? ["pull-request-card is-compact"] : [],
+      ]);
     }
   });
 }

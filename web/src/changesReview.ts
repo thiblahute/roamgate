@@ -7,7 +7,12 @@ import {
 } from "../../shared/review";
 import type { LastStepTarget } from "./types";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
-import { heldCommentCount, reviewAgent } from "./reviewDelivery";
+import {
+  heldCommentCount,
+  paneToAttach,
+  reviewAgent,
+  useAttachAgentPane,
+} from "./reviewDelivery";
 import { handoffStatus, notSavedStatus, saveOrKeep } from "./reviewSave";
 
 /*
@@ -203,6 +208,11 @@ export type ChangesAgent = {
   setTalk: (on: boolean) => void;
   toggleHold: () => void;
   send: () => void;
+  /**
+   * A delivery that failed tried again: the workspace's agent pane told to
+   * a review that names none first (as the review pane does), else Send.
+   */
+  retryDelivery: () => void;
   review: (focus?: string) => void;
   /**
    * Writes reviewed marks (`session.reviewed` changes: null drops one),
@@ -288,6 +298,21 @@ export function useChangesAgent(
   const threads: readonly ReviewThread[] = snapshot?.threads ?? [];
   const session = snapshot?.session;
   const name = agent?.agentName ?? "Agent";
+  // "Live" with the workspace's agent pane, the review naming none (an
+  // agent that opened it without its pane): the review is told that pane,
+  // else the bridge has nowhere to send the comments.
+  const sessionCall = useCallback(
+    <T>(method: string, params: Record<string, unknown> = {}) =>
+      reviewCall<T>(connectionId, method, { session_id: sessionId, ...params }),
+    [connectionId, sessionId],
+  );
+  useAttachAgentPane(
+    sessionId ?? "",
+    // Never for a review kept from agents (a security request).
+    session && agent?.agentAllowed ? paneToAttach(session, agent) : null,
+    name,
+    sessionCall,
+  );
   const openDiscussions = (): number =>
     threads.filter(
       (thread) =>
@@ -295,7 +320,7 @@ export function useChangesAgent(
         !thread.resolved &&
         thread.comments[thread.comments.length - 1]?.author === REVIEW_USER,
     ).length;
-  return {
+  const result: ChangesAgent = {
     snapshot,
     agentName: agent?.agentPaneId && agent.agentAllowed ? name : null,
     agentPaneId: agent?.agentAllowed ? (agent.agentPaneId ?? null) : null,
@@ -331,6 +356,22 @@ export function useChangesAgent(
           ),
         () => {},
       ).then((error) => setStatus(handoffStatus(name, error, open, false)));
+    },
+    retryDelivery: () => {
+      if (
+        session &&
+        agent?.agentAllowed &&
+        !session.agent.paneId &&
+        agent.agentPaneId
+      ) {
+        void run(
+          "review.update",
+          { agent: name, agent_pane: agent.agentPaneId },
+          "Not delivered",
+        );
+        return;
+      }
+      result.send();
     },
     review: (focus) => {
       if (!agent?.agentPaneId) {
@@ -399,4 +440,5 @@ export function useChangesAgent(
       if (error) throw new Error(error);
     },
   };
+  return result;
 }

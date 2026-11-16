@@ -204,7 +204,7 @@ Changes, Commits and a file's changes in Files draw diffs through one surface,
 It only draws: each view keeps its own state and gives the surface the patch,
 the options, what is shown under lines and what a line selection does.
 
-When Changes is the review (`reviewin=changes`), its Working scope reads one
+Changes is the review. Its Working scope reads one
 diff per file: `git.diff_file` with kind `combined` (`git diff HEAD`, an
 untracked file listed by `git ls-files --others` as new; a FIFO, a device or
 a path through a link out of the checkout refused; the user's diff settings
@@ -238,7 +238,7 @@ with `workspace_id`, `checkout` and `target`: an unstored session,
 review last written. The first comment, mark or agent action opens it
 (`review.open` with the scope's target, `scopeOpenTarget`).
 
-A review of commits (the Branch scope, a range) has the review pane's views
+A review of commits (the Branch scope, a range) has two kinds of view
 in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,
 or one commit at a time (`<` `>`, `gc`, `:commit`, `:all`, `:commits`),
 oldest first, its message first as the file `:commit-message`; a branch with
@@ -252,19 +252,18 @@ view names the commit (`anchor.commit`, `commitSubject`, `commitParent`) and
 shows in that view only. `review.state` is polled while shown: a change
 offers a reload (R, gr, `:e`) beside the commit bar.
 
-Where a review shows with reviews in Changes (`changesReviewOpen.ts`
+Where a review shows (`changesReviewOpen.ts`
 `changesReviewChoice`, used by the review toggle, the reviews list, the
 inbox, an agent's `review_open` and `/rg-review`): every diff review
 (worktree, range, step, merge request) shows in Changes; only chats and
 rendered files keep their homes. A review shown in Changes is pinned to its
-workspace in the browser (`reviewChangesPins`, apart from the classic
-pane's `reviewPins`, so the pane never mounts it); an agent's review of a
+workspace in the browser (`reviewChangesPins`); an agent's review of a
 workspace that is not focused waits there and shows on arrival. Commits'
 Review this commit asks Changes for the Branch scope on that commit
 (`reviewGoTo.commit`), else opens the commit's own range review
 (`SHA^..SHA`, `openCommitReview`). The review stepping aside (Cmd+K, voice
-arrival, Go to the agent's pane) docks an expanded inspector on Changes
-(section 6 of the plan); keys that are the app's (`reviewKeyRoute`) are
+arrival, Go to the agent's pane) docks an expanded inspector on Changes;
+keys that are the app's (`reviewKeyRoute`) are
 left by Changes' cursor to App's capture listener. `review.gitlab.open`
 takes an optional `url`: the request the PR/MR card shows (its chosen
 remote), opened without the branch lookup. A review of a repository the
@@ -275,7 +274,7 @@ a review whose root is not the shown checkout) the tree offers none and
 `:stage`, `gs`, `:discard` are refused with a message.
 
 A merge request's review in Changes (`changesForge.ts`,
-`ChangesForge.tsx`) is the review pane's: `review.gitlab.refresh` with
+`ChangesForge.tsx`) uses `review.gitlab.refresh` with
 `poll` every minute while shown and on the page's return (not within 30 s
 of the last), forge discussions written on an older head found again by
 their text in today's file (`relocateLine`, both versions read once per
@@ -748,7 +747,7 @@ guard (a security project, a `web_url` not on the asked host, without https,
 or naming another request shows nothing). GitHub goes through gh's own login
 for each host (`gh auth status --hostname`, then one GraphQL query). Only the
 request's own https page is linked. `forge.session` finds the repositories a
-pane's session works in with the review pane's repository scan (its checkout,
+pane's session works in with the review's repository scan (its checkout,
 `subprojects/` on a branch, repositories its agent's record shows it worked
 in), each branch's request (`findBranchMergeRequest` for GitLab, the PR
 card's lookup for GitHub) and what `!N` and `#N` mean there. The server
@@ -820,7 +819,7 @@ goes as one prompt, one delivery at a time per review, without control
 characters and cut at 16,000 characters. Only connections whose host has
 the client get them (local connections once it is installed, SSH hosts once
 the setup above succeeded); elsewhere the review says why. So does a
-review whose agent has no known pane: the overlay attaches the workspace's
+review whose agent has no known pane: the browser attaches the workspace's
 agent pane it shows the review as live with, and **Retry** on an
 undelivered comment attaches it or sends again. A busy agent is
 tried again up to 10 times, 15 s apart at first and doubling up to 10
@@ -838,7 +837,7 @@ conversation mode holds): the pane reporting it, else the pane reporting the
 session a Claude session went on in after a resume or /clear (its successor
 transcript, see `session-resolver.ts`). That pane becomes the review's pane. A
 review whose session is not found tries the pane it was bound to, and forgets a
-pane with no agent left, so the overlay attaches the workspace's agent pane in
+pane with no agent left, so the browser attaches the workspace's agent pane in
 its place; a chat's threads never go to a pane running another session. When the
 session runs in no pane, the review says so in plain words ("Claude for this
 chat is not running in any pane") and the comments wait: the service looks for
@@ -854,7 +853,7 @@ the answer are sent.
 There is one comment store: review threads. A review whose target is
 `{ kind: "rendered", path | url }` holds the threads on a file or a site as
 Roamgate renders them; it has no diff or commits and is shown in the Files
-preview, never as a review pane. Its anchors are source lines (`path`, `line`,
+preview, never in Changes. Its anchors are source lines (`path`, `line`,
 `endLine`, `text`) plus `anchor.render`: the quote, page URL and CSS selector, a
 region in fractions of the graphic, the element, the animation's moment and a
 snapshot saved with the review's images.
@@ -873,8 +872,7 @@ Agents' `get` lists the shared threads with their own review id, unless
 that review is one agents may not read. Pending drafts the merge request's
 review already shows are not shared twice.
 
-With reviews in Changes (`reviewin=changes`, the browser's setting), a
-comment written in Files on a file of the checkout opens the checkout's
+A comment written in Files on a file of the checkout opens the checkout's
 worktree review instead of the file's rendered review
 (`workspaceFeedback.ts` `feedbackRoute`, `FeedbackPlace.oneReview`): the
 anchor's `path` is relative to that review's root, and keeps its line, text
@@ -906,8 +904,8 @@ frame too; its other blocks stay in the page with their source lines.
 
 A comment of the Files, Changes, Commits or History views goes to the review
 of what it is on (`web/src/workspaceFeedback.ts`), opened with the
-workspace's agent when it has none, and is written as the review pane writes
-one: a discussion when the review sends to its agent (`autoSend`), else a
+workspace's agent when it has none, and is written as a comment in Changes
+is: a discussion when the review sends to its agent (`autoSend`), else a
 review comment; delivery then follows the review (`holdComments`). The views
 draw it from the review store; `anchor.feedback` keeps the note as written,
 which says where it is. A terminal comment (`anchor.terminal`: pane, title,

@@ -4,8 +4,8 @@ import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
 
 /**
- * The reviews list over the workspace's review: opening it steps the
- * review aside, closing it brings the review back.
+ * The reviews list over the workspace's review in Changes: it opens over
+ * the review, which stays in Changes, there again once the list closes.
  */
 if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
   test("the reviews list and the pinned review, in an isolated DOM runtime", async () => {
@@ -23,7 +23,7 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  test("closing the reviews list returns to the review pinned to the workspace", async () => {
+  test("closing the reviews list returns to the workspace's review, kept in its Changes under the list", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });
     for (const [key, value] of Object.entries({
@@ -165,18 +165,32 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
       reviewCall: async (_connection: string, method: string) =>
         method === "review.activity" ? { activity: [] } : {},
     }));
-    // The review pane itself: which review it shows.
-    mock.module("./components/ReviewHost", () => ({
-      ReviewHost: ({ shownId }: { shownId: string | null }) => (
-        <div data-review-shown={shownId ?? ""} />
-      ),
+    // The inspector, where the review shows: its view, and the review
+    // Changes was asked to show.
+    const inspectorModule = await import("./components/WorkspaceInspectorHost");
+    mock.module("./components/WorkspaceInspectorHost", () => ({
+      ...inspectorModule,
+      WorkspaceInspectorHost: ({
+        state,
+        reviewGoTo,
+      }: {
+        state?: { open: boolean; view: string };
+        reviewGoTo?: { review?: string; scope?: string } | null;
+      }) =>
+        state?.open ? (
+          <div
+            data-inspector-view={state.view}
+            data-review-shown={
+              reviewGoTo ? (reviewGoTo.review ?? reviewGoTo.scope ?? "") : ""
+            }
+          />
+        ) : null,
     }));
     for (const name of [
       "ConnectionSwitcher",
       "GlobalTooltip",
       "AnnotationPanel",
       "AssistantPanel",
-      "WorkspaceInspectorHost",
       "WorkspaceTree",
       "ConfigMenu",
       "TabBar",
@@ -201,11 +215,13 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
       React.act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
-    /** The review shown, "" for none. */
-    const shown = () =>
-      container
-        .querySelector("[data-review-shown]")
-        ?.getAttribute("data-review-shown") ?? "";
+    /** The review Changes shows ("" for none), or null with no Changes. */
+    const shown = () => {
+      const changes = container.querySelector(
+        '[data-inspector-view="changes"]',
+      );
+      return changes ? changes.getAttribute("data-review-shown") : null;
+    };
     const list = () =>
       document.querySelector(
         '[role="dialog"][aria-label="Reviews in progress"]',
@@ -227,16 +243,19 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
     try {
       await React.act(async () => root.render(<App />));
       await settle();
-      // The review shortcut shows the workspace's review.
+      // The review shortcut shows the workspace's review, in Changes.
       await chord();
       await settle();
-      expect(shown()).toBe("r1");
-      // The list steps over it: the review goes aside, kept.
+      await settle();
+      // r1, of the worktree: Changes on its Working scope.
+      const review = "working";
+      expect(shown()).toBe(review);
+      // The list steps over it: the review stays in Changes, under it.
       await chord(true);
       await settle();
       expect(list()).not.toBeNull();
-      expect(shown()).toBe("");
-      // Esc closes the list: the pinned review is back.
+      expect(shown()).toBe(review);
+      // Esc closes the list: the review is there.
       await React.act(async () => {
         list()!.dispatchEvent(
           new KeyboardEvent("keydown", {
@@ -248,11 +267,12 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
       });
       await settle();
       expect(list()).toBeNull();
-      expect(shown()).toBe("r1");
+      expect(shown()).toBe(review);
       // Its close button too.
       await chord(true);
       await settle();
-      expect(shown()).toBe("");
+      expect(list()).not.toBeNull();
+      expect(shown()).toBe(review);
       await React.act(async () =>
         list()!
           .querySelector<HTMLButtonElement>('button[title="Close (Esc)"]')!
@@ -260,7 +280,7 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
       );
       await settle();
       expect(list()).toBeNull();
-      expect(shown()).toBe("r1");
+      expect(shown()).toBe(review);
     } finally {
       await React.act(async () => root.unmount());
       container.remove();

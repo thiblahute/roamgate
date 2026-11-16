@@ -4,11 +4,11 @@ import { workspaceRepoDirs } from "./changesRepo";
 import { workspaceRepos, scanRepos } from "./reviewRepos";
 
 /*
- * The review toggle on "in Changes" (plan: review into the inspector, D6):
- * it shows what the classic toggle would (the pinned review, else the one
- * `openWorkspaceReview` picks: the repository with work, its branch review
- * against the base, or its uncommitted work), in Changes' matching scope.
- * A workspace with several repositories (the classic pane's series) shows
+ * The review toggle (plan: review into the inspector, D6): it shows the
+ * pinned review, else the one `openWorkspaceReview` picks (the repository
+ * with work, its branch review against the base, or its uncommitted work),
+ * in Changes' matching scope.
+ * A workspace with several repositories (a series) shows
  * the one Changes showed last, else the review's, picked in Changes' scope
  * line. A range or compare opened by name, a step's review, a merge
  * request's review and a branch with nothing beyond its base (its history)
@@ -31,14 +31,24 @@ export type ChangesReviewChoice =
       /** Of a repository this workspace does not hold (D3). */
       elsewhere?: boolean;
     }
-  | { kind: "classic"; sessionId: string; reason: string };
+  /**
+   * A review with a home of its own, never Changes (D16): a chat's is
+   * discussed in its chat, a rendered file's or site's in the Files
+   * preview. `reason` says so.
+   */
+  | {
+      kind: "home";
+      sessionId: string;
+      home: "chat" | "files" | "reviews";
+      reason: string;
+    };
 
 function sameRoot(a: string, b: string): boolean {
   const trim = (path: string) => path.replace(/\/+$/, "");
   return trim(a) === trim(b);
 }
 
-/** Where a picked review shows: Changes' scope, or the classic pane. */
+/** Where a picked review shows: Changes' scope, or its own home. */
 export async function changesReviewChoice({
   snapshot,
   checkoutRoot,
@@ -68,19 +78,28 @@ export async function changesReviewChoice({
   lastRoot?: string;
 }): Promise<ChangesReviewChoice> {
   const { session } = snapshot;
-  const classic = (reason: string): ChangesReviewChoice => ({
-    kind: "classic",
-    sessionId: session.id,
-    reason,
-  });
   const { target } = session;
-  if (
-    target.kind !== "range" &&
-    target.kind !== "worktree" &&
-    target.kind !== "step" &&
-    target.kind !== "mr"
-  )
-    return classic("This review shows in the review pane.");
+  if (target.kind === "chat")
+    return {
+      kind: "home",
+      sessionId: session.id,
+      home: "chat",
+      reason: "A chat's review is discussed in its chat.",
+    };
+  if (target.kind === "rendered")
+    return {
+      kind: "home",
+      sessionId: session.id,
+      home: "files",
+      reason: "A rendered file's review is discussed in the Files preview.",
+    };
+  if (target.kind === "effort")
+    return {
+      kind: "home",
+      sessionId: session.id,
+      home: "reviews",
+      reason: "An effort's threads are discussed in its view in Reviews.",
+    };
   const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
   // A workspace without a known checkout shows its focused pane's
   // repository in Changes.

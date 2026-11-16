@@ -14,7 +14,7 @@ import {
  * host).
  */
 export const REVIEW_CLIENT_SCRIPT = `#!/usr/bin/env python3
-"""roamgate-review: talk to Roamgate's reviews (its review pane or Changes view).
+"""roamgate-review: talk to Roamgate's reviews (its Changes view).
 
 Installed by Roamgate and rewritten when Roamgate updates it. Output is JSON.
 """
@@ -100,7 +100,7 @@ def parser():
     common_options(common, argparse.SUPPRESS)
     p = argparse.ArgumentParser(
         prog="roamgate-review",
-        description="Talk to Roamgate's reviews, shown in its review pane or the Changes view. Output is JSON.",
+        description="Talk to Roamgate's reviews, shown in its Changes view. Output is JSON.",
     )
     common_options(p)
     sub = p.add_subparsers(dest="command", required=True)

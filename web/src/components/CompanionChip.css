@@ -159,12 +159,6 @@
   box-shadow: none;
 }
 
-/* The review covers the app: its strip runs the review's own colours. */
-.review-overlay > .companion-strip {
-  border-bottom-color: var(--rv-border, var(--border));
-  font-family: inherit;
-}
-
 /* A phone's top bar: the dot and the name, and the call's buttons. */
 @media (max-width: 640px) {
   .companion-chip-main {

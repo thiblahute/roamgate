@@ -27,7 +27,7 @@ if (process.env.ROAMGATE_APP_REVIEW_MR_TEST !== "1") {
   );
   await installAppReviewDom();
 
-  test("gf on an inbox request's review checks out its review worktree first; local changes refuse it, with a notice", async () => {
+  test("gf in Changes on an inbox request's review checks out its review worktree first; local changes refuse it, with a notice", async () => {
     const { mock } = await import("bun:test");
     /** The checkout setting, the inbox, and what the bridge was asked. */
     const bridge = {
@@ -68,9 +68,13 @@ if (process.env.ROAMGATE_APP_REVIEW_MR_TEST !== "1") {
       return "" as never;
     });
     try {
+      /** Changes' gf on a changed file, at a line. */
+      const gf = (path: string, line: number) =>
+        app.run(() => app.inspectorProps().onOpenDiffFile({ path }, { line }));
       app.setNextOpened("r1");
       await app.toggleReview();
-      await app.run(() => app.host().onOpenFile("w1", "/repo/r1/src/a.ts", 12));
+      await app.settle(50);
+      await gf("src/a.ts", 12);
       await app.settle(50);
       expect(bridge.calls).toEqual([
         {
@@ -79,12 +83,14 @@ if (process.env.ROAMGATE_APP_REVIEW_MR_TEST !== "1") {
         },
       ]);
       expect(notices).toEqual([]);
+      expect(app.inspector()).toMatchObject({ open: true, view: "files" });
       expect(app.inspectorFile()).toMatchObject({ line: 12 });
 
       // Local changes in the worktree: nothing touched, the user is told.
       bridge.answer = { state: "dirty", changes: ["a.ts"] };
       await app.toggleReview();
-      await app.run(() => app.host().onOpenFile("w1", "/repo/r1/src/a.ts", 3));
+      await app.settle(50);
+      await gf("src/a.ts", 3);
       await app.settle(50);
       expect(bridge.calls).toHaveLength(2);
       expect(notices).toEqual(["The review worktree has local changes"]);
@@ -92,7 +98,8 @@ if (process.env.ROAMGATE_APP_REVIEW_MR_TEST !== "1") {
       // Checked out at once (not on demand): nothing asked.
       bridge.checkout = "immediately";
       await app.toggleReview();
-      await app.run(() => app.host().onOpenFile("w1", "/repo/r1/src/a.ts", 4));
+      await app.settle(50);
+      await gf("src/a.ts", 4);
       await app.settle(50);
       expect(bridge.calls).toHaveLength(2);
 
@@ -101,7 +108,9 @@ if (process.env.ROAMGATE_APP_REVIEW_MR_TEST !== "1") {
       await app.focusWorkspace("w2");
       app.setNextOpened("r2");
       await app.toggleReview();
-      await app.run(() => app.host().onOpenFile("w2", "/repo/r2/src/b.ts", 1));
+      await app.settle(50);
+      expect(app.inspector()?.scope.workspaceId).toBe("w2");
+      await gf("src/b.ts", 1);
       await app.settle(50);
       expect(bridge.calls).toHaveLength(2);
     } finally {
