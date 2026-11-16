@@ -218,6 +218,57 @@ test("a hunk is known by its path and changed lines, not its place", () => {
   expect(hunkKey("all", "a.ts", "h1.x")).toBe("all:a.ts\nh1.x");
 });
 
+test("a hunk with no changed line, a commit's message, is known by its lines", () => {
+  const message = (text: string) =>
+    hunkIds(":commit-message", [hunk([` ${text}`])])[0]!;
+  expect(message("First")).not.toBe(message("Second"));
+  expect(message("First")).toBe(message("First"));
+  expect(message("First")).toMatch(/^c1\./);
+});
+
+test("a commit's message marked reviewed in its commit is that commit's only, old marks too", () => {
+  const info = (text: string): ReviewedFile => {
+    const own = [hunk([` ${text}`])];
+    return {
+      path: ":commit-message",
+      fingerprint: `1:${text}`,
+      hunks: hunkIds(":commit-message", own),
+    };
+  };
+  const first = info("First");
+  const second = info("Second");
+  // Marked in the second commit's view (its sha).
+  const marks = reviewedChanges(
+    second,
+    new Set([0]),
+    "b".repeat(40),
+    {},
+  ) as Record<string, string>;
+  expect(reviewedState([second], "b".repeat(40), marks).files.has(0)).toBe(
+    true,
+  );
+  expect(reviewedState([first], "a".repeat(40), marks).files.has(0)).toBe(
+    false,
+  );
+  // Written by Changes before (view "all", the old shared message id): only
+  // the message whose text the file mark holds is reviewed.
+  // The old id hashed the path alone: what an empty hunk's hash is.
+  const oldId = hunkIds(":commit-message", [{ lines: [] }])[0]!.replace(
+    /^c0\./,
+    "h0.",
+  );
+  const legacy = {
+    "all::commit-message": second.fingerprint,
+    [`all::commit-message\n${oldId}`]: "1",
+  };
+  expect(reviewedState([second], "b".repeat(40), legacy).files.has(0)).toBe(
+    true,
+  );
+  expect(reviewedState([first], "a".repeat(40), legacy).files.has(0)).toBe(
+    false,
+  );
+});
+
 test("hunks marked reviewed; all of them make the file reviewed", () => {
   const file: ReviewedFile = {
     path: "a.ts",
