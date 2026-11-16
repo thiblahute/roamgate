@@ -2216,6 +2216,12 @@ export function DiffViewerPanel({
       say("Git actions apply to the working changes.");
       return false;
     }
+    if (repoRoot) {
+      say(
+        "Not in another repository: stage and discard act on the checkout's files.",
+      );
+      return false;
+    }
     const entries = statusEntries.filter((entry) => entry.path === path);
     const item = buildGitFileMenuItems(entries).find(
       (each) => each.action === action,
@@ -2861,7 +2867,12 @@ export function DiffViewerPanel({
                 action: () => runGitRepoMenuAction(item),
               })),
             },
-          ].filter((group) => group.items.length > 0)}
+          ]
+            // Another repository than the workspace's checkout: git acts on
+            // the checkout only, so its actions are not offered here.
+            .filter((group) => !repoRoot || group.label !== "Git")
+            .filter((group) => !repoRoot || group.label !== "Repository")
+            .filter((group) => group.items.length > 0)}
           onClose={() => setContextMenu(null)}
         />
       ) : null}

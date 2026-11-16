@@ -21,6 +21,7 @@ import type {
 import type { GitDiffEntry, GitDiffFile } from "../types";
 import {
   type BridgeUpdate,
+  type HostCall,
   parseKeys,
   type ReviewSurface,
   type ShownLine,
@@ -144,7 +145,7 @@ export async function mountChangesReview(
   const { act, createElement, useState } = await import("react");
   type ReactNode = import("react").ReactNode;
   const { createRoot } = await import("react-dom/client");
-  const { spyOn } = await import("bun:test");
+  const { jest, spyOn } = await import("bun:test");
   const { store } = await import("../store");
   const { roamgateLocalStorage } = await import("../browserStorage");
   const { DiffContentView } = await import("./DiffContentView");
@@ -179,6 +180,8 @@ export async function mountChangesReview(
   backend.texts = options.texts ?? {};
   backend.commits = options.commits ?? [];
   backend.patchIds = options.patchIds;
+  backend.fileAt = options.fileAt ?? {};
+  backend.repos = options.repos ?? [];
   backend.calls = [];
   backend.failing.clear();
   backend.connected = true;
@@ -199,6 +202,17 @@ export async function mountChangesReview(
       : {}),
     ...(options.session ?? {}),
   };
+  // A merge request's review: shown as Changes' review scope, as the review
+  // toggle shows one (plan phase 7); its threads are the forge's, the
+  // agent's and the review pane's, not written in Changes.
+  const ofRequest =
+    (sessionFields.target as { kind?: string } | undefined)?.kind === "mr";
+  const asReview = ofCommits || ofRequest;
+  /** What the bridge read of the merge request, pushed with the review. */
+  let pushed: { mergeRequest?: unknown; gitlabError?: string } = {
+    ...(options.mergeRequest ? { mergeRequest: options.mergeRequest } : {}),
+    ...(options.gitlabError ? { gitlabError: options.gitlabError } : {}),
+  };
   let ownThreads: ReviewThread[] = options.threads ?? [];
   const otherReviews = options.otherReviews ?? [];
   /**
@@ -206,6 +220,13 @@ export async function mountChangesReview(
    * on the whole review with no line.
    */
   const asFeedback = (thread: ReviewThread, session: string): ReviewThread =>
+    ofRequest && session === sessionId
+      ? ({ ...thread, sessionId: session } as ReviewThread)
+      : asChangesComment(thread, session);
+  const asChangesComment = (
+    thread: ReviewThread,
+    session: string,
+  ): ReviewThread =>
     ({
       ...thread,
       sessionId: session,
@@ -249,6 +270,7 @@ export async function mountChangesReview(
         {
           session: ownSession() as Record<string, unknown>,
           threads: ownThreads.map((thread) => asFeedback(thread, sessionId)),
+          ...pushed,
         },
       ],
       ...otherReviews.map(
@@ -274,6 +296,7 @@ export async function mountChangesReview(
     ({
       session: ownSession(),
       threads: ownThreads.map((thread) => asFeedback(thread, sessionId)),
+      ...pushed,
     }) as unknown as ReviewSnapshot;
   // The bridge writes what Changes writes through the host: the review
   // opened (the checkout's), a thread added to it, the review read back.
@@ -332,6 +355,10 @@ export async function mountChangesReview(
     if ((read.session as { id?: string }).id === sessionId) remembered = read;
   };
   const apply = (update: BridgeUpdate) => {
+    if (update.mergeRequest)
+      pushed = { ...pushed, mergeRequest: update.mergeRequest };
+    if (update.gitlabError !== undefined)
+      pushed = { ...pushed, gitlabError: update.gitlabError };
     if (update.threads) ownThreads = update.threads;
     if (update.session) sessionFields = { ...sessionFields, ...update.session };
   };
@@ -362,6 +389,39 @@ export async function mountChangesReview(
       }) as ReturnType<typeof store.get>,
   );
   const notices: string[] = [];
+  // The page around the review: its host's callbacks, new tabs, visibility.
+  const hostCalls: HostCall[] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]) => {
+      hostCalls.push({ name, args });
+    };
+  const opened: string[] = [];
+  const windowOpen = Object.getOwnPropertyDescriptor(window, "open");
+  Object.defineProperty(window, "open", {
+    configurable: true,
+    writable: true,
+    value: (url?: string | URL) => {
+      opened.push(String(url));
+      return null;
+    },
+  });
+  let pageHidden = false;
+  const documentHidden = Object.getOwnPropertyDescriptor(document, "hidden");
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => pageHidden,
+  });
+  // Time: Bun's fake clock when asked; settling then runs on setImmediate,
+  // which the fake clock leaves running.
+  const fake = options.fakeTimers === true;
+  if (fake) jest.useFakeTimers();
+  const tick = fake
+    ? async () => {
+        jest.advanceTimersByTime(2);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    : () => new Promise((resolve) => setTimeout(resolve, 2));
   const notify = store.notify.bind(store);
   const notifySpy = spyOn(store, "notify").mockImplementation(((notice: {
     message: string;
@@ -470,7 +530,7 @@ export async function mountChangesReview(
   const settleOnly = async () => {
     for (let round = 0; round < 8; round++)
       await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 2));
+        await tick();
       });
     orders.clear();
   };
@@ -571,10 +631,27 @@ export async function mountChangesReview(
               annotations,
               threads,
               reviewCursor: true,
-              ...(ofCommits
+              ...(asReview
                 ? { reviewScope: { kind: "review" as const, sessionId } }
                 : {}),
+              ...(options.hostCallbacks
+                ? {
+                    forgeHost: {
+                      onShowReview: record("showReview"),
+                      onOpenLocal: record("openLocal"),
+                    },
+                  }
+                : {}),
               showFileSelector: false,
+              // The checkout's git actions, as the host runs them.
+              onGitAction: (action: string, path: string) => {
+                record("gitAction")(action, path);
+                return true;
+              },
+              // A review naming its repository: the checkout's is /repo.
+              ...(options.session?.root !== undefined
+                ? { repo: { root: "/repo", own: true } }
+                : {}),
               onCreateAnnotation: writeComment,
               onAddReviewImage: addImage,
               onReviewProgress: (next: typeof progress) => {
@@ -1042,6 +1119,27 @@ export async function mountChangesReview(
     });
   };
 
+  // The head's menus: More (the forge's, copying) and the agent's.
+  const menuButton = (name: "agent" | "more") => {
+    const button = [
+      ...host.querySelectorAll<HTMLButtonElement>(".rv-menu-button"),
+    ].find((each) =>
+      name === "more"
+        ? each.closest(".rv-more") !== null
+        : each.closest(".rv-agent") !== null,
+    );
+    if (!button) throw new Error(`no ${name} menu`);
+    return button;
+  };
+  const menuItems = (button: HTMLButtonElement) => [
+    ...(button.parentElement?.querySelectorAll<HTMLButtonElement>(
+      '.rv-menu [role^="menuitem"]',
+    ) ?? []),
+  ];
+  const menuLabel = (item: Element) =>
+    item.querySelector(".rv-menu-label")?.textContent ??
+    (item.textContent ?? "").trim();
+
   const surface: Partial<ReviewSurface> = {
     name: "changes",
     cursorLine() {
@@ -1203,6 +1301,11 @@ export async function mountChangesReview(
       getSpy.mockRestore();
       notifySpy.mockRestore();
       restoreGlobals();
+      if (windowOpen) Object.defineProperty(window, "open", windowOpen);
+      if (documentHidden)
+        Object.defineProperty(document, "hidden", documentHidden);
+      else Reflect.deleteProperty(document, "hidden");
+      if (fake) jest.useRealTimers();
     },
     screenLines() {
       if (options.viewport === undefined)
@@ -1671,6 +1774,106 @@ export async function mountChangesReview(
     },
     notices() {
       return [...notices];
+    },
+
+    // Time and the page.
+    async advance(ms) {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
+      });
+      await settleAll();
+    },
+    async setPageHidden(hidden) {
+      pageHidden = hidden;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await settleAll();
+    },
+
+    // The forge.
+    forgeThreads() {
+      return [...host.querySelectorAll<HTMLDetailsElement>("details.mrt")].map(
+        (card) => ({
+          id: card.dataset.threadId ?? "",
+          head: (card.querySelector("summary")?.textContent ?? "").trim(),
+          open: card.open,
+          text: card.textContent ?? "",
+        }),
+      );
+    },
+    async toggleForgeThread(id) {
+      const card = [
+        ...host.querySelectorAll<HTMLDetailsElement>("details.mrt"),
+      ].find((each) => each.dataset.threadId === id);
+      if (!card) throw new Error(`no forge thread ${id}`);
+      // A summary's click toggles its details in a browser.
+      await act(async () => {
+        card.open = !card.open;
+        card.dispatchEvent(new Event("toggle"));
+      });
+      await settleAll();
+    },
+    linkHref(label) {
+      const link = [...host.querySelectorAll("a")].find(
+        (element) => (element.textContent ?? "").trim() === label,
+      );
+      return link?.getAttribute("href") ?? null;
+    },
+    modeSwitch() {
+      const group = host.querySelector(
+        '[role="group"][aria-label="Review mode"]',
+      );
+      if (!group) return null;
+      return [...group.querySelectorAll("button")].map((button) => ({
+        label: button.textContent ?? "",
+        on: button.getAttribute("aria-pressed") === "true",
+      }));
+    },
+    async menu(name) {
+      const button = menuButton(name);
+      await act(async () => button.click());
+      await settleAll();
+      const items = menuItems(button).map((item) => ({
+        label: menuLabel(item),
+        ...(item.getAttribute("role") === "menuitemcheckbox"
+          ? { checked: item.getAttribute("aria-checked") === "true" }
+          : {}),
+        disabled: item.disabled,
+      }));
+      await act(async () => button.click());
+      await settleAll();
+      return items;
+    },
+    async chooseMenu(name, label) {
+      const button = menuButton(name);
+      await act(async () => button.click());
+      await settleAll();
+      const item = menuItems(button).find((each) => menuLabel(each) === label);
+      if (!item) throw new Error(`no menu entry ${label}`);
+      await act(async () => item.click());
+      await settleAll();
+    },
+
+    // The page around the review.
+    hostCalls(name) {
+      return hostCalls.filter(
+        (call) => name === undefined || call.name === name,
+      );
+    },
+    closes() {
+      return hostCalls.filter((call) => call.name === "close").length;
+    },
+    listsShown() {
+      return hostCalls.filter((call) => call.name === "showList").length;
+    },
+    reviewsShown() {
+      return hostCalls
+        .filter((call) => call.name === "showReview")
+        .map((call) => call.args[0]);
+    },
+    opened() {
+      return [...opened];
     },
     async search(pattern) {
       await press("/");

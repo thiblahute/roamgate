@@ -2951,6 +2951,24 @@ export default function App() {
     if (!s.activeConnectionId) return;
     void loadReviews(s.activeConnectionId).catch(() => {});
   }, [s.activeConnectionId, s.connectionGeneration]);
+  /**
+   * A review shown in Changes as the toggle shows one: in its workspace's
+   * inspector, else (its workspace gone, or none) the focused one's (D3).
+   */
+  const showReviewInChanges = useCallback(async (sessionId: string) => {
+    const snapshot = getReviewSnapshot(sessionId);
+    const workspaceId = snapshot?.session.workspaceId;
+    const { workspaces } = store.get();
+    if (
+      workspaceId &&
+      !workspaces.find(
+        (each) => each.focused && each.workspace_id === workspaceId,
+      ) &&
+      workspaces.some((each) => each.workspace_id === workspaceId)
+    )
+      await store.focusWorkspace(workspaceId);
+    toggleReviewInChangesRef.current({ sessionId });
+  }, []);
   // An agent raised a review: show it here when this tab is on its
   // connection; otherwise it opens once the user switches there.
   useEffect(() => {
@@ -2960,15 +2978,38 @@ export default function App() {
       const sessionId = takeOpenRequest(request, s.activeConnectionId);
       if (!sessionId) return;
       const snapshot = getReviewSnapshot(sessionId);
-      if (snapshot?.session.target.kind === "rendered")
+      if (snapshot?.session.target.kind === "rendered") {
         showRenderedInFiles(snapshot);
-      else setReviewSessionId(sessionId);
+        return;
+      }
+      // On "in Changes", a review asked for in this workspace (the
+      // Reviews inbox jumps there first), or of none left (D3), shows in
+      // its Changes (plan phase 7).
+      if (
+        snapshot &&
+        snapshot.session.target.kind !== "chat" &&
+        reviewSurfaceChoice() === "changes"
+      ) {
+        const { workspaces } = store.get();
+        const own = snapshot.session.workspaceId;
+        const focused = workspaces.find((each) => each.focused)?.workspace_id;
+        if (
+          !own ||
+          own === focused ||
+          !workspaces.some((each) => each.workspace_id === own)
+        ) {
+          void showReviewInChanges(sessionId);
+          return;
+        }
+      }
+      setReviewSessionId(sessionId);
     });
   }, [
     reviewState.openRequest,
     s.activeConnectionId,
     setReviewSessionId,
     showRenderedInFiles,
+    showReviewInChanges,
   ]);
   /** Show in code review: a file and line asked from the Files preview. */
   const [reviewGoTo, setReviewGoTo] = useState<{
@@ -3023,6 +3064,7 @@ export default function App() {
       path?: string;
       line?: number;
       scope?: "working" | "branch-main";
+      sessionId?: string;
     }) => void
   >(() => {});
   const toggleReview = useCallback(async () => {
@@ -3891,6 +3933,8 @@ export default function App() {
     /** A review shown as Changes' scope (plan phase 6). */
     review?: string;
     root?: string;
+    /** Of a repository the workspace does not hold (D3). */
+    elsewhere?: boolean;
     at: number;
   } | null>(null);
   const toggleReviewInChanges = useCallback(
@@ -3898,6 +3942,8 @@ export default function App() {
       path?: string;
       line?: number;
       scope?: "working" | "branch-main";
+      /** This review, shown as the toggle shows one (the reviews list's). */
+      sessionId?: string;
     }) => {
       const workspace = store.get().workspaces.find((each) => each.focused);
       if (!workspace) {
@@ -3957,6 +4003,10 @@ export default function App() {
         goBack(current, toggled);
         return;
       }
+      // A review picked (the reviews list's, the inbox's): shown as the
+      // toggle shows the pinned one.
+      const picked = goTo?.sessionId;
+      if (picked) goTo = undefined;
       // The toggle shows what the classic one would (the pinned review,
       // else the workspace's), in Changes' scope for it; what Changes
       // cannot show yet stays in the classic pane. Changes shows at once,
@@ -3966,7 +4016,7 @@ export default function App() {
         const shown = reviewToggleReturnRef.current;
         const stillShown = () =>
           !!shown && reviewToggleReturnRef.current === shown;
-        const sessionId = pinnedSessionId;
+        const sessionId = picked ?? pinnedSessionId;
         void (async () => {
           const { openWorkspaceReview } = await import("./reviewOpen");
           const picked =
@@ -4015,6 +4065,7 @@ export default function App() {
             ...(choice.scope ? { scope: choice.scope } : {}),
             ...(choice.review ? { review: choice.review } : {}),
             ...(choice.root !== undefined ? { root: choice.root } : {}),
+            ...(choice.elsewhere ? { elsewhere: true } : {}),
             at: Date.now(),
           });
         })();
@@ -4229,6 +4280,11 @@ export default function App() {
         store.get().workspaces,
       );
       if (!workspace) return;
+      // A request's review worktree follows on demand (refused when it
+      // has local changes), as from the review pane.
+      void import("./mrReviewFlow").then(({ checkoutForBrowsing }) =>
+        checkoutForBrowsing(workspace.workspace_id),
+      );
       openFileExplorerFile(
         workspace.workspace_id,
         inspectorFileEntry(entry.path),
@@ -6768,6 +6824,14 @@ export default function App() {
                   )}
                   onOpen={(sessionId) => {
                     setReviewListOpen(false);
+                    // On "in Changes", the review picked shows in Changes
+                    // (its workspace's, else this one's, D3), never in the
+                    // classic pane (plan phase 7).
+                    if (reviewSurfaceChoice() === "changes") {
+                      setReviewSuspended(false);
+                      void showReviewInChanges(sessionId);
+                      return;
+                    }
                     setReviewSessionId(sessionId, true);
                   }}
                   onClose={() => {

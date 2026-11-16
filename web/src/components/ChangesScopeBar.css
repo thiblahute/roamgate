@@ -86,3 +86,13 @@
   padding: 4px 6px 0;
   min-width: 0;
 }
+
+/* A review of a repository the workspace does not hold (D3). */
+.changes-scope-elsewhere {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}

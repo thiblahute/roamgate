@@ -10,11 +10,12 @@ import { workspaceRepos, scanRepos } from "./reviewRepos";
  * against the base, or its uncommitted work), in Changes' matching scope.
  * A workspace with several repositories (the classic pane's series) shows
  * the one Changes showed last, else the review's, picked in Changes' scope
- * line. A range or compare opened by name, a step's review, and a branch
- * with nothing beyond its base (its history) show as a review scope (plan
- * phase 6). What Changes cannot show yet goes to the classic pane: a merge
- * request (phase 7), and a review of a repository the workspace does not
- * hold.
+ * line. A range or compare opened by name, a step's review, a merge
+ * request's review and a branch with nothing beyond its base (its history)
+ * show as a review scope (plan phases 6 and 7). A review of a repository
+ * the workspace does not hold (its workspace gone, an agent's without one)
+ * shows in this workspace's Changes all the same, marked "from elsewhere"
+ * (D3). Only chats and rendered files keep their own homes.
  */
 
 export type ChangesReviewChoice =
@@ -27,6 +28,8 @@ export type ChangesReviewChoice =
       review?: string;
       /** The repository, when another than the inspector's ("": its own). */
       root?: string;
+      /** Of a repository this workspace does not hold (D3). */
+      elsewhere?: boolean;
     }
   | { kind: "classic"; sessionId: string; reason: string };
 
@@ -74,7 +77,8 @@ export async function changesReviewChoice({
   if (
     target.kind !== "range" &&
     target.kind !== "worktree" &&
-    target.kind !== "step"
+    target.kind !== "step" &&
+    target.kind !== "mr"
   )
     return classic("This review shows in the review pane.");
   const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
@@ -94,24 +98,57 @@ export async function changesReviewChoice({
     agentDirs,
   );
   const repos = workspaceRepos(scanned, sessions, session);
-  // Found in the workspace, not only listed for being this review's.
+  // Found in the workspace, not only listed for being this review's: the
+  // review's root is scanned too, so a repository is the workspace's when
+  // one of its panes' or agents' directories is in it (or holds it, a
+  // subproject).
+  const trimmed = (path: string) => path.replace(/\/+$/, "");
+  const near = (dir: string, root: string) =>
+    sameRoot(dir, root) ||
+    trimmed(dir).startsWith(`${trimmed(root)}/`) ||
+    trimmed(root).startsWith(`${trimmed(dir)}/`);
   const held = (root: string) =>
-    scanned.some((repo) => sameRoot(repo.root, root));
+    scanned.some((repo) => sameRoot(repo.root, root)) &&
+    [...dirs, ...agentDirs].some((dir) => near(dir, root));
+  // A repository this workspace does not hold: shown here, marked (D3).
   if (!here && !held(session.root))
-    return classic(
-      "This review is of another repository: it shows in the review pane.",
-    );
+    return target.kind === "worktree"
+      ? {
+          kind: "changes",
+          sessionId: session.id,
+          scope: "working",
+          root: session.root,
+          elsewhere: true,
+        }
+      : {
+          kind: "changes",
+          sessionId: session.id,
+          review: session.id,
+          root: session.root,
+          elsewhere: true,
+        };
   // Several repositories: the one shown last, as it was left.
   if (
+    target.kind !== "mr" &&
     repos.length > 1 &&
     lastRoot !== undefined &&
     (lastRoot === "" || held(lastRoot))
   )
     return { kind: "changes", sessionId: session.id, root: lastRoot };
-  const root = here ? undefined : session.root;
-  const at = root ? { root } : {};
+  // The checkout's own ("") when it is the review's: Changes comes back to
+  // it from another repository shown last.
+  const root = here ? "" : session.root;
+  const at = { root };
   if (target.kind === "worktree")
     return { kind: "changes", sessionId: session.id, scope: "working", ...at };
+  // A merge request's review: the review itself, its forge with it.
+  if (target.kind === "mr")
+    return {
+      kind: "changes",
+      sessionId: session.id,
+      review: session.id,
+      ...at,
+    };
   // A step's review, a range of other ends, two versions compared: the
   // review itself as the scope, with its commits.
   const review = {

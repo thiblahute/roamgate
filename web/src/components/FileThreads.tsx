@@ -414,6 +414,17 @@ export type ReviewThreadLook = {
     part: ReviewMessagePart,
     done: () => void,
   ) => ReactNode;
+  /**
+   * A forge discussion (a merge request's review in Changes, plan phase 7)
+   * as the review pane draws it: found again on today's line, folded by
+   * hand (r), its draft reply in the review's editor.
+   */
+  forge?: {
+    /** Found again in today's file: the line it was written on. */
+    outdatedLine: (thread: ReviewThread) => number | undefined;
+    /** The draft reply's editor (a reply when `comment` is null). */
+    editor: (thread: ReviewThread, comment: ReviewComment | null) => ReactNode;
+  };
 };
 
 export function FileThread({
@@ -423,6 +434,7 @@ export function FileThread({
   undelivered,
   nested,
   review,
+  top = false,
   onMessage = false,
 }: {
   thread: ReviewThread;
@@ -432,6 +444,8 @@ export function FileThread({
   /** Threads on parts of messages, by the message. */
   nested?: ReadonlyMap<string, ReviewThread[]>;
   review?: ReviewThreadLook;
+  /** Listed above the diff, with the review's general comments. */
+  top?: boolean;
   /** Drawn under the message it is on (a thread on the whole of it): its head says so. */
   onMessage?: boolean;
 }) {
@@ -441,6 +455,42 @@ export function FileThread({
     view.setEditing(null);
     view.backToKeys();
   };
+  if (thread.kind === "merge-request" && review?.forge) {
+    const forge = review.forge;
+    const outdatedLine = forge.outdatedLine(thread);
+    return (
+      <MrThreadCard
+        thread={thread}
+        forge={forgeOf(sessions, thread)}
+        top={top}
+        {...(outdatedLine !== undefined ? { outdatedLine } : {})}
+        flipped={view.flipped.has(thread.id)}
+        focusedComment={
+          view.cursor?.startsWith("m:") ? view.cursor.slice(2) : null
+        }
+        newLines={
+          thread.anchor.path ? review.newLines?.(thread.anchor.path) : undefined
+        }
+        replying={
+          view.replying === thread.id ? forge.editor(thread, null) : undefined
+        }
+        editing={(comment) =>
+          view.editing === comment.id
+            ? forge.editor(thread, comment)
+            : undefined
+        }
+        onDraftReply={() => {
+          view.setEditing(null);
+          view.setReplying(thread.id);
+        }}
+        onEditReply={(comment) => {
+          view.setReplying(null);
+          view.setEditing(comment.id);
+        }}
+        onDeleteReply={(comment) => api.removeComment?.(thread, comment)}
+      />
+    );
+  }
   if (thread.kind === "merge-request")
     return (
       <MrThreadCard

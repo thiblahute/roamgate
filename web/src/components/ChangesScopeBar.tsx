@@ -126,6 +126,7 @@ export function ChangesScopeBar({
   onBase,
   onDone,
   review,
+  elsewhere = false,
 }: {
   repos: readonly WorkspaceRepo[];
   /** The repository shown. */
@@ -153,6 +154,11 @@ export function ChangesScopeBar({
    * name, and the files of the view shown.
    */
   review?: { label: string; files?: number | undefined };
+  /**
+   * A review of a repository this workspace does not hold (its workspace
+   * gone, an agent's without one), shown here all the same (D3).
+   */
+  elsewhere?: boolean;
 }) {
   const name = repoName || root?.split("/").pop() || "Repository";
   const branchValue = (each: string) => `branch:${each}`;
@@ -195,10 +201,22 @@ export function ChangesScopeBar({
       ? ""
       : `${review.files} file${review.files === 1 ? "" : "s"}`
     : changesScopeFacts({ mode, commits, files, untracked });
-  const label = `${name} · ${review ? review.label : changesScopeChoice(mode, branch, base)}${facts ? ` · ${facts}` : ""}`;
+  const label = `${name}${elsewhere ? " (from elsewhere)" : ""} · ${review ? review.label : changesScopeChoice(mode, branch, base)}${facts ? ` · ${facts}` : ""}`;
   return (
     <div className="changes-scope-bar" title={label} aria-label={label}>
-      {repos.length > 1 ? (
+      {elsewhere ? (
+        <>
+          <strong className="changes-scope-name" title={root}>
+            {name}
+          </strong>
+          <span
+            className="changes-scope-elsewhere"
+            title={`Not a repository of this workspace: ${root ?? ""}. Git actions are not offered here.`}
+          >
+            from elsewhere
+          </span>
+        </>
+      ) : repos.length > 1 ? (
         <ThemedSelect
           className="changes-scope-repo"
           aria-label="Repository (p; ( and ) the previous and next)"

@@ -22,7 +22,11 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import type { ReviewThread, ReviewThreadKind } from "../../../shared/review";
+import type {
+  ReviewSnapshot,
+  ReviewThread,
+  ReviewThreadKind,
+} from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import { connectionClientScopeKey } from "../useConnectionClient";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
@@ -272,6 +276,11 @@ export function WorkspaceInspectorHost({
     review?: string;
     /** The repository to show ("": the workspace's own). */
     root?: string;
+    /**
+     * Of a repository the workspace does not hold (its workspace gone, an
+     * agent's review without one): shown here, marked "from elsewhere" (D3).
+     */
+    elsewhere?: boolean;
     at: number;
   } | null;
   onReanchorFileAnnotations: (path: string, text: string) => void;
@@ -504,6 +513,8 @@ export function WorkspaceInspectorHost({
    * an older step), until a scope is picked (plan phase 6).
    */
   const [shownReview, setShownReview] = useState<string | null>(null);
+  /** A repository the workspace does not hold, shown from elsewhere (D3). */
+  const [elsewhereRoot, setElsewhereRoot] = useState<string | null>(null);
   const { sessions: reviewSessions } = useReviewState();
   const shownReviewSnapshot = shownReview
     ? reviewSessions.get(shownReview)
@@ -533,6 +544,7 @@ export function WorkspaceInspectorHost({
       pickerOpen={repoPickerOpen}
       onPickerOpen={setRepoPickerOpen}
       onPickRepo={pickChangesRepo}
+      elsewhere={!!elsewhereRoot && elsewhereRoot === shownRoot}
       {...(shownReviewSnapshot
         ? {
             review: {
@@ -552,6 +564,33 @@ export function WorkspaceInspectorHost({
       onDone={() => focusChangesDiff()}
     />
   );
+  /**
+   * The Local / GitLab switch (plan phase 7): the merge request's review
+   * shown as Changes' review scope, on its repository; back, the checkout's
+   * branch review.
+   */
+  const forgeHost = useMemo(
+    () => ({
+      onShowReview: (snapshot: ReviewSnapshot) => {
+        const root = snapshot.session.root.replace(/\/+$/, "");
+        const same = root === (shownRoot ?? "").replace(/\/+$/, "");
+        setPendingGoTo({
+          review: snapshot.session.id,
+          ...(same ? {} : { root: root === ownRoot ? "" : root }),
+          at: Date.now(),
+        });
+      },
+      onOpenLocal: (root: string) => {
+        const trimmed = root.replace(/\/+$/, "");
+        setPendingGoTo({
+          scope: "branch-main",
+          root: trimmed === ownRoot ? "" : trimmed,
+          at: Date.now(),
+        });
+      },
+    }),
+    [ownRoot, shownRoot],
+  );
   const contentResourceKey = repoResourceKey(
     resourceStateKey(state.scope),
     changesRoot,
@@ -567,6 +606,10 @@ export function WorkspaceInspectorHost({
   }, [reviewGoTo]);
   useEffect(() => {
     if (!pendingGoTo) return;
+    if (pendingGoTo.root !== undefined)
+      setElsewhereRoot(
+        pendingGoTo.elsewhere && pendingGoTo.root ? pendingGoTo.root : null,
+      );
     if (
       pendingGoTo.root !== undefined &&
       (pendingGoTo.root || ownRoot) !== shownRoot
@@ -1776,6 +1819,7 @@ export function WorkspaceInspectorHost({
                           diffViewerRef.current?.runFileAction(action, path) ??
                           false
                         }
+                        forgeHost={forgeHost}
                         {...(onAddReviewImage ? { onAddReviewImage } : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)

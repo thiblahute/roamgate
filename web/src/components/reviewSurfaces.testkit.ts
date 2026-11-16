@@ -45,7 +45,18 @@ export type SurfaceFeature =
   /** Threads of the checkout's other reviews (a rendered file's, phase 4). */
   | "threads-shared"
   /** A merge request's review: its forge, drafts and discussions (phase 7). */
-  | "forge";
+  | "forge"
+  /** The workspace's repositories: the chooser, p, ( and ) (phase 7). */
+  | "series"
+  /** The agent's menu: ask about a line, go to its pane (phase 7). */
+  | "agent-menu"
+  /** A thread on a commit rewritten out of the review: gn shows it. */
+  | "gone-commits"
+  /**
+   * The checkout's git actions on the review (:stage, gs, :discard): Changes
+   * only, the classic pane has none.
+   */
+  | "git-actions";
 
 export type SurfaceEntry = {
   name: string;
@@ -65,10 +76,19 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "threads-panel",
   "threads-shared",
   "commits",
+  "forge",
+  "git-actions",
+  ...((process.env.ROAMGATE_CHANGES_TRY ?? "")
+    .split(",")
+    .filter(Boolean) as SurfaceFeature[]),
 ]);
 
 export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [
-  { name: "classic", mount: mountClassicReview, has: () => true },
+  {
+    name: "classic",
+    mount: mountClassicReview,
+    has: (feature) => feature !== "git-actions",
+  },
   {
     name: "changes",
     mount: mountChangesReview,

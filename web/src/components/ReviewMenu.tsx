@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import "./ReviewMenu.css";
 
 /** One entry of a review header menu; a toggle shows a check when on. */
 export type ReviewMenuItem = {
