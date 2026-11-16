@@ -117,7 +117,6 @@ import {
 } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
 import { reviewSurfaceChoice } from "./reviewPrefs";
-import { vimKeys } from "./vimKeys";
 import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
@@ -4242,18 +4241,15 @@ export default function App() {
         if (inspectorStateRef.current?.expanded !== expanded)
           setInspectorExpanded(expanded);
       }
-      // The keys go to the diff (its Vim cursor), once Changes has drawn it.
+      // The keys go to the diff (its cursor), once Changes has drawn it;
+      // `:novim` keeps the cursor too (only the editor is plain).
       const opened = inspectorStateRef.current;
-      const vim = vimKeys();
       let frames = 0;
       const focusDiff = () => {
         if (inspectorStateRef.current !== opened) return;
-        // With ":novim" there is no cursor: the view's tab, as elsewhere.
         const target = [
           ...document.querySelectorAll<HTMLElement>(
-            vim
-              ? ".workspace-inspector-slot .diff-content-view[data-review-cursor]"
-              : '.workspace-inspector-tabs [role="tab"][aria-selected="true"]',
+            ".workspace-inspector-slot .diff-content-view[data-review-cursor]",
           ),
         ].find((element) => element.getClientRects().length > 0);
         if (target) {
