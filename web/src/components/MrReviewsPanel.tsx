@@ -37,9 +37,14 @@ import {
   type MrItem,
   type MrOverrideField,
   type MrReason,
+  type MrSavedView,
   type MrSection,
   type MrWorkspaceLink,
 } from "../../../shared/mrReviews";
+import {
+  mrFilterCompletions,
+  mrFilterMatches,
+} from "../../../shared/mrReviewsFilter";
 import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
@@ -350,21 +355,28 @@ const SECTION_TITLE: Record<MrSection, string> = {
   suggested: "Suggested",
 };
 
-/** What the list shows: everything, the requests to review, or the user's own. */
-export type MrFilter = "all" | "review" | "mine";
+/**
+ * What the list shows: everything, the requests to review, the user's own,
+ * or a saved view (`view:NAME`).
+ */
+export type MrFilter = "all" | "review" | "mine" | `view:${string}`;
 const FILTERS: MrFilter[] = ["all", "review", "mine"];
-const FILTER_TITLE: Record<MrFilter, string> = {
+const FILTER_TITLE: Record<string, string> = {
   all: "All",
   review: "To review",
   mine: "Mine",
 };
+const filterTitle = (filter: MrFilter) =>
+  FILTER_TITLE[filter] ?? filter.slice("view:".length);
 const FILTER_KEY = "mrReviewsFilter";
 const MAXIMIZED_KEY = "mrReviewsMaximized";
 
 function storedFilter(): MrFilter {
   try {
     const value = roamgateLocalStorage.getItem(FILTER_KEY);
-    return FILTERS.includes(value as MrFilter) ? (value as MrFilter) : "all";
+    return FILTERS.includes(value as MrFilter) || value?.startsWith("view:")
+      ? (value as MrFilter)
+      : "all";
   } catch {
     return "all";
   }
@@ -384,8 +396,17 @@ function isOwn(entry: MrInboxEntry): boolean {
 }
 
 /** Whether a section's request is shown under a filter. */
-function filtered(entry: MrInboxEntry, filter: MrFilter): boolean {
+function filtered(
+  entry: MrInboxEntry,
+  filter: MrFilter,
+  views: MrSavedView[] = [],
+): boolean {
   if (filter === "all") return true;
+  if (filter.startsWith("view:")) {
+    const name = filter.slice("view:".length).toLowerCase();
+    const view = views.find((each) => each.name.toLowerCase() === name);
+    return !view || mrFilterMatches(entry, view.query);
+  }
   return filter === "mine" ? isOwn(entry) : !isOwn(entry);
 }
 
@@ -1190,7 +1211,22 @@ export function MrReviewsPanel({
       keep(MAXIMIZED_KEY, value ? "1" : "0");
       return value;
     });
-  const [filter, setFilterState] = useState<MrFilter>(storedFilter);
+  const [storedChoice, setFilterState] = useState<MrFilter>(storedFilter);
+  const views = useMemo(() => inbox?.views ?? [], [inbox]);
+  const filters: MrFilter[] = [
+    ...FILTERS,
+    ...views.map((view) => `view:${view.name}` as const),
+  ];
+  // A view deleted meanwhile (here or elsewhere): everything.
+  const filter: MrFilter =
+    !storedChoice.startsWith("view:") ||
+    views.some(
+      (view) =>
+        view.name.toLowerCase() ===
+        storedChoice.slice("view:".length).toLowerCase(),
+    )
+      ? storedChoice
+      : "all";
   const setFilter = (next: MrFilter) => {
     setFilterState(next);
     keep(FILTER_KEY, next);
@@ -1227,16 +1263,37 @@ export function MrReviewsPanel({
   /** The search (/): the requests shown, each section narrowed. */
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  // The search completes keys, then values (Tab, the arrows), as the
+  // inspector's : line does.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [completionAt, setCompletionAt] = useState(-1);
+  const [completionsOff, setCompletionsOff] = useState(false);
+  const completions = useMemo(() => {
+    if (!searchFocused || completionsOff) return [];
+    const last = /\S*$/.exec(query)?.[0] ?? "";
+    if (!last.replace(/^-/, "")) return [];
+    return mrFilterCompletions(query, entries).filter(
+      (each) => each.insert.trimEnd() !== query.trimEnd(),
+    );
+  }, [query, entries, searchFocused, completionsOff]);
+  const complete = (index: number) => {
+    const chosen = completions[Math.max(0, index)];
+    if (!chosen) return false;
+    setQuery(chosen.insert);
+    setCompletionAt(-1);
+    setSelected(null);
+    return true;
+  };
   const shown = useMemo(() => {
     const wanted = (entry: MrInboxEntry) =>
-      filtered(entry, filter) && mrMatches(entry, query);
+      filtered(entry, filter, views) && mrMatches(entry, query);
     return {
       pinned: bySection.pinned.filter(wanted),
       mine: bySection.mine.filter(wanted),
       authored: bySection.authored.filter(wanted),
       suggested: bySection.suggested.filter(wanted),
     };
-  }, [bySection, query, filter]);
+  }, [bySection, query, filter, views]);
   // One's own requests in lanes: folded lanes kept on this device, the
   // requests under a parent folded with it (za).
   const [folded, setFoldedState] = useState<Set<string>>(storedFoldedLanes);
@@ -1808,6 +1865,38 @@ export function MrReviewsPanel({
       setOverrideBusy(false);
     }
   };
+  /** Saves the search as a view (shown at once), or deletes one. */
+  const saveView = async (action: "save" | "delete", name: string) => {
+    try {
+      const result = await mrReviewsCall<{
+        changed: boolean;
+        name: string;
+        version?: number;
+      }>("view", {
+        action,
+        name,
+        ...(action === "save" ? { query: query.trim() } : {}),
+      });
+      await reload();
+      if (action === "save") {
+        setFilter(`view:${result.name}`);
+        setQuery("");
+      } else if (filter === `view:${result.name}`) setFilter("all");
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      const version = result.version;
+      setUndo({
+        label: `${action === "save" ? "Saved" : "Deleted"} the view ${result.name}`,
+        key: "",
+        ...(result.changed && version
+          ? { run: () => orderMrRequests({ op: "undo", version }) }
+          : {}),
+      });
+      undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+    } catch (cause) {
+      say(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   /** Opens a request's link (gx): a URL in a tab, a path in Files. */
   const openLink = (entry: MrInboxEntry) => {
     const link = entry.override?.link;
@@ -2015,6 +2104,25 @@ export function MrReviewsPanel({
       }
       return;
     }
+    if (name === "view" || name === "save" || name === "delview") {
+      const wanted = argument.replace(/^"|"$/g, "");
+      if (name === "view") {
+        const found = views.find(
+          (each) => each.name.toLowerCase() === wanted.toLowerCase(),
+        );
+        if (found) setFilter(`view:${found.name}`);
+        else
+          say(
+            views.length
+              ? `No view named ${wanted}: ${views.map((each) => each.name).join(", ")}`
+              : "No saved view yet: search, then :save NAME",
+          );
+      } else if (!wanted) say(`:${name} needs a view's name`);
+      else if (name === "save" && !query.trim())
+        say("Type a search first (/), then :save NAME");
+      else void saveView(name === "save" ? "save" : "delete", wanted);
+      return;
+    }
     if (name === "pin" || name === "unpin") {
       if (!current) say("Select a request first");
       else togglePin(current, name === "pin");
@@ -2088,6 +2196,28 @@ export function MrReviewsPanel({
     // it and goes back to the list.
     if (event.target === searchRef.current) {
       const key = event.ctrlKey ? `C-${event.key}` : event.key;
+      const open = completions.length > 0;
+      if (open && key === "Tab") {
+        complete(completionAt);
+        return true;
+      }
+      if (open && (key === "ArrowDown" || key === "C-n")) {
+        setCompletionAt((at) => (at + 1) % completions.length);
+        return true;
+      }
+      if (open && (key === "ArrowUp" || key === "C-p")) {
+        setCompletionAt((at) => (at <= 0 ? completions.length : at) - 1);
+        return true;
+      }
+      if (open && key === "Enter" && completionAt >= 0) {
+        complete(completionAt);
+        return true;
+      }
+      if (open && key === "Escape") {
+        setCompletionsOff(true);
+        setCompletionAt(-1);
+        return true;
+      }
       if (key === "Escape") {
         setQuery("");
         panelRef.current?.focus({ preventScroll: true });
@@ -2218,7 +2348,13 @@ export function MrReviewsPanel({
         }
       }
     } else if (event.key === "f") {
-      setFilter(FILTERS[(FILTERS.indexOf(filter) + 1) % FILTERS.length]!);
+      setFilter(filters[(filters.indexOf(filter) + 1) % filters.length]!);
+    } else if (event.key === "F") {
+      setFilter(
+        filters[
+          (filters.indexOf(filter) + filters.length - 1) % filters.length
+        ]!,
+      );
     } else if (event.key === ":") {
       setCommand("");
     } else if (event.key === "r") {
@@ -2742,37 +2878,71 @@ export function MrReviewsPanel({
                   type="search"
                   className="mr-reviews-search"
                   aria-label="Search the reviews"
-                  placeholder="Search (/): title, project, author, number, branch"
+                  placeholder="Search (/): words, project:, label:, lane:, waiting:, state:..."
                   value={query}
+                  role="combobox"
+                  aria-expanded={completions.length > 0}
+                  aria-controls="mr-reviews-completions"
+                  aria-autocomplete="list"
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
                   onChange={(event) => {
                     setQuery(event.target.value);
                     setSelected(null);
+                    setCompletionAt(-1);
+                    setCompletionsOff(false);
                   }}
                 />
+              ) : null}
+              {entries.length && completions.length ? (
+                <ul
+                  id="mr-reviews-completions"
+                  className="mr-reviews-completions"
+                  role="listbox"
+                  aria-label="Completions"
+                >
+                  {completions.slice(0, 12).map((each, index) => (
+                    <li
+                      key={each.label}
+                      role="option"
+                      aria-selected={index === completionAt}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        complete(index);
+                      }}
+                    >
+                      {each.label}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
               {entries.length ? (
                 <nav
                   className="assistant-primary-nav mr-reviews-filter"
                   aria-label="Show"
                 >
-                  {FILTERS.map((each) => (
+                  {filters.map((each) => (
                     <button
                       key={each}
                       type="button"
-                      className="ghost"
                       aria-pressed={filter === each}
-                      title={`${FILTER_TITLE[each]} (f, :${each})`}
+                      className={`ghost${each.startsWith("view:") ? " mr-reviews-view-chip" : ""}`}
+                      title={
+                        each.startsWith("view:")
+                          ? `${views.find((view) => `view:${view.name}` === each)?.query ?? ""} (f / F, :view ${filterTitle(each)}, :delview to delete it)`
+                          : `${filterTitle(each)} (f / F, :${each})`
+                      }
                       onClick={() => setFilter(each)}
                     >
-                      {FILTER_TITLE[each]}
+                      {filterTitle(each)}
                       {each === "all" ? null : (
                         <span>
                           {
                             entries.filter(
                               (entry) =>
-                                filtered(entry, each) &&
+                                filtered(entry, each, views) &&
                                 (entry.section !== "suggested" ||
-                                  each === "review"),
+                                  each !== "mine"),
                             ).length
                           }
                         </span>
@@ -2818,7 +2988,10 @@ export function MrReviewsPanel({
               {SECTIONS.filter(
                 (section) =>
                   (section !== "pinned" || bySection.pinned.length) &&
+                  // A view shows the sections it keeps something of.
+                  (!filter.startsWith("view:") || shown[section].length) &&
                   (filter === "all" ||
+                    filter.startsWith("view:") ||
                     (filter === "mine"
                       ? section === "authored" ||
                         (section === "pinned" && bySection.pinned.some(isOwn))

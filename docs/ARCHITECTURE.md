@@ -790,6 +790,18 @@ schema; `roamgate-review reviews TOOL JSON|-`) runs
 session's agent and workspace in the push's `summary`. They read and write
 only Roamgate's own state.
 
+The search is `shared/mrReviewsFilter.ts` (`parseMrFilter`,
+`mrFilterMatches`, `mrFilterCompletions`), shared by the panel, the saved
+views and `reviews_list`'s `filter`: `key:value` tokens (project, label,
+waiting, lane, state, stale, draft, author, pipeline, effort, is), each
+negatable, several values of one key ORed, unknown keys kept as words.
+Labels are the forge's (`labels` on `MrItem`, read with the inbox and own
+list queries, at most 10) and the override's. Saved views are
+`mr_reviews.views` (`{name, query}`, at most 20, names without `:` or `"`),
+returned with the inbox as `views`, changed by
+`bridge.mr_reviews.view {action: save|delete, name, query?}` (a save of an
+existing name replaces its query) and pushed as `changed: ["views"]`.
+
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and
 `mr_reviews.hidden` (`{key, marker}`, at most 300, the oldest forgotten

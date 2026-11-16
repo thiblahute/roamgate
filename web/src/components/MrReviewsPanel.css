@@ -676,3 +676,37 @@
 .is-mobile .mr-reviews-lane > .assistant-task-list {
   padding-left: 18px;
 }
+
+/* The search's completions: keys, then values (Tab, the arrows). */
+.mr-reviews-completions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mr-reviews-completions > li {
+  border: 1px solid var(--viewer-border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mr-reviews-completions > li[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mr-reviews-filter {
+  flex-wrap: wrap;
+}
+
+.mr-reviews-view-chip {
+  font-style: italic;
+}

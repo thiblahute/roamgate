@@ -59,6 +59,7 @@ const PUSHED_FIELDS: [keyof MrReviewsSettings, MrPushKind][] = [
   ["pinned", "pinned"],
   ["hidden", "hidden"],
   ["overrides", "overrides"],
+  ["views", "views"],
 ];
 
 export function createMrReviews(options: {

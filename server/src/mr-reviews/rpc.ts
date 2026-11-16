@@ -19,6 +19,10 @@ import {
 import {
   MAX_HIDDEN,
   MAX_PINNED,
+  MAX_VIEWS,
+  VIEW_NAME_MAX,
+  VIEW_QUERY_MAX,
+  viewName,
   mrReviewsSettings,
   normalizeStoredMrReviews,
   storedMrReviews,
@@ -409,6 +413,53 @@ export async function handleMrReviewsRpc(
       });
       if (result.changed) deps.inbox.changed();
       return { ok: true, key: target, ...result };
+    }
+    case "bridge.mr_reviews.view": {
+      // A saved search: saved (a new one, or a new query for its name) or
+      // deleted.
+      const action = params.action;
+      const name = viewName(params.name);
+      if (!name)
+        throw new MrReviewsError(
+          `a view's name is required (at most ${VIEW_NAME_MAX} characters, no colon or quote)`,
+        );
+      if (action !== "save" && action !== "delete")
+        throw new MrReviewsError("action is save or delete");
+      const query =
+        typeof params.query === "string"
+          ? params.query.trim().slice(0, VIEW_QUERY_MAX)
+          : "";
+      if (action === "save" && !query)
+        throw new MrReviewsError("a view needs a query");
+      const meta = change(params);
+      const result = await editSettings(async () => {
+        const current = await deps.settings();
+        const lower = name.toLowerCase();
+        const existing = current.views.find(
+          (view) => view.name.toLowerCase() === lower,
+        );
+        if (action === "delete" && !existing)
+          throw new MrReviewsError(`no view named ${name}`, "not_found");
+        if (action === "save" && existing?.query === query)
+          return { changed: false, version: current.orderVersion ?? 0 };
+        if (action === "save" && !existing && current.views.length >= MAX_VIEWS)
+          throw new MrReviewsError(
+            `At most ${MAX_VIEWS} views: delete one first.`,
+          );
+        const views =
+          action === "delete"
+            ? current.views.filter((view) => view.name.toLowerCase() !== lower)
+            : existing
+              ? current.views.map((view) =>
+                  view.name.toLowerCase() === lower
+                    ? { name: existing.name, query }
+                    : view,
+                )
+              : [...current.views, { name, query }];
+        const saved = await deps.saveSettings({ ...current, views }, meta);
+        return { changed: true, version: saved.orderVersion ?? 0 };
+      });
+      return { ok: true, name, ...result };
     }
     case "bridge.mr_reviews.settings.get":
       return deps.settings();

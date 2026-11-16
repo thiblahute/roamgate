@@ -26,6 +26,7 @@ export type StoredMrReviewsSettings = {
   hidden?: { key: string; marker: string }[];
   overrides?: Record<string, StoredMrOverride>;
   stale_days?: number;
+  views?: { name: string; query: string }[];
 };
 
 export const MAX_HOSTS = 10;
@@ -37,6 +38,17 @@ export const MAX_PINNED = 100;
 export const MAX_HIDDEN = 300;
 /** Requests with something set by hand (the oldest set forgotten first). */
 export const MAX_OVERRIDES = 500;
+/** Saved searches. */
+export const MAX_VIEWS = 20;
+export const VIEW_NAME_MAX = 40;
+export const VIEW_QUERY_MAX = 500;
+
+/** A view's name: a few words, no colon (`:view NAME` reads it). */
+export function viewName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.replace(/\s+/g, " ").trim().slice(0, VIEW_NAME_MAX);
+  return name && !/[:"]/.test(name) ? name : null;
+}
 
 function provider(value: unknown): ForgeProvider | null {
   return value === "gitlab" || value === "github" ? value : null;
@@ -205,6 +217,21 @@ export function normalizeStoredMrReviews(
       .slice(-MAX_OVERRIDES);
     out.overrides = Object.fromEntries(kept);
   }
+  if (Array.isArray(value.views)) {
+    const seen = new Set<string>();
+    out.views = list(value.views)
+      .flatMap((entry) => {
+        const name = viewName(entry.name);
+        const query =
+          typeof entry.query === "string"
+            ? entry.query.trim().slice(0, VIEW_QUERY_MAX)
+            : "";
+        if (!name || !query || seen.has(name.toLowerCase())) return [];
+        seen.add(name.toLowerCase());
+        return [{ name, query }];
+      })
+      .slice(0, MAX_VIEWS);
+  }
   const stale = Number(value.stale_days);
   if (Number.isInteger(stale) && stale >= 1 && stale <= 3650)
     out.stale_days = stale;
@@ -270,6 +297,7 @@ export function mrReviewsSettings(
       ]),
     ),
     staleDays: stored?.stale_days ?? base.staleDays,
+    views: stored?.views ?? base.views,
   };
 }
 
@@ -306,6 +334,7 @@ export function storedMrReviews(
           ),
         }
       : {}),
+    ...(settings.views.length ? { views: settings.views } : {}),
     ...(settings.staleDays !== DEFAULT_MR_REVIEWS_SETTINGS.staleDays
       ? { stale_days: settings.staleDays }
       : {}),
