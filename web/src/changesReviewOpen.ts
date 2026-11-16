@@ -10,8 +10,11 @@ import { workspaceRepos, scanRepos } from "./reviewRepos";
  * against the base, or its uncommitted work), in Changes' matching scope.
  * A workspace with several repositories (the classic pane's series) shows
  * the one Changes showed last, else the review's, picked in Changes' scope
- * line. What Changes cannot show yet goes to the classic pane: a merge
- * request, and a review of a repository the workspace does not hold.
+ * line. A range or compare opened by name, a step's review, and a branch
+ * with nothing beyond its base (its history) show as a review scope (plan
+ * phase 6). What Changes cannot show yet goes to the classic pane: a merge
+ * request (phase 7), and a review of a repository the workspace does not
+ * hold.
  */
 
 export type ChangesReviewChoice =
@@ -20,6 +23,8 @@ export type ChangesReviewChoice =
       sessionId: string;
       /** Absent: as Changes last showed that repository. */
       scope?: "working" | "branch-main";
+      /** A review shown as Changes' scope: its session (plan phase 6). */
+      review?: string;
       /** The repository, when another than the inspector's ("": its own). */
       root?: string;
     }
@@ -65,7 +70,12 @@ export async function changesReviewChoice({
     sessionId: session.id,
     reason,
   });
-  if (session.target.kind !== "range" && session.target.kind !== "worktree")
+  const { target } = session;
+  if (
+    target.kind !== "range" &&
+    target.kind !== "worktree" &&
+    target.kind !== "step"
+  )
     return classic("This review shows in the review pane.");
   const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
   // A workspace without a known checkout shows its focused pane's
@@ -100,10 +110,20 @@ export async function changesReviewChoice({
     return { kind: "changes", sessionId: session.id, root: lastRoot };
   const root = here ? undefined : session.root;
   const at = root ? { root } : {};
-  if (session.target.kind === "worktree")
+  if (target.kind === "worktree")
     return { kind: "changes", sessionId: session.id, scope: "working", ...at };
+  // A step's review, a range of other ends, two versions compared: the
+  // review itself as the scope, with its commits.
+  const review = {
+    kind: "changes" as const,
+    sessionId: session.id,
+    review: session.id,
+    ...at,
+  };
+  if (target.kind === "step" || target.compare || target.head !== "HEAD")
+    return review;
   // Nothing beyond the base (the default branch itself, say): the
-  // uncommitted work, else the review pane, which lists the commits.
+  // uncommitted work, else the review with the branch's history.
   if ((await changed("branch-main", root)) !== false)
     return {
       kind: "changes",
@@ -113,7 +133,5 @@ export async function changesReviewChoice({
     };
   if ((await changed("working", root)) !== false)
     return { kind: "changes", sessionId: session.id, scope: "working", ...at };
-  return classic(
-    "Nothing beyond the default branch: the review pane lists its commits.",
-  );
+  return review;
 }

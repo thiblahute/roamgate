@@ -223,6 +223,35 @@ anchor's file, whole, and the worktree review's state fingerprint hashes
 every untracked file: the whole patch's 4 MiB and 200-untracked-file caps no
 longer apply to either.
 
+Each Changes scope is a review session (`ReviewTarget` in `shared/review.ts`),
+bound by a read-only lookup (`changesReview.ts` `scopeReview`): Working is
+the checkout's `worktree` review; Branch the `range` review of `HEAD`
+against Automatic's base (the review that follows Automatic, `automaticBase`)
+or against the base picked in Compare against; Last step the `step` review
+of the step shown; a review opened by name (a range of other ends, a
+`compare`, an older step's) is a scope of its own, named in the scope line,
+until a scope is picked. Showing a scope never creates, touches or publishes
+a session: a scope with no review yet is read with its target instead of a
+session (`review.diff`, `review.commits`, `review.state` and `review.file`
+with `workspace_id`, `checkout` and `target`: an unstored session,
+`service.preview*`), so an agent's id-less `review_get` keeps finding the
+review last written. The first comment, mark or agent action opens it
+(`review.open` with the scope's target, `scopeOpenTarget`).
+
+A review of commits (the Branch scope, a range) has the review pane's views
+in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,
+or one commit at a time (`<` `>`, `gc`, `:commit`, `:all`, `:commits`),
+oldest first, its message first as the file `:commit-message`; a branch with
+nothing of its own shows its history, latest first. A commit's view reads
+`review.diff` with `commit`; the Branch scope's all-changes view is
+Changes' own per-file diffs, a review opened by name reads its whole diff.
+The view shown is kept per review (`reviewPlace.ts`, keyed by session, or
+by checkout and base for a scope with no review yet), and followed through
+a rebase on reload (`reviewFollow.ts`). A comment written in a commit's
+view names the commit (`anchor.commit`, `commitSubject`, `commitParent`) and
+shows in that view only. `review.state` is polled while shown: a change
+offers a reload (R, gr, `:e`) beside the commit bar.
+
 Browser preferences live in namespaced `localStorage` and sync across tabs on the
 same origin. Navigation, open files, live draft edits, and focus stay per tab.
 
@@ -322,7 +351,9 @@ settles, even when capture is unavailable, refused, or fails. It signals a
 completed workspace activity period, not a new Git snapshot, so Files can
 refresh independently of Last step availability.
 
-A capture is refused entirely when a file exceeds 8 MiB, content exceeds 32 MiB
+An untracked file over 50 MB is left out of the snapshot and named with it
+(`skipped`); the step's review says so. Any other capture is refused entirely
+when a file exceeds 8 MiB, content exceeds 32 MiB
 in total, or there are more than 10,000 files. It is also refused for symlinks,
 special or unreadable files, newline/tab filenames, applicable `filter`
 attributes, shared repositories (`core.sharedRepository` other than unset,
@@ -330,9 +361,26 @@ attributes, shared repositories (`core.sharedRepository` other than unset,
 directory, or after a 10-second timeout. A refusal is logged and the previous
 Last step stays available. Snapshots are not atomic against concurrent edits.
 
+**As a review target** (`{ kind: "step", step, before, after, at?, skipped? }`):
+the step's two snapshot trees; its review is one per step (the same two
+trees), opened only when a comment is written on the Last step or an agent
+runs `roamgate-review open --last-step` (`review_open` with `last_step`),
+never one per step automatically. The runtime's store (`refs: true`) keeps
+each completed step's trees under
+`refs/roamgate/steps/<workspace>/<step>/{before,after}` (and the left-out
+paths as a `skipped` blob), so a restart reads the workspace's latest step
+back from its refs and git's collection keeps them. After each step the
+workspace's refs are dropped but for its last 5 steps and the steps whose
+review has threads (`service.keptSteps`, `keepLastSteps`); a dropped step's
+trees go with git's next collection, and its review then says its snapshot
+is gone (`base-gone` / `head-gone`). The kind is new: a build that does not
+know it reads the stored review without crashing (no target validation on
+load; its describe and diff fall back) and lists it.
+
 Work happens in an owner-only `roamgate-last-step-capture` directory inside the
 checkout's Git directory. Only complete loose objects are hard-linked into Git's
-object database; Roamgate never runs `git add`, GC, or deletes user objects.
+object database; Roamgate never runs `git add` or GC, and deletes only its own
+`refs/roamgate/steps/` refs.
 
 **Recovery:** a crash can leave that directory behind, and later captures then
 refuse to run. Stop captures for the checkout and make sure the capture shell

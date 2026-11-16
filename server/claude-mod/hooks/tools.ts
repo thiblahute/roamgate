@@ -331,7 +331,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     command: "open",
     deferred: true,
     description:
-      "Open a Roamgate review for the user: by default the branch here against its default branch. Give one of range (BASE..HEAD, branch names, never SHAs), worktree (uncommitted changes), mr (a merge request URL, to draft the user's answers and review comments there: they stay in Roamgate), compare_old and compare_new (only what changed between two versions of a branch, tree to tree), file (a file to discuss as Roamgate renders it: Markdown, HTML, SVG, an image; the user comments on what they see, you get its source lines) or url (a site's page, such as a dev server's, browsed and commented in Roamgate; its scripts run only when the user listed the site). Then add your own threads with review_add (file and line: its source lines).",
+      "Open a Roamgate review for the user: by default the branch here against its default branch. Give one of range (BASE..HEAD, branch names, never SHAs), worktree (uncommitted changes), last_step (what your last step changed, as the workspace's Last step shows it), mr (a merge request URL, to draft the user's answers and review comments there: they stay in Roamgate), compare_old and compare_new (only what changed between two versions of a branch, tree to tree), file (a file to discuss as Roamgate renders it: Markdown, HTML, SVG, an image; the user comments on what they see, you get its source lines) or url (a site's page, such as a dev server's, browsed and commented in Roamgate; its scripts run only when the user listed the site). Then add your own threads with review_add (file and line: its source lines).",
     inputSchema: schema({
       path: {
         type: "string",
@@ -340,6 +340,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       },
       range: { type: "string" },
       worktree: { type: "boolean" },
+      last_step: { type: "boolean" },
       mr: { type: "string" },
       compare_old: { type: "string" },
       compare_new: { type: "string" },
@@ -377,6 +378,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       )
         throw new ToolInputError("repos are absolute paths");
       const worktree = optionalFlag(input, "worktree");
+      const lastStep = optionalFlag(input, "last_step");
       const file = optionalString(input, "file");
       const url = optionalString(input, "url");
       if (url !== undefined && !/^https?:\/\//i.test(url))
@@ -384,6 +386,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       const targets = [
         optionalString(input, "range"),
         worktree || undefined,
+        lastStep || undefined,
         optionalString(input, "mr"),
         old,
         file,
@@ -391,11 +394,12 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       ].filter((each) => each !== undefined);
       if (targets.length > 1)
         throw new ToolInputError(
-          "give one of range, worktree, mr, compare_old/compare_new, file or url",
+          "give one of range, worktree, last_step, mr, compare_old/compare_new, file or url",
         );
       return fields({
         range: optionalString(input, "range"),
         worktree: worktree ? "1" : undefined,
+        last_step: lastStep ? "1" : undefined,
         mr: optionalString(input, "mr"),
         compare: old !== undefined ? `${old}..${fresh}` : undefined,
         file,
@@ -546,13 +550,15 @@ export function reviewTarget(args: string): ToolBody {
   if (!words.length) return {};
   const [first, second] = words;
   if (first === "--worktree" || first === "worktree") return { worktree: "1" };
+  if (first === "--last-step" || first === "step" || first === "last-step")
+    return { last_step: "1" };
   if (/^https?:\/\//.test(first!)) return { mr: first! };
   if ((first === "--compare" || first === "compare") && second && words[2])
     return { compare: `${second}..${words[2]}` };
   if (first === "--range" && second) return { range: second };
   if (first!.includes("..")) return { range: first! };
   throw new ToolInputError(
-    "say what to review: nothing (this branch), worktree, BASE..HEAD, compare OLD NEW, or a merge request URL",
+    "say what to review: nothing (this branch), worktree, step (your last step), BASE..HEAD, compare OLD NEW, or a merge request URL",
   );
 }
 

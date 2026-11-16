@@ -141,6 +141,55 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
     } as unknown as Thread;
   };
 
+  describe("the Last step in Changes (plan D15)", () => {
+    test("a step's untracked files left out of its snapshots are named above its diff", async () => {
+      const diff = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        reviewScope: {
+          kind: "step",
+          step: {
+            step: "1763200000000-abcdef01",
+            before: "a".repeat(40),
+            after: "b".repeat(40),
+            skipped: ["huge.bin", "dump.sql"],
+          },
+        },
+      });
+      try {
+        expect(
+          document.querySelector(".diff-review-views [role=note]")?.textContent,
+        ).toBe(
+          "Left out of this step (untracked, over 50 MB): huge.bin, dump.sql",
+        );
+      } finally {
+        await diff.unmount();
+      }
+      // A step with nothing left out says nothing.
+      const whole = await mountChangesDiff({
+        entries: [a],
+        patches,
+        reviewCursor: true,
+        reviewScope: {
+          kind: "step",
+          step: {
+            step: "1763200000000-abcdef01",
+            before: "a".repeat(40),
+            after: "b".repeat(40),
+          },
+        },
+      });
+      try {
+        expect(
+          document.querySelector(".diff-review-views [role=note]"),
+        ).toBeNull();
+      } finally {
+        await whole.unmount();
+      }
+    });
+  });
+
   describe("the review's comment editor in Changes", () => {
     test("c opens the review's editor under the cursor's line, not the popover; Save sends it as a comment on that line", async () => {
       const notes: NewNote[] = [];

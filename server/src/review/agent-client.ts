@@ -115,6 +115,11 @@ def parser():
     target = o.add_mutually_exclusive_group()
     target.add_argument("--range", help="BASE..HEAD (default: default branch..HEAD)")
     target.add_argument("--worktree", action="store_true", help="uncommitted changes")
+    target.add_argument(
+        "--last-step",
+        action="store_true",
+        help="what your last step changed (the workspace's Last step)",
+    )
     target.add_argument("--mr", help="merge request URL")
     target.add_argument(
         "--compare",

@@ -482,12 +482,49 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       app.setChanged("working", []);
       await app.toggleReview();
       await app.settle(50);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
-      expect(app.inspector()?.open ?? false).toBe(false);
+      // Changes shows the review itself, its commits on its commit bar
+      // (plan phase 6): no classic pane.
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ review: "r1" });
       await app.toggleReview();
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      await app.settle(50);
+      expect(app.inspector()?.open).toBe(false);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
+    }
+  });
+
+  test("on reviewin=changes, a range of other ends, a compare and a step's review open in Changes as the review scope, never the classic pane", async () => {
+    for (const target of [
+      { kind: "range", base: "v1.0", head: "topic" },
+      { kind: "range", base: "topic-old", head: "topic", compare: true },
+      {
+        kind: "step",
+        step: "1763200000000-abcdef01",
+        before: "a".repeat(40),
+        after: "b".repeat(40),
+      },
+    ] as const) {
+      const review = reviewOf("r1", "w1");
+      review.session.target = target;
+      const app = await mountAppWithReviews({ reviews: [review] });
+      try {
+        localStorage.setItem(
+          "reviewPrefs",
+          JSON.stringify({ reviewIn: "changes", vim: true }),
+        );
+        app.setNextOpened("r1");
+        await app.toggleReview();
+        await app.settle(50);
+        expect(app.shown()).toEqual({ mounted: [], shownId: null });
+        expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+        expect(app.inspectorGoTo()).toMatchObject({ review: "r1" });
+        expect(app.notices()).toEqual([]);
+      } finally {
+        await app.unmount();
+      }
     }
   });
 

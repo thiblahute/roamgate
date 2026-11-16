@@ -1,0 +1,149 @@
+/* The review's commit bar in Changes (ChangesCommitBar.tsx). */
+.diff-review-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--viewer-border);
+  background: var(--viewer-header-bg);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.diff-review-views .note {
+  color: var(--muted);
+}
+
+.diff-commit-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.diff-commit-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.diff-commit-step:hover,
+.diff-commit-name:hover {
+  background: var(--accent-soft);
+}
+
+.diff-commit-name {
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.diff-commit-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-review-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning-text);
+}
+
+.diff-review-changed button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-commit-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 25%);
+}
+
+.diff-commit-picker-panel {
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+
+.diff-commit-picker-panel input {
+  margin: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--diff-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.diff-commit-picker-panel ul {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+  overflow: auto;
+}
+
+.diff-commit-picker-panel li > button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-commit-picker-panel li > button.on {
+  background: var(--accent-soft);
+}
+
+.diff-commit-picker-panel li > button.current {
+  font-weight: 600;
+}
+
+.diff-commit-picker-panel li.note {
+  padding: 5px 12px;
+  color: var(--muted);
+}

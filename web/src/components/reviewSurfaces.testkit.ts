@@ -64,6 +64,7 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "threads",
   "threads-panel",
   "threads-shared",
+  "commits",
 ]);
 
 export const ALL_REVIEW_SURFACES: SurfaceEntry[] = [

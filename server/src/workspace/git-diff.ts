@@ -37,6 +37,161 @@ function lastStepStoreDisposedError() {
   });
 }
 
+/**
+ * A completed last step: its trees, and as a review target (plan D15) its
+ * id (the name of the refs keeping them), when it ended and the untracked
+ * files its snapshots left out.
+ */
+export type LastStepRange = {
+  baseline: string;
+  current: string;
+  step?: string;
+  at?: string;
+  skipped?: string[];
+};
+
+/** Steps kept under refs besides the ones with threads (plan D15). */
+export const LAST_STEPS_KEPT = 5;
+
+/**
+ * The steps of a checkout whose review has threads: their refs are kept
+ * past the last LAST_STEPS_KEPT. Set by the review service.
+ */
+let lastStepKeeper: ((root: string) => readonly string[]) | null = null;
+
+export function keepLastSteps(
+  keeper: ((root: string) => readonly string[]) | null,
+) {
+  lastStepKeeper = keeper;
+}
+
+const STEP_ID = /^[0-9A-Za-z][0-9A-Za-z_-]{0,63}$/;
+
+/** The refs of a workspace's steps: `refs/roamgate/steps/<workspace>/`. */
+export function lastStepRefPrefix(workspaceId: string): string {
+  const name = workspaceId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 100);
+  return `refs/roamgate/steps/${name || "_"}`;
+}
+
+/** A new step's id: its end in ms (sorts by time), and a few random letters. */
+export function newLastStepId(at: number): string {
+  return `${String(at).padStart(13, "0")}-${randomUUID().slice(0, 8)}`;
+}
+
+/** When a step ended, from its id. */
+function lastStepTime(step: string): string | undefined {
+  const ms = Number(step.split("-")[0]);
+  return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : undefined;
+}
+
+/**
+ * Keeps a step's trees under refs (and the untracked files it left out, as
+ * a blob), then drops the refs of the workspace's older steps but the last
+ * LAST_STEPS_KEPT and the ones `keep` names (they have threads): git
+ * collects their trees as before.
+ */
+export async function persistLastStep({
+  root,
+  workspaceId,
+  step,
+  range,
+  keep,
+  host,
+  shQuote,
+  runProcessWithCodeTimeout,
+}: {
+  root: string;
+  workspaceId: string;
+  step: string;
+  range: { baseline: string; current: string; skipped?: string[] };
+  keep: readonly string[];
+} & GitCommandContext): Promise<void> {
+  const prefix = lastStepRefPrefix(workspaceId);
+  const kept = keep.filter((id) => STEP_ID.test(id)).join(" ");
+  const skipped = range.skipped?.length
+    ? `blob=$(printf '%s\\n' ${range.skipped.map((path) => shQuote(path)).join(" ")} | git hash-object -w --stdin)
+git update-ref ${shQuote(`${prefix}/${step}/skipped`)} "$blob"`
+    : "";
+  const command = `set -eu
+cd ${shQuote(root)}
+p=${shQuote(prefix)}
+git update-ref ${shQuote(`${prefix}/${step}/before`)} ${shQuote(range.baseline)}
+git update-ref ${shQuote(`${prefix}/${step}/after`)} ${shQuote(range.current)}
+${skipped}
+git for-each-ref --format='%(refname)' "$p/" | sed -n "s|^$p/\\([^/]*\\)/.*|\\1|p" | sort -u -r | tail -n +${LAST_STEPS_KEPT + 1} | while IFS= read -r old; do
+  case " ${kept} " in *" $old "*) continue;; esac
+  for end in before after skipped; do git update-ref -d "$p/$old/$end" 2>/dev/null || true; done
+done
+`;
+  const result = await runProcessWithCodeTimeout(
+    gitShellCommandArgv(command, host),
+    GIT_DIFF_TIMEOUT_MS,
+  );
+  if (result.code !== 0)
+    throw new Error(
+      (result.stderr || `git update-ref exited ${result.code}`)
+        .trim()
+        .slice(0, 1000),
+    );
+}
+
+/**
+ * The workspace's latest step kept under refs, after a restart lost the one
+ * in memory; undefined when none is.
+ */
+export async function readLastStepRefs({
+  root,
+  workspaceId,
+  host,
+  shQuote,
+  runProcessWithCodeTimeout,
+}: { root: string; workspaceId: string } & GitCommandContext): Promise<
+  LastStepRange | undefined
+> {
+  const prefix = lastStepRefPrefix(workspaceId);
+  const listed = await runProcessWithCodeTimeout(
+    gitShellCommandArgv(
+      `cd ${shQuote(root)} && git for-each-ref --format='%(refname) %(objectname)' ${shQuote(`${prefix}/`)}`,
+      host,
+    ),
+    GIT_DIFF_TIMEOUT_MS,
+  );
+  if (listed.code !== 0) return undefined;
+  const steps = new Map<string, Record<string, string>>();
+  for (const line of listed.stdout.split("\n")) {
+    const [ref, object] = line.trim().split(" ");
+    if (!ref || !object || !ref.startsWith(`${prefix}/`)) continue;
+    const [id, end] = ref.slice(prefix.length + 1).split("/");
+    if (!id || !end || !STEP_ID.test(id)) continue;
+    steps.set(id, { ...steps.get(id), [end]: object });
+  }
+  const step = [...steps.keys()]
+    .filter((id) => steps.get(id)?.before && steps.get(id)?.after)
+    .sort()
+    .pop();
+  if (!step) return undefined;
+  const ends = steps.get(step)!;
+  let skipped: string[] = [];
+  if (ends.skipped) {
+    const blob = await runProcessWithCodeTimeout(
+      gitShellCommandArgv(
+        `cd ${shQuote(root)} && git cat-file blob ${shQuote(ends.skipped)}`,
+        host,
+      ),
+      GIT_DIFF_TIMEOUT_MS,
+    );
+    if (blob.code === 0) skipped = blob.stdout.split("\n").filter(Boolean);
+  }
+  const at = lastStepTime(step);
+  return {
+    baseline: ends.before!,
+    current: ends.after!,
+    step,
+    ...(at ? { at } : {}),
+    ...(skipped.length ? { skipped } : {}),
+  };
+}
+
 export type LastStepBaselineStore = {
   captureWorkspace: (
     workspaceId: string,
@@ -47,6 +202,15 @@ export type LastStepBaselineStore = {
     workspaceId: string,
     root: string,
   ) => Promise<{ baseline: string; current: string } | undefined>;
+  /**
+   * The completed step as a review target needs it (plan D15): its id,
+   * end and left-out files too; after a restart, the latest one kept under
+   * refs.
+   */
+  completedStep?: (
+    workspaceId: string,
+    root: string,
+  ) => Promise<LastStepRange | undefined>;
   rememberSnapshot: (
     workspaceId: string,
     root: string,
@@ -65,9 +229,9 @@ export type LastStepBaselineStore = {
 
 type WorkspaceActivityCycle = {
   version: number;
-  capture: Promise<{ root: string; baseline: string }>;
+  capture: Promise<{ root: string; baseline: string; skipped: string[] }>;
   completion?: Promise<boolean>;
-  nextCapture?: Promise<{ root: string; baseline: string }>;
+  nextCapture?: Promise<{ root: string; baseline: string; skipped: string[] }>;
 };
 
 type GitCommandContext = {
@@ -431,18 +595,35 @@ exit "$git_code"
   };
 }
 
-export async function snapshotWorktreeTree({
+export async function snapshotWorktreeTree(
+  args: { root: string } & GitCommandContext,
+): Promise<string> {
+  return (await snapshotWorktree(args)).tree;
+}
+
+/**
+ * The checkout's files as a tree (`git write-tree` of a private index), and
+ * the untracked files left out of it for their size (plan D15).
+ */
+export async function snapshotWorktree({
   root,
   host,
   shQuote,
   runProcessWithCodeTimeout,
-}: { root: string } & GitCommandContext): Promise<string> {
+}: { root: string } & GitCommandContext): Promise<{
+  tree: string;
+  skipped: string[];
+}> {
   const command = worktreeSnapshotCommand(root, shQuote);
   const result = await runProcessWithCodeTimeout(
     gitShellCommandArgv(command, host),
     GIT_DIFF_TIMEOUT_MS,
   );
-  const tree = result.stdout.trim();
+  const lines = result.stdout.trim().split("\n");
+  const tree = (lines[lines.length - 1] ?? "").trim();
+  const skipped = lines
+    .filter((line) => line.startsWith("skipped\t"))
+    .map((line) => line.slice("skipped\t".length));
   if (result.code !== 0 || !/^[0-9a-f]{40,64}$/.test(tree)) {
     throw new Error(
       (result.stderr || result.stdout || `git write-tree exited ${result.code}`)
@@ -450,17 +631,21 @@ export async function snapshotWorktreeTree({
         .slice(0, 1000),
     );
   }
-  return tree;
+  return { tree, skipped };
 }
 
 export function createLastStepBaselineStore(
   context: GitCommandContext,
+  /**
+   * `refs`: each completed step's trees are kept under refs (plan D15), and
+   * read back after a restart. Off, steps live in memory only.
+   */
+  { refs = false }: { refs?: boolean } = {},
 ): LastStepBaselineStore {
   const workspaceVersions = new Map<string, number>();
-  const completedRanges = new Map<
-    string,
-    { root: string; baseline: string; current: string }
-  >();
+  const completedRanges = new Map<string, LastStepRange & { root: string }>();
+  /** Steps read back from refs after a restart, by workspace and root. */
+  const recovered = new Map<string, Promise<LastStepRange | undefined>>();
   const completedVersions = new Map<string, number>();
   const activityCycles = new Map<string, WorkspaceActivityCycle>();
   const snapshots = new Map<
@@ -489,6 +674,7 @@ export function createLastStepBaselineStore(
     completedVersions.clear();
     activityCycles.clear();
     snapshots.clear();
+    recovered.clear();
   }
 
   function deleteSnapshots(
@@ -518,9 +704,11 @@ export function createLastStepBaselineStore(
     return turn;
   }
 
-  async function snapshotRoot(root: string): Promise<string> {
+  async function snapshotRoot(
+    root: string,
+  ): Promise<{ tree: string; skipped: string[] }> {
     return enqueueForRoot(root, () =>
-      snapshotWorktreeTree({
+      snapshotWorktree({
         root,
         ...context,
       }),
@@ -537,9 +725,9 @@ export function createLastStepBaselineStore(
         (async () => {
           const root = await resolveRoot();
           assertActive();
-          const baseline = await snapshotRoot(root);
+          const { tree: baseline, skipped } = await snapshotRoot(root);
           assertActive();
-          return { root, baseline };
+          return { root, baseline, skipped };
         })(),
       );
       const cycle = { version, capture };
@@ -553,17 +741,22 @@ export function createLastStepBaselineStore(
       if (!cycle) return Promise.resolve(false);
       if (cycle.completion) return cycle.completion;
       const task = (async () => {
-        let captured: { root: string; baseline: string };
+        let captured: { root: string; baseline: string; skipped: string[] };
         try {
           captured = await cycle.capture;
         } catch {
           return false;
         }
-        let current = await snapshotRoot(captured.root);
+        const after = await snapshotRoot(captured.root);
+        let current = after.tree;
+        let skippedAfter = after.skipped;
         if (cycle.nextCapture) {
           try {
             const next = await cycle.nextCapture;
-            if (next.root === captured.root) current = next.baseline;
+            if (next.root === captured.root) {
+              current = next.baseline;
+              skippedAfter = next.skipped;
+            }
           } catch {
             // Do not publish a potentially late endpoint after a newer period
             // started but failed to establish its boundary snapshot.
@@ -575,11 +768,35 @@ export function createLastStepBaselineStore(
           return false;
         }
         completedVersions.set(workspaceId, cycle.version);
+        const ended = Date.now();
+        const step = newLastStepId(ended);
+        const skipped = [
+          ...new Set([...captured.skipped, ...skippedAfter]),
+        ].sort();
         completedRanges.set(workspaceId, {
           root: captured.root,
           baseline: captured.baseline,
           current,
+          step,
+          at: new Date(ended).toISOString(),
+          ...(skipped.length ? { skipped } : {}),
         });
+        recovered.delete(`${workspaceId}\n${captured.root}`);
+        // Kept under refs, so the step's review outlives a restart and gc
+        // (plan D15); without them the step still shows until then.
+        if (refs)
+          try {
+            await persistLastStep({
+              root: captured.root,
+              workspaceId,
+              step,
+              range: { baseline: captured.baseline, current, skipped },
+              keep: lastStepKeeper?.(captured.root) ?? [],
+              ...context,
+            });
+          } catch {
+            // Best effort: the step shows from memory.
+          }
         deleteSnapshots(
           (snapshotWorkspaceId) => snapshotWorkspaceId === workspaceId,
         );
@@ -601,6 +818,35 @@ export function createLastStepBaselineStore(
       const range = completedRanges.get(workspaceId);
       if (!range || range.root !== root) return undefined;
       return { baseline: range.baseline, current: range.current };
+    },
+    async completedStep(workspaceId, root) {
+      if (disposed) return undefined;
+      const completion = activityCycles.get(workspaceId)?.completion;
+      if (completion) {
+        try {
+          await completion;
+        } catch {
+          // Preserve the previous completed range when finalization fails.
+        }
+      }
+      const range = completedRanges.get(workspaceId);
+      if (range && range.root === root) {
+        const step: LastStepRange = { ...range };
+        delete (step as { root?: string }).root;
+        return step;
+      }
+      if (range) return undefined;
+      // After a restart: the latest step kept under refs, read once.
+      const key = `${workspaceId}\n${root}`;
+      let found = recovered.get(key);
+      if (!refs) return undefined;
+      if (!found) {
+        found = readLastStepRefs({ root, workspaceId, ...context }).catch(
+          () => undefined,
+        );
+        recovered.set(key, found);
+      }
+      return found;
     },
     rememberSnapshot(workspaceId, root, baseline, current) {
       assertActive();
@@ -635,6 +881,7 @@ export function createLastStepBaselineStore(
         completedRanges.delete(workspaceId);
         completedVersions.delete(workspaceId);
       }
+      recovered.set(`${workspaceId}\n${root}`, Promise.resolve(undefined));
     },
     dispose() {
       if (disposeTask) return disposeTask;
@@ -959,10 +1206,12 @@ async function resolveLastStepRange({
     if (!snapshot) {
       throw new Error("last-step snapshot expired; refresh Changes");
     }
-    return snapshot;
+    return snapshot as LastStepRange;
   }
 
-  const completed = await baselines?.resolveCompleted(workspaceId, root);
+  const completed = await (baselines?.completedStep
+    ? baselines.completedStep(workspaceId, root)
+    : baselines?.resolveCompleted(workspaceId, root));
   if (!completed) return null;
   const [baselineExists, currentExists] = await Promise.all([
     treeExists({
@@ -984,7 +1233,7 @@ async function resolveLastStepRange({
     baselines?.invalidateWorkspace(workspaceId, root);
     return null;
   }
-  return completed;
+  return completed as LastStepRange;
 }
 
 export async function readDiffSummary({
@@ -1224,6 +1473,20 @@ export async function readDiffSummary({
     ...(/^\d+$/.test(commits) ? { commits: Number(commits) } : {}),
     baseline_available: mode !== "last-step" || lastStepRange !== null,
     snapshot_id: lastStepSnapshotId,
+    // The step as a review target (plan D15): its comments' review.
+    ...(lastStepRange?.step
+      ? {
+          step: {
+            step: lastStepRange.step,
+            before: lastStepRange.baseline,
+            after: lastStepRange.current,
+            ...(lastStepRange.at ? { at: lastStepRange.at } : {}),
+            ...(lastStepRange.skipped?.length
+              ? { skipped: lastStepRange.skipped }
+              : {}),
+          },
+        }
+      : {}),
     entries: entriesWithStats,
     counts: {
       staged: entriesWithStats.filter((entry) => entry.kind === "staged")

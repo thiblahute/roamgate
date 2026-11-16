@@ -148,6 +148,7 @@ export async function mountChangesReview(
   const { store } = await import("../store");
   const { roamgateLocalStorage } = await import("../browserStorage");
   const { DiffContentView } = await import("./DiffContentView");
+  const { commitMessageFile } = await import("../reviewModel");
   const { InspectorCommandsContext, InspectorViewContext } = await import(
     "../useInspectorCommands"
   );
@@ -176,6 +177,8 @@ export async function mountChangesReview(
   // The bridge, from a clean slate.
   backend.files = options.files;
   backend.texts = options.texts ?? {};
+  backend.commits = options.commits ?? [];
+  backend.patchIds = options.patchIds;
   backend.calls = [];
   backend.failing.clear();
   backend.connected = true;
@@ -187,7 +190,15 @@ export async function mountChangesReview(
   const sessionId = options.sessionId ?? "s1";
   let marks: Record<string, string> = { ...(options.reviewed ?? {}) };
   let applied = 0;
-  let sessionFields: Record<string, unknown> = { ...(options.session ?? {}) };
+  // A review of commits (the commit bar): a range shown as a review scope
+  // in Changes, as the review toggle shows one (plan phase 6).
+  const ofCommits = !!options.commits?.length;
+  let sessionFields: Record<string, unknown> = {
+    ...(ofCommits
+      ? { target: { kind: "range", base: "main", head: "HEAD" } }
+      : {}),
+    ...(options.session ?? {}),
+  };
   let ownThreads: ReviewThread[] = options.threads ?? [];
   const otherReviews = options.otherReviews ?? [];
   /**
@@ -560,6 +571,9 @@ export async function mountChangesReview(
               annotations,
               threads,
               reviewCursor: true,
+              ...(ofCommits
+                ? { reviewScope: { kind: "review" as const, sessionId } }
+                : {}),
               showFileSelector: false,
               onCreateAnnotation: writeComment,
               onAddReviewImage: addImage,
@@ -589,7 +603,7 @@ export async function mountChangesReview(
     ...host.querySelectorAll<HTMLElement>("[data-diff-entry-key]"),
   ];
   const pathOf = (section: HTMLElement) =>
-    (section.dataset.diffEntryKey ?? "").replace(/^unstaged:/, "");
+    (section.dataset.diffEntryKey ?? "").replace(/^[a-z-]+:/, "");
   const shadowOf = (section: HTMLElement) =>
     section.querySelector("diffs-container")?.shadowRoot ?? null;
 
@@ -632,6 +646,21 @@ export async function mountChangesReview(
       kind: " ",
     };
   };
+  /**
+   * The files of the view shown: a commit's (its message first) when the
+   * commit bar names one, else the review's.
+   */
+  const viewFiles = (): ReviewDiffFile[] => {
+    const head =
+      view()?.querySelector(".diff-commit-name .note")?.textContent ?? "";
+    const at = /^(\d+)\//.exec(head);
+    const commit = at ? options.commits?.[Number(at[1]) - 1] : undefined;
+    if (!commit) return files;
+    return [
+      commitMessageFile(commit.subject, commit.body ?? ""),
+      ...(commit.files ?? files),
+    ];
+  };
   /** A drawn line of Pierre's, read as the review's. */
   const shown = (element: Element, path: string): ShownLine => {
     const code = element.closest("code");
@@ -639,7 +668,7 @@ export async function mountChangesReview(
     const type = element.getAttribute("data-line-type") ?? "";
     const old =
       code?.hasAttribute("data-deletions") || type === "change-deletion";
-    const file = files.find((each) => each.path === path);
+    const file = viewFiles().find((each) => each.path === path);
     for (const hunk of file?.hunks ?? [])
       for (const line of hunk.lines) {
         const match = old
@@ -1198,9 +1227,6 @@ export async function mountChangesReview(
           ),
       );
     },
-    view() {
-      return "";
-    },
     editorOpen() {
       // The review's editor, else the popover (Changes not "in Changes").
       return (
@@ -1596,6 +1622,52 @@ export async function mountChangesReview(
     },
     notice() {
       return notices[notices.length - 1] ?? null;
+    },
+    view() {
+      const name = view().querySelector(".diff-commit-name");
+      return [...(name?.children ?? [])]
+        .map((part) => part.textContent ?? "")
+        .join(" ")
+        .trim();
+    },
+    commitBar() {
+      const name = view().querySelector(".diff-commit-name");
+      if (!name) return null;
+      return {
+        head: name.querySelector(".note")?.textContent ?? "",
+        subject:
+          name.querySelector(":scope > span:not(.note)")?.textContent ?? "",
+      };
+    },
+    async stepCommitBar(direction) {
+      const button = view().querySelector<HTMLButtonElement>(
+        `.diff-commit-bar button[title^="${direction < 0 ? "Previous" : "Next"} commit"]`,
+      );
+      if (!button) throw new Error("no commit bar");
+      await act(async () => button.click());
+      await settleAll();
+    },
+    commitPicker() {
+      const input = host.querySelector<HTMLInputElement>(
+        'input[aria-label="Search commits"]',
+      );
+      if (!input) return null;
+      const list = input.parentElement?.querySelector("ul");
+      return {
+        query: input.value,
+        choices: [...(list?.querySelectorAll("li") ?? [])].map((item) =>
+          (
+            item.querySelector("button > span:first-child")?.textContent ??
+            item.textContent ??
+            ""
+          ).trim(),
+        ),
+      };
+    },
+    banner() {
+      return (
+        view().querySelector(".diff-review-changed span")?.textContent ?? null
+      );
     },
     notices() {
       return [...notices];

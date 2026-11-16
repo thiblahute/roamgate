@@ -1,4 +1,4 @@
-import type { ReviewRenderPart } from "../../shared/review";
+import type { ReviewRenderPart, ReviewTarget } from "../../shared/review";
 import { connectionStorageKey } from "./connectionStorage";
 import type { GitDiffKind, Pane } from "./types";
 import { resourceOwnerKey, type ResourceScope } from "./workspaceResource";
@@ -32,7 +32,17 @@ export type DiffReviewAnnotation = ReviewAnnotationBase & {
    * workspace's checkout: drawn only while Changes shows that repository.
    */
   root?: string;
+  /**
+   * The review it goes to when not the scope's usual one: a Last step's
+   * (plan D15), or a range or compare Changes shows as a review scope.
+   */
+  target?: DiffNoteTarget;
+  /** Written on one commit's diff (the commit bar): that commit. */
+  commit?: { sha: string; subject?: string; parent?: string | null };
 };
+
+/** The reviews a diff comment can name: a range, a last step. */
+export type DiffNoteTarget = Extract<ReviewTarget, { kind: "range" | "step" }>;
 
 export type FileLineReviewAnnotation = ReviewAnnotationBase & {
   source: "file";
@@ -152,6 +162,70 @@ function renderOf(candidate: Record<string, unknown>): {
     : {};
 }
 
+const REF = /^[^\s-][^\s]{0,255}$/;
+const TREE = /^[0-9a-f]{40,64}$/;
+const SHA = /^[0-9a-f]{7,64}$/;
+
+/** A diff comment's review, when it names one: checked field by field. */
+function noteTarget(value: unknown): DiffNoteTarget | null {
+  if (!value || typeof value !== "object") return null;
+  const target = value as Record<string, unknown>;
+  if (
+    target.kind === "range" &&
+    typeof target.base === "string" &&
+    typeof target.head === "string" &&
+    REF.test(target.base) &&
+    REF.test(target.head)
+  )
+    return {
+      kind: "range",
+      base: target.base,
+      head: target.head,
+      ...(target.compare === true ? { compare: true } : {}),
+    };
+  if (
+    target.kind === "step" &&
+    typeof target.step === "string" &&
+    /^[0-9A-Za-z][0-9A-Za-z_-]{0,63}$/.test(target.step) &&
+    typeof target.before === "string" &&
+    typeof target.after === "string" &&
+    TREE.test(target.before) &&
+    TREE.test(target.after)
+  ) {
+    const skipped = Array.isArray(target.skipped)
+      ? target.skipped.filter(
+          (path): path is string => typeof path === "string",
+        )
+      : [];
+    return {
+      kind: "step",
+      step: target.step,
+      before: target.before,
+      after: target.after,
+      ...(typeof target.at === "string" ? { at: target.at } : {}),
+      ...(skipped.length ? { skipped } : {}),
+    };
+  }
+  return null;
+}
+
+function noteCommit(value: unknown): DiffReviewAnnotation["commit"] | null {
+  if (!value || typeof value !== "object") return null;
+  const commit = value as Record<string, unknown>;
+  if (typeof commit.sha !== "string" || !SHA.test(commit.sha)) return null;
+  return {
+    sha: commit.sha,
+    ...(typeof commit.subject === "string"
+      ? { subject: commit.subject.slice(0, 500) }
+      : {}),
+    ...(typeof commit.parent === "string" && SHA.test(commit.parent)
+      ? { parent: commit.parent }
+      : commit.parent === null
+        ? { parent: null }
+        : {}),
+  };
+}
+
 export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
@@ -236,6 +310,12 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
       candidate.root.startsWith("/") &&
       candidate.root.length <= 4096
         ? { root: candidate.root }
+        : {}),
+      ...(noteTarget(candidate.target)
+        ? { target: noteTarget(candidate.target)! }
+        : {}),
+      ...(noteCommit(candidate.commit)
+        ? { commit: noteCommit(candidate.commit)! }
         : {}),
     };
   }

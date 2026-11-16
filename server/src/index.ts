@@ -238,6 +238,7 @@ import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
 import { type MrConnection, orderConnections } from "./mr-reviews/clones";
 import { gitShellCommandArgv } from "./workspace/git-shell";
+import { keepLastSteps } from "./workspace/git-diff";
 import {
   AGENT_CHAT_METHODS,
   handleAgentChatRpc,
@@ -1803,6 +1804,9 @@ function getReviewService(): ReviewService {
       }
     },
   });
+  // A last step's snapshots stay while its review has threads (D15).
+  const service = reviewService;
+  keepLastSteps((root) => service.keptSteps(root));
   // Images of reviews discarded before the last restart.
   try {
     pruneReviewImages(
@@ -1977,6 +1981,8 @@ function getReviewAgent(): ReviewAgentServer {
             readRoot: (path: string) => runtime.files.readReviewRoot(path),
             readDefaultBase: (root: string) =>
               runtime.files.readDefaultBase(root),
+            readLastStep: (root: string, workspaceId: string) =>
+              runtime.files.readLastStep(root, workspaceId),
           },
         ];
       }),

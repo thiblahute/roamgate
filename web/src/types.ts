@@ -227,6 +227,16 @@ export interface GitDiffEntry {
   parts?: GitDiffEntry[];
 }
 
+/** A last step as a review target (plan D15). */
+export type LastStepTarget = {
+  kind?: "step";
+  step: string;
+  before: string;
+  after: string;
+  at?: string;
+  skipped?: string[];
+};
+
 export interface GitDiffSummary {
   workspace_id: string;
   repo_name?: string;
@@ -240,6 +250,8 @@ export interface GitDiffSummary {
   commits?: number;
   baseline_available?: boolean;
   snapshot_id?: string;
+  /** On the Last step scope: the step as a review target (plan D15). */
+  step?: LastStepTarget;
   entries: GitDiffEntry[];
   counts: Record<Exclude<GitDiffKind, "combined">, number>;
 }

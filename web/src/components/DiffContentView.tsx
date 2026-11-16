@@ -133,7 +133,14 @@ import {
 } from "../changesThreads";
 import { repoFeedback, type ShownRepo } from "../changesRepo";
 import { latestComment } from "../reviewNavigation";
-import { useChangesAgent, worktreeReview } from "../changesReview";
+import {
+  type ChangesScope,
+  scopeReview,
+  stepTarget,
+  useChangesAgent,
+  useScopeByValue,
+  WORKING_SCOPE,
+} from "../changesReview";
 import type { ReviewProgress } from "./DiffViewerPanel";
 import {
   fileNoteAsDiff,
@@ -167,6 +174,8 @@ import {
 } from "../unresolvedThreads";
 import { usePendingFeedback } from "../feedbackPending";
 import { useInspectorCommands } from "../useInspectorCommands";
+import { useChangesViews, type ViewsSource } from "../useChangesViews";
+import { ChangesCommitBar } from "./ChangesCommitBar";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
 import {
@@ -507,6 +516,47 @@ type DiffDrawing = {
 const GAP_ID = "\u0000gap:";
 
 const DiffDrawingContext = createContext<DiffDrawing | null>(null);
+
+/**
+ * A thread of the scope's review written elsewhere than in Changes (the
+ * review pane, an agent): on a line of a file, not on a message, a chat, a
+ * rendered page or a terminal.
+ */
+function scopeLineThread(thread: ReviewThread): boolean {
+  const { anchor } = thread;
+  return (
+    !!anchor.path &&
+    anchor.line !== undefined &&
+    !anchor.message &&
+    !anchor.chat &&
+    !anchor.render &&
+    !anchor.terminal
+  );
+}
+
+/** Such a thread as a comment of the scope's diff (its sections' kind). */
+function scopeNote(thread: ReviewThread, kind: GitDiffKind): ReviewAnnotation {
+  const note = feedbackNote(thread);
+  if (note.source !== "diff" || thread.anchor.feedback !== undefined)
+    return note;
+  return {
+    ...note,
+    kind,
+    ...(thread.anchor.commit
+      ? {
+          commit: {
+            sha: thread.anchor.commit,
+            ...(thread.anchor.commitSubject
+              ? { subject: thread.anchor.commitSubject }
+              : {}),
+            ...(thread.anchor.commitParent
+              ? { parent: thread.anchor.commitParent }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
 
 /**
  * The section a comment is drawn in: its own entry's (`kind:path`). A
@@ -1121,7 +1171,7 @@ function sameRange(
   );
 }
 
-export function DiffContentView({
+function DiffContentViewInner({
   selectionRevision = 0,
   cursorGoTo = null,
   scopeLabel,
@@ -1162,6 +1212,14 @@ export function DiffContentView({
   otherFileGoTo = null,
   onAddReviewImage,
   onGitAction,
+  reviewScope = WORKING_SCOPE,
+  viewBar,
+  viewKey,
+  viewCommands,
+  viewCommit,
+  viewSingleCommit = false,
+  onSearchElsewhere,
+  readViewFile,
 }: {
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
@@ -1238,7 +1296,12 @@ export function DiffContentView({
   onAddReviewImage?: (file: File) => Promise<string>;
   /** A git action on a file of the working changes (`:stage`, `gs`). */
   onGitAction?: (action: GitFileAction, path: string) => boolean;
-}) {
+  /**
+   * The review the scope shown is (plan phase 6), found by a read-only
+   * lookup; the worktree review when absent.
+   */
+  reviewScope?: ChangesScope;
+} & ViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const { sessions: reviewSessions } = useReviewState();
   // Only the shown repository's: another one's file of the same path never
@@ -1251,44 +1314,113 @@ export function DiffContentView({
     reviewCursor && !embedded
       ? (file?.root ?? Object.values(files)[0]?.root)
       : null;
+  const shownScope = useScopeByValue(reviewScope);
+  // The scope's review's threads the host does not give: a question held
+  // for Send, and threads written elsewhere than in Changes (the review
+  // pane, an agent's review_add) on the scope's lines.
   const held = useMemo(() => {
-    const own = worktreeReview(
-      reviewSessions.values(),
+    const own = scopeReview(
+      [...reviewSessions.values()],
       connectionClient.connectionId,
       heldRoot,
+      shownScope,
     );
     const given = new Set((givenThreads ?? []).map((thread) => thread.id));
     return (own?.threads ?? []).filter(
       (thread) =>
-        thread.held !== undefined &&
-        thread.anchor.feedback !== undefined &&
-        !given.has(thread.id),
+        !given.has(thread.id) &&
+        (thread.held !== undefined
+          ? thread.anchor.feedback !== undefined
+          : thread.anchor.feedback === undefined && scopeLineThread(thread)),
     );
-  }, [connectionClient.connectionId, givenThreads, heldRoot, reviewSessions]);
+  }, [
+    connectionClient.connectionId,
+    givenThreads,
+    heldRoot,
+    reviewSessions,
+    shownScope,
+  ]);
+  const scopeNoteKind: GitDiffKind =
+    reviewScope.kind === "working"
+      ? "combined"
+      : reviewScope.kind === "step"
+        ? "last-step"
+        : "branch";
   const scoped = useMemo(
     () =>
       repoFeedback(
         held.length
-          ? [...givenAnnotations, ...held.map(feedbackNote)]
+          ? [
+              ...givenAnnotations,
+              ...held.map((thread) => scopeNote(thread, scopeNoteKind)),
+            ]
           : givenAnnotations,
         held.length ? [...(givenThreads ?? []), ...held] : (givenThreads ?? []),
         (sessionId) => reviewSessions.get(sessionId)?.session.root,
         repoRoot === undefined ? undefined : { root: repoRoot, own: !!repoOwn },
       ),
-    [givenAnnotations, givenThreads, held, repoOwn, repoRoot, reviewSessions],
+    [
+      givenAnnotations,
+      givenThreads,
+      held,
+      repoOwn,
+      repoRoot,
+      reviewSessions,
+      scopeNoteKind,
+    ],
   );
-  const threads = givenThreads || held.length ? scoped.threads : undefined;
+  // With the review's views (the commit bar), a comment shows in the view
+  // it was written on: a commit's, or all the changes'.
+  const viewed = useMemo(() => {
+    const hidden = new Set<string>();
+    // A step's review is drawn on that step only (plan D15): not on the
+    // working tree, the branch or another step.
+    for (const thread of scoped.threads) {
+      const target = reviewSessions.get(thread.sessionId)?.session.target;
+      if (
+        target?.kind === "step" &&
+        !(
+          shownScope.kind === "step" &&
+          shownScope.step.before === target.before &&
+          shownScope.step.after === target.after
+        ) &&
+        !(
+          shownScope.kind === "review" &&
+          shownScope.sessionId === thread.sessionId
+        )
+      )
+        hidden.add(thread.id);
+    }
+    for (const note of scoped.annotations) {
+      if (note.source !== "diff" || viewCommit === undefined) continue;
+      const own = note.commit?.sha ?? null;
+      const shows =
+        own === null
+          ? viewCommit === null || viewSingleCommit
+          : viewCommit !== null &&
+            (own === viewCommit ||
+              viewCommit.startsWith(own) ||
+              own.startsWith(viewCommit));
+      if (!shows) hidden.add(note.id);
+    }
+    if (!hidden.size) return scoped;
+    return {
+      annotations: scoped.annotations.filter((note) => !hidden.has(note.id)),
+      threads: scoped.threads.filter((thread) => !hidden.has(thread.id)),
+    };
+  }, [scoped, viewCommit, viewSingleCommit, reviewSessions, shownScope]);
+  const threads = givenThreads || held.length ? viewed.threads : undefined;
   // One review across Files and Changes (D16): a comment written in Files
   // is drawn on its file's combined diff, at its source line.
   const annotations = useMemo(() => {
-    if (!reviewCursor || embedded) return scoped.annotations;
-    if (!scoped.annotations.some((note) => note.source === "file"))
-      return scoped.annotations;
-    const byId = new Map(scoped.threads.map((thread) => [thread.id, thread]));
-    return scoped.annotations.map((note) =>
+    if (!reviewCursor || embedded) return viewed.annotations;
+    if (!viewed.annotations.some((note) => note.source === "file"))
+      return viewed.annotations;
+    const byId = new Map(viewed.threads.map((thread) => [thread.id, thread]));
+    return viewed.annotations.map((note) =>
       fileNoteAsDiff(note, byId.get(note.id)),
     );
-  }, [embedded, reviewCursor, scoped]);
+  }, [embedded, reviewCursor, viewed]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectFileRef = useRef(onSelectFile);
   const openFileRef = useRef(onOpenFile);
@@ -1451,6 +1583,7 @@ export function DiffContentView({
       ? (Object.values(filesByKey)[0]?.root ?? file?.root ?? repo?.root)
       : null,
     Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
+    reviewScope,
   );
   // ---- The review's threads drawn as the review pane draws them ---------
 
@@ -2163,6 +2296,7 @@ export function DiffContentView({
     onToggleSplit: () =>
       setViewMode((mode) => (mode === "split" ? "unified" : "split")),
     onReload: onRetry,
+    ...(onSearchElsewhere ? { searchElsewhere: onSearchElsewhere } : {}),
     runCommand: (input) => {
       if (!inspectorRunRef.current) return false;
       inspectorRunRef.current(input);
@@ -3126,7 +3260,7 @@ export function DiffContentView({
         ? Promise.resolve<string[] | null>(known.expansion.lines)
         : expandLines.current.get(cacheKey);
     if (!lines) {
-      lines = changesAgent.readFile(path).then(
+      lines = (readViewFile ?? changesAgent.readFile)(path).then(
         (text) => {
           const read = fileLines(text);
           if (patchMatches(source, read)) return read;
@@ -3523,7 +3657,8 @@ export function DiffContentView({
         setHideComments((hidden) => !hidden);
         return true;
       default:
-        return false;
+        // The review's views: < > gc (the commit bar).
+        return viewKey ? viewKey(key) : false;
     }
   };
 
@@ -4545,7 +4680,9 @@ export function DiffContentView({
     embedded
       ? null
       : {
-          commands: diffCommands,
+          commands: viewCommands
+            ? [...diffCommands, ...viewCommands]
+            : diffCommands,
           ...(cursor.active
             ? {
                 line: cursor.goToLine,
@@ -4882,6 +5019,7 @@ export function DiffContentView({
         ) : null}
         {headEnd}
       </div>
+      {viewBar}
 
       {error && !visibleEntries.length ? (
         <div className="diff-content-state is-error">
@@ -4975,5 +5113,305 @@ export function DiffContentView({
         onClose={closeAnnotationComposer}
       />
     </section>
+  );
+}
+
+/** What the review's views (the commit bar) give Changes' diff. */
+type ViewProps = {
+  /** The commit bar, under the head. */
+  viewBar?: ReactNode;
+  /** `<` `>` `gc`: true when taken. */
+  viewKey?: (key: string) => boolean;
+  /** `:commit`, `:all`, `:commits`, `:e`. */
+  viewCommands?: InspectorCommand[];
+  /**
+   * The commit shown (null: all the changes); undefined without views.
+   * A comment shows in the view it was written on.
+   */
+  viewCommit?: string | null;
+  /** One commit: it is all the changes, its comments show on it too. */
+  viewSingleCommit?: boolean;
+  /** A path found in no file of the view: another view's file, shown. */
+  onSearchElsewhere?: (pattern: string) => Promise<string | null>;
+  /** A file as the view shows it, for the lines revealed around a hunk. */
+  readViewFile?: (path: string) => Promise<string>;
+};
+
+type DiffContentViewProps = Omit<
+  Parameters<typeof DiffContentViewInner>[0],
+  keyof ViewProps
+> & {
+  /**
+   * The review's view shown when not the scope's own files (a commit, a
+   * range opened by name), for the tree; null when the scope's are shown.
+   */
+  onViewEntries?: (
+    view: { label: string; entries: readonly GitDiffEntry[] } | null,
+  ) => void;
+};
+
+const NO_FILES: Record<string, GitDiffFile> = {};
+
+/**
+ * Changes' diff. On "in Changes", a scope that is a review of commits (the
+ * Branch scope, a range opened by name) gets the review pane's views: the
+ * commit bar, `<` `>` `gc` `:commit` `:all`, a commit's files with its
+ * message first, the reload offer (plan: review into the inspector, phase
+ * 6).
+ */
+export function DiffContentView({
+  onViewEntries,
+  ...props
+}: DiffContentViewProps) {
+  const {
+    reviewCursor = false,
+    embedded = false,
+    reviewScope = WORKING_SCOPE,
+    connectionClient,
+    files = NO_FILES,
+    file,
+    repo,
+  } = props;
+  const reviewing = reviewCursor && !embedded;
+  const first = Object.values(files)[0] ?? file ?? null;
+  const root = repo?.root ?? first?.root ?? "";
+  const workspaceId = first?.workspace_id ?? "";
+  const { sessions } = useReviewState();
+  const connectionId = connectionClient.connectionId;
+  const viewsScope =
+    reviewing &&
+    (reviewScope.kind === "branch" || reviewScope.kind === "review");
+  const bound = viewsScope
+    ? scopeReview([...sessions.values()], connectionId, root, reviewScope)
+    : null;
+  const branchBase =
+    reviewScope.kind === "branch"
+      ? (reviewScope.base ?? reviewScope.automaticBase)
+      : undefined;
+  const source: ViewsSource | null = !viewsScope
+    ? null
+    : reviewScope.kind === "review"
+      ? { sessionId: reviewScope.sessionId }
+      : bound
+        ? { sessionId: bound.session.id }
+        : workspaceId && root && branchBase
+          ? {
+              workspaceId,
+              path: root,
+              target: { kind: "range", base: branchBase, head: "HEAD" },
+            }
+          : null;
+  // The view is remembered per review: a scope's, whether its review was
+  // opened yet or not.
+  const placeKey =
+    reviewScope.kind === "review"
+      ? reviewScope.sessionId
+      : `changes:${connectionId}:${root}:${branchBase ?? ""}`;
+  const where = useMemo(() => ({ root, workspaceId }), [root, workspaceId]);
+  const views = useChangesViews({
+    connectionId,
+    source,
+    enabled: viewsScope,
+    native: reviewScope.kind === "branch",
+    placeKey,
+    where,
+  });
+  const [viewGoTo, setViewGoTo] = useState<{
+    path: string;
+    at: number;
+  } | null>(null);
+  const sectionKeys = useRef<HTMLDivElement | null>(null);
+  const say = (message: string) => store.notify({ kind: "info", message });
+  const viewEntriesRef = useRef(onViewEntries);
+  viewEntriesRef.current = onViewEntries;
+  const shownEntries = views.shown?.entries ?? null;
+  const viewLabel = views.name
+    ? `${views.name.head} ${views.name.subject}`
+    : (bound?.session.title ?? "Review");
+  useEffect(() => {
+    viewEntriesRef.current?.(
+      shownEntries ? { label: viewLabel, entries: shownEntries } : null,
+    );
+  }, [shownEntries, viewLabel]);
+  useEffect(() => () => viewEntriesRef.current?.(null), []);
+  if (!reviewing) return <DiffContentViewInner {...props} />;
+
+  const { onRetry, onCreateAnnotation, cursorGoTo } = props;
+  const reload = () => {
+    views.reload();
+    onRetry?.();
+  };
+  const reviewTarget = bound?.session.target;
+  /** A step's untracked files too large for its snapshots (D15). */
+  const shownTarget =
+    reviewScope.kind === "review"
+      ? sessions.get(reviewScope.sessionId)?.session.target
+      : undefined;
+  const skipped =
+    reviewScope.kind === "step"
+      ? (reviewScope.step.skipped ?? [])
+      : shownTarget?.kind === "step"
+        ? (shownTarget.skipped ?? [])
+        : [];
+  /** The view's own files, when they are not Changes'. */
+  const foreign =
+    views.active &&
+    (views.commits === null
+      ? reviewScope.kind === "review"
+      : !(views.sha === null && reviewScope.kind === "branch"));
+  const shown = foreign
+    ? (views.shown ?? { entries: [], files: NO_FILES })
+    : null;
+  // The file a search found in another view is the one picked there, as
+  // the tree's pick would: the cursor goes there once it is drawn.
+  const goTo =
+    viewGoTo && (!cursorGoTo || viewGoTo.at > cursorGoTo.at)
+      ? viewGoTo
+      : cursorGoTo;
+  const picked =
+    (goTo && shown?.entries.find((each) => each.path === goTo.path)) ??
+    shown?.entries[0];
+  const focusDiff = () =>
+    sectionKeys.current
+      ?.closest<HTMLElement>(".diff-content-view")
+      ?.focus({ preventScroll: true });
+  const commands: InspectorCommand[] = [
+    {
+      name: "commit",
+      description:
+        "one commit: :commit 2, :commit words; :commit alone, all the changes",
+      run: (argument) => views.command("commit", argument),
+    },
+    {
+      name: "all",
+      description: "all the changes (:commit alone)",
+      run: () => {
+        if (!views.history) views.show(null);
+      },
+    },
+    {
+      name: "commits",
+      description: "pick a commit by its subject or sha (gc)",
+      run: (argument) => views.command("commits", argument),
+    },
+    {
+      name: "reload",
+      aliases: ["e", "edit"],
+      description: "read the review again, on the same line (R, gr)",
+      run: reload,
+    },
+  ];
+  return (
+    <DiffContentViewInner
+      {...props}
+      {...(shown
+        ? {
+            entries: shown.entries,
+            files: shown.files,
+            entry: picked ?? null,
+            file: picked
+              ? (shown.files[`branch:${picked.path}`] ?? null)
+              : null,
+            loading: false,
+            error: null,
+            fileErrors: {},
+            loadingKeys: [],
+            summaryLoading: !views.shown,
+          }
+        : {})}
+      cursorGoTo={goTo ?? null}
+      onRetry={reload}
+      {...(onCreateAnnotation
+        ? {
+            onCreateAnnotation: (input, written) =>
+              onCreateAnnotation(
+                input.source === "diff"
+                  ? {
+                      ...input,
+                      ...(views.current
+                        ? {
+                            commit: {
+                              sha: views.current.sha,
+                              subject: views.current.subject,
+                              parent: views.current.parent,
+                            },
+                          }
+                        : {}),
+                      // A range opened by name: its own review.
+                      ...(reviewScope.kind === "review" &&
+                      reviewTarget?.kind === "range" &&
+                      !input.target
+                        ? { target: reviewTarget }
+                        : {}),
+                    }
+                  : input,
+                written,
+              ),
+          }
+        : {})}
+      viewBar={
+        <>
+          <div ref={sectionKeys} hidden />
+          {skipped.length ? (
+            <div className="diff-review-views">
+              <span className="note" role="note">
+                Left out of this step (untracked, over 50 MB):{" "}
+                {skipped.join(", ")}
+              </span>
+            </div>
+          ) : null}
+          {views.active ? (
+            <ChangesCommitBar
+              views={views}
+              onReload={reload}
+              onDone={focusDiff}
+            />
+          ) : null}
+        </>
+      }
+      viewKey={(key) => {
+        if (key !== "<" && key !== ">" && key !== "gc") return false;
+        if (!views.active || !views.commits?.length) {
+          say("This review has a single commit.");
+          return true;
+        }
+        if (key === "gc") views.openPicker();
+        else views.step(key === ">" ? 1 : -1);
+        return true;
+      }}
+      viewCommands={commands}
+      {...(views.active && views.commits?.length
+        ? {
+            viewCommit: views.sha,
+            viewSingleCommit: views.commits.length === 1 && !views.history,
+          }
+        : {})}
+      {...(views.active
+        ? { readViewFile: views.readFile }
+        : reviewScope.kind === "step" && workspaceId && root
+          ? {
+              // The step's after tree, read with no review made.
+              readViewFile: async (path: string) =>
+                (
+                  await reviewCall<{ text: string }>(
+                    connectionId,
+                    "review.file",
+                    {
+                      workspace_id: workspaceId,
+                      checkout: root,
+                      target: stepTarget(reviewScope.step),
+                      path,
+                      rev: reviewScope.step.after,
+                    },
+                  )
+                ).text,
+            }
+          : {})}
+      onSearchElsewhere={async (pattern) => {
+        const path = await views.searchElsewhere(pattern);
+        if (path) setViewGoTo({ path, at: Date.now() });
+        return path;
+      }}
+    />
   );
 }

@@ -22,6 +22,7 @@ import {
   describeEffortPart,
   EFFORT_NO_LEADER,
   EFFORT_SESSION_PREFIX,
+  describeStepTarget,
   isSuggestion,
   REVIEW_EFFORT_ITEMS,
   REVIEW_EFFORT_TABS,
@@ -192,11 +193,48 @@ function refName(value: unknown, field: string): string {
   return ref;
 }
 
+/** At most this many untracked files a step's target names as left out. */
+const STEP_SKIPPED_MAX = 200;
+
+/** A last step's target (plan D15): its id and its two snapshot trees. */
+function parseStepTarget(
+  target: Record<string, unknown>,
+): Extract<ReviewTarget, { kind: "step" }> {
+  const tree = (value: unknown, field: string) => {
+    if (typeof value !== "string" || !/^[0-9a-f]{40,64}$/.test(value))
+      throw new ReviewError(`invalid ${field}`);
+    return value;
+  };
+  if (
+    typeof target.step !== "string" ||
+    !/^[0-9A-Za-z][0-9A-Za-z_-]{0,63}$/.test(target.step)
+  )
+    throw new ReviewError("invalid step");
+  const at = isoTime(target.at);
+  const skipped = Array.isArray(target.skipped)
+    ? target.skipped
+        .filter(
+          (path): path is string =>
+            typeof path === "string" && validReviewPath(path),
+        )
+        .slice(0, STEP_SKIPPED_MAX)
+    : [];
+  return {
+    kind: "step",
+    step: target.step,
+    before: tree(target.before, "before"),
+    after: tree(target.after, "after"),
+    ...(at ? { at } : {}),
+    ...(skipped.length ? { skipped } : {}),
+  };
+}
+
 export function parseReviewTarget(value: unknown): ReviewTarget {
   const target = value as Record<string, unknown> | null;
   if (!target || typeof target !== "object")
     throw new ReviewError("target is required");
   if (target.kind === "worktree") return { kind: "worktree" };
+  if (target.kind === "step") return parseStepTarget(target);
   if (target.kind === "range")
     return {
       kind: "range",
@@ -264,6 +302,9 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
     return left && right ? sameMergeRequest(left, right) : a.url === b.url;
   }
   if (a.kind === "chat" && b.kind === "chat") return a.chat === b.chat;
+  // One review per step: the same two snapshots.
+  if (a.kind === "step" && b.kind === "step")
+    return a.before === b.before && a.after === b.after;
   if (a.kind === "rendered" && b.kind === "rendered")
     return a.path === b.path && a.url === b.url;
   if (a.kind === "effort" && b.kind === "effort") return a.effort === b.effort;
@@ -286,7 +327,9 @@ export function reviewsBranch(target: ReviewTarget, branch: string): boolean {
       target.head === branch ||
       target.head === `refs/heads/${branch}`
     );
-  return target.kind === "worktree" || target.kind === "mr";
+  return (
+    target.kind === "worktree" || target.kind === "step" || target.kind === "mr"
+  );
 }
 
 function sameMergeRequest(a: MergeRequestRef, b: MergeRequestRef): boolean {
@@ -319,7 +362,9 @@ export function describeTarget(target: ReviewTarget): string {
   if (target.kind === "chat") return "chat";
   if (target.kind === "rendered") return target.path ?? target.url ?? "";
   if (target.kind === "effort") return "effort";
-  return "working tree";
+  if (target.kind === "step") return describeStepTarget(target);
+  // A kind of a newer build reads as what it may be, never throws.
+  return target.kind === "worktree" ? "working tree" : "review";
 }
 
 /** A chat message's time, as the agent's chat shows it (local, HH:MM). */
@@ -724,7 +769,12 @@ export function createReviewService(args: {
   /** A review of the checkout's code: a branch, a range, its work, an MR. */
   function codeReview(target: ReviewSession): boolean {
     const { kind } = target.target;
-    return kind === "range" || kind === "worktree" || kind === "mr";
+    return (
+      kind === "range" ||
+      kind === "worktree" ||
+      kind === "step" ||
+      kind === "mr"
+    );
   }
 
   /** The file a review of a rendered file shows (none for a site). */
@@ -3499,16 +3549,55 @@ export function createReviewService(args: {
    * rebase, an amend), the patch ids of it and of them come along, best
    * effort, so the overlay can find what it became.
    */
+  /**
+   * A review not opened: a scope Changes shows before its first comment
+   * (plan section 2). Read only: it is never kept, listed or published.
+   */
+  function preview(params: Record<string, unknown>): ReviewSession {
+    const connectionId = text(params.connectionId, "connection", 200);
+    const root = text(params.root, "root", 4096);
+    const target = parseReviewTarget(params.target);
+    if (
+      target.kind !== "range" &&
+      target.kind !== "worktree" &&
+      target.kind !== "step"
+    )
+      throw new ReviewError("only a checkout's changes can be read this way");
+    const at = now();
+    return {
+      id: `preview-${newId()}`,
+      connectionId,
+      root,
+      title: describeTarget(target),
+      target,
+      gitlab: false,
+      summary: "",
+      agent: {},
+      createdAt: at,
+      updatedAt: at,
+    };
+  }
+
   async function commits(params: Record<string, unknown>): Promise<{
     commits: ReviewCommit[];
     patchIds?: Record<string, string>;
   }> {
-    const target = session(params.sessionId);
+    return commitsOf(session(params.sessionId), params);
+  }
+
+  async function commitsOf(
+    target: ReviewSession,
+    params: Record<string, unknown>,
+  ): Promise<{
+    commits: ReviewCommit[];
+    patchIds?: Record<string, string>;
+  }> {
     // The overlay opening or reloading: no answer from what was remembered.
     if (params.recheck === true) gone.delete(target.id);
     const { loadCommits, loadPatchIds } = args;
     if (
       target.target.kind === "worktree" ||
+      target.target.kind === "step" ||
       target.target.kind === "chat" ||
       target.target.kind === "rendered" ||
       !loadCommits
@@ -3545,7 +3634,10 @@ export function createReviewService(args: {
   async function state(
     params: Record<string, unknown>,
   ): Promise<{ state: string }> {
-    const target = session(params.sessionId);
+    return stateOf(session(params.sessionId));
+  }
+
+  async function stateOf(target: ReviewSession): Promise<{ state: string }> {
     const { loadState } = args;
     if (
       target.target.kind === "mr" ||
@@ -3558,7 +3650,13 @@ export function createReviewService(args: {
   }
 
   async function diff(params: Record<string, unknown>): Promise<ReviewDiff> {
-    const target = session(params.sessionId);
+    return diffOf(session(params.sessionId), params);
+  }
+
+  async function diffOf(
+    target: ReviewSession,
+    params: Record<string, unknown>,
+  ): Promise<ReviewDiff> {
     const commit =
       typeof params.commit === "string" && params.commit
         ? params.commit
@@ -3574,7 +3672,9 @@ export function createReviewService(args: {
     if (params.first === true) {
       const { loadCommits } = args;
       const first =
-        target.target.kind === "worktree" || !loadCommits
+        target.target.kind === "worktree" ||
+        target.target.kind === "step" ||
+        !loadCommits
           ? undefined
           : (await commitList(target, loadCommits))[0]?.sha;
       if (first)
@@ -3739,7 +3839,13 @@ export function createReviewService(args: {
   async function file(
     params: Record<string, unknown>,
   ): Promise<{ text: string }> {
-    const target = session(params.sessionId);
+    return fileOf(session(params.sessionId), params);
+  }
+
+  async function fileOf(
+    target: ReviewSession,
+    params: Record<string, unknown>,
+  ): Promise<{ text: string }> {
     if (!args.loadFile) throw new ReviewError("files are not available here");
     const rev = typeof params.rev === "string" ? params.rev : "";
     const path = text(params.path, "path", 4096);
@@ -3749,9 +3855,32 @@ export function createReviewService(args: {
     };
   }
 
+  /**
+   * The last steps of a checkout whose reviews have threads: their snapshot
+   * refs are kept past the last few steps (plan D15).
+   */
+  function keptSteps(root: string): string[] {
+    return [...sessions.values()].flatMap((each) =>
+      each.root === root &&
+      each.target.kind === "step" &&
+      (threads.get(each.id)?.size ?? 0) > 0
+        ? [each.target.step]
+        : [],
+    );
+  }
+
   return {
     /** Agents' permission prompts, answered from the browser. */
     prompts,
+    keptSteps,
+    previewCommits: async (params: Record<string, unknown>) =>
+      commitsOf(preview(params), params),
+    previewDiff: async (params: Record<string, unknown>) =>
+      diffOf(preview(params), params),
+    previewState: async (params: Record<string, unknown>) =>
+      stateOf(preview(params)),
+    previewFile: async (params: Record<string, unknown>) =>
+      fileOf(preview(params), params),
     list,
     refreshGitlab,
     findGitlab,

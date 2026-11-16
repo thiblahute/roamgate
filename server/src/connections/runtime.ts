@@ -603,11 +603,14 @@ export function createLegacyConnectionRuntime(args: {
   });
   const lastStepBaselines =
     args.lastStepBaselines ??
-    createLastStepBaselineStore({
-      host: sshHost(),
-      runProcessWithCodeTimeout,
-      shQuote,
-    });
+    createLastStepBaselineStore(
+      {
+        host: sshHost(),
+        runProcessWithCodeTimeout,
+        shQuote,
+      },
+      { refs: true },
+    );
   const files = unixOnlyHandlers(
     remotePlatform,
     "Workspace file and Git access",

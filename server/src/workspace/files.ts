@@ -901,6 +901,22 @@ export function createFileHandlers({
         shQuote,
         runProcessWithCodeTimeout,
       }),
+    /** The workspace's last step in `root` as a review target (D15). */
+    readLastStep: async (
+      root: string,
+      workspaceId: string,
+    ): Promise<ReviewTarget | null> => {
+      const step = await lastStepBaselines?.completedStep?.(workspaceId, root);
+      if (!step?.step) return null;
+      return {
+        kind: "step",
+        step: step.step,
+        before: step.baseline,
+        after: step.current,
+        ...(step.at ? { at: step.at } : {}),
+        ...(step.skipped?.length ? { skipped: step.skipped } : {}),
+      };
+    },
     readDefaultBase: (root: string) =>
       readDefaultBase({
         root,

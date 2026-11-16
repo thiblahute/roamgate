@@ -3888,6 +3888,8 @@ export default function App() {
     path?: string;
     line?: number;
     scope?: "working" | "branch-main";
+    /** A review shown as Changes' scope (plan phase 6). */
+    review?: string;
     root?: string;
     at: number;
   } | null>(null);
@@ -4011,6 +4013,7 @@ export default function App() {
           }
           setChangesGoTo({
             ...(choice.scope ? { scope: choice.scope } : {}),
+            ...(choice.review ? { review: choice.review } : {}),
             ...(choice.root !== undefined ? { root: choice.root } : {}),
             at: Date.now(),
           });

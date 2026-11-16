@@ -57,6 +57,14 @@ export type ReviewAgentConnection = {
   sshHost?: string;
   readRoot: (path: string) => Promise<string>;
   readDefaultBase: (root: string) => Promise<string>;
+  /**
+   * The workspace's last step in the checkout, as a review target (plan
+   * D15); null when none is known.
+   */
+  readLastStep?: (
+    root: string,
+    workspaceId: string,
+  ) => Promise<ReviewTarget | null>;
 };
 
 export const REVIEW_CLIENT_INSTALLED_SCRIPT = `${REVIEW_CLIENT_SCRIPT}# roamgate-review ${REVIEW_CLIENT_CHECKSUM}\n`;
@@ -229,16 +237,30 @@ export function formOf(body: string): URLSearchParams {
 
 /** No target named: the branch against Automatic's base (plan D12). */
 function automaticTarget(form: URLSearchParams): boolean {
-  return !["mr", "worktree", "compare", "range"].some((flag) => form.get(flag));
+  return !["mr", "worktree", "last_step", "compare", "range"].some((flag) =>
+    form.get(flag),
+  );
 }
 
 export function parseTargetFlags(
   form: URLSearchParams,
   defaultBase: () => Promise<string>,
+  lastStep?: () => Promise<ReviewTarget | null>,
 ): Promise<ReviewTarget> | ReviewTarget {
   const mr = form.get("mr");
   if (mr) return { kind: "mr", url: mr };
   if (form.get("worktree")) return { kind: "worktree" };
+  if (form.get("last_step")) {
+    if (!lastStep)
+      throw new ReviewError("this connection does not keep last steps");
+    return lastStep().then((target) => {
+      if (!target)
+        throw new ReviewError(
+          "no last step known here yet: it ends when your turn does",
+        );
+      return target;
+    });
+  }
   const compare = form.get("compare");
   if (compare) {
     // Git refuses ".." in ref names: the two refs split there.
@@ -955,7 +977,13 @@ export function createReviewAgentServer(args: {
       }
       const target =
         rendered?.target ??
-        (await parseTargetFlags(form, () => connection.readDefaultBase(root)));
+        (await parseTargetFlags(
+          form,
+          () => connection.readDefaultBase(root),
+          connection.readLastStep
+            ? () => connection.readLastStep!(root, form.get("workspace") ?? "")
+            : undefined,
+        ));
       const workspaceId = form.get("workspace") || undefined;
       const opened = args.service.open({
         connectionId: connection.id,

@@ -60,14 +60,21 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     /** The toolbar's end (Review only) and the scope line, as given. */
     headEnd?: ReactNode;
     scopeControls?: ReactNode;
+    /** The review the scope is (plan phase 6), and the comment writer. */
+    reviewScope?: unknown;
+    onCreateAnnotation?: (input: Record<string, unknown>) => void;
   } = {};
   mock.module("./DiffContentView", () => ({
     DiffContentView: (props: {
       repo?: { root: string; own: boolean };
       headEnd?: ReactNode;
       scopeControls?: ReactNode;
+      reviewScope?: unknown;
+      onCreateAnnotation?: (input: Record<string, unknown>) => void;
     }) => {
       diffSeen.repo = props.repo;
+      diffSeen.reviewScope = props.reviewScope;
+      diffSeen.onCreateAnnotation = props.onCreateAnnotation;
       diffSeen.run = useContext(InspectorCommandsContext)?.run;
       diffSeen.headEnd = props.headEnd;
       diffSeen.scopeControls = props.scopeControls;
@@ -128,6 +135,13 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     /** The changed files Changes lists, and how many are untracked. */
     entries?: { path: string; kind: string }[];
     untracked?: number;
+    /** What Changes' panel shows: its scope, and its Last step. */
+    scopeMode?: string;
+    step?: Record<string, unknown>;
+    /** A review asked to show in Changes (the review toggle). */
+    reviewGoTo?: Props["reviewGoTo"];
+    /** The comments the host writes. */
+    created?: Record<string, unknown>[];
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -182,14 +196,19 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
                 ...(options.untracked !== undefined
                   ? { untracked: options.untracked }
                   : {}),
+                ...(options.scopeMode ? { scopeMode: options.scopeMode } : {}),
+                ...(options.step ? { step: options.step } : {}),
               } as unknown as Props["diffSelection"]
             }
+            {...(options.reviewGoTo ? { reviewGoTo: options.reviewGoTo } : {})}
             connectionClient={client}
             onFileSelectionChange={() => {}}
             onDiffSelectionChange={() => {}}
             onOpenDiffFile={() => {}}
             annotations={[]}
-            onCreateAnnotation={() => {}}
+            onCreateAnnotation={(input) =>
+              options.created?.push(input as Record<string, unknown>)
+            }
             onReanchorFileAnnotations={() => {}}
             onReanchorDiffAnnotations={() => {}}
             onEditAnnotation={() => {}}
@@ -434,6 +453,89 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(diffSeen.headEnd).toBeUndefined();
       } finally {
         await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("in Changes, each scope is its review by a lookup: the Last step's comments go to that step's review; a review asked for is the scope, named in the scope line", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      const step = {
+        step: "1763200000000-abcdef01",
+        before: "a".repeat(40),
+        after: "b".repeat(40),
+        at: "2026-11-15T10:02:00.000Z",
+      };
+      const created: Record<string, unknown>[] = [];
+      const lastStep = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "last-step" }],
+        scopeMode: "last-step",
+        step,
+        created,
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({ kind: "step", step });
+        diffSeen.onCreateAnnotation?.({
+          source: "diff",
+          path: "a.ts",
+          kind: "last-step",
+          side: "new",
+          line: 1,
+          hunk: "",
+          quote: "x",
+          comment: "Why?",
+        });
+        expect(created[0]?.target).toEqual({ kind: "step", ...step });
+      } finally {
+        await lastStep.unmount();
+      }
+      // A compare opened by name shows as the scope, named in the line.
+      const { rememberReviewSnapshot } = await import("../review");
+      rememberReviewSnapshot({
+        session: {
+          id: "r9",
+          connectionId: "local",
+          workspaceId: "w1",
+          root: "/repo",
+          title: "topic-old vs topic",
+          target: {
+            kind: "range",
+            base: "topic-old",
+            head: "topic",
+            compare: true,
+          },
+          gitlab: false,
+          summary: "",
+          agent: {},
+          createdAt: "2026-11-10T10:00:00Z",
+          updatedAt: "2026-11-10T10:00:00Z",
+        },
+        threads: [],
+      } as unknown as import("../../../shared/review").ReviewSnapshot);
+      const shown = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+        reviewGoTo: { review: "r9", at: Date.now() },
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "r9",
+        });
+        const bar = shown.host.querySelector<HTMLElement>(
+          "[data-stub=scope] .changes-scope-bar",
+        );
+        expect(bar?.getAttribute("aria-label")).toBe(
+          "repo \u00b7 topic-old vs topic",
+        );
+      } finally {
+        await shown.unmount();
         localStorage.removeItem(PREFS_KEY);
       }
     });

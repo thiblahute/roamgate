@@ -70,6 +70,14 @@ export function reviewScriptError(
       `This checkout no longer exists: ${root}`,
     );
   const unknown = /unknown revision: (\S+)/.exec(stderr);
+  // A last step whose snapshot trees git collected (plan D15).
+  if (unknown && target?.kind === "step") {
+    const end = unknown[1] === target.before ? "base" : "head";
+    return new ReviewGoneError(
+      end === "base" ? "base-gone" : "head-gone",
+      `This step's snapshot is gone from this checkout (${end === "base" ? "before" : "after"} it)`,
+    );
+  }
   if (unknown && target?.kind === "range") {
     const rev = unknown[1]!;
     const end = rev === target.base.replace(/["$`\\]/g, "") ? "base" : "head";
@@ -121,6 +129,15 @@ export function reviewPatchScript(
         ? `m="$b"`
         : `m=$(git merge-base "$b" "$h" 2>/dev/null) || m="$b"`,
       `{ printf '${SHAS_MARKER} %s %s\\n' "$m" "$h"; ${diff} "$m" "$h"${only}; } | ${cap}`,
+    );
+  } else if (target.kind === "step") {
+    // Tree against tree: what the agent's step changed (plan D15).
+    for (const tree of [target.before, target.after])
+      lines.push(
+        `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} >/dev/null || { echo "unknown revision: ${tree}" >&2; exit 3; }`,
+      );
+    lines.push(
+      `{ printf '${SHAS_MARKER} %s %s\\n' ${shQuote(target.before)} ${shQuote(target.after)}; ${diff} ${shQuote(target.before)} ${shQuote(target.after)}${only}; } | ${cap}`,
     );
   } else if (target.kind === "worktree") {
     lines.push(
@@ -228,6 +245,14 @@ export function reviewStateScript(
       `git rev-parse --verify --quiet ${shQuote(`${target.base}^{commit}`)} 2>/dev/null || git rev-parse --verify --quiet ${shQuote(`${target.base}^{tree}`)}`,
       `git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}`,
     );
+  else if (target.kind === "step")
+    // Its two snapshots never change: gone, the script says so.
+    lines.push(
+      ...[target.before, target.after].map(
+        (tree) =>
+          `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} || { echo "unknown revision: ${tree}" >&2; exit 3; }`,
+      ),
+    );
   else if (target.kind === "worktree")
     lines.push(
       "git rev-parse --verify --quiet HEAD",
@@ -254,7 +279,12 @@ export async function readReviewState(args: {
     : gitShellCommandArgv(script, undefined, GIT_ONLY);
   const result = await args.runProcessWithCodeTimeout(argv, 20_000);
   if (result.code !== 0)
-    throw reviewScriptError(result.stderr, "git failed", args.root);
+    throw reviewScriptError(
+      result.stderr,
+      "git failed",
+      args.root,
+      args.target,
+    );
   return result.stdout.trim().split(/\s+/).join(" ");
 }
 
