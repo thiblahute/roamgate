@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { PullRequestStatus } from "../../../shared/pullRequest";
-import { PullRequestCardView, PullRequestSelectors } from "./PullRequestCard";
+import { readFileSync } from "node:fs";
+import {
+  chipDetailsPlace,
+  PullRequestCardView,
+  PullRequestSelectors,
+} from "./PullRequestCard";
 
 const base: PullRequestStatus = {
   state: "select_remote",
@@ -197,4 +202,38 @@ test("compact (the review in Changes): nothing without a provider or a request, 
   });
   expect(ready).toContain("is-compact");
   expect(ready).toContain("https://github.com/team/project/pull/2");
+});
+
+test("compact, the chip's details open on the window under the chip, kept within it", () => {
+  // Under the summary, left-aligned with it.
+  expect(chipDetailsPlace({ bottom: 40, left: 300 }, 1280)).toEqual({
+    top: 44,
+    left: 300,
+    width: 576,
+  });
+  // Near the window's right edge: moved left to stay in.
+  expect(chipDetailsPlace({ bottom: 40, left: 1000 }, 1280)).toEqual({
+    top: 44,
+    left: 1280 - 576 - 8,
+    width: 576,
+  });
+  // A narrow window: as wide as it, 8 px from its edges.
+  expect(chipDetailsPlace({ bottom: 30, left: 100 }, 400)).toEqual({
+    top: 34,
+    left: 8,
+    width: 384,
+  });
+});
+
+test("compact, the chip's details are not drawn inside the row that clips", () => {
+  const css = readFileSync(
+    new URL("./ChangesScopeBar.css", import.meta.url),
+    "utf8",
+  );
+  // The old rule matched no element (the card is no <details>), so the
+  // details opened inside the row and were clipped.
+  expect(css).not.toContain(".pull-request-card[open]");
+  expect(css).toContain(
+    ".changes-request-chip .pull-request-card-disclosure[open] > :not(summary)",
+  );
 });

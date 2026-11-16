@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 /**
  * The inspector's frame around Changes (upstream WorkspaceInspectorHost):
@@ -156,6 +157,9 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     entry?: { path: string; kind: string };
     /** Calls of the host's onBack (the diff back to its tree). */
     backs?: string[];
+    /** The inspector expanded; its onExpandedChange and onClose calls. */
+    expanded?: boolean;
+    calls?: string[];
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -185,7 +189,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
               view,
               dock: "right",
               size: 480,
-              expanded: false,
+              expanded: options.expanded ?? false,
             }}
             visible
             workspace={"workspace" in options ? options.workspace : workspace}
@@ -234,8 +238,10 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
               void render();
             }}
             onDockChange={() => {}}
-            onExpandedChange={() => {}}
-            onClose={() => {}}
+            onExpandedChange={(expanded) =>
+              options.calls?.push(`expanded ${expanded}`)
+            }
+            onClose={() => options.calls?.push("close")}
             onBack={() => options.backs?.push("back")}
           />,
         ),
@@ -600,6 +606,109 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         await inspector.unmount();
         localStorage.removeItem(PREFS_KEY);
       }
+    });
+
+    test("expanded, the review's row ends with the inspector's header (shown in the app's Zen): the other views, Restore, Close and Zen's way out", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ reviewIn: "changes" }));
+      const calls: string[] = [];
+      const inspector = await mountInspector({
+        root: "/repo",
+        expanded: true,
+        calls,
+      });
+      try {
+        const end = () =>
+          inspector.host.querySelector<HTMLElement>(
+            "[data-stub=head-end] .diff-inspector-end",
+          );
+        expect(end()).not.toBeNull();
+        expect(
+          [...(end()?.querySelectorAll("button") ?? [])].map((button) =>
+            button.getAttribute("aria-label"),
+          ),
+        ).toEqual([
+          "Show Files",
+          "Show Commits",
+          "Show History",
+          "Restore Inspector dock",
+          "Close Workspace Inspector",
+        ]);
+        // No agent pane: no history to show.
+        expect(
+          end()?.querySelector<HTMLButtonElement>("[aria-label='Show History']")
+            ?.disabled,
+        ).toBe(true);
+        expect(end()?.querySelector(".zen-dock[data-zen-dock]")).not.toBeNull();
+        await act(async () =>
+          end()
+            ?.querySelector<HTMLButtonElement>(
+              "[aria-label='Restore Inspector dock']",
+            )
+            ?.click(),
+        );
+        await act(async () =>
+          end()
+            ?.querySelector<HTMLButtonElement>(
+              "[aria-label='Close Workspace Inspector']",
+            )
+            ?.click(),
+        );
+        expect(calls).toEqual(["expanded false", "close"]);
+        await act(async () =>
+          end()
+            ?.querySelector<HTMLButtonElement>("[aria-label='Show Commits']")
+            ?.click(),
+        );
+        expect(inspector.views).toEqual(["commits"]);
+        // Review only has its own end instead.
+        await act(async () => inspector.tab("Changes").click());
+        await act(async () => diffSeen.run?.("only"));
+        await act(async () => {});
+        expect(end()).toBeNull();
+        expect(
+          inspector.host.querySelector(
+            "[data-stub=head-end] .diff-review-only-end",
+          ),
+        ).not.toBeNull();
+      } finally {
+        await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+      // Docked, the inspector's own header is the way: no end.
+      const docked = await mountInspector({ root: "/repo" });
+      try {
+        localStorage.setItem(
+          PREFS_KEY,
+          JSON.stringify({ reviewIn: "changes" }),
+        );
+        expect(docked.host.querySelector(".diff-inspector-end")).toBeNull();
+      } finally {
+        await docked.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("in the app's Zen, an expanded inspector on Changes hides its header for the review's row, which shows its end; elsewhere that end stays hidden", () => {
+      const css = readFileSync(
+        new URL("./WorkspaceInspectorHost.css", import.meta.url),
+        "utf8",
+      );
+      const rule = (selector: string) =>
+        new RegExp(
+          `${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*")}\\s*\\{([^}]*)\\}`,
+        ).exec(css)?.[1] ?? "";
+      expect(rule(".diff-inspector-end")).toContain("display: none");
+      expect(
+        rule(
+          '.app.zen .workspace-inspector.is-expanded[data-view="changes"] .diff-inspector-end',
+        ),
+      ).toContain("display: flex");
+      expect(
+        rule(
+          '.app.zen .workspace-inspector.is-expanded[data-view="changes"]:has( .diff-inspector-end ) > .workspace-inspector-head',
+        ),
+      ).toContain("display: none");
     });
 
     test("in Changes, Review only hides the merge request card; Show all brings it back", async () => {
