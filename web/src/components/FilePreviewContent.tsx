@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
+  Download,
   FolderPlus,
   RefreshCw,
   X,
@@ -109,6 +110,8 @@ import {
   zenKeyTarget,
 } from "../useZenMode";
 import { copyTextFromUserGesture } from "../terminalClipboard";
+import { downloadFileFromUrl } from "../downloadFile";
+import { formatBytes } from "./agentSession";
 import { useChangedOnDisk } from "../useChangedOnDisk";
 import {
   useLiveConnectionClient,
@@ -2110,6 +2113,36 @@ export function FilePreviewContent({
     </>
   );
 
+  /** A file of the workspace's host, not a page nor a directory. */
+  const downloadable =
+    fileShown &&
+    !!preview?.workspace_id &&
+    !!previewPath &&
+    preview.type !== "directory" &&
+    !siteUrl;
+  const downloadName =
+    entry?.name || previewPath.split("/").pop() || "download";
+  const downloadLabel = `Download ${downloadName} (${formatBytes(preview?.size)})`;
+  /** The whole file, as the Files tree's Download sends it. */
+  const downloadFile = () => {
+    if (!preview?.workspace_id || !previewPath) return;
+    if (!connectionClient.isCurrent()) return;
+    const url = workspaceFileUrl(
+      connectionClient,
+      preview.workspace_id,
+      previewPath,
+    );
+    void downloadFileFromUrl({ url, filename: downloadName }).then((result) => {
+      if (result === "shared" || !connectionClient.isCurrent()) return;
+      store.notify({
+        kind: "info",
+        message: "Download started",
+        detail: previewPath,
+        autoDismissMs: 5000,
+      });
+    });
+  };
+
   const copyPreviewText = async () => {
     if (previewText === null) return;
     try {
@@ -2650,6 +2683,17 @@ export function FilePreviewContent({
                 Changes
               </button>
             ) : null}
+            {downloadable ? (
+              <button
+                type="button"
+                className="file-preview-refresh"
+                title={downloadLabel}
+                aria-label="Download file"
+                onClick={downloadFile}
+              >
+                <Download size={13} aria-hidden="true" />
+              </button>
+            ) : null}
             {entry && onClosePreview ? (
               <button
                 type="button"
@@ -2852,8 +2896,21 @@ export function FilePreviewContent({
             preview?.binary &&
             !preview.image_data_url &&
             !hasMediaPreview ? (
-              <div className="file-preview-state">
-                Binary file cannot be previewed.
+              <div className="file-preview-state is-binary">
+                <span>Binary file cannot be previewed.</span>
+                {downloadable ? (
+                  <button
+                    type="button"
+                    className="file-preview-download"
+                    onClick={downloadFile}
+                  >
+                    <Download size={14} aria-hidden="true" />
+                    <span>Download {downloadName}</span>
+                    <span className="file-preview-download-size">
+                      {formatBytes(preview.size)}
+                    </span>
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {!loading &&
@@ -2879,10 +2936,23 @@ export function FilePreviewContent({
             {!loading &&
             !error &&
             preview?.truncated &&
+            !preview.binary &&
             !hasMediaPreview &&
             !(hasHtmlPreview && renderRichPreview) ? (
               <div className="file-preview-banner">
                 Preview truncated at 512 KB.
+                {downloadable ? (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="file-preview-banner-link"
+                      onClick={downloadFile}
+                    >
+                      Download the whole file
+                    </button>
+                  </>
+                ) : null}
               </div>
             ) : null}
             {!loading && !error && lineBeyondPreview ? (

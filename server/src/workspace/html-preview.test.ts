@@ -8,7 +8,7 @@ import { standInHostHome } from "../test-environment";
 import { createFileHandlers } from "./files";
 import { readHtmlPreviewFile, HtmlPreviewError } from "./html-preview-files";
 import { HTML_PREVIEW_CSP, renderHtmlPreview } from "./html-preview";
-import { runBinaryProcessWithTimeout } from "./process";
+import { runBinaryProcessWithTimeout, spawnStreamingProcess } from "./process";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -55,6 +55,8 @@ for (const remote of [false, true]) {
         } as any,
         sshHost: () => (remote ? "example.invalid" : undefined),
         runProcessWithCodeTimeout: runShell,
+        streamProcess: (argv) =>
+          spawnStreamingProcess(["bash", "-c", argv.at(-1)!]),
         shQuote,
       });
 
