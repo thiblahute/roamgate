@@ -29,6 +29,8 @@ export type SurfaceFeature =
   | "editor"
   /** The window's width picks side by side (classic; D4 for Changes). */
   | "window-width"
+  /** The code checked every 5 s while shown; a change offers a reload. */
+  | "reload-offer"
   /** Context expansion: gap buttons, zo zO zR, x X (phase 5). */
   | "expand"
   /** Reviewed chunks and files: r, v, folds, the counts (phase 5). */
@@ -68,6 +70,9 @@ export type SurfaceEntry = {
 
 const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "commands",
+  "file-folds",
+  "open-files",
+  "reload-offer",
   "cursor",
   "search",
   "sides",

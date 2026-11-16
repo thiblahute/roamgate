@@ -109,15 +109,21 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       testWith(surface, "file-folds")(
         "a file of more than 600 changed lines starts folded; Show N lines shows it",
         async () => {
+          // Changes folds by its own rule: a diff of 1000 changed lines or
+          // more, shown by View diff (Pierre draws long files: no 600-line
+          // fold there).
+          const changes = surface.name === "changes";
+          const size = changes ? 1000 : 601;
+          const show = changes ? "View diff" : "Show 601 lines";
           const review = await mount({
-            files: [added("a.ts", 2), added("big.ts", 601)],
+            files: [added("a.ts", 2), added("big.ts", size)],
           });
           expect(review.fileFolded("big.ts")).toBe(true);
           expect(review.lines("big.ts")).toEqual([]);
-          expect(review.fileButtons("big.ts")).toEqual(["Show 601 lines"]);
-          await review.clickFileHeader("big.ts", "Show 601 lines");
+          expect(review.fileButtons("big.ts")).toEqual([show]);
+          await review.clickFileHeader("big.ts", show);
           expect(review.fileFolded("big.ts")).toBe(false);
-          expect(review.lines("big.ts").length).toBe(601);
+          expect(review.lines("big.ts").length).toBe(size);
           expect(review.fileButtons("big.ts")).toEqual([]);
           await review.unmount();
         },

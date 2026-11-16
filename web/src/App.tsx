@@ -4416,7 +4416,10 @@ export default function App() {
     [setActiveFilePreview],
   );
   const openDiffFileInExplorer = useCallback(
-    (entry: ActiveDiffSelection["entry"]) => {
+    (
+      entry: ActiveDiffSelection["entry"],
+      at?: { line?: number; rendered?: boolean },
+    ) => {
       const current = inspectorStateRef.current;
       if (!entry || !current) return;
       const workspace = resolveWorkspaceForScope(
@@ -4429,12 +4432,22 @@ export default function App() {
       void import("./mrReviewFlow").then(({ checkoutForBrowsing }) =>
         checkoutForBrowsing(workspace.workspace_id),
       );
-      openFileExplorerFile(
-        workspace.workspace_id,
-        inspectorFileEntry(entry.path),
-      );
+      // At the review's line, rendered, as the review pane's Open.
+      if (at?.line !== undefined || at?.rendered)
+        openInspector("files", workspace.workspace_id, {
+          entry: inspectorFileEntry(entry.path),
+          path: entry.path,
+          ...(at.line !== undefined ? { line: at.line } : {}),
+          ...(at.rendered ? { rendered: true } : {}),
+          focusInspector: true,
+        });
+      else
+        openFileExplorerFile(
+          workspace.workspace_id,
+          inspectorFileEntry(entry.path),
+        );
     },
-    [openFileExplorerFile],
+    [openFileExplorerFile, openInspector],
   );
   const browseFilesForPane = useCallback(
     (pane: Pane) => {
