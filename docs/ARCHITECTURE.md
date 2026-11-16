@@ -829,6 +829,36 @@ in `order`, `overrides` (keys and `dependsOn`) or `unsent` whose request is
 now listed is renamed to the request's key in one settings write.
 `bridge.mr_reviews.links` answers a branch key with its workspace.
 
+Upstreaming efforts (`mr-reviews/efforts.ts`, `effort-service.ts`):
+settings `mr_reviews.efforts` (`{id, group, name, clone: {connection_id,
+path}, source, target: {remote, branch}, feeders?, head?}`, at most 30;
+`source` and feeders exact refs), pushed as `changed: ["efforts"]`. Per
+effort, `<data>/mr-reviews/efforts/<id>/`: `ledger.json` (authored:
+dispositions by ledger key with the secondary key subject and author date,
+`aliases` of later patch ids, a journal of the last 100 bulk changes, a
+version), `derived.json` (commits with disposition and note, feeders,
+daily counts, the heads it came from) and `history.jsonl` (append-only,
+one line per version of a commit: key, sha, patch id, subject, author
+date, seen at, where). A refresh (at most every minute, after inbox
+refreshes and on viewers) runs `effortHeadsScript` (source, target and
+feeder heads; every 15 minutes `ls-remote` of the target and, when it
+moved, a fetch by URL into `refs/roamgate/upstream/<remote>/<branch>`),
+and only when a head moved `effortCommitsScript` (`git log` with files,
+`patch-id --stable`, `git cherry target source`, `git cherry source
+feeder`); requests' patch ids come from their heads fetched into
+`refs/roamgate/mr/<n>` when moved. Ledger keys are first-seen patch ids,
+kept across rewords (same patch id) and rebases (subject and author date).
+Authored not_for_upstream and superseded win (flagged upstream anyway);
+otherwise upstream, in review, in a part, then the authored planned or
+by-hand dispositions, else unsorted. RPCs `bridge.mr_reviews.effort.{set,
+preview, delete, get, refresh, history, leader}` and `ledger.{set, undo}`
+(bulk, at most 500, all or nothing); a ledger change is pushed as
+`changed: ["effort"]` with `effort: {id, journal}`. The inbox carries the
+cards as `efforts` (counts, not ready, overlaps by patch id with other
+efforts and branches headed upstream, D23). Tools: `effort_get`,
+`effort_set` (with `preview`), `ledger_list` (200 a page, `cluster`),
+`ledger_set`, `effort_overlaps`.
+
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and
 `mr_reviews.hidden` (`{key, marker}`, at most 300, the oldest forgotten

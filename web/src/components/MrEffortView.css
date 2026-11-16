@@ -1,0 +1,145 @@
+/* Upstreaming efforts: cards, the effort's view, its ledger. */
+.mr-effort-bar {
+  display: flex;
+  overflow: hidden;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--viewer-code-bg);
+}
+
+.mr-effort-bar > span {
+  height: 100%;
+}
+
+.mr-effort-bar .is-upstream,
+.mr-ledger-disposition.is-upstream {
+  background: var(--success, #3fb950);
+}
+.mr-effort-bar .is-in_review,
+.mr-ledger-disposition.is-in_review {
+  background: var(--accent);
+}
+.mr-effort-bar .is-in_part,
+.mr-ledger-disposition.is-in_part {
+  background: #8b7fd6;
+}
+.mr-effort-bar .is-planned,
+.mr-ledger-disposition.is-planned {
+  background: var(--warning, #d29922);
+}
+.mr-effort-bar .is-not_for_upstream,
+.mr-effort-bar .is-superseded,
+.mr-ledger-disposition.is-not_for_upstream,
+.mr-ledger-disposition.is-superseded {
+  background: var(--muted);
+}
+.mr-effort-bar .is-unsorted {
+  background: transparent;
+}
+
+.mr-effort-card {
+  position: relative;
+  display: flex;
+  gap: 4px;
+}
+
+.mr-effort-card > .mr-reviews-row {
+  flex: 1 1 auto;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.mr-effort-view {
+  display: grid;
+  gap: 8px;
+  outline: none;
+}
+
+.mr-effort-view .assistant-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr-ledger {
+  position: relative;
+  overflow: auto;
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.mr-ledger-row {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 7em minmax(10em, 1fr) 8em 8em 9em minmax(4em, 12em);
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--viewer-border);
+  cursor: default;
+}
+
+.mr-ledger-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr-ledger-row.is-cursor {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.mr-ledger-row.is-selected {
+  background: var(--accent-soft);
+}
+
+.mr-ledger-disposition {
+  justify-self: start;
+  max-width: 100%;
+  border-radius: 5px;
+  padding: 0 6px;
+  color: var(--bg, #000);
+}
+
+.mr-ledger-disposition.is-unsorted {
+  border: 1px solid var(--viewer-border);
+  color: var(--muted);
+}
+
+.mr-effort-burndown {
+  width: 100%;
+  max-width: 420px;
+  height: 80px;
+}
+
+.mr-effort-burndown polyline {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.mr-effort-dirs {
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.mr-effort-dirs th,
+.mr-effort-dirs td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--viewer-border);
+  text-align: left;
+}
+
+.is-mobile .mr-ledger-row {
+  grid-template-columns: 6em minmax(8em, 1fr) 7em;
+}
+
+.is-mobile .mr-ledger-author,
+.is-mobile .mr-ledger-dir,
+.is-mobile .mr-ledger-note {
+  display: none;
+}

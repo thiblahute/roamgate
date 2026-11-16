@@ -73,6 +73,12 @@ function follow() {
   if (following) return;
   following = true;
   bridge.onMrReviews((push) => {
+    // A ledger's change carries no new version: said to who follows it.
+    if (push.changed.includes("effort")) {
+      void loadMrInbox({ viewer: false }).catch(() => {});
+      for (const listener of changeListeners) listener(push);
+      return;
+    }
     if (latest && push.version <= (latest.orderVersion ?? 0)) return;
     if (latest)
       publish({ ...latest, order: push.order, orderVersion: push.version });

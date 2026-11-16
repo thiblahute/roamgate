@@ -6,7 +6,8 @@ import type {
   MrReviewsSettings,
   MrSection,
 } from "../../../shared/mrReviews";
-import { mrWhoseLabel } from "../../../shared/mrReviews";
+import { MR_DISPOSITIONS, mrWhoseLabel } from "../../../shared/mrReviews";
+import { clusterLedger, type DerivedCommit, filterLedger } from "./efforts";
 import {
   type WorkspaceTree,
   workspaceTreeGroupPaths,
@@ -164,7 +165,114 @@ export function boardFields(entry: MrInboxEntry): Record<string, unknown> {
   };
 }
 
+const effortParam = Type.String({
+  minLength: 1,
+  maxLength: 120,
+  description: "The effort: its name or id.",
+});
+
 export const boardToolSchemas = {
+  effort_get: Type.Object(
+    { effort: effortParam },
+    { additionalProperties: false },
+  ),
+  effort_set: Type.Object(
+    {
+      effort: Type.Optional(effortParam),
+      group: Type.Optional(
+        Type.String({
+          maxLength: 400,
+          description:
+            "To declare one: the group headed upstream (path, name or id).",
+        }),
+      ),
+      name: Type.Optional(Type.String({ maxLength: 80 })),
+      source: Type.Optional(
+        Type.String({
+          maxLength: 300,
+          description:
+            "The branch followed: a ref name, resolved once to one exact ref of the clone (refused when ambiguous).",
+        }),
+      ),
+      target: Type.Optional(
+        Type.String({ maxLength: 300, description: "remote/branch upstream." }),
+      ),
+      feeders: Type.Optional(
+        Type.Array(Type.String({ maxLength: 300 }), { maxItems: 20 }),
+      ),
+      clone: Type.Optional(
+        Type.String({ maxLength: 4096, description: "The clone's path." }),
+      ),
+      head: Type.Optional(
+        Type.String({
+          maxLength: 4096,
+          description: "The head workspace: its name or checkout path.",
+        }),
+      ),
+      preview: Type.Optional(
+        Type.Boolean({
+          description:
+            "Only say what it would hold and its overlaps; save nothing.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  ledger_list: Type.Object(
+    {
+      effort: effortParam,
+      filter: Type.Optional(
+        Type.String({
+          maxLength: 300,
+          description:
+            "Words (subject, sha) and disposition:, dir:, file:, author: tokens.",
+        }),
+      ),
+      disposition: Type.Optional(
+        Type.Union(MR_DISPOSITIONS.map((each) => Type.Literal(each))),
+      ),
+      cluster: Type.Optional(
+        Type.Boolean({
+          description:
+            "Also a first grouping of the unsorted commits (fixups with their commit, by directory and subject prefix), smallest first: material for planned requests.",
+        }),
+      ),
+      cursor: Type.Optional(Type.String({ maxLength: 10 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+  ledger_set: Type.Object(
+    {
+      effort: effortParam,
+      commits: Type.Array(Type.String({ minLength: 4, maxLength: 80 }), {
+        minItems: 1,
+        maxItems: 500,
+        description: "Shas (7 characters at least) or ledger keys.",
+      }),
+      disposition: Type.Union([
+        Type.Literal("not_for_upstream"),
+        Type.Literal("superseded"),
+        Type.Literal("planned"),
+        Type.Literal("upstream"),
+        Type.Literal("in_review"),
+        Type.Literal("unsorted"),
+      ]),
+      reason: Type.Optional(Type.String({ maxLength: 300 })),
+      pointer: Type.Optional(
+        Type.String({
+          maxLength: 300,
+          description:
+            "superseded: what replaces it; upstream / in_review by hand: the commit or request.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  effort_overlaps: Type.Object(
+    { effort: effortParam },
+    { additionalProperties: false },
+  ),
   upstream_group: Type.Object(
     {
       group: Type.String({
@@ -396,6 +504,16 @@ const OVERRIDE_WORDS: Record<string, string> = {
 export type BoardToolName = keyof typeof boardToolSchemas;
 
 export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
+  effort_get:
+    "An upstreaming effort: its declaration (source, target, feeders, head workspace), counts by disposition (upstream, in_review, in_part, planned, not_for_upstream, superseded, unsorted), feeders with commits not on the source yet, overlaps with other efforts and branches, and the last bulk changes.",
+  effort_set:
+    "Declare an upstreaming effort on a group headed upstream (group, source branch; target defaults to origin/main, the clone to the group's first workspace), or change one (effort). preview: true only says what it would hold and its overlaps. Declaring never starts a session. The user is told and can undo it.",
+  ledger_list:
+    "An effort's commits, oldest first, 200 a page (cursor), each with sha, subject, author, top directory, disposition and note; filter with words and disposition:, dir:, file:, author: tokens. cluster: true adds a first grouping of the unsorted commits for proposing planned requests.",
+  ledger_set:
+    "Set the disposition of up to 500 commits of an effort at once (not_for_upstream with a reason, superseded with a pointer, planned, upstream or in_review by hand, unsorted to clear), all or nothing. The user sees it with Undo.",
+  effort_overlaps:
+    "The other efforts and branches headed upstream holding commits of this effort (same, contains, contained, partial) and the proposed layout for each; nothing is applied.",
   upstream_group:
     "Mark a Workspaces-tree group as headed upstream (its workspaces, and those of the groups inside it, hold work meant to go upstream: their branches show in Reviews, lane Not proposed upstream yet, until their request opens), or unmark it. Only when the user asked.",
   upstream_workspace:
@@ -424,6 +542,8 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
 
 /** The tools that change the user's list. */
 export const BOARD_WRITING: BoardToolName[] = [
+  "effort_set",
+  "ledger_set",
   "upstream_group",
   "upstream_workspace",
   "upstream_unsent",
@@ -794,6 +914,147 @@ export function createBoardTools(
         summary: `${caller} restored ${forgeRefLabel(entry, true)}`,
       });
       return `Restored ${forgeRefLabel(entry)} to the view.`;
+    },
+
+    async effort_get(params: { effort: string }) {
+      const answer = (await panel("effort.get", { id: params.effort })) as {
+        effort: unknown;
+        summary: unknown;
+        feeders: unknown;
+        journal: unknown;
+      };
+      return JSON.stringify({
+        effort: answer.effort,
+        summary: answer.summary,
+        feeders: answer.feeders,
+        journal: answer.journal,
+      });
+    },
+
+    async effort_set(params: {
+      effort?: string;
+      group?: string;
+      name?: string;
+      source?: string;
+      target?: string;
+      feeders?: string[];
+      clone?: string;
+      head?: string;
+      preview?: boolean;
+    }) {
+      let group: string | undefined;
+      if (params.group) {
+        const tree = (await deps.tree?.()) ?? null;
+        const wanted = params.group.trim().toLowerCase();
+        const found = tree
+          ? workspaceTreeGroupPaths(tree).filter(
+              (each) =>
+                each.kind === "group" &&
+                (each.node === params.group ||
+                  each.names.join("/").toLowerCase() === wanted ||
+                  each.names[each.names.length - 1]!.toLowerCase() === wanted),
+            )
+          : [];
+        if (found.length !== 1)
+          throw new AssistantUserError(
+            found.length
+              ? `"${params.group}" fits several groups.`
+              : `No group "${params.group}".`,
+          );
+        group = found[0]!.node;
+      }
+      if (!params.effort && !group)
+        throw new AssistantUserError("Give effort (to change one) or group.");
+      const answer = await panel(
+        params.preview ? "effort.preview" : "effort.set",
+        {
+          ...(params.effort ? { id: params.effort } : {}),
+          ...(group ? { group } : {}),
+          ...(params.name ? { name: params.name } : {}),
+          ...(params.source ? { source: params.source } : {}),
+          ...(params.target ? { target: params.target } : {}),
+          ...(params.feeders ? { feeders: params.feeders } : {}),
+          ...(params.clone ? { clone: params.clone } : {}),
+          ...(params.head ? { head: params.head } : {}),
+          by: "agent",
+          summary:
+            `${caller} ${params.effort ? "changed" : "declared"} the effort ${params.name ?? params.effort ?? params.source ?? ""}`.trim(),
+        },
+      );
+      return JSON.stringify(answer);
+    },
+
+    async ledger_list(params: {
+      effort: string;
+      filter?: string;
+      disposition?: string;
+      cluster?: boolean;
+      cursor?: string;
+      limit?: number;
+    }) {
+      const answer = (await panel("effort.get", { id: params.effort })) as {
+        commits: DerivedCommit[];
+        summary: unknown;
+      };
+      const found = filterLedger(answer.commits, {
+        ...(params.filter ? { text: params.filter } : {}),
+        ...(params.disposition ? { disposition: params.disposition } : {}),
+      });
+      const skip = Math.max(0, Number.parseInt(params.cursor ?? "0", 10) || 0);
+      const limit = Math.min(200, params.limit ?? 200);
+      const page = found.slice(skip, skip + limit);
+      return `${UNTRUSTED}\n${JSON.stringify({
+        summary: answer.summary,
+        total: found.length,
+        commits: page.map((commit) => ({
+          sha: commit.sha.slice(0, 12),
+          key: commit.key,
+          subject: commit.subject,
+          author: commit.author,
+          dir: commit.dir,
+          disposition: commit.disposition,
+          ...(commit.note ? { note: commit.note } : {}),
+          ...(commit.upstreamAnyway ? { upstream_anyway: true } : {}),
+        })),
+        ...(skip + limit < found.length
+          ? { next_cursor: String(skip + limit) }
+          : {}),
+        ...(params.cluster
+          ? {
+              clusters: clusterLedger(
+                answer.commits.filter(
+                  (commit) => commit.disposition === "unsorted",
+                ),
+              ),
+            }
+          : {}),
+      })}`;
+    },
+
+    async ledger_set(params: {
+      effort: string;
+      commits: string[];
+      disposition: string;
+      reason?: string;
+      pointer?: string;
+    }) {
+      const done = await panel("ledger.set", {
+        id: params.effort,
+        commits: params.commits,
+        disposition: params.disposition,
+        ...(params.reason ? { reason: params.reason } : {}),
+        ...(params.pointer ? { pointer: params.pointer } : {}),
+        by: "agent",
+        summary: `${caller} marked ${params.commits.length} commit${params.commits.length === 1 ? "" : "s"} ${params.disposition.replace(/_/g, " ")}`,
+      });
+      return JSON.stringify(done);
+    },
+
+    async effort_overlaps(params: { effort: string }) {
+      const answer = (await panel("effort.get", { id: params.effort })) as {
+        summary?: { overlaps?: unknown };
+      };
+      return JSON.stringify({ overlaps: answer.summary?.overlaps ?? [] });
     },
 
     async upstream_group(params: { group: string; headed: boolean }) {

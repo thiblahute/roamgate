@@ -1072,6 +1072,31 @@ is not pushed. Enter and `w` go to its workspace. Branches are read from
 the checkouts, at most once a minute; a request's head is fetched into the
 clone (`refs/roamgate/mr/N`, never your own branches) only when it moved.
 
+**Upstreaming efforts** follow a large branch commit by commit until all
+of it is upstream. Declare one on a group headed upstream (its menu,
+**Declare an upstreaming effort…**, or `:declare` in Reviews): the source
+branch (resolved once to one exact ref of the clone, refused when
+ambiguous), its target (`origin/main` unless said), feeders (branches
+landing into it) and a name; **Preview** first shows what it holds and the
+other efforts or branches holding the same commits, with the proposed
+layout (one effort and a feeder, stacked efforts, or shared commits put in
+one part only). Its card at the top of Mine shows a bar by disposition and
+"N of M upstream"; Enter or `i` opens it maximized, with **Progress**
+(counts, a burndown, a breakdown by directory, overlaps), **Ledger** (every
+commit of `target..source`: `j`/`k`, `x` and `V` select, `/` filters with
+words and `disposition:`, `dir:`, `file:`, `author:`, `:mark not-upstream
+REASON`, `:supersede REF`, `:plan NAME`, `:unsort`, `u` undoes the last
+bulk change, Enter shows the commit's versions across rewords and rebases)
+and **Feeders** (their commits not on the source yet, their drift); `P`,
+`L`, `F` switch tabs. A commit is upstream when its patch is in the target
+(fetched into `refs/roamgate/upstream/...`, never your own remote-tracking
+refs, only when it moved), in review when one of your open requests holds
+it, in a part when a branch of the group holds it; what you mark by hand
+(not for upstream, superseded, planned) follows the commit across rewording
+and rebases. **Leader** (`c`) goes to the Claude session of its head
+workspace, which leads the effort through the board's tools; with none, it
+offers to start one there, and nothing starts it but you.
+
 **Set it by hand** when you know better: `e` (or **Set by hand** in its
 details) edits whose move it is (yours, the reviewer's, external, or a
 person's), the next step, the requests it waits for, labels, a link (a URL,
