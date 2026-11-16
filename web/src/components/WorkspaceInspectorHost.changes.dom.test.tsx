@@ -572,7 +572,11 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           [...(end?.querySelectorAll("button") ?? [])].map(
             (button) => button.textContent,
           ),
-        ).toEqual(["Show all"]);
+        ).toEqual(["Show all", "×"]);
+        // The review's way out too (the inspector's header is hidden).
+        expect(
+          end?.querySelector('[aria-label="Close the review"]'),
+        ).not.toBeNull();
         // Zen's way out docks there (in app Zen it draws its Exit Zen).
         expect(end?.querySelector(".zen-dock[data-zen-dock]")).not.toBeNull();
         // No floating hint over the review: its header has the way out.

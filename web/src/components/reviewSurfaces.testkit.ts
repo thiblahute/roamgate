@@ -11,7 +11,7 @@ import type { ReviewSurface, SurfaceOptions } from "./reviewSurface.testkit";
 
 /** What a test needs of a surface, beyond the diff it draws. */
 export type SurfaceFeature =
-  /** Everything the classic pane does (the files not yet sorted). */
+  /** Everything the classic pane does: every file is now sorted by feature. */
   | "review"
   /** The review's `:` commands and its shortcut list (`?`, `:help`). */
   | "commands"
@@ -21,6 +21,12 @@ export type SurfaceFeature =
    * on a reconnect or Retry.
    */
   | "place"
+  /**
+   * Touch screens, narrow windows and the phone: unified there, the
+   * layout's tree and way out, Review only's touch targets, the editor's
+   * Esc button, the phone's Back.
+   */
+  | "phone"
   /** The Vim cursor, its motions, the screen, Visual lines (phase 3). */
   | "cursor"
   /** `/ * # n N` in the diff and its file paths (phase 3). */
@@ -75,10 +81,13 @@ export type SurfaceEntry = {
 };
 
 const CHANGES_FEATURES = new Set<SurfaceFeature>([
+  "review",
   "commands",
   "file-folds",
   "open-files",
   "place",
+  "phone",
+  "window-width",
   "reload-offer",
   "cursor",
   "search",
@@ -123,7 +132,7 @@ export function reviewSurfacesWith(
   );
 }
 
-/** The surfaces with the whole review: the classic pane, today. */
+/** The surfaces with the whole review: the classic pane and Changes. */
 export const REVIEW_SURFACES = reviewSurfacesWith("review");
 
 /**

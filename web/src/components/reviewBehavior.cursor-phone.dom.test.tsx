@@ -26,7 +26,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -40,7 +40,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     );
   const changed = file("a.ts", hunk(1, 1, ["-old", "+new", " same"]));
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("phone"))
     describe(name, () => {
       test("a phone-wide window opens unified; nothing forces it, a remembered side by side stays", async () => {
         const phone = await mount({ files: [changed], width: 390 });
@@ -58,16 +58,19 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       });
 
       test("the file list is hidden in a window 800 px wide or less", async () => {
+        // Changes' tree is a drill-down in a compact inspector: below 640 px.
+        const [narrowWidth, wideWidth] =
+          name === "changes" ? [639, 640] : [800, 801];
         const narrow = await mount({
           files: [added("a.ts", 2)],
-          width: 800,
+          width: narrowWidth,
           styles: true,
         });
         expect(narrow.filesShown()).toBe(false);
         await narrow.unmount();
         const wide = await mount({
           files: [added("a.ts", 2)],
-          width: 801,
+          width: wideWidth,
           styles: true,
         });
         expect(wide.filesShown()).toBe(true);
@@ -75,19 +78,26 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       });
 
       test("Close stays in reach while the head scrolls, in a window 1100 px wide or less", async () => {
+        // Changes' head never scrolls with the lines: its way out of the
+        // review (Review only's, the inspector's header hidden) is in reach
+        // at every width.
+        const changes = name === "changes";
+        const close = changes ? "Close the review" : "Close";
         const narrow = await mount({
           files: [added("a.ts", 2)],
           width: 1100,
           styles: true,
         });
-        expect(narrow.control("Close")?.sticky).toBe(true);
+        if (changes) await narrow.press("o");
+        expect(narrow.control(close)?.sticky).toBe(true);
         await narrow.unmount();
         const wide = await mount({
           files: [added("a.ts", 2)],
           width: 1101,
           styles: true,
         });
-        expect(wide.control("Close")?.sticky).toBe(false);
+        if (changes) await wide.press("o");
+        expect(wide.control(close)?.sticky).toBe(changes);
         await wide.unmount();
       });
 
@@ -97,6 +107,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           coarse: true,
           styles: true,
         });
+        // Changes draws them in Review only alone.
+        if (name === "changes") await touch.press("o");
         expect(touch.control("Show all")?.minHeight).toBe(40);
         expect(touch.control("Close the review")?.minHeight).toBe(40);
         await touch.unmount();
@@ -104,7 +116,11 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           files: [added("a.ts", 2)],
           styles: true,
         });
-        expect(mouse.control("Show all")?.minHeight).toBe(28);
+        if (name === "changes") await mouse.press("o");
+        // Changes' review head is slim: its controls are 22 px with a mouse.
+        expect(mouse.control("Show all")?.minHeight).toBe(
+          name === "changes" ? 22 : 28,
+        );
         await mouse.unmount();
       });
 

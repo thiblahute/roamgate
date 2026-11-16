@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import type { InspectorCommand } from "../inspectorCommands";
+import { ZenDock } from "./ZenIsland";
 
 /*
  * Changes' frame in the inspector: its tree beside the diff (`f`, `:files`,
@@ -78,4 +79,42 @@ export function changesFrameCommands({
       run: toggleOnly,
     },
   ];
+}
+
+/**
+ * Review only's end of the diff's head: Show all, the way out of the
+ * review (the inspector's header, with its Close, is hidden), and Zen's.
+ */
+export function ReviewOnlyEnd({
+  onShowAll,
+  onCloseReview,
+}: {
+  onShowAll: () => void;
+  /** Absent: no review to close (Changes not the review). */
+  onCloseReview?: () => void;
+}) {
+  return (
+    <div className="diff-review-only-end">
+      <button
+        type="button"
+        className="diff-review-only-exit"
+        title="Show the inspector again (:only or Esc)"
+        onClick={onShowAll}
+      >
+        Show all
+      </button>
+      {onCloseReview ? (
+        <button
+          type="button"
+          className="diff-review-only-exit"
+          aria-label="Close the review"
+          title="Close the review; it is kept (:q)"
+          onClick={onCloseReview}
+        >
+          ×
+        </button>
+      ) : null}
+      <ZenDock iconSize={14} />
+    </div>
+  );
 }

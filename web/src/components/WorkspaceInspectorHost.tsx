@@ -97,7 +97,11 @@ import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { CommandLine } from "./CommandLine";
 import { ShortcutList } from "./ShortcutList";
-import { changesFrameCommands, useChangesTreeHidden } from "./changesFrame";
+import {
+  changesFrameCommands,
+  ReviewOnlyEnd,
+  useChangesTreeHidden,
+} from "./changesFrame";
 import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
 import {
@@ -1749,17 +1753,14 @@ export function WorkspaceInspectorHost({
                               ...(changesOnly
                                 ? {
                                     headEnd: (
-                                      <div className="diff-review-only-end">
-                                        <button
-                                          type="button"
-                                          className="diff-review-only-exit"
-                                          title="Show the inspector again (:only or Esc)"
-                                          onClick={toggleChangesOnly}
-                                        >
-                                          Show all
-                                        </button>
-                                        <ZenDock iconSize={14} />
-                                      </div>
+                                      <ReviewOnlyEnd
+                                        onShowAll={toggleChangesOnly}
+                                        onCloseReview={() =>
+                                          onCloseReview
+                                            ? onCloseReview("command")
+                                            : onClose()
+                                        }
+                                      />
                                     ),
                                   }
                                 : {}),

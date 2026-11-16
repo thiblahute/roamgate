@@ -644,6 +644,18 @@
   font-size: 11px;
 }
 
+/* On a touch screen, Review only's way back and way out stay touch targets. */
+@media (pointer: coarse) {
+  .diff-content-view[data-review-cursor]:not(.is-mobile)
+    .diff-content-head
+    .diff-review-only-exit {
+    height: auto;
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 14px;
+  }
+}
+
 .diff-content-view[data-review-cursor]:not(.is-mobile)
   .diff-content-title
   strong {

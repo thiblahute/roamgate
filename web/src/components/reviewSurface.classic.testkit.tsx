@@ -1565,19 +1565,24 @@ const firstWindow = window;
  * screen, the phone's layout and history, the stylesheet. `restore` undoes
  * it.
  */
-async function setUpScreen(options: SurfaceOptions) {
+export async function setUpScreen(
+  options: SurfaceOptions,
+  /** The surface's stylesheets (with `styles`), by their file here. */
+  stylesheets: readonly string[] = ["./ReviewOverlay.css"],
+) {
   const restores: (() => void)[] = [];
   const layout: { screenRows?: () => Element[] } = {};
   let host: HTMLElement | null = null;
 
-  if (options.styles) {
-    const style = document.createElement("style");
-    style.textContent = await Bun.file(
-      new URL("./ReviewOverlay.css", import.meta.url).pathname,
-    ).text();
-    document.head.append(style);
-    restores.push(() => style.remove());
-  }
+  if (options.styles)
+    for (const sheet of stylesheets) {
+      const style = document.createElement("style");
+      style.textContent = await Bun.file(
+        new URL(sheet, import.meta.url).pathname,
+      ).text();
+      document.head.append(style);
+      restores.push(() => style.remove());
+    }
 
   if (options.coarse) {
     const navigatorObject = window.navigator as unknown as object;
