@@ -31,6 +31,7 @@ import {
   REVIEW_USER,
   type ReviewComment,
   type ReviewThread,
+  type ReviewThreadKind,
 } from "../../../shared/review";
 import { reviewCall, useReviewState } from "../review";
 import {
@@ -39,8 +40,24 @@ import {
   sharedThreadDelivery,
   type ThreadDelivery,
 } from "../reviewDelivery";
+import { keepReviewDraft } from "../reviewDrafts";
 import { newClientId } from "../reviewPending";
-import { editorKey } from "../reviewSave";
+import {
+  authorLabel,
+  type FileExpansion,
+  fileLines,
+  type GapState,
+} from "../reviewModel";
+import {
+  type ChangesGap,
+  expandPatch,
+  parsePatch,
+  patchMatches,
+  revealLine,
+  withGaps,
+} from "../changesExpand";
+import { editorKey, editorPlaceholder } from "../reviewSave";
+import { feedbackNote, HELD_FOR_SEND } from "../workspaceFeedback";
 import { useReviewSessionCall } from "../reviewSessionCall";
 import { usePendingWrites } from "../usePendingWrites";
 import { useReviewStatusLine } from "../reviewStatusLine";
@@ -102,6 +119,7 @@ import {
 import { conversationOrder, ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
 import {
   changesDraftSession,
+  type ComposerDelivery,
   ReviewDiffComposer,
   suggestionBlock,
 } from "./ReviewDiffComposer";
@@ -115,7 +133,7 @@ import {
 } from "../changesThreads";
 import { repoFeedback, type ShownRepo } from "../changesRepo";
 import { latestComment } from "../reviewNavigation";
-import { useChangesAgent } from "../changesReview";
+import { useChangesAgent, worktreeReview } from "../changesReview";
 import type { ReviewProgress } from "./DiffViewerPanel";
 import {
   CHANGES_REVIEW_VIEW,
@@ -135,6 +153,7 @@ import {
 } from "../reviewToggle";
 import type { GitFileAction } from "../gitActions";
 import { ChangesAgentBar } from "./ChangesAgentBar";
+import { NoteBody } from "./ReviewNoteBody";
 import {
   stepNotice,
   stepUnresolved,
@@ -145,6 +164,7 @@ import { useInspectorCommands } from "../useInspectorCommands";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
 import {
+  type CommentMode,
   type DiffCursor,
   DIFF_CURSOR_KEYS,
   DIFF_REVIEW_KEYS,
@@ -472,7 +492,12 @@ type DiffDrawing = {
   composerKey: string;
   hideComments: boolean;
   openOnly: boolean;
+  /** A section's hidden gap: its count and buttons (GAP_ID). */
+  gap: (key: string, index: number) => ReactNode;
 };
+
+/** The ids of the annotations drawing a gap's controls: its index after. */
+const GAP_ID = "\u0000gap:";
 
 const DiffDrawingContext = createContext<DiffDrawing | null>(null);
 
@@ -504,6 +529,40 @@ export function diffViewThreads(
   });
 }
 
+/**
+ * The comments on a file and no line of it (the review in Changes), at
+ * the file's head above its lines, as the review pane draws them.
+ */
+function DiffFileThreads({ ids }: { ids: string }) {
+  const threads = useContext(DiffThreadsContext);
+  const drawing = useContext(DiffDrawingContext);
+  if (!threads || !ids || drawing?.hideComments) return null;
+  const shown = ids
+    .split("\u0000")
+    .map((id) => threads.byId.get(id))
+    .filter(
+      (thread): thread is ReviewThread =>
+        !!thread && !(drawing?.openOnly && thread.resolved),
+    );
+  if (!shown.length) return null;
+  return (
+    <div className="diff-file-threads">
+      {shown.map((thread) => (
+        <div key={thread.id} className="chat-review diff-review-thread">
+          <FileThread
+            thread={thread}
+            api={threads.api}
+            view={threads.view}
+            undelivered={threads.undelivered}
+            nested={threads.nested}
+            {...(threads.review ? { review: threads.review } : {})}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** A comment under its line: its thread, or a note not saved yet. */
 function DiffAnnotation({
   annotation,
@@ -516,6 +575,15 @@ function DiffAnnotation({
   const drawing = useContext(DiffDrawingContext);
   const pending = usePendingFeedback();
   if (annotation.id === COMPOSER_ID) return <>{drawing?.composer}</>;
+  if (annotation.id.startsWith(GAP_ID))
+    return (
+      <>
+        {drawing?.gap(
+          `${annotation.kind}:${annotation.path}`,
+          Number(annotation.id.slice(GAP_ID.length)),
+        )}
+      </>
+    );
   const thread = threads?.byId.get(annotation.id);
   if (
     drawing &&
@@ -633,6 +701,8 @@ type DiffFileSectionProps = {
    */
   reviewedFolded?: boolean;
   onShowReviewed?: (path: string) => void;
+  /** The ids of the threads on the file and no line, drawn at its head. */
+  fileThreadIds?: string;
 };
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -660,6 +730,7 @@ const DiffFileSection = memo(function DiffFileSection({
   threadMarks,
   reviewedFolded = false,
   onShowReviewed,
+  fileThreadIds,
 }: DiffFileSectionProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const measuredHeightRef = useRef<number | null>(null);
@@ -857,6 +928,9 @@ const DiffFileSection = memo(function DiffFileSection({
           </button>
         </header>
       )}
+      {fileThreadIds && !reviewedFolded ? (
+        <DiffFileThreads ids={fileThreadIds} />
+      ) : null}
       {section.collapsed && section.autoCollapse ? (
         <div className="diff-content-state diff-skipped-state">
           <span>{section.autoCollapse.label}; diff skipped.</span>
@@ -994,7 +1068,8 @@ function areDiffFileSectionPropsEqual(
     previous.chunkSpans === next.chunkSpans &&
     previous.threadMarks === next.threadMarks &&
     previous.reviewedFolded === next.reviewedFolded &&
-    previous.onShowReviewed === next.onShowReviewed
+    previous.onShowReviewed === next.onShowReviewed &&
+    previous.fileThreadIds === next.fileThreadIds
   );
 }
 
@@ -1088,7 +1163,15 @@ export function DiffContentView({
   onOpenFile?: (entry: GitDiffEntry) => void;
   openFileLabel?: string;
   loadImagePreview?: (path: string) => Promise<FilePreview>;
-  onCreateAnnotation?: (annotation: NewReviewAnnotation) => void;
+  /**
+   * A comment written. On "in Changes", `kind` is what the review's editor
+   * wrote: a review comment, or a question for the agent (C, `:ask`; held
+   * for Send when the review has no agent).
+   */
+  onCreateAnnotation?: (
+    annotation: NewReviewAnnotation,
+    written?: { kind?: ReviewThreadKind },
+  ) => void;
   onReanchorAnnotations?: (
     path: string,
     kind: GitDiffKind,
@@ -1118,18 +1201,40 @@ export function DiffContentView({
   // gets its threads.
   const repoRoot = repo?.root;
   const repoOwn = repo?.own;
+  // On "in Changes", a question held for Send (no agent to ask) is drawn
+  // on its line too, saying so, as the review pane draws it.
+  const heldRoot =
+    reviewCursor && !embedded
+      ? (file?.root ?? Object.values(files)[0]?.root)
+      : null;
+  const held = useMemo(() => {
+    const own = worktreeReview(
+      reviewSessions.values(),
+      connectionClient.connectionId,
+      heldRoot,
+    );
+    const given = new Set((givenThreads ?? []).map((thread) => thread.id));
+    return (own?.threads ?? []).filter(
+      (thread) =>
+        thread.held !== undefined &&
+        thread.anchor.feedback !== undefined &&
+        !given.has(thread.id),
+    );
+  }, [connectionClient.connectionId, givenThreads, heldRoot, reviewSessions]);
   const scoped = useMemo(
     () =>
       repoFeedback(
-        givenAnnotations,
-        givenThreads ?? [],
+        held.length
+          ? [...givenAnnotations, ...held.map(feedbackNote)]
+          : givenAnnotations,
+        held.length ? [...(givenThreads ?? []), ...held] : (givenThreads ?? []),
         (sessionId) => reviewSessions.get(sessionId)?.session.root,
         repoRoot === undefined ? undefined : { root: repoRoot, own: !!repoOwn },
       ),
-    [givenAnnotations, givenThreads, repoOwn, repoRoot, reviewSessions],
+    [givenAnnotations, givenThreads, held, repoOwn, repoRoot, reviewSessions],
   );
   const annotations = scoped.annotations;
-  const threads = givenThreads ? scoped.threads : undefined;
+  const threads = givenThreads || held.length ? scoped.threads : undefined;
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectFileRef = useRef(onSelectFile);
   const openFileRef = useRef(onOpenFile);
@@ -1277,6 +1382,13 @@ export function DiffContentView({
   const [hideComments, setHideComments] = useState(false);
   /** A suggestion asked for with `s`, the comment box's first words. */
   const [composerSeed, setComposerSeed] = useState<string | undefined>();
+  /**
+   * What the comment box writes: a review comment or a question for the
+   * agent; null: as the review the first comment opens says.
+   */
+  const [composerKind, setComposerKind] = useState<ReviewThreadKind | null>(
+    null,
+  );
   const [overallOpen, setOverallOpen] = useState(false);
   const changesAgent = useChangesAgent(
     connectionClient.connectionId,
@@ -1347,6 +1459,26 @@ export function DiffContentView({
   /** The thread dd or Delete deleted last: what u brings back. */
   const lastDeleted = useRef<ReviewThread | null>(null);
   const ownAgent = ownSnapshot ? reviewAgent(ownSnapshot, []) : null;
+  /** What a new comment is, as the review pane writes it. */
+  const commentKind: ReviewThreadKind = ownAgent?.commentKind ?? "draft";
+  /** How the review's comments go out: the editors' save policy. */
+  const ownDelivery: ComposerDelivery = {
+    gitlab: !!ownSnapshot?.session.gitlab,
+    talk: ownAgent?.talk ?? false,
+    agentNamed: !!ownSnapshot?.session.agent.name,
+    holdForSend: ownAgent?.holdForSend ?? false,
+  };
+  /** An editor's placeholder, as the review pane's says it. */
+  const placeholderOf = (editor: {
+    kind: ReviewThreadKind;
+    replyTo?: string;
+    commentId?: string;
+    overall?: boolean;
+  }) =>
+    editorPlaceholder(editor, {
+      ...ownDelivery,
+      agentName: ownAgent?.agentName ?? "Agent",
+    });
   /**
    * How a thread's comments go to its agent: the checkout's review's way,
    * or, for a thread of another review (a rendered file's), that review's.
@@ -1423,11 +1555,22 @@ export function DiffContentView({
       {...(comment
         ? { commentId: comment.id, initial: comment.body }
         : { replyTo: thread.id })}
-      placeholder={comment ? "Your comment..." : "Reply..."}
+      placeholder={placeholderOf(
+        comment
+          ? { kind: thread.kind, commentId: comment.id }
+          : { kind: "discussion", replyTo: thread.id },
+      )}
+      kind={comment ? thread.kind : "discussion"}
+      delivery={ownDelivery}
       draftSession={changesDraftSession(resourceKey)}
-      onSave={(text) => {
+      onSave={(text, plan) => {
         const api = threadWrites(connectionClient.connectionId);
-        if (comment) {
+        if (comment && plan.kind === "write" && plan.action === "delete") {
+          // Emptied: the comment goes, as the review pane's.
+          threadView.setEditing(null);
+          if (thread.comments.length > 1) api.removeComment(thread, comment);
+          else deleteThread(thread);
+        } else if (comment) {
           threadView.setEditing(null);
           void api
             .edit(thread, comment, text)
@@ -1493,8 +1636,50 @@ export function DiffContentView({
   ) =>
     pendingWrites.pendingById.get(comment.id) ??
     (index === 0 ? pendingWrites.pendingById.get(thread.id) : undefined);
+  /** New-side lines of each file shown, for what suggestions replace. */
+  const newLinesOf = (path: string) => {
+    const lines = new Map<number, string>();
+    for (const row of cursorHandle.current.model.rows)
+      if (row.path === path && row.new !== null) lines.set(row.new, row.text);
+    return lines;
+  };
   const reviewLook: ReviewThreadLook | undefined = reviewEditor
     ? {
+        newLines: newLinesOf,
+        partEditor: (thread, part, done) => (
+          <ReviewDiffComposer
+            key={`part:${part.comment}:${part.quote}`}
+            anchor={{
+              path: thread.anchor.path ?? "",
+              line: thread.anchor.line ?? 0,
+              side: thread.anchor.side ?? "new",
+              text: thread.anchor.text ?? "",
+              message: part,
+            }}
+            suggestable={null}
+            kind="discussion"
+            delivery={ownDelivery}
+            placeholder={placeholderOf({ kind: "discussion" })}
+            draftSession={changesDraftSession(resourceKey)}
+            onSave={(text) => {
+              done();
+              void threadWrites(connectionClient.connectionId)
+                .addPart(thread, part, text, newClientId())
+                .catch((error) =>
+                  setReviewStatus(
+                    `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+                  ),
+                );
+              focusDiffAfterEditor();
+            }}
+            onClose={() => {
+              done();
+              focusDiffAfterEditor();
+            }}
+            {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+            notify={say}
+          />
+        ),
         messageClass: (thread, comment, index) =>
           pendingOf(thread, comment, index) ? " is-pending" : "",
         messageEditor: (thread, comment) =>
@@ -1605,12 +1790,53 @@ export function DiffContentView({
     [threadView],
   );
   const changedFileCount = entries.length || visibleEntries.length;
+  // Context revealed around the hunks (the review in Changes): Roamgate's
+  // expansion, written into the patch Pierre draws (changesExpand.ts).
+  const [expansions, setExpansions] = useState<
+    ReadonlyMap<string, { source: string; expansion: FileExpansion }>
+  >(() => new Map());
+  const gapRowRef = useRef<(key: string, index: number) => ReactNode>(
+    () => null,
+  );
+  const expandedCache = useRef(
+    new Map<
+      string,
+      {
+        source: GitDiffFile;
+        expansion: FileExpansion | undefined;
+        file: GitDiffFile;
+        gaps: ChangesGap[];
+      }
+    >(),
+  );
+  /** A file's patch with its revealed context, and its hidden gaps. */
+  const expandedFile = (key: string, file: GitDiffFile | null) => {
+    if (!reviewCursor || embedded || !file?.diff) return null;
+    const kept = expansions.get(key);
+    const expansion = kept?.source === file.diff ? kept.expansion : undefined;
+    const cached = expandedCache.current.get(key);
+    if (cached?.source === file && cached.expansion === expansion)
+      return cached;
+    const expanded = expandPatch(file.diff, expansion);
+    const entry = {
+      source: file,
+      expansion,
+      file:
+        expanded.patch === file.diff ? file : { ...file, diff: expanded.patch },
+      gaps: expanded.gaps,
+    };
+    expandedCache.current.set(key, entry);
+    return entry;
+  };
   const renderedSections = useMemo<DiffSection[]>(
     () =>
       visibleEntries.map((visibleEntry) => {
         const key = diffEntryKey(visibleEntry);
         const diffFile = filesByKey[key] ?? null;
-        const renderableFile = diffRenderableFile(diffFile);
+        const shownFile = diffRenderableFile(diffFile);
+        const renderableFile = shownFile
+          ? (expandedFile(key, shownFile)?.file ?? shownFile)
+          : shownFile;
         const imagePreview =
           !!renderableFile &&
           isImageDiff(visibleEntry.path, renderableFile.diff);
@@ -1634,16 +1860,29 @@ export function DiffContentView({
           error: fileErrors[key] ?? null,
         };
       }),
+    // expandedFile reads expansions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeEntryKey,
       continuous,
       embedded,
+      expansions,
       fileErrors,
       filesByKey,
       manualCollapseStates,
+      reviewCursor,
       visibleEntries,
     ],
   );
+  /** Each section's gaps still hidden, by its key. */
+  const gapsByKey = useMemo(() => {
+    const byKey = new Map<string, ChangesGap[]>();
+    for (const section of renderedSections) {
+      const gaps = expandedCache.current.get(section.key)?.gaps;
+      if (gaps?.length && !section.collapsed) byKey.set(section.key, gaps);
+    }
+    return byKey;
+  }, [renderedSections]);
   const renderedSectionsRef = useRef(renderedSections);
   renderedSectionsRef.current = renderedSections;
   const nearbyKeySet = useMemo(() => new Set(nearbyKeys), [nearbyKeys]);
@@ -1696,9 +1935,9 @@ export function DiffContentView({
     [],
   );
   const saveAnnotation = useCallback(
-    (comment: string) => {
+    (comment: string, kind?: ReviewThreadKind) => {
       if (!pendingAnnotation || !onCreateAnnotation) return;
-      onCreateAnnotation({
+      const note: NewReviewAnnotation = {
         source: "diff",
         path: pendingAnnotation.path,
         kind: pendingAnnotation.kind,
@@ -1713,7 +1952,9 @@ export function DiffContentView({
         quote: pendingAnnotation.quote,
         hunk: pendingAnnotation.hunk,
         comment,
-      });
+      };
+      if (kind) onCreateAnnotation(note, { kind });
+      else onCreateAnnotation(note);
       setPendingAnnotation(null);
     },
     [onCreateAnnotation, pendingAnnotation],
@@ -1844,7 +2085,7 @@ export function DiffContentView({
     comment: (
       key: string,
       range: SelectedLineRange,
-      mode: "comment" | "suggest" | "new",
+      mode: CommentMode,
     ) => boolean;
     threadKey: (key: string, count: number | null) => boolean;
     move: (direction: 1 | -1, count: number) => number | null;
@@ -1884,7 +2125,7 @@ export function DiffContentView({
           onComment: (
             key: string,
             range: SelectedLineRange,
-            mode: "comment" | "suggest" | "new",
+            mode: CommentMode,
           ) => reviewHandlers.current.comment(key, range, mode),
           threadKey: (key: string, count: number | null) =>
             reviewHandlers.current.threadKey(key, count),
@@ -2130,13 +2371,24 @@ export function DiffContentView({
   const goToDone = useRef<number | null>(null);
   const goToReveal =
     cursorGoTo && goToDone.current !== cursorGoTo.at ? cursorGoTo.path : null;
+  // A file picked in the tree, the same way: open as the cursor goes to it.
+  const pickDone = useRef(selectionRevision);
+  const pickReveal =
+    selectionRevision > 0 && pickDone.current !== selectionRevision
+      ? (entry?.path ?? null)
+      : null;
   const foldedFiles = useMemo(() => {
     const folded = new Set<string>();
     if (!reviewEditor) return folded;
     for (const path of reviewedPaths)
-      if (!shownReviewed.has(path) && path !== goToReveal) folded.add(path);
+      if (
+        !shownReviewed.has(path) &&
+        path !== goToReveal &&
+        path !== pickReveal
+      )
+        folded.add(path);
     return folded;
-  }, [goToReveal, reviewEditor, reviewedPaths, shownReviewed]);
+  }, [goToReveal, pickReveal, reviewEditor, reviewedPaths, shownReviewed]);
   useEffect(() => {
     // Unmarked: the next mark folds it again.
     setShownReviewed((current) => {
@@ -2158,6 +2410,7 @@ export function DiffContentView({
   const pickedPath = selectionRevision > 0 ? (entry?.path ?? null) : null;
   useEffect(() => {
     if (pickedPath) showReviewed(pickedPath);
+    pickDone.current = selectionRevision;
   }, [pickedPath, selectionRevision, showReviewed]);
   useEffect(() => {
     if (!cursorGoTo?.path) return;
@@ -2243,10 +2496,30 @@ export function DiffContentView({
     for (const note of diffNotes) {
       if (gone.has(note.id)) continue;
       const spot = spots.get(note.id);
+      // On the file and no line: drawn at the file's head (DiffFileThreads).
+      if (spot && spot.line <= 0 && reviewEditor) continue;
       if (spot) add(spot.key, { ...note, side: spot.side, line: spot.line });
       // Not a thread (yet): a note kept in this browser, where it was.
       else if (!diffThreads?.byId.has(note.id))
         add(`${note.kind}:${note.path}`, note);
+    }
+    // The gaps still hidden, under the line above each (0: atop the file).
+    for (const [key, gaps] of gapsByKey) {
+      const section = renderedSections.find((each) => each.key === key);
+      if (!section) continue;
+      for (const gap of gaps)
+        add(key, {
+          id: `${GAP_ID}${gap.gap}`,
+          source: "diff",
+          path: section.entry.path,
+          kind: section.entry.kind,
+          side: gap.anchor.side,
+          line: gap.anchor.line,
+          hunk: "",
+          quote: "",
+          comment: "",
+          createdAt: 0,
+        });
     }
     if (pendingAnnotation) {
       const atEnd =
@@ -2267,7 +2540,16 @@ export function DiffContentView({
       });
     }
     return grouped;
-  }, [annotationsByPath, diffNotes, diffThreads, pendingAnnotation, placement]);
+  }, [
+    annotationsByPath,
+    diffNotes,
+    diffThreads,
+    gapsByKey,
+    pendingAnnotation,
+    placement,
+    renderedSections,
+    reviewEditor,
+  ]);
 
   /** gH, :unresolved: only the unresolved threads drawn, or all again. */
   const toggleOpenOnly = () => {
@@ -2558,20 +2840,48 @@ export function DiffContentView({
       effectiveViewMode === "split" ? "split" : "unified",
     );
     if (!target) return false;
-    // A line being discussed: c answers there; C asks anew.
-    if (mode !== "new" && target.endLine === undefined) {
-      const spot = spotAtCursor();
-      const open =
-        spot &&
-        threadsAtCursor(readingOrder, spot).find(
-          (each) => !each.thread.resolved && each.thread.kind === "discussion",
-        );
+    // A suggestion is of a line of the new version.
+    if (mode === "suggest" && target.side === "old") {
+      say("Suggestions apply to lines of the new version.");
+      return true;
+    }
+    const spot = target.endLine === undefined ? spotAtCursor() : null;
+    const here = spot ? threadsAtCursor(readingOrder, spot) : [];
+    // A line being discussed: c and :ask answer there; C asks anew.
+    if (mode !== "new" && mode !== "suggest") {
+      const open = here.find(
+        (each) => !each.thread.resolved && each.thread.kind === "discussion",
+      );
       if (open) {
         if (threadView.folded(open.thread)) threadView.unfold([open.thread.id]);
         threadView.setReplying(open.thread.id);
         return true;
       }
     }
+    // Your review comment on the line: c rewrites it, as the review pane's.
+    if (mode === "comment" && commentKind === "draft") {
+      const draft = here.find(
+        (each) =>
+          each.thread.kind === "draft" &&
+          each.thread.comments[0]?.author === REVIEW_USER,
+      );
+      const first = draft?.thread.comments[0];
+      if (draft && first) {
+        if (threadView.folded(draft.thread))
+          threadView.unfold([draft.thread.id]);
+        threadView.setEditing(first.id);
+        return true;
+      }
+    }
+    setComposerKind(
+      mode === "new" || mode === "ask"
+        ? "discussion"
+        : mode === "suggest"
+          ? "draft"
+          : ownSnapshot
+            ? commentKind
+            : null,
+    );
     setComposerSeed(
       mode === "suggest" &&
         target.side === "new" &&
@@ -2687,7 +2997,186 @@ export function DiffContentView({
   };
   reviewHandlers.current.markFile = toggleFile;
 
-  reviewHandlers.current.threadKey = (key) => {
+  // ---- Context expansion: zo x, zO X, zR, the gaps' buttons ---------------
+
+  /** Files read for their context, by section key and patch. */
+  const expandLines = useRef(new Map<string, Promise<string[] | null>>());
+  /** Reveals lines in a section's gaps, the file read once. */
+  const expandGaps = (
+    key: string,
+    changes: readonly { gap: number; change: (state: GapState) => GapState }[],
+  ) => {
+    const source = filesByKey[key]?.diff;
+    const path = filesByKey[key]?.path;
+    if (!source || !path || !changes.length) return;
+    const known = expansions.get(key);
+    const cacheKey = `${key}\u0000${source}`;
+    let lines =
+      known?.source === source
+        ? Promise.resolve<string[] | null>(known.expansion.lines)
+        : expandLines.current.get(cacheKey);
+    if (!lines) {
+      lines = changesAgent.readFile(path).then(
+        (text) => {
+          const read = fileLines(text);
+          if (patchMatches(source, read)) return read;
+          say("This file reads otherwise in the checkout: no more lines here.");
+          return null;
+        },
+        (error) => {
+          say(
+            `Cannot show more lines: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return null;
+        },
+      );
+      expandLines.current.set(cacheKey, lines);
+    }
+    void lines.then((read) => {
+      if (!read) {
+        expandLines.current.delete(cacheKey);
+        return;
+      }
+      setExpansions((current) => {
+        const kept = current.get(key);
+        const next = new Map(current);
+        next.set(key, {
+          source,
+          expansion: withGaps(
+            kept?.source === source ? kept.expansion : undefined,
+            read,
+            changes,
+          ),
+        });
+        return next;
+      });
+    });
+  };
+  /** zo / x (more), zO / X (all) around the cursor's hunk, zR the file. */
+  const expandAroundCursor = (mode: "more" | "all" | "file", count: number) => {
+    const row =
+      cursorHandle.current.model.rows[cursorHandle.current.rowIndex()];
+    if (!row) return true;
+    const gaps = gapsByKey.get(row.key) ?? [];
+    if (mode === "file") {
+      expandGaps(
+        row.key,
+        gaps.map((gap) => ({
+          gap: gap.gap,
+          change: (state: GapState) => ({ ...state, all: true }),
+        })),
+      );
+      return true;
+    }
+    const source = filesByKey[row.key]?.diff;
+    const hunks = source ? (parsePatch(source)?.file.hunks.length ?? 0) : 0;
+    const before = gaps.find((gap) => gap.gap === row.hunk);
+    const after = gaps.find((gap) => gap.gap === row.hunk + 1);
+    const changes: { gap: number; change: (state: GapState) => GapState }[] =
+      [];
+    if (before)
+      changes.push({
+        gap: before.gap,
+        change: (state) =>
+          mode === "all"
+            ? { ...state, all: true }
+            : { ...state, bottom: state.bottom + 20 * count },
+      });
+    if (after && after.gap <= hunks)
+      changes.push({
+        gap: after.gap,
+        change: (state) =>
+          mode === "all"
+            ? { ...state, all: true }
+            : { ...state, top: state.top + 20 * count },
+      });
+    expandGaps(row.key, changes);
+    return true;
+  };
+  /** A gap's controls, drawn under the line above it. */
+  const gapRow = (key: string, index: number): ReactNode => {
+    const info = gapsByKey.get(key)?.find((gap) => gap.gap === index);
+    if (!info) return null;
+    const change = (update: (state: GapState) => GapState) => () =>
+      expandGaps(key, [{ gap: info.gap, change: update }]);
+    return (
+      <div className="rd-expand diff-gap" data-gap={info.gap}>
+        <span className="note">
+          {info.hidden === null
+            ? "more lines"
+            : `${info.hidden} hidden line${info.hidden === 1 ? "" : "s"}`}
+        </span>
+        {info.canDown ? (
+          <button
+            type="button"
+            className="btn ghost"
+            title="Show 20 more lines below the hunk above"
+            onClick={change((state) => ({ ...state, top: state.top + 20 }))}
+          >
+            {"\u2193 20"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn ghost"
+          title={
+            info.hidden === null
+              ? "Show the rest of the file"
+              : "Show every hidden line here"
+          }
+          onClick={change((state) => ({ ...state, all: true }))}
+        >
+          {info.hidden === null ? "Show the rest" : `Show all ${info.hidden}`}
+        </button>
+        {info.canUp ? (
+          <button
+            type="button"
+            className="btn ghost"
+            title="Show 20 more lines above the hunk below"
+            onClick={change((state) => ({
+              ...state,
+              bottom: state.bottom + 20,
+            }))}
+          >
+            {"\u2191 20"}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+  gapRowRef.current = gapRow;
+  /**
+   * A thread on unchanged code the diff hides: the lines around it are
+   * shown (three each side), so it is read in place. Once per thread.
+   */
+  const revealedFor = useRef(new Set<string>());
+  const expandGapsRef = useRef(expandGaps);
+  expandGapsRef.current = expandGaps;
+  useEffect(() => {
+    if (!placement) return;
+    const byKey = new Map<
+      string,
+      { gap: number; change: (state: GapState) => GapState }[]
+    >();
+    for (const thread of placement.unplaced) {
+      const { path, line, endLine, side = "new" } = thread.anchor;
+      if (!path || !line || side !== "new") continue;
+      const section = renderedSectionsRef.current.find(
+        (each) => each.entry.path === path && !each.collapsed,
+      );
+      const source = section ? filesByKey[section.key]?.diff : undefined;
+      if (!section || !source) continue;
+      const once = `${thread.id}\u0000${source}`;
+      if (revealedFor.current.has(once)) continue;
+      const reveal = revealLine(source, endLine ?? line);
+      if (!reveal) continue;
+      revealedFor.current.add(once);
+      byKey.set(section.key, [...(byKey.get(section.key) ?? []), reveal]);
+    }
+    for (const [key, changes] of byKey) expandGapsRef.current(key, changes);
+  }, [filesByKey, placement]);
+
+  reviewHandlers.current.threadKey = (key, count) => {
     const spot = spotAtCursor();
     const here = spot ? threadsAtCursor(readingOrder, spot) : [];
     // The thread j / k are on, else the first one on the line.
@@ -2807,27 +3296,71 @@ export function DiffContentView({
       case "gU":
         return jumpUnreviewed(key === "gu" ? 1 : -1);
       case "e": {
-        // Your last comment on the line, rewritten in place.
-        const written = (focused ? [{ thread: focused }] : here)
-          .flatMap((each) =>
-            each.thread.comments.map((comment) => ({ each, comment })),
-          )
-          .filter(({ comment }) => comment.author === REVIEW_USER);
-        const mine = written[written.length - 1];
-        if (!mine) return false;
-        if (threadView.folded(mine.each.thread))
-          threadView.unfold([mine.each.thread.id]);
-        threadView.setEditing(mine.comment.id);
-        return true;
-      }
-      case "dd": {
-        if (!first || !diffThreads) return false;
-        const [only, ...rest] = first.thread.comments;
-        if (!only || rest.length || only.author !== REVIEW_USER) {
-          say("Delete a comment with its Delete button.");
+        // The message selected, else your last on the line, else your
+        // latest anywhere (the cursor goes there): rewritten in place.
+        const editable = (thread: ReviewThread, comment: ReviewComment) =>
+          comment.author === REVIEW_USER &&
+          thread.kind !== "merge-request" &&
+          (thread.kind === "discussion" || comment === thread.comments[0]);
+        const edit = (thread: ReviewThread, comment: ReviewComment) => {
+          if (threadView.folded(thread)) threadView.unfold([thread.id]);
+          threadView.setEditing(comment.id);
+          return true;
+        };
+        const selected = threadView.cursor?.startsWith("m:")
+          ? threadView.cursor.slice(2)
+          : null;
+        const message = selected
+          ? focused?.comments.find((comment) => comment.id === selected)
+          : undefined;
+        if (focused && message) {
+          if (editable(focused, message)) return edit(focused, message);
+          say(
+            `That message is ${authorLabel(message.author)}'s; e edits yours.`,
+          );
           return true;
         }
-        deleteThread(first.thread);
+        const mine = (thread: ReviewThread) =>
+          thread.comments.filter((comment) => editable(thread, comment)).pop();
+        for (const each of [...here].reverse()) {
+          const comment = mine(each.thread);
+          if (comment) return edit(each.thread, comment);
+        }
+        let latest: { spot: PlacedThread; comment: ReviewComment } | null =
+          null;
+        for (const spot of readingOrder) {
+          const comment = mine(spot.thread);
+          if (
+            comment &&
+            (!latest || comment.updatedAt > latest.comment.updatedAt)
+          )
+            latest = { spot, comment };
+        }
+        if (!latest) {
+          say("You have not written anything here yet.");
+          return true;
+        }
+        cursorHandle.current.goTo(
+          latest.spot.key,
+          latest.spot.line,
+          latest.spot.side,
+        );
+        return edit(latest.spot.thread, latest.comment);
+      }
+      case "dd": {
+        // Your comment on the line (or a review comment), not the agent's.
+        const thread = here
+          .map((each) => each.thread)
+          .filter(
+            (each) =>
+              each.kind === "draft" || each.comments[0]?.author === REVIEW_USER,
+          )
+          .pop();
+        if (!thread || !diffThreads) {
+          say("No comment on this line.");
+          return true;
+        }
+        deleteThread(thread);
         return true;
       }
       case "u": {
@@ -2864,6 +3397,14 @@ export function DiffContentView({
         onGitAction("stage", path);
         return true;
       }
+      case "zo":
+      case "x":
+        return expandAroundCursor("more", count ?? 1);
+      case "zO":
+      case "X":
+        return expandAroundCursor("all", 1);
+      case "zR":
+        return expandAroundCursor("file", 1);
       case "T":
         if (shownThreads.length) setThreadsOpen((open) => !open);
         else say("No comments yet.");
@@ -2881,6 +3422,48 @@ export function DiffContentView({
    * found by their text), drawn above the diff; the forge's discussions
    * under their own heading.
    */
+  /**
+   * Comments on a file shown and no line of it (or its line 0): at the
+   * file's head, in its first section.
+   */
+  const fileThreads = useMemo(() => {
+    const byPath = new Map<string, ReviewThread[]>();
+    if (!reviewEditor || !diffThreads || !placement) return byPath;
+    const shownPaths = new Set(visibleEntries.map((each) => each.path));
+    const placed = new Set(
+      placement.placed
+        .filter((spot) => spot.line > 0)
+        .map((spot) => spot.thread.id),
+    );
+    for (const thread of diffThreads.byId.values()) {
+      const { path, line } = thread.anchor;
+      if (
+        !path ||
+        (line !== undefined && line !== 0) ||
+        placed.has(thread.id) ||
+        partThreadIds.has(thread.id) ||
+        !shownPaths.has(path)
+      )
+        continue;
+      byPath.set(path, [...(byPath.get(path) ?? []), thread]);
+    }
+    return byPath;
+  }, [diffThreads, partThreadIds, placement, reviewEditor, visibleEntries]);
+  /** Each section's file threads, by its key: the file's first section. */
+  const fileThreadsKey = useMemo(() => {
+    const byKey = new Map<string, string>();
+    const done = new Set<string>();
+    for (const entry of visibleEntries) {
+      const list = fileThreads.get(entry.path);
+      if (!list || done.has(entry.path)) continue;
+      done.add(entry.path);
+      byKey.set(
+        diffEntryKey(entry),
+        list.map((thread) => thread.id).join("\u0000"),
+      );
+    }
+    return byKey;
+  }, [fileThreads, visibleEntries]);
   const generalThreads = useMemo<ReviewThread[]>(() => {
     if (!reviewEditor || !diffThreads || !placement) return [];
     const seen = new Set<string>();
@@ -2890,12 +3473,87 @@ export function DiffContentView({
       seen.add(thread.id);
       found.push(thread);
     };
-    for (const thread of placement.unplaced) add(thread);
+    const onFiles = new Set(
+      [...fileThreads.values()].flat().map((thread) => thread.id),
+    );
+    for (const thread of placement.unplaced)
+      if (!onFiles.has(thread.id)) add(thread);
     const placed = new Set(placement.placed.map((spot) => spot.thread.id));
     for (const thread of diffThreads.byId.values())
       if (!thread.anchor.path && !placed.has(thread.id)) add(thread);
     return found;
-  }, [diffThreads, partThreadIds, placement, reviewEditor]);
+  }, [diffThreads, fileThreads, partThreadIds, placement, reviewEditor]);
+  // The review's overall comment, above the diff as in the review pane:
+  // written in the review's editor, kept as you leave it.
+  const summary = changesAgent.summary;
+  const saveSummary = (text: string, send: boolean) =>
+    void changesAgent
+      .saveOverall(text, send)
+      .catch(() =>
+        keepReviewDraft(changesDraftSession(resourceKey), "overall", text),
+      );
+  const overallMark =
+    ownSnapshot?.session.agent.name && summary.trim()
+      ? summary.trim() === ownSnapshot.session.summarySent?.trim()
+        ? `\u2192 ${ownAgent?.agentName ?? "Agent"}`
+        : ownAgent?.held
+          ? `held for ${ownAgent.agentName}`
+          : `for ${ownAgent?.agentName ?? "Agent"}, not sent`
+      : null;
+  const overallBlock =
+    reviewEditor && (overallOpen || summary.trim()) ? (
+      <div className="diff-review-overall chat-review">
+        {overallOpen ? (
+          <ReviewDiffComposer
+            key="overall"
+            anchor={{ path: "", line: 0, side: "new", text: "" }}
+            suggestable={null}
+            initial={summary}
+            overall
+            kind="discussion"
+            delivery={ownDelivery}
+            placeholder={placeholderOf({ kind: "discussion", overall: true })}
+            draftSession={changesDraftSession(resourceKey)}
+            onSave={(text, plan) => {
+              setOverallOpen(false);
+              if (plan.kind === "overall") saveSummary(text, plan.send);
+              focusDiffAfterEditor();
+            }}
+            onClose={() => {
+              setOverallOpen(false);
+              focusDiffAfterEditor();
+            }}
+            {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+            notify={say}
+          />
+        ) : (
+          <div className="rc talk">
+            <NoteBody text={summary} />
+            <div className="rc-bar">
+              <span>Overall comment</span>
+              {overallMark ? (
+                <span className="rc-kind">{overallMark}</span>
+              ) : null}
+              <span className="spacer" />
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setOverallOpen(true)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => saveSummary("", false)}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null;
   const generalBlock =
     reviewEditor && diffThreads && !hideComments && generalThreads.length ? (
       <div className="diff-review-general" data-testid="diff-review-general">
@@ -2950,12 +3608,13 @@ export function DiffContentView({
   const closeReviewComposer = () => {
     setPendingAnnotation(null);
     setComposerSeed(undefined);
+    setComposerKind(null);
     focusDiffAfterEditor();
   };
   const composerNode: ReactNode =
     reviewEditor && pendingAnnotation ? (
       <ReviewDiffComposer
-        key={`${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}`}
+        key={`${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}:${composerKind ?? ""}`}
         anchor={{
           path: pendingAnnotation.path,
           line: pendingAnnotation.line,
@@ -2969,11 +3628,29 @@ export function DiffContentView({
             : null
         }
         {...(composerSeed !== undefined ? { initial: composerSeed } : {})}
+        // With no review yet, where the comment goes is the first comment's
+        // to find (it opens the review): kept on Esc, as what may reach
+        // the agent is.
+        kind={composerKind ?? (ownSnapshot ? commentKind : "discussion")}
+        delivery={ownDelivery}
+        {...(composerKind || ownSnapshot
+          ? {
+              placeholder: placeholderOf({ kind: composerKind ?? commentKind }),
+            }
+          : {})}
         draftSession={changesDraftSession(resourceKey)}
-        onSave={(text) => {
-          if (hideComments) setHideComments(false);
-          saveAnnotation(text);
+        onSave={(text, plan) => {
+          if (plan.kind !== "write" || plan.action !== "add") {
+            closeReviewComposer();
+            return;
+          }
+          if (hideComments && plan.showComments) setHideComments(false);
+          // A new question with no agent to ask: held in the workspace's
+          // threads, said so.
+          if (plan.held) say(HELD_FOR_SEND);
+          saveAnnotation(text, composerKind ?? undefined);
           setComposerSeed(undefined);
+          setComposerKind(null);
           focusDiffAfterEditor();
         }}
         onClose={closeReviewComposer}
@@ -2990,7 +3667,7 @@ export function DiffContentView({
   const composerRef = useRef<ReactNode>(null);
   composerRef.current = composerNode;
   const composerKey = pendingAnnotation
-    ? `${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}:${composerSeed ?? ""}`
+    ? `${pendingAnnotation.kind}:${pendingAnnotation.path}:${pendingAnnotation.side}:${pendingAnnotation.line}:${pendingAnnotation.endLine ?? ""}:${composerSeed ?? ""}:${composerKind ?? ""}`
     : "";
   const drawing = useMemo<DiffDrawing | null>(
     () =>
@@ -3002,6 +3679,7 @@ export function DiffContentView({
             composerKey,
             hideComments,
             openOnly: threadView.openOnly,
+            gap: (key: string, index: number) => gapRowRef.current(key, index),
           }
         : null,
     [composerKey, hideComments, reviewEditor, threadView.openOnly],
@@ -3459,6 +4137,8 @@ export function DiffContentView({
                       threadMarks: threadMarksByKey.get(section.key) ?? "",
                       reviewedFolded: foldedFiles.has(section.entry.path),
                       onShowReviewed: showReviewed,
+                      fileThreadIds:
+                        fileThreadsKey.get(section.key) ?? undefined,
                     }
                   : {}),
               }
@@ -3560,6 +4240,23 @@ export function DiffContentView({
             description: "show only the unresolved threads, or all again (gH)",
             run: () => toggleOpenOnly(),
           },
+          {
+            name: "ask",
+            description:
+              "ask the agent about the line, or answer where it is discussed (C)",
+            run: () => cursorHandle.current.comment("ask"),
+          },
+          {
+            name: "suggest",
+            description: "a suggested change of the line (s)",
+            run: () => cursorHandle.current.comment("suggest"),
+          },
+          {
+            name: "overall",
+            aliases: ["summary"],
+            description: "write the overall comment on the review",
+            run: () => setOverallOpen(true),
+          },
         ]
       : []),
     ...(reviewEditor && onGitAction
@@ -3614,12 +4311,6 @@ export function DiffContentView({
             name: "review",
             description: `${changesAgent.agentName} reviews the changes: :review [focus]`,
             run: (argument: string) => changesAgent.review(argument),
-          },
-          {
-            name: "overall",
-            aliases: ["summary"],
-            description: "write the overall comment on the review",
-            run: () => setOverallOpen(true),
           },
         ]
       : []),
@@ -3760,6 +4451,19 @@ export function DiffContentView({
             overallOpen={overallOpen}
             onOverall={setOverallOpen}
           />
+        ) : null}
+        {reviewEditor &&
+        !changesAgent.agentName &&
+        !overallOpen &&
+        !changesAgent.summary.trim() ? (
+          <button
+            type="button"
+            className="diff-overall-toggle"
+            title="An overall comment on the review (:overall)"
+            onClick={() => setOverallOpen(true)}
+          >
+            Overall comment
+          </button>
         ) : null}
         {reviewEditor && statusLine ? (
           <span className="changes-review-status" aria-live="polite">
@@ -3984,6 +4688,7 @@ export function DiffContentView({
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
         <DiffDrawingContext.Provider value={drawing}>
+          {overallBlock}
           {generalBlock}
           {diffList}
         </DiffDrawingContext.Provider>

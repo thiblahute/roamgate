@@ -22,7 +22,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import type { ReviewThread } from "../../../shared/review";
+import type { ReviewThread, ReviewThreadKind } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import { connectionClientScopeKey } from "../useConnectionClient";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
@@ -246,7 +246,7 @@ export function WorkspaceInspectorHost({
   /** `root`: the repository the comment is on, when not the checkout's. */
   onCreateAnnotation: (
     input: NewReviewAnnotation,
-    capture?: { root?: string },
+    capture?: { root?: string; kind?: ReviewThreadKind },
   ) => void;
   /** Stores an image pasted in the review's comment box in Changes. */
   onAddReviewImage?: (file: File) => Promise<string>;
@@ -1574,7 +1574,7 @@ export function WorkspaceInspectorHost({
                         {...(changesRepoShown
                           ? { repo: changesRepoShown }
                           : {})}
-                        onCreateAnnotation={(input) =>
+                        onCreateAnnotation={(input, written) =>
                           onCreateAnnotation(
                             input.source === "diff"
                               ? {
@@ -1589,9 +1589,15 @@ export function WorkspaceInspectorHost({
                                     : {}),
                                 }
                               : input,
-                            // Another repository's comments go to its review.
-                            reviewInChanges && changesRoot
-                              ? { root: changesRoot }
+                            // Another repository's comments go to its
+                            // review; a question asked is a discussion.
+                            reviewInChanges && (changesRoot || written?.kind)
+                              ? {
+                                  ...(changesRoot ? { root: changesRoot } : {}),
+                                  ...(written?.kind
+                                    ? { kind: written.kind }
+                                    : {}),
+                                }
                               : undefined,
                           )
                         }

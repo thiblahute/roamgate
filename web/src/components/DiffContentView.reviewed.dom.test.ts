@@ -367,6 +367,40 @@ if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
       }
     });
 
+    test("a file folded reviewed, picked in the tree, unfolds with the cursor on it", async () => {
+      reset();
+      const diff = await mount({ entry: a, selectionRevision: 1 });
+      const body = () =>
+        document.querySelector<HTMLElement>(
+          '[data-diff-entry-key="unstaged:a.ts"] .diff-file-section-body',
+        );
+      try {
+        await press("v");
+        for (let i = 0; i < 3; i++) await diff.settle();
+        expect(body()?.hidden).toBe(true);
+        expect(cursorAt()?.startsWith("unstaged:b.ts")).toBe(true);
+        // Picked in the tree again: the file opens, the cursor on its
+        // first line, and it stays reviewed.
+        await diff.update({ entry: a, selectionRevision: 2 });
+        for (let i = 0; i < 3; i++) await diff.settle();
+        expect(body()?.hidden).toBe(false);
+        expect(cursorAt()?.startsWith("unstaged:a.ts")).toBe(true);
+        expect(
+          document.querySelector('[data-diff-entry-key="unstaged:a.ts"]')
+            ?.textContent,
+        ).not.toContain("✓ reviewed");
+        expect(marked("unstaged:a.ts")).toContain("2:unstaged:reviewed");
+        // The same pick again (no new revision) changes nothing.
+        await press("j");
+        const at = cursorAt();
+        await diff.update({ entry: a, selectionRevision: 2 });
+        await diff.settle();
+        expect(cursorAt()).toBe(at);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("Option+V marks the file as v does", async () => {
       reset();
       const diff = await mount();

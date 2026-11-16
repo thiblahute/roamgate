@@ -27,6 +27,8 @@ export type SurfaceFeature =
   | "editor"
   /** The window's width picks side by side (classic; D4 for Changes). */
   | "window-width"
+  /** Context expansion: gap buttons, zo zO zR, x X (phase 5). */
+  | "expand"
   /** Reviewed chunks and files: r, v, folds, the counts (phase 5). */
   | "reviewed"
   /** A file's header folds it; large files start folded (phase 5). */
@@ -56,6 +58,8 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "search",
   "sides",
   "mouse",
+  "editor",
+  "expand",
   "reviewed",
   "threads",
   "threads-panel",

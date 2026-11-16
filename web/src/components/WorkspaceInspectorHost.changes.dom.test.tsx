@@ -52,16 +52,36 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   }));
   const { useContext } = await import("react");
   const { InspectorCommandsContext } = await import("../useInspectorCommands");
+  type ReactNode = import("react").ReactNode;
   /** What the host last gave Changes' diff, and its `:` commands. */
   const diffSeen: {
     repo?: { root: string; own: boolean };
     run?: (input: string) => void;
+    /** The toolbar's end (Review only) and the scope line, as given. */
+    headEnd?: ReactNode;
+    scopeControls?: ReactNode;
   } = {};
   mock.module("./DiffContentView", () => ({
-    DiffContentView: (props: { repo?: { root: string; own: boolean } }) => {
+    DiffContentView: (props: {
+      repo?: { root: string; own: boolean };
+      headEnd?: ReactNode;
+      scopeControls?: ReactNode;
+    }) => {
       diffSeen.repo = props.repo;
       diffSeen.run = useContext(InspectorCommandsContext)?.run;
-      return <div data-stub="changes-diff" aria-label="changes-diff" />;
+      diffSeen.headEnd = props.headEnd;
+      diffSeen.scopeControls = props.scopeControls;
+      // Drawn as the diff's toolbar draws them.
+      return (
+        <div data-stub="changes-diff" aria-label="changes-diff">
+          {props.scopeControls ? (
+            <div data-stub="scope">{props.scopeControls}</div>
+          ) : null}
+          {props.headEnd ? (
+            <div data-stub="head-end">{props.headEnd}</div>
+          ) : null}
+        </div>
+      );
     },
   }));
   mock.module("./GitCommitHistory", () => ({
@@ -105,6 +125,9 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     agentPane?: boolean;
     /** The checkout's root, as Changes' summary gives it. */
     root?: string;
+    /** The changed files Changes lists, and how many are untracked. */
+    entries?: { path: string; kind: string }[];
+    untracked?: number;
   }) {
     let view: View = options.view ?? "changes";
     const views: View[] = [];
@@ -152,10 +175,13 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
                 file: null,
                 loading: false,
                 error: null,
-                entries: [],
+                entries: options.entries ?? [],
                 files: {},
                 fileErrors: {},
                 ...(options.root ? { root: options.root } : {}),
+                ...(options.untracked !== undefined
+                  ? { untracked: options.untracked }
+                  : {}),
               } as unknown as Props["diffSelection"]
             }
             connectionClient={client}
@@ -346,6 +372,136 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       } finally {
         await inspector.unmount();
         localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("in Changes, the scope line is the host's controls: the repository picker, what is compared and the counts", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      // Two repositories of the workspace, each with a review.
+      const { rememberReviewSnapshot } = await import("../review");
+      for (const root of ["/repo", "/repo2"])
+        rememberReviewSnapshot({
+          session: {
+            id: `s${root}`,
+            connectionId: "local",
+            workspaceId: "w1",
+            root,
+            title: root,
+            target: { kind: "worktree" },
+            gitlab: false,
+            summary: "",
+            agent: {},
+            createdAt: "2026-11-10T10:00:00Z",
+            updatedAt: "2026-11-10T10:00:00Z",
+          },
+          threads: [],
+        } as unknown as import("../../../shared/review").ReviewSnapshot);
+      const inspector = await mountInspector({
+        root: "/repo",
+        entries: [
+          { path: "a.ts", kind: "unstaged" },
+          { path: "b.ts", kind: "untracked" },
+        ],
+        untracked: 1,
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.scopeControls).toBeDefined();
+        const bar = inspector.host.querySelector<HTMLElement>(
+          "[data-stub=scope] .changes-scope-bar",
+        );
+        expect(bar?.getAttribute("aria-label")).toBe(
+          "repo \u00b7 Working tree: uncommitted changes \u00b7 2 files (1 untracked)",
+        );
+        // The workspace's repositories: a picker, p and ( ) its keys.
+        expect(
+          bar?.querySelector(
+            '[aria-label="Repository (p; ( and ) the previous and next)"]',
+          ),
+        ).not.toBeNull();
+        expect(
+          bar?.querySelector('[aria-label="What Changes compares"]')
+            ?.textContent,
+        ).toContain("Working tree: uncommitted changes");
+        expect(bar?.querySelector(".changes-scope-facts")?.textContent).toBe(
+          "2 files (1 untracked)",
+        );
+        // Not Review only: nothing at the toolbar's end.
+        expect(diffSeen.headEnd).toBeUndefined();
+      } finally {
+        await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("in Changes, Review only gives the diff's one-row header Show all and Zen's docked way out; Show all brings the inspector back", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "changes", vim: true }),
+      );
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        await act(async () => diffSeen.run?.("only"));
+        await act(async () => {});
+        const end = inspector.host.querySelector<HTMLElement>(
+          "[data-stub=head-end] .diff-review-only-end",
+        );
+        expect(end).not.toBeNull();
+        expect(
+          [...(end?.querySelectorAll("button") ?? [])].map(
+            (button) => button.textContent,
+          ),
+        ).toEqual(["Show all"]);
+        // Zen's way out docks there (in app Zen it draws its Exit Zen).
+        expect(end?.querySelector(".zen-dock[data-zen-dock]")).not.toBeNull();
+        // No floating hint over the review: its header has the way out.
+        expect(
+          inspector.host.querySelector(".inspector-review-only-hint"),
+        ).toBeNull();
+        expect(
+          inspector.host
+            .querySelector(
+              ".inspector-changes-resource, [data-stub=changes-diff]",
+            )
+            ?.closest(".is-review-only"),
+        ).not.toBeNull();
+        await act(async () =>
+          end?.querySelector<HTMLButtonElement>("button")?.click(),
+        );
+        await act(async () => {});
+        expect(diffSeen.headEnd).toBeUndefined();
+        expect(inspector.host.querySelector("[data-stub=head-end]")).toBeNull();
+      } finally {
+        await inspector.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("on classic Changes the host gives no scope controls nor header end; Review only floats its Show all", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      const { roamgateLocalStorage } = await import("../browserStorage");
+      roamgateLocalStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ reviewIn: "classic", vim: true }),
+      );
+      const inspector = await mountInspector({ root: "/repo" });
+      try {
+        expect(diffSeen.scopeControls).toBeUndefined();
+        await act(async () => diffSeen.run?.("only"));
+        await act(async () => {});
+        expect(diffSeen.headEnd).toBeUndefined();
+        const hint = inspector.host.querySelector(
+          ".inspector-review-only-hint",
+        );
+        expect(hint?.textContent).toBe("Show all");
+      } finally {
+        await inspector.unmount();
+        roamgateLocalStorage.removeItem(PREFS_KEY);
       }
     });
 

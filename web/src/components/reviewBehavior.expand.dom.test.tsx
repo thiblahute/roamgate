@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /**
    * A 100-line file with line 31 and line 71 changed: hidden lines 1-29
@@ -62,7 +62,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       (n) => n !== 31 && n !== 71,
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("expand"))
     describe(name, () => {
       test("gap buttons sit between hunks and at the file's ends, and show 20 lines or all of them", async () => {
         const review = await mount(options());

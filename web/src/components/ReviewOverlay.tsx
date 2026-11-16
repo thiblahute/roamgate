@@ -40,6 +40,7 @@ import {
 import { newClientId, type PendingWrite } from "../reviewPending";
 import {
   editorKey,
+  editorPlaceholder,
   editorSave,
   handoffStatus,
   notSavedStatus,
@@ -4609,23 +4610,14 @@ export function ReviewOverlay({
   }
 
   function editorFor(current: Editor) {
-    const placeholder = current.overall
-      ? !agent.name
-        ? "Your overall comment on the review (Cmd+Enter saves, Esc closes)"
-        : talk && !session.gitlab
-          ? `Your overall comment, for ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
-          : `Your overall comment, for ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
-      : current.replyTo
-        ? current.publicReply
-          ? `Your draft reply, published with your review when you submit it on ${forge} (Cmd+Enter saves, Esc closes)`
-          : "Your reply (Cmd+Enter saves, Esc closes)"
-        : current.kind === "discussion"
-          ? talk
-            ? `For ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
-            : holdForSend && !current.commentId
-              ? `${HELD_FOR_SEND} (Cmd+Enter saves, Esc closes)`
-              : `For ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`
-          : "Your comment on this line (Cmd+Enter saves, Esc closes)";
+    const placeholder = editorPlaceholder(current, {
+      agentNamed: !!agent.name,
+      agentName,
+      talk,
+      gitlab: session.gitlab,
+      holdForSend,
+      forge,
+    });
     return (
       <div className="rc" key={`editor-${current.version}`}>
         <ReviewCommentEditor

@@ -618,6 +618,8 @@ export type ChangesDiffOptions = {
   patches: Record<string, string>;
   /** The selected entry (default: the first). */
   entry?: GitDiffEntry;
+  /** Bumped by each pick in the tree (DiffViewerPanel's selection). */
+  selectionRevision?: number;
   mobile?: boolean;
   embedded?: boolean;
   annotations?: readonly import("../annotations").ReviewAnnotation[];
@@ -837,6 +839,9 @@ export async function mountChangesDiff(
       root.render(
         inInspector(
           createElement(DiffContentView, {
+            ...(options.selectionRevision !== undefined
+              ? { selectionRevision: options.selectionRevision }
+              : {}),
             entry: selected,
             file: selected ? files[`${selected.kind}:${selected.path}`]! : null,
             entries: options.entries,

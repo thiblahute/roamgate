@@ -2,7 +2,16 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { vimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import { keepReviewDraft, takeReviewDraft } from "../reviewDrafts";
-import { editorKey, editorSave, type ReviewEditor } from "../reviewSave";
+import type {
+  ReviewMessagePart,
+  ReviewThreadKind,
+} from "../../../shared/review";
+import {
+  type EditorSave,
+  editorKey,
+  editorSave,
+  type ReviewEditor,
+} from "../reviewSave";
 import type { CommentEditorHandle } from "./ReviewCommentEditor";
 import { imageUploadPending, IMAGE_UPLOADING } from "./ReviewCommentEditor";
 import "./ChatThreads.css";
@@ -27,22 +36,60 @@ export function changesDraftSession(resourceKey: string): string {
   return `changes:${resourceKey}`;
 }
 
-/** What a suggestion on a line says: the line as it reads, to change. */
+/**
+ * What a suggestion on a line says: the line as it reads, to change, as
+ * the review pane writes it (a GitLab suggestion of that one line).
+ */
 export function suggestionBlock(lineText: string): string {
-  return `\`\`\`suggestion\n${lineText}\n\`\`\``;
+  return `\`\`\`suggestion:-0+0\n${lineText}\n\`\`\`\n`;
 }
+
+/** How the comments of the review reach someone (reviewDelivery). */
+export type ComposerDelivery = {
+  gitlab: boolean;
+  /** Comments go to the agent as written. */
+  talk: boolean;
+  /** The review's agent has a name: the overall comment goes to it. */
+  agentNamed: boolean;
+  /** A new question with no agent to ask is held for Send. */
+  holdForSend: boolean;
+};
+
+/** A reply or a question: they reach the agent, Esc keeps them. */
+const TALKING: ComposerDelivery = {
+  gitlab: false,
+  talk: true,
+  agentNamed: true,
+  holdForSend: false,
+};
+
+/** What a save asks of the composer's owner (editorSave's plan). */
+export type ComposerSave = Extract<
+  EditorSave,
+  { kind: "write" } | { kind: "overall" }
+>;
 
 export type ReviewDiffComposerProps = {
   /** The review's anchor the comment gets, for its draft key. */
-  anchor: { path: string; line: number; side: "old" | "new"; text: string };
+  anchor: {
+    path: string;
+    line: number;
+    side: "old" | "new";
+    text: string;
+    /** A comment on a part of a message: the part. */
+    message?: ReviewMessagePart;
+  };
   /** The line as it reads on the new side, a suggestion's text; or null. */
   suggestable: string | null;
   /** The first text: a suggestion asked for with `s`. */
   initial?: string;
   /** Where unsent text is kept. */
   draftSession: string;
-  /** Saves the text: the comment's words. */
-  onSave: (text: string) => void;
+  /**
+   * Saves the text: the comment's words, and what the save policy made of
+   * them (a write: add, reply, edit or delete; the overall comment).
+   */
+  onSave: (text: string, plan: ComposerSave) => void;
   /** Closed with nothing to save (kept as a draft if it holds words). */
   onClose: () => void;
   /** Stores a pasted image with the review; Markdown for it. */
@@ -55,6 +102,12 @@ export type ReviewDiffComposerProps = {
   /** Rewrites this comment, `initial` its words (its own draft key). */
   commentId?: string;
   placeholder?: string;
+  /** What it writes: a review comment (draft) or a discussion. */
+  kind?: ReviewThreadKind;
+  /** How the review's comments go out: what Esc keeps, what it saves. */
+  delivery?: ComposerDelivery;
+  /** The review's overall comment (`initial` its words). */
+  overall?: boolean;
 };
 
 /**
@@ -74,15 +127,19 @@ export function ReviewDiffComposer({
   replyTo,
   commentId,
   placeholder = "Your comment on this line (Cmd+Enter saves, Esc closes)",
+  kind = "discussion",
+  delivery = TALKING,
+  overall = false,
 }: ReviewDiffComposerProps) {
   const target = {
     ...(replyTo ? { replyTo } : {}),
     ...(commentId ? { commentId } : {}),
+    ...(overall ? { overall } : {}),
   };
   const key = editorKey({
     at: 0,
     file: 0,
-    kind: "discussion",
+    kind,
     anchor,
     ...target,
     text: "",
@@ -93,7 +150,7 @@ export function ReviewDiffComposer({
     if (kept !== undefined)
       notify("Your unsent text is back. Cmd+Enter sends it.");
     // A rewrite's kept words are its new text.
-    if (commentId && kept !== undefined) return kept;
+    if ((commentId || overall) && kept !== undefined) return kept;
     return initial !== undefined && !kept
       ? initial
       : initial !== undefined && kept
@@ -111,7 +168,7 @@ export function ReviewDiffComposer({
     const editor: ReviewEditor = {
       at: 0,
       file: 0,
-      kind: "discussion",
+      kind,
       anchor,
       ...target,
       text: text.current,
@@ -122,17 +179,20 @@ export function ReviewDiffComposer({
       explicit,
       uploading: imageUploadPending(text.current),
       lineText: suggestable ?? undefined,
-      original: commentId ? (initial ?? "") : "",
-      gitlab: false,
-      talk: true,
-      agentNamed: true,
-      holdForSend: false,
+      original: commentId || overall ? (initial ?? "") : "",
+      ...delivery,
     });
     if (plan.kind === "uploading") {
       notify(IMAGE_UPLOADING);
       return false;
     }
     done.current = true;
+    if (plan.kind === "overall") {
+      // Kept as you leave it: saved, or sent as you save.
+      keepReviewDraft(draftSession, key, "");
+      onSave(text.current, plan);
+      return true;
+    }
     if (plan.kind === "kept") {
       // Esc or moving away: the words wait for an explicit save.
       if (plan.notice) {
@@ -147,9 +207,9 @@ export function ReviewDiffComposer({
         notify(
           `Not sent: "${plan.stray}" looks like a stray key. Cmd+Enter or Save sends it.`,
         );
-      if (plan.meaningful) {
+      if (plan.action !== "none") {
         keepReviewDraft(draftSession, key, "");
-        onSave(text.current);
+        onSave(text.current, plan);
         return true;
       }
     }
@@ -186,7 +246,7 @@ export function ReviewDiffComposer({
   return (
     <div
       className={
-        replyTo || commentId
+        replyTo || commentId || overall
           ? "diff-review-reply"
           : "chat-review diff-review-composer"
       }

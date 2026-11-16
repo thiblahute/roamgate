@@ -403,6 +403,17 @@ export type ReviewThreadLook = {
     message: ReviewComment,
     index: number,
   ) => string;
+  /** A file's lines on the new side, by number: what a suggestion replaces. */
+  newLines?: (path: string) => ReadonlyMap<number, string> | undefined;
+  /**
+   * The editor of a comment on a part of a message (the review's), in place
+   * of the plain one; `done` closes it.
+   */
+  partEditor?: (
+    thread: ReviewThread,
+    part: ReviewMessagePart,
+    done: () => void,
+  ) => ReactNode;
 };
 
 export function FileThread({
@@ -498,7 +509,7 @@ export function FileThread({
       ? draft
       : null;
   };
-  /** Its box. */
+  /** Its box: the review's editor in Changes, else the plain one. */
   const draftBox = (draft: ReviewMessagePart, placeholder: string) => {
     const addPart = api.addPart;
     if (!addPart) return null;
@@ -506,7 +517,9 @@ export function FileThread({
       view.setPartDraft(null);
       view.backToKeys();
     };
-    return (
+    return review?.partEditor ? (
+      review.partEditor(thread, draft, done)
+    ) : (
       <div className="chat-thread is-draft">
         <ThreadEditor
           placeholder={placeholder}
@@ -628,6 +641,12 @@ export function FileThread({
               text={message.body}
               path={thread.anchor.path}
               parts={partsOf(message.id)}
+              {...(review?.newLines && thread.anchor.path
+                ? {
+                    newLines: review.newLines(thread.anchor.path),
+                    line: thread.anchor.endLine ?? thread.anchor.line,
+                  }
+                : {})}
             />
             {notesOn(message.id)}
             {view.partSelection?.comment === message.id &&
