@@ -1932,6 +1932,20 @@ export default function App() {
     return key;
   }, []);
   /**
+   * A review whose code is gone from its checkout (a root commit once
+   * reviewed as `SHA^..SHA`, a deleted branch): no workspace keeps it
+   * pinned, so the toggle finds the workspace's own review again.
+   */
+  const unpinChangesReview = useCallback((sessionId: string) => {
+    setChangesPins((pins) => {
+      const held = Object.entries(pins).filter(([, id]) => id === sessionId);
+      if (!held.length) return pins;
+      const kept = { ...pins };
+      for (const [key] of held) delete kept[key];
+      return kept;
+    });
+  }, []);
+  /**
    * Workspaces an agent opened a review in while you were elsewhere:
    * arriving there shows it in Changes.
    */
@@ -6870,6 +6884,7 @@ export default function App() {
                         void showFileInReview(path, line)
                       }
                       onReviewCommit={(sha) => void reviewCommit(sha)}
+                      onReviewGone={unpinChangesReview}
                       onFocusAgentPane={(paneId) => {
                         stepReviewAsideRef.current();
                         void store.focusPane(paneId);

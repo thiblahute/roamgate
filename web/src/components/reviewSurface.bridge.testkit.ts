@@ -30,8 +30,8 @@ export const backend = {
   /** File texts by `${rev}:${path}`. */
   fileAt: {} as Record<string, string>,
   repos: [] as NonNullable<SurfaceOptions["repos"]>,
-  /** Methods that fail, and with what. */
-  failing: new Map<string, string>(),
+  /** Methods that fail, and with what (an Error as it is: its code too). */
+  failing: new Map<string, string | Error>(),
   /** Methods held until released. */
   held: new Map<string, Promise<void>>(),
   /** What `review.get` answers: the review as the bridge holds it. */
@@ -65,7 +65,8 @@ export function mockReviewBackend() {
       const held = backend.held.get(method);
       if (held) await held;
       const failure = backend.failing.get(method);
-      if (failure !== undefined) throw new Error(failure);
+      if (failure !== undefined)
+        throw typeof failure === "string" ? new Error(failure) : failure;
       const answer = backend.answers[method];
       if (answer) return answer(params);
       if (method === "review.get" && backend.holds) return backend.holds();

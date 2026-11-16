@@ -839,6 +839,8 @@ export async function mountChangesReview(
               onRetry: record("reload"),
               // Closed as the review toggle closes it, the review kept.
               onCloseReview: record("close"),
+              // Its code gone from the checkout: the host lets go of it.
+              onReviewGone: record("reviewGone"),
               ...(options.hostCallbacks
                 ? { onFocusAgentPane: record("focusAgentPane") }
                 : {}),
@@ -1514,9 +1516,9 @@ export async function mountChangesReview(
     gapRows(path) {
       const section = sections().find((each) => pathOf(each) === path);
       const split =
-        shadowOf(section!)?.querySelector("pre")?.getAttribute(
-          "data-diff-type",
-        ) === "split";
+        shadowOf(section!)
+          ?.querySelector("pre")
+          ?.getAttribute("data-diff-type") === "split";
       return [...(section?.querySelectorAll<HTMLElement>(".rd-expand") ?? [])]
         .sort((a, b) => Number(a.dataset.gap) - Number(b.dataset.gap))
         .map((row) => {
@@ -1532,7 +1534,9 @@ export async function mountChangesReview(
     fileColumns(path) {
       const section = sections().find((each) => pathOf(each) === path);
       const type = section
-        ? shadowOf(section)?.querySelector("pre")?.getAttribute("data-diff-type")
+        ? shadowOf(section)
+            ?.querySelector("pre")
+            ?.getAttribute("data-diff-type")
         : undefined;
       return type === "split" ? 2 : type ? 1 : null;
     },

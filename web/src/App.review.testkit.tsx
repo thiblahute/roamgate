@@ -91,6 +91,8 @@ type InspectorProps = {
   onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;
   onReviewCommit?: (sha: string) => void;
+  /** Changes: the review it shows is gone from its checkout. */
+  onReviewGone?: (sessionId: string) => void;
   /** Changes' Go to the agent's pane. */
   onFocusAgentPane?: (paneId: string) => void;
   /** Changes' own close of the review (`:q`, Esc). */
@@ -164,6 +166,10 @@ export type AppWithReviews = {
   inspectorReviewCommit(sha: string): Promise<void>;
   /** The commits `openCommitReview` was asked to review. */
   commitReviews(): string[];
+  /** Changes says the review it shows is gone from its checkout. */
+  inspectorReviewGone(sessionId: string): Promise<void>;
+  /** The reviews pinned to workspaces' Changes, as App stores them. */
+  changesPins(): Record<string, string>;
   /**
    * An agent's `review_open` (or `/rg-review`) reaching the page: the
    * review raised for its workspace.
@@ -632,6 +638,17 @@ export async function mountAppWithReviews(options: {
       await settle(50);
     },
     commitReviews: () => [...current.commitReviews],
+    async inspectorReviewGone(sessionId) {
+      if (!current.inspectorProps?.onReviewGone)
+        throw new Error("no gone review handling in the inspector");
+      const gone = current.inspectorProps.onReviewGone;
+      await React.act(async () => gone(sessionId));
+      await settle(50);
+    },
+    changesPins: () =>
+      JSON.parse(
+        localStorage.getItem("roamgate:reviewChangesPins") ?? "{}",
+      ) as Record<string, string>,
     async agentOpens(sessionId) {
       await React.act(async () => {
         current.reviewState = {

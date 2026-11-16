@@ -5985,6 +5985,11 @@ type DiffContentViewProps = Omit<
    */
   showCommit?: { sha: string; at: number } | null;
   onCommitAbsent?: (sha: string) => void;
+  /**
+   * The review shown as the scope cannot be read: its code is gone from
+   * its checkout (base, head or checkout), with why.
+   */
+  onReviewGone?: (sessionId: string, message: string) => void;
 };
 
 const NO_FILES: Record<string, GitDiffFile> = {};
@@ -6001,6 +6006,7 @@ export function DiffContentView({
   onViewEntries,
   showCommit = null,
   onCommitAbsent,
+  onReviewGone,
   ...props
 }: DiffContentViewProps) {
   const {
@@ -6056,6 +6062,15 @@ export function DiffContentView({
     placeKey,
     where,
   });
+  // A review whose code is gone says so once per failure.
+  const reviewGoneRef = useRef(onReviewGone);
+  reviewGoneRef.current = onReviewGone;
+  const goneSession =
+    views.gone && reviewScope.kind === "review" ? reviewScope.sessionId : null;
+  const goneStatus = views.status;
+  useEffect(() => {
+    if (goneSession) reviewGoneRef.current?.(goneSession, goneStatus);
+  }, [goneSession, goneStatus]);
   // A merge request's review: its discussions read again while shown, an
   // older head's found again in today's file (plan phase 7).
   const forgeSnapshot =

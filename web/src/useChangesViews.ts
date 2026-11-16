@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ReviewCommit,
-  ReviewDiff,
-  ReviewTarget,
+import {
+  isReviewGoneCode,
+  type ReviewCommit,
+  type ReviewDiff,
+  type ReviewGoneCode,
+  type ReviewTarget,
 } from "../../shared/review";
 import { reviewDiffAsChanges, stepView, viewName } from "./changesViews";
 import { reviewCall } from "./review";
@@ -55,6 +57,11 @@ export type ChangesViews = {
   status: string;
   /** The last read failed (Retry reads it again). */
   failed: boolean;
+  /**
+   * The last read failed as the review's code is gone from its checkout
+   * (its base, head or checkout): nothing of it can be shown.
+   */
+  gone: ReviewGoneCode | null;
   /** The code changed since it was read: a reload shows it. */
   changed: boolean;
   /** The head the view's diff was read at (the review's, for all changes). */
@@ -114,6 +121,8 @@ export function useChangesViews({
   const [commits, setCommits] = useState<ReviewCommit[] | null>(null);
   /** The place the commits were read for. */
   const [readFor, setReadFor] = useState("");
+  const readForRef = useRef(readFor);
+  readForRef.current = readFor;
   const [sha, setSha] = useState<string | null>(null);
   /** A commit shown that is no longer in the review (a thread's). */
   const [goneCommit, setGoneCommit] = useState<ReviewCommit | null>(null);
@@ -122,6 +131,15 @@ export function useChangesViews({
   const [status, setStatus] = useState("");
   /** Why the last read failed; null once one succeeds. */
   const [failure, setFailure] = useState<string | null>(null);
+  const [goneCode, setGoneCode] = useState<ReviewGoneCode | null>(null);
+  /** A failed read: why, and whether it is a review whose code is gone. */
+  const failWith = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = (error as { code?: unknown } | null)?.code;
+    setFailure(message);
+    setGoneCode(isReviewGoneCode(code) ? code : null);
+    setStatus(`Cannot load the diff: ${message}`);
+  }, []);
   const [changed, setChanged] = useState(false);
   const [pickerState, setPickerState] = useState<{
     query: string;
@@ -237,20 +255,19 @@ export function useChangesViews({
       (error: unknown) => {
         if (cancelled) return;
         placeRead.current = placeKey;
-        // Read before: the review stays on the view it shows.
-        if (commitsRef.current === null) {
+        // Read before: the review stays on the view it shows; not another
+        // review's (the scope shown before), which it is not.
+        if (commitsRef.current === null || readForRef.current !== placeKey) {
           setCommits([]);
           setSha(null);
         }
-        const message = error instanceof Error ? error.message : String(error);
-        setFailure(message);
-        setStatus(`Cannot load the diff: ${message}`);
+        failWith(error);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [active, call, generation, placeKey]);
+  }, [active, call, generation, placeKey, failWith]);
 
   const index = commits?.findIndex((commit) => commit.sha === sha) ?? -1;
   const current =
@@ -284,17 +301,16 @@ export function useChangesViews({
         setDiff(loaded);
         setStatus("");
         setFailure(null);
+        setGoneCode(null);
         setLoading(false);
       },
       (error: unknown) => {
         if (!request.current()) return;
         setLoading(false);
-        const message = error instanceof Error ? error.message : String(error);
-        setFailure(message);
-        setStatus(`Cannot load the diff: ${message}`);
+        failWith(error);
       },
     );
-  }, [call, own, sha, generation]);
+  }, [call, own, sha, generation, failWith]);
 
   // The view shown is remembered with the review.
   useEffect(() => {
@@ -445,6 +461,7 @@ export function useChangesViews({
     loading,
     status,
     failed: active && failure !== null,
+    gone: active && failure !== null ? goneCode : null,
     changed,
     picker: pickerState ? { ...pickerState, choices: picked } : null,
     show,

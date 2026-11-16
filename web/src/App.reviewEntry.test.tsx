@@ -89,6 +89,31 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("a pinned review whose code is gone lets go of its workspace: the toggle opens the workspace's own review again", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1"), reviewOf("r2", "w2")],
+    });
+    try {
+      withVim();
+      await app.agentOpens("r1");
+      await app.agentOpens("r2");
+      expect(Object.values(app.changesPins()).sort()).toEqual(["r1", "r2"]);
+      // r1's commits are gone (a root commit once reviewed as SHA^..SHA).
+      await app.inspectorReviewGone("r1");
+      expect(Object.values(app.changesPins())).toEqual(["r2"]);
+      await app.toggleReview();
+      expect(app.inspector()?.open).toBe(false);
+      app.setNextOpened("r1");
+      await app.toggleReview();
+      await app.settle(50);
+      // Not the pin: the workspace's review is looked for again.
+      expect(app.openCalls()).toBe(1);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=changes, an agent's review of another workspace waits in that workspace's Changes, shown on arriving there", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1"), reviewOf("r2", "w2")],
