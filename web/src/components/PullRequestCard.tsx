@@ -142,6 +142,30 @@ export function PullRequestCard({
 
 type PullRequestStale = { failedAt: string; message?: string };
 
+/** Where a compact card's details open: on the window, under the chip. */
+export type ChipDetailsPlace = { top: number; left: number; width: number };
+
+/** The details' widest, as the card's own (640 px), within the window. */
+const CHIP_DETAILS_WIDTH = 576;
+
+/**
+ * Under the chip's summary and left-aligned with it, moved left to stay
+ * within the window (8 px from its edges), never wider than the window.
+ */
+export function chipDetailsPlace(
+  summary: { bottom: number; left: number },
+  windowWidth: number,
+): ChipDetailsPlace {
+  const width = Math.max(0, Math.min(CHIP_DETAILS_WIDTH, windowWidth - 16));
+  return {
+    top: Math.round(summary.bottom + 4),
+    left: Math.round(
+      Math.max(8, Math.min(summary.left, windowWidth - width - 8)),
+    ),
+    width,
+  };
+}
+
 export function PullRequestCardView({
   compact = false,
   current,
@@ -166,6 +190,11 @@ export function PullRequestCardView({
   onRemoteChange: (value: string) => void;
   onMatchChange: (value: string) => void;
 }) {
+  /*
+   * Compact, the card is a chip in a row that clips what overflows it: its
+   * details open on the window, under the chip, as the review's menus do.
+   */
+  const [place, setPlace] = useState<ChipDetailsPlace | null>(null);
   const pr = current?.state === "ready" ? current.request : undefined;
   if (
     compact &&
@@ -213,7 +242,22 @@ export function PullRequestCardView({
       data-attention={needsAttention || undefined}
       data-stale={stale ? true : undefined}
     >
-      <details className="pull-request-card-disclosure">
+      <details
+        className="pull-request-card-disclosure"
+        onToggle={(event) => {
+          if (!compact) return;
+          const details = event.currentTarget;
+          const summary = details.querySelector("summary");
+          setPlace(
+            details.open && summary
+              ? chipDetailsPlace(
+                  summary.getBoundingClientRect(),
+                  window.innerWidth,
+                )
+              : null,
+          );
+        }}
+      >
         <summary className="pull-request-card-summary">
           <span className="pull-request-card-icon">
             <GitPullRequest size={17} aria-hidden="true" />
@@ -282,7 +326,10 @@ export function PullRequestCardView({
             <RefreshCw size={14} aria-hidden="true" />
           </button>
         </summary>
-        <div className="pull-request-card-content">
+        <div
+          className="pull-request-card-content"
+          style={compact && place ? { position: "fixed", ...place } : undefined}
+        >
           {current ? (
             <PullRequestSelectors
               current={current}

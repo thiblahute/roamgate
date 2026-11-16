@@ -1,3 +1,4 @@
+import { FolderTree, GitGraph, History, Minimize2, X } from "lucide-react";
 import { useState } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import type { InspectorCommand } from "../inspectorCommands";
@@ -115,6 +116,85 @@ export function ReviewOnlyEnd({
         </button>
       ) : null}
       <ZenDock iconSize={14} />
+    </div>
+  );
+}
+
+/**
+ * The inspector's header, shrunk into the review's row when the inspector
+ * fills the screen in the app's Zen: the other views, Restore and Close,
+ * then Zen's way out. Drawn whenever the inspector is expanded; shown only
+ * in the app's Zen, where the inspector's own header is hidden (CSS), so
+ * the review's row is the screen's one row.
+ */
+export function InspectorZenEnd({
+  onView,
+  historyAvailable,
+  onRestore,
+  onClose,
+}: {
+  onView: (view: "files" | "commits" | "history") => void;
+  historyAvailable: boolean;
+  onRestore: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="diff-inspector-end"
+      role="group"
+      aria-label="Workspace Inspector"
+    >
+      <button
+        type="button"
+        className="diff-inspector-end-button"
+        title="Files"
+        aria-label="Show Files"
+        onClick={() => onView("files")}
+      >
+        <FolderTree size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="diff-inspector-end-button"
+        title="Commits"
+        aria-label="Show Commits"
+        onClick={() => onView("commits")}
+      >
+        <GitGraph size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="diff-inspector-end-button"
+        title={
+          historyAvailable
+            ? "Agent history"
+            : "Select an active agent pane to view history"
+        }
+        aria-label="Show History"
+        disabled={!historyAvailable}
+        onClick={() => onView("history")}
+      >
+        <History size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="diff-inspector-end-button"
+        title="Restore Inspector dock"
+        aria-label="Restore Inspector dock"
+        onClick={onRestore}
+      >
+        <Minimize2 size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="diff-inspector-end-button"
+        title="Close Inspector"
+        aria-label="Close Workspace Inspector"
+        onClick={onClose}
+      >
+        <X size={15} aria-hidden="true" />
+      </button>
+      <ZenDock iconSize={14} buttonClassName="diff-inspector-end-button" />
     </div>
   );
 }

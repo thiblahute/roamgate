@@ -94,7 +94,8 @@
 }
 
 /* The shown review's own pull or merge request: a chip in the scope's row,
-   its details opening below as the card's do. */
+   its details opening under it on the window (PullRequestCard places them),
+   out of the row that clips. */
 .changes-request-chip {
   flex: 0 1 auto;
   min-width: 0;
@@ -118,15 +119,14 @@
   text-overflow: ellipsis;
 }
 
-.changes-request-chip .pull-request-card[open] > :not(summary) {
-  position: absolute;
-  z-index: 20;
-  top: 100%;
-  left: 0;
-  width: min(36em, 80vw);
+.changes-request-chip .pull-request-card-disclosure[open] > :not(summary) {
+  z-index: 40;
+  box-sizing: border-box;
   background: var(--viewer-header-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 25%);
+  white-space: normal;
 }
 
 /* The repositories' keys, said to screen readers (the title shows them). */

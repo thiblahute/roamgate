@@ -464,3 +464,81 @@ body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   background: var(--viewer-header-bg);
   border: 1px solid var(--viewer-border);
 }
+
+/*
+ * The app's Zen with the inspector expanded on the review in Changes: the
+ * inspector's header shrinks into the review's row (InspectorZenEnd), so
+ * the screen has one row above the diff. Elsewhere that end is not shown.
+ */
+.diff-inspector-end {
+  order: 4;
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 0;
+}
+
+.app.zen
+  .workspace-inspector.is-expanded[data-view="changes"]
+  .diff-inspector-end {
+  display: flex;
+}
+
+.app.zen
+  .workspace-inspector.is-expanded[data-view="changes"]:has(.diff-inspector-end)
+  > .workspace-inspector-head {
+  display: none;
+}
+
+.diff-inspector-end-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.diff-inspector-end-button:hover:not(:disabled) {
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.diff-inspector-end-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.diff-inspector-end .zen-dock-island {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/*
+ * The header's controls take room in the row: its words go sooner, and the
+ * scope's name gives way before the change and find controls.
+ */
+@container review-head (max-width: 1100px) {
+  .app.zen
+    .workspace-inspector.is-expanded[data-view="changes"]
+    :is(.diff-head-word, .changes-scope-facts, .changes-scope-hint) {
+    display: none;
+  }
+  .app.zen
+    .workspace-inspector.is-expanded[data-view="changes"]
+    .diff-content-head.is-review
+    .diff-content-title {
+    min-width: 3em;
+  }
+  .app.zen
+    .workspace-inspector.is-expanded[data-view="changes"]
+    .diff-content-head.is-review
+    .diff-content-actions {
+    flex-shrink: 0;
+  }
+}

@@ -98,6 +98,7 @@ import { CommandLine } from "./CommandLine";
 import { ShortcutList } from "./ShortcutList";
 import {
   changesFrameCommands,
+  InspectorZenEnd,
   ReviewOnlyEnd,
   useChangesTreeHidden,
 } from "./changesFrame";
@@ -1811,7 +1812,22 @@ export function WorkspaceInspectorHost({
                                       />
                                     ),
                                   }
-                                : {}),
+                                : state.expanded && !compact
+                                  ? {
+                                      // The app's Zen: the inspector's
+                                      // header in the review's row.
+                                      headEnd: (
+                                        <InspectorZenEnd
+                                          onView={onViewChange}
+                                          historyAvailable={historyAvailable}
+                                          onRestore={() =>
+                                            onExpandedChange(false)
+                                          }
+                                          onClose={onClose}
+                                        />
+                                      ),
+                                    }
+                                  : {}),
                             }
                           : {})}
                         onGitAction={(action, path) =>
