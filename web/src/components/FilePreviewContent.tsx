@@ -259,6 +259,7 @@ export const PREVIEW_COMMAND_WORDS: readonly string[] = [
   "files",
   "only",
   "o",
+  "diffonly",
   "zen",
   "conversations",
   "threads",
@@ -1793,7 +1794,7 @@ export function FilePreviewContent({
       ? [
           {
             name: "only",
-            aliases: ["o", "zen"],
+            aliases: ["o", "diffonly", "zen"],
             description: "Review only: no chrome, just the file (o)",
             run: () => toggleZen(),
           },

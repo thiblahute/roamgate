@@ -923,7 +923,7 @@ export function useDiffCursor({
         else if (search || fileSearch.current) {
           setSearch(null);
           fileSearch.current = null;
-        } else return false;
+        } else return threadKey ? threadKey(key, count) : false;
         return true;
       default:
         return threadKey ? threadKey(key, count) : false;

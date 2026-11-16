@@ -145,7 +145,8 @@ export type ForgeMode = ReturnType<typeof useForgeMode>;
 
 /** Opens the merge request's changes in a new tab (O, :open, :gitlab). */
 export function openMergeRequest(snapshot: ReviewSnapshot | null) {
-  const mr = snapshot?.session.gitlab ? snapshot.mergeRequest : undefined;
+  // The branch's merge request, in the local review too (as the pane).
+  const mr = snapshot?.mergeRequest;
   if (!mr) {
     say("This review is not about a GitLab merge request.");
     return;

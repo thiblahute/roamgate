@@ -3156,6 +3156,7 @@ export default function App() {
       sessionId?: string;
       root?: string;
       commit?: string;
+      close?: boolean;
     }) => void
   >(() => {});
   /**
@@ -4074,10 +4075,15 @@ export default function App() {
       root?: string;
       /** Commits' Review this commit: that commit in the Branch scope. */
       commit?: string;
+      /**
+       * Close the review (`:q`, Esc in Changes): back to what the inspector
+       * showed when the toggle showed it, else nothing.
+       */
+      close?: boolean;
     }) => {
       const workspace = store.get().workspaces.find((each) => each.focused);
       if (!workspace) {
-        openDiffViewer();
+        if (!goTo?.close) openDiffViewer();
         return;
       }
       const scope = resourceScopeForWorkspace(
@@ -4129,6 +4135,10 @@ export default function App() {
         }
         if (focusBack) keepFocusBack(focusBack);
       };
+      if (goTo?.close) {
+        if (onChanges && current && toggled) goBack(current, toggled);
+        return;
+      }
       if (showing && current && !goTo) {
         goBack(current, toggled);
         return;
@@ -7188,6 +7198,23 @@ export default function App() {
                       onDockChange={setInspectorDock}
                       onExpandedChange={setInspectorExpanded}
                       onClose={closeInspector}
+                      onCloseReview={(how) => {
+                        // `:q` closes the inspector when no review toggle
+                        // showed Changes; Esc then leaves it as it is.
+                        const toggled = reviewToggleReturnRef.current;
+                        const current = inspectorStateRef.current;
+                        if (
+                          toggled &&
+                          current &&
+                          toggled.owner === resourceOwnerKey(current.scope)
+                        )
+                          toggleReviewInChangesRef.current({ close: true });
+                        else if (how === "command") closeInspector();
+                      }}
+                      onShowReviews={() => {
+                        setReviewSuspended(true);
+                        setReviewListOpen(true);
+                      }}
                       onBack={clearInspectorDetail}
                     />
                   </Suspense>

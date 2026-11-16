@@ -114,6 +114,19 @@ export type ReviewDiffComposerProps = {
  * One comment box. Typing does not render anything: the text is read from
  * a ref when saving, as the review pane does.
  */
+/** The comment boxes open, by their element: `:w` saves the one shown. */
+const openComposers = new Map<Element, () => boolean>();
+
+/**
+ * `:w`: saves the comment box open in `root`, as Save does. Null when none
+ * is open; false when it cannot be saved yet (an image on its way).
+ */
+export function saveOpenComposer(root: Element | null): boolean | null {
+  for (const [element, save] of openComposers)
+    if (root?.contains(element)) return save();
+  return null;
+}
+
 export function ReviewDiffComposer({
   anchor,
   suggestable,
@@ -217,6 +230,18 @@ export function ReviewDiffComposer({
     return true;
   };
 
+  const box = useRef<HTMLDivElement | null>(null);
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+  useEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    openComposers.set(element, () => commitRef.current(true));
+    return () => {
+      openComposers.delete(element);
+    };
+  }, []);
+
   // Going away with words unsent (a reload, another view, a closed tab):
   // they are kept as a draft, as the review pane keeps its open editor's.
   const keepOnUnmount = useRef(() => {});
@@ -245,6 +270,7 @@ export function ReviewDiffComposer({
 
   return (
     <div
+      ref={box}
       className={
         replyTo || commentId || overall
           ? "diff-review-reply"

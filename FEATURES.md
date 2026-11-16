@@ -186,6 +186,17 @@ Inspector button, shortcuts, or workspace/agent menus.
   (Cmd+F still finds on a Mac) and `:split` / `:unified` switch, as in the
   review pane. On the classic setting (the default), Changes keeps its own
   keys and mouse.
+- The same setting gives Changes' `:` line the review pane's commands, the
+  same words and Tab completion, and its message for a word that is none of
+  them. `:q` (`:quit`, `:close`, `:wq`, `:x`...) and Esc with nothing else to
+  leave (a selection, a search, Review only first) close the review as the
+  review toggle does, back to what the inspector showed; with Changes opened
+  by hand, `:q` closes the inspector and Esc does nothing. `:w` saves the
+  comment being written, `:reviews` lists the reviews in progress, `:review`
+  alone opens the agent review's focus bar (Start asks, with or without a
+  focus), `:conversations` lists the comments even when there are none yet.
+  `?` and `:help` show the review's shortcut list, the review pane's rows and
+  then Changes' own.
 - The same setting gives Changes the review's comments. `c`, Enter, `i` or
   `a` comment on the cursor's line, or on the lines `V` selected, in the
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc

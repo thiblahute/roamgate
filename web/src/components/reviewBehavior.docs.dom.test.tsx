@@ -29,7 +29,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
   const { defaultShortcutBindings, formatShortcut } = await import(
     "../shortcutBindings"
   );
@@ -159,7 +159,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     ]);
   });
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("commands"))
     describe(name, () => {
       test("the keys FEATURES.md's Review section documents are the review's shortcut list's", async () => {
         const surface = await mount({

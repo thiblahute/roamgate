@@ -13,6 +13,8 @@ import type { ReviewSurface, SurfaceOptions } from "./reviewSurface.testkit";
 export type SurfaceFeature =
   /** Everything the classic pane does (the files not yet sorted). */
   | "review"
+  /** The review's `:` commands and its shortcut list (`?`, `:help`). */
+  | "commands"
   /** The Vim cursor, its motions, the screen, Visual lines (phase 3). */
   | "cursor"
   /** `/ * # n N` in the diff and its file paths (phase 3). */
@@ -65,6 +67,7 @@ export type SurfaceEntry = {
 };
 
 const CHANGES_FEATURES = new Set<SurfaceFeature>([
+  "commands",
   "cursor",
   "search",
   "sides",
