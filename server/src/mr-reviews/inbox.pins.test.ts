@@ -68,6 +68,10 @@ function setup() {
           },
         };
       }
+      if (query.includes("authoredMergeRequests")) {
+        reads.push("own");
+        return { data: { currentUser: { username: "me", au: { nodes: [] } } } };
+      }
       reads.push("inbox");
       return {
         data: {
@@ -169,6 +173,22 @@ describe("pinned and hidden requests", () => {
     expect(storedMrReviews(DEFAULT_MR_REVIEWS_SETTINGS).pinned).toBeUndefined();
   });
 
+  test("pinning a listed request reads nothing; unpinning puts it back", async () => {
+    const t = setup();
+    await t.inbox.refresh();
+    t.reads.length = 0;
+    const { key } = (await t.call("pin", { text: url(1) })) as { key: string };
+    expect(t.reads).toEqual([]);
+    expect(t.snapshot().entries.find((each) => each.key === key)?.section).toBe(
+      "pinned",
+    );
+    await t.call("unpin", { key });
+    expect(t.snapshot().entries.find((each) => each.key === key)?.section).toBe(
+      "mine",
+    );
+    expect(t.settings().hidden).toEqual([]);
+  });
+
   test("pin by URL: read from the forge, listed as Pinned, kept in the settings", async () => {
     const t = setup();
     await t.inbox.refresh();
@@ -189,12 +209,12 @@ describe("pinned and hidden requests", () => {
     expect(t.inbox.item(pinned.key)?.title).toBe("MR 7");
     t.reads.length = 0;
     await t.inbox.refresh();
-    expect(t.reads).toEqual(["inbox", "one 7"]);
+    expect(t.reads).toEqual(["inbox", "own", "one 7"]);
     // One the inbox lists is pinned without another call.
     await t.call("pin", { text: url(1) });
     t.reads.length = 0;
     await t.inbox.refresh();
-    expect(t.reads).toEqual(["inbox", "one 7"]);
+    expect(t.reads).toEqual(["inbox", "own", "one 7"]);
     expect(
       t.snapshot().entries.find((each) => each.number === 1)?.section,
     ).toBe("pinned");

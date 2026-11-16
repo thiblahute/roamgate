@@ -13,6 +13,7 @@ import type {
 import {
   mrActivityMarker,
   mrProjectKey,
+  mrSeenOf,
   mrUnread,
 } from "../../../shared/mrReviews";
 import { type Logger, serverLogger } from "../utils/logger";
@@ -29,10 +30,15 @@ import {
 } from "./fetchers";
 import {
   type HostAnswer,
+  type OwnFields,
   githubInboxQuery,
+  githubOwnQuery,
   gitlabInboxQuery,
+  gitlabOwnQuery,
   parseGithubInbox,
   parseGitlabInbox,
+  parseOwnRequests,
+  unknownFieldError,
 } from "./queries";
 import type { MrStore } from "./store";
 
@@ -64,6 +70,7 @@ const PINS_PER_REFRESH = 20;
 /** A pinned request that closed is read again after this. */
 const PIN_TTL_MS = 60 * 60_000;
 const PIN_CALL: FetchCall = { feature: "inbox", kind: "pinned" };
+const OWN_CALL: FetchCall = { feature: "inbox", kind: "own" };
 
 /** The page a request has on its forge, for a pin not read. */
 function requestUrl(ref: ForgeRef): string {
@@ -86,7 +93,12 @@ export type MrInboxDeps = {
   curation?: () => MrCurationState;
 };
 
-type HostResult = { state: MrHostState; answer?: HostAnswer };
+type HostResult = {
+  state: MrHostState;
+  answer?: HostAnswer;
+  /** The user's own requests; absent when they could not be read. */
+  own?: MrItem[];
+};
 
 export function createMrInbox(deps: MrInboxDeps) {
   const now = deps.now ?? (() => Date.now());
@@ -98,6 +110,8 @@ export function createMrInbox(deps: MrInboxDeps) {
   let lastViewer = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = true;
+  /** The own-requests fields each GitLab host takes. */
+  const ownFields = new Map<string, OwnFields>();
 
   /**
    * Every request known: the forges' lists, then those the reviews agent
@@ -181,9 +195,50 @@ export function createMrInbox(deps: MrInboxDeps) {
     for (const ref of due) await readPin(ref);
   }
 
+  /**
+   * The user's own requests on a host: open, or settled since
+   * `settledSince`. A GitLab host that refuses a field is asked the basic
+   * ones from then on.
+   */
+  async function readOwn(
+    host: { host: string; provider: "gitlab" | "github" },
+    settledSince: string,
+  ): Promise<MrItem[]> {
+    if (host.provider === "github")
+      return parseOwnRequests(
+        "github",
+        host.host,
+        await deps.fetchers.github(host.host, githubOwnQuery(), OWN_CALL),
+        settledSince,
+      );
+    const fields = ownFields.get(host.host) ?? "full";
+    const fallBack = () => {
+      ownFields.set(host.host, "basic");
+      logger.info("own requests read with the basic fields", {
+        host: host.host,
+      });
+      return readOwn(host, settledSince);
+    };
+    let answer: unknown;
+    try {
+      answer = await deps.fetchers.gitlab(
+        host.host,
+        gitlabOwnQuery(fields),
+        OWN_CALL,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (fields === "full" && /field/i.test(message)) return fallBack();
+      throw error;
+    }
+    if (fields === "full" && unknownFieldError(answer)) return fallBack();
+    return parseOwnRequests("gitlab", host.host, answer, settledSince);
+  }
+
   async function readHost(
     host: { host: string; provider: "gitlab" | "github" },
     followed: string[],
+    settledSince: string,
   ): Promise<HostResult> {
     const base = { host: host.host, provider: host.provider };
     try {
@@ -199,7 +254,18 @@ export function createMrInbox(deps: MrInboxDeps) {
               followed,
               await deps.fetchers.github(host.host, githubInboxQuery(followed)),
             );
+      // Its own query: a failure there keeps what was known of them.
+      let own: MrItem[] | undefined;
+      try {
+        own = await readOwn(host, settledSince);
+      } catch (error) {
+        logger.debug("own requests not read", {
+          host: host.host,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return {
+        ...(own ? { own } : {}),
         state: {
           ...base,
           state: "ok",
@@ -265,9 +331,15 @@ export function createMrInbox(deps: MrInboxDeps) {
       settings.followed
         .filter((entry) => entry.host === host)
         .map((entry) => entry.project);
-    // Hosts without a followed project nor a login cost one call each.
+    // Hosts without a followed project nor a login cost two calls each
+    // (the inbox, the user's own requests).
+    const settledSince = new Date(
+      now() - settings.retentionDays * 24 * 60 * 60_000,
+    ).toISOString();
     const results = await Promise.all(
-      settings.hosts.map((host) => readHost(host, followedOf(host.host))),
+      settings.hosts.map((host) =>
+        readHost(host, followedOf(host.host), settledSince),
+      ),
     );
     hosts.clear();
     for (const result of results) hosts.set(result.state.host, result);
@@ -289,6 +361,22 @@ export function createMrInbox(deps: MrInboxDeps) {
           ...(followed?.files ? { files: followed.files } : {}),
         });
       }
+      // The user's own: what they were read with, else what was known.
+      const own =
+        result.own ??
+        previous.filter(
+          (item) =>
+            item.host === result.state.host &&
+            item.reasons.includes("authored"),
+        );
+      for (const item of own) {
+        const known = merged.get(item.key);
+        merged.set(item.key, {
+          ...item,
+          reasons: [...new Set([...(known?.reasons ?? []), ...item.reasons])],
+          ...(known?.files ? { files: known.files } : {}),
+        });
+      }
     }
     const list = [...merged.values()];
     deps.store.update((state) => {
@@ -301,13 +389,13 @@ export function createMrInbox(deps: MrInboxDeps) {
         state.baselined[result.state.host] = iso();
         for (const item of list)
           if (item.host === result.state.host && !state.seen[item.key])
-            state.seen[item.key] = {
-              at: iso(),
-              updatedAt: item.updatedAt,
-              headSha: item.headSha,
-              notes: item.notes,
-            };
+            state.seen[item.key] = mrSeenOf(item, iso());
       }
+      // The user's own requests are never "new" to them: what changes on
+      // them from the first sight on is what shows.
+      for (const item of list)
+        if (item.reasons.includes("authored") && !state.seen[item.key])
+          state.seen[item.key] = mrSeenOf(item, iso());
       for (const item of list) {
         const review = state.reviews[item.key];
         if (review && item.state !== "open" && !review.closedAt)
@@ -369,9 +457,11 @@ export function createMrInbox(deps: MrInboxDeps) {
       listed.add(item.key);
       const section = pinned.has(item.key)
         ? "pinned"
-        : item.reasons.length
-          ? "mine"
-          : "suggested";
+        : item.reasons.includes("authored")
+          ? "authored"
+          : item.reasons.length
+            ? "mine"
+            : "suggested";
       const ranked = state.ranked[item.key];
       const verdict = verdicts.get(item.key);
       if (section === "suggested") {
@@ -449,7 +539,7 @@ export function createMrInbox(deps: MrInboxDeps) {
         unavailable: state.pins[key]?.error ?? "Not read yet",
       });
     }
-    const rank = { pinned: 0, mine: 1, suggested: 2 } as const;
+    const rank = { pinned: 0, mine: 1, authored: 2, suggested: 3 } as const;
     const unreadFirst = (entry: MrInboxEntry) =>
       entry.isNew || entry.unread?.changed ? 0 : 1;
     const score = (entry: MrInboxEntry) => state.ranked[entry.key]?.score ?? 0;
@@ -519,12 +609,7 @@ export function createMrInbox(deps: MrInboxDeps) {
       const item = items().find((entry) => entry.key === key);
       if (!item) return false;
       deps.store.update((state) => {
-        state.seen[key] = {
-          at: iso(),
-          updatedAt: item.updatedAt,
-          headSha: item.headSha,
-          notes: item.notes,
-        };
+        state.seen[key] = mrSeenOf(item, iso());
       });
       deps.onChange?.();
       return true;

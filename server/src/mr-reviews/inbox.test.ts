@@ -58,6 +58,8 @@ function fakeFetchers(over: Partial<InboxFetchers> = {}) {
       calls.push(`gitlab ${host}`);
       if (host === "gitlab.nologin.org")
         throw new NotSignedInError("Not signed in to gitlab.nologin.org");
+      if (query.includes("authoredMergeRequests"))
+        return { data: { currentUser: { username: "me", au: { nodes: [] } } } };
       expect(query).toContain('project(fullPath: "group/app")');
       return {
         data: {

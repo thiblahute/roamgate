@@ -3,6 +3,7 @@ import type {
   MrInbox,
   MrReviewsPush,
   MrReviewsSettings,
+  MrWorkspaceLink,
 } from "../../shared/mrReviews";
 import { bridge } from "./api";
 
@@ -158,4 +159,57 @@ export function hideMrRequest(
 
 export function unhideMrRequest(key: string): Promise<unknown> {
   return mrReviewsCall("unhide", { key });
+}
+
+/** Unpins a request: it stays listed where a query lists it. */
+export function unpinMrRequest(key: string): Promise<unknown> {
+  return mrReviewsCall("unpin", { key });
+}
+
+/** The workspaces that are each request's, on every connection. */
+export async function loadMrWorkspaceLinks(
+  keys: string[],
+): Promise<Record<string, MrWorkspaceLink[]>> {
+  if (!keys.length) return {};
+  const reply = await mrReviewsCall<{
+    links?: Record<string, MrWorkspaceLink[]>;
+  }>("links", { keys });
+  return reply.links ?? {};
+}
+
+/** How long the links of the shown requests stand before they are read again. */
+export const LINKS_POLL_MS = 60_000;
+
+/**
+ * The workspaces of the requests shown (by key), read when the set of
+ * requests changes and every LINKS_POLL_MS while mounted.
+ */
+export function useMrWorkspaceLinks(
+  keys: readonly string[],
+): Record<string, MrWorkspaceLink[]> {
+  const [links, setLinks] = useState<Record<string, MrWorkspaceLink[]>>({});
+  const wanted = [...keys].sort().join("\n");
+  useEffect(() => {
+    if (!wanted) {
+      setLinks({});
+      return;
+    }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const read = async () => {
+      try {
+        const next = await loadMrWorkspaceLinks(wanted.split("\n"));
+        if (live) setLinks(next);
+      } catch {
+        // Kept as they were: a connection may be reconnecting.
+      }
+      if (live) timer = setTimeout(read, LINKS_POLL_MS);
+    };
+    void read();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [wanted]);
+  return links;
 }

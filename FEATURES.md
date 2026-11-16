@@ -1019,13 +1019,44 @@ rate limit stops two sessions answering each other in a loop.
 **Menu > Reviews**, the command menu or `Option+M` (`Alt+M`) opens the
 merge and pull requests waiting for you, from every GitLab and GitHub host
 glab and gh are signed in to on the Roamgate machine (or the hosts listed in
-its settings). It sits beside the page as Ranger does, with the same head,
-list and detail. **For you** lists the open requests where you are a
+its settings); the same key hides it again. It sits beside the page as
+Ranger does, as tall as Ranger's panel, with the same head, list and detail.
+Maximized (its head's button) it covers the workspace; Esc hides it as it is,
+and it comes back maximized until you restore it (kept in the browser). **To
+review** lists the open requests where you are a
 requested reviewer, an assignee or mentioned (a pending GitLab to-do, a
-GitHub mention); **Suggested** lists those Claude picked from the projects
+GitHub mention); **Mine** lists the requests you opened, open ones and those
+merged or closed in the last few days (the closed-review setting);
+**Suggested** lists those Claude picked from the projects
 you follow, each with why. A row shows the state, the pipeline, what changed
 since you last looked (new commits, new comments) and how many drafts you
-have pending on the forge. On a phone it fills the screen.
+have pending on the forge. On a phone it fills the screen. **All**, **To
+review** and **Mine** above the list (`f`, `:all`, `:review`, `:mine`) show
+everything or one side only; the choice is kept in the browser.
+
+One of your own requests shows where it stands: its pipeline, who approved
+it (or that nobody did yet), who asked for changes (GitHub), its unresolved
+threads, conflicts, and whether GitLab wants it rebased. What changed since
+you last looked is marked on those chips and said in the row ("pipeline
+failed, approved by bob, 2 new comments", "merged"): a pipeline that changed,
+new approvals, conflicts, threads to resolve, a merge or close, new commits
+and comments. It stays marked until you look: its details (`i`), its review,
+`o` or its workspace. Your requests are never shown "new": only what happens
+on them after they first show is. They come from one more query per host and
+refresh (no call per request), served from the inbox's store at once and read
+again in the background as the inbox is; a host that lacks some of the fields
+is asked the basic ones (pipeline, conflicts, rebase).
+
+A request's own workspaces, on every connection, are a click away: the
+house button on its row (with their count when there are several), its
+details' **Workspaces** (each with its connection and why), or `w` (`2w`
+for the second). A workspace is a request's when its checkout is on the
+request's source branch, or tracks it, in a clone of the project (or of a
+fork of it), when its name carries the request's number (`!12`, `#12`,
+`mr-12`) or branch, or when it is the request's review workspace. The
+target's branch never counts. With none, `w` says so and goes nowhere. These
+are read from your workspaces and their checkouts, at most once a minute per
+connection; never from the forge.
 
 The list is in your order: drag a request by its grip, or select it and
 use its up and down buttons (on a phone) or `J`/`K`, within its section.
@@ -1045,7 +1076,10 @@ panel, or dropping a link on it, does the same. It goes into a **Pinned**
 section above For you, read from the forge, and stays there whether or not
 a query lists it, with its state, pipeline and what changed like any row.
 One the forge does not give (not found, no access, host down) shows why,
-with a button to remove it. Pinned requests keep your order and answer the
+with a button to remove it. `P` (or the pin button of the selected row, its
+details' **Pin**, `:pin`) pins any request of the list on top without a
+call to the forge; `P` again (or `:unpin`) puts it back where a query lists
+it, and the toast's Undo takes either back. Pinned requests keep your order and answer the
 search. Removing a request (`dd` or `Delete`, `x` on a request that is not a
 suggestion, or the row's button) unpins a pinned one; any other one is
 hidden until something happens on it (a push, a comment, a state change),
@@ -1053,16 +1087,22 @@ and an **N hidden** chip (`H`) lists the hidden ones with Restore. `u` right
 after takes the removal back (a toast offers it for a few seconds). `x` on
 a suggestion stays "not interested". Pins and hidden requests are kept in
 the settings (`mr_reviews.pinned`, `mr_reviews.hidden`), so every device
-follows. The keys, as in Roamgate's other lists (`?` lists them):
+follows. The keys, as in Roamgate's other lists (`?` lists them, and so
+does the shortcut cheat sheet):
 
 | Key                      | Action                                                                            |
 | ------------------------ | --------------------------------------------------------------------------------- |
 | `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)                                   |
 | `gg`/`G`, Home/End       | First / last (`2G`: the second)                                                   |
+| `zz` / `zt` / `zb`       | Show the selected request in the middle, at the top, at the bottom of the list    |
 | `Enter`                  | Open its review                                                                   |
 | `i`                      | Its details                                                                       |
 | `c`                      | Its Claude session                                                                |
 | `o`                      | Open it on GitLab or GitHub                                                       |
+| `w`                      | Go to its workspace (`2w`: the second), on its connection                         |
+| `P`                      | Pin it on top, or unpin it                                                        |
+| `f`                      | Show all, to review, or mine                                                      |
+| `:`                      | A command: `pin`, `unpin`, `all`, `review`, `mine`, `refresh`                     |
 | `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                            |
 | `/`                      | Search; in the box Enter opens, Esc clears and goes back                          |
 | `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                         |
@@ -1073,7 +1113,7 @@ follows. The keys, as in Roamgate's other lists (`?` lists them):
 | `r`                      | Refresh                                                                           |
 | `a`                      | Ask the reviews agent                                                             |
 | `?`                      | List the keys                                                                     |
-| `Esc`                    | Step back: the key list, the search, then the panel                               |
+| `Esc`                    | Step back: the key list, the search, then hide the panel (maximized or not)       |
 
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**

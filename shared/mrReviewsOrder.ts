@@ -5,7 +5,12 @@
  * never a stale list written over it. Pure: the server and the page share it.
  */
 
-export const MR_SECTION_ORDER = ["pinned", "mine", "suggested"] as const;
+export const MR_SECTION_ORDER = [
+  "pinned",
+  "mine",
+  "authored",
+  "suggested",
+] as const;
 export type MrOrderSection = (typeof MR_SECTION_ORDER)[number];
 
 /** Requests kept in the user's order. */
@@ -79,6 +84,7 @@ export function applyMrOrderOp(
   const sections: MrOrderSections = {
     pinned: [...current.pinned],
     mine: [...current.mine],
+    authored: [...current.authored],
     suggested: [...current.suggested],
   };
   const unknown: string[] = [];

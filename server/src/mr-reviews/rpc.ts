@@ -154,7 +154,9 @@ export async function handleMrReviewsRpc(
           change(params),
         );
       });
-      await deps.inbox.readPin(ref);
+      // One a list already has (pinned from the inbox) is known: no call.
+      if (deps.inbox.item(key)) deps.inbox.changed();
+      else await deps.inbox.readPin(ref);
       return { ok: true, key };
     }
     case "bridge.mr_reviews.unpin": {

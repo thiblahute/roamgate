@@ -14,6 +14,7 @@ import { createCloneFinder, type MrConnection } from "./clones";
 import { createInboxFetchers, type InboxFetchers } from "./fetchers";
 import { discoverForgeHosts, type ForgeHost } from "./hosts";
 import { createMrInbox } from "./inbox";
+import { createWorkspaceLinker } from "./links";
 import { createMrAgent, type MrAgent } from "./agent";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
@@ -147,6 +148,9 @@ export function createMrReviews(options: {
   }
 
   const clones = createCloneFinder();
+  const linker = createWorkspaceLinker({
+    connections: options.connections ?? (() => []),
+  });
   let opener: ReturnType<typeof createMrOpener> | null = null;
   const curation = createMrCuration({
     store,
@@ -421,6 +425,34 @@ export function createMrReviews(options: {
             },
           ),
         };
+      }
+      case "bridge.mr_reviews.links": {
+        // The workspaces that are each request's, on every connection: no
+        // forge call. `keys` narrows it to those requests.
+        const wanted = Array.isArray(params.keys)
+          ? new Set(
+              params.keys
+                .filter((each): each is string => typeof each === "string")
+                .slice(0, 200),
+            )
+          : null;
+        const items = inbox
+          .items()
+          .filter((item) => !wanted || wanted.has(item.key));
+        // Its review workspace: where its review is, or the project's
+        // review worktree while it is checked out on it.
+        const state = store.get();
+        const reviews: Record<
+          string,
+          { connectionId: string; workspaceId?: string }
+        > = { ...state.reviews };
+        for (const record of Object.values(state.projects))
+          if (record.workspaceId && record.checkedOut)
+            reviews[record.checkedOut] ??= {
+              connectionId: record.connectionId,
+              workspaceId: record.workspaceId,
+            };
+        return { links: await linker.links(items, reviews) };
       }
       case "bridge.mr_reviews.forget_worktree": {
         // The project's next review makes its worktree anew (on the

@@ -41,24 +41,4 @@ export function mrPastedRequest(text: string): string | null {
     : null;
 }
 
-/** The panel's keys, for its help (?). */
-export const MR_REVIEWS_KEYS: [string, string][] = [
-  ["j k / Down Up", "next / previous request (a count repeats: 3j)"],
-  ["gg G / Home End", "first / last"],
-  ["Enter", "review it"],
-  ["i", "its details"],
-  ["c", "its Claude session"],
-  ["o", "open it on GitLab or GitHub"],
-  ["J K / Alt+Down Alt+Up", "move it down / up in your order (3J)"],
-  ["/", "search: title, project, author, number, branch"],
-  ["p", "add a request: paste its URL (also paste or drop one in the panel)"],
-  ["dd / Delete", "remove it from the view (a pinned one is unpinned)"],
-  ["u", "undo the last removal"],
-  ["H", "the hidden requests, to restore"],
-  ["x", "not interested (a suggestion), else remove it as dd"],
-  ["+", "more like this (a suggestion)"],
-  ["r", "refresh"],
-  ["a", "ask the reviews agent"],
-  ["?", "this list"],
-  ["Esc", "close the list, clear the search, then the panel"],
-];
+export { MR_REVIEWS_KEYS } from "./mrReviewsKeys";

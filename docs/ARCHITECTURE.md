@@ -657,7 +657,36 @@ GitHub `search` for review-requested, assignee and mentions plus each
 followed repository's open pull requests, with the viewer's pending review
 (its comment count is the draft count). GitLab draft counts are a
 conditional read of a request's `draft_notes`, only for requests
-reviewed in Roamgate, when the request changed or hourly. A host that fails keeps its last answer. State
+reviewed in Roamgate, when the request changed or hourly. A host that fails keeps its last answer.
+
+The user's own requests are a second query per host and refresh (kind
+`own`): GitLab `currentUser.authoredMergeRequests` and GitHub `search`
+`is:pr author:@me`, latest 30 in any state, of which the open ones and those
+updated within `retentionDays` are kept, with `reasons: ["authored"]` and
+`own` (`MrOwnStatus`: approvers, approved, changes requested, unresolved
+threads, conflicts, needs rebase). A GitLab host whose schema refuses one of
+the full fields (`approved`, `approvedBy`, `detailedMergeStatus`, the
+discussion counts) is asked the basic ones (`conflicts`, `shouldBeRebased`)
+from then on; an own query that fails keeps the host's last own items.
+Their entries get the section `authored` (after `mine`; pinned wins), and
+they are seen (never `isNew`) when first listed. `MrSeen` keeps the state,
+pipeline, approvers, unresolved count and conflicts too (`mrSeenOf`), so
+`mrUnread` says what changed among those; a record from before they were
+kept says nothing about them.
+
+`bridge.mr_reviews.links {keys?}` gives each listed request's workspaces,
+on every ready connection (`links.ts`): one `workspace.list`, one
+`pane.list` and one git script (branch, upstream, remote URLs of each
+workspace's checkout, else of its panes' folders) per connection, kept a
+minute. A workspace is a request's when its checkout is
+on the source branch or tracks it in a clone of the project (a remote is the
+project, or has its repository name on the same host: a fork), when its name
+carries the number (`!12`, `#12`, `mr-12`) or the branch in such a clone or
+outside any repository, or when it holds the request's review (its review
+record, or the project's review worktree checked out on it). A source branch
+that is the target's, `main` or `master`, never matches. No forge call.
+
+State
 (`<data>/mr-reviews/state.json`): what the user saw of each request
 (unread), feedback, Claude's picks, each request's Roamgate review and the
 time it was seen merged or closed, and each project's review worktree. The
@@ -665,7 +694,7 @@ inbox never writes to a forge.
 
 The user's order of the list is the settings' `mr_reviews.order` (request
 keys, at most 500), one flat list applied within each section (pinned, mine,
-suggested), requests not in it first; it wins over the inbox's own sort in
+authored, suggested), requests not in it first; it wins over the inbox's own sort in
 every section. It is server state, with a version: `mr_reviews.order_version`
 (`orderVersion` in the settings, returned with each
 `bridge.mr_reviews.inbox` as `orderVersion` beside `order`) counts every save
@@ -701,7 +730,7 @@ Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `mr_reviews.hidden` (`{key, marker}`, at most 300, the oldest forgotten
 first). `bridge.mr_reviews.pin {text}` takes a URL on one of the effective
 hosts or `project!12` (`parseRequestRef`), saves it, un-hides it and reads
-it at once; `unpin {key}`, `hide {key}` (a pinned request is unpinned,
+it at once (a request a list already has needs no read); `unpin {key}`, `hide {key}` (a pinned request is unpinned,
 another is hidden, answering `action`) and `unhide {key}` edit the lists
 one at a time. A pinned request the inbox's queries do not list is read
 with the single-request query (feature `inbox`, kind `pinned`, one call
