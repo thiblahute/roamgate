@@ -97,10 +97,18 @@ import {
   isWorkspaceRelativePath,
   treeRelativePath,
   buildGitStatusMaps,
+  mapGitPathToExplorerPath,
   requestFilePreview,
   uploadExplorerFile,
   deleteExplorerEntry,
 } from "./fileExplorerResources";
+import type { ReviewFileMark } from "../useReviewFileMarks";
+
+/** The review's files (repository paths) and its root, for the tree. */
+export type ExplorerReviewMarks = {
+  root: string | undefined;
+  marks: ReadonlyMap<string, ReviewFileMark>;
+};
 import "./FileExplorerDialog.css";
 
 const LONG_PRESS_MS = 550;
@@ -153,6 +161,7 @@ export function FileExplorerPanel({
   onPreviewChange,
   onPinFileTab,
   onActiveDiffEntriesChange,
+  reviewMarks,
 }: {
   open: boolean;
   workspaceId?: string;
@@ -168,6 +177,8 @@ export function FileExplorerPanel({
   ) => void;
   onPinFileTab?: (path: string) => void;
   onActiveDiffEntriesChange?: (entries: GitDiffEntry[]) => void;
+  /** The review's files and ticks (reviews in Changes, D16). */
+  reviewMarks?: ExplorerReviewMarks;
 }) {
   if (!open) return null;
 
@@ -187,6 +198,7 @@ export function FileExplorerPanel({
         onPreviewChange={onPreviewChange}
         onPinFileTab={onPinFileTab}
         onActiveDiffEntriesChange={onActiveDiffEntriesChange}
+        reviewMarks={reviewMarks}
       />
     </aside>
   );
@@ -373,6 +385,7 @@ function FileExplorerContent({
   onPreviewChange,
   onPinFileTab,
   onActiveDiffEntriesChange,
+  reviewMarks,
 }: {
   open: boolean;
   workspaceId?: string;
@@ -390,6 +403,7 @@ function FileExplorerContent({
   ) => void;
   onPinFileTab?: (path: string) => void;
   onActiveDiffEntriesChange?: (entries: GitDiffEntry[]) => void;
+  reviewMarks?: ExplorerReviewMarks;
 }) {
   const workspaces = useStoreSelector((state) => state.workspaces);
   const connectionClient = useLiveConnectionClient();
@@ -516,6 +530,20 @@ function FileExplorerContent({
     () => buildGitStatusMaps(gitSummaryState.summary, rootInfo?.root),
     [gitSummaryState.summary, rootInfo?.root],
   );
+  /** The review's files by their path in the tree (D16). */
+  const reviewMarkByPath = useMemo(() => {
+    const byPath = new Map<string, ReviewFileMark>();
+    if (!reviewMarks?.root || !rootInfo?.root) return byPath;
+    for (const [path, mark] of reviewMarks.marks) {
+      const shown = mapGitPathToExplorerPath(
+        reviewMarks.root,
+        rootInfo.root,
+        path,
+      );
+      if (shown) byPath.set(shown, mark);
+    }
+    return byPath;
+  }, [reviewMarks, rootInfo?.root]);
   const activeDiffEntries = useMemo(
     () =>
       activePath
@@ -1815,6 +1843,9 @@ function FileExplorerContent({
     const gitStatus = isDirectory
       ? gitStatusMaps.directoryStatuses.get(entry.path)
       : gitStatusMaps.fileStatuses.get(entry.path);
+    const reviewMark = isDirectory
+      ? undefined
+      : reviewMarkByPath.get(entry.path);
     const meta = [entry.type === "symlink" ? "symlink" : "", displaySize(entry)]
       .filter(Boolean)
       .join(" · ");
@@ -1958,6 +1989,27 @@ function FileExplorerContent({
                   {code}
                 </span>
               ))}
+            </span>
+          ) : null}
+          {reviewMark ? (
+            <span
+              className={`file-review-mark ${reviewMark.reviewed ? "is-reviewed" : ""} ${reviewMark.other ? "is-other" : ""}`}
+              data-review-mark={
+                reviewMark.reviewed
+                  ? reviewMark.other
+                    ? "other-reviewed"
+                    : "reviewed"
+                  : "other"
+              }
+              title={
+                reviewMark.other
+                  ? reviewMark.reviewed
+                    ? "In the review, no change: reviewed"
+                    : "In the review, no change: commented on"
+                  : "Reviewed"
+              }
+            >
+              {reviewMark.reviewed ? "\u2713" : "\u2022"}
             </span>
           ) : null}
           {meta ? <span className="file-meta">{meta}</span> : null}

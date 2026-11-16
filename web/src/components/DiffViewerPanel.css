@@ -757,6 +757,12 @@
   white-space: nowrap;
 }
 
+.diff-tree-threads {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .diff-tree-progress.is-reviewed {
   opacity: 1;
   color: var(--git-added, #3fb950);

@@ -815,6 +815,25 @@ Agents' `get` lists the shared threads with their own review id, unless
 that review is one agents may not read. Pending drafts the merge request's
 review already shows are not shared twice.
 
+With reviews in Changes (`reviewin=changes`, the browser's setting), a
+comment written in Files on a file of the checkout opens the checkout's
+worktree review instead of the file's rendered review
+(`workspaceFeedback.ts` `feedbackRoute`, `FeedbackPlace.oneReview`): the
+anchor's `path` is relative to that review's root, and keeps its line, text
+and `render` part; `anchor.feedback` keeps the note (source `file`) as
+written. Changes reads such a note as a comment on the file's combined
+diff at its new-side line (`reviewFiles.ts` `fileNoteAsDiff`); a thread
+with a `render` part is placed by its line, not by its text. Rendered
+reviews written before keep their threads and are still shared as above;
+nothing is moved. The worktree review's `reviewed` marks are the one
+reviewed state: a changed file's tick is its whole-file mark (`all:path`,
+the combined diff's fingerprint) or every chunk's, read the same way from
+`git.diff_file` kind `combined` by Files (`useReviewFileMarks.ts`); a file
+with no change is ticked with `all:path` = `unchanged`, which no diff's
+fingerprint equals, so the tick lapses once the file changes. The review's
+"Other files" are the files with no change that have that tick or an open
+thread of the worktree review (`otherReviewFiles`).
+
 In the Files preview, an animated diagram block and a standalone SVG (when
 animated or pointed at) are drawn by the same sandbox, unsanitized, as a static
 page held by the token (`kind: "inline"`): the helper pauses and crops them, and

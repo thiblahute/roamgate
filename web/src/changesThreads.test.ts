@@ -272,3 +272,49 @@ describe("on the combined diff (the review in Changes, D8)", () => {
     expect(unplaced.map((t) => t.id)).toEqual(["g"]);
   });
 });
+
+describe("placing the threads written in Files (D16)", () => {
+  const combined = (id: string, line: number): DiffReviewAnnotation => ({
+    ...note(id, "unstaged", line),
+    kind: "combined",
+  });
+  test("a rendered file's thread is on its line, though the words it quotes are not the line's", () => {
+    const words = {
+      ...thread("r", 2, "the rendered words"),
+      anchor: {
+        path: "a.ts",
+        line: 2,
+        side: "new",
+        text: "the rendered words",
+        render: { quote: "the rendered words" },
+      },
+    } as ReviewThread;
+    const placed = placeDiffThreads(
+      [combined("r", 2)],
+      new Map([["r", words]]),
+      [{ key: "combined:a.ts", path: "a.ts" }],
+      [
+        row("combined:a.ts", " ", 1, 1, "one"),
+        row("combined:a.ts", "+", null, 2, "# The **rendered** words"),
+      ],
+    );
+    expect(placed.unplaced).toEqual([]);
+    expect(
+      placed.placed.map(({ key, line, moved }) => [key, line, moved]),
+    ).toEqual([["combined:a.ts", 2, false]]);
+  });
+  test("with only its line to go by, it is on that line where another section shows the file", () => {
+    const placed = placeDiffThreads(
+      [combined("l", 2)],
+      new Map([["l", thread("l", 2, undefined)]]),
+      [{ key: "branch:a.ts", path: "a.ts" }],
+      [
+        row("branch:a.ts", " ", 1, 1, "one"),
+        row("branch:a.ts", "+", null, 2, "two"),
+      ],
+    );
+    expect(placed.placed.map(({ key, line }) => [key, line])).toEqual([
+      ["branch:a.ts", 2],
+    ]);
+  });
+});

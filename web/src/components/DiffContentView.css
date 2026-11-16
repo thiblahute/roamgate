@@ -553,6 +553,62 @@
   color: var(--muted);
 }
 
+/* The review's files with no change (D16), under the changed files. */
+.diff-other-files {
+  display: grid;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.diff-other-files h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.diff-other-file {
+  display: grid;
+  gap: 6px;
+}
+
+.diff-other-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diff-other-file-name {
+  overflow: hidden;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-other-file-note,
+.diff-other-file-line {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.diff-other-file-tick,
+.diff-other-file-open {
+  margin-left: auto;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.diff-other-file-open {
+  margin-left: 0;
+}
+
+.diff-other-file-tick.is-reviewed {
+  color: var(--git-added, #3fb950);
+}
+
 /* The review in Changes (its Vim cursor on): slim chrome, the diff first. */
 .diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-head {
   min-height: 0;

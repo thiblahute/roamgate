@@ -17,6 +17,7 @@ import {
   ChevronRight,
   File,
   FileDiff,
+  FileText,
   Folder,
   RefreshCw,
 } from "lucide-react";
@@ -239,6 +240,11 @@ export type DiffViewerPanelHandle = {
   /** The files' reviewed chunks (the review in Changes), for the tree. */
   markReviewProgress: (progress: ReadonlyMap<string, ReviewProgress>) => void;
   /**
+   * The review's files with no change (D16), listed in the tree's "Other
+   * files" group under the changed files, with their tick.
+   */
+  markOtherFiles: (files: readonly OtherReviewFile[]) => void;
+  /**
    * A git action on a file of the working changes, as its menu does it
    * (`:stage`, `gs`): confirmed when it destroys work. False, said, when
    * the action does not apply there.
@@ -246,8 +252,18 @@ export type DiffViewerPanelHandle = {
   runFileAction: (action: GitFileAction, path: string) => boolean;
 };
 
+/** A file of the review with no change, as the tree lists it (D16). */
+export type OtherReviewFile = {
+  path: string;
+  reviewed: boolean;
+  /** Its open threads. */
+  threads: number;
+};
+
 export type DiffViewerPanelProps = {
   ref?: Ref<DiffViewerPanelHandle>;
+  /** One of the review's Other files picked in the tree. */
+  onPickOtherFile?: (path: string) => void;
   /** The working changes in status groups (Staged, Changes, Untracked). */
   groupByStatus?: boolean;
   workspaceId?: string;
@@ -1104,6 +1120,7 @@ export function DiffViewerPanel({
   header,
   onSelectionChange,
   onOpenFile,
+  onPickOtherFile,
   ref,
 }: DiffViewerPanelProps) {
   const workspaces = useStoreSelector((state) => state.workspaces);
@@ -1236,6 +1253,9 @@ export function DiffViewerPanel({
   >(() => new Map());
   const [foldedGroups, setFoldedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
+  );
+  const [otherFiles, setOtherFiles] = useState<readonly OtherReviewFile[]>(
+    () => [],
   );
   const treeRef = useRef<HTMLDivElement>(null);
   const runtimeContextKey = diffRuntimeContextKey(
@@ -1851,6 +1871,18 @@ export function DiffViewerPanel({
       showScope: (scope) => setDiffScope(scope),
       showBase: (branch) => setBaseBranchRef.current(branch),
       runFileAction: (action, path) => runFileActionRef.current(action, path),
+      markOtherFiles: (files) =>
+        setOtherFiles((current) =>
+          current.length === files.length &&
+          files.every(
+            (each, at) =>
+              current[at]?.path === each.path &&
+              current[at]?.reviewed === each.reviewed &&
+              current[at]?.threads === each.threads,
+          )
+            ? current
+            : files,
+        ),
       markReviewProgress: (progress) =>
         setReviewProgress((current) =>
           current.size === progress.size &&
@@ -2638,6 +2670,67 @@ export function DiffViewerPanel({
             </span>
           </div>
         )}
+        {groupByStatus && otherFiles.length ? (
+          <div className="diff-tree-group diff-tree-other" key="other">
+            <button
+              type="button"
+              className="diff-tree-row diff-tree-group-head"
+              aria-expanded={!foldedGroups.has("other")}
+              title="Files with no change, commented on or marked reviewed"
+              onClick={() =>
+                setFoldedGroups((current) => {
+                  const next = new Set(current);
+                  if (next.has("other")) next.delete("other");
+                  else next.add("other");
+                  return next;
+                })
+              }
+            >
+              <span className="diff-tree-twisty">
+                {foldedGroups.has("other") ? (
+                  <ChevronRight size={13} />
+                ) : (
+                  <ChevronDown size={13} />
+                )}
+              </span>
+              <span className="diff-tree-name">Other files</span>
+              <span className="diff-tree-count">{otherFiles.length}</span>
+            </button>
+            {foldedGroups.has("other")
+              ? null
+              : otherFiles.map((other) => (
+                  <button
+                    type="button"
+                    key={`other:${other.path}`}
+                    className="diff-tree-row diff-tree-file diff-tree-other-file"
+                    data-other-file={other.path}
+                    style={{ paddingLeft: DIFF_TREE_BASE_INDENT }}
+                    title={other.path}
+                    onClick={() => onPickOtherFile?.(other.path)}
+                  >
+                    <span className="diff-tree-twisty" />
+                    <FileText size={15} />
+                    <span className="diff-tree-name">{other.path}</span>
+                    {other.threads ? (
+                      <span
+                        className="diff-tree-threads"
+                        title={`${other.threads} open thread${other.threads === 1 ? "" : "s"}`}
+                      >
+                        {other.threads}
+                      </span>
+                    ) : null}
+                    {other.reviewed ? (
+                      <span
+                        className="diff-tree-progress is-reviewed"
+                        title="Reviewed"
+                      >
+                        {"\u2713"}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+          </div>
+        ) : null}
       </div>
       {fileLoadingKey ? (
         <div className="diff-loading-inline">Loading diff...</div>

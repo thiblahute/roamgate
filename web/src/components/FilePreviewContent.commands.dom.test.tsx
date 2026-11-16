@@ -441,6 +441,114 @@ if (process.env.ROAMGATE_PREVIEW_COMMANDS_DOM_TEST !== "1") {
     await view.unmount();
   });
 
+  test("reviews in Changes: Reviewed and :reviewed tick the file in the checkout's review, as Changes' tree shows it (D16)", async () => {
+    const toggled: string[] = [];
+    let marks = new Map<string, { reviewed: boolean; other: boolean }>();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const draw = () =>
+      act(async () =>
+        root.render(
+          <FilePreviewContent
+            entry={entry("docs/plan.md")}
+            preview={preview("docs/plan.md", markdown)}
+            loading={false}
+            error={null}
+            onCreateAnnotation={() => {}}
+            reviewFiles={{
+              root: "/repo",
+              marks,
+              changed: () => false,
+              toggle: async (path) => {
+                toggled.push(path);
+              },
+            }}
+          />,
+        ),
+      );
+    await draw();
+    await act(settle);
+    const button = () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")].find((each) =>
+        each.classList.contains("file-preview-reviewed"),
+      );
+    expect(button()?.textContent).toBe("Reviewed");
+    expect(button()?.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => button()!.click());
+    await act(settle);
+    expect(toggled).toEqual(["docs/plan.md"]);
+    marks = new Map([["docs/plan.md", { reviewed: true, other: true }]]);
+    await draw();
+    expect(button()?.textContent).toBe("\u2713 Reviewed");
+    expect(button()?.getAttribute("aria-pressed")).toBe("true");
+    // The same from the command line.
+    const content = host.querySelector<HTMLElement>(
+      ".file-preview-file-content",
+    )!;
+    content.focus();
+    await act(async () => {
+      content.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: ":",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await settle();
+    });
+    const input = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Command"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(input),
+        "value",
+      )!.set!.call(input, "reviewed");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+    });
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await settle();
+    });
+    expect(toggled).toEqual(["docs/plan.md", "docs/plan.md"]);
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  test("a file outside the review's repository has no Reviewed", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <FilePreviewContent
+          entry={entry("plan.md")}
+          preview={preview("plan.md", markdown)}
+          loading={false}
+          error={null}
+          reviewFiles={{
+            root: "/other",
+            marks: new Map(),
+            changed: () => false,
+            toggle: async () => {},
+          }}
+        />,
+      ),
+    );
+    await act(settle);
+    expect(host.querySelector(".file-preview-reviewed")).toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
   test("every command the preview has is in its source view's Vim keys", async () => {
     const view = await mount();
     view.content.focus();

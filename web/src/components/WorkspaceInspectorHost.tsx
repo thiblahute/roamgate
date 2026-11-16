@@ -98,6 +98,7 @@ import { type ShortcutRow, ShortcutList } from "./ShortcutList";
 import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
 import { ChangesScopeBar, useChangesRepos } from "./ChangesScopeBar";
+import { useReviewFileMarks } from "../useReviewFileMarks";
 import {
   lastChangesRepo,
   rememberChangesRepo,
@@ -142,6 +143,8 @@ const VIEW_NOTES: Record<InspectorView, string> = {
 };
 const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
 const CHANGES_TREE_HIDDEN_KEY = "inspectorChangesTreeHidden";
+/** No threads given: the review's files read from none. */
+const NO_FEEDBACK_THREADS: readonly ReviewThread[] = [];
 
 /** The inspector's own keys, in its shortcut list (`?`, `:help`). */
 const INSPECTOR_KEYS: readonly ShortcutRow[] = [
@@ -410,6 +413,21 @@ export function WorkspaceInspectorHost({
         : undefined,
     [changesRoot, ownRoot, reviewInChanges, shownRoot],
   );
+  /**
+   * One review across Files and Changes (D16): the review's files and
+   * ticks in Files' tree and preview; an Other file picked in Changes' tree.
+   */
+  const reviewFiles = useReviewFileMarks({
+    client: connectionClient,
+    workspaceId: workspace?.workspace_id,
+    resourceKey,
+    threads: feedbackThreads ?? NO_FEEDBACK_THREADS,
+    enabled: reviewInChanges && !!workspace,
+  });
+  const [otherFileGoTo, setOtherFileGoTo] = useState<{
+    path: string;
+    at: number;
+  } | null>(null);
   const changesRepos = useChangesRepos(
     connectionClient.connectionId,
     workspace?.workspace_id ?? "",
@@ -1336,6 +1354,14 @@ export function WorkspaceInspectorHost({
                     }}
                     onPinFileTab={onPinFileTab}
                     onActiveDiffEntriesChange={setFileDiffEntries}
+                    {...(reviewInChanges
+                      ? {
+                          reviewMarks: {
+                            root: reviewFiles.root,
+                            marks: reviewFiles.marks,
+                          },
+                        }
+                      : {})}
                   />
                 </div>
                 {splitEnabled ? (
@@ -1406,6 +1432,7 @@ export function WorkspaceInspectorHost({
                     annotations={annotations}
                     onCreateAnnotation={onCreateAnnotation}
                     onShowInReview={onShowInReview}
+                    {...(reviewInChanges ? { reviewFiles } : {})}
                     onReanchorAnnotations={onReanchorFileAnnotations}
                     onOpenChanges={
                       primaryFileChangesEntry
@@ -1503,6 +1530,13 @@ export function WorkspaceInspectorHost({
                       ? { header: changesScopeBar() }
                       : {})}
                     groupByStatus={reviewInChanges}
+                    onPickOtherFile={(path) => {
+                      setOtherFileGoTo({ path, at: Date.now() });
+                      setDrillInByView((current) => ({
+                        ...current,
+                        changes: true,
+                      }));
+                    }}
                     onOpenFile={onOpenDiffFile}
                     onSelectionChange={(selection, meta) => {
                       if (selection.entry && meta?.userInitiated) {
@@ -1658,6 +1692,16 @@ export function WorkspaceInspectorHost({
                         onReviewProgress={(progress) =>
                           diffViewerRef.current?.markReviewProgress(progress)
                         }
+                        onOtherFiles={(files) =>
+                          diffViewerRef.current?.markOtherFiles(
+                            files.map((each) => ({
+                              path: each.path,
+                              reviewed: each.reviewed,
+                              threads: each.threads.length,
+                            })),
+                          )
+                        }
+                        otherFileGoTo={otherFileGoTo}
                         backAction={
                           compact && hasDetail
                             ? {

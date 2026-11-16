@@ -91,7 +91,9 @@ export function placeDiffThreads(
     if (!thread || !shown.has(annotation.path)) continue;
     const own = sectionKeyOf(annotation, keys);
     const side = annotation.side;
-    const text = thread.anchor.text;
+    // Words of a rendered file (Files, D16) are not a source line's: its
+    // line is where it is, as Files places it (placedInSource).
+    const text = thread.anchor.render ? undefined : thread.anchor.text;
     const ownRows = byKey.get(own);
     const stay: PlacedThread = {
       thread,
@@ -115,6 +117,19 @@ export function placeDiffThreads(
     if (exact) {
       placed.push(stay);
       continue;
+    }
+    // Nothing to find it by but its line, its own section not drawn: on
+    // that line of the path where another section shows it.
+    if (text === undefined && !ownRows?.length) {
+      const found = byPath
+        .get(annotation.path)
+        ?.find(
+          (row) => onSide(row, side) && lineOf(row, side) === annotation.line,
+        );
+      if (found) {
+        placed.push({ ...stay, key: found.key });
+        continue;
+      }
     }
     if (text !== undefined) {
       let best: { row: DiffCursorRow; distance: number } | null = null;

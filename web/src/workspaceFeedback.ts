@@ -51,6 +51,12 @@ export type FeedbackPlace = {
    * own review, as before.
    */
   chat?: PaneChat;
+  /**
+   * Reviews show in Changes (`reviewin=changes`, plan D16): a comment on a
+   * file of the checkout in Files is a thread of the checkout's worktree
+   * review, the one Changes writes to, not of a review of its own.
+   */
+  oneReview?: boolean;
 };
 
 export type FeedbackCall = <T>(
@@ -85,6 +91,8 @@ type Route = {
 function firstLine(text: string): string {
   return (text.split("\n", 1)[0] ?? "").slice(0, 4000);
 }
+
+const trimRoot = (root: string) => root.replace(/\/+$/, "");
 
 function absolute(path: string, root: string): string {
   return path.startsWith("/") ? path : `${root.replace(/\/+$/, "")}/${path}`;
@@ -155,6 +163,15 @@ export function feedbackRoute(
       : {}),
   };
   const { line, endLine } = note;
+  const lineAnchor =
+    line !== undefined
+      ? {
+          line,
+          ...(endLine !== undefined && endLine > line ? { endLine } : {}),
+          side: "new" as const,
+          text: firstLine(note.quote),
+        }
+      : {};
   // A page of a site: its URL is its review.
   if (/^https?:\/\//i.test(note.path))
     return {
@@ -165,10 +182,29 @@ export function feedbackRoute(
       },
       anchor: () => ({ render }),
     };
+  const file = absolute(note.path, place.root);
+  const root = trimRoot(place.root);
+  // One review (D16): a file of the checkout is the worktree review's, its
+  // path relative to that review's repository, its rendered anchor kept.
+  if (place.oneReview && file.startsWith(`${root}/`))
+    return {
+      held: false,
+      open: { path: place.root, target: { kind: "worktree" } },
+      anchor: (session) => {
+        const top = trimRoot(session.root);
+        return {
+          path: file.startsWith(`${top}/`)
+            ? file.slice(top.length + 1)
+            : file.slice(root.length + 1),
+          ...lineAnchor,
+          ...(Object.keys(render).length ? { render } : {}),
+        };
+      },
+    };
   return {
     held: false,
     open: {
-      file: absolute(note.path, place.root),
+      file,
       target: { kind: "rendered" },
       title: note.path.split("/").pop(),
     },
@@ -177,14 +213,7 @@ export function feedbackRoute(
         session.target.kind === "rendered"
           ? (session.target.path ?? note.path)
           : note.path,
-      ...(line !== undefined
-        ? {
-            line,
-            ...(endLine !== undefined && endLine > line ? { endLine } : {}),
-            side: "new" as const,
-            text: firstLine(note.quote),
-          }
-        : {}),
+      ...lineAnchor,
       ...(Object.keys(render).length ? { render } : {}),
     }),
   };

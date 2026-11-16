@@ -419,3 +419,8 @@ body:has(.file-preview.is-zen) .topbar {
 .file-preview > .review-cmdline .review-cmd {
   color: inherit;
 }
+
+/* The file's reviewed tick in the checkout's review (D16). */
+.file-preview-copy.file-preview-reviewed.is-reviewed {
+  color: var(--git-added, #3fb950);
+}
