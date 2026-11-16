@@ -1121,11 +1121,11 @@ export function prefetchDiffViewerWorkspace(
     const cacheKey = diffCacheKey(client, workspaceId, scope, resourceKey);
     let revision = diffCacheRevision(cacheKey);
     const cached = readDiffCache(client, workspaceId, scope, resourceKey);
-    const summary = await refreshGitDiffSummary(
-      client,
-      workspaceId,
-      scope,
-      resourceKey,
+    // As Changes shows Working (one combined entry per file): a warmup in
+    // the status entries' keys drew each file anew once the panel combined
+    // them, an open comment box with it.
+    const summary = combineWorkingSummary(
+      await refreshGitDiffSummary(client, workspaceId, scope, resourceKey),
     );
     if (!client.isCurrent() || diffCacheRevision(cacheKey) !== revision) return;
     const selected = resolveSelectedEntry(

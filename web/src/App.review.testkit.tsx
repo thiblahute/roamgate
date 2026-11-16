@@ -142,6 +142,8 @@ export type AppWithReviews = {
   setNextOpened(id: string | null): void;
   /** The notices shown since the mount. */
   notices(): string[];
+  /** The page shows this notice (null: none), as after a `:` command. */
+  showNotice(message: string | null): Promise<void>;
   /** The repositories `review.repos` finds in the workspace. */
   setRepos(roots: string[]): void;
   /** The paths a Changes scope holds ("working", "branch-main"). */
@@ -596,6 +598,16 @@ export async function mountAppWithReviews(options: {
       current.nextOpened = id;
     },
     notices: () => [...notices],
+    async showNotice(message) {
+      await React.act(async () => {
+        current.snapshot = {
+          ...current.snapshot,
+          notice: message === null ? null : { id: 1, message },
+        };
+        publish();
+      });
+      await settle();
+    },
     setChanged(mode, paths) {
       current.changed[mode] = paths;
     },

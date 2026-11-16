@@ -1759,6 +1759,45 @@ export async function mountChangesReview(
       }
       await settleAll();
     },
+    async keysInFocus(keys) {
+      const results: { key: string; untouched: boolean; stayed: boolean }[] =
+        [];
+      for (const stroke of parseKeys(keys)) {
+        const target = document.activeElement;
+        if (!(target instanceof HTMLElement) || !target.parentElement)
+          throw new Error("nothing focused");
+        // Its parent's capture runs after every listener above it (the
+        // window's, the inspector's, the diff's): what it sees is what
+        // the field gets.
+        let untouched = false;
+        const onKey = (event: Event) => {
+          untouched = !event.defaultPrevented;
+        };
+        const parent = target.parentElement;
+        parent.addEventListener("keydown", onKey, true);
+        await act(async () => {
+          target.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: stroke.key,
+              code: stroke.code ?? "",
+              ctrlKey: stroke.ctrlKey ?? false,
+              altKey: stroke.altKey ?? false,
+              shiftKey: stroke.shiftKey ?? false,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+        parent.removeEventListener("keydown", onKey, true);
+        await settleAll();
+        results.push({
+          key: stroke.key,
+          untouched,
+          stayed: document.activeElement === target,
+        });
+      }
+      return results;
+    },
     async editorCommand(text) {
       const view = await editorView();
       if (!view) throw new Error("no comment editor open");

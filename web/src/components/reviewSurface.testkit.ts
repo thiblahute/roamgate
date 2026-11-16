@@ -366,6 +366,14 @@ export interface ReviewSurface {
   writeInEditor(text: string): Promise<void>;
   /** Keys in Vim notation, pressed in the open editor (`<Esc>`, `<C-Enter>`). */
   editorPress(keys: string): Promise<void>;
+  /**
+   * Keys in Vim notation, each pressed on the focused element (the comment
+   * editor, the `:` prompt): for each, whether it reached that element
+   * untouched (nothing before it prevented it) and the focus stayed there.
+   */
+  keysInFocus(
+    keys: string,
+  ): Promise<{ key: string; untouched: boolean; stayed: boolean }[]>;
   /** An ex command typed in the editor's Vim prompt (`:w`, `:q`, `:sugg`). */
   editorCommand(text: string): Promise<void>;
   /** The buttons of the open comment editor, by label. */

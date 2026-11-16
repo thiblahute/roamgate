@@ -110,6 +110,52 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("with the editor or the : prompt focused every key is theirs: the diff and the inspector take none, keep none pending, and the focus stays", async () => {
+        const review = await mount({ files: [code()] });
+        // Where 2j and then j go, without anything in between.
+        await review.press("2j");
+        const at = review.cursorLine();
+        await review.press("j");
+        const next = review.cursorLine();
+        await review.press("k");
+        expect(review.cursorLine()).toEqual(at);
+        expect(next).not.toEqual(at);
+        await review.press("c");
+        expect(review.editorText()).toBe("");
+        // A count, the g / z / d / [ prefixes, Enter, a colon, ?, a motion:
+        // each the diff's, out of the editor.
+        const keys = "2gzd[<Enter>g:?jG";
+        const typed = await review.keysInFocus(keys);
+        expect(typed.length).toBe(11);
+        expect(typed.filter((each) => !each.untouched || !each.stayed)).toEqual(
+          [],
+        );
+        expect(review.cursorLine()).toEqual(at);
+        await review.editorCommand(":q");
+        expect(review.editorText()).toBeNull();
+        // Nothing kept: g waits alone (no gg), then j goes one line (no 2).
+        await review.press("g");
+        expect(review.cursorLine()).toEqual(at);
+        await review.press("j");
+        expect(review.cursorLine()).toEqual(next);
+        await review.press("k");
+        // The same in the `:` prompt.
+        await review.press(":");
+        expect(review.prompt()?.kind).toBe(":");
+        const prompted = await review.keysInFocus("2gzdjG?");
+        expect(
+          prompted.filter((each) => !each.untouched || !each.stayed),
+        ).toEqual([]);
+        expect(review.cursorLine()).toEqual(at);
+        await review.press("<Esc>");
+        expect(review.prompt()).toBeNull();
+        await review.press("g");
+        expect(review.cursorLine()).toEqual(at);
+        await review.press("j");
+        expect(review.cursorLine()).toEqual(next);
+        await review.unmount();
+      });
+
       test("V then C asks the agent about the lines selected, as one discussion; with no agent it is held for Send in the workspace's threads", async () => {
         const review = await mount({ files: [code()] });
         await review.press("2jVj");
