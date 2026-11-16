@@ -67,6 +67,11 @@ export type SurfaceOptions = {
   repos?: { root: string; branch?: string; ahead?: number; dirty?: boolean }[];
   /** What the bridge answers a method, over the kit's answers. */
   answers?: Record<string, (params: Record<string, unknown>) => unknown>;
+  /**
+   * `review.diff` answers whole diffs, never summaries (an older bridge,
+   * GitLab's whole diff of a merge request).
+   */
+  wholeDiffs?: boolean;
 
   // The page around the review.
   /** The workspace's agent panes, best candidate first. */

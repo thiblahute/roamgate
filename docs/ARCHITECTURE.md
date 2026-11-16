@@ -242,9 +242,21 @@ A review of commits (the Branch scope, a range) has two kinds of view
 in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,
 or one commit at a time (`<` `>`, `gc`, `:commit`, `:all`, `:commits`),
 oldest first, its message first as the file `:commit-message`; a branch with
-nothing of its own shows its history, latest first. A commit's view reads
-`review.diff` with `commit`; the Branch scope's all-changes view is
-Changes' own per-file diffs, a review opened by name reads its whole diff.
+nothing of its own shows its history, latest first. The Branch scope's
+all-changes view is Changes' own per-file diffs. Every other view (a
+commit, a range, a compare, a step, a merge request) is read file by file
+(`reviewDiffLoad.ts` `ViewLoad`): `review.diff` with `summary` (and
+`commit` for a commit's view) lists every file with its status and line
+counts and resolves the two commits it is between (a range's merge base and
+head, a commit's first parent or git's empty tree for a root commit, a
+step's snapshots: `server/src/workspace/review-files.ts`); then
+`review.diff` with those `base` and `head` and up to 32 `files` reads their
+patches, each cut at 512 KB. The files near the reader are read, a block
+ahead of them, two requests at a time; large and generated files wait to be
+asked for. Nothing caps the whole change. A merge request whose commits the
+checkout lacks answers GitLab's whole diff instead. Opening a review, the
+view it opens on is read with its commits (`first`), not after them. A
+range base `SHA^` (or `SHA~1`) of a root commit is git's empty tree.
 The view shown is kept per review (`reviewPlace.ts`, keyed by session, or
 by checkout and base for a scope with no review yet), and followed through
 a rebase on reload (`reviewFollow.ts`). A comment written in a commit's

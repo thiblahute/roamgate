@@ -9,7 +9,11 @@
  * (it replaces `../review` with a bridge held in memory).
  */
 import { mock } from "bun:test";
-import type { ReviewSnapshot } from "../../../shared/review";
+import type {
+  ReviewDiffFile,
+  ReviewFileStatus,
+  ReviewSnapshot,
+} from "../../../shared/review";
 import {
   type SurfaceOptions,
   settle as settleTimers,
@@ -30,6 +34,12 @@ export const backend = {
   /** File texts by `${rev}:${path}`. */
   fileAt: {} as Record<string, string>,
   repos: [] as NonNullable<SurfaceOptions["repos"]>,
+  /**
+   * `review.diff` answers summaries when asked (the files read a few at a
+   * time after), as the bridge does; false: the whole diff, as an older
+   * bridge or GitLab's whole diff of a merge request.
+   */
+  summaries: true,
   /** Methods that fail, and with what (an Error as it is: its code too). */
   failing: new Map<string, string | Error>(),
   /** Methods held until released. */
@@ -90,18 +100,50 @@ export function mockReviewBackend() {
       if (method === "review.diff") {
         // A commit's view, or all the changes; with commits of their own
         // changes the review opens on the oldest.
-        const first = params.first
-          ? backend.commits[0]?.files
-            ? backend.commits[0]
-            : null
-          : null;
+        // The server's `first`: the oldest commit's view (its own files, or
+        // the review's when the commit lists none), else all the changes.
+        const first = params.first ? (backend.commits[0] ?? null) : null;
         const commit =
           first ??
           backend.commits.find(
             (each) => each.files && each.sha === params.commit,
           );
+        const files = (commit?.files ?? backend.files) as ReviewDiffFile[];
+        // A summary's files, read a few at a time (plan phase 5s), as the
+        // bridge answers them.
+        if (Array.isArray(params.files))
+          return {
+            files: (params.files as { path: string }[]).map(
+              ({ path }) =>
+                files.find((file) => file.path === path) ?? {
+                  path,
+                  oldPath: path,
+                  hunks: [],
+                },
+            ),
+            baseSha: "b",
+            headSha: "h",
+            truncated: false,
+          };
+        if (params.summary === true && backend.summaries)
+          return {
+            files: files.map((file) => ({
+              path: file.path,
+              oldPath: file.oldPath,
+              hunks: [],
+              ...(file.binary ? { binary: true } : {}),
+              status: summaryStatus(file),
+              additions: count(file, "+"),
+              deletions: count(file, "-"),
+            })),
+            baseSha: "b",
+            headSha: "h",
+            truncated: false,
+            summary: true,
+            ...(params.first ? { view: first?.sha ?? null } : {}),
+          };
         return {
-          files: commit?.files ?? backend.files,
+          files,
           headSha: "h",
           truncated: false,
           ...(params.first ? { view: first?.sha ?? null } : {}),
@@ -279,4 +321,20 @@ export async function setUpScreen(
       for (const undo of restores.reverse()) undo();
     },
   };
+}
+
+function count(file: ReviewDiffFile, kind: "+" | "-") {
+  return file.hunks.reduce(
+    (sum, hunk) => sum + hunk.lines.filter((line) => line.kind === kind).length,
+    0,
+  );
+}
+
+function summaryStatus(file: ReviewDiffFile): ReviewFileStatus {
+  const all = (pattern: RegExp) =>
+    file.hunks.length > 0 &&
+    file.hunks.every((hunk) => pattern.test(hunk.header));
+  if (all(/^@@ -0,0 /)) return "added";
+  if (all(/^@@ -\d+(?:,\d+)? \+0,0 @@/)) return "deleted";
+  return file.oldPath !== file.path ? "renamed" : "modified";
 }

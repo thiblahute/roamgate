@@ -45,45 +45,109 @@ function fileStatus(file: ReviewDiffFile): string {
   return "Modified";
 }
 
+/** Each listed file as Changes last drew it, with what it was drawn from. */
+const converted = new WeakMap<
+  ReviewDiffFile,
+  {
+    whereKey: string;
+    read: ReviewDiffFile | null;
+    entry: GitDiffEntry;
+    file: GitDiffFile | null;
+  }
+>();
+
+const STATUS_NAMES = {
+  added: "Added",
+  deleted: "Deleted",
+  renamed: "Renamed",
+  modified: "Modified",
+} as const;
+
 /**
  * A view's diff as Changes draws it: one `branch` entry per file and its
  * patch; a commit's message first, as a file whose lines take comments.
+ * A summary's files (phase 5s) are listed from the start, each patch drawn
+ * once read (`loaded`, by path); `loading` and `errors` say how the others
+ * are going.
  */
 export function reviewDiffAsChanges(
   diff: ReviewDiff,
   where: { root: string; workspaceId: string },
   commit: ReviewCommit | null,
-): { entries: GitDiffEntry[]; files: Record<string, GitDiffFile> } {
-  const shown = commit
-    ? [commitMessageFile(commit.subject, commit.body), ...diff.files]
-    : diff.files;
+  loaded?: {
+    files: ReadonlyMap<string, ReviewDiffFile>;
+    loading?: ReadonlySet<string>;
+    errors?: ReadonlyMap<string, string>;
+  },
+): {
+  entries: GitDiffEntry[];
+  files: Record<string, GitDiffFile>;
+  loadingKeys: string[];
+  fileErrors: Record<string, string>;
+} {
+  const message = commit
+    ? commitMessageFile(commit.subject, commit.body)
+    : null;
+  const shown = message ? [message, ...diff.files] : diff.files;
   const entries: GitDiffEntry[] = [];
   const files: Record<string, GitDiffFile> = {};
-  for (const file of shown) {
+  const loadingKeys: string[] = [];
+  const fileErrors: Record<string, string> = {};
+  const whereKey = `${where.workspaceId}\n${where.root}`;
+  for (const listed of shown) {
+    const read =
+      listed === message || !diff.summary
+        ? listed
+        : (loaded?.files.get(listed.path) ?? null);
+    const key = `branch:${listed.path}`;
+    // Each file is converted once: the same objects each time a few more
+    // files arrive, so Changes draws only the new ones.
+    const known = listed === message ? undefined : converted.get(listed);
+    if (known && known.whereKey === whereKey && known.read === read) {
+      entries.push(known.entry);
+      if (known.file) files[key] = known.file;
+      else if (loaded?.loading?.has(listed.path)) loadingKeys.push(key);
+      const error = loaded?.errors?.get(listed.path);
+      if (error && !read) fileErrors[key] = error;
+      continue;
+    }
     const count = (kind: "+" | "-") =>
-      file.hunks.reduce(
+      (read ?? listed).hunks.reduce(
         (sum, hunk) => sum + hunk.lines.filter((l) => l.kind === kind).length,
         0,
       );
     const entry: GitDiffEntry = {
-      path: file.path,
-      ...(file.oldPath !== file.path ? { old_path: file.oldPath } : {}),
+      path: listed.path,
+      ...(listed.oldPath !== listed.path ? { old_path: listed.oldPath } : {}),
       kind: "branch",
-      status: file.commitMessage ? "Message" : fileStatus(file),
-      additions: count("+"),
-      deletions: count("-"),
+      status: listed.commitMessage
+        ? "Message"
+        : listed.status
+          ? STATUS_NAMES[listed.status]
+          : fileStatus(listed),
+      additions: listed.additions ?? count("+"),
+      deletions: listed.deletions ?? count("-"),
+      ...(listed.generated ? { generated: true } : {}),
     };
     entries.push(entry);
-    files[`branch:${file.path}`] = {
-      workspace_id: where.workspaceId,
-      root: where.root,
-      path: file.path,
-      kind: "branch",
-      diff: file.binary ? "" : reviewFilePatch(file),
-      truncated: false,
-    };
+    const file: GitDiffFile | null = read
+      ? {
+          workspace_id: where.workspaceId,
+          root: where.root,
+          path: listed.path,
+          kind: "branch",
+          diff: read.binary ? "" : reviewFilePatch(read),
+          truncated: !!read.truncated,
+        }
+      : null;
+    if (listed !== message)
+      converted.set(listed, { whereKey, read, entry, file });
+    if (file) files[key] = file;
+    else if (loaded?.loading?.has(listed.path)) loadingKeys.push(key);
+    const error = loaded?.errors?.get(listed.path);
+    if (error && !read) fileErrors[key] = error;
   }
-  return { entries, files };
+  return { entries, files, loadingKeys, fileErrors };
 }
 
 /** How the bar names a view: "1/2 aaaaaaaa" and the subject. */

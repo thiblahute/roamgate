@@ -553,7 +553,21 @@ export type ReviewDiffFile = {
   /** The commit's message, shown as a file so its lines can be commented. */
   commitMessage?: true;
   hunks: ReviewDiffHunk[];
+  /**
+   * In a summary (`ReviewDiff.summary`): what git says of the file, its
+   * hunks read file by file later.
+   */
+  status?: ReviewFileStatus;
+  additions?: number;
+  deletions?: number;
+  /** Marked generated (linguist-generated, gitlab-generated). */
+  generated?: boolean;
+  /** Its patch was cut at the per-file limit: the hunks read end there. */
+  truncated?: boolean;
 };
+
+/** A file's change in a review summary. */
+export type ReviewFileStatus = "added" | "deleted" | "renamed" | "modified";
 
 /** The path comments on a commit message are anchored to. */
 export const COMMIT_MESSAGE_PATH = ":commit-message";
@@ -569,7 +583,16 @@ export type ReviewDiff = {
    * diff of, the oldest of the review's; null for all the changes.
    */
   view?: string | null;
+  /**
+   * The files only, no hunks (asked with `summary`): each is read with
+   * `files` and the two commits above, a few at a time, whatever the size
+   * of the whole change.
+   */
+  summary?: true;
 };
+
+/** The most files one `review.diff` with `files` reads. */
+export const REVIEW_DIFF_FILES_MAX = 32;
 
 export const REVIEW_LIMITS = {
   bodyChars: 20_000,

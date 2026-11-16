@@ -3,6 +3,7 @@ import { isHostPath, validReviewPath } from "../workspace/review-patch";
 import { parseSiteUrl } from "../../../shared/renderedPage";
 import {
   COMMIT_MESSAGE_PATH,
+  REVIEW_DIFF_FILES_MAX,
   REVIEW_LIMITS,
   REVIEW_USER,
   type ReviewActivity,
@@ -11,6 +12,7 @@ import {
   type ReviewComment,
   type ReviewDiff,
   type ReviewEffortPart,
+  type ReviewDiffFile,
   type ReviewMergeRequestLink,
   type ReviewRenderPart,
   type ReviewPush,
@@ -47,6 +49,7 @@ import {
   updateDraftNote,
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
+import type { ReviewFileRequest } from "../workspace/review-files";
 import { combinedAnchor, entryAnchored } from "./changes-anchors";
 import { createAgentPrompts } from "./prompts";
 import type { ReviewStorage } from "./storage";
@@ -562,6 +565,37 @@ export function renderedPlace(part: ReviewRenderPart): string {
   return bits.join(", ");
 }
 
+/** A commit or tree name as git prints it. */
+function objectName(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{7,64}$/.test(value))
+    throw new ReviewError(`invalid ${field}`);
+  return value;
+}
+
+/** The files `review.diff` is asked to read: paths in the checkout. */
+function fileRequests(value: unknown): ReviewFileRequest[] {
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.length > REVIEW_DIFF_FILES_MAX
+  )
+    throw new ReviewError(`files takes 1 to ${REVIEW_DIFF_FILES_MAX} files`);
+  return value.map((item) => {
+    const { path, oldPath } = (item ?? {}) as Record<string, unknown>;
+    if (
+      typeof path !== "string" ||
+      !validReviewPath(path) ||
+      (oldPath !== undefined &&
+        (typeof oldPath !== "string" || !validReviewPath(oldPath)))
+    )
+      throw new ReviewError("invalid file");
+    return {
+      path,
+      ...(typeof oldPath === "string" && oldPath !== path ? { oldPath } : {}),
+    };
+  });
+}
+
 export function createReviewService(args: {
   storage: ReviewStorage;
   publish: (push: ReviewPush) => void;
@@ -574,6 +608,21 @@ export function createReviewService(args: {
     commit?: string,
     options?: { paths?: readonly string[] },
   ) => Promise<ReviewDiff>;
+  /**
+   * The review's files (or one commit's) without their patches, and the
+   * two commits they are between (`ReviewDiff.summary`); a merge request
+   * the checkout lacks may answer its whole diff instead.
+   */
+  loadSummary?: (
+    session: ReviewSession,
+    commit?: string,
+  ) => Promise<ReviewDiff>;
+  /** These files' patches between a summary's two commits. */
+  loadFiles?: (
+    session: ReviewSession,
+    ends: { base: string; head: string },
+    files: ReviewFileRequest[],
+  ) => Promise<ReviewDiffFile[]>;
   loadCommits?: (session: ReviewSession) => Promise<ReviewCommit[]>;
   /**
    * `git patch-id` of each of these commits the checkout has, by sha: to
@@ -3685,8 +3734,32 @@ export function createReviewService(args: {
       throw new ReviewError("invalid commit");
     if (target.target.kind === "chat" || target.target.kind === "rendered")
       return { files: [], truncated: false };
-    if (commit)
-      return fromCheckout(target, () => args.loadDiff(target, commit));
+    // Files of a summary, a few at a time (plan phase 5s).
+    if (params.files !== undefined) {
+      const { loadFiles } = args;
+      if (!loadFiles) throw new ReviewError("files are read whole here");
+      const files = fileRequests(params.files);
+      const base = objectName(params.base, "base");
+      const head = objectName(params.head, "head");
+      return {
+        files: await fromCheckout(target, () =>
+          loadFiles(target, { base, head }, files),
+        ),
+        baseSha: base,
+        headSha: head,
+        truncated: false,
+      };
+    }
+    // The files only, read one by one after (not a worktree's: Changes
+    // reads those itself).
+    const { loadSummary } = args;
+    const load =
+      params.summary === true &&
+      loadSummary &&
+      target.target.kind !== "worktree"
+        ? (commit?: string) => loadSummary(target, commit)
+        : (commit?: string) => args.loadDiff(target, commit);
+    if (commit) return fromCheckout(target, () => load(commit));
     // The view the overlay opens on, asked with the commits rather than
     // after them: the oldest commit, else all the changes.
     if (params.first === true) {
@@ -3699,18 +3772,21 @@ export function createReviewService(args: {
           : (await commitList(target, loadCommits))[0]?.sha;
       if (first)
         return {
-          ...(await fromCheckout(target, () => args.loadDiff(target, first))),
+          ...(await fromCheckout(target, () => load(first))),
           view: first,
         };
-      return { ...(await allChanges(target)), view: null };
+      return { ...(await allChanges(target, load)), view: null };
     }
-    return allChanges(target);
+    return allChanges(target, load);
   }
 
-  async function allChanges(target: ReviewSession): Promise<ReviewDiff> {
+  async function allChanges(
+    target: ReviewSession,
+    read: () => Promise<ReviewDiff> = () => args.loadDiff(target),
+  ): Promise<ReviewDiff> {
     const load = (loads.get(target.id) ?? 0) + 1;
     loads.set(target.id, load);
-    const result = await fromCheckout(target, () => args.loadDiff(target));
+    const result = await fromCheckout(target, read);
     // Remember what the user saw, so the reviews list can tell when the
     // branch moves on. Not a user edit: it does not touch updatedAt. An
     // older load answering late, or one for a review since removed or
