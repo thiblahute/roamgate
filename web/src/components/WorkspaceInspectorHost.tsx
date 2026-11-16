@@ -104,6 +104,8 @@ import {
   rememberChangesRepo,
   repoResourceKey,
 } from "../changesRepo";
+import { type ChangesScope, stepTarget, WORKING_SCOPE } from "../changesReview";
+import { useReviewState } from "../review";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
@@ -262,7 +264,12 @@ export function WorkspaceInspectorHost({
   reviewGoTo?: {
     path?: string;
     line?: number;
-    scope?: "working" | "branch-main";
+    scope?: "working" | "branch-main" | "last-step";
+    /**
+     * A review shown as Changes' scope (a range or compare opened by name,
+     * an older step): its session.
+     */
+    review?: string;
     /** The repository to show ("": the workspace's own). */
     root?: string;
     at: number;
@@ -492,6 +499,24 @@ export function WorkspaceInspectorHost({
         autoDismissMs: 1800,
       });
   };
+  /**
+   * A review shown as Changes' scope (a range or compare opened by name,
+   * an older step), until a scope is picked (plan phase 6).
+   */
+  const [shownReview, setShownReview] = useState<string | null>(null);
+  const { sessions: reviewSessions } = useReviewState();
+  const shownReviewSnapshot = shownReview
+    ? reviewSessions.get(shownReview)
+    : undefined;
+  /** The review's view Changes shows when not the scope's own files. */
+  const [viewTree, setViewTree] = useState<{
+    label: string;
+    entries: readonly GitDiffEntry[];
+  } | null>(null);
+  const [viewGoTo, setViewGoTo] = useState<{
+    path: string;
+    at: number;
+  } | null>(null);
   const changesScopeBar = () => (
     <ChangesScopeBar
       repos={changesRepos}
@@ -508,8 +533,22 @@ export function WorkspaceInspectorHost({
       pickerOpen={repoPickerOpen}
       onPickerOpen={setRepoPickerOpen}
       onPickRepo={pickChangesRepo}
-      onScope={(mode) => diffViewerRef.current?.showScope(mode)}
-      onBase={(branch) => diffViewerRef.current?.showBase(branch)}
+      {...(shownReviewSnapshot
+        ? {
+            review: {
+              label: shownReviewSnapshot.session.title,
+              files: viewTree?.entries.length,
+            },
+          }
+        : {})}
+      onScope={(mode) => {
+        setShownReview(null);
+        diffViewerRef.current?.showScope(mode);
+      }}
+      onBase={(branch) => {
+        setShownReview(null);
+        diffViewerRef.current?.showBase(branch);
+      }}
       onDone={() => focusChangesDiff()}
     />
   );
@@ -535,7 +574,11 @@ export function WorkspaceInspectorHost({
       pickChangesRepoRef.current(pendingGoTo.root);
       return;
     }
-    if (pendingGoTo.scope) diffViewerRef.current?.showScope(pendingGoTo.scope);
+    if (pendingGoTo.review !== undefined) setShownReview(pendingGoTo.review);
+    else if (pendingGoTo.scope) {
+      setShownReview(null);
+      diffViewerRef.current?.showScope(pendingGoTo.scope);
+    }
     const path = pendingGoTo.path;
     if (path === undefined) {
       setPendingGoTo(null);
@@ -563,6 +606,31 @@ export function WorkspaceInspectorHost({
     shownRoot,
     ownRoot,
   ]);
+  /** The review the scope shown is (plan phase 6): a read-only binding. */
+  const changesScope = useMemo<ChangesScope>(
+    () =>
+      shownReview
+        ? { kind: "review", sessionId: shownReview }
+        : diffSelection.scopeMode === "branch-main"
+          ? {
+              kind: "branch",
+              ...(diffSelection.pickedBase
+                ? { base: diffSelection.pickedBase }
+                : diffSelection.scopeBase
+                  ? { automaticBase: diffSelection.scopeBase }
+                  : {}),
+            }
+          : diffSelection.scopeMode === "last-step" && diffSelection.step
+            ? { kind: "step", step: diffSelection.step }
+            : WORKING_SCOPE,
+    [
+      shownReview,
+      diffSelection.scopeMode,
+      diffSelection.pickedBase,
+      diffSelection.scopeBase,
+      diffSelection.step,
+    ],
+  );
   const shownDiffEntries = useMemo(
     () =>
       reviewInChanges
@@ -1436,10 +1504,14 @@ export function WorkspaceInspectorHost({
                     onReanchorAnnotations={onReanchorFileAnnotations}
                     onOpenChanges={
                       primaryFileChangesEntry
-                        ? () =>
+                        ? () => {
+                            // Never away from a review shown (plan
+                            // section 7, Files' selectWorkingEntries).
+                            if (shownReview) return;
                             diffViewerRef.current?.selectWorkingEntries(
                               fileChangesEntries,
-                            )
+                            );
+                          }
                         : undefined
                     }
                     changesKey={fileChangesKey || undefined}
@@ -1530,6 +1602,11 @@ export function WorkspaceInspectorHost({
                       ? { header: changesScopeBar() }
                       : {})}
                     groupByStatus={reviewInChanges}
+                    viewFiles={reviewInChanges ? viewTree : null}
+                    onScopeChange={() => setShownReview(null)}
+                    onPickViewFile={(path) =>
+                      setViewGoTo({ path, at: Date.now() })
+                    }
                     onPickOtherFile={(path) => {
                       setOtherFileGoTo({ path, at: Date.now() });
                       setDrillInByView((current) => ({
@@ -1581,16 +1658,21 @@ export function WorkspaceInspectorHost({
                         showFileSelector={false}
                         selectionRevision={diffSelection.selectionRevision}
                         cursorGoTo={
-                          reviewGoTo?.path === undefined
-                            ? null
-                            : {
-                                path: reviewGoTo.path,
-                                at: reviewGoTo.at,
-                                ...(reviewGoTo.line !== undefined
-                                  ? { line: reviewGoTo.line }
-                                  : {}),
-                              }
+                          viewGoTo &&
+                          (reviewGoTo?.path === undefined ||
+                            viewGoTo.at > reviewGoTo.at)
+                            ? viewGoTo
+                            : reviewGoTo?.path === undefined
+                              ? null
+                              : {
+                                  path: reviewGoTo.path,
+                                  at: reviewGoTo.at,
+                                  ...(reviewGoTo.line !== undefined
+                                    ? { line: reviewGoTo.line }
+                                    : {}),
+                                }
                         }
+                        onViewEntries={setViewTree}
                         entry={diffSelection.entry}
                         file={diffSelection.file}
                         loading={diffSelection.loading}
@@ -1616,6 +1698,12 @@ export function WorkspaceInspectorHost({
                                   ...(input.kind === "branch" &&
                                   diffSelection.pickedBase
                                     ? { base: diffSelection.pickedBase }
+                                    : {}),
+                                  // The Last step's own review (D15).
+                                  ...(input.kind === "last-step" &&
+                                  diffSelection.step &&
+                                  !input.target
+                                    ? { target: stepTarget(diffSelection.step) }
                                     : {}),
                                   // Drawn only on its repository's diff.
                                   ...(reviewInChanges && changesRoot
@@ -1649,6 +1737,9 @@ export function WorkspaceInspectorHost({
                         }
                         onOpenFile={onOpenDiffFile}
                         reviewCursor={reviewInChanges}
+                        {...(reviewInChanges
+                          ? { reviewScope: changesScope }
+                          : {})}
                         {...(reviewInChanges
                           ? {
                               scopeLabel: changesScopeLabel({

@@ -639,6 +639,8 @@ export type ChangesDiffOptions = {
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
   /** The review's Vim cursor ("in Changes", Vim keys on). */
   reviewCursor?: boolean;
+  /** The review the scope shown is (plan phase 6). */
+  reviewScope?: import("../changesReview").ChangesScope;
   /** Files' Review on "in Changes": the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;
   /** The connection's id (default: one of its own per mount). */
@@ -860,6 +862,9 @@ export async function mountChangesDiff(
             annotations: options.annotations ?? [],
             ...(options.threads ? { threads: options.threads } : {}),
             ...(options.repo ? { repo: options.repo } : {}),
+            ...(options.reviewScope
+              ? { reviewScope: options.reviewScope }
+              : {}),
             ...(options.onCreateAnnotation
               ? { onCreateAnnotation: options.onCreateAnnotation }
               : {}),

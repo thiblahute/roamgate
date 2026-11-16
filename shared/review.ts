@@ -24,6 +24,25 @@ export type ReviewTarget =
       compare?: boolean;
     }
   | { kind: "worktree" }
+  /**
+   * What an agent's last step changed in the checkout (plan D15): the
+   * worktree snapshots (`git write-tree` of the files, untracked ones
+   * included) taken before and after it. Its trees stay under
+   * `refs/roamgate/steps/` while the step has threads, and for the last 5
+   * steps.
+   */
+  | {
+      kind: "step";
+      /** The step's id: its snapshot refs' name. */
+      step: string;
+      /** The trees before and after the step. */
+      before: string;
+      after: string;
+      /** When the step ended. */
+      at?: string;
+      /** Untracked files left out of the snapshots: too large. */
+      skipped?: string[];
+    }
   | { kind: "mr"; url: string }
   /**
    * An agent chat (its agent session, or its pane): no diff, threads on
@@ -43,6 +62,16 @@ export type ReviewTarget =
   | { kind: "effort"; effort: string };
 
 export type ReviewSide = "old" | "new";
+
+/** A last step's review: "last step 14:02" (when it ended), else its trees. */
+export function describeStepTarget(
+  target: Extract<ReviewTarget, { kind: "step" }>,
+): string {
+  const at = target.at ? new Date(target.at) : null;
+  if (at && !Number.isNaN(at.getTime()))
+    return `last step ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  return `last step ${target.before.slice(0, 7)}..${target.after.slice(0, 7)}`;
+}
 
 /**
  * Where a thread was written. No path: the whole review. A path without a

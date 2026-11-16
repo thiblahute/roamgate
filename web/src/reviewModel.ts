@@ -1,5 +1,6 @@
 import {
   COMMIT_MESSAGE_PATH,
+  describeStepTarget,
   REVIEW_USER,
   type ReviewAnchor,
   type ReviewCommit,
@@ -452,6 +453,7 @@ export function describeReviewTarget(target: ReviewTarget) {
       ? `${target.base} vs ${target.head}`
       : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
+  if (target.kind === "step") return describeStepTarget(target);
   return "working tree";
 }
 

@@ -109,6 +109,71 @@ describe("feedbackRoute", () => {
     });
   });
 
+  test("a Last step comment opens that step's review (plan D15); with no step known, the worktree review", () => {
+    const step = {
+      kind: "step" as const,
+      step: "1763200000000-abcdef01",
+      before: "a".repeat(40),
+      after: "b".repeat(40),
+      at: "2026-11-15T10:02:00.000Z",
+    };
+    const route = feedbackRoute(diffNote("last-step", { target: step }), place);
+    expect(route.held).toBe(false);
+    expect(route.open).toEqual({ path: "/repo", target: step });
+    expect(route.anchor(session(step as never))).toMatchObject({
+      path: "src/one.ts",
+      line: 4,
+      side: "new",
+    });
+    // The note keeps its step through the review's store and back.
+    expect(
+      parseReviewAnnotation({ ...diffNote("last-step"), target: step }),
+    ).toMatchObject({ target: step });
+    expect(feedbackRoute(diffNote("last-step"), place).open).toEqual({
+      path: "/repo",
+      target: { kind: "worktree" },
+    });
+  });
+
+  test("a comment on a range shown as a review scope goes to that range; one on a commit's diff names the commit", () => {
+    const range = { kind: "range" as const, base: "abc1234", head: "topic" };
+    const commit = {
+      sha: "c".repeat(40),
+      subject: "Fix the lexer",
+      parent: "d".repeat(40),
+    };
+    const route = feedbackRoute(
+      diffNote("branch", { target: range, commit }),
+      place,
+    );
+    expect(route.open).toEqual({ path: "/repo", target: range });
+    expect(route.anchor(session(range as never))).toMatchObject({
+      path: "src/one.ts",
+      line: 4,
+      commit: commit.sha,
+      commitSubject: "Fix the lexer",
+      commitParent: commit.parent,
+    });
+    expect(
+      parseReviewAnnotation({ ...diffNote("branch"), target: range, commit }),
+    ).toMatchObject({ target: range, commit });
+    // What is not a range or a step, or a commit that is no sha, is dropped.
+    for (const bad of [
+      { kind: "worktree" },
+      { kind: "range", base: "--output=x", head: "HEAD" },
+      { kind: "step", step: "x", before: "HEAD", after: "b".repeat(40) },
+    ])
+      expect(
+        parseReviewAnnotation({ ...diffNote("branch"), target: bad }),
+      ).not.toHaveProperty("target");
+    expect(
+      parseReviewAnnotation({
+        ...diffNote("branch"),
+        commit: { sha: "not a sha" },
+      }),
+    ).not.toHaveProperty("commit");
+  });
+
   test("a range on one side keeps its end; across sides, or ending before it starts, only its first line", () => {
     const anchor = (
       extra: Partial<Extract<ReviewAnnotation, { source: "diff" }>>,

@@ -19,6 +19,7 @@ import {
   LOCAL_SOCKET_KEY,
   REVIEW_AGENT_MAX_BODY_BYTES,
   REVIEW_AGENT_MAX_WATCHES,
+  type ReviewAgentConnection,
   type ReviewAgentServer,
 } from "./agent-server";
 import { createReviewService, type ReviewService } from "./service";
@@ -49,7 +50,7 @@ type Setup = {
 
 const notified: Record<string, unknown>[] = [];
 const placements: Record<string, unknown>[] = [];
-function setup(): Setup {
+function setup(extra: Partial<ReviewAgentConnection> = {}): Setup {
   const dir = temp("rg-rev-");
   const home = temp("rg-home-");
   const cwd = realpathSync(temp("rg-cwd-"));
@@ -73,6 +74,7 @@ function setup(): Setup {
           return "/repo";
         },
         readDefaultBase: async () => "origin/main",
+        ...extra,
       },
     ],
     notify: async (input) => {
@@ -888,4 +890,64 @@ test("get lists the rendered file's threads in the code review, each with its ow
   );
   expect(listed?.session).toBe(rendered.id);
   expect(listed?.path).toBe("plan.md");
+});
+
+test("--last-step opens the review of the workspace's last step; none known says so", async () => {
+  const before = "a".repeat(40);
+  const after = "b".repeat(40);
+  const asked: string[][] = [];
+  const s = setup({
+    readLastStep: async (root, workspaceId) => {
+      asked.push([root, workspaceId]);
+      return workspaceId === "w1"
+        ? { kind: "step", step: "1763200000000-abcdef01", before, after }
+        : null;
+    },
+  });
+  const opened = await run(s, ["open", "--last-step"]);
+  expect(opened.stderr).toBe("");
+  expect(asked).toEqual([["/repo", "w1"]]);
+  const { session } = s.service.get({ sessionId: opened.json.session.id });
+  expect(session.target).toEqual({
+    kind: "step",
+    step: "1763200000000-abcdef01",
+    before,
+    after,
+  });
+  expect(session.automaticBase).toBeUndefined();
+  // Opened again: the same review.
+  const again = await run(s, ["open", "--last-step"]);
+  expect(again.json.session.id).toBe(session.id);
+  const none = await run(s, ["open", "--last-step"], undefined, {
+    ROAMGATE_REVIEW_AGENT: "Claude",
+    HERDR_WORKSPACE_ID: "w9",
+  });
+  expect(none.code).not.toBe(0);
+  expect(none.stderr).toContain("no last step known here yet");
+});
+
+test("Changes switching scopes (reads with no review) leaves an agent's id-less get on the same review", async () => {
+  const s = setup();
+  const opened = await run(s, ["open"]);
+  const sessionId = opened.json.session.id as string;
+  const count = s.service.list().length;
+  for (const target of [
+    { kind: "worktree" },
+    { kind: "range", base: "main", head: "HEAD" },
+    {
+      kind: "step",
+      step: "1-a",
+      before: "a".repeat(40),
+      after: "b".repeat(40),
+    },
+  ])
+    await s.service.previewDiff({
+      connectionId: "local",
+      root: "/repo",
+      target,
+    });
+  expect(s.service.list().length).toBe(count);
+  const got = await run(s, ["get"]);
+  expect(got.stderr).toBe("");
+  expect(got.json.session.id).toBe(sessionId);
 });

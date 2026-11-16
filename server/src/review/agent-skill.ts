@@ -73,7 +73,9 @@ is the newer of the local one and its remote counterpart (\`origin/main\`
 when the local \`main\` is behind), the base the user's Changes view
 shows. Others:
 \`--range main..HEAD\` (use branch names, never SHAs, so it follows rebases),
-\`--worktree\`, \`--mr URL\`. The overlay pops up in the user's browser.
+\`--worktree\`, \`--last-step\` (what your last step changed, as the
+workspace's Last step shows it), \`--mr URL\`.
+The overlay pops up in the user's browser.
 
 Rewrote a branch the user already reviewed (folded fixups, rebased,
 force-pushed)? \`--compare OLD NEW\` shows only what changed between the two

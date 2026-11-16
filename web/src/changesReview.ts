@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   REVIEW_USER,
   type ReviewSnapshot,
+  type ReviewTarget,
   type ReviewThread,
 } from "../../shared/review";
+import type { LastStepTarget } from "./types";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
 import { heldCommentCount, reviewAgent } from "./reviewDelivery";
 import { handoffStatus, notSavedStatus, saveOrKeep } from "./reviewSave";
@@ -40,6 +42,139 @@ export function worktreeReview(
     if (!found || session.updatedAt > found.session.updatedAt) found = snapshot;
   }
   return found;
+}
+
+/**
+ * What Changes shows, as a review (plan phase 6): its scope, each bound to
+ * its review session by a read-only lookup.
+ */
+export type ChangesScope =
+  | { kind: "working" }
+  /**
+   * The branch against its base: `base`, the one picked in Compare against
+   * (its own range review, D12); else Automatic's, `automaticBase` as the
+   * summary resolved it.
+   */
+  | { kind: "branch"; base?: string; automaticBase?: string }
+  /** The Last step (D15). */
+  | { kind: "step"; step: LastStepTarget }
+  /** A review opened by name (a range, a compare, a commit's). */
+  | { kind: "review"; sessionId: string };
+
+export const WORKING_SCOPE: ChangesScope = { kind: "working" };
+
+/** `main` and `origin/main`: one branch, local and remote-tracking. */
+function counterparts(a: string, b: string): boolean {
+  const remoteOf = (remote: string, local: string) =>
+    remote.endsWith(`/${local}`) &&
+    !remote.slice(0, -local.length - 1).includes("/");
+  return a === b || remoteOf(a, b) || remoteOf(b, a);
+}
+
+/** The step a scope shows, as the review target its comments go to. */
+export function stepTarget(
+  step: LastStepTarget,
+): Extract<ReviewTarget, { kind: "step" }> {
+  return {
+    kind: "step",
+    step: step.step,
+    before: step.before,
+    after: step.after,
+    ...(step.at ? { at: step.at } : {}),
+    ...(step.skipped?.length ? { skipped: step.skipped } : {}),
+  };
+}
+
+/**
+ * The review a scope shows: the one last updated when the bridge keeps
+ * several; null when none was opened yet (the first comment opens it).
+ * Read only: showing a scope never opens or touches a session.
+ */
+export function scopeReview(
+  sessions: Iterable<ReviewSnapshot>,
+  connectionId: string,
+  root: string | null | undefined,
+  scope: ChangesScope = WORKING_SCOPE,
+): ReviewSnapshot | null {
+  if (scope.kind === "review") {
+    for (const snapshot of sessions)
+      if (
+        snapshot.session.id === scope.sessionId &&
+        snapshot.session.connectionId === connectionId
+      )
+        return snapshot;
+    return null;
+  }
+  if (scope.kind === "working")
+    return worktreeReview(sessions, connectionId, root);
+  if (!root) return null;
+  let found: ReviewSnapshot | null = null;
+  let foundRank = 0;
+  for (const snapshot of sessions) {
+    const { session } = snapshot;
+    if (
+      session.connectionId !== connectionId ||
+      trimRoot(session.root) !== trimRoot(root)
+    )
+      continue;
+    const { target } = session;
+    let rank = 0;
+    if (scope.kind === "step")
+      rank =
+        target.kind === "step" &&
+        target.before === scope.step.before &&
+        target.after === scope.step.after
+          ? 1
+          : 0;
+    else if (
+      target.kind === "range" &&
+      !target.compare &&
+      target.head === "HEAD"
+    ) {
+      if (scope.base) rank = target.base === scope.base ? 1 : 0;
+      else if (session.automaticBase !== false)
+        // Automatic's review: of that base, else of its counterpart, else
+        // any review that follows Automatic.
+        rank = !scope.automaticBase
+          ? session.automaticBase
+            ? 1
+            : 0
+          : target.base === scope.automaticBase
+            ? 3
+            : counterparts(target.base, scope.automaticBase)
+              ? 2
+              : session.automaticBase
+                ? 1
+                : 0;
+    }
+    if (!rank) continue;
+    if (
+      !found ||
+      rank > foundRank ||
+      (rank === foundRank && session.updatedAt > found.session.updatedAt)
+    ) {
+      found = snapshot;
+      foundRank = rank;
+    }
+  }
+  return found;
+}
+
+/**
+ * What `review.open` takes to make the scope's review, for its first
+ * comment or mark: its target, or none (the branch under Automatic: the
+ * bridge picks the base, as Option+R does). Null: a review opened by name,
+ * which exists.
+ */
+export function scopeOpenTarget(
+  scope: ChangesScope,
+): { target?: ReviewTarget } | null {
+  if (scope.kind === "review") return null;
+  if (scope.kind === "working") return { target: { kind: "worktree" } };
+  if (scope.kind === "step") return { target: stepTarget(scope.step) };
+  return scope.base
+    ? { target: { kind: "range", base: scope.base, head: "HEAD" } }
+    : {};
 }
 
 export type ChangesAgent = {
@@ -79,16 +214,26 @@ export type ChangesAgent = {
   summary: string;
 };
 
-/** What the review's agent group does, on the checkout's worktree review. */
+/** The same scope object while its value is the same. */
+export function useScopeByValue(scope: ChangesScope): ChangesScope {
+  const kept = useRef(scope);
+  if (JSON.stringify(kept.current) !== JSON.stringify(scope))
+    kept.current = scope;
+  return kept.current;
+}
+
+/** What the review's agent group does, on the scope's review. */
 export function useChangesAgent(
   connectionId: string,
   root: string | null | undefined,
   workspaceId?: string | null,
+  scope: ChangesScope = WORKING_SCOPE,
 ): ChangesAgent {
   const { sessions } = useReviewState();
+  const shownScope = useScopeByValue(scope);
   const snapshot = useMemo(
-    () => worktreeReview(sessions.values(), connectionId, root),
-    [connectionId, root, sessions],
+    () => scopeReview([...sessions.values()], connectionId, root, shownScope),
+    [connectionId, root, sessions, shownScope],
   );
   const [status, setStatus] = useState("");
   const agent = snapshot ? reviewAgent(snapshot, []) : null;
@@ -115,14 +260,16 @@ export function useChangesAgent(
     },
     [connectionId, sessionId],
   );
-  /** The checkout's review, opened for a first write as a comment opens it. */
+  /** The scope's review, opened for a first write as a comment opens it. */
   const opened = async (): Promise<string> => {
     if (sessionId) return sessionId;
+    const open = scopeOpenTarget(scope);
+    if (!open) throw new Error("this review is gone");
     if (!workspaceId || !root) throw new Error("no checkout to review");
     const made = await reviewCall<ReviewSnapshot>(connectionId, "review.open", {
       workspace_id: workspaceId,
       path: root,
-      target: { kind: "worktree" },
+      ...open,
     });
     rememberReviewSnapshot(made);
     return made.session.id;

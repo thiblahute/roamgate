@@ -248,6 +248,30 @@ Inspector button, shortcuts, or workspace/agent menus.
   is a tick only: chunk counts are the changed files'. Comments made in
   Files before this are kept in their file's own review: Files shows them,
   and Changes too on a file with a change.
+- With reviews in Changes, each scope is a review: Working the checkout's
+  uncommitted work, Branch the branch's review against its base (a base
+  picked in Compare against is its own review), Last step the review of the
+  agent's last step. Showing a scope opens no review: the first comment,
+  mark or agent action does. The Branch scope has the review pane's commit
+  bar: one commit at a time, oldest first, its message first as a file you
+  can comment on, `<` / `>` (or the bar's arrows) to the previous / next
+  commit and to all the changes, `gc` or a click on its name to pick one by
+  its subject or sha, `:commit 2`, `:commit words`, `:all`, `:commits`; the
+  tree lists the commit's files. A search that finds no file of this
+  commit goes to another commit's file by its path. A comment written on a
+  commit stays on that commit. A branch with nothing beyond its base shows
+  its history, latest first. After a rebase or an amend the commit shown is
+  followed (by its patch, else its subject), and the view shown is kept per
+  review. When the code changes, the bar offers to reload (R, gr, `:e`).
+  The review toggle opens every review but a merge request's in Changes: a
+  range of other ends, two versions compared and an older step's review
+  show as a scope of their own, named in the scope line, until you pick
+  another scope.
+- A comment on the Last step goes to that step's own review (agents open it
+  with `roamgate-review open --last-step` or `review_open` with
+  `last_step`), drawn on that step only. A step's snapshots are kept while
+  its review has comments, and for the last 5 steps, across restarts;
+  untracked files over 50 MB are left out of them, and the step says so.
 - Threads in Changes are drawn as the review pane draws them: under each of
   your messages how it goes to the agent (sent, on its way, held, not
   delivered with Retry, not sent with Send, for another review's thread that

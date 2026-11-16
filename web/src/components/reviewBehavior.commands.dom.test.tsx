@@ -28,7 +28,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { ALL_REVIEW_SURFACES, testWith } = await import(
+    "./reviewSurfaces.testkit"
+  );
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -62,8 +64,12 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   const unknown = (text: string) =>
     `Not a review command: :${text} (try :q, :w, :diff, :files)`;
 
-  for (const { name, mount } of REVIEW_SURFACES)
-    describe(name, () => {
+  for (const surface of ALL_REVIEW_SURFACES)
+    describe(surface.name, () => {
+      const { mount } = surface;
+      // The whole review's commands: the classic pane's, so far; the
+      // commit bar's run on every surface with commits (plan phase 6).
+      const test = testWith(surface, "review");
       test("an unknown command says so and names a few; :help and :set with another option are unknown", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });
         await review.command(":frob");
@@ -425,57 +431,60 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await found.unmount();
       });
 
-      test(":commit N, :commit words, :all and :commit alone pick the view; :commits opens the picker, searched", async () => {
-        const review = await mount({ files: [added("a.ts", 4)], commits });
-        // One commit at a time, oldest first.
-        expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
-        await review.command(":commit 2");
-        expect(review.view()).toBe("2/2 bbbbbbbb Fix the lexer");
-        await review.command(":all");
-        expect(review.view()).toBe("All changes 2 commits");
-        await review.command(":commit 1");
-        expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
-        await review.command(":commit");
-        expect(review.view()).toBe("All changes 2 commits");
-        // Past the last commit: nothing moves.
-        await review.command(":commit 9");
-        expect(review.view()).toBe("All changes 2 commits");
+      testWith(surface, "commits")(
+        ":commit N, :commit words, :all and :commit alone pick the view; :commits opens the picker, searched",
+        async () => {
+          const review = await mount({ files: [added("a.ts", 4)], commits });
+          // One commit at a time, oldest first.
+          expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
+          await review.command(":commit 2");
+          expect(review.view()).toBe("2/2 bbbbbbbb Fix the lexer");
+          await review.command(":all");
+          expect(review.view()).toBe("All changes 2 commits");
+          await review.command(":commit 1");
+          expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
+          await review.command(":commit");
+          expect(review.view()).toBe("All changes 2 commits");
+          // Past the last commit: nothing moves.
+          await review.command(":commit 9");
+          expect(review.view()).toBe("All changes 2 commits");
 
-        await review.command(":commits");
-        expect(review.commitPicker()).toEqual({
-          query: "",
-          choices: [
-            "All changes (2 commits)",
-            "1/2 aaaaaaaa Add the parser",
-            "2/2 bbbbbbbb Fix the lexer",
-          ],
-        });
-        await review.press("<Esc>");
-        expect(review.commitPicker()).toBeNull();
+          await review.command(":commits");
+          expect(review.commitPicker()).toEqual({
+            query: "",
+            choices: [
+              "All changes (2 commits)",
+              "1/2 aaaaaaaa Add the parser",
+              "2/2 bbbbbbbb Fix the lexer",
+            ],
+          });
+          await review.press("<Esc>");
+          expect(review.commitPicker()).toBeNull();
 
-        // One match goes there; several open the picker on them.
-        await review.command(":commits lexer");
-        expect(review.commitPicker()).toBeNull();
-        expect(review.view()).toBe("2/2 bbbbbbbb Fix the lexer");
-        await review.command(":commit parser");
-        expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
-        await review.command(":commits the");
-        expect(review.commitPicker()).toEqual({
-          query: "the",
-          choices: [
-            "1/2 aaaaaaaa Add the parser",
-            "2/2 bbbbbbbb Fix the lexer",
-          ],
-        });
-        await review.unmount();
+          // One match goes there; several open the picker on them.
+          await review.command(":commits lexer");
+          expect(review.commitPicker()).toBeNull();
+          expect(review.view()).toBe("2/2 bbbbbbbb Fix the lexer");
+          await review.command(":commit parser");
+          expect(review.view()).toBe("1/2 aaaaaaaa Add the parser");
+          await review.command(":commits the");
+          expect(review.commitPicker()).toEqual({
+            query: "the",
+            choices: [
+              "1/2 aaaaaaaa Add the parser",
+              "2/2 bbbbbbbb Fix the lexer",
+            ],
+          });
+          await review.unmount();
 
-        // A review of uncommitted work has no commits to pick.
-        const single = await mount({ files: [added("a.ts", 4)] });
-        await single.command(":commits");
-        expect(single.commitPicker()).toBeNull();
-        expect(single.notice()).toBe("This review has a single commit.");
-        await single.unmount();
-      });
+          // A review of uncommitted work has no commits to pick.
+          const single = await mount({ files: [added("a.ts", 4)] });
+          await single.command(":commits");
+          expect(single.commitPicker()).toBeNull();
+          expect(single.notice()).toBe("This review has a single commit.");
+          await single.unmount();
+        },
+      );
 
       test(":e :edit :reload read the diff again, on the same line", async () => {
         const review = await mount({ files: [added("a.ts", 6)] });

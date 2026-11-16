@@ -100,6 +100,8 @@ export type ActiveDiffSelection = {
   commits?: number;
   /** The working tree's untracked files. */
   untracked?: number;
+  /** The Last step shown, as a review target (plan D15). */
+  step?: import("../types").LastStepTarget;
   /** Compare against: the branch picked ("": automatic) and the choices. */
   baseBranch?: string;
   baseBranches?: string[];
@@ -277,6 +279,15 @@ export type DiffViewerPanelProps = {
     meta?: DiffSelectionMeta,
   ) => void;
   onOpenFile?: (entry: GitDiffEntry) => void;
+  /**
+   * The review's view shown in Changes when it is not the scope's own
+   * files (a commit of the commit bar, a range opened by name): listed
+   * instead of the tree, a pick goes to that file.
+   */
+  viewFiles?: { label: string; entries: readonly GitDiffEntry[] } | null;
+  onPickViewFile?: (path: string) => void;
+  /** A scope picked (its switch, `:scope`, showScope). */
+  onScopeChange?: (scope: "working" | "branch-main" | "last-step") => void;
 };
 
 type DiffCache = {
@@ -1121,6 +1132,9 @@ export function DiffViewerPanel({
   onSelectionChange,
   onOpenFile,
   onPickOtherFile,
+  viewFiles = null,
+  onPickViewFile,
+  onScopeChange,
   ref,
 }: DiffViewerPanelProps) {
   const workspaces = useStoreSelector((state) => state.workspaces);
@@ -1153,8 +1167,13 @@ export function DiffViewerPanel({
     scopePreference?.key === preferenceKey
       ? scopePreference.value
       : loadDiffScope(connectionClient.connectionId, repositoryResourceKey);
+  const scopeChangeRef = useRef(onScopeChange);
+  scopeChangeRef.current = onScopeChange;
   const setDiffScope = useCallback(
-    (value: DiffScope) => setScopePreference({ key: preferenceKey, value }),
+    (value: DiffScope) => {
+      setScopePreference({ key: preferenceKey, value });
+      scopeChangeRef.current?.(value);
+    },
     [preferenceKey],
   );
   const [basePreference, setBasePreference] = useState<{
@@ -1505,6 +1524,9 @@ export function DiffViewerPanel({
               baseBranches: source.summary.base_branches ?? [],
               ...(source.summary.branch
                 ? { branch: source.summary.branch }
+                : {}),
+              ...(diffScope === "last-step" && source.summary.step
+                ? { step: source.summary.step }
                 : {}),
               ...(source.summary.commits !== undefined
                 ? { commits: source.summary.commits }
@@ -2619,7 +2641,33 @@ export function DiffViewerPanel({
         className="diff-list diff-tree"
         aria-label="Changed files"
       >
-        {summaryLoading && !cache.summary ? (
+        {viewFiles ? (
+          <div className="diff-tree-group diff-tree-view">
+            <div className="diff-tree-row diff-tree-group-head">
+              <span className="diff-tree-name" title={viewFiles.label}>
+                {viewFiles.label}
+              </span>
+              <span className="diff-tree-count">
+                {viewFiles.entries.length}
+              </span>
+            </div>
+            {viewFiles.entries.map((entry) => (
+              <button
+                type="button"
+                key={`view:${entry.path}`}
+                className="diff-tree-row diff-tree-file"
+                data-view-file={entry.path}
+                style={{ paddingLeft: DIFF_TREE_BASE_INDENT }}
+                title={entry.path}
+                onClick={() => onPickViewFile?.(entry.path)}
+              >
+                <span className="diff-tree-twisty" />
+                <FileText size={15} />
+                <span className="diff-tree-name">{entry.path}</span>
+              </button>
+            ))}
+          </div>
+        ) : summaryLoading && !cache.summary ? (
           <DiffSkeleton />
         ) : cache.summary?.entries.length ? (
           groupTrees ? (

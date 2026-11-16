@@ -125,6 +125,7 @@ export function ChangesScopeBar({
   onScope,
   onBase,
   onDone,
+  review,
 }: {
   repos: readonly WorkspaceRepo[];
   /** The repository shown. */
@@ -147,10 +148,18 @@ export function ChangesScopeBar({
   onBase: (branch: string) => void;
   /** A choice made: the keys back to the diff. */
   onDone: () => void;
+  /**
+   * A review shown as the scope (a range or compare opened by name): its
+   * name, and the files of the view shown.
+   */
+  review?: { label: string; files?: number | undefined };
 }) {
   const name = repoName || root?.split("/").pop() || "Repository";
   const branchValue = (each: string) => `branch:${each}`;
   const scopeOptions = [
+    ...(review
+      ? [{ value: "review", label: review.label, detail: "the review shown" }]
+      : []),
     {
       value: "working",
       label: changesScopeChoice("working", branch, base),
@@ -176,8 +185,17 @@ export function ChangesScopeBar({
       label: changesScopeChoice("last-step", branch, base),
     },
   ];
-  const scopeValue = mode === "branch-main" ? branchValue(baseBranch) : mode;
-  const label = `${name} · ${changesScopeChoice(mode, branch, base)} · ${changesScopeFacts({ mode, commits, files, untracked })}`;
+  const scopeValue = review
+    ? "review"
+    : mode === "branch-main"
+      ? branchValue(baseBranch)
+      : mode;
+  const facts = review
+    ? review.files === undefined
+      ? ""
+      : `${review.files} file${review.files === 1 ? "" : "s"}`
+    : changesScopeFacts({ mode, commits, files, untracked });
+  const label = `${name} · ${review ? review.label : changesScopeChoice(mode, branch, base)}${facts ? ` · ${facts}` : ""}`;
   return (
     <div className="changes-scope-bar" title={label} aria-label={label}>
       {repos.length > 1 ? (
@@ -216,6 +234,7 @@ export function ChangesScopeBar({
         value={scopeValue}
         options={scopeOptions}
         onChange={(value) => {
+          if (value === "review") return;
           if (value.startsWith("branch:")) {
             onBase(value.slice("branch:".length));
             onScope("branch-main");
@@ -223,9 +242,7 @@ export function ChangesScopeBar({
         }}
         onSelectedClose={onDone}
       />
-      <span className="changes-scope-facts">
-        {changesScopeFacts({ mode, commits, files, untracked })}
-      </span>
+      <span className="changes-scope-facts">{facts}</span>
     </div>
   );
 }

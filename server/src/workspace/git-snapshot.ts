@@ -58,6 +58,9 @@ else
   git read-tree --empty
 fi
 git ls-files --cached --others --exclude-standard -z -- "$@" > "$quarantine/paths"
+# Untracked files over 50 MB are left out (plan D15), named on the output;
+# any other file past the bounds below still refuses the snapshot.
+git -c core.quotepath=off ls-files --others --exclude-standard -- "$@" > "$quarantine/untracked"
 git ls-files --cached --others --exclude-standard -- "$@" > "$quarantine/quoted-paths"
 # Preserve sparse entries in one batch; materialized files override them below.
 git ls-files -t --stage -- "$@" > "$quarantine/index-entries"
@@ -124,6 +127,16 @@ xargs -0 sh -c '
     shift 6
     size=$1
     case "$size" in ""|*[!0-9]*) fail "unsupported dd byte count";; esac
+    # An untracked file over 50 MB is left out (plan D15): its real size,
+    # read only past the 8 MiB bound, of the pinned inode.
+    if [ "$size" -gt 8388608 ] &&
+      [ "$(wc -c < "$quarantine/sources/$count" | tr -d "[:blank:]")" -gt 52428800 ] &&
+      grep -Fxq -- "$path" "$quarantine/untracked"; then
+      printf "%s\\n" "$path" >> "$quarantine/skipped"
+      rm -f "$quarantine/files/$count" "$quarantine/sources/$count"
+      count=$((count - 1))
+      continue
+    fi
     [ "$size" -le 8388608 ] || fail "file exceeds 8 MiB: $path"
     total=$((total + size))
     [ "$total" -le 33554432 ] || fail "worktree exceeds 32 MiB"
@@ -165,6 +178,9 @@ publish() {
 }
 if [ -f "$quarantine/hashes" ]; then publish < "$quarantine/hashes"; fi
 publish < "$quarantine/trees"
+if [ -f "$quarantine/skipped" ]; then
+  while IFS= read -r skipped; do printf 'skipped\t%s\\n' "$skipped"; done < "$quarantine/skipped"
+fi
 cleanup
 trap - EXIT
 printf '%s\\n' "$tree"

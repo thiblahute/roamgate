@@ -222,6 +222,7 @@ export function useDiffCursor({
   onScrollTo,
   goTo: lineGoTo = null,
   skipRow,
+  searchElsewhere,
 }: {
   enabled: boolean;
   sections: readonly DiffCursorSection[];
@@ -274,6 +275,12 @@ export function useDiffCursor({
   goTo?: { path: string; line?: number; at: number } | null;
   /** Rows the cursor steps over (a folded reviewed chunk's but its first). */
   skipRow?: (row: number) => boolean;
+  /**
+   * A pattern found nowhere in the view: a file of another of the
+   * review's views whose path matches, shown (the commit bar's views);
+   * null when none has.
+   */
+  searchElsewhere?: (pattern: string) => Promise<string | null>;
 }): DiffCursor {
   // The same files (keys and patches): the same model, whatever array
   // they came in.
@@ -703,6 +710,11 @@ export function useDiffCursor({
     if (!found.length) {
       setSearch(null);
       if (searchFile(pattern, direction)) fileSearch.current = pattern;
+      else if (searchElsewhere)
+        void searchElsewhere(pattern).then((path) => {
+          if (path) fileSearch.current = pattern;
+          else setNotFound(pattern);
+        });
       else setNotFound(pattern);
       return;
     }

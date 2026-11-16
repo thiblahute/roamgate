@@ -136,15 +136,29 @@ export function feedbackRoute(
       held: false,
       open: {
         path: place.root,
-        // No target: the branch against Automatic's base. A base picked
-        // in Compare against is its own review (plan D12).
-        ...(note.kind !== "branch"
-          ? { target: { kind: "worktree" } }
-          : note.base
-            ? { target: { kind: "range", base: note.base, head: "HEAD" } }
-            : {}),
+        // A review it names: its Last step's (D15), a range shown as a
+        // review scope. No target: the branch against Automatic's base. A
+        // base picked in Compare against is its own review (plan D12).
+        ...(note.target
+          ? { target: note.target }
+          : note.kind !== "branch"
+            ? { target: { kind: "worktree" } }
+            : note.base
+              ? { target: { kind: "range", base: note.base, head: "HEAD" } }
+              : {}),
       },
       anchor: () => ({
+        ...(note.commit
+          ? {
+              commit: note.commit.sha,
+              ...(note.commit.subject
+                ? { commitSubject: note.commit.subject }
+                : {}),
+              ...(note.commit.parent
+                ? { commitParent: note.commit.parent }
+                : {}),
+            }
+          : {}),
         path: note.path,
         line: note.line,
         ...(note.endLine !== undefined &&

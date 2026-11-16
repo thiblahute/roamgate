@@ -79,6 +79,14 @@ const SESSION_METHODS = new Set([
   "review.image.add",
 ]);
 
+/** Reads a scope's diff without a review (`target` instead of a session). */
+const PREVIEW_METHODS = new Set([
+  "review.diff",
+  "review.commits",
+  "review.state",
+  "review.file",
+]);
+
 export function isReviewMethod(method: string): boolean {
   return method.startsWith("review.");
 }
@@ -95,6 +103,28 @@ export async function handleReviewRpc(
 ): Promise<unknown> {
   const params: Record<string, unknown> = { ...raw, author: REVIEW_USER };
   const sessionId = raw.session_id ?? raw.sessionId;
+  // A scope Changes shows with no review yet (plan section 2: showing a
+  // scope never makes a session): its commits and diffs, read only.
+  if (
+    PREVIEW_METHODS.has(method) &&
+    sessionId === undefined &&
+    raw.target !== undefined
+  ) {
+    const workspaceId = raw.workspace_id;
+    if (typeof workspaceId !== "string" || !workspaceId)
+      throw new ReviewError("workspace_id is required");
+    // The checkout's directory (`path` is a file's, for review.file).
+    const checkout = typeof raw.checkout === "string" ? raw.checkout : "";
+    const root =
+      isHostPath(checkout) && connection.readRoot
+        ? await connection.readRoot(checkout)
+        : await connection.resolveRoot(workspaceId);
+    const preview = { ...params, connectionId: connection.id, root };
+    if (method === "review.commits") return service.previewCommits(preview);
+    if (method === "review.diff") return service.previewDiff(preview);
+    if (method === "review.file") return service.previewFile(preview);
+    return service.previewState(preview);
+  }
   if (SESSION_METHODS.has(method)) {
     const { session } = service.get({ sessionId });
     if (session.connectionId !== connection.id)
