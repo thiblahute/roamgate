@@ -33,7 +33,11 @@ import {
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 import { callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
-import { handleMrReviewsShortcut } from "./mrReviewsOpen";
+import {
+  handleMrReviewsShortcut,
+  onMrFileOpen,
+  takeMrFileOpen,
+} from "./mrReviewsOpen";
 import {
   CompanionChip,
   CompanionStrip,
@@ -3201,6 +3205,18 @@ export default function App() {
       }),
     [openInspector],
   );
+  // A request's link to a file (gx in Reviews): shown in the Files
+  // preview once this page shows that workspace's connection.
+  useEffect(() => {
+    const take = () => {
+      if (!connectionClient.isCurrent()) return;
+      const found = takeMrFileOpen(connectionClient.connectionId);
+      if (found)
+        openFileExplorerFile(found.workspaceId, inspectorFileEntry(found.path));
+    };
+    take();
+    return onMrFileOpen(take);
+  }, [connectionClient, openFileExplorerFile]);
   const openDiffViewer = useCallback(
     (workspaceId?: string, focusInspector = true) =>
       openInspector("changes", workspaceId, { focusInspector }),

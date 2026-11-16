@@ -333,6 +333,8 @@ const SEQUENCES = new Set([
   "zO",
   "zR",
   "za",
+  "zc",
+  "gx",
 ]);
 
 export type KeyResult =

@@ -1,4 +1,5 @@
 import type {
+  MrPushKind,
   MrReviewsPush,
   MrReviewsSettings,
 } from "../../../shared/mrReviews";
@@ -15,7 +16,16 @@ import { createInboxFetchers, type InboxFetchers } from "./fetchers";
 import { discoverForgeHosts, type ForgeHost } from "./hosts";
 import { createMrInbox } from "./inbox";
 import { createWorkspaceLinker } from "./links";
+import { Value } from "typebox/value";
+import { AssistantUserError } from "../assistant/errors";
 import { createMrAgent, type MrAgent } from "./agent";
+import {
+  BOARD_DESCRIPTIONS,
+  BOARD_WRITING,
+  type BoardToolName,
+  boardToolSchemas,
+  createBoardTools,
+} from "./board-tools";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
 import { createMrOpener } from "./open";
@@ -39,6 +49,17 @@ import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
  */
 
 const HOSTS_TTL_MS = 5 * 60_000;
+
+/**
+ * The fields the user authors in the inbox: a change of one bumps the
+ * inbox version and is pushed to every page (with Undo for an agent's).
+ */
+const PUSHED_FIELDS: [keyof MrReviewsSettings, MrPushKind][] = [
+  ["order", "order"],
+  ["pinned", "pinned"],
+  ["hidden", "hidden"],
+  ["overrides", "overrides"],
+];
 
 export function createMrReviews(options: {
   run: GlabContext["runProcessWithCodeTimeout"];
@@ -112,15 +133,15 @@ export function createMrReviews(options: {
     meta: MrChangeMeta = { by: "user" },
   ): Promise<MrReviewsSettings> {
     let changed: MrReviewsPush["changed"] = [];
+    let previous: MrReviewsSettings | null = null;
     const written = await updateGuiSettings((current) => {
       const before = mrReviewsSettings(current.mr_reviews);
+      previous = before;
       const same = (a: unknown, b: unknown) =>
         JSON.stringify(a) === JSON.stringify(b);
-      changed = [
-        ...(same(before.order, next.order) ? [] : ["order" as const]),
-        ...(same(before.pinned, next.pinned) ? [] : ["pinned" as const]),
-        ...(same(before.hidden, next.hidden) ? [] : ["hidden" as const]),
-      ];
+      changed = PUSHED_FIELDS.filter(
+        ([field]) => !same(before[field], next[field]),
+      ).map(([, kind]) => kind);
       return {
         ...current,
         mr_reviews: storedMrReviews({
@@ -132,6 +153,8 @@ export function createMrReviews(options: {
     discovered = null;
     const saved = mrReviewsSettings(written.mr_reviews);
     if (changed.length) {
+      // Undo needs what the change started from.
+      if (previous) order.seed(previous);
       order.remember(saved);
       options.publish?.({
         version: saved.orderVersion ?? 0,
@@ -139,9 +162,7 @@ export function createMrReviews(options: {
         changed,
         by: meta.by,
         ...(meta.summary ? { summary: meta.summary } : {}),
-        ...(meta.undoable && changed.includes("order")
-          ? { undo: saved.orderVersion ?? 0 }
-          : {}),
+        ...(meta.undoable ? { undo: saved.orderVersion ?? 0 } : {}),
       });
     }
     return saved;
@@ -563,10 +584,55 @@ export function createMrReviews(options: {
       params,
     );
 
+  /**
+   * One of the board's tools for an agent session (the review socket's
+   * `reviews` command): `caller` names it in what the user is told.
+   */
+  async function boardTool(
+    tool: string,
+    params: unknown,
+    caller: string,
+  ): Promise<string> {
+    // What a generic caller (one MCP tool for all) needs to call them.
+    if (tool === "help")
+      return JSON.stringify({
+        tools: Object.entries(boardToolSchemas).map(([name, schema]) => ({
+          name,
+          description: BOARD_DESCRIPTIONS[name as BoardToolName],
+          writes: BOARD_WRITING.includes(name as BoardToolName),
+          params: JSON.parse(JSON.stringify(schema)),
+        })),
+      });
+    if (!Object.hasOwn(boardToolSchemas, tool))
+      throw new MrReviewsError(
+        `unknown tool ${tool.slice(0, 60)}: ${Object.keys(boardToolSchemas).join(", ")} (help: each one's parameters)`,
+        "not_found",
+      );
+    const name = tool as BoardToolName;
+    const schema = boardToolSchemas[name];
+    if (!Value.Check(schema, params)) {
+      const first = [...Value.Errors(schema, params)][0];
+      throw new MrReviewsError(
+        `invalid ${name} parameters${first ? `: ${first.instancePath || "/"} ${first.message}` : ""}`,
+      );
+    }
+    try {
+      return await createBoardTools(
+        { settings, inbox, store, order, rpc: (method, p) => rpc(method, p) },
+        caller,
+      )[name](params);
+    } catch (error) {
+      if (error instanceof AssistantUserError)
+        throw new MrReviewsError(error.message);
+      throw error;
+    }
+  }
+
   return {
     inbox,
     store,
     settings,
+    boardTool,
     opener,
     claude,
     curation,

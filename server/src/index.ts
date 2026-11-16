@@ -1316,6 +1316,26 @@ function getAgentMessenger(): AgentMessenger {
   return agentMessenger;
 }
 
+/** An agent's workspace as the user knows it, for what they are told. */
+async function agentWorkspaceLabel(
+  connectionId: string,
+  workspaceId: string,
+): Promise<string> {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime || !workspaceId) return "a session";
+  try {
+    const listed = await runtime.herdr.call("workspace.list", {});
+    const found = (
+      Array.isArray(listed?.workspaces) ? listed.workspaces : []
+    ).find((each: any) => each?.workspace_id === workspaceId);
+    return typeof found?.label === "string" && found.label.trim()
+      ? found.label.trim().slice(0, 60)
+      : "a session";
+  } catch {
+    return "a session";
+  }
+}
+
 let reviewAgent: ReviewAgentServer | null = null;
 /** The review client and its socket are set up on this machine. */
 let reviewAgentInstalled = false;
@@ -1328,6 +1348,13 @@ function getReviewAgent(): ReviewAgentServer {
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
     messages: getAgentMessenger(),
+    // The Reviews board's tools, for any agent session.
+    reviews: async ({ connectionId, workspaceId, agent, tool, params }) =>
+      getMrReviews().boardTool(
+        tool,
+        params,
+        `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`,
+      ),
     // A claude started by hand in a pane: the claude start setting says
     // whether conversation mode takes it.
     claudeStart: async ({ connectionId, paneId, sessionId, source }) => {

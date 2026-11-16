@@ -46,6 +46,8 @@ import {
   unknownFieldError,
   withOwnDetails,
 } from "./queries";
+import { assignLanes } from "./lanes";
+import { overrideOutdated } from "./overrides";
 import type { MrStore } from "./store";
 
 /**
@@ -619,6 +621,7 @@ export function createMrInbox(deps: MrInboxDeps) {
       }
       const seen = state.seen[item.key];
       const review = state.reviews[item.key];
+      const override = settings.overrides[item.key];
       const drafts =
         item.drafts ??
         (item.provider === "gitlab" ? state.drafts[item.key]?.count : 0);
@@ -632,6 +635,14 @@ export function createMrInbox(deps: MrInboxDeps) {
           ? { reason: ranked.reason }
           : {}),
         ...(verdict ? { feedback: verdict } : {}),
+        ...(override
+          ? {
+              override,
+              ...(overrideOutdated(override, mrActivityMarker(item))
+                ? { overrideOutdated: true }
+                : {}),
+            }
+          : {}),
         ...(review
           ? {
               review: {
@@ -680,6 +691,7 @@ export function createMrInbox(deps: MrInboxDeps) {
         unreadFirst(a) - unreadFirst(b) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+    assignLanes(out, { staleDays: settings.staleDays, now: now() });
     return { entries: out, hidden };
   }
 

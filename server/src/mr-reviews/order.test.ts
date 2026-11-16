@@ -240,9 +240,49 @@ describe("the user's order on the server", () => {
       by: "agent",
       summary: "Claude removed",
     });
-    expect(t.pushes.at(-1)!.undo).toBeUndefined();
+    // An agent's removal can be taken back too.
+    expect(t.pushes.at(-1)!.undo).toBe(1);
     await t.call("unhide", { key: key(3) });
     expect(t.pushes.map((push) => push.version)).toEqual([1, 2]);
+    await t.call("hide", { key: key(4), by: "agent", summary: "x" });
+    await t.call("order", { op: "undo", version: t.pushes.at(-1)!.undo! });
+    expect(await t.shown("suggested")).toContain(4);
+  });
+
+  test("Undo takes back an agent's override, unless changed since", async () => {
+    const t = await setup();
+    await t.call("override", {
+      key: key(1),
+      set: { next: "ping bob", labels: ["infra"] },
+    });
+    await t.call("override", {
+      key: key(1),
+      set: { whose: "reviewer", next: "wait for bob" },
+      by: "agent",
+      summary: "Claude set the next step",
+    });
+    const push = t.pushes.at(-1)!;
+    expect(push).toMatchObject({ changed: ["overrides"], by: "agent" });
+    await t.call("override", { key: key(2), set: { next: "mine" } });
+    await t.call("order", { op: "undo", version: push.undo! });
+    const settings = await t.reviews.settings();
+    expect(settings.overrides[key(1)]).toMatchObject({
+      next: "ping bob",
+      labels: ["infra"],
+    });
+    expect(settings.overrides[key(1)]!.whose).toBeUndefined();
+    // The user's own change after it stands.
+    expect(settings.overrides[key(2)]!.next).toBe("mine");
+    // Changed again since: kept as it is.
+    await t.call("override", {
+      key: key(2),
+      set: { next: "agent's" },
+      by: "agent",
+    });
+    const second = t.pushes.at(-1)!.undo!;
+    await t.call("override", { key: key(2), set: { next: "user's" } });
+    await t.call("order", { op: "undo", version: second });
+    expect((await t.reviews.settings()).overrides[key(2)]!.next).toBe("user's");
   });
 
   test("the order and its version survive a restart", async () => {

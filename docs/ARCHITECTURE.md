@@ -725,16 +725,50 @@ sends its moves and drags as `before`/`after` operations.
 
 Every save that changes the order, the pins or the removals is pushed to
 every socket, whichever connection a page shows, as
-`{"mr_reviews": {version, order, changed: ["order"|"pinned"|"hidden"], by:
-"user"|"agent", summary?, undo?}}` (like `workspace_tree`; the page parses it
+`{"mr_reviews": {version, order, changed: ["order"|"pinned"|"hidden"|
+"overrides"|...], by: "user"|"agent", summary?, undo?}}` (like `workspace_tree`; the page parses it
 in `api.ts` as `onMrReviews`). A page keeps the highest version: it applies
 the order at once (an order-only change needs no read), reads the inbox again
 for pins and removals, and an inbox answer older than a push never takes the
-order back. The agent's changes carry a `summary` ("Claude moved 3 requests
-to the top"), and `undo` (the version Undo takes back) for an order change:
-the panel shows them in its removal toast, `u` sends the `undo` operation,
-which restores the previous order when nothing changed since and otherwise
-undoes only what that change moved.
+order back. An agent's changes carry a `summary` ("Claude moved 3 requests
+to the top") and `undo` (the version Undo takes back), whatever they
+changed: the panel shows them in its toast, `u` sends the `undo` operation.
+The server keeps the whole `mr_reviews` value of the last 40 versions:
+undo restores each field that change touched unless it changed since, the
+order by what that change moved on the latest order, pins and removals
+element by element, overrides key by key.
+
+What the user (or an agent) sets by hand on a request is
+`mr_reviews.overrides` (request key to `{whose?: "me"|"reviewer"|"external"|
+{person}, next?, depends_on?, labels?, link?, stale?, at, by, marker}`, at
+most 500, the oldest set forgotten first; `next` 200 characters, 10 labels
+of 40, `link` 1000), checked in `mr-reviews/overrides.ts`.
+`bridge.mr_reviews.override {key, set?, clear?: FIELD[]|"all", by?,
+summary?}` applies one change (dependencies given as references or URLs are
+stored as keys), answering `{changed, override, version}`; setting
+`whose`, `next` or `stale` records the request's `mrActivityMarker` as
+`marker`, and an entry whose marker moved since carries `overrideOutdated`.
+`entries()` then gives every own request (`reasons` has `authored`) a
+`lane` (`your_move|waiting|blocked|not_sent|stale|done`), `laneWhy`, `next`
+(`{text, from: "override"|"rule"|"inferred", by?}`), `dependsOn` and
+`parent` (`mr-reviews/lanes.ts`): an override's `stale` or `whose` when not
+outdated, else rules from the forge's status (merged or closed: done; an
+open dependency: blocked; quiet `stale_days`, default 90: stale; failed
+pipeline, conflicts, changes requested, unresolved threads, needs rebase
+or draft: your move; else waiting). `parent` is the first open listed
+request it waits for, unless that makes a cycle; the panel draws it under
+its parent (`web/src/mrReviewsLanes.ts`).
+
+The board's tools are one handler table (`mr-reviews/board-tools.ts`:
+`reviews_list` with lanes, next steps, overrides and paging, `reviews_override`,
+`reviews_order`, `reviews_sort`, `reviews_pin`, `reviews_unpin`,
+`reviews_hide`, `reviews_unhide`, typebox schemas) shared by the reviews
+agent and every agent session: the review socket's `reviews` command
+(`{tool, params}` with `params` a JSON object, checked against the tool's
+schema; `roamgate-review reviews TOOL JSON|-`) runs
+`createMrReviews().boardTool(tool, params, caller)`, `caller` naming the
+session's agent and workspace in the push's `summary`. They read and write
+only Roamgate's own state.
 
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and
