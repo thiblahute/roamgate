@@ -1695,6 +1695,7 @@ export function WorkspaceInspectorHost({
                       ? { header: changesScopeBar() }
                       : {})}
                     groupByStatus={reviewInChanges}
+                    review={reviewInChanges}
                     viewFiles={reviewInChanges ? viewTree : null}
                     onScopeChange={() => setShownReview(null)}
                     onPickViewFile={(path) =>

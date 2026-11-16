@@ -769,6 +769,7 @@ const IMPORTANT_RPC_METHODS = new Set([
   ),
   "file.read",
   "git.diff_file",
+  "git.diff_files",
   "git.commit_file",
   "git.commit_preview",
   "git.file_action",
@@ -3130,6 +3131,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     readGitDiffSummary,
     readWorkspacePullRequest,
     readGitDiffFile,
+    readGitDiffFiles,
     readGitCommits,
     readGitCommit,
     readGitCommitFile,
@@ -3659,6 +3661,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         "git-pull-request-error",
         new Error("Cannot resolve this workspace's Git checkout."),
       );
+    }
+    return;
+  }
+  if (method === "git.diff_files") {
+    try {
+      const result = await readGitDiffFiles(params ?? {});
+      sendReply({ id, result }, "git-diff-files");
+    } catch (e) {
+      sendError("git-diff-files-error", e);
     }
     return;
   }

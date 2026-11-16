@@ -54,6 +54,8 @@ export type ChangesOptions = {
   automaticBase?: string;
   /** The working changes in status groups (the review in Changes). */
   groupByStatus?: boolean;
+  /** Changes shows the review (DiffViewerPanel `review`). */
+  review?: boolean;
 };
 
 /** One row of the changed-files tree, as a user reads it. */
@@ -302,18 +304,25 @@ export async function mountChangesTree(
           },
         };
       }
-      if (method === "git.diff_file") {
-        const kind = String(params.kind);
-        const path = String(params.path);
-        return {
+      const fileOf = (kind: string, path: string) =>
+        ({
           workspace_id: workspaceId,
           root: "/repo",
           path,
           kind: kind as GitDiffKind,
           diff: options.patches?.[`${kind}:${path}`] ?? PATCH,
           truncated: false,
-        } satisfies GitDiffFile as GitDiffFile;
-      }
+        }) satisfies GitDiffFile as GitDiffFile;
+      if (method === "git.diff_file")
+        return fileOf(String(params.kind), String(params.path));
+      if (method === "git.diff_files")
+        return {
+          workspace_id: workspaceId,
+          root: "/repo",
+          files: (params.entries as { path: string; kind: string }[]).map(
+            (each) => fileOf(each.kind, each.path),
+          ),
+        };
       return {};
     },
   };
@@ -374,6 +383,7 @@ export async function mountChangesTree(
       workspaceId,
       resourceKey: workspaceId,
       ...(options.groupByStatus ? { groupByStatus: true } : {}),
+      ...(options.review ? { review: true } : {}),
       ...(options.viewFiles ? { viewFiles: options.viewFiles } : {}),
       onSelectionChange: (next: ActiveDiffSelection) => {
         selection = next;
