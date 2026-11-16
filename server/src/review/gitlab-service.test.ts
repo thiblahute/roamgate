@@ -52,13 +52,18 @@ function make(options: Options = {}) {
   const writes: { method: string; argv: string[] }[] = [];
   const reads: string[] = [];
   const drafts: FakeDraft[] = [];
+  /** Each loadDiff's commit and options. */
+  const diffLoads: { commit?: string; paths?: readonly string[] }[] = [];
   let next = 100;
   const field = (argv: string[], name: string) =>
     argv.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
   const service = createReviewService({
     storage: openReviewStorage(dir),
     publish: () => {},
-    loadDiff: async () => options.diff ?? { files: [], truncated: false },
+    loadDiff: async (_session, commit, load) => {
+      diffLoads.push({ commit, paths: load?.paths });
+      return options.diff ?? { files: [], truncated: false };
+    },
     deliveryDelayMs: 0,
     ...(options.promptAgent
       ? {
@@ -141,7 +146,7 @@ function make(options: Options = {}) {
     },
   });
   services.push(service);
-  return { service, writes, reads, drafts, dir };
+  return { service, writes, reads, drafts, dir, diffLoads };
 }
 
 function openMr(
@@ -458,6 +463,27 @@ test("a range comment goes to GitLab as a line range from the diff", async () =>
   expect(pushed!.some((arg) => arg.startsWith("position[old_line]="))).toBe(
     false,
   );
+});
+
+test("a range comment's diff is its file's alone, read whole (no patch cap)", async () => {
+  const { service, diffLoads } = make({
+    webProject: "g/p",
+    diff: {
+      truncated: false,
+      files: parseUnifiedDiff(
+        "diff --git a/a.c b/a.c\n--- a/a.c\n+++ b/a.c\n@@ -1,2 +1,3 @@\n ctx1\n+add2\n ctx2\n",
+      ),
+    },
+  });
+  const review = openMr(service, "g/p");
+  await service.refreshGitlab({ sessionId: review.id });
+  await service.addThread({
+    sessionId: review.id,
+    kind: "draft",
+    anchor: { path: "a.c", line: 1, endLine: 3, side: "new" },
+    text: "range",
+  });
+  expect(diffLoads).toEqual([{ commit: undefined, paths: ["a.c"] }]);
 });
 
 test("a poll of an unchanged merge request reads only the merge request", async () => {

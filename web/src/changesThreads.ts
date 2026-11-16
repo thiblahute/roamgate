@@ -16,7 +16,9 @@ import { compareKeys, type NavPlace } from "./unresolvedThreads";
  * own entry's line while it still reads as written, else on the nearest
  * line of the same path, in any entry, that does; one found nowhere is
  * listed in the Comments panel and not drawn. Placed, never written back
- * here: the stored anchor stays what it was written as (D13).
+ * here: the server moves stored anchors onto the combined diff (D13,
+ * server/src/review/changes-anchors.ts); one it could not place keeps its
+ * entry's anchor and is placed here by its text, or listed.
  */
 
 /** A thread's place among the lines drawn. */
@@ -33,8 +35,24 @@ export type PlacedThread = {
 
 export type ThreadSection = { key: string; path: string };
 
-const sectionKeyOf = (annotation: DiffReviewAnnotation) =>
-  `${annotation.kind}:${annotation.path}`;
+/** The working changes' per-entry kinds the combined diff stands for. */
+const WORKING_KINDS = new Set(["staged", "unstaged", "untracked", "combined"]);
+
+/**
+ * The section a thread belongs to: its own entry's, or its file's
+ * combined diff when that is what is shown (the review in Changes, D8): a
+ * thread written on a staged or unstaged entry not migrated yet (D13) is
+ * placed there by its text.
+ */
+const sectionKeyOf = (
+  annotation: DiffReviewAnnotation,
+  keys: ReadonlySet<string>,
+) => {
+  const combined = `combined:${annotation.path}`;
+  return WORKING_KINDS.has(annotation.kind) && keys.has(combined)
+    ? combined
+    : `${annotation.kind}:${annotation.path}`;
+};
 
 function lineOf(row: DiffCursorRow, side: "old" | "new"): number | null {
   return side === "old" ? row.old : row.new;
@@ -65,12 +83,13 @@ export function placeDiffThreads(
     (byPath.get(row.path) ?? byPath.set(row.path, []).get(row.path)!).push(row);
   }
   const shown = new Set(sections.map((section) => section.path));
+  const keys = new Set(sections.map((section) => section.key));
   const placed: PlacedThread[] = [];
   const unplaced: ReviewThread[] = [];
   for (const annotation of annotations) {
     const thread = threads.get(annotation.id);
     if (!thread || !shown.has(annotation.path)) continue;
-    const own = sectionKeyOf(annotation);
+    const own = sectionKeyOf(annotation, keys);
     const side = annotation.side;
     const text = thread.anchor.text;
     const ownRows = byKey.get(own);

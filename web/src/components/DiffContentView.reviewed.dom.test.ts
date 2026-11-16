@@ -480,6 +480,84 @@ if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
       }
     });
 
+    test("a combined diff's chunks carry staged, unstaged or partly staged, told exactly by the server", async () => {
+      reset();
+      const combined = entry("a.ts", "combined", "M");
+      const diff = await mount({
+        entries: [combined, entry("b.ts", "combined", "M")],
+        patches: {
+          "combined:a.ts": patch(
+            "a.ts",
+            "@@ -1,3 +1,3 @@\n one\n-two\n+deux\n three",
+            "@@ -20,3 +20,4 @@\n x\n-y\n+z\n+zz\n w",
+            "@@ -40,3 +41,3 @@\n k\n-l\n+m\n n",
+          ),
+          "combined:b.ts": patch("b.ts", "@@ -1,2 +1,2 @@\n p\n-q\n+r"),
+        },
+        staged: {
+          // The first chunk all in the index, the second its removal and
+          // one of its two lines, the third none of it.
+          "combined:a.ts": {
+            old: [
+              [2, 2],
+              [21, 21],
+            ],
+            new: [
+              [2, 2],
+              [21, 21],
+            ],
+          },
+          // Untracked or unknown: no staged lines.
+        },
+      });
+      try {
+        await diff.settle();
+        // One section per file.
+        expect(diff.sections().map((section) => section.key)).toEqual([
+          "combined:a.ts",
+          "combined:b.ts",
+        ]);
+        const a = marked("combined:a.ts");
+        expect(a).toContain("2:staged");
+        expect(a).toContain("21:partly");
+        expect(a).toContain("22:partly");
+        expect(a).toContain("42:unstaged");
+        expect(a.some((m) => m.startsWith("2:") && !m.includes("staged"))).toBe(
+          false,
+        );
+        expect(
+          marked("combined:b.ts").every((m) => m.endsWith(":unstaged")),
+        ).toBe(true);
+        expect(marked("combined:b.ts").length).toBeGreaterThan(0);
+      } finally {
+        await diff.unmount();
+      }
+    });
+
+    test("a combined chunk keeps its reviewed mark when it is staged: its id is the same", async () => {
+      reset();
+      const combined = entry("b.ts", "combined", "M");
+      const body = patch("b.ts", "@@ -1,2 +1,2 @@\n p\n-q\n+r");
+      const diff = await mount({
+        entries: [combined],
+        patches: { "combined:b.ts": body },
+      });
+      try {
+        await keys("jj");
+        await press("r");
+        await diff.settle();
+        expect(marked("combined:b.ts")).toContain("2:unstaged:reviewed");
+        // Staged: the same combined diff, the index now holds its lines.
+        await diff.update({
+          staged: { "combined:b.ts": { old: [[2, 2]], new: [[2, 2]] } },
+        });
+        await diff.settle();
+        expect(marked("combined:b.ts")).toContain("2:staged:reviewed");
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("on classic, r, v and gu do nothing and nothing is marked", async () => {
       reset();
       const diff = await mount({ reviewCursor: false });

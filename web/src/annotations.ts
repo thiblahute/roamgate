@@ -206,6 +206,7 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
       "conflicted",
       "branch",
       "last-step",
+      "combined",
     ].includes(String(candidate.kind));
     if (
       line === null ||

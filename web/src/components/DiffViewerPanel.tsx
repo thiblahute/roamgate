@@ -129,12 +129,97 @@ const STATUS_GROUPS: readonly { kind: GitDiffKind; label: string }[] = [
  */
 export function orderByStatus(entries: GitDiffEntry[]): GitDiffEntry[] {
   return STATUS_GROUPS.flatMap(({ kind }) =>
-    treeOrderedDiffEntries(entries.filter((entry) => entry.kind === kind)),
-  ).concat(
-    entries.filter(
-      (entry) => !STATUS_GROUPS.some(({ kind }) => kind === entry.kind),
+    treeOrderedDiffEntries(
+      entries.filter((entry) => statusGroupOf(entry) === kind),
     ),
-  );
+  ).concat(entries.filter((entry) => statusGroupOf(entry) === null));
+}
+
+/** The first status group an entry is listed in (a combined one's parts). */
+function statusGroupOf(entry: GitDiffEntry): GitDiffKind | null {
+  const kinds = (entry.parts ?? [entry]).map((part) => part.kind);
+  return STATUS_GROUPS.find(({ kind }) => kinds.includes(kind))?.kind ?? null;
+}
+
+/** The working entries one combined diff per file stands for (D8). */
+const COMBINED_PART_KINDS: ReadonlySet<GitDiffKind> = new Set([
+  "staged",
+  "unstaged",
+  "untracked",
+]);
+
+/** The status entries of a list, a combined entry's parts in its place. */
+export function statusEntriesOf(entries: GitDiffEntry[]): GitDiffEntry[] {
+  return entries.flatMap((entry) => entry.parts ?? [entry]);
+}
+
+/**
+ * One entry per file for its staged, unstaged and untracked entries: its
+ * combined diff against HEAD (kind "combined", the review in Changes, D8),
+ * which keeps the status entries as its `parts`. A conflict stays as is.
+ */
+export function combineWorkingEntries(entries: GitDiffEntry[]): GitDiffEntry[] {
+  const partsByPath = new Map<string, GitDiffEntry[]>();
+  const order: (GitDiffEntry | string)[] = [];
+  for (const entry of entries) {
+    if (!COMBINED_PART_KINDS.has(entry.kind)) {
+      order.push(entry);
+      continue;
+    }
+    const parts = partsByPath.get(entry.path);
+    if (parts) parts.push(entry);
+    else {
+      partsByPath.set(entry.path, [entry]);
+      order.push(entry.path);
+    }
+  }
+  return order.map((each) => {
+    if (typeof each !== "string") return each;
+    const parts = partsByPath.get(each)!;
+    const part = (kind: GitDiffKind) => parts.find((p) => p.kind === kind);
+    const staged = part("staged");
+    const working = part("untracked") ?? part("unstaged");
+    const only = parts.length === 1 ? parts[0] : undefined;
+    return {
+      path: each,
+      kind: "combined" as const,
+      status: part("untracked")
+        ? "untracked"
+        : working?.status === "deleted"
+          ? "deleted"
+          : (staged?.status ?? working?.status ?? "modified"),
+      ...(staged?.old_path || working?.old_path
+        ? { old_path: staged?.old_path ?? working?.old_path }
+        : {}),
+      // Each part counts its own diff: the sum is not the combined one's.
+      ...(only?.additions !== undefined ? { additions: only.additions } : {}),
+      ...(only?.deletions !== undefined ? { deletions: only.deletions } : {}),
+      ...(parts.some((p) => p.binary) ? { binary: true } : {}),
+      ...(parts.some((p) => p.generated) ? { generated: true } : {}),
+      ...((working ?? staged)?.file_size !== undefined
+        ? { file_size: (working ?? staged)!.file_size }
+        : {}),
+      ...((working ?? staged)?.mtime_ms !== undefined
+        ? { mtime_ms: (working ?? staged)!.mtime_ms }
+        : {}),
+      ...((working ?? staged)?.size !== undefined
+        ? { size: (working ?? staged)!.size }
+        : {}),
+      parts,
+    };
+  });
+}
+
+const combinedSummaries = new WeakMap<GitDiffSummary, GitDiffSummary>();
+
+/** A Working summary with one combined entry per file, the same each time. */
+export function combineWorkingSummary(summary: GitDiffSummary): GitDiffSummary {
+  let combined = combinedSummaries.get(summary);
+  if (!combined) {
+    combined = { ...summary, entries: combineWorkingEntries(summary.entries) };
+    combinedSummaries.set(summary, combined);
+  }
+  return combined;
 }
 
 export type DiffViewerPanelHandle = {
@@ -1116,6 +1201,19 @@ export function DiffViewerPanel({
     repositoryResourceKey,
     baseBranch || undefined,
   );
+  /**
+   * The review in Changes reads the working changes as one combined diff
+   * per file (D8): the summary its diff and selection use. The tree keeps
+   * the status entries (each combined entry's parts).
+   */
+  const combineWorking = groupByStatus && diffScope === "working";
+  const shownSummary = useMemo(
+    () =>
+      combineWorking && sharedSummaryState.summary
+        ? combineWorkingSummary(sharedSummaryState.summary)
+        : sharedSummaryState.summary,
+    [combineWorking, sharedSummaryState.summary],
+  );
   const [cache, setCache] = useState<DiffCache>(() =>
     readDiffCache(
       connectionClient,
@@ -1225,7 +1323,7 @@ export function DiffViewerPanel({
   };
 
   useEffect(() => {
-    const summary = sharedSummaryState.summary;
+    const summary = shownSummary;
     if (
       !workspace?.workspace_id ||
       !summary ||
@@ -1234,12 +1332,24 @@ export function DiffViewerPanel({
     ) {
       return;
     }
+    const preferred = preferredSummarySelectionRef.current ?? cache.selected;
     const selected = resolveSelectedEntry(
       connectionClient,
       workspace.workspace_id,
       diffScope,
       summary.entries,
-      preferredSummarySelectionRef.current ?? cache.selected,
+      // A status entry stands for its file's combined one, and back.
+      preferred &&
+        (summary.entries.find(
+          (entry) =>
+            entry.path === preferred.path &&
+            (entry.kind === preferred.kind ||
+              (entry.kind === "combined" &&
+                COMBINED_PART_KINDS.has(preferred.kind)) ||
+              (preferred.kind === "combined" &&
+                COMBINED_PART_KINDS.has(entry.kind))),
+        ) ??
+          preferred),
       cacheResourceKey,
     );
     preferredSummarySelectionRef.current = null;
@@ -1290,8 +1400,9 @@ export function DiffViewerPanel({
         const match = summary.entries.find(
           (entry) =>
             entry.path === target.path &&
-            entry.kind === target.kind &&
-            entry.status === target.status,
+            ((entry.kind === target.kind && entry.status === target.status) ||
+              (entry.kind === "combined" &&
+                !!entry.parts?.some((part) => part.kind === target.kind))),
         );
         return match ? [match] : [];
       });
@@ -1302,7 +1413,7 @@ export function DiffViewerPanel({
     // The shared snapshot is the synchronization boundary; cache adoption is
     // intentionally driven only when that immutable snapshot changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedSummaryState.summary]);
+  }, [shownSummary]);
 
   const diffSelection = useCallback(
     (
@@ -1484,11 +1595,19 @@ export function DiffViewerPanel({
   }, [cacheWorkspaceId, completionKey, completionRevision]);
 
   const loadFile = async (
-    entry: GitDiffEntry,
+    asked: GitDiffEntry,
     meta: DiffSelectionMeta = {},
     select = true,
   ) => {
     if (!workspace?.workspace_id || !connectionClient.isCurrent()) return;
+    // A status entry (a tree row, a goTo) shows its file's combined diff.
+    const entry =
+      cache.summary?.entries.find(
+        (each) =>
+          each.kind === "combined" &&
+          each.path === asked.path &&
+          COMBINED_PART_KINDS.has(asked.kind),
+      ) ?? asked;
     const workspaceId = workspace.workspace_id;
     const scope = diffScope;
     const key = diffEntryKey(entry);
@@ -1864,25 +1983,32 @@ export function DiffViewerPanel({
       ?.querySelector<HTMLElement>(".diff-tree-file.is-selected")
       ?.scrollIntoView({ block: "nearest" });
   }, [expandedDirs, selectedKey, visibleEntryKey]);
-  const tree = useMemo(
-    () => buildDiffTree(cache.summary?.entries ?? []),
+  /** The status entries (a combined entry's parts): the tree's rows. */
+  const statusEntries = useMemo(
+    () => statusEntriesOf(cache.summary?.entries ?? []),
     [cache.summary?.entries],
   );
+  /** A row's entry as the diff shows it: its combined entry's key. */
+  const shownKeyOf = (entry: GitDiffEntry) =>
+    combineWorking && COMBINED_PART_KINDS.has(entry.kind)
+      ? `combined:${entry.path}`
+      : diffEntryKey(entry);
+  const tree = useMemo(() => buildDiffTree(statusEntries), [statusEntries]);
   const groupTrees = useMemo(
     () =>
       groupByStatus && diffScope === "working"
         ? STATUS_GROUPS.map(({ kind, label }) => {
-            const entries = (cache.summary?.entries ?? []).filter(
+            const entries = statusEntries.filter(
               (entry) => entry.kind === kind,
             );
             return { kind, label, entries, tree: buildDiffTree(entries) };
           }).filter((group) => group.entries.length > 0)
         : null,
-    [cache.summary?.entries, diffScope, groupByStatus],
+    [statusEntries, diffScope, groupByStatus],
   );
   const workingCounts = useMemo(
-    () => countWorkingEntries(cache.summary?.entries ?? []),
-    [cache.summary?.entries],
+    () => countWorkingEntries(statusEntries),
+    [statusEntries],
   );
 
   const clearLongPressTimer = () => {
@@ -2036,9 +2162,7 @@ export function DiffViewerPanel({
       say("Git actions apply to the working changes.");
       return false;
     }
-    const entries = (cache.summary?.entries ?? []).filter(
-      (entry) => entry.path === path,
-    );
+    const entries = statusEntries.filter((entry) => entry.path === path);
     const item = buildGitFileMenuItems(entries).find(
       (each) => each.action === action,
     );
@@ -2167,7 +2291,7 @@ export function DiffViewerPanel({
 
       const primary = child.entries[0];
       const selected = child.entries.some(
-        (entry) => diffEntryKey(entry) === selectedKey,
+        (entry) => shownKeyOf(entry) === selectedKey,
       );
       const stats = diffStatsForEntries(child.entries);
       const statusCodes = Array.from(

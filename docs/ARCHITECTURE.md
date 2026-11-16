@@ -204,6 +204,25 @@ Changes, Commits and a file's changes in Files draw diffs through one surface,
 It only draws: each view keeps its own state and gives the surface the patch,
 the options, what is shown under lines and what a line selection does.
 
+When Changes is the review (`reviewin=changes`), its Working scope reads one
+diff per file: `git.diff_file` with kind `combined` (`git diff HEAD`, an
+untracked file listed by `git ls-files --others` as new; a FIFO, a device or
+a path through a link out of the checkout refused; the user's diff settings
+pinned as the review's patch loader pins them). The answer adds `staged`,
+the changed lines the index holds (HEAD's removed lines `git diff --cached`
+removed, the working tree's added lines the index added, mapped through `git
+diff`), from which each chunk is staged, unstaged or partly staged. Threads
+anchor on that numbering. The tree keeps the status entries
+(`GitDiffEntry.parts`) for its groups and menus. On a read of a worktree
+review (`review.list`, `review.get`, `review.open`) the server moves threads
+still anchored on a staged, unstaged or untracked entry's own diff
+(`anchor.feedback` kind) onto the combined diff by their line's text, in the
+background and once (`server/src/review/changes-anchors.ts`); one it cannot
+place keeps its anchor. A draft's anchor diff (`anchorDiff`) reads only the
+anchor's file, whole, and the worktree review's state fingerprint hashes
+every untracked file: the whole patch's 4 MiB and 200-untracked-file caps no
+longer apply to either.
+
 Browser preferences live in namespaced `localStorage` and sync across tabs on the
 same origin. Navigation, open files, live draft edits, and focus stay per tab.
 

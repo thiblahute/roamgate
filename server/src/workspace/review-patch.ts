@@ -99,8 +99,16 @@ export function reviewPatchScript(
   target: ReviewTarget,
   shQuote: (value: string) => string,
   maxBytes = REVIEW_PATCH_MAX_BYTES,
+  /**
+   * Only these files (a thread's, to place it): the whole of each, every
+   * untracked one among them, no file count cap.
+   */
+  paths?: readonly string[],
 ): string {
-  const diff = `${GIT} diff ${DIFF_OPTIONS} --find-renames`;
+  const only = paths?.length
+    ? ` -- ${paths.map((path) => shQuote(path)).join(" ")}`
+    : "";
+  const diff = `${GIT} ${only ? "--literal-pathspecs " : ""}diff ${DIFF_OPTIONS} --find-renames`;
   const cap = `head -c ${maxBytes + 1}`;
   const lines = [enterCheckout(root, shQuote)];
   if (target.kind === "range") {
@@ -112,15 +120,17 @@ export function reviewPatchScript(
       target.compare
         ? `m="$b"`
         : `m=$(git merge-base "$b" "$h" 2>/dev/null) || m="$b"`,
-      `{ printf '${SHAS_MARKER} %s %s\\n' "$m" "$h"; ${diff} "$m" "$h"; } | ${cap}`,
+      `{ printf '${SHAS_MARKER} %s %s\\n' "$m" "$h"; ${diff} "$m" "$h"${only}; } | ${cap}`,
     );
   } else if (target.kind === "worktree") {
     lines.push(
       `h=$(git rev-parse --verify --quiet HEAD) || h=`,
       `{ printf '${SHAS_MARKER} %s %s\\n' "$h" "";`,
-      `  ${diff} HEAD 2>/dev/null || ${diff} --cached;`,
+      `  ${diff} HEAD${only} 2>/dev/null || ${diff} --cached${only};`,
       // A name git still quotes (a newline or quote in it) is skipped.
-      `  ${GIT} ls-files --others --exclude-standard | head -n ${MAX_UNTRACKED_FILES} |`,
+      only
+        ? `  ${GIT} --literal-pathspecs ls-files --others --exclude-standard${only} |`
+        : `  ${GIT} ls-files --others --exclude-standard | head -n ${MAX_UNTRACKED_FILES} |`,
       `  while IFS= read -r f; do case "$f" in \\"*) continue;; esac; ${GIT} diff ${DIFF_OPTIONS} --no-index -- /dev/null "$f"; done;`,
       `} | ${cap}`,
     );
@@ -159,14 +169,32 @@ export function parseReviewPatchOutput(
   return { files: parseUnifiedDiff(text), baseSha, headSha, truncated };
 }
 
+/**
+ * The most one file's patch is read to place a thread (anchorDiff, the
+ * Changes anchors' migration): the review's 4 MiB cap is for the whole
+ * patch, not for one file.
+ */
+export const REVIEW_FILE_PATCH_MAX_BYTES = 64 * 1024 * 1024;
+
 export async function readReviewPatch(args: {
   root: string;
   target: ReviewTarget;
+  /** Only these files, uncapped but for REVIEW_FILE_PATCH_MAX_BYTES. */
+  paths?: readonly string[];
   host?: string;
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<ReviewDiff> {
-  const script = reviewPatchScript(args.root, args.target, args.shQuote);
+  const maxBytes = args.paths?.length
+    ? REVIEW_FILE_PATCH_MAX_BYTES
+    : REVIEW_PATCH_MAX_BYTES;
+  const script = reviewPatchScript(
+    args.root,
+    args.target,
+    args.shQuote,
+    maxBytes,
+    args.paths,
+  );
   const argv = args.host
     ? sshReadCommandArgv(args.host, script, [], "review.patch")
     : gitShellCommandArgv(script, undefined, GIT_ONLY);
@@ -181,7 +209,7 @@ export async function readReviewPatch(args: {
       args.root,
       args.target,
     );
-  return parseReviewPatchOutput(result.stdout);
+  return parseReviewPatchOutput(result.stdout, maxBytes);
 }
 
 /**
@@ -204,7 +232,9 @@ export function reviewStateScript(
     lines.push(
       "git rev-parse --verify --quiet HEAD",
       "{ git diff --no-color --no-ext-diff HEAD 2>/dev/null || git diff --no-color --no-ext-diff --cached; } | git hash-object --stdin",
-      `git ls-files --others --exclude-standard | head -n ${MAX_UNTRACKED_FILES} | { git hash-object --stdin-paths 2>/dev/null; git ls-files --others --exclude-standard | head -n ${MAX_UNTRACKED_FILES}; } | git hash-object --stdin`,
+      // Every untracked file counts (no 200-file cap, plan phase 5s):
+      // Changes lists them all, and a change to any one is a change.
+      `git ls-files --others --exclude-standard | { git hash-object --stdin-paths 2>/dev/null; git ls-files --others --exclude-standard; } | git hash-object --stdin`,
     );
   else throw new Error("merge request changes come from the forge");
   lines.push("exit 0");

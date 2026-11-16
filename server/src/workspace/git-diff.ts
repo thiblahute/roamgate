@@ -8,6 +8,7 @@ import {
 import { LARGE_DIFF_PATCH_BYTES } from "../../../shared/gitDiffLimits";
 import { worktreeSnapshotCommand } from "./git-snapshot";
 import { gitShellCommandArgv } from "./git-shell";
+import { readCombinedDiffFile } from "./git-combined";
 import { collectWorktreeFingerprints } from "./git-actions";
 import {
   GIT_DIFF_MAX_BYTES,
@@ -327,7 +328,8 @@ function diffFileKind(mode: GitDiffMode, requestedKind: unknown): GitDiffKind {
   if (
     requestedKind === "staged" ||
     requestedKind === "untracked" ||
-    requestedKind === "conflicted"
+    requestedKind === "conflicted" ||
+    requestedKind === "combined"
   ) {
     return requestedKind;
   }
@@ -1302,6 +1304,32 @@ export async function readDiffFile({
         })
       : null;
   const kind = diffFileKind(mode, params.kind);
+  // The review's reading of the working changes: one diff per file, its
+  // staged lines told exactly (plan D8, phase 5s).
+  if (kind === "combined") {
+    const combined = await readCombinedDiffFile({
+      root,
+      path,
+      oldPath,
+      automatic: params.automatic === true,
+      host,
+      shQuote,
+      runProcessWithCodeTimeout,
+    });
+    return {
+      workspace_id: workspaceId,
+      root,
+      path,
+      kind,
+      diff: combined.diff,
+      patch_size: combined.patch_size,
+      truncated: combined.truncated,
+      ...(combined.deferred ? { deferred: true } : {}),
+      ...(combined.untracked ? { untracked: true } : {}),
+      ...(combined.unmerged ? { unmerged: true } : {}),
+      ...(combined.staged ? { staged: combined.staged } : {}),
+    };
+  }
   let gitCommand: string | null = null;
   if (mode === "branch-main") {
     gitCommand = `diff --no-ext-diff --find-renames ${shQuote(base ?? "main")}...HEAD -- ${pathspec}`;

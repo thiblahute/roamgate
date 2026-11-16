@@ -1634,7 +1634,7 @@ function getReviewService(): ReviewService {
       );
       return runtime.files.readReviewPatchIds(session.root, shas);
     },
-    loadDiff: async (session, commit) => {
+    loadDiff: async (session, commit, options) => {
       const { runtime } = resolveReadyConnection(
         connectionManager,
         session.connectionId,
@@ -1656,17 +1656,21 @@ function getReviewService(): ReviewService {
         }
       }
       if (session.target.kind !== "mr")
-        return runtime.files.readReviewPatch(session.root, session.target);
+        return runtime.files.readReviewPatch(
+          session.root,
+          session.target,
+          options?.paths,
+        );
       // A merge request: diff its commits locally when the checkout has
       // them (one host command), else ask GitLab for the diff.
       const context = reviewGlabContext(runtime, session.root);
       const mr = await readMergeRequest(context, session.target.url);
       try {
-        const diff = await runtime.files.readReviewPatch(session.root, {
-          kind: "range",
-          base: mr.baseSha,
-          head: mr.headSha,
-        });
+        const diff = await runtime.files.readReviewPatch(
+          session.root,
+          { kind: "range", base: mr.baseSha, head: mr.headSha },
+          options?.paths,
+        );
         return { ...diff, baseSha: mr.baseSha, headSha: mr.headSha };
       } catch {
         return readMergeRequestDiff(context, mr);

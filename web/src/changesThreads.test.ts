@@ -212,3 +212,63 @@ describe("going through the threads", () => {
     ).toEqual({ index: 3, on: false });
   });
 });
+
+describe("on the combined diff (the review in Changes, D8)", () => {
+  const combined = [{ key: "combined:a.ts", path: "a.ts" }];
+  // HEAD a, b; index S, a, b; working tree S, a, B.
+  const rows = [
+    row("combined:a.ts", "+", null, 1, "S"),
+    row("combined:a.ts", " ", 1, 2, "a"),
+    row("combined:a.ts", "-", 2, null, "b"),
+    row("combined:a.ts", "+", null, 3, "B"),
+  ];
+  const combinedNote = (
+    id: string,
+    line: number,
+    side: "old" | "new",
+  ): DiffReviewAnnotation => ({
+    ...note(id, "unstaged", line, side),
+    kind: "combined",
+  });
+
+  test("a thread written on it is drawn on its line", () => {
+    const { placed, unplaced } = placeDiffThreads(
+      [combinedNote("c1", 3, "new")],
+      new Map([["c1", thread("c1", 3, "B")]]),
+      combined,
+      rows,
+    );
+    expect(unplaced).toEqual([]);
+    expect(placed.map((p) => [p.key, p.side, p.line, p.moved])).toEqual([
+      ["combined:a.ts", "new", 3, false],
+    ]);
+  });
+
+  test("one written on an entry and not migrated yet is found there by its text", () => {
+    // The unstaged entry numbered b as the index's line 3, old side.
+    const { placed } = placeDiffThreads(
+      [note("u1", "unstaged", 3, "old"), note("s1", "staged", 1, "new")],
+      new Map([
+        ["u1", thread("u1", 3, "b", "old")],
+        ["s1", thread("s1", 1, "S")],
+      ]),
+      combined,
+      rows,
+    );
+    expect(placed.map((p) => [p.thread.id, p.key, p.side, p.line])).toEqual([
+      ["u1", "combined:a.ts", "old", 2],
+      ["s1", "combined:a.ts", "new", 1],
+    ]);
+  });
+
+  test("one whose words are gone is listed, not drawn", () => {
+    const { placed, unplaced } = placeDiffThreads(
+      [note("g", "unstaged", 3, "old")],
+      new Map([["g", thread("g", 3, "nowhere", "old")]]),
+      combined,
+      rows,
+    );
+    expect(placed).toEqual([]);
+    expect(unplaced.map((t) => t.id)).toEqual(["g"]);
+  });
+});

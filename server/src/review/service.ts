@@ -46,6 +46,7 @@ import {
   updateDraftNote,
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
+import { combinedAnchor, entryAnchored } from "./changes-anchors";
 import { createAgentPrompts } from "./prompts";
 import { ReviewSessions } from "./sessions";
 import type { ReviewStorage } from "./storage";
@@ -521,7 +522,15 @@ export function createReviewService(args: {
   sessionLimit?: number;
   storage: ReviewStorage;
   publish: (push: ReviewPush) => void;
-  loadDiff: (session: ReviewSession, commit?: string) => Promise<ReviewDiff>;
+  /**
+   * The review's diff, or one commit's. With `paths`, only those files,
+   * whole (no patch or untracked-file cap): to place a thread on its file.
+   */
+  loadDiff: (
+    session: ReviewSession,
+    commit?: string,
+    options?: { paths?: readonly string[] },
+  ) => Promise<ReviewDiff>;
   loadCommits?: (session: ReviewSession) => Promise<ReviewCommit[]>;
   /**
    * `git patch-id` of each of these commits the checkout has, by sha: to
@@ -1417,7 +1426,7 @@ export function createReviewService(args: {
     const connectionId =
       typeof params.connectionId === "string" ? params.connectionId : undefined;
     const root = typeof params.root === "string" ? params.root : undefined;
-    return [...sessions.values()]
+    const shown = [...sessions.values()]
       .filter(
         (s) =>
           (!connectionId || s.connectionId === connectionId) &&
@@ -1427,8 +1436,80 @@ export function createReviewService(args: {
           ((s.target.kind !== "chat" && s.target.kind !== "effort") ||
             params.chats === true),
       )
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(snapshot);
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    for (const each of shown) migrateEntryAnchors(each);
+    return shown.map(snapshot);
+  }
+
+  /** Worktree reviews whose Changes anchors are being migrated (D13). */
+  const migrating = new Map<string, Promise<void>>();
+  const migrateAgain = new Set<string>();
+  const migrationRetryAt = new Map<string, number>();
+  /** Threads tried once this run: one not found is not read again. */
+  const migrationTried = new Set<string>();
+
+  /**
+   * Plan D13: on a read of a worktree review (review.list, review.get,
+   * review.open), its threads still anchored on a Changes entry's own diff
+   * are placed on the combined `git diff HEAD` by their line's text and
+   * written back (changes-anchors.ts), in the background; the review is
+   * published again when one moved. Idempotent: a migrated thread is
+   * "combined" and never read again; one that cannot be placed keeps its
+   * anchor and is tried again only after a restart.
+   */
+  function migrateEntryAnchors(target: ReviewSession): Promise<void> {
+    if (target.target.kind !== "worktree") return Promise.resolve();
+    const running = migrating.get(target.id);
+    if (running) {
+      // Threads written meanwhile: looked at once this pass ends.
+      migrateAgain.add(target.id);
+      return running;
+    }
+    // The checkout could not be read lately (a connection not ready yet,
+    // as at startup): asked again on a read 5 s later or more.
+    if ((migrationRetryAt.get(target.id) ?? 0) > clock())
+      return Promise.resolve();
+    const todo = [...threadsOf(target.id).values()].filter(
+      (thread) => !migrationTried.has(thread.id) && entryAnchored(thread),
+    );
+    if (!todo.length) return Promise.resolve();
+    const paths = [...new Set(todo.map((thread) => thread.anchor.path!))];
+    const task = (async () => {
+      const diff = await fromCheckout(target, () =>
+        args.loadDiff(target, undefined, { paths }),
+      ).catch(() => undefined);
+      if (!diff) {
+        migrationRetryAt.set(target.id, clock() + 5_000);
+        return;
+      }
+      migrationRetryAt.delete(target.id);
+      for (const thread of todo) migrationTried.add(thread.id);
+      if (!live(target)) return;
+      let moved = false;
+      for (const thread of todo) {
+        const current = threadsOf(target.id).get(thread.id);
+        // Edited, moved or deleted meanwhile: left for the next read.
+        if (current !== thread || !entryAnchored(thread)) continue;
+        const file = diff.files.find(
+          (each) => each.path === thread.anchor.path,
+        );
+        const anchor = combinedAnchor(thread, file);
+        if (!anchor) continue;
+        // Not a user edit: its updatedAt stays.
+        thread.anchor = anchor;
+        storage.saveThread(thread);
+        moved = true;
+      }
+      if (moved) publishSession(target);
+    })()
+      .finally(() => migrating.delete(target.id))
+      .then(() =>
+        migrateAgain.delete(target.id)
+          ? migrateEntryAnchors(target)
+          : undefined,
+      );
+    migrating.set(target.id, task);
+    return task;
   }
 
   function open(params: Record<string, unknown>): ReviewSnapshot {
@@ -1510,6 +1591,7 @@ export function createReviewService(args: {
     if (paneId && (params.raise !== false || !found.agent.paneId))
       bindPane(found, paneId);
     changed(found);
+    void migrateEntryAnchors(found);
     if (params.raise !== false)
       args.publish({
         type: "open",
@@ -1955,10 +2037,15 @@ export function createReviewService(args: {
     if (!anchor.path || !anchor.line) return Promise.resolve(undefined);
     const commit =
       anchor.commit && anchor.commitParent ? anchor.commit : undefined;
-    const key = commit ?? "";
+    // The anchor's file alone, whole: the review's patch caps (4 MiB, 200
+    // untracked files) would leave a large or late file out (phase 5s).
+    const paths = [
+      ...new Set([anchor.path, anchor.oldPath].filter((p): p is string => !!p)),
+    ];
+    const key = `${commit ?? ""}\0${paths.join("\0")}`;
     let diff = cache.get(key);
     if (!diff) {
-      diff = args.loadDiff(target, commit).catch(() => undefined);
+      diff = args.loadDiff(target, commit, { paths }).catch(() => undefined);
       cache.set(key, diff);
     }
     return diff;
@@ -3682,8 +3769,14 @@ export function createReviewService(args: {
     /** Whether agents may see this review now, without asking GitLab. */
     agentMayRead: (params: Record<string, unknown>) =>
       !agentRefusal(session(params.sessionId)),
-    get: (params: Record<string, unknown>) =>
-      snapshot(session(params.sessionId)),
+    get: (params: Record<string, unknown>) => {
+      const target = session(params.sessionId);
+      void migrateEntryAnchors(target);
+      return snapshot(target);
+    },
+    /** D13's migration of one review's Changes anchors (tests await it). */
+    migrateEntryAnchors: (params: Record<string, unknown>) =>
+      migrateEntryAnchors(session(params.sessionId)),
     open,
     update,
     remove,

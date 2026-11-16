@@ -269,12 +269,18 @@ Inspector button, shortcuts, or workspace/agent menus.
   first), then goes on to the next chunk not reviewed, and `r` again unmarks
   it. `v` and `Option+V` (`Alt+V`) mark the file, every chunk of it. `gu` and
   `gU` jump to the next and previous chunk not reviewed. The marks are the
-  checkout review's, so a chunk keeps its mark when it is staged. Every chunk
-  carries its state in the margin: green staged, amber unstaged, both when it
-  is partly staged; a reviewed chunk is dimmed.
+  checkout review's, so a chunk keeps its mark when it is staged. The diff
+  shows each file once, its staged and unstaged changes together against
+  `HEAD` (an untracked file as new), the lines comments are anchored on, so
+  staging never moves a comment. Every chunk carries its state in the
+  margin, told line by line from the index: green staged, amber unstaged,
+  both when it is partly staged; a reviewed chunk is dimmed.
   The tree lists the working changes in groups, **Staged**, **Changes** and
-  **Untracked**, a file changed twice in both, with its reviewed chunks
-  (`3/7`, a check once every chunk is) beside its name.
+  **Untracked**, a file changed twice in both (each row shows the same
+  diff, and its menu acts on that group's change), with its reviewed chunks
+  (`3/7`, a check once every chunk is) beside its name. Comments written on
+  the staged or unstaged diffs before are moved onto that file's lines by
+  their text; one whose line is gone is listed in the Comments panel.
 - The **PR/MR status** card in **Changes** and **Commits** shows the branch's
   GitHub pull request or GitLab merge request: state, checks, and reviews. It
   needs `gh` or `glab` authenticated on the checkout host and never changes

@@ -26,6 +26,7 @@ import {
   highlightedPatch,
   DiffContentView,
   diffViewThreads,
+  annotationSectionKey,
 } from "./DiffContentView";
 import { feedbackNote } from "../workspaceFeedback";
 import type { ReviewThread } from "../../../shared/review";
@@ -738,4 +739,54 @@ test("a comment written in Changes is listed in its Comments panel, where its fi
   ).toEqual(["a"]);
   // A note the server has not taken yet has no thread to list.
   expect(diffViewThreads(annotations, threads.slice(1), entries)).toEqual([]);
+});
+
+test("a comment on the combined diff is listed and drawn on its file's entries in upstream's Changes", () => {
+  const combinedThread: ReviewThread = {
+    id: "m",
+    sessionId: "s1",
+    kind: "discussion",
+    anchor: {
+      path: "src/one.ts",
+      line: 2,
+      side: "new",
+      feedback: JSON.stringify({
+        source: "diff",
+        path: "src/one.ts",
+        kind: "combined",
+        side: "new",
+        line: 2,
+        hunk: "",
+        quote: "x",
+      }),
+    },
+    comments: [],
+    resolved: false,
+    createdAt: "2026-11-10T10:00:00Z",
+    updatedAt: "2026-11-10T10:00:00Z",
+  };
+  const note = feedbackNote(combinedThread);
+  expect(note).toMatchObject({ source: "diff", kind: "combined" });
+  expect(
+    diffViewThreads([note], [combinedThread], entries).map((each) => each.id),
+  ).toEqual(["m"]);
+  // Drawn on the entry numbering its side alike: the working tree's (new)
+  // on the unstaged entry, HEAD's (old) on the staged one.
+  const shown = new Set(["staged:src/one.ts", "unstaged:src/one.ts"]);
+  const at = (side: "old" | "new") =>
+    annotationSectionKey({ kind: "combined", path: "src/one.ts", side }, shown);
+  expect(at("new")).toBe("unstaged:src/one.ts");
+  expect(at("old")).toBe("staged:src/one.ts");
+  expect(
+    annotationSectionKey(
+      { kind: "combined", path: "src/one.ts", side: "new" },
+      new Set(["combined:src/one.ts"]),
+    ),
+  ).toBe("combined:src/one.ts");
+  expect(
+    annotationSectionKey(
+      { kind: "staged", path: "src/one.ts", side: "new" },
+      shown,
+    ),
+  ).toBe("staged:src/one.ts");
 });

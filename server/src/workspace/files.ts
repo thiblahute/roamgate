@@ -839,10 +839,15 @@ export function createFileHandlers({
     runWorkspaceGitFileAction,
     runWorkspaceGitRepoAction,
     resolveWorkspaceGitRoot: workspaceAndGitRoot,
-    readReviewPatch: (root: string, target: ReviewTarget) =>
+    readReviewPatch: (
+      root: string,
+      target: ReviewTarget,
+      paths?: readonly string[],
+    ) =>
       readReviewPatch({
         root,
         target,
+        paths,
         host: sshHost(),
         shQuote,
         runProcessWithCodeTimeout,
