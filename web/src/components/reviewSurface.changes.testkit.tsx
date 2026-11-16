@@ -385,9 +385,16 @@ export async function mountChangesReview(
     string,
     { done: number; total: number; reviewed: boolean }
   > = new Map();
-  // Side by side as the classic pane would open it: as told, else by width.
+  // Side by side when told (a choice remembered), else as Changes picks it
+  // by its width (the window's, here: the inspector expanded over it).
   const split = options.split ?? (options.width ?? 1024) >= 1100;
-  roamgateLocalStorage.setItem("diffViewMode", split ? "split" : "unified");
+  if (options.split !== undefined)
+    roamgateLocalStorage.setItem(
+      "diffViewMode",
+      options.split ? "split" : "unified",
+    );
+  else if (options.storage !== "keep")
+    roamgateLocalStorage.removeItem("diffViewMode");
   const base = store.get();
   const getSpy = spyOn(store, "get").mockImplementation(
     () =>
@@ -435,12 +442,13 @@ export async function mountChangesReview(
   // which the fake clock leaves running.
   const fake = options.fakeTimers === true;
   if (fake) jest.useFakeTimers();
-  const tick = fake
-    ? async () => {
-        jest.advanceTimersByTime(2);
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    : () => new Promise((resolve) => setTimeout(resolve, 2));
+  // The clock may turn fake in a test after mounting: settled as it is.
+  const tick = async () => {
+    if (fake || jest.isFakeTimers()) {
+      jest.advanceTimersByTime(2);
+      await new Promise((resolve) => setImmediate(resolve));
+    } else await new Promise((resolve) => setTimeout(resolve, 2));
+  };
   const notify = store.notify.bind(store);
   const notifySpy = spyOn(store, "notify").mockImplementation(((notice: {
     message: string;
@@ -519,6 +527,9 @@ export async function mountChangesReview(
       <InspectorViewContext.Provider value="changes">
         {/* biome-ignore lint/a11y/noStaticElementInteractions: the inspector's keys */}
         <div
+          className="workspace-inspector-slot"
+          // Put away: the inspector closed (it stays mounted, as App keeps it).
+          hidden={putAway.hidden}
           onKeyDown={(event) => {
             if (
               event.key === "?" &&
@@ -591,6 +602,25 @@ export async function mountChangesReview(
         </div>
       </InspectorViewContext.Provider>
     );
+  };
+  /**
+   * The review shown or put away, as the review toggle shows it: the diff
+   * focused and its keys held there a moment (App's holdFocus), the hold
+   * dropped as it goes away.
+   */
+  const putAway = {
+    hidden: options.hidden ?? false,
+    stopHold: null as (() => void) | null,
+  };
+  const { holdFocus } = await import("./dialogFocus");
+  const takeKeys = () => {
+    putAway.stopHold?.();
+    putAway.stopHold = null;
+    const target = view();
+    const slot = host.querySelector(".workspace-inspector-slot");
+    if (!target || !slot) return;
+    target.focus({ preventScroll: true });
+    putAway.stopHold = holdFocus(target, slot);
   };
   const registry = {
     set: (id: string, _view: string, set: CommandSet | null) => {
@@ -1118,6 +1148,16 @@ export async function mountChangesReview(
     }) as DOMRect;
   const scroller = () => host.querySelector<HTMLElement>(".pierre-diff-scroll");
   proto.getBoundingClientRect = function (this: Element) {
+    // Changes as wide as the window: the inspector expanded.
+    if (
+      this instanceof HTMLElement &&
+      this.classList.contains("diff-content-view")
+    )
+      return {
+        ...box(0, 600),
+        right: options.width ?? 1024,
+        width: options.width ?? 1024,
+      } as DOMRect;
     if (
       this.hasAttribute("data-line") ||
       this.hasAttribute("data-column-number")
@@ -1163,6 +1203,7 @@ export async function mountChangesReview(
 
   await render();
   layOutScroller();
+  if (!putAway.hidden) await act(async () => takeKeys());
 
   /**
    * Where a key goes: the focus, in the diff or in the frame's own fields
@@ -1533,7 +1574,24 @@ export async function mountChangesReview(
       await render();
       layOutScroller();
     },
+    async setHidden(value) {
+      putAway.hidden = value;
+      if (value) {
+        putAway.stopHold?.();
+        putAway.stopHold = null;
+      }
+      await render();
+      if (!value) await act(async () => takeKeys());
+      await settleAll();
+    },
+    hasFocus() {
+      // A browser drops the focus of an element hidden; happy-dom keeps it.
+      const active = document.activeElement;
+      const slot = host.querySelector<HTMLElement>(".workspace-inspector-slot");
+      return active !== null && !!slot && !slot.hidden && slot.contains(active);
+    },
     async unmount() {
+      putAway.stopHold?.();
       await act(async () => root.unmount());
       host.remove();
       restoreLayout();
@@ -1824,6 +1882,8 @@ export async function mountChangesReview(
       return (
         host.querySelector(".changes-review-status")?.textContent ||
         host.querySelector(".diff-agent-status")?.textContent ||
+        // A review of commits: why its views could not be read.
+        host.querySelector(".diff-review-views-status")?.textContent ||
         ""
       );
     },
@@ -1977,6 +2037,14 @@ export async function mountChangesReview(
           threads: update.threads ?? ownThreads,
         } as unknown as ReviewSnapshot;
       };
+    },
+    async setConnected(connected) {
+      await act(async () => {
+        backend.connected = connected;
+        for (const listener of [...backend.connectionListeners]) listener();
+        await tick();
+      });
+      await settleAll();
     },
     failBridge(methods, error = "not connected to bridge") {
       backend.failing.clear();

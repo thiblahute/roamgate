@@ -15,6 +15,12 @@ export type SurfaceFeature =
   | "review"
   /** The review's `:` commands and its shortcut list (`?`, `:help`). */
   | "commands"
+  /**
+   * The review's place across reloads (per review, the last 50), its
+   * remembered preferences, put away and shown again, its loads retried
+   * on a reconnect or Retry.
+   */
+  | "place"
   /** The Vim cursor, its motions, the screen, Visual lines (phase 3). */
   | "cursor"
   /** `/ * # n N` in the diff and its file paths (phase 3). */
@@ -72,6 +78,7 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "commands",
   "file-folds",
   "open-files",
+  "place",
   "reload-offer",
   "cursor",
   "search",

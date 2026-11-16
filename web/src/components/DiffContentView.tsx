@@ -212,6 +212,8 @@ import {
 } from "../reviewCommands";
 import type { ReviewCommand } from "../reviewNavigation";
 import { CHANGES_REVIEW_KEYS } from "../reviewShortcuts";
+import { readReviewPlace, writeReviewPlace } from "../reviewPlace";
+import { SPLIT_MIN_WIDTH } from "../reviewPrefs";
 import "./DiffContentView.css";
 
 export { highlightedPatch } from "./DiffSurface";
@@ -360,10 +362,14 @@ function deepQuerySelector(
   return null;
 }
 
+/** The view mode chosen (Split, Unified, S), or null when none was. */
+function storedDiffViewMode(): DiffViewMode | null {
+  const stored = roamgateLocalStorage.getItem(DIFF_VIEW_MODE_KEY);
+  return stored === "unified" || stored === "split" ? stored : null;
+}
+
 function loadDiffViewMode(): DiffViewMode {
-  return roamgateLocalStorage.getItem(DIFF_VIEW_MODE_KEY) === "unified"
-    ? "unified"
-    : "split";
+  return storedDiffViewMode() ?? "split";
 }
 
 function loadMobileDiffWrap() {
@@ -1313,6 +1319,8 @@ function DiffContentViewInner({
   onCloseReview,
   onShowReviews,
   reviewOnly = false,
+  placeKey,
+  placeSettled = true,
 }: {
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
@@ -1636,16 +1644,34 @@ function DiffContentViewInner({
       if (Math.abs(adjustment) > 0.5) scroller.scrollTop += adjustment;
     }
   }, [continuous]);
-  const [viewMode, setViewMode] = useState<DiffViewMode>(() =>
+  const [viewMode, setShownViewMode] = useState<DiffViewMode>(() =>
     loadDiffViewMode(),
   );
+  /** A view mode chosen (Split, Unified, S, `:diff`): remembered. */
+  const setViewMode = useCallback(
+    (update: DiffViewMode | ((mode: DiffViewMode) => DiffViewMode)) =>
+      setShownViewMode((current) => {
+        const next = typeof update === "function" ? update(current) : update;
+        roamgateLocalStorage.setItem(DIFF_VIEW_MODE_KEY, next);
+        return next;
+      }),
+    [],
+  );
+  // The review in Changes with no mode chosen: side by side when Changes
+  // is wide enough for it, unified below (plan D4: its width, not the
+  // window's).
+  useLayoutEffect(() => {
+    if (!reviewCursor || embedded || storedDiffViewMode()) return;
+    const width = sectionRef.current?.getBoundingClientRect().width ?? 0;
+    setShownViewMode(width >= SPLIT_MIN_WIDTH ? "split" : "unified");
+  }, [reviewCursor, embedded]);
   const [desktopWrap, setDesktopWrap] = useState(() => loadDesktopDiffWrap());
   const [mobileWrap, setMobileWrap] = useState(() => loadMobileDiffWrap());
   useEffect(
     () =>
       subscribeLocalStorage((key) => {
         if (key === null || key === DIFF_VIEW_MODE_KEY)
-          setViewMode(loadDiffViewMode());
+          setShownViewMode(loadDiffViewMode());
         if (key === null || key === DESKTOP_DIFF_WRAP_KEY)
           setDesktopWrap(loadDesktopDiffWrap());
         if (key === null || key === MOBILE_DIFF_WRAP_KEY)
@@ -2689,6 +2715,59 @@ function DiffContentViewInner({
   });
   const cursorHandle = useRef<DiffCursor>(cursor);
   cursorHandle.current = cursor;
+  // The review's place: the cursor's file and line, kept in the browser
+  // per review (the review pane's place store) and back after a reload or
+  // when the review shows again. Read once the review's rows are drawn,
+  // before any is written.
+  const placeId = reviewEditor
+    ? (ownSnapshot?.session.id ?? placeKey ?? null)
+    : null;
+  const placeRead = useRef<string | null>(null);
+  const here = cursor.active ? cursor.where() : null;
+  const placeRows = cursor.model.rows.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the cursor's line
+  useEffect(() => {
+    if (!placeId || !cursor.active || !placeRows) return;
+    if (placeRead.current !== placeId) {
+      if (!placeSettled) return;
+      if (cursorGoTo && Date.now() - cursorGoTo.at < 10_000) {
+        // Sent to a line (Files' Review, a thread): that line, not the
+        // place left.
+        placeRead.current = placeId;
+        return;
+      }
+      const place = readReviewPlace(placeId);
+      const line = place?.new ?? place?.old ?? null;
+      const section = place?.path
+        ? cursorSections.find((each) => each.path === place.path)
+        : undefined;
+      if (
+        section &&
+        line !== null &&
+        !cursorHandle.current.goTo(
+          section.key,
+          line,
+          place?.new != null ? "new" : "old",
+        )
+      )
+        // Its file not drawn yet: tried again as it is.
+        return;
+      // Its file is not in the view (gone, another commit): left as it is,
+      // once the view has settled.
+      if (place?.path && !section && (loading || summaryLoading)) return;
+      placeRead.current = placeId;
+      // Gone back there: written once the cursor is on it. Else the review
+      // is the latest one moved in from now on, as the pane keeps it.
+      if (section && line !== null) return;
+    }
+    if (!here) return;
+    writeReviewPlace(placeId, {
+      ...(readReviewPlace(placeId) ?? { commit: null }),
+      path: here.path,
+      old: here.old,
+      new: here.new,
+    });
+  }, [placeId, placeRows, placeSettled, here?.path, here?.old, here?.new]);
   // The review's reviewed marks on the rows shown (phase 5).
   const reviewLayout = useMemo(
     () => reviewedLayout(cursor.model),
@@ -4543,9 +4622,6 @@ function DiffContentViewInner({
     openFileRef.current = onOpenFile;
   }, [onOpenFile]);
   useEffect(() => {
-    roamgateLocalStorage.setItem(DIFF_VIEW_MODE_KEY, viewMode);
-  }, [viewMode]);
-  useEffect(() => {
     roamgateLocalStorage.setItem(DESKTOP_DIFF_WRAP_KEY, String(desktopWrap));
   }, [desktopWrap]);
   useEffect(() => {
@@ -5706,6 +5782,10 @@ function DiffContentViewInner({
 
 /** What the review's views (the commit bar) give Changes' diff. */
 type ViewProps = {
+  /** Where the review's place is kept (the scope's, until it has a review). */
+  placeKey?: string;
+  /** The view to show is drawn (its commit's files): the place can be read. */
+  placeSettled?: boolean;
   /** The commit bar, under the head. */
   viewBar?: ReactNode;
   /** `<` `>` `gc`: true when taken. */
@@ -6048,6 +6128,13 @@ export function DiffContentView({
       cursorGoTo={goTo ?? null}
       onRetry={reload}
       onThreadsElsewhere={threadsElsewhere}
+      placeKey={placeKey}
+      placeSettled={
+        !views.active ||
+        (views.ready &&
+          (!!views.shown ||
+            (views.current === null && reviewScope.kind === "branch")))
+      }
       {...(onCreateAnnotation
         ? {
             onCreateAnnotation: (input, written) =>

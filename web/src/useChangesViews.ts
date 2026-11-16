@@ -12,6 +12,7 @@ import { type CommitChoice, commitChoices, searchCommits } from "./reviewModel";
 import { findFile } from "./reviewNavigation";
 import { readReviewPlace, writeReviewPlace } from "./reviewPlace";
 import { store } from "./store";
+import { useReloadOnReconnect } from "./useReloadOnReconnect";
 import type { GitDiffEntry, GitDiffFile } from "./types";
 
 /*
@@ -52,6 +53,8 @@ export type ChangesViews = {
   loading: boolean;
   /** What the views said last: loading a commit, why one failed. */
   status: string;
+  /** The last read failed (Retry reads it again). */
+  failed: boolean;
   /** The code changed since it was read: a reload shows it. */
   changed: boolean;
   /** The head the view's diff was read at (the review's, for all changes). */
@@ -117,6 +120,8 @@ export function useChangesViews({
   const [diff, setDiff] = useState<ReviewDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  /** Why the last read failed; null once one succeeds. */
+  const [failure, setFailure] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
   const [pickerState, setPickerState] = useState<{
     query: string;
@@ -232,9 +237,14 @@ export function useChangesViews({
       (error: unknown) => {
         if (cancelled) return;
         placeRead.current = placeKey;
-        setCommits([]);
-        setSha(null);
-        setStatus(error instanceof Error ? error.message : String(error));
+        // Read before: the review stays on the view it shows.
+        if (commitsRef.current === null) {
+          setCommits([]);
+          setSha(null);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        setFailure(message);
+        setStatus(`Cannot load the diff: ${message}`);
       },
     );
     return () => {
@@ -273,16 +283,15 @@ export function useChangesViews({
         if (!request.done(loaded)) return;
         setDiff(loaded);
         setStatus("");
+        setFailure(null);
         setLoading(false);
       },
       (error: unknown) => {
         if (!request.current()) return;
         setLoading(false);
-        setStatus(
-          `${sha ? "Cannot load that commit" : "Cannot load the review"}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        setFailure(message);
+        setStatus(`Cannot load the diff: ${message}`);
       },
     );
   }, [call, own, sha, generation]);
@@ -415,6 +424,15 @@ export function useChangesViews({
     return null;
   };
 
+  // A read the lost connection failed: read again once it is back (one
+  // try each time it comes back; another failure waits for Retry).
+  const reloadViews = () => {
+    diffs.current.clear();
+    setChanged(false);
+    setGeneration((value) => value + 1);
+  };
+  useReloadOnReconnect(active ? failure : null, connectionId, reloadViews);
+
   return {
     active,
     commits: active ? commits : null,
@@ -426,6 +444,7 @@ export function useChangesViews({
     shown,
     loading,
     status,
+    failed: active && failure !== null,
     changed,
     picker: pickerState ? { ...pickerState, choices: picked } : null,
     show,
@@ -469,11 +488,7 @@ export function useChangesViews({
         if (matches[0]!.sha !== sha) show(matches[0]!.sha);
       } else openPicker(words);
     },
-    reload: () => {
-      diffs.current.clear();
-      setChanged(false);
-      setGeneration((value) => value + 1);
-    },
+    reload: reloadViews,
     searchElsewhere,
     headSha: diff?.headSha ?? null,
     readFile: async (path) => {
