@@ -5,12 +5,13 @@
  */
 export const REVIEW_SKILL = `---
 name: roamgate-review
-description: Use Roamgate's review pane (review overlay) to go through code with the user - open a Roamgate review of a branch, range, worktree or merge request (or a series across several repositories), answer the user's comments on lines, and leave review comments. Use when the user says "roamgate", "review pane", "Roamgate review", "open a review", "show me the diff in roamgate", or asks to review a branch or merge request together. Also to list the other agent sessions Roamgate runs (here and on other machines) and send one a message, or answer a message another agent session sent you through Roamgate.
+description: Use Roamgate's reviews (its review pane, or the workspace's Changes view) to go through code with the user - open a Roamgate review of a branch, range, worktree or merge request (or a series across several repositories), answer the user's comments on lines, and leave review comments. Use when the user says "roamgate", "review pane", "Roamgate review", "open a review", "show me the diff in roamgate", or asks to review a branch or merge request together. Also to list the other agent sessions Roamgate runs (here and on other machines) and send one a message, or answer a message another agent session sent you through Roamgate.
 ---
 
 # Reviewing with the user in Roamgate
 
-The user reads diffs in Roamgate's review overlay and comments on lines.
+The user reads diffs in a Roamgate review and comments on lines, in
+Roamgate's review pane or in the workspace's Changes view, as they chose.
 You talk to it with \`~/.cache/roamgate/bin/roamgate-review\` (JSON output;
 also \`roamgate-review\` when \`~/.local/bin\` is on PATH). Run it from the
 repository's directory. Pass \`--agent NAME\` (your name, e.g. "Claude"),
@@ -75,7 +76,8 @@ shows. Others:
 \`--range main..HEAD\` (use branch names, never SHAs, so it follows rebases),
 \`--worktree\`, \`--last-step\` (what your last step changed, as the
 workspace's Last step shows it), \`--mr URL\`.
-The overlay pops up in the user's browser.
+It opens in the user's browser, in the review pane or the workspace's
+Changes view; in a workspace the user is not in, it waits there for them.
 
 Rewrote a branch the user already reviewed (folded fixups, rebased,
 force-pushed)? \`--compare OLD NEW\` shows only what changed between the two
@@ -95,7 +97,7 @@ default branch..HEAD) or \`--repo PATH=BASE..HEAD\`, repeatable:
       --repo ../lib=origin/main..topic --repo subprojects/plugin
 
 Each gets its own review in the same workspace, and the user switches
-between them in the overlay. \`reply --comment ID\` finds the right one by
+between them in the review. \`reply --comment ID\` finds the right one by
 itself. Change code in the thread's \`repo\` (\`get\` and \`watch\` give it).
 
 ## Discuss a file or a page, rendered

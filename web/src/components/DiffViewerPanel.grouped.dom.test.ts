@@ -60,6 +60,40 @@ if (process.env.ROAMGATE_CHANGES_GROUPED_DOM_TEST !== "1") {
       }
     });
 
+    test("a review from elsewhere lists its own files: the checkout's read it refuses is not said above them", async () => {
+      const refused = "root is not a repository of this workspace";
+      const listed = await mountChangesTree({
+        entries: { working },
+        groupByStatus: true,
+        summaryError: refused,
+        viewFiles: {
+          label: "Review elsewhere",
+          entries: [entry("lib.ts", "branch", "M")],
+        },
+      });
+      try {
+        await listed.settle();
+        const text = document.body.textContent ?? "";
+        expect(text).toContain("Review elsewhere");
+        expect(text).toContain("lib.ts");
+        expect(text).not.toContain(refused);
+      } finally {
+        await listed.unmount();
+      }
+      // With no files of its own to list, the refusal says why.
+      const bare = await mountChangesTree({
+        entries: { working },
+        groupByStatus: true,
+        summaryError: refused,
+      });
+      try {
+        await bare.settle();
+        expect(document.body.textContent ?? "").toContain(refused);
+      } finally {
+        await bare.unmount();
+      }
+    });
+
     test("without it the tree is one, as upstream's: a path changed twice is one row", async () => {
       const changes = await mountChangesTree({ entries: { working } });
       try {

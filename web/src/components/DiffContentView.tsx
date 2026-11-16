@@ -1,6 +1,7 @@
 import { imageMimeForPath } from "../../../shared/filePreview";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import { shortcutMatches } from "../shortcutPreferences";
+import { useSystemBack } from "../systemBack";
 import type { SelectedLineRange } from "@pierre/diffs";
 import {
   ChevronDown,
@@ -28,6 +29,7 @@ import {
   useState,
 } from "react";
 import {
+  COMMIT_MESSAGE_PATH,
   REVIEW_USER,
   type ReviewComment,
   type ReviewSnapshot,
@@ -1257,6 +1259,9 @@ function DiffContentViewInner({
   readViewFile,
   forge: forgeView,
   forgeHost,
+  agentPanes = NO_AGENT_PANES,
+  onFocusAgentPane,
+  onThreadsElsewhere,
 }: {
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
@@ -1340,6 +1345,22 @@ function DiffContentViewInner({
   reviewScope?: ChangesScope;
   /** What the page does for the Local / GitLab switch (plan phase 7). */
   forgeHost?: ForgeHost;
+  /**
+   * The workspace's agent panes: the review's agent when it has none
+   * bound (the first), as the review pane finds it.
+   */
+  agentPanes?: readonly { paneId: string; agent: string }[];
+  /** Go to the agent's pane (the agent's menu); the review is kept. */
+  onFocusAgentPane?: (paneId: string) => void;
+  /**
+   * gn / gN past this view's threads: the next unresolved one in another
+   * view of the review (a commit, one rewritten out of it), shown there;
+   * false when there is none.
+   */
+  onThreadsElsewhere?: (
+    direction: 1 | -1,
+    drawn: ReadonlySet<string>,
+  ) => boolean;
 } & ViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const { sessions: reviewSessions } = useReviewState();
@@ -1637,6 +1658,12 @@ function DiffContentViewInner({
   // listed in the Comments panel, as in the Files preview.
   const threadView = useFileThreadView(() => sectionRef.current);
   const [threadsOpen, setThreadsOpen] = useState(false);
+  // The phone's Back closes the conversations first (plan section 6).
+  useSystemBack(
+    reviewCursor && !embedded && threadsOpen,
+    () => setThreadsOpen(false),
+    "popup",
+  );
   /** The review's comment box and thread keys, "in Changes" (plan phase 4). */
   const reviewEditor = reviewCursor && !embedded;
   /** `t`: every comment hidden (their margin markers stay). */
@@ -1658,6 +1685,7 @@ function DiffContentViewInner({
       : null,
     Object.values(filesByKey)[0]?.workspace_id ?? file?.workspace_id,
     reviewScope,
+    agentPanes,
   );
   /**
    * Why git actions are refused here: the review shown is of another
@@ -2241,7 +2269,8 @@ function DiffContentViewInner({
       expansion,
       file:
         expanded.patch === file.diff ? file : { ...file, diff: expanded.patch },
-      gaps: expanded.gaps,
+      // A commit's message is drawn whole: nothing hidden around it.
+      gaps: file.path === COMMIT_MESSAGE_PATH ? [] : expanded.gaps,
     };
     expandedCache.current.set(key, entry);
     return entry;
@@ -2473,12 +2502,24 @@ function DiffContentViewInner({
         diffStyle: effectiveViewMode === "split" ? "split" : "unified",
         wrap: wrapEnabled,
         themeType: theme,
+        // The review's own gap rows say what is hidden there: Pierre's
+        // separator only marks the gap.
+        ...(reviewCursor && !embedded
+          ? { hunkSeparators: "simple" as const }
+          : {}),
         onPostRender: () => {
           if (performance.now() <= userScrollUntilRef.current)
             restoreScrollAnchor();
         },
       }),
-    [effectiveViewMode, restoreScrollAnchor, theme, wrapEnabled],
+    [
+      effectiveViewMode,
+      restoreScrollAnchor,
+      theme,
+      wrapEnabled,
+      reviewCursor,
+      embedded,
+    ],
   );
 
   /*
@@ -3325,8 +3366,9 @@ function DiffContentViewInner({
     }
     const spot = target.endLine === undefined ? spotAtCursor() : null;
     const here = spot ? threadsAtCursor(readingOrder, spot) : [];
-    // A line being discussed: c and :ask answer there; C asks anew.
-    if (mode !== "new" && mode !== "suggest") {
+    // A line being discussed: c, C and :ask answer there, as the review
+    // pane's do.
+    if (mode !== "suggest") {
       const open = here.find(
         (each) => !each.thread.resolved && each.thread.kind === "discussion",
       );
@@ -3704,6 +3746,14 @@ function DiffContentViewInner({
           ? cursorThreadPlace(readingOrder, drawingSections, spot, direction)
           : { index: direction === 1 ? 0 : readingOrder.length, on: false };
         const step = stepUnresolved(walk, place, direction);
+        // Past the last one here: another view's (a commit's), before
+        // wrapping around this one.
+        if (
+          (key === "gn" || key === "gN") &&
+          (!step || step.wrapped) &&
+          onThreadsElsewhere?.(direction, new Set(order.map((t) => t.id)))
+        )
+          return true;
         if (!step) {
           say(
             key === "gn" || key === "gN"
@@ -5156,6 +5206,8 @@ function DiffContentViewInner({
             agent={changesAgent}
             overallOpen={overallOpen}
             onOverall={setOverallOpen}
+            onAsk={() => cursorHandle.current.comment("ask")}
+            {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
           />
         ) : null}
         {reviewEditor ? (
@@ -5520,9 +5572,17 @@ type DiffContentViewProps = Omit<
   onViewEntries?: (
     view: { label: string; entries: readonly GitDiffEntry[] } | null,
   ) => void;
+  /**
+   * Commits' Review this commit (plan phase 8): that commit shown in the
+   * Branch scope's commit bar once its commits are read; `onCommitAbsent`
+   * when the scope does not hold it.
+   */
+  showCommit?: { sha: string; at: number } | null;
+  onCommitAbsent?: (sha: string) => void;
 };
 
 const NO_FILES: Record<string, GitDiffFile> = {};
+const NO_AGENT_PANES: readonly { paneId: string; agent: string }[] = [];
 
 /**
  * Changes' diff. On "in Changes", a scope that is a review of commits (the
@@ -5533,6 +5593,8 @@ const NO_FILES: Record<string, GitDiffFile> = {};
  */
 export function DiffContentView({
   onViewEntries,
+  showCommit = null,
+  onCommitAbsent,
   ...props
 }: DiffContentViewProps) {
   const {
@@ -5610,6 +5672,7 @@ export function DiffContentView({
   });
   const [viewGoTo, setViewGoTo] = useState<{
     path: string;
+    line?: number;
     at: number;
   } | null>(null);
   const sectionKeys = useRef<HTMLDivElement | null>(null);
@@ -5626,6 +5689,49 @@ export function DiffContentView({
     );
   }, [shownEntries, viewLabel]);
   useEffect(() => () => viewEntriesRef.current?.(null), []);
+  // Review this commit: shown once the Branch scope's commits are read.
+  const commitAbsentRef = useRef(onCommitAbsent);
+  commitAbsentRef.current = onCommitAbsent;
+  const commitShown = useRef("");
+  const commitAbsentAt = useRef(0);
+  const summaryLoading = props.summaryLoading ?? false;
+  const entryCount = props.entries?.length ?? 0;
+  const viewsActive = views.active;
+  const viewsReady = views.ready;
+  const viewCommits = views.commits;
+  const showView = views.show;
+  const scopeKind = reviewScope.kind;
+  // Again when the scope's review settles (its base read, its review
+  // found): each is read anew at its own remembered view.
+  const commitAt = showCommit ? `${showCommit.at}|${placeKey}` : "";
+  useEffect(() => {
+    if (!showCommit || commitShown.current === commitAt) return;
+    if (Date.now() - showCommit.at > 15_000) return;
+    if (!reviewing || scopeKind !== "branch") return;
+    // Its commits still on their way (read once its files are).
+    if (viewsActive ? !viewsReady : summaryLoading || entryCount) return;
+    commitShown.current = commitAt;
+    const sha = showCommit.sha;
+    const found = viewCommits?.find(
+      (commit) => commit.sha === sha || commit.sha.startsWith(sha),
+    );
+    if (found) showView(found.sha);
+    else if (commitAbsentAt.current !== showCommit.at) {
+      commitAbsentAt.current = showCommit.at;
+      commitAbsentRef.current?.(sha);
+    }
+  }, [
+    showCommit,
+    commitAt,
+    reviewing,
+    scopeKind,
+    summaryLoading,
+    entryCount,
+    viewsActive,
+    viewsReady,
+    viewCommits,
+    showView,
+  ]);
   if (!reviewing) return <DiffContentViewInner {...props} />;
 
   const { onRetry, onCreateAnnotation, cursorGoTo } = props;
@@ -5667,6 +5773,61 @@ export function DiffContentView({
     sectionKeys.current
       ?.closest<HTMLElement>(".diff-content-view")
       ?.focus({ preventScroll: true });
+  /**
+   * gn / gN past the view's threads: the next unresolved one written on
+   * another commit (one rewritten out of the review too, named as it was),
+   * its view shown and the cursor on it.
+   */
+  const threadsElsewhere = (
+    direction: 1 | -1,
+    drawn: ReadonlySet<string>,
+  ): boolean => {
+    if (!views.active || !views.commits?.length) return false;
+    const order = views.commits.map((commit) => commit.sha);
+    const seen = new Set<string>();
+    const candidates = [...(bound?.threads ?? []), ...(props.threads ?? [])]
+      .filter((thread) => {
+        if (seen.has(thread.id)) return false;
+        seen.add(thread.id);
+        const { commit, path } = thread.anchor;
+        return (
+          !thread.resolved &&
+          !!commit &&
+          !!path &&
+          commit !== views.sha &&
+          !drawn.has(thread.id)
+        );
+      })
+      .map((thread) => {
+        const at = order.indexOf(thread.anchor.commit!);
+        return { thread, rank: at < 0 ? order.length : at };
+      })
+      .sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          (a.thread.anchor.line ?? 0) - (b.thread.anchor.line ?? 0),
+      );
+    const next =
+      direction === 1 ? candidates[0] : candidates[candidates.length - 1];
+    if (!next) return false;
+    const { anchor } = next.thread;
+    const sha = anchor.commit!;
+    views.show(
+      sha,
+      order.includes(sha)
+        ? undefined
+        : {
+            ...(anchor.commitSubject ? { subject: anchor.commitSubject } : {}),
+            ...(anchor.commitParent ? { parent: anchor.commitParent } : {}),
+          },
+    );
+    setViewGoTo({
+      path: anchor.path!,
+      ...(anchor.line !== undefined ? { line: anchor.line } : {}),
+      at: Date.now(),
+    });
+    return true;
+  };
   const commands: InspectorCommand[] = [
     {
       name: "commit",
@@ -5713,6 +5874,7 @@ export function DiffContentView({
         : {})}
       cursorGoTo={goTo ?? null}
       onRetry={reload}
+      onThreadsElsewhere={threadsElsewhere}
       {...(onCreateAnnotation
         ? {
             onCreateAnnotation: (input, written) =>

@@ -153,11 +153,14 @@ export function diffSurfaceOptions({
   wrap,
   themeType,
   onPostRender,
+  hunkSeparators = "line-info-basic",
 }: {
   diffStyle: "split" | "unified";
   wrap: boolean;
   themeType: "dark" | "light";
   onPostRender?: DiffSurfaceOptions["onPostRender"];
+  /** Between hunks: Pierre's count of unmodified lines, or a plain mark. */
+  hunkSeparators?: "line-info-basic" | "simple";
 }): DiffSurfaceOptions {
   return {
     theme: DEFAULT_THEMES,
@@ -167,7 +170,7 @@ export function diffSurfaceOptions({
     disableFileHeader: true,
     stickyHeader: false,
     diffIndicators: "bars",
-    hunkSeparators: "line-info-basic",
+    hunkSeparators,
     lineDiffType: "word-alt",
     maxLineDiffLength: 2_000,
     tokenizeMaxLineLength: 4_000,

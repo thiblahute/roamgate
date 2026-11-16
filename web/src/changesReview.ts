@@ -185,6 +185,8 @@ export type ChangesAgent = {
    * agents out: a security merge request, one not read yet).
    */
   agentName: string | null;
+  /** The agent's pane (bound, else the workspace's); null without one. */
+  agentPaneId: string | null;
   /** A merge request's review: its Send is the agent's, said so. */
   gitlab: boolean;
   /** The scope's review, opened for a first write when it is not yet. */
@@ -235,6 +237,8 @@ export function useChangesAgent(
   root: string | null | undefined,
   workspaceId?: string | null,
   scope: ChangesScope = WORKING_SCOPE,
+  /** The workspace's agent panes: the agent when the review has none. */
+  agentPanes: readonly { paneId: string; agent: string }[] = [],
 ): ChangesAgent {
   const { sessions } = useReviewState();
   const shownScope = useScopeByValue(scope);
@@ -243,7 +247,7 @@ export function useChangesAgent(
     [connectionId, root, sessions, shownScope],
   );
   const [status, setStatus] = useState("");
-  const agent = snapshot ? reviewAgent(snapshot, []) : null;
+  const agent = snapshot ? reviewAgent(snapshot, agentPanes) : null;
   const sessionId = snapshot?.session.id;
   const run = useCallback(
     async (
@@ -294,6 +298,7 @@ export function useChangesAgent(
   return {
     snapshot,
     agentName: agent?.agentPaneId && agent.agentAllowed ? name : null,
+    agentPaneId: agent?.agentAllowed ? (agent.agentPaneId ?? null) : null,
     gitlab: !!session?.gitlab,
     open: opened,
     talk: agent?.talk ?? false,

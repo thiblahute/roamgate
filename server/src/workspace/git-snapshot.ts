@@ -41,7 +41,8 @@ trap cleanup EXIT
 trap 'trap - EXIT; exit 1' HUP INT TERM
 printf '%s\\n' "$$" > "$quarantine/owner-pid"
 # Fail closed if this shell cannot enforce the per-file disk bound.
-ulimit -f 65536 || fail 'file size limits unavailable'
+# (512-byte blocks in sh, 1 KiB in bash: either holds a 50 MB file.)
+ulimit -f 131072 || fail 'file size limits unavailable'
 case "$objects$git_dir" in *'
 '*) fail 'object directory contains a newline';; esac
 mkdir "$quarantine/objects" "$quarantine/objects/info" "$quarantine/files" "$quarantine/sources"
@@ -59,7 +60,7 @@ else
 fi
 git ls-files --cached --others --exclude-standard -z -- "$@" > "$quarantine/paths"
 # Untracked files over 50 MB are left out (plan D15), named on the output;
-# any other file past the bounds below still refuses the snapshot.
+# a tracked file over 50 MB, or more than 128 MiB in all, refuses it.
 git -c core.quotepath=off ls-files --others --exclude-standard -- "$@" > "$quarantine/untracked"
 git ls-files --cached --others --exclude-standard -- "$@" > "$quarantine/quoted-paths"
 # Preserve sparse entries in one batch; materialized files override them below.
@@ -110,7 +111,7 @@ xargs -0 sh -c '
     [ -f "$file" ] && [ -r "$file" ] || fail "unreadable or special file: $path"
     count=$((count + 1))
     [ "$count" -le 10000 ] || fail "more than 10000 files"
-    # dd reads at most 8 MiB + one byte, even if a file grows after listing.
+    # dd reads at most 50 MB + one byte, even if a file grows after listing.
     # The destination is a numbered regular file, never a worktree pathname.
     # Pin the containing directory as cwd as well as the final inode. A raced
     # ancestor symlink must not redirect the read outside the checkout.
@@ -121,25 +122,23 @@ xargs -0 sh -c '
     file="./\${path##*/}"
     ln -P "$file" "$quarantine/sources/$count" || fail "cannot pin file: $path"
     [ -f "$quarantine/sources/$count" ] && [ ! -L "$quarantine/sources/$count" ] || fail "file changed type: $path"
-    report=$(dd if="$quarantine/sources/$count" of="$quarantine/files/$count" bs=8388609 count=1 2>&1) || fail "cannot read: $path"
+    report=$(dd if="$quarantine/sources/$count" of="$quarantine/files/$count" bs=52428801 count=1 2>&1) || fail "cannot read: $path"
     # GNU/BSD dd reports records in/out followed by the byte count (LC_ALL=C).
     set -- $report
     shift 6
     size=$1
     case "$size" in ""|*[!0-9]*) fail "unsupported dd byte count";; esac
-    # An untracked file over 50 MB is left out (plan D15): its real size,
-    # read only past the 8 MiB bound, of the pinned inode.
-    if [ "$size" -gt 8388608 ] &&
-      [ "$(wc -c < "$quarantine/sources/$count" | tr -d "[:blank:]")" -gt 52428800 ] &&
+    # An untracked file over 50 MB is left out (plan D15).
+    if [ "$size" -gt 52428800 ] &&
       grep -Fxq -- "$path" "$quarantine/untracked"; then
       printf "%s\\n" "$path" >> "$quarantine/skipped"
       rm -f "$quarantine/files/$count" "$quarantine/sources/$count"
       count=$((count - 1))
       continue
     fi
-    [ "$size" -le 8388608 ] || fail "file exceeds 8 MiB: $path"
+    [ "$size" -le 52428800 ] || fail "file exceeds 50 MB: $path"
     total=$((total + size))
-    [ "$total" -le 33554432 ] || fail "worktree exceeds 32 MiB"
+    [ "$total" -le 134217728 ] || fail "worktree exceeds 128 MiB"
     mode=100644
     [ ! -x "$quarantine/sources/$count" ] || mode=100755
     printf "%s\\t%s\\n" "$mode" "$path" >> "$quarantine/metadata"

@@ -99,15 +99,19 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
         onOverall: (value: boolean) => {
           open = value;
         },
+        onAsk: () => {},
       });
     };
     await act(async () => root.render(createElement(Bar)));
     return {
       host,
+      // The bar's own buttons; the agent's name is its menu's.
       buttons: () =>
-        [...host.querySelectorAll<HTMLButtonElement>("button")].map(
-          (each) => each.textContent ?? "",
-        ),
+        [
+          ...host.querySelectorAll<HTMLButtonElement>(
+            ".diff-agent-bar > button",
+          ),
+        ].map((each) => each.textContent ?? ""),
       click: async (label: string) => {
         const button = [
           ...host.querySelectorAll<HTMLButtonElement>("button"),

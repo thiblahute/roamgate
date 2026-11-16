@@ -78,6 +78,9 @@ const CHANGES_FEATURES = new Set<SurfaceFeature>([
   "commits",
   "forge",
   "git-actions",
+  "agent-menu",
+  "series",
+  "gone-commits",
   ...((process.env.ROAMGATE_CHANGES_TRY ?? "")
     .split(",")
     .filter(Boolean) as SurfaceFeature[]),

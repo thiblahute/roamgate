@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import type { RunProcessWithCodeTimeout } from "./file-types";
-import { snapshotWorktreeTree } from "./git-diff";
+import { snapshotWorktree, snapshotWorktreeTree } from "./git-diff";
 
 // Budget the complete integration scenario, not one capture. The production
 // 9s publication deadline and 10s caller timeout remain independently enforced.
@@ -58,9 +58,9 @@ function instrument(
 
 const tinyBudgets = instrument((script) =>
   script
-    .replaceAll("8388609", "33")
-    .replaceAll("8388608", "32")
-    .replaceAll("33554432", "64"),
+    .replaceAll("52428801", "33")
+    .replaceAll("52428800", "32")
+    .replaceAll("134217728", "64"),
 );
 
 async function objectFiles(root: string) {
@@ -353,6 +353,20 @@ describe("bounded worktree snapshot transaction", () => {
           ],
           timeout,
         );
+      // Untracked, grown past the bound: left out and named (plan D15),
+      // its bytes never published.
+      const left = await snapshotWorktree({
+        root,
+        shQuote,
+        runProcessWithCodeTimeout: runner,
+      });
+      expect(left.skipped).toEqual(["file"]);
+      expect(await git(root, "ls-tree", "-r", "--name-only", left.tree)).toBe(
+        "",
+      );
+      // Tracked, it refuses the snapshot: nothing published.
+      await writeFile(join(root, "file"), "small");
+      await git(root, "add", "file");
       const before = await objectFiles(root);
       await expect(capture(root, runner)).rejects.toThrow("file exceeds");
       expect(await objectFiles(root)).toEqual(before);

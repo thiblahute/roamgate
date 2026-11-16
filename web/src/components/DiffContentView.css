@@ -502,6 +502,24 @@
   font-weight: 600;
 }
 
+.diff-agent-name .rv-menu-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border-color: transparent;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The menu's entries keep the menu's own look, not the bar's buttons'. */
+.diff-agent-bar .rv-menu button {
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  color: var(--rv-text, var(--text));
+  font-size: 13px;
+}
+
 .diff-agent-mode {
   color: var(--muted);
   font-size: 11px;

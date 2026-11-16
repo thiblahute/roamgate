@@ -230,6 +230,61 @@ export async function openWorkspaceReview(
 }
 
 /**
+ * Commits' Review this commit: a review of that one commit (`SHA^..SHA`) in
+ * the workspace (the focused one by default), the workspace's agent
+ * attached; a review of it already there is shown again. Returns the
+ * review, or null after saying why there is none.
+ */
+export async function openCommitReview(
+  sha: string,
+  options: { workspaceId?: string | undefined; path?: string } = {},
+): Promise<string | null> {
+  const current = store.get();
+  const connectionId = current.activeConnectionId;
+  const workspaceId =
+    options.workspaceId ??
+    current.workspaces.find((w) => w.focused)?.workspace_id;
+  if (!connectionId || !workspaceId) {
+    store.notify({
+      kind: "error",
+      message: "Cannot review this commit",
+      detail: connectionId
+        ? "No workspace is focused."
+        : "Roamgate is not connected to Herdr.",
+    });
+    return null;
+  }
+  const agentPane = reviewAgentPanes(current.panes, workspaceId)[0];
+  const agentName = agentPane?.agent ?? "agent";
+  try {
+    const snapshot = await reviewCall<ReviewSnapshot>(
+      connectionId,
+      "review.open",
+      {
+        workspace_id: workspaceId,
+        ...(options.path ? { path: options.path } : {}),
+        target: { kind: "range", base: `${sha}^`, head: sha },
+        ...(agentPane
+          ? {
+              agent_pane: agentPane.pane_id,
+              agent: agentName.charAt(0).toUpperCase() + agentName.slice(1),
+            }
+          : {}),
+      },
+    );
+    rememberReviewSnapshot(snapshot);
+    return snapshot.session.id;
+  } catch (error) {
+    store.notify({
+      kind: "error",
+      message: "Cannot review this commit",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
  * Show in code review: the checkout a file (absolute path) is reviewed in,
  * the deepest root of the connection's reviews holding it (a code review's,
  * a rendered file's, whose root is its checkout's), else its directory,

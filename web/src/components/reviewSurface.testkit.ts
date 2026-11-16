@@ -213,6 +213,12 @@ export interface ReviewSurface {
   text(): string;
   /** Keys in Vim notation: `5j`, `gg`, `<C-d>`, `<Left>`, `<Esc>`, `<A-v>`. */
   press(keys: string): Promise<void>;
+  /**
+   * One key, in the same notation, pressed where `press` presses it:
+   * whether the review took it (its default prevented), or left it to the
+   * app (reviewKeys.ts).
+   */
+  keyTaken(keys: string): Promise<boolean>;
   /** A `:` command, as typed at the prompt (with or without the colon). */
   command(text: string): Promise<void>;
   /** Click a line (Shift extends a selection). */
@@ -560,7 +566,12 @@ export function parseKeys(keys: string): KeyStroke[] {
     const named = NAMED[name.toLowerCase()];
     const key = named ?? name;
     const stroke: KeyStroke = { key };
-    if (mods.has("C")) stroke.ctrlKey = true;
+    if (mods.has("C")) {
+      stroke.ctrlKey = true;
+      // As a browser says it: the letter's key code too.
+      if (key.length === 1 && /[a-z]/i.test(key))
+        stroke.code = `Key${key.toUpperCase()}`;
+    }
     if (mods.has("S")) stroke.shiftKey = true;
     if (mods.has("A") || mods.has("M")) {
       stroke.altKey = true;

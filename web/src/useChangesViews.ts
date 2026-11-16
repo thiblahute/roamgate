@@ -35,6 +35,8 @@ export type ChangesViews = {
   active: boolean;
   /** The review's commits, oldest first; null until read (or none apply). */
   commits: ReviewCommit[] | null;
+  /** The commits are the review shown's, read at its remembered view. */
+  ready: boolean;
   /** A branch with nothing of its own: its history, latest first. */
   history: boolean;
   /** The commit shown; null for all the changes. */
@@ -55,7 +57,14 @@ export type ChangesViews = {
   /** The head the view's diff was read at (the review's, for all changes). */
   headSha: string | null;
   picker: { query: string; at: number; choices: CommitChoice[] } | null;
-  show: (sha: string | null) => void;
+  /**
+   * A view shown: all the changes (null) or a commit; `gone`: a commit no
+   * longer in the review (a thread's, rewritten out), named as it was.
+   */
+  show: (
+    sha: string | null,
+    gone?: { subject?: string; parent?: string },
+  ) => void;
   step: (direction: 1 | -1) => void;
   openPicker: (query?: string) => void;
   movePicker: (step: number) => void;
@@ -100,7 +109,11 @@ export function useChangesViews({
   const sourceKey = source ? JSON.stringify(source) : "";
   const [generation, setGeneration] = useState(0);
   const [commits, setCommits] = useState<ReviewCommit[] | null>(null);
+  /** The place the commits were read for. */
+  const [readFor, setReadFor] = useState("");
   const [sha, setSha] = useState<string | null>(null);
+  /** A commit shown that is no longer in the review (a thread's). */
+  const [goneCommit, setGoneCommit] = useState<ReviewCommit | null>(null);
   const [diff, setDiff] = useState<ReviewDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -213,6 +226,7 @@ export function useChangesViews({
             say(`Following the rewritten commit: ${label}.`);
         }
         setCommits(list);
+        setReadFor(placeKey);
         setSha(next);
       },
       (error: unknown) => {
@@ -229,7 +243,12 @@ export function useChangesViews({
   }, [active, call, generation, placeKey]);
 
   const index = commits?.findIndex((commit) => commit.sha === sha) ?? -1;
-  const current = index >= 0 ? commits![index]! : null;
+  const current =
+    index >= 0
+      ? commits![index]!
+      : sha && goneCommit?.sha === sha
+        ? goneCommit
+        : null;
   const history = commits?.[0]?.history === true;
   /** The view comes from the review's diff, not Changes' own files. */
   const own = !active || commits === null || (sha === null && native);
@@ -322,10 +341,25 @@ export function useChangesViews({
     () => commitChoices(commits ?? [], !history),
     [commits, history],
   );
-  const show = useCallback((next: string | null) => {
-    setPickerState(null);
-    setSha(next);
-  }, []);
+  const show = useCallback(
+    (next: string | null, gone?: { subject?: string; parent?: string }) => {
+      setPickerState(null);
+      setGoneCommit(
+        next && gone
+          ? {
+              sha: next,
+              parent: gone.parent ?? null,
+              author: "",
+              date: "",
+              subject: gone.subject ?? next.slice(0, 8),
+              body: "",
+            }
+          : null,
+      );
+      setSha(next);
+    },
+    [],
+  );
   const openPicker = (query = "") => {
     if (choices.length < 2) {
       say("This review has a single commit.");
@@ -387,6 +421,7 @@ export function useChangesViews({
     history,
     sha: active ? sha : null,
     current: active ? current : null,
+    ready: active && commits !== null && readFor === placeKey,
     name: active && commits?.length ? viewName(commits, current) : null,
     shown,
     loading,

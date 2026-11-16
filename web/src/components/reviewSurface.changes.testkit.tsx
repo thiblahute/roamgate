@@ -155,6 +155,12 @@ export async function mountChangesReview(
   );
   const { runInspectorCommand } = await import("../inspectorCommands");
   type CommandSet = import("../useInspectorCommands").InspectorCommandSet;
+  const { useInspectorCommands } = await import("../useInspectorCommands");
+  const { ChangesScopeBar, useChangesRepos, useChangesSeries } = await import(
+    "./ChangesScopeBar"
+  );
+  const { repoLabel } = await import("../reviewRepos");
+  type WorkspaceRepo = import("../reviewModel").WorkspaceRepo;
 
   mounted += 1;
   const connectionId = `changes-review-${mounted}`;
@@ -227,26 +233,30 @@ export async function mountChangesReview(
     thread: ReviewThread,
     session: string,
   ): ReviewThread =>
-    ({
-      ...thread,
-      sessionId: session,
-      anchor: {
-        ...thread.anchor,
-        feedback: thread.anchor.feedback
-          ? thread.anchor.feedback
-          : thread.anchor.path
-            ? JSON.stringify({
-                source: "diff",
-                path: thread.anchor.path,
-                kind: "unstaged",
-                side: thread.anchor.side ?? "new",
-                line: thread.anchor.line,
-                quote: "",
-                hunk: "",
-              })
-            : "{}",
-      },
-    }) as ReviewThread;
+    // Written on a commit's view (the review pane's commit bar): the
+    // review's own thread, anchored on that commit, as it is stored.
+    thread.anchor.commit && !thread.anchor.feedback
+      ? ({ ...thread, sessionId: session } as ReviewThread)
+      : ({
+          ...thread,
+          sessionId: session,
+          anchor: {
+            ...thread.anchor,
+            feedback: thread.anchor.feedback
+              ? thread.anchor.feedback
+              : thread.anchor.path
+                ? JSON.stringify({
+                    source: "diff",
+                    path: thread.anchor.path,
+                    kind: "unstaged",
+                    side: thread.anchor.side ?? "new",
+                    line: thread.anchor.line,
+                    quote: "",
+                    hunk: "",
+                  })
+                : "{}",
+          },
+        } as ReviewThread);
   const ownSession = () => ({
     id: sessionId,
     connectionId,
@@ -617,7 +627,7 @@ export async function mountChangesReview(
           createElement(
             PromptHost,
             null,
-            createElement(DiffContentView, {
+            createElement(series ? ChangesWithSeries : DiffContentView, {
               entry: entries[0] ?? null,
               file: entries[0]
                 ? diffFiles[`unstaged:${entries[0].path}`]!
@@ -640,8 +650,10 @@ export async function mountChangesReview(
                       onShowReview: record("showReview"),
                       onOpenLocal: record("openLocal"),
                     },
+                    onFocusAgentPane: record("focusAgentPane"),
                   }
                 : {}),
+              ...(options.agentPanes ? { agentPanes: options.agentPanes } : {}),
               showFileSelector: false,
               // The checkout's git actions, as the host runs them.
               onGitAction: (action: string, path: string) => {
@@ -666,6 +678,54 @@ export async function mountChangesReview(
     await settleOnly();
   };
   let goTo: { path: string; at: number } | null = null;
+  /**
+   * The workspace's repositories (plan phase 8), as the inspector lists
+   * them over Changes: its scope line's chooser, p, ( and ). Picking one
+   * is the host's (`openRepo`, with whether it has only uncommitted work);
+   * the review shown stays, as the review pane's host leaves it to the
+   * page.
+   */
+  const series =
+    options.repos !== undefined || options.repoDirs !== undefined
+      ? {
+          ownRoot: (options.session?.root as string | undefined) ?? "/repo",
+          repos: [] as readonly WorkspaceRepo[],
+        }
+      : null;
+  function ChangesWithSeries(props: Parameters<typeof DiffContentView>[0]) {
+    const own = series!.ownRoot;
+    const repos = useChangesRepos(connectionId, "workspace", own, true, {
+      dirs: options.repoDirs ?? [],
+      agentDirs: options.agentDirs ?? [],
+    });
+    series!.repos = repos;
+    const chooser = useChangesSeries({
+      repos,
+      shownRoot: own,
+      onPick: (root, worktree) => {
+        if (options.hostCallbacks) record("openRepo")(root, worktree);
+      },
+    });
+    useInspectorCommands({ commands: chooser.commands });
+    return createElement(DiffContentView, {
+      ...props,
+      scopeControls: createElement(ChangesScopeBar, {
+        repos,
+        root: own,
+        repoName: undefined,
+        mode: "working",
+        baseBranch: "",
+        baseBranches: [],
+        files: entries.length,
+        pickerOpen: chooser.pickerOpen,
+        onPickerOpen: chooser.setPickerOpen,
+        onPickRepo: chooser.pick,
+        onScope: () => {},
+        onBase: () => {},
+        onDone: () => {},
+      }),
+    });
+  }
   /** Drawn side by side now (S may have switched it since mounting). */
   const drawnSplit = () =>
     sections().some(
@@ -1006,6 +1066,31 @@ export async function mountChangesReview(
       await settleAll();
     }
   };
+  const keyTaken = async (keys: string) => {
+    const [stroke] = parseKeys(keys);
+    const active = document.activeElement;
+    const target =
+      active instanceof HTMLElement && view().contains(active)
+        ? active
+        : view();
+    if (target === view()) target.focus();
+    let taken = false;
+    await act(async () => {
+      taken = !target.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: stroke!.key,
+          code: stroke!.code ?? "",
+          ctrlKey: stroke!.ctrlKey ?? false,
+          altKey: stroke!.altKey ?? false,
+          shiftKey: stroke!.shiftKey ?? false,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settleAll();
+    return taken;
+  };
   // Threads as drawn: the review's cards (ThreadCard with the review's
   // bars), under their lines and above the diff.
   const threadCards = () =>
@@ -1142,6 +1227,16 @@ export async function mountChangesReview(
 
   const surface: Partial<ReviewSurface> = {
     name: "changes",
+    keyTaken,
+    repoChooser() {
+      // The scope line's chooser: each repository as its option reads
+      // (its name, then its branch and state).
+      if (!series || !host.querySelector(".changes-scope-repo")) return null;
+      return {
+        choices: series.repos.map((repo) => repoLabel(repo)),
+        value: series.ownRoot,
+      };
+    },
     cursorLine() {
       return drawn("[data-editor-active-line]")[0]?.line ?? null;
     },

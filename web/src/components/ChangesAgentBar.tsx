@@ -1,20 +1,30 @@
+import { ChevronDown } from "lucide-react";
 import type { ChangesAgent } from "../changesReview";
+import { ReviewMenu } from "./ReviewMenu";
 
 /**
  * The review's agent group in Changes (plan: review into the inspector,
  * phase 4), for the checkout's review: Comments go to the agent (Live),
  * Hold, Send, Agent review and the overall comment (its editor is the
  * review's, drawn above the diff). Shown once the review has an agent to
- * talk to.
+ * talk to. The agent's name opens its menu, as the review pane's does:
+ * how comments reach it, asking it about the line, its review, going to
+ * its pane.
  */
 export function ChangesAgentBar({
   agent,
   overallOpen,
   onOverall,
+  onAsk,
+  onFocusAgentPane,
 }: {
   agent: ChangesAgent;
   overallOpen: boolean;
   onOverall: (open: boolean) => void;
+  /** A discussion with the agent on the cursor's line (C, :ask). */
+  onAsk: () => void;
+  /** Go to the agent's pane, the review kept; absent: no such entry. */
+  onFocusAgentPane?: (paneId: string) => void;
 }) {
   if (!agent.agentName) return null;
   const name = agent.agentName;
@@ -27,13 +37,55 @@ export function ChangesAgentBar({
         aria-label="Agent"
         data-mode={mode}
       >
-        <span
-          className="diff-agent-name"
-          title={`${name}: how your comments reach it`}
-        >
-          {name}
-          <span className="diff-agent-mode">{mode}</span>
-        </span>
+        <ReviewMenu
+          className="rv-agent diff-agent-name"
+          title={`${name}: how your comments reach it, and asking it`}
+          label={
+            <>
+              {name}
+              <span className="diff-agent-mode">{mode}</span>
+              <ChevronDown size={12} />
+            </>
+          }
+          items={[
+            {
+              label: `Comments go to ${name}`,
+              title: agent.talk
+                ? `Your comments go to ${name} as you write them; uncheck to hold them until you Send them`
+                : `Send your comments to ${name} as you write them`,
+              checked: agent.talk,
+              onSelect: () => agent.setTalk(!agent.talk),
+            },
+            agent.talk && {
+              label: "Hold until Send",
+              hint: ":hold",
+              title: agent.held
+                ? `Your comments wait until you Send them to ${name}; uncheck to send each as you write it`
+                : `Hold your comments and Send them to ${name} when you are done`,
+              checked: agent.held,
+              onSelect: agent.toggleHold,
+            },
+            {
+              label: `Ask ${name} about this line`,
+              hint: "C",
+              title: `A discussion with ${name} on the line your cursor is on (:ask)`,
+              onSelect: onAsk,
+            },
+            {
+              label: `${name} reviews the changes`,
+              hint: ":review",
+              title: `${name} reviews line by line, reading the checkout`,
+              disabled: agent.reviewing,
+              onSelect: () => agent.review(),
+            },
+            !!agent.agentPaneId &&
+              !!onFocusAgentPane && {
+                label: `Go to ${name}'s pane`,
+                title: "The review is kept",
+                onSelect: () => onFocusAgentPane(agent.agentPaneId!),
+              },
+          ]}
+        />
         <button
           type="button"
           aria-pressed={agent.talk}

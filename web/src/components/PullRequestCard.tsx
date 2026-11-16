@@ -21,10 +21,13 @@ export function PullRequestCard({
   workspaceId,
   branch,
   compact = false,
+  onRequest,
 }: {
   client: ConnectionClient;
   workspaceId: string;
   branch?: string;
+  /** The request shown (its remote as chosen), null when none. */
+  onRequest?: (url: string | null) => void;
   /**
    * The review in Changes: one slim line, and nothing at all when there
    * is no provider, no request or no branch to tell about.
@@ -98,6 +101,13 @@ export function PullRequestCard({
   }, [client, ready, workspaceId, branch, remote, match, refresh]);
 
   const current = client.isCurrent() ? status : null;
+  const requestUrl =
+    current?.state === "ready" ? (current.request?.url ?? null) : null;
+  const onRequestRef = useRef(onRequest);
+  onRequestRef.current = onRequest;
+  useEffect(() => {
+    onRequestRef.current?.(requestUrl);
+  }, [requestUrl]);
   const reset = () => {
     sequence.current++;
     lastGood.current = null;

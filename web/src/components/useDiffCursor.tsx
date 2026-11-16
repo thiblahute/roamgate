@@ -29,6 +29,9 @@ import {
 } from "../diffCursor";
 import { isTypingTarget } from "../inspectorCommands";
 import { runKeyCommand, useKeyMachine } from "../keyMachine";
+import { reviewKeyRoute } from "../reviewKeys";
+import { shortcutMatches } from "../shortcutPreferences";
+import { store } from "../store";
 import { type Match, wordAt } from "../reviewNavigation";
 import type { DiffSurfaceInstance } from "./DiffSurface";
 import type { ShortcutRow } from "./ShortcutList";
@@ -930,6 +933,18 @@ export function useDiffCursor({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (!enabled || event.defaultPrevented || !rows.length) return;
     if (isTypingTarget(event.target) || searchPrompt) return;
+    // The app's shortcuts that reach past the review (its toggles, the
+    // sidebar, the overlay tab) and those leaving for another workspace,
+    // tab or pane go to the app, as from the review pane (reviewKeys.ts).
+    if (
+      reviewKeyRoute(
+        (id) => shortcutMatches(event.nativeEvent, id),
+        store.get().overlayOpen,
+      ) !== "review"
+    ) {
+      machine.reset();
+      return;
+    }
     // Option+V (Alt+V): read by the key's code, as a Mac types "√".
     if (
       onMarkFile &&

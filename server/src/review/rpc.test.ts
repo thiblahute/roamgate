@@ -160,6 +160,53 @@ test("the browser finds a review's merge request on its own connection only", as
   ).rejects.toThrow("no such review");
 });
 
+test("the merge request the user picked (Changes' card's remote) opens as is, whatever the branch's lookup finds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-rpc-"));
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+    gitlab: {
+      context: () => {
+        throw new Error("glab must not run");
+      },
+      checkout: async () => {
+        throw new Error("the branch's own request is not looked up");
+      },
+      // The branch's lookup would find none.
+      find: async () => null,
+    },
+  });
+  cleanups.push(() => {
+    service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const opened = (await handleReviewRpc(service, local, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "worktree" },
+  })) as { session: { id: string } };
+  const fork = "https://gitlab.example/fork/p/-/merge_requests/7";
+  const picked = (await handleReviewRpc(service, local, "review.gitlab.open", {
+    session_id: opened.session.id,
+    url: fork,
+  })) as {
+    mergeRequest: { url: string; number: number };
+    snapshot: { session: Record<string, unknown> };
+  };
+  expect(picked.mergeRequest).toMatchObject({ url: fork, number: 7 });
+  expect(picked.snapshot.session).toMatchObject({
+    target: { kind: "mr", url: fork },
+    workspaceId: "w1",
+    gitlab: true,
+  });
+  await expect(
+    handleReviewRpc(service, local, "review.gitlab.open", {
+      session_id: opened.session.id,
+      url: "http://gitlab.example/fork/p/-/merge_requests/7",
+    }),
+  ).rejects.toThrow("invalid merge request URL");
+});
+
 test("a page's storage write reaches the connection with its token, checked", async () => {
   const service = setup();
   const written: unknown[] = [];

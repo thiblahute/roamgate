@@ -60,12 +60,15 @@ export function GitCommitHistory({
   resourceKey,
   compact,
   active,
+  onReviewCommit,
 }: {
   client: ConnectionClient;
   workspaceId: string;
   resourceKey: string;
   compact: boolean;
   active: boolean;
+  /** Review this commit: in Changes, or the review pane (plan phase 8). */
+  onReviewCommit?: (sha: string) => void;
 }) {
   const [page, setPage] = useState<CommitPage | null>(null);
   /** The commit list hidden beside the commit (`:files`), remembered. */
@@ -410,6 +413,16 @@ export function GitCommitHistory({
                   },
                 ]
               : []),
+            ...(onReviewCommit && selectedSha
+              ? [
+                  {
+                    name: "reviewcommit",
+                    description:
+                      "review the commit shown (the Review this commit button)",
+                    run: () => onReviewCommit(selectedSha),
+                  },
+                ]
+              : []),
             ...(page?.has_more && !loadingMore
               ? [
                   {
@@ -577,6 +590,16 @@ export function GitCommitHistory({
                 <div className="git-commit-meta-summary">
                   <code>{detail.sha.slice(0, 8)}</code>
                   <span>{detail.author.name}</span>
+                  {onReviewCommit ? (
+                    <button
+                      type="button"
+                      className="git-commit-review"
+                      title="Review this commit: its changes in a review, to comment on (:reviewcommit)"
+                      onClick={() => onReviewCommit(detail.sha)}
+                    >
+                      Review this commit
+                    </button>
+                  ) : null}
                 </div>
                 <details className="git-commit-metadata">
                   <summary>Commit details</summary>
