@@ -168,3 +168,36 @@ describe("GitHub inbox", () => {
     expect(parsed.followed[0]!.files).toEqual(["x.rs"]);
   });
 });
+
+test("the forges' labels are read with the lists", async () => {
+  const { gitlabItem, githubItem, gitlabOwnListQuery, githubOwnListQuery } =
+    await import("./queries");
+  expect(gitlabInboxQuery([])).toContain("labels { nodes { title } }");
+  expect(gitlabOwnListQuery()).toContain("labels { nodes { title } }");
+  expect(githubInboxQuery([])).toContain(
+    "labels(first: 10) { nodes { name } }",
+  );
+  expect(githubOwnListQuery()).toContain(
+    "labels(first: 10) { nodes { name } }",
+  );
+  expect(
+    gitlabItem(
+      "gitlab.example.org",
+      glNode(1, "group/app", {
+        labels: { nodes: [{ title: "audio" }, { title: "" }, {}] },
+      }),
+    )!.labels,
+  ).toEqual(["audio"]);
+  expect(gitlabItem("gitlab.example.org", glNode(2))!.labels).toBeUndefined();
+  expect(
+    githubItem("github.com", {
+      number: 3,
+      title: "t",
+      url: "https://github.com/o/r/pull/3",
+      state: "OPEN",
+      updatedAt: "x",
+      repository: { nameWithOwner: "o/r" },
+      labels: { nodes: [{ name: "bug" }] },
+    })!.labels,
+  ).toEqual(["bug"]);
+});

@@ -1,34 +1,13 @@
-import { forgeRefLabel } from "../../shared/forge";
 import type { MrInboxEntry } from "../../shared/mrReviews";
+import { mrFilterMatches } from "../../shared/mrReviewsFilter";
+
+export { mrSearchText } from "../../shared/mrReviewsFilter";
 
 export { moveMrKey, orderMrEntries } from "../../shared/mrReviewsOrder";
 
-/** The words a request is found by: title, project, author, number, branches. */
-export function mrSearchText(entry: MrInboxEntry): string {
-  return [
-    entry.title,
-    entry.project,
-    entry.host,
-    entry.author,
-    forgeRefLabel(entry),
-    forgeRefLabel(entry, true),
-    entry.sourceBranch,
-    entry.targetBranch,
-    entry.state,
-    entry.draft ? "draft" : "",
-    entry.reason ?? "",
-    ...entry.reasons.map((reason) => reason.replace(/_/g, " ")),
-  ]
-    .join("\n")
-    .toLowerCase();
-}
-
-/** Every word of the search is in the request's words (as the Threads list). */
+/** Every token holds and every word is in the request's words. */
 export function mrMatches(entry: MrInboxEntry, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
-  const text = mrSearchText(entry);
-  return words.every((word) => text.includes(word));
+  return mrFilterMatches(entry, query);
 }
 
 /** What a paste or a drop holds that may name a request: one URL or reference. */

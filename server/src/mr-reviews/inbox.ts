@@ -730,6 +730,7 @@ export function createMrInbox(deps: MrInboxDeps) {
         refreshing: refreshing !== null,
         ...(settings.order.length ? { order: settings.order } : {}),
         orderVersion: settings.orderVersion ?? 0,
+        ...(settings.views.length ? { views: settings.views } : {}),
       };
     },
     refresh,

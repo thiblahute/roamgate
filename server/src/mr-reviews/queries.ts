@@ -23,7 +23,7 @@ export const FOLLOWED_PAGE = 40;
 export const FILES_KEPT = 40;
 
 const GITLAB_FIELDS =
-  "iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha }";
+  "iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } }";
 
 /** One GraphQL query for a GitLab host. JSON strings are GraphQL strings. */
 export function gitlabInboxQuery(followed: string[]): string {
@@ -35,7 +35,7 @@ export function gitlabInboxQuery(followed: string[]): string {
 }
 
 const GITHUB_FIELDS =
-  "number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } }";
+  "number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } }";
 
 function githubSearch(alias: string, filter: string): string {
   return `${alias}: search(type: ISSUE, query: ${JSON.stringify(`is:open is:pr archived:false ${filter}`)}, first: ${INBOX_PAGE}) { nodes { ... on PullRequest { ${GITHUB_FIELDS} } } }`;
@@ -120,7 +120,22 @@ export function gitlabItem(host: string, node: unknown): MrItem | null {
     notes: count(mr.userNotesCount),
     reasons: [],
     ...(files ? { files } : {}),
+    ...labelsOf(mr.labels, "title"),
   };
+}
+
+/** The forge's labels of a request (at most 10), when it gave some. */
+function labelsOf(
+  value: unknown,
+  field: "title" | "name",
+): { labels?: string[] } {
+  const list = (value as { nodes?: unknown })?.nodes;
+  if (!Array.isArray(list)) return {};
+  const labels = list
+    .map((node) => text((node as Record<string, unknown>)?.[field], 60))
+    .filter(Boolean)
+    .slice(0, 10);
+  return labels.length ? { labels } : {};
 }
 
 /** A GitHub pull request node, or null. */
@@ -164,6 +179,7 @@ export function githubItem(host: string, node: unknown): MrItem | null {
     // The viewer's pending review is theirs alone: its comments are drafts.
     drafts: pending ? count(pending.comments?.totalCount) : 0,
     ...(files ? { files } : {}),
+    ...labelsOf(pr.labels, "name"),
   };
 }
 
@@ -299,7 +315,7 @@ export const OWN_DETAILS_BATCH = 40;
 
 /** What a row needs of an own merge request, cheap for GitLab to answer. */
 const GITLAB_OWN_LIST =
-  "iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username }";
+  "iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username } labels { nodes { title } }";
 const GITLAB_OWN_DETAILS =
   "iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha }";
 
@@ -316,7 +332,7 @@ const GITLAB_OWN_FIELDS = {
 export type OwnFields = keyof typeof GITLAB_OWN_FIELDS;
 
 const GITHUB_OWN_LIST =
-  "number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login }";
+  "number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login } labels(first: 10) { nodes { name } }";
 const GITHUB_OWN_DETAILS =
   "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } }";
 

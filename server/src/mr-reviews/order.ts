@@ -61,7 +61,7 @@ export function editSettings<T>(change: () => Promise<T>): Promise<T> {
 const HISTORY = 40;
 
 /** Lists Undo restores element by element (by their key). */
-const UNDO_LISTS = ["pinned", "hidden"] as const;
+const UNDO_LISTS = ["pinned", "hidden", "views"] as const;
 const UNDO_LIST_KEY: {
   [field in (typeof UNDO_LISTS)[number]]: (
     value: MrReviewsSettings[field][number],
@@ -69,6 +69,7 @@ const UNDO_LIST_KEY: {
 } = {
   pinned: (ref) => forgeRefKey(ref),
   hidden: (entry) => entry.key,
+  views: (view) => view.name.toLowerCase(),
 };
 /** Records Undo restores key by key. */
 const UNDO_RECORDS = ["overrides"] as const;
@@ -112,9 +113,18 @@ export function undoList<T>(
       const at = out.findIndex((each) => keyOf(each) === key);
       if (at >= 0 && sameJson(out[at], value)) out.splice(at, 1);
     }
-  for (const [key, value] of was)
-    if (!now.has(key) && !out.some((each) => keyOf(each) === key))
-      restored.push(value);
+  for (const [key, value] of was) {
+    const at = out.findIndex((each) => keyOf(each) === key);
+    if (!now.has(key)) {
+      if (at < 0) restored.push(value);
+    } else if (
+      at >= 0 &&
+      !sameJson(value, now.get(key)) &&
+      sameJson(out[at], now.get(key))
+    )
+      // Changed in place by that change, and not since.
+      out[at] = value;
+  }
   return [...restored, ...out];
 }
 

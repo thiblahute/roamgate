@@ -71,6 +71,8 @@ export type MrItem = ForgeRef & {
   drafts?: number;
   /** The user's own request: where it stands. */
   own?: MrOwnStatus;
+  /** The forge's labels (at most 10). */
+  labels?: string[];
 };
 
 /** What the user saw last time they looked. */
@@ -152,6 +154,10 @@ export type MrInboxEntry = MrItem & {
    * listed.
    */
   parent?: string;
+  /** A branch the user said will be a request (not proposed yet). */
+  unsent?: boolean;
+  /** The upstreaming effort it is a part of (its name). */
+  effort?: string;
 };
 
 /** Whose move it is on one's own request. */
@@ -299,6 +305,8 @@ export type MrInbox = {
   orderVersion?: number;
   /** Removed by the user and quiet since: the "N hidden" list. */
   hidden: MrHiddenEntry[];
+  /** The user's saved searches. */
+  views?: MrSavedView[];
 };
 
 export type MrVerdict = "not_interested" | "more_like_this";
@@ -368,6 +376,8 @@ export type MrReviewsSettings = {
   overrides: Record<string, MrOverride>;
   /** A request quiet this many days is Stale. */
   staleDays: number;
+  /** Saved searches, shown as chips after All / To review / Mine. */
+  views: MrSavedView[];
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -390,7 +400,11 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   hidden: [],
   overrides: {},
   staleDays: 90,
+  views: [],
 };
+
+/** A saved search: its name and its query (section 5's tokens and words). */
+export type MrSavedView = { name: string; query: string };
 
 /** What a push says changed (`MrReviewsPush.changed`). */
 export const MR_PUSH_KINDS = [

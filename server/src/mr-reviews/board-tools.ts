@@ -7,6 +7,10 @@ import type {
   MrSection,
 } from "../../../shared/mrReviews";
 import { mrWhoseLabel } from "../../../shared/mrReviews";
+import {
+  mrFilterMatches,
+  parseMrFilter,
+} from "../../../shared/mrReviewsFilter";
 import type { MrOrderOp } from "../../../shared/mrReviewsOrder";
 import { mrCount } from "../../../shared/mrReviewsOrder";
 import { AssistantUserError } from "../assistant/errors";
@@ -135,6 +139,19 @@ export function boardFields(entry: MrInboxEntry): Record<string, unknown> {
 }
 
 export const boardToolSchemas = {
+  reviews_view: Type.Object(
+    {
+      action: Type.Union([Type.Literal("create"), Type.Literal("delete")]),
+      name: Type.String({ minLength: 1, maxLength: 40 }),
+      filter: Type.Optional(
+        Type.String({
+          maxLength: 500,
+          description: "The view's query, as reviews_list's filter.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
   reviews_list: Type.Object(
     {
       section: Type.Optional(
@@ -152,6 +169,13 @@ export const boardToolSchemas = {
           maxLength: 200,
           description:
             "Keep requests with any of these words (case-insensitive) in their reference, title, project or author.",
+        }),
+      ),
+      filter: Type.Optional(
+        Type.String({
+          maxLength: 500,
+          description:
+            "The panel's search: key:value tokens (project:group/name or group/*, label:x, waiting:me|reviewer|external|NAME, lane:your-move|waiting|blocked|not-sent|stale|done, state:open|draft|merged|closed|branch|unsent, stale:yes, draft:yes|no, author:NAME, pipeline:failed|running|success|manual, effort:NAME, is:mine|review|pinned|suggested|unread; any negated with -; several of one key: any) and words; or view:NAME for a saved view.",
         }),
       ),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })),
@@ -301,6 +325,8 @@ const OVERRIDE_WORDS: Record<string, string> = {
 export type BoardToolName = keyof typeof boardToolSchemas;
 
 export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
+  reviews_view:
+    "Create (or change the query of) a saved view of the user's Reviews list, a chip after All / To review / Mine on every device, or delete one. The query is reviews_list's filter (tokens and words). Only when the user asked for it.",
   reviews_list:
     "The inbox exactly as the user sees it, in their order: for each request its position (# overall, n in its section), section (pinned, for_you: to review, authored: their own, suggested), key, reference, title, author, state, pipeline, updated, what is new (unread: new commits and comments, or new when never opened), the suggestion's score and reason, the pinned flag, and for the user's own requests their lane (your_move, waiting, blocked, not_sent, stale, done), why, the next step and where it comes from, what was set by hand (override, maybe outdated) and the requests each waits for (under: drawn below that one); plus the removed (hidden) requests. Paged: limit (at most 120) and cursor (next_cursor of the last page). Use it before reordering, and to answer \"what is on my list\". No forge call.",
   reviews_order:
@@ -321,6 +347,7 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
 
 /** The tools that change the user's list. */
 export const BOARD_WRITING: BoardToolName[] = [
+  "reviews_view",
   "reviews_order",
   "reviews_pin",
   "reviews_unpin",
@@ -431,10 +458,23 @@ export function createBoardTools(
     async reviews_list(params: {
       section?: string;
       text?: string;
+      filter?: string;
       limit?: number;
       cursor?: string;
     }) {
       const view = await deps.order.view();
+      let query = params.filter?.trim() ?? "";
+      const named = /^view:(.+)$/i.exec(query);
+      if (named) {
+        const wanted = named[1]!.trim().replace(/^"|"$/g, "").toLowerCase();
+        const saved = (await deps.settings()).views.find(
+          (each) => each.name.toLowerCase() === wanted,
+        );
+        if (!saved)
+          throw new AssistantUserError(`No saved view is named ${named[1]}.`);
+        query = saved.query;
+      }
+      const filter = parseMrFilter(query);
       const state = deps.store.get();
       const terms = words(params.text);
       const rows: Record<string, unknown>[] = [];
@@ -446,7 +486,11 @@ export function createBoardTools(
       for (const section of SECTION_LIST) {
         view.sections[section].forEach((entry, index) => {
           at++;
-          if (!sectionWanted(params.section, section) || !matches(entry, terms))
+          if (
+            !sectionWanted(params.section, section) ||
+            !matches(entry, terms) ||
+            !mrFilterMatches(entry, filter)
+          )
             return;
           if (matched++ < skip) return;
           if (rows.length >= limit) {
@@ -668,6 +712,24 @@ export function createBoardTools(
         summary: `${caller} restored ${forgeRefLabel(entry, true)}`,
       });
       return `Restored ${forgeRefLabel(entry)} to the view.`;
+    },
+
+    async reviews_view(params: {
+      action: "create" | "delete";
+      name: string;
+      filter?: string;
+    }) {
+      if (params.action === "create" && !params.filter?.trim())
+        throw new AssistantUserError("A view needs a filter.");
+      const done = (await panel("view", {
+        action: params.action === "create" ? "save" : "delete",
+        name: params.name,
+        ...(params.filter ? { query: params.filter } : {}),
+        by: "agent",
+        summary: `${caller} ${params.action === "create" ? "saved" : "deleted"} the view ${params.name.slice(0, 40)}`,
+      })) as { changed?: boolean; name?: string };
+      const views = (await deps.settings()).views;
+      return JSON.stringify({ changed: !!done.changed, views });
     },
 
     async reviews_override(params: {

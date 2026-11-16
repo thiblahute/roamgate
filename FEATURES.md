@@ -1104,7 +1104,20 @@ change made on any device (a drag, `J`/`K`, or the reviews agent) shows on
 all the others at once, without losing your selection, scroll or a drag in
 progress; a new request comes first. The search
 box (`/`) narrows the list to the requests whose title, project, author,
-number (`!123`, `#45`) or branches hold every word typed.
+number (`!123`, `#45`), branches, labels or next step hold every word typed,
+and reads GitLab-style tokens: `project:group/name` (or `group/*`),
+`label:x` (the forge's labels and yours), `waiting:me|reviewer|external|NAME`,
+`lane:your-move|waiting|blocked|not-sent|stale|done`,
+`state:open|draft|merged|closed`, `stale:yes`, `draft:yes|no`, `author:NAME`,
+`pipeline:failed|running|success`, `is:mine|review|pinned|suggested|unread`;
+`-` before a token or word excludes it, and several values of one key match
+any of them. Tab and the arrows complete keys, then values taken from the
+list (projects, labels, people). `:save NAME` keeps the search as a **saved
+view**: a chip after All, To review and Mine, on every device (Roamgate's
+settings, `mr_reviews.views`, at most 20); `f` and `F` cycle all the chips,
+`:view NAME` shows one and `:delview NAME` deletes it. Agent sessions create
+and delete views too (`reviews_view`), and `reviews_list` takes the same
+filter.
 
 **Add** and **remove** requests from the view. The Add box (`p`, with an
 Add button, on a phone too) takes the URL of any merge or pull request on
@@ -1141,7 +1154,7 @@ does the shortcut cheat sheet):
 | `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it           |
 | `za`                     | Fold the requests under it, or its lane                                           |
 | `gx`                     | Open its link (a URL, or a file in its workspace)                                 |
-| `f`                      | Show all, to review, or mine                                                      |
+| `f` / `F`                 | Next / previous of all, to review, mine and your saved views                      |
 | `:`                      | A command: `note`, `whose`, `after`, `label`, `unlabel`, `link`, `stale`, `clear`, `pin`, `unpin`, `all`, `review`, `mine`, `refresh` |
 | `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                            |
 | `/`                      | Search; in the box Enter opens, Esc clears and goes back                          |

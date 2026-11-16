@@ -62,7 +62,7 @@ async function setup() {
   const store = openMrStore(join(dir, `state-${Math.random()}.json`));
   store.update((state) => {
     state.items = [
-      item(1, { pipeline: "failed" }),
+      item(1, { pipeline: "failed", labels: ["audio"] }),
       item(2),
       item(3, { reasons: ["review_requested"], author: "bob" }),
     ];
@@ -161,6 +161,74 @@ test("reviews_override sets and clears, said with Undo, never on others' names",
   await expect(reviews.boardTool("reviews_eat", {}, "Claude")).rejects.toThrow(
     /unknown tool/,
   );
+});
+
+test("saved views and filters: same tokens in the list, kept and undone", async () => {
+  const { reviews, pushes } = await setup();
+  const filtered = json(
+    await reviews.boardTool(
+      "reviews_list",
+      { filter: "is:mine -label:audio" },
+      "Claude",
+    ),
+  );
+  expect(filtered.requests.map((row: any) => row.ref)).toEqual(["g/p!2"]);
+  const made = JSON.parse(
+    await reviews.boardTool(
+      "reviews_view",
+      { action: "create", name: "Audio", filter: "label:audio" },
+      "Claude",
+    ),
+  );
+  expect(made).toEqual({
+    changed: true,
+    views: [{ name: "Audio", query: "label:audio" }],
+  });
+  expect(pushes.at(-1)).toMatchObject({
+    changed: ["views"],
+    summary: "Claude saved the view Audio",
+  });
+  const byView = json(
+    await reviews.boardTool("reviews_list", { filter: "view:audio" }, "Claude"),
+  );
+  expect(byView.requests.map((row: any) => row.ref)).toEqual(["g/p!1"]);
+  // The inbox carries the views for every page.
+  expect((await reviews.inbox.get({ viewer: false })).views).toEqual([
+    { name: "Audio", query: "label:audio" },
+  ]);
+  // A new query for the same name, then Undo: the old query is back.
+  await reviews.handle("bridge.mr_reviews.view", {
+    action: "save",
+    name: "audio",
+    query: "label:audio is:mine",
+    by: "agent",
+  });
+  expect((await reviews.settings()).views).toEqual([
+    { name: "Audio", query: "label:audio is:mine" },
+  ]);
+  await reviews.handle("bridge.mr_reviews.order", {
+    op: "undo",
+    version: pushes.at(-1)!.undo,
+  });
+  expect((await reviews.settings()).views).toEqual([
+    { name: "Audio", query: "label:audio" },
+  ]);
+  await expect(
+    reviews.handle("bridge.mr_reviews.view", {
+      action: "save",
+      name: "a:b",
+      query: "x",
+    }),
+  ).rejects.toThrow(/name/);
+  await reviews.boardTool(
+    "reviews_view",
+    { action: "delete", name: "AUDIO" },
+    "Claude",
+  );
+  expect((await reviews.settings()).views).toEqual([]);
+  await expect(
+    reviews.boardTool("reviews_list", { filter: "view:audio" }, "Claude"),
+  ).rejects.toThrow(/No saved view/);
 });
 
 test("any agent session reaches the board through roamgate-review", async () => {

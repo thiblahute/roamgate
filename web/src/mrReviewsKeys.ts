@@ -19,12 +19,18 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ["E", "clear what was set by hand (:clear [FIELD])"],
   ["za", "fold the requests after it, or its lane"],
   ["gx", "open its link (a URL, or a file in its workspace)"],
-  ["f", "show all, to review, or mine (:all, :review, :mine)"],
+  [
+    "f F",
+    "next / previous of all, to review, mine and your saved views (:all, :review, :mine, :view NAME)",
+  ],
   ["J K / Alt+Down Alt+Up", "move it down / up in your order (3J)"],
-  ["/", "search: title, project, author, number, branch"],
+  [
+    "/",
+    "search: words and project:, label:, lane:, waiting:, state:, author:, pipeline:, is: (-key: negates; Tab completes)",
+  ],
   [
     ":",
-    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], pin, unpin, all, review, mine, refresh",
+    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, pin, unpin, all, review, mine, refresh",
   ],
   ["p", "add a request: paste its URL (also paste or drop one in the panel)"],
   ["dd / Delete", "remove it from the view (a pinned one is unpinned)"],
