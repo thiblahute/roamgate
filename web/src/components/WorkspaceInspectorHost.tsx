@@ -238,7 +238,11 @@ export function WorkspaceInspectorHost({
   onDiffSelectionChange: DiffViewerPanelProps["onSelectionChange"];
   onOpenDocument: (path: string, fragment?: string) => void;
   onRefreshFile: () => void;
-  onOpenDiffFile: (entry: ActiveDiffSelection["entry"]) => void;
+  /** A changed file in Files: at a line, rendered (the review's Open). */
+  onOpenDiffFile: (
+    entry: ActiveDiffSelection["entry"],
+    at?: { line?: number; rendered?: boolean },
+  ) => void;
   annotations: readonly ReviewAnnotation[];
   /** The threads the annotations written as comments are, by their id. */
   feedbackThreads?: readonly ReviewThread[];

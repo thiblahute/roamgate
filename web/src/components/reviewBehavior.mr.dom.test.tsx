@@ -200,12 +200,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         },
       );
 
-      testWith(surface, "review")(
+      testWith(surface, "reload-offer")(
         "the code's state is checked every 5 s while shown; a change offers a reload",
         async () => {
           let state = "one";
           const review = await mount({
             files: [added("a.ts", 2)],
+            // In Changes a review of commits is checked so; its Working
+            // scope is git's, read again by the inspector.
+            ...(surface.name === "changes"
+              ? { commits: [{ sha: "a".repeat(40), subject: "One" }] }
+              : {}),
             fakeTimers: true,
             answers: { "review.state": () => ({ state }) },
           });

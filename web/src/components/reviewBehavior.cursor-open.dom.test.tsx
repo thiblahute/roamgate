@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -38,7 +38,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       ),
     );
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("open-files"))
     describe(name, () => {
       test("Open and Rendered on a file's header open it in the Files preview, at the cursor line when it is in that file", async () => {
         const review = await mount({

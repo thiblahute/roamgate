@@ -415,6 +415,7 @@ export async function mountChangesReview(
       hostCalls.push({ name, args });
     };
   const opened: string[] = [];
+  const openedFiles: { path: string; line?: number; rendered?: boolean }[] = [];
   const windowOpen = Object.getOwnPropertyDescriptor(window, "open");
   Object.defineProperty(window, "open", {
     configurable: true,
@@ -724,10 +725,10 @@ export async function mountChangesReview(
             Frame,
             null,
             createElement(series ? ChangesWithSeries : DiffContentView, {
-              entry: entries[0] ?? null,
-              file: entries[0]
-                ? diffFiles[`unstaged:${entries[0].path}`]!
-                : null,
+              // The file picked in the tree (the first at first).
+              entry: picked ?? null,
+              file: picked ? diffFiles[`unstaged:${picked.path}`]! : null,
+              selectionRevision,
               entries,
               files: diffFiles,
               loading: false,
@@ -749,6 +750,22 @@ export async function mountChangesReview(
                   : {}),
               },
               onShowReviews: record("showList"),
+              // Files to open in: the review's Open and Rendered.
+              ...(options.openFiles || options.hostCallbacks
+                ? {
+                    onOpenFile: (
+                      entry: GitDiffEntry,
+                      at?: { line?: number; rendered?: boolean },
+                    ) => {
+                      record("openFile")(entry.path, at);
+                      openedFiles.push({
+                        path: `/repo/${entry.path}`,
+                        ...(at?.line !== undefined ? { line: at.line } : {}),
+                        ...(at?.rendered ? { rendered: true } : {}),
+                      });
+                    },
+                  }
+                : {}),
               // The inspector reads the changes again (its refresh).
               onRetry: record("reload"),
               // Closed as the review toggle closes it, the review kept.
@@ -781,6 +798,8 @@ export async function mountChangesReview(
     await settleOnly();
   };
   let goTo: { path: string; at: number } | null = null;
+  let picked: GitDiffEntry | undefined = entries[0];
+  let selectionRevision = 0;
   /**
    * The workspace's repositories (plan phase 8), as the inspector lists
    * them over Changes: its scope line's chooser, p, ( and ). Picking one
@@ -1203,6 +1222,16 @@ export async function mountChangesReview(
     await settleAll();
     return taken;
   };
+  const fileSection = (path: string) => {
+    const section = sections().find((each) => pathOf(each) === path);
+    if (!section) throw new Error(`no file ${path}`);
+    return section;
+  };
+  const fileButtonsOf = (path: string) => [
+    ...fileSection(path).querySelectorAll<HTMLButtonElement>(
+      ".diff-file-section-head > button:not(.diff-file-collapse):not(.diff-file-section-title), .diff-skipped-state button",
+    ),
+  ];
   // Threads as drawn: the review's cards (ThreadCard with the review's
   // bars), under their lines and above the diff.
   const threadCards = () =>
@@ -1428,6 +1457,9 @@ export async function mountChangesReview(
     async goToFile(path) {
       // Picked in the tree: Changes' cursor goes to it, shown.
       goTo = { path, at: Math.max(Date.now(), (goTo?.at ?? 0) + 1) };
+      // As the tree picks it: the selection, a new revision of it.
+      picked = entries.find((entry) => entry.path === path) ?? picked;
+      selectionRevision += 1;
       await render();
       await settleAll();
     },
@@ -2146,6 +2178,31 @@ export async function mountChangesReview(
     },
     opened() {
       return [...opened];
+    },
+    openedFiles() {
+      return [...openedFiles];
+    },
+
+    // Files: each file's head, folded or not, and what it offers.
+    fileFolded(path) {
+      const title = fileSection(path).querySelector(".diff-file-section-title");
+      return title?.getAttribute("aria-expanded") === "false";
+    },
+    fileButtons(path) {
+      // Its head's, and its skipped diff's while folded.
+      return fileButtonsOf(path).map((button) => button.textContent ?? "");
+    },
+    async clickFileHeader(path, label) {
+      const button =
+        label === undefined
+          ? fileSection(path).querySelector<HTMLButtonElement>(
+              ".diff-file-section-title",
+            )
+          : fileButtonsOf(path).find((each) => each.textContent === label);
+      if (!button) throw new Error(`no button ${label} on ${path}`);
+      await act(async () => button.click());
+      await settleAll();
+      await settleAll();
     },
     async search(pattern) {
       await press("/");

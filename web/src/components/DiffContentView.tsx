@@ -217,6 +217,12 @@ import "./DiffContentView.css";
 export { highlightedPatch } from "./DiffSurface";
 
 type DiffViewMode = "split" | "unified";
+
+/** Where Files opens a file: at a line, rendered (Markdown, a page). */
+export type OpenFileAt = { line?: number; rendered?: boolean };
+
+/** The files the Files preview renders: the review's Rendered. */
+const RENDERED_FILE = /\.(md|markdown|mdx|html?|svg)$/i;
 type AppTheme = "dark" | "light";
 
 const DIFF_VIEW_MODE_KEY = "diffViewMode";
@@ -800,8 +806,14 @@ type DiffFileSectionProps = {
   annotationSelectionActive: boolean;
   onToggle: (key: string, collapsed: boolean) => void;
   onSelectFile?: (entry: GitDiffEntry) => void;
-  onOpenFile?: (entry: GitDiffEntry) => void;
+  onOpenFile?: (entry: GitDiffEntry, at?: OpenFileAt) => void;
   openFileLabel?: string;
+  /**
+   * The review's header (the review in Changes): Open, and Rendered on a
+   * file the Files preview renders, as the review pane's; none without a
+   * Files preview to open in.
+   */
+  reviewHeader?: boolean;
   onRequestAnnotation?: (request: DiffAnnotationRequest) => void;
   onEditAnnotation?: (id: string) => void;
   /** The review cursor's: Pierre's instance of the file, drawn or gone. */
@@ -849,6 +861,7 @@ const DiffFileSection = memo(function DiffFileSection({
   onSelectFile,
   onOpenFile,
   openFileLabel = "Open in Files",
+  reviewHeader = false,
   onRequestAnnotation,
   onEditAnnotation,
   onInstance,
@@ -1044,17 +1057,44 @@ const DiffFileSection = memo(function DiffFileSection({
               Show
             </button>
           ) : null}
-          <button
-            type="button"
-            className="diff-file-open"
-            aria-label={openFileLabel}
-            title={openFileLabel}
-            onClick={() => onOpenFile?.(section.entry)}
-            disabled={!onOpenFile}
-          >
-            <FolderOpen size={14} />
-            <span>{openFileLabel}</span>
-          </button>
+          {reviewHeader ? (
+            onOpenFile ? (
+              <>
+                <button
+                  type="button"
+                  className="diff-file-open"
+                  title="Open the file in the preview (gf), at the cursor line when it is in this file"
+                  onClick={() => onOpenFile(section.entry)}
+                >
+                  Open
+                </button>
+                {RENDERED_FILE.test(section.entry.path) ? (
+                  <button
+                    type="button"
+                    className="diff-file-open"
+                    title="Show rendered: the file as the Files preview renders it, at the cursor line, with this review's comments on it"
+                    onClick={() =>
+                      onOpenFile(section.entry, { rendered: true })
+                    }
+                  >
+                    Rendered
+                  </button>
+                ) : null}
+              </>
+            ) : null
+          ) : (
+            <button
+              type="button"
+              className="diff-file-open"
+              aria-label={openFileLabel}
+              title={openFileLabel}
+              onClick={() => onOpenFile?.(section.entry)}
+              disabled={!onOpenFile}
+            >
+              <FolderOpen size={14} />
+              <span>{openFileLabel}</span>
+            </button>
+          )}
         </header>
       )}
       {fileThreadIds && !reviewedFolded ? (
@@ -1188,6 +1228,7 @@ function areDiffFileSectionPropsEqual(
     previous.onSelectFile === next.onSelectFile &&
     previous.onOpenFile === next.onOpenFile &&
     previous.openFileLabel === next.openFileLabel &&
+    previous.reviewHeader === next.reviewHeader &&
     previous.onRequestAnnotation === next.onRequestAnnotation &&
     previous.onEditAnnotation === next.onEditAnnotation &&
     previous.onInstance === next.onInstance &&
@@ -1307,7 +1348,8 @@ function DiffContentViewInner({
   onRetry?: () => void;
   onNearbyFilesChange?: (entries: GitDiffEntry[]) => void;
   onVisibleFileChange?: (entry: GitDiffEntry | null) => void;
-  onOpenFile?: (entry: GitDiffEntry) => void;
+  /** Opens a file in Files: at a line, rendered (the review's Open). */
+  onOpenFile?: (entry: GitDiffEntry, at?: OpenFileAt) => void;
   openFileLabel?: string;
   loadImagePreview?: (path: string) => Promise<FilePreview>;
   /**
@@ -1538,6 +1580,9 @@ function DiffContentViewInner({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectFileRef = useRef(onSelectFile);
   const openFileRef = useRef(onOpenFile);
+  /** The review's Open goes to the cursor's line (the review in Changes). */
+  const reviewOpensAtRef = useRef(false);
+  reviewOpensAtRef.current = reviewCursor && !embedded;
   const nearbyFilesChangeRef = useRef(onNearbyFilesChange);
   nearbyFilesChangeRef.current = onNearbyFilesChange;
   const visibleFileChangeRef = useRef(onVisibleFileChange);
@@ -2404,9 +2449,22 @@ function DiffContentViewInner({
   const handleSelectFile = useCallback((target: GitDiffEntry) => {
     selectFileRef.current?.(target);
   }, []);
-  const handleOpenFile = useCallback((target: GitDiffEntry) => {
-    openFileRef.current?.(target);
-  }, []);
+  const handleOpenFile = useCallback(
+    (target: GitDiffEntry, at?: OpenFileAt) => {
+      // The review's Open: at the cursor line when it is in that file (a
+      // removed line's old number is near enough).
+      const where = reviewOpensAtRef.current
+        ? cursorHandle.current.where()
+        : null;
+      const line =
+        where?.path === target.path ? (where.new ?? where.old) : null;
+      openFileRef.current?.(target, {
+        ...at,
+        ...(line !== null && line !== undefined ? { line } : {}),
+      });
+    },
+    [],
+  );
   const handleRequestAnnotation = useCallback(
     (target: DiffAnnotationRequest) => setPendingAnnotation(target),
     [],
@@ -4009,7 +4067,7 @@ function DiffContentViewInner({
           ? visibleEntries.find((each) => each.path === path)
           : undefined;
         if (!target || !onOpenFile) return false;
-        onOpenFile(target);
+        handleOpenFile(target);
         return true;
       }
       case "O":
@@ -4892,6 +4950,7 @@ function DiffContentViewInner({
           onSelectFile={onSelectFile ? handleSelectFile : undefined}
           onOpenFile={onOpenFile ? handleOpenFile : undefined}
           openFileLabel={openFileLabel}
+          reviewHeader={reviewEditor}
           onRequestAnnotation={
             onCreateAnnotation ? handleRequestAnnotation : undefined
           }

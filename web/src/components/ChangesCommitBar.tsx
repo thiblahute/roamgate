@@ -69,7 +69,7 @@ export function ChangesCommitBar({
       ) : null}
       {views.changed ? (
         <div className="diff-review-changed" role="status">
-          <span>The code changed since it was loaded.</span>
+          <span>The code changed since this review was loaded.</span>
           <button
             type="button"
             title="Read the review again, on the same line (R, gr, :e)"

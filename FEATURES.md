@@ -196,7 +196,9 @@ Inspector button, shortcuts, or workspace/agent menus.
   alone opens the agent review's focus bar (Start asks, with or without a
   focus), `:conversations` lists the comments even when there are none yet.
   `?` and `:help` show the review's shortcut list, the review pane's rows and
-  then Changes' own.
+  then Changes' own. Each file's head has **Open** (and **Rendered** on
+  Markdown, a page or an SVG), which opens it in the Files preview at the
+  cursor's line when the cursor is in that file, as `gf` does.
 - The same setting gives Changes the review's comments. `c`, Enter, `i` or
   `a` comment on the cursor's line, or on the lines `V` selected, in the
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc
