@@ -199,6 +199,13 @@ Inspector button, shortcuts, or workspace/agent menus.
   then Changes' own. Each file's head has **Open** (and **Rendered** on
   Markdown, a page or an SVG), which opens it in the Files preview at the
   cursor's line when the cursor is in that file, as `gf` does.
+- The review in Changes keeps your place as the review pane does: the
+  cursor's file and line per review (the last 50 reviews), back after a
+  page reload or when the review opens again. With no side by side or
+  unified chosen yet, it opens side by side when Changes is 1100 px wide or
+  more, unified below. A review of commits that could not be read says why
+  with Retry, and reads itself again once a lost connection is back (once:
+  another failure waits for Retry).
 - The same setting gives Changes the review's comments. `c`, Enter, `i` or
   `a` comment on the cursor's line, or on the lines `V` selected, in the
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc

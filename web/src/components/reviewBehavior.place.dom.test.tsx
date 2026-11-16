@@ -27,7 +27,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   /** `count` added lines `${path} line N`. */
   const added = (path: string, count: number) =>
@@ -53,8 +53,16 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     ]),
   );
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("place"))
     describe(name, () => {
+      /**
+       * A review that loads its own diff: in Changes a review of a commit
+       * (its Working scope is git's, loaded and retried by the inspector).
+       */
+      const ownLoad =
+        name === "changes"
+          ? { commits: [{ sha: "c".repeat(40), subject: "One" }] }
+          : {};
       test("a reload puts the cursor back on its file and line, a removed line by its old number", async () => {
         const files = [added("a.ts", 6), changed];
         const review = await mount({ files });
@@ -283,14 +291,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           await review.advance(700);
           input.focus();
           expect(review.hasFocus()).toBe(true);
-          // Anything but a terminal keeps the focus it took.
+          // Anything but a terminal keeps the focus it took. In Changes the
+          // review toggle holds the keys against anything for 1.5 s (until
+          // a click or a key elsewhere): plan section 10's focus rule.
+          const changes = name === "changes";
           other.focus();
-          expect(review.hasFocus()).toBe(false);
+          expect(review.hasFocus()).toBe(changes);
           await review.setHidden(true);
           await review.setHidden(false);
           expect(review.hasFocus()).toBe(true);
-          // Past 800 ms the terminal keeps it.
-          await review.advance(800);
+          // Past 800 ms (1.5 s in Changes) the terminal keeps it.
+          await review.advance(changes ? 1500 : 800);
           input.focus();
           expect(review.hasFocus()).toBe(false);
         } finally {
@@ -338,10 +349,10 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
 
       test("a review opened while the connection is down loads once it is back, where it was left", async () => {
         const files = [added("a.ts", 6)];
-        const first = await mount({ files });
+        const first = await mount({ files, ...ownLoad });
         await first.click({ path: "a.ts", text: "a.ts line 5" });
         await first.unmount();
-        const review = await mount({ files, storage: "keep" });
+        const review = await mount({ files, storage: "keep", ...ownLoad });
         await review.setConnected(false);
         await review.reload();
         expect(review.status()).toBe(
@@ -358,7 +369,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
 
       test("Retry loads a review that failed, and another failure is not tried again on its own", async () => {
         const files = [added("a.ts", 3)];
-        const review = await mount({ files });
+        const review = await mount({ files, ...ownLoad });
         await review.click({ path: "a.ts", text: "a.ts line 2" });
         review.failBridge(
           ["review.diff", "review.commits"],
@@ -385,7 +396,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       });
 
       test("a load the connection fails while it is up is tried once again, not in a loop", async () => {
-        const review = await mount({ files: [added("a.ts", 3)] });
+        const review = await mount({ files: [added("a.ts", 3)], ...ownLoad });
         review.failBridge(
           ["review.diff", "review.commits"],
           "bridge hello is unavailable",

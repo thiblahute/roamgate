@@ -789,6 +789,9 @@ export async function mountChangesDiff(
     "../useInspectorCommands"
   );
   mounted += 1;
+  // Each mount a review opened anew: no place left by an earlier one.
+  const { roamgateLocalStorage } = await import("../browserStorage");
+  roamgateLocalStorage.removeItem("reviewPlace");
   const connectionId = initial.connectionId ?? `changes-diff-${mounted}`;
   const client: ConnectionClient = {
     connectionId,

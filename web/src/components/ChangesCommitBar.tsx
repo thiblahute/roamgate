@@ -65,7 +65,18 @@ export function ChangesCommitBar({
         </div>
       ) : null}
       {views.status ? (
-        <span className="diff-review-views-status note">{views.status}</span>
+        <span className="diff-review-views-status note" aria-live="polite">
+          {views.status}
+          {views.failed && !views.loading ? (
+            <button
+              type="button"
+              className="btn ghost rv-sm"
+              onClick={onReload}
+            >
+              Retry
+            </button>
+          ) : null}
+        </span>
       ) : null}
       {views.changed ? (
         <div className="diff-review-changed" role="status">
