@@ -6,6 +6,7 @@ import {
   frameAgentMessage,
   parseAgentAddress,
 } from "../../../shared/agentMessage";
+import type { ClaudeModDelivery } from "../conversation/prompt-pane";
 import { type TurnCauses, turnCauses } from "../voice/turn-causes";
 
 /**
@@ -13,8 +14,9 @@ import { type TurnCauses, turnCauses } from "../voice/turn-causes";
  * sessions` and `message`): the sessions Roamgate manages on every ready
  * connection, and messages delivered to them framed as another agent's,
  * never as the user's. A session in conversation mode gets one through
- * Roamgate's queue; one in a terminal through Herdr's `agent.prompt`, once
- * it is idle.
+ * Roamgate's queue; a terminal Claude running Roamgate's mod through the
+ * mod, which submits it once Claude is idle; any other terminal session
+ * through Herdr's `agent.prompt`, once it is idle.
  */
 
 /** What a connection gives of its agents, as Herdr lists them. */
@@ -39,6 +41,8 @@ export type MessengerRuntime = {
      */
     prompt(paneId: string, text: string): Promise<boolean>;
   };
+  /** The pane's Claude mod, when it runs a live one. */
+  claudeMod?: ClaudeModDelivery;
   herdr: {
     call(
       method: string,
@@ -81,6 +85,8 @@ type Pending = {
   /** The sender's name, for the turn it starts (voice/turn-causes.ts). */
   fromName: string;
   queuedAt: number;
+  /** Who the Claude mod is told it comes from. */
+  source: "message" | "companion";
 };
 
 const RATE_WINDOW_MS = 10 * 60_000;
@@ -136,8 +142,19 @@ export function createAgentMessenger(args: {
   const pairLimit = args.pairLimit ?? 8;
   const waitingLimit = args.waitingLimit ?? 5;
   const causes = args.causes ?? turnCauses;
-  const noteCause = (connectionId: string, paneId: string, name: string) =>
-    causes.note(connectionId, paneId, { by: "agent", name });
+  // The voice companion's work is its own turn, the others an agent's.
+  const noteCause = (
+    connectionId: string,
+    paneId: string,
+    item: Pick<Pending, "fromName" | "source">,
+  ) =>
+    causes.note(
+      connectionId,
+      paneId,
+      item.source === "companion"
+        ? { by: "companion" }
+        : { by: "agent", name: item.fromName },
+    );
   const sent = new Map<string, number[]>();
   const pairs = new Map<string, number[]>();
   const waiting = new Map<string, Pending[]>();
@@ -302,10 +319,25 @@ export function createAgentMessenger(args: {
           const next = left[0]!;
           if (!(await runtime.conversation.prompt(target.paneId, next.text)))
             break;
-          noteCause(target.connectionId, target.paneId, next.fromName);
+          noteCause(target.connectionId, target.paneId, next);
           left.shift();
         }
-      } else {
+      } else if (runtime.claudeMod) {
+        // A Claude mod came up meanwhile: it takes them all, in order.
+        while (left.length) {
+          const next = left[0]!;
+          if (!runtime.claudeMod.deliver(target.paneId, next.text, next.source))
+            break;
+          noteCause(target.connectionId, target.paneId, next);
+          left.shift();
+          log("agent message handed to the session's Claude mod", {
+            to: address,
+            from: next.from,
+            id: next.id,
+          });
+        }
+      }
+      if (left.length && !runtime.conversation.holds(target.paneId)) {
         const info = (await runtime.herdr.call(
           "agent.get",
           { target: target.paneId },
@@ -314,7 +346,7 @@ export function createAgentMessenger(args: {
         const state = text(info?.agent?.agent_status);
         if (state === "idle" || state === "done") {
           const next = left.shift()!;
-          noteCause(target.connectionId, target.paneId, next.fromName);
+          noteCause(target.connectionId, target.paneId, next);
           await runtime.herdr.call(
             "agent.prompt",
             { target: target.paneId, text: next.text },
@@ -386,13 +418,25 @@ export function createAgentMessenger(args: {
     const runtime = args.runtime(target.connectionId);
     if (!runtime)
       throw new AgentMessageError("its connection is not ready", 503);
-    let delivery: "conversation" | "terminal" | "waiting";
+    let delivery: "conversation" | "mod" | "terminal" | "waiting";
     if (
       receiver.mode === "conversation" &&
       (await runtime.conversation.prompt(target.paneId, framed))
     ) {
-      noteCause(target.connectionId, target.paneId, sender.name);
+      noteCause(target.connectionId, target.paneId, {
+        fromName: sender.name,
+        source: "message",
+      });
       delivery = "conversation";
+    } else if (
+      !waiting.get(address)?.length &&
+      runtime.claudeMod?.deliver(target.paneId, framed, "message")
+    ) {
+      noteCause(target.connectionId, target.paneId, {
+        fromName: sender.name,
+        source: "message",
+      });
+      delivery = "mod";
     } else {
       const queue = waiting.get(address) ?? [];
       if (queue.length >= waitingLimit)
@@ -406,6 +450,7 @@ export function createAgentMessenger(args: {
         from: fromAddress,
         fromName: sender.name,
         queuedAt: now(),
+        source: "message",
       };
       waiting.set(address, [...queue, item]);
       // Idle now (and nothing waits before it): typed at once.
@@ -428,15 +473,58 @@ export function createAgentMessenger(args: {
       note:
         delivery === "conversation"
           ? "In its queue: it reads it at once when idle, else when its turn ends."
-          : delivery === "terminal"
-            ? "Typed into its terminal: it was idle."
-            : "Its terminal is busy: Roamgate types it in once the session is idle (for up to 30 minutes).",
+          : delivery === "mod"
+            ? "Handed to its Claude: it reads it at once when idle, else when its turn ends."
+            : delivery === "terminal"
+              ? "Typed into its terminal: it was idle."
+              : "Its terminal is busy: Roamgate types it in once the session is idle (for up to 30 minutes).",
     };
+  }
+
+  /**
+   * Hands `text` as it is (no frame, no rate limit: the voice companion's
+   * work for the user) to the session at `address`, the way `send` does:
+   * conversation mode's queue, else its Claude mod, else typed once the
+   * terminal session is idle (waiting for up to the limit).
+   */
+  async function deliver(address: string, text: string): Promise<void> {
+    const target = parseAgentAddress(address);
+    if (!target) throw new AgentMessageError("an address is CONNECTION/PANE");
+    const key = agentAddress(target.connectionId, target.paneId);
+    const runtime = args.runtime(target.connectionId);
+    if (!runtime)
+      throw new AgentMessageError("its connection is not ready", 503);
+    if (await runtime.conversation.prompt(target.paneId, text)) return;
+    if (
+      !waiting.get(key)?.length &&
+      runtime.claudeMod?.deliver(target.paneId, text, "companion")
+    )
+      return;
+    const queue = waiting.get(key) ?? [];
+    if (queue.length >= waitingLimit)
+      throw new AgentMessageError(
+        `${waitingLimit} messages already wait for that session to be idle; try again later`,
+        429,
+      );
+    waiting.set(key, [
+      ...queue,
+      {
+        id: nextId++,
+        text,
+        from: "voice companion",
+        fromName: "voice companion",
+        queuedAt: now(),
+        source: "companion",
+      },
+    ]);
+    // Idle now (and nothing waits before it): typed at once.
+    await flush(key);
   }
 
   return {
     list,
     send,
+    deliver,
     /** Messages waiting for a busy terminal session, by address. */
     waitingFor: (address: string) => waiting.get(address)?.length ?? 0,
     dispose() {

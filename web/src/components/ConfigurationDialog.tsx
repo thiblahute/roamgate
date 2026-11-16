@@ -54,6 +54,7 @@ import {
   useConnectionClient,
 } from "../useConnectionClient";
 import { AgentIntegrationsSettings } from "./AgentIntegrationsSettings";
+import { ClaudeModSettings } from "./ClaudeModSettings";
 import { AgentAutoRenameSettings } from "./AgentAutoRenameSettings";
 import { ClaudeStartSettings } from "./ClaudeStartSettings";
 import { ConversationIdleSettings } from "./ConversationIdleSettings";
@@ -837,6 +838,12 @@ export function ConfigurationDialog({
                   />
                   <LimitResumeSettings
                     key={`limit-resume-${connectionClientScopeKey(
+                      connectionClient,
+                      connectionClient.serverRuntimeGeneration,
+                    )}`}
+                  />
+                  <ClaudeModSettings
+                    key={`claude-mod-${connectionClientScopeKey(
                       connectionClient,
                       connectionClient.serverRuntimeGeneration,
                     )}`}

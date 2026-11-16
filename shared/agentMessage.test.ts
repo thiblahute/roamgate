@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  AGENT_MESSAGE_TOOL,
   frameAgentMessage,
   outgoingAgentMessage,
   parseAgentAddress,
@@ -75,4 +76,25 @@ test("a framed message reads as another session's in the chat, never the user's"
   });
   // Words of the user's after it stay theirs.
   expect(parseInjectedMessage(`${framed}\n\nand mine`)?.rest).toBe("and mine");
+});
+
+test("the sender's message is read back from its Roamgate tool call", () => {
+  const text = 'Run `make` with "$X" set';
+  expect(
+    outgoingAgentMessage(
+      AGENT_MESSAGE_TOOL,
+      JSON.stringify({ to: "desktop/w17:p1", text }),
+    ),
+  ).toEqual({ to: "desktop/w17:p1", text });
+  expect(
+    outgoingAgentMessage(AGENT_MESSAGE_TOOL, JSON.stringify({ to: "nope" })),
+  ).toBeNull();
+  expect(outgoingAgentMessage(AGENT_MESSAGE_TOOL, "{")).toBeNull();
+  // Another server's tool of the same short name is not Roamgate's.
+  expect(
+    outgoingAgentMessage(
+      "mcp__other__agent_message",
+      JSON.stringify({ to: "desktop/w17:p1", text }),
+    ),
+  ).toBeNull();
 });

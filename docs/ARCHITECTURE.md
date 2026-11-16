@@ -396,6 +396,102 @@ filled from read-only `herdr integration status` on the same host (over SSH for
 remote connections), only when the CLI version matches the running server. CLI
 failures leave versions unknown without failing the list.
 
+## Claude Code mod
+
+Roamgate ships a Claude Code mod (`server/claude-mod/`, Claude Code 2.1.304
+or newer): JavaScript hooks that run inside Claude sessions, in Herdr panes
+and in conversation mode. The bridge embeds its files at build time (a Bun macro,
+`agent/claude-mod-files.ts`) and writes them, with the review client, to
+`~/.cache/roamgate/claude-plugins` on this machine and on each SSH host: a
+directory marketplace `roamgate` listing the plugin `roamgate` by relative
+path, so Claude Code reads it in place and an update needs no reinstall
+(running sessions take it at `/reload-plugins`). It is installed only by the
+user's action, `claude_mod.install`, which runs Claude Code's own `claude
+plugin install roamgate --marketplace <that folder> --scope user` on the
+connection's host (`claude_mod.status` and `claude_mod.uninstall` likewise);
+Roamgate never edits Claude's settings itself. Not offered on Windows.
+
+Its inbox and status part is inert in a `claude -p` run (it draws on no
+terminal), in conversation mode's headless claude (`ROAMGATE_HEADLESS=1`),
+outside a Herdr pane, with `ROAMGATE_CLAUDE_MOD=off`, and while the review
+socket is missing (it looks again every 30 s). Otherwise it speaks over the
+review socket
+(`$.http.fetch` with `socketPath`), sending the pane, workspace, Herdr socket
+and cwd as the client does, so the connection is resolved the same way
+(agent/claude-mod.ts):
+
+- `mod_poll` (`session`, `client`: random per module instance, `protocol`,
+  `claude`, `after`, `wait_ms`) says hello and is held up to 20 s; it answers
+  `{protocol, epoch, messages}`, every message of the pane's inbox above
+  `after` not yet acknowledged, oldest first, or `{superseded: true}` once a
+  newer client polls for the pane. A mod is live while a poll is in flight or
+  ended under 45 s ago.
+- The mod submits the messages one at a time with `$.prompt.submit({ text,
+  asUser: true })`, which waits until Claude is idle, and acknowledges each
+  (`mod_ack`) once its turn started (`submitted`, which removes it from the
+  inbox). Ids it already submitted are acknowledged, not submitted again. A
+  drop or refusal caused by the user stopping a turn holds the queue
+  (`held`) until the main loop's next `turn.complete`; another refusal is
+  `failed` (dropped, logged).
+- `mod_event` reports `turn_start`, `turn_complete` (its reason, with the
+  model, context and plan windows of `$.session.usage()`), `blocked` (an
+  AskUserQuestion running, or a permission ask put to the person, Claude
+  Code's `PermissionRequest`, unanswered for 2 s, until a hook answers it or
+  the call ends; an ask auto mode's classifier settles asks nobody),
+  `unblocked`, `usage` and `bye` (`session.end`, except `/clear` and
+  `/resume`, which keep the process).
+- `mod_tools` (`session`, `client`, `headless`, `gone`) says the session has
+  the mod's tools (below).
+
+The inbox (`claude-mod-inbox.json` in the data directory, at most 50 per
+pane, a day old at most) survives restarts with its ids and `epoch`; a mod
+that sees another epoch reads from the start. Messages whose mod said `bye`
+or stopped polling 90 s ago are typed through Herdr's `agent.prompt` once the
+pane's agent is idle or done (checked every 5 s, for up to 30 minutes), or
+dropped when the pane has no agent; a mod that comes back first takes them.
+
+Delivery (`promptPaneAgent`, the messenger, companion errands, which reach a
+session in either mode through the messenger's `deliver`, the profile chip's
+Retry) goes to a pane's live mod before
+Herdr's `agent.prompt`; conversation mode keeps its own queue. What a live
+mod says is laid over Herdr's screen detection wherever Roamgate reads
+Herdr's panes and agents (`withOwnedSessions`, `overlayModPanes`): working
+and idle are the mod's (Herdr's `done`, idle and unseen, stays), blocked is
+either's, and the pane's session is the mod's. Each change is pushed to the
+browsers as `roamgate.claude_mod` (they read the panes again) and pokes the
+usage limit resumer; `agent_profile.get` carries the mod's `usage`.
+
+In every session, conversation mode's headless claude and `claude -p` runs
+included, the mod also gives the model tools (`server/claude-mod/hooks/tools.ts`,
+named `mcp__roamgate__<name>`): `review_get`, `review_reply`, `review_add`,
+`review_working`, `review_update`, `review_resolve`, `review_reopen`,
+`review_edit`, `review_notify`, `agent_message` and `agent_sessions` in the
+prompt's tool list, `review_open`, `review_summary` and `review_threads`
+behind tool search. Each is one request to the review socket with the body
+`roamgate-review` sends for the same command (`comment_id` is `comment`,
+`review` is `session`), the pane under Roamgate's names in a headless claude
+as the client does, `claude_session`, and `via: claude-mod` without `agent`:
+the server names the review's own agent when it runs in the asking pane, else
+Claude (`ROAMGATE_REVIEW_AGENT` still names one). Text goes as JSON, never
+through a shell. Without the socket a tool answers an error saying Roamgate
+is not running. For the user the mod registers `/rg-review [worktree |
+BASE..HEAD | compare OLD NEW | URL]` (`open`; Claude Code keeps `/review`)
+and `/threads` (`waiting`: the threads that need the session's answer in the
+reviews and chats whose agent runs in its pane or is its session), each
+answered with a line of text on any surface.
+
+A Claude TUI in a Herdr pane and conversation mode's headless claude (never a
+script's `claude -p`) send `mod_tools` at start and every 4 minutes, and a
+TUI `gone` when its session ends. The hub keeps it per pane: a terminal's for
+10 minutes after its last hello, a headless one's for 7 days (kept in the
+inbox file), since Roamgate starts it again after an idle stop. While a pane
+has the tools, what the review service sends its agent (comments, the overall
+comment, handoffs, review requests) names them (`your review_reply tool
+(comment_id: ...)`, `ReviewService` `agentTools`) instead of the client's
+command lines; other agents keep the commands. The chat reads an
+`agent_message` call as a sent message, as it reads `roamgate-review
+message`.
+
 ## Ranger
 
 The bridge runs one Pi Durable assistant service, independent of the selected
@@ -636,7 +732,8 @@ reply to a thread whose last comment is already its own is refused (409),
 pointing at `review_edit` (the client's `edit`) on that comment: it
 corrects its answer instead of answering itself. The
 user's discussion comments reach a review's agent as a prompt typed into its
-Herdr pane (`agent.prompt`), a few seconds after they are written: a burst
+Herdr pane (`agent.prompt`), or through its pane's Claude Code mod when it
+runs one, a few seconds after they are written: a burst
 goes as one prompt, one delivery at a time per review, without control
 characters and cut at 16,000 characters. Only connections whose host has
 the client get them (local connections once it is installed, SSH hosts once
@@ -686,8 +783,9 @@ approves no permission, answers no question of the user's and authorizes
 nothing outward, with the reply command. The frame comes first, so typed into
 a terminal it is never a slash command or a `!` line. A conversation-mode
 session gets it through `ConversationService.prompt` (the queue: no
-permission or question is ever answered by it); a terminal session through
-Herdr's `agent.prompt` when its agent is idle or done, else polled every 3 s
+permission or question is ever answered by it); a terminal Claude running
+Roamgate's Claude Code mod through the mod's inbox; another terminal session
+through Herdr's `agent.prompt` when its agent is idle or done, else polled every 3 s
 for up to 30 minutes, at most 5 waiting per session. Limits: 20 messages per
 sender and 8 between two sessions (both ways) in ten minutes, refused with
 429. The chats parse the frame as an injected notice (**From NAME**, kept out
@@ -1512,13 +1610,15 @@ last entry until the next message, a dismiss, or a profile restart.
 `agent_profile.get` also answers `model`, the model the pane's session runs
 now (`runningModel`), the surest source first: the model conversation
 mode's running process last named (its `init`, a `set_model` answer, or an
-answer's `message.model`, so a fallback shows), a choice not answered with
+answer's `message.model`, so a fallback shows) or a terminal's Claude
+mod reported (its status line's), a choice not answered with
 yet, the transcript's last answer, the profile's `ANTHROPIC_MODEL`. For a
 pane of another agent it is the model its transcript last names
 (`latestTranscriptModel`: a Pi `model_change` or answer, a Codex
 `turn_context`). The chat header's model chip and the terminal's profile
-chip show it short (`shortModelName`: "Opus 5.5"), refreshed with the
-profile chip and at once on a `model_notice`.
+chip show it short (`shortModelName`: "Opus 5.5"), their titles the mod's
+context and plan usage too, refreshed with the profile chip and at once on
+a `model_notice`.
 
 What the code of a rewind comes to is read from the transcript
 (`server/src/conversation/rewind-scan.ts`): the files edited after the
@@ -1676,7 +1776,8 @@ once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
   (else tried again in 30 s). A pause's state is `scheduled`, `off`,
   `skipped`, `missed`, `resuming`, `resumed` or `failed`.
 - **Delivery** (`promptPaneAgent`, as review comments): conversation mode's
-  `prompt` (its queue; a sleeping process wakes), else Herdr's
+  `prompt` (its queue; a sleeping process wakes), else the terminal Claude's
+  mod when it runs one (its status is then the mod's too), else Herdr's
   `agent.prompt` into the terminal's Claude. A failed send is tried again
   30 s later, five times per reset. "Resume now" sends at once (refused
   only while the agent asks something); before the reset it does not count

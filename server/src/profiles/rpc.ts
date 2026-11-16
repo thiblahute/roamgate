@@ -11,6 +11,7 @@ import {
   switchModel,
   type UsageLimit,
 } from "../../../shared/agentProfiles";
+import type { ClaudeModUsage } from "../agent/claude-mod";
 import { isRecord } from "../agent/session-utils";
 import type { GuiSettings } from "../config/gui-settings";
 import {
@@ -43,8 +44,13 @@ export type ProfileRpcDeps = {
   typedLaunch: (paneId: string, spec: LaunchSpec) => string;
   /** Sends a message to the session: conversation mode's queue. */
   sendConversation: (paneId: string, text: string) => Promise<unknown>;
-  /** Types a prompt into the terminal's idle Claude (agent.prompt). */
+  /**
+   * A prompt for the terminal's Claude: through its Claude mod when it runs
+   * one, else typed into it once idle (agent.prompt).
+   */
   promptTerminal: (paneId: string, text: string) => Promise<unknown>;
+  /** What the pane's live Claude mod last said of usage, if it runs one. */
+  modUsage?: (paneId: string) => ClaudeModUsage | null;
   now?: () => number;
   log?: (message: string, fields?: Record<string, unknown>) => void;
 };
@@ -211,7 +217,8 @@ export async function handleProfileRpc(
     const model = runningModel(
       pane.owner === "conversation"
         ? (deps.conversationModel?.(paneId) ?? null)
-        : null,
+        : // A terminal's Claude mod: the model its status line shows.
+          (deps.modUsage?.(paneId)?.model ?? null),
       choice?.model ? (choice.model_resolved ?? choice.model) : null,
       tail,
       profile.env?.ANTHROPIC_MODEL,
@@ -225,6 +232,8 @@ export async function handleProfileRpc(
       default: defaultName,
       profiles: listed,
       limit,
+      // Exact context and plan usage, from the session's Claude mod.
+      ...(deps.modUsage?.(paneId) ? { usage: deps.modUsage(paneId) } : {}),
       ...(choice?.return_at && profiles.return_after_reset
         ? { returns_at: choice.return_at, returns_to: choice.return_to }
         : {}),

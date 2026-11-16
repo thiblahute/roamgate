@@ -119,6 +119,7 @@ import {
   createWorktreeRemovalRuntime,
 } from "../worktree/remove";
 import { createAgentStatusSubscriptionLoop } from "./agent-status-subscription";
+import { type ClaudeModHub, overlayModPanes } from "../agent/claude-mod";
 import { createTabAutoRenamer } from "./tab-auto-rename";
 import { createAgentTabTitleReader } from "./agent-tab-title";
 import { sanitizeConnectionError } from "./manager";
@@ -261,6 +262,8 @@ export function createLegacyConnectionRuntime(args: {
     connectionId: string,
     paneId: string,
   ) => string | null;
+  /** Roamgate's Claude mods, across connections (agent/claude-mod.ts). */
+  claudeMod?: ClaudeModHub | null;
 }) {
   const { config } = args;
   const remotePlatform = config.remotePlatform;
@@ -288,6 +291,14 @@ export function createLegacyConnectionRuntime(args: {
     logger: logger.child("herdr"),
     connectionId: identity.id,
   });
+  /** This connection's Claude mods: delivery, and what they say. */
+  const claudeMod = {
+    deliver: (paneId: string, text: string, kind?: string) =>
+      args.claudeMod?.deliver(identity.id, paneId, text, kind) ?? null,
+    live: (paneId: string) => !!args.claudeMod?.live(identity.id, paneId),
+    pane: (paneId: string) => args.claudeMod?.pane(identity.id, paneId) ?? null,
+    panes: () => args.claudeMod?.panes(identity.id) ?? [],
+  };
   const agentSessionFiles = createAgentSessionFileAccess({
     sshHost: config.sshHost,
     runBinaryProcessWithTimeout,
@@ -303,6 +314,7 @@ export function createLegacyConnectionRuntime(args: {
       herdrCall: withOwnedSessions(
         (...args) => herdr.call(...args),
         () => conversation?.ownedPanes() ?? [],
+        () => claudeMod.panes(),
       ),
       files: agentSessionFiles,
       indexStore: createSessionIndexStore({
@@ -360,7 +372,13 @@ export function createLegacyConnectionRuntime(args: {
     readSettings: readGuiSettings,
     store: sessionProfiles(),
     agentGet: async (paneId) => {
-      const result = await herdr.call("agent.get", { target: paneId }, 5000);
+      // With what the pane's Claude mod says laid over Herdr's.
+      const result = overlayModPanes(
+        "agent.get",
+        { target: paneId },
+        await herdr.call("agent.get", { target: paneId }, 5000),
+        claudeMod.panes(),
+      );
       return isRecord(result) && isRecord(result.agent) ? result.agent : null;
     },
     conversationSession: (paneId) =>
@@ -380,8 +398,12 @@ export function createLegacyConnectionRuntime(args: {
       if (!conversation) throw new Error("Not ready");
       return conversation.send(paneId, { text });
     },
-    promptTerminal: (paneId, text) =>
-      herdr.call("agent.prompt", { target: paneId, text }, 5000),
+    // A Claude mod submits it once Claude is idle; else it is typed.
+    promptTerminal: async (paneId, text) => {
+      if (claudeMod.deliver(paneId, text, "retry")) return;
+      await herdr.call("agent.prompt", { target: paneId, text }, 5000);
+    },
+    modUsage: (paneId) => claudeMod.pane(paneId)?.usage ?? null,
     log: (message, fields) =>
       logger.info(message, { connection: identity.id, ...fields }),
   });
@@ -491,6 +513,10 @@ export function createLegacyConnectionRuntime(args: {
             (task.kind === "command" || task.kind === "monitor"),
         ).length;
       },
+      // A live Claude mod knows whether Claude is idle; Herdr's screen
+      // detection may lag behind a turn that just started.
+      exactStatus: (paneId) =>
+        claudeMod.live(paneId) ? (claudeMod.pane(paneId)?.status ?? null) : null,
       // An /exit Claude took as a message is in its transcript's end.
       exitSwallowed: async (paneId, command, sinceMs) => {
         const path = await agentSessions.resolvePath({ pane_id: paneId });
@@ -1224,7 +1250,10 @@ export function createLegacyConnectionRuntime(args: {
       herdr,
       conversation: conversation!,
       transcriptTail,
+      claudeMod,
     }),
+    /** This connection's Claude mods. */
+    claudeMod,
     historyWatcher: historyWatcher!,
     recoveryIdentity,
     taskNotificationSource,

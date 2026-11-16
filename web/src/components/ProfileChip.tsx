@@ -9,6 +9,7 @@ import {
   modelTitle,
   resetTime,
   retrySession,
+  usageSummary,
   useSessionProfile,
 } from "../sessionProfiles";
 import { ActionsMenu, type ActionsMenuGroup } from "./ActionsMenu";
@@ -83,6 +84,8 @@ export function ProfileChip({
     const rect = event.currentTarget.getBoundingClientRect();
     setMenu({ x: rect.left, y: rect.bottom + 4 });
   };
+  // Exact figures when the session runs Roamgate's Claude mod.
+  const usage = usageSummary(data.usage);
   const resets = limit ? resetTime(limit) : "";
   const limitTitle = limit
     ? `${limit.message}${resets ? `\nResets ${resets} here.` : ""}`
@@ -182,11 +185,11 @@ export function ProfileChip({
         ref={chipRef}
         type="button"
         className={`terminal-pane-action profile-chip${label ? " is-labelled" : ""}${label && notDefault ? " is-other" : ""}`}
-        title={
+        title={`${data.model ? `Model: ${data.model}\n` : ""}${
           notDefault
             ? `Runs with the ${current} profile (${data.label ?? current}); default: ${data.default}${data.returns_at ? `. Back to ${data.returns_to} at ${new Date(data.returns_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`
             : `Runs with the ${current} profile`
-        }
+        }${usage ? `\n${usage}` : ""}`}
         aria-label={
           notDefault ? `Profile: ${current}` : "Run with another profile"
         }
@@ -201,7 +204,10 @@ export function ProfileChip({
             <ActionsMenu
               x={menu.x}
               y={menu.y}
-              header={{ title: "Profile", subtitle: `Now: ${current}` }}
+              header={{
+                title: "Profile",
+                subtitle: `Now: ${current}${usage ? ` · ${usage}` : ""}`,
+              }}
               onClose={() => setMenu(null)}
               groups={groups}
             />,

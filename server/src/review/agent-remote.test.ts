@@ -94,3 +94,9 @@ test("the forward rides the master's control socket", () => {
     ]),
   );
 });
+
+test("the host setup fits in one command argument, with room to grow", () => {
+  // ssh hands it to the host's shell as one argument: Linux refuses one
+  // past 128 KiB ("Argument list too long").
+  expect(Buffer.byteLength(remoteSetupScript())).toBeLessThan(96 * 1024);
+});

@@ -358,3 +358,89 @@ test("the turn a message starts is noted as the sending agent's", async () => {
   // Not the user's input.
   expect(causes.turn("desktop", "w6:p1").userAt).toBeNull();
 });
+
+test("a terminal Claude running Roamgate's mod gets it through the mod, busy or not", async () => {
+  jest.useFakeTimers();
+  try {
+    const { messenger, local } = setup();
+    const handed: { pane: string; text: string; kind?: string }[] = [];
+    let live = true;
+    local.runtime.claudeMod = {
+      deliver(paneId, text, kind) {
+        if (!live) return null;
+        handed.push({ pane: paneId, text, kind });
+        return { id: handed.length };
+      },
+    };
+    const result = await messenger.send({
+      from: fromLocal,
+      to: "local/w2:p1",
+      text: "when you are done",
+    });
+    expect(result.delivery).toBe("mod");
+    expect(handed.map((each) => [each.pane, each.kind])).toEqual([
+      ["w2:p1", "message"],
+    ]);
+    expect(local.typed).toEqual([]);
+    // Its mod gone: typed once idle, as before; it comes back meanwhile.
+    live = false;
+    const waiting = await messenger.send({
+      from: fromLocal,
+      to: "local/w2:p1",
+      text: "second",
+    });
+    expect(waiting.delivery).toBe("waiting");
+    live = true;
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(handed).toHaveLength(2);
+    expect(local.typed).toEqual([]);
+    expect(messenger.waitingFor("local/w2:p1")).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("the voice companion's work reaches a terminal session in any mode, as it is", async () => {
+  jest.useFakeTimers();
+  try {
+    const { messenger, local, desktop } = setup();
+    // Conversation mode: its queue, unframed.
+    await messenger.deliver("local/w1:p1", "run the tests");
+    expect(local.prompted).toEqual([{ pane: "w1:p1", text: "run the tests" }]);
+    // An idle terminal session: typed at once.
+    await messenger.deliver("desktop/w5:p1", "run the tests");
+    expect(desktop.typed).toEqual([{ pane: "w5:p1", text: "run the tests" }]);
+    // A busy one: nothing typed, never while it asks its user, then once idle.
+    await messenger.deliver("local/w2:p1", "when you are done");
+    expect(local.typed).toEqual([]);
+    expect(messenger.waitingFor("local/w2:p1")).toBe(1);
+    local.byPane.get("w2:p1")!.status = "blocked";
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(local.typed).toEqual([]);
+    local.byPane.get("w2:p1")!.status = "idle";
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(local.typed).toEqual([{ pane: "w2:p1", text: "when you are done" }]);
+    expect(messenger.waitingFor("local/w2:p1")).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("the voice companion's work goes through a live Claude mod, marked as its", async () => {
+  const { messenger, local } = setup();
+  const handed: { pane: string; text: string; kind?: string }[] = [];
+  local.runtime.claudeMod = {
+    deliver(paneId, text, kind) {
+      handed.push({ pane: paneId, text, kind });
+      return { id: handed.length };
+    },
+  };
+  await messenger.deliver("local/w2:p1", "run the tests");
+  expect(handed).toEqual([
+    { pane: "w2:p1", text: "run the tests", kind: "companion" },
+  ]);
+  expect(local.typed).toEqual([]);
+});

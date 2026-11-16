@@ -98,3 +98,41 @@ test("a conversation gets the message in its queue, a terminal has it typed", as
   });
   expect(prompted).toHaveLength(1);
 });
+
+test("a terminal Claude running Roamgate's mod: its status and delivery", async () => {
+  const { value, calls } = runtime();
+  const handed: string[] = [];
+  value.claudeMod = {
+    pane: (paneId) =>
+      paneId === "w1:p1"
+        ? {
+            connection_id: "desktop",
+            pane_id: "w1:p1",
+            session_id: "mod-session",
+            claude: "2.1.319",
+            protocol: 1,
+            // Herdr's screen says idle; the turn still runs.
+            status: "working",
+            waiting: 0,
+            held: 0,
+            since: "",
+            updated_at: "",
+          }
+        : null,
+    deliver: (_paneId, text) => {
+      handed.push(text);
+      return { id: 1 };
+    },
+  };
+  const connection = limitConnection(value);
+  expect((await connection.panes())[0]).toEqual({
+    paneId: "w1:p1",
+    sessionId: "mod-session",
+    owner: "terminal",
+    status: "working",
+  });
+  const [pane] = await connection.panes();
+  await connection.deliver(pane!, "Continue");
+  expect(handed).toEqual(["Continue"]);
+  expect(calls.some((each) => each.method === "agent.prompt")).toBe(false);
+});
