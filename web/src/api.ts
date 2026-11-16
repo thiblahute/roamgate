@@ -414,6 +414,19 @@ function parseMrReviewsPush(value: unknown): MrReviewsPush | null {
     by: push.by,
     ...(typeof push.summary === "string" ? { summary: push.summary } : {}),
     ...(typeof push.undo === "number" ? { undo: push.undo } : {}),
+    ...(push.effort &&
+    typeof push.effort === "object" &&
+    typeof (push.effort as { id?: unknown }).id === "string"
+      ? {
+          effort: {
+            id: (push.effort as { id: string }).id,
+            ...(typeof (push.effort as { journal?: unknown }).journal ===
+            "number"
+              ? { journal: (push.effort as { journal: number }).journal }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 

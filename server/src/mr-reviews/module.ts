@@ -27,6 +27,9 @@ import {
   requestOfBranch,
 } from "./upstream";
 import { renameOverrideKeys } from "./overrides";
+import { join } from "node:path";
+import { dataRoot } from "../config/data-paths";
+import { createEffortService, handleEffortRpc } from "./effort-service";
 import { emptyWorkspaceTree } from "../../../shared/workspaceTree";
 import {
   BOARD_DESCRIPTIONS,
@@ -72,6 +75,7 @@ const PUSHED_FIELDS: [keyof MrReviewsSettings, MrPushKind][] = [
   ["unsent", "unsent"],
   ["upstreamGroups", "upstream"],
   ["upstreamSkip", "upstream"],
+  ["efforts", "efforts"],
 ];
 
 export function createMrReviews(options: {
@@ -118,6 +122,8 @@ export function createMrReviews(options: {
   more?: MrReviewsRpcDeps["more"];
   /** Tells every page the order, pins or removals changed. */
   publish?: (push: MrReviewsPush) => void;
+  /** Where efforts' ledgers live (tests); else <data>/mr-reviews/efforts. */
+  effortsDir?: string;
 }) {
   const logger = serverLogger.child("mr-reviews");
   const store = options.store ?? openMrStore();
@@ -224,12 +230,16 @@ export function createMrReviews(options: {
     const rows: MrInboxEntry[] = [];
     const covered = new Map<
       string,
-      Pick<MrInboxEntry, "fromBranch" | "local">
+      Pick<MrInboxEntry, "fromBranch" | "local" | "effort">
     >();
     for (const branch of upstream.branches()) {
       const request = requestOfBranch(branch, items, ids);
       if (request) {
+        const effort = value.efforts.find(
+          (each) => each.group === branch.member.group,
+        );
         covered.set(request.key, {
+          ...(effort ? { effort: effort.name } : {}),
           fromBranch: branch.branch,
           ...(branch.dirty || branch.unpushed
             ? {
@@ -243,19 +253,50 @@ export function createMrReviews(options: {
         });
         continue;
       }
-      rows.push(branchEntry(branch, value, users.get(branch.host) ?? ""));
+      const effort = value.efforts.find(
+        (each) => each.group === branch.member.group,
+      );
+      // The effort's own source checkout is its card, not a row.
+      if (
+        effort &&
+        branch.member.path === effort.clone.path &&
+        effort.source.endsWith(`/${branch.branch}`)
+      )
+        continue;
+      rows.push({
+        ...branchEntry(branch, value, users.get(branch.host) ?? ""),
+        ...(effort ? { effort: effort.name } : {}),
+      });
     }
     return { rows, covered };
   }
+  const efforts = createEffortService({
+    root: options.effortsDir ?? join(dataRoot(), "mr-reviews", "efforts"),
+    settings: saved,
+    connections: options.connections ?? (() => []),
+    items: () => inbox.items(),
+    upstream,
+    ...(options.publish ? { publish: options.publish } : {}),
+    current: async () => {
+      const value = await saved();
+      return { version: value.orderVersion ?? 0, order: value.order };
+    },
+  });
   const inbox = createMrInbox({
     fetchers,
     settings,
     store,
     logger,
     upstream: upstreamRows,
-    onViewer: () => void upstream.refresh(),
+    efforts: (value) => efforts.summaries(value),
+    onViewer: () => {
+      void upstream.refresh().then(() => efforts.refresh());
+    },
     afterRefresh: (items) => {
-      void upstream.refresh().then(() => rekeyBranches());
+      void upstream
+        .refresh()
+        .then(() => rekeyBranches())
+        .then(() => efforts.refresh());
       void opener?.prefetch(items);
       void lifecycle();
       void curation.maybeRun(items);
@@ -486,6 +527,29 @@ export function createMrReviews(options: {
         throw new MrReviewsError("key is required");
       return params.key;
     };
+    if (
+      method.startsWith("bridge.mr_reviews.effort.") ||
+      method.startsWith("bridge.mr_reviews.ledger.")
+    ) {
+      const answer = await handleEffortRpc(
+        {
+          service: efforts,
+          settings: saved,
+          edit: editSettings,
+          save: saveSettings,
+          upstream,
+          groupLabel: async (group) => {
+            const node = (await options.tree?.read())?.nodes.find(
+              (each) => each.id === group,
+            );
+            return node?.kind === "group" ? node.label : null;
+          },
+        },
+        method,
+        params,
+      );
+      if (answer !== undefined) return answer;
+    }
     switch (method) {
       case "bridge.mr_reviews.agent.get":
         return reviewsAgent().snapshot();
@@ -783,6 +847,7 @@ export function createMrReviews(options: {
     boardTool,
     upstream,
     rekeyBranches,
+    efforts,
     opener,
     claude,
     curation,

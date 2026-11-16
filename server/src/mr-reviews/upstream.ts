@@ -408,6 +408,7 @@ export function createUpstreamScanner(options: {
 }) {
   const now = options.now ?? (() => Date.now());
   let branches: UpstreamBranch[] = [];
+  let lastMembers: UpstreamMember[] = [];
   let at = 0;
   let running: Promise<void> | null = null;
   /** Commits by `dir\0head\0target`. */
@@ -516,6 +517,7 @@ export function createUpstreamScanner(options: {
       }
     }
     const members = upstreamMembers(tree, settings, live, dirs);
+    lastMembers = members;
     const next: UpstreamBranch[] = [];
     for (const connection of connections) {
       const mine = members.filter(
@@ -598,6 +600,8 @@ export function createUpstreamScanner(options: {
   return {
     /** The branches as last read. */
     branches: () => branches,
+    /** The workspaces headed upstream as last read. */
+    members: () => lastMembers,
     /** The user's requests' patch ids read for linking, by key. */
     patchIds,
     /** Reads them again unless read within UPSTREAM_SCAN_MS (or forced). */

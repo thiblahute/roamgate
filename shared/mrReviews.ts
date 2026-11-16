@@ -377,6 +377,10 @@ export type MrInbox = {
   hidden: MrHiddenEntry[];
   /** The user's saved searches. */
   views?: MrSavedView[];
+  /** Upstreaming efforts' cards. */
+  efforts?: MrEffortSummary[];
+  /** The Workspaces-tree groups headed upstream. */
+  upstreamGroups?: string[];
 };
 
 export type MrVerdict = "not_interested" | "more_like_this";
@@ -454,6 +458,8 @@ export type MrReviewsSettings = {
   upstreamSkip: WorkspaceRef[];
   /** Branches said to be requests, not proposed yet (D25: "not sent"). */
   unsent: MrUnsent[];
+  /** Upstreaming efforts, each declared on a group headed upstream. */
+  efforts: MrEffort[];
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -480,6 +486,79 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   upstreamGroups: [],
   upstreamSkip: [],
   unsent: [],
+  efforts: [],
+};
+
+/**
+ * An upstreaming effort: a large branch (the source) followed commit by
+ * commit until all of it is upstream, declared on a group headed upstream.
+ */
+export type MrEffort = {
+  id: string;
+  /** The Workspaces-tree group node. */
+  group: string;
+  name: string;
+  /** The clone the source is read in. */
+  clone: { connectionId: string; path: string };
+  /** An exact ref: refs/remotes/<remote>/<branch> or refs/heads/<branch>. */
+  source: string;
+  /** The upstream project's branch. */
+  target: { remote: string; branch: string };
+  /** Exact refs whose commits land into the source. */
+  feeders: string[];
+  /** The head workspace (its Claude session leads the effort). */
+  head?: { connectionId: string; path: string; workspaceId?: string };
+};
+
+/** What happens to one commit of an effort. */
+export type MrDisposition =
+  | "upstream"
+  | "in_review"
+  | "in_part"
+  | "planned"
+  | "not_for_upstream"
+  | "superseded"
+  | "unsorted";
+
+export const MR_DISPOSITIONS: MrDisposition[] = [
+  "upstream",
+  "in_review",
+  "in_part",
+  "planned",
+  "not_for_upstream",
+  "superseded",
+  "unsorted",
+];
+
+/** An effort as the inbox shows it: its card. */
+export type MrEffortSummary = {
+  id: string;
+  name: string;
+  group: string;
+  source: string;
+  target: string;
+  total: number;
+  counts: Partial<Record<MrDisposition, number>>;
+  /** Feeders' commits not on the source yet. */
+  notReady: number;
+  /** When the ledger was last derived. */
+  at?: string;
+  /** Read problem (the clone is unreachable, a ref is gone). */
+  error?: string;
+  /** Other efforts or branches holding some of its commits. */
+  overlaps: MrOverlap[];
+  head?: { connectionId: string; workspaceId?: string; label?: string };
+};
+
+/** Commits two branches or efforts share (D23). */
+export type MrOverlap = {
+  with: string;
+  /** effort or branch key. */
+  kind: "effort" | "branch";
+  shared: number;
+  /** same: the same commits; contains: all of one is in the other. */
+  relation: "same" | "contains" | "contained" | "partial";
+  proposal: string;
 };
 
 /** A branch said to be a request before it is one. */
@@ -522,6 +601,8 @@ export type MrReviewsPush = {
   summary?: string;
   /** The version Undo takes back. */
   undo?: number;
+  /** An effort's ledger changed: which, and the bulk change Undo takes back. */
+  effort?: { id: string; journal?: number };
 };
 
 /**

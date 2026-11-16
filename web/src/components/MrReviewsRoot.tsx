@@ -23,7 +23,7 @@ function close(options: { keepFocus?: boolean } = {}) {
 }
 
 let renders = 0;
-function render(select?: string, open?: string, view?: "chat") {
+function render(select?: string, open?: string, view?: "chat" | "declare") {
   // A new key remounts it, so a request to open, or the chat, is taken
   // once.
   root?.render(
@@ -42,7 +42,11 @@ function render(select?: string, open?: string, view?: "chat") {
  * timeline is shown: loaded only when asked for; the bridge and the store
  * are module singletons.
  */
-export function showMrReviews(select?: string, open?: string, view?: "chat") {
+export function showMrReviews(
+  select?: string,
+  open?: string,
+  view?: "chat" | "declare",
+) {
   if (root) {
     render(select, open, view);
     return;

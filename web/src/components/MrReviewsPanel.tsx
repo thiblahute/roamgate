@@ -90,6 +90,7 @@ import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
 import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
+import { MrEffortCard, MrEffortDeclare, MrEffortView } from "./MrEffortView";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
@@ -1343,8 +1344,8 @@ export function MrReviewsPanel({
   initialOpen?: string;
   /** The request to show selected (from a review: the one shown). */
   initialSelect?: string;
-  /** The reviews agent's chat at once (a voice answer's card). */
-  initialView?: "chat";
+  /** The reviews agent's chat at once (a voice answer's card), or declaring an effort. */
+  initialView?: "chat" | "declare";
   /** Step (b) on: the buttons of a request's detail (Review...). */
   renderActions?: (entry: MrInboxEntry) => ReactNode;
   /** Opening a request (Enter without a workspace, a click): its review (else its detail). */
@@ -1352,7 +1353,9 @@ export function MrReviewsPanel({
 }) {
   const { mobile } = useLayoutPreferences();
   const { inbox, error, reload } = useMrInbox();
-  const [view, setView] = useState<View>(initialView ?? "list");
+  const [view, setView] = useState<View>(
+    initialView === "chat" ? "chat" : "list",
+  );
   // Kept in the browser: shown again as it was left, full or beside the page.
   const [maximized, setMaximizedState] = useState(() => {
     try {
@@ -2143,6 +2146,58 @@ export function MrReviewsPanel({
     );
   };
 
+  // Upstreaming efforts: their view, their declaration, their leader.
+  const [effortView, setEffortView] = useState<string | null>(null);
+  const [declaring, setDeclaring] = useState(initialView === "declare");
+  const [leaderAsk, setLeaderAsk] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const efforts = inbox?.efforts ?? [];
+  const openEffort = (id: string) => {
+    setDetail(null);
+    setDeclaring(false);
+    setEffortView(id);
+    if (!mobile) setMaximized(true);
+  };
+  const closeEffort = () => {
+    setEffortView(null);
+    setDeclaring(false);
+    panelRef.current?.focus({ preventScroll: true });
+  };
+  /** Its leader: the Claude session of its head workspace (D15, D18). */
+  const leader = async (id: string, start = false) => {
+    const effort = efforts.find((each) => each.id === id);
+    try {
+      const answer = await mrReviewsCall<{
+        state: "ready" | "none" | "busy" | "starting";
+        connectionId: string;
+        workspaceId: string;
+      }>("effort.leader", { id, ...(start ? { start: true } : {}) });
+      setLeaderAsk(null);
+      if (answer.state === "none") {
+        setLeaderAsk({ id, name: effort?.name ?? id });
+        return;
+      }
+      if (answer.state === "busy") {
+        say("Every pane of its head workspace runs something: open a free one");
+        return;
+      }
+      await store
+        .jumpToConnectionWorkspace(answer.connectionId, answer.workspaceId)
+        .catch(() => {});
+      onClose({ keepFocus: true });
+    } catch (cause) {
+      say(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  /** Says something where Undo shows, with Undo when it can be undone. */
+  const sayUndo = (label: string, run?: () => Promise<unknown>) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndo({ label, key: "", ...(run ? { run } : {}) });
+    undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+  };
+
   /** A count and the g of gg, as the review pane reads them. */
   const keyState = useRef(EMPTY_KEY_STATE);
 
@@ -2306,6 +2361,28 @@ export function MrReviewsPanel({
       }
       return;
     }
+    if (name === "effort" || name === "declare") {
+      const found = argument
+        ? efforts.find(
+            (each) =>
+              each.id === argument ||
+              each.name.toLowerCase() === argument.toLowerCase(),
+          )
+        : undefined;
+      if (found) openEffort(found.id);
+      else if (argument && name === "effort")
+        say(
+          efforts.length
+            ? `No effort named ${argument}: ${efforts.map((each) => each.name).join(", ")}`
+            : "No effort yet: :declare one",
+        );
+      else {
+        setEffortView(null);
+        setDetail(null);
+        setDeclaring(true);
+      }
+      return;
+    }
     if (name === "unsent") {
       if (!current) say("Select a branch first");
       else toggleUnsent(current, argument || undefined);
@@ -2342,6 +2419,15 @@ export function MrReviewsPanel({
 
   /** One key in the panel; true when the panel took it. */
   const onKey = (event: KeyboardEvent): boolean => {
+    // An effort's view, or the declaration, has its own keys.
+    if ((effortView || declaring) && view === "list") return false;
+    // An effort's card has the focus: Enter, i and c are its own.
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest(".mr-effort-card") &&
+      (event.key === "Enter" || event.key === "i" || event.key === "c")
+    )
+      return false;
     // Another handler may have marked it (a chat's Escape, say): the panel
     // still owns its keys while it has the focus.
     if (event.isComposing) return false;
@@ -2653,6 +2739,17 @@ export function MrReviewsPanel({
       ? `Updated ${relative(inbox.refreshedAt)}`
       : "Not read yet";
 
+  const toast = undo ? (
+    <div className="mr-reviews-undo" role="status">
+      <span>{undo.label}.</span>
+      {undo.run ? (
+        <button type="button" className="ghost" onClick={undoRemoval}>
+          Undo (u)
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <aside
       ref={panelRef}
@@ -2895,7 +2992,54 @@ export function MrReviewsPanel({
               Opening the review...
             </p>
           ) : null}
-          {detailEntry ? (
+          {leaderAsk ? (
+            <div
+              className="assistant-hint mr-effort-leader-ask"
+              role="alertdialog"
+            >
+              <p>
+                No Claude session runs in the head workspace of {leaderAsk.name}
+                . Start one there? It leads the effort: keeps the ledger,
+                proposes planned requests, asks you to decide.
+              </p>
+              <div className="assistant-task-buttons">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => void leader(leaderAsk.id, true)}
+                >
+                  Start it
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setLeaderAsk(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {declaring ? (
+            <MrEffortDeclare
+              groups={inbox?.upstreamGroups ?? []}
+              onCancel={closeEffort}
+              onDone={(id) => {
+                setDeclaring(false);
+                void reload().then(() => openEffort(id));
+              }}
+            />
+          ) : effortView ? (
+            <>
+              <MrEffortView
+                id={effortView}
+                onBack={closeEffort}
+                onLeader={() => void leader(effortView)}
+                say={sayUndo}
+              />
+              {toast}
+            </>
+          ) : detailEntry ? (
             <MrDetail
               entry={detailEntry}
               links={links[detailEntry.key]}
@@ -3257,6 +3401,32 @@ export function MrReviewsPanel({
                         : bySection[section].length}
                     </span>
                   </h3>
+                  {section === "authored" && efforts.length ? (
+                    <ul
+                      className="assistant-task-list mr-effort-cards"
+                      aria-label="Efforts"
+                    >
+                      {efforts
+                        .filter(
+                          (each) =>
+                            !query ||
+                            each.name
+                              .toLowerCase()
+                              .includes(query.toLowerCase()) ||
+                            query
+                              .toLowerCase()
+                              .includes(`effort:${each.name.toLowerCase()}`),
+                        )
+                        .map((each) => (
+                          <MrEffortCard
+                            key={each.id}
+                            summary={each}
+                            onOpen={() => openEffort(each.id)}
+                            onLeader={() => void leader(each.id)}
+                          />
+                        ))}
+                    </ul>
+                  ) : null}
                   {section === "authored" && lanesOn ? (
                     laneGroups.map((group) => (
                       <div
@@ -3368,20 +3538,7 @@ export function MrReviewsPanel({
                   reorder · / search · : command · dd remove · ? all keys
                 </p>
               ) : null}
-              {undo ? (
-                <div className="mr-reviews-undo" role="status">
-                  <span>{undo.label}.</span>
-                  {undo.run ? (
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={undoRemoval}
-                    >
-                      Undo (u)
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+              {toast}
             </>
           )}
         </div>

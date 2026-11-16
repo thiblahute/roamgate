@@ -69,6 +69,7 @@ const UNDO_LISTS = [
   "unsent",
   "upstreamGroups",
   "upstreamSkip",
+  "efforts",
 ] as const;
 const UNDO_LIST_KEY: {
   [field in (typeof UNDO_LISTS)[number]]: (
@@ -81,6 +82,7 @@ const UNDO_LIST_KEY: {
   unsent: (entry) => entry.key,
   upstreamGroups: (id) => id,
   upstreamSkip: (ref) => workspaceRefKey(ref),
+  efforts: (effort) => effort.id,
 };
 /** Records Undo restores key by key. */
 const UNDO_RECORDS = ["overrides"] as const;

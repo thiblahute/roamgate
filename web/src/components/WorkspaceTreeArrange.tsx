@@ -787,6 +787,16 @@ export function ArrangeNodeMenu({
         "Workspaces here hold work meant to go upstream: Reviews lists their branches until their request opens",
       action: () => void setGroupHeaded(node.id, !headed).catch(() => {}),
     });
+    if (headed)
+      items.push({
+        label: "Declare an upstreaming effort…",
+        title:
+          "Follow a large branch of this group commit by commit until it is all upstream",
+        action: () =>
+          void import("./MrReviewsRoot").then((module) =>
+            module.showMrReviews(undefined, undefined, "declare"),
+          ),
+      });
   }
   items.push({
     label: "Move into…",

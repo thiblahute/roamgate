@@ -36,7 +36,90 @@ export type StoredMrReviewsSettings = {
   upstream_groups?: string[];
   upstream_skip?: WorkspaceRef[];
   unsent?: MrUnsent[];
+  efforts?: StoredMrEffort[];
 };
+
+/** As settings.json keeps an effort. */
+export type StoredMrEffort = {
+  id: string;
+  group: string;
+  name: string;
+  clone: { connection_id: string; path: string };
+  source: string;
+  target: { remote: string; branch: string };
+  feeders?: string[];
+  head?: { connection_id: string; path: string; workspace_id?: string };
+};
+
+export const MAX_EFFORTS = 30;
+const REF_RE = /^refs\/(heads|remotes)\/[\w./-]{1,240}$/;
+const NAME_RE = /^[\w.-]{1,100}$/;
+
+export function normalizeEffort(raw: unknown): StoredMrEffort | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, any>;
+  const id =
+    typeof value.id === "string" && /^[\w-]{1,64}$/.test(value.id)
+      ? value.id
+      : "";
+  const group =
+    typeof value.group === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value.group)
+      ? value.group
+      : "";
+  const name =
+    typeof value.name === "string"
+      ? value.name.replace(/\s+/g, " ").trim().slice(0, 80)
+      : "";
+  const connection = String(value.clone?.connection_id ?? "");
+  const path = String(value.clone?.path ?? "");
+  const source = String(value.source ?? "");
+  const remote = String(value.target?.remote ?? "");
+  const branch = String(value.target?.branch ?? "");
+  if (
+    !id ||
+    !group ||
+    !name ||
+    !connection ||
+    !path.startsWith("/") ||
+    !REF_RE.test(source) ||
+    !NAME_RE.test(remote) ||
+    !/^[\w./-]{1,200}$/.test(branch)
+  )
+    return null;
+  const feeders = Array.isArray(value.feeders)
+    ? [
+        ...new Set(
+          value.feeders.filter(
+            (ref: unknown): ref is string =>
+              typeof ref === "string" && REF_RE.test(ref) && ref !== source,
+          ),
+        ),
+      ].slice(0, 20)
+    : [];
+  const head =
+    value.head &&
+    typeof value.head.connection_id === "string" &&
+    typeof value.head.path === "string" &&
+    value.head.path.startsWith("/")
+      ? {
+          connection_id: value.head.connection_id,
+          path: value.head.path,
+          ...(typeof value.head.workspace_id === "string"
+            ? { workspace_id: value.head.workspace_id }
+            : {}),
+        }
+      : undefined;
+  return {
+    id,
+    group,
+    name,
+    clone: { connection_id: connection, path },
+    source,
+    target: { remote, branch },
+    ...(feeders.length ? { feeders } : {}),
+    ...(head ? { head } : {}),
+  };
+}
 
 export const MAX_HOSTS = 10;
 export const MAX_FOLLOWED = 30;
@@ -296,6 +379,17 @@ export function normalizeStoredMrReviews(
       })
       .slice(0, MAX_UNSENT);
   }
+  if (Array.isArray(value.efforts)) {
+    const seen = new Set<string>();
+    out.efforts = value.efforts
+      .flatMap((raw) => {
+        const effort = normalizeEffort(raw);
+        if (!effort || seen.has(effort.id)) return [];
+        seen.add(effort.id);
+        return [effort];
+      })
+      .slice(0, MAX_EFFORTS);
+  }
   const stale = Number(value.stale_days);
   if (Number.isInteger(stale) && stale >= 1 && stale <= 3650)
     out.stale_days = stale;
@@ -365,6 +459,29 @@ export function mrReviewsSettings(
     upstreamGroups: stored?.upstream_groups ?? base.upstreamGroups,
     upstreamSkip: stored?.upstream_skip ?? base.upstreamSkip,
     unsent: stored?.unsent ?? base.unsent,
+    efforts: (stored?.efforts ?? []).map((effort) => ({
+      id: effort.id,
+      group: effort.group,
+      name: effort.name,
+      clone: {
+        connectionId: effort.clone.connection_id,
+        path: effort.clone.path,
+      },
+      source: effort.source,
+      target: effort.target,
+      feeders: effort.feeders ?? [],
+      ...(effort.head
+        ? {
+            head: {
+              connectionId: effort.head.connection_id,
+              path: effort.head.path,
+              ...(effort.head.workspace_id
+                ? { workspaceId: effort.head.workspace_id }
+                : {}),
+            },
+          }
+        : {}),
+    })),
   };
 }
 
@@ -409,6 +526,33 @@ export function storedMrReviews(
       ? { upstream_skip: settings.upstreamSkip }
       : {}),
     ...(settings.unsent.length ? { unsent: settings.unsent } : {}),
+    ...(settings.efforts.length
+      ? {
+          efforts: settings.efforts.map((effort) => ({
+            id: effort.id,
+            group: effort.group,
+            name: effort.name,
+            clone: {
+              connection_id: effort.clone.connectionId,
+              path: effort.clone.path,
+            },
+            source: effort.source,
+            target: effort.target,
+            ...(effort.feeders.length ? { feeders: effort.feeders } : {}),
+            ...(effort.head
+              ? {
+                  head: {
+                    connection_id: effort.head.connectionId,
+                    path: effort.head.path,
+                    ...(effort.head.workspaceId
+                      ? { workspace_id: effort.head.workspaceId }
+                      : {}),
+                  },
+                }
+              : {}),
+          })),
+        }
+      : {}),
     ...(settings.staleDays !== DEFAULT_MR_REVIEWS_SETTINGS.staleDays
       ? { stale_days: settings.staleDays }
       : {}),

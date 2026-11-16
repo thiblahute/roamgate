@@ -2,6 +2,7 @@ import type { ForgeRef } from "../../../shared/forge";
 import { forgeRefKey } from "../../../shared/forge";
 import type {
   MrCurationState,
+  MrEffortSummary,
   MrHiddenEntry,
   MrHostState,
   MrInbox,
@@ -116,8 +117,10 @@ export type MrInboxDeps = {
    */
   upstream?: (settings: MrReviewsSettings) => {
     rows: MrInboxEntry[];
-    covered: Map<string, Pick<MrInboxEntry, "fromBranch" | "local">>;
+    covered: Map<string, Pick<MrInboxEntry, "fromBranch" | "local" | "effort">>;
   };
+  /** The efforts' cards. */
+  efforts?: (settings: MrReviewsSettings) => MrEffortSummary[];
   /** Someone looks at the inbox: the branches may be read again. */
   onViewer?: () => void;
 };
@@ -761,6 +764,12 @@ export function createMrInbox(deps: MrInboxDeps) {
         ...(settings.order.length ? { order: settings.order } : {}),
         orderVersion: settings.orderVersion ?? 0,
         ...(settings.views.length ? { views: settings.views } : {}),
+        ...(settings.upstreamGroups.length
+          ? { upstreamGroups: settings.upstreamGroups }
+          : {}),
+        ...(settings.efforts.length && deps.efforts
+          ? { efforts: deps.efforts(settings) }
+          : {}),
       };
     },
     refresh,
