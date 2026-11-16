@@ -427,6 +427,16 @@
   background: var(--input-bg);
 }
 
+/* Review only's way back and way out: touch targets on a touch screen. */
+@media (pointer: coarse) {
+  .diff-review-only-exit {
+    height: auto;
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 14px;
+  }
+}
+
 body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   visibility: hidden;
 }

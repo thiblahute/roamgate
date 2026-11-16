@@ -4132,8 +4132,8 @@ function DiffContentViewInner({
       case "zR":
         return expandAroundCursor("file", 1);
       case "T":
-        if (listedThreads.length) setThreadsOpen((open) => !open);
-        else say("No comments yet.");
+        // The review's list, with none too (it says so), as the pane's.
+        setThreadsOpen((open) => !open);
         return true;
       case "t":
         setHideComments((hidden) => !hidden);

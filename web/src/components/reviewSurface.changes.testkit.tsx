@@ -138,7 +138,7 @@ export async function mountChangesReview(
   const restoreGlobals = installPierreGlobals();
   // The bridge the classic pane's tests hold: the checkout's worktree
   // review, its reviewed marks written by review.update.
-  const { backend, mockClassicBackend } = await import(
+  const { backend, mockClassicBackend, setUpScreen } = await import(
     "./reviewSurface.classic.testkit"
   );
   mockClassicBackend();
@@ -183,6 +183,18 @@ export async function mountChangesReview(
   const { changesFrameClass, changesFrameCommands, useChangesTreeHidden } =
     await import("./changesFrame");
   const { useZenEscape, useZenMode } = await import("../useZenMode");
+  const { ReviewOnlyEnd } = await import("./changesFrame");
+  const { useSystemBack } = await import("../systemBack");
+  const { workspaceInspectorLayout } = await import(
+    "./workspaceInspectorLayout"
+  );
+  // The screen: a touch screen, the phone's layout and Back, the
+  // stylesheets of the inspector and of Changes' diff.
+  // (Its lines' layout is this kit's own: no viewport there.)
+  const screen = await setUpScreen({ ...options, viewport: undefined }, [
+    "./WorkspaceInspectorHost.css",
+    "./DiffContentView.css",
+  ]);
   // The browser storage it opens with, as the classic kit's.
   if (options.storage !== "keep") {
     localStorage.clear();
@@ -512,11 +524,18 @@ export async function mountChangesReview(
     const [treeHidden, toggleTree] = useChangesTreeHidden();
     const [only, toggleOnly] = useZenMode();
     useZenEscape(only, toggleOnly);
+    // The phone's last Back: App closes the inspector's view (the review
+    // put away, kept), as for every view of the inspector.
+    useSystemBack(
+      !!options.phone && !putAway.hidden,
+      () => record("close")("back"),
+      "panel",
+    );
     frame.only = only;
     frame.commands = [
       ...changesFrameCommands({
-        // A phone's inspector is compact: its tree is a drill-down.
-        toggleTree: options.phone ? null : toggleTree,
+        // A compact inspector's tree is a drill-down: not hidden beside.
+        toggleTree: compact ? null : toggleTree,
         only,
         toggleOnly,
       }),
@@ -553,16 +572,30 @@ export async function mountChangesReview(
         >
           <div
             className={`workspace-inspector-resource inspector-changes-resource ${changesFrameClass(
-              { treeHidden: treeHidden && !options.phone, only },
-            )}`}
+              { treeHidden: treeHidden && !compact, only },
+            )} ${compact ? "is-compact" : ""}`}
           >
             <div className="workspace-inspector-navigation" />
             <div className="workspace-inspector-detail">
               {isValidElement(children)
                 ? cloneElement(
-                    children as ReactElement<{ reviewOnly?: boolean }>,
+                    children as ReactElement<{
+                      reviewOnly?: boolean;
+                      headEnd?: ReactNode;
+                    }>,
                     {
                       reviewOnly: only,
+                      // Review only's end of the head, as the host gives it.
+                      ...(only
+                        ? {
+                            headEnd: (
+                              <ReviewOnlyEnd
+                                onShowAll={toggleOnly}
+                                onCloseReview={() => record("close")("command")}
+                              />
+                            ),
+                          }
+                        : {}),
                     },
                   )
                 : children}
@@ -608,6 +641,12 @@ export async function mountChangesReview(
    * focused and its keys held there a moment (App's holdFocus), the hold
    * dropped as it goes away.
    */
+  /**
+   * The inspector expanded over the window: compact below the host's
+   * width (its tree a drill-down; on a phone too).
+   */
+  const compact =
+    !!options.phone || workspaceInspectorLayout(options.width ?? 1024).compact;
   const putAway = {
     hidden: options.hidden ?? false,
     stopHold: null as (() => void) | null,
@@ -641,6 +680,7 @@ export async function mountChangesReview(
 
   const host = document.createElement("div");
   document.body.append(host);
+  screen.attach(host);
   let root = createRoot(host);
   const client = {
     connectionId,
@@ -805,6 +845,8 @@ export async function mountChangesReview(
                 : {}),
               ...(options.agentPanes ? { agentPanes: options.agentPanes } : {}),
               showFileSelector: false,
+              // The phone: Changes compact, as the inspector draws it there.
+              ...(options.phone ? { mobile: true } : {}),
               // The checkout's git actions, as the host runs them.
               onGitAction: (action: string, path: string) => {
                 record("gitAction")(action, path);
@@ -1574,6 +1616,31 @@ export async function mountChangesReview(
       await render();
       layOutScroller();
     },
+    async systemBack() {
+      await screen.back(act);
+      await settleAll();
+    },
+    control(label) {
+      const element = [
+        ...host.querySelectorAll<HTMLElement>("button, [role='button']"),
+      ].find(
+        (each) =>
+          each.getAttribute("aria-label") === label ||
+          each.title === label ||
+          // A title naming its keys: "Close (Esc, :q)".
+          each.title.startsWith(`${label} (`) ||
+          each.textContent === label,
+      );
+      if (!element) return null;
+      const style = getComputedStyle(element);
+      return {
+        minHeight: Number.parseFloat(style.minHeight) || 0,
+        // In place while the lines scroll: sticky, or outside their scroller.
+        sticky:
+          style.position === "sticky" ||
+          !(scroller()?.contains(element) ?? false),
+      };
+    },
     async setHidden(value) {
       putAway.hidden = value;
       if (value) {
@@ -1594,6 +1661,7 @@ export async function mountChangesReview(
       putAway.stopHold?.();
       await act(async () => root.unmount());
       host.remove();
+      screen.restore();
       restoreLayout();
       getSpy.mockRestore();
       notifySpy.mockRestore();
@@ -1896,8 +1964,13 @@ export async function mountChangesReview(
 
     // The inspector's frame around Changes.
     filesShown() {
+      // Beside the diff: not hidden, and not a compact inspector's drill-down.
       const resource = host.querySelector(".inspector-changes-resource");
-      return !!resource && !resource.classList.contains("files-tree-hidden");
+      return (
+        !!resource &&
+        !resource.classList.contains("files-tree-hidden") &&
+        !resource.classList.contains("is-compact")
+      );
     },
     diffOnly() {
       return !!host
