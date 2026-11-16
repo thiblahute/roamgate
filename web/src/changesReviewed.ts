@@ -114,12 +114,23 @@ export function reviewedLayout(model: DiffCursorModel): ChangesReviewedLayout {
   return { files, chunks, units };
 }
 
+/**
+ * The view a review's marks are kept in: the commit shown (its sha, as the
+ * review pane kept them), else all the changes (`all`). A commit's message
+ * and its files are that commit's: marked in one commit, the others keep
+ * their own marks.
+ */
+export function changesReviewView(commit: string | null | undefined): string {
+  return commit || CHANGES_REVIEW_VIEW;
+}
+
 /** The reviewed files and chunks of Changes' rows, from the review's marks. */
 export function changesReviewed(
   layout: ChangesReviewedLayout,
   marks: Readonly<Record<string, string>>,
+  view: string = CHANGES_REVIEW_VIEW,
 ): ReviewedState {
-  return reviewedState(layout.files, CHANGES_REVIEW_VIEW, marks);
+  return reviewedState(layout.files, view, marks);
 }
 
 /** "3/7": a path's chunks reviewed, or null for a path with none. */

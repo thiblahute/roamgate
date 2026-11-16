@@ -21,7 +21,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  const { installReviewDom, file, hunk, numbered } = await import(
+  const { installReviewDom, file, hunk, numbered, thread } = await import(
     "./reviewSurface.testkit"
   );
   await installReviewDom();
@@ -78,6 +78,137 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         // And after a reload.
         await review.reload();
         expect(review.fileReviewed("b.ts")).toBe(true);
+        await review.unmount();
+      });
+
+      test("a commit's message marked reviewed is that commit's only; its thread shows on that commit only", async () => {
+        const a = added("a.ts", 1);
+        const b = added("b.ts", 1);
+        const c = added("c.ts", 1);
+        const second = "b".repeat(40);
+        const review = await mount({
+          files: [a, b, c],
+          commits: [
+            { sha: "a".repeat(40), subject: "First", files: [a] },
+            { sha: second, subject: "Second", files: [b] },
+            { sha: "c".repeat(40), subject: "Third", files: [c] },
+          ],
+          threads: [
+            {
+              ...thread("t2", ":commit-message", 1, "Say why"),
+              anchor: {
+                path: ":commit-message",
+                line: 1,
+                side: "new",
+                commit: second,
+                commitSubject: "Second",
+              },
+            } as ReturnType<typeof thread>,
+          ],
+        });
+        const message = ":commit-message";
+        expect(review.view()).toBe("1/3 aaaaaaaa First");
+        expect(review.commentTexts().join("\n")).not.toContain("Say why");
+        await review.press(">");
+        expect(review.view()).toBe("2/3 bbbbbbbb Second");
+        expect(review.commentTexts().join("\n")).toContain("Say why");
+        // The message, marked reviewed whole.
+        await review.press("gg");
+        expect(review.cursorLine()?.path).toBe(message);
+        await review.press("<A-v>");
+        expect(review.fileReviewed(message)).toBe(true);
+        expect(review.fileReviewed("b.ts")).toBe(false);
+        expect(review.text()).toContain("1/2 reviewed");
+        // Kept as the commit's: the view's key is its sha, as the review
+        // pane kept it.
+        expect(review.reviewedMarks()[`${second}:${message}`]).toBeTruthy();
+        // The other commits' messages are not reviewed.
+        await review.press("<");
+        expect(review.view()).toBe("1/3 aaaaaaaa First");
+        expect(review.fileReviewed(message)).toBe(false);
+        expect(review.text()).toContain("0/2 reviewed");
+        expect(review.commentTexts().join("\n")).not.toContain("Say why");
+        await review.press(">");
+        await review.press(">");
+        expect(review.view()).toBe("3/3 cccccccc Third");
+        expect(review.fileReviewed(message)).toBe(false);
+        expect(review.text()).toContain("0/2 reviewed");
+        // Still the second's, after a reload too.
+        await review.press("<");
+        expect(review.fileReviewed(message)).toBe(true);
+        await review.reload();
+        expect(review.view()).toBe("2/3 bbbbbbbb Second");
+        expect(review.fileReviewed(message)).toBe(true);
+        await review.press("<");
+        expect(review.fileReviewed(message)).toBe(false);
+        await review.unmount();
+      });
+
+      test("a commit's message chunk marked with r is that commit's only", async () => {
+        const a = added("a.ts", 1);
+        const b = added("b.ts", 1);
+        const c = added("c.ts", 1);
+        const review = await mount({
+          files: [a, b, c],
+          commits: [
+            { sha: "a".repeat(40), subject: "First", files: [a] },
+            { sha: "b".repeat(40), subject: "Second", files: [b] },
+            { sha: "c".repeat(40), subject: "Third", files: [c] },
+          ],
+        });
+        const message = ":commit-message";
+        await review.press(">");
+        await review.press("gg");
+        expect(review.cursorLine()?.path).toBe(message);
+        await review.press("r");
+        expect(review.fileReviewed(message)).toBe(true);
+        await review.press("<");
+        expect(review.fileReviewed(message)).toBe(false);
+        await review.press(">");
+        await review.press(">");
+        expect(review.view()).toBe("3/3 cccccccc Third");
+        expect(review.fileReviewed(message)).toBe(false);
+        // A comment on its message is anchored on that commit, and shows
+        // on it only.
+        await review.press("gg");
+        expect(review.cursorLine()?.path).toBe(message);
+        await review.press("c");
+        await review.type("Why?");
+        await review.editorPress("<C-Enter>");
+        expect(review.calls("review.thread.add")[0]?.params).toMatchObject({
+          anchor: { path: message, line: 1, commit: "c".repeat(40) },
+        });
+        expect(review.commentTexts().join("\n")).toContain("Why?");
+        await review.press("<");
+        expect(review.view()).toBe("2/3 bbbbbbbb Second");
+        expect(review.commentTexts().join("\n")).not.toContain("Why?");
+        await review.unmount();
+      });
+
+      test("a file marked reviewed in one commit stays so when its path is marked in another", async () => {
+        const first = file("a.ts", hunk(1, 1, ["+a one"]));
+        const third = file("a.ts", hunk(5, 5, ["+a five"]));
+        const review = await mount({
+          files: [
+            file("a.ts", hunk(1, 1, ["+a one"]), hunk(5, 6, ["+a five"])),
+          ],
+          commits: [
+            { sha: "a".repeat(40), subject: "First", files: [first] },
+            { sha: "c".repeat(40), subject: "Third", files: [third] },
+          ],
+        });
+        await review.goToFile("a.ts");
+        await review.press("<A-v>");
+        expect(review.fileReviewed("a.ts")).toBe(true);
+        await review.press(">");
+        expect(review.view()).toBe("2/2 cccccccc Third");
+        expect(review.fileReviewed("a.ts")).toBe(false);
+        await review.goToFile("a.ts");
+        await review.press("<A-v>");
+        expect(review.fileReviewed("a.ts")).toBe(true);
+        await review.press("<");
+        expect(review.view()).toBe("1/2 aaaaaaaa First");
+        expect(review.fileReviewed("a.ts")).toBe(true);
         await review.unmount();
       });
     });

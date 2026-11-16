@@ -441,6 +441,10 @@ type HunkLines = { lines: readonly { kind: string; text: string }[] };
  * and added lines, not of its place nor its context. A hunk keeps its mark
  * when a rebase or a change elsewhere moves it, and loses it when its own
  * lines change. A second hunk of the file with the same lines gets `~2`.
+ *
+ * A hunk with no changed line (a commit's message, all context) is its
+ * lines instead, `c<count>.<hash>`: hashing none of them gave every commit's
+ * message one id (`h0.`), so one marked reviewed marked them all.
  */
 export function hunkIds(path: string, hunks: readonly HunkLines[]): string[] {
   const seen = new Map<string, number>();
@@ -457,7 +461,10 @@ export function hunkIds(path: string, hunks: readonly HunkLines[]): string[] {
       changed++;
       feed(`${line.kind}${line.text}\n`);
     }
-    const id = `h${changed}.${(hash >>> 0).toString(36)}`;
+    if (!changed) for (const line of hunk.lines) feed(`${line.text}\n`);
+    const id = changed
+      ? `h${changed}.${(hash >>> 0).toString(36)}`
+      : `c${hunk.lines.length}.${(hash >>> 0).toString(36)}`;
     const count = (seen.get(id) ?? 0) + 1;
     seen.set(id, count);
     return count === 1 ? id : `${id}~${count}`;

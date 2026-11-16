@@ -155,7 +155,7 @@ import {
   otherReviewFiles,
 } from "../reviewFiles";
 import {
-  CHANGES_REVIEW_VIEW,
+  changesReviewView,
   type ChunkSpan,
   changesReviewed,
   chunkSpans,
@@ -2810,9 +2810,11 @@ function DiffContentViewInner({
   );
   const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
   const ownReviewId = changesAgent.snapshot?.session.id;
+  // The commit shown keeps its own marks (its sha), as the review pane did.
+  const reviewView = changesReviewView(viewCommit);
   const reviewState = useMemo(
-    () => changesReviewed(reviewLayout, reviewedMarks),
-    [reviewLayout, reviewedMarks],
+    () => changesReviewed(reviewLayout, reviewedMarks, reviewView),
+    [reviewLayout, reviewedMarks, reviewView],
   );
   /**
    * The review's files with no change (D16): commented on or ticked in
@@ -3716,7 +3718,7 @@ function DiffContentViewInner({
         )
       : null;
     writeMarks(
-      fileToggleChanges(info, marking, CHANGES_REVIEW_VIEW, reviewedMarks),
+      fileToggleChanges(info, marking, reviewView, reviewedMarks),
       () =>
         fileToggleNotice(marking, reviewedFileCount, reviewLayout.files.length),
     );
@@ -3741,7 +3743,7 @@ function DiffContentViewInner({
       picked,
       reviewLayout.files,
       reviewState.hunks,
-      CHANGES_REVIEW_VIEW,
+      reviewView,
       reviewedMarks,
     );
     const isPicked = (file: number, hunk: number) =>
