@@ -132,18 +132,18 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       const button = app.tabBarReview()!;
       expect(button).not.toBeNull();
-      expect(button.getAttribute("aria-expanded")).toBe("false");
+      expect(button.hasAttribute("aria-expanded")).toBe(false);
       expect(button.title).toStartWith("Review this branch");
       app.setNextOpened("r1");
       await app.click(button);
       await app.settle(50);
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       // Changes is the review: the button says nothing of it.
-      expect(app.tabBarReview()!.getAttribute("aria-expanded")).toBe("false");
+      expect(app.tabBarReview()!.hasAttribute("aria-expanded")).toBe(false);
       expect(app.tabBarReview()!.title).toStartWith("Review this branch");
       await app.click(app.tabBarReview()!);
       expect(app.inspector()?.open).toBe(false);
-      expect(app.tabBarReview()!.getAttribute("aria-expanded")).toBe("false");
+      expect(app.tabBarReview()!.hasAttribute("aria-expanded")).toBe(false);
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();

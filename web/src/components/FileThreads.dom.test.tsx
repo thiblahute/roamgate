@@ -1121,4 +1121,54 @@ if (process.env.ROAMGATE_FILE_THREADS_DOM_TEST !== "1") {
       host.remove();
     }
   });
+
+  // Ported from reviewStops.dom.test.ts (the review pane's comment stops,
+  // retired with it): a forge discussion's messages are stops as they are.
+  test("a forge discussion's message is one stop, never cut in parts as yours are", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { MrThreadCard } = await import("./MrThreadCard");
+    const forge = {
+      ...thread("m1", 3, false),
+      kind: "merge-request",
+      comments: [
+        {
+          ...comment("m1c", "First paragraph.\n\nSecond paragraph."),
+          author: "reviewer",
+        },
+        { ...comment("m1d", "An answer."), author: "you" },
+      ],
+    } as unknown as import("../../../shared/review").ReviewThread;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <MrThreadCard
+            thread={forge}
+            forge="GitLab"
+            onDraftReply={() => {}}
+            onEditReply={() => {}}
+            onDeleteReply={() => {}}
+          />,
+        ),
+      );
+      expect(host.textContent).toContain("Second paragraph.");
+      expect(
+        [...host.querySelectorAll<HTMLElement>("[data-chat-stop^='m:']")].map(
+          (stop) => stop.dataset.chatStop,
+        ),
+      ).toEqual(["m:m1c", "m:m1d"]);
+      // Its parts are drawn, but none is a stop: fileStops takes a part
+      // only inside a message of yours (.chat-thread-body).
+      expect(host.querySelectorAll("[data-part]").length).toBeGreaterThan(1);
+      expect(
+        host.querySelectorAll(".chat-thread-body [data-part]"),
+      ).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
 }
