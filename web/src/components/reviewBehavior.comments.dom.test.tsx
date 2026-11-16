@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   const code = () =>
     file("a.ts", hunk(1, 1, [" one", "-two", "+deux", "+trois", " four"]));
@@ -63,7 +63,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   /** An agent the comments go to as they are written. */
   const agent = { agent: { name: "Claude", paneId: "p1" } };
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("editor"))
     describe(name, () => {
       test("c, Enter, i and a open an editor on the cursor line; saved, it is a comment on that line", async () => {
         const review = await mount({ files: [code()] });

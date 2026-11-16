@@ -1,4 +1,5 @@
 import type { ReviewAnchor, ReviewThreadKind } from "../../shared/review";
+import { HELD_FOR_SEND } from "./workspaceFeedback";
 
 /*
  * Saving what is written in a review. The editor closes as you save, before
@@ -207,4 +208,44 @@ export function editorSave(input: {
           ? "add"
           : "none",
   };
+}
+
+/**
+ * What an empty editor says it writes, by what it is and where it goes:
+ * the review pane's words, in the review pane and in Changes alike.
+ */
+export function editorPlaceholder(
+  editor: Pick<
+    ReviewEditor,
+    "overall" | "replyTo" | "publicReply" | "kind" | "commentId"
+  >,
+  delivery: {
+    /** The review's agent has a name: the overall comment goes to it. */
+    agentNamed: boolean;
+    agentName: string;
+    talk: boolean;
+    gitlab: boolean;
+    holdForSend: boolean;
+    /** The forge a public reply is published on. */
+    forge?: string;
+  },
+): string {
+  const { agentName, talk } = delivery;
+  if (editor.overall)
+    return !delivery.agentNamed
+      ? "Your overall comment on the review (Cmd+Enter saves, Esc closes)"
+      : talk && !delivery.gitlab
+        ? `Your overall comment, for ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
+        : `Your overall comment, for ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`;
+  if (editor.replyTo)
+    return editor.publicReply
+      ? `Your draft reply, published with your review when you submit it on ${delivery.forge ?? "GitLab"} (Cmd+Enter saves, Esc closes)`
+      : "Your reply (Cmd+Enter saves, Esc closes)";
+  if (editor.kind === "discussion")
+    return talk
+      ? `For ${agentName}: sent as you save (Cmd+Enter saves, Esc closes)`
+      : delivery.holdForSend && !editor.commentId
+        ? `${HELD_FOR_SEND} (Cmd+Enter saves, Esc closes)`
+        : `For ${agentName}: sent when you press Send (Cmd+Enter saves, Esc closes)`;
+  return "Your comment on this line (Cmd+Enter saves, Esc closes)";
 }

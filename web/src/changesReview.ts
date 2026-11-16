@@ -65,8 +65,17 @@ export type ChangesAgent = {
    * opening the checkout's review for the first mark as a comment does.
    */
   markReviewed: (changes: Record<string, string | null>) => Promise<void>;
-  /** Saves the overall comment, sent to the agent as it is saved when live. */
-  saveOverall: (text: string) => Promise<void>;
+  /**
+   * A file of the checkout as it reads now (the review's `review.file`),
+   * for the lines Changes reveals around a hunk.
+   */
+  readFile: (path: string) => Promise<string>;
+  /**
+   * Saves the overall comment; `send` hands the review to the agent with
+   * it (unset: when comments go to the agent as written). Throws when it
+   * was not saved.
+   */
+  saveOverall: (text: string, send?: boolean) => Promise<void>;
   summary: string;
 };
 
@@ -106,6 +115,18 @@ export function useChangesAgent(
     },
     [connectionId, sessionId],
   );
+  /** The checkout's review, opened for a first write as a comment opens it. */
+  const opened = async (): Promise<string> => {
+    if (sessionId) return sessionId;
+    if (!workspaceId || !root) throw new Error("no checkout to review");
+    const made = await reviewCall<ReviewSnapshot>(connectionId, "review.open", {
+      workspace_id: workspaceId,
+      path: root,
+      target: { kind: "worktree" },
+    });
+    rememberReviewSnapshot(made);
+    return made.session.id;
+  };
   const threads: readonly ReviewThread[] = snapshot?.threads ?? [];
   const session = snapshot?.session;
   const name = agent?.agentName ?? "Agent";
@@ -167,21 +188,7 @@ export function useChangesAgent(
     },
     markReviewed: async (changes) => {
       if (!Object.keys(changes).length) return;
-      let id = sessionId;
-      if (!id) {
-        if (!workspaceId || !root) throw new Error("no checkout to review");
-        const opened = await reviewCall<ReviewSnapshot>(
-          connectionId,
-          "review.open",
-          {
-            workspace_id: workspaceId,
-            path: root,
-            target: { kind: "worktree" },
-          },
-        );
-        rememberReviewSnapshot(opened);
-        id = opened.session.id;
-      }
+      const id = await opened();
       rememberReviewSnapshot(
         await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
           session_id: id,
@@ -189,20 +196,33 @@ export function useChangesAgent(
         }),
       );
     },
-    saveOverall: async (text) => {
-      if (!sessionId) return;
+    readFile: async (path) => {
+      const id = await opened();
+      const { text } = await reviewCall<{ text: string }>(
+        connectionId,
+        "review.file",
+        { session_id: id, path, rev: "" },
+      );
+      return text;
+    },
+    saveOverall: async (text, send) => {
+      const sends = send ?? (!!agent?.talk && !agent.held && !!text.trim());
+      // Left as it was, and nothing to send: nothing to write.
+      if (!sends && text === (session?.summary ?? "")) return;
       const error = await saveOrKeep(
         async () => {
-          rememberReviewSnapshot(
-            await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
-              session_id: sessionId,
-              summary: text,
-            }),
-          );
-          if (agent?.talk && !agent.held && text.trim())
+          const id = await opened();
+          if (text !== (session?.summary ?? ""))
+            rememberReviewSnapshot(
+              await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
+                session_id: id,
+                summary: text,
+              }),
+            );
+          if (sends)
             rememberReviewSnapshot(
               await reviewCall<ReviewSnapshot>(connectionId, "review.handoff", {
-                session_id: sessionId,
+                session_id: id,
               }),
             );
         },
@@ -211,7 +231,7 @@ export function useChangesAgent(
       setStatus(
         error
           ? notSavedStatus(error)
-          : agent?.talk && !agent.held
+          : sends
             ? handoffStatus(name, null, openDiscussions(), true)
             : "Overall comment saved.",
       );

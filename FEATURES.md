@@ -191,13 +191,29 @@ Inspector button, shortcuts, or workspace/agent menus.
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc
   keeps what you wrote as a draft that comes back, a key or two is a stray
   and is not sent, an image pasted in is stored with the review, `s` or
-  `:suggest` starts a suggestion with the line as it reads). On a line with an
-  open discussion `c` answers it; `C` asks anew. `gn` / `gN` go to the next /
+  `:suggest` starts a suggestion with the line as it reads, a GitLab
+  suggestion as the review pane writes it; on a removed line it says
+  suggestions are for the new version). The editor says where the comment
+  goes, as the review pane's: a review comment, for the agent as you save, or
+  held until Send; a review comment (no agent the comments go to) is saved by
+  Esc too. On a line with an open discussion `c` answers it; on your review
+  comment there `c` rewrites it; `C` asks the agent anew, and `:ask` answers
+  where the line is discussed, else asks. With no agent to ask, the question
+  is held for Send in the workspace's threads, and drawn on its line saying
+  so. `gn` / `gN` go to the next /
   previous unresolved thread through every file (`n` / `N`, with no search
   going, go thread to thread), `gH` shows only the unresolved ones, `g;` the
   comment written last, `za` folds the thread on the line, `r` resolves or
-  reopens it, `e` rewrites your last comment on the line, `dd` deletes a lone
-  comment of yours, `T` lists the comments, `t` hides them all. `j` / `k` step into the messages drawn under a line, and the parts of a
+  reopens it, `e` rewrites the message selected if it is yours, else your
+  last comment on the line, else your latest anywhere (the cursor goes
+  there), `dd` deletes your comment on the line (not the agent's), `T` lists
+  the comments, `t` hides them all. Words selected in a message offer
+  **Comment**, a discussion quoting them, and a comment on a part of a message
+  is written in the review's editor too. A comment on a file and no line is
+  drawn at the file's head, above its lines. The review's overall comment is
+  above the diff, as in the review pane: **Overall comment** in the head (or
+  the agent group's **Overall**, `:overall`) opens it in the review's editor,
+  Esc keeps it as written; once written it shows with Edit and Delete. `j` / `k` step into the messages drawn under a line, and the parts of a
   message, before going on to the next line (`k` up onto a line lands on its
   last message); `n` / `N` go message to message, `gl` to the thread's last
   message, `c` on a message answers it (on a part, comments on that part),
@@ -231,6 +247,19 @@ Inspector button, shortcuts, or workspace/agent menus.
   their margin while the comments are hidden; a click on one shows them, and
   so do the agent's new answers and a comment you write. `T` lists the
   comments, open ones first, the latest written first.
+- Changes then shows more of the code around the changes, as the review pane:
+  between the hunks and at the file's ends a line says how many lines are
+  hidden, with **↓ 20**, **Show all** and **↑ 20** (the end of the file
+  reads **more lines** and **Show the rest** until the file is read). `zo` or
+  `x` shows 20 more lines on both sides of the hunk at the cursor (a count
+  asks for that many times 20), `zO` or `X` every hidden line around it,
+  `zR` the whole file; the cursor stays on its line. A thread on unchanged
+  code the diff hides opens the hunk nearer to it, three lines past it, so it
+  is read on its line. The lines come from the checkout's file; a file that
+  reads otherwise there (other changes in it not shown) says so and shows no
+  more.
+- A reviewed file folded to its header opens again when it is picked in the
+  tree, the cursor on its first line.
 - On the working changes, `gs` stages the file at the cursor, and `:stage`,
   `:unstage`, `:discard` and `:delete` act on the file at the cursor or the
   files `V` selected, with the same confirmations as the tree's menus (a

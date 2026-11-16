@@ -26,13 +26,13 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   const code = () =>
     file("a.ts", hunk(1, 1, [" one", "-two", "+deux", "+trois", " four"]));
   const block = "```suggestion:-0+0\ndeux\n```\n";
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("editor"))
     describe(name, () => {
       test("a suggestion left as the line reads saves as nothing; with words or a change it saves as written", async () => {
         const review = await mount({ files: [code()] });

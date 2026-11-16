@@ -1,12 +1,11 @@
-import { useState } from "react";
 import type { ChangesAgent } from "../changesReview";
-import { ThreadEditor } from "./ThreadEditor";
 
 /**
  * The review's agent group in Changes (plan: review into the inspector,
  * phase 4), for the checkout's review: Comments go to the agent (Live),
- * Hold, Send, Agent review and the overall comment. Shown once the review
- * has an agent to talk to.
+ * Hold, Send, Agent review and the overall comment (its editor is the
+ * review's, drawn above the diff). Shown once the review has an agent to
+ * talk to.
  */
 export function ChangesAgentBar({
   agent,
@@ -17,7 +16,6 @@ export function ChangesAgentBar({
   overallOpen: boolean;
   onOverall: (open: boolean) => void;
 }) {
-  const [busy, setBusy] = useState(false);
   if (!agent.agentName) return null;
   const name = agent.agentName;
   const mode = agent.talk ? (agent.held ? "holding" : "live") : "manual";
@@ -91,31 +89,6 @@ export function ChangesAgentBar({
         <span className="diff-agent-status" role="status" aria-live="polite">
           {agent.status}
         </span>
-      ) : null}
-      {overallOpen ? (
-        <div className="diff-agent-overall chat-review">
-          <ThreadEditor
-            placeholder={
-              agent.talk && !agent.held
-                ? `Your overall comment, for ${name}: sent as you save (Cmd+Enter saves, Esc closes)`
-                : `Your overall comment, for ${name}: sent when you press Send (Cmd+Enter saves, Esc closes)`
-            }
-            kept={{ text: agent.summary }}
-            sendLabel="Save"
-            onSave={async (text) => {
-              if (busy) return;
-              setBusy(true);
-              try {
-                await agent.saveOverall(text);
-                onOverall(false);
-              } finally {
-                setBusy(false);
-              }
-            }}
-            onClose={() => onOverall(false)}
-            onLeave={() => onOverall(false)}
-          />
-        </div>
       ) : null}
     </>
   );

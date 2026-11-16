@@ -4,6 +4,7 @@ import type {
   ReviewSession,
   ReviewSnapshot,
   ReviewThread,
+  ReviewThreadKind,
 } from "../../shared/review";
 import {
   type NewReviewAnnotation,
@@ -63,7 +64,16 @@ export type FeedbackCall = <T>(
  * is on, kept as a diff's anchor keeps it, so the review pane and the
  * rendered file find the line again after the code moves.
  */
-export type FeedbackCapture = { snapshot?: Blob; lineText?: string };
+export type FeedbackCapture = {
+  snapshot?: Blob;
+  lineText?: string;
+  /**
+   * What the review's editor in Changes wrote: a review comment, or a
+   * question for the agent (held for Send when the review has no agent,
+   * as the review pane holds it). Unset: as the review says (feedbackKind).
+   */
+  kind?: ReviewThreadKind;
+};
 
 type Route = {
   open: Record<string, unknown>;
@@ -259,7 +269,6 @@ export async function writeFeedback(
   hold = false,
 ): Promise<{ threadId: string; held: boolean; snapshot: ReviewSnapshot }> {
   const route = feedbackRoute(note, place);
-  const holding = route.held || hold;
   const opened = await call<ReviewSnapshot>("review.open", {
     workspace_id: place.workspaceId,
     ...route.open,
@@ -268,6 +277,13 @@ export async function writeFeedback(
       : {}),
   });
   const { session } = opened;
+  // A question with no agent to ask: held for Send in the workspace's
+  // threads (the review pane's holdForSend).
+  const asked =
+    capture?.kind === "discussion" &&
+    !session.agent.paneId &&
+    session.target.kind !== "mr";
+  const holding = route.held || hold || asked;
   let anchor = route.anchor(session);
   if (
     note.source === "file" &&
@@ -287,7 +303,7 @@ export async function writeFeedback(
   const threadId = feedbackThreadId(note.id);
   await call("review.thread.add", {
     session_id: session.id,
-    kind: holding ? "discussion" : feedbackKind(session),
+    kind: holding ? "discussion" : (capture?.kind ?? feedbackKind(session)),
     anchor: { ...anchor, feedback: JSON.stringify(kept) },
     new_thread_id: threadId,
     text: comment.trim(),

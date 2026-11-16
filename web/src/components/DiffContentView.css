@@ -643,3 +643,43 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* The review in Changes: the overall comment above the diff, its button in
+   the head, a file's comments at its head, and a hidden gap's controls. */
+.diff-review-overall,
+.diff-file-threads {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-overall-toggle {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.diff-gap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 8px;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diff-gap button {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}

@@ -156,7 +156,13 @@ export async function mountChangesReview(
 
   mounted += 1;
   const connectionId = `changes-review-${mounted}`;
-  const { feedbackNote } = await import("../workspaceFeedback");
+  const { addFeedbackImage, feedbackNote, writeFeedback } = await import(
+    "../workspaceFeedback"
+  );
+  const { createReviewAnnotation } = await import("../annotations");
+  const { reviewCall, rememberReviewSnapshot } = await import("../review");
+  type NewReviewAnnotation = import("../annotations").NewReviewAnnotation;
+  type FeedbackCapture = import("../workspaceFeedback").FeedbackCapture;
   const { CommandLine } = await import("./CommandLine");
   const { inspectorCompletions, opensCommandLine } = await import(
     "../inspectorCommands"
@@ -169,12 +175,15 @@ export async function mountChangesReview(
   }
   // The bridge, from a clean slate.
   backend.files = options.files;
+  backend.texts = options.texts ?? {};
   backend.calls = [];
-  backend.answers = options.answers ?? {};
   backend.failing.clear();
   backend.connected = true;
   backend.held.clear();
   backend.holds = null;
+  backend.imageGate = Promise.resolve();
+  if (options.vim !== undefined)
+    (await import("../vimKeys")).setVimKeys(options.vim);
   const sessionId = options.sessionId ?? "s1";
   let marks: Record<string, string> = { ...(options.reviewed ?? {}) };
   let applied = 0;
@@ -191,17 +200,19 @@ export async function mountChangesReview(
       sessionId: session,
       anchor: {
         ...thread.anchor,
-        feedback: thread.anchor.path
-          ? JSON.stringify({
-              source: "diff",
-              path: thread.anchor.path,
-              kind: "unstaged",
-              side: thread.anchor.side ?? "new",
-              line: thread.anchor.line,
-              quote: "",
-              hunk: "",
-            })
-          : "{}",
+        feedback: thread.anchor.feedback
+          ? thread.anchor.feedback
+          : thread.anchor.path
+            ? JSON.stringify({
+                source: "diff",
+                path: thread.anchor.path,
+                kind: "unstaged",
+                side: thread.anchor.side ?? "new",
+                line: thread.anchor.line,
+                quote: "",
+                hunk: "",
+              })
+            : "{}",
       },
     }) as ReviewThread;
   const ownSession = () => ({
@@ -247,6 +258,53 @@ export async function mountChangesReview(
     ]);
   };
   publishSession();
+  /** This review as the bridge answers it. */
+  const ownSnapshot = () =>
+    ({
+      session: ownSession(),
+      threads: ownThreads.map((thread) => asFeedback(thread, sessionId)),
+    }) as unknown as ReviewSnapshot;
+  // The bridge writes what Changes writes through the host: the review
+  // opened (the checkout's), a thread added to it, the review read back.
+  backend.answers = {
+    "review.open": () => ownSnapshot(),
+    "review.get": (params) =>
+      backend.holds
+        ? backend.holds()
+        : params.session_id === sessionId
+          ? ownSnapshot()
+          : {},
+    "review.thread.add": (params) => {
+      if (params.session_id !== sessionId) return {};
+      const anchor = params.anchor as Record<string, unknown>;
+      const at = new Date().toISOString();
+      const id = String(params.new_thread_id ?? `w${backend.calls.length}`);
+      ownThreads = [
+        ...ownThreads,
+        {
+          id,
+          sessionId,
+          kind: params.kind,
+          anchor,
+          comments: [
+            {
+              id: `${id}c`,
+              author: "you",
+              body: String(params.text ?? ""),
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          resolved: false,
+          createdAt: at,
+          updatedAt: at,
+          ...(params.held !== undefined ? { held: params.held } : {}),
+        } as unknown as ReviewThread,
+      ];
+      return { threadId: id };
+    },
+    ...(options.answers ?? {}),
+  };
   /** The comments the host gives Changes: every review's, as App does. */
   const feedback = () => {
     const threads = [...backend.sessions.values()].flatMap((snapshot) =>
@@ -396,11 +454,14 @@ export async function mountChangesReview(
       throw new Error(`no backend here: ${method}`);
     },
   };
+  /** Each file's lines in order, read again once the surface settled. */
+  const orders = new Map<string, ShownLine[]>();
   const settleOnly = async () => {
     for (let round = 0; round < 8; round++)
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 2));
       });
+    orders.clear();
   };
   /** The marks each review.update wrote, applied as the bridge does. */
   const settleAll = async () => {
@@ -432,6 +493,49 @@ export async function mountChangesReview(
     publishSession();
     await render();
   };
+  // The host's writes (App's addFeedback): a comment written in Changes is
+  // a thread of the checkout's review, read back once written.
+  const call = <T,>(method: string, params: Record<string, unknown>) =>
+    reviewCall<T>(connectionId, method, params);
+  const place = () => {
+    const agent = (sessionFields.agent ?? {}) as {
+      name?: string;
+      paneId?: string;
+    };
+    return {
+      workspaceId: "workspace",
+      root: "/repo",
+      ...(agent.paneId
+        ? { agent: { paneId: agent.paneId, name: agent.name ?? "Agent" } }
+        : {}),
+    };
+  };
+  const writeComment = (
+    input: NewReviewAnnotation,
+    capture?: FeedbackCapture,
+  ) => {
+    void (async () => {
+      const written = await writeFeedback(
+        call,
+        createReviewAnnotation(input),
+        place(),
+        Date.now() * 1000,
+        capture,
+      );
+      rememberReviewSnapshot(
+        await call<ReviewSnapshot>("review.get", {
+          session_id: written.snapshot.session.id,
+        }),
+      );
+    })().catch((error: unknown) =>
+      store.notify({
+        kind: "error",
+        message: "Comment kept in this browser",
+        detail: String(error),
+      }),
+    );
+  };
+  const addImage = (image: File) => addFeedbackImage(call, place(), image);
   const render = async () => {
     const { threads, annotations } = feedback();
     await act(async () =>
@@ -457,7 +561,8 @@ export async function mountChangesReview(
               threads,
               reviewCursor: true,
               showFileSelector: false,
-              onCreateAnnotation: () => {},
+              onCreateAnnotation: writeComment,
+              onAddReviewImage: addImage,
               onReviewProgress: (next: typeof progress) => {
                 progress = next;
               },
@@ -488,6 +593,45 @@ export async function mountChangesReview(
   const shadowOf = (section: HTMLElement) =>
     section.querySelector("diffs-container")?.shadowRoot ?? null;
 
+  /**
+   * A file's line revealed around its hunks (unchanged code, read from the
+   * file's text): its numbers on both sides, by the hunks' offsets.
+   */
+  const revealed = (
+    file: ReviewDiffFile,
+    number: number,
+    old: boolean,
+  ): ShownLine | null => {
+    const text = options.texts?.[file.path];
+    if (text === undefined) return null;
+    const heads = file.hunks.map((hunk) =>
+      /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+        .exec(hunk.header)!
+        .slice(1)
+        .map((value) => (value === undefined ? 1 : Number(value))),
+    );
+    // The gap's offset: before the first hunk past it, else after the last.
+    let offset: number | null = null;
+    for (const [oldStart, , newStart] of heads)
+      if ((old ? oldStart! : newStart!) > number) {
+        offset = newStart! - oldStart!;
+        break;
+      }
+    if (offset === null) {
+      const [oldStart, oldCount, newStart, newCount] = heads[heads.length - 1]!;
+      offset = newStart! + newCount! - (oldStart! + oldCount!);
+    }
+    const at = old ? number + offset : number;
+    const line = text.split("\n")[at - 1];
+    if (line === undefined) return null;
+    return {
+      path: file.path,
+      old: at - offset,
+      new: at,
+      text: line,
+      kind: " ",
+    };
+  };
   /** A drawn line of Pierre's, read as the review's. */
   const shown = (element: Element, path: string): ShownLine => {
     const code = element.closest("code");
@@ -510,6 +654,8 @@ export async function mountChangesReview(
             kind: line.kind,
           };
       }
+    const context = file ? revealed(file, number, old) : null;
+    if (context) return context;
     throw new Error(`no line ${path}:${old ? "-" : "+"}${number}`);
   };
   const drawn = (selector: string, only?: string) => {
@@ -549,19 +695,73 @@ export async function mountChangesReview(
       (line, index) =>
         lines.findIndex((other) => sameLine(other, line)) === index,
     );
-  /** The review's order of its lines: unified, file by file. */
-  const order = files.flatMap((file) =>
-    file.hunks.flatMap((hunk) =>
-      hunk.lines.map((line) => ({ ...line, path: file.path })),
-    ),
-  );
-  const rank = (line: ShownLine) =>
-    order.findIndex(
+  /**
+   * A file's lines in the review's order: its hunks' lines, and the
+   * unchanged lines revealed around them (drawn now) where they read.
+   */
+  const fileOrder = (file: ReviewDiffFile): ShownLine[] => {
+    const cached = orders.get(file.path);
+    if (cached) return cached;
+    const found = readOrder(file);
+    orders.set(file.path, found);
+    return found;
+  };
+  const readOrder = (file: ReviewDiffFile): ShownLine[] => {
+    const own = file.hunks.flatMap((hunk) =>
+      hunk.lines.map((line) => ({ ...line, path: file.path }) as ShownLine),
+    );
+    const known = new Set(own.map((line) => `${line.old}:${line.new}`));
+    const extra = sections()
+      .filter((section) => pathOf(section) === file.path)
+      .flatMap((section) => [
+        ...(shadowOf(section)?.querySelectorAll(
+          "[data-content] [data-line][data-line-type]",
+        ) ?? []),
+      ])
+      .map((element) => {
+        try {
+          return shown(element, file.path);
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (line): line is ShownLine =>
+          !!line && !known.has(`${line.old}:${line.new}`),
+      );
+    if (!extra.length) return own;
+    // Where each reads: a removed line just before the new line after it.
+    const place = (line: ShownLine, index: number, list: ShownLine[]) => {
+      if (line.new !== null) return line.new;
+      const next = list.slice(index + 1).find((each) => each.new !== null);
+      return (next?.new ?? Number.MAX_SAFE_INTEGER) - 0.5;
+    };
+    const placed = own.map((line, index) => ({
+      line,
+      at: place(line, index, own),
+      index,
+    }));
+    const seen = new Set<string>();
+    for (const line of extra) {
+      const key = `${line.old}:${line.new}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      placed.push({ line, at: line.new!, index: own.length });
+    }
+    return placed
+      .sort((a, b) => a.at - b.at || a.index - b.index)
+      .map(({ line }) => line);
+  };
+  const order = () => files.flatMap(fileOrder);
+  const rank = (line: ShownLine) => {
+    const list = order();
+    return list.findIndex(
       (each) =>
         each.path === line.path &&
         each.old === line.old &&
         each.new === line.new,
     );
+  };
 
   /** A file's rows as Pierre lays them out: split rows side by side. */
   const fileRows = (
@@ -569,8 +769,8 @@ export async function mountChangesReview(
     sideBySide = drawnSplit(),
   ): ShownLine[][] => {
     const rows: ShownLine[][] = [];
-    for (const hunk of file.hunks) {
-      const lines = hunk.lines.map((line) => ({ ...line, path: file.path }));
+    for (const hunk of [{ lines: fileOrder(file) }]) {
+      const lines = hunk.lines;
       if (!sideBySide) {
         for (const line of lines) rows.push([line]);
         continue;
@@ -635,7 +835,9 @@ export async function mountChangesReview(
       this.hasAttribute("data-column-number")
     )
       return box(0, LINE);
-    if (options.viewport === undefined) return rect.call(this);
+    // No screen asked for: one tall enough that Pierre draws every row.
+    if (options.viewport === undefined)
+      return this === scroller() ? box(0, 100_000) : rect.call(this);
     if (this === scroller()) return box(0, height);
     if (
       this instanceof HTMLElement &&
@@ -784,11 +986,17 @@ export async function mountChangesReview(
   // The open comment editor: the review's (CodeMirror) under its line.
   const editorBox = () =>
     host.querySelector<HTMLElement>("[data-review-editor]");
+  const { EditorView } = await import("@codemirror/view");
+  const currentView = (content: HTMLElement) => EditorView.findFromDOM(content);
   const editorView = async () => {
-    const content = editorBox()?.querySelector<HTMLElement>(".cm-content");
-    if (!content) return null;
-    const { EditorView } = await import("@codemirror/view");
-    return EditorView.findFromDOM(content);
+    // The editor loads lazily: let it come.
+    for (let round = 0; round < 20; round++) {
+      const content = editorBox()?.querySelector<HTMLElement>(".cm-content");
+      if (content) return currentView(content);
+      if (!editorBox()) return null;
+      await settleOnly();
+    }
+    return null;
   };
   const editorBarButtons = () => [
     ...(editorBox()?.querySelectorAll<HTMLButtonElement>(
@@ -857,6 +1065,31 @@ export async function mountChangesReview(
     },
     text() {
       return host.textContent ?? "";
+    },
+    gaps(path) {
+      const section = sections().find((each) => pathOf(each) === path);
+      return [...(section?.querySelectorAll<HTMLElement>(".rd-expand") ?? [])]
+        .sort((a, b) => Number(a.dataset.gap) - Number(b.dataset.gap))
+        .map((row) => ({
+          label: row.querySelector(".note")?.textContent ?? "",
+          buttons: [...row.querySelectorAll("button")].map(
+            (button) => button.textContent ?? "",
+          ),
+        }));
+    },
+    async expandGap(path, index, label) {
+      const section = sections().find((each) => pathOf(each) === path);
+      const row = [
+        ...(section?.querySelectorAll<HTMLElement>(".rd-expand") ?? []),
+      ].sort((a, b) => Number(a.dataset.gap) - Number(b.dataset.gap))[index];
+      if (!row) throw new Error(`no gap ${index} in ${path}`);
+      const button = [
+        ...row.querySelectorAll<HTMLButtonElement>("button"),
+      ].find((each) => each.textContent === label);
+      if (!button) throw new Error(`no gap button ${label}`);
+      await act(async () => button.click());
+      await settleAll();
+      await settleAll();
     },
     async goToFile(path) {
       // Picked in the tree: Changes' cursor goes to it, shown.
@@ -975,14 +1208,185 @@ export async function mountChangesReview(
         document.querySelector(".annotation-composer-popover") !== null
       );
     },
+    editor() {
+      const text = surface.editorText!();
+      if (text === null) return null;
+      return { placeholder: surface.editorPlaceholder!() ?? "", text };
+    },
     editorText() {
+      const content = editorBox()?.querySelector<HTMLElement>(".cm-content");
+      if (!content) return null;
+      return currentView(content)?.state.doc.toString() ?? "";
+    },
+    editorPlaceholder() {
+      const content = editorBox()?.querySelector<HTMLElement>(".cm-content");
+      const view = content ? currentView(content) : null;
+      if (!view) return null;
+      const placeholder = view.dom.querySelector(".cm-placeholder");
+      return (
+        placeholder?.getAttribute("aria-label") ??
+        placeholder?.textContent ??
+        view.contentDOM.getAttribute("aria-placeholder")
+      );
+    },
+    async type(text) {
+      const view = await editorView();
+      if (!view) throw new Error("no comment editor open");
+      await act(async () => {
+        const { from, to } = view.state.selection.main;
+        view.dispatch({
+          changes: { from, to, insert: text },
+          selection: { anchor: from + text.length },
+        });
+      });
+      await settleAll();
+    },
+    async typeInEditor(text) {
+      const view = await editorView();
+      if (!view) throw new Error("no comment editor open");
+      await act(async () =>
+        view.dispatch({
+          changes: { from: view.state.doc.length, insert: text },
+        }),
+      );
+    },
+    async editorPress(keys) {
+      for (const stroke of parseKeys(keys)) {
+        const content = editorBox()?.querySelector(".cm-content");
+        if (!content) throw new Error("no comment editor open");
+        await act(async () => {
+          content.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              ...stroke,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+      }
+      await settleAll();
+    },
+    async editorCommand(text) {
+      const view = await editorView();
+      if (!view) throw new Error("no comment editor open");
+      const { getCM, Vim } = await import("@replit/codemirror-vim");
+      const cm = getCM(view);
+      if (!cm) throw new Error("the editor has no Vim");
+      // As typed at Vim's `:` prompt (its panel needs a real layout).
+      await act(async () => {
+        Vim.handleEx(
+          cm as Parameters<typeof Vim.handleEx>[0],
+          text.replace(/^:/, ""),
+        );
+      });
+      await settleAll();
+    },
+    async pasteImage(name, type = "image/png") {
       const content = editorBox()?.querySelector(".cm-content");
-      return content ? (content.textContent ?? "") : null;
+      if (!content) throw new Error("no comment editor open");
+      const image = new File([new Uint8Array([137, 80, 78, 71])], name, {
+        type,
+      });
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: { files: [image], getData: () => "", types: ["Files"] },
+      });
+      await act(async () => {
+        content.dispatchEvent(event);
+      });
+      await settleAll();
+      await settleAll();
+    },
+    holdImageUploads() {
+      let release = () => {};
+      backend.imageGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return async () => {
+        backend.imageGate = Promise.resolve();
+        release();
+        await settleAll();
+        await settleAll();
+      };
+    },
+    async selectWords(words) {
+      const body = [...host.querySelectorAll(".chat-thread-body")].find(
+        (element) => element.textContent?.includes(words),
+      );
+      if (!body) throw new Error(`no message reads ${words}`);
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && !node.textContent?.includes(words))
+        node = walker.nextNode();
+      if (!node) throw new Error(`the words ${words} span several nodes`);
+      const start = node.textContent!.indexOf(words);
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + words.length);
+      // happy-dom lays nothing out: the selection gets a box, as drawn.
+      range.getBoundingClientRect = () =>
+        ({
+          x: 40,
+          y: 60,
+          left: 40,
+          top: 60,
+          right: 140,
+          bottom: 76,
+          width: 100,
+          height: 16,
+        }) as DOMRect;
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      // Released over the words, as a drag over them ends.
+      const released = node.parentElement ?? body;
+      await act(async () => {
+        released.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      });
+      await settleAll();
+    },
+    async commentOnPart(part) {
+      const row = [...host.querySelectorAll("[data-part]")].find(
+        (element) =>
+          (element.textContent ?? "")
+            .replace(
+              element.querySelector(":scope > .rc-part-add")?.textContent ?? "",
+              "",
+            )
+            .trim() === part.trim(),
+      );
+      const button = row?.querySelector<HTMLButtonElement>(
+        'button[aria-label="Comment on this part"]',
+      );
+      if (!button) throw new Error(`no part ${part} to comment on`);
+      await act(async () => button.click());
+      await settleAll();
+    },
+    fileComments(path) {
+      const section = sections().find((each) => pathOf(each) === path);
+      return [
+        ...(section?.querySelectorAll<HTMLElement>(
+          ".diff-file-threads .chat-thread[data-thread-id]",
+        ) ?? []),
+      ].map((card) => card.textContent ?? "");
+    },
+    commentTexts() {
+      return threadCards().map((card) => card.textContent ?? "");
+    },
+    async clickButton(label, index = 0) {
+      // A selection's Comment is drawn over the page, out of the view.
+      const found = [
+        ...document.body.querySelectorAll<HTMLElement>("button, a"),
+      ].filter(
+        (element) =>
+          (element.textContent ?? "").trim() === label ||
+          element.getAttribute("aria-label") === label,
+      )[index];
+      if (!found) throw new Error(`no button ${label}`);
+      await act(async () => found.click());
+      await settleAll();
     },
     async writeInEditor(text) {
-      // The editor loads lazily: let it come.
-      for (let round = 0; round < 20 && !(await editorView()); round++)
-        await settleOnly();
       const view = await editorView();
       if (!view) throw new Error("no comment editor open");
       await act(async () =>

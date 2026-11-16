@@ -269,7 +269,7 @@ if (process.env.ROAMGATE_CHANGES_REVIEW_DOM_TEST !== "1") {
         await press("s");
         await waitForEditor(diff);
         expect(editor()!.state.doc.toString()).toBe(
-          "```suggestion\nthree\n```",
+          "```suggestion:-0+0\nthree\n```\n",
         );
       } finally {
         await diff.unmount();

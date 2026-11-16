@@ -25,7 +25,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     "./reviewSurface.testkit"
   );
   await installReviewDom();
-  const { REVIEW_SURFACES } = await import("./reviewSurfaces.testkit");
+  const { reviewSurfacesWith } = await import("./reviewSurfaces.testkit");
 
   const code = () =>
     file("a.ts", hunk(1, 1, [" one", "-two", "+deux", "+trois", " four"]));
@@ -60,7 +60,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       updatedAt: options.updatedAt ?? "2026-11-04T14:11:18Z",
     }) as unknown as import("../../../shared/review").ReviewThread;
 
-  for (const { name, mount } of REVIEW_SURFACES)
+  for (const { name, mount } of reviewSurfacesWith("editor"))
     describe(name, () => {
       test("+ in the margin of a message's part comments on that part", async () => {
         const review = await mount({

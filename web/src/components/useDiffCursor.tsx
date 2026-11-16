@@ -182,7 +182,16 @@ export type DiffCursor = {
   clearSelection: () => void;
   /** Puts the cursor on a row of the model, scrolling to it. */
   moveTo: (row: number) => void;
+  /** `:ask`, `:suggest`: a comment on the cursor's or the `V` lines. */
+  comment: (mode: CommentMode) => boolean;
 };
+
+/**
+ * What a comment key asks: a comment (c, Enter, i, a), a suggestion (s),
+ * a new question for the agent (C), or one answered where the line is
+ * discussed (`:ask`).
+ */
+export type CommentMode = "comment" | "suggest" | "new" | "ask";
 
 /** The cursor's line, as the review's anchors name it. */
 export type CursorWhere = {
@@ -237,7 +246,7 @@ export function useDiffCursor({
   onComment?: (
     key: string,
     range: SelectedLineRange,
-    mode: "comment" | "suggest" | "new",
+    mode: CommentMode,
   ) => boolean;
   /**
    * The thread keys (gn, gN, gH, g;, gl, za, r, e, dd, u, T, t) of the
@@ -880,18 +889,10 @@ export function useDiffCursor({
       case "Enter":
       case "i":
       case "a":
-      case "s": {
-        if (!onComment) return false;
-        const range = commentRange();
-        if (!range) return false;
-        const opened = onComment(
-          range.key,
-          range.range,
+      case "s":
+        return commentHere(
           key === "s" ? "suggest" : key === "C" ? "new" : "comment",
         );
-        if (opened) setAnchor(null);
-        return opened;
-      }
       case "f":
         return runCommand("files");
       case "o":
@@ -996,6 +997,16 @@ export function useDiffCursor({
     setAnchor(null);
     jumpTo(target, undefined, "none");
     return again;
+  };
+
+  /** A comment on the cursor's line or the selection's; true when opened. */
+  const commentHere = (mode: CommentMode): boolean => {
+    if (!onComment) return false;
+    const range = commentRange();
+    if (!range) return false;
+    const opened = onComment(range.key, range.range, mode);
+    if (opened) setAnchor(null);
+    return opened;
   };
 
   /** The lines a comment would be on: the cursor's, or the selection's. */
@@ -1122,6 +1133,7 @@ export function useDiffCursor({
     selection: () => anchor,
     clearSelection: () => setAnchor(null),
     moveTo: (row) => jumpTo(row, undefined, "center"),
+    comment: commentHere,
   };
 }
 
