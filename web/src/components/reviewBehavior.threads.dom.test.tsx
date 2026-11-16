@@ -821,6 +821,190 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         );
         await review.unmount();
       });
+
+      test("a reply shows at once as pending, is sent once, and retried with its id", async () => {
+        const asked = conversation("t1", null, [
+          ["you", "Why not one?", "2026-10-31T19:16:11Z"],
+        ]);
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: [asked],
+        });
+        expect(shown(review, "t1")?.buttons).toContain("Reply");
+        await review.threadButton("t1", "Reply");
+        await review.writeInEditor("but i like my overlay!");
+        // The server is slow to answer; Save pressed twice.
+        const sending = review.holdBridge("review.reply");
+        await review.editorPress("<C-Enter>");
+        await review.editorPress("<C-Enter>").catch(() => {});
+        // Shown at once, pending, and sent once.
+        const reply = () => shown(review, "t1")?.messages[1];
+        expect(reply()).toMatchObject({
+          text: "but i like my overlay!",
+          pending: "sending",
+          marks: ["Sending..."],
+        });
+        const writes = () => review.calls("review.reply");
+        expect(writes()).toHaveLength(1);
+        const id = writes()[0]!.params.new_comment_id;
+        expect(id).toMatch(/^[0-9a-f]{16}$/);
+        expect(writes()[0]!.params.comment_id).toBe("t1");
+
+        // It fails: kept, with why and Retry.
+        await sending.release("timeout: review.reply");
+        expect(reply()).toMatchObject({
+          pending: "failed",
+          marks: ["Not saved: timeout: review.reply"],
+        });
+        await review.threadButton("t1", "Retry", 1);
+        expect(writes()).toHaveLength(2);
+        expect(writes()[1]!.params.new_comment_id).toBe(id);
+
+        // The review sent back has it: no longer pending, shown once.
+        await review.push({
+          threads: [
+            conversation("t1", null, [
+              ["you", "Why not one?", "2026-10-31T19:16:11Z"],
+              [
+                "you",
+                "but i like my overlay!",
+                "2026-10-31T19:22:36Z",
+                undefined,
+                id as string,
+              ],
+            ]),
+          ],
+        });
+        expect(reply()?.pending).toBeNull();
+        expect(review.text().split("but i like my overlay!").length - 1).toBe(
+          1,
+        );
+        await review.unmount();
+      });
+
+      test("a reply that did not reach the agent says why, with Retry; the live agent's pane is attached", async () => {
+        const answered = (updatedAt: string) =>
+          conversation("t1", null, [
+            ["Claude", "Which object posts?", "2026-11-04T14:11:18Z"],
+            ["you", "The bus, set by core", updatedAt],
+          ]);
+        // The agent opened the review without naming its pane (conversation
+        // mode's claude did): the bridge could not deliver.
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          session: {
+            autoSend: true,
+            agent: { name: "Claude" },
+            deliveryError: "no pane is known for Claude",
+          },
+          threads: [answered("2026-11-04T14:33:29Z")],
+          agentPanes: [{ paneId: "w1:p1", agent: "claude" }],
+        });
+        // Shown "live" with the workspace's pane: the review is told that pane.
+        const attach = {
+          method: "review.update",
+          params: { session_id: "s1", agent: "Claude", agent_pane: "w1:p1" },
+        };
+        expect(review.calls("review.update")).toEqual([attach]);
+        const marks = () => shown(review, "t1")?.messages[1]?.marks;
+        expect(marks()).toEqual(["not delivered: no pane is known for Claude"]);
+        expect(review.text()).not.toContain("\u2192 Claude...");
+        await review.threadButton("t1", "Retry", 1);
+        expect(lastCall(review, "review.update")).toEqual(attach);
+
+        // Attached and retried by the bridge: on its way, then delivered.
+        await review.push({
+          session: {
+            agent: { name: "Claude", paneId: "w1:p1" },
+            deliveryError: undefined,
+          },
+        });
+        expect(marks()).toEqual(["\u2192 Claude..."]);
+        await review.push({ session: { deliveredAt: "2026-11-04T14:39:07Z" } });
+        expect(review.text()).not.toContain("\u2192 Claude...");
+        expect(marks()).toEqual(["\u2192 Claude"]);
+
+        // A terminal-mode agent the bridge could not type into: the same.
+        await review.push({
+          session: {
+            deliveredAt: undefined,
+            deliveryError: "herdr: pane not found",
+          },
+        });
+        expect(marks()).toEqual(["not delivered: herdr: pane not found"]);
+        const sent = review.calls().length;
+        await review.threadButton("t1", "Retry", 1);
+        expect(
+          review
+            .calls()
+            .slice(sent)
+            .map((call) => call.method)
+            .filter((method) => method !== "review.get"),
+        ).toEqual(["review.handoff"]);
+        await review.unmount();
+      });
+
+      test("a large file with threads opens, each thread on its line; one between hunks gets context", async () => {
+        const lines = numbered("plan line", 1000);
+        const question = (id: string, line: number, body: string) => ({
+          ...thread(id, "plan.md", line, body),
+          kind: "discussion" as const,
+          comments: [
+            {
+              id: `${id}c`,
+              author: "Claude",
+              body,
+              createdAt: "2026-11-04T14:11:18Z",
+              updatedAt: "2026-11-04T14:11:18Z",
+            },
+          ],
+        });
+        // 816 changed lines (past the large-file fold), then unchanged lines,
+        // then a last small hunk: line 900 is between the hunks.
+        const review = await mount({
+          files: [
+            file(
+              "plan.md",
+              hunk(
+                1,
+                1,
+                lines.slice(0, 816).map((text) => `+${text}`),
+              ),
+              hunk(950, 950, [` ${lines[949]}`]),
+            ),
+          ],
+          texts: { "plan.md": `${lines.join("\n")}\n` },
+          threads: [
+            question("q1", 354, "How does element code get its Element?"),
+            question("q2", 900, "And this unchanged line?"),
+          ] as ReviewThread[],
+        });
+        // Not folded: no "Show 816 lines", the file's lines are there.
+        expect(review.text()).not.toContain("Show 817 lines");
+        expect(review.text()).not.toContain("Show 816 lines");
+        expect(review.lines("plan.md").map((line) => line.text)).toContain(
+          "plan line 354",
+        );
+        // Each on its line, neither apart from the code.
+        expect(
+          review
+            .shownThreads()
+            .filter((each) => each.general)
+            .map((each) => each.id),
+        ).toEqual([]);
+        expect(review.text()).toContain(
+          "How does element code get its Element?",
+        );
+        expect(review.text()).toContain("And this unchanged line?");
+        expect(review.markedLines().map((line) => line.new)).toEqual([
+          354, 900,
+        ]);
+        // The unchanged line is shown with its neighbours.
+        const drawn = review.lines("plan.md").map((line) => line.text);
+        for (const around of [897, 899, 900, 901, 903])
+          expect(drawn).toContain(`plan line ${around}`);
+        await review.unmount();
+      });
     });
   }
 }

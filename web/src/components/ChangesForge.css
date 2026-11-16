@@ -98,3 +98,17 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* A merge request's discussions: the open ones' heading, the others folded. */
+.mr-open h4 {
+  margin: 6px 0 4px;
+  color: var(--rv-gitlab);
+  font-size: 13px;
+}
+
+.mr-other > summary {
+  margin-bottom: 4px;
+  color: var(--rv-faint);
+  font-size: 13px;
+  cursor: pointer;
+}

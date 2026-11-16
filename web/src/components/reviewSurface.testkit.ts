@@ -2,9 +2,9 @@
  * Behavior-level test kit for the review surfaces (plan: review into the
  * inspector, gate 3). A test drives a surface with keys and commands and
  * reads what is visible: the line with the cursor, its side, the word under
- * it, what is folded. It never asserts a surface's class names, so the same
- * test runs against the classic review pane and, once it exists, the review
- * in Changes; each surface has its own implementation of `ReviewSurface`.
+ * it, what is folded. It never asserts a surface's class names: the tests
+ * ran against the classic review pane and the review in Changes alike, and
+ * run against Changes since the pane retired (phase 9).
  *
  * Not a test file: imported by `reviewBehavior.*.dom.test.tsx`, which run in
  * an isolated child with happy-dom installed (`installReviewDom`).
@@ -348,8 +348,6 @@ export interface ReviewSurface {
   filterShortcuts(text: string): Promise<void>;
   /** The Vim preference for comments, as remembered. */
   vimPreference(): boolean | undefined;
-  /** Where reviews open (`:set reviewin=`), as remembered. */
-  reviewInPreference(): string | undefined;
 
   // The comment editor.
   /** A comment editor is open. */

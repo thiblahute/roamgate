@@ -24,7 +24,7 @@
   box-shadow: var(--shadow-modal);
 }
 
-/* Shown from an open review: above it (5500), below dialogs (6000). */
+/* Shown from the reviews list: above it (5500), below dialogs (6000). */
 .overlay-tab.is-floating.is-above-review {
   z-index: 5550;
 }

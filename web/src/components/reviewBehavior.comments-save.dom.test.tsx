@@ -31,6 +31,27 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   const code = () =>
     file("a.ts", hunk(1, 1, [" one", "-two", "+deux", "+trois", " four"]));
   const block = "```suggestion:-0+0\ndeux\n```\n";
+  /** The drafts kept in this browser, by review, as reviewDrafts.ts keeps them. */
+  const drafts = async () => {
+    const { roamgateLocalStorage } = await import("../browserStorage");
+    return JSON.parse(
+      roamgateLocalStorage.getItem("reviewDrafts") ?? "{}",
+    ) as Record<string, Record<string, { text: string }>>;
+  };
+  /** The overall comments kept unsent, of every review. */
+  const overallDrafts = async () =>
+    Object.values(await drafts()).flatMap((each) =>
+      each.overall ? [each.overall.text] : [],
+    );
+  /** How many drafts each review with any keeps. */
+  const draftCounts = async () =>
+    Object.values(await drafts()).map((each) => Object.keys(each).length);
+  /** Every overall comment kept, forgotten. */
+  const dropOverallDrafts = async () => {
+    const { takeReviewDraft } = await import("../reviewDrafts");
+    for (const session of Object.keys(await drafts()))
+      takeReviewDraft(session, "overall");
+  };
 
   for (const { name, mount } of reviewSurfacesWith("editor"))
     describe(name, () => {
@@ -296,6 +317,49 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           /^See !\[diagram\.png\]\(<[^>]+>\)!\[screenshot\]\(<[^>]+>\)$/,
         );
         await review.unmount();
+      });
+
+      test("an overall comment whose save fails is kept to write on", async () => {
+        const review = await mount({ files: [code()] });
+        await review.clickButton("Overall comment");
+        await review.type("Looks good overall");
+        review.failBridge(["review.update"], "not connected to bridge");
+        await review.editorButton("Save");
+        expect(review.calls("review.update").length).toBeGreaterThan(0);
+        expect(review.text()).toContain("Not saved: not connected to bridge");
+        // Kept in this browser, and back in the editor as it opens again.
+        expect(await overallDrafts()).toEqual(["Looks good overall"]);
+        review.failBridge([]);
+        await review.clickButton("Overall comment");
+        expect(review.editorText()).toBe("Looks good overall");
+        await review.unmount();
+        await dropOverallDrafts();
+      });
+
+      test("text in an editor open as the review goes away is kept", async () => {
+        await dropOverallDrafts();
+        const review = await mount({ files: [code()] });
+        await review.clickButton("Overall comment");
+        await review.type("Half written");
+        // Another connection shown, or the review dropped from the kept ones.
+        await review.unmount();
+        expect(await draftCounts()).toEqual([1]);
+        expect(await overallDrafts()).toEqual(["Half written"]);
+        await dropOverallDrafts();
+      });
+
+      test("a save waits while an image of the comment uploads", async () => {
+        const { imageUploadToken } = await import("./ReviewCommentEditor");
+        const review = await mount({ files: [code()] });
+        await review.clickButton("Overall comment");
+        await review.type(`See ${imageUploadToken(1)}`);
+        const before = review.calls("review.update").length;
+        await review.editorButton("Save");
+        expect(review.calls("review.update")).toHaveLength(before);
+        // The editor stays, for the image to land in.
+        expect(review.editorText()).toBe(`See ${imageUploadToken(1)}`);
+        await review.unmount();
+        await dropOverallDrafts();
       });
     });
 }

@@ -1,8 +1,8 @@
 /*
  * The `:` commands: each view lists the ones it has (name, aliases, what it
  * does, how it runs) and the one prompt completes and runs them. The
- * inspector's views and the classic review pane (reviewCommands.ts) give
- * theirs in this form. Pure: testable without a DOM.
+ * inspector's views and the review (reviewCommands.ts) give theirs in this
+ * form. Pure: testable without a DOM.
  */
 
 /** What a command can tell the prompt while it runs. */

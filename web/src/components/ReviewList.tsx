@@ -7,7 +7,7 @@ import type {
 import { rememberReviewSnapshot, reviewCall } from "../review";
 import { describeReviewTarget, rankReviews } from "../reviewModel";
 import { store } from "../store";
-import "./ReviewOverlay.css";
+import "./ReviewList.css";
 
 function fmtDate(iso: string): string {
   const date = new Date(iso);

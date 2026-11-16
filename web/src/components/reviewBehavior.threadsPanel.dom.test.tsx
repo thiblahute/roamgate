@@ -194,6 +194,174 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         });
         await review.unmount();
       });
+
+      test("resolving a conversation keeps the list where it is; resolved ones are hidden until shown", async () => {
+        /** Every scrollIntoView made in the list, by conversation. */
+        const scrolled: string[] = [];
+        const scrollIntoView = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function (this: Element) {
+          const id = this.closest("[data-panel-thread]")?.getAttribute(
+            "data-panel-thread",
+          );
+          if (id) scrolled.push(id);
+        };
+        // Fifteen on the whole review, newest first; the last three resolved.
+        const fifteen = (resolved: Set<number>) =>
+          Array.from({ length: 15 }, (_, i) =>
+            conversation(
+              `t${i + 1}`,
+              null,
+              [
+                [
+                  "you",
+                  `Point ${i + 1}`,
+                  `2026-10-31T19:${String(59 - i).padStart(2, "0")}:00Z`,
+                ],
+              ],
+              { resolved: resolved.has(i + 1) },
+            ),
+          );
+        const resolved = new Set([13, 14, 15]);
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: fifteen(resolved),
+        });
+        try {
+          await review.clickThreadsChip();
+          const list = () =>
+            document.querySelector<HTMLElement>(
+              ".threads-panel .threads-panel-list",
+            )!;
+          const panel = () => review.threadsPanel()!;
+          // Open ones only, with the count of the resolved ones to show them.
+          expect(panel().ids).toEqual(
+            Array.from({ length: 12 }, (_, i) => `t${i + 1}`),
+          );
+          expect(
+            document.querySelector(
+              ".threads-panel .threads-panel-head .threads-panel-count",
+            )?.textContent,
+          ).toBe("12 open \u00b7 3 resolved, show");
+          expect(
+            list().querySelector(".threads-panel-group")?.textContent,
+          ).toBe("3 resolved, show");
+
+          for (let i = 0; i < 6; i++) await review.press("j");
+          expect(panel().selected).toBe("t7");
+          list().scrollTop = 120;
+          scrolled.length = 0;
+          // r resolves it; the review comes back with it resolved.
+          await review.press("r");
+          expect(lastCall(review, "review.resolve")?.params).toMatchObject({
+            comment_id: "t7",
+            resolved: true,
+          });
+          resolved.add(7);
+          await review.push({ threads: fifteen(resolved) });
+          expect(panel().ids).not.toContain("t7");
+          expect(panel().selected).toBe("t8");
+          expect(list().scrollTop).toBe(120);
+          expect(scrolled).toEqual([]);
+
+          // Scrolled up by hand, it stays there through new renders.
+          list().scrollTop = 0;
+          await review.push({ threads: fifteen(resolved) });
+          expect(list().scrollTop).toBe(0);
+          expect(scrolled).toEqual([]);
+          // A move by key still brings the selection into view.
+          await review.press("j");
+          expect(scrolled).toEqual(["t9"]);
+
+          // H lists the resolved ones after the open ones, and is remembered.
+          await review.press("H");
+          expect(panel().ids).toEqual([
+            ...[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12].map((i) => `t${i}`),
+            ...[7, 13, 14, 15].map((i) => `t${i}`),
+          ]);
+          expect(
+            list().querySelector(".threads-panel-group")?.textContent,
+          ).toBe("4 resolved, hide");
+          expect(
+            localStorage.getItem("roamgate:threadsPanel.showResolved"),
+          ).toBe("1");
+
+          // R answers the selected one right there; it reloads nothing.
+          const reads = review.calls().length;
+          await review.press("R");
+          expect(panel().selected).toBe("t9");
+          expect(
+            document.querySelector(
+              ".threads-panel [data-panel-thread='t9'] .threads-panel-reply .cm-content",
+            ),
+          ).not.toBeNull();
+          expect(review.calls().slice(reads)).toEqual([]);
+          expect(review.hostCalls("reload")).toEqual([]);
+        } finally {
+          Element.prototype.scrollIntoView = scrollIntoView;
+          await review.unmount();
+        }
+      });
+
+      test("gn / gN go through the unresolved threads only, opening a reviewed file; gH shows only them", async () => {
+        const review = await mount({
+          files: [added("a.ts", 10), added("b.ts", 10)],
+          threads: [
+            {
+              ...conversation("t3", 3, [["you", "Question t3"]]),
+              anchor: { path: "b.ts", line: 3, side: "new" },
+            },
+            conversation("t1", 2, [["you", "Question t1"]]),
+            conversation("t2", 5, [["you", "Question t2"]], {
+              resolved: true,
+            }),
+          ],
+        });
+        // b.ts is marked reviewed: folded to its header.
+        await review.goToFile("b.ts");
+        await review.press("v");
+        expect(review.fileReviewed("b.ts")).toBe(true);
+        await review.goToFile("a.ts");
+        await review.press("gg");
+        const where = () => review.unresolvedNav()?.label;
+        expect(where()).toBe("2 unresolved");
+        // The reviewed file shows no line yet.
+        expect(review.lines("b.ts").map((line) => line.text)).not.toContain(
+          "b.ts line 3",
+        );
+        await review.press("gn");
+        expect(where()).toBe("1 of 2 unresolved");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
+        // Over the resolved one on a.ts into the reviewed file, opened.
+        await review.press("gn");
+        expect(review.lines("b.ts").map((line) => line.text)).toContain(
+          "b.ts line 3",
+        );
+        expect(where()).toBe("2 of 2 unresolved");
+        expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 3 });
+        // Past the last: back at the first.
+        await review.press("gn");
+        expect(where()).toBe("1 of 2 unresolved");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
+        await review.press("gN");
+        expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 3 });
+        // The arrows do the same.
+        await review.unresolvedStep("previous");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
+
+        // The resolved one is drawn folded; gH leaves it out, remembered.
+        expect(review.text()).toContain("Question t2");
+        await review.press("gH");
+        expect(review.text()).not.toContain("Question t2");
+        expect(localStorage.getItem("roamgate:threads.openOnly")).toBe("1");
+        expect(
+          document
+            .querySelector(
+              '[aria-label="Unresolved threads"] [aria-label="Unresolved only"]',
+            )
+            ?.getAttribute("aria-pressed"),
+        ).toBe("true");
+        await review.unmount();
+      });
     });
   }
 }

@@ -24,9 +24,8 @@ import { openReviewStorage } from "./storage";
  * phase 8): the skill, the client's help and the Claude mod's tool
  * descriptions. Each claim they make about where and how the user sees a
  * review is pinned here with the behavior that makes it true: the bridge
- * raises the review in the user's browser, which shows it in the review
- * pane or the workspace's Changes view as the user set it (both opened
- * from that one request: App.reviewEntry.test.tsx), so a change of
+ * raises the review in the user's browser, which shows it in the
+ * workspace's Changes view (App.reviewEntry.test.tsx), so a change of
  * surface has to update both.
  */
 
@@ -96,29 +95,30 @@ function setup() {
   return { service, published, call };
 }
 
-test("the skill and the review_open tool say a review opens on the branch against its default branch, popping up for the user", async () => {
+test("the skill and the review_open tool say a review opens on the branch against its default branch, in the user's Changes", async () => {
   // What they say.
   expect(REVIEW_SKILL).toContain(
-    "Use Roamgate's reviews (its review pane, or the workspace's Changes view) to go through code with the user",
+    "Use Roamgate's reviews (in the workspace's Changes view) to go through code with the user",
   );
   expect(REVIEW_SKILL).toContain(
-    "The user reads diffs in a Roamgate review and comments on lines, in\nRoamgate's review pane or in the workspace's Changes view, as they chose.",
+    "The user reads diffs in a Roamgate review and comments on lines, in the\nworkspace's Changes view.",
   );
   expect(REVIEW_SKILL).toContain(
     "Without a target it reviews `<default branch>..HEAD`.",
   );
   expect(REVIEW_SKILL).toContain(
-    "It opens in the user's browser, in the review pane or the workspace's\nChanges view; in a workspace the user is not in, it waits there for them.",
+    "It opens in the user's browser, in the workspace's Changes view; in a\nworkspace the user is not in, it waits there for them.",
   );
   expect(REVIEW_SKILL).toContain("between them in the review.");
-  // Neither setting's surface is named alone.
+  // The retired review pane is named nowhere.
   expect(REVIEW_SKILL).not.toContain("overlay");
+  expect(REVIEW_SKILL).not.toContain("review pane");
   const open = roamgateTool("review_open")!;
   expect(open.description).toStartWith(
     "Open a Roamgate review for the user: by default the branch here against its default branch.",
   );
   expect(open.description).toContain(
-    "It opens in the user's browser, in the review pane or the workspace's Changes view as they set it; in a workspace they are not in, it waits there.",
+    "It opens in the user's browser, in the workspace's Changes view (a file or a page in its Files preview); in a workspace they are not in, it waits there.",
   );
 
   // What it does: the default branch..HEAD, raised in the user's browser
@@ -162,7 +162,7 @@ test("the skill names the mod's tools, those behind tool search apart", () => {
   );
 });
 
-test("the client's help says it talks to the review pane", async () => {
+test("the client's help says it talks to the reviews in Changes", async () => {
   const dir = temp("rg-txc-");
   const client = join(dir, "roamgate-review");
   writeFileSync(client, REVIEW_CLIENT_SCRIPT);
@@ -179,10 +179,10 @@ test("the client's help says it talks to the review pane", async () => {
   expect(code).toBe(0);
   // argparse wraps the description at the terminal's width.
   expect(stdout.replace(/\s+/g, " ")).toContain(
-    "Talk to Roamgate's reviews, shown in its review pane or the Changes view. Output is JSON.",
+    "Talk to Roamgate's reviews, shown in its Changes view. Output is JSON.",
   );
   expect(REVIEW_CLIENT_SCRIPT).toContain(
-    '"""roamgate-review: talk to Roamgate\'s reviews (its review pane or Changes view).',
+    '"""roamgate-review: talk to Roamgate\'s reviews (its Changes view).',
   );
 });
 

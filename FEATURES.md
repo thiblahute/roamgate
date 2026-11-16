@@ -173,8 +173,8 @@ Inspector button, shortcuts, or workspace/agent menus.
   them; a larger untracked tree is listed without line counts.
 - `gt` / `gT` go to the next and previous view (`2gt` to the second), from
   anywhere in the inspector but a text field; the tabs' arrow keys stay.
-- With reviews set to open in Changes (`:set reviewin=changes`) and Vim keys
-  on (`:vim`), Changes takes the review's cursor: `j`/`k` (counts too),
+- Changes is the review (see [Review](#review)), with its cursor and keys,
+  Vim keys on or off (`:novim` only makes the comment editor plain): `j`/`k` (counts too),
   `J`/`K`, `gg`/`G` and `12G` or `:12` (line 12 of all the changes),
   Ctrl-d/u/f/b/e/y, PageUp/PageDown, `H`/`M`/`L`, `zz`/`zt`/`zb`, `{`/`}`
   hunks, `[`/`]` files, `w`/`b`/`E`, `h`/`l`/`0`/`^`/`$`, Left and Right to
@@ -182,43 +182,40 @@ Inspector button, shortcuts, or workspace/agent menus.
   finds no line goes file to file by path, the tree marks the files with a
   hit), `V` Visual lines (Shift+click too), `S` side by side, `R`/`gr`
   reload, `f` the tree, `o` Review only. A click puts the cursor on a line,
-  a second click there opens the comment box. Ctrl-f is then the page down
-  (Cmd+F still finds on a Mac) and `:split` / `:unified` switch, as in the
-  review pane. On the classic setting (the default), Changes keeps its own
-  keys and mouse.
-- The same setting gives Changes' `:` line the review pane's commands, the
-  same words and Tab completion, and its message for a word that is none of
-  them. `:q` (`:quit`, `:close`, `:wq`, `:x`...) and Esc with nothing else to
+  a second click there opens the comment box. Ctrl-f is the page down
+  (Cmd+F still finds on a Mac) and `:split` / `:unified` switch.
+- Changes' `:` line has the review's commands, with Tab completion, and
+  says so for a word that is none of them. `:q` (`:quit`, `:close`, `:wq`, `:x`...) and Esc with nothing else to
   leave (a selection, a search, Review only first) close the review as the
   review toggle does, back to what the inspector showed; with Changes opened
   by hand, `:q` closes the inspector and Esc does nothing. `:w` saves the
   comment being written, `:reviews` lists the reviews in progress, `:review`
   alone opens the agent review's focus bar (Start asks, with or without a
   focus), `:conversations` lists the comments even when there are none yet.
-  `?` and `:help` show the review's shortcut list, the review pane's rows and
-  then Changes' own. Each file's head has **Open** (and **Rendered** on
+  `?` and `:help` show the review's shortcut list, then Changes' own
+  rows. Each file's head has **Open** (and **Rendered** on
   Markdown, a page or an SVG), which opens it in the Files preview at the
   cursor's line when the cursor is in that file, as `gf` does.
-- The review in Changes keeps your place as the review pane does: the
+- The review in Changes keeps your place: the
   cursor's file and line per review (the last 50 reviews), back after a
   page reload or when the review opens again. With no side by side or
   unified chosen yet, it opens side by side when Changes is 1100 px wide or
   more, unified below. A review of commits that could not be read says why
   with Retry, and reads itself again once a lost connection is back (once:
   another failure waits for Retry).
-- The same setting gives Changes the review's comments. `c`, Enter, `i` or
+- Changes has the review's comments. `c`, Enter, `i` or
   `a` comment on the cursor's line, or on the lines `V` selected, in the
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc
   keeps what you wrote as a draft that comes back, a key or two is a stray
   and is not sent, an image pasted in is stored with the review, `s` or
-  `:suggest` starts a suggestion with the line as it reads, a GitLab
-  suggestion as the review pane writes it; on a removed line it says
+  `:suggest` starts a suggestion with the line as it reads, in GitLab's
+  suggestion format; on a removed line it says
   suggestions are for the new version). The editor says where the comment
-  goes, as the review pane's: a review comment, for the agent as you save, or
+  goes: a review comment, for the agent as you save, or
   held until Send; a review comment (no agent the comments go to) is saved by
   Esc too. On a line with an open discussion `c` answers it; on your review
   comment there `c` rewrites it; `C` and `:ask` answer where the line is
-  discussed, else ask the agent, as in the review pane. With no agent to ask, the question
+  discussed, else ask the agent. With no agent to ask, the question
   is held for Send in the workspace's threads, and drawn on its line saying
   so. `gn` / `gN` go to the next /
   previous unresolved thread through every file (`n` / `N`, with no search
@@ -231,7 +228,7 @@ Inspector button, shortcuts, or workspace/agent menus.
   **Comment**, a discussion quoting them, and a comment on a part of a message
   is written in the review's editor too. A comment on a file and no line is
   drawn at the file's head, above its lines. The review's overall comment is
-  above the diff, as in the review pane: **Overall comment** in the head (or
+  above the diff: **Overall comment** in the head (or
   the agent group's **Overall**, `:overall`) opens it in the review's editor,
   Esc keeps it as written; once written it shows with Edit and Delete. `j` / `k` step into the messages drawn under a line, and the parts of a
   message, before going on to the next line (`k` up onto a line lands on its
@@ -248,11 +245,11 @@ Inspector button, shortcuts, or workspace/agent menus.
   review has an agent, the diff's head gets its agent group: **Live**
   (comments go to the agent as you write them), **Hold**, **Send**,
   **Review** and **Overall**, also `:send`, `:hold`, `:review [focus]` and
-  `:overall`. The agent's name opens its menu, as the review pane's: how
+  `:overall`. The agent's name opens its menu: how
   comments reach it, **Ask Claude about this line** (`C`), its review, and
   **Go to Claude's pane** (the review is kept). With no agent bound to the
   review, the workspace's agent pane is its agent.
-- With reviews in Changes, Files and Changes are one review of the checkout.
+- Files and Changes are one review of the checkout.
   A comment written in Files, on the source or the rendered Markdown, HTML
   or diagram, is a thread of the checkout's review, the one Changes writes
   to: Changes draws it on its file's diff at its source line (words of a
@@ -271,11 +268,11 @@ Inspector button, shortcuts, or workspace/agent menus.
   is a tick only: chunk counts are the changed files'. Comments made in
   Files before this are kept in their file's own review: Files shows them,
   and Changes too on a file with a change.
-- With reviews in Changes, each scope is a review: Working the checkout's
+- Each scope of Changes is a review: Working the checkout's
   uncommitted work, Branch the branch's review against its base (a base
   picked in Compare against is its own review), Last step the review of the
   agent's last step. Showing a scope opens no review: the first comment,
-  mark or agent action does. The Branch scope has the review pane's commit
+  mark or agent action does. The Branch scope has the review's commit
   bar: one commit at a time, oldest first, its message first as a file you
   can comment on, `<` / `>` (or the bar's arrows) to the previous / next
   commit and to all the changes, `gc` or a click on its name to pick one by
@@ -299,7 +296,7 @@ Inspector button, shortcuts, or workspace/agent menus.
   also hides the merge request card. On a phone, Back closes the `:`
   prompt, then the comments list, then Review only, then the diff for its
   tree, then Changes. With several repositories, `p`, `(` and `)` go
-  through them as in the review pane; one with only uncommitted work shows
+  through them; one with only uncommitted work shows
   its Working scope. They open in Changes: a range of other ends, two versions compared, an older step's
   review and a merge or pull request's review show as a scope of their own,
   named in the scope line, until you pick another scope. A review of a
@@ -309,7 +306,7 @@ Inspector button, shortcuts, or workspace/agent menus.
   checkout (a series repository, a request's review worktree, one from
   elsewhere) the tree offers no git actions and `:stage`, `gs` and
   `:discard` say why they do not act there.
-- A merge or pull request's review in Changes is the review pane's: its
+- In a merge or pull request's review, its
   GitLab or GitHub discussions are drawn on their lines (one written on an
   older head is found again in today's file, folded, "outdated (was line
   N)") and above the diff (on the whole request, open ones and a folded
@@ -339,7 +336,7 @@ Inspector button, shortcuts, or workspace/agent menus.
   its review has comments, and for the last 5 steps, across restarts;
   untracked files over 50 MB are left out of them, and the step says so;
   nothing smaller keeps a step from its snapshot.
-- Threads in Changes are drawn as the review pane draws them: under each of
+- Threads in Changes show under each of
   your messages how it goes to the agent (sent, on its way, held, not
   delivered with Retry, not sent with Send, for another review's thread that
   review's way), "edited" and forge draft marks, Edit and Delete (`u` brings
@@ -357,7 +354,7 @@ Inspector button, shortcuts, or workspace/agent menus.
   their margin while the comments are hidden; a click on one shows them, and
   so do the agent's new answers and a comment you write. `T` lists the
   comments, open ones first, the latest written first.
-- Changes then shows more of the code around the changes, as the review pane:
+- Changes shows more of the code around the changes:
   between the hunks and at the file's ends a line says how many lines are
   hidden, with **↓ 20**, **Show all** and **↑ 20** (the end of the file
   reads **more lines** and **Show the rest** until the file is read). `zo` or
@@ -498,7 +495,7 @@ Inspector state is scoped to each checkout; see
   draft, merged, closed), pipeline or checks, approvals and unresolved
   threads; hovering it shows the title, author, branches, failed jobs and when
   it last changed. A click opens its page; **Review** opens a GitLab merge
-  request in the review overlay. The chat's header shows the request of each
+  request's review in Changes. The chat's header shows the request of each
   repository the session works on (the pane's checkout, its `subprojects/` on
   a branch, and repositories the agent worked in), folded into one "3 MRs"
   chip listing them when there are several. The request button next to it
@@ -844,8 +841,8 @@ Inspector state is scoped to each checkout; see
   Voice chat follows you between workspaces (sidebar, Find workspace,
   shortcuts, the phone's switcher): the workspace you go to shows its agent's
   chat (the pane on screen when it is an agent, else its most recently used
-  one, on any connection), a review pinned there steps aside (Option+R
-  brings it back), and the conversation goes on there; what was held
+  one, on any connection), an expanded Changes there docks (Option+R
+  expands it again), and the conversation goes on there; what was held
   stays with the pane it was said to, and only one voice chat listens at a
   time. A
   workspace with no agent is not switched to: Roamgate says so and asks
@@ -1278,13 +1275,13 @@ for your Send, on the next load.
 ## Review
 
 Option+R (Ctrl+Alt+R elsewhere), **Review** in the tab bar, or on a phone **Review** in the ⋮ More options sheet, opens a review of
-the focused workspace's branch against its default branch, over the
-terminals. That base is the one Changes' Branch scope shows under Automatic
+the focused workspace's branch against its default branch, in the workspace
+inspector's Changes view. That base is the one the Branch scope shows under Automatic
 (below), and the review's title names it. Option+Shift+R lists the reviews in progress, the ones with new
-commits or discussions waiting on you first. Closing a review only hides
-it: Option+R brings it back exactly as you left it (view, place, folds,
-drafts), and a workspace's other repositories keep theirs too. On a phone,
-Back closes it too, and the header scrolls with Close kept in reach. When the
+commits or discussions waiting on you first. Closing a review (Option+R
+again, `:q`, Esc) only hides it, back to what the inspector showed: Option+R
+brings it back as you left it (view, place, drafts), and a workspace's other
+repositories keep theirs too. On a phone, Back closes it too. When the
 code changes under an open review it says so; `R`, `gr`, `:e` (or **Reload**) reads it
 again, and comments follow their code or show as outdated.
 
@@ -1387,21 +1384,22 @@ again, and comments follow their code or show as outdated.
   While the agent works on a thread, the thread says so with what it is
   doing and for how long, until it answers there.
 - `gf` (or a file's **Open**) opens the file at the cursor line in the
-  file preview, as the checkout has it now; the review steps aside until
-  Option+R. The preview moves with Vim keys too (`j`/`k`, `gg`/`G`, `/`,
+  Files preview, as the checkout has it now; Option+R comes back to the
+  review. The preview moves with Vim keys too (`j`/`k`, `gg`/`G`, `/`,
   Ctrl-d/u...) unless `:vim` turned them off, and `:files` (or its button
   beside refresh) hides the file tree next to it, until shown again.
-- Vim keys throughout: counts, `gg`/`G`, Ctrl-d/u/f/b, `{`/`}` hunks, `]`/`[`
+- Vim-style keys throughout: counts, `gg`/`G`, Ctrl-d/u/f/b, `{`/`}` hunks, `]`/`[`
   files, word motions, `*`/`#` and `/`/`?` search, `:` commands, `zo`/`zO`/`zR`
-  to show more context. Comments are written in a Vim editor (`:vim` toggles
-  Configuration's **Vim keys**, on every device);
+  to show more context. Comments are written in a Vim editor (`:novim`, as
+  Configuration's **Vim keys** switch off, on every device, makes it a plain
+  one, the other keys stay);
   on touch screens its **Esc** button stands in for the missing key.
   `j`/`k` stop on each message under a line as on a line, so `r`, `e` and `dd`
   act on it there; side by side they go straight down or up on one side, and
   only the left and right arrows change side.
 - **Local** and **GitLab**: a local review shows the checkout's diff and only
   your local comments. **GitLab** (the MR chip, `gm`, `:switch`) opens the
-  review of the branch's merge request in the same overlay: the diff and
+  review of the branch's merge request in Changes: the diff and
   commits as GitLab has them, its discussions on their lines (older ones
   moved to today's code), and your review comments and overall comment as
   GitLab draft notes, shared with any other tool that writes them. Review
@@ -1425,8 +1423,8 @@ again, and comments follow their code or show as outdated.
   searches subject words (letters in order too) or a sha prefix, `j`/`k`
   (until you type) or the arrows move, Enter shows it, Esc closes.
   `:commit 2` goes to the second one, `:commit words` to the one matching,
-  `:all` back to the whole change. In diff only (`o`) a quiet strip at the
-  bottom keeps the commit's name and its arrows, and these keys still work.
+  `:all` back to the whole change. In Review only (`o`) the commit bar stays,
+  and these keys still work.
 - `r` resolves the thread on the line (or the selected message's), and
   reopens a resolved one. On a line without a thread it marks the chunk
   (hunk) there reviewed: it folds to one "chunk reviewed" line and the
@@ -1499,17 +1497,17 @@ review it was written in, which sends it to the agent once; replying,
 resolving and reopening work from either view. A thread finds its line again
 by the line's text after the file changes; one on a removed line is listed in
 the Comments panel only. A merge request's GitLab discussions and your GitLab
-drafts on the file show there too, as the review pane draws them (Draft
+drafts on the file show there too, as Changes draws them (Draft
 reply, Edit, Delete); nothing written on the rendered file becomes a GitLab
 draft by itself. A part of a comment takes a thread of its own (+, words
-selected, c on a part), as in the review pane and a chat. **Review** in the
+selected, c on a part), as in Changes and a chat. **Review** in the
 preview's bar shows the file in its checkout's code review at the cursor's
-line, and **Rendered** beside a file's Open in the review pane shows it
+line, and **Rendered** beside a file's Open in Changes shows it
 rendered at the cursor's line. `o` or `:only` (or the expand button) hides all the
 chrome, in the rendered view and in the source alike; `o`, Esc or Show all
 brings it back.
 
-`:` opens the inspector's command line, the review pane's (Tab / Shift+Tab
+`:` opens the inspector's command line (Tab / Shift+Tab
 complete, a command's argument too, Enter runs, Esc or Backspace on nothing
 leaves it and gives the focus back), wherever the inspector has the focus:
 its tab strip and buttons, the Files tree and preview (the rendered file, a
@@ -1518,24 +1516,23 @@ handles, Review only, a phone's keyboard), Changes, Commits and History;
 never in a comment box, a search box or another field, where `:` is text. In
 the Files preview's source view its Vim keys' `:` runs the same commands
 (but `:set`, which stays the editor's own there). A preview shown outside
-the inspector has the same prompt, with its own commands. The review pane's
-prompt is the same one, with the review's commands. Each command does what a
+the inspector has the same prompt, with its own commands. In Changes it has
+the review's commands too. Each command does what a
 key or a button already does, where that one is; the shown view's come
 first, then the inspector's own. `?` (or `:help`) lists them with the view's
 keys, filtered as you type; `:help WORD` opens the list filtered:
 
-| Command                             | Does                                                                                                                             |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `:view NAME` (`:v`)                 | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes)                                    |
-| `:files`                            | Files, beside a file: hides or shows the file tree (its button); Changes: its changed files' tree; Commits: its commit list      |
-| `:only` (`:o`)                      | Changes: Review only, the diff alone over the app; Esc, `:only` or **Show all** bring the inspector back                         |
-| `:dock` (`right` / `bottom`)        | the dock button                                                                                                                  |
-| `:expand`                           | the expand button, or restore                                                                                                    |
-| `:vim`, `:novim`                    | Vim keys in the review, its comments and the previews, on / off (one setting)                                                    |
-| `:set vim` / `novim`                | the same                                                                                                                         |
-| `:set reviewin=classic` / `changes` | where reviews open: the review pane (the default) or Changes; `:set reviewin` says which. On classic, Changes keeps its own keys |
-| `:help` (`WORD`)                    | the shortcut list (`?`), filtered by the word                                                                                    |
-| `:q` (`:quit`, `:close`)            | Files: closes the file's tab; elsewhere closes the inspector                                                                     |
+| Command                      | Does                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `:view NAME` (`:v`)          | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes)                               |
+| `:files`                     | Files, beside a file: hides or shows the file tree (its button); Changes: its changed files' tree; Commits: its commit list |
+| `:only` (`:o`)               | Changes: Review only, the diff alone over the app; Esc, `:only` or **Show all** bring the inspector back                    |
+| `:dock` (`right` / `bottom`) | the dock button                                                                                                             |
+| `:expand`                    | the expand button, or restore                                                                                               |
+| `:vim`, `:novim`             | Vim keys in comment editors, message boxes and the previews, on / off (one setting); the review's other keys stay           |
+| `:set vim` / `novim`         | the same                                                                                                                    |
+| `:help` (`WORD`)             | the shortcut list (`?`), filtered by the word                                                                               |
+| `:q` (`:quit`, `:close`)     | Files: closes the file's tab; elsewhere closes the inspector                                                                |
 
 The Files tree, its toolbar's:
 
@@ -1593,7 +1590,7 @@ Commits:
 | `:commit N` / `WORDS`                 | the commit of row N, or whose subject or sha has the words     |
 | `:more`                               | **Load more commits**                                          |
 | `:preview`, `:diff`                   | **Preview at commit** for the file shown, **Back to diff**     |
-| `:reviewcommit`                       | **Review this commit**: in Changes, or the review pane         |
+| `:reviewcommit`                       | **Review this commit**, in Changes                             |
 
 History:
 
@@ -1634,7 +1631,7 @@ start at the site's root: the folder above it where they are found (below
 your home folder), or the **Root** set beside the entry in Settings.
 
 Comments written from the Files, Changes, Commits and History views are
-threads of the review of what they are on, as the review pane's: the view
+threads of the review of what they are on: the view
 draws each under what it is on and lists it in its Comments panel, the focus
 stays where you wrote it, and the workspace's agent gets it as that review's
 settings say (as you write, or held until Send), answering in the thread. A
@@ -2032,8 +2029,7 @@ top, the efforts' cards too. Narrow panes and phones keep the one list.
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**
 workspace, and opens the request's review there, GitLab merge requests and
-GitHub pull requests alike (with reviews in Changes, in that workspace's
-Changes). The worktree checks out the request's head,
+GitHub pull requests alike, in that workspace's Changes. The worktree checks out the request's head,
 detached, at once or only when you browse its files (`gf`, Open in Files;
 a setting); nothing is built. If it has local changes you are asked: keep them as a WIP commit on
 a `review/<number>` branch, or discard them; leaving it as it is changes
@@ -2058,7 +2054,7 @@ worktree stays. The command menu finds a request by number or title.
 
 Each review workspace has one Claude, and each request its own Claude
 session. **Review with Claude** (a request's details) starts or resumes
-the request's session there and asks it to review through the review pane:
+the request's session there and asks it to review in Roamgate:
 it reads the request and leaves its threads in the review, where you
 answer them; its threads stay Roamgate notes, never forge comments. **Ask
 Claude** (`c` in the list) takes you to the request's session. Claude

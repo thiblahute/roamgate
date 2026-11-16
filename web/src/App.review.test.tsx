@@ -1,10 +1,11 @@
 import { expect, jest, test } from "bun:test";
 
 /**
- * The review at the app level: Option+R, the reviews list, the review's
- * place kept while it is away, Cmd+K and Go to agent's pane putting it
- * aside, the code preload. App is mounted with a stub review surface
- * (App.review.testkit.tsx); what a review draws is the behavior tests'.
+ * The review at the app level, in the workspace's Changes: Option+R, the
+ * reviews list, Changes kept while the review is away, Cmd+K and Go to
+ * agent's pane putting it aside, the code preload. App is mounted with a
+ * stub inspector (App.review.testkit.tsx); what a review draws is the
+ * behavior tests'.
  */
 if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   test("the review at the app level, in an isolated DOM runtime", async () => {
@@ -27,61 +28,73 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   );
   await installAppReviewDom();
 
-  test("Option+R shows the workspace's branch review, and hides it again", async () => {
+  test("Option+R shows the workspace's review in its Changes, and hides it again; again, the same review", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()?.open ?? false).toBe(false);
       app.setNextOpened("r1");
       await app.toggleReview();
+      await app.settle(50);
       // The workspace's review is found (or made) once.
       expect(app.openCalls()).toBe(1);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspector()?.scope.workspaceId).toBe("w1");
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
       await app.toggleReview();
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
-      // Again: the review pinned to the workspace, not looked up anew.
+      expect(app.inspector()?.open).toBe(false);
+      // Again: the same review, picked as Option+R picks it (the one shown
+      // there last); Changes pins only an agent's.
       await app.toggleReview();
-      expect(app.openCalls()).toBe(1);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
+      await app.settle(50);
+      expect(app.openCalls()).toBe(2);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("closing the review only hides it: Option+R brings back the same one, never mounted again", async () => {
+  test("closing the review in Changes (Esc, :q) goes back to what the inspector showed; Option+R brings it back, and closed stays closed across workspaces", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
       app.setNextOpened("r1");
       await app.toggleReview();
-      expect(app.mounts("r1")).toBe(1);
-      // Its own close (Esc, :q) hides it as Option+R does.
-      await app.settle();
-      await app.run(() => app.host().onClose());
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      // Its own close (Esc, :q) closes it as Option+R does.
+      await app.run(() => app.inspectorProps().onCloseReview?.("escape"));
+      expect(app.inspector()?.open).toBe(false);
       await app.toggleReview();
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.mounts("r1")).toBe(1);
-      // Another workspace and back: kept, shown again.
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      // Another workspace and back: Changes kept, shown again.
       await app.focusWorkspace("w2");
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
       await app.focusWorkspace("w1");
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.mounts("r1")).toBe(1);
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspector()?.scope.workspaceId).toBe("w1");
       // Closed stays closed across workspace changes, until Option+R.
-      await app.toggleReview();
+      (document.activeElement as HTMLElement | null)?.blur();
+      await app.run(() => app.inspectorProps().onCloseReview?.("command"));
       await app.focusWorkspace("w2");
       await app.focusWorkspace("w1");
-      expect(app.shown().shownId).toBe(null);
-      expect(app.openCalls()).toBe(1);
+      await app.settle(50);
+      expect(app.inspector()?.open ?? false).toBe(false);
+      expect(app.openCalls()).toBe(2);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("Option+Shift+R opens the reviews list over the review, which comes back once it closes", async () => {
+  test("Option+Shift+R opens the reviews list over the review in Changes, which is still there once it closes", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
@@ -93,22 +106,26 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       expect(app.listShown()).toBe(false);
       app.setNextOpened("r1");
       await app.toggleReview();
+      await app.settle(50);
       await app.toggleList();
       expect(app.listShown()).toBe(true);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      // The review stays in Changes, under the list.
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       await app.closeList();
       expect(app.listShown()).toBe(false);
-      expect(app.shown().shownId).toBe("r1");
-      // The review's own way to the list (:reviews) does the same.
-      await app.run(() => app.host().onShowList());
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      // Changes' own way to the list (:reviews) does the same.
+      await app.run(() => app.inspectorProps().onShowReviews?.());
       expect(app.listShown()).toBe(true);
-      expect(app.shown().shownId).toBe(null);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("the tab bar's Review opens and closes the review as Option+R does", async () => {
+  test("the tab bar's Review opens and closes the review in Changes as Option+R does, with no open state of its own", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
@@ -119,18 +136,21 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       expect(button.title).toStartWith("Review this branch");
       app.setNextOpened("r1");
       await app.click(button);
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.tabBarReview()!.getAttribute("aria-expanded")).toBe("true");
-      expect(app.tabBarReview()!.title).toStartWith("Close the review");
-      await app.click(app.tabBarReview()!);
-      expect(app.shown().shownId).toBe(null);
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      // Changes is the review: the button says nothing of it.
       expect(app.tabBarReview()!.getAttribute("aria-expanded")).toBe("false");
+      expect(app.tabBarReview()!.title).toStartWith("Review this branch");
+      await app.click(app.tabBarReview()!);
+      expect(app.inspector()?.open).toBe(false);
+      expect(app.tabBarReview()!.getAttribute("aria-expanded")).toBe("false");
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("Cmd+K puts the review aside; Option+R or the next workspace change brings it back", async () => {
+  test("Cmd+K docks the review's expanded Changes and closes the reviews list; Option+R expands it again, a workspace change leaves it docked", async () => {
     const { COMMAND_MENU_OPENING } = await import(
       "./components/CommandCombobox"
     );
@@ -140,67 +160,104 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       app.setNextOpened("r1");
       await app.toggleReview();
+      await app.settle(50);
       // The command menu says it opens; the review steps aside, kept.
       window.dispatchEvent(new Event(COMMAND_MENU_OPENING));
       await app.settle();
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      (document.activeElement as HTMLElement | null)?.blur();
       await app.toggleReview();
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.openCalls()).toBe(1);
-      expect(app.mounts("r1")).toBe(1);
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
       // It also closes the reviews list.
       await app.toggleList();
       expect(app.listShown()).toBe(true);
       window.dispatchEvent(new Event(COMMAND_MENU_OPENING));
       await app.settle();
       expect(app.listShown()).toBe(false);
-      expect(app.shown().shownId).toBe(null);
-      // A workspace change ends the step aside: back in w1, it shows.
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      // A workspace change and back: Changes as it was left, docked.
       await app.focusWorkspace("w2");
       await app.focusWorkspace("w1");
-      expect(app.shown().shownId).toBe("r1");
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("Go to agent's pane puts the review aside and focuses the pane", async () => {
+  test("Changes' Go to agent's pane docks the review and focuses the pane; Option+R expands it again", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
       app.setNextOpened("r1");
       await app.toggleReview();
-      await app.run(() => app.host().onFocusAgentPane("a"));
+      await app.settle(50);
+      await app.run(() => app.inspectorProps().onFocusAgentPane?.("a"));
       expect(app.focusedPanes()).toEqual(["a"]);
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: false,
+      });
+      // The pane has the keys now.
+      (document.activeElement as HTMLElement | null)?.blur();
       await app.toggleReview();
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.openCalls()).toBe(1);
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
   });
 
-  test("gf opens the file at its line in Files and the review steps aside; Option+R brings it back", async () => {
+  test("gf in Changes opens the file at its line in Files; Option+R brings the review back in Changes", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
       app.setNextOpened("r1");
       await app.toggleReview();
-      await app.run(() => app.host().onOpenFile("w1", "/repo/r1/src/a.ts", 12));
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      await app.settle(50);
+      await app.run(() =>
+        app.inspectorProps().onOpenDiffFile({ path: "src/a.ts" }, { line: 12 }),
+      );
       const inspector = app.inspector();
       expect(inspector).toMatchObject({ open: true, view: "files" });
       expect(inspector?.scope.workspaceId).toBe("w1");
       expect(app.inspectorFile()).toMatchObject({
-        entry: { path: "/repo/r1/src/a.ts", type: "file" },
+        entry: { path: "src/a.ts", type: "file" },
         line: 12,
       });
       await app.toggleReview();
-      expect(app.shown().shownId).toBe("r1");
-      expect(app.mounts("r1")).toBe(1);
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }
@@ -211,10 +268,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes" }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       // Inspector closed: the toggle opens Changes, expanded the first time,
@@ -272,10 +326,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       // Leave the inspector docked on Changes, opened by hand.
       await app.toggleReview();
@@ -335,10 +387,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: false }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "false");
       app.setNextOpened("r1");
       const terminal = document.createElement("div");
       terminal.tabIndex = 0;
@@ -365,10 +415,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes" }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       await app.toggleReview();
@@ -397,10 +444,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes" }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       app.setRepos(["/repo/r1", "/repo/other"]);
@@ -422,10 +466,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r2", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r2");
       app.setRepos(["/repo/r1", "/repo/r2"]);
       await app.toggleReview();
@@ -450,10 +492,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     };
     const app = await mountAppWithReviews({ reviews: [branch] });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes" }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       await app.toggleReview();
@@ -471,10 +510,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     branch.session.target = { kind: "range", base: "main", head: "HEAD" };
     const app = await mountAppWithReviews({ reviews: [branch] });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       app.setChanged("branch-main", []);
       app.setChanged("working", ["notes.txt"]);
@@ -503,10 +540,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     branch.session.target = { kind: "range", base: "main", head: "HEAD" };
     const app = await mountAppWithReviews({ reviews: [branch] });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       app.setChanged("branch-main", []);
       app.setChanged("working", []);
@@ -545,10 +580,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       review.session.target = target;
       const app = await mountAppWithReviews({ reviews: [review] });
       try {
-        localStorage.setItem(
-          "reviewPrefs",
-          JSON.stringify({ reviewIn: "changes", vim: true }),
-        );
+        localStorage.setItem("reviewPrefs", "{}");
+        localStorage.setItem("vimKeys", "true");
         app.setNextOpened("r1");
         await app.toggleReview();
         await app.settle(50);
@@ -567,10 +600,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r2", "w1")],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes" }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r2");
       await app.toggleReview();
@@ -599,10 +629,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1"), mr],
     });
     try {
-      localStorage.setItem(
-        "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
-      );
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       await app.toggleList();
       expect(app.listShown()).toBe(true);
       await app.pickFromList("m1");
@@ -616,23 +644,27 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=classic, Option+R leaves the inspector alone", async () => {
+  test("a stored reviewin=classic (the retired setting) changes nothing: Option+R opens the review in Changes", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "classic" }),
+      );
       localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       await app.toggleReview();
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: "r1" });
-      expect(app.inspector()?.open ?? false).toBe(false);
+      await app.settle(50);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
     } finally {
       await app.unmount();
     }
   });
 
-  test("the review's code loads 3 s after the page shows, and the last 6 reviews shown stay mounted", async () => {
+  test("the review's code loads 3 s after the page shows; reviews shown one after the other each take the workspace's Changes", async () => {
     const reviews = Array.from({ length: 8 }, (_, index) =>
       reviewOf(`r${index + 1}`, "w1"),
     );
@@ -643,21 +675,24 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
         expect(app.highlighterPreloads()).toBe(0);
         await app.settle(200);
         expect(app.highlighterPreloads()).toBe(1);
-        // Reviews of the workspace's repositories shown one after the
-        // other (the review's ( and ), p): the 6 latest stay mounted.
+        // Reviews of the workspace's repositories picked one after the
+        // other: Changes holds one at a time, the last picked.
         app.setNextOpened("r1");
         await app.toggleReview();
+        await app.settle(50);
         for (const review of reviews.slice(1)) {
-          await app.run(() => app.host().onShow(review.session.id));
+          await app.toggleList();
+          await app.pickFromList(review.session.id);
+          await app.settle(50);
         }
-        expect(app.shown().shownId).toBe("r8");
-        expect(app.shown().mounted.sort()).toEqual(
-          ["r3", "r4", "r5", "r6", "r7", "r8"].sort(),
-        );
-        // Each was mounted once, and the one shown again is the same.
-        await app.run(() => app.host().onShow("r4"));
-        expect(app.shown().shownId).toBe("r4");
-        expect(app.mounts("r4")).toBe(1);
+        expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+        expect(app.inspectorGoTo()).toMatchObject({ root: "/repo/r8" });
+        // The one picked again is shown again.
+        await app.toggleList();
+        await app.pickFromList("r4");
+        await app.settle(50);
+        expect(app.inspectorGoTo()).toMatchObject({ root: "/repo/r4" });
+        expect(app.shown()).toEqual({ mounted: [], shownId: null });
       } finally {
         await app.unmount();
       }

@@ -28,50 +28,50 @@
 }
 
 /* Syntax colours: maildesk's palette over highlight.js classes */
-:is(.review-overlay, .chat-review) .hljs-keyword,
-:is(.review-overlay, .chat-review) .hljs-built_in,
-:is(.review-overlay, .chat-review) .hljs-literal {
+.chat-review .hljs-keyword,
+.chat-review .hljs-built_in,
+.chat-review .hljs-literal {
   color: var(--rv-syn-kw);
 }
 
-:is(.review-overlay, .chat-review) .hljs-string,
-:is(.review-overlay, .chat-review) .hljs-regexp,
-:is(.review-overlay, .chat-review) .hljs-char {
+.chat-review .hljs-string,
+.chat-review .hljs-regexp,
+.chat-review .hljs-char {
   color: var(--rv-syn-str);
 }
 
-:is(.review-overlay, .chat-review) .hljs-comment,
-:is(.review-overlay, .chat-review) .hljs-quote {
+.chat-review .hljs-comment,
+.chat-review .hljs-quote {
   color: var(--rv-syn-com);
   font-style: italic;
 }
 
-:is(.review-overlay, .chat-review) .hljs-number,
-:is(.review-overlay, .chat-review) .hljs-symbol {
+.chat-review .hljs-number,
+.chat-review .hljs-symbol {
   color: var(--rv-syn-num);
 }
 
-:is(.review-overlay, .chat-review) .hljs-title,
-:is(.review-overlay, .chat-review) .hljs-section,
-:is(.review-overlay, .chat-review) .hljs-function {
+.chat-review .hljs-title,
+.chat-review .hljs-section,
+.chat-review .hljs-function {
   color: var(--rv-syn-def);
 }
 
-:is(.review-overlay, .chat-review) .hljs-type,
-:is(.review-overlay, .chat-review) .hljs-class {
+.chat-review .hljs-type,
+.chat-review .hljs-class {
   color: var(--rv-syn-type);
 }
 
-:is(.review-overlay, .chat-review) .hljs-meta,
-:is(.review-overlay, .chat-review) .hljs-tag,
-:is(.review-overlay, .chat-review) .hljs-name {
+.chat-review .hljs-meta,
+.chat-review .hljs-tag,
+.chat-review .hljs-name {
   color: var(--rv-syn-meta);
 }
 
-:is(.review-overlay, .chat-review) .hljs-attr,
-:is(.review-overlay, .chat-review) .hljs-attribute,
-:is(.review-overlay, .chat-review) .hljs-property,
-:is(.review-overlay, .chat-review) .hljs-variable {
+.chat-review .hljs-attr,
+.chat-review .hljs-attribute,
+.chat-review .hljs-property,
+.chat-review .hljs-variable {
   color: var(--rv-syn-prop);
 }
 

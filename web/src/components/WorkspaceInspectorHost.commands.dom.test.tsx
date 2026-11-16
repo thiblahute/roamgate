@@ -489,12 +489,9 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
       }
     });
 
-    test(":vim, :novim and :set vim / novim switch the Vim keys; :set reviewin= picks where reviews open; another :set is unknown", async () => {
-      const { readReviewPrefs, writeReviewPrefs } = await import(
-        "../reviewPrefs"
-      );
+    test(":vim, :novim and :set vim / novim switch the Vim keys; :set reviewin is no setting now; another :set is unknown", async () => {
+      const { readReviewPrefs } = await import("../reviewPrefs");
       const { setVimKeys, vimKeys } = await import("../vimKeys");
-      writeReviewPrefs({ reviewIn: undefined });
       setVimKeys(true);
       const inspector = await mountInspector({ view: "changes" });
       try {
@@ -515,16 +512,12 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
           "Vim keys on",
         ]);
         told.length = 0;
-        await inspector.command(place(), "set reviewin");
+        // Reviews always open in Changes: `reviewin` is no setting.
         await inspector.command(place(), "set reviewin=changes");
-        expect(readReviewPrefs().reviewIn).toBe("changes");
-        await inspector.command(place(), "set reviewin=classic");
-        expect(readReviewPrefs().reviewIn).toBe("classic");
-        expect(told).toEqual([
-          "Reviews open in the review pane (reviewin=classic)",
-          "Reviews open in Changes (reviewin=changes)",
-          "Reviews open in the review pane (reviewin=classic)",
-        ]);
+        expect(told[0]).toStartWith(
+          "Not a command here: :set reviewin=changes (try ",
+        );
+        expect(readReviewPrefs()).not.toHaveProperty("reviewIn");
         told.length = 0;
         await inspector.command(place(), "set number");
         expect(told[0]).toStartWith("Not a command here: :set number (try ");
@@ -532,14 +525,15 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         place().focus();
         await inspector.press(place(), ":");
         await inspector.type("set rev");
-        expect(inspector.completions()).toEqual([
-          "set reviewin=classic",
-          "set reviewin=changes",
-        ]);
+        expect(inspector.completions()).toEqual([]);
+        await inspector.press(inspector.prompt()!, "Escape");
+        place().focus();
+        await inspector.press(place(), ":");
+        await inspector.type("set n");
+        expect(inspector.completions()).toEqual(["set novim"]);
         await inspector.press(inspector.prompt()!, "Escape");
       } finally {
         await inspector.unmount();
-        writeReviewPrefs({ reviewIn: undefined });
         setVimKeys(true);
       }
     });
@@ -608,10 +602,14 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
       const inspector = await mountInspector({ view: "changes" });
       const changes = () =>
         inspector.host.querySelector(".inspector-changes-resource")!;
-      const hint = () =>
-        inspector.host.querySelector<HTMLButtonElement>(
-          ".inspector-review-only-hint button",
-        );
+      // Review only's Show all: at the end of the diff's head.
+      const hint = () => {
+        const end = (diffProps as { headEnd?: { props?: unknown } } | null)
+          ?.headEnd?.props as { onShowAll?: () => void } | undefined;
+        return end?.onShowAll
+          ? { textContent: "Show all", click: end.onShowAll }
+          : null;
+      };
       try {
         const place = () => inspector.place("changes");
         expect(changes().classList.contains("files-tree-hidden")).toBe(false);
@@ -661,10 +659,25 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
             .filter((key) => key.startsWith(":") && key.length > 1)
             .map((key) => key.slice(1));
           // The stand-ins' own words aside, every word is forwarded; but
-          // `:set`, which stays CodeMirror Vim's own options there.
+          // `:set`, which stays CodeMirror Vim's own options there, and
+          // the review's repositories and scopes, Changes' own (always
+          // listed there now that Changes is the review).
           for (const word of words.filter(
             (word) =>
-              !["refresh", "reload", "scope", "commit", "set"].includes(word),
+              ![
+                "refresh",
+                "reload",
+                "scope",
+                "commit",
+                "set",
+                "repo",
+                "p",
+                "nextrepo",
+                "prevrepo",
+                "working",
+                "branch",
+                "last",
+              ].includes(word),
           ))
             expect([word, forwarded.has(word)]).toEqual([word, true]);
           expect(words).toContain("help");
@@ -715,36 +728,29 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
       }
     });
 
-    test("Changes gets the review's cursor only on `:set reviewin=changes`, with Vim keys on or off", async () => {
-      const { writeReviewPrefs } = await import("../reviewPrefs");
+    test("Changes always gets the review's cursor, with Vim keys on or off", async () => {
       const { setVimKeys } = await import("../vimKeys");
-      writeReviewPrefs({ reviewIn: undefined });
       setVimKeys(true);
       const inspector = await mountInspector({ view: "changes" });
       try {
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 20));
         });
-        // On classic (the default), Changes keeps its own keys.
-        expect(diffProps?.reviewCursor).toBe(false);
-        await inspector.command(
-          inspector.place("changes"),
-          "set reviewin=changes",
-        );
+        // With no setting at all, Changes is the review.
         expect(diffProps?.reviewCursor).toBe(true);
         // `:novim` keeps the review: only the editor is a plain one.
         await inspector.command(inspector.place("changes"), "novim");
         expect(diffProps?.reviewCursor).toBe(true);
         await inspector.command(inspector.place("changes"), "vim");
         expect(diffProps?.reviewCursor).toBe(true);
+        // The retired switch is no command, and changes nothing.
         await inspector.command(
           inspector.place("changes"),
           "set reviewin=classic",
         );
-        expect(diffProps?.reviewCursor).toBe(false);
+        expect(diffProps?.reviewCursor).toBe(true);
       } finally {
         await inspector.unmount();
-        writeReviewPrefs({ reviewIn: undefined });
         setVimKeys(true);
       }
     });

@@ -21,7 +21,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  const { installReviewDom, file, hunk, thread } = await import(
+  const { installReviewDom, file, hunk, numbered, thread } = await import(
     "./reviewSurface.testkit"
   );
   await installReviewDom();
@@ -179,6 +179,92 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(again.fileReviewed("c.ts")).toBe(true);
         expect(texts(again)).not.toContain("a 3");
         await again.unmount();
+      });
+
+      test("r marks the chunk under the cursor reviewed, folded to a line; Option+V the file", async () => {
+        const numberedAdded = (path: string, from: number, count: number) =>
+          numbered(`${path} line`, count, from).map((line) => `+${line}`);
+        const review = await mount({
+          files: [
+            file(
+              "a.ts",
+              hunk(1, 1, numberedAdded("a.ts", 1, 3)),
+              hunk(10, 20, numberedAdded("a.ts", 20, 3)),
+            ),
+            file("b.ts", hunk(1, 1, numberedAdded("b.ts", 1, 2))),
+          ],
+        });
+        const cursorText = () => review.cursorLine()?.text ?? "";
+        const updates = () => review.calls("review.update").length;
+
+        expect(cursorText()).toBe("a.ts line 1");
+        await review.press("r");
+        const written = Object.keys(review.reviewedMarks());
+        expect(written).toHaveLength(1);
+        expect(written[0]).toMatch(/^all:a\.ts\nh3\./);
+        // Folded to one line; the cursor on the next chunk; 1/2 in the list.
+        expect(texts(review)).not.toContain("a.ts line 3");
+        const folded = review
+          .lines("a.ts")
+          .filter((line) => line.kind === "reviewed");
+        expect(folded).toHaveLength(1);
+        expect(folded[0]?.text).toBe("\u2713 reviewed: 3 lines, za shows them");
+        expect(cursorText()).toBe("a.ts line 20");
+        expect(review.chunkProgress("a.ts")).toBe("1/2");
+
+        // A click on it shows it again, za folds it back.
+        await review.click({ path: "a.ts", kind: "reviewed" });
+        expect(texts(review)).toContain("a.ts line 3");
+        await review.press("za");
+        expect(texts(review)).not.toContain("a.ts line 3");
+        // r on it unmarks it; r again marks it and goes on.
+        await review.press("r");
+        expect(texts(review)).toContain("a.ts line 3");
+        expect(Object.values(review.reviewedMarks())).toEqual([""]);
+        expect(review.chunkProgress("a.ts")).toBeNull();
+        await review.press("r");
+        expect(cursorText()).toBe("a.ts line 20");
+
+        // gU goes back over the reviewed one: b.ts is the previous not reviewed.
+        await review.press("gU");
+        expect(cursorText()).toBe("b.ts line 1");
+        await review.press("gu");
+        expect(cursorText()).toBe("a.ts line 20");
+
+        // The second chunk: the file is reviewed, folded, ticked.
+        await review.press("r");
+        expect(texts(review)).not.toContain("a.ts line 20");
+        expect(review.fileReviewed("a.ts")).toBe(true);
+        expect(Object.values(review.reviewedMarks())).toContain("1");
+        expect(Object.keys(review.reviewedMarks())).toContain("all:a.ts");
+
+        // Shown again, the reviewed file shows its chunks.
+        expect(review.fileFolded("a.ts")).toBe(true);
+        await review.clickFileHeader("a.ts", "Show");
+        expect(texts(review)).toContain("a.ts line 3");
+
+        // Option+V on b.ts marks it whole: a Mac types "\u221a", its code is KeyV.
+        await review.goToFile("b.ts");
+        expect(cursorText()).toBe("b.ts line 1");
+        expect(await review.keyTaken("<A-v>")).toBe(true);
+        expect(review.reviewedMarks()["all:b.ts"]).toBeTruthy();
+        expect(texts(review)).not.toContain("b.ts line 1");
+        // Shown again from the file list, Option+V on it unmarks it.
+        await review.goToFile("b.ts");
+        expect(cursorText()).toBe("b.ts line 1");
+        await review.press("<A-v>");
+        expect(review.reviewedMarks()["all:b.ts"]).toBe("");
+        expect(texts(review)).toContain("b.ts line 1");
+
+        // In a comment it types, and the file stays as it is.
+        await review.goToFile("b.ts");
+        await review.press("c");
+        expect(review.editorOpen()).toBe(true);
+        const before = updates();
+        expect(await review.keyTaken("<A-v>")).toBe(false);
+        expect(updates()).toBe(before);
+        expect(texts(review)).toContain("b.ts line 1");
+        await review.unmount();
       });
     });
 }

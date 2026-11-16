@@ -129,6 +129,88 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(review.calls("review.handoff")).toEqual([]);
         await review.unmount();
       });
+
+      test("a rendered file's threads show on its lines in the code review, answered in their own review; Rendered shows the file rendered", async () => {
+        const lines = numbered("plan line", 12);
+        // Written on the rendered file: older anchors keep the words quoted.
+        const rendered = (
+          id: string,
+          path: string,
+          line: number,
+          body: string,
+        ): ReviewThread =>
+          ({
+            ...thread(id, path, line, body),
+            sessionId: "r1",
+            kind: "discussion",
+            anchor: {
+              path,
+              line,
+              side: "new",
+              text: "the words",
+              render: { quote: "the words" },
+            },
+          }) as unknown as ReviewThread;
+        const review = await mount({
+          files: [
+            file(
+              "plan.md",
+              hunk(
+                1,
+                1,
+                lines.map((text) => `+${text}`),
+              ),
+            ),
+          ],
+          texts: { "plan.md": `${lines.join("\n")}\n` },
+          shared: [
+            rendered("r1t", "plan.md", 4, "Said on the rendered plan"),
+            rendered("r2t", "other.md", 2, "On a file not in the changes"),
+          ],
+          otherReviews: [
+            {
+              id: "r1",
+              connectionId: "desktop",
+              root: "/repo",
+              title: "plan.md rendered",
+              target: { kind: "rendered", path: "plan.md" },
+              gitlab: false,
+              summary: "",
+              agent: {},
+              createdAt: "2026-11-10",
+              updatedAt: "2026-11-10",
+            },
+          ],
+          openFiles: true,
+        });
+        // On its line, not apart as outdated; another file's is not here.
+        expect(review.text()).toContain("Said on the rendered plan");
+        expect(shown(review, "r1t")?.general).toBe(false);
+        expect(
+          review.markedLines().map((line) => `${line.path}:${line.new}`),
+        ).toEqual(["plan.md:4"]);
+        expect(review.text()).not.toContain("On a file not in the changes");
+        // Answered here: a reply the server writes in the thread's review.
+        expect(shown(review, "r1t")?.buttons).toContain("Reply");
+        await review.threadButton("r1t", "Reply");
+        await review.writeInEditor("Answered from the code");
+        await review.editorPress("<C-Enter>");
+        expect(review.calls("review.reply")[0]?.params).toMatchObject({
+          session_id: "r1",
+          comment_id: "r1t",
+          text: "Answered from the code",
+        });
+        // Rendered: the file in the Files preview, rendered.
+        expect(review.fileButtons("plan.md")).toContain("Rendered");
+        await review.clickFileHeader("plan.md", "Rendered");
+        expect(
+          review.openedFiles()[review.openedFiles().length - 1],
+        ).toMatchObject({
+          path: "/repo/plan.md",
+          rendered: true,
+        });
+        await review.unmount();
+      });
     });
   }
 }

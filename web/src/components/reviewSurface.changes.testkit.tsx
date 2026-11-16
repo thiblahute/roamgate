@@ -5,10 +5,9 @@
  * on the review's files written as patches. It reads Pierre's drawing: the
  * line Pierre marks active is the cursor's, the lines it marks selected the
  * Visual selection's; its threads are the review's cards Changes draws,
- * fed from the classic kit's bridge as the host feeds them. What Changes
- * does not do yet (commits, the forge, ...: phases 5 to 8) throws, and the
- * tests that need it run on the classic pane only (`CHANGES_FEATURES` in
- * reviewSurfaces.testkit.ts).
+ * fed from the bridge in memory (reviewSurface.bridge.testkit) as the host
+ * feeds them. A test needing what it does not do is not registered
+ * (`CHANGES_FEATURES` in reviewSurfaces.testkit.ts).
  *
  * Not a test file: imported by `reviewBehavior.*.dom.test.tsx`, whose child
  * installed happy-dom (`installReviewDom`) first.
@@ -136,12 +135,12 @@ export async function mountChangesReview(
   options: SurfaceOptions,
 ): Promise<ReviewSurface> {
   const restoreGlobals = installPierreGlobals();
-  // The bridge the classic pane's tests hold: the checkout's worktree
-  // review, its reviewed marks written by review.update.
-  const { backend, mockClassicBackend, setUpScreen } = await import(
-    "./reviewSurface.classic.testkit"
+  // The bridge in memory: the checkout's worktree review, its reviewed
+  // marks written by review.update.
+  const { backend, mockReviewBackend, setUpScreen } = await import(
+    "./reviewSurface.bridge.testkit"
   );
-  mockClassicBackend();
+  mockReviewBackend();
   const { act, cloneElement, createElement, isValidElement, useState } =
     await import("react");
   type ReactNode = import("react").ReactNode;
@@ -195,7 +194,7 @@ export async function mountChangesReview(
     "./WorkspaceInspectorHost.css",
     "./DiffContentView.css",
   ]);
-  // The browser storage it opens with, as the classic kit's.
+  // The browser storage it opens with.
   if (options.storage !== "keep") {
     localStorage.clear();
     for (const [key, value] of Object.entries(options.storage ?? {}))
@@ -2032,14 +2031,6 @@ export async function mountChangesReview(
       const stored = roamgateLocalStorage.getItem("vimKeys");
       return stored === null ? undefined : stored === "true";
     },
-    reviewInPreference() {
-      try {
-        return JSON.parse(roamgateLocalStorage.getItem("reviewPrefs") ?? "{}")
-          .reviewIn;
-      } catch {
-        return undefined;
-      }
-    },
     buttons() {
       return [
         ...[...host.querySelectorAll("button, a")].map(
@@ -2114,7 +2105,7 @@ export async function mountChangesReview(
       await settleAll();
     },
 
-    // The bridge: the classic kit's, this review in it.
+    // The bridge in memory, this review in it.
     calls(method) {
       return backend.calls
         .filter((call) => method === undefined || call.method === method)

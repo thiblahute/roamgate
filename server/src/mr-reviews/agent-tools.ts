@@ -223,7 +223,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   set_hints:
     "Change the user's own hints for the suggestions (areas they maintain, people they work with), in their words. Only when the user asked; returns the previous hints.",
   open_review:
-    "Show a request's review in Roamgate for the user, as Enter in the Reviews inbox does (its project's review worktree and the review pane; any question, such as which clone, is asked to the user there). Only when the user asked to open or review it.",
+    "Show a request's review in Roamgate for the user, as Enter in the Reviews inbox does (its project's review worktree, shown in its workspace's Changes view; any question, such as which clone, is asked to the user there). Only when the user asked to open or review it.",
 };
 
 /** The mutating tools: they change the user's lists, order or screen. */

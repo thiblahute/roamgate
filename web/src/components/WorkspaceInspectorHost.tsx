@@ -46,7 +46,6 @@ import {
   opensCommandLine,
   runInspectorCommand,
 } from "../inspectorCommands";
-import { reviewSurfaceChoice, useReviewPrefs } from "../reviewPrefs";
 import { useZenEscape, useZenMode } from "../useZenMode";
 import { resetKeyMachines, useKeyMachine } from "../keyMachine";
 import { store, useStoreSelector } from "../store";
@@ -260,7 +259,7 @@ export function WorkspaceInspectorHost({
   /** Shows a file of a checkout (absolute path) in its code review. */
   onShowInReview?: (path: string, line?: number) => void;
   /**
-   * On "in Changes", Files' Review: the file (absolute or relative) and
+   * Files' Review: the file (absolute or relative) and
    * line Changes' cursor goes to; `at` tells requests apart.
    */
   reviewGoTo?: {
@@ -382,14 +381,6 @@ export function WorkspaceInspectorHost({
   /** Review only in Changes (`:only`): the diff alone, Esc brings all back. */
   const [changesOnly, toggleChangesOnly] = useZenMode();
   useZenEscape(changesOnly, toggleChangesOnly);
-  /**
-   * The review in Changes (`:set reviewin=changes`): its cursor, keys,
-   * threads and controls there, with Vim keys on or off (`:novim` only
-   * makes the comment editor a plain one, as in the classic pane). On
-   * classic, Changes keeps upstream's.
-   */
-  const reviewPrefs = useReviewPrefs();
-  const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes";
   /** The files in the tree's groups when Changes is the review. */
   const resourceKey = resourceOwnerKey(state.scope);
   /*
@@ -422,10 +413,10 @@ export function WorkspaceInspectorHost({
   /** Its comments only: another repository's threads of a same path stay off. */
   const changesRepoShown = useMemo(
     () =>
-      reviewInChanges && shownRoot
+      shownRoot
         ? { root: shownRoot, own: !changesRoot || changesRoot === ownRoot }
         : undefined,
-    [changesRoot, ownRoot, reviewInChanges, shownRoot],
+    [changesRoot, ownRoot, shownRoot],
   );
   /**
    * One review across Files and Changes (D16): the review's files and
@@ -436,7 +427,7 @@ export function WorkspaceInspectorHost({
     workspaceId: workspace?.workspace_id,
     resourceKey,
     threads: feedbackThreads ?? NO_FEEDBACK_THREADS,
-    enabled: reviewInChanges && !!workspace,
+    enabled: !!workspace,
   });
   const [otherFileGoTo, setOtherFileGoTo] = useState<{
     path: string;
@@ -457,7 +448,7 @@ export function WorkspaceInspectorHost({
     connectionClient.connectionId,
     workspace?.workspace_id ?? "",
     ownRoot,
-    reviewInChanges && visible && state.open && state.view === "changes",
+    visible && state.open && state.view === "changes",
     repoDirs,
   );
   /**
@@ -648,7 +639,7 @@ export function WorkspaceInspectorHost({
     resourceStateKey(state.scope),
     changesRoot,
   );
-  // Files' Review on "in Changes": that file's entry picked in the tree.
+  // Files' Review: that file's entry picked in the tree.
   const lastGoTo = useRef(0);
   const [pendingGoTo, setPendingGoTo] = useState<typeof reviewGoTo>(null);
   useEffect(() => {
@@ -751,11 +742,8 @@ export function WorkspaceInspectorHost({
     ],
   );
   const shownDiffEntries = useMemo(
-    () =>
-      reviewInChanges
-        ? orderByStatus(diffSelection.entries)
-        : diffSelection.entries,
-    [diffSelection.entries, reviewInChanges],
+    () => orderByStatus(diffSelection.entries),
+    [diffSelection.entries],
   );
   /** The shortcut list (`?`, `:help`), with what its filter starts with. */
   const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
@@ -1032,7 +1020,7 @@ export function WorkspaceInspectorHost({
           },
         ]
       : []),
-    ...(state.view === "changes" && reviewInChanges
+    ...(state.view === "changes"
       ? [
           ...series.commands,
           ...(["working", "branch", "last"] as const).map((name) => ({
@@ -1175,8 +1163,10 @@ export function WorkspaceInspectorHost({
    * prompt, then the conversations (Changes' diff), Review only, the diff
    * back to its tree, then the view (App).
    */
-  const changesShown =
-    reviewInChanges && visible && state.open && state.view === "changes";
+  const changesShown = visible && state.open && state.view === "changes";
+  /** The inspector's header can shrink into the review's row (app Zen). */
+  const zenEnd =
+    state.view === "changes" && state.expanded && !compact && !changesOnly;
   useSystemBack(changesShown && !!commandLine, leaveCommandLine, "popup");
   useSystemBack(changesShown && changesOnly, toggleChangesOnly, "navigation");
   useSystemBack(
@@ -1214,7 +1204,10 @@ export function WorkspaceInspectorHost({
       ref={hostRef}
       className={`workspace-inspector workspace-inspector-${state.dock} ${
         state.expanded ? "is-expanded" : ""
-      } ${compact ? "is-compact" : ""} ${hasDetail ? "has-detail" : ""}`}
+      } ${compact ? "is-compact" : ""} ${hasDetail ? "has-detail" : ""} ${
+        // Classes, not :has(): typing in a comment restyles nothing.
+        changesOnly && state.view === "changes" ? "is-review-only" : ""
+      } ${zenEnd ? "has-zen-end" : ""}`}
       aria-label="Workspace Inspector"
       data-view={state.view}
       onKeyDownCapture={onViewKey}
@@ -1382,12 +1375,9 @@ export function WorkspaceInspectorHost({
         {visible &&
         state.open &&
         workspace &&
-        // Review only shows the diff alone: no request card under it.
-        !(changesOnly && state.view === "changes") &&
-        // The review in Changes has it as a chip in its head's row, and
-        // only for the checkout's own review.
-        !(reviewInChanges && state.view === "changes") &&
-        (state.view === "changes" || state.view === "commits") ? (
+        // Changes has it as a chip in its head's row, and only for the
+        // checkout's own review.
+        state.view === "commits" ? (
           <PullRequestCard
             key={connectionClientScopeKey(
               connectionClient,
@@ -1401,7 +1391,7 @@ export function WorkspaceInspectorHost({
             client={connectionClient}
             workspaceId={workspace.workspace_id}
             branch={workspace.worktree?.git_status?.branch}
-            compact={reviewInChanges}
+            compact
             onRequest={setCardRequest}
           />
         ) : null}
@@ -1457,14 +1447,10 @@ export function WorkspaceInspectorHost({
                     }}
                     onPinFileTab={onPinFileTab}
                     onActiveDiffEntriesChange={setFileDiffEntries}
-                    {...(reviewInChanges
-                      ? {
-                          reviewMarks: {
-                            root: reviewFiles.root,
-                            marks: reviewFiles.marks,
-                          },
-                        }
-                      : {})}
+                    reviewMarks={{
+                      root: reviewFiles.root,
+                      marks: reviewFiles.marks,
+                    }}
                   />
                 </div>
                 {splitEnabled ? (
@@ -1535,7 +1521,7 @@ export function WorkspaceInspectorHost({
                     annotations={annotations}
                     onCreateAnnotation={onCreateAnnotation}
                     onShowInReview={onShowInReview}
-                    {...(reviewInChanges ? { reviewFiles } : {})}
+                    reviewFiles={reviewFiles}
                     onReanchorAnnotations={onReanchorFileAnnotations}
                     onOpenChanges={
                       primaryFileChangesEntry
@@ -1630,15 +1616,11 @@ export function WorkspaceInspectorHost({
                     ref={diffViewerRef}
                     workspaceId={workspace.workspace_id}
                     resourceKey={resourceKey}
-                    {...(reviewInChanges && changesRoot
-                      ? { repoRoot: changesRoot }
-                      : {})}
-                    {...(reviewInChanges && compact
-                      ? { header: changesScopeBar() }
-                      : {})}
-                    groupByStatus={reviewInChanges}
-                    review={reviewInChanges}
-                    viewFiles={reviewInChanges ? viewTree : null}
+                    {...(changesRoot ? { repoRoot: changesRoot } : {})}
+                    {...(compact ? { header: changesScopeBar() } : {})}
+                    groupByStatus
+                    review
+                    viewFiles={viewTree}
                     onScopeChange={() => setShownReview(null)}
                     onPickViewFile={(path) =>
                       setViewGoTo({ path, at: Date.now() })
@@ -1744,14 +1726,12 @@ export function WorkspaceInspectorHost({
                                     ? { target: stepTarget(diffSelection.step) }
                                     : {}),
                                   // Drawn only on its repository's diff.
-                                  ...(reviewInChanges && changesRoot
-                                    ? { root: changesRoot }
-                                    : {}),
+                                  ...(changesRoot ? { root: changesRoot } : {}),
                                 }
                               : input,
                             // Another repository's comments go to its
                             // review; a question asked is a discussion.
-                            reviewInChanges && (changesRoot || written?.kind)
+                            changesRoot || written?.kind
                               ? {
                                   ...(changesRoot ? { root: changesRoot } : {}),
                                   ...(written?.kind
@@ -1767,7 +1747,7 @@ export function WorkspaceInspectorHost({
                           diffViewerRef.current?.selectEntry(target)
                         }
                         onRetry={() => diffViewerRef.current?.refresh()}
-                        {...(reviewInChanges && leftReview && !shownReview
+                        {...(leftReview && !shownReview
                           ? {
                               errorBack: {
                                 label: "Back to the review",
@@ -1782,54 +1762,46 @@ export function WorkspaceInspectorHost({
                           diffViewerRef.current?.highlightEntry(target)
                         }
                         onOpenFile={onOpenDiffFile}
-                        reviewCursor={reviewInChanges}
-                        {...(reviewInChanges
-                          ? { reviewScope: changesScope }
-                          : {})}
-                        {...(reviewInChanges
+                        reviewCursor
+                        reviewScope={changesScope}
+                        scopeLabel={changesScopeLabel({
+                          mode: diffSelection.scopeMode,
+                          base: diffSelection.scopeBase,
+                          repo:
+                            diffSelection.repoName ??
+                            workspace?.worktree?.repo_name,
+                          branch:
+                            diffSelection.branch ??
+                            workspace?.worktree?.git_status?.branch,
+                        })}
+                        scopeControls={changesScopeBar()}
+                        {...(changesOnly
                           ? {
-                              scopeLabel: changesScopeLabel({
-                                mode: diffSelection.scopeMode,
-                                base: diffSelection.scopeBase,
-                                repo:
-                                  diffSelection.repoName ??
-                                  workspace?.worktree?.repo_name,
-                                branch:
-                                  diffSelection.branch ??
-                                  workspace?.worktree?.git_status?.branch,
-                              }),
-                              scopeControls: changesScopeBar(),
-                              ...(changesOnly
-                                ? {
-                                    headEnd: (
-                                      <ReviewOnlyEnd
-                                        onShowAll={toggleChangesOnly}
-                                        onCloseReview={() =>
-                                          onCloseReview
-                                            ? onCloseReview("command")
-                                            : onClose()
-                                        }
-                                      />
-                                    ),
+                              headEnd: (
+                                <ReviewOnlyEnd
+                                  onShowAll={toggleChangesOnly}
+                                  onCloseReview={() =>
+                                    onCloseReview
+                                      ? onCloseReview("command")
+                                      : onClose()
                                   }
-                                : state.expanded && !compact
-                                  ? {
-                                      // The app's Zen: the inspector's
-                                      // header in the review's row.
-                                      headEnd: (
-                                        <InspectorZenEnd
-                                          onView={onViewChange}
-                                          historyAvailable={historyAvailable}
-                                          onRestore={() =>
-                                            onExpandedChange(false)
-                                          }
-                                          onClose={onClose}
-                                        />
-                                      ),
-                                    }
-                                  : {}),
+                                />
+                              ),
                             }
-                          : {})}
+                          : zenEnd
+                            ? {
+                                // The app's Zen: the inspector's
+                                // header in the review's row.
+                                headEnd: (
+                                  <InspectorZenEnd
+                                    onView={onViewChange}
+                                    historyAvailable={historyAvailable}
+                                    onRestore={() => onExpandedChange(false)}
+                                    onClose={onClose}
+                                  />
+                                ),
+                              }
+                            : {})}
                         onGitAction={(action, path) =>
                           diffViewerRef.current?.runFileAction(action, path) ??
                           false
@@ -1942,17 +1914,6 @@ export function WorkspaceInspectorHost({
             </InspectorViewContext.Provider>
           </div>
         )}
-        {changesOnly && state.view === "changes" && !reviewInChanges ? (
-          <div className="inspector-review-only-hint">
-            <button
-              type="button"
-              title="Show the inspector again (:only or Esc)"
-              onClick={toggleChangesOnly}
-            >
-              Show all
-            </button>
-          </div>
-        ) : null}
         {shortcuts ? (
           <ShortcutList
             className="inspector-keys"

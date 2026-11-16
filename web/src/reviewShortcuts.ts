@@ -2,9 +2,8 @@ import type { ShortcutRow } from "./components/ShortcutList";
 import { detectShortcutPlatform, formatShortcut } from "./shortcutBindings";
 
 /*
- * The review's shortcut list (`?`): the classic pane's and the review in
- * Changes', the same rows, so both list (and FEATURES.md documents) the
- * same keys. Changes adds the rows of what only it has.
+ * The review's shortcut list (`?`) in Changes, the rows FEATURES.md
+ * documents.
  */
 
 /** The file reviewed, or no longer: Option+V on a Mac, Alt+V elsewhere. */

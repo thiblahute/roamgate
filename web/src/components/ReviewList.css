@@ -1,0 +1,196 @@
+/*
+ * The reviews list (Option+Shift+R, `:reviews`), in Roamgate's theme: light
+ * or dark, accent and syntax colors all come from the app's tokens. Only
+ * GitLab's and the agent's own colors are the review's.
+ */
+.review-list-overlay {
+  --rv-bg: var(--shell-bg);
+  --rv-surface: var(--shell-panel);
+  --rv-surface-2: var(--panel-2);
+  --rv-border: var(--shell-border);
+  --rv-text: var(--text);
+  --rv-muted: var(--muted);
+  --rv-faint: color-mix(in srgb, var(--muted) 70%, var(--bg));
+  --rv-accent: var(--accent);
+  --rv-accent-soft: var(--accent-soft);
+  --rv-danger: var(--red);
+  --rv-danger-soft: var(--danger-soft);
+  --rv-shadow: var(--shadow-lg);
+  --rv-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --rv-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --rv-sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --rv-syn-kw: var(--syntax-keyword);
+  --rv-syn-str: var(--syntax-string);
+  --rv-syn-com: var(--syntax-comment);
+  --rv-syn-num: var(--syntax-number);
+  --rv-syn-def: var(--syntax-function);
+  --rv-syn-type: var(--syntax-type);
+  --rv-syn-meta: var(--syntax-meta);
+  --rv-syn-prop: var(--syntax-property);
+  --rv-gitlab: #fc6d26;
+  --rv-agent: #c9a4f2;
+  --rv-agent-soft: color-mix(in srgb, #c9a4f2 14%, var(--panel));
+}
+
+:root[data-theme="light"] .review-list-overlay {
+  --rv-agent: #7b45c4;
+  --rv-agent-soft: color-mix(in srgb, #7b45c4 10%, var(--panel));
+}
+
+/* On a phone the list ends at the keyboard, as the app's content does. */
+:where(html[data-layout="mobile"]) .review-list-overlay {
+  bottom: var(--keyboard-inset-content, var(--keyboard-inset-bottom, 0px));
+}
+
+.review-list-overlay * {
+  box-sizing: border-box;
+}
+
+.review-list-overlay button {
+  font: inherit;
+  color: inherit;
+}
+
+.review-list-overlay .icon-btn {
+  border: 1px solid var(--rv-border);
+  background: var(--rv-surface);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.review-list-overlay .icon-btn:hover {
+  background: var(--rv-surface-2);
+}
+
+.review-list-overlay .icon-btn {
+  width: 32px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.review-list-overlay .note {
+  font-size: 12px;
+  color: var(--rv-faint);
+}
+
+.review-list-overlay .settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Reviews in progress */
+.review-list-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5500;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.35);
+  color: var(--rv-text);
+  font: 14px / 1.45 var(--rv-sans);
+  outline: none;
+}
+
+.review-list-overlay .panel {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow: auto;
+  padding: 18px 22px;
+  border-radius: 12px;
+  background: var(--rv-surface);
+  box-shadow: var(--rv-shadow);
+}
+
+.review-list-overlay .panel h2 {
+  margin: 6px 0 10px;
+  font-size: 15px;
+}
+
+.review-list-overlay .chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-list-overlay .hist-item {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rv-border);
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-list-overlay .hist-item:hover,
+.review-list-overlay .hist-item:focus,
+.review-list-overlay .hist-item.on {
+  border-color: var(--rv-accent);
+  background: var(--rv-surface-2);
+  outline: none;
+}
+
+.review-list-overlay .review-item.done {
+  opacity: 0.6;
+}
+
+.review-list-overlay .hist-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-list-overlay .hist-when {
+  color: var(--rv-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.review-list-overlay .hist-last {
+  grid-column: 1 / 3;
+  overflow: hidden;
+  color: var(--rv-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-list-overlay .review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  white-space: normal;
+}
+
+.review-list-overlay .chip-s {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--rv-surface-2);
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+.review-list-overlay .chip-s.news {
+  background: var(--rv-accent-soft);
+  color: var(--rv-accent);
+  font-weight: 600;
+}
+
+.review-list-overlay .bubble.error {
+  margin: 6px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--rv-danger-soft);
+  color: var(--rv-danger);
+}

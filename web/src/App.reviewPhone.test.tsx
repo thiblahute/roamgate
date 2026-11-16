@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 
 /**
  * The review on a phone, at the app level: More options' Review opens and
- * closes it, as Option+R does on a desktop (App.review.testkit.tsx).
+ * closes it in Changes, as Option+R does on a desktop
+ * (App.review.testkit.tsx).
  */
 if (process.env.ROAMGATE_APP_REVIEW_PHONE_TEST !== "1") {
   test("the review on a phone, in an isolated DOM runtime", async () => {
@@ -25,7 +26,7 @@ if (process.env.ROAMGATE_APP_REVIEW_PHONE_TEST !== "1") {
   );
   await installAppReviewDom("http://localhost/?layout=mobile");
 
-  test("on a phone, More options' Review opens the review and closes the sheet; again, closes the review", async () => {
+  test("on a phone, More options' Review opens the review in Changes and closes the sheet; again, closes it", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
@@ -44,17 +45,21 @@ if (process.env.ROAMGATE_APP_REVIEW_PHONE_TEST !== "1") {
       await app.click(more());
       expect(more().getAttribute("aria-expanded")).toBe("true");
       expect(review().getAttribute("aria-label")).toBe("Review this branch");
-      expect(review().getAttribute("aria-pressed")).toBe("false");
+      // Changes is the review: the button has no pressed state.
+      expect(review().hasAttribute("aria-pressed")).toBe(false);
       app.setNextOpened("r1");
       await app.click(review());
-      expect(app.shown().shownId).toBe("r1");
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(more().getAttribute("aria-expanded")).toBe("false");
-      expect(review().getAttribute("aria-label")).toBe("Close the review");
-      expect(review().getAttribute("aria-pressed")).toBe("true");
+      expect(review().getAttribute("aria-label")).toBe("Review this branch");
+      expect(review().hasAttribute("aria-pressed")).toBe(false);
       await app.click(more());
       await app.click(review());
-      expect(app.shown()).toEqual({ mounted: ["r1"], shownId: null });
+      await app.settle(50);
+      expect(app.inspector()?.open).toBe(false);
       expect(app.openCalls()).toBe(1);
+      expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
       await app.unmount();
     }

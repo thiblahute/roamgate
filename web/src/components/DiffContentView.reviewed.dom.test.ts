@@ -558,7 +558,7 @@ if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
       }
     });
 
-    test("on classic, r, v and gu do nothing and nothing is marked", async () => {
+    test("without the review (a commit's diff in Commits, Files' changes), r, v and gu do nothing and nothing is marked", async () => {
       reset();
       const diff = await mount({ reviewCursor: false });
       try {

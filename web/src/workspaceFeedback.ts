@@ -52,7 +52,7 @@ export type FeedbackPlace = {
    */
   chat?: PaneChat;
   /**
-   * Reviews show in Changes (`reviewin=changes`, plan D16): a comment on a
+   * Reviews show in Changes (plan D16): a comment on a
    * file of the checkout in Files is a thread of the checkout's worktree
    * review, the one Changes writes to, not of a review of its own.
    */

@@ -218,6 +218,7 @@ import { CHANGES_REVIEW_KEYS } from "../reviewShortcuts";
 import { readReviewPlace, writeReviewPlace } from "../reviewPlace";
 import { SPLIT_MIN_WIDTH } from "../reviewPrefs";
 import "./DiffContentView.css";
+import "./ReviewCard.css";
 
 export { highlightedPatch } from "./DiffSurface";
 
@@ -542,7 +543,7 @@ const DiffThreadsContext = createContext<DiffThreads | null>(null);
 const COMPOSER_ID = "\u0000composer";
 
 /**
- * The review's comment box (reviewin Changes), what the annotation of
+ * The review's comment box in Changes, what the annotation of
  * COMPOSER_ID draws; hidden comments and the threads only the unresolved
  * ones: what `t` and `gH` set.
  */
@@ -1327,7 +1328,7 @@ function DiffContentViewInner({
   placeSettled = true,
 }: {
   selectionRevision?: number;
-  /** On "in Changes", what is shown: repository, scope, branch and base. */
+  /** What is shown: repository, scope, branch and base. */
   scopeLabel?: string;
   /** The scope line as controls (the review in Changes), for scopeLabel. */
   scopeControls?: ReactNode;
@@ -1335,7 +1336,7 @@ function DiffContentViewInner({
   errorBack?: { label: string; run: () => void };
   /** At the toolbar's end (Review only: Show all, Zen's way out). */
   headEnd?: ReactNode;
-  /** Files' Review on "in Changes": the cursor to that file and line. */
+  /** Files' Review: the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;
   entry: GitDiffEntry | null;
   file: GitDiffFile | null;
@@ -1367,7 +1368,7 @@ function DiffContentViewInner({
   openFileLabel?: string;
   loadImagePreview?: (path: string) => Promise<FilePreview>;
   /**
-   * A comment written. On "in Changes", `kind` is what the review's editor
+   * A comment written. `kind` is what the review's editor
    * wrote: a review comment, or a question for the agent (C, `:ask`; held
    * for Send when the review has no agent).
    */
@@ -1385,8 +1386,8 @@ function DiffContentViewInner({
   showFileSelector?: boolean;
   backAction?: { label: string; onClick: () => void };
   /**
-   * The review's Vim cursor and keys (on "in Changes" with Vim keys on);
-   * off, Changes keeps its own keys and mouse.
+   * The review's cursor and keys (with Vim keys on or off: they only
+   * change the comment editor); off (an embedded diff), its own keys.
    */
   reviewCursor?: boolean;
   /** The files with a hit of the cursor's search, for the tree to mark. */
@@ -1443,8 +1444,8 @@ function DiffContentViewInner({
   // gets its threads.
   const repoRoot = repo?.root;
   const repoOwn = repo?.own;
-  // On "in Changes", a question held for Send (no agent to ask) is drawn
-  // on its line too, saying so, as the review pane draws it.
+  // A question held for Send (no agent to ask) is drawn on its line too,
+  // saying so.
   const heldRoot =
     reviewCursor && !embedded
       ? (file?.root ?? Object.values(files)[0]?.root)
@@ -1940,7 +1941,15 @@ function DiffContentViewInner({
         gitlab: own.gitlab,
       };
     }
-    const agent = snapshot ? reviewAgent(snapshot, []) : null;
+    // The checkout's review talks to the workspace's agent pane when it
+    // names none of its own (told to it: useChangesAgent), as the review
+    // pane's did.
+    const agent = snapshot
+      ? reviewAgent(
+          snapshot,
+          thread.sessionId === ownSessionId ? agentPanes : NO_AGENT_PANES,
+        )
+      : null;
     return {
       delivery: {
         review: session ?? ({ agent: {} } as ThreadDelivery["review"]),
@@ -1948,7 +1957,10 @@ function DiffContentViewInner({
         held: agent?.held ?? false,
         undeliveredReason: agent?.undeliveredReason ?? null,
         agentName: agent?.agentName ?? "Agent",
-        retry: () => changesAgent.send(),
+        retry: () =>
+          thread.sessionId === ownSessionId
+            ? changesAgent.retryDelivery()
+            : changesAgent.send(),
       },
       canSend:
         !!agent?.agentAllowed && (!!session?.agent.name || !!agent.agentPaneId),
@@ -2806,18 +2818,25 @@ function DiffContentViewInner({
   );
   /**
    * The threads the Comments panel lists, and the head counts: those on
-   * the files shown, then the Other files' (D16).
+   * the files shown, then the Other files' (D16); in the review, those on
+   * the whole review too (drawn above the diff), as the review pane's list.
    */
   const listedThreads = useMemo(() => {
-    if (!otherFiles.length) return shownThreads;
+    const general = reviewEditor
+      ? (drawnThreads ?? []).filter((thread) => !thread.anchor.path)
+      : [];
+    if (!otherFiles.length && !general.length) return shownThreads;
     const listed = new Set(shownThreads.map((thread) => thread.id));
-    return [
-      ...shownThreads,
-      ...otherFiles
-        .flatMap((other) => other.threads)
-        .filter((thread) => !listed.has(thread.id)),
-    ];
-  }, [otherFiles, shownThreads]);
+    const more = [
+      ...otherFiles.flatMap((other) => other.threads),
+      ...general,
+    ].filter((thread) => {
+      if (listed.has(thread.id)) return false;
+      listed.add(thread.id);
+      return true;
+    });
+    return [...shownThreads, ...more];
+  }, [drawnThreads, otherFiles, reviewEditor, shownThreads]);
   const otherFileOf = (thread: ReviewThread) =>
     otherFiles.find((other) => other.threads.includes(thread))?.path;
   /** Shows an Other file's block (its threads), from the panel or the tree. */
@@ -2935,7 +2954,7 @@ function DiffContentViewInner({
   const cursorLineClickRef = useRef(cursor.onLineClick);
   cursorLineClickRef.current = cursor.onLineClick;
 
-  // ---- The review's threads and comment box (reviewin Changes) ----------
+  // ---- The review's threads and comment box ------------------------------
 
   const drawingSections = useMemo(
     () =>
@@ -3079,8 +3098,23 @@ function DiffContentViewInner({
         folded.add(path);
     return folded;
   }, [goToReveal, pickReveal, reviewEditor, reviewedPaths, shownReviewed]);
+  /** The chunks a reviewed file shown again was opened with (its peeks). */
+  const shownChunks = useRef(new Map<string, string[]>());
   useEffect(() => {
-    // Unmarked: the next mark folds it again.
+    // Unmarked: the next mark folds it again, its chunks too.
+    const dropped = [...shownChunks.current.keys()].filter(
+      (path) => !reviewedPaths.has(path),
+    );
+    if (dropped.length) {
+      const ids = new Set(
+        dropped.flatMap((path) => shownChunks.current.get(path) ?? []),
+      );
+      for (const path of dropped) shownChunks.current.delete(path);
+      setPeekedChunks((current) => {
+        const next = new Set([...current].filter((id) => !ids.has(id)));
+        return next.size === current.size ? current : next;
+      });
+    }
     setShownReviewed((current) => {
       const kept = [...current].filter((path) => reviewedPaths.has(path));
       return kept.length === current.size ? current : new Set(kept);
@@ -3088,9 +3122,24 @@ function DiffContentViewInner({
   }, [reviewedPaths]);
   const reviewedPathsRef = useRef(reviewedPaths);
   reviewedPathsRef.current = reviewedPaths;
-  /** Shows a reviewed file (only a reviewed one: kept open till unmarked). */
+  const chunkSpansRef = useRef(chunkSpansByKey);
+  chunkSpansRef.current = chunkSpansByKey;
+  /**
+   * Shows a reviewed file (only a reviewed one: kept open till unmarked),
+   * its chunks' lines too, as the review pane showed it (za folds one back).
+   */
   const showReviewed = useCallback((path: string) => {
     if (!reviewedPathsRef.current.has(path)) return;
+    if (!shownChunks.current.has(path)) {
+      const ids: string[] = [];
+      for (const [key, spans] of chunkSpansRef.current)
+        if (key.slice(key.indexOf(":") + 1) === path)
+          for (const span of spans)
+            if (span.reviewed) ids.push(`${key}\n${span.id}`);
+      shownChunks.current.set(path, ids);
+      if (ids.length)
+        setPeekedChunks((current) => new Set([...current, ...ids]));
+    }
     setShownReviewed((current) =>
       current.has(path) ? current : new Set(current).add(path),
     );
@@ -5900,8 +5949,8 @@ const NO_FILES: Record<string, GitDiffFile> = {};
 const NO_AGENT_PANES: readonly { paneId: string; agent: string }[] = [];
 
 /**
- * Changes' diff. On "in Changes", a scope that is a review of commits (the
- * Branch scope, a range opened by name) gets the review pane's views: the
+ * Changes' diff. A scope that is a review of commits (the Branch scope, a
+ * range opened by name) gets the review's views: the
  * commit bar, `<` `>` `gc` `:commit` `:all`, a commit's files with its
  * message first, the reload offer (plan: review into the inspector, phase
  * 6).

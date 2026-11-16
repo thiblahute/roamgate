@@ -46,9 +46,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     ),
   ];
 
-  for (const surface of ALL_REVIEW_SURFACES.filter(
-    (each) => each.name !== "classic",
-  ))
+  for (const surface of ALL_REVIEW_SURFACES)
     describe(surface.name, () => {
       testWith(surface, "cursor")(
         "the app's shortcuts over the review and those leaving it are the app's; the review keeps its own",

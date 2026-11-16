@@ -411,5 +411,136 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(review.buttons()).toContain("Retry");
         await review.unmount();
       });
+
+      test("the code it opens on is read with its commits, once", async () => {
+        const one = { sha: "c".repeat(40), subject: "One" };
+        // The commits answer only once the test lets them.
+        let answerCommits: () => void = () => {};
+        const commitsAsked = new Promise<void>((resolve) => {
+          answerCommits = resolve;
+        });
+        const review = await mount({
+          files: [added("a.ts", 3)],
+          commits: [one],
+          answers: {
+            "review.commits": async () => {
+              await commitsAsked;
+              return {
+                commits: [
+                  {
+                    ...one,
+                    parent: null,
+                    author: "T",
+                    date: "2026-11-05",
+                    body: "",
+                  },
+                ],
+              };
+            },
+          },
+        });
+        expect(review.calls("review.commits")).toHaveLength(1);
+        // Read in order: the view once its commits say which it is.
+        expect(review.calls("review.diff")).toEqual([]);
+        answerCommits();
+        await review.press("<Esc>");
+        // Its answer shows: no second read of the same view.
+        expect(review.calls("review.diff").map((call) => call.params)).toEqual([
+          { session_id: "s1", commit: one.sha },
+        ]);
+        expect(review.lines("a.ts").map((line) => line.text)).toContain(
+          "a.ts line 1",
+        );
+        await review.press("j");
+        expect(review.calls("review.diff")).toHaveLength(1);
+        await review.unmount();
+      });
+
+      test("a reload stays on the commit reviewed, or on what a rebase made of it", async () => {
+        const commit = (sha: string, subject: string) => ({
+          sha: sha.repeat(40),
+          parent: null,
+          author: "T",
+          date: "2026-11-05",
+          subject,
+          body: "",
+        });
+        let answer: {
+          commits: ReturnType<typeof commit>[];
+          patchIds?: Record<string, string>;
+        } = {
+          commits: [
+            commit("a", "First"),
+            commit("b", "Second"),
+            commit("c", "Third"),
+          ],
+        };
+        const review = await mount({
+          files: [added("a.ts", 30)],
+          commits: answer.commits,
+          answers: { "review.commits": () => answer },
+        });
+        const head = () => review.commitBar()?.head ?? "";
+        const follows = () =>
+          review.calls("review.commits").map((call) => call.params.follow);
+        const cursorText = () => review.cursorLine()?.text ?? "";
+        expect(head()).toBe("1/3 aaaaaaaa");
+        await review.press(">");
+        expect(head()).toBe("2/3 bbbbbbbb");
+        await review.click({ path: "a.ts", text: "a.ts line 12" });
+        expect(cursorText()).toBe("a.ts line 12");
+
+        // Reloaded as it is: the same commit and line. R reloads as gr does.
+        const reads = follows().length;
+        await review.press("R");
+        expect(follows()).toHaveLength(reads + 1);
+        expect(follows()[follows().length - 1]).toBe("b".repeat(40));
+        expect(head()).toBe("2/3 bbbbbbbb");
+        expect(cursorText()).toBe("a.ts line 12");
+
+        // Rebased with the second commit reworded: its patch id finds it.
+        answer = {
+          commits: [
+            commit("d", "First"),
+            commit("e", "Third"),
+            commit("f", "Second, reworded"),
+          ],
+          patchIds: {
+            ["b".repeat(40)]: "1".repeat(40),
+            ["d".repeat(40)]: "2".repeat(40),
+            ["e".repeat(40)]: "3".repeat(40),
+            ["f".repeat(40)]: "1".repeat(40),
+          },
+        };
+        await review.press("gr");
+        expect(head()).toBe("3/3 ffffffff");
+        expect(cursorText()).toBe("a.ts line 12");
+
+        // Amended (new patch id): found by its subject.
+        answer = {
+          commits: [
+            commit("1", "First"),
+            commit("2", "Second, reworded"),
+            commit("3", "Third"),
+          ],
+        };
+        await review.press("gr");
+        expect(head()).toBe("2/3 22222222");
+
+        // Gone: the nearest commit by place.
+        answer = { commits: [commit("4", "Other")] };
+        await review.press("gr");
+        expect(head()).toBe("1/1 44444444");
+
+        // All changes stays all changes.
+        answer = { commits: [commit("4", "Other"), commit("5", "More")] };
+        await review.press("gr");
+        await review.press("<");
+        expect(head()).toBe("All changes");
+        await review.press("gr");
+        expect(follows()[follows().length - 1]).toBeUndefined();
+        expect(head()).toBe("All changes");
+        await review.unmount();
+      });
     });
 }

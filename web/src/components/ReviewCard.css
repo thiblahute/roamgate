@@ -1,0 +1,179 @@
+/*
+ * Review comment cards and the comment editor's box (`.rc`), as the
+ * review's comments, the overall comment and the merge request's threads
+ * draw them.
+ */
+.rc {
+  margin: 4px 8px 8px 94px;
+  padding: 6px 8px;
+  border: 1px solid var(--rv-border);
+  border-left: 3px solid var(--rv-accent);
+  border-radius: 6px;
+  background: var(--rv-surface, transparent);
+  font-size: 13px;
+}
+
+.rc.talk {
+  border-left-style: double;
+}
+
+.rc.resolved {
+  opacity: 0.65;
+}
+
+/* A resolved thread, folded to one line until unfolded. */
+.rc.folded {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: calc(100% - 102px);
+  padding: 3px 8px;
+  color: var(--rv-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc.folded .rc-fold-mark {
+  color: var(--rv-faint);
+  white-space: nowrap;
+}
+
+.rc.folded .rc-fold-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc .rc-text {
+  white-space: pre-wrap;
+}
+
+.rc .rc-reply {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rv-border);
+}
+
+.rc .rc-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--rv-faint);
+  font-size: 11px;
+}
+
+/* The agent says it is working on this thread. */
+.rc .rc-working {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--rv-accent-soft);
+  color: var(--rv-text);
+  font-size: 12px;
+}
+
+.rc .rc-working-mark {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid var(--rv-border);
+  border-top-color: var(--rv-accent);
+  border-radius: 50%;
+  animation: row-spinner 0.8s linear infinite;
+}
+
+.rc .rc-working-time {
+  margin-left: auto;
+  color: var(--rv-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc .rc-working-mark {
+    animation: none;
+    border-color: var(--rv-accent);
+  }
+}
+
+.rc .rc-bar .spacer {
+  flex: 1;
+}
+
+.rc .rc-bar .btn {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.rc .rc-kind {
+  color: var(--rv-faint);
+}
+
+/* A comment on its way to the server, or one that failed to save. */
+.rc .rc-pending {
+  opacity: 0.7;
+  border-left: 2px dashed var(--rv-border);
+  padding-left: 6px;
+}
+
+.rc .rc-kind.rc-failed {
+  color: var(--rv-danger);
+}
+
+/*
+ * The agent's answers stand apart from your comments: a band across the
+ * whole box, so the thread reads as one flat conversation, not nested boxes.
+ */
+.rc .from-agent {
+  margin: 0 -8px;
+  padding: 4px 8px;
+  background: var(--rv-agent-soft);
+}
+
+/* The message j / k, n / N stopped on (r, e, dd act on it); a folded
+   resolved thread is one. */
+.rc .focused,
+.rc.folded.focused {
+  box-shadow: inset 2px 0 0 var(--rv-accent);
+  outline: 1px solid var(--rv-accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.rc > .focused:not(.from-agent) {
+  margin-right: -8px;
+  margin-left: -8px;
+  padding: 3px 8px;
+}
+
+.rc .rc-reply.from-agent {
+  margin-top: 4px;
+  border-top: 0;
+}
+
+.rc .from-agent + .rc-reply {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.rc .by-claude {
+  color: var(--rv-agent);
+  font-weight: 600;
+}
+
+@media (max-width: 800px) {
+  .rc {
+    margin-left: 8px;
+  }
+}
+
+.rc-editor {
+  min-height: 64px;
+}

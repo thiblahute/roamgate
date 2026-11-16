@@ -12,6 +12,7 @@ import { useSpeechEngine } from "../speechEngine";
 import { DictationButton, DictationStatus, useDictation } from "./Dictation";
 import { keepAboveKeyboard } from "./keepAboveKeyboard";
 import { defineExCommands, vimExEditors } from "./vimEx";
+import "./ReviewCard.css";
 
 /** What the overlay can do to an open editor. */
 export type CommentEditorHandle = {
