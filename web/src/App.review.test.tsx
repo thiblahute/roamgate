@@ -330,6 +330,36 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("on reviewin=changes with :novim, Option+R still gives the review's diff the keys: only the comment editor is plain", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem(
+        "reviewPrefs",
+        JSON.stringify({ reviewIn: "changes", vim: false }),
+      );
+      app.setNextOpened("r1");
+      const terminal = document.createElement("div");
+      terminal.tabIndex = 0;
+      document.body.append(terminal);
+      terminal.focus();
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()).toMatchObject({
+        open: true,
+        view: "changes",
+        expanded: true,
+      });
+      expect(
+        document.activeElement?.classList.contains("diff-content-view"),
+      ).toBe(true);
+      terminal.remove();
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=changes, Files' Review opens Changes at that file and line, not the classic pane", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
