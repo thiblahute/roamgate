@@ -294,6 +294,19 @@ export function createReviewAgentServer(args: {
     params: Record<string, string>;
   }) => Promise<Record<string, unknown>>;
   /**
+   * The Reviews board's tools for any agent session (`roamgate-review
+   * reviews TOOL JSON`, the mod's reviews_* tools): `params` checked
+   * against the tool's schema there. Local state only, never a forge.
+   */
+  reviews?: (input: {
+    connectionId: string;
+    paneId: string;
+    workspaceId: string;
+    agent: string;
+    tool: string;
+    params: unknown;
+  }) => Promise<string>;
+  /**
    * Agent sessions messaging each other (`roamgate-review sessions` and
    * `message`): the sessions Roamgate manages, across connections.
    */
@@ -642,6 +655,53 @@ export function createReviewAgentServer(args: {
         pane: paneId,
       });
       return { notified: true };
+    }
+    if (command === "reviews") {
+      if (!args.reviews)
+        throw new ReviewError("the Reviews board is unavailable", 503);
+      const tool = (form.get("tool") ?? "").trim();
+      if (!tool) throw new ReviewError("tool is required");
+      let params: unknown = {};
+      const raw = form.get("params");
+      if (raw?.trim()) {
+        try {
+          params = JSON.parse(raw);
+        } catch {
+          throw new ReviewError("params must be a JSON object");
+        }
+      }
+      if (!params || typeof params !== "object" || Array.isArray(params))
+        throw new ReviewError("params must be a JSON object");
+      try {
+        const text = await args.reviews({
+          connectionId: connection.id,
+          paneId: form.get("pane") ?? "",
+          workspaceId: form.get("workspace") ?? "",
+          agent: (form.get("agent") ?? "").trim(),
+          tool,
+          params,
+        });
+        // JSON answers come back as JSON (after the line saying what
+        // in them other people wrote, when there is one).
+        const at = text.startsWith("{") ? 0 : text.indexOf("\n") + 1;
+        try {
+          return {
+            tool,
+            ...(at ? { note: text.slice(0, at - 1) } : {}),
+            result: JSON.parse(text.slice(at)),
+          };
+        } catch {
+          return { tool, result: text };
+        }
+      } catch (error) {
+        if (error instanceof ReviewError) throw error;
+        const status =
+          (error as { code?: string }).code === "not_found" ? 404 : 400;
+        throw new ReviewError(
+          error instanceof Error ? error.message : String(error),
+          status,
+        );
+      }
     }
     if (command === "sessions" || command === "message") {
       if (!args.messages)

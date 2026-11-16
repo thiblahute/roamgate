@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type {
   MrInbox,
+  MrOverride,
+  MrOverrideField,
   MrReviewsPush,
   MrReviewsSettings,
   MrWorkspaceLink,
@@ -159,6 +161,32 @@ export function hideMrRequest(
 
 export function unhideMrRequest(key: string): Promise<unknown> {
   return mrReviewsCall("unhide", { key });
+}
+
+/** What one sets or clears by hand on one of one's requests. */
+export type MrOverrideEdit = {
+  set?: {
+    whose?: string;
+    next?: string;
+    dependsOn?: string[];
+    labels?: string[];
+    link?: string;
+    stale?: boolean;
+  };
+  clear?: MrOverrideField[] | "all";
+};
+
+/** Sets or clears override fields; every page follows by push. */
+export function overrideMrRequest(
+  key: string,
+  edit: MrOverrideEdit,
+): Promise<{
+  changed: boolean;
+  override: MrOverride | null;
+  /** The inbox version it made: Undo takes it back. */
+  version?: number;
+}> {
+  return mrReviewsCall("override", { key, ...edit });
 }
 
 /** Unpins a request: it stays listed where a query lists it. */

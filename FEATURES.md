@@ -1036,9 +1036,43 @@ have pending on the forge. On a phone it fills the screen. **All**, **To
 review** and **Mine** above the list (`f`, `:all`, `:review`, `:mine`) show
 everything or one side only; the choice is kept in the browser.
 
+**Mine is a status board of your own work**, in lanes saying whose move it
+is: **Your move**, **Waiting**, **Blocked**, **Not proposed upstream yet**,
+**Stale** and **Merged or closed**, each with its count; `za` (or a click on
+its title) folds a lane, kept in the browser. Each row is one line
+(reference, title, chips) and a second line saying the **next step**.
+Before anything is set by hand, the lane and the next step come from what
+the forge says: a failed pipeline, conflicts, changes requested, unresolved
+threads, a needed rebase or a draft make it your move ("Fix the failed
+pipeline", "Answer 2 unresolved threads"); otherwise it waits for review
+(or, approved, to be merged); no activity for 90 days (the `stale_days`
+setting) makes it Stale. A request that waits for another of yours is
+drawn under it, indented and joined by a thin tree line, with "after !12" on
+it and "blocks N" on its parent, and counts in Blocked; `za` on the parent
+folds them. `J`/`K` and drags move a request within its lane (or among the
+requests under the same parent); a request changes lane when its whose-move
+changes, not by a drag.
+
+**Set it by hand** when you know better: `e` (or **Set by hand** in its
+details) edits whose move it is (yours, the reviewer's, external, or a
+person's), the next step, the requests it waits for, labels, a link (a URL,
+or a file opened in its workspace's Files preview with `gx`) and stale.
+What you set wins and says "set by you" (or "set by Claude" when an agent
+set it); once the request moves on (a push, a comment, a state change),
+whose-move and the next step show dimmed as "changed since" until you look
+again, while labels, links and dependencies never age. `E` clears it all.
+The `:` line does the same in a word: `:note TEXT`, `:whose
+me|reviewer|external|NAME`, `:after group/project!12`, `:label X`, `:unlabel
+X`, `:link URL`, `:stale`, `:clear [FIELD]`. Each change offers Undo, and
+is kept in Roamgate's settings (`mr_reviews.overrides`), so every device has
+it. Any agent session reads and annotates the board too (`roamgate-review
+reviews reviews_list` and `reviews_override`, with the order and pin tools);
+what it changes shows on every page with Undo, naming the session ("Claude
+in sequence-head set the next step on !12").
+
 One of your own requests shows where it stands: its pipeline, who approved
-it (or that nobody did yet), who asked for changes (GitHub), its unresolved
-threads, conflicts, and whether GitLab wants it rebased. What changed since
+it, who asked for changes (GitHub), its unresolved threads, conflicts, and
+whether GitLab wants it rebased. What changed since
 you last looked is marked on those chips and said in the row ("pipeline
 failed, approved by bob, 2 new comments", "merged"): a pipeline that changed,
 new approvals, conflicts, threads to resolve, a merge or close, new commits
@@ -1106,13 +1140,16 @@ does the shortcut cheat sheet):
 | `o`                      | Open it on GitLab or GitHub                                                       |
 | `w`                      | Go to its workspace (`2w`: the second), on its connection                         |
 | `P`                      | Pin it on top, or unpin it                                                        |
+| `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it           |
+| `za`                     | Fold the requests under it, or its lane                                           |
+| `gx`                     | Open its link (a URL, or a file in its workspace)                                 |
 | `f`                      | Show all, to review, or mine                                                      |
-| `:`                      | A command: `pin`, `unpin`, `all`, `review`, `mine`, `refresh`                     |
+| `:`                      | A command: `note`, `whose`, `after`, `label`, `unlabel`, `link`, `stale`, `clear`, `pin`, `unpin`, `all`, `review`, `mine`, `refresh` |
 | `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                            |
 | `/`                      | Search; in the box Enter opens, Esc clears and goes back                          |
 | `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                         |
 | `dd` / `Delete`          | Remove it from the view (a pinned one is unpinned)                                |
-| `u`                      | Undo the last removal                                                             |
+| `u`                      | Undo the last change (a removal, a pin, what was set by hand, an agent's change)  |
 | `H`                      | The hidden requests, to restore                                                   |
 | `x` / `+`                | Not interested / more like this (a suggestion); `x` on another request removes it |
 | `r`                      | Refresh                                                                           |

@@ -17,7 +17,7 @@ import {
   type RpcLane,
 } from "./rpcLanes";
 import { clearSavedTerminalComposerDrafts } from "./terminalComposer";
-import type { MrReviewsPush } from "../../shared/mrReviews";
+import { MR_PUSH_KINDS, type MrReviewsPush } from "../../shared/mrReviews";
 import type { ReviewPush } from "../../shared/review";
 import { isReviewSnapshot } from "./reviewValidate";
 
@@ -430,7 +430,7 @@ function wsUrl(): string {
 function parseMrReviewsPush(value: unknown): MrReviewsPush | null {
   if (!value || typeof value !== "object") return null;
   const push = value as Record<string, unknown>;
-  const kinds = ["order", "pinned", "hidden"];
+  const kinds: readonly string[] = MR_PUSH_KINDS;
   if (
     typeof push.version !== "number" ||
     !Array.isArray(push.order) ||

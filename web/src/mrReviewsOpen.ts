@@ -83,3 +83,35 @@ export function handleMrReviewsShortcut(
   if (!event.repeat) toggle();
   return true;
 }
+
+/**
+ * A file a request's link names (gx on a path), to show in the Files
+ * preview of a workspace: the page takes it once it shows that
+ * workspace's connection (the panel jumps there first).
+ */
+export type MrFileOpen = {
+  connectionId: string;
+  workspaceId: string;
+  path: string;
+  at: number;
+};
+let pendingFile: MrFileOpen | null = null;
+const fileListeners = new Set<() => void>();
+
+export function requestMrFileOpen(request: Omit<MrFileOpen, "at">) {
+  pendingFile = { ...request, at: Date.now() };
+  for (const listener of fileListeners) listener();
+}
+
+/** The file asked for on this connection, taken (asked within a minute). */
+export function takeMrFileOpen(connectionId: string): MrFileOpen | null {
+  const found = pendingFile;
+  if (!found || found.connectionId !== connectionId) return null;
+  pendingFile = null;
+  return Date.now() - found.at < 60_000 ? found : null;
+}
+
+export function onMrFileOpen(listener: () => void): () => void {
+  fileListeners.add(listener);
+  return () => fileListeners.delete(listener);
+}

@@ -443,3 +443,236 @@
   font: inherit;
   outline: none;
 }
+
+/* One's own requests in lanes: whose move it is. */
+.mr-reviews-lane {
+  display: grid;
+  gap: 4px;
+}
+
+.mr-reviews-lane + .mr-reviews-lane {
+  margin-top: 4px;
+}
+
+.mr-reviews-lane-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mr-reviews-lane-title > span {
+  border-radius: 8px;
+  padding: 0 6px;
+  background: var(--viewer-code-bg);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.mr-reviews-lane.is-your_move > .mr-reviews-lane-title {
+  color: var(--accent);
+}
+
+.mr-reviews-lane.is-blocked > .mr-reviews-lane-title,
+.mr-reviews-lane.is-stale > .mr-reviews-lane-title,
+.mr-reviews-lane.is-done > .mr-reviews-lane-title {
+  color: var(--muted);
+}
+
+/* Dense: reference, title and chips on one line, the next step below. */
+.mr-reviews-lane .mr-reviews-row {
+  gap: 3px;
+  padding: 7px 10px;
+}
+
+.mr-reviews-row > .mr-reviews-dense-head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 4px 8px;
+}
+
+.mr-reviews-dense-head > strong {
+  flex: 1 1 14em;
+}
+
+.mr-reviews-dense-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 10px;
+}
+
+.mr-reviews-dense-chips .assistant-task-state {
+  padding: 0 6px;
+}
+
+.mr-reviews-row > .mr-reviews-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.mr-reviews-next-text.is-set {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.mr-reviews-next-text.is-outdated,
+.mr-reviews-detail .is-outdated {
+  opacity: 0.55;
+  text-decoration: line-through dotted;
+}
+
+.mr-reviews-setby {
+  font-style: italic;
+}
+
+.mr-reviews-dense-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.mr-reviews-next em {
+  border-radius: 5px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.mr-reviews-chip.is-tree {
+  border-style: dashed;
+  color: var(--text);
+}
+
+.mr-reviews-chip.is-label {
+  border-color: transparent;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+}
+
+/* A request drawn under the one it waits for: indented, joined to it by a
+   thin tree line. */
+.mr-reviews-item.is-child {
+  margin-left: calc(var(--mr-depth, 1) * 18px);
+}
+
+.mr-reviews-item.is-child:not(.is-drop-before)::before {
+  position: absolute;
+  top: -6px;
+  bottom: 0;
+  left: -11px;
+  width: 9px;
+  border-left: 1px solid var(--viewer-border);
+  content: "";
+}
+
+.mr-reviews-item.is-child.is-last-child:not(.is-drop-before)::before {
+  bottom: calc(100% - 50% - 1px);
+}
+
+.mr-reviews-item.is-child:not(.is-drop-after)::after {
+  position: absolute;
+  top: 50%;
+  left: -11px;
+  width: 9px;
+  border-top: 1px solid var(--viewer-border);
+  content: "";
+}
+
+/* The fold of a request's children, in the gutter on its left: rows keep
+   one width. */
+.mr-reviews-fold-place {
+  position: absolute;
+  top: 50%;
+  left: -16px;
+  transform: translateY(-50%);
+}
+
+.mr-reviews-fold {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--muted);
+}
+
+.mr-reviews-lane > .assistant-task-list {
+  gap: 6px;
+  padding-left: 8px;
+}
+
+.mr-reviews-lane-hint {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 11px;
+}
+
+/* What one sets by hand (e). */
+.mr-override-form {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mr-override-form > label {
+  display: grid;
+  grid-template-columns: 7em 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mr-override-form > label > span:first-child {
+  color: var(--muted);
+}
+
+.mr-override-form input[type="text"],
+.mr-override-form select {
+  min-width: 0;
+  width: 100%;
+}
+
+.mr-override-whose {
+  display: flex;
+  gap: 6px;
+}
+
+.mr-override-form > .mr-override-check {
+  grid-template-columns: auto 1fr;
+}
+
+.mr-override-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.mr-reviews-depends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.is-mobile .mr-override-form > label {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.is-mobile .mr-reviews-lane > .assistant-task-list {
+  padding-left: 18px;
+}

@@ -131,7 +131,117 @@ export type MrInboxEntry = MrItem & {
    * only the remove button works.
    */
   unavailable?: string;
+  /** What the user (or an agent) set on it by hand. */
+  override?: MrOverride;
+  /**
+   * The override's whose-move and next step were set before the request
+   * moved on (its activity marker changed): shown dimmed, "changed since".
+   */
+  overrideOutdated?: boolean;
+  /** One's own work: whose move it is (override, inference, else rules). */
+  lane?: MrLane;
+  /** Why it is in its lane, in a few words (the rule, or who set it). */
+  laneWhy?: string;
+  /** The next step, and where it comes from. */
+  next?: MrNextStep;
+  /** The requests it waits for (keys), override first. */
+  dependsOn?: string[];
+  /**
+   * Drawn under this request (an open request it depends on, in the list):
+   * the key of its parent. Absent for cycles and for dependencies not
+   * listed.
+   */
+  parent?: string;
 };
+
+/** Whose move it is on one's own request. */
+export type MrWhose = "me" | "reviewer" | "external" | { person: string };
+
+/**
+ * What the user (or an agent) set by hand on one of their requests: each
+ * field set wins over what Roamgate infers. Kept in settings.json
+ * (`mr_reviews.overrides`), on every device.
+ */
+export type MrOverride = {
+  whose?: MrWhose;
+  next?: string;
+  /** Request keys it waits for. */
+  dependsOn?: string[];
+  labels?: string[];
+  /** A URL, or a path on the workspace that has it (notes, a plan). */
+  link?: string;
+  stale?: boolean;
+  at: string;
+  by: "user" | "agent";
+  /** The request's activity marker when it was set (mrActivityMarker). */
+  marker: string;
+};
+
+/** The fields of an override one may set or clear. */
+export const MR_OVERRIDE_FIELDS = [
+  "whose",
+  "next",
+  "dependsOn",
+  "labels",
+  "link",
+  "stale",
+] as const;
+export type MrOverrideField = (typeof MR_OVERRIDE_FIELDS)[number];
+
+/**
+ * The lanes one's own work is grouped in: whose move it is. "done":
+ * merged or closed lately.
+ */
+export type MrLane =
+  | "your_move"
+  | "waiting"
+  | "blocked"
+  | "not_sent"
+  | "stale"
+  | "done";
+
+export const MR_LANES: MrLane[] = [
+  "your_move",
+  "waiting",
+  "blocked",
+  "not_sent",
+  "stale",
+  "done",
+];
+
+export const MR_LANE_TITLE: Record<MrLane, string> = {
+  your_move: "Your move",
+  waiting: "Waiting",
+  blocked: "Blocked",
+  not_sent: "Not proposed upstream yet",
+  stale: "Stale",
+  done: "Merged or closed",
+};
+
+/** The next step on a request, and who said it. */
+export type MrNextStep = {
+  text: string;
+  /** override: set by hand; rule: from the forge's status. */
+  from: "override" | "rule" | "inferred";
+  /** For an override: who set it. */
+  by?: "user" | "agent";
+};
+
+/** How a whose-move reads: "me", "reviewer", "external" or the person. */
+export function mrWhoseLabel(whose: MrWhose): string {
+  return typeof whose === "string" ? whose : whose.person;
+}
+
+/** "me" | "reviewer" | "external" | a person's name, as typed. */
+export function parseMrWhose(text: string): MrWhose | null {
+  const value = text.trim().replace(/^@/, "");
+  if (!value || value.length > 80 || /\s/.test(value)) return null;
+  const lower = value.toLowerCase();
+  if (lower === "me" || lower === "reviewer" || lower === "external")
+    return lower;
+  if (lower === "you" || lower === "mine") return "me";
+  return /^[\w.-]+$/.test(value) ? { person: value } : null;
+}
 
 /**
  * A workspace that is a request's (`bridge.mr_reviews.links`): on its
@@ -242,7 +352,10 @@ export type MrReviewsSettings = {
    * first, in the inbox's own order. Empty: the inbox's order.
    */
   order: string[];
-  /** Read only: counts the changes of `order`, `pinned` and `hidden`. */
+  /**
+   * Read only: the inbox version, counting every change of what the user
+   * authored here (order, pins, removals, overrides...).
+   */
   orderVersion?: number;
   /** Requests the user added by URL, newest first. */
   pinned: ForgeRef[];
@@ -251,6 +364,10 @@ export type MrReviewsSettings = {
    * (mrActivityMarker) at that time: shown again once it changes.
    */
   hidden: { key: string; marker: string }[];
+  /** What was set by hand on requests, by request key. */
+  overrides: Record<string, MrOverride>;
+  /** A request quiet this many days is Stale. */
+  staleDays: number;
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -271,16 +388,33 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   order: [],
   pinned: [],
   hidden: [],
+  overrides: {},
+  staleDays: 90,
 };
 
+/** What a push says changed (`MrReviewsPush.changed`). */
+export const MR_PUSH_KINDS = [
+  "order",
+  "pinned",
+  "hidden",
+  "overrides",
+  "views",
+  "unsent",
+  "upstream",
+  "efforts",
+  "effort",
+] as const;
+export type MrPushKind = (typeof MR_PUSH_KINDS)[number];
+
 /**
- * Pushed to every page when the order, the pins or the removals change
- * (`{mr_reviews: ...}`): the order itself, so the list follows at once.
+ * Pushed to every page when what the user authored here changes (the
+ * order, pins, removals, overrides...: `{mr_reviews: ...}`): the order
+ * itself, so the list follows at once.
  */
 export type MrReviewsPush = {
   version: number;
   order: string[];
-  changed: ("order" | "pinned" | "hidden")[];
+  changed: MrPushKind[];
   by: "user" | "agent";
   /** What the agent did, in a few words, for a toast with Undo. */
   summary?: string;

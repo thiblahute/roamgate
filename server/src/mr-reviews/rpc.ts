@@ -1,17 +1,27 @@
-import { forgeRefKey } from "../../../shared/forge";
+import { forgeRefKey, forgeRefLabel } from "../../../shared/forge";
 import {
+  MR_OVERRIDE_FIELDS,
+  type MrItem,
+  type MrOverride,
   mrActivityMarker,
   type MrReviewsSettings,
+  parseMrWhose,
 } from "../../../shared/mrReviews";
 import type { MrOrderOp } from "../../../shared/mrReviewsOrder";
 import { parseRequestRef } from "./agent-search";
 import type { MrInboxService } from "./inbox";
 import { editSettings, type MrChangeMeta, type MrOrder } from "./order";
 import {
+  applyOverride,
+  type MrOverrideChange,
+  sameOverride,
+} from "./overrides";
+import {
   MAX_HIDDEN,
   MAX_PINNED,
   mrReviewsSettings,
   normalizeStoredMrReviews,
+  storedMrReviews,
 } from "./settings";
 
 /**
@@ -55,15 +65,123 @@ function key(params: Record<string, unknown>): string {
 }
 
 /** Who is changing the view: the agent says so, and in a few words what. */
-function change(params: Record<string, unknown>): MrChangeMeta {
+export function change(params: Record<string, unknown>): MrChangeMeta {
   return params.by === "agent"
     ? {
         by: "agent",
+        // What an agent changes, the user can take back.
+        undoable: true,
         ...(typeof params.summary === "string" && params.summary
           ? { summary: params.summary.slice(0, 200) }
           : {}),
       }
     : { by: "user" };
+}
+
+/**
+ * A request named by key, reference or URL, for a dependency: one of the
+ * list's, or any request on the user's hosts.
+ */
+function requestKey(
+  value: string,
+  items: readonly MrItem[],
+  hosts: MrReviewsSettings["hosts"],
+): string {
+  const text = value.trim();
+  if (items.some((item) => item.key === text)) return text;
+  const ref = parseRequestRef(text, items, hosts);
+  if (!ref)
+    throw new MrReviewsError(
+      `"${text.slice(0, 100)}" names no request: use its URL or project!123.`,
+    );
+  if ("ambiguous" in ref)
+    throw new MrReviewsError(
+      `"${text.slice(0, 100)}" fits several requests: ${ref.ambiguous.map((item) => forgeRefLabel(item)).join(", ")}.`,
+    );
+  return forgeRefKey(ref);
+}
+
+/** An override change from a page or a tool, checked. */
+export function overrideChange(
+  params: Record<string, unknown>,
+  resolve: (value: string) => string,
+): MrOverrideChange {
+  const out: MrOverrideChange = {};
+  const set = params.set;
+  if (set !== undefined) {
+    if (!set || typeof set !== "object" || Array.isArray(set))
+      throw new MrReviewsError("set must be an object");
+    const value = set as Record<string, unknown>;
+    const fields: NonNullable<MrOverrideChange["set"]> = {};
+    for (const name of Object.keys(value))
+      if (!(MR_OVERRIDE_FIELDS as readonly string[]).includes(name))
+        throw new MrReviewsError(
+          `unknown field ${name}: ${MR_OVERRIDE_FIELDS.join(", ")}`,
+        );
+    if ("whose" in value) {
+      const whose =
+        typeof value.whose === "string"
+          ? parseMrWhose(value.whose)
+          : value.whose && typeof value.whose === "object"
+            ? parseMrWhose(String((value.whose as { person?: unknown }).person))
+            : null;
+      if (!whose)
+        throw new MrReviewsError(
+          "whose is me, reviewer, external or a person's user name",
+        );
+      fields.whose = whose;
+    }
+    if ("next" in value) {
+      if (typeof value.next !== "string")
+        throw new MrReviewsError("next must be text");
+      fields.next = value.next;
+    }
+    if ("dependsOn" in value) {
+      if (
+        !Array.isArray(value.dependsOn) ||
+        value.dependsOn.some((each) => typeof each !== "string")
+      )
+        throw new MrReviewsError("dependsOn must be a list of requests");
+      fields.dependsOn = (value.dependsOn as string[]).map(resolve);
+    }
+    if ("labels" in value) {
+      if (
+        !Array.isArray(value.labels) ||
+        value.labels.some((each) => typeof each !== "string")
+      )
+        throw new MrReviewsError("labels must be a list of words");
+      fields.labels = value.labels as string[];
+    }
+    if ("link" in value) {
+      if (typeof value.link !== "string")
+        throw new MrReviewsError("link must be a URL or a path");
+      fields.link = value.link;
+    }
+    if ("stale" in value) {
+      if (typeof value.stale !== "boolean")
+        throw new MrReviewsError("stale must be true or false");
+      fields.stale = value.stale;
+    }
+    out.set = fields;
+  }
+  const clear = params.clear;
+  if (clear === "all") out.clear = "all";
+  else if (clear !== undefined) {
+    if (
+      !Array.isArray(clear) ||
+      clear.some(
+        (each) =>
+          !(MR_OVERRIDE_FIELDS as readonly string[]).includes(each as string),
+      )
+    )
+      throw new MrReviewsError(
+        `clear is "all" or fields among ${MR_OVERRIDE_FIELDS.join(", ")}`,
+      );
+    out.clear = clear as MrOverrideChange["clear"];
+  }
+  if (!out.set && !out.clear)
+    throw new MrReviewsError("set or clear is required");
+  return out;
 }
 
 const ORDER_OPS = ["top", "bottom", "before", "after", "arrange"] as const;
@@ -253,6 +371,45 @@ export async function handleMrReviewsRpc(
         elsewhere: result.elsewhere,
       };
     }
+    case "bridge.mr_reviews.override": {
+      // Whose move, next step, dependencies, labels, link, stale: set by
+      // hand on one of the user's requests (or cleared).
+      const target = key(params);
+      const item = deps.inbox.item(target);
+      if (!item) throw new MrReviewsError("no such request", "not_found");
+      const hosts = await deps.inbox.hosts();
+      const items = deps.inbox.items();
+      const changeOf = overrideChange(params, (value) =>
+        requestKey(value, items, hosts),
+      );
+      if (changeOf.set?.dependsOn?.includes(target))
+        throw new MrReviewsError("a request cannot wait for itself");
+      const meta = change(params);
+      const result = await editSettings(async () => {
+        const current = await deps.settings();
+        const before = current.overrides[target];
+        const after = applyOverride(before, changeOf, {
+          by: meta.by,
+          at: new Date().toISOString(),
+          marker: mrActivityMarker(item),
+        });
+        if (sameOverride(before, after ?? undefined))
+          return { changed: false, override: before ?? null };
+        const overrides: Record<string, MrOverride> = {
+          ...current.overrides,
+        };
+        if (after) overrides[target] = after;
+        else delete overrides[target];
+        const saved = await deps.saveSettings({ ...current, overrides }, meta);
+        return {
+          changed: true,
+          override: after,
+          version: saved.orderVersion ?? 0,
+        };
+      });
+      if (result.changed) deps.inbox.changed();
+      return { ok: true, key: target, ...result };
+    }
     case "bridge.mr_reviews.settings.get":
       return deps.settings();
     case "bridge.mr_reviews.settings.update": {
@@ -267,6 +424,8 @@ export async function handleMrReviewsRpc(
         // The browser speaks the settings' own names; settings.json the
         // stored ones: normalized through the stored form.
         const stored = normalizeStoredMrReviews({
+          // What the page does not send (overrides, views...) is kept.
+          ...storedMrReviews(current),
           hosts: value.hosts ?? current.hosts,
           followed: value.followed ?? current.followed,
           checkout: value.checkout ?? current.checkout,
@@ -297,6 +456,7 @@ export async function handleMrReviewsRpc(
             : current.order,
           pinned: value.pinned ?? current.pinned,
           hidden: value.hidden ?? current.hidden,
+          stale_days: value.staleDays ?? current.staleDays,
         });
         return deps.saveSettings(mrReviewsSettings(stored));
       });
@@ -307,7 +467,8 @@ export async function handleMrReviewsRpc(
             name !== "order" &&
             name !== "orderVersion" &&
             name !== "pinned" &&
-            name !== "hidden",
+            name !== "hidden" &&
+            name !== "staleDays",
         )
       )
         void deps.inbox.refresh();

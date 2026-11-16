@@ -3,9 +3,11 @@ import { forgeRefKey, validHost, validProject } from "../../../shared/forge";
 import { MAX_ORDER } from "../../../shared/mrReviewsOrder";
 import {
   DEFAULT_MR_REVIEWS_SETTINGS,
+  type MrOverride,
   type MrReviewsSettings,
   mrProjectKey,
 } from "../../../shared/mrReviews";
+import { normalizeOverride, type StoredMrOverride } from "./overrides";
 
 /** The reviews settings, as settings.json keeps them (`mr_reviews`). */
 export type StoredMrReviewsSettings = {
@@ -22,6 +24,8 @@ export type StoredMrReviewsSettings = {
   order_version?: number;
   pinned?: ForgeRef[];
   hidden?: { key: string; marker: string }[];
+  overrides?: Record<string, StoredMrOverride>;
+  stale_days?: number;
 };
 
 export const MAX_HOSTS = 10;
@@ -31,6 +35,8 @@ export { MAX_ORDER };
 export const MAX_PINNED = 100;
 /** Requests the user removed from the view (the oldest forgotten first). */
 export const MAX_HIDDEN = 300;
+/** Requests with something set by hand (the oldest set forgotten first). */
+export const MAX_OVERRIDES = 500;
 
 function provider(value: unknown): ForgeProvider | null {
   return value === "gitlab" || value === "github" ? value : null;
@@ -184,7 +190,53 @@ export function normalizeStoredMrReviews(
       })
       .slice(-MAX_HIDDEN);
   }
+  if (
+    value.overrides &&
+    typeof value.overrides === "object" &&
+    !Array.isArray(value.overrides)
+  ) {
+    const kept = Object.entries(value.overrides as Record<string, unknown>)
+      .flatMap(([key, raw]) => {
+        if (!key || key.length > 600) return [];
+        const override = normalizeOverride(raw);
+        return override ? [[key, override] as const] : [];
+      })
+      .sort(([, a], [, b]) => a.at.localeCompare(b.at))
+      .slice(-MAX_OVERRIDES);
+    out.overrides = Object.fromEntries(kept);
+  }
+  const stale = Number(value.stale_days);
+  if (Number.isInteger(stale) && stale >= 1 && stale <= 3650)
+    out.stale_days = stale;
   return out;
+}
+
+function fromStoredOverride(stored: StoredMrOverride): MrOverride {
+  return {
+    ...(stored.whose !== undefined ? { whose: stored.whose } : {}),
+    ...(stored.next !== undefined ? { next: stored.next } : {}),
+    ...(stored.depends_on ? { dependsOn: stored.depends_on } : {}),
+    ...(stored.labels ? { labels: stored.labels } : {}),
+    ...(stored.link !== undefined ? { link: stored.link } : {}),
+    ...(stored.stale !== undefined ? { stale: stored.stale } : {}),
+    at: stored.at,
+    by: stored.by,
+    marker: stored.marker,
+  };
+}
+
+function toStoredOverride(override: MrOverride): StoredMrOverride {
+  return {
+    ...(override.whose !== undefined ? { whose: override.whose } : {}),
+    ...(override.next !== undefined ? { next: override.next } : {}),
+    ...(override.dependsOn ? { depends_on: override.dependsOn } : {}),
+    ...(override.labels ? { labels: override.labels } : {}),
+    ...(override.link !== undefined ? { link: override.link } : {}),
+    ...(override.stale !== undefined ? { stale: override.stale } : {}),
+    at: override.at,
+    by: override.by,
+    marker: override.marker,
+  };
 }
 
 /** The settings in effect, defaults filled in. */
@@ -211,6 +263,13 @@ export function mrReviewsSettings(
     orderVersion: stored?.order_version ?? 0,
     pinned: stored?.pinned ?? base.pinned,
     hidden: stored?.hidden ?? base.hidden,
+    overrides: Object.fromEntries(
+      Object.entries(stored?.overrides ?? {}).map(([key, value]) => [
+        key,
+        fromStoredOverride(value),
+      ]),
+    ),
+    staleDays: stored?.stale_days ?? base.staleDays,
   };
 }
 
@@ -237,5 +296,18 @@ export function storedMrReviews(
     ...(settings.orderVersion ? { order_version: settings.orderVersion } : {}),
     ...(settings.pinned.length ? { pinned: settings.pinned } : {}),
     ...(settings.hidden.length ? { hidden: settings.hidden } : {}),
+    ...(Object.keys(settings.overrides).length
+      ? {
+          overrides: Object.fromEntries(
+            Object.entries(settings.overrides).map(([key, value]) => [
+              key,
+              toStoredOverride(value),
+            ]),
+          ),
+        }
+      : {}),
+    ...(settings.staleDays !== DEFAULT_MR_REVIEWS_SETTINGS.staleDays
+      ? { stale_days: settings.staleDays }
+      : {}),
   };
 }

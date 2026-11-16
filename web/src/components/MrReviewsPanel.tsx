@@ -1,7 +1,9 @@
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   EyeOff,
   ExternalLink,
   GripVertical,
@@ -28,13 +30,15 @@ import {
   useState,
 } from "react";
 import { forgeKind, forgeRefLabel } from "../../../shared/forge";
-import type {
-  MrHostState,
-  MrInboxEntry,
-  MrItem,
-  MrReason,
-  MrSection,
-  MrWorkspaceLink,
+import {
+  MR_LANE_TITLE,
+  type MrHostState,
+  type MrInboxEntry,
+  type MrItem,
+  type MrOverrideField,
+  type MrReason,
+  type MrSection,
+  type MrWorkspaceLink,
 } from "../../../shared/mrReviews";
 import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -42,7 +46,9 @@ import {
   hideMrRequest,
   mrReviewsCall,
   onMrReviewsChange,
+  type MrOverrideEdit,
   orderMrRequests,
+  overrideMrRequest,
   pinMrRequest,
   unhideMrRequest,
   unpinMrRequest,
@@ -66,6 +72,15 @@ import {
   orderMrEntries,
 } from "../mrReviewsOrder";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
+import {
+  keepFoldedLanes,
+  type MrLaneRow,
+  mrLaneGroups,
+  mrLaneSiblings,
+  storedFoldedLanes,
+} from "../mrReviewsLanes";
+import { requestMrFileOpen } from "../mrReviewsOpen";
+import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
 import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
@@ -418,6 +433,23 @@ export function unreadLabel(entry: MrInboxEntry): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+/**
+ * For one's own request: only what its chips do not already show (its
+ * pipeline, approvals, conflicts, threads and state are chips).
+ */
+export function ownUnreadLabel(entry: MrInboxEntry): string | null {
+  if (entry.isNew) return null;
+  const unread = entry.unread;
+  if (!unread?.changed) return null;
+  const parts = [
+    ...(unread.newCommits ? ["new commits"] : []),
+    ...(unread.newNotes
+      ? [`${unread.newNotes} new comment${unread.newNotes === 1 ? "" : "s"}`]
+      : []),
+  ];
+  return parts.length ? parts.join(", ") : null;
+}
+
 /** Where one of the user's own requests stands, as chips. */
 export function ownChips(
   entry: MrInboxEntry,
@@ -455,8 +487,6 @@ export function ownChips(
       tone: "good",
       changed: !!unread?.newApprovals?.length,
     });
-  else if (entry.state === "open" && !own.changesRequested.length)
-    chips.push({ label: "no approval yet", tone: "wait", changed: false });
   if (own.unresolved)
     chips.push({
       label: `${own.unresolved} unresolved`,
@@ -533,6 +563,176 @@ export type MrRowMove = {
   canDown?: boolean;
 };
 
+type MrChip = ReturnType<typeof ownChips>[number];
+
+/** A request's row as it always was: others' requests, suggestions. */
+function MrRowBody({
+  entry,
+  chips,
+  unread,
+  drafts,
+}: {
+  entry: MrInboxEntry;
+  chips: MrChip[];
+  unread: string | null;
+  drafts: string | null;
+}) {
+  return (
+    <>
+      <div>
+        <strong>
+          <span className="mr-reviews-number">
+            {forgeRefLabel(entry, true)}
+          </span>{" "}
+          {entry.title}
+        </strong>
+        {entry.unavailable ? null : (
+          <span className={`assistant-task-state is-${stateLabel(entry)}`}>
+            {stateLabel(entry)}
+          </span>
+        )}
+      </div>
+      {entry.unavailable ? (
+        <span className="mr-reviews-row-meta mr-reviews-unavailable">
+          {entry.unavailable}
+        </span>
+      ) : (
+        <span className="mr-reviews-row-meta">
+          <PipelineDot status={entry.pipeline} />
+          {entry.project} · {entry.author} · {relative(entry.updatedAt)}
+        </span>
+      )}
+      {entry.section === "suggested" && entry.reason ? (
+        <small className="mr-reviews-reason">{entry.reason}</small>
+      ) : entry.reasons.some((reason) => reason !== "authored") ? (
+        <small>
+          {entry.reasons
+            .filter((reason) => reason !== "authored")
+            .map((reason) => REASON_LABEL[reason])
+            .join(", ")}
+        </small>
+      ) : null}
+      {chips.length ? (
+        <small className="mr-reviews-own" aria-label="Where it stands">
+          {chips.map((chip) => (
+            <span
+              key={chip.label}
+              className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+            >
+              {chip.label}
+            </span>
+          ))}
+        </small>
+      ) : null}
+      {unread || drafts ? (
+        <small className="mr-reviews-badges">
+          {unread ? (
+            <em className="mr-reviews-unread" title="Since you last looked">
+              {unread}
+            </em>
+          ) : null}
+          {drafts ? <em className="mr-reviews-drafts">{drafts}</em> : null}
+        </small>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * One's own request, dense: reference, title and chips on one line, the
+ * next step on the second (set by hand, or from its status).
+ */
+function MrDenseRow({
+  entry,
+  chips,
+  tree,
+  unread,
+  drafts,
+}: {
+  entry: MrInboxEntry;
+  chips: MrChip[];
+  tree?: MrLaneRow;
+  unread: string | null;
+  drafts: string | null;
+}) {
+  const next = entry.next;
+  const fromOverride = next?.from === "override";
+  const outdated = fromOverride && entry.overrideOutdated;
+  const state = stateLabel(entry);
+  return (
+    <>
+      <div className="mr-reviews-dense-head">
+        <strong>
+          <span className="mr-reviews-number">
+            {forgeRefLabel(entry, true)}
+          </span>{" "}
+          {entry.title}
+        </strong>
+        <span className="mr-reviews-dense-chips" aria-label="Where it stands">
+          {state !== "open" ? (
+            <span className={`assistant-task-state is-${state}`}>{state}</span>
+          ) : null}
+          {tree?.after ? (
+            <span className="mr-reviews-chip is-tree">{tree.after}</span>
+          ) : null}
+          {tree?.children ? (
+            <span className="mr-reviews-chip is-tree">
+              blocks {tree.children}
+            </span>
+          ) : null}
+          {chips.map((chip) => (
+            <span
+              key={chip.label}
+              className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+            >
+              {chip.label}
+            </span>
+          ))}
+          {entry.override?.labels?.map((label) => (
+            <span key={`label:${label}`} className="mr-reviews-chip is-label">
+              {label}
+            </span>
+          ))}
+        </span>
+      </div>
+      <span className="mr-reviews-next">
+        {next ? (
+          <span
+            className={`mr-reviews-next-text${fromOverride ? " is-set" : ""}${outdated ? " is-outdated" : ""}`}
+            title={
+              outdated
+                ? "Set before the request moved on: check it (e to edit, E to clear)"
+                : undefined
+            }
+          >
+            {next.text}
+          </span>
+        ) : null}
+        {fromOverride ? (
+          <small className="mr-reviews-setby">
+            {outdated
+              ? "changed since"
+              : next?.by === "agent"
+                ? "set by Claude"
+                : "set by you"}
+          </small>
+        ) : null}
+        <small className="mr-reviews-dense-meta">
+          <PipelineDot status={entry.pipeline} />
+          {entry.project} · {relative(entry.updatedAt)}
+          {entry.override?.link ? " · link (gx)" : ""}
+        </small>
+        {unread ? (
+          <em className="mr-reviews-unread" title="Since you last looked">
+            {unread}
+          </em>
+        ) : null}
+        {drafts ? <em className="mr-reviews-drafts">{drafts}</em> : null}
+      </span>
+    </>
+  );
+}
+
 export function MrReviewRow({
   entry,
   selected,
@@ -543,7 +743,13 @@ export function MrReviewRow({
   links,
   onGoWorkspace,
   onTogglePin,
+  tree,
+  onToggleChildren,
 }: {
+  /** In a lane: its depth, children, and parent. */
+  tree?: MrLaneRow;
+  /** Folds or unfolds the requests drawn under it (za). */
+  onToggleChildren?: () => void;
   entry: MrInboxEntry;
   selected: boolean;
   onSelect: () => void;
@@ -557,14 +763,24 @@ export function MrReviewRow({
   /** Pins it on top, or unpins it (P); on the selected row. */
   onTogglePin?: () => void;
 }) {
-  const unread = unreadLabel(entry);
+  const dense = !!entry.lane;
+  const unread = dense ? ownUnreadLabel(entry) : unreadLabel(entry);
   const drafts = draftsLabel(entry);
-  const chips = ownChips(entry);
+  // Dense rows say a pipeline that passed by its dot alone.
+  const chips = ownChips(entry).filter(
+    (chip) => !dense || chip.label !== "pipeline success" || chip.changed,
+  );
   const first = links?.[0];
   const drag = move?.drag;
+  const depth = tree?.depth ?? 0;
   return (
     <li
-      className={`mr-reviews-item${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}`}
+      className={`mr-reviews-item${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}${depth ? " is-child" : ""}${tree?.last ? " is-last-child" : ""}`}
+      style={
+        depth
+          ? ({ "--mr-depth": depth } as unknown as CSSProperties)
+          : undefined
+      }
       draggable={drag ? true : undefined}
       onDragStart={drag?.onDragStart}
       onDragOver={drag?.onDragOver}
@@ -589,62 +805,45 @@ export function MrReviewRow({
         onFocus={onSelect}
         onClick={onOpen}
       >
-        <div>
-          <strong>
-            <span className="mr-reviews-number">
-              {forgeRefLabel(entry, true)}
-            </span>{" "}
-            {entry.title}
-          </strong>
-          {entry.unavailable ? null : (
-            <span className={`assistant-task-state is-${stateLabel(entry)}`}>
-              {stateLabel(entry)}
-            </span>
-          )}
-        </div>
-        {entry.unavailable ? (
-          <span className="mr-reviews-row-meta mr-reviews-unavailable">
-            {entry.unavailable}
-          </span>
+        {dense ? (
+          <MrDenseRow
+            entry={entry}
+            chips={chips}
+            tree={tree}
+            unread={unread}
+            drafts={drafts}
+          />
         ) : (
-          <span className="mr-reviews-row-meta">
-            <PipelineDot status={entry.pipeline} />
-            {entry.project} · {entry.author} · {relative(entry.updatedAt)}
-          </span>
+          <MrRowBody
+            entry={entry}
+            chips={chips}
+            unread={unread}
+            drafts={drafts}
+          />
         )}
-        {entry.section === "suggested" && entry.reason ? (
-          <small className="mr-reviews-reason">{entry.reason}</small>
-        ) : entry.reasons.some((reason) => reason !== "authored") ? (
-          <small>
-            {entry.reasons
-              .filter((reason) => reason !== "authored")
-              .map((reason) => REASON_LABEL[reason])
-              .join(", ")}
-          </small>
-        ) : null}
-        {chips.length ? (
-          <small className="mr-reviews-own" aria-label="Where it stands">
-            {chips.map((chip) => (
-              <span
-                key={chip.label}
-                className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
-              >
-                {chip.label}
-              </span>
-            ))}
-          </small>
-        ) : null}
-        {unread || drafts ? (
-          <small className="mr-reviews-badges">
-            {unread ? (
-              <em className="mr-reviews-unread" title="Since you last looked">
-                {unread}
-              </em>
-            ) : null}
-            {drafts ? <em className="mr-reviews-drafts">{drafts}</em> : null}
-          </small>
-        ) : null}
       </button>
+      {tree?.children ? (
+        <span className="mr-reviews-fold-place">
+          <button
+            type="button"
+            className="assistant-icon-button mr-reviews-fold"
+            aria-label={
+              tree.collapsed
+                ? "Show the requests after it"
+                : "Fold the requests after it"
+            }
+            aria-expanded={!tree.collapsed}
+            title={`${tree.children} request${tree.children === 1 ? "" : "s"} wait${tree.children === 1 ? "s" : ""} for it (za)`}
+            onClick={onToggleChildren}
+          >
+            {tree.collapsed ? (
+              <ChevronRight size={14} />
+            ) : (
+              <ChevronDown size={14} />
+            )}
+          </button>
+        </span>
+      ) : null}
       {first && onGoWorkspace ? (
         <span className="mr-reviews-move">
           <button
@@ -736,10 +935,16 @@ function MrDetail({
   actions,
   links,
   onGoWorkspace,
+  board,
+  editor,
 }: {
   entry: MrInboxEntry;
   onBack: () => void;
   actions?: ReactNode;
+  /** Lane, next step and what was set by hand (dl rows). */
+  board?: ReactNode;
+  /** The form to set them, while editing (e). */
+  editor?: ReactNode;
   links?: MrWorkspaceLink[];
   onGoWorkspace?: (link: MrWorkspaceLink) => void;
 }) {
@@ -767,7 +972,9 @@ function MrDetail({
         {entry.reason ? (
           <p className="mr-reviews-reason">{entry.reason}</p>
         ) : null}
+        {editor}
         <dl className="assistant-task-metadata">
+          {board}
           <div>
             <dt>Author</dt>
             <dd>{entry.author}</dd>
@@ -1030,7 +1237,40 @@ export function MrReviewsPanel({
       suggested: bySection.suggested.filter(wanted),
     };
   }, [bySection, query, filter]);
-  const ordered = SECTIONS.flatMap((section) => shown[section]);
+  // One's own requests in lanes: folded lanes kept on this device, the
+  // requests under a parent folded with it (za).
+  const [folded, setFoldedState] = useState<Set<string>>(storedFoldedLanes);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // A bridge from before lanes gives none: the plain list then.
+  const lanesOn = shown.authored.some((entry) => entry.lane);
+  const laneGroups = useMemo(
+    () => (lanesOn ? mrLaneGroups(shown.authored, { folded, collapsed }) : []),
+    [shown.authored, folded, collapsed, lanesOn],
+  );
+  const toggleLane = (lane: string) =>
+    setFoldedState((current) => {
+      const next = new Set(current);
+      if (!next.delete(lane)) next.add(lane);
+      keepFoldedLanes(next);
+      return next;
+    });
+  const toggleChildren = (key: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  /** The rows as drawn, in order: what j / k walk. */
+  const ordered = SECTIONS.flatMap((section) =>
+    section === "authored" && lanesOn
+      ? laneGroups.flatMap((group) => group.rows.map((row) => row.entry))
+      : shown[section],
+  );
+  /** The rows a row moves among (J / K, drag): its section, or its lane. */
+  const siblingsOf = (entry: MrInboxEntry): MrInboxEntry[] =>
+    entry.section === "authored" && lanesOn
+      ? mrLaneSiblings(laneGroups, entry.key)
+      : shown[entry.section];
   const links = useMrWorkspaceLinks(
     useMemo(() => entries.map((entry) => entry.key), [entries]),
   );
@@ -1307,7 +1547,7 @@ export function MrReviewsPanel({
   const shiftSelected = (step: number) => {
     const current = entries.find((entry) => entry.key === selected);
     if (!current) return;
-    const list = shown[current.section];
+    const list = siblingsOf(current);
     const at = list.findIndex((entry) => entry.key === current.key);
     if (at < 0) return;
     const to = Math.min(list.length - 1, Math.max(0, at + step));
@@ -1329,7 +1569,7 @@ export function MrReviewsPanel({
   const sectionOf = (key: string | null) =>
     entries.find((entry) => entry.key === key)?.section;
   const rowMove = (entry: MrInboxEntry): MrRowMove => {
-    const list = shown[entry.section];
+    const list = siblingsOf(entry);
     const at = list.indexOf(entry);
     return {
       onStep: (step) => {
@@ -1358,7 +1598,8 @@ export function MrReviewsPanel({
                 if (
                   !dragging ||
                   dragging === entry.key ||
-                  sectionOf(dragging) !== entry.section
+                  sectionOf(dragging) !== entry.section ||
+                  !list.some((each) => each.key === dragging)
                 )
                   return;
                 event.preventDefault();
@@ -1533,6 +1774,84 @@ export function MrReviewsPanel({
         ),
       );
 
+  // What one sets by hand on a request (e, E, :note...): said, with Undo.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [overrideBusy, setOverrideBusy] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const setOverride = async (
+    entry: MrInboxEntry,
+    edit: MrOverrideEdit,
+    label: string,
+  ): Promise<boolean> => {
+    setOverrideBusy(true);
+    setOverrideError(null);
+    try {
+      const result = await overrideMrRequest(entry.key, edit);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      const version = result.version;
+      setUndo({
+        label: result.changed
+          ? `${label} on ${forgeRefLabel(entry, true)}`
+          : `Nothing changed on ${forgeRefLabel(entry, true)}`,
+        key: entry.key,
+        ...(result.changed && version
+          ? { run: () => orderMrRequests({ op: "undo", version }) }
+          : {}),
+      });
+      undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+      await reload();
+      return true;
+    } catch (cause) {
+      setOverrideError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setOverrideBusy(false);
+    }
+  };
+  /** Opens a request's link (gx): a URL in a tab, a path in Files. */
+  const openLink = (entry: MrInboxEntry) => {
+    const link = entry.override?.link;
+    if (!link) {
+      say(`${forgeRefLabel(entry, true)} has no link: set one with e or :link`);
+      return;
+    }
+    if (/^https?:\/\//i.test(link)) {
+      window.open(link, "_blank", "noopener");
+      return;
+    }
+    const where = links[entry.key]?.[0];
+    if (!where) {
+      say(`No workspace of ${forgeRefLabel(entry, true)} to show ${link} in`);
+      return;
+    }
+    requestMrFileOpen({
+      connectionId: where.connectionId,
+      workspaceId: where.workspaceId,
+      path: link,
+    });
+    goWorkspace(entry, where);
+  };
+  /** Starts editing what is set by hand on a request (e). */
+  const edit = (entry: MrInboxEntry) => {
+    showDetail(entry);
+    setOverrideError(null);
+    setEditing(entry.key);
+  };
+  const clearOverride = (
+    entry: MrInboxEntry,
+    field: MrOverrideField | "all",
+  ) => {
+    if (!entry.override) {
+      say(`Nothing is set by hand on ${forgeRefLabel(entry, true)}`);
+      return;
+    }
+    void setOverride(
+      entry,
+      { clear: field === "all" ? "all" : [field] },
+      field === "all" ? "Cleared what was set by hand" : `Cleared ${field}`,
+    );
+  };
+
   /** A count and the g of gg, as the review pane reads them. */
   const keyState = useRef(EMPTY_KEY_STATE);
 
@@ -1584,10 +1903,118 @@ export function MrReviewsPanel({
   }, [command]);
   const runCommand = (text: string) => {
     const [name = "", ...rest] = text.trim().replace(/^:/, "").split(/\s+/);
-    const current = ordered.find((entry) => entry.key === selected);
+    const current =
+      detailEntry ?? ordered.find((entry) => entry.key === selected);
     setCommand(null);
     panelRef.current?.focus({ preventScroll: true });
     if (!name) return;
+    const argument = rest.join(" ").trim();
+    const OVERRIDE_COMMANDS = [
+      "note",
+      "whose",
+      "label",
+      "unlabel",
+      "link",
+      "after",
+      "stale",
+      "clear",
+      "edit",
+    ];
+    if (OVERRIDE_COMMANDS.includes(name)) {
+      if (!current) {
+        say("Select a request first");
+        return;
+      }
+      const labels = current.override?.labels ?? [];
+      const given = argument
+        .split(",")
+        .map((each) => each.trim())
+        .filter(Boolean);
+      if (name === "edit") edit(current);
+      else if (name === "note")
+        void setOverride(
+          current,
+          argument ? { set: { next: argument } } : { clear: ["next"] },
+          argument ? "Next step set" : "Next step cleared",
+        );
+      else if (name === "whose")
+        void setOverride(
+          current,
+          argument ? { set: { whose: argument } } : { clear: ["whose"] },
+          argument ? `Whose move: ${argument}` : "Whose move cleared",
+        );
+      else if (name === "label")
+        void setOverride(
+          current,
+          { set: { labels: [...labels, ...given] } },
+          `Labelled ${given.join(", ")}`,
+        );
+      else if (name === "unlabel")
+        void setOverride(
+          current,
+          {
+            set: {
+              labels: labels.filter(
+                (label) =>
+                  !given.some(
+                    (each) => each.toLowerCase() === label.toLowerCase(),
+                  ),
+              ),
+            },
+          },
+          `Unlabelled ${given.join(", ")}`,
+        );
+      else if (name === "link")
+        void setOverride(
+          current,
+          argument ? { set: { link: argument } } : { clear: ["link"] },
+          argument ? "Link set" : "Link cleared",
+        );
+      else if (name === "after")
+        void setOverride(
+          current,
+          argument
+            ? {
+                set: {
+                  dependsOn: [
+                    ...(current.override?.dependsOn ?? []),
+                    ...argument.split(/[\s,]+/).filter(Boolean),
+                  ],
+                },
+              }
+            : { clear: ["dependsOn"] },
+          argument ? `Waits for ${argument}` : "Waits for nothing",
+        );
+      else if (name === "stale")
+        void setOverride(
+          current,
+          current.override?.stale
+            ? { clear: ["stale"] }
+            : { set: { stale: true } },
+          current.override?.stale ? "No longer stale" : "Marked stale",
+        );
+      else {
+        const field = (
+          {
+            whose: "whose",
+            next: "next",
+            note: "next",
+            after: "dependsOn",
+            depends: "dependsOn",
+            labels: "labels",
+            label: "labels",
+            link: "link",
+            stale: "stale",
+          } as Record<string, MrOverrideField>
+        )[argument];
+        if (argument && !field)
+          say(
+            `Not a field: ${argument} (whose, next, after, labels, link, stale)`,
+          );
+        else clearOverride(current, field ?? "all");
+      }
+      return;
+    }
     if (name === "pin" || name === "unpin") {
       if (!current) say("Select a request first");
       else togglePin(current, name === "pin");
@@ -1676,7 +2103,8 @@ export function MrReviewsPanel({
     }
     if (event.key === "Escape") {
       keyState.current = EMPTY_KEY_STATE;
-      if (prompt) setPrompt(null);
+      if (editing) setEditing(null);
+      else if (prompt) setPrompt(null);
       else if (view === "settings") setView("list");
       else if (detail) setDetail(null);
       else if (hiddenOpen) setHiddenOpen(false);
@@ -1684,6 +2112,26 @@ export function MrReviewsPanel({
       else if (query) setQuery("");
       // Hidden as it is: brought back full screen when it was.
       else onClose();
+      return true;
+    }
+    if (
+      !typing &&
+      view === "list" &&
+      detailEntry &&
+      !prompt &&
+      !editing &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      const fed = feedKey(keyState.current, event.key);
+      keyState.current = fed.state;
+      if (fed.type === "wait") return fed.state.pending === "g";
+      if (fed.key === "e") edit(detailEntry);
+      else if (fed.key === "E") clearOverride(detailEntry, "all");
+      else if (fed.key === "gx") openLink(detailEntry);
+      else if (fed.key === ":") setCommand("");
+      else return false;
       return true;
     }
     if (typing || view !== "list" || detail || prompt) return false;
@@ -1738,6 +2186,37 @@ export function MrReviewsPanel({
       goNthWorkspace(current, count);
     } else if (event.key === "P" && current) {
       togglePin(current);
+    } else if (fed.key === "e" && current) {
+      edit(current);
+    } else if (fed.key === "E" && current) {
+      clearOverride(current, "all");
+    } else if (fed.key === "gx" && current) {
+      openLink(current);
+    } else if (
+      (fed.key === "za" || fed.key === "zc" || fed.key === "zo") &&
+      current
+    ) {
+      const row = laneGroups
+        .flatMap((group) => group.rows)
+        .find((each) => each.entry.key === current.key);
+      if (row?.children) toggleChildren(current.key);
+      else if (current.lane && current.section === "authored") {
+        // The lane folds away: the selection goes to the next row shown.
+        const lane = laneGroups.find((group) =>
+          group.rows.some((each) => each.entry.key === current.key),
+        )?.lane;
+        if (lane) {
+          const after = ordered.slice(ordered.indexOf(current) + 1);
+          const next = after.find(
+            (each) =>
+              !laneGroups
+                .find((g) => g.lane === lane)
+                ?.rows.some((r) => r.entry.key === each.key),
+          );
+          toggleLane(lane);
+          if (next) setSelected(next.key);
+        }
+      }
     } else if (event.key === "f") {
       setFilter(FILTERS[(FILTERS.indexOf(filter) + 1) % FILTERS.length]!);
     } else if (event.key === ":") {
@@ -2073,9 +2552,65 @@ export function MrReviewsPanel({
               entry={detailEntry}
               links={links[detailEntry.key]}
               onGoWorkspace={(link) => goWorkspace(detailEntry, link)}
-              onBack={() => setDetail(null)}
+              onBack={() => {
+                setEditing(null);
+                setDetail(null);
+              }}
+              board={
+                <MrOverrideSummary
+                  entry={detailEntry}
+                  onSelect={(key) => {
+                    if (!entries.some((each) => each.key === key)) {
+                      say(`${refOfKey(key) ?? key} is not in your list`);
+                      return;
+                    }
+                    setEditing(null);
+                    setDetail(null);
+                    setSelected(key);
+                  }}
+                  onClear={(field) => clearOverride(detailEntry, field)}
+                />
+              }
+              editor={
+                editing === detailEntry.key ? (
+                  <MrOverrideForm
+                    entry={detailEntry}
+                    known={entries}
+                    busy={overrideBusy}
+                    error={overrideError}
+                    onCancel={() => {
+                      setEditing(null);
+                      panelRef.current?.focus({ preventScroll: true });
+                    }}
+                    onSave={(change) => {
+                      if (!change) {
+                        setEditing(null);
+                        panelRef.current?.focus({ preventScroll: true });
+                        return;
+                      }
+                      void setOverride(detailEntry, change, "Saved").then(
+                        (ok) => {
+                          if (!ok) return;
+                          setEditing(null);
+                          panelRef.current?.focus({ preventScroll: true });
+                        },
+                      );
+                    }}
+                  />
+                ) : null
+              }
               actions={
                 <>
+                  {editing !== detailEntry.key ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      title="Set whose move, the next step, what it waits for, labels, a link (e)"
+                      onClick={() => edit(detailEntry)}
+                    >
+                      Set by hand
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="primary"
@@ -2304,7 +2839,72 @@ export function MrReviewsPanel({
                         : bySection[section].length}
                     </span>
                   </h3>
-                  {shown[section].length ? (
+                  {section === "authored" && lanesOn ? (
+                    laneGroups.map((group) => (
+                      <div
+                        key={group.lane}
+                        className={`mr-reviews-lane is-${group.lane}`}
+                        role="group"
+                        aria-label={MR_LANE_TITLE[group.lane]}
+                      >
+                        <button
+                          type="button"
+                          className="mr-reviews-lane-title"
+                          aria-expanded={!group.folded}
+                          title={`${group.folded ? "Show" : "Fold"} this lane (za)`}
+                          onClick={() => toggleLane(group.lane)}
+                        >
+                          {group.folded ? (
+                            <ChevronRight size={13} />
+                          ) : (
+                            <ChevronDown size={13} />
+                          )}
+                          {MR_LANE_TITLE[group.lane]}
+                          <span>{group.count}</span>
+                        </button>
+                        {!group.folded &&
+                        group.count >
+                          group.rows.filter(
+                            (row) => row.entry.lane === group.lane,
+                          ).length ? (
+                          <p className="assistant-hint mr-reviews-lane-hint">
+                            {(() => {
+                              const under =
+                                group.count -
+                                group.rows.filter(
+                                  (row) => row.entry.lane === group.lane,
+                                ).length;
+                              return `${under} drawn under the request${under === 1 ? "" : "s"} ${under === 1 ? "it waits" : "they wait"} for`;
+                            })()}
+                          </p>
+                        ) : null}
+                        {group.rows.length ? (
+                          <ul className="assistant-task-list">
+                            {group.rows.map((row) => (
+                              <MrReviewRow
+                                key={row.entry.key}
+                                entry={row.entry}
+                                tree={row}
+                                onToggleChildren={() =>
+                                  toggleChildren(row.entry.key)
+                                }
+                                selected={row.entry.key === selected}
+                                onSelect={() => setSelected(row.entry.key)}
+                                onOpen={() => void open(row.entry)}
+                                move={rowMove(row.entry)}
+                                onRemove={() => remove(row.entry)}
+                                links={links[row.entry.key]}
+                                onGoWorkspace={(link) =>
+                                  goWorkspace(row.entry, link)
+                                }
+                                onTogglePin={() => togglePin(row.entry)}
+                              />
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : shown[section].length ? (
                     <ul className="assistant-task-list">
                       {shown[section].map((entry) => (
                         <MrReviewRow
@@ -2344,10 +2944,10 @@ export function MrReviewsPanel({
               ))}
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter its workspace, else review · i details · w
-                  workspace · P pin · f all, to review, mine · c Claude · o on
-                  the forge · J/K reorder · / search · : command · dd remove · ?
-                  all keys
+                  j/k move · Enter its workspace, else review · i details · e
+                  set next step, whose move · w workspace · P pin · f all, to
+                  review, mine · za fold · c Claude · o on the forge · J/K
+                  reorder · / search · : command · dd remove · ? all keys
                 </p>
               ) : null}
               {undo ? (
@@ -2375,7 +2975,7 @@ export function MrReviewsPanel({
             ref={commandRef}
             type="text"
             aria-label="Command"
-            placeholder="pin, unpin, all, review, mine, refresh"
+            placeholder="note, whose, after, label, link, clear, pin, mine, refresh"
             autoComplete="off"
             spellCheck={false}
             value={command}

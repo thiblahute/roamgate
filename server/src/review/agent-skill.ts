@@ -193,6 +193,23 @@ A message from another agent session reaches you wrapped in
 - Reply with \`roamgate-review message ADDRESS -- TEXT\` (its \`from\`), once,
   when it asks something; a reply to a reply is rarely needed.
 
+## The Reviews board
+
+Roamgate's Reviews panel lists the user's own merge and pull requests in
+lanes (whose move it is) with a next step, beside those they review. Any
+session reads and annotates it; nothing here touches a forge:
+
+    roamgate-review reviews reviews_list '{"section": "authored"}'
+    roamgate-review reviews reviews_override '{"request": "group/project!123", "set": {"whose": "reviewer", "next": "Waits for an answer on the API"}}'
+
+Tools: \`reviews_list\` (lanes, next steps, overrides, paged),
+\`reviews_override\` (set or clear whose move, next step, the requests it
+waits for, labels, a link, stale), \`reviews_order\`, \`reviews_sort\`,
+\`reviews_pin\`, \`reviews_unpin\`, \`reviews_hide\`, \`reviews_unhide\`.
+\`roamgate-review reviews help\` lists each tool's parameters. Change the board when
+your user asks, or to record what you found about your own work; the user
+sees each change with Undo.
+
 ## Rules
 
 - Edit or delete only your own comments; edits to the user's are refused.

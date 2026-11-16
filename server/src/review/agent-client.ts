@@ -238,6 +238,13 @@ def parser():
     msg.add_argument("to", help="its address, CONNECTION/PANE, as sessions lists it")
     msg.add_argument("text", nargs="*", help="text, or - for standard input")
 
+    rv = sub.add_parser(
+        "reviews",
+        help="the Reviews board: your requests' lanes and next steps, overrides, order (TOOL, then its parameters as JSON)",
+    )
+    rv.add_argument("tool", help="reviews_list, reviews_override, reviews_order, ...")
+    rv.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
+
     q = sub.add_parser(
         "permission",
         help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",
@@ -516,6 +523,8 @@ def main():
         if isinstance(value, list):
             value = "\\n".join(real_repo(v) for v in value)
         body[key.replace("-", "_")] = "1" if value is True else value
+    if args.command == "reviews" and args.params == "-":
+        body["params"] = sys.stdin.read()
     if "text" in vars(args):
         text = text_of(args)
         if text is not None:

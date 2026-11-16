@@ -1,3 +1,4 @@
+import { forgeRefKey } from "../../../shared/forge";
 import type {
   MrHiddenEntry,
   MrInboxEntry,
@@ -59,6 +60,64 @@ export function editSettings<T>(change: () => Promise<T>): Promise<T> {
 /** Versions kept, to rebase a stale list and to undo. */
 const HISTORY = 40;
 
+/** Lists Undo restores element by element (by their key). */
+const UNDO_LISTS = ["pinned", "hidden"] as const;
+const UNDO_LIST_KEY: {
+  [field in (typeof UNDO_LISTS)[number]]: (
+    value: MrReviewsSettings[field][number],
+  ) => string;
+} = {
+  pinned: (ref) => forgeRefKey(ref),
+  hidden: (entry) => entry.key,
+};
+/** Records Undo restores key by key. */
+const UNDO_RECORDS = ["overrides"] as const;
+
+const sameJson = (a: unknown, b: unknown) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * A record after undoing the change from `before` to `after`: each key it
+ * changed goes back, unless it changed again since.
+ */
+export function undoRecord<T>(
+  before: Record<string, T>,
+  after: Record<string, T>,
+  current: Record<string, T>,
+): Record<string, T> {
+  const out = { ...current };
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (sameJson(before[key], after[key])) continue;
+    if (!sameJson(current[key], after[key])) continue;
+    if (before[key] === undefined) delete out[key];
+    else out[key] = before[key];
+  }
+  return out;
+}
+
+/** A keyed list after undoing a change, as undoRecord; restored ones first. */
+export function undoList<T>(
+  before: T[],
+  after: T[],
+  current: T[],
+  keyOf: (value: T) => string,
+): T[] {
+  const index = (list: T[]) => new Map(list.map((each) => [keyOf(each), each]));
+  const was = index(before);
+  const now = index(after);
+  const out = [...current];
+  const restored: T[] = [];
+  for (const [key, value] of now)
+    if (!was.has(key)) {
+      const at = out.findIndex((each) => keyOf(each) === key);
+      if (at >= 0 && sameJson(out[at], value)) out.splice(at, 1);
+    }
+  for (const [key, value] of was)
+    if (!now.has(key) && !out.some((each) => keyOf(each) === key))
+      restored.push(value);
+  return [...restored, ...out];
+}
+
 export type MrOrderDeps = {
   inbox: MrInboxService;
   /** The settings in effect. */
@@ -71,8 +130,11 @@ export type MrOrderDeps = {
 };
 
 export function createMrOrder(deps: MrOrderDeps) {
-  /** Per version: the stored order, and the list as it was shown. */
-  const stored = new Map<number, string[]>();
+  /**
+   * Per version: the whole settings as saved (Undo takes back any field a
+   * change touched), and the list as it was shown.
+   */
+  const stored = new Map<number, MrReviewsSettings>();
   const shown = new Map<number, string[]>();
 
   function view(settings: MrReviewsSettings): MrOrderView {
@@ -105,7 +167,7 @@ export function createMrOrder(deps: MrOrderDeps) {
 
   function note(settings: MrReviewsSettings) {
     const version = settings.orderVersion ?? 0;
-    stored.set(version, [...settings.order]);
+    stored.set(version, structuredClone(settings));
     shown.set(version, shownList(settings));
     for (const old of [...stored.keys()])
       if (old <= version - HISTORY) {
@@ -122,6 +184,8 @@ export function createMrOrder(deps: MrOrderDeps) {
   return {
     /** Remembers what a save produced (the version it got). */
     remember: note,
+    /** Remembers the settings a save starts from, unless known. */
+    seed,
 
     /** The inbox as the user sees it: sections in their order. */
     async view(): Promise<MrOrderView> {
@@ -197,9 +261,10 @@ export function createMrOrder(deps: MrOrderDeps) {
     },
 
     /**
-     * Takes back the change that made `version`: the order before it when
-     * nothing changed since, else what that change moved, undone on the
-     * latest order.
+     * Takes back the change that made `version`: each field it touched goes
+     * back to what it was, unless something changed it since (for the
+     * order: what that change moved, undone on the latest order; for keyed
+     * fields such as overrides, key by key).
      */
     undo(version: number): Promise<MrReviewsSettings> {
       return editSettings(async () => {
@@ -207,17 +272,37 @@ export function createMrOrder(deps: MrOrderDeps) {
         seed(current);
         const after = shown.get(version);
         const before = shown.get(version - 1);
-        const order = stored.get(version - 1);
-        if (!after || !before || !order)
+        const settingsBefore = stored.get(version - 1);
+        const settingsAfter = stored.get(version);
+        if (!after || !before || !settingsBefore || !settingsAfter)
           throw new Error("That change can no longer be undone.");
-        const next =
-          (current.orderVersion ?? 0) === version
-            ? order
-            : storedMrOrder(
-                rebaseMrOrder(after, before, shownList(current)),
-                current.order,
-              );
-        return deps.save({ ...current, order: next }, { by: "user" });
+        const same = (a: unknown, b: unknown) =>
+          JSON.stringify(a) === JSON.stringify(b);
+        const next: MrReviewsSettings = { ...current };
+        if (!same(settingsBefore.order, settingsAfter.order))
+          next.order =
+            (current.orderVersion ?? 0) === version
+              ? settingsBefore.order
+              : storedMrOrder(
+                  rebaseMrOrder(after, before, shownList(current)),
+                  current.order,
+                );
+        for (const field of UNDO_LISTS) {
+          const keyOf = UNDO_LIST_KEY[field];
+          (next as Record<string, unknown>)[field] = undoList(
+            settingsBefore[field] as unknown[],
+            settingsAfter[field] as unknown[],
+            current[field] as unknown[],
+            keyOf as (value: unknown) => string,
+          );
+        }
+        for (const field of UNDO_RECORDS)
+          (next as Record<string, unknown>)[field] = undoRecord(
+            settingsBefore[field] as Record<string, unknown>,
+            settingsAfter[field] as Record<string, unknown>,
+            current[field] as Record<string, unknown>,
+          );
+        return deps.save(next, { by: "user" });
       });
     },
   };
