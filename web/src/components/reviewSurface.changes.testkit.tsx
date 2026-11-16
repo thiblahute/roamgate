@@ -142,8 +142,10 @@ export async function mountChangesReview(
     "./reviewSurface.classic.testkit"
   );
   mockClassicBackend();
-  const { act, createElement, useState } = await import("react");
+  const { act, cloneElement, createElement, isValidElement, useState } =
+    await import("react");
   type ReactNode = import("react").ReactNode;
+  type ReactElement<P> = import("react").ReactElement<P>;
   const { createRoot } = await import("react-dom/client");
   const { jest, spyOn } = await import("bun:test");
   const { store } = await import("../store");
@@ -155,6 +157,7 @@ export async function mountChangesReview(
   );
   const { runInspectorCommand } = await import("../inspectorCommands");
   type CommandSet = import("../useInspectorCommands").InspectorCommandSet;
+  type InspectorCommand = import("../inspectorCommands").InspectorCommand;
   const { useInspectorCommands } = await import("../useInspectorCommands");
   const { ChangesScopeBar, useChangesRepos, useChangesSeries } = await import(
     "./ChangesScopeBar"
@@ -172,9 +175,14 @@ export async function mountChangesReview(
   type NewReviewAnnotation = import("../annotations").NewReviewAnnotation;
   type FeedbackCapture = import("../workspaceFeedback").FeedbackCapture;
   const { CommandLine } = await import("./CommandLine");
-  const { inspectorCompletions, opensCommandLine } = await import(
-    "../inspectorCommands"
-  );
+  const { inspectorCompletions, isTypingTarget, opensCommandLine } =
+    await import("../inspectorCommands");
+  const { inspectorShortcutList } = await import("../useInspectorCommands");
+  const { inspectorSettingCommands } = await import("../inspectorSettings");
+  const { ShortcutList } = await import("./ShortcutList");
+  const { changesFrameClass, changesFrameCommands, useChangesTreeHidden } =
+    await import("./changesFrame");
+  const { useZenEscape, useZenMode } = await import("../useZenMode");
   // The browser storage it opens with, as the classic kit's.
   if (options.storage !== "keep") {
     localStorage.clear();
@@ -468,38 +476,115 @@ export async function mountChangesReview(
     ]),
   );
 
-  // The inspector's prompt, as WorkspaceInspectorHost runs it.
+  // The inspector's frame around Changes, as WorkspaceInspectorHost draws
+  // and runs it: the tree beside the diff (`:files`), Review only
+  // (`:only`), the `:` prompt and the shortcut list (`?`, `:help`), the
+  // inspector's settings (`:vim`, `:set`).
   const parts = new Map<string, CommandSet>();
-  /** The inspector's `:` prompt over Changes, with its completions. */
-  const PromptHost = ({ children }: { children: ReactNode }) => {
+  const frame = {
+    commands: [] as InspectorCommand[],
+    only: false,
+  };
+  /** The commands shown: Changes' parts', then the frame's. */
+  const shownCommands = (): CommandSet => {
+    const sets = [...parts.values()];
+    const own = sets.find((set) => set.shortcuts || set.unknown);
+    return {
+      commands: [...sets.flatMap((set) => set.commands), ...frame.commands],
+      line: sets.find((set) => set.line)?.line,
+      keys: sets.flatMap((set) => set.keys ?? []),
+      ...(own?.shortcuts ? { shortcuts: own.shortcuts } : {}),
+      ...(own?.unknown ? { unknown: own.unknown } : {}),
+    };
+  };
+  const Frame = ({ children }: { children: ReactNode }) => {
     const [open, setOpen] = useState(false);
+    const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
+    const [treeHidden, toggleTree] = useChangesTreeHidden();
+    const [only, toggleOnly] = useZenMode();
+    useZenEscape(only, toggleOnly);
+    frame.only = only;
+    frame.commands = [
+      ...changesFrameCommands({
+        // A phone's inspector is compact: its tree is a drill-down.
+        toggleTree: options.phone ? null : toggleTree,
+        only,
+        toggleOnly,
+      }),
+      ...inspectorSettingCommands((filter) => setShortcuts({ filter })),
+    ];
+    const back = () => view()?.focus({ preventScroll: true });
     return (
       <InspectorViewContext.Provider value="changes">
         {/* biome-ignore lint/a11y/noStaticElementInteractions: the inspector's keys */}
         <div
           onKeyDown={(event) => {
+            if (
+              event.key === "?" &&
+              !event.defaultPrevented &&
+              !open &&
+              !shortcuts &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              !isTypingTarget(event.target)
+            ) {
+              event.preventDefault();
+              setShortcuts({ filter: "" });
+              return;
+            }
             if (open || event.defaultPrevented || !opensCommandLine(event))
               return;
             event.preventDefault();
             setOpen(true);
           }}
         >
-          {children}
+          <div
+            className={`workspace-inspector-resource inspector-changes-resource ${changesFrameClass(
+              { treeHidden: treeHidden && !options.phone, only },
+            )}`}
+          >
+            <div className="workspace-inspector-navigation" />
+            <div className="workspace-inspector-detail">
+              {isValidElement(children)
+                ? cloneElement(
+                    children as ReactElement<{ reviewOnly?: boolean }>,
+                    {
+                      reviewOnly: only,
+                    },
+                  )
+                : children}
+            </div>
+          </div>
+          {shortcuts ? (
+            <ShortcutList
+              className="inspector-keys"
+              {...inspectorShortcutList(shownCommands())}
+              filter={shortcuts.filter}
+              onFilter={(filter) => setShortcuts({ filter })}
+              placeholder="Search shortcuts and commands"
+              onClose={() => {
+                setShortcuts(null);
+                back();
+              }}
+            />
+          ) : null}
           {open ? (
             <CommandLine
               kind=":"
               completions={(typed) =>
-                inspectorCompletions(
-                  [...parts.values()].flatMap((set) => set.commands),
-                  typed,
-                )
+                inspectorCompletions(shownCommands().commands, typed)
               }
               onBlur={() => setOpen(false)}
               onSubmit={(text) => {
                 setOpen(false);
+                back();
                 registry.run(text);
               }}
-              onCancel={() => setOpen(false)}
+              onCancel={() => {
+                setOpen(false);
+                back();
+              }}
             />
           ) : null}
         </div>
@@ -512,11 +597,12 @@ export async function mountChangesReview(
       else parts.delete(id);
     },
     run: (input: string) => {
-      const sets = [...parts.values()];
+      const { commands, line, unknown } = shownCommands();
       const problem = runInspectorCommand(
-        sets.flatMap((set) => set.commands),
+        commands,
         input,
-        sets.find((set) => set.line)?.line,
+        line,
+        unknown ? (text) => unknown(text) : undefined,
       );
       if (problem) store.notify({ kind: "info", message: problem });
     },
@@ -583,12 +669,22 @@ export async function mountChangesReview(
       name?: string;
       paneId?: string;
     };
+    // The review's agent, else the workspace's first agent pane, as App
+    // gives it.
+    const pane = options.agentPanes?.[0];
     return {
       workspaceId: "workspace",
       root: "/repo",
       ...(agent.paneId
         ? { agent: { paneId: agent.paneId, name: agent.name ?? "Agent" } }
-        : {}),
+        : pane
+          ? {
+              agent: {
+                paneId: pane.paneId,
+                name: pane.agent.charAt(0).toUpperCase() + pane.agent.slice(1),
+              },
+            }
+          : {}),
     };
   };
   const writeComment = (
@@ -625,7 +721,7 @@ export async function mountChangesReview(
           InspectorCommandsContext.Provider,
           { value: registry },
           createElement(
-            PromptHost,
+            Frame,
             null,
             createElement(series ? ChangesWithSeries : DiffContentView, {
               entry: entries[0] ?? null,
@@ -644,14 +740,21 @@ export async function mountChangesReview(
               ...(asReview
                 ? { reviewScope: { kind: "review" as const, sessionId } }
                 : {}),
+              // Another review and the reviews list are always offered, as
+              // the page around the review offers them.
+              forgeHost: {
+                onShowReview: record("showReview"),
+                ...(options.hostCallbacks
+                  ? { onOpenLocal: record("openLocal") }
+                  : {}),
+              },
+              onShowReviews: record("showList"),
+              // The inspector reads the changes again (its refresh).
+              onRetry: record("reload"),
+              // Closed as the review toggle closes it, the review kept.
+              onCloseReview: record("close"),
               ...(options.hostCallbacks
-                ? {
-                    forgeHost: {
-                      onShowReview: record("showReview"),
-                      onOpenLocal: record("openLocal"),
-                    },
-                    onFocusAgentPane: record("focusAgentPane"),
-                  }
+                ? { onFocusAgentPane: record("focusAgentPane") }
                 : {}),
               ...(options.agentPanes ? { agentPanes: options.agentPanes } : {}),
               showFileSelector: false,
@@ -1042,13 +1145,22 @@ export async function mountChangesReview(
   await render();
   layOutScroller();
 
+  /**
+   * Where a key goes: the focus, in the diff or in the frame's own fields
+   * (the shortcut list's filter, the prompt, the focus bar); else the diff.
+   */
+  const keyTarget = () => {
+    const active = document.activeElement;
+    return active instanceof HTMLElement &&
+      (view().contains(active) ||
+        (host.contains(active) &&
+          active.closest(".review-keys, .review-cmdline") !== null))
+      ? active
+      : view();
+  };
   const press = async (keys: string) => {
     for (const stroke of parseKeys(keys)) {
-      const active = document.activeElement;
-      const target =
-        active instanceof HTMLElement && view().contains(active)
-          ? active
-          : view();
+      const target = keyTarget();
       if (target === view()) target.focus();
       await act(async () => {
         target.dispatchEvent(
@@ -1676,7 +1788,72 @@ export async function mountChangesReview(
       );
     },
     status() {
-      return host.querySelector(".changes-review-status")?.textContent ?? "";
+      // The review's line; the agent group's own when it has a bar.
+      return (
+        host.querySelector(".changes-review-status")?.textContent ||
+        host.querySelector(".diff-agent-status")?.textContent ||
+        ""
+      );
+    },
+    focusBar() {
+      return (
+        host.querySelector<HTMLInputElement>(".diff-review-focusbar input")
+          ?.value ?? null
+      );
+    },
+
+    // The inspector's frame around Changes.
+    filesShown() {
+      const resource = host.querySelector(".inspector-changes-resource");
+      return !!resource && !resource.classList.contains("files-tree-hidden");
+    },
+    diffOnly() {
+      return !!host
+        .querySelector(".inspector-changes-resource")
+        ?.classList.contains("is-review-only");
+    },
+    chromeShown() {
+      return !surface.diffOnly!() && surface.filesShown!();
+    },
+    conversationsShown() {
+      return host.querySelector(".threads-panel") !== null;
+    },
+    shortcuts() {
+      const panel = [...host.querySelectorAll(".review-keys-panel")].find(
+        (each) => each.querySelector("h2")?.textContent === "Review shortcuts",
+      );
+      if (!panel) return null;
+      return [...panel.querySelectorAll(".keys-row")].map((row) => ({
+        keys: [...row.querySelectorAll("kbd")]
+          .map((key) => key.textContent)
+          .join(" "),
+        label: row.querySelector("dd")?.textContent ?? "",
+      }));
+    },
+    async filterShortcuts(text) {
+      const input = host.querySelector<HTMLInputElement>(
+        ".review-keys-panel .review-keys-filter",
+      );
+      if (!input) throw new Error("no shortcut list");
+      await typeInto(input, text);
+      await settleAll();
+    },
+    shortcutKeys() {
+      return [...host.querySelectorAll(".keys .keys-row dt")].map((row) =>
+        [...row.querySelectorAll("kbd")].map((key) => key.textContent ?? ""),
+      );
+    },
+    vimPreference() {
+      const stored = roamgateLocalStorage.getItem("vimKeys");
+      return stored === null ? undefined : stored === "true";
+    },
+    reviewInPreference() {
+      try {
+        return JSON.parse(roamgateLocalStorage.getItem("reviewPrefs") ?? "{}")
+          .reviewIn;
+      } catch {
+        return undefined;
+      }
     },
     buttons() {
       return [...host.querySelectorAll("button, a")].map(

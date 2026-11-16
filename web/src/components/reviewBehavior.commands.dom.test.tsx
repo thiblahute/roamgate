@@ -67,18 +67,22 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   for (const surface of ALL_REVIEW_SURFACES)
     describe(surface.name, () => {
       const { mount } = surface;
-      // The whole review's commands: the classic pane's, so far; the
-      // commit bar's run on every surface with commits (plan phase 6).
-      const test = testWith(surface, "review");
+      // The review's commands, on every surface with them; the commit
+      // bar's on every surface with commits (plan phase 6).
+      const test = testWith(surface, "commands");
       test("an unknown command says so and names a few; :help and :set with another option are unknown", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });
         await review.command(":frob");
         expect(review.notice()).toBe(unknown("frob"));
         await review.command(":frob now");
         expect(review.notice()).toBe(unknown("frob now"));
-        // `?` is the shortcut list; there is no :help command.
+        // `?` is the shortcut list; there is no :help command. In Changes,
+        // `:help` is the inspector's: the same list, which Esc closes.
         await review.command(":help");
-        expect(review.notice()).toBe(unknown("help"));
+        if (surface.name === "changes") {
+          expect(review.shortcuts()?.length).toBeGreaterThan(40);
+          await review.press("<Esc>");
+        } else expect(review.notice()).toBe(unknown("help"));
         expect(review.shortcuts()).toBeNull();
         await review.command(":set number");
         expect(review.notice()).toBe(unknown("set number"));
@@ -489,11 +493,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
       test(":e :edit :reload read the diff again, on the same line", async () => {
         const review = await mount({ files: [added("a.ts", 6)] });
         await review.press("3j");
-        let reads = review.calls("review.diff").length;
+        // In Changes the uncommitted changes are the inspector's (git's
+        // diff, not review.diff): read again by its refresh.
+        const read = () =>
+          surface.name === "changes"
+            ? review.hostCalls("reload").length
+            : review.calls("review.diff").length;
+        let reads = read();
         for (const alias of [":e", ":edit", ":reload"]) {
           await review.command(alias);
-          expect(review.calls("review.diff").length).toBeGreaterThan(reads);
-          reads = review.calls("review.diff").length;
+          expect(read()).toBeGreaterThan(reads);
+          reads = read();
           expect(review.cursorLine()?.text).toBe("a.ts line 4");
         }
         await review.unmount();

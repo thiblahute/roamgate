@@ -124,6 +124,7 @@ import {
   changesDraftSession,
   type ComposerDelivery,
   ReviewDiffComposer,
+  saveOpenComposer,
   suggestionBlock,
 } from "./ReviewDiffComposer";
 import {
@@ -202,9 +203,15 @@ import {
   type CommentMode,
   type DiffCursor,
   DIFF_CURSOR_KEYS,
-  DIFF_REVIEW_KEYS,
   useDiffCursor,
 } from "./useDiffCursor";
+import {
+  notAReviewCommand,
+  REVIEW_FRAME_COMMANDS,
+  reviewInspectorCommands,
+} from "../reviewCommands";
+import type { ReviewCommand } from "../reviewNavigation";
+import { CHANGES_REVIEW_KEYS } from "../reviewShortcuts";
 import "./DiffContentView.css";
 
 export { highlightedPatch } from "./DiffSurface";
@@ -1262,6 +1269,9 @@ function DiffContentViewInner({
   agentPanes = NO_AGENT_PANES,
   onFocusAgentPane,
   onThreadsElsewhere,
+  onCloseReview,
+  onShowReviews,
+  reviewOnly = false,
 }: {
   selectionRevision?: number;
   /** On "in Changes", what is shown: repository, scope, branch and base. */
@@ -1361,6 +1371,15 @@ function DiffContentViewInner({
     direction: 1 | -1,
     drawn: ReadonlySet<string>,
   ) => boolean;
+  /**
+   * The review closed (`:q`, Esc with nothing else to leave), as the review
+   * toggle closes it; the review is kept.
+   */
+  onCloseReview?: (how: "command" | "escape") => void;
+  /** `:reviews`: the reviews in progress. */
+  onShowReviews?: () => void;
+  /** Review only is on: Esc leaves it first (the inspector's). */
+  reviewOnly?: boolean;
 } & ViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const { sessions: reviewSessions } = useReviewState();
@@ -1680,6 +1699,8 @@ function DiffContentViewInner({
     null,
   );
   const [overallOpen, setOverallOpen] = useState(false);
+  /** `:review` alone: the agent review's focus, asked first (Start). */
+  const [focusBar, setFocusBar] = useState<string | null>(null);
   const changesAgent = useChangesAgent(
     connectionClient.connectionId,
     reviewEditor
@@ -1746,10 +1767,19 @@ function DiffContentViewInner({
     (update: (current: string) => string) => setReviewStatus(update),
     [],
   );
+  /** What the agent group said, on the review's line when it has no bar. */
+  const agentSaid = changesAgent.agentName ? "" : changesAgent.status;
+  const startAgentReview = (focus: string) => {
+    setFocusBar(null);
+    changesAgent.review(focus);
+    sectionRef.current?.focus({ preventScroll: true });
+  };
   const statusLine = useReviewStatusLine({
     session: ownSnapshot?.session ?? null,
     threads: drawnThreads ?? NO_THREADS,
-    agentName: ownSnapshot ? reviewAgent(ownSnapshot, []).agentName : "Agent",
+    agentName: ownSnapshot
+      ? reviewAgent(ownSnapshot, agentPanes).agentName
+      : "Agent",
     draftSession: changesDraftSession(resourceKey),
     status: reviewStatus,
     setStatus: setStatusWith,
@@ -1783,7 +1813,9 @@ function DiffContentViewInner({
   }, [latestAnswer]);
   /** The thread dd or Delete deleted last: what u brings back. */
   const lastDeleted = useRef<ReviewThread | null>(null);
-  const ownAgent = ownSnapshot ? reviewAgent(ownSnapshot, []) : null;
+  // The workspace's agent pane when the review has none bound, as the
+  // review pane finds it (and as the page writes the comment to it).
+  const ownAgent = ownSnapshot ? reviewAgent(ownSnapshot, agentPanes) : null;
   /** What a new comment is, as the review pane writes it. */
   const commentKind: ReviewThreadKind = ownAgent?.commentKind ?? "draft";
   /** How the review's comments go out: the editors' save policy. */
@@ -3709,6 +3741,12 @@ function DiffContentViewInner({
         ? here[0]
         : undefined;
     switch (key) {
+      case "Escape":
+        // Nothing else to leave: the review closes (it is kept), past
+        // Review only, which Esc leaves first.
+        if (reviewOnly || !onCloseReview) return false;
+        onCloseReview("escape");
+        return true;
       case "Tab":
       case "S-Tab":
       case "gn":
@@ -4882,6 +4920,101 @@ function DiffContentViewInner({
   ) : null;
 
   /*
+   * The review's `:` commands in Changes: the review pane's registry
+   * (reviewCommands.ts), so the words, their order and what Tab says of
+   * them are the pane's; each runs what it means here. The frame's words
+   * (`:files`, `:only`, `:vim`, `:set`) are the inspector's; a commit
+   * bar's `:commit`, `:commits`, `:all` and `:e` are the views'.
+   */
+  const viewCommand = (name: string, argument: string) => {
+    const command = viewCommands?.find(
+      (each) => each.name === name || each.aliases?.includes(name),
+    );
+    if (!command) return false;
+    command.run(argument, { say, unknown: () => {} });
+    return true;
+  };
+  const runChangesReviewCommand = (command: ReviewCommand) => {
+    switch (command.type) {
+      case "close":
+        onCloseReview?.("command");
+        return;
+      case "save":
+        if (saveOpenComposer(sectionRef.current) === false) return;
+        say("Review saved");
+        return;
+      case "split":
+        setViewMode((mode) => (mode === "split" ? "unified" : "split"));
+        return;
+      case "comments":
+        setHideComments((hidden) => !hidden);
+        return;
+      case "ask":
+        cursorHandle.current.comment("ask");
+        return;
+      case "suggest":
+        cursorHandle.current.comment("suggest");
+        return;
+      case "overall":
+        setOverallOpen(true);
+        return;
+      case "threads":
+        setThreadsOpen(true);
+        return;
+      case "unresolved":
+        toggleOpenOnly();
+        return;
+      case "unreviewed":
+        reviewHandlers.current.threadKey("gu", null);
+        return;
+      case "send":
+        changesAgent.send();
+        return;
+      case "hold":
+        if (changesAgent.talk) changesAgent.toggleHold();
+        else
+          say(
+            `Comments are not going to ${changesAgent.agentName ?? "Agent"}.`,
+          );
+        return;
+      case "review":
+        if (command.focus === null) setFocusBar("");
+        else changesAgent.review(command.focus);
+        return;
+      case "open":
+        openMergeRequest(ownSnapshot);
+        return;
+      case "switchMode":
+        forgeMode.switchMode();
+        return;
+      case "commit":
+        if (
+          !viewCommand(
+            "commit",
+            command.index === null ? "" : String(command.index + 1),
+          )
+        )
+          say("This review has a single commit.");
+        return;
+      case "commits":
+        if (!viewCommand("commits", command.query))
+          say("This review has a single commit.");
+        return;
+      case "reload":
+        if (!viewCommand("reload", "")) onRetry?.();
+        return;
+      case "reviews":
+        onShowReviews?.();
+        return;
+      default:
+        return;
+    }
+  };
+  const changesReviewCommands = reviewInspectorCommands(
+    runChangesReviewCommand,
+  ).filter((command) => !REVIEW_FRAME_COMMANDS.includes(command.name));
+
+  /*
    * The diff's `:` commands in the inspector's prompt (Changes, a commit's
    * diff), each a button of its bar; the Files preview's embedded diff has
    * the preview's.
@@ -4915,7 +5048,8 @@ function DiffContentViewInner({
           },
         ]
       : []),
-    ...(!mobile
+    // With the review, the review's `:diff` (`:s`, `:split`, `:unified`).
+    ...(!mobile && !reviewEditor
       ? [
           {
             name: "diff",
@@ -4959,39 +5093,6 @@ function DiffContentViewInner({
           ? setMobileWrap((value) => !value)
           : setDesktopWrap((value) => !value),
     },
-    ...(reviewEditor
-      ? [
-          {
-            name: "comments",
-            aliases: ["hidecomments"],
-            description: "show / hide every comment (t)",
-            run: () => setHideComments((hidden) => !hidden),
-          },
-          {
-            name: "unresolved",
-            aliases: ["openonly"],
-            description: "show only the unresolved threads, or all again (gH)",
-            run: () => toggleOpenOnly(),
-          },
-          {
-            name: "ask",
-            description:
-              "ask the agent about the line, or answer where it is discussed (C)",
-            run: () => cursorHandle.current.comment("ask"),
-          },
-          {
-            name: "suggest",
-            description: "a suggested change of the line (s)",
-            run: () => cursorHandle.current.comment("suggest"),
-          },
-          {
-            name: "overall",
-            aliases: ["summary"],
-            description: "write the overall comment on the review",
-            run: () => setOverallOpen(true),
-          },
-        ]
-      : []),
     ...(reviewEditor && onGitAction
       ? (
           [
@@ -5032,45 +5133,10 @@ function DiffContentViewInner({
           },
         }))
       : []),
-    ...(reviewEditor
-      ? [
-          {
-            name: "open",
-            aliases: ["gitlab"],
-            description:
-              "the merge request's changes on its forge, in a new tab (O)",
-            run: () => openMergeRequest(ownSnapshot),
-          },
-          {
-            name: "switch",
-            description:
-              "the local review and the merge request's, both ways (gm)",
-            run: () => forgeMode.switchMode(),
-          },
-        ]
-      : []),
-    ...(reviewEditor && changesAgent.agentName
-      ? [
-          {
-            name: "send",
-            aliases: ["handoff"],
-            description: `send the held comments, or the open discussions, to ${changesAgent.agentName}`,
-            run: () => changesAgent.send(),
-          },
-          {
-            name: "hold",
-            description:
-              "hold your comments until :send, or send each as written",
-            run: () => changesAgent.toggleHold(),
-          },
-          {
-            name: "review",
-            description: `${changesAgent.agentName} reviews the changes: :review [focus]`,
-            run: (argument: string) => changesAgent.review(argument),
-          },
-        ]
-      : []),
-    ...(listedThreads.length
+    // The review's own words (the review pane's registry), each meaning in
+    // Changes what it means there.
+    ...(reviewEditor ? changesReviewCommands : []),
+    ...(!reviewEditor && listedThreads.length
       ? [
           {
             name: "conversations",
@@ -5091,9 +5157,17 @@ function DiffContentViewInner({
           ...(cursor.active
             ? {
                 line: cursor.goToLine,
-                keys: reviewEditor
-                  ? [...DIFF_CURSOR_KEYS, ...DIFF_REVIEW_KEYS]
-                  : DIFF_CURSOR_KEYS,
+                keys: DIFF_CURSOR_KEYS,
+              }
+            : {}),
+          // The review's list and words, as the review pane has them.
+          ...(reviewEditor
+            ? {
+                shortcuts: {
+                  title: "Review shortcuts",
+                  rows: CHANGES_REVIEW_KEYS,
+                },
+                unknown: notAReviewCommand,
               }
             : {}),
         },
@@ -5234,10 +5308,46 @@ function DiffContentViewInner({
             Overall comment
           </button>
         ) : null}
-        {reviewEditor && statusLine ? (
+        {reviewEditor && (statusLine || agentSaid) ? (
           <span className="changes-review-status" aria-live="polite">
-            {statusLine}
+            {agentSaid || statusLine}
           </span>
+        ) : null}
+        {reviewEditor && focusBar !== null ? (
+          <div className="diff-review-focusbar">
+            <span className="note">
+              {changesAgent.agentName ?? "Agent"} review, focus (optional):
+            </span>
+            <input
+              // The focus bar takes the keys as soon as it opens.
+              // biome-ignore lint/a11y/noAutofocus: see above
+              autoFocus
+              aria-label="Review focus"
+              value={focusBar}
+              placeholder="locking, API, error paths... (Enter starts, Esc cancels)"
+              onChange={(event) => setFocusBar(event.target.value)}
+              onFocus={(event) => event.target.select()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  startAgentReview(focusBar);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setFocusBar(null);
+                  sectionRef.current?.focus({ preventScroll: true });
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn primary rv-sm"
+              onClick={() => startAgentReview(focusBar)}
+            >
+              Start
+            </button>
+          </div>
         ) : null}
         <div className="diff-content-actions">
           {hunkTargets.length ? (
@@ -5469,13 +5579,15 @@ function DiffContentViewInner({
           {otherFilesBlock}
         </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>
-      {threadsOpen && listedThreads.length && diffThreads ? (
+      {/* The review's list opens with none too (`:conversations`), saying so. */}
+      {threadsOpen &&
+      ((listedThreads.length && diffThreads) || reviewEditor) ? (
         <ThreadsList
           className="diff-threads"
           threads={
             reviewEditor ? conversationOrder(listedThreads) : listedThreads
           }
-          api={diffThreads.api}
+          api={diffThreads?.api ?? threadWrites(connectionClient.connectionId)}
           onGo={
             reviewEditor
               ? (thread) => {

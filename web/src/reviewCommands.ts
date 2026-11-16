@@ -33,6 +33,18 @@ export const REVIEW_COMMAND_ALIASES: Readonly<
   e: ["edit", "reload"],
 };
 
+/**
+ * The review's words that are its frame's in Changes: the inspector's
+ * prompt runs them (the tree, Review only, the preferences).
+ */
+export const REVIEW_FRAME_COMMANDS: readonly string[] = [
+  "files",
+  "only",
+  "vim",
+  "novim",
+  "set",
+];
+
 /** Words with a meaning of their own that Tab does not offer. */
 export const REVIEW_UNLISTED_COMMANDS: readonly string[] = ["novim", "set"];
 

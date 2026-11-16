@@ -316,7 +316,7 @@ export function useChangesAgent(
       setStatus(
         agent.held
           ? `Your comments go to ${name} as you write them.`
-          : `Your comments wait until you Send them to ${name}.`,
+          : `Your comments wait until you Send them to ${name} (:send).`,
       );
     },
     send: () => {

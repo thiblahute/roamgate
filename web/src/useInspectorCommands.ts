@@ -14,7 +14,57 @@ export type InspectorCommandSet = {
   root?: () => Element | null;
   /** The part's keys, for the inspector's shortcut list (`?`, `:help`). */
   keys?: readonly ShortcutRow[];
+  /**
+   * The part's own shortcut list, shown by `?` and `:help` in place of the
+   * inspector's (the review in Changes: the review's list).
+   */
+  shortcuts?: { title: string; rows: readonly ShortcutRow[] };
+  /** What the prompt says of a word that is no command (the review's). */
+  unknown?: (text: string) => string;
 };
+
+/** The inspector's own keys, in its shortcut list (`?`, `:help`). */
+export const INSPECTOR_KEYS: readonly ShortcutRow[] = [
+  ["gt gT", "next / previous view (2gt: the second view, Vim's tabs)"],
+  [":", "command line, in every view; Tab / Shift+Tab complete"],
+  ["?", "this list (:help WORD opens it filtered)"],
+  ["← → Home End", "on the tabs: previous / next view, the first / last"],
+];
+
+/**
+ * The shortcut list `?` shows over a view: its part's own list when it has
+ * one (the review in Changes), else the view's keys, the inspector's, then
+ * every command the prompt has there.
+ */
+export function inspectorShortcutList(set: InspectorCommandSet): {
+  title: string;
+  rows: ShortcutRow[];
+} {
+  if (set.shortcuts)
+    return { title: set.shortcuts.title, rows: [...set.shortcuts.rows] };
+  const seen = new Set<string>();
+  return {
+    title: "Inspector shortcuts",
+    rows: [
+      ...(set.keys ?? []),
+      ...INSPECTOR_KEYS,
+      ...set.commands
+        .filter((command) => {
+          if (command.listed === false || seen.has(command.name)) return false;
+          seen.add(command.name);
+          return true;
+        })
+        .map(
+          (command): ShortcutRow => [
+            [command.name, ...(command.aliases ?? [])]
+              .map((word) => `:${word}`)
+              .join(" "),
+            command.description,
+          ],
+        ),
+    ],
+  };
+}
 
 /** The inspector's one prompt: what each part of its views can do there. */
 export type InspectorCommandRegistry = {
