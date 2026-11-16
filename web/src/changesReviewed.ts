@@ -10,6 +10,7 @@
  * files and chunks, and tells each chunk's staged state (D8).
  */
 import type { DiffCursorModel } from "./diffCursor";
+import type { GitLineRanges } from "./types";
 import {
   type HunkUnit,
   hunkIds,
@@ -140,14 +141,52 @@ const baseId = (id: string) => id.replace(/~\d+$/, "");
 /** A chunk's key in `chunkStages`. */
 export const chunkStageKey = (key: string, hunk: number) => `${key}\n${hunk}`;
 
+/** The changed lines the index holds of a combined diff (git.diff_file). */
+export type StagedLines = { old: GitLineRanges; new: GitLineRanges };
+
+const inRanges = (ranges: GitLineRanges, line: number) =>
+  ranges.some(([first, last]) => line >= first && line <= last);
+
 /**
- * Each chunk's staged state. An entry's own kind says where its chunk
- * lives; an unstaged chunk whose changed lines (same id) the path's staged
- * entry holds too is partly staged. Told exactly once the server serves
- * the combined `git diff HEAD` (phase 5s); until then this is the entries'.
+ * A combined diff's chunk's staged state, exactly, from the server's
+ * staged lines: staged when the index holds every changed line of it,
+ * unstaged when none, partly staged otherwise. Unknown (an untracked file,
+ * a conflict, a cut patch): unstaged.
+ */
+export function combinedChunkStage(
+  rows: readonly {
+    kind: "+" | "-" | " ";
+    old: number | null;
+    new: number | null;
+  }[],
+  staged: StagedLines | undefined,
+): ChunkStage {
+  if (!staged) return "unstaged";
+  let some = false;
+  let all = true;
+  for (const row of rows) {
+    if (row.kind === " ") continue;
+    const held =
+      row.kind === "-"
+        ? row.old !== null && inRanges(staged.old, row.old)
+        : row.new !== null && inRanges(staged.new, row.new);
+    some ||= held;
+    all &&= held;
+  }
+  return some ? (all ? "staged" : "partly") : "unstaged";
+}
+
+/**
+ * Each chunk's staged state. A combined diff's chunk (the review in
+ * Changes, `combined:` sections) is told exactly from the server's staged
+ * lines (`staged`, by section key). An entry's own kind says where its
+ * chunk lives; an unstaged chunk whose changed lines (same id) the path's
+ * staged entry holds too is partly staged.
  */
 export function chunkStages(
   layout: ChangesReviewedLayout,
+  model?: DiffCursorModel,
+  stagedLines?: ReadonlyMap<string, StagedLines | undefined>,
 ): Map<string, ChunkStage> {
   const stages = new Map<string, ChunkStage>();
   for (const own of layout.chunks) {
@@ -157,6 +196,16 @@ export function chunkStages(
         .map((chunk) => baseId(chunk.id)),
     );
     for (const chunk of own) {
+      if (chunk.key.startsWith("combined:")) {
+        stages.set(
+          chunkStageKey(chunk.key, chunk.hunk),
+          combinedChunkStage(
+            model?.rows.slice(chunk.start, chunk.end + 1) ?? [],
+            stagedLines?.get(chunk.key),
+          ),
+        );
+        continue;
+      }
       const here = chunk.key.startsWith("staged:") ? "staged" : "unstaged";
       stages.set(
         chunkStageKey(chunk.key, chunk.hunk),
@@ -189,8 +238,10 @@ export function chunkSpans(
   model: DiffCursorModel,
   layout: ChangesReviewedLayout,
   state: ReviewedState,
+  /** A combined section's staged lines, by its key (git.diff_file). */
+  stagedLines?: ReadonlyMap<string, StagedLines | undefined>,
 ): Map<string, ChunkSpan[]> {
-  const stages = chunkStages(layout);
+  const stages = chunkStages(layout, model, stagedLines);
   const spans = new Map<string, ChunkSpan[]>();
   layout.chunks.forEach((own, file) => {
     for (const chunk of own) {

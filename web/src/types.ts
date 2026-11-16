@@ -198,7 +198,15 @@ export type GitDiffKind =
   | "untracked"
   | "conflicted"
   | "branch"
-  | "last-step";
+  | "last-step"
+  /**
+   * A file's staged and unstaged changes as one diff against HEAD, the
+   * review's reading of the working changes in Changes (plan D8).
+   */
+  | "combined";
+
+/** Line ranges, first and last, both included. */
+export type GitLineRanges = [number, number][];
 
 export interface GitDiffEntry {
   path: string;
@@ -212,6 +220,11 @@ export interface GitDiffEntry {
   file_size?: number;
   mtime_ms?: number;
   size?: number;
+  /**
+   * A combined entry's status entries (staged, unstaged, untracked): the
+   * tree lists the file under each one's group, its menus act on them.
+   */
+  parts?: GitDiffEntry[];
 }
 
 export interface GitDiffSummary {
@@ -228,7 +241,7 @@ export interface GitDiffSummary {
   baseline_available?: boolean;
   snapshot_id?: string;
   entries: GitDiffEntry[];
-  counts: Record<GitDiffKind, number>;
+  counts: Record<Exclude<GitDiffKind, "combined">, number>;
 }
 
 export interface GitDiffFile {
@@ -240,6 +253,16 @@ export interface GitDiffFile {
   patch_size?: number;
   deferred?: boolean;
   truncated: boolean;
+  /** A combined diff's file that git does not track yet. */
+  untracked?: boolean;
+  /** A combined diff's file in conflict: no staged lines to tell. */
+  unmerged?: boolean;
+  /**
+   * A combined diff's changed lines the index holds: HEAD's lines removed
+   * (old) and the working tree's lines added (new). Every other changed
+   * line is unstaged; absent when it cannot be told.
+   */
+  staged?: { old: GitLineRanges; new: GitLineRanges };
 }
 
 // Raw list responses

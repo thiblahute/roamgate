@@ -26,7 +26,9 @@ if (process.env.ROAMGATE_CHANGES_GROUPED_DOM_TEST !== "1") {
   );
   await installChangesDom();
   const { act } = await import("react");
-  const { orderByStatus } = await import("./DiffViewerPanel");
+  const { combineWorkingEntries, orderByStatus } = await import(
+    "./DiffViewerPanel"
+  );
 
   const working = [
     entry("src/one.ts", "unstaged", "M"),
@@ -89,6 +91,116 @@ if (process.env.ROAMGATE_CHANGES_GROUPED_DOM_TEST !== "1") {
       } finally {
         await changes.unmount();
       }
+    });
+
+    test("a file staged and changed again is one combined diff: either of its rows shows it, read as kind combined", async () => {
+      const changes = await mountChangesTree({
+        entries: { working },
+        groupByStatus: true,
+      });
+      try {
+        const rows = () =>
+          [
+            ...document.querySelectorAll<HTMLButtonElement>(".diff-tree-file"),
+          ].filter(
+            (row) =>
+              row.querySelector(".diff-tree-name")?.textContent === "one.ts",
+          );
+        expect(rows()).toHaveLength(2);
+        // The one under Staged.
+        await act(async () => rows()[0]!.click());
+        await changes.settle();
+        const picked = changes.selection();
+        expect(picked?.entry).toMatchObject({
+          kind: "combined",
+          path: "src/one.ts",
+        });
+        // One section per file in the diff, a conflict kept as it is.
+        expect(
+          picked?.entries.map((each) => `${each.kind}:${each.path}`).sort(),
+        ).toEqual([
+          "combined:a.ts",
+          "combined:src/new.ts",
+          "combined:src/one.ts",
+        ]);
+        // Both of its rows are the file shown.
+        expect(rows().map((row) => row.getAttribute("aria-current"))).toEqual([
+          "true",
+          "true",
+        ]);
+        const asked = changes.calls
+          .filter((call) => call.method === "git.diff_file")
+          .map((call) => `${call.params.kind}:${call.params.path}`);
+        expect(asked).toContain("combined:src/one.ts");
+        expect(asked.some((each) => /^(staged|unstaged):/.test(each))).toBe(
+          false,
+        );
+        // The one under Changes shows the same diff.
+        await act(async () => rows()[1]!.click());
+        await changes.settle();
+        expect(changes.selection()?.entry).toMatchObject({
+          kind: "combined",
+          path: "src/one.ts",
+        });
+        // Its menus act on the entry it stands for: unstage under Staged.
+        await changes.openMenu("one.ts");
+        const labels = (changes.menu() ?? []).flatMap((group) =>
+          group.items.map((item) => item.label),
+        );
+        expect(labels.some((label) => /^Unstage/.test(label))).toBe(true);
+        await changes.closeMenu();
+      } finally {
+        await changes.unmount();
+      }
+    });
+
+    test("upstream's Changes (no status groups) still reads each entry's own diff", async () => {
+      const changes = await mountChangesTree({ entries: { working } });
+      try {
+        await changes.clickRow("one.ts");
+        expect(changes.selection()?.entry?.kind).not.toBe("combined");
+        const asked = changes.calls
+          .filter((call) => call.method === "git.diff_file")
+          .map((call) => String(call.params.kind));
+        expect(asked).not.toContain("combined");
+      } finally {
+        await changes.unmount();
+      }
+    });
+
+    test("combineWorkingEntries: one entry per file, its status entries kept as parts, in the groups' order", () => {
+      const combined = combineWorkingEntries([
+        ...working,
+        entry("c.ts", "conflicted", "U"),
+        entry("gone.ts", "unstaged", "deleted"),
+        entry("gone.ts", "staged", "modified"),
+      ]);
+      expect(
+        combined.map((each) => [each.kind, each.path, each.status]),
+      ).toEqual([
+        ["combined", "src/one.ts", "M"],
+        ["combined", "src/new.ts", "untracked"],
+        ["combined", "a.ts", "M"],
+        ["conflicted", "c.ts", "U"],
+        ["combined", "gone.ts", "deleted"],
+      ]);
+      expect(combined[0]!.parts?.map((part) => part.kind)).toEqual([
+        "unstaged",
+        "staged",
+      ]);
+      // Two diffs' counts do not add up to the combined one's.
+      expect(combined[0]!.additions).toBeUndefined();
+      expect(combined[2]!.additions).toBe(1);
+      expect(
+        orderByStatus(combined).map((each) => `${each.kind}:${each.path}`),
+      ).toEqual([
+        "conflicted:c.ts",
+        // Staged, in the tree's order (folders first).
+        "combined:src/one.ts",
+        "combined:gone.ts",
+        "combined:a.ts",
+        "combined:src/new.ts",
+      ]);
     });
 
     test("orderByStatus keeps each group's tree order and leaves other scopes' entries as they are", () => {

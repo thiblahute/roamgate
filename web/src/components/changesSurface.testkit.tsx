@@ -616,6 +616,8 @@ export type ChangesDiffOptions = {
   entries: GitDiffEntry[];
   /** Patches by `${kind}:${path}`. */
   patches: Record<string, string>;
+  /** A combined section's staged lines, as git.diff_file tells them. */
+  staged?: Record<string, GitDiffFile["staged"]>;
   /** The selected entry (default: the first). */
   entry?: GitDiffEntry;
   /** Bumped by each pick in the tree (DiffViewerPanel's selection). */
@@ -805,6 +807,9 @@ export async function mountChangesDiff(
     kind: each.kind,
     diff: options.patches[`${each.kind}:${each.path}`] ?? "",
     truncated: false,
+    ...(options.staged?.[`${each.kind}:${each.path}`]
+      ? { staged: options.staged[`${each.kind}:${each.path}`] }
+      : {}),
   });
   const container = document.createElement("div");
   document.body.append(container);

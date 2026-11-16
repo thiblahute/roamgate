@@ -502,6 +502,30 @@ const GAP_ID = "\u0000gap:";
 const DiffDrawingContext = createContext<DiffDrawing | null>(null);
 
 /**
+ * The section a comment is drawn in: its own entry's (`kind:path`). A
+ * comment on the combined diff (the review in Changes, D8) shown on the
+ * per-entry diffs goes on the entry that numbers its side alike: the new
+ * side (the working tree) on the unstaged or untracked entry, the old side
+ * (HEAD) on the staged one, else on any entry of its file.
+ */
+export function annotationSectionKey(
+  annotation: Pick<DiffReviewAnnotation, "kind" | "path" | "side">,
+  shownKeys: ReadonlySet<string>,
+): string {
+  const own = `${annotation.kind}:${annotation.path}`;
+  if (annotation.kind !== "combined" || shownKeys.has(own)) return own;
+  const order =
+    annotation.side === "old"
+      ? ["staged", "unstaged", "untracked", "conflicted"]
+      : ["unstaged", "untracked", "staged", "conflicted"];
+  return (
+    order
+      .map((kind) => `${kind}:${annotation.path}`)
+      .find((key) => shownKeys.has(key)) ?? own
+  );
+}
+
+/**
  * The threads of the comments on the files a diff view shows, in their
  * order: what its Comments panel lists.
  */
@@ -519,10 +543,14 @@ export function diffViewThreads(
   const shown = new Set(
     entries.map((each) => (byPath ? each.path : `${each.kind}:${each.path}`)),
   );
+  const paths = new Set(entries.map((each) => each.path));
   return annotations.flatMap((note) => {
     const thread =
       note.source === "diff" &&
-      shown.has(byPath ? note.path : `${note.kind}:${note.path}`)
+      (byPath || note.kind !== "combined"
+        ? shown.has(byPath ? note.path : `${note.kind}:${note.path}`)
+        : // On the combined diff, shown on its file's entries.
+          paths.has(note.path))
         ? byId.get(note.id)
         : undefined;
     return thread ? [thread] : [];
@@ -1363,15 +1391,16 @@ export function DiffContentView({
   );
   const annotationsByPath = useMemo(() => {
     const grouped = new Map<string, DiffReviewAnnotation[]>();
+    const shownKeys = new Set(visibleEntries.map(diffEntryKey));
     for (const annotation of annotations) {
       if (annotation.source !== "diff") continue;
-      const key = `${annotation.kind}:${annotation.path}`;
+      const key = annotationSectionKey(annotation, shownKeys);
       const pathAnnotations = grouped.get(key);
       if (pathAnnotations) pathAnnotations.push(annotation);
       else grouped.set(key, [annotation]);
     }
     return grouped;
-  }, [annotations]);
+  }, [annotations, visibleEntries]);
   // The comments' threads, in the file's views: drawn under their lines,
   // listed in the Comments panel, as in the Files preview.
   const threadView = useFileThreadView(() => sectionRef.current);
@@ -2147,9 +2176,16 @@ export function DiffContentView({
     () => changesReviewed(reviewLayout, reviewedMarks),
     [reviewLayout, reviewedMarks],
   );
+  /** Each combined section's staged lines, as the server told them (D8). */
+  const stagedLinesByKey = useMemo(() => {
+    const staged = new Map<string, GitDiffFile["staged"]>();
+    for (const [key, each] of Object.entries(filesByKey))
+      if (key.startsWith("combined:")) staged.set(key, each.staged);
+    return staged;
+  }, [filesByKey]);
   const chunkSpansByKey = useMemo(
-    () => chunkSpans(cursor.model, reviewLayout, reviewState),
-    [cursor.model, reviewLayout, reviewState],
+    () => chunkSpans(cursor.model, reviewLayout, reviewState, stagedLinesByKey),
+    [cursor.model, reviewLayout, reviewState, stagedLinesByKey],
   );
   const cursorMatching = useMemo(
     () => new Set(cursor.matchingPaths),

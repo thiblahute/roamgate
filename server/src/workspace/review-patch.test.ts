@@ -689,3 +689,53 @@ test("a Windows host's repositories are scanned and kept", async () => {
     },
   ]);
 });
+
+test("a review's state sees every untracked file, past the first 200", async () => {
+  const root = repository();
+  const worktree = { kind: "worktree" as const };
+  for (let at = 0; at < 230; at++)
+    writeFileSync(join(root, `u${String(at).padStart(3, "0")}.txt`), "x\n");
+  const before = await readReviewState({ ...run, root, target: worktree });
+  // The last one by name: beyond any 200-file cut.
+  writeFileSync(join(root, "u229.txt"), "y\n");
+  expect(await readReviewState({ ...run, root, target: worktree })).not.toBe(
+    before,
+  );
+}, 20_000);
+
+test("one file's patch is read whole: past 200 untracked files and the 4 MiB cut", async () => {
+  const root = repository();
+  for (let at = 0; at < 210; at++)
+    writeFileSync(join(root, `u${String(at).padStart(3, "0")}.txt`), "x\n");
+  const whole = await readReviewPatch({
+    ...run,
+    root,
+    target: { kind: "worktree" },
+  });
+  expect(whole.files.some((file) => file.path === "u209.txt")).toBe(false);
+  const late = await readReviewPatch({
+    ...run,
+    root,
+    target: { kind: "worktree" },
+    paths: ["u209.txt"],
+  });
+  expect(late.files.map((file) => file.path)).toEqual(["u209.txt"]);
+  // A file larger than the whole patch's cut, on a range.
+  const big = `${"line of text that is long enough\n".repeat(140_000)}`;
+  writeFileSync(join(root, "big.txt"), big);
+  git(root, "add", "big.txt");
+  git(root, "commit", "-q", "-m", "big");
+  const range = { kind: "range" as const, base: "main", head: "HEAD" };
+  expect(
+    (await readReviewPatch({ ...run, root, target: range })).truncated,
+  ).toBe(true);
+  const one = await readReviewPatch({
+    ...run,
+    root,
+    target: range,
+    paths: ["big.txt"],
+  });
+  expect(one.truncated).toBe(false);
+  expect(one.files.map((file) => file.path)).toEqual(["big.txt"]);
+  expect(one.files[0]!.hunks[0]!.lines.length).toBe(140_000);
+}, 30_000);
