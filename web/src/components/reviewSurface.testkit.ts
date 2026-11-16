@@ -605,6 +605,23 @@ export async function settle(rounds = 10) {
 export async function installReviewDom() {
   const { Window } = await import("happy-dom");
   const browser = new Window({ url: "http://localhost/" });
+  // happy-dom has no `assignedSlot`: an element slotted into the diff's
+  // shadow DOM (a comment editor under a line) finds its slot as in a
+  // browser, where CodeMirror follows it to find its root.
+  if (!("assignedSlot" in browser.HTMLElement.prototype))
+    Object.defineProperty(browser.Element.prototype, "assignedSlot", {
+      configurable: true,
+      get(this: Element) {
+        const root = this.parentElement?.shadowRoot;
+        if (!root) return null;
+        const name = this.getAttribute("slot") ?? "";
+        return (
+          [...root.querySelectorAll("slot")].find(
+            (slot) => (slot.getAttribute("name") ?? "") === name,
+          ) ?? null
+        );
+      },
+    });
   for (const [key, value] of Object.entries({
     window: browser,
     document: browser.document,

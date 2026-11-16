@@ -2,6 +2,7 @@ import { insertNewlineAndIndent } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import {
+  drawSelection,
   EditorView,
   keymap,
   placeholder as placeholderText,
@@ -40,6 +41,11 @@ export const reviewEditorTheme = EditorView.theme({
     caretColor: "var(--rv-text)",
   },
   ".cm-scroller": { fontFamily: "inherit" },
+  // The caret is drawn (drawSelection), not the browser's: a thin bar in
+  // the text's color while typing (insert mode), Vim's block otherwise.
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeft: "2px solid var(--rv-text)",
+  },
   ".cm-fat-cursor": {
     background: "var(--rv-accent) !important",
     opacity: "0.6",
@@ -263,6 +269,7 @@ export function ReviewCommentEditor({
         selection: { anchor: value.length },
         extensions: [
           ...(vimMode ? [vim({ status: true })] : []),
+          drawSelection(),
           keymap.of([
             { key: "Mod-Enter", run: save },
             // Markdown's Enter only continues lists and quotes. On Android

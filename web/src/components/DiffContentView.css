@@ -389,6 +389,15 @@
   white-space: normal;
 }
 
+/* The editor's box as the classic review drew it: the panel's background,
+   its Vim bar a step lighter. */
+.diff-review-composer.chat-review,
+.diff-review-reply {
+  --rv-surface: var(--shell-panel);
+  --rv-surface-2: var(--panel-2);
+  --rv-border: var(--shell-border);
+}
+
 .diff-review-composer .rc-editor,
 .diff-review-reply .rc-editor {
   min-width: 0;
@@ -398,6 +407,8 @@
 /* A reply or a rewrite in a thread: the review's editor, in the card. */
 .diff-review-reply {
   margin: 4px 0 0;
+  font-family: var(--sans-font);
+  font-size: 13px;
   white-space: normal;
 }
 
