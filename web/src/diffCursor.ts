@@ -1,5 +1,4 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { relocateLine } from "./reviewModel";
 import {
   type Cursor,
   findFile,
@@ -177,11 +176,6 @@ export function stepRows(
     if (next !== null) return next;
   }
   return Math.max(0, Math.min(last, at + delta));
-}
-
-/** The side a row is on, side by side: "both" for an unchanged line. */
-export function rowSide(row: DiffCursorRow): "left" | "right" | "both" {
-  return row.kind === "-" ? "left" : row.kind === "+" ? "right" : "both";
 }
 
 /** `}` / `{`: the first row of the next or previous hunk, `count` times. */
@@ -383,15 +377,6 @@ export function stickyInset(
   return inset;
 }
 
-/** The next hit after (or before) the cursor, wrapping around. */
-export function searchStep(
-  hits: readonly Match[],
-  cursor: Cursor,
-  direction: 1 | -1,
-): Match | null {
-  return nextMatch(hits, cursor, direction);
-}
-
 /** The next file whose path matches, from the cursor's file; -1 if none. */
 export function searchFileStep(
   model: DiffCursorModel,
@@ -433,26 +418,4 @@ export function screenRow(
   if (key === "H") return visible[Math.min(visible.length - 1, count - 1)]!;
   if (key === "L") return visible[Math.max(0, visible.length - count)]!;
   return visible[Math.floor(visible.length / 2)]!;
-}
-
-/**
- * A thread written on an older version of a file, put on today's row:
- * the line it was on in `oldLines`, looked for in `currentLines` (the
- * review's relocateLine), then its row among those drawn. Null when the
- * line is not found, or not drawn: the thread is outdated (was line N).
- */
-export function relocatedRow(
-  model: DiffCursorModel,
-  path: string,
-  oldLines: readonly string[],
-  currentLines: readonly string[],
-  line: number,
-): { row: number; line: number } | null {
-  const found = relocateLine(oldLines, line, currentLines);
-  if (found === null) return null;
-  const file = model.files.find((each) => each.path === path);
-  if (!file) return null;
-  for (let at = file.start; at < file.end; at++)
-    if (model.rows[at]!.new === found) return { row: at, line: found };
-  return null;
 }

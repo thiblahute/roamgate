@@ -159,12 +159,11 @@ import {
 import {
   changesReviewView,
   type ChunkSpan,
-  changesReviewed,
   chunkSpans,
   markChunks,
   reviewedLayout,
 } from "../changesReviewed";
-import { nextUnreviewedHunk } from "../reviewNavigation";
+import { nextUnreviewedHunk, reviewedState } from "../reviewNavigation";
 import {
   fileToggleChanges,
   fileToggleNotice,
@@ -2150,13 +2149,6 @@ function DiffContentViewInner({
   ) =>
     pendingWrites.pendingById.get(comment.id) ??
     (index === 0 ? pendingWrites.pendingById.get(thread.id) : undefined);
-  /** New-side lines of each file shown, for what suggestions replace. */
-  const newLinesOf = (path: string) => {
-    const lines = new Map<number, string>();
-    for (const row of cursorHandle.current.model.rows)
-      if (row.path === path && row.new !== null) lines.set(row.new, row.text);
-    return lines;
-  };
   const forge = forgeName(ownSnapshot?.session);
   /** Why "Make it mine" failed, by thread: shown on the thread. */
   const [adoptFailures, setAdoptFailures] = useState<
@@ -2278,7 +2270,9 @@ function DiffContentViewInner({
   const agentWorking = ownSnapshot?.session.agent.working;
   const reviewLook: ReviewThreadLook | undefined = reviewEditor
     ? {
-        newLines: newLinesOf,
+        // New-side lines of each file shown, for what suggestions replace.
+        newLines: (path: string) =>
+          cursorHandle.current.model.newLinesByPath.get(path) ?? new Map(),
         working: (thread) =>
           agentWorking?.threadId === thread.id ? (
             <ReviewWorking
@@ -2876,7 +2870,7 @@ function DiffContentViewInner({
   // The commit shown keeps its own marks (its sha), as the review pane did.
   const reviewView = changesReviewView(viewCommit);
   const reviewState = useMemo(
-    () => changesReviewed(reviewLayout, reviewedMarks, reviewView),
+    () => reviewedState(reviewLayout.files, reviewView, reviewedMarks),
     [reviewLayout, reviewedMarks, reviewView],
   );
   /**

@@ -9,7 +9,6 @@ import {
   fileFingerprint,
   fileToggleChanges,
   fileToggleNotice,
-  hunkNear,
   hunkToggle,
   hunkToggleNotice,
   pickHunks,
@@ -99,26 +98,11 @@ const units: HunkUnit[] = [
   { file: 1, hunk: 0 },
   null,
 ];
-const rowFiles = [0, 0, 0, 0, 1, 2];
-const fileOf = (at: number) => rowFiles[at];
-
-test("context revealed belongs to the nearest hunk of its file, never another file's", () => {
-  expect(hunkNear(units, fileOf, units.length, 1)).toEqual({
-    file: 0,
-    hunk: 0,
-  });
-  // Row 2 is as near hunk 0 (row 1) as hunk 1 (row 3): the one above.
-  expect(hunkNear(units, fileOf, units.length, 2)).toEqual({
-    file: 0,
-    hunk: 0,
-  });
-  // Row 5 is alone in file 2.
-  expect(hunkNear(units, fileOf, units.length, 5)).toBeNull();
-});
-
 test("r takes the cursor's hunk, or every hunk the selection covers", () => {
-  const near = (at: number) => hunkNear(units, fileOf, units.length, at);
-  expect([...pickHunks(units, 2, null, near)]).toEqual([[0, new Set([0])]]);
+  const near = (at: number) => units[at] ?? null;
+  expect([...pickHunks(units, 1, null, near)]).toEqual([[0, new Set([0])]]);
+  // On context, no hunk: the view marks the file instead.
+  expect([...pickHunks(units, 2, null, near)]).toEqual([]);
   expect([...pickHunks(units, 4, 1, near)]).toEqual([
     [0, new Set([0, 1])],
     [1, new Set([0])],

@@ -16,7 +16,6 @@ import {
   hunkIds,
   type ReviewedFile,
   type ReviewedState,
-  reviewedState,
 } from "./reviewNavigation";
 import { fileFingerprint } from "./reviewToggle";
 
@@ -122,26 +121,6 @@ export function reviewedLayout(model: DiffCursorModel): ChangesReviewedLayout {
  */
 export function changesReviewView(commit: string | null | undefined): string {
   return commit || CHANGES_REVIEW_VIEW;
-}
-
-/** The reviewed files and chunks of Changes' rows, from the review's marks. */
-export function changesReviewed(
-  layout: ChangesReviewedLayout,
-  marks: Readonly<Record<string, string>>,
-  view: string = CHANGES_REVIEW_VIEW,
-): ReviewedState {
-  return reviewedState(layout.files, view, marks);
-}
-
-/** "3/7": a path's chunks reviewed, or null for a path with none. */
-export function chunkProgress(
-  layout: ChangesReviewedLayout,
-  state: ReviewedState,
-  path: string,
-): string | null {
-  const file = layout.files.findIndex((each) => each.path === path);
-  if (file < 0 || !layout.files[file]!.hunks.length) return null;
-  return `${state.hunks[file]?.size ?? 0}/${layout.files[file]!.hunks.length}`;
 }
 
 /** What the index holds of a chunk (D8): the marker each chunk carries. */
