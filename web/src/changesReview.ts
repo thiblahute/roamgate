@@ -259,28 +259,33 @@ export function useChangesAgent(
   const [status, setStatus] = useState("");
   const agent = snapshot ? reviewAgent(snapshot, agentPanes) : null;
   const sessionId = snapshot?.session.id;
-  const run = useCallback(
-    async (
-      method: string,
-      params: Record<string, unknown>,
-      failure: string,
-    ) => {
-      if (!sessionId) return;
-      try {
-        rememberReviewSnapshot(
-          await reviewCall<ReviewSnapshot>(connectionId, method, {
-            session_id: sessionId,
-            ...params,
-          }),
-        );
-      } catch (error) {
-        setStatus(
-          `${failure}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    },
-    [connectionId, sessionId],
-  );
+  /** Writes to review `id`, its new snapshot kept. */
+  const write = async (
+    id: string,
+    method: string,
+    params: Record<string, unknown> = {},
+  ) =>
+    rememberReviewSnapshot(
+      await reviewCall<ReviewSnapshot>(connectionId, method, {
+        session_id: id,
+        ...params,
+      }),
+    );
+  /** A write to the scope's review; `failure` says why it did not take. */
+  const run = async (
+    method: string,
+    params: Record<string, unknown>,
+    failure: string,
+  ) => {
+    if (!sessionId) return;
+    try {
+      await write(sessionId, method, params);
+    } catch (error) {
+      setStatus(
+        `${failure}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
   /** The scope's review, opened for a first write as a comment opens it. */
   const opened = async (): Promise<string> => {
     if (sessionId) return sessionId;
@@ -348,12 +353,7 @@ export function useChangesAgent(
       if (!sessionId) return;
       const open = openDiscussions();
       void saveOrKeep(
-        async () =>
-          rememberReviewSnapshot(
-            await reviewCall<ReviewSnapshot>(connectionId, "review.handoff", {
-              session_id: sessionId,
-            }),
-          ),
+        () => write(sessionId, "review.handoff"),
         () => {},
       ).then((error) => setStatus(handoffStatus(name, error, open, false)));
     },
@@ -390,13 +390,7 @@ export function useChangesAgent(
     },
     markReviewed: async (changes) => {
       if (!Object.keys(changes).length) return;
-      const id = await opened();
-      rememberReviewSnapshot(
-        await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
-          session_id: id,
-          reviewed: changes,
-        }),
-      );
+      await write(await opened(), "review.update", { reviewed: changes });
     },
     readFile: async (path) => {
       const id = await opened();
@@ -415,18 +409,8 @@ export function useChangesAgent(
         async () => {
           const id = await opened();
           if (text !== (session?.summary ?? ""))
-            rememberReviewSnapshot(
-              await reviewCall<ReviewSnapshot>(connectionId, "review.update", {
-                session_id: id,
-                summary: text,
-              }),
-            );
-          if (sends)
-            rememberReviewSnapshot(
-              await reviewCall<ReviewSnapshot>(connectionId, "review.handoff", {
-                session_id: id,
-              }),
-            );
+            await write(id, "review.update", { summary: text });
+          if (sends) await write(id, "review.handoff");
         },
         () => {},
       );
