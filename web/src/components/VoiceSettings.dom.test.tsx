@@ -1,22 +1,15 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 import * as React from "react";
 
-if (process.env.ROAMGATE_VOICE_SETTINGS_DOM_TEST !== "1") {
-  test("voice settings in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_VOICE_SETTINGS_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 20_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "voice settings in an isolated browser runtime",
+    "ROAMGATE_VOICE_SETTINGS_DOM_TEST",
+    20_000,
+  )
+) {
   test("a voice used while the browser reads with its own reads with it again", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });

@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 import { editsText } from "../messageBoxKeys";
 
@@ -58,22 +59,14 @@ describe("keys a message box keeps", () => {
   });
 });
 
-if (process.env.ROAMGATE_MESSAGE_BOX_DOM_TEST !== "1") {
-  test("shortcuts from a message box, in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_MESSAGE_BOX_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "shortcuts from a message box, in an isolated browser runtime",
+    "ROAMGATE_MESSAGE_BOX_DOM_TEST",
+    30_000,
+  )
+) {
   test("the command menu opens from a composer, its Vim box and a review comment", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });

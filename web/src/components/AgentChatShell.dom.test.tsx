@@ -1,22 +1,15 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, mock, test } from "bun:test";
 import * as React from "react";
 
-if (process.env.ROAMGATE_SHELL_BLOCK_DOM_TEST !== "1") {
-  test("the `!` command block in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_SHELL_BLOCK_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 20_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the `!` command block in an isolated browser runtime",
+    "ROAMGATE_SHELL_BLOCK_DOM_TEST",
+    20_000,
+  )
+) {
   test("a `!` line reads as a command the user ran: where, status chip, folded output, and what Claude has of it", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });

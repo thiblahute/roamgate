@@ -1,22 +1,15 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, mock, test } from "bun:test";
 import * as React from "react";
 
-if (process.env.ROAMGATE_COMPOSER_SHELL_DOM_TEST !== "1") {
-  test("the message box's shell mode in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_COMPOSER_SHELL_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 20_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the message box's shell mode in an isolated DOM runtime",
+    "ROAMGATE_COMPOSER_SHELL_DOM_TEST",
+    20_000,
+  )
+) {
   test("a box starting with ! turns into a shell line: label, Run, and back without the !", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost" });

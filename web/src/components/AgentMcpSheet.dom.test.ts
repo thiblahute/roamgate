@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { Root } from "react-dom/client";
@@ -63,22 +64,14 @@ test("the summary counts what the list comes to", () => {
   ).toBe("1 connected, 1 needs sign-in, 1 failed, 1 connecting, 1 disabled");
 });
 
-if (process.env.ROAMGATE_MCP_SHEET_DOM_TEST !== "1") {
-  test("MCP sheet interactions in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_MCP_SHEET_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 15_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "MCP sheet interactions in an isolated DOM runtime",
+    "ROAMGATE_MCP_SHEET_DOM_TEST",
+    15_000,
+  )
+) {
   await registerTests();
 }
 

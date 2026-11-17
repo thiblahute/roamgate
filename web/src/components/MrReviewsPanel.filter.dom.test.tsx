@@ -1,21 +1,14 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 
-if (process.env.ROAMGATE_MR_REVIEWS_FILTER_DOM_TEST !== "1") {
-  test("the reviews panel's filter tokens and saved views, in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_MR_REVIEWS_FILTER_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the reviews panel's filter tokens and saved views, in an isolated browser runtime",
+    "ROAMGATE_MR_REVIEWS_FILTER_DOM_TEST",
+    30_000,
+  )
+) {
   test("tokens, completion, saved views, f / F and :save / :view / :delview", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({

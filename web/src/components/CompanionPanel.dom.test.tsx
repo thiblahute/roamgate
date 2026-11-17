@@ -1,21 +1,14 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, spyOn, test } from "bun:test";
 
-if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
-  test("the companion's conversation in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_COMPANION_PANEL_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the companion's conversation in an isolated browser runtime",
+    "ROAMGATE_COMPANION_PANEL_DOM_TEST",
+    30_000,
+  )
+) {
   /** A browser for React to render in, as the page's globals. */
   async function installBrowser() {
     const { Window } = await import("happy-dom");

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { inIsolatedChild } from "../testIsolated";
+import { describe, expect } from "bun:test";
 
 /**
  * The review's keys and the app's (plan: review into the inspector, phase
@@ -10,22 +11,14 @@ import { describe, expect, test } from "bun:test";
  * capture listener, before the pane sees them (App.review.test.tsx), so
  * the pane alone is not a surface for this test.
  */
-if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
-  test("the review's keys and the app's, in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 120_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the review's keys and the app's, in an isolated DOM runtime",
+    "ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST",
+    120_000,
+  )
+) {
   const { installReviewDom, file, hunk, numbered } = await import(
     "./reviewSurface.testkit"
   );

@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, mock, spyOn, test } from "bun:test";
 import * as React from "react";
 import type {
@@ -8,22 +9,14 @@ import type {
   AssistantWorkspace,
 } from "../../../shared/assistant";
 
-if (process.env.ROAMGATE_RANGER_CHAT_DOM_TEST !== "1") {
-  test("Ranger chat UI in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_RANGER_CHAT_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 20_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Ranger chat UI in an isolated browser runtime",
+    "ROAMGATE_RANGER_CHAT_DOM_TEST",
+    20_000,
+  )
+) {
   test("Ranger's pane renders the shared chat, its threads, and its own controls", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });
