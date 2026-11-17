@@ -5123,7 +5123,9 @@ function DiffContentViewInner({
       if (isEditableSearchTarget(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
-      focusSearch();
+      // The review finds with its own search, `/`.
+      if (cursorActiveRef.current) cursorHandle.current.openSearchPrompt();
+      else focusSearch();
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
@@ -5234,7 +5236,8 @@ function DiffContentViewInner({
    * the preview's.
    */
   const diffCommands: InspectorCommand[] = [
-    ...(hunkTargets.length
+    // The review moves with { } and n N, and finds with `/`.
+    ...(hunkTargets.length && !reviewEditor
       ? [
           {
             name: "next",
@@ -5249,7 +5252,7 @@ function DiffContentViewInner({
           },
         ]
       : []),
-    ...(!mobile && hasSearchableDiff
+    ...(!mobile && hasSearchableDiff && !reviewEditor
       ? [
           {
             name: "find",
@@ -5521,7 +5524,9 @@ function DiffContentViewInner({
         </div>
       ) : null}
       <div className="diff-content-actions">
-        {hunkTargets.length ? (
+        {/* The review has { } and n N for these, `/` to find; a phone's
+            review keeps the arrows, its keys out of reach. */}
+        {hunkTargets.length && !(reviewEditor && !mobile) ? (
           <div className="diff-hunk-navigation" aria-label="Change navigation">
             <button
               type="button"
@@ -5551,7 +5556,7 @@ function DiffContentViewInner({
             </button>
           </div>
         ) : null}
-        {!embedded && !mobile ? (
+        {!embedded && !mobile && !reviewEditor ? (
           <div
             className={`diff-search-controls${searchQuery ? " has-query" : ""}`}
           >
@@ -5796,21 +5801,6 @@ function DiffContentViewInner({
             }
           : undefined
       }
-      onKeyDownCapture={(e) => {
-        if (
-          !embedded &&
-          !mobile &&
-          shortcutMatches(e.nativeEvent, "preview.search") &&
-          // With the review's cursor, Ctrl-f is a page down (Vim's); a
-          // Mac's Cmd+F still finds.
-          !(cursor.active && e.ctrlKey && !e.metaKey)
-        ) {
-          if (isEditableSearchTarget(e.target)) return;
-          e.preventDefault();
-          e.stopPropagation();
-          focusSearch();
-        }
-      }}
     >
       <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
         {phoneRow ? null : headBack}

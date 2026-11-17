@@ -118,6 +118,8 @@ export type DiffCursor = {
   selectionIn: (key: string) => SelectedLineRange | null | undefined;
   /** `/` was pressed: the search prompt is open. */
   searchPrompt: boolean;
+  /** Opens the search prompt, as `/` does (Cmd+F in the review). */
+  openSearchPrompt: () => void;
   submitSearch: (text: string) => void;
   closeSearchPrompt: () => void;
   /** The search's or the Visual selection's status line, or null. */
@@ -1279,6 +1281,7 @@ export function useDiffCursor({
     onLineClick,
     selectionIn,
     searchPrompt,
+    openSearchPrompt: () => setSearchPrompt(true),
     submitSearch: (text) => {
       setSearchPrompt(false);
       if (text) runSearch(text, false, 1);
