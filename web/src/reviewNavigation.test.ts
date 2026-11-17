@@ -218,6 +218,24 @@ test("a hunk is known by its path and changed lines, not its place", () => {
   expect(hunkKey("all", "a.ts", "h1.x")).toBe("all:a.ts\nh1.x");
 });
 
+test("hunk ids stay the ones reviewed marks were stored with", () => {
+  expect(
+    hunkIds("a.ts", [
+      hunk([" ctx", "-old", "+new", " ctx"]),
+      hunk([" x", "+added"]),
+      hunk([" y", "+added"]),
+      hunk([" only context"]),
+      hunk([]),
+    ]),
+  ).toEqual([
+    "h2.o22bei",
+    "h1.67bazw",
+    "h1.67bazw~2",
+    "c1.8ohigm",
+    "c0.45f5j9",
+  ]);
+});
+
 test("a hunk with no changed line, a commit's message, is known by its lines", () => {
   const message = (text: string) =>
     hunkIds(":commit-message", [hunk([` ${text}`])])[0]!;

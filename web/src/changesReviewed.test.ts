@@ -9,6 +9,7 @@ import {
   reviewedLayout,
 } from "./changesReviewed";
 import { diffCursorModel } from "./diffCursor";
+import { reviewedFileOf } from "./reviewFiles";
 import { hunkKey } from "./reviewNavigation";
 import { fileToggleChanges, hunkToggle, pickHunks } from "./reviewToggle";
 
@@ -56,6 +57,20 @@ describe("reviewedLayout", () => {
     expect(new Set(layout.units.map((unit) => unit?.hunk))).toEqual(
       new Set([0, 1]),
     );
+  });
+
+  test("a path's fingerprint and chunk ids stay those marks were stored with", () => {
+    const layout = reviewedLayout(
+      model({ key: "unstaged:a.ts", path: "a.ts", diff: two }),
+    );
+    const pinned = {
+      path: "a.ts",
+      fingerprint: "2:1l8k2hd",
+      hunks: ["h2.t3yrgh", "h2.12hng3o"],
+    };
+    expect(layout.files).toEqual([pinned]);
+    // The Files preview's tick reads the same file the same way.
+    expect(reviewedFileOf("a.ts", two)).toEqual(pinned);
   });
 
   test("a chunk keeps its mark when it is staged", () => {
