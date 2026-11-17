@@ -401,18 +401,14 @@
   white-space: normal;
 }
 
-/* The review's bar under a message of a thread in Changes. */
+/* The review's bar under a message of a thread in Changes (ReviewCard.css),
+   wrapping, right under the message unless a forge discussion's. */
 .diff-review-thread .rc-bar {
-  display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  color: var(--rv-faint);
-  font-size: 11px;
 }
 
-.diff-review-thread .rc-bar .spacer {
-  flex: 1;
+.diff-review-thread .rc-bar:not(.mrt *) {
+  margin-top: 0;
 }
 
 .diff-review-thread .rc-kind.rc-failed {
@@ -812,16 +808,6 @@
   flex: 0 1 auto;
   min-width: 6em;
   overflow: hidden;
-}
-
-.diff-content-head .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .diff-content-head.is-review .changes-review-status {

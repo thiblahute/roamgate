@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ReviewComment, ReviewThread } from "../../../shared/review";
 import { NoteBody } from "./ReviewNoteBody";
+import "./ReviewCard.css";
 import "./MrThreadCard.css";
 
 /** maildesk's dates: today HH:MM, this week the weekday, else the date. */
