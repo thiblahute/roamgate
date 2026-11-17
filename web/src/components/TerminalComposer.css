@@ -40,7 +40,7 @@
     color: var(--text-strong);
   }
 
-  /* The box with Vim keys (the review's `:vim`): CodeMirror, dressed as
+  /* The box with Vim keys (the one Vim keys setting): CodeMirror, dressed as
      the plain box, which it fills. */
   .terminal-composer-input.terminal-composer-vim {
     display: flex;
