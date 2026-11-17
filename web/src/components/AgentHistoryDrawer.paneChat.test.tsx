@@ -874,6 +874,28 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
       });
       expect(chip()?.textContent).toBe("Haiku 5.5");
       expect(chip()?.title).toContain("Model: claude-haiku-5-5");
+      // A gateway's model keeps its provider, in a part a narrow chip cuts
+      // before the model's name.
+      profileModel = "openrouter/igalia/glm-5p3";
+      await render({
+        status: "working",
+        model_notice: {
+          at: "2026-11-16T10:01:00.000Z",
+          ok: true,
+          requested: "igalia/glm-5p3",
+          model: "openrouter/igalia/glm-5p3",
+          text: "Model set to igalia/glm-5p3 (openrouter/igalia/glm-5p3)",
+        },
+      });
+      expect(chip()?.getAttribute("aria-label")).toBe(
+        "Model: igalia · GLM 5p3",
+      );
+      expect(chip()?.querySelector(".model-label-provider")?.textContent).toBe(
+        "igalia ·",
+      );
+      expect(chip()?.querySelector(".model-label-name")?.textContent).toBe(
+        "GLM 5p3",
+      );
     } finally {
       profileModel = null;
       await React.act(async () => root.unmount());

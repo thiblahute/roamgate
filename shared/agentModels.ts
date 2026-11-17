@@ -143,16 +143,42 @@ function capitalized(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
+/** Between a model's provider and its name, a middle dot: "igalia . GLM 5p3". */
+export const MODEL_PROVIDER_SEPARATOR = " \u00b7 ";
+
 /**
  * A model's short, readable name for a chip: "Opus 5.5" from
- * claude-opus-5-5, its dated, gateway (anthropic/claude-opus-5-5),
- * Bedrock (us.anthropic.claude-opus-5-5-v1:0) and Vertex (@20260101)
- * spellings too; "Haiku 3.5" from claude-3-5-haiku; "Opus" from the
- * alias; a context tag kept ("Opus 5.5 1M" from opus-5-5[1m]). Another
- * backend's model as its words: "GLM 5p3", "GPT 5.6 sol".
+ * claude-opus-5-5, its dated, Bedrock (us.anthropic.claude-opus-5-5-v1:0)
+ * and Vertex (@20260101) spellings too; "Haiku 3.5" from claude-3-5-haiku;
+ * "Opus" from the alias; a context tag kept ("Opus 5.5 1M" from
+ * opus-5-5[1m]). Another backend's model as its words: "GLM 5p3", "GPT 5.6
+ * sol". A gateway's provider stays in front, the segment right before
+ * the model (earlier ones dropped), then MODEL_PROVIDER_SEPARATOR:
+ * "igalia . GLM 5p3" from igalia/glm-5p3, "anthropic . Sonnet 4.5" from
+ * openrouter/anthropic/claude-sonnet-4-5 (shortModelParts keeps the two
+ * apart, for a chip that cuts the provider first).
  */
 export function shortModelName(model: string): string {
-  let rest = model.trim();
+  const { provider, name } = shortModelParts(model);
+  return provider ? `${provider}${MODEL_PROVIDER_SEPARATOR}${name}` : name;
+}
+
+/** shortModelName's two parts: the provider prefix (null without one), the name. */
+export function shortModelParts(model: string): {
+  provider: string | null;
+  name: string;
+} {
+  const trimmed = model.trim();
+  const segments = trimmed.split("/");
+  const provider =
+    segments.length > 1 && segments[segments.length - 1]
+      ? segments[segments.length - 2] || null
+      : null;
+  return { provider, name: modelName(trimmed) };
+}
+
+function modelName(model: string): string {
+  let rest = model;
   const tagged = /\[([^\]]*)\]$/.exec(rest);
   const tag = tagged?.[1]?.trim().toUpperCase() ?? "";
   if (tagged) rest = rest.slice(0, tagged.index).trim();
