@@ -54,10 +54,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_CHAT_DOM_TEST !== "1") {
       });
     (browser.HTMLElement.prototype as any).scrollIntoView = () => {};
     // A plain message box (no Vim editor to load).
-    browser.localStorage.setItem(
-      "roamgate:reviewPrefs",
-      JSON.stringify({ vim: false }),
-    );
+    browser.localStorage.setItem("roamgate:vimKeys", "false");
     const React = await import("react");
     const { act } = React;
     const { createRoot } = await import("react-dom/client");
