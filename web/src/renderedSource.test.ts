@@ -10,7 +10,6 @@ import {
   quoteOffset,
   quoteWords,
   regionOf,
-  renderedKind,
   renderedWhere,
   sourceStopOf,
 } from "./renderedSource";
@@ -102,14 +101,6 @@ test("a region is in fractions of the graphic, a click a point", () => {
   expect(regionOf({ x: 0, y: 0 }, { x: 1, y: 1 }, { ...box, width: 0 })).toBe(
     null,
   );
-});
-
-test("files are shown by kind", () => {
-  expect(renderedKind("docs/Plan.MD")).toBe("markdown");
-  expect(renderedKind("a.svg")).toBe("svg");
-  expect(renderedKind("site/index.html")).toBe("page");
-  expect(renderedKind("shot.png")).toBe("image");
-  expect(renderedKind("main.c")).toBe("text");
 });
 
 test("a thread's place reads briefly", () => {

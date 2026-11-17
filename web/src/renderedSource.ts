@@ -1,5 +1,4 @@
 import { marked, type Token, type Tokens, type TokensList } from "marked";
-import { imageMimeForPath, isHtmlPath } from "../../shared/filePreview";
 import type { ReviewAnchor, ReviewRegion } from "../../shared/review";
 
 /*
@@ -7,18 +6,6 @@ import type { ReviewAnchor, ReviewRegion } from "../../shared/review";
  * block by block, each block knowing its lines; regions of graphics in
  * fractions of their size.
  */
-
-export type RenderedKind = "markdown" | "svg" | "image" | "page" | "text";
-
-/** How a rendered review shows a file (a site is always a page). */
-export function renderedKind(path: string): RenderedKind {
-  const lower = path.toLowerCase();
-  if (/\.(md|markdown|mdown|mkd)$/.test(lower)) return "markdown";
-  if (lower.endsWith(".svg")) return "svg";
-  if (isHtmlPath(lower) || lower.endsWith(".xhtml")) return "page";
-  if (imageMimeForPath(lower)) return "image";
-  return "text";
-}
 
 /** A top-level Markdown block and the source lines it comes from. */
 export type MarkdownBlock = {

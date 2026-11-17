@@ -10,6 +10,7 @@ import {
   parseReviewAnnotation,
   type ReviewAnnotation,
 } from "./annotations";
+import { blobBase64 } from "./renderedCapture";
 
 /*
  * Comments written in the Files preview, Changes, Commits and History are
@@ -191,14 +192,6 @@ export function feedbackThreadId(noteId: string): string {
   return [hash32(noteId, 0x811c9dc5), hash32(noteId, 0x1b873593)]
     .map((part) => part.toString(16).padStart(8, "0"))
     .join("");
-}
-
-async function blobBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += 0x8000)
-    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  return btoa(binary);
 }
 
 /**
