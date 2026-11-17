@@ -905,7 +905,10 @@ such group, at most 200), changed by
 `upstream.workspace {ref, headed}` (in a marked group of the tree it skips
 the workspace or brings it back; elsewhere it marks or unmarks it by
 itself) and read by `upstream.marks` (`{groups, skip, workspaces}`);
-pushed as `changed: ["upstream"]`. Members are the workspace nodes under
+pushed as `changed: ["upstream"]`. The board tools name a workspace by
+label or checkout path among the tree's workspace nodes and the live
+workspaces with no node, the latter as `workspaceRefFor` names them on the
+pages, so a mark made by a tool and by a menu is the same. Members are the workspace nodes under
 such a group resolved to live workspaces (`resolveWorkspaceTree`), and the
 live workspaces (with a node or none) matching `upstream_workspaces`,
 whose home is `upstreamWorkspaceHome(ref)` (`ws-` and 16 hex digits) where

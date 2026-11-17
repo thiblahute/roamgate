@@ -1085,6 +1085,7 @@ export function createMrReviews(options: {
           order,
           rpc: (method, p) => rpc(method, p),
           ...(options.tree ? { tree: options.tree.read } : {}),
+          workspaces: () => upstream.live(),
         },
         caller,
       )[name](params);

@@ -433,6 +433,56 @@ export function branchEntry(
 }
 
 /**
+ * The workspaces Herdr lists on each connection (a connection that does not
+ * answer is left out), with where those without a checkout of their own
+ * work (their first pane's folder), by `connection\0workspace`.
+ */
+export async function readLiveWorkspaces(
+  connections: readonly MrConnection[],
+): Promise<{
+  live: Map<string, LiveWorkspaceIdentity[]>;
+  dirs: Map<string, string>;
+}> {
+  const live = new Map<string, LiveWorkspaceIdentity[]>();
+  const dirs = new Map<string, string>();
+  for (const connection of connections) {
+    try {
+      const [listed, panes] = (await Promise.all([
+        connection.herdr("workspace.list"),
+        connection.herdr("pane.list").catch(() => null),
+      ])) as [
+        { workspaces?: Parameters<typeof workspaceIdentity>[0][] } | null,
+        {
+          panes?: {
+            workspace_id?: string;
+            cwd?: string;
+            foreground_cwd?: string;
+          }[];
+        } | null,
+      ];
+      // Herdr gives a worktree's checkout; any other workspace is where
+      // its first pane is (the tree names it by its label then, as the
+      // pages do).
+      for (const pane of panes?.panes ?? []) {
+        const dir = pane.cwd || pane.foreground_cwd;
+        const key = `${connection.id}\0${pane.workspace_id}`;
+        if (pane.workspace_id && dir?.startsWith("/") && !dirs.has(key))
+          dirs.set(key, dir);
+      }
+      live.set(
+        connection.id,
+        (listed?.workspaces ?? [])
+          .filter((each) => typeof each?.workspace_id === "string")
+          .map((each) => workspaceIdentity(each)),
+      );
+    } catch {
+      // Not read: its workspaces show as they were last.
+    }
+  }
+  return { live, dirs };
+}
+
+/**
  * Reads the members' branches, each connection at most every
  * UPSTREAM_SCAN_MS, the commits only when a head or a target moved.
  */
@@ -521,42 +571,7 @@ export function createUpstreamScanner(options: {
     }
     const tree = await options.tree();
     const connections = options.connections();
-    const live = new Map<string, LiveWorkspaceIdentity[]>();
-    const dirs = new Map<string, string>();
-    for (const connection of connections) {
-      try {
-        const [listed, panes] = (await Promise.all([
-          connection.herdr("workspace.list"),
-          connection.herdr("pane.list").catch(() => null),
-        ])) as [
-          { workspaces?: Parameters<typeof workspaceIdentity>[0][] } | null,
-          {
-            panes?: {
-              workspace_id?: string;
-              cwd?: string;
-              foreground_cwd?: string;
-            }[];
-          } | null,
-        ];
-        // Herdr gives a worktree's checkout; any other workspace is where
-        // its first pane is (the tree names it by its label then, as the
-        // pages do).
-        for (const pane of panes?.panes ?? []) {
-          const dir = pane.cwd || pane.foreground_cwd;
-          const key = `${connection.id}\0${pane.workspace_id}`;
-          if (pane.workspace_id && dir?.startsWith("/") && !dirs.has(key))
-            dirs.set(key, dir);
-        }
-        live.set(
-          connection.id,
-          (listed?.workspaces ?? [])
-            .filter((each) => typeof each?.workspace_id === "string")
-            .map((each) => workspaceIdentity(each)),
-        );
-      } catch {
-        // Not read: its workspaces show as they were last.
-      }
-    }
+    const { live, dirs } = await readLiveWorkspaces(connections);
     const members = upstreamMembers(tree, settings, live, dirs);
     lastMembers = members;
     const next: UpstreamBranch[] = [];
@@ -643,6 +658,8 @@ export function createUpstreamScanner(options: {
     branches: () => branches,
     /** The workspaces headed upstream as last read. */
     members: () => lastMembers,
+    /** Every workspace Herdr lists on the connections, read now. */
+    live: () => readLiveWorkspaces(options.connections()),
     /** The user's requests' patch ids read for linking, by key. */
     patchIds,
     /** Reads them again unless read within UPSTREAM_SCAN_MS (or forced). */
