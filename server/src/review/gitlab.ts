@@ -33,6 +33,7 @@ import {
   runForgeCli,
   runForgeScript,
 } from "./forge-cli";
+import { type Memo, memo } from "./memo";
 import { parseUnifiedDiff } from "./patch";
 
 /**
@@ -137,7 +138,7 @@ const HOST_CHECK_TTL_MS = 5 * 60_000;
 /** What glab said of each host, by the process runner that asked it. */
 const hostChecks = new WeakMap<
   GlabContext["runProcessWithCodeTimeout"],
-  Map<string, { until: number; access: Promise<{ ownLogin: boolean }> }>
+  Map<string, Memo<{ ownLogin: boolean }>>
 >();
 
 /**
@@ -187,23 +188,12 @@ export async function glabHostAccess(
     checks = new Map();
     hostChecks.set(context.runProcessWithCodeTimeout, checks);
   }
-  const key = `${context.host ?? ""}\n${context.root}\n${host.toLowerCase()}`;
-  const known = checks.get(key);
-  if (known && known.until > Date.now()) return known.access;
-  const entry = {
-    until: Number.POSITIVE_INFINITY,
-    access: checkGlabHost(context, host),
-  };
-  checks.set(key, entry);
-  entry.access.then(
-    () => {
-      entry.until = Date.now() + HOST_CHECK_TTL_MS;
-    },
-    () => {
-      if (checks.get(key) === entry) checks.delete(key);
-    },
+  return memo(
+    checks,
+    `${context.host ?? ""}\n${context.root}\n${host.toLowerCase()}`,
+    HOST_CHECK_TTL_MS,
+    () => checkGlabHost(context, host),
   );
-  return entry.access;
 }
 
 async function checkGlabHost(
