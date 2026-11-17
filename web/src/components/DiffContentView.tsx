@@ -67,7 +67,7 @@ import { useReviewSessionCall, writeReviewSession } from "../reviewSessionCall";
 import { usePendingWrites } from "../usePendingWrites";
 import { useReviewStatusLine } from "../reviewStatusLine";
 import { plural } from "./MrThreadCard";
-import { ReviewMessageBar } from "./ReviewMessageBar";
+import { PendingStatus, ReviewMessageBar } from "./ReviewMessageBar";
 import type { ConnectionClient } from "../api";
 import {
   diffReviewLineLabel,
@@ -797,32 +797,11 @@ function DiffAnnotation({
       >
         <div className="chat-thread is-draft">
           <div className="rc-text">{annotation.comment}</div>
-          {waiting.error === undefined ? (
-            <div className="rc-bar" role="status">
-              <span className="rc-kind">Sending...</span>
-            </div>
-          ) : (
-            <div className="rc-bar" role="alert">
-              <span className="rc-kind rc-failed">
-                Not saved: {waiting.error}
-              </span>
-              <span className="spacer" />
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={waiting.retry}
-              >
-                Retry
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={waiting.discard}
-              >
-                Discard
-              </button>
-            </div>
-          )}
+          <PendingStatus
+            error={waiting.error}
+            onRetry={waiting.retry}
+            onDiscard={waiting.discard}
+          />
         </div>
       </div>
     );
