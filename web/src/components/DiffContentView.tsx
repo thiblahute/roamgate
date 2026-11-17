@@ -123,10 +123,10 @@ import {
   useFileThreadView,
 } from "./FileThreads";
 import { conversationOrder, ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
+import { preloadReviewCommentEditor } from "./ReviewCommentEditorLazy";
 import {
   changesDraftSession,
   type ComposerDelivery,
-  preloadReviewCommentEditor,
   ReviewDiffComposer,
   saveOpenComposer,
   suggestionBlock,

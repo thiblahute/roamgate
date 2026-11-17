@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { vimKeys } from "../vimKeys";
-import { preloadableLazy } from "../lazyWithReload";
+import { ReviewCommentEditorLazy } from "./ReviewCommentEditorLazy";
 import { keepReviewDraft, takeReviewDraft } from "../reviewDrafts";
 import type {
   ReviewMessagePart,
@@ -24,21 +24,6 @@ import "./ChatThreads.css";
  * for images) and its unsent text kept (reviewDrafts). It replaces the
  * popover in Changes; the popover stays for Files and Terminal.
  */
-
-const ReviewCommentEditorLazy = preloadableLazy("review-comment-editor", () =>
-  import("./ReviewCommentEditor").then((module) => ({
-    default: module.ReviewCommentEditor,
-  })),
-);
-
-/**
- * Loads the comment editor ahead, with the review's cursor: opened, it
- * draws and takes the focus at once, so the keys typed right after `c` are
- * the comment's, not the diff's.
- */
-export function preloadReviewCommentEditor(): void {
-  void ReviewCommentEditorLazy.preload().catch(() => {});
-}
 
 /** Where a Changes editor's unsent text is kept: beside no review session. */
 export function changesDraftSession(resourceKey: string): string {
