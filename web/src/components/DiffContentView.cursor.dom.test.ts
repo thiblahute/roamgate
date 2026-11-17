@@ -120,6 +120,44 @@ if (
       }
     });
 
+    test("in the review, Cmd+F opens its `/` search: no find box, change arrows, :find, :next or :previous", async () => {
+      const prompt = inspector();
+      const diff = await mountChangesDiff({
+        entries: [a, b],
+        patches,
+        reviewCursor: true,
+        onCreateAnnotation: () => {},
+        inspectorCommands: prompt.registry,
+      });
+      try {
+        expect(view().querySelector(".diff-search-controls")).toBeNull();
+        expect(view().querySelector(".diff-hunk-navigation")).toBeNull();
+        const names = prompt
+          .sets()
+          .flatMap((set) => set.commands.map((command) => command.name));
+        expect(names).not.toContain("find");
+        expect(names).not.toContain("next");
+        expect(names).not.toContain("previous");
+        // Ctrl+F here (Cmd+F on a Mac), from outside the diff, whose
+        // cursor takes Ctrl-f as a page down.
+        (document.activeElement as HTMLElement | null)?.blur();
+        await act(async () => {
+          document.body.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "f",
+              ctrlKey: true,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+        await diff.settle();
+        expect(document.querySelector(".review-cmdline")).not.toBeNull();
+      } finally {
+        await diff.unmount();
+      }
+    });
+
     test("without the review, c is nothing: no editor, no comment box", async () => {
       const diff = await mountChangesDiff({
         entries: [a],
