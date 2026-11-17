@@ -44,8 +44,28 @@ test("search is smart-case, whole-word with *, and wraps", () => {
   ]);
   const whole = findMatches(text, "foo", true);
   expect(whole.map((m) => m.at)).toEqual([0, 0, 2]);
-  expect(nextMatch(whole, { at: 2, col: 0 }, 1)).toEqual(whole[0]!);
-  expect(nextMatch(whole, { at: 0, col: 0 }, -1)).toEqual(whole[2]!);
+  expect(nextMatch(whole, { at: 2, col: 0 }, 1)).toEqual({
+    hit: whole[0]!,
+    wrapped: true,
+  });
+  expect(nextMatch(whole, { at: 0, col: 0 }, -1)).toEqual({
+    hit: whole[2]!,
+    wrapped: true,
+  });
+  // A step says when it went round.
+  const hits = [
+    { at: 1, start: 0, end: 3 },
+    { at: 5, start: 2, end: 5 },
+  ];
+  expect(nextMatch(hits, { at: 1, col: 0 }, 1)).toEqual({
+    hit: hits[1]!,
+    wrapped: false,
+  });
+  expect(nextMatch(hits, { at: 9, col: 0 }, -1)).toEqual({
+    hit: hits[1]!,
+    wrapped: false,
+  });
+  expect(nextMatch([], { at: 0, col: 0 }, 1)).toBeNull();
   expect(findMatches(text, "a.b", false)).toEqual([]);
 });
 

@@ -125,21 +125,29 @@ export function findFile(
   return -1;
 }
 
-/** The next match after (or before) the cursor, wrapping around. */
+/**
+ * The next match after (or before) the cursor, and whether it went round:
+ * past the last match back to the first (n), or before the first to the
+ * last (N).
+ */
 export function nextMatch(
   matches: readonly Match[],
   cursor: Cursor,
   direction: 1 | -1,
-): Match | null {
+): { hit: Match; wrapped: boolean } | null {
   if (!matches.length) return null;
   const after = (m: Match) =>
     m.at > cursor.at || (m.at === cursor.at && m.start > cursor.col);
   const before = (m: Match) =>
     m.at < cursor.at || (m.at === cursor.at && m.start < cursor.col);
-  if (direction === 1) return matches.find(after) ?? matches[0]!;
+  if (direction === 1) {
+    const hit = matches.find(after);
+    return hit ? { hit, wrapped: false } : { hit: matches[0]!, wrapped: true };
+  }
   for (let index = matches.length - 1; index >= 0; index--)
-    if (before(matches[index]!)) return matches[index]!;
-  return matches[matches.length - 1]!;
+    if (before(matches[index]!))
+      return { hit: matches[index]!, wrapped: false };
+  return { hit: matches[matches.length - 1]!, wrapped: true };
 }
 
 /**

@@ -9,10 +9,8 @@ import {
   rowAt,
   rowLine,
   screenRow,
-  searchFileStep,
   scrollTarget,
   searchHits,
-  searchStepWrapping,
   stepRows,
   wordStep,
 } from "./diffCursor";
@@ -233,8 +231,6 @@ describe("the cursor's rows from Pierre's hunks", () => {
       "new.ts",
       "src/moved.ts",
     ]);
-    expect(searchFileStep(model, "moved", 0, 1)).toBe(2);
-    expect(searchFileStep(model, "nowhere", 0, 1)).toBe(-1);
   });
 });
 
@@ -263,29 +259,5 @@ describe("where the screen goes for the cursor", () => {
     expect(scrollTarget(row(1200), view(1000), "reveal", 40, 60)).toBeNull();
     // Far away (more than half a screen): centred below the header.
     expect(scrollTarget(row(5000), view(1000), "reveal", 40, 60)).toBe(4790);
-  });
-
-  test("a search's step says when it went round", () => {
-    const hits = [
-      { at: 1, start: 0, end: 3 },
-      { at: 5, start: 2, end: 5 },
-    ];
-    expect(searchStepWrapping(hits, { at: 1, col: 0 }, 1)).toEqual({
-      hit: hits[1]!,
-      wrapped: false,
-    });
-    expect(searchStepWrapping(hits, { at: 5, col: 2 }, 1)).toEqual({
-      hit: hits[0]!,
-      wrapped: true,
-    });
-    expect(searchStepWrapping(hits, { at: 1, col: 0 }, -1)).toEqual({
-      hit: hits[1]!,
-      wrapped: true,
-    });
-    expect(searchStepWrapping(hits, { at: 9, col: 0 }, -1)).toEqual({
-      hit: hits[1]!,
-      wrapped: false,
-    });
-    expect(searchStepWrapping([], { at: 0, col: 0 }, 1)).toBeNull();
   });
 });

@@ -1,11 +1,8 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import {
   type Cursor,
-  findFile,
   findMatches,
-  firstNonBlank,
   type Match,
-  nextMatch,
   searchRegExp,
   type SplitLine,
   splitStep,
@@ -252,11 +249,6 @@ export function wordStep(
   return next;
 }
 
-/** `^`: the line's first character that is not blank. */
-export function firstColumn(model: DiffCursorModel, at: number): number {
-  return firstNonBlank(model.rows[at]?.text ?? "");
-}
-
 /**
  * The search's hits: the lines that match, and the files whose path does
  * (at their first line), in the rows' order.
@@ -284,24 +276,6 @@ export function searchHits(
     found.push({ at: file.start, start: 0, end: 0 });
   }
   return found.sort((a, b) => a.at - b.at || a.start - b.start);
-}
-
-/**
- * The search's next hit and whether it went round: past the last hit back
- * to the first (n), or before the first to the last (N).
- */
-export function searchStepWrapping(
-  hits: readonly Match[],
-  cursor: Cursor,
-  direction: 1 | -1,
-): { hit: Match; wrapped: boolean } | null {
-  const hit = nextMatch(hits, cursor, direction);
-  if (!hit) return null;
-  const after =
-    hit.at > cursor.at || (hit.at === cursor.at && hit.start > cursor.col);
-  const before =
-    hit.at < cursor.at || (hit.at === cursor.at && hit.start < cursor.col);
-  return { hit, wrapped: direction === 1 ? !after : !before };
 }
 
 /** How the screen follows the cursor: see `scrollTarget`. */
@@ -375,21 +349,6 @@ export function stickyInset(
     inset = Math.max(inset, stuck + element.offsetHeight);
   }
   return inset;
-}
-
-/** The next file whose path matches, from the cursor's file; -1 if none. */
-export function searchFileStep(
-  model: DiffCursorModel,
-  pattern: string,
-  at: number,
-  direction: 1 | -1,
-): number {
-  return findFile(
-    model.files.map((file) => file.path),
-    pattern,
-    model.rows[at]?.file ?? -1,
-    direction,
-  );
 }
 
 /** The paths of the files with a hit, for the tree to mark. */
