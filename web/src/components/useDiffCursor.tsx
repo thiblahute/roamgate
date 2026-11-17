@@ -1153,22 +1153,30 @@ export function useDiffCursor({
   /** A comment on the cursor's line or the selection's; true when opened. */
   const commentHere = (mode: CommentMode): boolean => {
     if (!onComment) return false;
-    const range = commentRange();
+    const range = selectedRange();
     if (!range) return false;
     const opened = onComment(range.key, range.range, mode);
     if (opened) setAnchor(null);
     return opened;
   };
 
-  /** The lines a comment would be on: the cursor's, or the selection's. */
-  const commentRange = (): { key: string; range: SelectedLineRange } | null => {
-    const last = rows[at];
-    if (!last) return null;
-    const first = anchor === null ? last : (rows[anchor] ?? last);
-    const [from, to] = at < (anchor ?? at) ? [last, first] : [first, last];
-    const same = from.key === to.key;
+  /**
+   * The lines a comment would be on: the cursor's, or the selection's in
+   * its first file; into another file (a Shift+click there), it ends at
+   * that one's end. The highlight shows the same lines.
+   */
+  const selectedRange = (): {
+    key: string;
+    range: SelectedLineRange;
+  } | null => {
+    const first = Math.min(at, anchor ?? at);
+    let last = Math.max(at, anchor ?? at);
+    const from = rows[first];
+    if (!from || !rows[last]) return null;
+    while (rows[last]!.key !== from.key) last--;
+    const to = rows[last]!;
     const start = rowLine(from, from.kind === "-" ? "left" : "right");
-    const end = same ? rowLine(to, to.kind === "-" ? "left" : "right") : start;
+    const end = rowLine(to, to.kind === "-" ? "left" : "right");
     return {
       key: from.key,
       range: {
@@ -1219,21 +1227,8 @@ export function useDiffCursor({
   const selectionIn = (key: string): SelectedLineRange | null | undefined => {
     if (!enabled) return undefined;
     if (anchor === null) return null;
-    const first = Math.min(anchor, at);
-    let last = Math.max(anchor, at);
-    const from = rows[first];
-    if (!from || !rows[last] || from.key !== key) return null;
-    // Into another file (a Shift+click there): shown to this one's end.
-    while (rows[last]!.key !== key) last--;
-    const to = rows[last]!;
-    const start = rowLine(from, from.kind === "-" ? "left" : "right");
-    const end = rowLine(to, to.kind === "-" ? "left" : "right");
-    return {
-      start: start.line,
-      side: start.side,
-      end: end.line,
-      endSide: end.side,
-    };
+    const selected = selectedRange();
+    return selected?.key === key ? selected.range : null;
   };
 
   const matchingPaths = useMemo(
