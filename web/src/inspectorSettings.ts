@@ -1,5 +1,4 @@
 import type { InspectorCommand } from "./inspectorCommands";
-import { parseReviewCommand } from "./reviewNavigation";
 import { store } from "./store";
 import { setVimKeys, vimKeys } from "./vimKeys";
 
@@ -8,23 +7,31 @@ import { setVimKeys, vimKeys } from "./vimKeys";
  * `:set vim|novim` (the one Vim keys setting) and `:help`, the shortcut list.
  */
 
+/** What `:vim` (a toggle), `:novim` and `:set vim|novim` set Vim keys to. */
+const VIM_WORDS = new Map<string, boolean | null>([
+  ["vim", null],
+  ["novim", false],
+  ["set vim", true],
+  ["set novim", false],
+]);
+
 /**
  * `:vim`, `:novim`, `:set ...`: the one Vim keys setting, said as set.
  * False when the words are not a setting.
  */
 export function runReviewSetting(words: string): boolean {
-  const command = parseReviewCommand(words);
-  if (command.type === "vim") {
-    const on = command.on ?? !vimKeys();
-    setVimKeys(on);
-    store.notify({
-      kind: "info",
-      message: on ? "Vim keys on" : "Vim keys off",
-      autoDismissMs: 1800,
-    });
-    return true;
-  }
-  return false;
+  const setting = VIM_WORDS.get(
+    words.trim().replace(/^:/, "").split(/\s+/).join(" "),
+  );
+  if (setting === undefined) return false;
+  const on = setting ?? !vimKeys();
+  setVimKeys(on);
+  store.notify({
+    kind: "info",
+    message: on ? "Vim keys on" : "Vim keys off",
+    autoDismissMs: 1800,
+  });
+  return true;
 }
 
 /** The settings commands; `:help WORD` opens the list filtered. */
