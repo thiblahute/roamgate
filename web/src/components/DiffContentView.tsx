@@ -209,6 +209,8 @@ import { CommandLine } from "./CommandLine";
 import {
   type CommentMode,
   type DiffCursor,
+  GO_TO_FRESH_MS,
+  goToMatches,
   useDiffCursor,
 } from "./useDiffCursor";
 import {
@@ -2820,7 +2822,7 @@ function DiffContentViewInner({
     if (!placeId || !cursor.active || !placeRows) return;
     if (placeRead.current !== placeId) {
       if (!placeSettled) return;
-      if (cursorGoTo && Date.now() - cursorGoTo.at < 10_000) {
+      if (cursorGoTo && Date.now() - cursorGoTo.at < GO_TO_FRESH_MS) {
         // Sent to a line (Files' Review, a thread): that line, not the
         // place left.
         placeRead.current = placeId;
@@ -3230,19 +3232,14 @@ function DiffContentViewInner({
   const goToRowPath = (() => {
     const wanted = cursorGoTo?.path;
     if (!wanted || goToDone.current === cursorGoTo.at) return null;
-    const relative = (path: string) => path.replace(/^\.?\//, "");
     return (
-      cursor.model.rows.find(
-        (row) =>
-          row.path === wanted ||
-          relative(row.path) === wanted ||
-          wanted.endsWith(`/${relative(row.path)}`),
-      )?.path ?? null
+      cursor.model.rows.find((row) => goToMatches(wanted, row.path))?.path ??
+      null
     );
   })();
   useEffect(() => {
     if (!cursorGoTo?.path || goToDone.current === cursorGoTo.at) return;
-    if (!goToRowPath && Date.now() - cursorGoTo.at < 10_000) return;
+    if (!goToRowPath && Date.now() - cursorGoTo.at < GO_TO_FRESH_MS) return;
     showReviewed(goToRowPath ?? cursorGoTo.path);
     goToDone.current = cursorGoTo.at;
   }, [cursorGoTo?.path, cursorGoTo?.at, goToRowPath, showReviewed]);

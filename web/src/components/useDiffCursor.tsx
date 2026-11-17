@@ -64,6 +64,17 @@ type ScrollTo = "center" | "start" | "end" | "nearest" | "reveal" | "none";
 
 type CursorState = { at: number; col: number; scroll: ScrollTo };
 
+/** How long a go-to request (Files' Review, a thread) is taken. */
+export const GO_TO_FRESH_MS = 10_000;
+
+/** Whether a go-to's path (absolute or relative) names a row's path. */
+export function goToMatches(wanted: string, rowPath: string): boolean {
+  const relative = rowPath.replace(/^\.?\//, "");
+  return (
+    wanted === rowPath || wanted === relative || wanted.endsWith(`/${relative}`)
+  );
+}
+
 /** Pierre's parsed patch, read once per patch text. */
 const parsedPatches = new Map<string, ReturnType<typeof getSingularPatch>>();
 function parsedPatch(patch: string) {
@@ -381,20 +392,13 @@ export function useDiffCursor({
   const goToDone = useRef(0);
   useEffect(() => {
     if (!enabled || !lineGoTo || lineGoTo.at === goToDone.current) return;
-    if (Date.now() - lineGoTo.at > 10_000) return;
+    if (Date.now() - lineGoTo.at > GO_TO_FRESH_MS) return;
     const rows = model.rows;
-    const relative = (path: string) => path.replace(/^\.?\//, "");
     let best = -1;
     let distance = Number.POSITIVE_INFINITY;
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index]!;
-      const path = relative(row.path);
-      if (
-        lineGoTo.path !== row.path &&
-        !lineGoTo.path.endsWith(`/${path}`) &&
-        lineGoTo.path !== path
-      )
-        continue;
+      if (!goToMatches(lineGoTo.path, row.path)) continue;
       if (lineGoTo.line === undefined) {
         best = index;
         break;
