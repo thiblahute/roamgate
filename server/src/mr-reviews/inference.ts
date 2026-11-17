@@ -7,6 +7,10 @@ import type {
   MrWhose,
 } from "../../../shared/mrReviews";
 import { type Logger, serverLogger } from "../utils/logger";
+import type { AgentProfile } from "../../../shared/agentProfiles";
+import { profileModels } from "../profiles/models";
+import { peekGuiSettings } from "../config/gui-settings";
+import { profileForSession } from "../profiles/profiles";
 import { type RunModel, runClaudeModel } from "./curation";
 import type { OwnNote } from "./queries";
 import { mrMergeFact } from "../../../shared/mrReviewsMerge";
@@ -35,6 +39,42 @@ export const INFERENCE_BATCH = 20;
 export const INFERENCE_MODEL = "sonnet";
 /** The names a Claude subscription takes, offered in the settings. */
 export const INFERENCE_MODEL_ALIASES = ["sonnet", "opus", "haiku"] as const;
+
+/**
+ * The automatic model on a profile (D27): on Anthropic's own endpoint
+ * (no base URL) Sonnet; behind a gateway the profile's own model (its main
+ * slot, else its Sonnet or Opus slot), never a Claude name it may not
+ * serve. A gateway naming none gets the alias, which its slots may map.
+ */
+export function profileInferenceModel(profile: AgentProfile): string {
+  const env = profile.env ?? {};
+  const base = env.ANTHROPIC_BASE_URL;
+  if (typeof base !== "string" || !base.trim()) return INFERENCE_MODEL;
+  for (const slot of [
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  ]) {
+    const value = env[slot];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return INFERENCE_MODEL;
+}
+
+/**
+ * The inference's models from the default agent profile (the one the
+ * helpers run with): the automatic one, and the profile's models
+ * (its server's list, or Claude's aliases) for the settings to suggest.
+ */
+export function defaultProfileInferenceModels(
+  profile: () => AgentProfile = () =>
+    profileForSession(peekGuiSettings(), null, null),
+) {
+  return {
+    automatic: () => profileInferenceModel(profile()),
+    list: async () => (await profileModels(profile())).models,
+  };
+}
 
 /** The model a pass runs on: the setting, else the automatic one. */
 export function inferenceModel(

@@ -829,9 +829,11 @@ someone else) tell a meaningful change. After each refresh, once every
 `mr_reviews.inference_hours` (default 12) every open own row whose version
 moved is inferred, oldest first, 20 a batch (`runClaudeModel`, no tools,
 the people's text marked as data) on `mr_reviews.inference_model`, any
-name the agent takes, else the automatic model (`sonnet`, D27; the
-module's `inferenceModels.automatic`, listed with the names to suggest by
-`bridge.mr_reviews.inference_models`); the suggestions keep their own
+name the agent takes, else the automatic model (D27: from the default
+agent profile, `profileInferenceModel`: `sonnet` on Anthropic's endpoint,
+behind a gateway the profile's `ANTHROPIC_MODEL`, else its Sonnet or Opus
+slot; listed with the profile's models from the profiles' model discovery
+by `bridge.mr_reviews.inference_models`); the suggestions keep their own
 (`CURATION_MODEL`, Opus); between
 runs only rows with a meaningful change, each at most every two hours.
 Dependencies found without the model (references in the description and

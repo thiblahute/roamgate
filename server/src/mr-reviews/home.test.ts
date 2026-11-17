@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,15 @@ import {
   type MrItem,
   mrHomeLinks,
 } from "../../../shared/mrReviews";
+import { normalizeProfilesSettings } from "../../../shared/agentProfiles";
+import type { GuiSettings } from "../config/gui-settings";
+import {
+  type AgentCommand,
+  commandForSession,
+  createSessionProfiles,
+  type LaunchSpec,
+} from "../profiles/profiles";
+import { claudeCommand } from "./claude";
 import type { MrConnection } from "./clones";
 import {
   createMrHomes,
@@ -49,8 +58,12 @@ const item = (extra: Partial<MrItem> = {}): MrItem => ({
  * they do, Herdr keeps workspaces and panes, and the pane's agent becomes an
  * idle Claude a moment after `claude` is typed.
  */
-function fakeConnection(options: { conversation?: boolean } = {}) {
+function fakeConnection(
+  options: { conversation?: boolean; launch?: boolean } = {},
+) {
   const scripts: string[] = [];
+  /** Profile starts handed to roamgate-hold (what its token stands for). */
+  const launches: { paneId: string; spec: LaunchSpec }[] = [];
   const herdrCalls: [string, Record<string, unknown>][] = [];
   const workspaces: Record<string, unknown>[] = [
     // Herdr's list gives no folder here: its pane does.
@@ -138,11 +151,27 @@ function fakeConnection(options: { conversation?: boolean } = {}) {
           },
         }
       : {}),
+    ...(options.launch
+      ? {
+          // The typed text carries the argv only so the fake sees the start.
+          launch: (paneId: string, spec: LaunchSpec) => {
+            launches.push({ paneId, spec });
+            return ` roamgate-hold --launch t${launches.length} ${spec.argv.join(" ")}\r`;
+          },
+        }
+      : {}),
   };
-  return { conn, scripts, herdrCalls, workspaces, panes, prompted };
+  return { conn, scripts, herdrCalls, workspaces, panes, prompted, launches };
 }
 
-function setup(options: { conversation?: boolean; homePrompt?: string } = {}) {
+function setup(
+  options: {
+    conversation?: boolean;
+    homePrompt?: string;
+    launch?: boolean;
+    agentCommand?: (session: string) => AgentCommand;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "mr-home-"));
   dirs.push(dir);
   const store = openMrStore(join(dir, "state.json"));
@@ -190,6 +219,10 @@ function setup(options: { conversation?: boolean; homePrompt?: string } = {}) {
       return { session: { id: `rs-${reviews.length}` } } as any;
     },
     markSeen: (key) => seen.push(key),
+    ...(options.agentCommand ? { agentCommand: options.agentCommand } : {}),
+    ...(options.conversation
+      ? { startMode: async () => "conversation" as const }
+      : {}),
     sleep: () => new Promise((resolve) => setTimeout(resolve, 2)),
     pollMs: 1,
     deliverMs: 2_000,
@@ -366,4 +399,97 @@ test("opening in a home: its head fetched from the project's remote there, the r
   await expect(
     homes.openIn(request.key, { connectionId: "local", workspaceId: "gone" }),
   ).rejects.toThrow("not open any more");
+});
+
+/** Profile settings whose default is `defaultName` (GLM has a secret file). */
+function profileSettings(defaultName: string): GuiSettings {
+  const dir = mkdtempSync(join(tmpdir(), "mr-home-profile-"));
+  dirs.push(dir);
+  const token = join(dir, "token");
+  writeFileSync(token, "s3cret\n");
+  chmodSync(token, 0o600);
+  return {
+    version: 1,
+    repositories: {},
+    workspace_auto_sync: {},
+    custom: {},
+    ui: {},
+    profiles: normalizeProfilesSettings({
+      list: [
+        {
+          name: "GLM",
+          agent: "claude",
+          env: {
+            ANTHROPIC_BASE_URL: "https://gw.example",
+            ANTHROPIC_AUTH_TOKEN: { file: token },
+          },
+        },
+      ],
+      default: defaultName,
+    }),
+  };
+}
+
+test("the home's Claude starts with the default profile, through roamgate-hold", async () => {
+  const settings = profileSettings("GLM");
+  const sessions = createSessionProfiles({ file: null });
+  const { homes, fake, request } = setup({
+    launch: true,
+    agentCommand: (session) => commandForSession(session, settings, sessions),
+  });
+  const started = await homes.start(request.key);
+  const session = started.agent.session!;
+  // The profile's program and environment go through a one-use token:
+  // nothing secret is typed into the pane.
+  expect(fake.launches).toEqual([
+    {
+      paneId: "p-home",
+      spec: {
+        argv: ["claude", "--session-id", session],
+        env: {
+          ANTHROPIC_BASE_URL: "https://gw.example",
+          ANTHROPIC_AUTH_TOKEN: "s3cret",
+        },
+        unset: expect.arrayContaining(["ANTHROPIC_API_KEY"]),
+        agent: "claude",
+        terminal: true,
+      },
+    },
+  ]);
+  const typed = fake.herdrCalls.filter(
+    ([method]) => method === "pane.send_text",
+  );
+  expect(typed).toHaveLength(1);
+  expect(String(typed[0]![1].text)).toStartWith(" roamgate-hold --launch t1 ");
+  expect(String(typed[0]![1].text)).not.toContain("s3cret");
+  // Told its job as any home's Claude.
+  expect(await homes.delivered(request.key)).toBe(true);
+  expect(fake.prompted).toHaveLength(1);
+});
+
+test("conversation mode's home start takes the profile too; the plain default types claude as before", async () => {
+  const settings = profileSettings("GLM");
+  const sessions = createSessionProfiles({ file: null });
+  const held = setup({
+    launch: true,
+    conversation: true,
+    agentCommand: (session) => commandForSession(session, settings, sessions),
+  });
+  await held.homes.start(held.request.key);
+  expect(held.fake.launches).toHaveLength(1);
+  expect(held.fake.launches[0]!.spec.terminal).toBe(false);
+  expect(await held.homes.delivered(held.request.key)).toBe(true);
+
+  const plainSettings = profileSettings("Claude");
+  const plain = setup({
+    launch: true,
+    agentCommand: (session) =>
+      commandForSession(session, plainSettings, sessions),
+  });
+  const started = await plain.homes.start(plain.request.key);
+  expect(plain.fake.launches).toEqual([]);
+  const typed = plain.fake.herdrCalls.find(
+    ([method]) => method === "pane.send_text",
+  );
+  expect(typed?.[1].text).toBe(claudeCommand(started.agent.session!, false));
 });

@@ -11,6 +11,7 @@ import {
   containedIn,
   createMrInference,
   INFERENCE_DEBOUNCE_MS,
+  defaultProfileInferenceModels,
   INFERENCE_MODEL,
   inferenceModel,
   inferenceOutdated,
@@ -19,6 +20,7 @@ import {
   parseInference,
   referencedKeys,
   rowFacts,
+  profileInferenceModel,
   rowVersion,
 } from "./inference";
 import { assignLanes } from "./lanes";
@@ -375,4 +377,47 @@ test("the model: Sonnet when automatic, the automatic one given, the setting fir
   settings = { ...auto, inferenceModel: "opus" };
   await inference.infer(key(1));
   expect(models).toEqual(["sonnet", "opus"]);
+});
+
+test("the automatic model from the default profile: Sonnet on Claude, a gateway's own model (D27)", async () => {
+  const claude = { name: "Claude", agent: "claude" as const };
+  expect(profileInferenceModel(claude)).toBe("sonnet");
+  // Anthropic's endpoint with its own token: still Sonnet.
+  expect(
+    profileInferenceModel({
+      ...claude,
+      name: "Work",
+      env: { ANTHROPIC_API_KEY: { file: "~/.key" } },
+    }),
+  ).toBe("sonnet");
+  const gateway = {
+    name: "Fireworks",
+    agent: "claude" as const,
+    env: {
+      ANTHROPIC_BASE_URL: "https://gw.example/anthropic",
+      ANTHROPIC_AUTH_TOKEN: { file: "~/.gw" },
+      ANTHROPIC_MODEL: "glm-5p3",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-k3",
+    },
+  };
+  expect(profileInferenceModel(gateway)).toBe("glm-5p3");
+  const slots: Record<string, string | { file: string }> = { ...gateway.env };
+  delete slots.ANTHROPIC_MODEL;
+  expect(profileInferenceModel({ ...gateway, env: slots })).toBe("kimi-k3");
+  // Through the module's default: the default profile, the setting first.
+  let profile: typeof gateway | typeof claude = gateway;
+  const models = defaultProfileInferenceModels(() => profile);
+  expect(models.automatic()).toBe("glm-5p3");
+  expect(inferenceModel(DEFAULT_MR_REVIEWS_SETTINGS, models.automatic)).toBe(
+    "glm-5p3",
+  );
+  expect(
+    inferenceModel(
+      { ...DEFAULT_MR_REVIEWS_SETTINGS, inferenceModel: "opus" },
+      models.automatic,
+    ),
+  ).toBe("opus");
+  profile = claude;
+  expect(models.automatic()).toBe("sonnet");
+  expect(await models.list()).toEqual(["opus", "sonnet", "haiku", "opusplan"]);
 });

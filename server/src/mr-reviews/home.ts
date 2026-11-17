@@ -3,8 +3,9 @@ import { forgeRefLabel } from "../../../shared/forge";
 import type { MrItem } from "../../../shared/mrReviews";
 import { mrHomePrompt, mrProjectKey } from "../../../shared/mrReviews";
 import type { ReviewSnapshot } from "../../../shared/review";
+import type { AgentCommand } from "../profiles/profiles";
 import { type Logger, serverLogger } from "../utils/logger";
-import { claudeCommand } from "./claude";
+import { claudeCommand, profileLaunch } from "./claude";
 import { type MrConnection, remoteIsProject, shQuote } from "./clones";
 import { MrReviewsError } from "./rpc";
 import type { MrHomeRecord, MrProjectRecord, MrStore } from "./store";
@@ -261,6 +262,8 @@ export function createMrHomes(deps: {
   markSeen: (key: string) => void;
   /** The claude start setting (claude_start_mode). */
   startMode?: () => Promise<"terminal" | "conversation">;
+  /** The new session's profile command (tests; else the default profile). */
+  agentCommand?: (session: string) => AgentCommand;
   sleep?: (ms: number) => Promise<void>;
   /** How long the background delivery keeps trying. */
   deliverMs?: number;
@@ -452,13 +455,20 @@ export function createMrHomes(deps: {
       const home = state.homes?.[key];
       if (home) home.claudeSession = session;
     });
+    const mode = (await deps.startMode?.()) ?? "terminal";
+    const command = deps.agentCommand;
+    // A new session: the default profile, as the review workspace's Claude.
     await conn.herdr("pane.send_text", {
       pane_id: paneId,
-      text: claudeCommand(
-        session,
-        false,
-        (await deps.startMode?.()) ?? "terminal",
-      ),
+      text:
+        profileLaunch(
+          conn,
+          paneId,
+          session,
+          false,
+          mode,
+          command ? () => command(session) : undefined,
+        ) ?? claudeCommand(session, false, mode),
     });
     const delivery = (async () => {
       for (let waited = 0; waited < deliverMs; waited += pollMs) {
