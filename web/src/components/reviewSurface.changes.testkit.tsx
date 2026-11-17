@@ -497,7 +497,6 @@ export async function mountChangesReview(
     return {
       commands: [...sets.flatMap((set) => set.commands), ...frame.commands],
       line: sets.find((set) => set.line)?.line,
-      keys: sets.flatMap((set) => set.keys ?? []),
       ...(own?.shortcuts ? { shortcuts: own.shortcuts } : {}),
       ...(own?.unknown ? { unknown: own.unknown } : {}),
     };

@@ -12,8 +12,6 @@ export type InspectorCommandSet = {
    * the other parts' (`:refresh` is the preview's there, the tree's in it).
    */
   root?: () => Element | null;
-  /** The part's keys, for the inspector's shortcut list (`?`, `:help`). */
-  keys?: readonly ShortcutRow[];
   /**
    * The part's own shortcut list, shown by `?` and `:help` in place of the
    * inspector's (the review in Changes: the review's list).
@@ -33,8 +31,8 @@ export const INSPECTOR_KEYS: readonly ShortcutRow[] = [
 
 /**
  * The shortcut list `?` shows over a view: its part's own list when it has
- * one (the review in Changes), else the view's keys, the inspector's, then
- * every command the prompt has there.
+ * one (the review in Changes), else the inspector's keys, then every
+ * command the prompt has there.
  */
 export function inspectorShortcutList(set: InspectorCommandSet): {
   title: string;
@@ -46,7 +44,6 @@ export function inspectorShortcutList(set: InspectorCommandSet): {
   return {
     title: "Inspector shortcuts",
     rows: [
-      ...(set.keys ?? []),
       ...INSPECTOR_KEYS,
       ...set.commands
         .filter((command) => {

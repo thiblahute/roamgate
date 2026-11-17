@@ -9,7 +9,11 @@ import { detectShortcutPlatform, formatShortcut } from "./shortcutBindings";
 /** The file reviewed, or no longer: Option+V on a Mac, Alt+V elsewhere. */
 const MARK_FILE_KEY = formatShortcut("Alt+V", detectShortcutPlatform());
 
-export const REVIEW_KEYS: readonly ShortcutRow[] = [
+/**
+ * The review in Changes: the review's rows, then what only Changes has
+ * (the checkout's git, its scopes, the inspector's views and dock).
+ */
+export const CHANGES_REVIEW_KEYS: readonly ShortcutRow[] = [
   [
     "j k ↓ ↑",
     "next / previous line or message under it (5j); side by side, on one side",
@@ -123,14 +127,6 @@ export const REVIEW_KEYS: readonly ShortcutRow[] = [
   [":", "command line; Tab / Shift+Tab complete"],
   ["?", "this list"],
   ["Esc :q", "close the review (it is kept)"],
-];
-
-/**
- * The review in Changes: the review's rows, then what only Changes has
- * (the checkout's git, its scopes, the inspector's views and dock).
- */
-export const CHANGES_REVIEW_KEYS: readonly ShortcutRow[] = [
-  ...REVIEW_KEYS,
   ["Ctrl-e Ctrl-y", "a line down / up"],
   [
     "gs :stage",

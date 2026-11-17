@@ -209,7 +209,6 @@ import { CommandLine } from "./CommandLine";
 import {
   type CommentMode,
   type DiffCursor,
-  DIFF_CURSOR_KEYS,
   useDiffCursor,
 } from "./useDiffCursor";
 import {
@@ -5494,12 +5493,7 @@ function DiffContentViewInner({
           commands: viewCommands
             ? [...diffCommands, ...viewCommands]
             : diffCommands,
-          ...(cursor.active
-            ? {
-                line: cursor.goToLine,
-                keys: DIFF_CURSOR_KEYS,
-              }
-            : {}),
+          ...(cursor.active ? { line: cursor.goToLine } : {}),
           // The review's list and words, as the review pane has them.
           ...(reviewEditor
             ? {

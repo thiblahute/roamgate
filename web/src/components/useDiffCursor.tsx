@@ -36,7 +36,6 @@ import { shortcutMatches } from "../shortcutPreferences";
 import { store } from "../store";
 import { type Match, searchRegExp, wordAt } from "../reviewNavigation";
 import type { DiffSurfaceInstance } from "./DiffSurface";
-import type { ShortcutRow } from "./ShortcutList";
 
 /*
  * The review's Vim cursor in Changes (plan: review into the inspector,
@@ -64,75 +63,6 @@ const SEARCH_MARGIN_LINES = 3;
 type ScrollTo = "center" | "start" | "end" | "nearest" | "reveal" | "none";
 
 type CursorState = { at: number; col: number; scroll: ScrollTo };
-
-/** The keys of the cursor, for the inspector's shortcut list. */
-export const DIFF_CURSOR_KEYS: readonly ShortcutRow[] = [
-  [
-    "j k ↓ ↑",
-    "next / previous line (5j); side by side, on one side of the diff",
-  ],
-  ["J K", "10 lines down / up"],
-  ["gg G", "first / last line (12G and :12: line 12 of all the changes)"],
-  ["Ctrl-d Ctrl-u", "half a screen down / up"],
-  ["Ctrl-f Ctrl-b", "a screen down / up (also Ctrl-j Ctrl-k, PageDown PageUp)"],
-  ["Ctrl-e Ctrl-y", "a line down / up"],
-  ["H M L", "top / middle / bottom of the screen"],
-  ["zz zt zb", "current line to the middle / top / bottom"],
-  ["{ }", "previous / next hunk"],
-  ["[ ]", "previous / next file"],
-  ["w b E", "next word / previous word / end of word"],
-  ["h l", "one character left / right"],
-  ["0 ^ $", "start / first character / end of the line"],
-  [
-    "← →",
-    "as h l; side by side, past a line's start / end: the line beside it",
-  ],
-  ["/", "search the diff (smart case); n / N next / previous match, Esc ends"],
-  ["* #", "search the word under the cursor, forward / backward"],
-  ["V", "select lines (j / k extend, Shift+click too); Esc cancels"],
-  ["S", "side by side / unified"],
-  ["R gr", "reload the changes"],
-  ["f", "show / hide the file tree (:files)"],
-  ["o", "Review only: the diff alone (:only)"],
-  ["p", "the workspace's repositories, searched as you type (:repo)"],
-  ["( )", "the previous / next repository (:prevrepo :nextrepo)"],
-];
-
-/** The comment keys, listed too once Changes has the review's comments. */
-export const DIFF_REVIEW_KEYS: readonly ShortcutRow[] = [
-  [
-    "c Enter i a",
-    "comment on the line (or the lines V selected); on a discussion, answer it",
-  ],
-  ["C", "ask the agent about the line, as a new discussion"],
-  ["s", "suggest a change on the line"],
-  ["gn gN", "next / previous unresolved thread, in any file (wrapping)"],
-  ["n N", "with no search going: next / previous thread"],
-  ["gH :unresolved", "show only the unresolved threads, or all again"],
-  ["g;", "the comment written last"],
-  ["gl", "the last message of the thread on the line"],
-  ["j k", "into the messages (and the parts) of the comments under a line"],
-  ["u", "bring back the comment dd deleted"],
-  ["za", "fold / unfold the thread on the line"],
-  [
-    "r",
-    "resolve or reopen the thread on the line; elsewhere mark the chunk reviewed (V: the chunks selected), again unmarks",
-  ],
-  [
-    "v Alt+V",
-    "mark the cursor's file reviewed, every chunk of it, or unmark it",
-  ],
-  ["gu gU", "next / previous chunk not reviewed, in any file (wrapping)"],
-  ["e", "edit your last comment on the line"],
-  ["dd", "delete your lone comment on the line"],
-  ["T :conversations", "every comment, open ones first"],
-  ["t :comments", "show / hide every comment"],
-  ["gs", "stage the file at the cursor (:stage :unstage :discard :delete)"],
-  [
-    ":send :hold :review :overall",
-    "the agent group: send, hold, review, overall comment",
-  ],
-];
 
 /** Pierre's parsed patch, read once per patch text. */
 const parsedPatches = new Map<string, ReturnType<typeof getSingularPatch>>();
