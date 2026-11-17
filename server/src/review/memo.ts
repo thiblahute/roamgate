@@ -27,3 +27,23 @@ export function memo<T>(
   );
   return entry.value;
 }
+
+/**
+ * `run` once the run before it for `id` ended, failed or not: one queue
+ * per id, forgotten when its last run ends.
+ */
+export function serialize<T>(
+  queues: Map<string, Promise<T>>,
+  id: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const next = (queues.get(id) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(run);
+  queues.set(id, next);
+  const forget = () => {
+    if (queues.get(id) === next) queues.delete(id);
+  };
+  next.then(forget, forget);
+  return next;
+}
