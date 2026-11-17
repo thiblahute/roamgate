@@ -5985,7 +5985,8 @@ export default function App() {
                   sessions={[...reviewState.sessions.values()].filter(
                     (snapshot) =>
                       snapshot.session.connectionId === s.activeConnectionId &&
-                      snapshot.session.target.kind !== "chat",
+                      snapshot.session.target.kind !== "chat" &&
+                      snapshot.session.target.kind !== "effort",
                   )}
                   onOpen={(sessionId) => {
                     setReviewListOpen(false);

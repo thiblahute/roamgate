@@ -9,6 +9,7 @@ import {
   type ReviewCommit,
   type ReviewComment,
   type ReviewDiff,
+  type ReviewEffortPart,
   type ReviewMergeRequestLink,
   type ReviewPush,
   type ReviewSession,
@@ -16,7 +17,12 @@ import {
   type ReviewTarget,
   type ReviewThread,
   type ReviewThreadKind,
+  describeEffortPart,
+  EFFORT_NO_LEADER,
+  EFFORT_SESSION_PREFIX,
   isSuggestion,
+  REVIEW_EFFORT_ITEMS,
+  REVIEW_EFFORT_TABS,
   threadNeedsAnswer,
   unheardComments,
 } from "../../../shared/review";
@@ -106,6 +112,38 @@ function body(value: unknown): string {
   return result;
 }
 
+/** An effort's id, as the reviews inbox makes them. */
+const EFFORT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+function effortTarget(target: Record<string, unknown>): ReviewTarget {
+  const effort = text(target.effort, "effort", 200);
+  if (!EFFORT_ID.test(effort)) throw new ReviewError("invalid effort");
+  return { kind: "effort", effort };
+}
+
+/** A thread's place in an effort's view: its tab, item and words. */
+function effortPart(value: unknown): ReviewEffortPart | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") throw new ReviewError("invalid effort part");
+  const raw = value as Record<string, unknown>;
+  const tab = REVIEW_EFFORT_TABS.find((each) => each === raw.tab);
+  if (!tab) throw new ReviewError("an effort part needs its tab");
+  const part: ReviewEffortPart = { tab };
+  if (raw.item !== undefined && raw.item !== null) {
+    const item = raw.item as Record<string, unknown>;
+    const kind = REVIEW_EFFORT_ITEMS.find((each) => each === item?.kind);
+    const key = optionalText(item?.key, "effort item", 300)?.trim();
+    if (!kind || !key) throw new ReviewError("invalid effort item");
+    const label = optionalText(item.label, "effort item label", 300);
+    part.item = { kind, key, ...(label ? { label: oneLine(label, 300) } : {}) };
+  }
+  const plan = optionalText(raw.plan, "plan", 200);
+  if (plan) part.plan = plan;
+  const quote = optionalText(raw.quote, "quote", 4000)?.trim();
+  if (quote) part.quote = quote;
+  return part;
+}
+
 /**
  * An agent's name: shown to the user and typed, quoted, into commands for
  * the agent, so it is plain.
@@ -163,6 +201,7 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
     };
   if (target.kind === "chat")
     return { kind: "chat", chat: text(target.chat, "chat", 300) };
+  if (target.kind === "effort") return effortTarget(target);
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
     let parsed: URL;
@@ -196,6 +235,7 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
     return left && right ? sameMergeRequest(left, right) : a.url === b.url;
   }
   if (a.kind === "chat" && b.kind === "chat") return a.chat === b.chat;
+  if (a.kind === "effort" && b.kind === "effort") return a.effort === b.effort;
   return true;
 }
 
@@ -246,6 +286,7 @@ export function describeTarget(target: ReviewTarget): string {
       : `${target.base}..${target.head}`;
   if (target.kind === "mr") return target.url.replace(/^https:\/\//, "");
   if (target.kind === "chat") return "chat";
+  if (target.kind === "effort") return "effort";
   return "working tree";
 }
 
@@ -325,6 +366,8 @@ function parseAnchor(value: unknown): ReviewAnchor {
       ...(excerpt ? { excerpt } : {}),
     };
   }
+  const effort = effortPart(raw.effort);
+  if (effort) anchor.effort = effort;
   return anchor;
 }
 
@@ -1138,8 +1181,10 @@ export function createReviewService(args: {
         (s) =>
           (!connectionId || s.connectionId === connectionId) &&
           (!root || s.root === root) &&
-          // A chat's threads are not a review of the checkout.
-          (s.target.kind !== "chat" || params.chats === true),
+          // A chat's threads, or an effort's, are not a review of the
+          // checkout.
+          ((s.target.kind !== "chat" && s.target.kind !== "effort") ||
+            params.chats === true),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(snapshot);
@@ -2077,8 +2122,14 @@ export function createReviewService(args: {
     );
   }
 
-  /** The agent session the review's comments follow, when one is known. */
+  /**
+   * The agent session the review's comments follow, when one is known. An
+   * effort's follow its leader, whichever session that is now: looked up
+   * as the session `effort:ID` (args.sessionPane).
+   */
   function agentSession(target: ReviewSession): string | undefined {
+    if (target.target.kind === "effort")
+      return `${EFFORT_SESSION_PREFIX}${target.target.effort}`;
     return target.target.kind === "chat"
       ? target.target.chat
       : target.agent.sessionId;
@@ -2094,6 +2145,8 @@ export function createReviewService(args: {
   class AgentNotRunning extends Error {}
 
   function notRunning(target: ReviewSession): AgentNotRunning {
+    if (target.target.kind === "effort")
+      return new AgentNotRunning(EFFORT_NO_LEADER);
     return new AgentNotRunning(
       `${agentLabel(target)} for this ${target.target.kind === "chat" ? "chat" : "review"} is not running in any pane`,
     );
@@ -2110,7 +2163,12 @@ export function createReviewService(args: {
   }
 
   async function recordSession(target: ReviewSession, paneId: string) {
-    if (!args.paneSession || target.target.kind === "chat") return;
+    if (
+      !args.paneSession ||
+      target.target.kind === "chat" ||
+      target.target.kind === "effort"
+    )
+      return;
     let sessionId: string | null;
     try {
       sessionId = await args.paneSession(target.connectionId, paneId);
@@ -2149,7 +2207,9 @@ export function createReviewService(args: {
       }
       if (
         found === null &&
-        (target.target.kind === "chat" || !target.agent.paneId)
+        (target.target.kind === "chat" ||
+          target.target.kind === "effort" ||
+          !target.agent.paneId)
       )
         throw notRunning(target);
     }
@@ -2392,12 +2452,15 @@ export function createReviewService(args: {
         `It is not a thread: act on it, then say what you did with \`${command} working --done --message "WHAT YOU DID"\`.`,
       );
     const chat = target.target.kind === "chat";
+    const effort = target.target.kind === "effort";
     if (due.length)
       lines.push(
         ...(overall ? [""] : []),
         chat
           ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on parts of your messages in this chat:`
-          : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+          : effort
+            ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the view of the upstreaming effort you lead (${oneLine(target.title, 200)}, id ${target.target.kind === "effort" ? target.target.effort : ""}) in Reviews:`
+            : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
       );
     const since = target.deliveredAt ?? "";
     for (const thread of due) {
@@ -2406,15 +2469,20 @@ export function createReviewService(args: {
         : "";
       const part = thread.anchor.message;
       const said = thread.anchor.chat;
+      // On what an effort's view shows: the tab, the item, the words.
+      const shown = thread.anchor.effort;
       lines.push(
         "",
-        said
-          ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
-          : part
-            ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
-            : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
-        ...((said ?? part)?.quote?.split("\n").map((line) => `  > ${line}`) ??
-          []),
+        shown && !part
+          ? `- [${thread.id.slice(0, 8)}] on ${describeEffortPart(shown)}${shown.quote ? ", about this part" : ""}:`
+          : said
+            ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
+            : part
+              ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
+              : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
+        ...((said ?? part ?? shown)?.quote
+          ?.split("\n")
+          .map((line) => `  > ${line}`) ?? []),
       );
       // What changed since the agent last heard: new comments, and earlier
       // ones the user rewrote.
@@ -2432,7 +2500,12 @@ export function createReviewService(args: {
         lines.push("  (A suggested change: apply it, then reply.)");
     }
     const replyHow = chat ? args.chatReplyHow?.(target) : undefined;
-    if (due.length && chat)
+    if (due.length && effort)
+      lines.push(
+        "",
+        `These are threads on the effort's view (its ledger, plans and progress), not on code: read it with your effort_get tool when you need more. Answer each in its thread with \`${command} reply --comment ID -- TEXT\`, and say there what you did or changed.`,
+      );
+    else if (due.length && chat)
       lines.push(
         "",
         `These are threads on our conversation, not on code. Answer each in its thread with ${replyHow ?? `\`${command} reply --comment ID -- TEXT\``}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.`,

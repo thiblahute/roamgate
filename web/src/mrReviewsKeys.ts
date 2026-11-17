@@ -1,4 +1,45 @@
 /**
+ * An effort's view's keys, for its help (?): its tabs, its ledger and the
+ * comments one leaves there for its leader session.
+ */
+export const EFFORT_KEYS: [string, string][] = [
+  [
+    "P L R F W",
+    "Progress, Ledger, Plans (planned requests), Feeders, What changed",
+  ],
+  [
+    "j k / Down Up",
+    "the next / previous commit in the ledger, the next / previous thing one comments on elsewhere (a click points at one too)",
+  ],
+  ["x V", "in the ledger: select the commit, select a range"],
+  ["/", "filter the ledger: words, disposition:, dir:, file:, author:"],
+  [
+    "d",
+    "in the ledger: goes to its head workspace and shows the commit's diff in its Changes; with two versions picked in its history (Enter): the two compared there",
+  ],
+  ["Enter", "in the ledger: the commit's versions"],
+  [
+    "c",
+    "comment on the words selected, else on what the cursor is on (a commit, a plan, a count, a directory, a feeder, a part of What changed): the thread goes to the leader session, which answers in it; held while none runs",
+  ],
+  ["C", "comment on the tab"],
+  ["n N", "the next / previous thread"],
+  ["gn gN", "the next / previous open thread, on any tab"],
+  [
+    "r R dd za",
+    "on a thread: resolve or reopen it, reply, delete your lone comment, fold it",
+  ],
+  ["gl", "its leader: the Claude session of its head workspace"],
+  ["u", "undo the last change"],
+  [
+    ":",
+    "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort, refresh, delete (the effort, after a confirmation, with Undo)",
+  ],
+  ["?", "this list"],
+  ["Esc", "close this list, clear the selection, then back to the requests"],
+];
+
+/**
  * The reviews panel's keys, for its help (?) and the shortcut cheat sheet:
  * alone, so the cheat sheet does not load the panel's code.
  */
@@ -58,6 +99,10 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   [
     "d",
     "in an effort's ledger: goes to its head workspace and shows the commit's diff in its Changes; with two versions picked in its history (Enter): the two compared there",
+  ],
+  [
+    "c (effort)",
+    "in an effort: comment on the words selected or on what the cursor is on, for its leader session (C: on the tab; n N, gn gN: its threads; gl: the leader session; ?: all its keys)",
   ],
   [
     ": (effort)",

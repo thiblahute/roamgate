@@ -99,6 +99,8 @@ function intParam(value: string | null, field: string): number | undefined {
 }
 
 function locationOf(anchor: ReviewAnchor): string {
+  if (!anchor.path && anchor.effort)
+    return `effort ${anchor.effort.tab}${anchor.effort.item ? ` ${anchor.effort.item.kind} ${anchor.effort.item.key}` : ""}`;
   if (!anchor.path) return "review";
   if (!anchor.line) return anchor.path;
   const lines = anchor.endLine
@@ -127,6 +129,17 @@ export function threadOutput(thread: ReviewThread) {
             at: thread.anchor.chat.at ?? null,
             excerpt: thread.anchor.chat.excerpt ?? null,
             quote: thread.anchor.chat.quote,
+          },
+        }
+      : {}),
+    // On what an effort's view shows: the tab, the item, the words.
+    ...(thread.anchor.effort
+      ? {
+          on_effort: {
+            tab: thread.anchor.effort.tab,
+            item: thread.anchor.effort.item ?? null,
+            plan: thread.anchor.effort.plan ?? null,
+            quote: thread.anchor.effort.quote ?? null,
           },
         }
       : {}),

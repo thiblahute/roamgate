@@ -590,8 +590,9 @@ function useWorkspaceRepos(
         other.connectionId !== session.connectionId ||
         !session.workspaceId ||
         other.workspaceId !== session.workspaceId ||
-        // A chat's threads are not comments on a checkout.
-        other.target.kind === "chat"
+        // A chat's threads, or an effort's, are not comments on a checkout.
+        other.target.kind === "chat" ||
+        other.target.kind === "effort"
       )
         continue;
       const entry = byRoot.get(other.root) ?? { root: other.root };

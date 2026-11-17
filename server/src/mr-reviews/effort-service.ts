@@ -444,6 +444,19 @@ export async function handleEffortRpc(
     }) =>
       | { sessionId: string; snapshot?: ReviewSnapshot }
       | Promise<{ sessionId: string; snapshot?: ReviewSnapshot }>;
+    /**
+     * The effort's review: the threads on its view, for its leader. Found
+     * by the effort wherever it was opened; made in the head's checkout
+     * when `open` (the first comment), else null.
+     */
+    effortReview?: (input: {
+      effort: string;
+      connectionId: string;
+      workspaceId?: string;
+      root: string;
+      title: string;
+      open: boolean;
+    }) => ReviewSnapshot | null;
   },
   method: string,
   params: Record<string, unknown>,
@@ -1176,6 +1189,37 @@ export async function handleEffortRpc(
       return {
         text: text.length > 200_000 ? `${text.slice(0, 200_000)}\n...` : text,
       };
+    }
+    case "bridge.mr_reviews.effort.threads": {
+      // The threads on the effort's view (its review, target `effort`):
+      // delivered to its leader as review comments, answered in place.
+      const effort = await effortOf();
+      if (!deps.effortReview)
+        throw new MrReviewsError(
+          "reviews cannot be opened here",
+          "unavailable",
+        );
+      const head = effort.head ?? {
+        connectionId: effort.clone.connectionId,
+        path: effort.clone.path,
+      };
+      const open = params.open === true;
+      const workspaceId = open
+        ? await workspaceAt(
+            head.connectionId,
+            [head.path],
+            "workspaceId" in head ? head.workspaceId : undefined,
+          )
+        : undefined;
+      const snapshot = deps.effortReview({
+        effort: effort.id,
+        connectionId: head.connectionId,
+        ...(workspaceId ? { workspaceId } : {}),
+        root: head.path,
+        title: `Effort ${effort.name}`,
+        open,
+      });
+      return { snapshot };
     }
     case "bridge.mr_reviews.effort.leader": {
       // The effort's leader is the Claude session of its head workspace

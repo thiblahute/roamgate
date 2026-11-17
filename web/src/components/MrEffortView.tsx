@@ -1,5 +1,11 @@
-import { ChevronLeft, RefreshCw, Trash2 } from "lucide-react";
 import {
+  ChevronLeft,
+  MessageSquarePlus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import {
+  Fragment,
   type ReactNode,
   useCallback,
   useEffect,
@@ -7,6 +13,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import type { ReviewThread } from "../../../shared/review";
 import {
   MR_DISPOSITIONS,
   type MrDisposition,
@@ -26,6 +34,18 @@ import {
 import { type ShownReply, showReply } from "../mrReviewFlow";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import { useWorkspaceTree } from "../workspaceTreeStore";
+import { EFFORT_KEYS } from "../mrReviewsKeys";
+import {
+  type EffortPoint,
+  EffortThreadsAt,
+  EffortThreadsProvider,
+  effortItemProps,
+  pointKey,
+  pointOf,
+  selectedIn,
+  useEffortSelection,
+  useEffortThreads,
+} from "./EffortThreads";
 import { ConfirmDialog } from "./ModalDialogs";
 import "./MrEffortView.css";
 
@@ -244,6 +264,7 @@ export function MrLedgerTable({
   onCursor,
   onToggle,
   proposals,
+  threads,
 }: {
   commits: LedgerCommit[];
   selected: ReadonlySet<string>;
@@ -251,6 +272,8 @@ export function MrLedgerTable({
   onCursor: (index: number) => void;
   onToggle: (key: string) => void;
   proposals?: Record<string, MrMatchProposal[]>;
+  /** Open threads on a commit of the ledger, by its key. */
+  threads?: ReadonlyMap<string, number>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(0);
@@ -288,6 +311,7 @@ export function MrLedgerTable({
               role="row"
               aria-selected={selected.has(commit.key)}
               aria-rowindex={index + 1}
+              {...effortItemProps(ledgerPoint(commit), null)}
               className={`mr-ledger-row${index === cursor ? " is-cursor" : ""}${selected.has(commit.key) ? " is-selected" : ""}`}
               style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
               onClick={(event) => {
@@ -298,6 +322,14 @@ export function MrLedgerTable({
             >
               <code>{commit.sha.slice(0, 10)}</code>
               <span className="mr-ledger-subject" title={commit.subject}>
+                {threads?.get(commit.key) ? (
+                  <span
+                    className="mr-effort-thread-count"
+                    title="Open threads on it: under the ledger when the cursor is on it"
+                  >
+                    {threads.get(commit.key)}
+                  </span>
+                ) : null}
                 {commit.subject}
               </span>
               <span className="mr-ledger-author">{commit.author}</span>
@@ -333,6 +365,25 @@ export function MrLedgerTable({
 }
 
 type Tab = "progress" | "ledger" | "plans" | "feeders" | "changes";
+
+/** A commit as one points at it: by its ledger key, which follows rebases. */
+function commitPoint(
+  tab: Tab,
+  commit: LedgerCommit,
+  plan?: string,
+): EffortPoint {
+  return {
+    tab,
+    item: {
+      kind: "commit",
+      key: commit.key,
+      label: `${commit.sha.slice(0, 10)} ${commit.subject}`.slice(0, 300),
+    },
+    ...(plan ? { plan } : {}),
+  };
+}
+
+const ledgerPoint = (commit: LedgerCommit) => commitPoint("ledger", commit);
 
 const TABS: { tab: Tab; label: string; key: string }[] = [
   { tab: "progress", label: "Progress", key: "P" },
@@ -378,6 +429,22 @@ export function MrEffortView({
   const rootRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const commandRef = useRef<HTMLInputElement>(null);
+  /** What a click or j / k points at outside the ledger, to comment on. */
+  const [pointed, setPointed] = useState<EffortPoint | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  /** A thread gone to (n, gn): focused once drawn. */
+  const [goingTo, setGoingTo] = useState<string | null>(null);
+  const lastThread = useRef<string | null>(null);
+  // A comment box closed: the keys come back to the view.
+  const back = useCallback(
+    () =>
+      requestAnimationFrame(() =>
+        rootRef.current?.focus({ preventScroll: true }),
+      ),
+    [],
+  );
+  const threads = useEffortThreads(id, back);
+  const selection = useEffortSelection(rootRef);
 
   const load = useCallback(
     () =>
@@ -428,6 +495,133 @@ export function MrEffortView({
       }),
     );
   }, [detail, query]);
+
+  /** Where c comments: the ledger's cursor, else what was pointed at. */
+  const currentPoint = (): EffortPoint => {
+    if (tab === "ledger" && shown[cursor]) return ledgerPoint(shown[cursor]!);
+    if (pointed && pointed.tab === tab) return pointed;
+    return { tab };
+  };
+
+  /** c: on the words selected, else on what the cursor is on. */
+  const commentHere = () => {
+    const words = selectedIn(rootRef.current);
+    if (words) threads.comment(pointOf(words.element, tab), words.quote);
+    else if (threads.draft) focusDraft();
+    else threads.comment(currentPoint());
+  };
+
+  const focusDraft = () =>
+    requestAnimationFrame(() =>
+      rootRef.current
+        ?.querySelector<HTMLElement>(".mr-effort-thread.is-draft .cm-content")
+        ?.focus(),
+    );
+
+  /** Threads in the order of the view: tab, then where they are in it. */
+  const ordered = useMemo(() => {
+    const order = new Map(TABS.map((each, index) => [each.tab, index]));
+    const commitAt = new Map(
+      (detail?.commits ?? []).map((commit, index) => [commit.key, index]),
+    );
+    const planAt = new Map(
+      (detail?.plans ?? []).map((plan, index) => [plan.id, index]),
+    );
+    const place = (thread: (typeof threads.threads)[number]) => {
+      const part = thread.anchor.effort!;
+      const item = part.item;
+      if (!item) return -1;
+      if (part.tab === "plans")
+        return (
+          (planAt.get(part.plan ?? (item.kind === "plan" ? item.key : "")) ??
+            0) *
+            10_000 +
+          (item.kind === "commit" ? 1 + (commitAt.get(item.key) ?? 0) : 0)
+        );
+      return item.kind === "commit" ? (commitAt.get(item.key) ?? 0) : 0;
+    };
+    return [...threads.threads].sort(
+      (a, b) =>
+        (order.get(a.anchor.effort!.tab) ?? 0) -
+          (order.get(b.anchor.effort!.tab) ?? 0) ||
+        place(a) - place(b) ||
+        a.createdAt.localeCompare(b.createdAt),
+    );
+  }, [threads.threads, detail]);
+
+  /** Shows a thread: its tab, its commit under the ledger's cursor. */
+  const goToThread = (threadId: string) => {
+    const thread = threads.threads.find((each) => each.id === threadId);
+    const part = thread?.anchor.effort;
+    if (!thread || !part) return;
+    lastThread.current = thread.id;
+    setTab(part.tab);
+    if (part.tab === "ledger" && part.item?.kind === "commit") {
+      const key = part.item.key;
+      const at = shown.findIndex((commit) => commit.key === key);
+      if (at >= 0) setCursor(at);
+      else {
+        const all = detail?.commits.findIndex((commit) => commit.key === key);
+        if (all !== undefined && all >= 0) {
+          setQuery("");
+          setCursor(all);
+        }
+      }
+    }
+    setGoingTo(thread.id);
+  };
+
+  /** n / N: the next or previous thread; gn / gN only the open ones. */
+  const stepThread = (step: 1 | -1, openOnly: boolean) => {
+    const list = openOnly
+      ? ordered.filter((thread) => !thread.resolved)
+      : ordered;
+    if (!list.length) {
+      say(openOnly ? "No open thread" : "No thread");
+      return;
+    }
+    const at = list.findIndex((thread) => thread.id === lastThread.current);
+    const next =
+      at < 0
+        ? step > 0
+          ? 0
+          : list.length - 1
+        : (at + step + list.length) % list.length;
+    goToThread(list[next]!.id);
+  };
+
+  useEffect(() => {
+    if (!goingTo) return;
+    const frame = requestAnimationFrame(() => {
+      const element = rootRef.current?.querySelector<HTMLElement>(
+        `.mr-effort-thread[data-thread-id="${CSS.escape(goingTo)}"]`,
+      );
+      if (!element) return;
+      element.scrollIntoView({ block: "nearest" });
+      element.focus({ preventScroll: true });
+      setGoingTo(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  });
+
+  /** j / k outside the ledger: from one thing one comments on to the next. */
+  const movePointed = (step: number) => {
+    const items = [
+      ...(rootRef.current?.querySelectorAll<HTMLElement>(
+        "[data-effort-item]",
+      ) ?? []),
+    ];
+    if (!items.length) return;
+    const at = pointed
+      ? items.findIndex(
+          (item) => pointKey(pointOf(item, tab)) === pointKey(pointed),
+        )
+      : -1;
+    const next =
+      items[Math.max(0, Math.min(items.length - 1, at < 0 ? 0 : at + step))]!;
+    setPointed(pointOf(next, tab));
+    next.scrollIntoView({ block: "nearest" });
+  };
 
   const targets = () =>
     selected.size ? [...selected] : shown[cursor] ? [shown[cursor]!.key] : [];
@@ -675,12 +869,13 @@ export function MrEffortView({
       }
       return;
     }
-    if (target.closest("input, textarea, select")) return;
+    if (target.closest("input, textarea, select, [contenteditable]")) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      if (diff) setDiff(null);
+      if (helpOpen) setHelpOpen(false);
+      else if (diff) setDiff(null);
       else if (history) setHistory(null);
       else if (selected.size) setSelected(new Set());
       else onBack();
@@ -719,10 +914,20 @@ export function MrEffortView({
     let handled = true;
     const tabKey = TABS.find((each) => each.key === fed.key);
     if (tabKey) setTab(tabKey.tab);
-    else if (fed.key === "c") onLeader();
+    else if (fed.key === "c") commentHere();
+    else if (fed.key === "C") threads.comment({ tab });
+    else if (fed.key === "gl") onLeader();
+    else if (fed.key === "n" || fed.key === "N")
+      stepThread(fed.key === "n" ? 1 : -1, false);
+    else if (fed.key === "gn" || fed.key === "gN")
+      stepThread(fed.key === "gn" ? 1 : -1, true);
+    else if (fed.key === "?") setHelpOpen((open) => !open);
     else if (fed.key === ":") setCommand("");
-    else if (tab !== "ledger") handled = false;
-    else if (fed.key === "j" || fed.key === "ArrowDown") move(cursor + count);
+    else if (tab !== "ledger") {
+      if (fed.key === "j" || fed.key === "ArrowDown") movePointed(count);
+      else if (fed.key === "k" || fed.key === "ArrowUp") movePointed(-count);
+      else handled = false;
+    } else if (fed.key === "j" || fed.key === "ArrowDown") move(cursor + count);
     else if (fed.key === "k" || fed.key === "ArrowUp") move(cursor - count);
     else if (fed.key === "gg") move((fed.count ?? 1) - 1);
     else if (fed.key === "G") move(fed.count ? fed.count - 1 : shown.length);
@@ -776,6 +981,74 @@ export function MrEffortView({
     );
   }, [detail]);
 
+  const hasThreadsAt = (point: EffortPoint) =>
+    threads.at(point).length > 0 ||
+    (!!threads.draft && pointKey(threads.draft.point) === pointKey(point));
+  /** Open threads on each commit of the ledger, for its rows. */
+  const ledgerThreads = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const thread of threads.threads) {
+      const part = thread.anchor.effort!;
+      if (
+        part.tab === "ledger" &&
+        part.item?.kind === "commit" &&
+        !thread.resolved
+      )
+        counts.set(part.item.key, (counts.get(part.item.key) ?? 0) + 1);
+    }
+    return counts;
+  }, [threads.threads]);
+  /**
+   * The tab's threads whose item it no longer shows (a plan dropped, a
+   * commit gone from the source): listed with the tab's own, none lost.
+   */
+  const away = useMemo(() => {
+    if (!detail || !summary) return [];
+    const drawn = new Set<string>();
+    const add = (point: EffortPoint) => drawn.add(pointKey(point));
+    if (tab === "progress") {
+      for (const point of counterPoints(summary)) add(point);
+      for (const [dir] of dirs.slice(0, 30))
+        add({ tab, item: { kind: "directory", key: dir } });
+    } else if (tab === "ledger")
+      for (const commit of detail.commits) add(ledgerPoint(commit));
+    else if (tab === "plans") {
+      const bykey = new Map(detail.commits.map((each) => [each.key, each]));
+      for (const plan of detail.plans ?? []) {
+        add({ tab, item: { kind: "plan", key: plan.id } });
+        for (const key of plan.commits.slice(0, 12)) {
+          const commit = bykey.get(key);
+          if (commit) add(commitPoint(tab, commit, plan.id));
+        }
+      }
+    } else if (tab === "feeders")
+      for (const feeder of detail.feeders)
+        add({ tab, item: { kind: "feeder", key: feeder.ref } });
+    else if (tab === "changes" && detail.changes) {
+      const bykey = new Map(detail.commits.map((each) => [each.key, each]));
+      for (const [title, keys] of changeLists(detail.changes)) {
+        add({ tab, item: { kind: "change", key: title } });
+        for (const key of keys.slice(0, 30)) {
+          const commit = bykey.get(key);
+          if (commit) add(commitPoint(tab, commit));
+        }
+      }
+      for (const title of ["Feeders landed", "Parts merged"])
+        add({ tab, item: { kind: "change", key: title } });
+    }
+    return threads.threads.filter((thread: ReviewThread) => {
+      const part = thread.anchor.effort!;
+      if (part.tab !== tab || !part.item) return false;
+      return !drawn.has(
+        pointKey({
+          tab: part.tab,
+          item: part.item,
+          ...(part.plan ? { plan: part.plan } : {}),
+        }),
+      );
+    });
+  }, [detail, summary, tab, dirs, threads.threads]);
+
   let body: ReactNode;
   if (error) body = <p className="assistant-error">{error}</p>;
   else if (!detail || !summary)
@@ -784,7 +1057,10 @@ export function MrEffortView({
     body = (
       <div className="mr-effort-progress">
         <EffortBar summary={summary} />
-        <p>{countsText(summary)}</p>
+        <EffortCounts summary={summary} pointed={pointed} />
+        {counterPoints(summary).map((point) => (
+          <EffortThreadsAt key={pointKey(point)} point={point} />
+        ))}
         {summary.overlaps.length ? (
           <ul className="mr-effort-overlaps" aria-label="Overlaps">
             {summary.overlaps.map((each) => (
@@ -806,14 +1082,29 @@ export function MrEffortView({
             </tr>
           </thead>
           <tbody>
-            {dirs.slice(0, 30).map(([dir, counts]) => (
-              <tr key={dir}>
-                <td>{dir}</td>
-                {MR_DISPOSITIONS.map((each) => (
-                  <td key={each}>{counts[each] ?? ""}</td>
-                ))}
-              </tr>
-            ))}
+            {dirs.slice(0, 30).map(([dir, counts]) => {
+              const point: EffortPoint = {
+                tab: "progress",
+                item: { kind: "directory", key: dir },
+              };
+              return (
+                <Fragment key={dir}>
+                  <tr {...effortItemProps(point, pointed)}>
+                    <td>{dir}</td>
+                    {MR_DISPOSITIONS.map((each) => (
+                      <td key={each}>{counts[each] ?? ""}</td>
+                    ))}
+                  </tr>
+                  {hasThreadsAt(point) ? (
+                    <tr className="mr-effort-threads-row">
+                      <td colSpan={MR_DISPOSITIONS.length + 1}>
+                        <EffortThreadsAt point={point} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -853,7 +1144,11 @@ export function MrEffortView({
             })
           }
           {...(detail.proposals ? { proposals: detail.proposals } : {})}
+          threads={ledgerThreads}
         />
+        {shown[cursor] ? (
+          <EffortThreadsAt point={ledgerPoint(shown[cursor]!)} />
+        ) : null}
         {shown[cursor] && detail.proposals?.[shown[cursor]!.key]?.length ? (
           <section
             className="mr-effort-proposals"
@@ -966,23 +1261,38 @@ export function MrEffortView({
       </>
     );
   else if (tab === "plans")
-    body = <PlansList detail={detail} write={write} makePart={makePart} />;
+    body = (
+      <PlansList
+        detail={detail}
+        write={write}
+        makePart={makePart}
+        pointed={pointed}
+      />
+    );
   else if (tab === "changes")
     body = (
       <WhatChanged
         detail={detail}
+        pointed={pointed}
         onSeen={() => void mrReviewsCall("effort.seen", { id }).then(load)}
       />
     );
   else
     body = detail.feeders.length ? (
       <ul className="mr-effort-feeders" aria-label="Feeders">
-        {detail.feeders.map((feeder) => (
-          <li key={feeder.ref}>
-            <code>{feeder.ref.replace(/^refs\/(heads|remotes)\//, "")}</code>:{" "}
-            {feeder.notReady} not on the source yet, {feeder.drift} behind it
-          </li>
-        ))}
+        {detail.feeders.map((feeder) => {
+          const point: EffortPoint = {
+            tab: "feeders",
+            item: { kind: "feeder", key: feeder.ref },
+          };
+          return (
+            <li key={feeder.ref} {...effortItemProps(point, pointed)}>
+              <code>{feeder.ref.replace(/^refs\/(heads|remotes)\//, "")}</code>:{" "}
+              {feeder.notReady} not on the source yet, {feeder.drift} behind it
+              <EffortThreadsAt point={point} />
+            </li>
+          );
+        })}
       </ul>
     ) : (
       <p className="assistant-hint">
@@ -991,84 +1301,252 @@ export function MrEffortView({
     );
 
   return (
-    <section
-      ref={rootRef}
-      tabIndex={-1}
-      className="mr-effort-view"
-      aria-label={`Effort ${detail?.effort.name ?? ""}`}
-      onKeyDown={onKey}
-    >
-      <div className="assistant-section-heading">
-        <button type="button" className="ghost" onClick={onBack}>
-          <ChevronLeft size={13} /> All reviews
-        </button>
-        <strong>{detail?.effort.name}</strong>
-        <button
-          type="button"
-          className="ghost"
-          title="Read it again now"
-          onClick={() =>
-            void mrReviewsCall("effort.refresh", { id }).then(load)
-          }
-        >
-          <RefreshCw size={13} />
-        </button>
-        <button type="button" className="ghost" onClick={onLeader} title="c">
-          Leader session
-        </button>
-        <button
-          type="button"
-          className="ghost"
-          title="Delete this effort, after a confirmation (:delete)"
-          onClick={() => setDeleting(true)}
-        >
-          <Trash2 size={13} /> {"Delete effort\u2026"}
-        </button>
-      </div>
-      <nav className="assistant-primary-nav" aria-label="Effort views">
-        {TABS.map((each) => (
+    <EffortThreadsProvider value={threads}>
+      <section
+        ref={rootRef}
+        tabIndex={-1}
+        className="mr-effort-view"
+        aria-label={`Effort ${detail?.effort.name ?? ""}`}
+        onKeyDown={onKey}
+        onClick={(event) => {
+          // A click points at what it is on, for c to comment on.
+          const target = event.target as Element;
+          if (tab === "ledger" || target.closest(".mr-effort-thread")) return;
+          const item = target.closest("[data-effort-item]");
+          if (item) setPointed(pointOf(item, tab));
+        }}
+      >
+        <div className="assistant-section-heading">
+          <button type="button" className="ghost" onClick={onBack}>
+            <ChevronLeft size={13} /> All reviews
+          </button>
+          <strong>{detail?.effort.name}</strong>
           <button
-            key={each.tab}
             type="button"
             className="ghost"
-            aria-pressed={tab === each.tab}
-            title={each.key}
-            onClick={() => setTab(each.tab)}
+            title="Read it again now"
+            onClick={() =>
+              void mrReviewsCall("effort.refresh", { id }).then(load)
+            }
           >
-            {each.label}
-            {each.tab === "changes" && summary?.changed
-              ? ` (${summary.changed})`
-              : ""}
+            <RefreshCw size={13} />
           </button>
-        ))}
-      </nav>
-      {body}
-      {command !== null ? (
-        <div className="mr-reviews-command">
-          <span aria-hidden="true">:</span>
-          <input
-            ref={commandRef}
-            type="text"
-            aria-label="Ledger command"
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            onBlur={() => setCommand(null)}
-          />
+          <button
+            type="button"
+            className="ghost"
+            onClick={onLeader}
+            title="The Claude session of its head workspace (gl)"
+          >
+            Leader session
+          </button>
+          <button
+            type="button"
+            className="ghost mr-effort-comment"
+            title="Comment for the leader session on the words selected, else on what the cursor is on (c); on the tab (C)"
+            // Keeps the words selected while pressed.
+            onPointerDown={(event) => event.preventDefault()}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={commentHere}
+          >
+            <MessageSquarePlus size={13} /> Comment
+          </button>
+          {threads.open ? (
+            <button
+              type="button"
+              className="mr-reviews-chip is-changed mr-effort-open-threads"
+              title="Open threads on this effort: the next one (gn)"
+              onClick={() => stepThread(1, true)}
+            >
+              {threads.open} open thread{threads.open === 1 ? "" : "s"}
+            </button>
+          ) : null}
+          {threads.waiting ? (
+            <span
+              className="mr-reviews-chip is-wait mr-effort-waiting"
+              role="status"
+              title={threads.waiting.reason}
+            >
+              {threads.waiting.count}{" "}
+              {threads.waiting.noLeader
+                ? "waiting for the leader session"
+                : "not delivered"}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="ghost"
+            title="Delete this effort, after a confirmation (:delete)"
+            onClick={() => setDeleting(true)}
+          >
+            <Trash2 size={13} /> {"Delete effort\u2026"}
+          </button>
         </div>
+        <nav className="assistant-primary-nav" aria-label="Effort views">
+          {TABS.map((each) => (
+            <button
+              key={each.tab}
+              type="button"
+              className="ghost"
+              aria-pressed={tab === each.tab}
+              title={each.key}
+              onClick={() => setTab(each.tab)}
+            >
+              {each.label}
+              {each.tab === "changes" && summary?.changed
+                ? ` (${summary.changed})`
+                : ""}
+            </button>
+          ))}
+        </nav>
+        {detail && summary ? (
+          <EffortThreadsAt point={{ tab }} extra={away} />
+        ) : null}
+        {body}
+        {threads.error ? (
+          <p className="assistant-error" role="alert">
+            {threads.error}{" "}
+            <button
+              type="button"
+              className="ghost"
+              onClick={threads.clearError}
+            >
+              Dismiss
+            </button>
+          </p>
+        ) : null}
+        {helpOpen ? (
+          <div className="agent-tasks-help" role="note" aria-label="Keys">
+            <dl>
+              {EFFORT_KEYS.map(([keys, label]) => (
+                <div key={keys}>
+                  <dt>
+                    {keys
+                      .split(" ")
+                      .map((key, index) =>
+                        key === "/" ? (
+                          <span key={index}> / </span>
+                        ) : (
+                          <kbd key={index}>{key}</kbd>
+                        ),
+                      )}
+                  </dt>
+                  <dd>{label}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {selection
+          ? createPortal(
+              <button
+                type="button"
+                className="chat-thread-select mr-effort-select"
+                style={{ left: selection.x, top: selection.y }}
+                // Keeps the selection while the button is pressed.
+                onPointerDown={(event) => event.preventDefault()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  threads.comment(
+                    pointOf(selection.element, tab),
+                    selection.quote,
+                  );
+                }}
+              >
+                Comment
+              </button>,
+              document.body,
+            )
+          : null}
+        {command !== null ? (
+          <div className="mr-reviews-command">
+            <span aria-hidden="true">:</span>
+            <input
+              ref={commandRef}
+              type="text"
+              aria-label="Ledger command"
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              onBlur={() => setCommand(null)}
+            />
+          </div>
+        ) : null}
+        <ConfirmDialog
+          open={deleting}
+          title={`Delete the effort ${detail?.effort.name ?? ""}?`}
+          message={`${detail?.effort.name ?? "This effort"} leaves Reviews with its card, its ledger marks, its plans and its history${summary ? ` (${summary.total} commits)` : ""}. Its parts' branches and worktrees stay as they are, and so do the other efforts. Undo brings it all back.`}
+          confirmLabel="Delete effort"
+          danger
+          onConfirm={() => void deleteEffort()}
+          onClose={() => {
+            setDeleting(false);
+            rootRef.current?.focus({ preventScroll: true });
+          }}
+        />
+      </section>
+    </EffortThreadsProvider>
+  );
+}
+
+/** The counts of the Progress tab, each one a place to comment on. */
+function counterPoints(summary: MrEffortSummary): EffortPoint[] {
+  return [
+    "total",
+    ...MR_DISPOSITIONS.filter((each) => summary.counts[each]),
+    ...(summary.notReady ? ["not_ready"] : []),
+  ].map((key) => ({
+    tab: "progress",
+    item: { kind: "counter", key },
+  }));
+}
+
+/** countsText, each count one can point at. */
+function EffortCounts({
+  summary,
+  pointed,
+}: {
+  summary: MrEffortSummary;
+  pointed: EffortPoint | null;
+}) {
+  const at = (key: string, label: string): EffortPoint => ({
+    tab: "progress",
+    item: { kind: "counter", key, label },
+  });
+  const parts = MR_DISPOSITIONS.filter((each) => summary.counts[each]);
+  return (
+    <p className="mr-effort-counts">
+      <span
+        {...effortItemProps(at("total", `${summary.total} commits`), pointed)}
+      >
+        {summary.total} commits
+      </span>
+      :{" "}
+      {parts.length
+        ? parts.map((each, index) => {
+            const label = `${summary.counts[each]} ${DISPOSITION_TITLE[each]}`;
+            return (
+              <Fragment key={each}>
+                {index ? ", " : ""}
+                <span {...effortItemProps(at(each, label), pointed)}>
+                  {label}
+                </span>
+              </Fragment>
+            );
+          })
+        : "none read yet"}
+      {summary.notReady ? (
+        <>
+          ;{" "}
+          <span
+            {...effortItemProps(
+              at("not_ready", `${summary.notReady} not ready in feeders`),
+              pointed,
+            )}
+          >
+            {summary.notReady} not ready in feeders
+          </span>
+        </>
       ) : null}
-      <ConfirmDialog
-        open={deleting}
-        title={`Delete the effort ${detail?.effort.name ?? ""}?`}
-        message={`${detail?.effort.name ?? "This effort"} leaves Reviews with its card, its ledger marks, its plans and its history${summary ? ` (${summary.total} commits)` : ""}. Its parts' branches and worktrees stay as they are, and so do the other efforts. Undo brings it all back.`}
-        confirmLabel="Delete effort"
-        danger
-        onConfirm={() => void deleteEffort()}
-        onClose={() => {
-          setDeleting(false);
-          rootRef.current?.focus({ preventScroll: true });
-        }}
-      />
-    </section>
+    </p>
   );
 }
 
@@ -1077,8 +1555,10 @@ function PlansList({
   detail,
   write,
   makePart,
+  pointed,
 }: {
   detail: EffortDetail;
+  pointed: EffortPoint | null;
   write: (
     method: string,
     params: Record<string, unknown>,
@@ -1092,14 +1572,24 @@ function PlansList({
   if (!plans.length)
     return (
       <p className="assistant-hint">
-        No planned request yet. The leader session proposes them (c), or select
+        No planned request yet. The leader session proposes them (gl), or select
         commits in the Ledger and :plan NAME.
       </p>
     );
   return (
     <ul className="mr-effort-plans" aria-label="Planned requests">
       {plans.map((plan) => (
-        <li key={plan.id} className={`is-${plan.state}`}>
+        <li
+          key={plan.id}
+          className={`is-${plan.state}`}
+          {...effortItemProps(
+            {
+              tab: "plans",
+              item: { kind: "plan", key: plan.id, label: plan.name },
+            },
+            pointed,
+          )}
+        >
           <div className="mr-reviews-dense-head">
             <strong>{plan.name}</strong>
             <span className="mr-reviews-dense-chips">
@@ -1123,13 +1613,23 @@ function PlansList({
               ) : null}
             </span>
           </div>
+          <EffortThreadsAt
+            point={{ tab: "plans", item: { kind: "plan", key: plan.id } }}
+          />
           <ol className="mr-effort-plan-commits">
             {plan.commits.slice(0, 12).map((key) => {
               const commit = bykey.get(key);
+              const point = commit
+                ? commitPoint("plans", commit, plan.id)
+                : null;
               return (
-                <li key={key}>
+                <li
+                  key={key}
+                  {...(point ? effortItemProps(point, pointed) : {})}
+                >
                   <code>{commit?.sha.slice(0, 10) ?? "gone"}</code>{" "}
                   {commit?.subject ?? "no longer on the source"}
+                  {point ? <EffortThreadsAt point={point} /> : null}
                 </li>
               );
             })}
@@ -1192,32 +1692,66 @@ function PlansList({
 }
 
 /** What changed since the user last looked at the effort. */
+/** What changed's lists of commits, by their heading. */
+function changeLists(changes: MrEffortChanges): [string, string[]][] {
+  return [
+    ["New unsorted commits", changes.unsorted],
+    ["Landed upstream", changes.landed],
+    ["Now in review", changes.inReview],
+    ["Matches to confirm (Ledger, :confirm or :reject)", changes.proposals],
+    ["Upstream anyway (said not for upstream)", changes.upstreamAnyway],
+  ];
+}
+
+/** A part of What changed, by its heading. */
+function changePoint(title: string): EffortPoint {
+  return { tab: "changes", item: { kind: "change", key: title } };
+}
+
 function WhatChanged({
   detail,
+  pointed,
   onSeen,
 }: {
   detail: EffortDetail;
+  pointed: EffortPoint | null;
   onSeen: () => void;
 }) {
   const changes = detail.changes;
   const bykey = new Map(detail.commits.map((commit) => [commit.key, commit]));
+  const heading = (title: string, children: ReactNode) => (
+    <>
+      <h4 {...effortItemProps(changePoint(title), pointed)}>{children}</h4>
+      <EffortThreadsAt point={changePoint(title)} />
+    </>
+  );
   const list = (title: string, keys: string[]) =>
     keys.length ? (
       <section key={title}>
-        <h4>
-          {title} ({keys.length})
-        </h4>
+        {heading(
+          title,
+          <>
+            {title} ({keys.length})
+          </>,
+        )}
         <ul>
-          {keys.slice(0, 30).map((key) => (
-            <li key={key}>
-              <code>{bykey.get(key)?.sha.slice(0, 10)}</code>{" "}
-              {bykey.get(key)?.subject ?? key}
-            </li>
-          ))}
+          {keys.slice(0, 30).map((key) => {
+            const commit = bykey.get(key);
+            const point = commit ? commitPoint("changes", commit) : null;
+            return (
+              <li key={key} {...(point ? effortItemProps(point, pointed) : {})}>
+                <code>{commit?.sha.slice(0, 10)}</code> {commit?.subject ?? key}
+                {point ? <EffortThreadsAt point={point} /> : null}
+              </li>
+            );
+          })}
           {keys.length > 30 ? <li>and {keys.length - 30} more</li> : null}
         </ul>
       </section>
     ) : null;
+  const [unsorted, landed, inReview, proposals, upstreamAnyway] = changes
+    ? changeLists(changes)
+    : [];
   if (!changes) return <p className="assistant-hint">Nothing read yet.</p>;
   const empty =
     !changes.unsorted.length &&
@@ -1240,12 +1774,12 @@ function WhatChanged({
         </button>
       </p>
       {empty ? <p>Nothing new.</p> : null}
-      {list("New unsorted commits", changes.unsorted)}
-      {list("Landed upstream", changes.landed)}
-      {list("Now in review", changes.inReview)}
+      {list(...unsorted!)}
+      {list(...landed!)}
+      {list(...inReview!)}
       {changes.feeders.length ? (
         <section>
-          <h4>Feeders landed</h4>
+          {heading("Feeders landed", "Feeders landed")}
           <ul>
             {changes.feeders.map((each) => (
               <li key={each.ref}>
@@ -1259,7 +1793,7 @@ function WhatChanged({
       ) : null}
       {changes.partsMerged.length ? (
         <section>
-          <h4>Parts merged</h4>
+          {heading("Parts merged", "Parts merged")}
           <ul>
             {changes.partsMerged.map((name) => (
               <li key={name}>{name}</li>
@@ -1267,11 +1801,8 @@ function WhatChanged({
           </ul>
         </section>
       ) : null}
-      {list(
-        "Matches to confirm (Ledger, :confirm or :reject)",
-        changes.proposals,
-      )}
-      {list("Upstream anyway (said not for upstream)", changes.upstreamAnyway)}
+      {list(...proposals!)}
+      {list(...upstreamAnyway!)}
     </div>
   );
 }

@@ -519,7 +519,9 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     );
     expect(card.textContent).toContain("2 changed");
     expect(card.textContent).toContain("1 to confirm");
-    await press("c");
+    // gl: its leader session (c comments, as in Changes).
+    await press("g");
+    await press("l");
     expect(leaders).toEqual([2]);
 
     // Delete: :delete asks first, naming the effort and what goes with it;

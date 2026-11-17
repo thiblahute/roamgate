@@ -192,3 +192,81 @@
   font-size: 0.85em;
   white-space: pre;
 }
+
+/* Comments on the effort's view, for its leader session: in the chats'
+   comment color, whatever the theme and accent. */
+.mr-effort-view {
+  --chat-comment: #e0a84f;
+}
+
+:root[data-theme="light"] .mr-effort-view {
+  --chat-comment: #9a6200;
+}
+
+.mr-effort-view [data-effort-item] {
+  border-radius: 4px;
+  cursor: default;
+}
+
+.mr-effort-view [data-pointed="true"] {
+  outline: 1px solid var(--chat-comment);
+  outline-offset: 1px;
+}
+
+.mr-effort-threads {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.mr-effort-threads-row > td {
+  padding: 0 4px;
+}
+
+.mr-effort-thread:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mr-effort-quote {
+  margin: 0 0 6px;
+  padding: 2px 8px;
+  border-left: 2px solid var(--chat-comment);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.mr-effort-thread-count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: 6px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chat-comment) 30%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  text-align: center;
+}
+
+.mr-effort-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Above the Reviews pane it is drawn over. */
+.chat-thread-select.mr-effort-select {
+  z-index: 5800;
+}
+
+.mr-effort-open-threads,
+.mr-effort-waiting {
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.mr-effort-open-threads {
+  color: var(--text);
+  cursor: pointer;
+}
