@@ -187,7 +187,15 @@ describe("typing to the companion", () => {
     expect(ranger.calls[ranger.calls.length - 1]).toBe(
       "ranger Qu'est-ce qui attend ?",
     );
-    expect(lines().slice(-1)[0]).toBe("said: Ranger: Ranger says hi.");
+    // Shown as asked, as work given to a session is, with its answer.
+    expect(lines().slice(-2)).toEqual([
+      "said: Je demande à Ranger.",
+      "job ranger answered: Qu'est-ce qui attend ?",
+    ]);
+    const rangerJob = companionCallState().log.slice(-1)[0];
+    expect(rangerJob?.kind === "job" ? rangerJob.answer : null).toBe(
+      "Ranger says hi.",
+    );
     const reviews = setup({
       to: "reviews",
       reply: "Je demande à l'agent des reviews.",
@@ -197,7 +205,9 @@ describe("typing to the companion", () => {
     expect(reviews.calls[reviews.calls.length - 1]).toBe(
       "reviews Des MRs qui touchent validate ?",
     );
-    expect(lines().slice(-1)[0]).toBe("said: Reviews: Two MRs touch validate.");
+    expect(lines().slice(-1)[0]).toBe(
+      "job reviews answered: Des MRs qui touchent validate ?",
+    );
     const open = setup({ to: "open", pane: "local/w3:p1", say: "docs" });
     await sendCompanionText("Montre-moi docs.", open.deps);
     expect(open.calls[open.calls.length - 1]).toBe("show local/w3:p1");

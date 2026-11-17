@@ -25,6 +25,7 @@ import { type State, store } from "./store";
 import { ackLanguage } from "./voiceAck";
 import {
   answersContext,
+  askCompanionAgent,
   companionRouteAction,
   findAnswer,
   sessionLabel,
@@ -38,6 +39,8 @@ import {
   forwardWork,
   parseVoiceSessionId,
   plainText,
+  RANGER_VOICE_SESSION,
+  REVIEWS_VOICE_SESSION,
   routeSpeech,
   type VoiceRoute,
   type VoiceSessionInfo,
@@ -223,19 +226,16 @@ export async function sendCompanionText(
       return route;
     }
     case "ranger":
+    case "reviews": {
+      // Shown as work given to a session is: asked, then its answer or
+      // why it was not asked.
       if (reply) say(reply);
-      void deps.ranger(said).then(
-        (answer) => say(`Ranger: ${plainText(answer)}`),
-        (error: Error) => say(`Ranger: ${error.message}`),
-      );
+      const chat =
+        route.to === "ranger" ? RANGER_VOICE_SESSION : REVIEWS_VOICE_SESSION;
+      const ask = route.to === "ranger" ? deps.ranger : deps.reviews;
+      void askCompanionAgent(chat, said, () => ask(said)).catch(() => {});
       return route;
-    case "reviews":
-      if (reply) say(reply);
-      void deps.reviews(said).then(
-        (answer) => say(`Reviews: ${plainText(answer)}`),
-        (error: Error) => say(`Reviews: ${error.message}`),
-      );
-      return route;
+    }
     case "errand":
       if (reply) say(reply);
       if (route.job)

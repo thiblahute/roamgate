@@ -39,7 +39,11 @@ import {
   cancelTool,
   parseVoiceSessionId,
   plainText,
+  RANGER_VOICE_SESSION,
+  REVIEWS_VOICE_SESSION,
 } from "../voiceRoute";
+import { openAssistant } from "../assistant";
+import { openMrReviews } from "../mrReviewsOpen";
 import { sendCompanionText } from "../companionText";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { answerCompanionTool } from "../companionWeb";
@@ -414,6 +418,17 @@ export function CompanionPanel({
   const hearing = call.open ? hearingNow(call) : null;
   hearingRef.current = hearing !== null;
   const open = (session: string) => {
+    // Ranger's or the reviews agent's chat: a question the companion gave.
+    if (session === RANGER_VOICE_SESSION) {
+      onClose();
+      openAssistant();
+      return;
+    }
+    if (session === REVIEWS_VOICE_SESSION) {
+      onClose();
+      openMrReviews(undefined, "chat");
+      return;
+    }
     const target = parseVoiceSessionId(session);
     if (!target) return;
     onClose();
@@ -526,7 +541,13 @@ export function CompanionPanel({
                     <button
                       type="button"
                       className="companion-panel-session"
-                      title="Open this session's chat"
+                      title={
+                        entry.session === RANGER_VOICE_SESSION
+                          ? "Open Ranger's chat"
+                          : entry.session === REVIEWS_VOICE_SESSION
+                            ? "Open the reviews agent's chat"
+                            : "Open this session's chat"
+                      }
                       onClick={() => open(entry.session)}
                     >
                       {entry.label}

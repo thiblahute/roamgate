@@ -48,7 +48,11 @@ export type CompanionLogEntry =
       id: number;
       at: number;
       kind: "job";
-      /** `<connection>/<pane>`, and how it is named aloud. */
+      /**
+       * `<connection>/<pane>`, or "ranger" and "reviews" for Ranger and the
+       * reviews agent (voiceCompanion.ts askCompanionAgent), and how it is
+       * named aloud.
+       */
       session: string;
       label: string;
       /** What was given to the session. */

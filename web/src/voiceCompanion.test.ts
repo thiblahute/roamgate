@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { AgentPermissionPrompt } from "../../shared/review";
 import {
   __resetCompanionCallForTests,
+  companionRecent,
   COMPANION_VOICE_KEY,
   companionCallState,
   companionName,
@@ -20,6 +21,7 @@ import {
   answerPromptByVoice,
   answersContext,
   answerText,
+  askCompanionAgent,
   companionRouteAction,
   findAnswer,
   isReadWholeRequest,
@@ -430,5 +432,70 @@ describe("a call with the companion itself", () => {
     expect(companionName()).toBe("Jarvis");
     setCompanionName("");
     expect(companionName()).toBe("Companion");
+  });
+});
+
+describe("a question the companion gives Ranger or the reviews agent", () => {
+  afterEach(() => __resetCompanionCallForTests());
+  const jobs = () =>
+    companionCallState().log.flatMap((entry) =>
+      entry.kind === "job"
+        ? [
+            `${entry.label} (${entry.session}) ${entry.status}: ${entry.words}${
+              entry.context ? ` [${entry.context}]` : ""
+            }${entry.answer ? ` -> ${entry.answer}` : ""}`,
+          ]
+        : [],
+    );
+
+  test("shows it asked at once, a second one too, and each answer as it comes", async () => {
+    const answers: ((answer: string) => void)[] = [];
+    const asked: string[] = [];
+    const ask = (words: string) => () => {
+      asked.push(words);
+      return new Promise<string>((resolve) => answers.push(resolve));
+    };
+    const first = askCompanionAgent(
+      "ranger",
+      "Où en est roamgate-dictation ?",
+      ask("first"),
+      "Answer in French.",
+    );
+    // Asked again while the first one runs: asked, and shown, too.
+    const second = askCompanionAgent(
+      "ranger",
+      "Tu l'as bien reçu ?",
+      ask("second"),
+    );
+    expect(asked).toEqual(["first", "second"]);
+    expect(jobs()).toEqual([
+      "Ranger (ranger) running: Où en est roamgate-dictation ? [Answer in French.]",
+      "Ranger (ranger) running: Tu l'as bien reçu ?",
+    ]);
+    // The front knows it asked, and that the answer is still to come.
+    expect(companionRecent()).toContain(
+      'You gave Ranger: "Où en est roamgate-dictation ?", running',
+    );
+    answers[1]!("**Oui**, reçu.");
+    expect(await second).toBe("**Oui**, reçu.");
+    answers[0]!("Elle attend ton OK.");
+    expect(await first).toBe("Elle attend ton OK.");
+    expect(jobs()).toEqual([
+      "Ranger (ranger) answered: Où en est roamgate-dictation ? [Answer in French.] -> Elle attend ton OK.",
+      "Ranger (ranger) answered: Tu l'as bien reçu ? -> Oui, reçu.",
+    ]);
+  });
+
+  test("says why it was not asked, and gives the error back", async () => {
+    await expect(
+      askCompanionAgent("reviews", "Anything new on GES?", async () => {
+        throw new Error("The reviews agent is unavailable.");
+      }),
+    ).rejects.toThrow("The reviews agent is unavailable.");
+    await askCompanionAgent("ranger", "What waits on me?", async () => "  ");
+    expect(jobs()).toEqual([
+      "The reviews agent (reviews) not started: Anything new on GES? -> The reviews agent is unavailable.",
+      "Ranger (ranger) no answer: What waits on me?",
+    ]);
   });
 });

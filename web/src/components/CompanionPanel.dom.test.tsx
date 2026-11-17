@@ -224,6 +224,86 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     await act(async () => root.unmount());
   });
 
+  test("a question given to Ranger shows as asked, then answered, and opens Ranger's chat", async () => {
+    await installBrowser();
+    const React = await import("react");
+    const { act } = React;
+    const { createRoot } = await import("react-dom/client");
+    const companion = await import("../companionCall");
+    const assistant = await import("../assistant");
+    const { askCompanionAgent } = await import("../voiceCompanion");
+    const { setVoiceFronting } = await import("../voiceFrontFlag");
+    const { CompanionPanel } = await import("./CompanionPanel");
+    companion.__resetCompanionCallForTests();
+    setVoiceFronting(true);
+    const opened = spyOn(assistant, "openAssistant").mockImplementation(
+      () => {},
+    );
+    let closed = 0;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => {
+        root.render(<CompanionPanel onClose={() => closed++} />);
+      });
+      const answers: ((answer: string) => void)[] = [];
+      const ask = () => new Promise<string>((resolve) => answers.push(resolve));
+      let first: Promise<string> = Promise.resolve("");
+      let second: Promise<string> = Promise.resolve("");
+      await act(async () => {
+        first = askCompanionAgent(
+          "ranger",
+          "Où en est roamgate-dictation ?",
+          ask,
+          "Answer in French.",
+        );
+        // Asked again before the first answer: shown too.
+        second = askCompanionAgent("ranger", "Tu l'as reçu ?", ask);
+      });
+      const jobs = () => [
+        ...document.querySelectorAll<HTMLElement>(".companion-panel-job"),
+      ];
+      const shown = () =>
+        jobs().map((job) =>
+          [
+            job.querySelector(".companion-panel-session")?.textContent,
+            job.querySelector(".companion-panel-status")?.textContent,
+            job.querySelector(".companion-panel-words")?.textContent,
+            job.querySelector(".companion-panel-answer")?.textContent ?? "",
+          ].join(" | "),
+        );
+      expect(shown()).toEqual([
+        "Ranger | Working | Où en est roamgate-dictation ? | ",
+        "Ranger | Working | Tu l'as reçu ? | ",
+      ]);
+      expect(jobs()[0]!.textContent).toContain(
+        "With context: Answer in French.",
+      );
+      await act(async () => {
+        answers[0]!("Elle attend ton OK pour le plan.");
+        answers[1]!("Oui.");
+        await Promise.all([first, second]);
+      });
+      expect(shown()).toEqual([
+        "Ranger | Answered | Où en est roamgate-dictation ? | Elle attend ton OK pour le plan.",
+        "Ranger | Answered | Tu l'as reçu ? | Oui.",
+      ]);
+      const name = jobs()[0]!.querySelector<HTMLButtonElement>(
+        ".companion-panel-session",
+      )!;
+      expect(name.title).toBe("Open Ranger's chat");
+      await act(async () => name.click());
+      expect(opened).toHaveBeenCalledTimes(1);
+      expect(closed).toBe(1);
+    } finally {
+      opened.mockRestore();
+      await act(async () => root.unmount());
+      host.remove();
+      companion.__resetCompanionCallForTests();
+    }
+  });
+
   test("asked without a call: its box takes the focus, a held call its buttons", async () => {
     await installBrowser();
     const React = await import("react");
