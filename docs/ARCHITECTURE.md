@@ -749,7 +749,7 @@ stored as keys), answering `{changed, override, version}`; setting
 `whose`, `next` or `stale` records the request's `mrActivityMarker` as
 `marker`, and an entry whose marker moved since carries `overrideOutdated`.
 `entries()` then gives every own request (`reasons` has `authored`) a
-`lane` (`your_move|waiting|blocked|not_sent|stale|done`), `laneWhy`, `next`
+`lane` (`your_move|waiting|merging|blocked|not_sent|stale|done`), `laneWhy`, `next`
 (`{text, from: "override"|"rule"|"inferred", by?}`), `dependsOn` and
 `parent` (`mr-reviews/lanes.ts`): an override's `stale` or `whose` when not
 outdated, else the inference (below) while it holds, else rules from the
@@ -785,10 +785,41 @@ override (`whose`, `stale`, `next`; branches keep their lane). RPC
 `bridge.mr_reviews.infer {key}` and tool `reviews_refresh {request?}` force
 one row; `mr_reviews.inference` (default on) turns the runs off.
 
+Scheduled merges and merge bots (`shared/mrReviewsMerge.ts`, section 15,
+D26): settings `mr_reviews.merge {after_labels?, bots?, bot_failures?,
+queue_labels?, scopes?: {<host | host/group/* | host/project>: lists}}`;
+an absent list is the default, a scope's list replaces the inherited one
+(the most specific scope wins per list), patterns are case-insensitive
+regexes checked when saved (20 a list, 200 characters). The own details'
+`full` fields (a new level above `nomerge`, the former full, then `basic`)
+add GitLab `assignees`, `reviewers`, `autoMergeEnabled`, `mergeUser` and
+the system notes among the last discussions, GitHub `assignees`,
+`reviewRequests`, `autoMergeRequest`, `mergeQueueEntry` and a
+`timelineItems` slice; `OwnDetails.merge` keeps them as `MrMergeFacts`
+(assignees, reviewers, auto-merge, queue, `approvedAt`, events, label add
+times). GitLab label add times come from REST `resource_label_events`
+(`InboxFetchers.gitlabLabelEvents`, kind `label-events`), read only for a
+request whose details were just read, that carries a merge-after label,
+and whose merge-after labels differ from the last read (`labelTimesFor`),
+at most 20 a refresh. `entries()` sets each open own request's `merge`
+(`{after?: {label, delayMs, delay, from: label|approval|update, since, at,
+ready}, bot?: {name, via: assignee|reviewer|label|queue|auto_merge,
+queued, position?, by?, failed?: {reason, at}}}`); a failure is the bot's
+latest note matching a pattern, the bot unassigning itself, a merge-queue
+removal or auto-merge turned off by someone else, newer than the bot's
+latest assignment or queueing. Rules: a failure is your move, queued is
+`merging`, a delay not over is waiting, over is your move; these rules are
+`exact` and win over a model inference, overrides still win. The merge
+state is part of a row's version and facts (`scheduled|ready|queued|
+failed:AT`), so the time passing, a queueing and a failure are meaningful
+events; the inbox sets a timer for the soonest mergeable time that
+notifies the pages and runs the inference (no forge call). Board tool rows
+carry `merge` (`mergeable_at`, `via`, `failed`).
+
 Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`, section 11):
 `{format: "roamgate-reviews", version: 1, exported_at, mr_reviews: {order,
 pinned, hidden, overrides, views, unsent, upstream_groups, upstream_skip,
-efforts} as stored, efforts: {<id>: {ledger (without journal), history}}}`
+efforts, merge} as stored, efforts: {<id>: {ledger (without journal), history}}}`
 in key-sorted JSON (`stableJson`), every key matching a secret pattern
 dropped and token-like values masked (`withoutSecrets`). `importChanges`
 diffs item by item (overrides and ledger entries by key, lists by id,

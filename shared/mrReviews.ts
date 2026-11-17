@@ -1,6 +1,11 @@
 import type { AssistantSource } from "./assistant";
 import { forgeRefLabel } from "./forge";
 import type { WorkspaceRef } from "./workspaceTree";
+import {
+  EMPTY_MR_MERGE_SETTINGS,
+  type MrMergeInfo,
+  type MrMergeSettings,
+} from "./mrReviewsMerge";
 import type {
   ForgePipelineStatus,
   ForgeProvider,
@@ -173,6 +178,8 @@ export type MrInboxEntry = MrItem & {
   local?: { unpushed: number; dirty: number; workspace: string };
   /** The upstreaming effort it is a part of (its name). */
   effort?: string;
+  /** A merge scheduled by a label, or a bot merging it (section 15). */
+  merge?: MrMergeInfo;
 };
 
 /** A branch headed upstream, as its workspace's checkout has it. */
@@ -275,6 +282,7 @@ export type MrOverrideField = (typeof MR_OVERRIDE_FIELDS)[number];
 export type MrLane =
   | "your_move"
   | "waiting"
+  | "merging"
   | "blocked"
   | "not_sent"
   | "stale"
@@ -283,6 +291,7 @@ export type MrLane =
 export const MR_LANES: MrLane[] = [
   "your_move",
   "waiting",
+  "merging",
   "blocked",
   "not_sent",
   "stale",
@@ -292,6 +301,7 @@ export const MR_LANES: MrLane[] = [
 export const MR_LANE_TITLE: Record<MrLane, string> = {
   your_move: "Your move",
   waiting: "Waiting",
+  merging: "Merging",
   blocked: "Blocked",
   not_sent: "Not proposed upstream yet",
   stale: "Stale",
@@ -489,6 +499,8 @@ export type MrReviewsSettings = {
   unsent: MrUnsent[];
   /** Upstreaming efforts, each declared on a group headed upstream. */
   efforts: MrEffort[];
+  /** Scheduled merges and merge bots: patterns and names, per scope. */
+  merge: MrMergeSettings;
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -518,6 +530,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   upstreamSkip: [],
   unsent: [],
   efforts: [],
+  merge: EMPTY_MR_MERGE_SETTINGS,
 };
 
 /**

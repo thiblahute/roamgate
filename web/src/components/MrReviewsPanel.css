@@ -479,6 +479,16 @@
   color: var(--accent);
 }
 
+.mr-reviews-lane.is-merging > .mr-reviews-lane-title {
+  color: var(--success-text, #3fb950);
+}
+
+/* The detail's Merge line: the bot, then the scheduled merge. */
+.mr-reviews-merge {
+  display: grid;
+  gap: 2px;
+}
+
 .mr-reviews-lane.is-blocked > .mr-reviews-lane-title,
 .mr-reviews-lane.is-stale > .mr-reviews-lane-title,
 .mr-reviews-lane.is-done > .mr-reviews-lane-title {
@@ -762,4 +772,31 @@
   align-items: center;
   padding: 2px 8px;
   font-size: 0.85em;
+}
+
+/* Scheduled merges and merge bots: the scope tabs above the lists. */
+.mr-merge-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mr-merge-scope {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mr-merge-scopes button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.mr-merge-scopes button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mr-merge-settings textarea {
+  font-family: var(--mono-font, monospace);
+  font-size: 12px;
 }

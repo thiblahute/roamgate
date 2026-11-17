@@ -300,7 +300,11 @@ describe("own requests: the inbox", () => {
         }
         if (query.includes("mergeRequests(iids:")) {
           asked.push(
-            query.includes("approvedBy") ? "details full" : "details basic",
+            query.includes("assignees")
+              ? "details full"
+              : query.includes("approvedBy")
+                ? "details nomerge"
+                : "details basic",
           );
           if (over.details) return over.details(query);
           return { data: { p0: { mergeRequests: { nodes: own } } } };
@@ -364,7 +368,7 @@ describe("own requests: the inbox", () => {
     expect(entry!.unread?.changed).toBe(false);
   });
 
-  test("a host refusing the full fields is asked the basic ones from then on", async () => {
+  test("a host refusing the full fields is asked fewer, then the basic ones from then on", async () => {
     const fake = fetchers({
       details: (query) =>
         query.includes("approvedBy")
@@ -383,6 +387,7 @@ describe("own requests: the inbox", () => {
       "inbox",
       "list",
       "details full",
+      "details nomerge",
       "details basic",
       "inbox",
       "list",

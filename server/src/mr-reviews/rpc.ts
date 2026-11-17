@@ -32,8 +32,10 @@ import {
   viewName,
   mrReviewsSettings,
   normalizeStoredMrReviews,
+  storedMergeOf,
   storedMrReviews,
 } from "./settings";
+import type { MrMergeSettings } from "../../../shared/mrReviewsMerge";
 
 /**
  * `bridge.mr_reviews.*`: the reviews inbox for every browser. Reads and
@@ -646,6 +648,13 @@ export async function handleMrReviewsRpc(
           pinned: value.pinned ?? current.pinned,
           hidden: value.hidden ?? current.hidden,
           stale_days: value.staleDays ?? current.staleDays,
+          ...(value.merge !== undefined
+            ? {
+                merge:
+                  storedMergeOf(value.merge as MrMergeSettings | undefined) ??
+                  {},
+              }
+            : {}),
         });
         return deps.saveSettings(mrReviewsSettings(stored));
       });

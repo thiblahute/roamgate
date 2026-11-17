@@ -1035,8 +1035,8 @@ review** and **Mine** above the list (`f`, `:all`, `:review`, `:mine`) show
 everything or one side only; the choice is kept in the browser.
 
 **Mine is a status board of your own work**, in lanes saying whose move it
-is: **Your move**, **Waiting**, **Blocked**, **Not proposed upstream yet**,
-**Stale** and **Merged or closed**, each with its count; `za` (or a click on
+is: **Your move**, **Waiting**, **Merging**, **Blocked**, **Not proposed
+upstream yet**, **Stale** and **Merged or closed**, each with its count; `za` (or a click on
 its title) folds a lane, kept in the browser. Each row is one line
 (reference, title, chips) and a second line saying the **next step**.
 Before anything is set by hand, the lane and the next step come from what
@@ -1180,6 +1180,27 @@ connection; never from the forge.
 
 The list is in your order: drag a request by its grip, or select it and
 use its up and down buttons (on a phone) or `J`/`K`, within its section.
+**Scheduled merges and merge bots** show on your own requests. A label
+that schedules the merge after a delay ("Merge after: 2 days",
+"merge-after: 1 week", "merge after 3d") gives a chip "merge after 2 days ·
+mergeable Thu 14:00", counted from when the label was added (else the last
+approval, else the last update; the chip's tooltip and the details say
+which): the request waits on time in **Waiting**, then becomes your move
+("Mergeable: the merge-after delay passed") the moment the time passes. A
+request a merge bot is merging (Marge-bot, bors, Mergify, Kodiak, assigned
+or as a reviewer), with a queue label, in GitHub's merge queue (with its
+position) or with auto-merge set goes to **Merging** ("queued to merge by
+marge-bot"). A failed attempt (the bot's note "I couldn't merge this
+branch: CI failed!", the bot unassigning itself, a removal from the merge
+queue) makes it your move with the bot's reason as the next step. These
+facts win over what Claude infers; what you set by hand still wins over
+them. The patterns, bot names, failure notes and queue labels are settings
+(**Scheduled merges and merge bots** in the Reviews settings, one per line,
+the defaults shown when empty), with scopes for a host, a group
+(`host/group/*`) or a project replacing the lists there ("Off here" turns
+a detection off). Roamgate only reads: it never assigns a bot, sets
+auto-merge or posts anything.
+
 Your order is kept in Roamgate's settings (`mr_reviews.order` in
 `settings.json`), so it is the same after a reload and on every device, and
 it wins over the inbox's own sort in every section, Suggested included. A
@@ -1190,8 +1211,9 @@ box (`/`) narrows the list to the requests whose title, project, author,
 number (`!123`, `#45`), branches, labels or next step hold every word typed,
 and reads GitLab-style tokens: `project:group/name` (or `group/*`),
 `label:x` (the forge's labels and yours), `waiting:me|reviewer|external|NAME`,
-`lane:your-move|waiting|blocked|not-sent|stale|done`,
-`state:open|draft|merged|closed`, `stale:yes`, `draft:yes|no`, `author:NAME`,
+`lane:your-move|waiting|merging|blocked|not-sent|stale|done`,
+`state:open|draft|merging|merged|closed`, `merge-after:yes|no|waiting|ready`,
+`bot:NAME|any|queued|failed`, `waiting:time`, `stale:yes`, `draft:yes|no`, `author:NAME`,
 `pipeline:failed|running|success`, `is:mine|review|pinned|suggested|unread`;
 `-` before a token or word excludes it, and several values of one key match
 any of them. Tab and the arrows complete keys, then values taken from the

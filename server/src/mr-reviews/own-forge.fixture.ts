@@ -1,4 +1,5 @@
 import type { InboxFetchers } from "./fetchers";
+import { parseLabelEvents } from "./queries";
 
 /**
  * A fake forge for the user's own requests, GitLab or GitHub: it answers
@@ -18,10 +19,23 @@ export type FakeRequest = {
   approvedBy?: string[];
   unresolved?: number;
   conflicts?: boolean;
+  /** Section 15: labels, who is assigned, auto-merge, the merge queue. */
+  labels?: string[];
+  /** GitLab's label events (REST), oldest first. */
+  labelEvents?: { label: string; action?: "add" | "remove"; at: string }[];
+  assignees?: string[];
+  reviewers?: string[];
+  autoMerge?: { by: string; at: string };
+  /** GitHub's merge queue. */
+  queue?: { position: number; at: string };
+  /** Notes: GitLab discussions (system ones too), GitHub comments. */
+  notes?: { author: string; at: string; body: string; system?: boolean }[];
+  /** GitHub timeline items, as the API gives them (__typename first). */
+  timeline?: Record<string, unknown>[];
 };
 
 export type FakeCall = {
-  kind: "inbox" | "list" | "details" | "other";
+  kind: "inbox" | "list" | "details" | "labels" | "other";
   query: string;
   /** Bytes sent and received. */
   bytes: number;
@@ -79,7 +93,42 @@ export function createOwnForge(
     targetBranch: "main",
     project: { fullPath: r.project },
     author: { username: "me" },
+    labels: { nodes: (r.labels ?? []).map((title) => ({ title })) },
   });
+  const gitlabMerge = (r: FakeRequest, query: string) =>
+    query.includes("assignees")
+      ? {
+          assignees: {
+            nodes: (r.assignees ?? []).map((username) => ({ username })),
+          },
+          reviewers: {
+            nodes: (r.reviewers ?? []).map((username) => ({ username })),
+          },
+          autoMergeEnabled: !!r.autoMerge,
+          mergeUser: r.autoMerge ? { username: r.autoMerge.by } : null,
+        }
+      : {};
+  const gitlabNotes = (r: FakeRequest, query: string) =>
+    query.includes("discussions(")
+      ? {
+          discussions: {
+            nodes: (r.notes ?? []).map((note) => ({
+              resolvable: false,
+              resolved: false,
+              notes: {
+                nodes: [
+                  {
+                    author: { username: note.author },
+                    createdAt: note.at,
+                    body: note.body,
+                    system: note.system === true,
+                  },
+                ],
+              },
+            })),
+          },
+        }
+      : {};
   const gitlabDetails = (r: FakeRequest, full: boolean) => ({
     iid: String(r.number),
     webUrl: url(r),
@@ -115,7 +164,38 @@ export function createOwnForge(
     baseRefName: "main",
     repository: { nameWithOwner: r.project },
     author: { login: "me" },
+    labels: { nodes: (r.labels ?? []).map((name) => ({ name })) },
   });
+  const githubMerge = (r: FakeRequest, query: string) =>
+    query.includes("mergeTimeline")
+      ? {
+          assignees: { nodes: (r.assignees ?? []).map((login) => ({ login })) },
+          reviewRequests: {
+            nodes: (r.reviewers ?? []).map((login) => ({
+              requestedReviewer: { login },
+            })),
+          },
+          autoMergeRequest: r.autoMerge
+            ? {
+                enabledAt: r.autoMerge.at,
+                enabledBy: { login: r.autoMerge.by },
+              }
+            : null,
+          mergeQueueEntry: r.queue
+            ? { position: r.queue.position, enqueuedAt: r.queue.at }
+            : null,
+          mergeTimeline: { nodes: r.timeline ?? [] },
+          lastComments: {
+            nodes: (r.notes ?? [])
+              .filter((note) => !note.system)
+              .map((note) => ({
+                author: { login: note.author },
+                createdAt: note.at,
+                body: note.body,
+              })),
+          },
+        }
+      : {};
   const githubDetails = (r: FakeRequest) => ({
     number: r.number,
     url: url(r),
@@ -230,9 +310,11 @@ export function createOwnForge(
                 .filter(
                   (r) => r.project === match[2] && iids.includes(r.number),
                 )
-                .map((r) =>
-                  gitlabDetails(r, full && query.includes("approvedBy")),
-                ),
+                .map((r) => ({
+                  ...gitlabDetails(r, full && query.includes("approvedBy")),
+                  ...gitlabNotes(r, query),
+                  ...gitlabMerge(r, query),
+                })),
             },
           };
         }
@@ -311,7 +393,9 @@ export function createOwnForge(
           const r = requests.find(
             (entry) => entry.project === project && entry.number === number,
           );
-          pulls[pull[1]!] = r ? githubDetails(r) : null;
+          pulls[pull[1]!] = r
+            ? { ...githubDetails(r), ...githubMerge(r, query) }
+            : null;
         }
         data[repo[1]!] = pulls;
       }
@@ -383,6 +467,23 @@ export function createOwnForge(
     },
     async gitlabDrafts() {
       return 0;
+    },
+    async gitlabLabelEvents(item) {
+      const r = requests.find(
+        (each) => each.project === item.project && each.number === item.number,
+      );
+      const body = (r?.labelEvents ?? []).map((event) => ({
+        action: event.action ?? "add",
+        label: { name: event.label },
+        created_at: event.at,
+      }));
+      calls.push({
+        kind: "labels",
+        query: `${item.project}!${item.number}`,
+        numbers: [item.number],
+        bytes: JSON.stringify(body).length,
+      });
+      return parseLabelEvents(body);
     },
   };
 

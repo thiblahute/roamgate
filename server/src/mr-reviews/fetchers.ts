@@ -4,6 +4,7 @@ import type { MrItem } from "../../../shared/mrReviews";
 import { ghHostLogin } from "../review/forge";
 import { type GlabContext, glab, glabHostAccess } from "../review/gitlab";
 import { forgeGate } from "../workspace/forge-calls";
+import { parseLabelEvents } from "./queries";
 
 /**
  * How the inbox asks the forges, on the bridge's machine with the user's
@@ -26,6 +27,8 @@ export type InboxFetchers = {
   github(host: string, query: string, call?: FetchCall): Promise<unknown>;
   /** The user's pending draft notes on a GitLab merge request. */
   gitlabDrafts(item: MrItem): Promise<number>;
+  /** When each label of a GitLab merge request was last added (section 15). */
+  gitlabLabelEvents?(item: MrItem): Promise<Record<string, string>>;
 };
 
 export class NotSignedInError extends Error {}
@@ -136,6 +139,19 @@ export function createInboxFetchers(run: Run): InboxFetchers {
         { feature: "inbox", kind: "drafts" },
       );
       return Array.isArray(answer) ? answer.length : 0;
+    },
+    async gitlabLabelEvents(item) {
+      const login = await access(item.host);
+      const answer = await glab(
+        context,
+        { host: item.host, ...login },
+        "GET",
+        `projects/${encodeURIComponent(item.project)}/merge_requests/${item.number}/resource_label_events?per_page=100`,
+        [],
+        false,
+        { feature: "inbox", kind: "label-events" },
+      );
+      return parseLabelEvents(answer);
     },
   };
 }

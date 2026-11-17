@@ -46,6 +46,11 @@ import {
   mrFilterCompletions,
   mrFilterMatches,
 } from "../../../shared/mrReviewsFilter";
+import {
+  mrBotFailedLabel,
+  mrBotLabel,
+  mrMergeTime,
+} from "../../../shared/mrReviewsMerge";
 import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
@@ -473,18 +478,94 @@ export function ownUnreadLabel(entry: MrInboxEntry): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
-/** Where one of the user's own requests stands, as chips. */
-export function ownChips(
+const MERGE_FROM = {
+  label: "the label was added",
+  approval: "the last approval",
+  update: "the last update",
+} as const;
+
+/**
+ * A merge scheduled by a label and a bot merging it (section 15), as
+ * chips: "merge after 2 days · mergeable Thu 14:00", "queued to merge by
+ * marge-bot", "marge-bot could not merge".
+ */
+export function mergeChips(
   entry: MrInboxEntry,
-): { label: string; tone: "good" | "bad" | "wait"; changed: boolean }[] {
+  now = Date.now(),
+): {
+  label: string;
+  tone: "good" | "bad" | "wait";
+  changed: boolean;
+  title?: string;
+}[] {
+  const merge = entry.merge;
+  if (!merge) return [];
+  const chips: ReturnType<typeof mergeChips> = [];
+  const { after, bot } = merge;
+  if (bot?.failed)
+    chips.push({
+      label: mrBotFailedLabel(bot),
+      tone: "bad",
+      changed: false,
+      title: `${bot.failed.reason} (${formatUiDateTime(bot.failed.at)})`,
+    });
+  else if (bot?.queued)
+    chips.push({
+      label: mrBotLabel(bot),
+      tone: "good",
+      changed: false,
+      title: `Recognized by ${bot.via === "auto_merge" ? "auto-merge being set" : bot.via === "queue" ? "the forge's merge queue" : bot.via === "label" ? "its queue label" : `${bot.name} being its ${bot.via}`}`,
+    });
+  if (after)
+    chips.push({
+      label: `merge after ${after.delay} · mergeable ${after.ready ? "now" : mrMergeTime(after.at, now)}`,
+      tone: after.ready ? "good" : "wait",
+      changed: false,
+      title: `Label "${after.label}": ${after.delay} from when ${MERGE_FROM[after.from]} (${formatUiDateTime(after.since)}), mergeable ${formatUiDateTime(after.at)}`,
+    });
+  return chips;
+}
+
+const BOT_VIA = {
+  assignee: "it is assigned",
+  reviewer: "it is a reviewer",
+  label: "its queue label",
+  queue: "the forge's merge queue",
+  auto_merge: "auto-merge being set",
+} as const;
+
+/** The detail's Merge line: the scheduled merge and the bot, in full. */
+function MergeDetail({ merge }: { merge: NonNullable<MrInboxEntry["merge"]> }) {
+  const { after, bot } = merge;
+  return (
+    <dd className="mr-reviews-merge">
+      {bot ? (
+        <span>
+          {bot.failed
+            ? `${mrBotFailedLabel(bot)} (${formatUiDateTime(bot.failed.at)}): ${bot.failed.reason}`
+            : `${mrBotLabel(bot)}, recognized by ${bot.via === "assignee" || bot.via === "reviewer" ? `${bot.name}: ${BOT_VIA[bot.via]}` : BOT_VIA[bot.via]}`}
+        </span>
+      ) : null}
+      {after ? (
+        <span>
+          {`"${after.label}": mergeable ${after.ready ? `since ${formatUiDateTime(after.at)}` : formatUiDateTime(after.at)}, ${after.delay} from when ${MERGE_FROM[after.from]} (${formatUiDateTime(after.since)})`}
+        </span>
+      ) : null}
+    </dd>
+  );
+}
+
+/** Where one of the user's own requests stands, as chips. */
+export function ownChips(entry: MrInboxEntry): {
+  label: string;
+  tone: "good" | "bad" | "wait";
+  changed: boolean;
+  title?: string;
+}[] {
   const own = entry.own;
-  if (!own) return [];
+  if (!own) return mergeChips(entry);
   const unread = entry.unread?.changed ? entry.unread : null;
-  const chips: {
-    label: string;
-    tone: "good" | "bad" | "wait";
-    changed: boolean;
-  }[] = [];
+  const chips: ReturnType<typeof ownChips> = mergeChips(entry);
   if (entry.pipeline)
     chips.push({
       label: `pipeline ${entry.pipeline}`,
@@ -672,6 +753,7 @@ function MrRowBody({
             <span
               key={chip.label}
               className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+              title={chip.title}
             >
               {chip.label}
             </span>
@@ -736,6 +818,7 @@ function MrDenseRow({
             <span
               key={chip.label}
               className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+              title={chip.title}
             >
               {chip.label}
             </span>
@@ -1087,11 +1170,18 @@ function MrDetail({
                   <span
                     key={chip.label}
                     className={`mr-reviews-chip is-${chip.tone}${chip.changed ? " is-changed" : ""}`}
+                    title={chip.title}
                   >
                     {chip.label}
                   </span>
                 ))}
               </dd>
+            </div>
+          ) : null}
+          {entry.merge ? (
+            <div>
+              <dt>Merge</dt>
+              <MergeDetail merge={entry.merge} />
             </div>
           ) : null}
           <div>

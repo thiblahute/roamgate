@@ -20,6 +20,8 @@ export const MR_FILTER_KEYS = [
   "author",
   "pipeline",
   "effort",
+  "merge-after",
+  "bot",
   "is",
 ] as const;
 export type MrFilterKey = (typeof MR_FILTER_KEYS)[number];
@@ -42,6 +44,7 @@ const LANE_NAMES: Record<string, MrLane> = {
   not_sent: "not_sent",
   unsent: "not_sent",
   stale: "stale",
+  merging: "merging",
   done: "done",
 };
 
@@ -139,15 +142,51 @@ function holds(entry: MrInboxEntry, token: MrFilterToken): boolean {
       if (whose && !entry.overrideOutdated)
         return like(token.value, mrWhoseLabel(whose));
       if (value === "me") return entry.lane === "your_move";
-      if (value === "reviewer") return entry.lane === "waiting";
-      return false;
+      if (value === "time")
+        return (
+          entry.lane === "waiting" &&
+          !!entry.merge?.after &&
+          !entry.merge.after.ready
+        );
+      if (value === "reviewer")
+        return (
+          entry.lane === "waiting" &&
+          !(entry.merge?.after && !entry.merge.after.ready)
+        );
+      // A bot (or the forge's queue) merging it.
+      const bot = entry.merge?.bot;
+      return (
+        entry.lane === "merging" &&
+        !!bot &&
+        (value === "bot" || like(token.value, bot.name))
+      );
     }
     case "lane":
       return !!entry.lane && LANE_NAMES[value] === entry.lane;
     case "state":
+      if (value === "merging")
+        return entry.lane === "merging" || !!entry.merge?.bot?.queued;
       return value === "draft"
         ? entry.draft && entry.state === "open"
         : stateOf(entry) === value;
+    case "merge-after": {
+      const after = entry.merge?.after;
+      if (value === "no" || value === "none") return !after;
+      if (!after) return false;
+      if (value === "ready" || value === "now") return after.ready;
+      if (value === "waiting" || value === "later") return !after.ready;
+      return (
+        value === "yes" || value === "any" || like(token.value, after.delay)
+      );
+    }
+    case "bot": {
+      const bot = entry.merge?.bot;
+      if (!bot) return value === "none";
+      if (value === "any" || value === "yes") return true;
+      if (value === "failed") return !!bot.failed;
+      if (value === "queued") return bot.queued;
+      return like(token.value, bot.name);
+    }
     case "stale":
       return (entry.lane === "stale") === (value === "yes" || value === "true");
     case "draft":
@@ -205,14 +244,27 @@ export function mrFilterIsOwn(filter: MrFilter | string): boolean {
         (token.value === "mine" || token.value === "own")) ||
         token.key === "lane" ||
         token.key === "waiting" ||
-        token.key === "effort"),
+        token.key === "effort" ||
+        token.key === "merge-after" ||
+        token.key === "bot" ||
+        (token.key === "state" && token.value === "merging")),
   );
 }
 
 const VALUES: Partial<Record<MrFilterKey, string[]>> = {
-  waiting: ["me", "reviewer", "external"],
-  lane: ["your-move", "waiting", "blocked", "not-sent", "stale", "done"],
-  state: ["open", "draft", "merged", "closed", "branch", "unsent"],
+  waiting: ["me", "reviewer", "external", "time", "bot"],
+  lane: [
+    "your-move",
+    "waiting",
+    "merging",
+    "blocked",
+    "not-sent",
+    "stale",
+    "done",
+  ],
+  state: ["open", "draft", "merging", "merged", "closed", "branch", "unsent"],
+  "merge-after": ["yes", "no", "waiting", "ready"],
+  bot: ["any", "queued", "failed", "none"],
   stale: ["yes", "no"],
   draft: ["yes", "no"],
   pipeline: ["failed", "running", "pending", "success", "manual", "none"],
@@ -259,6 +311,8 @@ export function mrFilterCompletions(
     else if (key === "waiting" && entry.override?.whose)
       found.add(mrWhoseLabel(entry.override.whose));
     else if (key === "effort" && entry.effort) found.add(entry.effort);
+    else if ((key === "bot" || key === "waiting") && entry.merge?.bot)
+      found.add(entry.merge.bot.name);
   }
   return [...found]
     .filter((value) => value && value.toLowerCase().startsWith(typed))

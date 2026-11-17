@@ -2,6 +2,7 @@ import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ForgeProvider } from "../../../shared/forge";
 import type { MrReviewsSettings } from "../../../shared/mrReviews";
+import { MrMergeSettingsSection } from "./MrMergeSettings";
 import {
   loadMrReviewsSettings,
   mrReviewsCall,
@@ -445,6 +446,11 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
           />
         </label>
       </section>
+      <MrMergeSettingsSection
+        merge={settings.merge ?? { scopes: {} }}
+        busy={busy}
+        onSave={(merge) => void save({ merge })}
+      />
       <MrReviewsBackup onImported={onSaved} />
     </div>
   );
