@@ -1,38 +1,18 @@
-import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { ReviewPush } from "../../../shared/review";
-import { createReviewService, type ReviewService } from "./service";
-import { openReviewStorage } from "./storage";
+import { reviewServiceForTest } from "./testkit";
+import { expect, test } from "bun:test";
 
 /**
  * Threads shared between a rendered file and the code reviews of its
  * checkout: each lives in the review it was written in, and shows in both.
  */
-const directories: string[] = [];
-const services: ReviewService[] = [];
-afterEach(() => {
-  for (const service of services.splice(0)) service.close();
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
-});
-
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-shared-"));
-  directories.push(dir);
   const prompts: { pane: string; text: string }[] = [];
-  const pushes: ReviewPush[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: (push) => pushes.push(push),
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service, pushes } = reviewServiceForTest({
     deliveryDelayMs: 10,
     promptAgent: async (_connection, pane, text) => {
       prompts.push({ pane, text });
     },
   });
-  services.push(service);
   const open = (target: Record<string, unknown>, root = "/repo") =>
     service.open({
       connectionId: "local",
