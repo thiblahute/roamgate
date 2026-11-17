@@ -25,7 +25,7 @@ import { scrollChatPage } from "./chatPaging";
 import { defineExCommands, vimExEditors } from "./vimEx";
 
 /**
- * The agent chat's message box with Vim keys (the review's `:vim` setting).
+ * The agent chat's message box with Vim keys (the one Vim keys setting).
  * It starts in insert mode; Esc goes to normal mode, `:w` sends, `:q`
  * leaves the box. Enter sends where the plain box sends on Enter and adds a
  * line elsewhere; Shift+Enter always adds one.
