@@ -147,6 +147,11 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(review.notices()).toContain(
           "Not sent: reopen it to go on, Cmd+Enter or Save sends it.",
         );
+        // Kept as Changes' own: a review session's drafts never take it.
+        expect(Object.keys(await drafts())).toHaveLength(1);
+        expect(
+          Object.keys(await drafts()).every((id) => id.startsWith("changes:")),
+        ).toBe(true);
         await review.press("C");
         expect(review.editorText()).toBe("Is this right?");
         expect(review.notices()).toContain(

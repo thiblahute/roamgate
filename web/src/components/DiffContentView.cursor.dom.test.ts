@@ -5,8 +5,9 @@ import { describe, expect, test } from "bun:test";
  * The review's Vim cursor in Changes (plan: review into the inspector,
  * phase 3, D10): Changes takes the review's keys and mouse; a diff without
  * the review (a commit's in Commits, Files' changes) keeps upstream's. The
- * shared behavior tests (reviewBehavior.*) cover the motions; these cover
- * what is Changes' own.
+ * shared behavior tests (reviewBehavior.*) cover the review's keys; these
+ * cover the diff without the review, which takes none of them, and
+ * Changes' tree marking the cursor's search.
  */
 if (
   inIsolatedChild(
@@ -89,31 +90,6 @@ if (
     }
     return null;
   };
-  const lineElement = (key: string, type: string, number: number) =>
-    [
-      ...(document
-        .querySelector(`[data-diff-entry-key="${key}"] diffs-container`)
-        ?.shadowRoot?.querySelectorAll<HTMLElement>(
-          "[data-content] [data-line]",
-        ) ?? []),
-    ].find(
-      (line) =>
-        line.getAttribute("data-line-type") === type &&
-        line.getAttribute("data-line") === String(number),
-    )!;
-  const click = async (element: HTMLElement, shiftKey = false) => {
-    await act(async () => {
-      element.dispatchEvent(
-        new PointerEvent("click", {
-          bubbles: true,
-          composed: true,
-          pointerType: "mouse",
-          button: 0,
-          shiftKey,
-        }),
-      );
-    });
-  };
 
   describe("the review's cursor in Changes", () => {
     test("without the review (a commit's diff in Commits, Files' changes), the diff keeps its keys: no cursor, j is nothing, Ctrl+F finds, :split and :unified pick, no :N", async () => {
@@ -144,65 +120,71 @@ if (
       }
     });
 
-    test("in Changes: the cursor starts on the first line, j moves it, :N is row N of all the changes, f and o are :files and :only", async () => {
-      const prompt = inspector();
+    test("without the review, c is nothing: no editor, no comment box", async () => {
       const diff = await mountChangesDiff({
-        entries: [a, b],
+        entries: [a],
         patches,
-        inspectorCommands: prompt.registry,
-        reviewCursor: true,
+        onCreateAnnotation: () => {},
       });
       try {
-        await diff.update({});
-        expect(cursorAt()).toBe("unstaged:a.ts:context:1");
-        // Side by side j goes down the added side; unified, the next line.
-        await press("j");
+        await press("c");
         await diff.settle();
-        expect(cursorAt()).toBe(
-          diff.diffStyle("unstaged:a.ts") === "split"
-            ? "unstaged:a.ts:change-addition:2"
-            : "unstaged:a.ts:change-deletion:2",
-        );
-        await act(async () => prompt.registry.run("5"));
-        await diff.settle();
-        expect(cursorAt()).toBe("unstaged:b.ts:change-deletion:1");
-        await press("f");
-        await press("o");
-        expect(prompt.ran).toEqual(["files", "only"]);
-        // :split and :unified are the review's: a toggle.
-        const style = diff.diffStyle("unstaged:a.ts");
-        await act(async () => prompt.registry.run("split"));
-        await diff.settle();
-        expect(diff.diffStyle("unstaged:a.ts")).not.toBe(style);
-        await act(async () => prompt.registry.run("split"));
-        await diff.settle();
-        expect(diff.diffStyle("unstaged:a.ts")).toBe(style);
+        expect(
+          document.querySelector(".diff-review-composer .cm-content"),
+        ).toBeNull();
+        expect(diff.composer()).toBeNull();
       } finally {
         await diff.unmount();
       }
     });
 
-    test("a click puts the cursor on a line; a second click there opens the comment box at it", async () => {
-      const notes: unknown[] = [];
+    test("without the review, gs stages nothing", async () => {
+      const done: string[] = [];
       const diff = await mountChangesDiff({
         entries: [a],
         patches,
-        reviewCursor: true,
-        onCreateAnnotation: (note) => notes.push(note),
+        onCreateAnnotation: () => {},
+        onGitAction: (action, path) => {
+          done.push(`${action} ${path}`);
+          return true;
+        },
       });
       try {
-        await diff.update({ split: undefined } as never);
-        const style = diff.diffStyle("unstaged:a.ts");
-        const type = "change-addition";
-        await click(lineElement("unstaged:a.ts", type, 2));
+        await press("g");
+        await press("s");
         await diff.settle();
-        expect(cursorAt()).toBe(`unstaged:a.ts:${type}:2`);
-        expect(diff.composer()).toBeNull();
-        await click(lineElement("unstaged:a.ts", type, 2));
-        await diff.settle();
-        expect(diff.composer()?.title).toContain("a.ts");
-        expect(style).not.toBeNull();
+        expect(done).toEqual([]);
       } finally {
+        await diff.unmount();
+      }
+    });
+
+    test("without the review, r, v and gu do nothing and nothing is marked", async () => {
+      const { spyOn } = await import("bun:test");
+      const { store } = await import("../store");
+      const notify = spyOn(store, "notify");
+      const diff = await mountChangesDiff({
+        entries: [a, b],
+        patches,
+        onCreateAnnotation: () => {},
+      });
+      try {
+        for (const key of "rvgu") await press(key);
+        await diff.settle();
+        expect(notify).not.toHaveBeenCalled();
+        expect(cursorAt()).toBeNull();
+        for (const section of document.querySelectorAll(
+          "[data-diff-entry-key]",
+        ))
+          expect(
+            section
+              .querySelector("diffs-container")
+              ?.shadowRoot?.querySelector(
+                "[data-chunk-stage], [data-chunk-reviewed], [data-chunk-folded]",
+              ),
+          ).toBeNull();
+      } finally {
+        notify.mockRestore();
         await diff.unmount();
       }
     });

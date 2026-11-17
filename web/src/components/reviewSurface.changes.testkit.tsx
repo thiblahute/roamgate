@@ -20,6 +20,7 @@ import type {
 import type { GitDiffEntry, GitDiffFile } from "../types";
 import {
   type BridgeUpdate,
+  type ChunkMarker,
   type HostCall,
   parseKeys,
   type ReviewSurface,
@@ -290,17 +291,25 @@ export async function mountChangesReview(
     ...sessionFields,
     reviewed: marks,
   });
+  /** The checkout's review is open (`unopened`: once review.open opens it). */
+  let reviewOpen = !options.unopened;
   /** What the bridge holds: this review, and the checkout's others. */
   const publishSession = () => {
     backend.sessions = new Map([
-      [
-        sessionId,
-        {
-          session: ownSession() as Record<string, unknown>,
-          threads: ownThreads.map((thread) => asFeedback(thread, sessionId)),
-          ...pushed,
-        },
-      ],
+      ...(reviewOpen
+        ? [
+            [
+              sessionId,
+              {
+                session: ownSession() as Record<string, unknown>,
+                threads: ownThreads.map((thread) =>
+                  asFeedback(thread, sessionId),
+                ),
+                ...pushed,
+              },
+            ] as const,
+          ]
+        : []),
       ...otherReviews.map(
         (session) =>
           [
@@ -329,7 +338,11 @@ export async function mountChangesReview(
   // The bridge writes what Changes writes through the host: the review
   // opened (the checkout's), a thread added to it, the review read back.
   backend.answers = {
-    "review.open": () => ownSnapshot(),
+    "review.open": () => {
+      reviewOpen = true;
+      publishSession();
+      return ownSnapshot();
+    },
     "review.get": (params) =>
       backend.holds
         ? backend.holds()
@@ -452,9 +465,19 @@ export async function mountChangesReview(
   }) as typeof store.notify);
 
   const files = options.files;
-  const entries: GitDiffEntry[] = files.map((file) => ({
+  // The files' entries as Changes lists them: the index's first (staged),
+  // then the working tree's, or one combined entry per file.
+  const kind = options.changes ?? "unstaged";
+  const listed = [
+    ...(options.stagedFiles ?? []).map((file) => ({
+      file,
+      kind: "staged" as const,
+    })),
+    ...files.map((file) => ({ file, kind })),
+  ];
+  const entries: GitDiffEntry[] = listed.map(({ file, kind }) => ({
     path: file.path,
-    kind: "unstaged",
+    kind,
     status: "M",
     additions: file.hunks.reduce(
       (sum, hunk) => sum + hunk.lines.filter((l) => l.kind === "+").length,
@@ -465,19 +488,26 @@ export async function mountChangesReview(
       0,
     ),
   }));
-  const diffFiles: Record<string, GitDiffFile> = Object.fromEntries(
-    files.map((file) => [
-      `unstaged:${file.path}`,
-      {
-        workspace_id: "workspace",
-        root: "/repo",
-        path: file.path,
-        kind: "unstaged",
-        diff: patchOf(file),
-        truncated: false,
-      } as GitDiffFile,
-    ]),
-  );
+  /** A combined file's staged lines (setStaged changes them). */
+  let staged = options.staged ?? {};
+  const filesOf = (): Record<string, GitDiffFile> =>
+    Object.fromEntries(
+      listed.map(({ file, kind }) => [
+        `${kind}:${file.path}`,
+        {
+          workspace_id: "workspace",
+          root: "/repo",
+          path: file.path,
+          kind,
+          diff: patchOf(file),
+          truncated: false,
+          ...(kind === "combined" && staged[file.path]
+            ? { staged: staged[file.path] }
+            : {}),
+        } as GitDiffFile,
+      ]),
+    );
+  let diffFiles = filesOf();
 
   // The inspector's frame around Changes, as WorkspaceInspectorHost draws
   // and runs it: the tree beside the diff (`:files`), Review only
@@ -691,7 +721,7 @@ export async function mountChangesReview(
           createElement(series ? ChangesWithSeries : DiffContentView, {
             // The file picked in the tree (the first at first).
             entry: picked ?? null,
-            file: picked ? diffFiles[`unstaged:${picked.path}`]! : null,
+            file: picked ? diffFiles[`${picked.kind}:${picked.path}`]! : null,
             selectionRevision,
             entries,
             files: diffFiles,
@@ -764,7 +794,7 @@ export async function mountChangesReview(
     );
     await settleOnly();
   };
-  let goTo: { path: string; at: number } | null = null;
+  let goTo: { path: string; line?: number; at: number } | null = null;
   let picked: GitDiffEntry | undefined = entries[0];
   let selectionRevision = 0;
   /**
@@ -895,7 +925,11 @@ export async function mountChangesReview(
     const old =
       code?.hasAttribute("data-deletions") || type === "change-deletion";
     const file = viewFiles().find((each) => each.path === path);
-    for (const hunk of file?.hunks ?? [])
+    // A staged entry's lines are its own file's.
+    const own = [file, ...(options.stagedFiles ?? [])].filter(
+      (each) => each?.path === path,
+    );
+    for (const hunk of own.flatMap((each) => each?.hunks ?? []))
       for (const line of hunk.lines) {
         const match = old
           ? line.old === number && line.kind !== "+"
@@ -1475,11 +1509,21 @@ export async function mountChangesReview(
       await settleAll();
       await settleAll();
     },
-    async goToFile(path) {
-      // Picked in the tree: Changes' cursor goes to it, shown.
-      goTo = { path, at: Math.max(Date.now(), (goTo?.at ?? 0) + 1) };
+    async goToFile(path, line) {
+      // Picked in the tree: Changes' cursor goes to it, shown. On a line:
+      // Files' Review, the file's path in the checkout.
+      goTo = {
+        path: line === undefined ? path : `/repo/${path}`,
+        ...(line === undefined ? {} : { line }),
+        at: Math.max(Date.now(), (goTo?.at ?? 0) + 1),
+      };
       // As the tree picks it: the selection, a new revision of it.
-      picked = entries.find((entry) => entry.path === path) ?? picked;
+      picked =
+        entries.find(
+          (entry) => entry.path === path && entry.kind !== "staged",
+        ) ??
+        entries.find((entry) => entry.path === path) ??
+        picked;
       selectionRevision += 1;
       await render();
       await settleAll();
@@ -1496,6 +1540,30 @@ export async function mountChangesReview(
     },
     reviewedMarks() {
       return { ...marks };
+    },
+    chunkMarkers(path, entry) {
+      const section = sections().find(
+        (each) =>
+          pathOf(each) === path &&
+          (entry === "staged") ===
+            (each.dataset.diffEntryKey ?? "").startsWith("staged:"),
+      );
+      if (!section) throw new Error(`no file ${path}`);
+      return [
+        ...(shadowOf(section)?.querySelectorAll(
+          "[data-content] [data-line][data-chunk-stage]",
+        ) ?? []),
+      ].map((line) => ({
+        line: Number(line.getAttribute("data-line")),
+        stage: line.getAttribute("data-chunk-stage") as ChunkMarker["stage"],
+        reviewed: line.hasAttribute("data-chunk-reviewed"),
+      }));
+    },
+    async setStaged(next) {
+      staged = next;
+      diffFiles = filesOf();
+      await render();
+      await settleAll();
     },
     press,
     async command(text) {
@@ -1900,6 +1968,34 @@ export async function mountChangesReview(
     },
 
     // Threads.
+    threadStop() {
+      const focused = host.querySelector<HTMLElement>(
+        ".diff-review-thread .is-focused",
+      );
+      const stop = focused?.closest<HTMLElement>(
+        "[data-chat-stop], [data-part]",
+      );
+      if (!stop) return null;
+      // Its own words: not the comments drawn in it, nor its buttons.
+      const words = (element: Element | null | undefined) => {
+        const copy = element?.cloneNode(true) as Element | undefined;
+        for (const other of copy?.querySelectorAll(".chat-thread, button") ??
+          [])
+          other.remove();
+        return (copy?.textContent ?? "").replace(/\s+/g, " ").trim();
+      };
+      const id = stop.dataset.chatStop;
+      if (id === undefined) return { kind: "part", text: words(stop) };
+      if (id.startsWith("m:"))
+        return {
+          kind: "message",
+          text: words(stop.querySelector(".chat-thread-body")),
+        };
+      return {
+        kind: "thread",
+        text: words(stop.querySelector(".chat-thread-summary") ?? stop),
+      };
+    },
     shownThreads() {
       return threadCards().map(readThread);
     },

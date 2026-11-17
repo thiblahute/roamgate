@@ -312,6 +312,37 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         }
       });
 
+      test("a focus the cursor's key did not ask for comes back to the review; a press elsewhere keeps it where it went", async () => {
+        const review = await mount({
+          files: [added("a.ts", 4)],
+          fakeTimers: true,
+        });
+        const outside = document.createElement("button");
+        document.body.prepend(outside);
+        try {
+          // Past the hold of the review shown: a focus taken stays taken.
+          await review.advance(2000);
+          outside.focus();
+          await review.advance(10);
+          expect(review.hasFocus()).toBe(false);
+          // After a key of the cursor, the browser hands the focus to the
+          // page's first control: it comes back.
+          await review.press("zz");
+          outside.focus();
+          await review.advance(10);
+          expect(review.hasFocus()).toBe(true);
+          // A press there is the user's: the focus stays where it went.
+          await review.press("zz");
+          outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+          outside.focus();
+          await review.advance(10);
+          expect(review.hasFocus()).toBe(false);
+        } finally {
+          outside.remove();
+          await review.unmount();
+        }
+      });
+
       test("a review the lost connection failed loads again once it is back, on the same commit and line", async () => {
         const review = await mount({
           files: [added("all.ts", 2)],

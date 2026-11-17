@@ -233,6 +233,26 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("Files' Review puts the cursor on that file's line", async () => {
+        const review = await mount({
+          files: [
+            added("a.ts", 4),
+            file(
+              "b.ts",
+              hunk(8, 8, [" eight", "-nine", "+neuf", " ten", " eleven"]),
+            ),
+          ],
+        });
+        expect(review.cursorLine()?.path).toBe("a.ts");
+        await review.goToFile("b.ts", 10);
+        expect(review.cursorLine()).toMatchObject({
+          path: "b.ts",
+          new: 10,
+          text: "ten",
+        });
+        await review.unmount();
+      });
+
       test("the cursor's word is drawn on its line, and only there", async () => {
         const review = await mount({
           files: [file("a.ts", hunk(1, 1, ["+alpha beta", "+gamma delta"]))],

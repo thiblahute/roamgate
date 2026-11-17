@@ -204,6 +204,49 @@ if (
         });
         await review.unmount();
       });
+
+      test("another repository's thread on a file of the same path is not drawn, walked, counted or listed; the checkout's other review's is", async () => {
+        const session = (id: string, root: string) => ({
+          id,
+          workspaceId: "workspace",
+          root,
+          title: root,
+          target: { kind: "worktree" },
+          gitlab: false,
+          summary: "",
+          agent: {},
+          createdAt: "2026-11-04",
+          updatedAt: "2026-11-04",
+        });
+        const mountWith = (root: string) =>
+          mount({
+            files: [added("a.ts", 12)],
+            // The review names its repository: the checkout's, /repo.
+            session: { root: "/repo" },
+            shared: [
+              {
+                ...conversation("ta", 2, [["you", "On a.ts of a"]]),
+                sessionId: "in-a",
+              },
+            ],
+            otherReviews: [session("in-a", root)],
+          });
+        // Of another repository, /w/a: its a.ts is not this one's.
+        const review = await mountWith("/w/a");
+        expect(review.shownThreads()).toEqual([]);
+        expect(review.threadsChip()).toBeNull();
+        await review.press("gn");
+        expect(review.notice()).toBe("No unresolved comment here.");
+        expect(review.cursorLine()?.new).toBe(1);
+        await review.unmount();
+        // Of this checkout: drawn, counted and walked.
+        const own = await mountWith("/repo");
+        expect(own.shownThreads().map((each) => each.id)).toEqual(["ta"]);
+        expect(own.threadsChip()).not.toBeNull();
+        await own.press("gn");
+        expect(own.cursorLine()?.new).toBe(2);
+        await own.unmount();
+      });
     });
   }
 }

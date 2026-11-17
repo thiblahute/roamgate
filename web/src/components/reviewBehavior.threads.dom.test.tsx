@@ -22,9 +22,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 60_000);
 } else {
-  const { installReviewDom, file, hunk, numbered, thread } = await import(
-    "./reviewSurface.testkit"
-  );
+  const { installReviewDom, file, hunk, numbered, settle, thread } =
+    await import("./reviewSurface.testkit");
   await installReviewDom();
   const { reviewSurfacesWith, testWith } = await import(
     "./reviewSurfaces.testkit"
@@ -1075,6 +1074,263 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         const drawn = review.lines("plan.md").map((line) => line.text);
         for (const around of [897, 899, 900, 901, 903])
           expect(drawn).toContain(`plan line ${around}`);
+        await review.unmount();
+      });
+
+      test("j and k step into the messages under a line before the next line; gl goes to the last, n / N message to message, and c on a message answers", async () => {
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: [
+            conversation("t1", 3, [
+              ["you", "Why three?"],
+              ["Claude", "Because of the cache"],
+              ["you", "Thanks"],
+            ]),
+          ],
+        });
+        await review.press("2j");
+        expect(review.cursorLine()?.new).toBe(3);
+        expect(selected(review)).toBeNull();
+        // j goes into the thread, message by message, the cursor kept.
+        await review.press("j");
+        expect(selected(review)).toBe("Why three?");
+        expect(review.cursorLine()?.new).toBe(3);
+        await review.press("j");
+        expect(selected(review)).toBe("Because of the cache");
+        await review.press("k");
+        expect(selected(review)).toBe("Why three?");
+        // k off the first message is back on the line.
+        await review.press("k");
+        expect(selected(review)).toBeNull();
+        expect(review.cursorLine()?.new).toBe(3);
+        await review.press("gl");
+        expect(selected(review)).toBe("Thanks");
+        await review.press("N");
+        expect(selected(review)).toBe("Because of the cache");
+        await review.press("n");
+        expect(selected(review)).toBe("Thanks");
+        // Past the last message, j goes on to the next line.
+        await review.press("j");
+        expect(review.cursorLine()?.new).toBe(4);
+        expect(selected(review)).toBeNull();
+        // k comes up onto the thread's last message.
+        await review.press("k");
+        expect(review.cursorLine()?.new).toBe(3);
+        expect(selected(review)).toBe("Thanks");
+        await review.press("c");
+        expect(review.editorOpen()).toBe(true);
+        expect(review.editorPlaceholder()).toMatch(/^Your reply/);
+        await review.unmount();
+      });
+
+      test("j stops on a message of several parts, then on each part followed by the comments on it; a folded thread is one stop", async () => {
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: [
+            conversation("t1", 3, [
+              ["Claude", "First paragraph here.\n\nSecond paragraph there."],
+            ]),
+            // A comment on the message's second part.
+            {
+              ...conversation("n1", 3, [["you", "On the second part"]]),
+              anchor: {
+                path: "a.ts",
+                line: 3,
+                side: "new",
+                message: {
+                  thread: "t1",
+                  comment: "t1c0",
+                  quote: "Second paragraph there.",
+                },
+              },
+            } as ReviewThread,
+            // Resolved: folded to its line, two messages in it.
+            conversation(
+              "t3",
+              5,
+              [
+                ["you", "Settled"],
+                ["Claude", "Second message"],
+              ],
+              { resolved: true },
+            ),
+          ],
+        });
+        await review.press("2j");
+        const seen: string[] = [];
+        for (let i = 0; i < 8; i++) {
+          await review.press("j");
+          const stop = review.threadStop();
+          seen.push(
+            `${review.cursorLine()?.new} ${stop ? `${stop.kind}: ${stop.kind === "thread" ? "" : stop.text}` : "line"}`,
+          );
+        }
+        expect(seen).toEqual([
+          // The message whole, then each part, the comment on the second
+          // part after it.
+          "3 message: First paragraph here. Second paragraph there.",
+          "3 part: First paragraph here.",
+          "3 part: Second paragraph there.",
+          "3 message: On the second part",
+          "4 line",
+          "5 line",
+          // Folded: one stop, the thread's line.
+          "5 thread: ",
+          "6 line",
+        ]);
+        await review.unmount();
+      });
+
+      test("zz, zt, zb and z. place the cursor's line, and the message j / k are on when one is", async () => {
+        const placed: string[] = [];
+        const scrollIntoView = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function (
+          this: Element,
+          options?: boolean | ScrollIntoViewOptions,
+        ) {
+          const stop = this.getAttribute("data-chat-stop");
+          // The cursor's own "nearest" steps are not placements.
+          if (
+            stop &&
+            typeof options === "object" &&
+            options.block !== "nearest"
+          )
+            placed.push(`${stop}:${options.block}`);
+        };
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: [conversation("t1", 3, [["you", "Why three?"]])],
+        });
+        try {
+          await review.press("2j");
+          expect(review.cursorLine()?.new).toBe(3);
+          // On a line: the keys are the review's, no message placed.
+          for (const second of ["z", "t", "b", "."]) {
+            expect(await review.keyTaken("z")).toBe(true);
+            expect(await review.keyTaken(second)).toBe(true);
+          }
+          expect(placed).toEqual([]);
+          expect(review.cursorLine()?.new).toBe(3);
+          // On a message: that message is placed.
+          await review.press("j");
+          expect(selected(review)).toBe("Why three?");
+          await review.press("zzztzb");
+          expect(placed).toEqual([
+            "m:t1c0:center",
+            "m:t1c0:start",
+            "m:t1c0:end",
+          ]);
+        } finally {
+          Element.prototype.scrollIntoView = scrollIntoView;
+          await review.unmount();
+        }
+      });
+
+      test("a new comment on its way is drawn as Sending..., then Not saved with Retry and Discard", async () => {
+        const { act } = await import("react");
+        const { pendingFeedback } = await import("../feedbackPending");
+        const note = {
+          id: "n-wait",
+          source: "diff",
+          path: "a.ts",
+          kind: "unstaged",
+          side: "new",
+          line: 2,
+          hunk: "",
+          quote: "a.ts line 2",
+          comment: "Why two?",
+          createdAt: 1,
+        };
+        const asked: string[] = [];
+        const review = await mount({ files: [added("a.ts", 12)] });
+        try {
+          await act(async () => {
+            pendingFeedback.start(note as never, {
+              retry: () => asked.push("retry"),
+              discard: () => asked.push("discard"),
+            });
+            await settle();
+          });
+          expect(review.text()).toContain("Why two?");
+          expect(review.text()).toContain("Sending...");
+          await act(async () => {
+            pendingFeedback.fail("n-wait", "offline");
+            await settle();
+          });
+          expect(review.text()).toContain("Not saved: offline");
+          await review.clickButton("Retry");
+          await review.clickButton("Discard");
+          expect(asked).toEqual(["retry", "discard"]);
+          await act(async () => {
+            pendingFeedback.done("n-wait");
+            await settle();
+          });
+          expect(review.text()).not.toContain("Why two?");
+        } finally {
+          pendingFeedback.done("n-wait");
+          await review.unmount();
+        }
+      });
+
+      test("a comment whose code is nowhere in the diff, one on the whole review and the forge's are drawn above the diff", async () => {
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          threads: [
+            conversation("t9", 90, [["you", "About a gone line"]]),
+            conversation("t8", null, [["you", "On the whole review"]]),
+            {
+              ...conversation("t7", null, [["you", "From the forge"]]),
+              kind: "merge-request",
+              anchor: { feedback: "{}" },
+            } as ReviewThread,
+          ],
+        });
+        const general = review
+          .shownThreads()
+          .filter((each) => each.general)
+          .map((each) => each.id);
+        expect(general).toEqual(["t9", "t8"]);
+        expect(review.text()).toContain("About a gone line");
+        // The forge's: drawn as GitLab's, with them.
+        expect(review.forgeThreads().map((each) => each.id)).toEqual(["t7"]);
+        expect(review.forgeThreads()[0]?.head).toContain("GitLab");
+        expect(review.markedLines()).toEqual([]);
+        await review.unmount();
+      });
+
+      test("a thread written on a staged entry is drawn where its line reads now: under the working tree's, found by its text", async () => {
+        // Written on the staged entry, where line 2 read "one"; the working
+        // tree's diff has "one" on line 1, and no staged entry is shown.
+        const note = {
+          source: "diff",
+          path: "a.ts",
+          kind: "staged",
+          side: "new",
+          line: 2,
+          quote: "one",
+          hunk: "",
+        };
+        const review = await mount({
+          files: [
+            file("a.ts", hunk(1, 1, [" one", "-two", "+deux", " three"])),
+          ],
+          threads: [
+            {
+              ...conversation("m1", 2, [["you", "About one"]]),
+              anchor: {
+                path: "a.ts",
+                line: 2,
+                side: "new",
+                text: "one",
+                feedback: JSON.stringify(note),
+              },
+            } as ReviewThread,
+          ],
+        });
+        expect(
+          review.shownThreads().map((each) => [each.id, each.general]),
+        ).toEqual([["m1", false]]);
+        expect(review.markedLines().map((line) => line.text)).toEqual(["one"]);
         await review.unmount();
       });
     });
