@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 
 /*
@@ -6,22 +7,14 @@ import { expect, test } from "bun:test";
  * again where it was scrolled; by the bar's buttons, Alt+arrows (Cmd+[ /
  * Cmd+] on a Mac), the frame's keys and `:back` / `:forward`.
  */
-if (process.env.ROAMGATE_PREVIEW_HISTORY_DOM_TEST !== "1") {
-  test("the Files preview's history in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_PREVIEW_HISTORY_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the Files preview's history in an isolated DOM runtime",
+    "ROAMGATE_PREVIEW_HISTORY_DOM_TEST",
+    30_000,
+  )
+) {
   const { Window } = await import("happy-dom");
   const browser = new Window({ url: "http://localhost/" });
   for (const [key, value] of Object.entries({

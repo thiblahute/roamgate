@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, mock, test } from "bun:test";
 
 /*
@@ -5,22 +6,14 @@ import { describe, expect, mock, test } from "bun:test";
  * does there (Refresh, a commit's row), and `:files` hides the commit list
  * beside the commit, as `:files` hides the tree in Files and Changes.
  */
-if (process.env.ROAMGATE_COMMITS_COMMANDS_DOM_TEST !== "1") {
-  test("Commits' commands in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_COMMITS_COMMANDS_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Commits' commands in an isolated DOM runtime",
+    "ROAMGATE_COMMITS_COMMANDS_DOM_TEST",
+    30_000,
+  )
+) {
   const { installChangesDom } = await import("./changesSurface.testkit");
   await installChangesDom();
   const { act, createElement } = await import("react");

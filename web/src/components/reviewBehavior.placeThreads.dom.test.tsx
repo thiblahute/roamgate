@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 
 /**
@@ -5,22 +6,14 @@ import { describe, expect, test } from "bun:test";
  * browser, across a reload. Runs against every review surface
  * (reviewSurfaces.testkit.ts).
  */
-if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
-  test("review thread preferences in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "review thread preferences in an isolated DOM runtime",
+    "ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST",
+    30_000,
+  )
+) {
   const { installReviewDom, file, hunk, numbered, thread } = await import(
     "./reviewSurface.testkit"
   );

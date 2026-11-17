@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
@@ -8,22 +9,14 @@ import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
  * its tick ("Other files"); the tick toggled from Files written to the
  * worktree review, opened for a first mark.
  */
-if (process.env.ROAMGATE_REVIEW_FILE_MARKS_TEST !== "1") {
-  test("Files' review marks in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_REVIEW_FILE_MARKS_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Files' review marks in an isolated DOM runtime",
+    "ROAMGATE_REVIEW_FILE_MARKS_TEST",
+    30_000,
+  )
+) {
   const { mock } = await import("bun:test");
   const { useSyncExternalStore } = await import("react");
   const calls: { method: string; params: Record<string, unknown> }[] = [];

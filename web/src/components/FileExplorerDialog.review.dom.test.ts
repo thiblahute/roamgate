@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,22 +15,14 @@ import { __storeTesting, store } from "../store";
  * (reviewed, changed or not), and a file with no change in the review by a
  * comment a dot; other files nothing.
  */
-if (process.env.ROAMGATE_FILE_EXPLORER_REVIEW_DOM_TEST !== "1") {
-  test("Files' tree review marks in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_FILE_EXPLORER_REVIEW_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 15_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Files' tree review marks in an isolated DOM runtime",
+    "ROAMGATE_FILE_EXPLORER_REVIEW_DOM_TEST",
+    15_000,
+  )
+) {
   test("the review's files carry their tick, or a dot while only commented on", async () => {
     const browser = new Window({ url: "http://localhost" });
     for (const [key, value] of Object.entries({

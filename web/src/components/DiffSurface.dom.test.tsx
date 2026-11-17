@@ -1,25 +1,18 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 
 /**
  * The shared Pierre diff surface (DiffSurface), mounted alone and through
  * the views that draw with it: Changes, Commits and Files' file changes.
  */
-if (process.env.ROAMGATE_DIFF_SURFACE_DOM_TEST !== "1") {
-  test("Diff surface in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_DIFF_SURFACE_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Diff surface in an isolated DOM runtime",
+    "ROAMGATE_DIFF_SURFACE_DOM_TEST",
+    30_000,
+  )
+) {
   const { installChangesDom, mountChangesDiff, entry, selectDiffLines } =
     await import("./changesSurface.testkit");
   await installChangesDom();

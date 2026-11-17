@@ -1,21 +1,14 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, mock, test } from "bun:test";
 
-if (process.env.ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST !== "1") {
-  test("the activity timeline's subjects and projects in an isolated browser runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the activity timeline's subjects and projects in an isolated browser runtime",
+    "ROAMGATE_ACTIVITY_TIMELINE_DOM_TEST",
+    30_000,
+  )
+) {
   const { Window } = await import("happy-dom");
   const browser = new Window({ url: "http://localhost/" });
   for (const [key, value] of Object.entries({

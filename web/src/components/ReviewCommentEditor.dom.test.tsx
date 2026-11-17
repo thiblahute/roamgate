@@ -1,25 +1,18 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 
 /**
  * The review's comment editor mounted alone where Changes draws it: in an
  * element slotted into the diff's shadow DOM.
  */
-if (process.env.ROAMGATE_COMMENT_EDITOR_DOM_TEST !== "1") {
-  test("the comment editor in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_COMMENT_EDITOR_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the comment editor in an isolated DOM runtime",
+    "ROAMGATE_COMMENT_EDITOR_DOM_TEST",
+    30_000,
+  )
+) {
   const { installReviewDom } = await import("./reviewSurface.testkit");
   await installReviewDom();
   const { act, createElement } = await import("react");

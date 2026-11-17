@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 
 /*
@@ -6,22 +7,14 @@ import { expect, test } from "bun:test";
  * another workspace (the inspector drawn anew) and after a page reload:
  * its scroll, cursor, Back / Forward history and Source switch.
  */
-if (process.env.ROAMGATE_PREVIEW_PLACE_DOM_TEST !== "1") {
-  test("the Files preview's places kept in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_PREVIEW_PLACE_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the Files preview's places kept in an isolated DOM runtime",
+    "ROAMGATE_PREVIEW_PLACE_DOM_TEST",
+    30_000,
+  )
+) {
   /** Layout's resize reports, given by the test (happy-dom has none). */
   const observers = new Set<() => void>();
   class FakeResizeObserver {

@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
@@ -5,22 +6,14 @@ import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
  * The checkout's own review in Changes (plan: review into the inspector,
  * phase 4): the lookup of its worktree review, and the agent group on it.
  */
-if (process.env.ROAMGATE_CHANGES_REVIEW_TEST !== "1") {
-  test("the checkout's review in Changes in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_CHANGES_REVIEW_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the checkout's review in Changes in an isolated DOM runtime",
+    "ROAMGATE_CHANGES_REVIEW_TEST",
+    30_000,
+  )
+) {
   const { mock } = await import("bun:test");
   const calls: { method: string; params: Record<string, unknown> }[] = [];
   const remembered: ReviewSnapshot[] = [];

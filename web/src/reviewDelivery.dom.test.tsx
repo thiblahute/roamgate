@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
@@ -6,22 +7,14 @@ import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
  * the review pane): talk, hold, held for Send, why delivery failed, shared
  * threads' own reviews, and the agent pane told to the review once.
  */
-if (process.env.ROAMGATE_REVIEW_DELIVERY_TEST !== "1") {
-  test("review delivery in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_REVIEW_DELIVERY_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "review delivery in an isolated DOM runtime",
+    "ROAMGATE_REVIEW_DELIVERY_TEST",
+    30_000,
+  )
+) {
   const { mock } = await import("bun:test");
   const remembered: ReviewSnapshot[] = [];
   mock.module("./review", () => ({

@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, mock, test } from "bun:test";
 
 /*
@@ -8,22 +9,14 @@ import { describe, expect, mock, test } from "bun:test";
  * on nothing and Enter give the focus back. The views are stand-ins that
  * give commands as the real ones do (useInspectorCommands).
  */
-if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
-  test("the inspector's command line in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "the inspector's command line in an isolated DOM runtime",
+    "ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST",
+    30_000,
+  )
+) {
   const { installChangesDom } = await import("./changesSurface.testkit");
   await installChangesDom();
   const { useInspectorCommands } = await import("../useInspectorCommands");

@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot } from "../../shared/review";
 
@@ -5,22 +6,14 @@ import type { ReviewSnapshot } from "../../shared/review";
  * Calls on one review session (reviewSessionCall, taken out of the review
  * pane): its id is added, and after a write its state is read back.
  */
-if (process.env.ROAMGATE_REVIEW_SESSION_CALL_TEST !== "1") {
-  test("review session calls in an isolated runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_REVIEW_SESSION_CALL_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 30_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "review session calls in an isolated runtime",
+    "ROAMGATE_REVIEW_SESSION_CALL_TEST",
+    30_000,
+  )
+) {
   const { mock } = await import("bun:test");
   const calls: [string, string, Record<string, unknown>][] = [];
   const remembered: ReviewSnapshot[] = [];

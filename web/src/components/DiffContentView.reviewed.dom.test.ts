@@ -1,3 +1,4 @@
+import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 import type { ReviewSnapshot } from "../../../shared/review";
 
@@ -8,22 +9,14 @@ import type { ReviewSnapshot } from "../../../shared/review";
  * `gu` / `gU` jump to the chunks not reviewed, and every chunk carries its
  * staged marker and its reviewed mark in the margin.
  */
-if (process.env.ROAMGATE_CHANGES_REVIEWED_DOM_TEST !== "1") {
-  test("Changes' reviewed marks in an isolated DOM runtime", async () => {
-    const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, ROAMGATE_CHANGES_REVIEWED_DOM_TEST: "1" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
-    expect(code).toBe(0);
-  }, 60_000);
-} else {
+if (
+  inIsolatedChild(
+    import.meta.path,
+    "Changes' reviewed marks in an isolated DOM runtime",
+    "ROAMGATE_CHANGES_REVIEWED_DOM_TEST",
+    60_000,
+  )
+) {
   const { mock } = await import("bun:test");
   const calls: { method: string; params: Record<string, unknown> }[] = [];
   let marks: Record<string, string> = {};
