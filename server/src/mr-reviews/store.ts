@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { dataRoot, replaceDataFile } from "../config/data-paths";
 import type {
   MrFeedback,
+  MrInferred,
   MrItem,
   MrSeen,
   MrVerdict,
@@ -107,6 +108,10 @@ export type MrState = {
    * only when the request changed (or they were still settling).
    */
   ownDetails: Record<string, OwnDetails & { at: string }>;
+  /** What was inferred of one's own work, by key (section 7). */
+  inferred?: Record<string, MrInferred>;
+  /** When the last twice-daily inference run started. */
+  inferenceAt?: string;
 };
 
 export const FEEDBACK_KEPT = 200;
@@ -155,6 +160,10 @@ export function normalizeState(raw: unknown): MrState {
     found: record(value.found),
     pins: record(value.pins),
     ownDetails: record(value.ownDetails),
+    inferred: record(value.inferred),
+    ...(typeof value.inferenceAt === "string"
+      ? { inferenceAt: value.inferenceAt }
+      : {}),
   };
 }
 

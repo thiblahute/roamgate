@@ -300,7 +300,28 @@ export function MrOverrideSummary({
             <small className="mr-reviews-setby">
               {entry.next.from === "override"
                 ? `set by ${by}${outdated ? ", changed since" : ""}`
-                : "from its status"}
+                : entry.next.from === "inferred"
+                  ? "inferred by Claude"
+                  : "from its status"}
+            </small>
+          </dd>
+        </div>
+      ) : null}
+      {entry.inferred?.by === "model" ? (
+        <div>
+          <dt>Inferred</dt>
+          <dd
+            className={`mr-override-fields${entry.inferredOutdated ? " is-outdated" : ""}`}
+          >
+            <span>whose move: {mrWhoseLabel(entry.inferred.whose)}</span>
+            <span>{entry.inferred.next}</span>
+            {entry.inferred.stale ? <span>stale</span> : null}
+            <small>
+              {new Date(entry.inferred.at).toLocaleString()}
+              {entry.inferredOutdated
+                ? "; it moved on since (:infer reads it again)"
+                : ""}
+              {override?.whose || override?.next ? "; set by hand wins" : ""}
             </small>
           </dd>
         </div>

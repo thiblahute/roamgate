@@ -135,7 +135,8 @@ function branchLane(
 
 /**
  * Lanes, next steps and nesting for the own requests among `entries`
- * (changed in place): the override first, else the rules.
+ * (changed in place): the override first, then the inference while it
+ * holds, else the rules; dependencies found or set make it Blocked.
  */
 export function assignLanes(
   entries: MrInboxEntry[],
@@ -145,7 +146,12 @@ export function assignLanes(
   for (const entry of entries) {
     if (!entry.reasons.includes("authored")) continue;
     const override: MrOverride | undefined = entry.override;
-    const dependsOn = override?.dependsOn ?? [];
+    // The inference while it holds (section 7); overrides win over it.
+    const inferred =
+      entry.inferred && !entry.inferredOutdated ? entry.inferred : undefined;
+    const dependsOn = override?.dependsOn?.length
+      ? override.dependsOn
+      : (inferred?.dependsOn ?? []);
     if (dependsOn.length) entry.dependsOn = dependsOn;
     const waitingFor = dependsOn.flatMap((key) => {
       const found = byKey.get(key);
@@ -165,9 +171,27 @@ export function assignLanes(
         override.whose === "me"
           ? `set by ${override.by === "agent" ? "Claude" : "you"}`
           : `waiting on ${mrWhoseLabel(override.whose)}`;
+    } else if (
+      inferred?.by === "model" &&
+      lane !== "done" &&
+      lane !== "blocked"
+    ) {
+      if (inferred.stale) {
+        lane = "stale";
+        why = "inferred stale";
+      } else if (!entry.branch) {
+        // A branch stays not proposed yet; its next step is inferred.
+        lane = inferred.whose === "me" ? "your_move" : "waiting";
+        why =
+          inferred.whose === "me"
+            ? "inferred: your move"
+            : `inferred: waiting on ${mrWhoseLabel(inferred.whose)}`;
+      }
     }
     if (override?.next)
       next = { text: override.next, from: "override", by: override.by };
+    else if (inferred?.by === "model" && inferred.next && lane !== "done")
+      next = { text: inferred.next, from: "inferred" };
     entry.lane = lane;
     entry.laneWhy = why;
     entry.next = next;

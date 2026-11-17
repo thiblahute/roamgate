@@ -22,6 +22,8 @@ export type StoredMrReviewsSettings = {
   checkout?: "immediately" | "on_demand";
   retention_days?: number;
   curation?: boolean;
+  inference?: boolean;
+  inference_hours?: number;
   suggest_days?: number;
   hints?: string;
   tree_groups?: Record<string, string[]>;
@@ -203,6 +205,10 @@ export function normalizeStoredMrReviews(
   if (Number.isInteger(days) && days >= 0 && days <= 365)
     out.retention_days = days;
   if (typeof value.curation === "boolean") out.curation = value.curation;
+  if (typeof value.inference === "boolean") out.inference = value.inference;
+  const hours = Number(value.inference_hours);
+  if (Number.isInteger(hours) && hours >= 1 && hours <= 168)
+    out.inference_hours = hours;
   const suggest = Number(value.suggest_days);
   if (Number.isInteger(suggest) && suggest >= 1 && suggest <= 365)
     out.suggest_days = suggest;
@@ -435,6 +441,8 @@ export function mrReviewsSettings(
     checkout: stored?.checkout ?? base.checkout,
     retentionDays: stored?.retention_days ?? base.retentionDays,
     curation: stored?.curation ?? base.curation,
+    inference: stored?.inference ?? base.inference,
+    inferenceHours: stored?.inference_hours ?? base.inferenceHours,
     suggestDays: stored?.suggest_days ?? base.suggestDays,
     hints: stored?.hints ?? base.hints,
     treeGroups: stored?.tree_groups ?? base.treeGroups,
@@ -495,6 +503,12 @@ export function storedMrReviews(
     checkout: settings.checkout,
     retention_days: settings.retentionDays,
     curation: settings.curation,
+    ...(settings.inference !== DEFAULT_MR_REVIEWS_SETTINGS.inference
+      ? { inference: settings.inference }
+      : {}),
+    ...(settings.inferenceHours !== DEFAULT_MR_REVIEWS_SETTINGS.inferenceHours
+      ? { inference_hours: settings.inferenceHours }
+      : {}),
     suggest_days: settings.suggestDays,
     hints: settings.hints,
     tree_groups: settings.treeGroups,

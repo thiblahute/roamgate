@@ -325,7 +325,7 @@ const GITLAB_OWN_DETAILS =
  * refuses them is asked "basic" from then on.
  */
 const GITLAB_OWN_FIELDS = {
-  full: "conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount",
+  full: "conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } }",
   basic: "conflicts shouldBeRebased",
 } as const;
 
@@ -334,7 +334,7 @@ export type OwnFields = keyof typeof GITLAB_OWN_FIELDS;
 const GITHUB_OWN_LIST =
   "number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login } labels(first: 10) { nodes { name } }";
 const GITHUB_OWN_DETAILS =
-  "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } }";
+  "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } }";
 
 const PAGE_INFO = "pageInfo { hasNextPage endCursor }";
 
@@ -451,12 +451,74 @@ export type OwnDetails = {
   /** GitHub: the comments of the user's pending review. */
   drafts?: number;
   own: MrOwnStatus;
+  /** The description's start, for the inference (DESCRIPTION_KEPT). */
+  description?: string;
+  /** The last note of each recent thread and comment, oldest first. */
+  lastNotes?: OwnNote[];
   /**
    * Something the forge settles later without touching updatedAt (a
    * pipeline running, mergeability being computed): read again next time.
    */
   settling: boolean;
 };
+
+/** A request's recent note, as the inference reads it. */
+export type OwnNote = {
+  author: string;
+  at: string;
+  body: string;
+  /** A thread one can resolve (a review thread), and whether it is. */
+  resolvable: boolean;
+  resolved: boolean;
+};
+
+export const OWN_DESCRIPTION_KEPT = 1500;
+export const OWN_NOTES_KEPT = 10;
+const OWN_NOTE_BODY = 300;
+
+/** The last notes of a GitLab merge request's discussions or a GitHub pull request's comments and threads. */
+export function ownNotes(provider: "gitlab" | "github", node: any): OwnNote[] {
+  const out: OwnNote[] = [];
+  const add = (
+    note: any,
+    resolvable: boolean,
+    resolved: boolean,
+    login: (note: any) => unknown,
+  ) => {
+    if (!note || note.system === true) return;
+    const body = text(note.body, 2000).replace(/\s+/g, " ").trim();
+    if (!body) return;
+    out.push({
+      author: text(login(note), 100),
+      at: text(note.createdAt, 40),
+      body: body.slice(0, OWN_NOTE_BODY),
+      resolvable,
+      resolved,
+    });
+  };
+  if (provider === "gitlab")
+    for (const discussion of nodes(node?.discussions) as any[])
+      for (const note of nodes(discussion?.notes))
+        add(
+          note,
+          discussion?.resolvable === true,
+          discussion?.resolved === true,
+          (each) => each?.author?.username,
+        );
+  else {
+    for (const comment of nodes(node?.lastComments))
+      add(comment, false, false, (each) => each?.author?.login);
+    for (const thread of nodes(node?.lastThreads) as any[])
+      for (const comment of nodes(thread?.comments))
+        add(
+          comment,
+          true,
+          thread?.isResolved === true,
+          (each) => each?.author?.login,
+        );
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-OWN_NOTES_KEPT);
+}
 
 const GITLAB_MERGE_SETTLING = new Set([
   "CHECKING",
@@ -495,11 +557,18 @@ export function parseOwnDetails(
               text((node as any).detailedMergeStatus, 60).toUpperCase(),
             )
           : (node as any).mergeable === "UNKNOWN";
+      const description = text(
+        provider === "gitlab" ? (node as any).description : (node as any).body,
+        OWN_DESCRIPTION_KEPT,
+      );
+      const lastNotes = ownNotes(provider, node);
       found.set(item.key, {
         updatedAt: item.updatedAt,
         headSha: item.headSha,
         pipeline: item.pipeline,
         notes: item.notes,
+        ...(description ? { description } : {}),
+        ...(lastNotes.length ? { lastNotes } : {}),
         ...(item.baseSha ? { baseSha: item.baseSha } : {}),
         ...(item.drafts !== undefined ? { drafts: item.drafts } : {}),
         own:

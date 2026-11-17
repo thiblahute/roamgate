@@ -772,12 +772,38 @@ stored as keys), answering `{changed, override, version}`; setting
 `lane` (`your_move|waiting|blocked|not_sent|stale|done`), `laneWhy`, `next`
 (`{text, from: "override"|"rule"|"inferred", by?}`), `dependsOn` and
 `parent` (`mr-reviews/lanes.ts`): an override's `stale` or `whose` when not
-outdated, else rules from the forge's status (merged or closed: done; an
+outdated, else the inference (below) while it holds, else rules from the
+forge's status (merged or closed: done; an
 open dependency: blocked; quiet `stale_days`, default 90: stale; failed
 pipeline, conflicts, changes requested, unresolved threads, needs rebase
 or draft: your move; else waiting). `parent` is the first open listed
 request it waits for, unless that makes a cycle; the panel draws it under
 its parent (`web/src/mrReviewsLanes.ts`).
+
+The inference (`mr-reviews/inference.ts`, section 7, D7): the own details
+query also asks GitLab `description` and `discussions(last: 10)` with each
+one's last note (`full` fields only), GitHub `body`, `comments(last: 5)` and
+`reviewThreads(last: 20)` last comments; `OwnDetails` keeps the
+description (1500 characters) and `lastNotes` (10, 300 characters each,
+system notes dropped). `state.json` `inferred` (by key: `{whose, next,
+dependsOn, stale, version, facts, at, by: model|local}`) and
+`inferenceAt`. A row's version is `head|notes|state|pipeline|unresolved|
+conflicts|needsRebase` (branches: `head|ahead|behind|dirty`); its facts
+(state, pipeline, conflicts, changes requested, approvals, the last note by
+someone else) tell a meaningful change. After each refresh, once every
+`mr_reviews.inference_hours` (default 12) every open own row whose version
+moved is inferred, oldest first, 20 a batch (`runClaudeModel`, the
+curation's model, no tools, the people's text marked as data); between
+runs only rows with a meaningful change, each at most every two hours.
+Dependencies found without the model (references in the description and
+notes resolved to listed requests; a request whose patch ids are all in a
+smaller one of the same project waits for it) are kept with the model's;
+when the model fails they are stored alone (`by: "local"`). `entries()`
+attaches `inferred` and `inferredOutdated` (version moved and the facts
+changed meaningfully); lanes use a current model inference after an
+override (`whose`, `stale`, `next`; branches keep their lane). RPC
+`bridge.mr_reviews.infer {key}` and tool `reviews_refresh {request?}` force
+one row; `mr_reviews.inference` (default on) turns the runs off.
 
 The board's tools are one handler table (`mr-reviews/board-tools.ts`:
 `reviews_list` with lanes, next steps, overrides and paging, `reviews_override`,
