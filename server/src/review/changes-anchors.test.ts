@@ -2,9 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createReviewService } from "./service";
 import { handleReviewRpc } from "./rpc";
-import { openReviewStorage } from "./storage";
+import { reviewServiceForTest } from "./testkit";
 import { combinedAnchor } from "./changes-anchors";
 import { parseUnifiedDiff } from "./patch";
 import { readReviewPatch } from "../workspace/review-patch";
@@ -66,9 +65,8 @@ function checkout() {
 function server(root: string) {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-anchors-store-"));
   const loads: (readonly string[] | undefined)[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async (session, _commit, options) => {
       loads.push(options?.paths);
       return readReviewPatch({
@@ -82,7 +80,6 @@ function server(root: string) {
     deliveryDelayMs: 5,
   });
   cleanups.push(() => {
-    service.close();
     rmSync(dir, { recursive: true, force: true });
   });
   const connection = {
@@ -249,14 +246,12 @@ test("the migrated anchors are kept across a restart of the server", async () =>
     1,
   );
   await service.migrateEntryAnchors({ sessionId: snapshot.session.id });
-  const reopened = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service: reopened } = reviewServiceForTest({
+    dir,
     loadDiff: async () => {
       throw new Error("not read again");
     },
   });
-  cleanups.unshift(() => reopened.close());
   const thread = reopened
     .get({ sessionId: snapshot.session.id })
     .threads.find((each) => each.id === feedbackThreadId("u"))!;
@@ -285,8 +280,8 @@ test("a review read publishes it again once its threads moved", async () => {
   const root = checkout();
   const pushes: string[] = [];
   const dir = mkdtempSync(join(tmpdir(), "roamgate-anchors-store-"));
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
+  const { service } = reviewServiceForTest({
+    dir,
     publish: (push) => {
       if (push.type === "session")
         pushes.push(
@@ -303,7 +298,6 @@ test("a review read publishes it again once its threads moved", async () => {
       }),
   });
   cleanups.push(() => {
-    service.close();
     rmSync(dir, { recursive: true, force: true });
   });
   const opened = service.open({
@@ -412,9 +406,8 @@ test("a checkout not readable yet (a connection not ready, at startup) is asked 
   let ready = false;
   let now = Date.parse("2026-11-15T10:00:00Z");
   const dir = mkdtempSync(join(tmpdir(), "roamgate-anchors-store-"));
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     now: () => new Date(now),
     loadDiff: async (session, _commit, options) => {
       if (!ready) throw new Error("connection not ready");
@@ -428,7 +421,6 @@ test("a checkout not readable yet (a connection not ready, at startup) is asked 
     },
   });
   cleanups.push(() => {
-    service.close();
     rmSync(dir, { recursive: true, force: true });
   });
   const opened = service.open({

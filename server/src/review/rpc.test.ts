@@ -1,28 +1,10 @@
-import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { expect, test } from "bun:test";
 import { handleReviewRpc } from "./rpc";
-import { createReviewService, type ReviewService } from "./service";
-import { openReviewStorage } from "./storage";
-
-const cleanups: (() => void)[] = [];
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
-});
+import { type ReviewService } from "./service";
+import { reviewServiceForTest } from "./testkit";
 
 function setup(): ReviewService {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-rpc-"));
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
-  });
-  cleanups.push(() => {
-    service.close();
-    rmSync(dir, { recursive: true, force: true });
-  });
-  return service;
+  return reviewServiceForTest().service;
 }
 
 const local = { id: "local", resolveRoot: async () => "/repo" };
@@ -88,11 +70,7 @@ test("the page's list has the chats, so their threads survive a reload", async (
 });
 
 test("the browser finds a review's merge request on its own connection only", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-rpc-"));
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
     gitlab: {
       context: () => {
         throw new Error("glab must not run");
@@ -116,10 +94,6 @@ test("the browser finds a review's merge request on its own connection only", as
         branch: "four",
       }),
     },
-  });
-  cleanups.push(() => {
-    service.close();
-    rmSync(dir, { recursive: true, force: true });
   });
   const opened = (await handleReviewRpc(service, local, "review.open", {
     workspace_id: "w1",
@@ -161,11 +135,7 @@ test("the browser finds a review's merge request on its own connection only", as
 });
 
 test("the merge request the user picked (Changes' card's remote) opens as is, whatever the branch's lookup finds", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-rpc-"));
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
     gitlab: {
       context: () => {
         throw new Error("glab must not run");
@@ -176,10 +146,6 @@ test("the merge request the user picked (Changes' card's remote) opens as is, wh
       // The branch's lookup would find none.
       find: async () => null,
     },
-  });
-  cleanups.push(() => {
-    service.close();
-    rmSync(dir, { recursive: true, force: true });
   });
   const opened = (await handleReviewRpc(service, local, "review.open", {
     workspace_id: "w1",

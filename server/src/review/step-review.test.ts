@@ -4,12 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import type { ReviewSession } from "../../../shared/review";
-import {
-  createReviewService,
-  describeTarget,
-  type ReviewService,
-} from "./service";
-import { openReviewStorage } from "./storage";
+import { describeTarget } from "./service";
+import { reviewServiceForTest } from "./testkit";
 
 /*
  * The Last step as a review target in the review service (plan D15), and
@@ -18,9 +14,7 @@ import { openReviewStorage } from "./storage";
  */
 
 const directories: string[] = [];
-const services: ReviewService[] = [];
 afterEach(() => {
-  for (const service of services.splice(0)) service.close();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
@@ -34,9 +28,8 @@ function setup(dir?: string) {
       return path;
     })();
   const loads: { target: unknown; commit?: string }[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(directory),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir: directory,
     loadDiff: async (session, commit) => {
       loads.push({ target: session.target, commit });
       return { files: [], truncated: false, headSha: "f".repeat(40) };
@@ -56,7 +49,6 @@ function setup(dir?: string) {
         : [],
     loadState: async () => "state",
   });
-  services.push(service);
   return { directory, service, loads };
 }
 
@@ -203,7 +195,6 @@ test("a review of a kind from a newer build is kept and listed, never crashing a
     raise: false,
   });
   service.close();
-  services.length = 0;
   // An older build reads what this one wrote: its own fallbacks for a kind
   // it does not know are the ones this build has for an unknown kind.
   const db = new Database(join(directory, "reviews.sqlite"));
