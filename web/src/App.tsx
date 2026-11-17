@@ -2910,19 +2910,31 @@ export default function App() {
     },
     [openInspector],
   );
+  /**
+   * A review with a home of its own (D16), shown there: a rendered file's
+   * in the Files preview, a chat's in its agent's pane. False for a code
+   * review, whose home is Changes.
+   */
+  const showReviewHome = useCallback(
+    (snapshot: ReviewSnapshot): boolean => {
+      const { session } = snapshot;
+      if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
+      else if (session.target.kind === "effort") openMrReviews();
+      else if (session.target.kind !== "chat") return false;
+      else if (session.agent.paneId) void store.focusPane(session.agent.paneId);
+      return true;
+    },
+    [showRenderedInFiles],
+  );
   /** A thread of the panel, shown where it is. */
   const goToWorkspaceThread = useCallback(
     (thread: ReviewThread, snapshot: ReviewSnapshot) => {
-      const { session } = snapshot;
-      if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
-      else if (thread.anchor.terminal)
+      if (thread.anchor.terminal && snapshot.session.target.kind !== "rendered")
         void store.focusPane(thread.anchor.terminal.pane);
-      else if (session.target.kind !== "chat")
-        showReviewInChangesRef.current(session.id);
-      // A chat's thread: its agent's pane, where the chat shows.
-      else if (session.agent.paneId) void store.focusPane(session.agent.paneId);
+      else if (!showReviewHome(snapshot))
+        showReviewInChangesRef.current(snapshot.session.id);
     },
-    [showRenderedInFiles],
+    [showReviewHome],
   );
   // Cmd+K from the review: the menu goes to other workspaces, so the review
   // steps aside (it is kept; Option+R brings it back).
@@ -2987,16 +2999,7 @@ export default function App() {
       const sessionId = takeOpenRequest(request, s.activeConnectionId);
       if (!sessionId) return;
       const snapshot = getReviewSnapshot(sessionId);
-      if (snapshot?.session.target.kind === "rendered") {
-        showRenderedInFiles(snapshot);
-        return;
-      }
-      // A chat's review is discussed in its chat: its agent's pane.
-      if (snapshot?.session.target.kind === "chat") {
-        if (snapshot.session.agent.paneId)
-          void store.focusPane(snapshot.session.agent.paneId);
-        return;
-      }
+      if (snapshot && showReviewHome(snapshot)) return;
       // A review asked for in this workspace (the Reviews inbox jumps
       // there first), or of none left (D3), shows in its Changes; another
       // workspace's waits in that one's Changes, shown on arriving there.
@@ -3016,7 +3019,7 @@ export default function App() {
   }, [
     reviewState.openRequest,
     s.activeConnectionId,
-    showRenderedInFiles,
+    showReviewHome,
     showReviewInChanges,
     pinReviewForChanges,
   ]);
@@ -4017,10 +4020,7 @@ export default function App() {
               message: choice.reason,
               autoDismissMs: 4000,
             });
-            if (choice.home === "files") showRenderedInFiles(snapshot);
-            else if (choice.home === "reviews") openMrReviews();
-            else if (snapshot.session.agent.paneId)
-              void store.focusPane(snapshot.session.agent.paneId);
+            showReviewHome(snapshot);
             return;
           }
           setChangesGoTo({
@@ -4125,7 +4125,7 @@ export default function App() {
       changesPinnedId,
       reviewState.sessions,
       setInspectorExpanded,
-      showRenderedInFiles,
+      showReviewHome,
     ],
   );
   toggleReviewInChangesRef.current = toggleReviewInChanges;
