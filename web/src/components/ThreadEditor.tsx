@@ -1,18 +1,11 @@
 import { Suspense, useRef, useState } from "react";
 import { vimKeys } from "../vimKeys";
-import { lazyWithReload } from "../lazyWithReload";
+import { ReviewCommentEditorLazy } from "./ReviewCommentEditorLazy";
 import { newClientId } from "../reviewPending";
 import "./ChatThreads.css";
 
 /** A comment box's words, and the id they were last sent with. */
 export type ThreadBox = { text: string; sent?: { text: string; id: string } };
-
-// The editor is loaded with the first comment box, not with the chat.
-const ReviewCommentEditor = lazyWithReload("review-comment-editor", () =>
-  import("./ReviewCommentEditor").then((module) => ({
-    default: module.ReviewCommentEditor,
-  })),
-);
 
 /**
  * A comment box: Cmd+Enter or :w saves, Esc on an empty one closes. A save
@@ -73,7 +66,7 @@ export function ThreadEditor({
   return (
     <div className="chat-thread-editor">
       <Suspense fallback={null}>
-        <ReviewCommentEditor
+        <ReviewCommentEditorLazy
           value={initial}
           vimMode={vim}
           autoFocus={autoFocus}

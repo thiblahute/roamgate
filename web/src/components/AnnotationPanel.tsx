@@ -32,17 +32,10 @@ import {
 } from "../shortcutPreferences";
 import type { Pane } from "../types";
 import { vimKeys } from "../vimKeys";
-import { lazyWithReload } from "../lazyWithReload";
+import { ReviewCommentEditorLazy } from "./ReviewCommentEditorLazy";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ThemedSelect } from "./ThemedSelect";
 import "./AnnotationPanel.css";
-
-// The comment editors' CodeMirror Vim editor, loaded with the first one.
-const ReviewCommentEditor = lazyWithReload("review-comment-editor", () =>
-  import("./ReviewCommentEditor").then((module) => ({
-    default: module.ReviewCommentEditor,
-  })),
-);
 
 /** The most a held comment takes, as typed. */
 const COMMENT_MAX_LENGTH = 10_000;
@@ -82,7 +75,7 @@ function HeldCommentEditor({
       onKeyDownCapture={onKeys}
     >
       <Suspense fallback={null}>
-        <ReviewCommentEditor
+        <ReviewCommentEditorLazy
           key={drawn}
           value={comment}
           vimMode
