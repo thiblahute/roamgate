@@ -16,15 +16,12 @@ import {
   diffCursorModel,
   fileStep,
   filesWithHits,
-  firstColumn,
   hunkStep,
   rowAt,
   rowLine,
   screenRow,
   scrollTarget,
-  searchFileStep,
   searchHits,
-  searchStepWrapping,
   stepRows,
   stickyInset,
   wordStep,
@@ -34,7 +31,14 @@ import { runKeyCommand, useKeyMachine } from "../keyMachine";
 import { reviewKeyRoute } from "../reviewKeys";
 import { shortcutMatches } from "../shortcutPreferences";
 import { store } from "../store";
-import { type Match, searchRegExp, wordAt } from "../reviewNavigation";
+import {
+  findFile,
+  firstNonBlank,
+  type Match,
+  nextMatch,
+  searchRegExp,
+  wordAt,
+} from "../reviewNavigation";
 import type { DiffSurfaceInstance } from "./DiffSurface";
 
 /*
@@ -801,7 +805,12 @@ export function useDiffCursor({
   }, [notFound]);
 
   const searchFile = (pattern: string, direction: 1 | -1): boolean => {
-    const index = searchFileStep(model, pattern, at, direction);
+    const index = findFile(
+      model.files.map((file) => file.path),
+      pattern,
+      model.rows[at]?.file ?? -1,
+      direction,
+    );
     const file = model.files[index];
     if (index < 0 || !file) return false;
     jumpTo(file.start, 0);
@@ -834,7 +843,7 @@ export function useDiffCursor({
 
   /** The next hit, its fold opened, clear of the edges; a wrap told. */
   const goToHit = (found: readonly Match[], direction: 1 | -1) => {
-    const step = searchStepWrapping(found, { at, col: cursor.col }, direction);
+    const step = nextMatch(found, { at, col: cursor.col }, direction);
     if (!step) return;
     const wrap =
       step.wrapped && found.length > 1
@@ -930,7 +939,7 @@ export function useDiffCursor({
       case "}":
       case "{": {
         const target = hunkStep(model, at, key === "}" ? 1 : -1, n);
-        jumpTo(target, firstColumn(model, target));
+        jumpTo(target, firstNonBlank(model.rows[target]?.text ?? ""));
         return true;
       }
       case "]":
@@ -991,7 +1000,7 @@ export function useDiffCursor({
         jumpTo(at, 0, "none");
         return true;
       case "^":
-        jumpTo(at, firstColumn(model, at), "none");
+        jumpTo(at, firstNonBlank(model.rows[at]?.text ?? ""), "none");
         return true;
       case "$":
         jumpTo(at, Math.max(0, (row?.text.length ?? 1) - 1), "none");
