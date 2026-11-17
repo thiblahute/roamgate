@@ -6,7 +6,11 @@ import type {
   MrReviewsSettings,
   MrSection,
 } from "../../../shared/mrReviews";
-import { MR_DISPOSITIONS, mrWhoseLabel } from "../../../shared/mrReviews";
+import {
+  MR_DISPOSITIONS,
+  mrWhoseLabel,
+  upstreamWorkspaceHome,
+} from "../../../shared/mrReviews";
 import { clusterLedger, type DerivedCommit, filterLedger } from "./efforts";
 import {
   type WorkspaceTree,
@@ -217,7 +221,7 @@ export const boardToolSchemas = {
         Type.String({
           maxLength: 400,
           description:
-            "To declare one: the group headed upstream (path, name or id).",
+            "To declare one: the group headed upstream (path, name or id), or a workspace headed upstream by itself (name or checkout path).",
         }),
       ),
       name: Type.Optional(Type.String({ maxLength: 80 })),
@@ -407,10 +411,11 @@ export const boardToolSchemas = {
         minLength: 1,
         maxLength: 4096,
         description:
-          "A workspace in a group headed upstream: its name or its checkout path.",
+          "A workspace of the Workspaces tree: its name or its checkout path.",
       }),
       headed: Type.Boolean({
-        description: "false: not headed upstream (skipped); true: back.",
+        description:
+          "false: not headed upstream (skipped in its group, unmarked alone); true: headed upstream (back in its group, marked alone).",
       }),
     },
     { additionalProperties: false },
@@ -635,7 +640,7 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
   effort_get:
     "An upstreaming effort: its declaration (source, target, feeders, head workspace), counts by disposition (upstream, in_review, in_part, planned, not_for_upstream, superseded, unsorted), feeders with commits not on the source yet, overlaps with other efforts and branches, and the last bulk changes.",
   effort_set:
-    "Declare an upstreaming effort on a group headed upstream (group, source branch; target defaults to origin/main, the clone to the group's first workspace), or change one (effort). preview: true only says what it would hold and its overlaps. Declaring never starts a session. The user is told and can undo it.",
+    "Declare an upstreaming effort on a group or a workspace headed upstream (group, source branch; target defaults to origin/main, the clone to the group's first workspace), or change one (effort). preview: true only says what it would hold and its overlaps. Declaring never starts a session. The user is told and can undo it.",
   ledger_list:
     "An effort's commits, oldest first, 200 a page (cursor), each with sha, subject, author, top directory, disposition and note; filter with words and disposition:, dir:, file:, author: tokens. cluster: true adds a first grouping of the unsorted commits for proposing planned requests.",
   ledger_set:
@@ -651,7 +656,7 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
   upstream_group:
     "Mark a Workspaces-tree group as headed upstream (its workspaces, and those of the groups inside it, hold work meant to go upstream: their branches show in Reviews, lane Not proposed upstream yet, until their request opens), or unmark it. Only when the user asked.",
   upstream_workspace:
-    "Say one workspace of a group headed upstream is not (headed: false), or is again. Only when the user asked.",
+    "Say one workspace of a group headed upstream is not (headed: false), or is again; a workspace in no such group is headed upstream by itself (headed: true) or no longer. Only when the user asked.",
   upstream_unsent:
     "Turn a branch headed upstream into a request not proposed yet (with a title and target branch, the first commit's subject and the default branch otherwise), or back into a plain branch. When its request opens on the forge it takes the request's place, order and what was set by hand. Never opens anything on a forge.",
   reviews_view:
@@ -1106,13 +1111,24 @@ export function createBoardTools(
                   each.names[each.names.length - 1]!.toLowerCase() === wanted),
             )
           : [];
-        if (found.length !== 1)
+        // Else a workspace headed upstream by itself (its name or path).
+        const alone = found.length
+          ? []
+          : (await deps.settings()).upstreamWorkspaces.filter(
+              (ref) =>
+                ref.path === params.group!.trim() ||
+                ref.label?.toLowerCase() === wanted,
+            );
+        if (found.length !== 1 && alone.length !== 1)
           throw new AssistantUserError(
-            found.length
-              ? `"${params.group}" fits several groups.`
-              : `No group "${params.group}".`,
+            found.length || alone.length
+              ? `"${params.group}" fits several groups or workspaces.`
+              : `No group or workspace headed upstream "${params.group}".`,
           );
-        group = found[0]!.node;
+        group =
+          found.length === 1
+            ? found[0]!.node
+            : upstreamWorkspaceHome(alone[0]!);
       }
       if (!params.effort && !group)
         throw new AssistantUserError("Give effort (to change one) or group.");

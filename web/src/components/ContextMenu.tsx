@@ -38,6 +38,10 @@ export interface ContextMenuState {
 export interface Item {
   label: string;
   danger?: boolean;
+  /** A toggle: shown checked or not. */
+  checked?: boolean;
+  disabled?: boolean;
+  title?: string;
   action: () => void;
 }
 
@@ -478,7 +482,12 @@ export function ContextMenu({
             {group.items.map((item) => (
               <button
                 key={item.label}
-                className={`context-menu-item ${item.danger ? "is-danger" : ""}`}
+                {...(item.checked === undefined
+                  ? {}
+                  : { role: "menuitemcheckbox", "aria-checked": item.checked })}
+                disabled={item.disabled}
+                title={item.title}
+                className={`context-menu-item ${item.danger ? "is-danger" : ""}${item.checked ? " is-checked" : ""}`}
                 onClick={() => {
                   onClose();
                   // Arranging touches no connection.

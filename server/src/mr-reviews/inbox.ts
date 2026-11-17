@@ -944,6 +944,9 @@ export function createMrInbox(deps: MrInboxDeps) {
         ...(settings.upstreamGroups.length
           ? { upstreamGroups: settings.upstreamGroups }
           : {}),
+        ...(settings.upstreamWorkspaces.length
+          ? { upstreamWorkspaces: settings.upstreamWorkspaces }
+          : {}),
         ...(settings.efforts.length && deps.efforts
           ? { efforts: deps.efforts(settings) }
           : {}),

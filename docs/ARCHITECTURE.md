@@ -851,9 +851,11 @@ notifies the pages and runs the inference (no forge call). Board tool rows
 carry `merge` (`mergeable_at`, `via`, `failed`).
 
 Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`, section 11):
-`{format: "roamgate-reviews", version: 1, exported_at, mr_reviews: {order,
+`{format: "roamgate-reviews", version: 3, exported_at, mr_reviews: {order,
 pinned, hidden, overrides, views, unsent, upstream_groups, upstream_skip,
-efforts, merge} as stored, efforts: {<id>: {ledger (without journal), history}}}`
+upstream_workspaces, efforts, merge, hosts, followed, hints} as stored,
+efforts: {<id>: {ledger (without journal), history}}}` (version 2 added
+the hosts, followed projects and hints, version 3 `upstream_workspaces`)
 in key-sorted JSON (`stableJson`), every key matching a secret pattern
 dropped and token-like values masked (`withoutSecrets`). `importChanges`
 diffs item by item (overrides and ledger entries by key, lists by id,
@@ -896,11 +898,18 @@ is newer than the one it last wrote or took, unless it is typing or saving.
 Branches headed upstream (`mr-reviews/upstream.ts`): settings
 `mr_reviews.upstream_groups` (Workspaces-tree group ids, at most 50; groups
 below them count, ids of deleted groups are dropped on each tree change)
-and `upstream_skip` (`WorkspaceRef`s, at most 200), changed by
+and `upstream_skip` (`WorkspaceRef`s, at most 200), plus
+`upstream_workspaces` (`WorkspaceRef`s headed upstream by themselves, in no
+such group, at most 200), changed by
 `bridge.mr_reviews.upstream.group {group, headed}` and
-`upstream.workspace {ref, headed}` and read by `upstream.marks`; pushed as
-`changed: ["upstream"]`. Members are the workspace nodes under such a group
-resolved to live workspaces (`resolveWorkspaceTree`). One script per
+`upstream.workspace {ref, headed}` (in a marked group of the tree it skips
+the workspace or brings it back; elsewhere it marks or unmarks it by
+itself) and read by `upstream.marks` (`{groups, skip, workspaces}`);
+pushed as `changed: ["upstream"]`. Members are the workspace nodes under
+such a group resolved to live workspaces (`resolveWorkspaceTree`), and the
+live workspaces (with a node or none) matching `upstream_workspaces`,
+whose home is `upstreamWorkspaceHome(ref)` (`ws-` and 16 hex digits) where
+a group's is its node id. One script per
 connection (`upstreamScanScript`, kept a minute) reads each checkout's
 branch, head, dirty and unpushed counts, remotes, and for `upstream` then
 `origin` the default branch with ahead/behind; the commits and their patch
@@ -923,7 +932,9 @@ now listed is renamed to the request's key in one settings write.
 Upstreaming efforts (`mr-reviews/efforts.ts`, `effort-service.ts`):
 settings `mr_reviews.efforts` (`{id, group, name, clone: {connection_id,
 path}, source, target: {remote, branch}, feeders?, head?}`, at most 30;
-`source` and feeders exact refs), pushed as `changed: ["efforts"]`. Per
+`source` and feeders exact refs; `group` is its home: a marked group's
+node id or a workspace's `upstreamWorkspaceHome`), pushed as
+`changed: ["efforts"]`. Per
 effort, `<data>/mr-reviews/efforts/<id>/`: `ledger.json` (authored:
 dispositions by ledger key with the secondary key subject and author date,
 `aliases` of later patch ids, a journal of the last 100 bulk changes, a

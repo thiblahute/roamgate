@@ -6,6 +6,7 @@ import {
   mrActivityMarker,
   type MrReviewsSettings,
   parseMrWhose,
+  sameUpstreamWorkspace,
 } from "../../../shared/mrReviews";
 import type { MrOrderOp } from "../../../shared/mrReviewsOrder";
 import { parseRequestRef } from "./agent-search";
@@ -18,7 +19,9 @@ import {
 } from "./overrides";
 import {
   parseWorkspaceRef,
+  type WorkspaceTree,
   workspaceRefKey,
+  workspaceTreeAncestors,
 } from "../../../shared/workspaceTree";
 import {
   MAX_HIDDEN,
@@ -26,6 +29,7 @@ import {
   MAX_UNSENT,
   MAX_UPSTREAM_GROUPS,
   MAX_UPSTREAM_SKIP,
+  MAX_UPSTREAM_WORKSPACES,
   MAX_VIEWS,
   VIEW_NAME_MAX,
   VIEW_QUERY_MAX,
@@ -64,6 +68,12 @@ export type MrReviewsRpcDeps = {
   order: MrOrder;
   /** The Headed upstream marks changed: the branches are read again. */
   upstreamChanged?: () => Promise<void>;
+  /**
+   * The Workspaces tree: whether a workspace is in a group headed
+   * upstream. Without it, a workspace marked by itself is unmarked and
+   * any other is taken to be in such a group.
+   */
+  tree?: () => Promise<WorkspaceTree | null>;
   /** The rest of the methods (open, checkout, Claude), when set up. */
   more?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 };
@@ -537,12 +547,13 @@ export async function handleMrReviewsRpc(
       return {
         groups: current.upstreamGroups,
         skip: current.upstreamSkip,
+        workspaces: current.upstreamWorkspaces,
       };
     }
     case "bridge.mr_reviews.upstream.group":
     case "bridge.mr_reviews.upstream.workspace": {
-      // A Workspaces-tree group headed upstream (D5), or one of its
-      // workspaces that is not.
+      // A Workspaces-tree group headed upstream (D5), or a workspace: one
+      // of such a group's that is not, or one headed by itself.
       const headed = params.headed !== false;
       const meta = change(params);
       const isGroup = method === "bridge.mr_reviews.upstream.group";
@@ -576,21 +587,56 @@ export async function handleMrReviewsRpc(
               : current.upstreamGroups.filter((id) => id !== group),
           };
         } else {
+          // In a group headed upstream, a workspace is headed unless
+          // skipped; elsewhere only when marked by itself.
           const id = workspaceRefKey(ref!);
-          const has = current.upstreamSkip.some(
+          const own = current.upstreamWorkspaces.some((each) =>
+            sameUpstreamWorkspace(each, ref!),
+          );
+          const tree = deps.tree ? await deps.tree().catch(() => null) : null;
+          const node = tree?.nodes.find(
+            (each) =>
+              each.kind === "workspace" &&
+              sameUpstreamWorkspace(each.ref, ref!),
+          );
+          const marked = new Set(current.upstreamGroups);
+          const inGroup = tree
+            ? !!node?.parent &&
+              workspaceTreeAncestors(tree, node.parent).some((each) =>
+                marked.has(each),
+              )
+            : !own;
+          const skipped = current.upstreamSkip.some(
             (each) => workspaceRefKey(each) === id,
           );
-          // Headed: not skipped.
-          if (has !== headed)
-            return { changed: false, version: current.orderVersion ?? 0 };
-          next = {
-            ...current,
-            upstreamSkip: headed
-              ? current.upstreamSkip.filter(
+          const upstreamSkip =
+            inGroup && !headed
+              ? skipped
+                ? current.upstreamSkip
+                : [...current.upstreamSkip, ref!].slice(-MAX_UPSTREAM_SKIP)
+              : current.upstreamSkip.filter(
                   (each) => workspaceRefKey(each) !== id,
-                )
-              : [...current.upstreamSkip, ref!].slice(-MAX_UPSTREAM_SKIP),
-          };
+                );
+          let upstreamWorkspaces = current.upstreamWorkspaces.filter(
+            (each) => !sameUpstreamWorkspace(each, ref!),
+          );
+          if (!inGroup && headed) {
+            if (upstreamWorkspaces.length >= MAX_UPSTREAM_WORKSPACES)
+              throw new MrReviewsError(
+                `At most ${MAX_UPSTREAM_WORKSPACES} workspaces headed upstream by themselves.`,
+              );
+            upstreamWorkspaces = own
+              ? current.upstreamWorkspaces
+              : [...upstreamWorkspaces, ref!];
+          }
+          if (
+            JSON.stringify(upstreamSkip) ===
+              JSON.stringify(current.upstreamSkip) &&
+            JSON.stringify(upstreamWorkspaces) ===
+              JSON.stringify(current.upstreamWorkspaces)
+          )
+            return { changed: false, version: current.orderVersion ?? 0 };
+          next = { ...current, upstreamSkip, upstreamWorkspaces };
         }
         const saved = await deps.saveSettings(next, meta);
         return { changed: true, version: saved.orderVersion ?? 0 };

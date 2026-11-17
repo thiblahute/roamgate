@@ -5,9 +5,12 @@ import {
   type MrItem,
   type MrReviewsSettings,
   mrBranchKey,
+  sameUpstreamWorkspace,
+  upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import {
   type LiveWorkspaceIdentity,
+  liveWorkspaceKey,
   resolveWorkspaceTree,
   type WorkspaceRef,
   type WorkspaceTree,
@@ -22,7 +25,7 @@ import { forgeHeadRef } from "./worktree";
 /**
  * Branches headed upstream: the workspaces of the Workspaces-tree groups
  * marked "Headed upstream" (and the groups inside them), minus those the
- * user said are not, read from their checkouts (one cheap script per
+ * user said are not, and the workspaces marked by themselves, read from their checkouts (one cheap script per
  * connection, kept a minute; the commits only when the head or the target
  * moved). A branch whose request is open is the request's: it shows no
  * row of its own. Nothing here reads a forge; the only git fetch is of the
@@ -42,7 +45,10 @@ export type UpstreamMember = {
   workspaceId: string;
   label: string;
   path: string;
-  /** The marked group it is in (the nearest). */
+  /**
+   * Its home: the marked group it is in (the nearest), or for a
+   * workspace marked by itself its `upstreamWorkspaceHome`.
+   */
   group: string;
 };
 
@@ -77,12 +83,14 @@ function skipped(ref: WorkspaceRef, skip: readonly WorkspaceRef[]): boolean {
 
 /**
  * The workspaces headed upstream: workspace nodes under a marked group,
- * resolved to the live ones (a connection not listed is not read), minus
- * the skipped.
+ * minus the skipped, and the workspaces marked by themselves (with a node
+ * of the tree or not), resolved to the live ones (a connection not listed
+ * is not read).
  */
 export function upstreamMembers(
   tree: WorkspaceTree,
-  settings: Pick<MrReviewsSettings, "upstreamGroups" | "upstreamSkip">,
+  settings: Pick<MrReviewsSettings, "upstreamGroups" | "upstreamSkip"> &
+    Partial<Pick<MrReviewsSettings, "upstreamWorkspaces">>,
   live: ReadonlyMap<string, readonly LiveWorkspaceIdentity[]>,
   /**
    * Where a workspace without a checkout of its own works (its first
@@ -90,33 +98,63 @@ export function upstreamMembers(
    */
   dirs: ReadonlyMap<string, string> = new Map(),
 ): UpstreamMember[] {
-  if (!settings.upstreamGroups.length) return [];
+  const own = settings.upstreamWorkspaces ?? [];
+  if (!settings.upstreamGroups.length && !own.length) return [];
   const groups = headedGroups(tree, settings.upstreamGroups);
   const resolved = resolveWorkspaceTree(tree, live);
   const out: UpstreamMember[] = [];
-  for (const node of tree.nodes) {
-    if (node.kind !== "workspace" || !node.parent) continue;
-    const group = workspaceTreeAncestors(tree, node.parent).find((id) =>
-      groups.has(id),
-    );
-    if (!group) continue;
-    if (skipped(node.ref, settings.upstreamSkip)) continue;
-    const found = resolved.nodes.get(node.id);
-    if (found?.state !== "live") continue;
+  const add = (connectionId: string, workspaceId: string, home: string) => {
     const identity = live
-      .get(found.connectionId)
-      ?.find((each) => each.workspace_id === found.workspaceId);
-    const path =
-      identity?.path ?? dirs.get(`${found.connectionId}\0${found.workspaceId}`);
-    if (!identity || !path) continue;
+      .get(connectionId)
+      ?.find((each) => each.workspace_id === workspaceId);
+    const path = identity?.path ?? dirs.get(`${connectionId}\0${workspaceId}`);
+    if (!identity || !path) return;
     out.push({
-      connectionId: found.connectionId,
-      workspaceId: found.workspaceId,
+      connectionId,
+      workspaceId,
       label: identity.label,
       path,
-      group: groups.get(group) ?? group,
+      group: home,
     });
+  };
+  for (const node of tree.nodes) {
+    if (node.kind !== "workspace") continue;
+    const group = node.parent
+      ? workspaceTreeAncestors(tree, node.parent).find((id) => groups.has(id))
+      : undefined;
+    let home: string;
+    if (group) {
+      if (skipped(node.ref, settings.upstreamSkip)) continue;
+      home = groups.get(group) ?? group;
+    } else {
+      const mark = own.find((each) => sameUpstreamWorkspace(each, node.ref));
+      if (!mark) continue;
+      home = upstreamWorkspaceHome(mark);
+    }
+    const found = resolved.nodes.get(node.id);
+    if (found?.state !== "live") continue;
+    add(found.connectionId, found.workspaceId, home);
   }
+  // Workspaces marked by themselves that the tree has no node for.
+  if (own.length)
+    for (const [connectionId, workspaces] of live)
+      for (const identity of workspaces) {
+        if (
+          resolved.nodeByWorkspace.has(
+            liveWorkspaceKey(connectionId, identity.workspace_id),
+          )
+        )
+          continue;
+        const ref: WorkspaceRef = {
+          connection_id: connectionId,
+          ...(identity.path ? { path: identity.path } : {}),
+          ...(identity.label ? { label: identity.label } : {}),
+          workspace_id: identity.workspace_id,
+        };
+        const mark = own.find((each) => sameUpstreamWorkspace(each, ref));
+        if (mark)
+          add(connectionId, identity.workspace_id, upstreamWorkspaceHome(mark));
+      }
   return out;
 }
 
@@ -474,7 +512,10 @@ export function createUpstreamScanner(options: {
 
   async function scan(): Promise<void> {
     const settings = await options.settings();
-    if (!settings.upstreamGroups.length) {
+    if (
+      !settings.upstreamGroups.length &&
+      !settings.upstreamWorkspaces.length
+    ) {
       branches = [];
       return;
     }

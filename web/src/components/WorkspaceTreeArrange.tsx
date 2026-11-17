@@ -794,7 +794,9 @@ export function ArrangeNodeMenu({
           "Follow a large branch of this group commit by commit until it is all upstream",
         action: () =>
           void import("./MrReviewsRoot").then((module) =>
-            module.showMrReviews(undefined, undefined, "declare"),
+            module.showMrReviews(undefined, undefined, "declare", {
+              home: headed,
+            }),
           ),
       });
   }
