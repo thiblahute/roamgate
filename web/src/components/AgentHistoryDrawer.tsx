@@ -164,6 +164,7 @@ import { VoiceChatOverlay } from "./VoiceChatOverlay";
 import { subscribeVoiceRecording } from "../voiceLibrary";
 import { AgentHistoryFilters } from "./AgentHistoryFilters";
 import { scrollChatTo } from "./chatPaging";
+import { mountKeyOf } from "./chatMountWindow";
 import { ConversationMinimap } from "./ConversationMinimap";
 import {
   groupHistoryChatItems,
@@ -921,6 +922,17 @@ export function AgentHistoryDrawer({
     const anchor = olderAnchorRef.current;
     if (!anchor) return;
     const scroller = contentRef.current;
+    // A long chat draws an item away from the view as an empty box, and
+    // the item come near in its place (chatMountWindow): the same item.
+    if (!anchor.element.isConnected) {
+      const id = mountKeyOf(anchor.element);
+      const again = id
+        ? timelineRef.current?.querySelector(
+            `:scope > [data-bubble-id="${CSS.escape(id)}"], :scope > [data-place-id="${CSS.escape(id)}"]`,
+          )
+        : null;
+      if (again) anchor.element = again;
+    }
     if (scroller && anchor.element.isConnected) {
       scroller.scrollTop +=
         anchor.element.getBoundingClientRect().top - anchor.top;
