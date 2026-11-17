@@ -446,6 +446,14 @@ test("a review of a root commit as ROOT^..ROOT compares it with the empty tree",
       target: { kind: "range", base: "nothing-here^", head: second },
     }),
   ).rejects.toBeInstanceOf(ReviewGoneError);
+  // Its state too: the poll says gone, not changed.
+  for (const target of [
+    { kind: "range" as const, base: "nothing-here^", head: second },
+    { kind: "range" as const, base: `${second}^`, head: "gone-branch" },
+  ])
+    await expect(
+      readReviewState({ ...run, root, target }),
+    ).rejects.toBeInstanceOf(ReviewGoneError);
 });
 
 test("a review's state changes when its code does", async () => {
