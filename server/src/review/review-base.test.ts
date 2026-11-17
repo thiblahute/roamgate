@@ -6,8 +6,7 @@ import { resolveDefaultBase } from "../workspace/diff-base";
 import { readDefaultBase } from "../workspace/review-patch";
 import { createReviewAgentServer } from "./agent-server";
 import { handleReviewRpc } from "./rpc";
-import { createReviewService } from "./service";
-import { openReviewStorage } from "./storage";
+import { reviewServiceForTest } from "./testkit";
 
 /**
  * Which review the branch's three ways in land on (plan: review into the
@@ -77,11 +76,7 @@ async function branchScopeBase(root: string) {
 function setup(root: string) {
   const dir = temp("rg-rb-");
   const home = temp("rg-rbh-");
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
-  });
+  const { service } = reviewServiceForTest({ dir });
   const defaultBase = (path: string) =>
     readDefaultBase({ root: path, shQuote, runProcessWithCodeTimeout });
   const agent = createReviewAgentServer({

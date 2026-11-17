@@ -3,21 +3,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ReviewPush, threadNeedsAnswer } from "../../../shared/review";
-import {
-  createReviewService,
-  fileChangePlace,
-  type ReviewService,
-  reviewsBranch,
-} from "./service";
+import { fileChangePlace, type ReviewService, reviewsBranch } from "./service";
 import { openReviewStorage } from "./storage";
 import { ReviewGoneError } from "../workspace/review-patch";
 import { TurnCauses } from "../voice/turn-causes";
 import { reviewServiceForTest } from "./testkit";
 
 const directories: string[] = [];
-const services: ReviewService[] = [];
 afterEach(() => {
-  for (const service of services.splice(0)) service.close();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
@@ -247,7 +240,6 @@ test("reviews survive a restart, and a deleted thread can be restored", async ()
   });
   await first.service.restoreThread({ sessionId: session.id, thread });
   first.service.close();
-  services.splice(services.indexOf(first.service), 1);
 
   const second = setup(first.dir);
   const restored = second.service.get({ sessionId: session.id });
@@ -332,13 +324,11 @@ test("activity tells which branches moved since their diff was seen", async () =
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   let head = "aaaaaaa1";
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async () => ({ files: [], truncated: false, headSha: head }),
     loadHeads: async (_connection, entries) => entries.map(() => head),
   });
-  services.push(service);
   const session = openSession(service);
   await service.diff({ sessionId: session.id });
   expect((await service.activity({ connectionId: "local" })).activity).toEqual([
@@ -360,10 +350,8 @@ test("the commit the overlay showed, gone, brings the patch ids along", async ()
   const asked: string[][] = [];
   const sha = (c: string) => c.repeat(40);
   let failPatchIds = false;
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     loadCommits: async () =>
       ["a", "b"].map((c) => ({
         sha: sha(c),
@@ -379,7 +367,6 @@ test("the commit the overlay showed, gone, brings the patch ids along", async ()
       return Object.fromEntries(shas.map((s) => [s, `p${s[0]}`]));
     },
   });
-  services.push(service);
   const sessionId = openSession(service).id;
   // Still there, or nothing followed: no patch ids.
   expect(
@@ -409,9 +396,8 @@ test("the view a review opens on loads with its commits, from one listing", asyn
   let listings = 0;
   const diffs: (string | undefined)[] = [];
   let commits = ["a", "b"];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async (_session, commit) => {
       diffs.push(commit);
       return { files: [], truncated: false, headSha: sha("f") };
@@ -429,7 +415,6 @@ test("the view a review opens on loads with its commits, from one listing", asyn
       }));
     },
   });
-  services.push(service);
   const sessionId = openSession(service).id;
   // Asked together as the overlay opens: git lists the commits once.
   const [list, first] = await Promise.all([
@@ -465,9 +450,8 @@ test("a removed checkout is remembered, not asked of the host each poll", async 
       "This checkout no longer exists: /repo",
     );
   let removed = true;
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     now: () => new Date(now),
     loadDiff: async () => {
       calls.push("diff");
@@ -489,7 +473,6 @@ test("a removed checkout is remembered, not asked of the host each poll", async 
       return entries.map(() => null);
     },
   });
-  services.push(service);
   const session = openSession(service);
   const sessionId = session.id;
   await expect(service.commits({ sessionId })).rejects.toThrow(
@@ -525,15 +508,13 @@ test("a merge request's review is never given up for its checkout", async () => 
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   let calls = 0;
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async () => {
       calls++;
       throw new ReviewGoneError("checkout-gone", "gone");
     },
   });
-  services.push(service);
   // Its loader falls back to GitLab; what still fails is not remembered.
   const { session } = service.open({
     connectionId: "local",
@@ -613,10 +594,8 @@ test("a merge request's review sends your discussions to the agent as written, o
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
@@ -658,7 +637,6 @@ test("a merge request's review sends your discussions to the agent as written, o
       }),
     },
   });
-  services.push(service);
   // No agent yet when the review opens.
   const local = service.open({
     connectionId: "local",
@@ -711,10 +689,8 @@ test("a merge request's review: drafts are draft notes; agents write only here",
   let project = "gst/gstreamer";
   let at = Date.parse("2026-10-29T10:00:00Z");
   let nextDraft = 11;
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     now: () => new Date(at),
     gitlab: {
       checkout: async () => checkoutOn("fix", "a1"),
@@ -760,7 +736,6 @@ test("a merge request's review: drafts are draft notes; agents write only here",
       }),
     },
   });
-  services.push(service);
   const local = service.open({
     connectionId: "local",
     root: "/repo",
@@ -879,15 +854,12 @@ test("agent review: the previous pass goes, the prompt reaches the pane", async 
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: { pane: string; text: string }[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     promptAgent: async (_connection, pane, text) => {
       prompts.push({ pane, text });
     },
   });
-  services.push(service);
   const session = openSession(service);
   await service.addThread({
     sessionId: session.id,
@@ -954,15 +926,12 @@ test("the overall comment goes to the agent with a handoff, once", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   await service.update({ sessionId: session.id, summary: "All good" });
   await service.handoff({ sessionId: session.id });
@@ -1001,16 +970,13 @@ test("held comments wait for the user's handoff", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 20,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   await service.update({ sessionId: session.id, holdComments: true });
   await service.addThread({ sessionId: session.id, text: "First" });
@@ -1043,16 +1009,13 @@ test("the user's comments reach the agent by themselves, batched", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 20,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   expect(session.autoSend).toBe(true);
   await service.addThread({
@@ -1132,16 +1095,13 @@ test("a comment on a commit message reaches the agent as such", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   await service.addThread({
     sessionId: session.id,
@@ -1165,16 +1125,13 @@ test("a comment on a part of a message reaches the agent with its quote", async 
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   const anchor = { path: "plan.md", line: 3, side: "new" as const };
   const plan = await service.addThread({
@@ -1214,9 +1171,8 @@ test("a chat's threads: no diff, kept out of the reviews, sent with context", as
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async () => {
       throw new Error("a chat has no diff");
     },
@@ -1225,7 +1181,6 @@ test("a chat's threads: no diff, kept out of the reviews, sent with context", as
       prompts.push(text);
     },
   });
-  services.push(service);
   const review = openSession(service);
   const chat = service.open({
     connectionId: "local",
@@ -1304,9 +1259,8 @@ test("a comment on a file a chat's tool call changed says the file and lines", a
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
+    dir,
     loadDiff: async () => {
       throw new Error("a chat has no diff");
     },
@@ -1315,7 +1269,6 @@ test("a comment on a file a chat's tool call changed says the file and lines", a
       prompts.push(text);
     },
   });
-  services.push(service);
   const chat = service.open({
     connectionId: "local",
     root: "/repo",
@@ -1384,10 +1337,8 @@ test("a Ranger chat's threads go to Ranger, answered with its own tool", async (
   directories.push(dir);
   const prompts: { pane: string; text: string }[] = [];
   let busy = true;
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     retryDelayMs: 20,
     promptAgent: async (_connection, pane, text) => {
@@ -1401,7 +1352,6 @@ test("a Ranger chat's threads go to Ranger, answered with its own tool", async (
         ? "your `chat_thread_reply` tool"
         : undefined,
   });
-  services.push(service);
   const chat = service.open({
     connectionId: "local",
     workspaceId: "ranger",
@@ -1461,10 +1411,8 @@ test("attaching an agent delivers what was written; failures are reported", asyn
   const prompts: { pane: string; text: string }[] = [];
   let failing = false;
   const errors: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     onDeliveryError: (_session, reason) => errors.push(reason),
     retryDelayMs: 30,
@@ -1473,7 +1421,6 @@ test("attaching an agent delivers what was written; failures are reported", asyn
       prompts.push({ pane, text });
     },
   });
-  services.push(service);
   // A review opened from the browser before any agent was attached.
   const session = service.open({
     connectionId: "local",
@@ -1523,16 +1470,13 @@ test("an edit to an answered comment reaches the agent again", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 10,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   const thread = await service.addThread({
     sessionId: session.id,
@@ -1614,16 +1558,13 @@ test("in a local review a suggested change goes to the agent", async () => {
   const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
   directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
+  const { service } = reviewServiceForTest({
+    dir,
     deliveryDelayMs: 20,
     promptAgent: async (_connection, _pane, text) => {
       prompts.push(text);
     },
   });
-  services.push(service);
   const session = openSession(service);
   // A plain review comment stays the user's, for the merge request.
   await service.addThread({
@@ -1693,10 +1634,9 @@ function findSetup(
     checkouts: 0,
   };
   const calls: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
+  const { service } = reviewServiceForTest({
+    dir,
     publish: (push) => options.pushes?.push(push),
-    loadDiff: async () => ({ files: [], truncated: false }),
     loadHeads: async (_connection, entries) => entries.map(() => clock.head),
     now: () => new Date(clock.at),
     gitlab: {
@@ -1726,7 +1666,6 @@ function findSetup(
       }),
     },
   });
-  services.push(service);
   return { service, clock, calls };
 }
 
@@ -2336,17 +2275,8 @@ test("comparing two versions is its own review, titled OLD vs NEW", () => {
 });
 
 test("the turn a review comment starts is noted as the user's", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
-  directories.push(dir);
   const causes = new TurnCauses();
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
-    loadDiff: async () => ({ files: [], truncated: false }),
-    promptAgent: async () => {},
-    causes,
-  });
-  services.push(service);
+  const { service } = reviewServiceForTest({ causes });
   const session = openSession(service);
   await service.update({ sessionId: session.id, summary: "All good" });
   await service.handoff({ sessionId: session.id });
