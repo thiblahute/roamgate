@@ -1225,9 +1225,13 @@ export function useDiffCursor({
   const selectionIn = (key: string): SelectedLineRange | null | undefined => {
     if (!enabled) return undefined;
     if (anchor === null) return null;
-    const from = rows[Math.min(anchor, at)];
-    const to = rows[Math.max(anchor, at)];
-    if (!from || !to || from.key !== key) return null;
+    const first = Math.min(anchor, at);
+    let last = Math.max(anchor, at);
+    const from = rows[first];
+    if (!from || !rows[last] || from.key !== key) return null;
+    // Into another file (a Shift+click there): shown to this one's end.
+    while (rows[last]!.key !== key) last--;
+    const to = rows[last]!;
     const start = rowLine(from, from.kind === "-" ? "left" : "right");
     const end = rowLine(to, to.kind === "-" ? "left" : "right");
     return {
