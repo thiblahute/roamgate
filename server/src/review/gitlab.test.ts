@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { withoutGateFlags } from "../workspace/forge-calls";
+import { parseJsonPages } from "./forge-cli";
 import {
   chmodSync,
   mkdirSync,
@@ -19,7 +20,6 @@ import {
   mergeRequestSource,
   onGitlabHost,
   parseCheckout,
-  parseJsonPages,
   parseMergeRequestUrl,
   pickMergeRequest,
   readCheckout,
