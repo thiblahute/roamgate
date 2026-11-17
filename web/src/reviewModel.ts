@@ -51,36 +51,6 @@ export function lineNumberOf(line: ReviewDiffLine): number {
   return (line.kind === "-" ? line.old : line.new) ?? 0;
 }
 
-export function anchorForRow(
-  diff: ReviewDiff,
-  row: ReviewRow,
-  endRow?: ReviewRow,
-): ReviewAnchor {
-  const file = diff.files[row.file]!;
-  const anchor: ReviewAnchor = {
-    path: row.line.kind === "-" ? file.oldPath : file.path,
-    line: lineNumberOf(row.line),
-    side: sideOf(row.line),
-    text: row.line.text,
-  };
-  // GitLab needs both numbers for an unchanged line, and the old path of a
-  // renamed file.
-  if (row.line.kind === " " && row.line.old !== null)
-    anchor.contextOld = row.line.old;
-  if (file.oldPath !== file.path && row.line.kind !== "-")
-    anchor.oldPath = file.oldPath;
-  if (
-    endRow &&
-    endRow.file === row.file &&
-    sideOf(endRow.line) === anchor.side &&
-    lineNumberOf(endRow.line) > anchor.line!
-  ) {
-    anchor.endLine = lineNumberOf(endRow.line);
-    anchor.text = endRow.line.text;
-  }
-  return anchor;
-}
-
 function rowMatches(
   diff: ReviewDiff,
   row: ReviewRow,
@@ -513,25 +483,6 @@ export function contextForLine(
 }
 
 /**
- * Large files start folded, except one with open threads: they are read
- * on their lines, not apart from the code.
- */
-export function startsFolded(
-  file: ReviewDiffFile,
-  lines: number,
-  threads: readonly ReviewThread[],
-  limit: number,
-): boolean {
-  if (lines <= limit) return false;
-  return !threads.some(
-    (thread) =>
-      !thread.resolved &&
-      thread.anchor.path !== undefined &&
-      (thread.anchor.path === file.path || thread.anchor.path === file.oldPath),
-  );
-}
-
-/**
  * maildesk's way of putting an older GitLab thread on today's code: find the
  * line it was written on in the file at its commit, look for that text in
  * the current file, and prefer the candidate whose neighbours (three each
@@ -601,36 +552,6 @@ export type WorkspaceRepo = {
   /** Comments in its review, when it has one. */
   comments?: number;
 };
-
-/**
- * Repositories matching a search: by name first, then anywhere in name,
- * branch or path, then the name's letters in order (as in fuzzy finders).
- */
-export function searchRepos(
-  repos: WorkspaceRepo[],
-  query: string,
-): WorkspaceRepo[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return repos;
-  const scored: { repo: WorkspaceRepo; score: number }[] = [];
-  for (const repo of repos) {
-    const name = (repo.root.split("/").pop() ?? "").toLowerCase();
-    const text = `${name} ${repo.branch ?? ""} ${repo.root}`.toLowerCase();
-    let score = name.startsWith(q) ? 0 : text.includes(q) ? 1 : -1;
-    if (score < 0) {
-      // Letters in order, in the name only: a path matches nearly anything.
-      let at = 0;
-      for (const char of q) {
-        at = name.indexOf(char, at);
-        if (at < 0) break;
-        at++;
-      }
-      if (at > 0) score = 2;
-    }
-    if (score >= 0) scored.push({ repo, score });
-  }
-  return scored.sort((a, b) => a.score - b.score).map((entry) => entry.repo);
-}
 
 /** A view of the commit picker: all the changes (no commit) or a commit. */
 export type CommitChoice = {

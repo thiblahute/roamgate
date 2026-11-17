@@ -1,12 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot } from "../../shared/review";
-import {
-  addLatest,
-  livePins,
-  pinHolds,
-  reviewPinKey,
-  withLatest,
-} from "./reviewPins";
+import { livePins, pinHolds, reviewPinKey, withLatest } from "./reviewPins";
 
 function snap(id: string, workspaceId?: string): ReviewSnapshot {
   return {
@@ -84,10 +78,4 @@ test("remembered workspaces keep the latest ones only", () => {
   last = withLatest(last, "new", "s", 50);
   expect(last.w10).toBe("again");
   expect(last.w11).toBeUndefined();
-
-  let closed: ReadonlySet<string> = new Set();
-  for (let i = 0; i < 60; i++) closed = addLatest(closed, `w${i}`, 50);
-  expect(closed.size).toBe(50);
-  expect(closed.has("w9")).toBe(false);
-  expect(closed.has("w59")).toBe(true);
 });

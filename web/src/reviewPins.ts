@@ -64,13 +64,3 @@ export function withLatest(
     .slice(-(max - 1));
   return Object.fromEntries([...kept, [key, value]]);
 }
-
-/** The set with `key` added last, its oldest entries dropped past `max`. */
-export function addLatest(
-  set: ReadonlySet<string>,
-  key: string,
-  max = REVIEW_MEMORY_KEPT,
-): ReadonlySet<string> {
-  const kept = [...set].filter((known) => known !== key).slice(-(max - 1));
-  return new Set([...kept, key]);
-}

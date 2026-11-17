@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
 import type { ReviewSnapshot } from "../../shared/review";
 import { BoundedCache } from "./boundedCache";
 import { plural } from "./components/MrThreadCard";
-import { reviewCall, useReviewState } from "./review";
+import { reviewCall } from "./review";
 import type { WorkspaceRepo } from "./reviewModel";
 
 /*
@@ -80,42 +79,6 @@ export function workspaceRepos(
   if (!byRoot.has(session.root))
     byRoot.set(session.root, { root: session.root });
   return [...byRoot.values()].sort((a, b) => a.root.localeCompare(b.root));
-}
-
-/**
- * The repositories of the review's workspace (see workspaceRepos); the
- * panes' directories are scanned once the review shows.
- */
-export function useWorkspaceRepos(
-  connectionId: string,
-  session: ReviewSnapshot["session"],
-  dirs: string[],
-  agentDirs: string[],
-  shown: boolean,
-): WorkspaceRepo[] {
-  const [scanned, setScanned] = useState<WorkspaceRepo[]>([]);
-  const dirsKey = dirs.join("\n");
-  const agentKey = agentDirs.join("\n");
-  useEffect(() => {
-    // Out of sight, the panes' directories are scanned once it shows.
-    if (!shown) return;
-    let cancelled = false;
-    const list = dirsKey ? dirsKey.split("\n") : [];
-    const agents = agentKey ? agentKey.split("\n") : [];
-    void scanRepos(connectionId, [session.root, ...list], agents).then(
-      (repos) => {
-        if (!cancelled) setScanned(repos);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, session.root, dirsKey, agentKey, shown]);
-  const { sessions } = useReviewState();
-  return useMemo(
-    () => workspaceRepos(scanned, sessions.values(), session),
-    [scanned, sessions, session],
-  );
 }
 
 /** Nothing committed beyond its default branch, but work in progress. */

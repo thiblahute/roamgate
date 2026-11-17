@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewDiff, ReviewThread } from "../../shared/review";
 import {
-  anchorForRow,
   commitChoices,
   contextForLine,
   expandDiff,
@@ -12,8 +11,6 @@ import {
   reviewAsMarkdown,
   reviewLayout,
   searchCommits,
-  searchRepos,
-  startsFolded,
 } from "./reviewModel";
 
 const diff: ReviewDiff = {
@@ -68,23 +65,6 @@ test("rows are numbered in reading order with file starts", () => {
   const layout = reviewLayout(diff);
   expect(layout.rows).toHaveLength(5);
   expect(layout.fileStart).toEqual([0, undefined]);
-});
-
-test("anchors take the side and number of the commented line", () => {
-  const layout = reviewLayout(diff);
-  expect(anchorForRow(diff, layout.rows[1]!)).toEqual({
-    path: "src/a.c",
-    line: 2,
-    side: "old",
-    text: "int y;",
-  });
-  expect(anchorForRow(diff, layout.rows[2]!, layout.rows[3]!)).toEqual({
-    path: "src/a.c",
-    line: 2,
-    endLine: 3,
-    side: "new",
-    text: "long z;",
-  });
 });
 
 test("threads land on their line, follow moved code, or become outdated", () => {
@@ -363,33 +343,6 @@ test("the gap holding a line", () => {
   expect(gapForLine(file, 5)).toBeNull();
   expect(gapForLine(file, 10)).toBe(1);
   expect(gapForLine(file, 25)).toBe(2);
-});
-
-test("a large file starts folded unless it has open threads", () => {
-  const file = { path: "plan.md", oldPath: "plan.md", hunks: [] };
-  const on = (path: string, resolved = false) =>
-    ({ anchor: { path, line: 3 }, resolved }) as unknown as ReviewThread;
-  expect(startsFolded(file, 816, [], 600)).toBe(true);
-  expect(startsFolded(file, 500, [], 600)).toBe(false);
-  expect(startsFolded(file, 816, [on("plan.md")], 600)).toBe(false);
-  // Resolved threads are hidden: they do not hold a large file open.
-  expect(startsFolded(file, 816, [on("plan.md", true)], 600)).toBe(true);
-  expect(startsFolded(file, 816, [on("other.md")], 600)).toBe(true);
-});
-
-test("the repository search puts names first, then words, then letters", () => {
-  const repos = [
-    { root: "/w/cloud-project-system", branch: "tsaunier/prores" },
-    { root: "/w/cloud-project-system/subprojects/gstreamer", branch: "main" },
-    { root: "/w/gst-nle-playground", branch: "feature/use-ges" },
-  ];
-  const names = (query: string) =>
-    searchRepos(repos, query).map((repo) => repo.root.split("/").pop());
-  expect(names("gst")).toEqual(["gstreamer", "gst-nle-playground"]);
-  expect(names("prores")).toEqual(["cloud-project-system"]);
-  expect(names("cps")).toEqual(["cloud-project-system"]);
-  expect(names("")).toHaveLength(3);
-  expect(names("zzz")).toEqual([]);
 });
 
 test("the commit picker: all changes first, then commits found by name", () => {
