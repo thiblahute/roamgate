@@ -51,6 +51,7 @@ import {
 import { ReviewGoneError } from "../workspace/review-patch";
 import type { ReviewFileRequest } from "../workspace/review-files";
 import { combinedAnchor, entryAnchored } from "./changes-anchors";
+import { serialize } from "./memo";
 import { createAgentPrompts } from "./prompts";
 import type { ReviewStorage } from "./storage";
 import { type TurnCauses, turnCauses } from "../voice/turn-causes";
@@ -1900,27 +1901,14 @@ export function createReviewService(args: {
    * once its latest text is there.
    */
   async function syncSummary(target: ReviewSession) {
-    const before = summaryWrites.get(target.id) ?? Promise.resolve();
-    const run = before
-      .catch(() => {})
-      .then(async () => {
-        const written = target.summary;
-        await writeSummaryDraft(target);
-        if (
-          live(target) &&
-          target.summary === written &&
-          target.summaryUnsent
-        ) {
-          delete target.summaryUnsent;
-          storage.saveSession(target);
-        }
-      });
-    summaryWrites.set(target.id, run);
-    try {
-      await run;
-    } finally {
-      if (summaryWrites.get(target.id) === run) summaryWrites.delete(target.id);
-    }
+    await serialize(summaryWrites, target.id, async () => {
+      const written = target.summary;
+      await writeSummaryDraft(target);
+      if (live(target) && target.summary === written && target.summaryUnsent) {
+        delete target.summaryUnsent;
+        storage.saveSession(target);
+      }
+    });
   }
 
   /**
@@ -1965,14 +1953,7 @@ export function createReviewService(args: {
     if (!gitlabMode(target))
       throw new ReviewError("this is not a merge request's review");
     // One push at a time: a second one would send the same drafts again.
-    const before = pushes.get(target.id) ?? Promise.resolve();
-    const run = before.catch(() => {}).then(() => pushNow(target));
-    pushes.set(target.id, run);
-    try {
-      return await run;
-    } finally {
-      if (pushes.get(target.id) === run) pushes.delete(target.id);
-    }
+    return serialize(pushes, target.id, () => pushNow(target));
   }
 
   /**
@@ -2944,16 +2925,7 @@ export function createReviewService(args: {
    */
   function deliver(sessionId: string, overall?: string): Promise<number> {
     // One at a time per review: the next reads what the previous sent.
-    const previous = typing.get(sessionId) ?? Promise.resolve(0);
-    const run = previous
-      .catch(() => 0)
-      .then(() => deliverNow(sessionId, overall));
-    typing.set(sessionId, run);
-    const forget = () => {
-      if (typing.get(sessionId) === run) typing.delete(sessionId);
-    };
-    run.then(forget, forget);
-    return run;
+    return serialize(typing, sessionId, () => deliverNow(sessionId, overall));
   }
 
   async function deliverNow(
