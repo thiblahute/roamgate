@@ -241,7 +241,7 @@ const COMPANION_DRAFT_KEY = "companion";
 /**
  * Typing to the companion, as one talks to it on a call, or instead of a
  * call: Enter sends, the answer is written above. It is the agent chats'
- * message box, Vim keys included with the review's `:vim` setting.
+ * message box, Vim keys included with the one Vim keys setting.
  */
 function CompanionComposer({
   name,
