@@ -522,7 +522,7 @@ Inspector state is scoped to each checkout; see
   menu or the command menu (`Cmd+Option+Shift+V`, `Ctrl+Alt+Shift+V`), or
   its chip when no call runs, opens it with its message box focused (full
   screen on a phone). The box is the agent chats' message box, with Vim keys
-  under the review's `:vim` setting (Esc then leaves insert mode first, and
+  under **Vim keys** (Esc then leaves insert mode first, and
   closes the dialog the next time), and its draft is kept until sent. Enter
   sends, on a phone too; it says it is thinking while it decides,
   then answers in writing as it would on a call (an answer, a web search,
