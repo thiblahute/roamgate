@@ -67,14 +67,37 @@ test("an effort declared by a tool: its card, ledger tools, the push with Undo, 
     effortsDir: join(dir, `efforts-${Math.random()}`),
   });
   await reviews.upstream.refresh(true);
-  // "big" is a local branch and a remote one: ambiguous, refused.
+  // "big" is a local branch and a remote one: the local one, as git reads it.
+  expect(
+    JSON.parse(
+      await reviews.boardTool(
+        "effort_set",
+        { group: "Big upstreaming", source: "big", preview: true },
+        "Claude",
+      ),
+    ).effort,
+  ).toMatchObject({ source: "refs/heads/big" });
+  // Only remote branches, of two remotes: ambiguous, refused.
+  g.git(clone, "update-ref", "refs/remotes/origin/far", "HEAD");
+  g.git(clone, "update-ref", "refs/remotes/mac/far", "HEAD");
   await expect(
     reviews.boardTool(
       "effort_set",
-      { group: "Big upstreaming", source: "big" },
+      { group: "Big upstreaming", source: "far" },
       "Claude",
     ),
-  ).rejects.toThrow(/ambiguous.*refs\/heads\/big.*refs\/remotes\/origin\/big/);
+  ).rejects.toThrow(
+    /ambiguous.*refs\/remotes\/mac\/far.*refs\/remotes\/origin\/far/,
+  );
+  expect(
+    JSON.parse(
+      await reviews.boardTool(
+        "effort_set",
+        { group: "Big upstreaming", source: "mac/far", preview: true },
+        "Claude",
+      ),
+    ).effort,
+  ).toMatchObject({ source: "refs/remotes/mac/far" });
   const preview = JSON.parse(
     await reviews.boardTool(
       "effort_set",
