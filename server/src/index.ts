@@ -1573,6 +1573,22 @@ const renderedPages = createRenderedPages({
 let reviewService: ReviewService | null = null;
 function getReviewService(): ReviewService {
   if (reviewService) return reviewService;
+  const runtimeOf = (connectionId: string) =>
+    resolveReadyConnection(connectionManager, connectionId).runtime;
+  /** A merge request's commit not in the checkout: the forge's diff, whole. */
+  const forgeCommitDiff = async (
+    runtime: ReturnType<typeof runtimeOf>,
+    root: string,
+    target: { url: string },
+    commit: string,
+  ) => {
+    const context = reviewGlabContext(runtime, root);
+    const mr = await readMergeRequest(context, target.url);
+    const listed = (await readMergeRequestCommits(context, mr)).find((entry) =>
+      entry.sha.startsWith(commit),
+    );
+    return readCommitDiff(context, mr, commit, listed?.parent ?? null);
+  };
   reviewService = createReviewService({
     storage: openReviewStorage(reviewDirectory()),
     publish: (push) => {
@@ -1603,10 +1619,7 @@ function getReviewService(): ReviewService {
       for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
     },
     loadCommits: async (session) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       // Comparing two versions of a branch: its commits were rewritten, so
       // they would show the whole branch again, not what changed.
       if (session.target.kind === "range" && session.target.compare) return [];
@@ -1630,17 +1643,11 @@ function getReviewService(): ReviewService {
       }
     },
     loadPatchIds: async (session, shas) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       return runtime.files.readReviewPatchIds(session.root, shas);
     },
     loadSummary: async (session, commit) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       if (commit) {
         try {
           return await runtime.files.readReviewSummary(session.root, {
@@ -1648,13 +1655,7 @@ function getReviewService(): ReviewService {
           });
         } catch (error) {
           if (session.target.kind !== "mr") throw error;
-          // Not in the checkout: GitLab's diff of the commit, whole.
-          const context = reviewGlabContext(runtime, session.root);
-          const mr = await readMergeRequest(context, session.target.url);
-          const listed = (await readMergeRequestCommits(context, mr)).find(
-            (entry) => entry.sha.startsWith(commit),
-          );
-          return readCommitDiff(context, mr, commit, listed?.parent ?? null);
+          return forgeCommitDiff(runtime, session.root, session.target, commit);
         }
       }
       if (session.target.kind !== "mr")
@@ -1674,17 +1675,11 @@ function getReviewService(): ReviewService {
       }
     },
     loadFiles: (session, ends, files) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       return runtime.files.readReviewFiles(session.root, ends, files);
     },
     loadDiff: async (session, commit, options) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       if (commit) {
         try {
           return await runtime.files.readReviewCommitPatch(
@@ -1693,12 +1688,7 @@ function getReviewService(): ReviewService {
           );
         } catch (error) {
           if (session.target.kind !== "mr") throw error;
-          const context = reviewGlabContext(runtime, session.root);
-          const mr = await readMergeRequest(context, session.target.url);
-          const listed = (await readMergeRequestCommits(context, mr)).find(
-            (entry) => entry.sha.startsWith(commit),
-          );
-          return readCommitDiff(context, mr, commit, listed?.parent ?? null);
+          return forgeCommitDiff(runtime, session.root, session.target, commit);
         }
       }
       if (session.target.kind !== "mr")
@@ -1746,10 +1736,7 @@ function getReviewService(): ReviewService {
         );
         return;
       }
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        connectionId,
-      );
+      const runtime = runtimeOf(connectionId);
       await promptPaneAgent(runtime, paneId, text, "review");
     },
     // The comments follow the agent's session to the pane it runs in now.
@@ -1762,18 +1749,12 @@ function getReviewService(): ReviewService {
           connectionId,
           sessionId.slice(EFFORT_SESSION_PREFIX.length),
         );
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        connectionId,
-      );
+      const runtime = runtimeOf(connectionId);
       return runtime.agentSessions.sessionPane(sessionId);
     },
     paneSession: async (connectionId, paneId) => {
       if (rangerChatSession(paneId)) return null;
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        connectionId,
-      );
+      const runtime = runtimeOf(connectionId);
       return runtime.agentSessions.paneSession(paneId);
     },
     // Agents run the review client: on this machine once it is installed,
@@ -1787,24 +1768,15 @@ function getReviewService(): ReviewService {
     },
     gitlab: {
       context: (session) => {
-        const { runtime } = resolveReadyConnection(
-          connectionManager,
-          session.connectionId,
-        );
+        const runtime = runtimeOf(session.connectionId);
         return reviewGlabContext(runtime, session.root);
       },
       checkout: (session) => {
-        const { runtime } = resolveReadyConnection(
-          connectionManager,
-          session.connectionId,
-        );
+        const runtime = runtimeOf(session.connectionId);
         return readCheckout(reviewGlabContext(runtime, session.root));
       },
       find: (session, checkout) => {
-        const { runtime } = resolveReadyConnection(
-          connectionManager,
-          session.connectionId,
-        );
+        const runtime = runtimeOf(session.connectionId);
         return findBranchMergeRequest(
           reviewGlabContext(runtime, session.root),
           checkout,
@@ -1813,24 +1785,15 @@ function getReviewService(): ReviewService {
       },
     },
     loadState: (session) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       return runtime.files.readReviewState(session.root, session.target);
     },
     loadHeads: (connectionId, entries) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        connectionId,
-      );
+      const runtime = runtimeOf(connectionId);
       return runtime.files.readReviewHeads(entries);
     },
     loadFile: async (session, rev, path) => {
-      const { runtime } = resolveReadyConnection(
-        connectionManager,
-        session.connectionId,
-      );
+      const runtime = runtimeOf(session.connectionId);
       try {
         return await runtime.files.readReviewFile(session.root, rev, path);
       } catch (error) {
