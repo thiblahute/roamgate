@@ -181,6 +181,31 @@ test("a workspace headed upstream by itself: marked, listed, an effort's home, e
   const ref = { connection_id: "local", label: "solo", workspace_id: "w1" };
   const key = `branch:gitlab:${FORGE_HOST}/media/engine@solo-work`;
   const snapshot = async () => reviews.inbox.get({ viewer: false });
+  // A tool finds it without a node of the tree, by its checkout or its
+  // name, and marks it as the page does.
+  expect(
+    JSON.parse(
+      await reviews.boardTool(
+        "upstream_workspace",
+        { workspace: clone, headed: true },
+        "Claude",
+      ),
+    ),
+  ).toEqual({ changed: true, workspace: "solo", headed: true });
+  expect((await reviews.settings()).upstreamWorkspaces).toEqual([ref]);
+  await reviews.boardTool(
+    "upstream_workspace",
+    { workspace: "SOLO", headed: false },
+    "Claude",
+  );
+  expect((await reviews.settings()).upstreamWorkspaces).toEqual([]);
+  await expect(
+    reviews.boardTool(
+      "upstream_workspace",
+      { workspace: "nowhere", headed: true },
+      "Claude",
+    ),
+  ).rejects.toThrow(/No workspace is "nowhere"/);
   expect(
     await reviews.handle("bridge.mr_reviews.upstream.workspace", {
       ref,
@@ -213,6 +238,18 @@ test("a workspace headed upstream by itself: marked, listed, an effort's home, e
     ),
   );
   expect(preview.effort).toMatchObject({ group: home, name: "solo" });
+  // Or by its checkout, which the mark does not carry.
+  const byPath = JSON.parse(
+    await reviews.boardTool(
+      "effort_set",
+      { group: clone, source: "solo-work", preview: true },
+      "Claude",
+    ),
+  );
+  expect(byPath.effort).toMatchObject({
+    group: home,
+    source: "refs/heads/solo-work",
+  });
   const declared = (await reviews.handle("bridge.mr_reviews.effort.set", {
     group: home,
     source: "refs/heads/solo-work",

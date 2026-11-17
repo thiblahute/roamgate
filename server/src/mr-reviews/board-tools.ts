@@ -9,10 +9,16 @@ import type {
 import {
   MR_DISPOSITIONS,
   mrWhoseLabel,
+  sameUpstreamWorkspace,
   upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import { clusterLedger, type DerivedCommit, filterLedger } from "./efforts";
 import {
+  emptyWorkspaceTree,
+  type LiveWorkspaceIdentity,
+  liveWorkspaceKey,
+  resolveWorkspaceTree,
+  type WorkspaceRef,
   type WorkspaceTree,
   workspaceTreeGroupPaths,
 } from "../../../shared/workspaceTree";
@@ -411,7 +417,7 @@ export const boardToolSchemas = {
         minLength: 1,
         maxLength: 4096,
         description:
-          "A workspace of the Workspaces tree: its name or its checkout path.",
+          "A workspace: its name or its checkout path (in the Workspaces tree or not).",
       }),
       headed: Type.Boolean({
         description:
@@ -720,6 +726,15 @@ export type BoardToolDeps = {
   rpc: (method: string, params: Record<string, unknown>) => Promise<unknown>;
   /** The Workspaces tree, for the upstream tools. */
   tree?: () => Promise<WorkspaceTree>;
+  /**
+   * The workspaces Herdr lists on the connections (and where those
+   * without a checkout work, by `connection\0workspace`), for the
+   * upstream tools: a workspace needs no node of the tree.
+   */
+  workspaces?: () => Promise<{
+    live: ReadonlyMap<string, readonly LiveWorkspaceIdentity[]>;
+    dirs: ReadonlyMap<string, string>;
+  }>;
 };
 
 /**
@@ -739,6 +754,51 @@ export function createBoardTools(
         throw new AssistantUserError(error.message);
       throw error;
     }
+  }
+
+  /**
+   * The workspaces a name or a checkout path names: the Workspaces tree's
+   * nodes, then the workspaces Herdr lists that have no node there (as
+   * the pages name them, so a mark is the same from a menu or a tool).
+   */
+  async function workspacesNamed(wanted: string): Promise<WorkspaceRef[]> {
+    const tree = (await deps.tree?.()) ?? emptyWorkspaceTree();
+    const lower = wanted.toLowerCase();
+    const found: WorkspaceRef[] = tree.nodes.flatMap((node) =>
+      node.kind === "workspace" &&
+      (node.ref.path === wanted || node.ref.label?.toLowerCase() === lower)
+        ? [node.ref]
+        : [],
+    );
+    const listed = await deps.workspaces?.().catch(() => null);
+    if (!listed) return found;
+    const placed = resolveWorkspaceTree(tree, listed.live).nodeByWorkspace;
+    for (const [connectionId, workspaces] of listed.live)
+      for (const identity of workspaces) {
+        if (placed.has(liveWorkspaceKey(connectionId, identity.workspace_id)))
+          continue;
+        const dir = listed.dirs.get(
+          `${connectionId}\0${identity.workspace_id}`,
+        );
+        if (
+          identity.path !== wanted &&
+          dir !== wanted &&
+          identity.label.toLowerCase() !== lower
+        )
+          continue;
+        found.push({
+          connection_id: connectionId,
+          ...(identity.path ? { path: identity.path } : {}),
+          ...(identity.label ? { label: identity.label } : {}),
+          workspace_id: identity.workspace_id,
+        });
+      }
+    return found;
+  }
+
+  /** The answer naming several workspaces a name fits. */
+  function severalWorkspaces(wanted: string, found: WorkspaceRef[]) {
+    return `"${wanted}" fits several workspaces: ${found.map((ref) => `${ref.label ?? ""} (${ref.path ?? ref.connection_id})`).join(", ")}.`;
   }
 
   function entryOf(key: string, view: MrOrderView): MrInboxEntry | undefined {
@@ -1111,19 +1171,34 @@ export function createBoardTools(
                   each.names[each.names.length - 1]!.toLowerCase() === wanted),
             )
           : [];
-        // Else a workspace headed upstream by itself (its name or path).
-        const alone = found.length
-          ? []
-          : (await deps.settings()).upstreamWorkspaces.filter(
-              (ref) =>
-                ref.path === params.group!.trim() ||
-                ref.label?.toLowerCase() === wanted,
-            );
+        // Else a workspace headed upstream by itself (its name or path),
+        // as marked or as the workspaces named so are now.
+        let alone: WorkspaceRef[] = [];
+        let named: WorkspaceRef[] = [];
+        if (!found.length) {
+          const marks = (await deps.settings()).upstreamWorkspaces;
+          named = await workspacesNamed(params.group.trim());
+          const homes = new Set<string>();
+          alone = marks.filter((ref) => {
+            const fits =
+              ref.path === params.group!.trim() ||
+              ref.label?.toLowerCase() === wanted ||
+              named.some((each) => sameUpstreamWorkspace(ref, each));
+            const home = upstreamWorkspaceHome(ref);
+            if (!fits || homes.has(home)) return false;
+            homes.add(home);
+            return true;
+          });
+        }
         if (found.length !== 1 && alone.length !== 1)
           throw new AssistantUserError(
             found.length || alone.length
               ? `"${params.group}" fits several groups or workspaces.`
-              : `No group or workspace headed upstream "${params.group}".`,
+              : named.length === 1
+                ? `The workspace "${params.group}" is not headed upstream: mark it first (upstream_workspace).`
+                : named.length
+                  ? severalWorkspaces(params.group, named)
+                  : `No group or workspace headed upstream "${params.group}".`,
           );
         group =
           found.length === 1
@@ -1317,9 +1392,6 @@ export function createBoardTools(
     },
 
     async upstream_workspace(params: { workspace: string; headed: boolean }) {
-      const tree = (await deps.tree?.()) ?? null;
-      if (!tree)
-        throw new AssistantUserError("The Workspaces tree is not available.");
       let wanted = params.workspace.trim();
       // A checkout path names the workspace whose branch is read there.
       const view = await deps.order.view();
@@ -1327,19 +1399,14 @@ export function createBoardTools(
         .map((entry) => entry.branch)
         .find((branch) => branch?.path === wanted);
       if (byPath) wanted = byPath.workspaceLabel;
-      const found = tree.nodes.filter(
-        (node): node is Extract<typeof node, { kind: "workspace" }> =>
-          node.kind === "workspace" &&
-          (node.ref.path === wanted ||
-            node.ref.label?.toLowerCase() === wanted.toLowerCase()),
-      );
+      const found = await workspacesNamed(wanted);
       if (found.length !== 1)
         throw new AssistantUserError(
           found.length
-            ? `"${wanted}" fits several workspaces: ${found.map((node) => `${node.ref.label ?? ""} (${node.ref.path ?? node.ref.connection_id})`).join(", ")}.`
-            : `No workspace of the Workspaces tree is "${wanted}" (a name or a checkout path).`,
+            ? severalWorkspaces(wanted, found)
+            : `No workspace is "${wanted}" (a name or a checkout path), in the Workspaces tree or on a connection.`,
         );
-      const ref = found[0]!.ref;
+      const ref = found[0]!;
       const done = (await panel("upstream.workspace", {
         ref,
         headed: params.headed,
