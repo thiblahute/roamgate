@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  registerSshMaster,
+  runSshCommand,
+  unregisterSshMaster,
+} from "../bridge/ssh-sessions";
 import { withoutGateFlags } from "../workspace/forge-calls";
+import { ghApi } from "./github";
 import {
   createDraftNote,
   createDraftReply,
@@ -306,5 +314,79 @@ describe("GitHub pull requests in the review pane", () => {
       /submitPullRequestReview|event|APPROVE|COMMENT\b|REQUEST_CHANGES/,
     );
     expect(all).not.toContain("/comments/"); // no public comment
+  });
+});
+
+describe("gh over SSH", () => {
+  test("a dead master reruns a read cold, never a write", async () => {
+    const directory = mkdtempSync("/tmp/rg-github-test-");
+    const controlPath = join(directory, "m.ctl");
+    writeFileSync(controlPath, "");
+    let alive = true;
+    const owner = {};
+    registerSshMaster(owner, {
+      destination: "gh-box",
+      controlPath,
+      isListening: () => true,
+      isAlive: async () => alive,
+    });
+    try {
+      let runs = 0;
+      const ctx = {
+        root: "/tmp",
+        host: "gh-box",
+        shQuote: (value: string) => `'${value}'`,
+        // The master dies under the first, multiplexed run.
+        runProcessWithCodeTimeout: (argv: string[]) => {
+          alive = true;
+          return runSshCommand(argv, async () => {
+            runs++;
+            if (runs > 1) return { code: 0, stdout: "{}", stderr: "" };
+            alive = false;
+            return { code: 255, stdout: "", stderr: "" };
+          });
+        },
+      };
+      const attempts = async (call: () => Promise<unknown>) => {
+        runs = 0;
+        await call().catch(() => {});
+        return runs;
+      };
+      const query = (text: string): [string, string, "raw"][] => [
+        ["query", text, "raw"],
+      ];
+      expect(
+        await attempts(() =>
+          ghApi(ctx, "github.com", "GET", "repos/o/r/pulls/8"),
+        ),
+      ).toBe(2);
+      expect(
+        await attempts(() =>
+          ghApi(ctx, "github.com", "POST", "graphql", {
+            kind: "drafts",
+            fields: query("query { viewer { login } }"),
+          }),
+        ),
+      ).toBe(2);
+      expect(
+        await attempts(() =>
+          ghApi(ctx, "github.com", "POST", "graphql", {
+            kind: "draft",
+            fields: query(
+              "mutation($r: ID!) { addPullRequestReviewThread(input: {pullRequestReviewId: $r}) { thread { id } } }",
+            ),
+          }),
+        ),
+      ).toBe(1);
+      for (const method of ["POST", "PATCH", "DELETE"] as const)
+        expect(
+          await attempts(() =>
+            ghApi(ctx, "github.com", method, "repos/o/r/pulls/8/comments"),
+          ),
+        ).toBe(1);
+    } finally {
+      unregisterSshMaster(owner);
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

@@ -15,7 +15,7 @@ import {
   validHost,
   validProject,
 } from "../../../shared/forge";
-import { sshReadCommandArgv } from "../bridge/ssh-command";
+import { sshCommandArgv, sshReadCommandArgv } from "../bridge/ssh-command";
 import { forgeGate } from "../workspace/forge-calls";
 import { gitShellCommandArgv } from "../workspace/git-shell";
 import { readPullRequestStatus } from "../workspace/pull-request";
@@ -479,13 +479,20 @@ async function gh(
     context.runProcessWithCodeTimeout,
     { checkout: context.host ?? "", feature: "chip", ...call },
     ["gh", ...argv],
-    (full) => spawnGh(context, full),
+    // The chips' gh calls only read.
+    (full) => spawnGh(context, full, true),
   );
 }
 
+/**
+ * gh on the checkout's host. Only a read may be `retrySafe`: a cold SSH
+ * retry of a write (a REST POST, PATCH or DELETE, a GraphQL mutation) could
+ * make it twice, such as a second pending comment.
+ */
 export async function spawnGh(
   context: ForgeContext,
   full: string[],
+  retrySafe: boolean,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const env = {
     GH_PROMPT_DISABLED: "1",
@@ -499,7 +506,9 @@ export async function spawnGh(
       .map(([key, value]) => `${key}=${value}`)
       .join(" ")} ${full.map(context.shQuote).join(" ")}`;
     return context.runProcessWithCodeTimeout(
-      sshReadCommandArgv(context.host, command, [], "forge.github"),
+      retrySafe
+        ? sshReadCommandArgv(context.host, command, [], "forge.github")
+        : sshCommandArgv(context.host, command, [], "forge.github"),
       TIMEOUT_MS,
     );
   }
