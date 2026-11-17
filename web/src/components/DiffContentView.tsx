@@ -2039,6 +2039,25 @@ function DiffContentViewInner({
       ? "GitHub"
       : "GitLab";
   };
+  /** What every review editor in Changes shares. */
+  const composerBase = () => ({
+    delivery: ownDelivery,
+    draftSession: changesDraftSession(resourceKey),
+    notify: say,
+    ...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {}),
+  });
+  /** A thread's place, as its editor names it. */
+  const threadAnchor = (thread: ReviewThread) => ({
+    path: thread.anchor.path ?? "",
+    line: thread.anchor.line ?? 0,
+    side: thread.anchor.side ?? "new",
+    text: thread.anchor.text ?? "",
+  });
+  /** A write that did not take, said in the review's status. */
+  const notSaved = (error: unknown) =>
+    setReviewStatus(
+      `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+    );
   /** The keys back where the editor was opened from: the panel, the diff. */
   const backFromComposer = (inPanel: boolean) => {
     if (!inPanel) return focusDiffAfterEditor();
@@ -2057,12 +2076,7 @@ function DiffContentViewInner({
   ) => (
     <ReviewDiffComposer
       key={comment ? `edit:${comment.id}` : `reply:${thread.id}`}
-      anchor={{
-        path: thread.anchor.path ?? "",
-        line: thread.anchor.line ?? 0,
-        side: thread.anchor.side ?? "new",
-        text: thread.anchor.text ?? "",
-      }}
+      anchor={threadAnchor(thread)}
       suggestable={null}
       {...(comment
         ? { commentId: comment.id, initial: comment.body }
@@ -2073,8 +2087,7 @@ function DiffContentViewInner({
           : { kind: "discussion", replyTo: thread.id },
       )}
       kind={comment ? thread.kind : "discussion"}
-      delivery={ownDelivery}
-      draftSession={changesDraftSession(resourceKey)}
+      {...composerBase()}
       onSave={(text, plan) => {
         const api = threadWrites(connectionClient.connectionId);
         if (comment && plan.kind === "write" && plan.action === "delete") {
@@ -2084,13 +2097,7 @@ function DiffContentViewInner({
           else deleteThread(thread);
         } else if (comment) {
           threadView.setEditing(null);
-          void api
-            .edit(thread, comment, text)
-            .catch((error) =>
-              setReviewStatus(
-                `Not saved: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            );
+          void api.edit(thread, comment, text).catch(notSaved);
         } else {
           if (done) done();
           else threadView.setReplying(null);
@@ -2125,7 +2132,6 @@ function DiffContentViewInner({
         else threadView.setReplying(null);
         backFromComposer(!!done);
       }}
-      {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
       notify={(message) =>
         store.notify({ kind: "info", message, autoDismissMs: 2500 })
       }
@@ -2197,12 +2203,7 @@ function DiffContentViewInner({
   ) => (
     <ReviewDiffComposer
       key={comment ? `edit:${comment.id}` : `reply:${thread.id}`}
-      anchor={{
-        path: thread.anchor.path ?? "",
-        line: thread.anchor.line ?? 0,
-        side: thread.anchor.side ?? "new",
-        text: thread.anchor.text ?? "",
-      }}
+      anchor={threadAnchor(thread)}
       suggestable={null}
       {...(comment
         ? { commentId: comment.id, initial: comment.body }
@@ -2218,8 +2219,7 @@ function DiffContentViewInner({
         },
       )}
       kind="merge-request"
-      delivery={ownDelivery}
-      draftSession={changesDraftSession(resourceKey)}
+      {...composerBase()}
       onSave={(text, plan) => {
         if (comment) threadView.setEditing(null);
         else threadView.setReplying(null);
@@ -2241,11 +2241,7 @@ function DiffContentViewInner({
             thread.sessionId,
             method,
             params,
-          ).catch((error: unknown) =>
-            setReviewStatus(
-              `Not saved: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          );
+          ).catch(notSaved);
         }
         focusDiffAfterEditor();
       }}
@@ -2254,8 +2250,6 @@ function DiffContentViewInner({
         else threadView.setReplying(null);
         focusDiffAfterEditor();
       }}
-      {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
-      notify={say}
     />
   );
   const agentWorking = ownSnapshot?.session.agent.working;
@@ -2280,35 +2274,22 @@ function DiffContentViewInner({
         partEditor: (thread, part, done) => (
           <ReviewDiffComposer
             key={`part:${part.comment}:${part.quote}`}
-            anchor={{
-              path: thread.anchor.path ?? "",
-              line: thread.anchor.line ?? 0,
-              side: thread.anchor.side ?? "new",
-              text: thread.anchor.text ?? "",
-              message: part,
-            }}
+            anchor={{ ...threadAnchor(thread), message: part }}
             suggestable={null}
             kind="discussion"
-            delivery={ownDelivery}
+            {...composerBase()}
             placeholder={placeholderOf({ kind: "discussion" })}
-            draftSession={changesDraftSession(resourceKey)}
             onSave={(text) => {
               done();
               void threadWrites(connectionClient.connectionId)
                 .addPart(thread, part, text, newClientId())
-                .catch((error) =>
-                  setReviewStatus(
-                    `Not saved: ${error instanceof Error ? error.message : String(error)}`,
-                  ),
-                );
+                .catch(notSaved);
               focusDiffAfterEditor();
             }}
             onClose={() => {
               done();
               focusDiffAfterEditor();
             }}
-            {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
-            notify={say}
           />
         ),
         messageClass: (thread, comment, index) =>
@@ -4439,9 +4420,8 @@ function DiffContentViewInner({
             initial={summary}
             overall
             kind="discussion"
-            delivery={ownDelivery}
+            {...composerBase()}
             placeholder={placeholderOf({ kind: "discussion", overall: true })}
-            draftSession={changesDraftSession(resourceKey)}
             onSave={(text, plan) => {
               setOverallOpen(false);
               if (plan.kind === "overall") saveSummary(text, plan.send);
@@ -4451,8 +4431,6 @@ function DiffContentViewInner({
               setOverallOpen(false);
               focusDiffAfterEditor();
             }}
-            {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
-            notify={say}
           />
         ) : (
           <div className="rc talk">
@@ -4722,13 +4700,12 @@ function DiffContentViewInner({
         // to find (it opens the review): kept on Esc, as what may reach
         // the agent is.
         kind={composerKind ?? (ownSnapshot ? commentKind : "discussion")}
-        delivery={ownDelivery}
+        {...composerBase()}
         {...(composerKind || ownSnapshot
           ? {
               placeholder: placeholderOf({ kind: composerKind ?? commentKind }),
             }
           : {})}
-        draftSession={changesDraftSession(resourceKey)}
         onSave={(text, plan) => {
           if (plan.kind !== "write" || plan.action !== "add") {
             closeReviewComposer();
@@ -4744,8 +4721,6 @@ function DiffContentViewInner({
           focusDiffAfterEditor();
         }}
         onClose={closeReviewComposer}
-        {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
-        notify={say}
         coarse={
           typeof window !== "undefined" &&
           !!window.matchMedia?.("(pointer: coarse)").matches
