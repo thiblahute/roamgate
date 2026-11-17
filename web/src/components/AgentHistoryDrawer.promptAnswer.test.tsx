@@ -87,7 +87,7 @@ if (process.env.ROAMGATE_PROMPT_ANSWER_DOM_TEST !== "1") {
       await import("../layoutPreferences");
     initializeLayoutPreferences();
     // A plain message box: Vim keys (CodeMirror) are the review's setting.
-    browser.localStorage.setItem("reviewPrefs", JSON.stringify({ vim: false }));
+    browser.localStorage.setItem("vimKeys", "false");
     const { parseAgentPrompt } = await import("../agentPrompt");
     const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
     const { createRoot } = await import("react-dom/client");
