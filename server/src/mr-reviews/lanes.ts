@@ -5,6 +5,12 @@ import type {
   MrOverride,
 } from "../../../shared/mrReviews";
 import { mrRefLabel, mrWhoseLabel } from "../../../shared/mrReviews";
+import {
+  mrBotFailedLabel,
+  mrBotFailedNext,
+  mrBotLabel,
+  mrBotQueuedNext,
+} from "../../../shared/mrReviewsMerge";
 
 /**
  * Lanes of one's own work: whose move it is, and the next step. An
@@ -16,11 +22,22 @@ import { mrRefLabel, mrWhoseLabel } from "../../../shared/mrReviews";
 
 const DAY_MS = 24 * 60 * 60_000;
 
+export type RuleLane = {
+  lane: MrLane;
+  why: string;
+  next: string;
+  /**
+   * From exact merge facts (a bot merging or failing, a merge-after delay):
+   * wins over the model's inference; an override still wins over it.
+   */
+  exact?: boolean;
+};
+
 /** Lane, why, and next step of one own request from the forge's status. */
 export function ruleLane(
   entry: MrInboxEntry,
   options: { staleDays: number; now: number; waitingFor: MrInboxEntry[] },
-): { lane: MrLane; why: string; next: string } {
+): RuleLane {
   if (entry.branch) return branchLane(entry, options);
   if (entry.state === "merged" || entry.state === "closed")
     return {
@@ -35,6 +52,26 @@ export function ruleLane(
       lane: "blocked",
       why: `after ${names}`,
       next: `Waits for ${names}`,
+    };
+  }
+  const bot = entry.merge?.bot;
+  if (bot?.failed)
+    return {
+      lane: "your_move",
+      why: mrBotFailedLabel(bot),
+      next: mrBotFailedNext(bot),
+      exact: true,
+    };
+  if (bot?.queued) {
+    const after = entry.merge?.after;
+    return {
+      lane: "merging",
+      why: mrBotLabel(bot),
+      next:
+        after && !after.ready
+          ? `${mrBotLabel(bot)}, once the merge-after delay (${after.delay}) is over`
+          : mrBotQueuedNext(bot),
+      exact: true,
     };
   }
   const updated = Date.parse(entry.updatedAt);
@@ -86,6 +123,21 @@ export function ruleLane(
       why: "draft",
       next: "Mark it ready for review",
     };
+  const after = entry.merge?.after;
+  if (after && !after.ready)
+    return {
+      lane: "waiting",
+      why: `merge after ${after.delay}`,
+      next: `Waiting on time: ${after.delay} from ${SINCE[after.from]}`,
+      exact: true,
+    };
+  if (after?.ready)
+    return {
+      lane: "your_move",
+      why: "mergeable",
+      next: `Merge it: the merge-after delay (${after.delay}) is over`,
+      exact: true,
+    };
   if (own?.approved || own?.approvedBy.length)
     return {
       lane: "waiting",
@@ -100,6 +152,12 @@ export function ruleLane(
     };
   return { lane: "waiting", why: "in review", next: "Waiting for review" };
 }
+
+const SINCE = {
+  label: "the label",
+  approval: "the last approval",
+  update: "the last update",
+} as const;
 
 /** A branch headed upstream: not proposed yet, unless quiet for long. */
 function branchLane(
@@ -173,6 +231,7 @@ export function assignLanes(
           : `waiting on ${mrWhoseLabel(override.whose)}`;
     } else if (
       inferred?.by === "model" &&
+      !rule.exact &&
       lane !== "done" &&
       lane !== "blocked"
     ) {
@@ -190,7 +249,12 @@ export function assignLanes(
     }
     if (override?.next)
       next = { text: override.next, from: "override", by: override.by };
-    else if (inferred?.by === "model" && inferred.next && lane !== "done")
+    else if (
+      inferred?.by === "model" &&
+      inferred.next &&
+      lane !== "done" &&
+      !rule.exact
+    )
       next = { text: inferred.next, from: "inferred" };
     entry.lane = lane;
     entry.laneWhy = why;

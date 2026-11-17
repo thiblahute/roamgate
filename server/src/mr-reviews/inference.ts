@@ -9,6 +9,7 @@ import type {
 import { type Logger, serverLogger } from "../utils/logger";
 import { CURATION_MODEL, type RunModel, runClaudeModel } from "./curation";
 import type { OwnNote } from "./queries";
+import { mrMergeFact } from "../../../shared/mrReviewsMerge";
 import type { MrStore } from "./store";
 
 /**
@@ -39,6 +40,8 @@ export type RowFacts = {
   approvals: number;
   /** When someone else last wrote on it. */
   other: string;
+  /** The merge state (section 15): "", scheduled, ready, queued, failed:AT. */
+  merge?: string;
 };
 
 /** What a row's inference stands on: it is read again when this moves. */
@@ -60,6 +63,8 @@ export function rowVersion(entry: MrInboxEntry): string {
     own?.unresolved ?? "",
     own?.conflicts ? 1 : 0,
     own?.needsRebase ? 1 : 0,
+    // Only when there is one: the versions of before stay the same.
+    ...(mrMergeFact(entry.merge) ? [mrMergeFact(entry.merge)] : []),
   ].join("|");
 }
 
@@ -81,6 +86,7 @@ export function rowFacts(
     changesRequested: entry.own?.changesRequested.length ?? 0,
     approvals: entry.own?.approvedBy.length ?? 0,
     other: others.at(-1)?.at ?? "",
+    ...(mrMergeFact(entry.merge) ? { merge: mrMergeFact(entry.merge) } : {}),
   };
   return JSON.stringify(facts);
 }
@@ -107,7 +113,13 @@ export function meaningful(before: string, after: string): boolean {
     (b.conflicts && !a.conflicts) ||
     b.changesRequested > a.changesRequested ||
     b.approvals > a.approvals ||
-    (!!b.other && b.other > a.other)
+    (!!b.other && b.other > a.other) ||
+    // A merge-after delay over, a bot taking it or failing (section 15).
+    (!!b.merge &&
+      b.merge !== (a.merge ?? "") &&
+      (b.merge === "ready" ||
+        b.merge === "queued" ||
+        b.merge.startsWith("failed:")))
   );
 }
 
@@ -303,6 +315,24 @@ export function inferencePrompt(
             unresolved_threads: row.own?.unresolved ?? undefined,
             conflicts: row.own?.conflicts || undefined,
             needs_rebase: row.own?.needsRebase || undefined,
+            merge: row.merge
+              ? {
+                  after: row.merge.after
+                    ? {
+                        label: row.merge.after.label,
+                        mergeable_at: row.merge.after.at,
+                        ready: row.merge.after.ready,
+                      }
+                    : undefined,
+                  bot: row.merge.bot
+                    ? {
+                        name: row.merge.bot.name,
+                        queued: row.merge.bot.queued,
+                        failed: row.merge.bot.failed?.reason,
+                      }
+                    : undefined,
+                }
+              : undefined,
           }),
       quiet_days: row.updatedAt
         ? Math.floor((now - Date.parse(row.updatedAt)) / DAY_MS)

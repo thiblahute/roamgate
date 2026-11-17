@@ -27,6 +27,7 @@ export const EXPORTED_KEYS = [
   "upstream_groups",
   "upstream_skip",
   "efforts",
+  "merge",
 ] as const;
 
 export type ExportedLedger = Omit<LedgerFile, "journal">;

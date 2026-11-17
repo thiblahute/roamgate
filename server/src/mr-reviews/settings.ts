@@ -14,6 +14,17 @@ import {
   workspaceRefKey,
 } from "../../../shared/workspaceTree";
 import { normalizeOverride, type StoredMrOverride } from "./overrides";
+import {
+  MAX_MERGE_PATTERNS,
+  MAX_MERGE_SCOPES,
+  MR_MERGE_RULE_KEYS,
+  MR_MERGE_STORED_KEYS,
+  type MrMergeRules,
+  type MrMergeSettings,
+  mrBotName,
+  mrMergePattern,
+  mrMergeScope,
+} from "../../../shared/mrReviewsMerge";
 
 /** The reviews settings, as settings.json keeps them (`mr_reviews`). */
 export type StoredMrReviewsSettings = {
@@ -39,7 +50,117 @@ export type StoredMrReviewsSettings = {
   upstream_skip?: WorkspaceRef[];
   unsent?: MrUnsent[];
   efforts?: StoredMrEffort[];
+  merge?: StoredMrMerge;
 };
+
+/** The lists of `mr_reviews.merge` (and of each scope), as stored. */
+export type StoredMrMergeLists = {
+  after_labels?: string[];
+  bots?: string[];
+  bot_failures?: string[];
+  queue_labels?: string[];
+};
+
+/** `mr_reviews.merge` (section 15): lists, and scopes replacing them. */
+export type StoredMrMerge = StoredMrMergeLists & {
+  scopes?: Record<string, StoredMrMergeLists>;
+};
+
+function mergeLists(raw: unknown): StoredMrMergeLists {
+  const out: StoredMrMergeLists = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const value = raw as Record<string, unknown>;
+  for (const key of MR_MERGE_RULE_KEYS) {
+    const stored = MR_MERGE_STORED_KEYS[key] as keyof StoredMrMergeLists;
+    const list = value[stored];
+    if (!Array.isArray(list)) continue;
+    const seen = new Set<string>();
+    out[stored] = list
+      .flatMap((each) => {
+        const checked =
+          key === "bots"
+            ? typeof each === "string" &&
+              /^@?[\w.-]{1,100}(\[bot\])?$/i.test(each.trim())
+              ? mrBotName(each)
+              : null
+            : mrMergePattern(each);
+        if (!checked || seen.has(checked)) return [];
+        seen.add(checked);
+        return [checked];
+      })
+      .slice(0, MAX_MERGE_PATTERNS);
+  }
+  return out;
+}
+
+/** `mr_reviews.merge` checked: patterns that compile, known scope keys. */
+export function normalizeStoredMerge(raw: unknown): StoredMrMerge | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: StoredMrMerge = mergeLists(raw);
+  const scopes = (raw as Record<string, unknown>).scopes;
+  if (scopes && typeof scopes === "object" && !Array.isArray(scopes)) {
+    const kept: Record<string, StoredMrMergeLists> = {};
+    for (const [key, lists] of Object.entries(scopes).slice(
+      0,
+      MAX_MERGE_SCOPES,
+    )) {
+      const scope = mrMergeScope(key);
+      if (!scope) continue;
+      const checked = mergeLists(lists);
+      if (Object.keys(checked).length) kept[scope] = checked;
+    }
+    if (Object.keys(kept).length) out.scopes = kept;
+  }
+  return out;
+}
+
+function fromStoredLists(lists: StoredMrMergeLists): Partial<MrMergeRules> {
+  const out: Partial<MrMergeRules> = {};
+  for (const key of MR_MERGE_RULE_KEYS) {
+    const list = lists[MR_MERGE_STORED_KEYS[key] as keyof StoredMrMergeLists];
+    if (list) out[key] = list;
+  }
+  return out;
+}
+
+function toStoredLists(lists: Partial<MrMergeRules>): StoredMrMergeLists {
+  const out: StoredMrMergeLists = {};
+  for (const key of MR_MERGE_RULE_KEYS)
+    if (lists[key])
+      out[MR_MERGE_STORED_KEYS[key] as keyof StoredMrMergeLists] = lists[key];
+  return out;
+}
+
+/** The merge settings in effect, from what settings.json holds. */
+export function mergeSettingsOf(
+  stored: StoredMrMerge | undefined,
+): MrMergeSettings {
+  return {
+    ...fromStoredLists(stored ?? {}),
+    scopes: Object.fromEntries(
+      Object.entries(stored?.scopes ?? {}).map(([scope, lists]) => [
+        scope,
+        fromStoredLists(lists),
+      ]),
+    ),
+  };
+}
+
+/** The merge settings as settings.json keeps them; undefined when all default. */
+export function storedMergeOf(
+  merge: MrMergeSettings | undefined,
+): StoredMrMerge | undefined {
+  if (!merge) return undefined;
+  const out: StoredMrMerge = toStoredLists(merge);
+  const scopes = Object.entries(merge.scopes ?? {}).filter(
+    ([, lists]) => Object.keys(toStoredLists(lists)).length,
+  );
+  if (scopes.length)
+    out.scopes = Object.fromEntries(
+      scopes.map(([scope, lists]) => [scope, toStoredLists(lists)]),
+    );
+  return Object.keys(out).length ? out : undefined;
+}
 
 /** As settings.json keeps an effort. */
 export type StoredMrEffort = {
@@ -399,6 +520,8 @@ export function normalizeStoredMrReviews(
   const stale = Number(value.stale_days);
   if (Number.isInteger(stale) && stale >= 1 && stale <= 3650)
     out.stale_days = stale;
+  const merge = normalizeStoredMerge(value.merge);
+  if (merge && Object.keys(merge).length) out.merge = merge;
   return out;
 }
 
@@ -467,6 +590,7 @@ export function mrReviewsSettings(
     upstreamGroups: stored?.upstream_groups ?? base.upstreamGroups,
     upstreamSkip: stored?.upstream_skip ?? base.upstreamSkip,
     unsent: stored?.unsent ?? base.unsent,
+    merge: mergeSettingsOf(stored?.merge),
     efforts: (stored?.efforts ?? []).map((effort) => ({
       id: effort.id,
       group: effort.group,
@@ -569,6 +693,9 @@ export function storedMrReviews(
       : {}),
     ...(settings.staleDays !== DEFAULT_MR_REVIEWS_SETTINGS.staleDays
       ? { stale_days: settings.staleDays }
+      : {}),
+    ...(storedMergeOf(settings.merge)
+      ? { merge: storedMergeOf(settings.merge) }
       : {}),
   };
 }

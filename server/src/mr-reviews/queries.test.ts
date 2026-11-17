@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import {
   githubInboxQuery,
   gitlabInboxQuery,
+  gitlabSystemEvents,
+  lesserOwnFields,
   ownDetailsQuery,
   ownNotes,
   parseGithubInbox,
   parseGitlabInbox,
+  parseLabelEvents,
   parseOwnDetails,
 } from "./queries";
 
@@ -304,4 +307,194 @@ test("own details carry the description and the last notes, oldest first, no sys
     ["bob", true, true],
     ["ann", false, false],
   ]);
+});
+
+describe("merge facts in the details (section 15)", () => {
+  test("each level asks its fields: full adds who is assigned and auto-merge", () => {
+    const items = [{ project: "group/app", number: 4 }];
+    expect(ownDetailsQuery("gitlab", items, "full")).toContain(
+      "autoMergeEnabled",
+    );
+    expect(ownDetailsQuery("gitlab", items, "nomerge")).not.toContain(
+      "assignees",
+    );
+    expect(ownDetailsQuery("gitlab", items, "nomerge")).toContain("approvedBy");
+    const items2 = [{ project: "acme/app", number: 4 }];
+    expect(ownDetailsQuery("github", items2, "full")).toContain(
+      "mergeQueueEntry",
+    );
+    expect(ownDetailsQuery("github", items2, "nomerge")).not.toContain(
+      "mergeTimeline",
+    );
+    expect(lesserOwnFields("gitlab", "full")).toBe("nomerge");
+    expect(lesserOwnFields("gitlab", "nomerge")).toBe("basic");
+    expect(lesserOwnFields("github", "nomerge")).toBeNull();
+  });
+
+  test("GitLab system notes as events", () => {
+    expect(gitlabSystemEvents("assigned to @marge-bot", "t1", "me")).toEqual([
+      { at: "t1", actor: "me", kind: "assigned", who: ["marge-bot"] },
+    ]);
+    expect(
+      gitlabSystemEvents(
+        "assigned to @alice and unassigned @marge-bot",
+        "t2",
+        "marge-bot",
+      ).map((event) => [event.kind, event.who]),
+    ).toEqual([
+      ["assigned", ["alice"]],
+      ["unassigned", ["marge-bot"]],
+    ]);
+    expect(
+      gitlabSystemEvents("requested review from @marge-bot", "t", "me")[0]
+        ?.kind,
+    ).toBe("review_requested");
+    expect(
+      gitlabSystemEvents("approved this merge request", "t", "bob")[0]?.kind,
+    ).toBe("approved");
+    expect(
+      gitlabSystemEvents(
+        "aborted the automatic merge because the source branch was updated",
+        "t",
+        "me",
+      )[0],
+    ).toMatchObject({
+      kind: "auto_merge_off",
+      reason: "the source branch was updated",
+    });
+    expect(gitlabSystemEvents("added 1 commit", "t", "me")).toEqual([]);
+  });
+
+  test("GitLab details: assignees, auto-merge, events and the approval time", () => {
+    const node = glNode(4, "group/app", {
+      approvedBy: { nodes: [{ username: "bob" }] },
+      assignees: { nodes: [{ username: "marge-bot" }] },
+      reviewers: { nodes: [{ username: "bob" }] },
+      autoMergeEnabled: true,
+      mergeUser: { username: "me" },
+      discussions: {
+        nodes: [
+          {
+            notes: {
+              nodes: [
+                {
+                  author: { username: "bob" },
+                  createdAt: "2026-11-10T10:00:00Z",
+                  body: "approved this merge request",
+                  system: true,
+                },
+              ],
+            },
+          },
+          {
+            notes: {
+              nodes: [
+                {
+                  author: { username: "me" },
+                  createdAt: "2026-11-11T10:00:00Z",
+                  body: "assigned to @marge-bot",
+                  system: true,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const details = parseOwnDetails("gitlab", "gitlab.example.org", {
+      data: { p0: { mergeRequests: { nodes: [node] } } },
+    });
+    const merge = [...details.values()][0]!.merge!;
+    expect(merge.assignees).toEqual(["marge-bot"]);
+    expect(merge.reviewers).toEqual(["bob"]);
+    expect(merge.autoMerge).toEqual({ by: "me" });
+    expect(merge.approvedAt).toBe("2026-11-10T10:00:00Z");
+    expect(merge.events.map((event) => event.kind)).toEqual([
+      "approved",
+      "assigned",
+    ]);
+    // Without the full fields: no merge facts at all.
+    const basic = parseOwnDetails("gitlab", "gitlab.example.org", {
+      data: { p0: { mergeRequests: { nodes: [glNode(5)] } } },
+    });
+    expect([...basic.values()][0]!.merge).toBeUndefined();
+  });
+
+  test("GitHub details: the merge queue, auto-merge, the timeline and label times", () => {
+    const pr = {
+      number: 7,
+      url: "https://github.com/acme/app/pull/7",
+      updatedAt: "2026-11-12T10:00:00Z",
+      headRefOid: "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+      repository: { nameWithOwner: "acme/app" },
+      latestOpinionatedReviews: {
+        nodes: [
+          {
+            state: "APPROVED",
+            submittedAt: "2026-11-09T08:00:00Z",
+            author: { login: "bob" },
+          },
+        ],
+      },
+      assignees: { nodes: [] },
+      reviewRequests: {
+        nodes: [{ requestedReviewer: { login: "mergify" } }],
+      },
+      autoMergeRequest: {
+        enabledAt: "2026-11-12T09:00:00Z",
+        enabledBy: { login: "me" },
+      },
+      mergeQueueEntry: { position: 3, enqueuedAt: "2026-11-12T09:30:00Z" },
+      mergeTimeline: {
+        nodes: [
+          {
+            __typename: "LabeledEvent",
+            createdAt: "2026-11-11T08:00:00Z",
+            actor: { login: "me" },
+            label: { name: "merge after 2 days" },
+          },
+          {
+            __typename: "RemovedFromMergeQueueEvent",
+            createdAt: "2026-11-11T09:00:00Z",
+            actor: { login: "github-merge-queue" },
+            reason: "FAILED_CHECKS",
+          },
+          { __typename: "SomethingElse", createdAt: "x" },
+        ],
+      },
+    };
+    const details = parseOwnDetails("github", "github.com", {
+      data: { p0: { n7: pr } },
+    });
+    const merge = [...details.values()][0]!.merge!;
+    expect(merge.reviewers).toEqual(["mergify"]);
+    expect(merge.autoMerge).toEqual({ by: "me", at: "2026-11-12T09:00:00Z" });
+    expect(merge.queue).toEqual({ position: 3, at: "2026-11-12T09:30:00Z" });
+    expect(merge.approvedAt).toBe("2026-11-09T08:00:00Z");
+    expect(merge.labelsAddedAt).toEqual({
+      "merge after 2 days": "2026-11-11T08:00:00Z",
+    });
+    expect(merge.events).toEqual([
+      {
+        kind: "dequeued",
+        at: "2026-11-11T09:00:00Z",
+        actor: "github-merge-queue",
+        reason: "failed checks",
+      },
+    ]);
+  });
+
+  test("GitLab label events: the last add of each label still on", () => {
+    expect(
+      parseLabelEvents([
+        { action: "add", label: { name: "a" }, created_at: "t1" },
+        { action: "add", label: { name: "b" }, created_at: "t2" },
+        { action: "remove", label: { name: "a" }, created_at: "t3" },
+        { action: "add", label: { name: "a" }, created_at: "t4" },
+        { action: "add", label: { name: "c" }, created_at: "t5" },
+        { action: "remove", label: { name: "c" }, created_at: "t6" },
+      ]),
+    ).toEqual({ a: "t4", b: "t2" });
+    expect(parseLabelEvents({ message: "403" })).toEqual({});
+  });
 });

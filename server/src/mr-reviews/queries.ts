@@ -6,6 +6,10 @@ import {
   validProject,
 } from "../../../shared/forge";
 import type { MrItem, MrOwnStatus, MrReason } from "../../../shared/mrReviews";
+import type {
+  MrMergeEvent,
+  MrMergeFacts,
+} from "../../../shared/mrReviewsMerge";
 import { githubPipelineStatus, gitlabPipelineStatus } from "../review/forge";
 
 /**
@@ -321,20 +325,39 @@ const GITLAB_OWN_DETAILS =
 
 /**
  * What GitLab says of the user's own merge requests besides the list's
- * fields. "full" also asks fields some GitLab versions lack; a host that
- * refuses them is asked "basic" from then on.
+ * fields. "full" also asks who is assigned and auto-merge (merge bots,
+ * section 15); "nomerge" leaves those out; "basic" leaves out what some
+ * GitLab versions lack too. A host that refuses a level is asked the next
+ * from then on.
  */
+const GITLAB_STATUS_FIELDS =
+  "conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } }";
 const GITLAB_OWN_FIELDS = {
-  full: "conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } }",
+  full: `${GITLAB_STATUS_FIELDS} assignees { nodes { username } } reviewers { nodes { username } } autoMergeEnabled mergeUser { username }`,
+  nomerge: GITLAB_STATUS_FIELDS,
   basic: "conflicts shouldBeRebased",
 } as const;
 
 export type OwnFields = keyof typeof GITLAB_OWN_FIELDS;
 
+/** The level asked after a host refused one. */
+export function lesserOwnFields(
+  provider: "gitlab" | "github",
+  fields: OwnFields,
+): OwnFields | null {
+  if (fields === "full") return "nomerge";
+  if (fields === "nomerge" && provider === "gitlab") return "basic";
+  return null;
+}
+
 const GITHUB_OWN_LIST =
   "number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login } labels(first: 10) { nodes { name } }";
 const GITHUB_OWN_DETAILS =
-  "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } }";
+  "number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state submittedAt author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } }";
+
+/** GitHub: who is assigned, auto-merge, the merge queue, and their events (section 15). */
+const GITHUB_MERGE_FIELDS =
+  "assignees(first: 10) { nodes { login } } reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } } autoMergeRequest { enabledAt enabledBy { login } } mergeQueueEntry { position enqueuedAt } mergeTimeline: timelineItems(last: 30, itemTypes: [LABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT]) { nodes { __typename ... on LabeledEvent { createdAt actor { login } label { name } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on UnassignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on AddedToMergeQueueEvent { createdAt actor { login } } ... on RemovedFromMergeQueueEvent { createdAt actor { login } reason } ... on AutoMergeEnabledEvent { createdAt actor { login } } ... on AutoMergeDisabledEvent { createdAt actor { login } reason } } }";
 
 const PAGE_INFO = "pageInfo { hasNextPage endCursor }";
 
@@ -430,7 +453,7 @@ export function ownDetailsQuery(
     const pulls = numbers
       .map(
         (number) =>
-          `n${number}: pullRequest(number: ${number}) { ${GITHUB_OWN_DETAILS} }`,
+          `n${number}: pullRequest(number: ${number}) { ${GITHUB_OWN_DETAILS}${fields === "full" ? ` ${GITHUB_MERGE_FIELDS}` : ""} }`,
       )
       .join(" ");
     return [
@@ -455,6 +478,10 @@ export type OwnDetails = {
   description?: string;
   /** The last note of each recent thread and comment, oldest first. */
   lastNotes?: OwnNote[];
+  /** Who is assigned, auto-merge, the merge queue and their events (section 15). */
+  merge?: MrMergeFacts;
+  /** The merge-after labels whose add times were read (GitLab), sorted. */
+  labelTimesFor?: string;
   /**
    * Something the forge settles later without touching updatedAt (a
    * pipeline running, mergeability being computed): read again next time.
@@ -520,6 +547,233 @@ export function ownNotes(provider: "gitlab" | "github", node: any): OwnNote[] {
   return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-OWN_NOTES_KEPT);
 }
 
+function users(list: unknown, field: string): string[] {
+  return names(list, (node) => node?.[field]);
+}
+
+function login(value: any): string {
+  return text(value?.login ?? value?.username, 100);
+}
+
+/** @names in a GitLab system note, up to the next clause. */
+function mentioned(clause: string): string[] {
+  return [...clause.matchAll(/@([\w.-]+)/g)].map((match) => match[1]!);
+}
+
+/**
+ * A GitLab system note read as merge events: assigned / unassigned,
+ * review requested / removed, approved, automatic merge set or aborted.
+ */
+export function gitlabSystemEvents(
+  body: string,
+  at: string,
+  actor: string,
+): MrMergeEvent[] {
+  const out: MrMergeEvent[] = [];
+  const base = { at, ...(actor ? { actor } : {}) };
+  const assigned = /\bassigned to ((?:@[\w.-]+(?:,\s*|\s+and\s+)?)+)/i.exec(
+    body,
+  );
+  if (assigned)
+    out.push({ ...base, kind: "assigned", who: mentioned(assigned[1]!) });
+  const unassigned = /\bunassigned ((?:@[\w.-]+(?:,\s*|\s+and\s+)?)+)/i.exec(
+    body,
+  );
+  if (unassigned)
+    out.push({ ...base, kind: "unassigned", who: mentioned(unassigned[1]!) });
+  const requested =
+    /\brequested reviews? from ((?:@[\w.-]+(?:,\s*|\s+and\s+)?)+)/i.exec(body);
+  if (requested)
+    out.push({
+      ...base,
+      kind: "review_requested",
+      who: mentioned(requested[1]!),
+    });
+  const removed =
+    /\bremoved review requests? for ((?:@[\w.-]+(?:,\s*|\s+and\s+)?)+)/i.exec(
+      body,
+    );
+  if (removed)
+    out.push({ ...base, kind: "review_removed", who: mentioned(removed[1]!) });
+  if (/^approved this merge request/i.test(body))
+    out.push({ ...base, kind: "approved" });
+  if (
+    /\b(enabled an automatic merge|set to auto-merge|enabled auto-merge)/i.test(
+      body,
+    )
+  )
+    out.push({ ...base, kind: "auto_merge_on" });
+  const aborted =
+    /\b(?:aborted|canceled|cancelled) the automatic merge(?: because (.*))?/i.exec(
+      body,
+    );
+  if (aborted)
+    out.push({
+      ...base,
+      kind: "auto_merge_off",
+      reason: (aborted[1] ?? "canceled")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 200),
+    });
+  return out;
+}
+
+/** A GitHub timeline item read as a merge event. */
+function githubEvent(node: any): MrMergeEvent | null {
+  const at = text(node?.createdAt, 40);
+  if (!at) return null;
+  const actor = login(node?.actor);
+  const base = { at, ...(actor ? { actor } : {}) };
+  const who = (value: any) => {
+    const name = login(value);
+    return name ? [name] : [];
+  };
+  switch (node?.__typename) {
+    case "LabeledEvent": {
+      const label = text(node?.label?.name, 60);
+      return label ? { ...base, kind: "labeled", label } : null;
+    }
+    case "AssignedEvent":
+      return { ...base, kind: "assigned", who: who(node.assignee) };
+    case "UnassignedEvent":
+      return { ...base, kind: "unassigned", who: who(node.assignee) };
+    case "ReviewRequestedEvent":
+      return {
+        ...base,
+        kind: "review_requested",
+        who: who(node.requestedReviewer),
+      };
+    case "ReviewRequestRemovedEvent":
+      return {
+        ...base,
+        kind: "review_removed",
+        who: who(node.requestedReviewer),
+      };
+    case "AddedToMergeQueueEvent":
+      return { ...base, kind: "queued" };
+    case "RemovedFromMergeQueueEvent": {
+      const reason = text(node?.reason, 200).replace(/_/g, " ").toLowerCase();
+      return { ...base, kind: "dequeued", ...(reason ? { reason } : {}) };
+    }
+    case "AutoMergeEnabledEvent":
+      return { ...base, kind: "auto_merge_on" };
+    case "AutoMergeDisabledEvent": {
+      const reason = text(node?.reason, 200).replace(/_/g, " ").toLowerCase();
+      return { ...base, kind: "auto_merge_off", ...(reason ? { reason } : {}) };
+    }
+  }
+  return null;
+}
+
+/** Events kept per request. */
+const MERGE_EVENTS_KEPT = 20;
+
+/**
+ * What the details say about merging, when they were asked (the "full"
+ * fields): assignees, reviewers, auto-merge, the merge queue, the latest
+ * approval and the events (GitLab system notes, GitHub timeline).
+ */
+export function ownMergeFacts(
+  provider: "gitlab" | "github",
+  node: any,
+): MrMergeFacts | undefined {
+  if (!node || typeof node !== "object" || !("assignees" in node))
+    return undefined;
+  const events: MrMergeEvent[] = [];
+  let approvedAt: string | undefined;
+  const labelsAddedAt: Record<string, string> = {};
+  if (provider === "gitlab") {
+    for (const discussion of nodes(node.discussions) as any[])
+      for (const note of nodes(discussion?.notes) as any[]) {
+        if (note?.system !== true) continue;
+        events.push(
+          ...gitlabSystemEvents(
+            text(note.body, 500),
+            text(note.createdAt, 40),
+            text(note.author?.username, 100),
+          ),
+        );
+      }
+  } else {
+    for (const each of nodes(node.mergeTimeline)) {
+      const event = githubEvent(each);
+      if (!event) continue;
+      if (event.kind === "labeled" && event.label)
+        labelsAddedAt[event.label] = event.at;
+      else events.push(event);
+    }
+    for (const review of nodes(node.latestOpinionatedReviews) as any[])
+      if (review?.state === "APPROVED") {
+        const at = text(review.submittedAt, 40);
+        if (at && (!approvedAt || at > approvedAt)) approvedAt = at;
+      }
+  }
+  events.sort((a, b) => a.at.localeCompare(b.at));
+  for (const event of events)
+    if (event.kind === "approved" && (!approvedAt || event.at > approvedAt))
+      approvedAt = event.at;
+  const autoMerge =
+    provider === "gitlab"
+      ? node.autoMergeEnabled === true
+        ? { ...(login(node.mergeUser) ? { by: login(node.mergeUser) } : {}) }
+        : undefined
+      : node.autoMergeRequest
+        ? {
+            ...(login(node.autoMergeRequest.enabledBy)
+              ? { by: login(node.autoMergeRequest.enabledBy) }
+              : {}),
+            ...(text(node.autoMergeRequest.enabledAt, 40)
+              ? { at: text(node.autoMergeRequest.enabledAt, 40) }
+              : {}),
+          }
+        : undefined;
+  const entry = provider === "github" ? node.mergeQueueEntry : null;
+  const position = Number(entry?.position);
+  const queue = entry
+    ? {
+        ...(Number.isSafeInteger(position) && position > 0 ? { position } : {}),
+        ...(text(entry.enqueuedAt, 40)
+          ? { at: text(entry.enqueuedAt, 40) }
+          : {}),
+      }
+    : undefined;
+  return {
+    assignees: users(
+      node.assignees,
+      provider === "gitlab" ? "username" : "login",
+    ),
+    reviewers:
+      provider === "gitlab"
+        ? users(node.reviewers, "username")
+        : names(node.reviewRequests, (request) =>
+            login(request?.requestedReviewer),
+          ),
+    ...(autoMerge ? { autoMerge } : {}),
+    ...(queue ? { queue } : {}),
+    ...(approvedAt ? { approvedAt } : {}),
+    events: events.slice(-MERGE_EVENTS_KEPT),
+    ...(Object.keys(labelsAddedAt).length ? { labelsAddedAt } : {}),
+  };
+}
+
+/**
+ * GitLab's label events of a merge request (REST
+ * `resource_label_events`): when each label present was last added.
+ */
+export function parseLabelEvents(answer: unknown): Record<string, string> {
+  const added: Record<string, string> = {};
+  if (!Array.isArray(answer)) return added;
+  for (const event of answer as any[]) {
+    const name = text(event?.label?.name, 60);
+    const at = text(event?.created_at, 40);
+    if (!name || !at) continue;
+    if (event.action === "add") added[name] = at;
+    else if (event.action === "remove") delete added[name];
+  }
+  return added;
+}
+
 const GITLAB_MERGE_SETTLING = new Set([
   "CHECKING",
   "UNCHECKED",
@@ -562,6 +816,7 @@ export function parseOwnDetails(
         OWN_DESCRIPTION_KEPT,
       );
       const lastNotes = ownNotes(provider, node);
+      const merge = ownMergeFacts(provider, node);
       found.set(item.key, {
         updatedAt: item.updatedAt,
         headSha: item.headSha,
@@ -571,6 +826,7 @@ export function parseOwnDetails(
         ...(lastNotes.length ? { lastNotes } : {}),
         ...(item.baseSha ? { baseSha: item.baseSha } : {}),
         ...(item.drafts !== undefined ? { drafts: item.drafts } : {}),
+        ...(merge ? { merge } : {}),
         own:
           provider === "gitlab" ? gitlabOwnStatus(node) : githubOwnStatus(node),
         settling: running || settling,

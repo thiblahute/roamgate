@@ -44,9 +44,15 @@ import {
   parseGitlabInbox,
   parseOwnDetails,
   parseOwnList,
+  lesserOwnFields,
   unknownFieldError,
   withOwnDetails,
 } from "./queries";
+import {
+  mergeAfterLabel,
+  mrMergeInfo,
+  mrMergeRulesFor,
+} from "../../../shared/mrReviewsMerge";
 import { inferenceOutdated, rowFacts } from "./inference";
 import { assignLanes } from "./lanes";
 import { overrideOutdated } from "./overrides";
@@ -90,6 +96,8 @@ const OWN_DETAILS_CALL: FetchCall = { feature: "inbox", kind: "own-details" };
 export const OWN_DETAILS_TTL_MS = 60 * 60_000;
 /** Unchanged own requests read again for their age per refresh, at most. */
 const OWN_AGED_PER_REFRESH = 10;
+/** GitLab label-events reads per refresh and host, at most (section 15). */
+const LABEL_EVENTS_PER_REFRESH = 20;
 /** Own requests whose details are read per refresh and host, at most. */
 const OWN_DETAILS_PER_REFRESH = 200;
 
@@ -126,6 +134,8 @@ export type MrInboxDeps = {
   efforts?: (settings: MrReviewsSettings) => MrEffortSummary[];
   /** Someone looks at the inbox: the branches may be read again. */
   onViewer?: () => void;
+  /** A scheduled merge became mergeable (section 15): the inference may run. */
+  onMergeTime?: () => void;
 };
 
 type HostResult = {
@@ -285,38 +295,83 @@ export function createMrInbox(deps: MrInboxDeps) {
     host: Host,
     batch: MrItem[],
   ): Promise<Map<string, OwnDetails>> {
-    if (host.provider === "github")
-      return parseOwnDetails(
-        "github",
-        host.host,
-        await deps.fetchers.github(
-          host.host,
-          ownDetailsQuery("github", batch),
-          OWN_DETAILS_CALL,
-        ),
-      );
     const fields = ownFields.get(host.host) ?? "full";
+    const lesser = lesserOwnFields(host.provider, fields);
     const fallBack = () => {
-      ownFields.set(host.host, "basic");
-      logger.info("own requests read with the basic fields", {
+      ownFields.set(host.host, lesser!);
+      logger.info("own requests read with fewer fields", {
         host: host.host,
+        fields: lesser,
       });
       return readOwnBatch(host, batch);
     };
+    const query = ownDetailsQuery(host.provider, batch, fields);
     let answer: unknown;
     try {
-      answer = await deps.fetchers.gitlab(
-        host.host,
-        ownDetailsQuery("gitlab", batch, fields),
-        OWN_DETAILS_CALL,
-      );
+      answer =
+        host.provider === "gitlab"
+          ? await deps.fetchers.gitlab(host.host, query, OWN_DETAILS_CALL)
+          : await deps.fetchers.github(host.host, query, OWN_DETAILS_CALL);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (fields === "full" && /field/i.test(message)) return fallBack();
+      if (lesser && /field/i.test(message)) return fallBack();
       throw error;
     }
-    if (fields === "full" && unknownFieldError(answer)) return fallBack();
-    return parseOwnDetails("gitlab", host.host, answer);
+    if (lesser && unknownFieldError(answer)) return fallBack();
+    return parseOwnDetails(host.provider, host.host, answer);
+  }
+
+  /**
+   * GitLab says when a label was added only through its label events: read
+   * for a request whose details were just read and that carries a
+   * merge-after label, once per change of those labels (section 15).
+   */
+  async function readLabelTimes(
+    host: Host,
+    items: MrItem[],
+    fresh: Map<string, OwnDetails>,
+    settings: MrReviewsSettings,
+  ): Promise<void> {
+    const read = deps.fetchers.gitlabLabelEvents;
+    if (host.provider !== "gitlab" || !read) return;
+    const known = deps.store.get().ownDetails;
+    let calls = 0;
+    for (const item of items) {
+      const details = fresh.get(item.key);
+      if (!details?.merge || item.state !== "open") continue;
+      const rules = mrMergeRulesFor(settings.merge, item);
+      const labels = (item.labels ?? []).filter(
+        (label) => !!mergeAfterLabel([label], rules.afterLabels),
+      );
+      if (!labels.length) continue;
+      const before = known[item.key];
+      const sameLabels =
+        before?.labelTimesFor !== undefined &&
+        before.labelTimesFor === [...labels].sort().join("\n");
+      if (sameLabels) {
+        if (before?.merge?.labelsAddedAt)
+          details.merge.labelsAddedAt = before.merge.labelsAddedAt;
+        details.labelTimesFor = before.labelTimesFor;
+        continue;
+      }
+      if (calls >= LABEL_EVENTS_PER_REFRESH) continue;
+      calls++;
+      try {
+        const added = await read(item);
+        const kept = Object.fromEntries(
+          labels.flatMap((label) =>
+            added[label] ? [[label, added[label]]] : [],
+          ),
+        );
+        if (Object.keys(kept).length) details.merge.labelsAddedAt = kept;
+        details.labelTimesFor = [...labels].sort().join("\n");
+      } catch (error) {
+        logger.debug("label events not read", {
+          mr: item.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   /**
@@ -325,7 +380,11 @@ export function createMrInbox(deps: MrInboxDeps) {
    * last read, still settling, or (a few per refresh) old; the others keep
    * the details known.
    */
-  async function readOwn(host: Host, settledSince: string): Promise<MrItem[]> {
+  async function readOwn(
+    host: Host,
+    settledSince: string,
+    settings: MrReviewsSettings,
+  ): Promise<MrItem[]> {
     const listed = (await listOwn(host)).filter(
       (item) => item.state === "open" || item.updatedAt >= settledSince,
     );
@@ -365,6 +424,7 @@ export function createMrInbox(deps: MrInboxDeps) {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+    if (fresh.size) await readLabelTimes(host, due, fresh, settings);
     // Kept for the requests listed; the others (gone, settled long ago) go.
     const keys = new Set(listed.map((item) => item.key));
     const prefix = `${host.provider}:${host.host.toLowerCase()}/`;
@@ -387,6 +447,7 @@ export function createMrInbox(deps: MrInboxDeps) {
     host: { host: string; provider: "gitlab" | "github" },
     followed: string[],
     settledSince: string,
+    settings: MrReviewsSettings,
   ): Promise<HostResult> {
     const base = { host: host.host, provider: host.provider };
     try {
@@ -405,7 +466,7 @@ export function createMrInbox(deps: MrInboxDeps) {
       // Its own query: a failure there keeps what was known of them.
       let own: MrItem[] | undefined;
       try {
-        own = await readOwn(host, settledSince);
+        own = await readOwn(host, settledSince, settings);
       } catch (error) {
         logger.debug("own requests not read", {
           host: host.host,
@@ -486,7 +547,7 @@ export function createMrInbox(deps: MrInboxDeps) {
     ).toISOString();
     const results = await Promise.all(
       settings.hosts.map((host) =>
-        readHost(host, followedOf(host.host), settledSince),
+        readHost(host, followedOf(host.host), settledSince, settings),
       ),
     );
     hosts.clear();
@@ -572,6 +633,28 @@ export function createMrInbox(deps: MrInboxDeps) {
       });
     deps.onChange?.();
     return refreshing;
+  }
+
+  let wakeTimer: ReturnType<typeof setTimeout> | null = null;
+  let wakeTime = 0;
+  /**
+   * At the soonest time a scheduled merge becomes mergeable, the rows move
+   * (Waiting to Your move) and the inference may run: no forge call.
+   */
+  function wakeAt(time: number) {
+    if (!Number.isFinite(time) || time <= now()) return;
+    if (wakeTimer && wakeTime === time) return;
+    if (wakeTimer) clearTimeout(wakeTimer);
+    wakeTime = time;
+    // setTimeout holds about 24 days at most; a later time is set again.
+    const wait = Math.min(time - now() + 1_000, 20 * 24 * 60 * 60_000);
+    wakeTimer = setTimeout(() => {
+      wakeTimer = null;
+      wakeTime = 0;
+      deps.onChange?.();
+      deps.onMergeTime?.();
+    }, wait);
+    (wakeTimer as { unref?: () => void }).unref?.();
   }
 
   function schedule() {
@@ -726,6 +809,30 @@ export function createMrInbox(deps: MrInboxDeps) {
         unreadFirst(a) - unreadFirst(b) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+    // Merges scheduled by a label and bots merging (section 15): exact
+    // facts, before the inference reads them.
+    let wake = Number.POSITIVE_INFINITY;
+    for (const entry of out) {
+      if (entry.branch || !entry.reasons.includes("authored")) continue;
+      const details = state.ownDetails[entry.key];
+      const merge = mrMergeInfo({
+        state: entry.state,
+        ...(entry.labels ? { labels: entry.labels } : {}),
+        updatedAt: entry.updatedAt,
+        ...(details?.merge ? { facts: details.merge } : {}),
+        ...(details?.lastNotes ? { notes: details.lastNotes } : {}),
+        rules: mrMergeRulesFor(settings.merge, entry),
+        ...(hosts.get(entry.host)?.state.user
+          ? { user: hosts.get(entry.host)!.state.user }
+          : {}),
+        now: now(),
+      });
+      if (!merge) continue;
+      entry.merge = merge;
+      if (merge.after && !merge.after.ready)
+        wake = Math.min(wake, Date.parse(merge.after.at));
+    }
+    wakeAt(wake);
     // What was inferred of one's own work, unless it moved on since.
     const inferred = state.inferred ?? {};
     for (const entry of out) {
@@ -856,6 +963,8 @@ export function createMrInbox(deps: MrInboxDeps) {
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
+      if (wakeTimer) clearTimeout(wakeTimer);
+      wakeTimer = null;
     },
   };
 }

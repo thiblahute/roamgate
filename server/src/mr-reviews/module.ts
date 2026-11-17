@@ -344,6 +344,7 @@ export function createMrReviews(options: {
     },
     curation: () => curation.state(),
     inference: () => inference.state(),
+    onMergeTime: () => void inference.maybeRun(),
   });
   const order = createMrOrder({ inbox, settings: saved, save: saveSettings });
   opener = createMrOpener({

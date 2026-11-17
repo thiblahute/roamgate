@@ -133,3 +133,25 @@ test("own-work filters and completions", () => {
   ).toContain("lane:your-move");
   expect(mrFilterCompletions("pool", list)).toEqual([]);
 });
+
+test("merge keys: completions, and they keep one's own work", () => {
+  const list = [
+    entry(1, {
+      lane: "merging",
+      merge: { bot: { name: "marge-bot", via: "assignee", queued: true } },
+    }),
+  ];
+  expect(mrFilterCompletions("bot:", list).map((each) => each.label)).toEqual(
+    expect.arrayContaining(["bot:failed", "bot:marge-bot"]),
+  );
+  expect(
+    mrFilterCompletions("merge-a", list).map((each) => each.label),
+  ).toEqual(["merge-after:"]);
+  expect(
+    mrFilterCompletions("state:m", list).map((each) => each.label),
+  ).toEqual(["state:merged", "state:merging"]);
+  expect(mrFilterIsOwn("bot:any")).toBe(true);
+  expect(mrFilterIsOwn("state:merging")).toBe(true);
+  expect(mrFilterIsOwn("-merge-after:yes")).toBe(false);
+  expect(mrFilterMatches(list[0]!, "-merge-after:yes bot:queued")).toBe(true);
+});
