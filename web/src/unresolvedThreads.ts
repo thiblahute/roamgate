@@ -81,19 +81,6 @@ export function stepUnresolved(
   return null;
 }
 
-/**
- * Where a reader is among threads sorted by `key`, when not on one: before
- * the first thread whose key comes after `here`'s.
- */
-export function placeBefore<T>(
-  keys: readonly T[],
-  here: T,
-  compare: (a: T, b: T) => number,
-): NavPlace {
-  const index = keys.findIndex((key) => compare(key, here) > 0);
-  return { index: index < 0 ? keys.length : index, on: false };
-}
-
 /** Compares sort keys made of numbers and strings, part by part. */
 export function compareKeys(
   a: readonly (number | string)[],

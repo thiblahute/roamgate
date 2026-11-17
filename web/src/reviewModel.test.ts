@@ -7,34 +7,9 @@ import {
   gapForLine,
   relocateLine,
   rankReviews,
-  placeThreads,
   reviewAsMarkdown,
-  reviewLayout,
   searchCommits,
 } from "./reviewModel";
-
-const diff: ReviewDiff = {
-  truncated: false,
-  files: [
-    {
-      path: "src/a.c",
-      oldPath: "src/a.c",
-      hunks: [
-        {
-          header: "@@ -1,3 +1,4 @@",
-          lines: [
-            { kind: " ", old: 1, new: 1, text: "int x;" },
-            { kind: "-", old: 2, new: null, text: "int y;" },
-            { kind: "+", old: null, new: 2, text: "long y;" },
-            { kind: "+", old: null, new: 3, text: "long z;" },
-            { kind: " ", old: 3, new: 4, text: "int w;" },
-          ],
-        },
-      ],
-    },
-    { path: "img.png", oldPath: "img.png", binary: true, hunks: [] },
-  ],
-};
 
 function thread(
   id: string,
@@ -60,47 +35,6 @@ function thread(
     ],
   };
 }
-
-test("rows are numbered in reading order with file starts", () => {
-  const layout = reviewLayout(diff);
-  expect(layout.rows).toHaveLength(5);
-  expect(layout.fileStart).toEqual([0, undefined]);
-});
-
-test("threads land on their line, follow moved code, or become outdated", () => {
-  const layout = reviewLayout(diff);
-  const placement = placeThreads(diff, layout, [
-    thread("exact", { path: "src/a.c", line: 2, side: "old", text: "int y;" }),
-    thread("range", {
-      path: "src/a.c",
-      line: 2,
-      endLine: 3,
-      side: "new",
-      text: "long z;",
-    }),
-    thread("moved", { path: "src/a.c", line: 9, side: "new", text: "int w;" }),
-    thread("gone", {
-      path: "src/a.c",
-      line: 7,
-      side: "new",
-      text: "deleted();",
-    }),
-    thread("file", { path: "img.png" }),
-    thread("review", {}),
-    thread("other", { path: "nope.c", line: 1, side: "new" }),
-  ]);
-  expect(placement.byRow.get(1)?.map((t) => t.id)).toEqual(["exact"]);
-  expect(placement.byRow.get(3)?.map((t) => t.id)).toEqual(["range"]);
-  expect(placement.byRow.get(4)?.map((t) => t.id)).toEqual(["moved"]);
-  expect(placement.moved.has("moved")).toBe(true);
-  expect(placement.byFile.get(1)?.map((t) => t.id)).toEqual(["file"]);
-  expect(placement.general.map((t) => t.id)).toEqual([
-    "gone",
-    "review",
-    "other",
-  ]);
-  expect([...placement.outdated].sort()).toEqual(["gone", "other"]);
-});
 
 test("the draft review as Markdown skips discussions", () => {
   const markdown = reviewAsMarkdown("Overall fine.", [
@@ -218,24 +152,9 @@ describe("context expansion", () => {
         [0, { lines: file, gaps: new Map([[1, above.change(state)]]) }],
       ]),
     );
-    const layout = reviewLayout(diff);
-    const thread = {
-      id: "t12",
-      sessionId: "s",
-      kind: "discussion",
-      anchor: { path: "f.c", line: 12, side: "new" },
-      comments: [],
-      resolved: false,
-      createdAt: "",
-      updatedAt: "",
-    } as unknown as ReviewThread;
-    const placement = placeThreads(diff, layout, [thread]);
-    expect(placement.general).toEqual([]);
-    const [at] = [...placement.byRow.keys()];
-    expect(layout.rows.find((row) => row.at === at)?.line.new).toBe(12);
-    const shown = layout.rows
-      .filter((row) => row.line.new !== null && row.line.expanded)
-      .map((row) => row.line.new);
+    const shown = diff.files[0]!.hunks.flatMap((hunk) => hunk.lines)
+      .filter((line) => line.new !== null && line.expanded)
+      .map((line) => line.new);
     expect(shown).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 

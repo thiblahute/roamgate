@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   compareKeys,
-  placeBefore,
   stepNotice,
   stepUnresolved,
   unresolvedPosition,
@@ -87,13 +86,4 @@ test("keys sort part by part, numbers and strings", () => {
   ];
   const shuffled = [keys[3]!, keys[0]!, keys[4]!, keys[2]!, keys[1]!];
   expect(shuffled.sort(compareKeys)).toEqual(keys);
-  // The cursor on line 12 of the first file: before the thread on it.
-  expect(placeBefore(keys, [-1, 0, 12, ""], compareKeys)).toEqual({
-    index: 1,
-    on: false,
-  });
-  expect(placeBefore(keys, [9, 0, 0, ""], compareKeys)).toEqual({
-    index: 5,
-    on: false,
-  });
 });
