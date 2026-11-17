@@ -18,6 +18,8 @@ if (process.env.ROAMGATE_HISTORY_DRAWER_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
+  // The plain message box: these tests type into its textarea.
+  (await import("../vimKeys")).setVimKeys(false);
   test("mobile disclosures reset per pane and speech stops per session", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/?layout=mobile" });

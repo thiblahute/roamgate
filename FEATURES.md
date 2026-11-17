@@ -190,8 +190,9 @@ Inspector state is scoped to each checkout; see
   commands that match what follows (Claude Code's own, then the session's
   skills and custom commands, read from its transcript); a click, or the
   arrows and Tab or Enter, fill in `/name`, Enter on a whole name sends it,
-  and Esc closes the list. **Vim keys in agent chats** in Configuration >
-  Behavior (off by default) makes chat message boxes Vim editors: insert mode
+  and Esc closes the list. **Vim keys** in Configuration > Behavior (on by
+  default; one setting for every device, which the review's `:vim` and
+  `:set novim` change too) makes chat message boxes Vim editors: insert mode
   first, `:w` sends, PageUp/PageDown scroll the conversation, and on touch
   screens an **Esc** button stands in for the missing key. Enter sends and
   Shift+Enter adds a line; on touch keyboards Enter adds a line and the Send
@@ -431,7 +432,8 @@ again, and comments follow their code or show as outdated.
   beside refresh) hides the file tree next to it, until shown again.
 - Vim keys throughout: counts, `gg`/`G`, Ctrl-d/u/f/b, `{`/`}` hunks, `]`/`[`
   files, word motions, `*`/`#` and `/`/`?` search, `:` commands, `zo`/`zO`/`zR`
-  to show more context. Comments are written in a Vim editor (`:vim` toggles);
+  to show more context. Comments are written in a Vim editor (`:vim` toggles
+  Configuration's **Vim keys**, on every device);
   on touch screens its **Esc** button stands in for the missing key.
   `j`/`k` stop on each message under a line as on a line, so `r`, `e` and `dd`
   act on it there; side by side they go straight down or up on one side, and

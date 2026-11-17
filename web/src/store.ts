@@ -72,6 +72,12 @@ import {
   disconnectShortcutPreferences,
   SHORTCUT_SETTING_KEY,
 } from "./shortcutPreferences";
+import {
+  adoptVimKeys,
+  connectVimKeys,
+  disconnectVimKeys,
+  VIM_KEYS_SETTING_KEY,
+} from "./vimKeys";
 import { isReconnectRetryableError } from "./reconnectRetry";
 import { readableConnections, topologyIsStale } from "./connectionSessions";
 import {
@@ -1368,11 +1374,14 @@ let uiSettingsHydrated = false;
 let uiSettingsEpoch = 0;
 let uiSettingsPushVersion = 0;
 let latestShortcutPush: unknown;
+let vimKeysPushVersion = 0;
+let latestVimKeysPush: unknown;
 async function hydrateUiSettings() {
   if (uiSettingsHydrated) return;
   uiSettingsHydrated = true;
   const epoch = uiSettingsEpoch;
   const pushVersion = uiSettingsPushVersion;
+  const vimPushVersion = vimKeysPushVersion;
   try {
     const result = await bridge.call("bridge.ui_settings.get");
     if (epoch !== uiSettingsEpoch) return;
@@ -1387,6 +1396,17 @@ async function hydrateUiSettings() {
       pushVersion === uiSettingsPushVersion
         ? ui[SHORTCUT_SETTING_KEY]
         : latestShortcutPush,
+    );
+    connectVimKeys(
+      async (on) => {
+        await bridge.call("bridge.ui_settings.update", {
+          key: VIM_KEYS_SETTING_KEY,
+          value: on,
+        });
+      },
+      vimPushVersion === vimKeysPushVersion
+        ? ui[VIM_KEYS_SETTING_KEY]
+        : latestVimKeysPush,
     );
   } catch {
     // Either the call lost a race with connection setup, or this is an older
@@ -2462,6 +2482,7 @@ function handleBridgeStatus(s: ConnectionStatus) {
     uiSettingsEpoch += 1;
     uiSettingsHydrated = false;
     disconnectShortcutPreferences();
+    disconnectVimKeys();
     catalogReadyForConnection = false;
     terminalReattachPending = true;
     bridge.setConnectionRuntimeGenerations([]);
@@ -2879,6 +2900,11 @@ export const store = {
         uiSettingsPushVersion += 1;
         latestShortcutPush = push.value;
         adoptShortcutPreferences(push.value);
+      }
+      if (push.key === VIM_KEYS_SETTING_KEY) {
+        vimKeysPushVersion += 1;
+        latestVimKeysPush = push.value;
+        adoptVimKeys(push.value);
       }
     });
     bridge.onStatus(handleBridgeStatus);
