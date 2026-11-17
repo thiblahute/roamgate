@@ -351,28 +351,6 @@
   flex: 0 0 auto;
 }
 
-/*
- * The `:` prompt (CommandLine) at the inspector's bottom edge; over the
- * Files preview's Review only, which covers the window.
- */
-.workspace-inspector > .review-cmdline {
-  flex: none;
-  background: var(--viewer-header-bg);
-  color: var(--text);
-}
-
-.workspace-inspector > .review-cmdline .review-cmd {
-  color: inherit;
-}
-
-.workspace-inspector:has(.file-preview.is-zen) > .review-cmdline {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 1160;
-}
-
 /* The inspector's shortcut list (`?`, `:help`), over the page. */
 .review-keys.inspector-keys {
   position: fixed;
@@ -441,6 +419,8 @@ body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
   visibility: hidden;
 }
 
+/* Over the Files preview's zen and Review only, which cover the window. */
+.workspace-inspector:has(.file-preview.is-zen) > .review-cmdline,
 .workspace-inspector.is-review-only > .review-cmdline {
   position: fixed;
   right: 0;
