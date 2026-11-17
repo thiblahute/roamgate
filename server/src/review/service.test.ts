@@ -12,6 +12,7 @@ import {
 import { openReviewStorage } from "./storage";
 import { ReviewGoneError } from "../workspace/review-patch";
 import { TurnCauses } from "../voice/turn-causes";
+import { reviewServiceForTest } from "./testkit";
 
 const directories: string[] = [];
 const services: ReviewService[] = [];
@@ -29,14 +30,7 @@ function setup(directory?: string) {
       directories.push(path);
       return path;
     })();
-  const pushes: ReviewPush[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: (push) => pushes.push(push),
-    loadDiff: async () => ({ files: [], truncated: false }),
-  });
-  services.push(service);
-  return { dir, service, pushes };
+  return reviewServiceForTest({ dir });
 }
 
 function openSession(service: ReviewService) {
