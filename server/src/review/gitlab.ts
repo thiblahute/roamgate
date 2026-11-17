@@ -1,9 +1,5 @@
-import { sshCommandArgv, sshReadCommandArgv } from "../bridge/ssh-command";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { forgeGate } from "../workspace/forge-calls";
-import { gitShellCommandArgv } from "../workspace/git-shell";
 import { enterCheckout, reviewScriptError } from "../workspace/review-patch";
 import type {
   ReviewAnchor,
@@ -27,6 +23,16 @@ import {
   readPullThreads,
   updatePullDraft,
 } from "./github";
+import {
+  type ApiFile,
+  apiFilesPatch,
+  base64File,
+  cliError,
+  commitFromMessage,
+  parseJsonPages,
+  runForgeCli,
+  runForgeScript,
+} from "./forge-cli";
 import { parseUnifiedDiff } from "./patch";
 
 /**
@@ -79,8 +85,6 @@ export type GitLabDraft = {
     new_line?: number | null;
   } | null;
 };
-
-const TIMEOUT_MS = 30_000;
 
 export function parseMergeRequestUrl(url: string): MergeRequestRef | null {
   // A GitHub pull request is reviewed the same way (review/github.ts).
@@ -209,15 +213,9 @@ async function checkGlabHost(
   const script = glabHostScript(context.root, host, context.shQuote);
   let result: { code: number; stdout: string; stderr: string };
   try {
-    result = await context.runProcessWithCodeTimeout(
-      context.host
-        ? sshReadCommandArgv(context.host, script, [], "review.gitlab")
-        : gitShellCommandArgv(script),
-      TIMEOUT_MS,
-      context.host
-        ? undefined
-        : { cwd: existsSync(context.root) ? context.root : homedir() },
-    );
+    result = await runForgeScript(context, script, "review.gitlab", {
+      cwd: true,
+    });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       throw new Error("glab is not installed on this host", { cause: error });
@@ -277,53 +275,6 @@ export async function glab(
       `${key}=${value}`,
     ]),
   ];
-  const env = { GLAB_NO_PROMPT: "1", GIT_TERMINAL_PROMPT: "0", NO_COLOR: "1" };
-  const spawn = async (argv: string[]) => {
-    let result: { code: number; stdout: string; stderr: string };
-    if (context.host) {
-      const unset = ownLogin
-        ? `env ${TOKEN_VARIABLES.map((name) => `-u ${name}`).join(" ")} `
-        : "";
-      // `glab api` names its project: a removed checkout runs it from home.
-      const command = `{ cd ${context.shQuote(context.root)} 2>/dev/null || cd; } && ${unset}${Object.entries(
-        env,
-      )
-        .map(([key, value]) => `${key}=${value}`)
-        .join(" ")} ${argv.map(context.shQuote).join(" ")}`;
-      result = await context.runProcessWithCodeTimeout(
-        method === "GET"
-          ? sshReadCommandArgv(context.host, command, [], "review.gitlab")
-          : sshCommandArgv(context.host, command, [], "review.gitlab"),
-        TIMEOUT_MS,
-      );
-    } else {
-      // A missing cwd fails the spawn with ENOENT too, as a missing glab
-      // would: a removed checkout runs it from home instead.
-      const cwd = existsSync(context.root) ? context.root : homedir();
-      try {
-        result = await context.runProcessWithCodeTimeout(argv, TIMEOUT_MS, {
-          cwd,
-          env: ownLogin
-            ? {
-                ...Object.fromEntries(
-                  Object.entries(process.env).filter(
-                    ([name]) => !TOKEN_VARIABLES.includes(name),
-                  ),
-                ),
-                ...env,
-              }
-            : { ...process.env, ...env },
-        });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT")
-          throw new Error("glab is not installed on this host", {
-            cause: error,
-          });
-        throw error;
-      }
-    }
-    return result;
-  };
   // Reads go through the forge gate's budget, sharing and If-None-Match;
   // writes only through its budget.
   const result = await forgeGate.run(
@@ -340,19 +291,18 @@ export async function glab(
       ...(read && call.reuseMs !== undefined ? { reuseMs: call.reuseMs } : {}),
     },
     argv,
-    spawn,
+    (full) =>
+      runForgeCli(context, full, {
+        env: { GLAB_NO_PROMPT: "1", GIT_TERMINAL_PROMPT: "0", NO_COLOR: "1" },
+        retrySafe: method === "GET",
+        tag: "review.gitlab",
+        unset: ownLogin ? TOKEN_VARIABLES : [],
+      }),
   );
   if (result.code === 127)
     throw new Error("glab is not installed on this host");
-  if (result.code !== 0) {
-    const message = (result.stderr || result.stdout || "GitLab request failed")
-      .trim()
-      .split("\n")
-      .slice(-3)
-      .join(" ")
-      .slice(0, 300);
-    throw new Error(`GitLab: ${message}`);
-  }
+  if (result.code !== 0)
+    throw cliError("GitLab", result.stderr || result.stdout);
   const text = result.stdout.trim();
   if (!text) return null;
   if (!paginate) return JSON.parse(text);
@@ -362,42 +312,6 @@ export async function glab(
   if (!pages.every(Array.isArray))
     throw new Error("GitLab: unexpected answer to a paged request");
   return (pages as unknown[][]).flat();
-}
-
-/**
- * The JSON values printed back to back, as `glab api --paginate` prints
- * its pages: each top-level array or object is cut out by its brackets,
- * skipping those inside strings, and parsed on its own.
- */
-export function parseJsonPages(text: string): unknown[] {
-  const values: unknown[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      // A bare string or number on its own is not a page.
-      if (depth === 0) return [JSON.parse(text)];
-      inString = true;
-    } else if (char === "[" || char === "{") {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (char === "]" || char === "}") {
-      depth--;
-      if (depth < 0) throw new Error("GitLab: malformed answer");
-      if (depth === 0) values.push(JSON.parse(text.slice(start, i + 1)));
-    } else if (depth === 0 && !/\s/.test(char)) return [JSON.parse(text)];
-  }
-  if (depth !== 0 || inString) throw new Error("GitLab: truncated answer");
-  return values;
 }
 
 export async function readMergeRequest(
@@ -435,6 +349,19 @@ export async function readMergeRequest(
   };
 }
 
+/** A file GitLab lists, too large or collapsed shown as binary. */
+function apiFile(file: Record<string, unknown>): ApiFile {
+  return {
+    oldPath: String(file.old_path ?? ""),
+    newPath: String(file.new_path ?? ""),
+    added: Boolean(file.new_file),
+    deleted: Boolean(file.deleted_file),
+    ...(file.too_large || file.collapsed
+      ? {}
+      : { patch: String(file.diff ?? "") }),
+  };
+}
+
 /** The MR's diff from the API, for when its commits are not in the checkout. */
 export async function readMergeRequestDiff(
   context: GlabContext,
@@ -447,22 +374,8 @@ export async function readMergeRequestDiff(
     "GET",
     `${mrPath(mr)}/diffs?per_page=100`,
   )) as Record<string, unknown>[];
-  const text = files
-    .map((file) => {
-      const oldPath = String(file.old_path ?? "");
-      const newPath = String(file.new_path ?? "");
-      const header = [
-        `diff --git a/${oldPath} b/${newPath}`,
-        `--- ${file.new_file ? "/dev/null" : `a/${oldPath}`}`,
-        `+++ ${file.deleted_file ? "/dev/null" : `b/${newPath}`}`,
-      ];
-      if (file.too_large || file.collapsed)
-        return [...header.slice(0, 1), "Binary files differ"].join("\n");
-      return [...header, String(file.diff ?? "").replace(/\n$/, "")].join("\n");
-    })
-    .join("\n");
   return {
-    files: parseUnifiedDiff(text),
+    files: parseUnifiedDiff(apiFilesPatch(files.map(apiFile))),
     baseSha: mr.baseSha,
     headSha: mr.headSha,
     truncated: false,
@@ -833,9 +746,10 @@ export async function readRawFile(
     "GET",
     `projects/${encodeURIComponent(mr.project)}/repository/files/${encodeURIComponent(path)}?ref=${sha}`,
   );
-  const content = (result as Record<string, unknown> | null)?.content;
-  if (typeof content !== "string") throw new Error("GitLab returned no file");
-  return Buffer.from(content, "base64").toString("utf8");
+  return base64File(
+    "GitLab",
+    (result as Record<string, unknown> | null)?.content,
+  );
 }
 
 /** The MR's commits, oldest first. */
@@ -851,19 +765,13 @@ export async function readMergeRequestCommits(
     `${mrPath(mr)}/commits?per_page=100`,
   )) as Record<string, unknown>[];
   return commits
-    .map((commit) => {
-      const message = String(commit.message ?? commit.title ?? "");
-      const [subject = "", ...rest] = message.split("\n");
-      const parents = commit.parent_ids as string[] | undefined;
-      return {
-        sha: String(commit.id ?? ""),
-        parent: parents?.[0] ?? null,
-        author: String(commit.author_name ?? ""),
-        date: String(commit.authored_date ?? commit.created_at ?? ""),
-        subject,
-        body: rest.join("\n").trim(),
-      };
-    })
+    .map((commit) => ({
+      sha: String(commit.id ?? ""),
+      parent: (commit.parent_ids as string[] | undefined)?.[0] ?? null,
+      author: String(commit.author_name ?? ""),
+      date: String(commit.authored_date ?? commit.created_at ?? ""),
+      ...commitFromMessage(String(commit.message ?? commit.title ?? "")),
+    }))
     .reverse();
 }
 
@@ -883,20 +791,8 @@ export async function readCommitDiff(
     "GET",
     `projects/${encodeURIComponent(mr.project)}/repository/commits/${sha}/diff?per_page=100`,
   )) as Record<string, unknown>[];
-  const text = files
-    .map((file) => {
-      const oldPath = String(file.old_path ?? "");
-      const newPath = String(file.new_path ?? "");
-      return [
-        `diff --git a/${oldPath} b/${newPath}`,
-        `--- ${file.new_file ? "/dev/null" : `a/${oldPath}`}`,
-        `+++ ${file.deleted_file ? "/dev/null" : `b/${newPath}`}`,
-        String(file.diff ?? "").replace(/\n$/, ""),
-      ].join("\n");
-    })
-    .join("\n");
   return {
-    files: parseUnifiedDiff(text),
+    files: parseUnifiedDiff(apiFilesPatch(files.map(apiFile))),
     baseSha: parent ?? undefined,
     headSha: sha,
     truncated: false,
@@ -1129,12 +1025,7 @@ export async function readCheckout(
   context: GlabContext,
 ): Promise<ReviewCheckout> {
   const script = readCheckoutScript(context.root, context.shQuote);
-  const result = await context.runProcessWithCodeTimeout(
-    context.host
-      ? sshReadCommandArgv(context.host, script, [], "review.checkout")
-      : gitShellCommandArgv(script),
-    TIMEOUT_MS,
-  );
+  const result = await runForgeScript(context, script, "review.checkout");
   if (result.code !== 0)
     throw reviewScriptError(
       result.stderr,

@@ -5,7 +5,14 @@ import type {
   ReviewThread,
 } from "../../../shared/review";
 import { forgeGate } from "../workspace/forge-calls";
-import { spawnGh } from "./forge";
+import {
+  apiFilesPatch,
+  base64File,
+  cliError,
+  commitFromMessage,
+  parseJsonPages,
+  spawnGh,
+} from "./forge-cli";
 import type {
   GitLabDraft,
   GlabContext,
@@ -81,18 +88,11 @@ export async function ghApi(
   if (result.code !== 0) {
     // GraphQL errors come with a body.
     if (path === "graphql" && body.startsWith("{")) return JSON.parse(body);
-    const message = (result.stderr || body || "GitHub request failed")
-      .trim()
-      .split("\n")
-      .slice(-3)
-      .join(" ")
-      .slice(0, 300);
-    throw new Error(`GitHub: ${message}`);
+    throw cliError("GitHub", result.stderr || body);
   }
   if (!body) return null;
   if (!options.paginate) return JSON.parse(body);
   // --paginate prints one JSON array per page back to back.
-  const { parseJsonPages } = await import("./gitlab");
   const pages = parseJsonPages(body);
   return pages.length === 1 ? pages[0] : (pages as unknown[][]).flat();
 }
@@ -136,20 +136,18 @@ export async function readPullRequest(
 }
 
 function filesDiff(files: Record<string, any>[]): string {
-  return files
-    .map((file) => {
+  return apiFilesPatch(
+    files.map((file) => {
       const newPath = String(file.filename ?? "");
-      const oldPath = String(file.previous_filename ?? newPath);
-      const header = [
-        `diff --git a/${oldPath} b/${newPath}`,
-        `--- ${file.status === "added" ? "/dev/null" : `a/${oldPath}`}`,
-        `+++ ${file.status === "removed" ? "/dev/null" : `b/${newPath}`}`,
-      ];
-      if (typeof file.patch !== "string")
-        return [header[0], "Binary files differ"].join("\n");
-      return [...header, file.patch.replace(/\n$/, "")].join("\n");
-    })
-    .join("\n");
+      return {
+        oldPath: String(file.previous_filename ?? newPath),
+        newPath,
+        added: file.status === "added",
+        deleted: file.status === "removed",
+        ...(typeof file.patch === "string" ? { patch: file.patch } : {}),
+      };
+    }),
+  );
 }
 
 export async function readPullDiff(
@@ -182,18 +180,13 @@ export async function readPullCommits(
     `${pullPath(mr)}/commits?per_page=100`,
     { paginate: true },
   )) as Record<string, any>[];
-  return (commits ?? []).map((entry) => {
-    const message = String(entry?.commit?.message ?? "");
-    const [subject = "", ...rest] = message.split("\n");
-    return {
-      sha: String(entry?.sha ?? ""),
-      parent: entry?.parents?.[0]?.sha ?? null,
-      author: String(entry?.commit?.author?.name ?? ""),
-      date: String(entry?.commit?.author?.date ?? ""),
-      subject,
-      body: rest.join("\n").trim(),
-    };
-  });
+  return (commits ?? []).map((entry) => ({
+    sha: String(entry?.sha ?? ""),
+    parent: entry?.parents?.[0]?.sha ?? null,
+    author: String(entry?.commit?.author?.name ?? ""),
+    date: String(entry?.commit?.author?.date ?? ""),
+    ...commitFromMessage(String(entry?.commit?.message ?? "")),
+  }));
 }
 
 export async function readPullCommitDiff(
@@ -229,9 +222,7 @@ export async function readPullRawFile(
     "GET",
     `repos/${mr.project}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${sha}`,
   )) as Record<string, unknown> | null;
-  const content = result?.content;
-  if (typeof content !== "string") throw new Error("GitHub returned no file");
-  return Buffer.from(content, "base64").toString("utf8");
+  return base64File("GitHub", result?.content);
 }
 
 /**
