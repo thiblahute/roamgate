@@ -177,12 +177,13 @@ Inspector button, shortcuts, or workspace/agent menus.
   Vim keys on or off (`:novim` only makes the comment editor plain): `j`/`k` (counts too),
   `J`/`K`, `gg`/`G` and `12G` or `:12` (line 12 of all the changes),
   Ctrl-d/u/f/b/e/y, PageUp/PageDown, `H`/`M`/`L`, `zz`/`zt`/`zb`, `{`/`}`
-  hunks, `[`/`]` files, `w`/`b`/`E`, `h`/`l`/`0`/`^`/`$`, Left and Right to
-  change side in a side by side diff, `/`, `*`, `#`, `n`/`N` (a search that
-  finds no line goes file to file by path, the tree marks the files with a
-  hit), `V` Visual lines (Shift+click too), `S` side by side, `R`/`gr`
-  reload, `f` the tree, `o` Review only. A click puts the cursor on a line,
-  a second click there opens the comment box. Ctrl-f is the page down
+  hunks, `[`/`]` files, `w`/`b`/`E`, `h`/`l`/`0`/`^`/`$`, Left and Right
+  as `h`/`l` (side by side, past a line's start or end to the line beside
+  it), `/`, `*`, `#`, `n`/`N` (a search that finds no line goes file to file
+  by path, the tree marks the files with a hit), `V` Visual lines
+  (Shift+click too), `S` side by side, `R`/`gr` reload, `f` the tree, `o`
+  Review only. A click puts the cursor on a line, a second click there
+  opens the comment box. Ctrl-f is the page down
   (Cmd+F still finds on a Mac) and `:split` / `:unified` switch.
 - Changes' `:` line has the review's commands, with Tab completion, and
   says so for a word that is none of them. `:q` (`:quit`, `:close`, `:wq`, `:x`...) and Esc with nothing else to
