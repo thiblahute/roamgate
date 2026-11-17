@@ -839,6 +839,12 @@ export function createFileHandlers({
     return { workspace_id: workspaceId, root, ...result };
   }
 
+  /** Where the review's reads run: this connection's host. */
+  const onHost = () => ({
+    host: sshHost(),
+    shQuote,
+    runProcessWithCodeTimeout,
+  });
   return {
     listWorkspaceFiles: listFiles,
     resolveWorkspaceFiles: resolveFiles,
@@ -869,85 +875,26 @@ export function createFileHandlers({
       root: string,
       target: ReviewTarget,
       paths?: readonly string[],
-    ) =>
-      readReviewPatch({
-        root,
-        target,
-        paths,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+    ) => readReviewPatch({ root, target, paths, ...onHost() }),
     readReviewSummary: (root: string, of: ReviewSummaryOf) =>
-      readReviewSummary({
-        root,
-        of,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewSummary({ root, of, ...onHost() }),
     readReviewFiles: (
       root: string,
       ends: { base: string; head: string },
       files: readonly ReviewFileRequest[],
-    ) =>
-      readReviewFiles({
-        root,
-        ...ends,
-        files,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+    ) => readReviewFiles({ root, ...ends, files, ...onHost() }),
     readReviewCommits: (root: string, base: string, head: string) =>
-      readReviewCommits({
-        root,
-        base,
-        head,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewCommits({ root, base, head, ...onHost() }),
     readReviewPatchIds: (root: string, shas: readonly string[]) =>
-      readReviewPatchIds({
-        root,
-        shas,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewPatchIds({ root, shas, ...onHost() }),
     readReviewCommitPatch: (root: string, commit: string) =>
-      readReviewCommitPatch({
-        root,
-        commit,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewCommitPatch({ root, commit, ...onHost() }),
     readReviewFile: (root: string, rev: string, path: string) =>
-      readReviewFile({
-        root,
-        rev,
-        path,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewFile({ root, rev, path, ...onHost() }),
     readReviewState: (root: string, target: ReviewTarget) =>
-      readReviewState({
-        root,
-        target,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewState({ root, target, ...onHost() }),
     readReviewHeads: (entries: { root: string; ref: string }[]) =>
-      readReviewHeads({
-        entries,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      readReviewHeads({ entries, ...onHost() }),
     /** The workspace's last step in `root` as a review target (D15). */
     readLastStep: async (
       root: string,
@@ -964,27 +911,9 @@ export function createFileHandlers({
         ...(step.skipped?.length ? { skipped: step.skipped } : {}),
       };
     },
-    readDefaultBase: (root: string) =>
-      readDefaultBase({
-        root,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
-    readReviewRoot: (path: string) =>
-      readReviewRoot({
-        path,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+    readDefaultBase: (root: string) => readDefaultBase({ root, ...onHost() }),
+    readReviewRoot: (path: string) => readReviewRoot({ path, ...onHost() }),
     scanReviewRepos: (paths: string[], agentPaths: string[] = []) =>
-      scanReviewRepos({
-        paths,
-        agentPaths,
-        host: sshHost(),
-        shQuote,
-        runProcessWithCodeTimeout,
-      }),
+      scanReviewRepos({ paths, agentPaths, ...onHost() }),
   };
 }

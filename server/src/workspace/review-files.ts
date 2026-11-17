@@ -1,4 +1,3 @@
-import { sshReadCommandArgv } from "../bridge/ssh-command";
 import {
   REVIEW_DIFF_FILES_MAX,
   type ReviewDiff,
@@ -10,14 +9,12 @@ import { parseUnifiedDiff } from "../review/patch";
 import { GIT_DIFF_MAX_BYTES } from "./file-constants";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 import { parseGeneratedAttributes } from "./git-diff";
-import { gitShellCommandArgv } from "./git-shell";
 import {
   DIFF_OPTIONS,
   enterCheckout,
   GIT,
-  GIT_ONLY,
   resolveBase,
-  reviewScriptError,
+  runReviewScript,
   SHAS_MARKER,
   validReviewPath,
 } from "./review-patch";
@@ -170,30 +167,6 @@ export function parseReviewSummary(output: string): ReviewDiff {
   };
 }
 
-async function runReviewScript(
-  args: {
-    root: string;
-    host?: string;
-    runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
-  },
-  script: string,
-  name: string,
-  target?: ReviewTarget,
-) {
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], name)
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, SUMMARY_TIMEOUT_MS);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git diff failed",
-      args.root,
-      target,
-    );
-  return result.stdout;
-}
-
 /** A review's (or one of its commits') files, without their patches. */
 export async function readReviewSummary(args: {
   root: string;
@@ -205,8 +178,12 @@ export async function readReviewSummary(args: {
   const output = await runReviewScript(
     args,
     reviewSummaryScript(args.root, args.of, args.shQuote),
-    "review.summary",
-    args.of.target,
+    {
+      tag: "review.summary",
+      timeoutMs: SUMMARY_TIMEOUT_MS,
+      label: "git diff failed",
+      ...(args.of.target ? { target: args.of.target } : {}),
+    },
   );
   return parseReviewSummary(output);
 }
@@ -304,7 +281,11 @@ export async function readReviewFiles(args: {
       args.files,
       args.shQuote,
     ),
-    "review.files",
+    {
+      tag: "review.files",
+      timeoutMs: SUMMARY_TIMEOUT_MS,
+      label: "git diff failed",
+    },
   );
   return parseReviewFiles(output, args.files);
 }

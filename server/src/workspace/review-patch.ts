@@ -56,6 +56,44 @@ export function enterCheckout(
   return `cd ${shQuote(root)} 2>/dev/null || { echo ${NO_CHECKOUT_MARKER} >&2; exit 2; }`;
 }
 
+/** Where a review script runs: the checkout, on the host or over SSH. */
+export type ReviewScriptHost = {
+  root: string;
+  host?: string;
+  runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
+};
+
+/**
+ * Runs a read-only review script in its checkout, over SSH on a remote
+ * host (`tag` names it there); its output, or reviewScriptError's error
+ * (`label` when git says nothing, `max` characters of what it says).
+ */
+export async function runReviewScript(
+  args: ReviewScriptHost,
+  script: string,
+  how: {
+    tag: string;
+    timeoutMs: number;
+    label: string;
+    target?: ReviewTarget;
+    max?: number;
+  },
+): Promise<string> {
+  const argv = args.host
+    ? sshReadCommandArgv(args.host, script, [], how.tag)
+    : gitShellCommandArgv(script, undefined, GIT_ONLY);
+  const result = await args.runProcessWithCodeTimeout(argv, how.timeoutMs);
+  if (result.code !== 0)
+    throw reviewScriptError(
+      result.stderr,
+      how.label,
+      args.root,
+      how.target,
+      how.max,
+    );
+  return result.stdout;
+}
+
 /** A review script's failure, as a ReviewGoneError when that is what it is. */
 export function reviewScriptError(
   stderr: string,
@@ -223,21 +261,13 @@ export async function readReviewPatch(args: {
     maxBytes,
     args.paths,
   );
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.patch")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(
-    argv,
-    REVIEW_PATCH_TIMEOUT_MS,
-  );
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git diff failed",
-      args.root,
-      args.target,
-    );
-  return parseReviewPatchOutput(result.stdout, maxBytes);
+  const output = await runReviewScript(args, script, {
+    tag: "review.patch",
+    timeoutMs: REVIEW_PATCH_TIMEOUT_MS,
+    label: "git diff failed",
+    target: args.target,
+  });
+  return parseReviewPatchOutput(output, maxBytes);
 }
 
 /**
@@ -284,19 +314,17 @@ export async function readReviewState(args: {
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<string> {
-  const script = reviewStateScript(args.root, args.target, args.shQuote);
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.state")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 20_000);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git failed",
-      args.root,
-      args.target,
-    );
-  return result.stdout.trim().split(/\s+/).join(" ");
+  const output = await runReviewScript(
+    args,
+    reviewStateScript(args.root, args.target, args.shQuote),
+    {
+      tag: "review.state",
+      timeoutMs: 20_000,
+      label: "git failed",
+      target: args.target,
+    },
+  );
+  return output.trim().split(/\s+/).join(" ");
 }
 
 /** The repository holding `path` on the connection's host. */
@@ -532,21 +560,15 @@ export async function readReviewFile(args: {
         'cat -- "$f"',
       ].join("\n");
   const script = `${enterCheckout(args.root, args.shQuote)}\n${read} | head -c ${REVIEW_FILE_MAX_BYTES + 1}`;
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.file")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 20_000);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "cannot read the file",
-      args.root,
-      undefined,
-      300,
-    );
-  if (Buffer.byteLength(result.stdout) > REVIEW_FILE_MAX_BYTES)
+  const output = await runReviewScript(args, script, {
+    tag: "review.file",
+    timeoutMs: 20_000,
+    label: "cannot read the file",
+    max: 300,
+  });
+  if (Buffer.byteLength(output) > REVIEW_FILE_MAX_BYTES)
     throw new Error("the file is too large to show context from");
-  return result.stdout;
+  return output;
 }
 
 /**
@@ -671,20 +693,17 @@ export async function readReviewPatchIds(args: {
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<Record<string, string>> {
   if (!args.shas.length) return {};
-  const script = reviewPatchIdsScript(args.root, args.shas, args.shQuote);
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.patch-ids")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 20_000);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git patch-id failed",
-      args.root,
-      undefined,
-      300,
-    );
-  return parseReviewPatchIds(result.stdout);
+  const output = await runReviewScript(
+    args,
+    reviewPatchIdsScript(args.root, args.shas, args.shQuote),
+    {
+      tag: "review.patch-ids",
+      timeoutMs: 20_000,
+      label: "git patch-id failed",
+      max: 300,
+    },
+  );
+  return parseReviewPatchIds(output);
 }
 
 export function parseReviewCommits(output: string): ReviewCommit[] {
@@ -722,25 +741,18 @@ export async function readReviewCommits(args: {
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<ReviewCommit[]> {
-  const script = reviewCommitsScript(
-    args.root,
-    args.base,
-    args.head,
-    args.shQuote,
+  const output = await runReviewScript(
+    args,
+    reviewCommitsScript(args.root, args.base, args.head, args.shQuote),
+    {
+      tag: "review.commits",
+      timeoutMs: 20_000,
+      label: "git log failed",
+      target: { kind: "range", base: args.base, head: args.head },
+      max: 300,
+    },
   );
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.commits")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 20_000);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git log failed",
-      args.root,
-      { kind: "range", base: args.base, head: args.head },
-      300,
-    );
-  return parseReviewCommits(result.stdout);
+  return parseReviewCommits(output);
 }
 
 export async function readReviewCommitPatch(args: {
@@ -750,18 +762,15 @@ export async function readReviewCommitPatch(args: {
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<ReviewDiff> {
-  const script = reviewCommitScript(args.root, args.commit, args.shQuote);
-  const argv = args.host
-    ? sshReadCommandArgv(args.host, script, [], "review.commit")
-    : gitShellCommandArgv(script, undefined, GIT_ONLY);
-  const result = await args.runProcessWithCodeTimeout(argv, 30_000);
-  if (result.code !== 0)
-    throw reviewScriptError(
-      result.stderr,
-      "git diff failed",
-      args.root,
-      undefined,
-      300,
-    );
-  return parseReviewPatchOutput(result.stdout);
+  const output = await runReviewScript(
+    args,
+    reviewCommitScript(args.root, args.commit, args.shQuote),
+    {
+      tag: "review.commit",
+      timeoutMs: 30_000,
+      label: "git diff failed",
+      max: 300,
+    },
+  );
+  return parseReviewPatchOutput(output);
 }
