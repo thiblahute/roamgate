@@ -1156,7 +1156,6 @@ export function WorkspaceInspectorHost({
         ...inspectorCommands,
       ],
       line: parts.find((part) => part.commands.line)?.commands.line,
-      keys: parts.flatMap((part) => part.commands.keys ?? []),
       ...(own?.commands.shortcuts ? { shortcuts: own.commands.shortcuts } : {}),
       ...(own?.commands.unknown ? { unknown: own.commands.unknown } : {}),
     };
