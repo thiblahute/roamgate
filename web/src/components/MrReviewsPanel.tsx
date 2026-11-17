@@ -776,6 +776,10 @@ function MrDenseRow({
                 ? "set by Claude"
                 : "set by you"}
           </small>
+        ) : next?.from === "inferred" ? (
+          <small className="mr-reviews-setby" title="Inferred by Claude">
+            inferred
+          </small>
         ) : null}
         <small className="mr-reviews-dense-meta">
           <PipelineDot status={entry.pipeline} />
@@ -2413,7 +2417,24 @@ export function MrReviewsPanel({
     } else if (name === "all" || name === "review" || name === "mine")
       setFilter(name);
     else if (name === "refresh" || name === "e") void reload(true);
-    else if (name === "help" || name === "h") setHelpOpen(true);
+    else if (name === "infer") {
+      // Whose move it is, read again now for the selected own row.
+      if (!current || (!current.branch && current.section !== "authored"))
+        say("Select one of your own requests or branches first");
+      else {
+        say("Inferring...");
+        void mrReviewsCall<{ next?: { text: string } | null }>("infer", {
+          key: current.key,
+        })
+          .then((answer) => {
+            say(answer.next ? `Next: ${answer.next.text}` : "Inferred");
+            return reload();
+          })
+          .catch((cause) =>
+            say(cause instanceof Error ? cause.message : String(cause)),
+          );
+      }
+    } else if (name === "help" || name === "h") setHelpOpen(true);
     else say(`Not a command: ${[name, ...rest].join(" ")}`);
   };
 

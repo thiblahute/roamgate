@@ -40,6 +40,7 @@ import {
 } from "./board-tools";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
+import { createMrInference } from "./inference";
 import { createMrOpener } from "./open";
 import { reviewPlacementOps } from "./tree";
 import type {
@@ -297,6 +298,17 @@ export function createMrReviews(options: {
       return { version: value.orderVersion ?? 0, order: value.order };
     },
   });
+  // Whose move it is, inferred (section 7): twice a day and on meaningful events.
+  const inference = createMrInference({
+    store,
+    settings,
+    rows: async () => inbox.snapshot(await settings()).entries,
+    users: () => inbox.users(),
+    patchIds: () => upstream.patchIds(),
+    ...(options.runModel ? { run: options.runModel } : {}),
+    logger,
+    onChange: () => inbox.changed(),
+  });
   const inbox = createMrInbox({
     fetchers,
     settings,
@@ -311,12 +323,13 @@ export function createMrReviews(options: {
       void upstream
         .refresh()
         .then(() => rekeyBranches())
-        .then(() => efforts.refresh());
+        .then(() => Promise.all([efforts.refresh(), inference.maybeRun()]));
       void opener?.prefetch(items);
       void lifecycle();
       void curation.maybeRun(items);
     },
     curation: () => curation.state(),
+    inference: () => inference.state(),
   });
   const order = createMrOrder({ inbox, settings: saved, save: saveSettings });
   opener = createMrOpener({
@@ -589,6 +602,22 @@ export function createMrReviews(options: {
       if (answer !== undefined) return answer;
     }
     switch (method) {
+      case "bridge.mr_reviews.infer": {
+        // One row now (`:infer`, reviews_refresh), whatever the schedule.
+        const target = key();
+        await inference.infer(target);
+        const row = inbox
+          .snapshot(await settings())
+          .entries.find((entry) => entry.key === target);
+        if (!row) throw new MrReviewsError("not on the board", "not_found");
+        return {
+          ok: true,
+          state: inference.state(),
+          ...(row.inferred ? { inferred: row.inferred } : {}),
+          lane: row.lane ?? null,
+          next: row.next ?? null,
+        };
+      }
       case "bridge.mr_reviews.agent.get":
         return reviewsAgent().snapshot();
       case "bridge.mr_reviews.agent.send": {

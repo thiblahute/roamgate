@@ -142,6 +142,10 @@ export type MrInboxEntry = MrItem & {
    * moved on (its activity marker changed): shown dimmed, "changed since".
    */
   overrideOutdated?: boolean;
+  /** What Roamgate inferred of one's own work (section 7), when it did. */
+  inferred?: MrInferred;
+  /** The inference no longer holds: the request moved on meaningfully since. */
+  inferredOutdated?: boolean;
   /** One's own work: whose move it is (override, inference, else rules). */
   lane?: MrLane;
   /** Why it is in its lane, in a few words (the rule, or who set it). */
@@ -303,6 +307,25 @@ export type MrNextStep = {
   by?: "user" | "agent";
 };
 
+/**
+ * What Roamgate inferred of one of the user's own requests or branches:
+ * derived (state.json), never synced nor exported. Overrides win over it.
+ */
+export type MrInferred = {
+  whose: MrWhose;
+  next: string;
+  /** Request keys it waits for (references found, branch containment, the model). */
+  dependsOn: string[];
+  stale: boolean;
+  /** The row's version when inferred (head, notes, state, pipeline...). */
+  version: string;
+  /** The facts it stood on, to tell a meaningful change (D7). */
+  facts: string;
+  at: string;
+  /** model: Claude read it; local: only what was found without a model. */
+  by: "model" | "local";
+};
+
 /** How a whose-move reads: "me", "reviewer", "external" or the person. */
 export function mrWhoseLabel(whose: MrWhose): string {
   return typeof whose === "string" ? whose : whose.person;
@@ -362,6 +385,8 @@ export type MrInbox = {
   entries: MrInboxEntry[];
   hosts: MrHostState[];
   curation: MrCurationState;
+  /** The inference of whose move it is (section 7). */
+  inference?: MrCurationState;
   /** When the latest refresh ended. */
   refreshedAt?: string;
   /** A refresh is running. */
@@ -411,6 +436,10 @@ export type MrReviewsSettings = {
   retentionDays: number;
   /** Claude picks suggestions in the background. */
   curation: boolean;
+  /** Claude infers whose move it is and the next step of one's own work. */
+  inference: boolean;
+  /** Hours between two inference runs over what moved (D7). */
+  inferenceHours: number;
   /**
    * Only requests updated this many days ago at most are suggested; an
    * older one is considered again once it changes.
@@ -473,6 +502,8 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   checkout: "immediately",
   retentionDays: 3,
   curation: true,
+  inference: true,
+  inferenceHours: 12,
   suggestDays: 30,
   hints: "",
   treeGroups: {},

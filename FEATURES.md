@@ -1044,7 +1044,19 @@ the forge says: a failed pipeline, conflicts, changes requested, unresolved
 threads, a needed rebase or a draft make it your move ("Fix the failed
 pipeline", "Answer 2 unresolved threads"); otherwise it waits for review
 (or, approved, to be merged); no activity for 90 days (the `stale_days`
-setting) makes it Stale. A request that waits for another of yours is
+setting) makes it Stale. Claude then **infers** whose move it is and the
+next step from the request's threads (the last note of each, who wrote
+it, resolved or not), its description and status, and your branches' local
+state ("Answer bob on the locking question", "Waiting for bob to
+re-review"): marked "inferred" on the row and shown beside what you set by
+hand in its details, which always wins. It runs twice a day over what
+moved (every 12 hours, the **Your own work** settings), and at once for
+one request when someone else answers, a pipeline fails, changes are
+requested, it conflicts or it is merged or closed (at most every two hours
+a request); your own pushes wait for the next run. `:infer` reads the
+selected one again now. References in descriptions and notes (`!12`,
+`group/project!12`, request URLs) and a request whose commits are all in
+another make it wait for that one, even without the model. A request that waits for another of yours is
 drawn under it, indented and joined by a thin tree line, with "after !12" on
 it and "blocks N" on its parent, and counts in Blocked; `za` on the parent
 folds them. `J`/`K` and drags move a request within its lane (or among the

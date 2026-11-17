@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   githubInboxQuery,
   gitlabInboxQuery,
+  ownDetailsQuery,
+  ownNotes,
   parseGithubInbox,
   parseGitlabInbox,
+  parseOwnDetails,
 } from "./queries";
 
 const glNode = (iid: number, project = "group/app", extra = {}) => ({
@@ -200,4 +203,105 @@ test("the forges' labels are read with the lists", async () => {
       labels: { nodes: [{ name: "bug" }] },
     })!.labels,
   ).toEqual(["bug"]);
+});
+
+test("own details carry the description and the last notes, oldest first, no system notes", () => {
+  expect(ownDetailsQuery("gitlab", [{ project: "g/p", number: 1 }])).toContain(
+    "discussions(last: 10)",
+  );
+  expect(
+    ownDetailsQuery("gitlab", [{ project: "g/p", number: 1 }], "basic"),
+  ).not.toContain("discussions");
+  expect(ownDetailsQuery("github", [{ project: "o/r", number: 1 }])).toContain(
+    "lastThreads: reviewThreads(last: 20)",
+  );
+  const node = {
+    ...glNode(4),
+    description: "Needs !3 first",
+    discussions: {
+      nodes: [
+        {
+          resolvable: true,
+          resolved: false,
+          notes: {
+            nodes: [
+              {
+                author: { username: "bob" },
+                createdAt: "2026-11-02T00:00:00Z",
+                body: "Why  this\nlock?",
+              },
+            ],
+          },
+        },
+        {
+          resolvable: false,
+          resolved: false,
+          notes: {
+            nodes: [
+              {
+                author: { username: "me" },
+                createdAt: "2026-11-01T00:00:00Z",
+                body: "Ready",
+              },
+            ],
+          },
+        },
+        {
+          resolvable: false,
+          resolved: false,
+          notes: {
+            nodes: [
+              {
+                author: { username: "bot" },
+                createdAt: "2026-11-03T00:00:00Z",
+                body: "added 1 commit",
+                system: true,
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  const details = parseOwnDetails("gitlab", "gitlab.example.org", {
+    data: { p0: { mergeRequests: { nodes: [node] } } },
+  });
+  const found = [...details.values()][0]!;
+  expect(found.description).toBe("Needs !3 first");
+  expect(found.lastNotes).toEqual([
+    {
+      author: "me",
+      at: "2026-11-01T00:00:00Z",
+      body: "Ready",
+      resolvable: false,
+      resolved: false,
+    },
+    {
+      author: "bob",
+      at: "2026-11-02T00:00:00Z",
+      body: "Why this lock?",
+      resolvable: true,
+      resolved: false,
+    },
+  ]);
+  expect(
+    ownNotes("github", {
+      lastComments: {
+        nodes: [{ author: { login: "ann" }, createdAt: "2", body: "LGTM" }],
+      },
+      lastThreads: {
+        nodes: [
+          {
+            isResolved: true,
+            comments: {
+              nodes: [{ author: { login: "bob" }, createdAt: "1", body: "ok" }],
+            },
+          },
+        ],
+      },
+    }).map((note) => [note.author, note.resolvable, note.resolved]),
+  ).toEqual([
+    ["bob", true, true],
+    ["ann", false, false],
+  ]);
 });

@@ -618,6 +618,8 @@ export async function handleMrReviewsRpc(
           checkout: value.checkout ?? current.checkout,
           retention_days: value.retentionDays ?? current.retentionDays,
           curation: value.curation ?? current.curation,
+          inference: value.inference ?? current.inference,
+          inference_hours: value.inferenceHours ?? current.inferenceHours,
           suggest_days: value.suggestDays ?? current.suggestDays,
           hints: value.hints ?? current.hints,
           tree_groups: value.treeGroups ?? current.treeGroups,

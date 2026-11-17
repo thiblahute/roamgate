@@ -515,6 +515,18 @@ export const boardToolSchemas = {
     },
     { additionalProperties: false },
   ),
+  reviews_refresh: Type.Object(
+    {
+      request: Type.Optional(
+        Type.String({
+          maxLength: 2048,
+          description:
+            "One of the user's own requests or branches: infer whose move it is now. Without it, read the inbox again.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
   reviews_override: Type.Object(
     {
       request: requestParam,
@@ -624,6 +636,8 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
     "Bring a removed (hidden) request back into the view, as H and restore do in the panel. Only when the user asked.",
   reviews_sort:
     "Set the user's order once from a sort, in one section or all (score: the suggestion score, highest first; updated: most recent first; project: by project, then most recent; unread: new and changed first). It does not keep sorting: later changes and the user's own moves stand. It replaces the user's own arrangement of that section, so use it only when the user asked to sort; for \"put X first\" use reviews_order.",
+  reviews_refresh:
+    "Read the user's inbox again from the forges now (through its own budget), or, with request, infer again whose move it is and the next step of one of their own requests or branches (Claude reads its status, threads and description; what was set by hand still wins). Returns its lane and next step.",
   reviews_override:
     "Set or clear, by hand, what Roamgate says of one of the user's own requests: whose move it is (me, reviewer, external or a person), the next step, the requests it waits for (drawn under them, counted Blocked), labels, a link (URL or path) and stale. Each field set wins over what Roamgate infers; whose and next show as outdated once the request moves on. Use it when the user said so, or to record what you found (\"waiting on bob's answer\"). The user is told and can undo it. No forge call.",
 };
@@ -1342,6 +1356,21 @@ export function createBoardTools(
       })) as { changed?: boolean; name?: string };
       const views = (await deps.settings()).views;
       return JSON.stringify({ changed: !!done.changed, views });
+    },
+
+    async reviews_refresh(params: { request?: string }) {
+      if (!params.request) {
+        await panel("inbox", { fresh: true, viewer: false });
+        return "The inbox is being read again; reviews_list shows it once done.";
+      }
+      const view = await deps.order.view();
+      const key = await listedKey(params.request, view);
+      const entry = key ? entryOf(key, view) : undefined;
+      if (!entry)
+        throw new AssistantUserError(
+          `${params.request.slice(0, 100)} is not in the user's list.`,
+        );
+      return JSON.stringify(await panel("infer", { key: entry.key }));
     },
 
     async reviews_override(params: {

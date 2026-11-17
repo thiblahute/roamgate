@@ -413,6 +413,38 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
           />
         </label>
       </section>
+      <section className="assistant-task-overview">
+        <h3 className="mr-reviews-section-title">Your own work</h3>
+        <label className="mr-reviews-settings-check">
+          <input
+            type="checkbox"
+            checked={settings.inference}
+            disabled={busy}
+            onChange={(event) => void save({ inference: event.target.checked })}
+          />
+          Claude infers whose move it is and the next step of your requests and
+          branches, from their threads and status (what you set by hand wins)
+        </label>
+        <label className="form-field">
+          <span>
+            Read again what moved every this many hours (and at once, one
+            request, when someone else answers, a pipeline fails, changes are
+            requested, it conflicts or is merged)
+          </span>
+          <input
+            type="number"
+            min={1}
+            max={168}
+            value={settings.inferenceHours}
+            disabled={busy}
+            onChange={(event) => {
+              const hours = Number(event.target.value);
+              if (Number.isInteger(hours) && hours >= 1 && hours <= 168)
+                void save({ inferenceHours: hours });
+            }}
+          />
+        </label>
+      </section>
     </div>
   );
 }

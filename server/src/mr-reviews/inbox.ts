@@ -47,6 +47,7 @@ import {
   unknownFieldError,
   withOwnDetails,
 } from "./queries";
+import { inferenceOutdated, rowFacts } from "./inference";
 import { assignLanes } from "./lanes";
 import { overrideOutdated } from "./overrides";
 import type { MrStore } from "./store";
@@ -107,6 +108,8 @@ export type MrInboxDeps = {
   logger?: Logger;
   /** The inbox changed: browsers may ask again. */
   onChange?: () => void;
+  /** The inference's state, for the settings. */
+  inference?: () => MrCurationState;
   /** After each refresh: prefetch, lifecycle, curation. */
   afterRefresh?: (items: MrItem[]) => void;
   /** Curation's state, shown in the inbox. */
@@ -723,6 +726,23 @@ export function createMrInbox(deps: MrInboxDeps) {
         unreadFirst(a) - unreadFirst(b) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+    // What was inferred of one's own work, unless it moved on since.
+    const inferred = state.inferred ?? {};
+    for (const entry of out) {
+      const found = inferred[entry.key];
+      if (!found || (!entry.branch && !entry.reasons.includes("authored")))
+        continue;
+      entry.inferred = found;
+      const user = hosts.get(entry.host)?.state.user?.toLowerCase() ?? "";
+      if (
+        inferenceOutdated(
+          found,
+          entry,
+          rowFacts(entry, state.ownDetails[entry.key]?.lastNotes, user),
+        )
+      )
+        entry.inferredOutdated = true;
+    }
     assignLanes(out, { staleDays: settings.staleDays, now: now() });
     return { entries: out, hidden };
   }
@@ -757,6 +777,7 @@ export function createMrInbox(deps: MrInboxDeps) {
             },
         ),
         curation: deps.curation?.() ?? { state: "off" },
+        ...(deps.inference ? { inference: deps.inference() } : {}),
         ...(lastRefresh
           ? { refreshedAt: new Date(lastRefresh).toISOString() }
           : {}),
