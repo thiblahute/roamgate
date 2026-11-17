@@ -869,24 +869,22 @@ export function useDiffCursor({
     const side = split ? splitSide.current : null;
     switch (key) {
       case "j":
-      case "ArrowDown": {
-        const rest = threadMove ? threadMove(1, n) : null;
-        if (rest === 0) return true;
-        jumpTo(stepRows(model, at, rest ?? n, side), undefined, "nearest");
-        return true;
-      }
+      case "ArrowDown":
       case "k":
       case "ArrowUp": {
-        const rest = threadMove ? threadMove(-1, n) : null;
+        const way = key === "j" || key === "ArrowDown" ? 1 : -1;
+        const rest = threadMove ? threadMove(way, n) : null;
         if (rest === 0) return true;
-        jumpTo(stepRows(model, at, -(rest ?? n), side), undefined, "nearest");
+        jumpTo(
+          stepRows(model, at, way * (rest ?? n), side),
+          undefined,
+          "nearest",
+        );
         return true;
       }
       case "J":
-        jumpTo(stepRows(model, at, 10 * n, side));
-        return true;
       case "K":
-        jumpTo(stepRows(model, at, -10 * n, side));
+        jumpTo(stepRows(model, at, (key === "J" ? 10 : -10) * n, side));
         return true;
       case "gg":
         jumpTo(count ? count - 1 : 0, 0, "start");
@@ -926,17 +924,11 @@ export function useDiffCursor({
         );
         return true;
       case "}":
-        jumpTo(
-          hunkStep(model, at, 1, n),
-          firstColumn(model, hunkStep(model, at, 1, n)),
-        );
+      case "{": {
+        const target = hunkStep(model, at, key === "}" ? 1 : -1, n);
+        jumpTo(target, firstColumn(model, target));
         return true;
-      case "{":
-        jumpTo(
-          hunkStep(model, at, -1, n),
-          firstColumn(model, hunkStep(model, at, -1, n)),
-        );
-        return true;
+      }
       case "]":
       case "[": {
         const target = fileStep(model, at, key === "]" ? n : -n);
@@ -1202,10 +1194,8 @@ export function useDiffCursor({
   const selectedPaths = (): string[] => {
     const last = rows[at];
     if (!last) return [];
-    const first = anchor === null ? last : (rows[anchor] ?? last);
     const lo = Math.min(at, anchor ?? at);
     const hi = Math.max(at, anchor ?? at);
-    void first;
     return [...new Set(rows.slice(lo, hi + 1).map((each) => each.path))];
   };
 

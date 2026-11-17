@@ -5391,30 +5391,15 @@ function DiffContentViewInner({
             run: () =>
               setViewMode((mode) => (mode === "split" ? "unified" : "split")),
           },
-          // With the review's cursor, the review's meaning: a toggle.
           {
             name: "split",
-            description: cursor.active
-              ? "side by side / unified (S)"
-              : "side by side (Split)",
-            run: () =>
-              cursor.active
-                ? setViewMode((mode) =>
-                    mode === "split" ? "unified" : "split",
-                  )
-                : setViewMode("split"),
+            description: "side by side (Split)",
+            run: () => setViewMode("split"),
           },
           {
             name: "unified",
-            description: cursor.active
-              ? "side by side / unified (S)"
-              : "one column (Unified)",
-            run: () =>
-              cursor.active
-                ? setViewMode((mode) =>
-                    mode === "split" ? "unified" : "split",
-                  )
-                : setViewMode("unified"),
+            description: "one column (Unified)",
+            run: () => setViewMode("unified"),
           },
         ]
       : []),
