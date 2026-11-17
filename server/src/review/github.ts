@@ -47,7 +47,10 @@ export async function ghApi(
     kind?: string;
   } = {},
 ): Promise<unknown> {
-  const read = method === "GET" || path === "graphql";
+  // A GraphQL query reads; a mutation writes, as REST's other methods do.
+  const query = options.fields?.find(([key]) => key === "query")?.[1] ?? "";
+  const read =
+    method === "GET" || (path === "graphql" && !/^\s*mutation\b/.test(query));
   const argv = [
     "gh",
     "api",
@@ -71,7 +74,7 @@ export async function ghApi(
       ...(method === "GET" && !options.paginate ? { conditional: true } : {}),
     },
     argv,
-    (full) => spawnGh(context, full),
+    (full) => spawnGh(context, full, read),
   );
   if (result.code === 127) throw new Error("gh is not installed on this host");
   const body = result.stdout.trim();
