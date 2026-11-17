@@ -141,8 +141,9 @@ export async function mountChangesReview(
     "./reviewSurface.bridge.testkit"
   );
   mockReviewBackend();
-  const { act, cloneElement, createElement, isValidElement, useState } =
-    await import("react");
+  const { act, cloneElement, createElement, isValidElement } = await import(
+    "react"
+  );
   type ReactNode = import("react").ReactNode;
   type ReactElement<P> = import("react").ReactElement<P>;
   const { createRoot } = await import("react-dom/client");
@@ -154,9 +155,8 @@ export async function mountChangesReview(
   const { InspectorCommandsContext, InspectorViewContext } = await import(
     "../useInspectorCommands"
   );
-  const { runInspectorCommand } = await import("../inspectorCommands");
-  type CommandSet = import("../useInspectorCommands").InspectorCommandSet;
-  type InspectorCommand = import("../inspectorCommands").InspectorCommand;
+  type InspectorCommandRegistry =
+    import("../useInspectorCommands").InspectorCommandRegistry;
   const { useInspectorCommands } = await import("../useInspectorCommands");
   const { ChangesScopeBar, useChangesRepos, useChangesSeries } = await import(
     "./ChangesScopeBar"
@@ -173,12 +173,10 @@ export async function mountChangesReview(
   const { reviewCall, rememberReviewSnapshot } = await import("../review");
   type NewReviewAnnotation = import("../annotations").NewReviewAnnotation;
   type FeedbackCapture = import("../workspaceFeedback").FeedbackCapture;
-  const { CommandLine } = await import("./CommandLine");
-  const { inspectorCompletions, isTypingTarget, opensCommandLine } =
-    await import("../inspectorCommands");
-  const { inspectorShortcutList } = await import("../useInspectorCommands");
+  const { useInspectorCommandFrame } = await import(
+    "./useInspectorCommandFrame"
+  );
   const { inspectorSettingCommands } = await import("../inspectorSettings");
-  const { ShortcutList } = await import("./ShortcutList");
   const { changesFrameClass, changesFrameCommands, useChangesTreeHidden } =
     await import("./changesFrame");
   const { useZenEscape, useZenMode } = await import("../useZenMode");
@@ -485,25 +483,9 @@ export async function mountChangesReview(
   // and runs it: the tree beside the diff (`:files`), Review only
   // (`:only`), the `:` prompt and the shortcut list (`?`, `:help`), the
   // inspector's settings (`:vim`, `:set`).
-  const parts = new Map<string, CommandSet>();
-  const frame = {
-    commands: [] as InspectorCommand[],
-    only: false,
-  };
-  /** The commands shown: Changes' parts', then the frame's. */
-  const shownCommands = (): CommandSet => {
-    const sets = [...parts.values()];
-    const own = sets.find((set) => set.shortcuts || set.unknown);
-    return {
-      commands: [...sets.flatMap((set) => set.commands), ...frame.commands],
-      line: sets.find((set) => set.line)?.line,
-      ...(own?.shortcuts ? { shortcuts: own.shortcuts } : {}),
-      ...(own?.unknown ? { unknown: own.unknown } : {}),
-    };
-  };
+  /** The frame's prompt, as `:` there runs it. */
+  let frameRegistry: InspectorCommandRegistry | null = null;
   const Frame = ({ children }: { children: ReactNode }) => {
-    const [open, setOpen] = useState(false);
-    const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
     const [treeHidden, toggleTree] = useChangesTreeHidden();
     const [only, toggleOnly] = useZenMode();
     useZenEscape(only, toggleOnly);
@@ -514,109 +496,67 @@ export async function mountChangesReview(
       () => record("close")("back"),
       "panel",
     );
-    frame.only = only;
-    frame.commands = [
-      ...changesFrameCommands({
-        // A compact inspector's tree is a drill-down: not hidden beside.
-        toggleTree: compact ? null : toggleTree,
-        only,
-        toggleOnly,
-      }),
-      ...inspectorSettingCommands((filter) => setShortcuts({ filter })),
-    ];
-    const back = () => view()?.focus({ preventScroll: true });
+    const commandFrame = useInspectorCommandFrame({
+      view: "changes",
+      back: view,
+      commands: (openShortcuts) => [
+        ...changesFrameCommands({
+          // A compact inspector's tree is a drill-down: not hidden beside.
+          toggleTree: compact ? null : toggleTree,
+          only,
+          toggleOnly,
+        }),
+        ...inspectorSettingCommands(openShortcuts),
+      ],
+    });
+    frameRegistry = commandFrame.registry;
     return (
-      <InspectorViewContext.Provider value="changes">
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: the inspector's keys */}
-        <div
-          className="workspace-inspector-slot"
-          // Put away: the inspector closed (it stays mounted, as App keeps it).
-          hidden={putAway.hidden}
-          onKeyDown={(event) => {
-            if (
-              event.key === "?" &&
-              !event.defaultPrevented &&
-              !open &&
-              !shortcuts &&
-              !event.ctrlKey &&
-              !event.metaKey &&
-              !event.altKey &&
-              !isTypingTarget(event.target)
-            ) {
-              event.preventDefault();
-              setShortcuts({ filter: "" });
-              return;
-            }
-            if (open || event.defaultPrevented || !opensCommandLine(event))
-              return;
-            event.preventDefault();
-            setOpen(true);
-          }}
-        >
+      <InspectorCommandsContext.Provider value={commandFrame.registry}>
+        <InspectorViewContext.Provider value="changes">
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: the inspector's keys */}
           <div
-            className={`workspace-inspector-resource inspector-changes-resource ${changesFrameClass(
-              { treeHidden: treeHidden && !compact, only },
-            )} ${compact ? "is-compact" : ""}`}
+            className="workspace-inspector-slot"
+            // Put away: the inspector closed (it stays mounted, as App keeps it).
+            hidden={putAway.hidden}
+            onKeyDown={commandFrame.onKeyDown}
           >
-            <div className="workspace-inspector-navigation" />
-            <div className="workspace-inspector-detail">
-              {isValidElement(children)
-                ? cloneElement(
-                    children as ReactElement<{
-                      reviewOnly?: boolean;
-                      headEnd?: ReactNode;
-                    }>,
-                    {
-                      reviewOnly: only,
-                      // Review only's end of the head, as the host gives it.
-                      ...(only
-                        ? {
-                            headEnd: (
-                              <ReviewOnlyEnd
-                                onShowAll={toggleOnly}
-                                onCloseReview={() => record("close")("command")}
-                              />
-                            ),
-                          }
-                        : {}),
-                    },
-                  )
-                : children}
+            <div
+              className={`workspace-inspector-resource inspector-changes-resource ${changesFrameClass(
+                { treeHidden: treeHidden && !compact, only },
+              )} ${compact ? "is-compact" : ""}`}
+            >
+              <div className="workspace-inspector-navigation" />
+              <div className="workspace-inspector-detail">
+                {isValidElement(children)
+                  ? cloneElement(
+                      children as ReactElement<{
+                        reviewOnly?: boolean;
+                        headEnd?: ReactNode;
+                      }>,
+                      {
+                        reviewOnly: only,
+                        // Review only's end of the head, as the host gives it.
+                        ...(only
+                          ? {
+                              headEnd: (
+                                <ReviewOnlyEnd
+                                  onShowAll={toggleOnly}
+                                  onCloseReview={() =>
+                                    record("close")("command")
+                                  }
+                                />
+                              ),
+                            }
+                          : {}),
+                      },
+                    )
+                  : children}
+              </div>
             </div>
+            {commandFrame.overlays}
           </div>
-          {shortcuts ? (
-            <ShortcutList
-              className="inspector-keys"
-              {...inspectorShortcutList(shownCommands())}
-              filter={shortcuts.filter}
-              onFilter={(filter) => setShortcuts({ filter })}
-              placeholder="Search shortcuts and commands"
-              onClose={() => {
-                setShortcuts(null);
-                back();
-              }}
-            />
-          ) : null}
-          {open ? (
-            <CommandLine
-              kind=":"
-              completions={(typed) =>
-                inspectorCompletions(shownCommands().commands, typed)
-              }
-              onBlur={() => setOpen(false)}
-              onSubmit={(text) => {
-                setOpen(false);
-                back();
-                registry.run(text);
-              }}
-              onCancel={() => {
-                setOpen(false);
-                back();
-              }}
-            />
-          ) : null}
-        </div>
-      </InspectorViewContext.Provider>
+        </InspectorViewContext.Provider>
+      </InspectorCommandsContext.Provider>
     );
   };
   /**
@@ -644,23 +584,6 @@ export async function mountChangesReview(
     target.focus({ preventScroll: true });
     putAway.stopHold = holdFocus(target, slot);
   };
-  const registry = {
-    set: (id: string, _view: string, set: CommandSet | null) => {
-      if (set) parts.set(id, set);
-      else parts.delete(id);
-    },
-    run: (input: string) => {
-      const { commands, line, unknown } = shownCommands();
-      const problem = runInspectorCommand(
-        commands,
-        input,
-        line,
-        unknown ? (text) => unknown(text) : undefined,
-      );
-      if (problem) store.notify({ kind: "info", message: problem });
-    },
-  };
-
   const host = document.createElement("div");
   document.body.append(host);
   screen.attach(host);
@@ -763,83 +686,79 @@ export async function mountChangesReview(
     await act(async () =>
       root.render(
         createElement(
-          InspectorCommandsContext.Provider,
-          { value: registry },
-          createElement(
-            Frame,
-            null,
-            createElement(series ? ChangesWithSeries : DiffContentView, {
-              // The file picked in the tree (the first at first).
-              entry: picked ?? null,
-              file: picked ? diffFiles[`unstaged:${picked.path}`]! : null,
-              selectionRevision,
-              entries,
-              files: diffFiles,
-              loading: false,
-              error: null,
-              resourceKey: connectionId,
-              connectionClient: client as never,
-              annotations,
-              threads,
-              reviewCursor: true,
-              ...(asReview
-                ? { reviewScope: { kind: "review" as const, sessionId } }
-                : {}),
-              // Another review and the reviews list are always offered, as
-              // the page around the review offers them.
-              forgeHost: {
-                onShowReview: record("showReview"),
-                ...(options.hostCallbacks
-                  ? { onOpenLocal: record("openLocal") }
-                  : {}),
-              },
-              onShowReviews: record("showList"),
-              // Files to open in: the review's Open and Rendered.
-              ...(options.openFiles || options.hostCallbacks
-                ? {
-                    onOpenFile: (
-                      entry: GitDiffEntry,
-                      at?: { line?: number; rendered?: boolean },
-                    ) => {
-                      record("openFile")(entry.path, at);
-                      openedFiles.push({
-                        path: `/repo/${entry.path}`,
-                        ...(at?.line !== undefined ? { line: at.line } : {}),
-                        ...(at?.rendered ? { rendered: true } : {}),
-                      });
-                    },
-                  }
-                : {}),
-              // The inspector reads the changes again (its refresh).
-              onRetry: record("reload"),
-              // Closed as the review toggle closes it, the review kept.
-              onCloseReview: record("close"),
-              // Its code gone from the checkout: the host lets go of it.
-              onReviewGone: record("reviewGone"),
+          Frame,
+          null,
+          createElement(series ? ChangesWithSeries : DiffContentView, {
+            // The file picked in the tree (the first at first).
+            entry: picked ?? null,
+            file: picked ? diffFiles[`unstaged:${picked.path}`]! : null,
+            selectionRevision,
+            entries,
+            files: diffFiles,
+            loading: false,
+            error: null,
+            resourceKey: connectionId,
+            connectionClient: client as never,
+            annotations,
+            threads,
+            reviewCursor: true,
+            ...(asReview
+              ? { reviewScope: { kind: "review" as const, sessionId } }
+              : {}),
+            // Another review and the reviews list are always offered, as
+            // the page around the review offers them.
+            forgeHost: {
+              onShowReview: record("showReview"),
               ...(options.hostCallbacks
-                ? { onFocusAgentPane: record("focusAgentPane") }
+                ? { onOpenLocal: record("openLocal") }
                 : {}),
-              ...(options.agentPanes ? { agentPanes: options.agentPanes } : {}),
-              showFileSelector: false,
-              // The phone: Changes compact, as the inspector draws it there.
-              ...(options.phone ? { mobile: true } : {}),
-              // The checkout's git actions, as the host runs them.
-              onGitAction: (action: string, path: string) => {
-                record("gitAction")(action, path);
-                return true;
-              },
-              // A review naming its repository: the checkout's is /repo.
-              ...(options.session?.root !== undefined
-                ? { repo: { root: "/repo", own: true } }
-                : {}),
-              onCreateAnnotation: writeComment,
-              onAddReviewImage: addImage,
-              onReviewProgress: (next: typeof progress) => {
-                progress = next;
-              },
-              ...(goTo ? { cursorGoTo: goTo } : {}),
-            }),
-          ),
+            },
+            onShowReviews: record("showList"),
+            // Files to open in: the review's Open and Rendered.
+            ...(options.openFiles || options.hostCallbacks
+              ? {
+                  onOpenFile: (
+                    entry: GitDiffEntry,
+                    at?: { line?: number; rendered?: boolean },
+                  ) => {
+                    record("openFile")(entry.path, at);
+                    openedFiles.push({
+                      path: `/repo/${entry.path}`,
+                      ...(at?.line !== undefined ? { line: at.line } : {}),
+                      ...(at?.rendered ? { rendered: true } : {}),
+                    });
+                  },
+                }
+              : {}),
+            // The inspector reads the changes again (its refresh).
+            onRetry: record("reload"),
+            // Closed as the review toggle closes it, the review kept.
+            onCloseReview: record("close"),
+            // Its code gone from the checkout: the host lets go of it.
+            onReviewGone: record("reviewGone"),
+            ...(options.hostCallbacks
+              ? { onFocusAgentPane: record("focusAgentPane") }
+              : {}),
+            ...(options.agentPanes ? { agentPanes: options.agentPanes } : {}),
+            showFileSelector: false,
+            // The phone: Changes compact, as the inspector draws it there.
+            ...(options.phone ? { mobile: true } : {}),
+            // The checkout's git actions, as the host runs them.
+            onGitAction: (action: string, path: string) => {
+              record("gitAction")(action, path);
+              return true;
+            },
+            // A review naming its repository: the checkout's is /repo.
+            ...(options.session?.root !== undefined
+              ? { repo: { root: "/repo", own: true } }
+              : {}),
+            onCreateAnnotation: writeComment,
+            onAddReviewImage: addImage,
+            onReviewProgress: (next: typeof progress) => {
+              progress = next;
+            },
+            ...(goTo ? { cursorGoTo: goTo } : {}),
+          }),
         ),
       ),
     );
@@ -1580,7 +1499,7 @@ export async function mountChangesReview(
     },
     press,
     async command(text) {
-      await act(async () => registry.run(text));
+      await act(async () => frameRegistry?.run(text));
       await settleAll();
     },
     async click(line, shift = false) {
