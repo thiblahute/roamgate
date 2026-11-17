@@ -9,6 +9,7 @@ import type { LegacyConnectionRuntime } from "../connections/runtime";
 import { assertUnixHost } from "../connections/unix-only";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import {
+  type GuiSettings,
   readGuiSettings,
   repoSettingsKey,
   workspaceRepoSettingsKey,
@@ -107,6 +108,49 @@ export async function gitCommonDir(
   ).catch(() => null);
   const dir = result?.code === 0 ? result.stdout.trim() : "";
   return dir.startsWith("/") ? dir.replace(/\/+$/, "") : null;
+}
+
+/**
+ * The settings key of the repository a workspace belongs to, shared by
+ * worktree creation, Ranger's confirmation and the settings dialogs. Herdr
+ * does not always describe the workspace's repository (a workspace opened
+ * outside a checkout, or one it has not inspected yet): git then names it
+ * from `root`, so that every checkout of a repository shares its settings.
+ * Settings saved under the checkout path before keep applying.
+ */
+export async function resolveRepoSettingsKey({
+  workspace,
+  root,
+  host,
+  connectionId,
+  settings,
+  runProcess = runProcessWithCodeTimeout,
+}: {
+  workspace: any;
+  root?: string | null;
+  host?: string;
+  connectionId?: string | null;
+  settings: GuiSettings;
+  runProcess?: RunProcessWithCodeTimeout;
+}): Promise<{ key: string | null; commonDir: string | null }> {
+  const fallbackKey = workspaceRepoSettingsKey(workspace, host, connectionId);
+  if (
+    typeof workspace?.worktree?.repo_key === "string" &&
+    workspace.worktree.repo_key
+  )
+    return { key: fallbackKey, commonDir: null };
+  const commonDir = root ? await gitCommonDir(root, host, runProcess) : null;
+  const commonDirKey = commonDir
+    ? repoSettingsKey(commonDir, host, connectionId)
+    : null;
+  const key =
+    commonDirKey &&
+    (settings.repositories[commonDirKey] ||
+      !fallbackKey ||
+      !settings.repositories[fallbackKey])
+      ? commonDirKey
+      : fallbackKey;
+  return { key, commonDir };
 }
 
 /** Herdr's repo_name for a git common directory: `roamgate` for `roamgate/.git`. */
@@ -215,41 +259,17 @@ export async function createWorkspaceWorktree(
     ...createParams,
     base: baseSync.commit,
   };
-  // Herdr does not always describe the workspace's repository (a workspace
-  // opened outside a checkout, or one it has not inspected yet): git then
-  // names it from the root the worktree is created from, so that every
-  // checkout of a repository shares its settings.
-  const reportedRepoKey =
-    typeof sourceWorkspace?.worktree?.repo_key === "string"
-      ? sourceWorkspace.worktree.repo_key
-      : "";
-  let commonDir: string | null = null;
-  if (!reportedRepoKey) {
-    commonDir = await gitCommonDir(
-      baseSync.root,
-      runtime.sshHost(),
-      runProcess,
-    );
-    assertCurrent();
-  }
   const settings = await readSettings();
   assertCurrent();
-  const fallbackKey = workspaceRepoSettingsKey(
-    sourceWorkspace,
-    runtime.sshHost(),
-    runtime.identity?.id,
-  );
-  const commonDirKey = commonDir
-    ? repoSettingsKey(commonDir, runtime.sshHost(), runtime.identity?.id)
-    : null;
-  // Settings saved under the checkout path before keep applying.
-  const key =
-    commonDirKey &&
-    (settings.repositories[commonDirKey] ||
-      !fallbackKey ||
-      !settings.repositories[fallbackKey])
-      ? commonDirKey
-      : fallbackKey;
+  const { key, commonDir } = await resolveRepoSettingsKey({
+    workspace: sourceWorkspace,
+    root: baseSync.root,
+    host: runtime.sshHost(),
+    connectionId: runtime.identity?.id,
+    settings,
+    runProcess,
+  });
+  assertCurrent();
   const command = worktreeCommandFor(settings, key);
   if (guardedCommand && (command ?? null) !== expectedWorktreeCommand)
     throw new Error("The worktree command changed.");
