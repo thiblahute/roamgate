@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReviewSnapshot } from "../../shared/review";
 import type { ReviewAnnotation } from "./annotations";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
+import { useReviewState } from "./review";
+import { writeReviewSession } from "./reviewSessionCall";
 import { type HeldFeedback, heldFeedback } from "./workspaceFeedback";
 
 const EDIT_DELAY_MS = 500;
@@ -32,16 +32,7 @@ export function useHeldFeedback(
       params: Record<string, unknown>,
     ) => {
       if (!connectionId) return;
-      await reviewCall(connectionId, method, {
-        session_id: entry.sessionId,
-        ...params,
-      });
-      const snapshot = await reviewCall<ReviewSnapshot>(
-        connectionId,
-        "review.get",
-        { session_id: entry.sessionId },
-      );
-      rememberReviewSnapshot(snapshot);
+      await writeReviewSession(connectionId, entry.sessionId, method, params);
     },
     [connectionId],
   );

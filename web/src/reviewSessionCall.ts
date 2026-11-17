@@ -46,6 +46,24 @@ export async function callReviewSession<T>(
   return result;
 }
 
+/**
+ * A write to a review session, its state read back before it resolves:
+ * an editor closed on it finds the comment shown.
+ */
+export async function writeReviewSession(
+  connectionId: string,
+  sessionId: string,
+  method: string,
+  params: Record<string, unknown> = {},
+): Promise<void> {
+  await reviewCall(connectionId, method, { session_id: sessionId, ...params });
+  rememberReviewSnapshot(
+    await reviewCall<ReviewSnapshot>(connectionId, "review.get", {
+      session_id: sessionId,
+    }),
+  );
+}
+
 /** callReviewSession for one session, the same function while it is. */
 export function useReviewSessionCall(
   connectionId: string,
