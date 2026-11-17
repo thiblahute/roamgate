@@ -23,7 +23,9 @@ Roamgate's mod, the review and messaging commands below are also tools
 \`review_get\`, \`review_reply\`, \`review_add\`, \`review_working\`,
 \`review_update\`, \`review_resolve\`, \`review_reopen\`, \`review_edit\`,
 \`review_notify\`, \`agent_message\`, \`agent_sessions\`, and behind tool
-search \`review_open\`, \`review_summary\`, \`review_threads\`. They take
+search \`review_open\`, \`review_summary\`, \`review_threads\`, and
+\`reviews_board\` (the Reviews board of the user's merge and pull requests:
+list their lanes and next steps, or set them when the user asks). They take
 Markdown as written (no shell quoting) and know your pane and name; their
 arguments are the options below (\`comment_id\` for \`--comment\`, \`review\`
 for \`--session\`). The client stays the way without them.
