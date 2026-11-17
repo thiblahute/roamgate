@@ -8,26 +8,7 @@ import {
 } from "@codemirror/view";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
-
-type Handlers = {
-  commit: (explicit: boolean) => void;
-  cancel: () => void;
-  suggest: () => void;
-};
-
-/** Vim's ex commands are global; each editor registers its own handlers. */
-const editors = new WeakMap<object, Handlers>();
-let exCommandsDefined = false;
-
-function defineExCommands() {
-  if (exCommandsDefined) return;
-  exCommandsDefined = true;
-  Vim.defineEx("write", "w", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("wq", "wq", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("xit", "x", (cm) => editors.get(cm)?.commit(true));
-  Vim.defineEx("quit", "q", (cm) => editors.get(cm)?.cancel());
-  Vim.defineEx("suggest", "sugg", (cm) => editors.get(cm)?.suggest());
-}
+import { defineExCommands, vimExEditors } from "./vimEx";
 
 /** What the overlay can do to an open editor. */
 export type CommentEditorHandle = {
@@ -267,7 +248,7 @@ export function ReviewCommentEditor({
     };
     host.addEventListener("keydown", onCaptureKey, true);
     if (cm)
-      editors.set(cm, {
+      vimExEditors.set(cm, {
         commit: (explicit) => handlers.current.onCommit(explicit),
         cancel: () => handlers.current.onCancel(),
         suggest: () => handlers.current.onSuggest(),
