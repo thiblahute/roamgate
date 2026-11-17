@@ -1009,12 +1009,16 @@ function getMrReviews(): MrReviews {
       return { sessionId: snapshot.session.id, snapshot };
     },
     // An effort's part: the same worktree path as the workspace menu's.
-    createWorktree: async ({ connectionId, workspaceId, branch }) => {
+    createWorktree: async ({ connectionId, workspaceId, cwd, branch }) => {
       const runtime = connectionManager.readyRuntime(connectionId);
       if (!runtime) throw new Error("this connection is not ready");
       const result: any = await createWorkspaceWorktree(
         runtime,
-        { workspace_id: workspaceId, branch, focus: false },
+        {
+          ...(workspaceId ? { workspace_id: workspaceId } : { cwd }),
+          branch,
+          focus: false,
+        },
         () => true,
       );
       const path =

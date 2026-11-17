@@ -154,12 +154,13 @@ export function createMrReviews(options: {
   publish?: (push: MrReviewsPush) => void;
   /** Where efforts' ledgers live (tests); else <data>/mr-reviews/efforts. */
   effortsDir?: string;
-  /** A worktree workspace through the user's worktree path (efforts' parts). */
-  createWorktree?: (input: {
-    connectionId: string;
-    workspaceId: string;
-    branch: string;
-  }) => Promise<{ path: string; workspaceId?: string }>;
+  /**
+   * A worktree workspace through the user's worktree path (efforts' parts),
+   * from the repository's parent workspace or its main checkout's path.
+   */
+  createWorktree?: NonNullable<
+    Parameters<typeof handleEffortRpc>[0]["createWorktree"]
+  >;
   /**
    * A Roamgate review of a range (an effort's commit, `d`; two versions
    * of one compared tree to tree), with its snapshot for the page to show.

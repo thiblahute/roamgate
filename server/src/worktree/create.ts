@@ -39,7 +39,6 @@ export async function syncWorktreeBase({
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }) {
-  if (!workspaceId) throw new Error("worktree.create requires workspace_id");
   const { root } = await resolveGitRoot(workspaceId);
   const runGit = (args: string) => {
     const command = `GIT_TERMINAL_PROMPT=0 git -C ${shQuote(root)} ${args}`;
@@ -232,11 +231,19 @@ export async function createWorkspaceWorktree(
     await runtime.worktreeHooks.sourceWorkspaceForWorktreeCreate(createParams);
   assertCurrent();
   const workspaceId = String(createParams.workspace_id ?? "");
+  // Without a workspace, a repository's main checkout by its path: Herdr
+  // starts a worktree from it as from its parent workspace.
+  const sourceCwd =
+    !workspaceId && typeof createParams.cwd === "string"
+      ? createParams.cwd.trim()
+      : "";
   const resolveGitRoot: GitRootResolver = async (id) => {
     assertCurrent();
-    const result = await runtime.files.resolveWorkspaceGitRoot({
-      workspace_id: id,
-    });
+    if (!id && !sourceCwd)
+      throw new Error("worktree.create requires workspace_id or cwd");
+    const result = id
+      ? await runtime.files.resolveWorkspaceGitRoot({ workspace_id: id })
+      : { root: sourceCwd };
     assertCurrent();
     if (guardedRoot && result.root !== expectedRoot)
       throw new Error("The worktree source repository changed.");
