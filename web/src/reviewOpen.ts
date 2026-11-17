@@ -1,13 +1,12 @@
 import type { ReviewSnapshot } from "../../shared/review";
 import { reviewAgentPanes } from "./annotations";
-import { roamgateLocalStorage } from "./browserStorage";
 import {
   clearReviewOpenRequest,
   type ReviewOpenRequest,
   rememberReviewSnapshot,
   reviewCall,
 } from "./review";
-import { withLatest } from "./reviewPins";
+import { readReviewMemory, withLatest, writeReviewMemory } from "./reviewPins";
 import { store } from "./store";
 import type { Pane } from "./types";
 
@@ -20,29 +19,8 @@ type ScannedRepo = {
   active: number;
 };
 
+/** The review last shown in each workspace: Option+R goes back to it. */
 const LAST_KEY = "roamgate.review.last";
-
-/**
- * The review last shown in each workspace: Option+R goes back to it. Only
- * the latest workspaces are remembered.
- */
-function lastReviews(): Record<string, string> {
-  try {
-    const all = JSON.parse(roamgateLocalStorage.getItem(LAST_KEY) ?? "{}");
-    return all && typeof all === "object" && !Array.isArray(all) ? all : {};
-  } catch {
-    return {};
-  }
-}
-
-function rememberLast(workspaceKey: string, sessionId: string) {
-  try {
-    roamgateLocalStorage.setItem(
-      LAST_KEY,
-      JSON.stringify(withLatest(lastReviews(), workspaceKey, sessionId)),
-    );
-  } catch {}
-}
 
 function paneDir(pane: Pane | undefined): string {
   return pane?.foreground_cwd ?? pane?.cwd ?? "";
@@ -106,7 +84,8 @@ export async function openWorkspaceReview(
   const last = options.root
     ? undefined
     : reviews.find(
-        (snapshot) => snapshot.session.id === lastReviews()[workspaceKey],
+        (snapshot) =>
+          snapshot.session.id === readReviewMemory(LAST_KEY)[workspaceKey],
       );
   const agentPane = reviewAgentPanes(current.panes, workspace.workspace_id)[0];
   const focusedPane = current.panes.find(
@@ -167,7 +146,10 @@ export async function openWorkspaceReview(
   };
   const show = (snapshot: ReviewSnapshot) => {
     void attachAgent(snapshot);
-    rememberLast(workspaceKey, snapshot.session.id);
+    writeReviewMemory(
+      LAST_KEY,
+      withLatest(readReviewMemory(LAST_KEY), workspaceKey, snapshot.session.id),
+    );
     return snapshot.session.id;
   };
   const open = (path?: string) =>

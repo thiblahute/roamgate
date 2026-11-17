@@ -1,4 +1,5 @@
 import type { ReviewSnapshot } from "../../shared/review";
+import { roamgateLocalStorage } from "./browserStorage";
 
 /*
  * Reviews pinned to workspaces (App.tsx): a small module of its own, as the
@@ -47,6 +48,28 @@ export function livePins(
   const live = { ...pins };
   for (const [key] of stale) delete live[key];
   return live;
+}
+
+/**
+ * A review remembered by workspace in this browser (the pins, Option+R's
+ * last one): `{ [reviewPinKey]: sessionId }`, empty when unreadable.
+ */
+export function readReviewMemory(key: string): Record<string, string> {
+  try {
+    const all = JSON.parse(roamgateLocalStorage.getItem(key) ?? "{}");
+    return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeReviewMemory(
+  key: string,
+  record: Record<string, string>,
+): void {
+  try {
+    roamgateLocalStorage.setItem(key, JSON.stringify(record));
+  } catch {}
 }
 
 /** The most workspaces whose closed or last review is remembered. */
