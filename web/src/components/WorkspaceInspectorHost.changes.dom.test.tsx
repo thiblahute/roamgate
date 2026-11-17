@@ -470,7 +470,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     test("Changes' diff is given the repository shown, so only its threads are drawn; ( and ) switch it", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       const { rememberReviewSnapshot } = await import("../review");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       // Two repositories of the workspace, each with a review.
       for (const root of ["/repo", "/repo2"])
         rememberReviewSnapshot({
@@ -507,7 +508,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, the scope line is the host's controls: the repository picker, what is compared and the counts", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       // Two repositories of the workspace, each with a review.
       const { rememberReviewSnapshot } = await import("../review");
       for (const root of ["/repo", "/repo2"])
@@ -567,7 +569,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, each scope is its review by a lookup: the Last step's comments go to that step's review; a review asked for is the scope, named in the scope line", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const step = {
         step: "1763200000000-abcdef01",
         before: "a".repeat(40),
@@ -647,7 +650,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("a review of one commit is named in the scope line by its short sha and subject (a root commit too), not SHA^..SHA", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const { rememberReviewSnapshot } = await import("../review");
       const sha = "d272642486c9f06335ef462e866f0798d7a3a4ad";
       rememberReviewSnapshot({
@@ -697,7 +701,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("a review shown whose code is gone lets go of its pin; with no thread Changes goes back to its own scope and says so, with threads it stays", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const { rememberReviewSnapshot } = await import("../review");
       const { store } = await import("../store");
       const review = (id: string, threads: unknown[]) =>
@@ -776,7 +781,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, Review only gives the diff's one-row header Show all and Zen's docked way out; Show all brings the inspector back", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const inspector = await mountInspector({ root: "/repo" });
       try {
         await act(async () => diffSeen.run?.("only"));
@@ -921,7 +927,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("in Changes, Review only hides the merge request card; Show all brings it back", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const inspector = await mountInspector({ root: "/repo" });
       try {
         const card = () =>
@@ -947,7 +954,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("on a phone, Back over the review in Changes leaves the prompt, then Review only, then the diff for its tree", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       // The phone: mobile mode and a session history Back walks.
       const entries: unknown[] = [null];
       let index = 0;
@@ -1067,7 +1075,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
 
     test("on a phone, a file picked in a branch, commit or range review's tree opens its diff, as Working's does; Back, the tree again", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
       const entries: unknown[] = [null];
       let index = 0;
       const fake = {
@@ -1167,8 +1176,9 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       const { roamgateLocalStorage } = await import("../browserStorage");
       roamgateLocalStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ reviewIn: "classic", vim: true }),
+        JSON.stringify({ reviewIn: "classic" }),
       );
+      roamgateLocalStorage.setItem("vimKeys", "true");
       const inspector = await mountInspector({ root: "/repo" });
       try {
         expect(diffSeen.scopeControls).toBeDefined();
