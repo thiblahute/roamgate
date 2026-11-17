@@ -28,8 +28,10 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   await installAppReviewDom();
 
   // Vim keys on, as the review's tests set them.
-  const withVim = () => localStorage.setItem("reviewPrefs", "{}");
-  localStorage.setItem("vimKeys", "true");
+  const withVim = () => {
+    localStorage.setItem("reviewPrefs", "{}");
+    localStorage.setItem("vimKeys", "true");
+  };
 
   test("an agent's review of the focused workspace shows in its Changes; of another, it waits pinned there while this one keeps its own", async () => {
     const app = await mountAppWithReviews({
