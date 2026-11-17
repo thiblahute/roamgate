@@ -12,7 +12,7 @@ import { compareKeys, type NavPlace } from "./unresolvedThreads";
  * Threads written in Changes before the merge are anchored on each entry's
  * own diff: a staged entry numbers its new side in the index, an unstaged
  * one its old side in the index (plan D8). They are placed again by their
- * line text, as the review pane places a thread (placeThreads): on their
+ * line text, as Files places a thread (placedInSource): on their
  * own entry's line while it still reads as written, else on the nearest
  * line of the same path, in any entry, that does; one found nowhere is
  * listed in the Comments panel and not drawn. Placed, never written back

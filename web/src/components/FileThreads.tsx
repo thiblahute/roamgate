@@ -118,12 +118,11 @@ export function codeReviewThreadsOn(
 }
 
 /**
- * Where a thread is in the file as it reads now, by the review pane's rule
- * (placeThreads): on its line while that still reads as written, else on
- * the nearest line that does (it moved), else, written on the rendered
- * file (whose older anchors keep the words quoted rather than the line),
- * on its line; otherwise, and on a removed line (the old side), on no
- * line: listed with the comments, not drawn.
+ * Where a thread is in the file as it reads now: on its line while that
+ * still reads as written, else on the nearest line that does (it moved),
+ * else, written on the rendered file (whose older anchors keep the words
+ * quoted rather than the line), on its line; otherwise, and on a removed
+ * line (the old side), on no line: listed with the comments, not drawn.
  */
 export function placedInSource(
   thread: ReviewThread,
