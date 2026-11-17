@@ -217,13 +217,15 @@ type CodeMirrorPreviewDeps = Awaited<
 let codeMirrorPreviewDepsPromise: Promise<CodeMirrorPreviewDeps> | null = null;
 
 async function importCodeMirrorPreviewDeps() {
-  const [codemirror, state, view, searchModule, vimModule] = await Promise.all([
-    import("codemirror"),
-    import("@codemirror/state"),
-    import("@codemirror/view"),
-    import("@codemirror/search"),
-    import("@replit/codemirror-vim"),
-  ]);
+  const [codemirror, state, view, searchModule, vimModule, vimEx] =
+    await Promise.all([
+      import("codemirror"),
+      import("@codemirror/state"),
+      import("@codemirror/view"),
+      import("@codemirror/search"),
+      import("@replit/codemirror-vim"),
+      import("./vimEx"),
+    ]);
 
   return {
     basicSetup: codemirror.basicSetup,
@@ -248,6 +250,8 @@ async function importCodeMirrorPreviewDeps() {
     vim: vimModule.vim,
     getCM: vimModule.getCM,
     Vim: vimModule.Vim,
+    defineExCommands: vimEx.defineExCommands,
+    vimExEditors: vimEx.vimExEditors,
   };
 }
 
@@ -289,20 +293,13 @@ export const PREVIEW_COMMAND_WORDS: readonly string[] = [
   "back",
   "forward",
 ];
-/** What runs a preview's commands, for its Vim keys' `:`. */
-const previewCommandRunners = new WeakMap<object, (input: string) => void>();
-let previewExCommandsDefined = false;
-
+/**
+ * The preview's words for its Vim keys' `:`, defined through vimEx.ts's one
+ * registry: Vim's ex commands are global, and a `:q` of its own would take
+ * the comment editors' and the chat's.
+ */
 function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
-  if (previewExCommandsDefined) return;
-  previewExCommandsDefined = true;
-  for (const word of new Set([
-    ...PREVIEW_COMMAND_WORDS,
-    ...INSPECTOR_COMMAND_WORDS,
-  ]))
-    deps.Vim.defineEx(word, word, (cm, params) =>
-      previewCommandRunners.get(cm)?.(params.input),
-    );
+  deps.defineExCommands([...PREVIEW_COMMAND_WORDS, ...INSPECTOR_COMMAND_WORDS]);
 }
 
 function loadCodeMirrorPreviewDeps() {
@@ -3083,7 +3080,7 @@ function CodeMirrorPreview({
       const cm = deps.getCM(view);
       if (cm) {
         definePreviewExCommands(deps);
-        previewCommandRunners.set(cm, (input) => commandRef.current?.(input));
+        deps.vimExEditors.set(cm, (input) => commandRef.current?.(input));
       }
       annotationRuntimeRef.current = {
         deps,
