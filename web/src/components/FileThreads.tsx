@@ -444,76 +444,62 @@ export function FileThread({
     view.setEditing(null);
     view.backToKeys();
   };
-  if (thread.kind === "merge-request" && review?.forge) {
-    const forge = review.forge;
-    const outdatedLine = forge.outdatedLine(thread);
+  if (thread.kind === "merge-request") {
+    // In the review: the forge's editor and the review's look.
+    const forge = review?.forge;
+    const outdatedLine = forge?.outdatedLine(thread);
+    const editor = (comment: ReviewComment | null) =>
+      forge ? (
+        forge.editor(thread, comment)
+      ) : !comment ? (
+        <ThreadEditor
+          placeholder="Draft reply..."
+          onLeave={view.backToKeys}
+          onClose={close}
+          onSave={(text, id) => api.reply(thread, text, id).then(close)}
+        />
+      ) : api.edit ? (
+        <ThreadEditor
+          kept={{ text: comment.body }}
+          placeholder="Your draft reply..."
+          onLeave={view.backToKeys}
+          onClose={close}
+          onSave={(text) => api.edit!(thread, comment, text).then(close)}
+        />
+      ) : undefined;
     return (
       <MrThreadCard
         thread={thread}
         forge={forgeOf(sessions, thread)}
-        top={top}
+        {...(forge
+          ? {
+              top,
+              flipped: view.flipped.has(thread.id),
+              newLines: thread.anchor.path
+                ? review?.newLines?.(thread.anchor.path)
+                : undefined,
+            }
+          : {})}
         {...(outdatedLine !== undefined ? { outdatedLine } : {})}
-        flipped={view.flipped.has(thread.id)}
         focusedComment={
           view.cursor?.startsWith("m:") ? view.cursor.slice(2) : null
         }
-        newLines={
-          thread.anchor.path ? review.newLines?.(thread.anchor.path) : undefined
-        }
-        replying={
-          view.replying === thread.id ? forge.editor(thread, null) : undefined
-        }
+        replying={view.replying === thread.id ? editor(null) : undefined}
         editing={(comment) =>
-          view.editing === comment.id
-            ? forge.editor(thread, comment)
-            : undefined
+          view.editing === comment.id ? editor(comment) : undefined
         }
         onDraftReply={() => {
-          view.setEditing(null);
+          if (forge) view.setEditing(null);
           view.setReplying(thread.id);
         }}
         onEditReply={(comment) => {
-          view.setReplying(null);
+          if (forge) view.setReplying(null);
           view.setEditing(comment.id);
         }}
         onDeleteReply={(comment) => api.removeComment?.(thread, comment)}
       />
     );
   }
-  if (thread.kind === "merge-request")
-    return (
-      <MrThreadCard
-        thread={thread}
-        forge={forgeOf(sessions, thread)}
-        focusedComment={
-          view.cursor?.startsWith("m:") ? view.cursor.slice(2) : null
-        }
-        replying={
-          view.replying === thread.id ? (
-            <ThreadEditor
-              placeholder="Draft reply..."
-              onLeave={view.backToKeys}
-              onClose={close}
-              onSave={(text, id) => api.reply(thread, text, id).then(close)}
-            />
-          ) : undefined
-        }
-        editing={(comment) =>
-          view.editing === comment.id && api.edit ? (
-            <ThreadEditor
-              kept={{ text: comment.body }}
-              placeholder="Your draft reply..."
-              onLeave={view.backToKeys}
-              onClose={close}
-              onSave={(text) => api.edit!(thread, comment, text).then(close)}
-            />
-          ) : undefined
-        }
-        onDraftReply={() => view.setReplying(thread.id)}
-        onEditReply={(comment) => view.setEditing(comment.id)}
-        onDeleteReply={(comment) => api.removeComment?.(thread, comment)}
-      />
-    );
   const snapshot = snapshotUrl(thread);
   const held = thread.held !== undefined;
   const moment = thread.anchor.render?.moment;
