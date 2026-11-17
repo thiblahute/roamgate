@@ -393,6 +393,8 @@ export type ReviewThreadLook = {
   ) => ReactNode;
   /** In place of the thread's buttons: the review's, an editor, or none. */
   threadBar: (thread: ReviewThread) => ReactNode;
+  /** The agent saying it works on this thread (review_working), or null. */
+  working?: (thread: ReviewThread) => ReactNode;
   /** A message being rewritten: its editor, in its place. */
   messageEditor: (
     thread: ReviewThread,
@@ -720,7 +722,10 @@ export function FileThread({
       }
       footer={
         review ? (
-          (review.threadBar(thread) ?? null)
+          <>
+            {review.working?.(thread) ?? null}
+            {review.threadBar(thread) ?? null}
+          </>
         ) : held ? null : forgeDraft && first ? (
           view.editing === first.id && api.edit ? (
             <ThreadEditor

@@ -822,6 +822,78 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("the agent working on a thread says so on it, by its chip too, until it answers or is done", async () => {
+        const review = await mount({
+          files: [added("a.ts", 12)],
+          session: claude,
+          threads: [
+            conversation("t1", 3, [["you", "Why?", "2026-10-31T19:16:11Z"]]),
+            conversation("t2", 8, [
+              ["you", "And this?", "2026-10-31T19:17:11Z"],
+            ]),
+          ],
+        });
+        expect(shown(review, "t1")?.working).toBeNull();
+        await review.push({
+          session: {
+            agent: {
+              ...claude.agent,
+              working: {
+                message: "reading a.ts",
+                at: new Date(Date.now() - 5_000).toISOString(),
+                threadId: "t1",
+              },
+            },
+          },
+        });
+        expect(shown(review, "t1")?.working).toMatch(
+          /^Claude is working on this: reading a\.ts[45] s$/,
+        );
+        expect(shown(review, "t2")?.working).toBeNull();
+        // By the chip, shown (not only its tooltip), with a mark.
+        expect(review.status()).toBe("Claude is working: reading a.ts");
+        expect(
+          document.querySelector(".changes-review-status.is-working"),
+        ).not.toBeNull();
+        expect(
+          document.querySelector(".changes-review-status")?.classList,
+        ).not.toContain("sr-only");
+        // Its answer in (the bridge drops `working`): the line goes, its last
+        // word stays by the chip.
+        await review.push({
+          session: {
+            agent: { ...claude.agent, update: { message: "Answered t1" } },
+          },
+          threads: [
+            conversation("t1", 3, [
+              ["you", "Why?", "2026-10-31T19:16:11Z"],
+              ["Claude", "Because.", "2026-10-31T19:18:11Z"],
+            ]),
+            conversation("t2", 8, [
+              ["you", "And this?", "2026-10-31T19:17:11Z"],
+            ]),
+          ],
+        });
+        expect(shown(review, "t1")?.working).toBeNull();
+        expect(review.status()).toBe("Claude: Answered t1");
+        expect(
+          document.querySelector(".changes-review-status.is-working"),
+        ).toBeNull();
+        // Work on the whole review: by the chip only.
+        await review.push({
+          session: {
+            agent: {
+              ...claude.agent,
+              working: { message: "rebasing", at: new Date().toISOString() },
+            },
+          },
+        });
+        expect(shown(review, "t1")?.working).toBeNull();
+        expect(shown(review, "t2")?.working).toBeNull();
+        expect(review.status()).toBe("Claude is working: rebasing");
+        await review.unmount();
+      });
+
       test("a reply shows at once as pending, is sent once, and retried with its id", async () => {
         const asked = conversation("t1", null, [
           ["you", "Why not one?", "2026-10-31T19:16:11Z"],

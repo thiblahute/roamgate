@@ -844,6 +844,12 @@
   white-space: nowrap;
 }
 
+/* The agent at work: kept readable while the row's other words shrink. */
+.diff-content-head.is-review .changes-review-status.is-working {
+  flex-shrink: 0.2;
+  min-width: min(12em, 30%);
+}
+
 /* The commit bar: "1/3 38d19192 ▾" with < >, its subject in the tooltip. */
 .diff-content-head.is-review .diff-review-views {
   flex: 0 1 auto;
@@ -1072,4 +1078,52 @@
   .diff-view-menu
   .lucide-chevron-down {
   display: none;
+}
+
+/* The agent says it works on a thread (review_working): on its card, and
+   a mark by the agent's chip. */
+.review-working {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--rv-accent-soft, var(--accent-soft));
+  color: var(--rv-text, var(--text));
+  font-size: 12px;
+}
+
+.review-working-mark {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid var(--rv-border, var(--border));
+  border-top-color: var(--rv-accent, var(--accent));
+  border-radius: 50%;
+  animation: row-spinner 0.8s linear infinite;
+}
+
+.changes-review-status .review-working-mark {
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.changes-review-status.is-working {
+  color: var(--rv-text, var(--text));
+}
+
+.review-working-time {
+  margin-left: auto;
+  color: var(--rv-faint, var(--muted));
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-working-mark {
+    animation: none;
+    border-color: var(--rv-accent, var(--accent));
+  }
 }
