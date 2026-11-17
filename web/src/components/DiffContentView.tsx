@@ -212,12 +212,7 @@ import {
   goToMatches,
   useDiffCursor,
 } from "./useDiffCursor";
-import {
-  notAReviewCommand,
-  REVIEW_FRAME_COMMANDS,
-  reviewInspectorCommands,
-} from "../reviewCommands";
-import type { ReviewCommand } from "../reviewNavigation";
+import { notAReviewCommand, reviewCommands } from "../reviewCommands";
 import { CHANGES_REVIEW_KEYS } from "../reviewShortcuts";
 import { readReviewPlace, writeReviewPlace } from "../reviewPlace";
 import { SPLIT_MIN_WIDTH } from "../reviewPrefs";
@@ -5218,100 +5213,41 @@ function DiffContentViewInner({
     </DiffSurfaceScroll>
   ) : null;
 
-  /*
-   * The review's `:` commands in Changes: the review pane's registry
-   * (reviewCommands.ts), so the words, their order and what Tab says of
-   * them are the pane's; each runs what it means here. The frame's words
-   * (`:files`, `:only`, `:vim`, `:set`) are the inspector's; a commit
-   * bar's `:commit`, `:commits`, `:all` and `:e` are the views'.
-   */
-  const viewCommand = (name: string, argument: string) => {
-    const command = viewCommands?.find(
-      (each) => each.name === name || each.aliases?.includes(name),
-    );
-    if (!command) return false;
-    command.run(argument, { say, unknown: () => {} });
-    return true;
-  };
-  const runChangesReviewCommand = (command: ReviewCommand) => {
-    switch (command.type) {
-      case "close":
-        onCloseReview?.("command");
-        return;
-      case "save":
-        if (saveOpenComposer(sectionRef.current) === false) return;
-        say("Review saved");
-        return;
-      case "split":
-        toggleSplit();
-        return;
-      case "comments":
-        setHideComments((hidden) => !hidden);
-        return;
-      case "ask":
-        cursorHandle.current.comment("ask");
-        return;
-      case "suggest":
-        cursorHandle.current.comment("suggest");
-        return;
-      case "overall":
-        setOverallOpen(true);
-        return;
-      case "threads":
-        setThreadsOpen(true);
-        return;
-      case "unresolved":
-        toggleOpenOnly();
-        return;
-      case "unreviewed":
-        reviewHandlers.current.threadKey("gu", null);
-        return;
-      case "send":
-        changesAgent.send();
-        return;
-      case "hold":
+  /** The review's `:` commands in Changes (reviewCommands.ts). */
+  const changesReviewCommands = reviewCommands(
+    {
+      close: () => onCloseReview?.("command"),
+      save: () => {
+        if (saveOpenComposer(sectionRef.current) !== false) say("Review saved");
+      },
+      split: () => toggleSplit(),
+      comments: () => setHideComments((hidden) => !hidden),
+      ask: () => cursorHandle.current.comment("ask"),
+      suggest: () => cursorHandle.current.comment("suggest"),
+      overall: () => setOverallOpen(true),
+      threads: () => setThreadsOpen(true),
+      unresolved: () => toggleOpenOnly(),
+      unreviewed: () => reviewHandlers.current.threadKey("gu", null),
+      send: () => changesAgent.send(),
+      hold: () => {
         if (changesAgent.talk) changesAgent.toggleHold();
         else
           say(
             `Comments are not going to ${changesAgent.agentName ?? "Agent"}.`,
           );
-        return;
-      case "review":
-        if (command.focus === null) setFocusBar("");
-        else changesAgent.review(command.focus);
-        return;
-      case "open":
-        openMergeRequest(ownSnapshot);
-        return;
-      case "switchMode":
-        forgeMode.switchMode();
-        return;
-      case "commit":
-        if (
-          !viewCommand(
-            "commit",
-            command.index === null ? "" : String(command.index + 1),
-          )
-        )
-          say("This review has a single commit.");
-        return;
-      case "commits":
-        if (!viewCommand("commits", command.query))
-          say("This review has a single commit.");
-        return;
-      case "reload":
-        if (!viewCommand("reload", "")) onRetry?.();
-        return;
-      case "reviews":
-        onShowReviews?.();
-        return;
-      default:
-        return;
-    }
-  };
-  const changesReviewCommands = reviewInspectorCommands(
-    runChangesReviewCommand,
-  ).filter((command) => !REVIEW_FRAME_COMMANDS.includes(command.name));
+      },
+      review: (focus) => {
+        if (focus) changesAgent.review(focus);
+        else setFocusBar("");
+      },
+      open: () => openMergeRequest(ownSnapshot),
+      switchMode: () => forgeMode.switchMode(),
+      reviews: () => onShowReviews?.(),
+      single: () => say("This review has a single commit."),
+      reload: () => onRetry?.(),
+    },
+    Boolean(viewCommands),
+  );
 
   /*
    * The diff's `:` commands in the inspector's prompt (Changes, a commit's

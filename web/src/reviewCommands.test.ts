@@ -6,138 +6,146 @@ import {
 } from "./inspectorCommands";
 import {
   notAReviewCommand,
-  REVIEW_COMMAND_ALIASES,
-  reviewInspectorCommands,
+  type ReviewActions,
+  reviewCommands,
 } from "./reviewCommands";
-import {
-  commandCompletions,
-  parseReviewCommand,
-  REVIEW_COMMANDS,
-  type ReviewCommand,
-} from "./reviewNavigation";
 
 /**
- * Every word of parseReviewCommand (plan, section 4), with an argument,
- * and what it runs: pinned, so a new command table keeps every alias.
+ * Every word of the review's `:` commands, with an argument, and what it
+ * runs: pinned, so the table keeps every alias. Without views of its
+ * commits (one commit), the review answers `:commit`, `:commits`, `:all`
+ * and `:e` itself; with them, those words are the views'.
  */
-const WORDS: [string, ReviewCommand][] = [
-  ["q", { type: "close" }],
-  ["q!", { type: "close" }],
-  ["quit", { type: "close" }],
-  ["close", { type: "close" }],
-  ["wq", { type: "close" }],
-  ["x", { type: "close" }],
-  ["xit", { type: "close" }],
-  ["w", { type: "save" }],
-  ["write", { type: "save" }],
-  ["s", { type: "split" }],
-  ["split", { type: "split" }],
-  ["diff", { type: "split" }],
-  ["unified", { type: "split" }],
-  ["files", { type: "files" }],
-  ["only", { type: "diffOnly" }],
-  ["o", { type: "diffOnly" }],
-  ["diffonly", { type: "diffOnly" }],
-  ["comments", { type: "comments" }],
-  ["hidecomments", { type: "comments" }],
-  ["ask", { type: "ask" }],
-  ["chat", { type: "ask" }],
-  ["discuss", { type: "ask" }],
-  ["review", { type: "review", focus: null }],
-  ["review the parser", { type: "review", focus: "the parser" }],
-  ["send", { type: "send" }],
-  ["handoff", { type: "send" }],
-  ["hold", { type: "hold" }],
-  ["overall", { type: "overall" }],
-  ["summary", { type: "overall" }],
-  ["conversations", { type: "threads" }],
-  ["threads", { type: "threads" }],
-  ["conv", { type: "threads" }],
-  ["unresolved", { type: "unresolved" }],
-  ["openonly", { type: "unresolved" }],
-  ["unreviewed", { type: "unreviewed" }],
-  ["suggest", { type: "suggest" }],
-  ["open", { type: "open" }],
-  ["gitlab", { type: "open" }],
-  ["mr", { type: "open" }],
-  ["switch", { type: "switchMode" }],
-  ["commit", { type: "commit", index: null }],
-  ["commit 2", { type: "commit", index: 1 }],
-  ["commit fix the parser", { type: "commits", query: "fix the parser" }],
-  ["commits", { type: "commits", query: "" }],
-  ["commits parser", { type: "commits", query: "parser" }],
-  ["all", { type: "commit", index: null }],
-  ["e", { type: "reload" }],
-  ["edit", { type: "reload" }],
-  ["reload", { type: "reload" }],
-  ["reviews", { type: "reviews" }],
-  ["vim", { type: "vim" }],
-  ["novim", { type: "vim", on: false }],
-  ["set vim", { type: "vim", on: true }],
-  ["set novim", { type: "vim", on: false }],
+const WORDS: [string, keyof ReviewActions, string?][] = [
+  ["q", "close"],
+  ["q!", "close"],
+  ["quit", "close"],
+  ["close", "close"],
+  ["wq", "close"],
+  ["x", "close"],
+  ["xit", "close"],
+  ["w", "save"],
+  ["write", "save"],
+  ["s", "split"],
+  ["split", "split"],
+  ["diff", "split"],
+  ["unified", "split"],
+  ["comments", "comments"],
+  ["hidecomments", "comments"],
+  ["ask", "ask"],
+  ["chat", "ask"],
+  ["discuss", "ask"],
+  ["review", "review"],
+  ["review the parser", "review", "the parser"],
+  ["send", "send"],
+  ["handoff", "send"],
+  ["hold", "hold"],
+  ["overall", "overall"],
+  ["summary", "overall"],
+  ["conversations", "threads"],
+  ["threads", "threads"],
+  ["conv", "threads"],
+  ["unresolved", "unresolved"],
+  ["openonly", "unresolved"],
+  ["unreviewed", "unreviewed"],
+  ["suggest", "suggest"],
+  ["open", "open"],
+  ["gitlab", "open"],
+  ["mr", "open"],
+  ["switch", "switchMode"],
+  ["reviews", "reviews"],
+  ["commit", "single"],
+  ["commit 2", "single", "2"],
+  ["commits parser", "single", "parser"],
+  ["all", "single"],
+  ["e", "reload"],
+  ["edit", "reload"],
+  ["reload", "reload"],
 ];
 
-function ran(input: string): ReviewCommand[] {
-  const commands: ReviewCommand[] = [];
+const VIEW_WORDS = ["commit", "commits", "all", "e", "edit", "reload"];
+
+function ran(input: string, ownViews = false): string[] {
+  const done: string[] = [];
+  const act = new Proxy({} as ReviewActions, {
+    get: (_, action: string) => (argument: string) =>
+      done.push(argument ? `${action} ${argument}` : action),
+  });
   const problem = runInspectorCommand(
-    reviewInspectorCommands((command) => commands.push(command)),
+    reviewCommands(act, ownViews),
     input,
-    (line) => commands.push({ type: "line", line }),
+    (line) => done.push(`line ${line}`),
     notAReviewCommand,
   );
-  if (problem) commands.push({ type: "unknown", text: problem });
-  return commands;
+  if (problem) done.push(problem);
+  return done;
 }
 
-test("every word of the review's commands runs through the registry what parseReviewCommand reads", () => {
-  for (const [word, command] of WORDS) {
-    expect(parseReviewCommand(word)).toEqual(command);
-    expect(ran(`:${word}`)).toEqual([command]);
-  }
+test("every word of the review's commands runs what it means", () => {
+  for (const [word, action, argument] of WORDS)
+    expect(ran(`:${word}`)).toEqual([
+      argument ? `${action} ${argument}` : action,
+    ]);
   // :N is the prompt's, given to the view's lines.
-  expect(ran(":12")).toEqual([{ type: "line", line: 12 }]);
+  expect(ran(":12")).toEqual(["line 12"]);
 });
 
-test("Tab offers the review's commands as before, aliases never", () => {
-  const commands = reviewInspectorCommands(() => {});
-  for (const [name] of REVIEW_COMMANDS)
-    for (let end = 0; end <= name.length; end++) {
-      const typed = name.slice(0, end);
-      expect(inspectorCompletions(commands, typed)).toEqual(
-        commandCompletions(typed),
-      );
-    }
-  expect(inspectorCompletions(commands, "nov")).toEqual([]);
+test("with views of its commits, :commit, :commits, :all and :e are theirs", () => {
+  const commands = reviewCommands({} as ReviewActions, true);
+  for (const word of VIEW_WORDS)
+    expect(findInspectorCommand(commands, word)).toBeNull();
+  expect(ran(":q", true)).toEqual(["close"]);
+});
+
+test("Tab offers the listed names in order, aliases never", () => {
+  const commands = reviewCommands({} as ReviewActions, false);
+  expect(inspectorCompletions(commands, "").map(([name]) => name)).toEqual([
+    "q",
+    "w",
+    "wq",
+    "x",
+    "diff",
+    "comments",
+    "ask",
+    "review",
+    "send",
+    "hold",
+    "overall",
+    "conversations",
+    "threads",
+    "unresolved",
+    "unreviewed",
+    "suggest",
+    "open",
+    "gitlab",
+    "switch",
+    "commit",
+    "commits",
+    "all",
+    "reviews",
+    "e",
+  ]);
+  expect(inspectorCompletions(commands, "commi").map(([name]) => name)).toEqual(
+    ["commit", "commits"],
+  );
   expect(inspectorCompletions(commands, "se")).toEqual([
     ["send", "send the held comments to the agent"],
   ]);
-  // Every alias names a listed command, and is found exactly.
-  for (const [name, aliases] of Object.entries(REVIEW_COMMAND_ALIASES)) {
-    expect(REVIEW_COMMANDS.some(([listed]) => listed === name)).toBe(true);
-    for (const alias of aliases)
-      expect(findInspectorCommand(commands, alias)?.command.name).toBe(name);
-  }
+  expect(inspectorCompletions(commands, "conv")).toEqual([
+    ["conversations", "every conversation of the review, resolved too (T)"],
+  ]);
 });
 
-test(":s is side by side, never :stage or :scope; unknown words and :set options say so", () => {
-  expect(ran(":s")).toEqual([{ type: "split" }]);
-  expect(ran(":frob now")).toEqual([
-    { type: "unknown", text: notAReviewCommand("frob now") },
-  ]);
-  expect(ran(":set number")).toEqual([
-    { type: "unknown", text: notAReviewCommand("set number") },
-  ]);
-  expect(ran(":set")).toEqual([
-    { type: "unknown", text: notAReviewCommand("set") },
-  ]);
-  expect(ran(":set reviewin=elsewhere")).toEqual([
-    { type: "unknown", text: notAReviewCommand("set reviewin=elsewhere") },
-  ]);
-  expect(ran(":help")).toEqual([
-    { type: "unknown", text: notAReviewCommand("help") },
-  ]);
-  // The retired switch (`reviewin`) is no setting now.
-  expect(ran(":set reviewin=changes")).toEqual([
-    { type: "unknown", text: notAReviewCommand("set reviewin=changes") },
-  ]);
+test(":s is side by side, never :stage or :scope; unknown words and the frame's say so here", () => {
+  expect(ran(":s")).toEqual(["split"]);
+  for (const words of [
+    "frob now",
+    "set number",
+    "set",
+    "set reviewin=elsewhere",
+    "help",
+    "files",
+    "vim",
+  ])
+    expect(ran(`:${words}`)).toEqual([notAReviewCommand(words)]);
 });

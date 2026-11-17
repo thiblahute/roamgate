@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   splitStep,
-  commandCompletions,
   latestComment,
   EMPTY_KEY_STATE,
   feedKey,
@@ -13,7 +12,6 @@ import {
   hunkKey,
   nextMatch,
   nextUnreviewedHunk,
-  parseReviewCommand,
   type ReviewedFile,
   reviewedChanges,
   reviewedIndexes,
@@ -80,46 +78,13 @@ test("counts and two-key sequences", () => {
   expect(feed("0")).toMatchObject({ key: "0" });
 });
 
-test("command line", () => {
-  expect(parseReviewCommand(":42")).toEqual({ type: "line", line: 42 });
-  expect(parseReviewCommand("wq")).toEqual({ type: "close" });
-  expect(parseReviewCommand(":switch")).toEqual({ type: "switchMode" });
-  // :gitlab still opens the merge request.
-  expect(parseReviewCommand("gitlab")).toEqual({ type: "open" });
-  expect(parseReviewCommand(":conversations")).toEqual({ type: "threads" });
-  expect(parseReviewCommand("conv")).toEqual({ type: "threads" });
-  expect(parseReviewCommand(":overall")).toEqual({ type: "overall" });
-  expect(parseReviewCommand("w")).toEqual({ type: "save" });
-  expect(parseReviewCommand("unified")).toEqual({ type: "split" });
-  expect(parseReviewCommand("only")).toEqual({ type: "diffOnly" });
-  expect(parseReviewCommand("nope")).toEqual({ type: "unknown", text: "nope" });
-});
-
-test("commits: gc picks one, :commit goes by number or by name", () => {
+test("commits: gc picks one; < and > step through them", () => {
   let state = EMPTY_KEY_STATE;
   expect(feedKey(state, "g").type).toBe("wait");
   state = feedKey(state, "g").state;
   expect(feedKey(state, "c")).toMatchObject({ type: "command", key: "gc" });
   expect(feedKey(EMPTY_KEY_STATE, "<")).toMatchObject({ key: "<" });
   expect(feedKey(EMPTY_KEY_STATE, ">")).toMatchObject({ key: ">" });
-  expect(parseReviewCommand(":commit 2")).toEqual({ type: "commit", index: 1 });
-  expect(parseReviewCommand(":commit")).toEqual({
-    type: "commit",
-    index: null,
-  });
-  expect(parseReviewCommand(":all")).toEqual({ type: "commit", index: null });
-  expect(parseReviewCommand(":commit fix the parser")).toEqual({
-    type: "commits",
-    query: "fix the parser",
-  });
-  expect(parseReviewCommand(":commits")).toEqual({
-    type: "commits",
-    query: "",
-  });
-  expect(commandCompletions("commi").map(([name]) => name)).toEqual([
-    "commit",
-    "commits",
-  ]);
 });
 
 test("search finds files by their path, after the current one", () => {
@@ -181,9 +146,7 @@ test("side by side, j and k go line by line on their side", () => {
   expect(splitStep(lines, 7, 1, "left")).toBe(null);
 });
 
-test("gn / gN / gH and :unresolved go through the unresolved threads", () => {
-  expect(parseReviewCommand(":unresolved")).toEqual({ type: "unresolved" });
-  expect(parseReviewCommand("openonly")).toEqual({ type: "unresolved" });
+test("gn / gN / gH go through the unresolved threads", () => {
   for (const sequence of ["gn", "gN", "gH"]) {
     const first = feedKey(EMPTY_KEY_STATE, "g");
     expect(first.type).toBe("wait");

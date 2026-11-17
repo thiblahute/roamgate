@@ -1,85 +1,98 @@
 import type { InspectorCommand } from "./inspectorCommands";
-import {
-  parseReviewCommand,
-  REVIEW_COMMANDS,
-  type ReviewCommand,
-} from "./reviewNavigation";
 
 /*
- * The review's `:` commands as the inspector's registry has them
- * (inspectorCommands.ts): one entry per name Tab offers (REVIEW_COMMANDS,
- * in its order), with the other words of parseReviewCommand as its
- * aliases, and the words Tab never offers (`:novim`, `:set ...`) as
- * entries of their own. Each runs what parseReviewCommand reads.
+ * The review's `:` commands in Changes, one table: each listed name with
+ * the other words run as it, what Tab says of it and what it does. The
+ * frame's words (`:files`, `:only`, `:vim`, `:set`) are the inspector's;
+ * a commit bar's `:commit`, `:commits`, `:all` and `:e` are the views'.
  */
 
-/** Words run but not offered, by the listed name they mean the same as. */
-export const REVIEW_COMMAND_ALIASES: Readonly<
-  Record<string, readonly string[]>
-> = {
-  q: ["q!", "quit", "close"],
-  w: ["write"],
-  x: ["xit"],
-  diff: ["s", "split", "unified"],
-  only: ["diffonly", "o"],
-  comments: ["hidecomments"],
-  ask: ["chat", "discuss"],
-  send: ["handoff"],
-  overall: ["summary"],
-  conversations: ["conv"],
-  unresolved: ["openonly"],
-  open: ["mr"],
-  e: ["edit", "reload"],
-};
+/** What the review does for its words; `argument`: the words after it. */
+export type ReviewActions = Record<
+  | "close"
+  | "save"
+  | "split"
+  | "comments"
+  | "ask"
+  | "review"
+  | "send"
+  | "hold"
+  | "overall"
+  | "threads"
+  | "unresolved"
+  | "unreviewed"
+  | "suggest"
+  | "open"
+  | "switchMode"
+  | "reviews"
+  /** `:commit`, `:commits`, `:all` without views of their own. */
+  | "single"
+  /** `:e` without views of their own. */
+  | "reload",
+  (argument: string) => void
+>;
 
-/**
- * The review's words that are its frame's in Changes: the inspector's
- * prompt runs them (the tree, Review only, the preferences).
- */
-export const REVIEW_FRAME_COMMANDS: readonly string[] = [
-  "files",
-  "only",
-  "vim",
-  "novim",
-  "set",
+/** [name, what Tab says, what it does, the other words run as it]. */
+const TABLE: [string, string, keyof ReviewActions, ...string[]][] = [
+  ["q", "close the review", "close", "q!", "quit", "close"],
+  ["w", "save the review", "save", "write"],
+  ["wq", "save and close", "close"],
+  ["x", "save and close", "close", "xit"],
+  ["diff", "side by side / unified", "split", "s", "split", "unified"],
+  ["comments", "show / hide all comments", "comments", "hidecomments"],
+  ["ask", "ask the agent about this line", "ask", "chat", "discuss"],
+  ["review", "agent review (:review focus)", "review"],
+  ["send", "send the held comments to the agent", "send", "handoff"],
+  ["hold", "hold comments until :send / send as written", "hold"],
+  ["overall", "write the overall comment on the review", "overall", "summary"],
+  [
+    "conversations",
+    "every conversation of the review, resolved too (T)",
+    "threads",
+    "conv",
+  ],
+  ["threads", "every conversation of the review, resolved too (T)", "threads"],
+  [
+    "unresolved",
+    "show only the unresolved threads, or all again (gH)",
+    "unresolved",
+    "openonly",
+  ],
+  ["unreviewed", "the next chunk not reviewed (gu)", "unreviewed"],
+  ["suggest", "suggest a change on this line", "suggest"],
+  ["open", "open the MR on GitLab", "open", "mr"],
+  ["gitlab", "open the MR on GitLab", "open"],
+  ["switch", "local review / review on GitLab (the branch's MR)", "switchMode"],
+  [
+    "commit",
+    "review one commit: :commit 2, :commit words of its subject; alone for all",
+    "single",
+  ],
+  ["commits", "pick a commit by its subject (gc)", "single"],
+  ["all", "all changes again", "single"],
+  ["reviews", "the reviews in progress", "reviews"],
+  ["e", "reload the diff (gr)", "reload", "edit", "reload"],
 ];
 
-/** Words with a meaning of their own that Tab does not offer. */
-export const REVIEW_UNLISTED_COMMANDS: readonly string[] = ["novim", "set"];
+/** The views' words: theirs when the review has views of its commits. */
+const VIEW_WORDS = new Set(["commit", "commits", "all", "e"]);
 
 /**
- * The review's commands for the prompt, each handing what it means to
- * `run`. `:N` is not among them: the prompt gives it to the view's lines.
+ * The review's commands for the prompt. `:N` is not among them: the
+ * prompt gives it to the view's lines.
  */
-export function reviewInspectorCommands(
-  run: (command: ReviewCommand) => void,
+export function reviewCommands(
+  act: ReviewActions,
+  ownViews: boolean,
 ): InspectorCommand[] {
-  const entry = (
-    name: string,
-    description: string,
-    listed: boolean,
-  ): InspectorCommand => ({
-    name,
-    description,
-    ...(REVIEW_COMMAND_ALIASES[name]
-      ? { aliases: REVIEW_COMMAND_ALIASES[name] }
-      : {}),
-    ...(listed ? {} : { listed: false }),
-    run: (argument, how) => {
-      const command = parseReviewCommand(
-        argument ? `${name} ${argument}` : name,
-      );
-      if (command.type === "unknown") how.unknown();
-      else run(command);
-    },
-  });
-  return [
-    ...REVIEW_COMMANDS.map(([name, description]) =>
-      entry(name, description, true),
-    ),
-    entry("novim", "Vim keys in comments off", false),
-    entry("set", "set vim, novim", false),
-  ];
+  return TABLE.filter(([name]) => !ownViews || !VIEW_WORDS.has(name)).map(
+    ([name, description, action, ...aliases]) => ({
+      name,
+      description,
+      ...(aliases.length ? { aliases } : {}),
+      run: (argument) => act[action](argument),
+    }),
+  );
 }
 
 /** The review's message for a word that is none of its commands. */
