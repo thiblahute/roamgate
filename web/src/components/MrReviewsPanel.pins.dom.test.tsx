@@ -220,67 +220,85 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
     const addBox = () =>
       host.querySelector<HTMLInputElement>(
         '[aria-label="Add a merge or pull request"]',
-      )!;
+      );
+    const URL7 = "https://gitlab.example.org/group/app/-/merge_requests/7";
+    const URL8 = "https://gitlab.example.org/group/app/-/merge_requests/8";
+    const URL9 = "https://gitlab.example.org/group/app/-/merge_requests/9";
+    const URL404 = "https://gitlab.example.org/group/app/-/merge_requests/404";
     const pinCalls = () =>
       calls.filter(([method]) => method === "bridge.mr_reviews.pin");
 
-    // Nothing pinned: no Pinned section, the Add box is there.
+    const commandBox = () =>
+      host.querySelector<HTMLInputElement>('[aria-label="Command"]')!;
+    const searchBox = () =>
+      host.querySelector<HTMLInputElement>(
+        '[aria-label="Search the reviews"]',
+      )!;
+    const addOffer = () => host.querySelector(".mr-reviews-add-offer");
+
+    // Nothing pinned: no Pinned section, and no Add row: p opens a prompt.
     panel.focus();
     expect(titles()).toEqual(["To review", "Mine", "Suggested"]);
-    expect(addBox()).not.toBeNull();
-    expect(button("Add")?.hasAttribute("disabled")).toBe(true);
+    expect(addBox()).toBeNull();
+    expect(host.querySelector(".mr-reviews-add")).toBeNull();
+    expect(button("Add")).toBeNull();
+    expect(host.textContent).not.toContain("paste its URL");
 
-    // Add by URL: a Pinned section on top, the new row selected.
-    await type(
-      addBox(),
-      keyOf(7).includes("#7")
-        ? "https://gitlab.example.org/group/app/-/merge_requests/7"
-        : "",
-    );
-    await click(button("Add"));
-    expect(pinCalls().map(([, params]) => params.text)).toEqual([
-      "https://gitlab.example.org/group/app/-/merge_requests/7",
-    ]);
+    // p opens the prompt where the : line opens; Enter adds: a Pinned
+    // section on top, the new row selected, the prompt gone.
+    await key("p");
+    expect(document.activeElement).toBe(addBox());
+    expect(addBox()?.closest(".mr-reviews-command")).not.toBeNull();
+    await type(addBox()!, URL7);
+    await key("Enter");
+    await settle();
+    expect(pinCalls().map(([, params]) => params.text)).toEqual([URL7]);
     expect(titles()).toEqual(["Pinned", "To review", "Mine", "Suggested"]);
     expect(rows()).toEqual([keyOf(7), keyOf(1), keyOf(2), keyOf(3)]);
     expect(selected()).toBe(keyOf(7));
-    expect(addBox().value).toBe("");
+    expect(addBox()).toBeNull();
+    expect(document.activeElement).toBe(panel);
 
-    // An unknown host or a bad reference says why and pins nothing.
-    await type(addBox(), "https://elsewhere.org/g/p/-/merge_requests/3");
-    await click(button("Add"));
-    expect(host.textContent).toContain("not one of your forge hosts");
-    expect(rows()).toHaveLength(4);
+    // :add URL adds too; an unknown host says why and pins nothing.
+    await key(":");
     await type(
-      addBox(),
-      "https://gitlab.example.org/group/app/-/merge_requests/8",
-    );
-    expect(host.textContent).not.toContain("not one of your forge hosts");
-
-    // p goes to the Add box, Enter pins, Esc empties it and gives the keys back.
-    await act(async () => {
-      panel.focus();
-    });
-    await type(addBox(), "");
-    await key("p");
-    expect(document.activeElement).toBe(addBox());
-    await type(
-      addBox(),
-      "https://gitlab.example.org/group/app/-/merge_requests/404",
+      commandBox(),
+      "add https://elsewhere.org/g/p/-/merge_requests/3",
     );
     await key("Enter");
     await settle();
-    // A request the forge does not give: a row saying so, with a remove button.
+    expect(host.textContent).toContain("not one of your forge hosts");
+    expect(rows()).toHaveLength(4);
+    // :add alone opens the prompt; typing there clears the error, Esc
+    // closes it, pins nothing and gives the keys back.
+    await key(":");
+    await type(commandBox(), "add");
+    await key("Enter");
+    expect(document.activeElement).toBe(addBox());
+    await type(addBox()!, URL8);
+    expect(host.textContent).not.toContain("not one of your forge hosts");
+    const beforeEscape = pinCalls().length;
+    await key("Escape");
+    expect(addBox()).toBeNull();
+    expect(document.activeElement).toBe(panel);
+    expect(pinCalls()).toHaveLength(beforeEscape);
+
+    // :pin URL adds it as well; one the forge does not give is a row saying
+    // so, with a remove button.
+    await key(":");
+    await type(commandBox(), `pin ${URL404}`);
+    await key("Enter");
+    await settle();
+    expect(pinCalls()[pinCalls().length - 1]?.[1].text).toBe(URL404);
     expect(rows()[0]).toBe(keyOf(404));
     expect(host.textContent).toContain(
       "Not found, or you have no access to it",
     );
-    await type(addBox(), "junk");
-    await key("Escape");
-    expect(addBox().value).toBe("");
-    expect(document.activeElement).toBe(panel);
     await click(host.querySelector('[aria-label="Unpin (dd)"]'));
     expect(rows()).toEqual([keyOf(7), keyOf(1), keyOf(2), keyOf(3)]);
+    await act(async () => {
+      panel.focus();
+    });
 
     // dd removes the selected For you request: undo toast, "1 hidden" chip.
     await key("j");
@@ -372,11 +390,21 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
       "",
     );
     // A second pin, then J moves it within Pinned and saves the whole order.
-    await type(
-      addBox(),
-      "https://gitlab.example.org/group/app/-/merge_requests/9",
-    );
-    await click(button("Add"));
+    // A request's URL in the search is one to add, not words to search
+    // for: no offer for one the list has, else "Add this request", and
+    // Enter adds it.
+    await act(async () => {
+      searchBox().focus();
+    });
+    await type(searchBox(), URL7);
+    expect(addOffer()).toBeNull();
+    await type(searchBox(), URL9);
+    expect(addOffer()?.textContent).toContain("Add this request");
+    await key("Enter");
+    await settle();
+    expect(pinCalls()[pinCalls().length - 1]?.[1].text).toBe(URL9);
+    expect(searchBox().value).toBe("");
+    expect(addOffer()).toBeNull();
     expect(rows()[0]).toBe(keyOf(9));
     await act(async () => {
       panel.focus();

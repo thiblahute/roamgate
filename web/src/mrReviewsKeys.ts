@@ -38,9 +38,12 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ],
   [
     ":",
-    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer (whose move, read again now), pin, unpin, all, review, mine, refresh",
+    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer (whose move, read again now), pin, unpin, add URL (or pin URL: adds a request), all, review, mine, refresh",
   ],
-  ["p", "add a request: paste its URL (also paste or drop one in the panel)"],
+  [
+    "p",
+    "add a request: a prompt to paste its URL in (Enter adds, Esc closes); a URL pasted in the search, or pasted or dropped in the panel, adds it too",
+  ],
   ["dd / Delete", "remove it from the view (a pinned one is unpinned)"],
   ["u", "undo the last removal"],
   ["H", "the hidden requests, to restore"],
