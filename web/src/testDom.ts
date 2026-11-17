@@ -28,7 +28,6 @@ export function installTestDom(
     cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) =>
       clearTimeout(id),
     IS_REACT_ACT_ENVIRONMENT: true,
-    ...options.extra,
   };
   for (const key of [
     "HTMLElement",
@@ -36,6 +35,7 @@ export function installTestDom(
     "HTMLButtonElement",
     "HTMLTextAreaElement",
     "HTMLInputElement",
+    "HTMLIFrameElement",
     "HTMLFormElement",
     "HTMLTemplateElement",
     "HTMLStyleElement",
@@ -94,6 +94,7 @@ export function installTestDom(
     globals.Worker = TestWorker;
     globals.IntersectionObserver = TestIntersectionObserver;
   }
+  Object.assign(globals, options.extra);
   for (const [key, value] of Object.entries(globals)) {
     originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, {

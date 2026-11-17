@@ -15,51 +15,8 @@ if (
     30_000,
   )
 ) {
-  const { Window } = await import("happy-dom");
-  const browser = new Window({ url: "http://localhost/" });
-  for (const [key, value] of Object.entries({
-    window: browser,
-    document: browser.document,
-    navigator: browser.navigator,
-    localStorage: browser.localStorage,
-    sessionStorage: browser.sessionStorage,
-    HTMLElement: browser.HTMLElement,
-    HTMLDivElement: browser.HTMLDivElement,
-    HTMLIFrameElement: browser.HTMLIFrameElement,
-    Element: browser.Element,
-    Node: browser.Node,
-    Text: browser.Text,
-    DOMParser: browser.DOMParser,
-    NodeFilter: browser.NodeFilter,
-    HTMLTextAreaElement: browser.HTMLTextAreaElement,
-    HTMLInputElement: browser.HTMLInputElement,
-    Range: browser.Range,
-    MutationObserver: browser.MutationObserver,
-    ResizeObserver: browser.ResizeObserver,
-    getComputedStyle: browser.getComputedStyle.bind(browser),
-    getSelection: browser.getSelection.bind(browser),
-    matchMedia: browser.matchMedia.bind(browser),
-    Event: browser.Event,
-    KeyboardEvent: browser.KeyboardEvent,
-    MessageEvent: browser.MessageEvent,
-    MouseEvent: browser.MouseEvent,
-    FocusEvent: browser.FocusEvent,
-    HTMLFormElement: browser.HTMLFormElement,
-    HTMLButtonElement: browser.HTMLButtonElement,
-    PointerEvent: browser.PointerEvent,
-    CSS: {
-      escape: (value: string) => value.replace(/["\\]/g, "\\$&"),
-    },
-    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
-    cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) =>
-      clearTimeout(id),
-    IS_REACT_ACT_ENVIRONMENT: true,
-  }))
-    Object.defineProperty(globalThis, key, {
-      value,
-      configurable: true,
-      writable: true,
-    });
+  const { installTestDom } = await import("../testDom");
+  installTestDom();
 
   const { mock } = await import("bun:test");
   const real = await import("../review");
