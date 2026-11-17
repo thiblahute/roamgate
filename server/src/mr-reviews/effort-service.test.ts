@@ -354,6 +354,20 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
       title: "pool: add a",
     }),
   ]);
+  // Two versions (D32): compared tree to tree in the same Changes.
+  await reviews.handle("bridge.mr_reviews.effort.open_commit", {
+    id: "Big",
+    sha: a2,
+    from: a,
+  });
+  expect(opened[1]).toEqual(
+    expect.objectContaining({
+      workspaceId: "w1",
+      base: a,
+      head: a2,
+      compare: true,
+    }),
+  );
   const diff = (await reviews.handle("bridge.mr_reviews.effort.diff", {
     id: "Big",
     from: a,
@@ -382,7 +396,11 @@ test("export and import through the panel: a preview first, applied with a push"
   const { text } = (await reviews.handle("bridge.mr_reviews.export", {})) as {
     text: string;
   };
+  // The hosts list, followed projects and hints too (D30).
   expect(JSON.parse(text).mr_reviews).toEqual({
+    followed: [],
+    hints: "",
+    hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
     views: [{ name: "media", query: "project:media/*" }],
   });
   const changed = text.replace("project:media/*", "project:media/gst");
@@ -416,7 +434,16 @@ test("a pick already in the target is skipped and said; a real conflict stops", 
   // The target holds b already, within a larger change.
   g.git(clone, "checkout", "-q", "-b", "target", "origin/main");
   g.commit(clone, "pool/b.c", "b\n", "pool: b and more");
-  g.git(clone, "worktree", "add", "-q", "-b", "part", `${g.root}/part`, "target");
+  g.git(
+    clone,
+    "worktree",
+    "add",
+    "-q",
+    "-b",
+    "part",
+    `${g.root}/part`,
+    "target",
+  );
   const connection = g.connection([]);
   const run = async (shas: string[]) =>
     parsePick(

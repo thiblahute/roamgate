@@ -26,6 +26,10 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
   const [host, setHost] = useState("");
   const [extraHost, setExtraHost] = useState("");
   const [extraProvider, setExtraProvider] = useState<ForgeProvider>("gitlab");
+  const [models, setModels] = useState<{
+    automatic: string;
+    models: string[];
+  } | null>(null);
 
   useEffect(() => {
     loadMrReviewsSettings().then(
@@ -35,6 +39,10 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
       },
       (cause) => setError(String(cause?.message ?? cause)),
     );
+    // The inference's model: what automatic picks and the names to suggest.
+    mrReviewsCall<{ automatic: string; models: string[] }>(
+      "inference_models",
+    ).then(setModels, () => {});
   }, []);
 
   if (!settings)
@@ -469,6 +477,35 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
             }}
           />
         </label>
+        <label className="form-field">
+          <span>
+            Model it reads them with (any name the agent takes; empty:
+            automatic,{" "}
+            {models?.automatic ? <code>{models.automatic}</code> : "Sonnet"}{" "}
+            from the default agent profile)
+          </span>
+          <input
+            type="text"
+            list="mr-reviews-inference-models"
+            aria-label="Inference model"
+            placeholder={`Automatic (${models?.automatic ?? "sonnet"})`}
+            defaultValue={settings.inferenceModel ?? ""}
+            disabled={busy}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            onBlur={(event) => {
+              const model = event.target.value.trim();
+              if (model !== (settings.inferenceModel ?? ""))
+                void save({ inferenceModel: model });
+            }}
+          />
+          <datalist id="mr-reviews-inference-models">
+            {(models?.models ?? []).map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
+        </label>
       </section>
       <MrMergeSettingsSection
         merge={settings.merge ?? { scopes: {} }}
@@ -559,8 +596,9 @@ export function MrReviewsBackup({ onImported }: { onImported: () => void }) {
       <p className="assistant-hint">
         What you and your agents authored here: the order, pins, removals, what
         was set by hand, saved views, requests not proposed yet, groups headed
-        upstream and efforts with their ledgers. Never secrets, nothing read
-        from the forges. Also <code>roamgate reviews export</code> and{" "}
+        upstream and efforts with their ledgers, and the hosts, followed
+        projects and hints. Never secrets, nothing read from the forges. Also{" "}
+        <code>roamgate reviews export</code> and{" "}
         <code>roamgate reviews import</code>.
       </p>
       <div className="assistant-task-buttons">

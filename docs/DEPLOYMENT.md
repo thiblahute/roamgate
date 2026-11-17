@@ -480,7 +480,8 @@ reviews use the `glab` login on the checkout host, like the PR/MR status card.
 
 What the Reviews panel authors lives in `settings.json` (`mr_reviews`: the
 order, pins, removals, overrides, saved views, requests not proposed yet,
-groups and workspaces headed upstream, efforts) and, per upstreaming effort,
+groups and workspaces headed upstream, efforts, merge rules, and the forge
+hosts list, followed projects and suggestion hints) and, per upstreaming effort,
 in `~/.config/roamgate/mr-reviews/efforts/<id>/` (`ledger.json` and the
 append-only `history.jsonl`). To keep or move it:
 
@@ -494,8 +495,11 @@ The export is stable, key-sorted JSON: the same state gives the same file,
 so it diffs and versions well. It never holds secrets (keys or values that
 look like tokens, passwords or private keys are dropped), nor anything read
 again from the forges or derived (inference, caches, `derived.json`), nor
-the Undo journal; the forge hosts, clones and other settings stay out (the
-backup of the rest of Roamgate is a separate matter). An import lists every
+the Undo journal; the clones and other settings stay out (the backup of
+the rest of Roamgate is a separate matter). Forge tokens stay in `glab` and
+`gh`'s own configuration, never in the hosts list. An export from an older
+Roamgate (version 1) has no hosts, followed projects or hints, and importing
+it keeps the local ones. An import lists every
 added, removed and changed item, flags the ones whose local value is newer,
 and changes nothing without `--apply`; it replaces the exported keys and
 each effort's ledger and merges histories. The commands read the service's

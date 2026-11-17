@@ -989,16 +989,25 @@ function getMrReviews(): MrReviews {
         ...(paneId ? { paneId, agent: "Claude" } : {}),
         raise: false,
       }),
-    openRange: ({ connectionId, workspaceId, root, base, head, title }) => ({
-      sessionId: getReviewService().open({
+    openRange: ({
+      connectionId,
+      workspaceId,
+      root,
+      base,
+      head,
+      title,
+      compare,
+    }) => {
+      const snapshot = getReviewService().open({
         connectionId,
         workspaceId,
         root,
-        target: { kind: "range", base, head },
+        target: { kind: "range", base, head, ...(compare ? { compare } : {}) },
         title,
         raise: false,
-      }).session.id,
-    }),
+      });
+      return { sessionId: snapshot.session.id, snapshot };
+    },
     // An effort's part: the same worktree path as the workspace menu's.
     createWorktree: async ({ connectionId, workspaceId, branch }) => {
       const runtime = connectionManager.readyRuntime(connectionId);

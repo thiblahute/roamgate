@@ -40,7 +40,11 @@ import {
 } from "./board-tools";
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
-import { createMrInference } from "./inference";
+import {
+  createMrInference,
+  INFERENCE_MODEL,
+  INFERENCE_MODEL_ALIASES,
+} from "./inference";
 import { createMrHomes } from "./home";
 import { createMrOpener } from "./open";
 import { reviewPlacementOps } from "./tree";
@@ -131,6 +135,14 @@ export function createMrReviews(options: {
   };
   /** The model runner (tests). */
   runModel?: RunModel;
+  /**
+   * The inference's models: the automatic one (the setting empty) and
+   * the names the settings suggest. Default: Sonnet among Claude's aliases.
+   */
+  inferenceModels?: {
+    automatic: () => string;
+    list: () => Promise<string[]>;
+  };
   /** Drops a request's review (lifecycle). */
   removeReview?: (sessionId: string) => void;
   /** The reviews agent (tests: one on a fake driver). */
@@ -146,7 +158,10 @@ export function createMrReviews(options: {
     workspaceId: string;
     branch: string;
   }) => Promise<{ path: string; workspaceId?: string }>;
-  /** A Roamgate review of a range (an effort's commit, `d`). */
+  /**
+   * A Roamgate review of a range (an effort's commit, `d`; two versions
+   * of one compared tree to tree), with its snapshot for the page to show.
+   */
   openRange?: (input: {
     connectionId: string;
     workspaceId: string;
@@ -154,7 +169,8 @@ export function createMrReviews(options: {
     base: string;
     head: string;
     title: string;
-  }) => { sessionId: string };
+    compare?: boolean;
+  }) => { sessionId: string; snapshot?: ReviewSnapshot };
 }) {
   const logger = serverLogger.child("mr-reviews");
   const store = options.store ?? openMrStore();
@@ -323,6 +339,9 @@ export function createMrReviews(options: {
     users: () => inbox.users(),
     patchIds: () => upstream.patchIds(),
     ...(options.runModel ? { run: options.runModel } : {}),
+    ...(options.inferenceModels
+      ? { automaticModel: options.inferenceModels.automatic }
+      : {}),
     logger,
     onChange: () => inbox.changed(),
   });
@@ -693,6 +712,15 @@ export function createMrReviews(options: {
         void efforts.refresh(true);
         inbox.changed();
         return { applied: true, changes, ledgers };
+      }
+      case "bridge.mr_reviews.inference_models": {
+        // The settings' suggestions: the automatic model and the names to offer.
+        const automatic =
+          options.inferenceModels?.automatic() ?? INFERENCE_MODEL;
+        const models = options.inferenceModels
+          ? await options.inferenceModels.list().catch(() => [])
+          : [...INFERENCE_MODEL_ALIASES];
+        return { automatic, models };
       }
       case "bridge.mr_reviews.infer": {
         // One row now (`:infer`, reviews_refresh), whatever the schedule.

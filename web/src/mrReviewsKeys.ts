@@ -54,7 +54,7 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ],
   [
     "d",
-    "in an effort's ledger: the commit's diff in its head workspace; with two versions picked in its history (Enter): how they differ",
+    "in an effort's ledger: goes to its head workspace and shows the commit's diff in its Changes; with two versions picked in its history (Enter): the two compared there",
   ],
   [
     ": (effort)",

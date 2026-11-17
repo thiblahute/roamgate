@@ -55,6 +55,15 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     const React = await import("react");
     const { act } = React;
     const { bridge } = await import("../api");
+    const { store } = await import("../store");
+    const review = await import("../review");
+    const shown: string[] = [];
+    (store as any).jumpToConnectionWorkspace = async (
+      connectionId: string,
+      workspaceId: string,
+    ) => {
+      shown.push(`jump ${connectionId} ${workspaceId}`);
+    };
     const own = {
       approvedBy: [] as string[],
       approved: false,
@@ -188,7 +197,16 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
       if (method === "bridge.mr_reviews.effort.diff")
         return { text: "1:  111 ! 1:  222 old" };
       if (method === "bridge.mr_reviews.effort.open_commit")
-        return { ok: true, connectionId: "local", workspaceId: "w1" };
+        return {
+          ok: true,
+          connectionId: "local",
+          workspaceId: "w1",
+          sessionId: `rs-${params.from ? "versions" : "commit"}`,
+          snapshot: {
+            session: { id: `rs-${params.from ? "versions" : "commit"}` },
+            threads: [],
+          },
+        };
       if (method === "bridge.mr_reviews.ledger.match")
         return { accepted: 1, rejected: 0, journal: 6 };
       if (method === "bridge.mr_reviews.effort.part")
@@ -351,7 +369,8 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
         li.textContent?.trim().slice(0, 14),
       ),
     ).toEqual(["1111111111 old", "2222222222 new"]);
-    // Two versions picked: d shows how they differ.
+    // Two versions picked: d compares them in the head workspace's Changes
+    // (D32), the page goes there and the Reviews pane hides.
     const boxes = view.querySelectorAll<HTMLInputElement>(
       ".mr-effort-history input[type=checkbox]",
     );
@@ -363,22 +382,54 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     await press("d");
     await wait(30);
     expect(calls[calls.length - 1]).toEqual([
+      "bridge.mr_reviews.effort.open_commit",
+      { id: "e1", sha: "2".repeat(40), from: "1".repeat(40) },
+    ]);
+    expect(review.getReviewSnapshot("rs-versions")).toBeDefined();
+    expect(shown).toEqual(["jump local w1"]);
+    expect(jumps).toEqual([["local", "w1"]]);
+    expect(view.querySelector(".mr-effort-diff")).toBeNull();
+    // Its head workspace not open: the two as text here instead.
+    const opened = (bridge as any).call;
+    (bridge as any).call = async (
+      method: string,
+      params: Record<string, unknown>,
+    ) => {
+      if (method === "bridge.mr_reviews.effort.open_commit") {
+        calls.push([method, params]);
+        throw new Error("its head workspace is not open: open it, or set head");
+      }
+      return opened(method, params);
+    };
+    view.focus();
+    await press("d");
+    await wait(30);
+    expect(calls[calls.length - 1]).toEqual([
       "bridge.mr_reviews.effort.diff",
       { id: "e1", from: "1".repeat(40), to: "2".repeat(40) },
     ]);
     expect(view.querySelector(".mr-effort-diff")?.textContent).toBe(
       "1:  111 ! 1:  222 old",
     );
+    (bridge as any).call = opened;
     await press("Escape");
     await press("Escape");
     expect(view.querySelector(".mr-effort-history")).toBeNull();
-    // d alone: the commit's diff as a review in the head workspace.
+    // d alone: goes to the head workspace with the commit's diff in its
+    // Changes, as Enter on a request goes to its home.
     await press("d");
     await wait(30);
-    expect(calls[calls.length - 1]?.[0]).toBe(
+    expect(calls[calls.length - 1]).toEqual([
       "bridge.mr_reviews.effort.open_commit",
-    );
-    expect(jumps).toEqual([["local", "w1"]]);
+      { id: "e1", sha: expect.stringMatching(/^[0-9a-f]+$/) },
+    ]);
+    expect(review.getReviewSnapshot("rs-commit")).toBeDefined();
+    expect(shown).toEqual(["jump local w1", "jump local w1"]);
+    expect(jumps).toEqual([
+      ["local", "w1"],
+      ["local", "w1"],
+    ]);
+
     // A proposal shows in the row, :confirm confirms it.
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(

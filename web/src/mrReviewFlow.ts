@@ -84,7 +84,7 @@ export async function openMrReview(
   };
 }
 
-type ShownReply = {
+export type ShownReply = {
   connectionId: string;
   workspaceId: string;
   sessionId: string;
@@ -92,7 +92,7 @@ type ShownReply = {
 };
 
 /** Goes to the workspace and shows the review there (its Changes). */
-async function showReply(reply: ShownReply) {
+export async function showReply(reply: ShownReply) {
   rememberReviewSnapshot(reply.snapshot);
   await store
     .jumpToConnectionWorkspace(reply.connectionId, reply.workspaceId)
