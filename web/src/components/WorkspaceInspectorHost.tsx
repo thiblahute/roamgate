@@ -40,22 +40,15 @@ import { lazyWithReload } from "../lazyWithReload";
 import { useSystemBack } from "../systemBack";
 import {
   INSPECTOR_VIEW_NAMES,
-  type InspectorCommand,
-  inspectorCompletions,
   inspectorViewNamed,
   isTypingTarget,
-  opensCommandLine,
-  runInspectorCommand,
 } from "../inspectorCommands";
 import { useZenEscape, useZenMode } from "../useZenMode";
 import { resetKeyMachines, useKeyMachine } from "../keyMachine";
 import { store, useStoreSelector } from "../store";
 import {
-  type InspectorCommandRegistry,
-  type InspectorCommandSet,
   InspectorCommandsContext,
   InspectorViewContext,
-  inspectorShortcutList,
 } from "../useInspectorCommands";
 import { inspectorSettingCommands } from "../inspectorSettings";
 import { shortcutTitle, useShortcutPreferences } from "../shortcutPreferences";
@@ -94,8 +87,7 @@ import { FilePreviewTabs } from "./FilePreviewTabs";
 import { workspaceInspectorLayout } from "./workspaceInspectorLayout";
 import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
-import { CommandLine } from "./CommandLine";
-import { ShortcutList } from "./ShortcutList";
+import { useInspectorCommandFrame } from "./useInspectorCommandFrame";
 import {
   changesFrameCommands,
   InspectorZenEnd,
@@ -754,8 +746,6 @@ export function WorkspaceInspectorHost({
     () => orderByStatus(diffSelection.entries),
     [diffSelection.entries],
   );
-  /** The shortcut list (`?`, `:help`), with what its filter starts with. */
-  const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
   const [drillInByView, setDrillInByView] = useState<
     Record<InspectorView, boolean>
   >(() => ({
@@ -899,8 +889,7 @@ export function WorkspaceInspectorHost({
   const viewKeys = useKeyMachine(["gt", "gT"]);
   const onViewKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (
-      commandLine ||
-      shortcuts ||
+      commandFrame.busy ||
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
@@ -959,18 +948,6 @@ export function WorkspaceInspectorHost({
     tabRefs[nextView].current?.focus();
   };
 
-  /*
-   * The `:` prompt, the inspector's one: `:` anywhere in it (the tab strip,
-   * a view's tree, toolbar or content) but where it is typed text. Each
-   * part of the shown view gives its commands (useInspectorCommands), then
-   * come the inspector's own.
-   */
-  const [commandLine, setCommandLine] = useState<{
-    from: HTMLElement | null;
-  } | null>(null);
-  const commandPartsRef = useRef(
-    new Map<string, { view: InspectorView; commands: InspectorCommandSet }>(),
-  );
   const tabRefs = {
     files: filesTabRef,
     changes: changesTabRef,
@@ -981,184 +958,137 @@ export function WorkspaceInspectorHost({
     (view) => view !== "history" || historyAvailable,
   );
   const activeFileTab = state.view === "files" ? fileTabs.activePath : null;
-  const inspectorCommands: InspectorCommand[] = [
-    {
-      name: "view",
-      aliases: ["v"],
-      description: `go to a view: ${viewNames.join(", ")} (the tabs)`,
-      complete: () => viewNames.map((view) => [view, VIEW_NOTES[view]]),
-      run: (argument) => {
-        const view = inspectorViewNamed(viewNames, argument);
-        if (!view) {
-          store.notify({
-            kind: "info",
-            message: argument
-              ? `Not a view here: ${argument} (${viewNames.join(", ")})`
-              : `Which view? :view ${viewNames.join(" | ")}`,
-            autoDismissMs: 2500,
-          });
-          return;
-        }
-        onViewChange(view);
-        tabRefs[view].current?.focus({ preventScroll: true });
+  /*
+   * The `:` prompt, the inspector's one: `:` anywhere in it (the tab strip,
+   * a view's tree, toolbar or content) but where it is typed text; the
+   * view's parts' commands, then the inspector's own.
+   */
+  const commandFrame = useInspectorCommandFrame({
+    view: state.view,
+    back: () => tabRefs[state.view].current,
+    commands: (openShortcuts) => [
+      {
+        name: "view",
+        aliases: ["v"],
+        description: `go to a view: ${viewNames.join(", ")} (the tabs)`,
+        complete: () => viewNames.map((view) => [view, VIEW_NOTES[view]]),
+        run: (argument) => {
+          const view = inspectorViewNamed(viewNames, argument);
+          if (!view) {
+            store.notify({
+              kind: "info",
+              message: argument
+                ? `Not a view here: ${argument} (${viewNames.join(", ")})`
+                : `Which view? :view ${viewNames.join(" | ")}`,
+              autoDismissMs: 2500,
+            });
+            return;
+          }
+          onViewChange(view);
+          tabRefs[view].current?.focus({ preventScroll: true });
+        },
       },
-    },
-    ...(state.view === "files" && treeHideable
-      ? [
-          {
-            name: "files",
-            description: "show / hide the file tree",
-            run: () => {
-              const navigation = document.getElementById(navigationIds.files);
-              const leaving =
-                !filesTreeHidden &&
-                !!navigation?.contains(document.activeElement);
-              toggleFilesTree();
-              if (leaving)
-                document
-                  .getElementById(detailIds.files)
-                  ?.focus({ preventScroll: true });
-            },
-          },
-        ]
-      : []),
-    ...(state.view === "changes"
-      ? [
-          ...series.commands,
-          ...(["working", "branch", "last"] as const).map((name) => ({
-            name,
-            description:
-              name === "working"
-                ? "the working tree: uncommitted changes"
-                : name === "branch"
-                  ? "the branch against its base"
-                  : "the agent's last step",
-            run: () =>
-              diffViewerRef.current?.showScope(
-                name === "working"
-                  ? "working"
-                  : name === "branch"
-                    ? "branch-main"
-                    : "last-step",
-              ),
-          })),
-        ]
-      : []),
-    ...(state.view === "changes"
-      ? changesFrameCommands({
-          toggleTree: changesTreeHideable
-            ? () => {
-                const navigation = document.getElementById(
-                  navigationIds.changes,
-                );
+      ...(state.view === "files" && treeHideable
+        ? [
+            {
+              name: "files",
+              description: "show / hide the file tree",
+              run: () => {
+                const navigation = document.getElementById(navigationIds.files);
                 const leaving =
-                  !changesTreeHidden &&
+                  !filesTreeHidden &&
                   !!navigation?.contains(document.activeElement);
-                toggleChangesTree();
+                toggleFilesTree();
                 if (leaving)
                   document
-                    .getElementById(detailIds.changes)
+                    .getElementById(detailIds.files)
                     ?.focus({ preventScroll: true });
-              }
-            : null,
-          only: changesOnly,
-          toggleOnly: toggleChangesOnly,
-        })
-      : []),
-    {
-      name: "dock",
-      description: "dock at right or at bottom (the dock button)",
-      complete: () => [
-        ["right", "dock at right"],
-        ["bottom", "dock at bottom"],
-      ],
-      run: (argument) => {
-        const word = argument.toLowerCase();
-        onDockChange(
-          word === "right" || word === "bottom"
-            ? word
-            : state.dock === "right"
-              ? "bottom"
-              : "right",
-        );
+              },
+            },
+          ]
+        : []),
+      ...(state.view === "changes"
+        ? [
+            ...series.commands,
+            ...(["working", "branch", "last"] as const).map((name) => ({
+              name,
+              description:
+                name === "working"
+                  ? "the working tree: uncommitted changes"
+                  : name === "branch"
+                    ? "the branch against its base"
+                    : "the agent's last step",
+              run: () =>
+                diffViewerRef.current?.showScope(
+                  name === "working"
+                    ? "working"
+                    : name === "branch"
+                      ? "branch-main"
+                      : "last-step",
+                ),
+            })),
+          ]
+        : []),
+      ...(state.view === "changes"
+        ? changesFrameCommands({
+            toggleTree: changesTreeHideable
+              ? () => {
+                  const navigation = document.getElementById(
+                    navigationIds.changes,
+                  );
+                  const leaving =
+                    !changesTreeHidden &&
+                    !!navigation?.contains(document.activeElement);
+                  toggleChangesTree();
+                  if (leaving)
+                    document
+                      .getElementById(detailIds.changes)
+                      ?.focus({ preventScroll: true });
+                }
+              : null,
+            only: changesOnly,
+            toggleOnly: toggleChangesOnly,
+          })
+        : []),
+      {
+        name: "dock",
+        description: "dock at right or at bottom (the dock button)",
+        complete: () => [
+          ["right", "dock at right"],
+          ["bottom", "dock at bottom"],
+        ],
+        run: (argument) => {
+          const word = argument.toLowerCase();
+          onDockChange(
+            word === "right" || word === "bottom"
+              ? word
+              : state.dock === "right"
+                ? "bottom"
+                : "right",
+          );
+        },
       },
-    },
-    {
-      name: "expand",
-      description: state.expanded
-        ? "restore the inspector's dock (the expand button)"
-        : "expand the inspector (the expand button)",
-      run: () => onExpandedChange(!state.expanded),
-    },
-    ...inspectorSettingCommands((filter) => setShortcuts({ filter })),
-    {
-      name: "q",
-      aliases: ["quit", "close"],
-      description: activeFileTab
-        ? "close the file's tab"
-        : "close the inspector",
-      run: () => {
-        if (activeFileTab) onCloseFileTab(activeFileTab);
-        else onClose();
+      {
+        name: "expand",
+        description: state.expanded
+          ? "restore the inspector's dock (the expand button)"
+          : "expand the inspector (the expand button)",
+        run: () => onExpandedChange(!state.expanded),
       },
-    },
-  ];
-  /**
-   * The commands of the view shown, its parts' first, then the inspector's;
-   * of its parts, first the one where the focus is (or was, when `:` was
-   * pressed): one word means that part's.
-   */
-  const shownCommands = (): InspectorCommandSet => {
-    const focus = commandLine?.from ?? document.activeElement;
-    const focused = (part: { commands: InspectorCommandSet }) =>
-      !!focus && !!part.commands.root?.()?.contains(focus);
-    const parts = [...commandPartsRef.current.values()]
-      .filter((part) => part.view === state.view)
-      .sort((a, b) => Number(focused(b)) - Number(focused(a)));
-    // A part with its own list and words (the review in Changes).
-    const own = parts.find(
-      (part) => part.commands.shortcuts || part.commands.unknown,
-    );
-    return {
-      commands: [
-        ...parts.flatMap((part) => part.commands.commands),
-        ...inspectorCommands,
-      ],
-      line: parts.find((part) => part.commands.line)?.commands.line,
-      ...(own?.commands.shortcuts ? { shortcuts: own.commands.shortcuts } : {}),
-      ...(own?.commands.unknown ? { unknown: own.commands.unknown } : {}),
-    };
-  };
-  const runCommand = (input: string) => {
-    const { commands, line, unknown } = shownCommands();
-    const problem = runInspectorCommand(
-      commands,
-      input,
-      line,
-      unknown ? (text) => unknown(text) : undefined,
-    );
-    if (problem)
-      store.notify({ kind: "info", message: problem, autoDismissMs: 2500 });
-  };
-  const runCommandRef = useRef(runCommand);
-  runCommandRef.current = runCommand;
-  const commandRegistry = useMemo<InspectorCommandRegistry>(
-    () => ({
-      set: (id, view, commands) => {
-        if (commands) commandPartsRef.current.set(id, { view, commands });
-        else commandPartsRef.current.delete(id);
+      ...inspectorSettingCommands(openShortcuts),
+      {
+        name: "q",
+        aliases: ["quit", "close"],
+        description: activeFileTab
+          ? "close the file's tab"
+          : "close the inspector",
+        run: () => {
+          if (activeFileTab) onCloseFileTab(activeFileTab);
+          else onClose();
+        },
       },
-      run: (input) => runCommandRef.current(input),
-    }),
-    [],
-  );
-  /** Esc, Enter: the focus back where it was when `:` was pressed. */
-  const leaveCommandLine = () => {
-    const from = commandLine?.from;
-    setCommandLine(null);
-    const back = from?.isConnected ? from : tabRefs[state.view].current;
-    back?.focus({ preventScroll: true });
-  };
+    ],
+  });
   /*
    * The phone's Back over the review in Changes (plan section 6): the
    * prompt, then the conversations (Changes' diff), Review only, the diff
@@ -1168,7 +1098,11 @@ export function WorkspaceInspectorHost({
   /** The inspector's header can shrink into the review's row (app Zen). */
   const zenEnd =
     state.view === "changes" && state.expanded && !compact && !changesOnly;
-  useSystemBack(changesShown && !!commandLine, leaveCommandLine, "popup");
+  useSystemBack(
+    changesShown && commandFrame.commandLineOpen,
+    commandFrame.leaveCommandLine,
+    "popup",
+  );
   useSystemBack(changesShown && changesOnly, toggleChangesOnly, "navigation");
   useSystemBack(
     changesShown && compact && !!drillInByView.changes && changesDetail,
@@ -1212,35 +1146,9 @@ export function WorkspaceInspectorHost({
       aria-label="Workspace Inspector"
       data-view={state.view}
       onKeyDownCapture={onViewKey}
-      onKeyDown={(event) => {
-        if (
-          event.key === "?" &&
-          !event.defaultPrevented &&
-          !commandLine &&
-          !shortcuts &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          !event.altKey &&
-          !isTypingTarget(event.target)
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          setShortcuts({ filter: "" });
-          return;
-        }
-        if (event.defaultPrevented || commandLine || !opensCommandLine(event))
-          return;
-        event.preventDefault();
-        event.stopPropagation();
-        setCommandLine({
-          from:
-            document.activeElement instanceof HTMLElement
-              ? document.activeElement
-              : null,
-        });
-      }}
+      onKeyDown={commandFrame.onKeyDown}
     >
-      <InspectorCommandsContext.Provider value={commandRegistry}>
+      <InspectorCommandsContext.Provider value={commandFrame.registry}>
         <header className="workspace-inspector-head">
           {/* One line: the repository when the checkout is not named after
               it, the checkout; its path in the tooltip. */}
@@ -1888,33 +1796,7 @@ export function WorkspaceInspectorHost({
             </InspectorViewContext.Provider>
           </div>
         )}
-        {shortcuts ? (
-          <ShortcutList
-            className="inspector-keys"
-            {...inspectorShortcutList(shownCommands())}
-            filter={shortcuts.filter}
-            onFilter={(filter) => setShortcuts({ filter })}
-            placeholder="Search shortcuts and commands"
-            onClose={() => {
-              setShortcuts(null);
-              tabRefs[state.view].current?.focus({ preventScroll: true });
-            }}
-          />
-        ) : null}
-        {commandLine ? (
-          <CommandLine
-            kind=":"
-            completions={(typed) =>
-              inspectorCompletions(shownCommands().commands, typed)
-            }
-            onBlur={() => setCommandLine(null)}
-            onSubmit={(text) => {
-              leaveCommandLine();
-              runCommand(text);
-            }}
-            onCancel={leaveCommandLine}
-          />
-        ) : null}
+        {commandFrame.overlays}
       </InspectorCommandsContext.Provider>
     </aside>
   );
