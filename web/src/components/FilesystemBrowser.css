@@ -182,7 +182,7 @@
   opacity: 0.7;
 }
 
-/* A file of the checkout's review (D16): its tick, or a dot when not yet. */
+/* A file of the checkout's review: its tick, or a dot when not yet. */
 .file-review-mark {
   flex: 0 0 auto;
   margin-left: 4px;

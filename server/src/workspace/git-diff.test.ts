@@ -115,7 +115,7 @@ describe("branch comparison with real Git", () => {
         params: { mode: "branch-main" },
       });
       // The local default and its remote, the same commit: the remote one,
-      // the base the branch's review uses too (D12).
+      // the base the branch's review uses too.
       expect(detected.base).toBe("refs/remotes/origin/custom");
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -171,7 +171,7 @@ export type ChangesGoTo = {
   root?: string;
   /**
    * Of a repository the workspace does not hold (its workspace gone, an
-   * agent's review without one): shown here, marked "from elsewhere" (D3).
+   * agent's review without one): shown here, marked "from elsewhere".
    */
   elsewhere?: boolean;
   /** Commits' Review this commit: that commit in the Branch scope. */
@@ -264,7 +264,7 @@ export function WorkspaceInspectorHost({
   onShowInReview?: (path: string, line?: number) => void;
   /** Where Changes' cursor goes (Files' Review, the toggle). */
   reviewGoTo?: ChangesGoTo | null;
-  /** Commits' Review this commit (plan phase 8). */
+  /** Commits' Review this commit. */
   onReviewCommit?: (sha: string) => void;
   /**
    * A review shown in Changes whose code is gone from its checkout: it is
@@ -393,7 +393,7 @@ export function WorkspaceInspectorHost({
     [changesRoot, ownRoot, shownRoot],
   );
   /**
-   * One review across Files and Changes (D16): the review's files and
+   * One review across Files and Changes: the review's files and
    * ticks in Files' tree and preview; an Other file picked in Changes' tree.
    */
   const reviewFiles = useReviewFileMarks({
@@ -466,8 +466,7 @@ export function WorkspaceInspectorHost({
   };
   const pickChangesRepoRef = useRef(pickChangesRepo);
   pickChangesRepoRef.current = pickChangesRepo;
-  // A repository with only uncommitted work shows its Working scope, as
-  // the review pane opens its worktree review.
+  // A repository with only uncommitted work shows its Working scope.
   const series = useChangesSeries({
     repos: changesRepos,
     shownRoot,
@@ -487,7 +486,7 @@ export function WorkspaceInspectorHost({
   const setRepoPickerOpen = series.setPickerOpen;
   /**
    * A review shown as Changes' scope (a range or compare opened by name,
-   * an older step), until a scope is picked (plan phase 6).
+   * an older step), until a scope is picked.
    */
   const [shownReview, setShownReview] = useState<string | null>(null);
   /** The review last shown as the scope: a scope that fails offers it back. */
@@ -495,7 +494,7 @@ export function WorkspaceInspectorHost({
   useEffect(() => {
     if (shownReview) setLeftReview(shownReview);
   }, [shownReview]);
-  /** A repository the workspace does not hold, shown from elsewhere (D3). */
+  /** A repository the workspace does not hold, shown from elsewhere. */
   const [elsewhereRoot, setElsewhereRoot] = useState<string | null>(null);
   const { sessions: reviewSessions } = useReviewState();
   const shownReviewSnapshot = shownReview
@@ -589,7 +588,7 @@ export function WorkspaceInspectorHost({
     />
   );
   /**
-   * The Local / GitLab switch (plan phase 7): the merge request's review
+   * The Local / GitLab switch: the merge request's review
    * shown as Changes' review scope, on its repository; back, the checkout's
    * branch review.
    */
@@ -717,7 +716,7 @@ export function WorkspaceInspectorHost({
     },
     [onReviewGone, reviewSessions],
   );
-  /** The review the scope shown is (plan phase 6): a read-only binding. */
+  /** The review the scope shown is: a read-only binding. */
   const changesScope = useMemo<ChangesScope>(
     () =>
       shownReview
@@ -1090,7 +1089,7 @@ export function WorkspaceInspectorHost({
     ],
   });
   /*
-   * The phone's Back over the review in Changes (plan section 6): the
+   * The phone's Back over the review in Changes: the
    * prompt, then the conversations (Changes' diff), Review only, the diff
    * back to its tree, then the view (App).
    */
@@ -1420,8 +1419,8 @@ export function WorkspaceInspectorHost({
                     onOpenChanges={
                       primaryFileChangesEntry
                         ? () => {
-                            // Never away from a review shown (plan
-                            // section 7, Files' selectWorkingEntries).
+                            // Never away from a review shown (Files'
+                            // selectWorkingEntries).
                             if (shownReview) return;
                             diffViewerRef.current?.selectWorkingEntries(
                               fileChangesEntries,
@@ -1619,7 +1618,7 @@ export function WorkspaceInspectorHost({
                                   diffSelection.pickedBase
                                     ? { base: diffSelection.pickedBase }
                                     : {}),
-                                  // The Last step's own review (D15).
+                                  // The Last step's own review.
                                   ...(input.kind === "last-step" &&
                                   diffSelection.step &&
                                   !input.target

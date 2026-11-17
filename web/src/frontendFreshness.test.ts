@@ -179,7 +179,7 @@ test("an unfocused API key survives a stale build until its dialog closes", asyn
 test("a dialog kept mounted but hidden does not hold back a reload", async () => {
   const tab = page("/assets/index-old.js");
   const review = document.createElement("div");
-  // A dialog only while shown (as the retired review pane's role was).
+  // A dialog only while shown.
   const show = (hidden: boolean) => {
     review.hidden = hidden;
     if (hidden) review.removeAttribute("role");

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
 /**
- * Where reviews open from (plan: review into the inspector, phase 8): an
- * agent's `review_open` (and `/rg-review`, which raises the same request),
- * Commits' Review this commit, and the review stepping aside (Cmd+K, voice
- * arrival, Go to the agent's pane): the workspace's Changes.
+ * Where reviews open from: an agent's `review_open` (and `/rg-review`,
+ * which raises the same request), Commits' Review this commit, and the
+ * review stepping aside (Cmd+K, voice arrival, Go to the agent's pane): the
+ * workspace's Changes.
  */
 if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
   test("where reviews open from, in an isolated DOM runtime", async () => {

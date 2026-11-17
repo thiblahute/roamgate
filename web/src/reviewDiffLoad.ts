@@ -74,7 +74,7 @@ export const VIEW_FILES_PER_READ = 16;
 export const VIEW_READS_AT_ONCE = 2;
 
 /**
- * One view's diff as Changes reads it (plan phase 5s): the summary, every
+ * One view's diff as Changes reads it: the summary, every
  * file listed with its counts, then the patches of the files the reader
  * gets near, a few files per request (as Changes reads its own files),
  * whatever the whole change weighs. A whole diff (a merge request GitLab

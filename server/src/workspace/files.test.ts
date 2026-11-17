@@ -322,7 +322,7 @@ describe("workspace file handlers", () => {
         return { code: 0, stdout: `${argv[at + 1] ?? ""}\n`, stderr: "" };
       },
       shQuote,
-      // A review from elsewhere (plan D3): its repository is no pane's.
+      // A review from elsewhere: its repository is no pane's.
       reviewRoots: () => ["/reviews/other/"],
     });
     await expect(

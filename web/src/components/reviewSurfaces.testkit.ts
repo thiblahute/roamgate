@@ -1,9 +1,7 @@
 /**
- * The review surface the behavior tests run against: the review in Changes
- * (plan: review into the inspector; the classic review pane they also ran
- * against retired in phase 9). Each test says what it needs of the
- * surface; one needing what it does not do is not registered (neither run
- * nor skipped).
+ * The review surface the behavior tests run against: the review in Changes.
+ * Each test says what it needs of the surface; one needing what it does
+ * not do is not registered (neither run nor skipped).
  */
 import { test } from "bun:test";
 import { mountChangesReview } from "./reviewSurface.changes.testkit";
@@ -27,44 +25,44 @@ export type SurfaceFeature =
    * Esc button, the phone's Back.
    */
   | "phone"
-  /** The Vim cursor, its motions, the screen, Visual lines (phase 3). */
+  /** The Vim cursor, its motions, the screen, Visual lines. */
   | "cursor"
-  /** `/ * # n N` in the diff and its file paths (phase 3). */
+  /** `/ * # n N` in the diff and its file paths. */
   | "search"
-  /** Side by side: sides, S and its commands (phase 3). */
+  /** Side by side: sides, S and its commands. */
   | "sides"
-  /** A click and Shift+click on a line (phase 3). */
+  /** A click and Shift+click on a line. */
   | "mouse"
-  /** The review's commits: the commit bar, views (phase 6). */
+  /** The review's commits: the commit bar, views. */
   | "commits"
-  /** The comment editor (phase 4). */
+  /** The comment editor. */
   | "editor"
-  /** The window's width picks side by side (D4). */
+  /** The window's width picks side by side. */
   | "window-width"
   /** The code checked every 5 s while shown; a change offers a reload. */
   | "reload-offer"
-  /** Context expansion: gap buttons, zo zO zR, x X (phase 5). */
+  /** Context expansion: gap buttons, zo zO zR, x X. */
   | "expand"
-  /** Reviewed chunks and files: r, v, folds, the counts (phase 5). */
+  /** Reviewed chunks and files: r, v, folds, the counts. */
   | "reviewed"
-  /** A file's header folds it; large files start folded (phase 5). */
+  /** A file's header folds it; large files start folded. */
   | "file-folds"
-  /** Open on a file's header, to the Files preview (phase 8). */
+  /** Open on a file's header, to the Files preview. */
   | "open-files"
   /**
    * The review's threads: their cards, folds, writes on their way, the
-   * delivery to the agent, the status line, t, gH, n / N (phase 4).
+   * delivery to the agent, the status line, t, gH, n / N.
    */
   | "threads"
-  /** The comments panel (T), its chip and the unresolved arrows (phase 4). */
+  /** The comments panel (T), its chip and the unresolved arrows. */
   | "threads-panel"
-  /** Threads of the checkout's other reviews (a rendered file's, phase 4). */
+  /** Threads of the checkout's other reviews (a rendered file's). */
   | "threads-shared"
-  /** A merge request's review: its forge, drafts and discussions (phase 7). */
+  /** A merge request's review: its forge, drafts and discussions. */
   | "forge"
-  /** The workspace's repositories: the chooser, p, ( and ) (phase 7). */
+  /** The workspace's repositories: the chooser, p, ( and ). */
   | "series"
-  /** The agent's menu: ask about a line, go to its pane (phase 7). */
+  /** The agent's menu: ask about a line, go to its pane. */
   | "agent-menu"
   /** A thread on a commit rewritten out of the review: gn shows it. */
   | "gone-commits"

@@ -13,9 +13,9 @@ import {
 } from "./reviewFiles";
 
 /*
- * One review across Files and Changes (plan: review into the inspector,
- * D16): Files' comments read in Changes, the review's files with no change
- * ("Other files"), and the reviewed tick both views read the same way.
+ * One review across Files and Changes: Files' comments read in Changes, the
+ * review's files with no change ("Other files"), and the reviewed tick both
+ * views read the same way.
  */
 
 const thread = (

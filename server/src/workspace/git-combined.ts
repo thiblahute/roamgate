@@ -9,12 +9,11 @@ import type { RunProcessWithCodeTimeout } from "./file-types";
 import { DIFF_OPTIONS, GIT as REVIEW_GIT } from "./review-patch";
 
 /*
- * One file of the working changes as the review reads them (plan: review
- * into the inspector, D8 and phase 5s): the combined `git diff HEAD`
- * (staged and unstaged together; an untracked file as new), the numbering
- * threads anchor on, and which of its changed lines the index holds, told
- * exactly from `git diff --cached` (HEAD to index) and `git diff` (index to
- * working tree).
+ * One file of the working changes as the review reads them: the combined
+ * `git diff HEAD` (staged and unstaged together; an untracked file as new),
+ * the numbering threads anchor on, and which of its changed lines the
+ * index holds, told exactly from `git diff --cached` (HEAD to index) and
+ * `git diff` (index to working tree).
  */
 
 /**

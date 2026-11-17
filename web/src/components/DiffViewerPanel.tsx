@@ -100,7 +100,7 @@ export type ActiveDiffSelection = {
   commits?: number;
   /** The working tree's untracked files. */
   untracked?: number;
-  /** The Last step shown, as a review target (plan D15). */
+  /** The Last step shown, as a review target. */
   step?: import("../types").LastStepTarget;
   /** Compare against: the branch picked ("": automatic) and the choices. */
   baseBranch?: string;
@@ -128,7 +128,7 @@ const STATUS_GROUPS: readonly { kind: GitDiffKind; label: string }[] = [
 
 /**
  * The entries grouped by status, as `git status` does (the review in
- * Changes, D8): each group keeps the tree's order.
+ * Changes): each group keeps the tree's order.
  */
 export function orderByStatus(entries: GitDiffEntry[]): GitDiffEntry[] {
   return STATUS_GROUPS.flatMap(({ kind }) =>
@@ -144,7 +144,7 @@ function statusGroupOf(entry: GitDiffEntry): GitDiffKind | null {
   return STATUS_GROUPS.find(({ kind }) => kinds.includes(kind))?.kind ?? null;
 }
 
-/** The working entries one combined diff per file stands for (D8). */
+/** The working entries one combined diff per file stands for. */
 const COMBINED_PART_KINDS: ReadonlySet<GitDiffKind> = new Set([
   "staged",
   "unstaged",
@@ -158,7 +158,7 @@ export function statusEntriesOf(entries: GitDiffEntry[]): GitDiffEntry[] {
 
 /**
  * One entry per file for its staged, unstaged and untracked entries: its
- * combined diff against HEAD (kind "combined", the review in Changes, D8),
+ * combined diff against HEAD (kind "combined", the review in Changes),
  * which keeps the status entries as its `parts`. A conflict stays as is.
  */
 export function combineWorkingEntries(entries: GitDiffEntry[]): GitDiffEntry[] {
@@ -242,7 +242,7 @@ export type DiffViewerPanelHandle = {
   /** The files' reviewed chunks (the review in Changes), for the tree. */
   markReviewProgress: (progress: ReadonlyMap<string, ReviewProgress>) => void;
   /**
-   * The review's files with no change (D16), listed in the tree's "Other
+   * The review's files with no change, listed in the tree's "Other
    * files" group under the changed files, with their tick.
    */
   markOtherFiles: (files: readonly OtherReviewFile[]) => void;
@@ -254,7 +254,7 @@ export type DiffViewerPanelHandle = {
   runFileAction: (action: GitFileAction, path: string) => boolean;
 };
 
-/** A file of the review with no change, as the tree lists it (D16). */
+/** A file of the review with no change, as the tree lists it. */
 export type OtherReviewFile = {
   path: string;
   reviewed: boolean;
@@ -1333,7 +1333,7 @@ export function DiffViewerPanel({
   );
   /**
    * The review in Changes reads the working changes as one combined diff
-   * per file (D8): the summary its diff and selection use. The tree keeps
+   * per file: the summary its diff and selection use. The tree keeps
    * the status entries (each combined entry's parts).
    */
   const combineWorking = groupByStatus && diffScope === "working";

@@ -2,11 +2,10 @@ import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
 
 /**
- * The checkout's git actions from the review (:stage, gs, :discard): they
- * act on the inspector's checkout, so a review of another repository (a
- * series repository, a merge request's review worktree, one from
- * elsewhere) refuses them, saying why (plan: review into the inspector,
- * section 2, phase 7). Runs against the surfaces with git actions
+ * The checkout's git actions from the review (:stage, gs, :discard): they act
+ * on the inspector's checkout, so a review of another repository (a series
+ * repository, a merge request's review worktree, one from elsewhere) refuses
+ * them, saying why. Runs against the surfaces with git actions
  * (reviewSurfaces.testkit.ts).
  */
 if (

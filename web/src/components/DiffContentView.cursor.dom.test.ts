@@ -2,12 +2,11 @@ import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 
 /*
- * The review's Vim cursor in Changes (plan: review into the inspector,
- * phase 3, D10): Changes takes the review's keys and mouse; a diff without
- * the review (a commit's in Commits, Files' changes) keeps upstream's. The
- * shared behavior tests (reviewBehavior.*) cover the review's keys; these
- * cover the diff without the review, which takes none of them, and
- * Changes' tree marking the cursor's search.
+ * The review's Vim cursor in Changes: Changes takes the review's keys and
+ * mouse; a diff without the review (a commit's in Commits, Files' changes)
+ * keeps upstream's. The shared behavior tests (reviewBehavior.*) cover the
+ * review's keys; these cover the diff without the review, which takes none of
+ * them, and Changes' tree marking the cursor's search.
  */
 if (
   inIsolatedChild(

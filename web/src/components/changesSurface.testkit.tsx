@@ -1,10 +1,9 @@
 /**
- * Behavior-level test kit for the inspector's Changes (plan: review into
- * the inspector, gate 3): it mounts Changes' tree (DiffViewerPanel) on an
- * in-memory connection and answers what a user sees: the tree's rows, the
- * scope picked, the file selected, the menu opened, the confirmation shown.
- * Tests read Changes only through it, so they keep running when Changes
- * moves onto the shared Pierre surface.
+ * Behavior-level test kit for the inspector's Changes: it mounts Changes'
+ * tree (DiffViewerPanel) on an in-memory connection and answers what a user
+ * sees: the tree's rows, the scope picked, the file selected, the menu
+ * opened, the confirmation shown. Tests read Changes only through it, so
+ * they keep running when Changes moves onto the shared Pierre surface.
  *
  * Not a test file: imported by `*.behavior.dom.test.ts(x)` children, after
  * `installChangesDom()` has put a happy-dom window in place.
@@ -560,7 +559,7 @@ export type ChangesDiffOptions = {
   inspectorCommands?: import("../useInspectorCommands").InspectorCommandRegistry;
   /** The review's Vim cursor ("in Changes", Vim keys on). */
   reviewCursor?: boolean;
-  /** The review the scope shown is (plan phase 6). */
+  /** The review the scope shown is. */
   reviewScope?: import("../changesReview").ChangesScope;
   /** Files' Review on "in Changes": the cursor to that file and line. */
   cursorGoTo?: { path: string; line?: number; at: number } | null;

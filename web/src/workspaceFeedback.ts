@@ -16,7 +16,7 @@ import { blobBase64 } from "./renderedCapture";
 
 /*
  * Comments written in the Files preview, Changes, Commits and History are
- * review threads of the review of what they are on, as the review pane's:
+ * review threads of the review of what they are on:
  * the workspace's agent gets them as the review's settings say (sent as
  * written, or held until Send), and they are answered in their threads.
  * A terminal comment is a thread of the chat review of the agent in its
@@ -53,7 +53,7 @@ export type FeedbackPlace = {
    */
   chat?: PaneChat;
   /**
-   * Reviews show in Changes (plan D16): a comment on a
+   * Reviews show in Changes: a comment on a
    * file of the checkout in Files is a thread of the checkout's worktree
    * review, the one Changes writes to, not of a review of its own.
    */
@@ -68,7 +68,7 @@ export type FeedbackCall = <T>(
 /**
  * What a comment captured, not part of the note's text: a graphic's
  * region, and the source text of the (last) line a rendered file's comment
- * is on, kept as a diff's anchor keeps it, so the review pane and the
+ * is on, kept as a diff's anchor keeps it, so the review and the
  * rendered file find the line again after the code moves.
  */
 export type FeedbackCapture = {
@@ -76,8 +76,8 @@ export type FeedbackCapture = {
   lineText?: string;
   /**
    * What the review's editor in Changes wrote: a review comment, or a
-   * question for the agent (held for Send when the review has no agent,
-   * as the review pane holds it). Unset: as the review says (feedbackKind).
+   * question for the agent (held for Send when the review has no agent).
+   * Unset: as the review says (feedbackKind).
    */
   kind?: ReviewThreadKind;
 };
@@ -147,9 +147,9 @@ export function feedbackRoute(
       held: false,
       open: {
         path: place.root,
-        // A review it names: its Last step's (D15), a range shown as a
+        // A review it names: its Last step's, a range shown as a
         // review scope. No target: the branch against Automatic's base. A
-        // base picked in Compare against is its own review (plan D12).
+        // base picked in Compare against is its own review.
         ...(note.target
           ? { target: note.target }
           : note.kind !== "branch"
@@ -225,7 +225,7 @@ export function feedbackRoute(
       ...(Object.keys(render).length ? { render } : {}),
     }),
   };
-  // One review (D16): a file of the checkout is the worktree review's, its
+  // One review: a file of the checkout is the worktree review's, its
   // path relative to that review's repository, its rendered anchor kept.
   // The repository is the one holding the file (its directory's): the
   // workspace's directory may hold checkouts without being one.
@@ -271,7 +271,7 @@ export function feedbackThreadId(noteId: string): string {
 }
 
 /**
- * How a comment goes in a review, as the review pane writes it: to the
+ * How a comment goes in a review: to the
  * agent when the review sends comments to one, else a review comment.
  */
 export function feedbackKind(session: ReviewSession): "discussion" | "draft" {
@@ -286,7 +286,7 @@ export const FEEDBACK_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 /**
  * An image pasted in a comment written in Changes, stored with the
  * checkout's worktree review (opened for it, as the first comment opens
- * it); Markdown linking its file, as the review pane's editor writes it.
+ * it); Markdown linking its file.
  */
 export async function addFeedbackImage(
   call: FeedbackCall,
@@ -348,7 +348,7 @@ export async function writeFeedback(
   }
   const { session } = opened;
   // A question with no agent to ask: held for Send in the workspace's
-  // threads (the review pane's holdForSend).
+  // threads.
   const asked =
     capture?.kind === "discussion" &&
     !session.agent.paneId &&
@@ -451,7 +451,7 @@ export function feedbackNote(thread: ReviewThread): ReviewAnnotation {
   });
   if (parsed) return parsed;
   const { anchor } = thread;
-  // A question asked in the review pane with no agent: a diff's line.
+  // A question asked in a review's diff with no agent: a diff's line.
   if (anchor.path && anchor.line !== undefined && anchor.side)
     return {
       id: thread.id,

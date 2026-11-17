@@ -16,9 +16,7 @@ import {
 
 /*
  * Where a comment written in the inspector goes (`feedbackRoute`): which
- * review it opens and where in it the thread is anchored. Characterization
- * tests of today's routing (plan: review into the inspector, phase A); the
- * Last step route changes on purpose in phase 6.
+ * review it opens and where in it the thread is anchored.
  */
 
 const place = { workspaceId: "w1", root: "/repo" };
@@ -109,7 +107,7 @@ describe("feedbackRoute", () => {
     });
   });
 
-  test("a Last step comment opens that step's review (plan D15); with no step known, the worktree review", () => {
+  test("a Last step comment opens that step's review; with no step known, the worktree review", () => {
     const step = {
       kind: "step" as const,
       step: "1763200000000-abcdef01",
@@ -273,7 +271,7 @@ describe("feedbackRoute", () => {
   });
 });
 
-describe("one review across Files and Changes (D16)", () => {
+describe("one review across Files and Changes", () => {
   const rendered: ReviewAnnotation = {
     id: "rendered",
     source: "file",
@@ -739,7 +737,7 @@ describe("workspaceFeedback", () => {
     const sessions = [
       snapshot("w1", [
         thread("from-changes", { path: "src/one.ts", line: 4, feedback }),
-        // Written in the review pane: no note behind it.
+        // Written in a review's diff: no note behind it.
         thread("from-review", { path: "src/one.ts", line: 4, side: "new" }),
         thread("held", { path: "src/one.ts", line: 4, feedback }, 5),
       ]),

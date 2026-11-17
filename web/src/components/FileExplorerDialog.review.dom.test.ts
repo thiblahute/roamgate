@@ -10,10 +10,9 @@ import { bridge, type ConnectionClient } from "../api";
 import { __storeTesting, store } from "../store";
 
 /**
- * One review across Files and Changes (plan: review into the inspector,
- * D16), in Files' tree: a file of the checkout's review carries its tick
- * (reviewed, changed or not), and a file with no change in the review by a
- * comment a dot; other files nothing.
+ * One review across Files and Changes, in Files' tree: a file of the
+ * checkout's review carries its tick (reviewed, changed or not), and a file
+ * with no change in the review by a comment a dot; other files nothing.
  */
 if (
   inIsolatedChild(

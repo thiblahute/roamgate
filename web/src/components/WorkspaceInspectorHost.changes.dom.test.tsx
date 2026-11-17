@@ -5,8 +5,7 @@ import { readFileSync } from "node:fs";
  * The inspector's frame around Changes (upstream WorkspaceInspectorHost):
  * its tab strip, the Changes badge, History's availability and the state
  * of a checkout that is gone. The views it holds are stand-ins; their own
- * behavior is pinned in DiffViewerPanel.behavior and DiffContentView.behavior
- * (plan: review into the inspector, phase A).
+ * behavior is pinned in DiffViewerPanel.behavior and DiffContentView.behavior.
  */
 if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   test("inspector frame in an isolated DOM runtime", async () => {
@@ -74,7 +73,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     /** The toolbar's end (Review only) and the scope line, as given. */
     headEnd?: ReactNode;
     scopeControls?: ReactNode;
-    /** The review the scope is (plan phase 6), and the comment writer. */
+    /** The review the scope is, and the comment writer. */
     reviewScope?: unknown;
     onCreateAnnotation?: (input: Record<string, unknown>) => void;
     /** What the review in Changes is handed from the host (its jobs). */
@@ -1182,8 +1181,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   });
 
   /**
-   * The review pane's host's jobs (ReviewHost, retired in phase 9), now the
-   * inspector's around the review in Changes: what the review is given from
+   * The jobs of the retired review host (ReviewHost), now the inspector's
+   * around the review in Changes: what the review is given from
    * the workspace's panes, where its files open, its close, reviews list
    * and Go to agent's pane, the review shown as Changes' scope.
    */

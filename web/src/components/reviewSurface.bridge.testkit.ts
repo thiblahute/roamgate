@@ -2,8 +2,6 @@
  * The review's bridge held in memory, and the screen a mounted review is
  * shown on (a touch screen, the phone's layout and history, stylesheets),
  * for the shared behavior tests' review surface (reviewSurface.changes).
- * Taken from the classic review pane's kit when that pane retired (plan:
- * review into the inspector, phase 9).
  *
  * `mockReviewBackend()` must run before the review's modules are imported
  * (it replaces `../review` with a bridge held in memory).
@@ -109,7 +107,7 @@ export function mockReviewBackend() {
             (each) => each.files && each.sha === params.commit,
           );
         const files = (commit?.files ?? backend.files) as ReviewDiffFile[];
-        // A summary's files, read a few at a time (plan phase 5s), as the
+        // A summary's files, read a few at a time, as the
         // bridge answers them.
         if (Array.isArray(params.files))
           return {

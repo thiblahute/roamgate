@@ -74,7 +74,7 @@ export type DefaultBaseFacts = {
 };
 
 /**
- * Automatic's base (plan D12): the more recent of the local default branch
+ * Automatic's base: the more recent of the local default branch
  * and its remote counterpart, so a stale local `main` does not show its
  * gap as the branch's own work. When one contains the other, the one
  * ahead (the remote when they are the same, the review's base until

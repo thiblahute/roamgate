@@ -1,12 +1,11 @@
 /**
- * App with reviews, for the app-level review tests (plan: review into the
- * inspector, gate 3): Option+R, the reviews list, Cmd+K, voice arrival, Go
- * to agent's pane, focus back to the chat, the code preload. It mounts the
- * real App on a store held here, with two workspaces, and stands a stub in
- * for the workspace inspector, where reviews show (its Changes): the tests
- * read what App asks the inspector to show and call the props it gives it,
- * never how a review draws itself (the review's own behavior is
- * reviewBehavior.*.dom.test.tsx's).
+ * App with reviews, for the app-level review tests: Option+R, the reviews
+ * list, Cmd+K, voice arrival, Go to agent's pane, focus back to the chat, the
+ * code preload. It mounts the real App on a store held here, with two
+ * workspaces, and stands a stub in for the workspace inspector, where reviews
+ * show (its Changes): the tests read what App asks the inspector to show and
+ * call the props it gives it, never how a review draws itself (the review's
+ * own behavior is reviewBehavior.*.dom.test.tsx's).
  *
  * Not a test file: imported by `App.review*.test.tsx`, in an isolated child.
  * `installAppReviewDom` must run first, before React or App is imported.
@@ -47,7 +46,7 @@ export function reviewOf(id: string, workspaceId: string): ReviewSnapshot {
  * review.
  */
 export type ShownReviews = {
-  /** The review panes mounted, in order. */
+  /** The reviews mounted, in order. */
   mounted: string[];
   /** The one visible, or null. */
   shownId: string | null;

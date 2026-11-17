@@ -2,14 +2,11 @@ import { inIsolatedChild } from "../testIsolated";
 import { describe, expect } from "bun:test";
 
 /**
- * The review's keys and the app's (plan: review into the inspector, phase
- * 8; reviewKeys.ts): the app's shortcuts that work over the review (the
- * review toggle, the overlay tab) and those leaving for another workspace,
- * tab or pane reach the app; the review keeps its own. reviewKeys.test.ts
- * holds the routing itself. Changes' cursor leaves such keys to the app
- * (this test). The review pane does not: App.tsx takes them first, in its
- * capture listener, before the pane sees them (App.review.test.tsx), so
- * the pane alone is not a surface for this test.
+ * The review's keys and the app's (reviewKeys.ts): the app's shortcuts that
+ * work over the review (the review toggle, the overlay tab) and those
+ * leaving for another workspace, tab or pane reach the app; the review
+ * keeps its own. reviewKeys.test.ts holds the routing itself. Changes'
+ * cursor leaves such keys to the app (this test).
  */
 if (
   inIsolatedChild(

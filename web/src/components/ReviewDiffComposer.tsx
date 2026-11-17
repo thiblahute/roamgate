@@ -17,8 +17,8 @@ import { imageUploadPending, IMAGE_UPLOADING } from "./ReviewCommentEditor";
 import "./ChatThreads.css";
 
 /*
- * The review's comment editor in Changes (plan: review into the inspector,
- * phase 4): the review's Vim editor drawn under the line, with its
+ * The review's comment editor in Changes: the review's Vim editor drawn
+ * under the line, with its
  * save policy (reviewSave: only an explicit save sends, Esc keeps a draft,
  * a key or two is a stray, an unchanged suggestion is empty, a save waits
  * for images) and its unsent text kept (reviewDrafts). It replaces the
@@ -32,7 +32,7 @@ export function changesDraftSession(resourceKey: string): string {
 
 /**
  * What a suggestion on a line says: the line as it reads, to change, as
- * the review pane writes it (a GitLab suggestion of that one line).
+ * a GitLab suggestion of that one line.
  */
 export function suggestionBlock(lineText: string): string {
   return `\`\`\`suggestion:-0+0\n${lineText}\n\`\`\`\n`;
@@ -106,7 +106,7 @@ export type ReviewDiffComposerProps = {
 
 /**
  * One comment box. Typing does not render anything: the text is read from
- * a ref when saving, as the review pane does.
+ * a ref when saving.
  */
 /** The comment boxes open, by their element: `:w` saves the one shown. */
 const openComposers = new Map<Element, () => boolean>();
@@ -237,7 +237,7 @@ export function ReviewDiffComposer({
   }, []);
 
   // Going away with words unsent (a reload, another view, a closed tab):
-  // they are kept as a draft, as the review pane keeps its open editor's.
+  // they are kept as a draft.
   const keepOnUnmount = useRef(() => {});
   keepOnUnmount.current = () => {
     if (!done.current && text.current.trim())

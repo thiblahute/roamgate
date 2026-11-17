@@ -52,7 +52,7 @@ if (
     return editor();
   };
 
-  describe("the Last step in Changes (plan D15)", () => {
+  describe("the Last step in Changes", () => {
     test("a step's untracked files left out of its snapshots are named above its diff", async () => {
       const diff = await mountChangesDiff({
         entries: [a],

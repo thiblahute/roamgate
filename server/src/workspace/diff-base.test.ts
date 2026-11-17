@@ -119,7 +119,7 @@ describe("Inspector comparison base selection", () => {
   });
 });
 
-describe("Automatic's base: the newer of the local default branch and its remote (D12)", () => {
+describe("Automatic's base: the newer of the local default branch and its remote", () => {
   const both = {
     local: "refs/heads/main",
     remote: "refs/remotes/origin/main",

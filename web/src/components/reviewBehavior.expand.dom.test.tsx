@@ -96,7 +96,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("side by side, each gap row is one row across both sides, as the review pane drew it; in one column, in it", async () => {
+      test("side by side, each gap row is one row across both sides; in one column, in it", async () => {
         const review = await mount({ ...options(), split: true });
         expect(review.sideBySide()).toBe(true);
         expect(review.gapRows("a.ts")).toEqual(["across", "across", "across"]);

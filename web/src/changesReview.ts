@@ -17,8 +17,8 @@ import {
 import { handoffStatus, notSavedStatus, saveOrKeep } from "./reviewSave";
 
 /*
- * The checkout's own review in Changes (plan: review into the inspector,
- * phase 4): the worktree review the comments written there belong to, found
+ * The checkout's own review in Changes: the worktree review the comments
+ * written there belong to, found
  * by a read-only lookup (showing Changes never opens or touches a session),
  * and what the review's agent group does on it: Comments go to the agent,
  * Hold, Send, Agent review, the overall comment.
@@ -49,18 +49,18 @@ export function worktreeReview(
 }
 
 /**
- * What Changes shows, as a review (plan phase 6): its scope, each bound to
+ * What Changes shows, as a review: its scope, each bound to
  * its review session by a read-only lookup.
  */
 export type ChangesScope =
   | { kind: "working" }
   /**
    * The branch against its base: `base`, the one picked in Compare against
-   * (its own range review, D12); else Automatic's, `automaticBase` as the
+   * (its own range review); else Automatic's, `automaticBase` as the
    * summary resolved it.
    */
   | { kind: "branch"; base?: string; automaticBase?: string }
-  /** The Last step (D15). */
+  /** The Last step. */
   | { kind: "step"; step: LastStepTarget }
   /** A review opened by name (a range, a compare, a commit's). */
   | { kind: "review"; sessionId: string };
@@ -209,7 +209,7 @@ export type ChangesAgent = {
   send: () => void;
   /**
    * A delivery that failed tried again: the workspace's agent pane told to
-   * a review that names none first (as the review pane does), else Send.
+   * a review that names none first, else Send.
    */
   retryDelivery: () => void;
   review: (focus?: string) => void;

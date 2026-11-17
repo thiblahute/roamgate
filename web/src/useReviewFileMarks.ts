@@ -16,10 +16,9 @@ import type { ReviewedFile } from "./reviewNavigation";
 import type { GitDiffFile } from "./types";
 
 /*
- * The checkout's review as Files shows it (plan: review into the
- * inspector, D16): which files are the review's and ticked reviewed, the
- * same marks Changes reads (a changed file's tick from its combined diff,
- * as Changes reads it), and the tick toggled from Files.
+ * The checkout's review as Files shows it: which files are the review's and
+ * ticked reviewed, the same marks Changes reads (a changed file's tick from
+ * its combined diff, as Changes reads it), and the tick toggled from Files.
  */
 
 /** A file of the review, as Files marks it. */

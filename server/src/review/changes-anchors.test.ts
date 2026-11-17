@@ -17,7 +17,7 @@ import {
 } from "../../../web/src/workspaceFeedback";
 
 /*
- * Plan D13: threads written on Changes' staged and unstaged entries, moved
+ * Threads written on Changes' staged and unstaged entries, moved
  * onto the worktree review's combined `git diff HEAD` by their line's
  * text, against the real review service and a real checkout (as
  * feedback-migration.test.ts writes notes).

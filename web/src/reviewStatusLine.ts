@@ -4,8 +4,7 @@ import { plural } from "./components/MrThreadCard";
 import { reviewDraftCount } from "./reviewDrafts";
 
 /*
- * The review's status line, as the review pane says it (plan: review into
- * the inspector, phase 4): the agent waiting for an answer in its pane,
+ * The review's status line: the agent waiting for an answer in its pane,
  * comments not delivered, a review pass going on and what it left, the
  * agent's work and last word, and the unsent drafts kept from before.
  */

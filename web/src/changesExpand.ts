@@ -12,8 +12,7 @@ import {
 } from "./reviewModel";
 
 /*
- * Context expansion in Changes (plan: review into the inspector, phase 5):
- * Roamgate owns it, as the review pane does. The lines revealed in each gap
+ * Context expansion in Changes: Roamgate owns it. The lines revealed in each gap
  * (reviewModel's FileExpansion: the file's new side, a GapState per gap)
  * are written into the file's patch as context, and Pierre draws that
  * patch: it never expands anything itself. The hunks are kept apart, even
@@ -134,7 +133,7 @@ export function expandPatch(
   // A new file (nothing on the old side) is whole in its patch: nothing
   // around it to show.
   if (ranges.every((each) => each!.oldCount === 0)) return { patch, gaps: [] };
-  // What is still hidden, as the review pane counts it.
+  // What is still hidden, as reviewModel's expandDiff counts it.
   const { gaps } = expandDiff(
     { files: [file], truncated: false } as ReviewDiff,
     expansion ? new Map([[0, expansion]]) : new Map(),
@@ -230,7 +229,7 @@ export function expandPatch(
 
 /**
  * The gaps to open so that the new-side `line` shows with three lines each
- * side (a thread on unchanged code), as the review pane opens them.
+ * side (a thread on unchanged code).
  */
 export function revealLine(
   patch: string,

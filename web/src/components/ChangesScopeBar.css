@@ -87,7 +87,7 @@
   min-width: 0;
 }
 
-/* A review of a repository the workspace does not hold (D3). */
+/* A review of a repository the workspace does not hold. */
 .changes-scope-elsewhere {
   color: var(--muted);
   font-weight: normal;
@@ -140,8 +140,8 @@
 }
 
 /*
- * On a phone or in a narrow inspector, the line is the review's identity
- * (user, 2026-11-17): the workspace's name is the inspector's title already,
+ * On a phone or in a narrow inspector, the line is the review's identity:
+ * the workspace's name is the inspector's title already,
  * so a lone repository's name goes, with the separator; a merge request's
  * review is named by its number and title, the scope picker saying it all.
  */

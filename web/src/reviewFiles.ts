@@ -11,14 +11,13 @@ import {
 import { fileFingerprint } from "./reviewToggle";
 
 /*
- * One review across Files and Changes (plan: review into the inspector,
- * D16). A comment written on a file in Files is a thread of the checkout's
- * worktree review, as a comment written in Changes is; the reviewed tick
- * on a file is that review's mark in both views. A file with no change
- * joins the review when it is commented on or marked reviewed (never by
- * being opened): it is one of the review's "Other files", listed under the
- * changed files with its threads and its tick, until it is unmarked and
- * its threads are resolved or deleted.
+ * One review across Files and Changes. A comment written on a file in Files
+ * is a thread of the checkout's worktree review, as a comment written in
+ * Changes is; the reviewed tick on a file is that review's mark in both
+ * views. A file with no change joins the review when it is commented on or
+ * marked reviewed (never by being opened): it is one of the review's "Other
+ * files", listed under the changed files with its threads and its tick, until
+ * it is unmarked and its threads are resolved or deleted.
  */
 
 /**

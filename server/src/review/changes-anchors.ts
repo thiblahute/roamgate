@@ -7,16 +7,15 @@ import type {
 } from "../../../shared/review";
 
 /*
- * Plan D13 (decided: migrate): threads written in Changes before it showed
- * one combined diff per file are anchored on their entry's own diff, a
- * staged entry numbering its new side in the index, an unstaged one its old
- * side in the index. The worktree review's diff is the combined `git diff
- * HEAD`, so agents and GitLab drafts read those anchors on the wrong lines.
- * Each is placed again by its line's text as Changes places it on screen
- * (web changesThreads.ts) and written back: anchor and note (`feedback`)
- * then name the combined diff's line, the note's kind "combined". One
- * whose line cannot be found keeps its anchor and is listed, not drawn, as
- * before.
+ * Threads written in Changes before it showed one combined diff per file
+ * are anchored on their entry's own diff, a staged entry numbering its new
+ * side in the index, an unstaged one its old side in the index. The
+ * worktree review's diff is the combined `git diff HEAD`, so agents and
+ * GitLab drafts read those anchors on the wrong lines. Each is placed again
+ * by its line's text as Changes places it on screen (web changesThreads.ts)
+ * and written back: anchor and note (`feedback`) then name the combined
+ * diff's line, the note's kind "combined". One whose line cannot be found
+ * keeps its anchor and is listed, not drawn, as before.
  */
 
 /** The note kinds of Changes' per-entry working diffs. */

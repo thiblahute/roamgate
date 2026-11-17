@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./CommandLine.css";
 
 /*
- * The Vim-like prompt at a view's bottom edge, the review pane's: `:` for a
+ * The Vim-like prompt at a view's bottom edge: `:` for a
  * command (Tab / Shift+Tab go through the completions) or `/` for a search.
  * Enter runs what is typed; Esc, or Backspace on nothing, leaves it.
  */

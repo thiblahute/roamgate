@@ -648,7 +648,7 @@ export function createFileHandlers({
       dir.startsWith(`${root === "/" ? "" : root}/`) ||
       root.startsWith(`${dir === "/" ? "" : dir}/`);
     // A review's own repository is shown in any workspace (a review from
-    // elsewhere, plan D3): its exact root, nothing below or above it.
+    // elsewhere): its exact root, nothing below or above it.
     if (!dirs.some(related) && !reviewRoots().map(trim).includes(root))
       throw new Error("root is not a repository of this workspace");
     const host = sshHost();
@@ -895,7 +895,7 @@ export function createFileHandlers({
       readReviewState({ root, target, ...onHost() }),
     readReviewHeads: (entries: { root: string; ref: string }[]) =>
       readReviewHeads({ entries, ...onHost() }),
-    /** The workspace's last step in `root` as a review target (D15). */
+    /** The workspace's last step in `root` as a review target. */
     readLastStep: async (
       root: string,
       workspaceId: string,

@@ -93,7 +93,7 @@ export function sendsOut(
 /**
  * The text without its suggestions that leave the line as it reads
  * (`lineText`, the line the comment is on): they change nothing, so they
- * count as empty, as in maildesk. Trimmed.
+ * count as empty. Trimmed.
  */
 export function withoutUnchangedSuggestions(
   text: string,
@@ -211,8 +211,7 @@ export function editorSave(input: {
 }
 
 /**
- * What an empty editor says it writes, by what it is and where it goes:
- * the review pane's words, in the review pane and in Changes alike.
+ * What an empty editor says it writes, by what it is and where it goes.
  */
 export function editorPlaceholder(
   editor: Pick<

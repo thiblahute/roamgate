@@ -1,13 +1,13 @@
 /*
- * Reviewed chunks and files in Changes (plan: review into the inspector,
- * phase 5), on the rows of the cursor's model. Changes draws a path once
- * per entry (staged, unstaged), so a path's chunks are the entries' chunks
- * in order: a chunk keeps its mark through staging, because its id hashes
- * the path and the changed lines only (hunkIds), never the entry.
+ * Reviewed chunks and files in Changes, on the rows of the cursor's model.
+ * Changes draws a path once per entry (staged, unstaged), so a path's chunks
+ * are the entries' chunks in order: a chunk keeps its mark through staging,
+ * because its id hashes the path and the changed lines only (hunkIds), never
+ * the entry.
  *
  * The marks themselves are the review's (`session.reviewed`, reviewNavigation
  * and reviewToggle); this module only reads Changes' rows as those see
- * files and chunks, and tells each chunk's staged state (D8).
+ * files and chunks, and tells each chunk's staged state.
  */
 import type { DiffCursorModel } from "./diffCursor";
 import type { GitLineRanges } from "./types";
@@ -104,16 +104,15 @@ export function reviewedLayout(model: DiffCursorModel): ChangesReviewedLayout {
 }
 
 /**
- * The view a review's marks are kept in: the commit shown (its sha, as the
- * review pane kept them), else all the changes (`all`). A commit's message
- * and its files are that commit's: marked in one commit, the others keep
- * their own marks.
+ * The view a review's marks are kept in: the commit shown (its sha), else all
+ * the changes (`all`). A commit's message and its files are that commit's:
+ * marked in one commit, the others keep their own marks.
  */
 export function changesReviewView(commit: string | null | undefined): string {
   return commit || CHANGES_REVIEW_VIEW;
 }
 
-/** What the index holds of a chunk (D8): the marker each chunk carries. */
+/** What the index holds of a chunk: the marker each chunk carries. */
 export type ChunkStage = "staged" | "unstaged" | "partly";
 
 const baseId = (id: string) => id.replace(/~\d+$/, "");

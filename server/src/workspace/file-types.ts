@@ -73,7 +73,7 @@ export type GitDiffKind =
   | "conflicted"
   | "branch"
   | "last-step"
-  /** A file's staged and unstaged changes together, `git diff HEAD` (D8). */
+  /** A file's staged and unstaged changes together, `git diff HEAD`. */
   | "combined";
 
 export type GitDiffMode = "working" | "branch-main" | "last-step";

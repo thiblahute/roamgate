@@ -3,9 +3,9 @@ import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
 /**
- * How a review's comments reach its agent (reviewDelivery, taken out of
- * the review pane): talk, hold, held for Send, why delivery failed, shared
- * threads' own reviews, and the agent pane told to the review once.
+ * How a review's comments reach its agent (reviewDelivery): talk, hold, held
+ * for Send, why delivery failed, shared threads' own reviews, and the agent
+ * pane told to the review once.
  */
 if (
   inIsolatedChild(

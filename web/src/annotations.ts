@@ -33,8 +33,8 @@ export type DiffReviewAnnotation = ReviewAnnotationBase & {
    */
   root?: string;
   /**
-   * The review it goes to when not the scope's usual one: a Last step's
-   * (plan D15), or a range or compare Changes shows as a review scope.
+   * The review it goes to when not the scope's usual one: a Last step's,
+   * or a range or compare Changes shows as a review scope.
    */
   target?: DiffNoteTarget;
   /** Written on one commit's diff (the commit bar): that commit. */

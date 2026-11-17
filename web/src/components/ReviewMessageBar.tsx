@@ -9,12 +9,11 @@ import type { PendingWrite } from "../reviewPending";
 import { HELD_FOR_SEND } from "../workspaceFeedback";
 
 /*
- * The review's bar under one message of a thread (plan: review into the
- * inspector, phase 4): how your comment goes to the agent (sent, on its
- * way, held, not delivered with Retry, not sent with Send), its forge draft
- * and edited marks, Edit and Delete; or, while it is on its way, Sending...
- * then Not saved with Retry and Discard. The review in Changes draws it
- * under each message, as the review pane does.
+ * The review's bar under one message of a thread: how your comment goes to
+ * the agent (sent, on its way, held, not delivered with Retry, not sent with
+ * Send), its forge draft and edited marks, Edit and Delete; or, while it is
+ * on its way, Sending... then Not saved with Retry and Discard. The review in
+ * Changes draws it under each message.
  */
 
 export type ReviewMessageBarProps = {

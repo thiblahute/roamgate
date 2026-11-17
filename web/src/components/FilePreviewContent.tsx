@@ -434,7 +434,7 @@ export function FilePreviewContent({
    */
   onShowInReview?: (path: string, line?: number) => void;
   /**
-   * The checkout's review (reviews in Changes, D16): the file's reviewed
+   * The checkout's review (reviews in Changes): the file's reviewed
    * tick, toggled here as in Changes; an unchanged file joins the review.
    */
   reviewFiles?: ReviewFileMarks;
@@ -1563,7 +1563,7 @@ export function FilePreviewContent({
     () => new Map(fileThreads.all.map((thread) => [thread.id, thread])),
     [fileThreads.all],
   );
-  /** The comments' panel lists every conversation, as the review pane's. */
+  /** The comments' panel lists every conversation. */
   const conversations = useMemo(
     () => fileThreads.all.filter((thread) => thread.kind !== "merge-request"),
     [fileThreads.all],

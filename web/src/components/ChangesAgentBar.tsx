@@ -3,12 +3,11 @@ import type { ChangesAgent } from "../changesReview";
 import { ReviewMenu } from "./ReviewMenu";
 
 /**
- * The review's agent group in Changes (plan: review into the inspector,
- * phase 4), for the checkout's review: one chip, the agent's name, its
- * mode and the held comments' count, whose menu holds Live, Hold, Send,
- * its Review, the overall comment, asking it about the line and going to
- * its pane. What it said is the chip's tooltip, never a line of its own.
- * Shown once the review has an agent to talk to.
+ * The review's agent group in Changes, for the checkout's review: one chip,
+ * the agent's name, its mode and the held comments' count, whose menu holds
+ * Live, Hold, Send, its Review, the overall comment, asking it about the line
+ * and going to its pane. What it said is the chip's tooltip, never a line of
+ * its own. Shown once the review has an agent to talk to.
  */
 export function ChangesAgentBar({
   agent,
@@ -34,7 +33,7 @@ export function ChangesAgentBar({
   const sendCount = agent.heldCount || agent.waiting;
   const sendLabel = agent.gitlab
     ? // A merge request's review: the Send is the agent's, never the
-      // forge's (user decision 2026-11-13).
+      // forge's.
       sendCount
       ? `Send ${sendCount} to ${name}`
       : `Send to ${name}`

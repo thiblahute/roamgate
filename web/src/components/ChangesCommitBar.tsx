@@ -8,8 +8,7 @@ import type { ChangesViews } from "../useChangesViews";
 import "./ChangesCommitBar.css";
 
 /*
- * The review's commit bar in Changes (plan: review into the inspector,
- * phase 6), as the review pane's: the view shown (all the changes, or a
+ * The review's commit bar in Changes: the view shown (all the changes, or a
  * commit), `<` `>` beside it, `gc` (a click on its name) for the picker;
  * the offer to reload once the code changed (R, gr, :e).
  */

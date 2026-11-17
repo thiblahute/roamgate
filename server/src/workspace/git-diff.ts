@@ -38,7 +38,7 @@ function lastStepStoreDisposedError() {
 }
 
 /**
- * A completed last step: its trees, and as a review target (plan D15) its
+ * A completed last step: its trees, and as a review target its
  * id (the name of the refs keeping them), when it ended and the untracked
  * files its snapshots left out.
  */
@@ -50,7 +50,7 @@ export type LastStepRange = {
   skipped?: string[];
 };
 
-/** Steps kept under refs besides the ones with threads (plan D15). */
+/** Steps kept under refs besides the ones with threads. */
 export const LAST_STEPS_KEPT = 5;
 
 /**
@@ -203,7 +203,7 @@ export type LastStepBaselineStore = {
     root: string,
   ) => Promise<{ baseline: string; current: string } | undefined>;
   /**
-   * The completed step as a review target needs it (plan D15): its id,
+   * The completed step as a review target needs it: its id,
    * end and left-out files too; after a restart, the latest one kept under
    * refs.
    */
@@ -694,7 +694,7 @@ export async function snapshotWorktreeTree(
 
 /**
  * The checkout's files as a tree (`git write-tree` of a private index), and
- * the untracked files left out of it for their size (plan D15).
+ * the untracked files left out of it for their size.
  */
 export async function snapshotWorktree({
   root,
@@ -728,7 +728,7 @@ export async function snapshotWorktree({
 export function createLastStepBaselineStore(
   context: GitCommandContext,
   /**
-   * `refs`: each completed step's trees are kept under refs (plan D15), and
+   * `refs`: each completed step's trees are kept under refs, and
    * read back after a restart. Off, steps live in memory only.
    */
   { refs = false }: { refs?: boolean } = {},
@@ -873,8 +873,8 @@ export function createLastStepBaselineStore(
           ...(skipped.length ? { skipped } : {}),
         });
         recovered.delete(`${workspaceId}\n${captured.root}`);
-        // Kept under refs, so the step's review outlives a restart and gc
-        // (plan D15); without them the step still shows until then.
+        // Kept under refs, so the step's review outlives a restart and gc;
+        // without them the step still shows until then.
         if (refs)
           try {
             await persistLastStep({
@@ -1266,7 +1266,7 @@ async function resolveComparisonBase({
   const listed = parseRefsOutput(result.stdout);
   if (requested !== undefined && requested !== "")
     return selectDiffBase(listed.refs, undefined, requested);
-  // Automatic: the same base as the branch's review (D12).
+  // Automatic: the same base as the branch's review.
   const { base, branches } = await resolveDefaultBase({
     root,
     host,
@@ -1564,7 +1564,7 @@ export async function readDiffSummary({
     ...(/^\d+$/.test(commits) ? { commits: Number(commits) } : {}),
     baseline_available: mode !== "last-step" || lastStepRange !== null,
     snapshot_id: lastStepSnapshotId,
-    // The step as a review target (plan D15): its comments' review.
+    // The step as a review target: its comments' review.
     ...(lastStepRange?.step
       ? {
           step: {
@@ -1736,7 +1736,7 @@ export async function readDiffFiles({
   const markers = entries.map(() => `ROAMGATE-COMBINED-${randomUUID()}`);
   const scripts = entries.map((entry, index) => {
     // The review's reading of the working changes: one diff per file, its
-    // staged lines told exactly (plan D8, phase 5s).
+    // staged lines told exactly.
     if (entry.kind === "combined")
       return combinedDiffScript(
         root,

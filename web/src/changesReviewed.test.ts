@@ -12,9 +12,9 @@ import { hunkKey, reviewedState } from "./reviewNavigation";
 import { fileToggleChanges, hunkToggle, pickHunks } from "./reviewToggle";
 
 /*
- * Reviewed chunks and files on Changes' rows (plan: review into the
- * inspector, phase 5): chunks of a path counted over its staged and
- * unstaged entries, marks surviving staging, the staged markers.
+ * Reviewed chunks and files on Changes' rows: chunks of a path counted over
+ * its staged and unstaged entries, marks surviving staging, the staged
+ * markers.
  */
 
 const patch = (path: string, ...hunks: string[]) =>

@@ -3,7 +3,7 @@ import type { ReviewAnnotation } from "./annotations";
 import type { Pane } from "./types";
 
 /*
- * The repository Changes shows (plan: review into the inspector, phase 7):
+ * The repository Changes shows:
  * the workspace's own checkout, or another repository of the workspace
  * picked in its scope line (p, ( and )). Another repository's diffs are
  * kept apart by their resource key, which carries its root, and asked for

@@ -177,7 +177,7 @@ export function FileExplorerPanel({
   ) => void;
   onPinFileTab?: (path: string) => void;
   onActiveDiffEntriesChange?: (entries: GitDiffEntry[]) => void;
-  /** The review's files and ticks (reviews in Changes, D16). */
+  /** The review's files and ticks (reviews in Changes). */
   reviewMarks?: ExplorerReviewMarks;
 }) {
   if (!open) return null;
@@ -530,7 +530,7 @@ function FileExplorerContent({
     () => buildGitStatusMaps(gitSummaryState.summary, rootInfo?.root),
     [gitSummaryState.summary, rootInfo?.root],
   );
-  /** The review's files by their path in the tree (D16). */
+  /** The review's files by their path in the tree. */
   const reviewMarkByPath = useMemo(() => {
     const byPath = new Map<string, ReviewFileMark>();
     if (!reviewMarks?.root || !rootInfo?.root) return byPath;

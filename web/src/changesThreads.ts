@@ -4,21 +4,20 @@ import type { DiffCursorRow } from "./diffCursor";
 import { compareKeys, type NavPlace } from "./unresolvedThreads";
 
 /*
- * The review's threads in Changes (plan: review into the inspector, phase
- * 4). Pure: where each thread is drawn among the files' lines, in what
- * order the walk (gn / gN) goes through them, which ones are on the
- * cursor's line.
+ * The review's threads in Changes. Pure: where each thread is drawn among the
+ * files' lines, in what order the walk (gn / gN) goes through them, which
+ * ones are on the cursor's line.
  *
  * Threads written in Changes before the merge are anchored on each entry's
- * own diff: a staged entry numbers its new side in the index, an unstaged
- * one its old side in the index (plan D8). They are placed again by their
- * line text, as Files places a thread (placedInSource): on their
- * own entry's line while it still reads as written, else on the nearest
- * line of the same path, in any entry, that does; one found nowhere is
- * listed in the Comments panel and not drawn. Placed, never written back
- * here: the server moves stored anchors onto the combined diff (D13,
- * server/src/review/changes-anchors.ts); one it could not place keeps its
- * entry's anchor and is placed here by its text, or listed.
+ * own diff: a staged entry numbers its new side in the index, an unstaged one
+ * its old side in the index. They are placed again by their line text, as
+ * Files places a thread (placedInSource): on their own entry's line while it
+ * still reads as written, else on the nearest line of the same path, in any
+ * entry, that does; one found nowhere is listed in the Comments panel and not
+ * drawn. Placed, never written back here: the server moves stored anchors
+ * onto the combined diff (server/src/review/changes-anchors.ts); one it could
+ * not place keeps its entry's anchor and is placed here by its text, or
+ * listed.
  */
 
 /** A thread's place among the lines drawn. */
@@ -39,10 +38,9 @@ export type ThreadSection = { key: string; path: string };
 const WORKING_KINDS = new Set(["staged", "unstaged", "untracked", "combined"]);
 
 /**
- * The section a thread belongs to: its own entry's, or its file's
- * combined diff when that is what is shown (the review in Changes, D8): a
- * thread written on a staged or unstaged entry not migrated yet (D13) is
- * placed there by its text.
+ * The section a thread belongs to: its own entry's, or its file's combined
+ * diff when that is what is shown (the review in Changes): a thread written
+ * on a staged or unstaged entry not migrated yet is placed there by its text.
  */
 const sectionKeyOf = (
   annotation: DiffReviewAnnotation,
@@ -91,7 +89,7 @@ export function placeDiffThreads(
     if (!thread || !shown.has(annotation.path)) continue;
     const own = sectionKeyOf(annotation, keys);
     const side = annotation.side;
-    // Words of a rendered file (Files, D16) are not a source line's: its
+    // Words of a rendered file (Files) are not a source line's: its
     // line is where it is, as Files places it (placedInSource).
     const text = thread.anchor.render ? undefined : thread.anchor.text;
     const ownRows = byKey.get(own);
@@ -246,8 +244,8 @@ export function cursorThreadPlace(
 
 /**
  * Marks the lines a thread is on (`data-thread-mark`) among a file's drawn
- * lines, as the review pane marks them in its margin: shown while the
- * comments are hidden too. `marks` are "old:N" / "new:N".
+ * lines, in their margin: shown while the comments are hidden too. `marks`
+ * are "old:N" / "new:N".
  */
 export function markThreadLines(root: ParentNode, marks: ReadonlySet<string>) {
   for (const element of root.querySelectorAll<HTMLElement>(

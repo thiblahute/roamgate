@@ -864,8 +864,7 @@ if (
       send.click();
       await settle();
     });
-    // Written as the review pane writes: to the review with the agent,
-    // held for nothing.
+    // Written to the review with the agent, held for nothing.
     const open = writes.find((each) => each.method === "review.open");
     expect(open?.params).toMatchObject({
       agent_pane: "w1:p1",
@@ -1062,8 +1061,7 @@ if (
     }
   });
 
-  // Ported from reviewStops.dom.test.ts (the review pane's comment stops,
-  // retired with it): a forge discussion's messages are stops as they are.
+  // A forge discussion's messages are stops as they are.
   test("a forge discussion's message is one stop, never cut in parts as yours are", async () => {
     const { act } = await import("react");
     const { createRoot } = await import("react-dom/client");

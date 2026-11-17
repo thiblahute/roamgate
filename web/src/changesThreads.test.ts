@@ -213,7 +213,7 @@ describe("going through the threads", () => {
   });
 });
 
-describe("on the combined diff (the review in Changes, D8)", () => {
+describe("on the combined diff (the review in Changes)", () => {
   const combined = [{ key: "combined:a.ts", path: "a.ts" }];
   // HEAD a, b; index S, a, b; working tree S, a, B.
   const rows = [
@@ -273,7 +273,7 @@ describe("on the combined diff (the review in Changes, D8)", () => {
   });
 });
 
-describe("placing the threads written in Files (D16)", () => {
+describe("placing the threads written in Files", () => {
   const combined = (id: string, line: number): DiffReviewAnnotation => ({
     ...note(id, "unstaged", line),
     kind: "combined",
