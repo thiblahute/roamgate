@@ -101,7 +101,7 @@ if (process.env.ROAMGATE_CHAT_CATCHING_UP_DOM_TEST !== "1") {
       "../layoutPreferences"
     );
     initializeLayoutPreferences();
-    browser.localStorage.setItem("reviewPrefs", JSON.stringify({ vim: false }));
+    browser.localStorage.setItem("vimKeys", "false");
     const { AgentHistoryDrawer } = await import("./AgentHistoryDrawer");
     const { createRoot } = await import("react-dom/client");
     const container = document.createElement("div");
