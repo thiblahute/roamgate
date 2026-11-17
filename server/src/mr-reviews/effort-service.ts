@@ -203,6 +203,16 @@ export function createEffortService(options: {
 
   /** The patch ids of each part: branches of the effort's group. */
   function partsOf(effort: MrEffort) {
+    // A part made for a plan holds its commits even where their patch ids
+    // changed: fixups folded, or made from a branch holding them already
+    // (both checked tree to tree when it was made).
+    const plans = store.ledger(effort.id).plans;
+    const patchIds = new Map(
+      (store.derived(effort.id)?.commits ?? []).map((commit) => [
+        commit.key,
+        commit.patchId,
+      ]),
+    );
     return options.upstream
       .branches()
       .filter(
@@ -213,11 +223,22 @@ export function createEffortService(options: {
       )
       .map((branch) => ({
         label: branch.branch,
-        ids: new Set(
-          branch.commits.flatMap((commit) =>
+        ids: new Set([
+          ...branch.commits.flatMap((commit) =>
             commit.patchId ? [commit.patchId] : [],
           ),
-        ),
+          ...plans
+            .filter(
+              (plan) =>
+                plan.part?.path === branch.member.path && !plan.part.conflict,
+            )
+            .flatMap((plan) =>
+              plan.commits.flatMap((key) => {
+                const id = patchIds.get(key);
+                return id ? [id] : [];
+              }),
+            ),
+        ]),
       }));
   }
 
@@ -575,6 +596,7 @@ export async function handleEffortRpc(
         live !== undefined &&
         (live === null ||
           live.sha !== was.sha ||
+          Boolean(live.folding) !== Boolean(was.folding) ||
           live.files.join("\n") !== was.files.join("\n"))
       );
     });
@@ -589,11 +611,13 @@ export async function handleEffortRpc(
           plan.part.conflict = {
             sha: live.sha,
             subject:
-              live.sha === plan.part.conflict!.sha
+              live.subject ??
+              (live.sha === plan.part.conflict!.sha
                 ? plan.part.conflict!.subject
                 : (commits.find((commit) => commit.sha === live.sha)?.subject ??
-                  ""),
+                  "")),
             files: live.files,
+            ...(live.folding ? { folding: true } : {}),
           };
       }
       service.store.writeLedger(effort.id, latest);
@@ -936,8 +960,12 @@ export async function handleEffortRpc(
     case "bridge.mr_reviews.effort.part": {
       // An accepted planned request gets its part (D25): a worktree in the
       // effort's group through the user's worktree path, on the target,
-      // with the plan's commits picked in source order (no -x). A conflict
-      // stops there and is reported; nothing is aborted.
+      // with the plan's commits picked in source order (no -x) and their
+      // fixups folded into their targets. A conflict stops there and is
+      // reported; nothing is aborted. When a local upstream/<plan> branch
+      // (or the one named by from) already holds the plan's changes over
+      // the target, the part starts at its commit instead, nothing picked;
+      // that branch is only read, never moved.
       const effort = await effortOf();
       const ledger = service.store.ledger(effort.id);
       const plan = findPlan(ledger.plans, String(params.plan ?? ""));
@@ -959,15 +987,22 @@ export async function handleEffortRpc(
         throw new MrReviewsError(
           "some of its commits are no longer on the source: edit the plan",
         );
+      const slug = plan.name
+        .toLowerCase()
+        .replace(/[^a-z0-9._/-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60);
       const branch =
-        (typeof params.branch === "string" && params.branch.trim()) ||
-        plan.name
-          .toLowerCase()
-          .replace(/[^a-z0-9._/-]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 60);
-      if (!/^[A-Za-z0-9][\w./-]*$/.test(branch) || branch.includes(".."))
+        (typeof params.branch === "string" && params.branch.trim()) || slug;
+      const isBranchName = (name: string) =>
+        /^[A-Za-z0-9][\w./-]*$/.test(name) && !name.includes("..");
+      if (!isBranchName(branch))
         throw new MrReviewsError(`"${branch}" is not a branch name`);
+      const named = typeof params.from === "string" ? params.from.trim() : "";
+      if (named && !isBranchName(named))
+        throw new MrReviewsError(`"${named}" is not a branch name`);
+      const base =
+        named || (slug.startsWith("upstream/") ? slug : `upstream/${slug}`);
       const connection = service.connectionOf(effort.clone.connectionId);
       if (!connection)
         throw new MrReviewsError("that connection is not ready", "unavailable");
@@ -988,6 +1023,30 @@ export async function handleEffortRpc(
         throw new MrReviewsError(
           `the branch ${branch} exists already (${taken.split("\n")[0]}): name the part's branch with branch`,
         );
+      const targets = [
+        upstreamRef(effort),
+        `refs/remotes/${effort.target.remote}/${effort.target.branch}`,
+      ];
+      const carries = parseCarries(
+        (
+          await connection.run(
+            carriesScript(
+              effort.clone.path,
+              base,
+              targets,
+              picked.map((commit) => commit.sha),
+            ),
+            120_000,
+          )
+        ).stdout,
+      );
+      if (named && !carries.sha)
+        throw new MrReviewsError(
+          carries.missing
+            ? `${named} is not a local branch of the clone`
+            : `${named} does not hold the plan's changes over the target (${carries.not ?? "unknown"}): nothing made`,
+        );
+      const start = carries.sha ? carries.sha : undefined;
       const from = await partSource(effort, connection);
       const made = await deps
         .createWorktree({
@@ -1017,30 +1076,35 @@ export async function handleEffortRpc(
           await connection.run(
             pickScript(
               made.path,
-              [
-                upstreamRef(effort),
-                `refs/remotes/${effort.target.remote}/${effort.target.branch}`,
-              ],
-              picked.map((commit) => commit.sha),
+              start ? [start] : targets,
+              start ? [] : picked.map((commit) => commit.sha),
               branch,
             ),
             300_000,
           )
         ).stdout,
       );
-      // Only the commits read back on the branch count as picked.
-      const onBranch = pick.onBranch
-        ? pickedOnBranch(picked, pick.onBranch)
-        : 0;
+      // Only the commits read back on the branch count as picked (before
+      // the fixups are folded, by patch id; folding must keep the tree).
+      // From a branch holding them all, checked tree to tree: all of them.
+      const onBranch = start
+        ? pick.error
+          ? 0
+          : picked.length
+        : pick.onBranch
+          ? pickedOnBranch(picked, pick.onBranch)
+          : 0;
       const missing =
-        !pick.error && !pick.conflict
+        !start && !pick.error && !pick.conflict
           ? picked.length - pick.skipped.length - onBranch
           : 0;
       const error =
         pick.error ??
         (missing > 0
           ? `${missing} of the plan's commits are not on ${branch}`
-          : undefined);
+          : pick.fold && !pick.fold.sameTree
+            ? `folding the fixups changed what ${branch} holds: look at it there`
+            : undefined);
       const conflict = pick.conflict
         ? {
             sha: pick.conflict,
@@ -1049,12 +1113,31 @@ export async function handleEffortRpc(
               "",
             files: pick.files,
           }
-        : undefined;
+        : pick.folding
+          ? {
+              sha: pick.folding.sha,
+              subject: pick.folding.subject,
+              files: pick.files,
+              folding: true,
+            }
+          : undefined;
+      // Fixups whose target is not in the part stay commits: said.
+      const left = [...picked];
+      const unfolded = (pick.fold?.unfolded ?? []).map((subject) => {
+        const at = left.findIndex((commit) => commit.subject === subject);
+        const [commit] = at < 0 ? [] : left.splice(at, 1);
+        return { sha: commit?.sha ?? "", subject };
+      });
+      const folded =
+        pick.fold && pick.onBranch
+          ? Math.max(0, pick.onBranch.count - pick.fold.count)
+          : 0;
       const part = {
         connectionId: effort.clone.connectionId,
         path: made.path,
         branch,
         ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
+        ...(start ? { from: base } : {}),
         ...(conflict ? { conflict } : {}),
       };
       await changePlans(
@@ -1063,7 +1146,7 @@ export async function handleEffortRpc(
         { action: "part", plan: plan.id, part },
         {
           by: meta.by,
-          summary: `Part ${branch} made for ${plan.name}`,
+          summary: `Part ${branch} made for ${plan.name}${start ? ` from ${base}` : ""}`,
         },
       );
       await deps
@@ -1106,6 +1189,9 @@ export async function handleEffortRpc(
         branch,
         picked: onBranch,
         of: picked.length,
+        ...(start ? { from: base } : {}),
+        ...(folded ? { folded } : {}),
+        ...(unfolded.length ? { unfolded } : {}),
         ...(pick.skipped.length
           ? {
               skipped: pick.skipped.map((sha) => ({
@@ -1411,7 +1497,14 @@ export function readableError(error: unknown) {
  * `P n` (picked), `S sha` for one already in the target (empty,
  * skipped), and on a stop `X sha` with `U file` lines; never aborts.
  * Then what the branch holds over the target, read back: `N count` and
- * an `I patch-id` line per commit with a diff.
+ * an `I patch-id` line per commit with a diff. Then, when the picks all
+ * went in, every fixup!, squash! and amend! commit folded into its
+ * target (a non-interactive autosquash rebase onto the target; a squash!
+ * adds its body to the target's message, never its subject line):
+ * `T same|differs` (the tree against the one before folding), `F count`
+ * (the commits left) and `K subject` per fixup left as a commit (its
+ * target not in the part); on a stop `R sha subject` with `U file` lines,
+ * never aborted.
  */
 export function pickScript(
   dir: string,
@@ -1443,12 +1536,75 @@ export function pickScript(
     "done",
     'printf "P\t%s\n" "$n"',
     "report",
+    `[ -n "$t" ] && git -C "$d" log --format=%s "$t"..HEAD | grep -qE ${shQuote(FIXUP_SUBJECT)} || exit 0`,
+    'before=$(git -C "$d" rev-parse "HEAD^{tree}")',
+    // Its own editor for a squash!'s message: the squash! subject lines
+    // out, the target's message and any body the squash! adds kept.
+    `if GIT_EDITOR=${shQuote('f() { grep -v "^squash! " "$1" > "$1.rg"; mv "$1.rg" "$1"; }; f')} git -C "$d" -c sequence.editor=: -c rebase.updateRefs=false -c rebase.autoStash=false -c rebase.abbreviateCommands=false rebase -i --autosquash --empty=keep --no-verify "$t" >/dev/null 2>&1; then`,
+    '  [ "$(git -C "$d" rev-parse "HEAD^{tree}")" = "$before" ] && echo "T\tsame" || echo "T\tdiffers"',
+    '  printf "F\t%s\n" "$(git -C "$d" rev-list --count "$t"..HEAD)"',
+    `  git -C "$d" log --reverse --format=%s "$t"..HEAD | grep -E ${shQuote(FIXUP_SUBJECT)} | sed "s/^/K\t/"`,
+    'elif r=$(git -C "$d" rev-parse -q --verify REBASE_HEAD 2>/dev/null); then',
+    '  printf "R\t%s\t%s\n" "$r" "$(git -C "$d" log -1 --format=%s "$r")"',
+    '  git -C "$d" diff --name-only --diff-filter=U | sed "s/^/U\t/"',
+    'else echo "E\tfolding the fixups failed"; fi',
   ].join("\n");
+}
+
+const FIXUP_SUBJECT = "^(fixup|squash|amend)! ";
+
+/**
+ * Whether a local branch already holds a plan's changes over the target:
+ * `M` when there is no such branch, `N reason` when it does not, `Y sha`
+ * when it does. The plan's changes, squashed: its commits merged in turn
+ * onto the tree where the branch leaves the target; held when merging
+ * that squashed change into the branch cleanly leaves its tree as it is
+ * (all of it there already). Only read: no ref, index or worktree
+ * touched.
+ */
+export function carriesScript(
+  dir: string,
+  branch: string,
+  targets: string[],
+  shas: string[],
+) {
+  return [
+    `d=${shQuote(dir)}`,
+    `b=$(git -C "$d" rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) || { echo M; exit 0; }`,
+    `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null) || { echo "N\tthe target is unknown"; exit 0; }`,
+    '[ "$(git -C "$d" rev-list --count "$t..$b")" -gt 0 ] || { echo "N\tnothing over the target"; exit 0; }',
+    'm=$(git -C "$d" merge-base "$t" "$b") || { echo "N\tno common history with the target"; exit 0; }',
+    'base=$(git -C "$d" rev-parse "$m^{tree}")',
+    "cur=$base",
+    `for c in ${shas.map(shQuote).join(" ")}; do`,
+    '  p=$(git -C "$d" rev-parse -q --verify "$c^" 2>/dev/null) || { printf "N\t%s is a root commit\n" "$c"; exit 0; }',
+    '  out=$(git -C "$d" merge-tree --write-tree --merge-base="$p" "$cur" "$c" 2>/dev/null) || { printf "N\t%s does not apply where it leaves the target\n" "$c"; exit 0; }',
+    '  cur=$(printf "%s\n" "$out" | head -n 1)',
+    "done",
+    '[ "$cur" != "$base" ] || { echo "N\tthe plan changes nothing there"; exit 0; }',
+    'out=$(git -C "$d" merge-tree --write-tree --merge-base="$base" "$b" "$cur" 2>/dev/null) || { echo "N\tsome plan changes are not there"; exit 0; }',
+    '[ "$(printf "%s\n" "$out" | head -n 1)" = "$(git -C "$d" rev-parse "$b^{tree}")" ] && printf "Y\t%s\n" "$b" || echo "N\tsome plan changes are not there"',
+  ].join("\n");
+}
+
+export function parseCarries(stdout: string): {
+  sha?: string;
+  missing?: true;
+  not?: string;
+} {
+  for (const line of stdout.split("\n")) {
+    const [kind, value = ""] = line.split("\t");
+    if (kind === "M") return { missing: true };
+    if (kind === "Y" && /^[0-9a-f]{40,64}$/.test(value)) return { sha: value };
+    if (kind === "N") return { not: value };
+  }
+  return { not: "it could not be read" };
 }
 
 /**
  * For each part worktree: `X path sha` with `U path file` lines while a
- * pick is stopped there, `D path` when none is. A missing worktree says
+ * pick is stopped there (`R path sha subject` while folding its fixups
+ * is), `D path` when none is. A missing worktree says
  * nothing (its stop is kept as it was).
  */
 export function partStopsScript(paths: string[]) {
@@ -1458,6 +1614,9 @@ export function partStopsScript(paths: string[]) {
     '  if c=$(git -C "$d" rev-parse -q --verify CHERRY_PICK_HEAD 2>/dev/null); then',
     '    printf "X\t%s\t%s\n" "$d" "$c"',
     '    git -C "$d" diff --name-only --diff-filter=U | while IFS= read -r f; do printf "U\t%s\t%s\n" "$d" "$f"; done',
+    '  elif c=$(git -C "$d" rev-parse -q --verify REBASE_HEAD 2>/dev/null); then',
+    '    printf "R\t%s\t%s\t%s\n" "$d" "$c" "$(git -C "$d" log -1 --format=%s "$c")"',
+    '    git -C "$d" diff --name-only --diff-filter=U | while IFS= read -r f; do printf "U\t%s\t%s\n" "$d" "$f"; done',
     '  elif git -C "$d" rev-parse -q --verify HEAD >/dev/null 2>&1; then printf "D\t%s\n" "$d"; fi',
     "done",
   ].join("\n");
@@ -1465,12 +1624,22 @@ export function partStopsScript(paths: string[]) {
 
 /** A part's path: its stop now, or null when the pick is no longer stopped. */
 export function parsePartStops(stdout: string) {
-  const out = new Map<string, { sha: string; files: string[] } | null>();
+  const out = new Map<
+    string,
+    { sha: string; files: string[]; subject?: string; folding?: true } | null
+  >();
   for (const line of stdout.split("\n")) {
-    const [kind, path = "", value = ""] = line.split("\t");
+    const [kind, path = "", value = "", ...rest] = line.split("\t");
     if (kind === "D" && path) out.set(path, null);
     else if (kind === "X" && path && value)
       out.set(path, { sha: value, files: [] });
+    else if (kind === "R" && path && value)
+      out.set(path, {
+        sha: value,
+        files: [],
+        subject: rest.join("\t"),
+        folding: true,
+      });
     else if (kind === "U" && value) out.get(path)?.files.push(value);
   }
   return out;
@@ -1484,15 +1653,25 @@ export function parsePick(stdout: string): {
   error?: string;
   /** Read back: commits over the target and their patch ids (with a diff). */
   onBranch?: { count: number; ids: string[] };
+  /** The fixups folded: the commits left, the same tree, those left as commits. */
+  fold?: { count: number; sameTree: boolean; unfolded: string[] };
+  /** Folding the fixups stopped here: the part's commit and its subject. */
+  folding?: { sha: string; subject: string };
 } {
   let picked = 0;
   let onBranch: { count: number; ids: string[] } | undefined;
+  let fold:
+    | { count: number; sameTree: boolean; unfolded: string[] }
+    | undefined;
+  let folding: { sha: string; subject: string } | undefined;
+  let sameTree = false;
+  const unfolded: string[] = [];
   const skipped: string[] = [];
   let conflict: string | undefined;
   let error: string | undefined;
   const files: string[] = [];
   for (const line of stdout.split("\n")) {
-    const [kind, value = ""] = line.split("\t");
+    const [kind, value = "", ...rest] = line.split("\t");
     if (kind === "P") picked = Number(value) || 0;
     else if (kind === "X") conflict = value;
     else if (kind === "U" && value) files.push(value);
@@ -1500,6 +1679,12 @@ export function parsePick(stdout: string): {
     else if (kind === "E") error = value;
     else if (kind === "N") onBranch = { count: Number(value) || 0, ids: [] };
     else if (kind === "I" && value && onBranch) onBranch.ids.push(value);
+    else if (kind === "T") sameTree = value === "same";
+    else if (kind === "F")
+      fold = { count: Number(value) || 0, sameTree, unfolded };
+    else if (kind === "K" && value) unfolded.push([value, ...rest].join("\t"));
+    else if (kind === "R" && value)
+      folding = { sha: value, subject: rest.join("\t") };
   }
   return {
     picked,
@@ -1508,6 +1693,8 @@ export function parsePick(stdout: string): {
     ...(conflict ? { conflict } : {}),
     ...(error ? { error } : {}),
     ...(onBranch ? { onBranch } : {}),
+    ...(fold ? { fold } : {}),
+    ...(folding ? { folding } : {}),
   };
 }
 

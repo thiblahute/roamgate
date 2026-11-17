@@ -22,6 +22,7 @@ import {
   type MrEffortChanges,
   type MrEffortSummary,
   type MrMatchProposal,
+  fixupTargets,
   type MrPlan,
   upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
@@ -727,10 +728,12 @@ export function MrEffortView({
       { plan: name, ...(branch ? { branch } : {}) },
       (done) =>
         done.conflict
-          ? `Part ${done.branch}: ${done.picked} of ${done.of} picked, stopped at ${String(done.conflict.sha).slice(0, 10)} (${done.conflict.files.join(", ") || "empty"}): resolve it there`
+          ? `Part ${done.branch}: ${done.picked} of ${done.of} picked, stopped ${done.conflict.folding ? "folding fixups " : ""}at ${String(done.conflict.sha).slice(0, 10)} (${done.conflict.files.join(", ") || "empty"}): resolve it there`
           : done.error
             ? `Part ${done.branch}: ${done.picked} of ${done.of} on its branch: ${done.error}`
-            : `Part ${done.branch} made with ${done.picked} commits${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
+            : done.from
+              ? `Part ${done.branch} made from ${done.from}, which holds its ${done.of} commits: nothing picked`
+              : `Part ${done.branch} made with ${done.picked} commits${done.folded ? `, ${done.folded} fixup${done.folded === 1 ? "" : "s"} folded` : ""}${done.unfolded?.length ? `, ${done.unfolded.length} fixup${done.unfolded.length === 1 ? "" : "s"} left as commits (target not in the part)` : ""}${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
     );
 
   /**
@@ -1617,22 +1620,44 @@ function PlansList({
             point={{ tab: "plans", item: { kind: "plan", key: plan.id } }}
           />
           <ol className="mr-effort-plan-commits">
-            {plan.commits.slice(0, 12).map((key) => {
-              const commit = bykey.get(key);
-              const point = commit
-                ? commitPoint("plans", commit, plan.id)
-                : null;
-              return (
-                <li
-                  key={key}
-                  {...(point ? effortItemProps(point, pointed) : {})}
-                >
-                  <code>{commit?.sha.slice(0, 10) ?? "gone"}</code>{" "}
-                  {commit?.subject ?? "no longer on the source"}
-                  {point ? <EffortThreadsAt point={point} /> : null}
-                </li>
+            {(() => {
+              // Fixups fold into their targets when the part is made.
+              const known = plan.commits.map((key) => bykey.get(key));
+              const targets = fixupTargets(
+                known.map((commit) => commit ?? { sha: "", subject: "" }),
               );
-            })}
+              const folds = (index: number) => {
+                const target = targets[index];
+                if (target === undefined || !known[index] || plan.part?.from)
+                  return null;
+                if (target < 0)
+                  return "its target is not in this plan: it stays a commit";
+                const into = known[target]?.sha.slice(0, 10) ?? "";
+                return plan.part
+                  ? `folded into ${into} in the part`
+                  : `folded into ${into} when the part is made`;
+              };
+              return plan.commits.slice(0, 12).map((key, index) => {
+                const commit = bykey.get(key);
+                const point = commit
+                  ? commitPoint("plans", commit, plan.id)
+                  : null;
+                const note = folds(index);
+                return (
+                  <li
+                    key={key}
+                    {...(point ? effortItemProps(point, pointed) : {})}
+                  >
+                    <code>{commit?.sha.slice(0, 10) ?? "gone"}</code>{" "}
+                    {commit?.subject ?? "no longer on the source"}
+                    {note ? (
+                      <span className="mr-effort-plan-fold"> ({note})</span>
+                    ) : null}
+                    {point ? <EffortThreadsAt point={point} /> : null}
+                  </li>
+                );
+              });
+            })()}
             {plan.commits.length > 12 ? (
               <li>and {plan.commits.length - 12} more</li>
             ) : null}
@@ -1640,8 +1665,14 @@ function PlansList({
           {plan.part ? (
             <p className="assistant-hint">
               Part <code>{plan.part.branch}</code> in {plan.part.path}
+              {plan.part.from ? (
+                <>
+                  {" "}
+                  from <code>{plan.part.from}</code>
+                </>
+              ) : null}
               {plan.part.conflict
-                ? `: stopped at ${plan.part.conflict.sha.slice(0, 10)} ${plan.part.conflict.subject} (${plan.part.conflict.files.join(", ") || "empty"}); resolve it there`
+                ? `: stopped ${plan.part.conflict.folding ? "folding fixups " : ""}at ${plan.part.conflict.sha.slice(0, 10)} ${plan.part.conflict.subject} (${plan.part.conflict.files.join(", ") || "empty"}); resolve it there`
                 : ""}
             </p>
           ) : null}

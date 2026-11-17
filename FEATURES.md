@@ -1122,7 +1122,12 @@ request: the leader session proposes them, you **Accept**, `:split NEW`
 (a commit is in one planned request only, across efforts). An accepted
 one's **Make its part** (`:part [NAME]`) makes a worktree workspace
 in the effort's group through your worktree command, moves it onto the
-target and cherry-picks its commits in order; a conflict stops there and
+target and cherry-picks its commits in order, then folds each `fixup!`,
+`squash!` or `amend!` commit into its target (a plan's fixup rows say
+where they fold; one whose target is not in the plan stays a commit and
+is said). When a local `upstream/<plan name>` branch already holds the
+plan's changes over the target, the part starts at its commit instead,
+nothing picked, that branch left as it is. A conflict stops there and
 is reported, left for that worktree's session to resolve. Its branch is
 then a request not proposed yet, until its request opens. **What changed**
 (`W`, and "N changed" on the card) lists what moved since you last looked:

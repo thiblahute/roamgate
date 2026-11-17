@@ -168,6 +168,11 @@
   padding-left: 20px;
 }
 
+.mr-effort-plan-fold {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
 .mr-effort-plans {
   list-style: none;
   margin: 0;
