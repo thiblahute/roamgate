@@ -84,6 +84,7 @@ import {
 import {
   answerDelivery,
   answersContext,
+  askCompanionAgent,
   companionRouteAction,
   sessionLabel,
   answerText,
@@ -1042,8 +1043,23 @@ export function useVoiceChat({
             if (front && reply) void front.say(reply, signal);
             // Ranger answers when it has read what it needs: voice chat
             // goes on meanwhile, and its answer is read when it comes.
-            void askRanger(voiceMessage(words, cut, route.context)).then(
+            const toRanger = () =>
+              askRanger(voiceMessage(words, cut, route.context));
+            voiceTrace(`asking Ranger: ${words}`);
+            // On a call with the companion, shown in its conversation as
+            // work given to a session is, and in the front's recent context.
+            void (
+              companionCall
+                ? askCompanionAgent(
+                    RANGER_VOICE_SESSION,
+                    words,
+                    toRanger,
+                    route.context,
+                  )
+                : toRanger()
+            ).then(
               (answer) => {
+                voiceTrace("Ranger answered");
                 // The answer is read; the card points at Ranger's chat.
                 note("Ranger answered.", "Ranger", { ranger: true });
                 if (signal.aborted) return;
@@ -1051,6 +1067,7 @@ export function useVoiceChat({
                 else void speak(plainText(answer), signal).catch(() => {});
               },
               (error: Error) => {
+                voiceTrace(`Ranger was not asked: ${error.message}`);
                 note(error.message, "Ranger");
                 if (!signal.aborted)
                   void speak(error.message, signal).catch(() => {});
@@ -1068,8 +1085,18 @@ export function useVoiceChat({
             // Marked as said, as in its own chat by voice.
             const cutReviews = interruptedAt;
             interruptedAt = null;
-            void askReviewsAgent(
-              voiceMessage(words, cutReviews, route.context),
+            const toReviews = () =>
+              askReviewsAgent(voiceMessage(words, cutReviews, route.context));
+            voiceTrace(`asking the reviews agent: ${words}`);
+            void (
+              companionCall
+                ? askCompanionAgent(
+                    REVIEWS_VOICE_SESSION,
+                    words,
+                    toReviews,
+                    route.context,
+                  )
+                : toReviews()
             ).then(
               (answer) => {
                 note("The reviews agent answered.", "Reviews", {

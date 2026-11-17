@@ -3,7 +3,13 @@ import type {
   AgentPromptAnswer,
 } from "../../shared/review";
 import type { AgentPrompt } from "./agentPrompt";
+import { logCompanion, updateCompanionJob } from "./companionCall";
 import { BLOCKED_NOTICE } from "./components/voiceStream";
+import {
+  plainText,
+  RANGER_VOICE_SESSION,
+  REVIEWS_VOICE_SESSION,
+} from "./voiceRoute";
 
 /**
  * Voice chat's companion (server voice-front.ts, front_mode "companion"):
@@ -71,6 +77,55 @@ export function sessionLabel(
   return (
     session?.workspace || session?.title || session?.agent || "the session"
   );
+}
+
+/** The agents with a chat of their own, not a pane, asked by the companion. */
+export type CompanionAgentChat =
+  | typeof RANGER_VOICE_SESSION
+  | typeof REVIEWS_VOICE_SESSION;
+
+/** How those agents are named in the companion's conversation. */
+export const COMPANION_AGENT_LABELS: Record<CompanionAgentChat, string> = {
+  [RANGER_VOICE_SESSION]: "Ranger",
+  [REVIEWS_VOICE_SESSION]: "The reviews agent",
+};
+
+/**
+ * A question the companion gives Ranger or the reviews agent: shown in its
+ * conversation as work given to a session is, so the user sees it was
+ * asked and the front's recent context (companionRecent) says so too.
+ * The entry follows the answer, or says it was not asked; the answer or
+ * the error comes back as `ask` gives it.
+ */
+export async function askCompanionAgent(
+  chat: CompanionAgentChat,
+  words: string,
+  ask: () => Promise<string>,
+  context?: string,
+): Promise<string> {
+  const logged = logCompanion({
+    kind: "job",
+    session: chat,
+    label: COMPANION_AGENT_LABELS[chat],
+    words,
+    ...(context ? { context } : {}),
+    status: "running",
+  });
+  try {
+    const answer = await ask();
+    const text = plainText(answer).trim();
+    updateCompanionJob(
+      logged,
+      text ? { status: "answered", answer: text } : { status: "no answer" },
+    );
+    return answer;
+  } catch (error) {
+    updateCompanionJob(logged, {
+      status: "not started",
+      answer: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 /** Answers kept, at most. */
