@@ -227,7 +227,7 @@ if (process.env.ROAMGATE_CHAT_PLACE_DOM_TEST !== "1") {
   }));
   const { initializeLayoutPreferences } = await import("../layoutPreferences");
   initializeLayoutPreferences();
-  browser.localStorage.setItem("reviewPrefs", JSON.stringify({ vim: false }));
+  browser.localStorage.setItem("vimKeys", "false");
   const { store } = await import("../store");
   const connectionId = store.get().activeConnectionId;
   const { chatPlaceKey } = await import("../chatPlace");
