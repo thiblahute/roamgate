@@ -15,32 +15,8 @@ if (
     20_000,
   )
 ) {
-  const { Window } = await import("happy-dom");
-  const browser = new Window({
-    url: "http://localhost/",
-    width: 412,
-    height: 915,
-  });
-  for (const [key, value] of Object.entries({
-    window: browser,
-    document: browser.document,
-    navigator: browser.navigator,
-    HTMLElement: browser.HTMLElement,
-    Element: browser.Element,
-    Node: browser.Node,
-    Event: browser.Event,
-    KeyboardEvent: browser.KeyboardEvent,
-    PointerEvent: browser.PointerEvent,
-    MouseEvent: browser.MouseEvent,
-    localStorage: browser.localStorage,
-    sessionStorage: browser.sessionStorage,
-    IS_REACT_ACT_ENVIRONMENT: true,
-  }))
-    Object.defineProperty(globalThis, key, {
-      value,
-      configurable: true,
-      writable: true,
-    });
+  const { installTestDom } = await import("../testDom");
+  const { browser } = installTestDom({ width: 412, height: 915 });
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { updateLayoutPreferences } = await import("../layoutPreferences");

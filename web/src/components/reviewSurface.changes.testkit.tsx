@@ -407,24 +407,8 @@ export async function mountChangesReview(
     );
   else if (options.storage !== "keep")
     roamgateLocalStorage.removeItem("diffViewMode");
-  const base = store.get();
-  const getSpy = spyOn(store, "get").mockImplementation(
-    () =>
-      ({
-        ...base,
-        connections: [
-          {
-            id: connectionId,
-            label: "Local",
-            source: "test",
-            is_default: false,
-            state: "ready",
-            generation: 1,
-            type: "local",
-          },
-        ],
-      }) as ReturnType<typeof store.get>,
-  );
+  const { fakeConnection, spyStoreConnection } = await import("../testDom");
+  const getSpy = spyStoreConnection(store, connectionId);
   const notices: string[] = [];
   // The page around the review: its host's callbacks, new tabs, visibility.
   const hostCalls: HostCall[] = [];
@@ -682,16 +666,7 @@ export async function mountChangesReview(
   document.body.append(host);
   screen.attach(host);
   let root = createRoot(host);
-  const client = {
-    connectionId,
-    generation: 1,
-    serverRuntimeGeneration: 1,
-    isCurrent: () => true,
-    acceptsServerGeneration: () => true,
-    call: async (method: string) => {
-      throw new Error(`no backend here: ${method}`);
-    },
-  };
+  const client = fakeConnection(connectionId);
   /** Each file's lines in order, read again once the surface settled. */
   const orders = new Map<string, ShownLine[]>();
   const settleOnly = async () => {

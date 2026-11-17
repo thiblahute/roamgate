@@ -1,4 +1,7 @@
 import { Window } from "happy-dom";
+import { spyOn } from "bun:test";
+import type { ConnectionClient } from "./api";
+import type { store as Store } from "./store";
 
 /** Install a browser before dynamically importing React components in DOM tests. */
 export function installTestDom(
@@ -6,12 +9,14 @@ export function installTestDom(
     url?: string;
     pierre?: boolean;
     extra?: Record<string, unknown>;
+    width?: number;
+    height?: number;
   } = {},
 ) {
   const browser = new Window({
     url: options.url ?? "http://localhost/",
-    width: 1280,
-    height: 800,
+    width: options.width ?? 1280,
+    height: options.height ?? 800,
   });
   const originals = new Map<string, PropertyDescriptor | undefined>();
   const globals: Record<string, unknown> = {
@@ -113,4 +118,47 @@ export function installTestDom(
       }
     },
   };
+}
+
+/** An in-memory ready connection whose calls can be overridden per suite. */
+export function fakeConnection(
+  connectionId: string,
+  call: ConnectionClient["call"] = async (method) => {
+    throw new Error(`no backend here: ${method}`);
+  },
+): ConnectionClient {
+  return {
+    connectionId,
+    generation: 1,
+    serverRuntimeGeneration: 1,
+    isCurrent: () => true,
+    acceptsServerGeneration: () => true,
+    call,
+  } as ConnectionClient;
+}
+
+/** Make the store report the test connection until mockRestore is called. */
+export function spyStoreConnection(
+  store: typeof Store,
+  connectionId: string,
+  options: { label?: string; type?: "local" | "ssh" } = {},
+) {
+  const base = store.get();
+  return spyOn(store, "get").mockImplementation(
+    () =>
+      ({
+        ...base,
+        connections: [
+          {
+            id: connectionId,
+            label: options.label ?? "Local",
+            source: "test",
+            is_default: false,
+            state: "ready",
+            generation: 1,
+            type: options.type ?? "local",
+          },
+        ],
+      }) as ReturnType<typeof store.get>,
+  );
 }

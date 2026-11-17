@@ -688,7 +688,6 @@ export async function mountChangesDiff(
 ): Promise<ChangesDiff> {
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  const { spyOn } = await import("bun:test");
   const { store } = await import("../store");
   const { DiffContentView } = await import("./DiffContentView");
   const { InspectorCommandsContext, InspectorViewContext } = await import(
@@ -699,34 +698,9 @@ export async function mountChangesDiff(
   const { roamgateLocalStorage } = await import("../browserStorage");
   roamgateLocalStorage.removeItem("reviewPlace");
   const connectionId = initial.connectionId ?? `changes-diff-${mounted}`;
-  const client: ConnectionClient = {
-    connectionId,
-    generation: 1,
-    serverRuntimeGeneration: 1,
-    isCurrent: () => true,
-    acceptsServerGeneration: () => true,
-    call: async (method) => {
-      throw new Error(`no backend here: ${method}`);
-    },
-  };
-  const base = store.get();
-  const spy = spyOn(store, "get").mockImplementation(
-    () =>
-      ({
-        ...base,
-        connections: [
-          {
-            id: connectionId,
-            label: "Local",
-            source: "test",
-            is_default: false,
-            state: "ready",
-            generation: 1,
-            type: "local",
-          },
-        ],
-      }) as ReturnType<typeof store.get>,
-  );
+  const { fakeConnection, spyStoreConnection } = await import("../testDom");
+  const client = fakeConnection(connectionId);
+  const spy = spyStoreConnection(store, connectionId);
   let options = initial;
   const fileOf = (each: GitDiffEntry): GitDiffFile => ({
     workspace_id: "workspace",
