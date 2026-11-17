@@ -17,40 +17,8 @@ import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
 
 export async function installAppReviewDom(url = "http://localhost/") {
-  const { Window } = await import("happy-dom");
-  const browser = new Window({ url });
-  for (const [key, value] of Object.entries({
-    window: browser,
-    document: browser.document,
-    navigator: browser.navigator,
-    HTMLElement: browser.HTMLElement,
-    HTMLButtonElement: browser.HTMLButtonElement,
-    HTMLTextAreaElement: browser.HTMLTextAreaElement,
-    HTMLInputElement: browser.HTMLInputElement,
-    Element: browser.Element,
-    Node: browser.Node,
-    Event: browser.Event,
-    FocusEvent: browser.FocusEvent,
-    KeyboardEvent: browser.KeyboardEvent,
-    MouseEvent: browser.MouseEvent,
-    CustomEvent: browser.CustomEvent,
-    ResizeObserver: browser.ResizeObserver,
-    MutationObserver: browser.MutationObserver,
-    getComputedStyle: browser.getComputedStyle.bind(browser),
-    matchMedia: browser.matchMedia.bind(browser),
-    localStorage: browser.localStorage,
-    sessionStorage: browser.sessionStorage,
-    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
-    cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) =>
-      clearTimeout(id),
-    IS_REACT_ACT_ENVIRONMENT: true,
-  }))
-    Object.defineProperty(globalThis, key, {
-      value,
-      configurable: true,
-      writable: true,
-    });
-  return browser;
+  const { installTestDom } = await import("./testDom");
+  return installTestDom({ url }).browser;
 }
 
 /** A review of a workspace (of no workspace with `workspaceId: ""`). */
