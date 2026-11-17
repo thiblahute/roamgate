@@ -2,11 +2,15 @@ import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { MrEffort } from "../../../shared/mrReviews";
 import {
+  changePlans,
+  changesOf,
   clusterLedger,
   createLedgerStore,
+  decideMatches,
   deriveEffort,
   overlapOf,
   setDispositions,
+  snapshotOf,
   undoLedger,
 } from "./efforts";
 import { createGitFixture, type GitFixture } from "./git.fixture";
@@ -224,3 +228,178 @@ test("880 commits: derived within the bound, then nothing run while the heads ho
   expect(again.ran).toBe(false);
   expect(connection.scripts.length).toBe(scripts + 1);
 }, 60_000);
+
+test("fuzzy proposals from upstream, confirmed and rejected; planned requests; what changed", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  const bare = g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  const big = "pool: allocate buffers lazily\n".repeat(1);
+  g.commit(clone, "gst/pool/pool.c", "a\nb\nc\n", big.trim());
+  g.commit(clone, "gst/pool/pool.h", "h\n", "pool: export the allocator");
+  g.commit(clone, "tests/t.c", "t\n", "tests: cover the pool");
+  g.commit(clone, "docs/d.md", "d\n", "docs: describe the pool");
+  // Upstream took the first one reworded and changed (another patch id).
+  const up = g.clone("media/engine", "up");
+  g.commit(
+    up,
+    "gst/pool/pool.c",
+    "a\nb\nc changed\n",
+    "bufferpool: allocate buffers lazily",
+  );
+  g.commit(up, "other/x.c", "x\n", "other: unrelated work");
+  g.git(up, "push", "-q", bare, "main");
+  const connection = g.connection([]);
+  const store = createLedgerStore(join(g.root, "efforts"));
+  const effort = effortOf(clone);
+  const derive = async () =>
+    (
+      await deriveEffort({
+        effort,
+        connection,
+        store,
+        checkTarget: true,
+        requests: async () => [],
+        force: true,
+      })
+    ).derived;
+  let derived = await derive();
+  const first = derived.commits[0]!;
+  expect(first.disposition).toBe("unsorted");
+  expect(first.sizes).toEqual([3]);
+  const upstreamSha = g.git(up, "rev-parse", "HEAD~1").trim();
+  expect(derived.proposals?.[first.key]?.[0]).toMatchObject({
+    sha: upstreamSha,
+    subject: "bufferpool: allocate buffers lazily",
+  });
+  expect(derived.proposals?.[derived.commits[2]!.key]).toBeUndefined();
+  // What changed starts from the first reading.
+  expect(
+    changesOf(derived, store.ledger("e1"), store.seen("e1")),
+  ).toMatchObject({ unsorted: [], landed: [], proposals: [first.key] });
+
+  // Rejected: never proposed again.
+  const rejected = await decideMatches(store, effort, {
+    decisions: [
+      {
+        commit: first.sha.slice(0, 8),
+        match: upstreamSha.slice(0, 9),
+        accept: false,
+      },
+    ],
+    by: "agent",
+    summary: "no",
+  });
+  expect(rejected).toMatchObject({ accepted: 0, rejected: 1 });
+  derived = await derive();
+  expect(derived.proposals?.[first.key]).toBeUndefined();
+  await undoLedger(store, "e1", rejected.journal);
+  derived = await derive();
+  expect(derived.proposals?.[first.key]?.[0]?.sha).toBe(upstreamSha);
+  // Confirmed: upstream by hand, pointing at it, in its history.
+  await decideMatches(store, effort, {
+    decisions: [{ commit: first.sha, match: upstreamSha, accept: true }],
+    by: "user",
+    summary: "yes",
+  });
+  derived = await derive();
+  expect(derived.commits[0]).toMatchObject({
+    disposition: "upstream",
+    note: upstreamSha,
+  });
+  expect(
+    store.history("e1", first.key).map((each) => [each.where, each.sha]),
+  ).toEqual([
+    ["source", first.sha],
+    ["upstream", upstreamSha],
+  ]);
+  // An unknown match is refused, nothing changed.
+  await expect(
+    decideMatches(store, effort, {
+      decisions: [{ commit: first.sha, match: "deadbeef00", accept: true }],
+      by: "user",
+      summary: "x",
+    }),
+  ).rejects.toThrow(/nothing changed/);
+
+  // Planned requests: proposed, a commit in one only, split, accepted.
+  const [, header, tests, docs] = derived.commits.map((each) => each.sha);
+  const proposed = await changePlans(
+    store,
+    effort,
+    { action: "propose", name: "Pool API", commits: [docs!, header!, tests!] },
+    { by: "agent", summary: "p" },
+  );
+  expect(proposed.plan).toMatchObject({ state: "proposed", name: "Pool API" });
+  // In source order whatever the order given.
+  expect(proposed.plan!.commits).toEqual(
+    derived.commits.slice(1).map((each) => each.key),
+  );
+  await expect(
+    changePlans(
+      store,
+      effort,
+      { action: "propose", name: "Other", commits: [tests!] },
+      { by: "agent", summary: "p" },
+    ),
+  ).rejects.toThrow(/one planned request only.*Pool API/);
+  // Another effort's plan holds it: refused too (D4).
+  await expect(
+    changePlans(
+      store,
+      effort,
+      { action: "edit", plan: "Pool API", add: [tests!] },
+      {
+        by: "agent",
+        summary: "p",
+        taken: new Map([[derived.commits[2]!.patchId, "Elsewhere"]]),
+      },
+    ),
+  ).rejects.toThrow(/in a part of Elsewhere/);
+  await changePlans(
+    store,
+    effort,
+    { action: "split", plan: "Pool API", commits: [docs!], name: "Pool docs" },
+    { by: "user", summary: "s" },
+  );
+  await changePlans(
+    store,
+    effort,
+    { action: "accept", plan: "pool api" },
+    { by: "user", summary: "a" },
+  );
+  derived = await derive();
+  expect(derived.commits.map((each) => [each.disposition, each.note])).toEqual([
+    ["upstream", upstreamSha],
+    ["planned", "Pool API"],
+    ["planned", "Pool API"],
+    ["planned", "Pool docs"],
+  ]);
+  expect(store.ledger("e1").plans.map((p) => [p.name, p.state])).toEqual([
+    ["Pool API", "accepted"],
+    ["Pool docs", "proposed"],
+  ]);
+  // Undo of a plan change puts every plan back.
+  const dropped = await changePlans(
+    store,
+    effort,
+    { action: "drop", plan: "Pool docs" },
+    { by: "user", summary: "d" },
+  );
+  expect(store.ledger("e1").plans).toHaveLength(1);
+  await undoLedger(store, "e1", dropped.journal);
+  expect(store.ledger("e1").plans).toHaveLength(2);
+
+  // What changed: the confirmed commit landed since the first look.
+  const changes = changesOf(derived, store.ledger("e1"), store.seen("e1"));
+  expect(changes.landed).toEqual([first.key]);
+  expect(changes.proposals).toEqual([]);
+  store.writeSeen("e1", snapshotOf(derived, store.ledger("e1")));
+  // A new commit on the source shows as new unsorted.
+  g.commit(clone, "new.c", "n\n", "A new thing");
+  derived = await derive();
+  const after = changesOf(derived, store.ledger("e1"), store.seen("e1"));
+  expect(after.landed).toEqual([]);
+  expect(after.unsorted).toEqual([derived.commits.at(-1)!.key]);
+});

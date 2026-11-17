@@ -5,6 +5,7 @@ import type { MrReviewsPush } from "../../../shared/mrReviews";
 import { WORKSPACE_TREE_VERSION } from "../../../shared/workspaceTree";
 import { updateGuiSettings } from "../config/gui-settings";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
+import { parsePick, pickScript } from "./effort-service";
 import { createMrReviews } from "./module";
 import { openMrStore } from "./store";
 
@@ -185,4 +186,210 @@ test("an effort declared by a tool: its card, ledger tools, the push with Undo, 
       ),
     ),
   ).toEqual({ overlaps: [] });
+});
+
+test("planned requests by tool, a part made with its commits picked, a conflict reported, a commit opened", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  g.commit(clone, "pool/a.c", "a2\n", "pool: change a");
+  const workspaces = [{ workspace_id: "w1", label: "big", cwd: clone }];
+  const connection = g.connection(workspaces);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const nodes: any[] = [
+    { id: "g1", kind: "group", parent: null, label: "Big" },
+    {
+      id: "n1",
+      kind: "workspace",
+      parent: "g1",
+      ref: { connection_id: "local", label: "big" },
+    },
+  ];
+  const made: string[] = [];
+  const placed: unknown[] = [];
+  const opened: unknown[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({ version: WORKSPACE_TREE_VERSION, nodes }),
+      apply: async (ops) => {
+        placed.push(...ops);
+        // The part now shows in the group, as the tree would place it.
+        for (const op of ops as any[])
+          if (op.op === "move")
+            nodes.push({
+              id: `n${nodes.length}`,
+              kind: "workspace",
+              parent: op.parent.node,
+              ref: {
+                connection_id: "local",
+                label: op.subject.workspace.path.split("/").pop(),
+              },
+            });
+      },
+    },
+    createWorktree: async ({ workspaceId, branch }) => {
+      expect(workspaceId).toBe("w1");
+      // As the worktree path would: from origin's default branch.
+      const path = join(g.root, `part-${branch.replace(/\//g, "-")}`);
+      g.git(clone, "worktree", "add", "-q", "-b", branch, path, "origin/main");
+      made.push(path);
+      workspaces.push({
+        workspace_id: `w${workspaces.length + 1}`,
+        label: path.split("/").pop()!,
+        cwd: path,
+      });
+      return { path, workspaceId: `w${workspaces.length}` };
+    },
+    openRange: (input) => {
+      opened.push(input);
+      return { sessionId: "s1" };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big" },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const list = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  );
+  const [a, b, a2] = list.commits.map((c: any) => c.sha);
+  const proposed = JSON.parse(
+    await reviews.boardTool(
+      "ledger_plans",
+      { effort: "Big", action: "propose", plan: "Pool b", commits: [b] },
+      "Claude in lead",
+    ),
+  );
+  expect(proposed.plan).toMatchObject({ name: "Pool b", state: "proposed" });
+  // A part only once accepted.
+  await expect(
+    reviews.boardTool(
+      "part_create",
+      { effort: "Big", plan: "Pool b" },
+      "Claude",
+    ),
+  ).rejects.toThrow(/accept Pool b first/);
+  await reviews.handle("bridge.mr_reviews.ledger.plans", {
+    id: "Big",
+    action: "accept",
+    plan: "Pool b",
+  });
+  const part = JSON.parse(
+    await reviews.boardTool(
+      "part_create",
+      { effort: "Big", plan: "Pool b", branch: "pool-b" },
+      "Claude in lead",
+    ),
+  );
+  expect(part).toMatchObject({ ok: true, branch: "pool-b", picked: 1, of: 1 });
+  expect(
+    g.git(made[0]!, "log", "--format=%s", "origin/main..HEAD").trim(),
+  ).toBe("pool: add b");
+  expect(placed).toContainEqual(
+    expect.objectContaining({ op: "move", parent: { node: "g1" } }),
+  );
+  // Its branch is a request not proposed yet, titled after the plan.
+  expect((await reviews.settings()).unsent).toEqual([
+    expect.objectContaining({ title: "Pool b" }),
+  ]);
+  // Its commit counts in a part now.
+  await reviews.efforts.refresh(true);
+  const counts = (await reviews.inbox.get({ viewer: false })).efforts![0]!;
+  expect(counts.counts).toMatchObject({ in_part: 1, unsorted: 2 });
+  expect(counts.plans).toEqual({ proposed: 0, accepted: 1 });
+  // The change of a, without a: a conflict, reported, left as it is.
+  await reviews.handle("bridge.mr_reviews.ledger.plans", {
+    id: "Big",
+    action: "propose",
+    name: "Change a",
+    commits: [a2],
+    accepted: true,
+  });
+  const conflict = await reviews.handle("bridge.mr_reviews.effort.part", {
+    id: "Big",
+    plan: "Change a",
+  });
+  expect(conflict).toMatchObject({
+    ok: false,
+    picked: 0,
+    conflict: {
+      sha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      files: ["pool/a.c"],
+    },
+  });
+  expect(
+    g.git(made[1]!, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").trim(),
+  ).toMatch(/^[0-9a-f]{40}$/);
+  // `d`: the commit's diff as a review in the head workspace.
+  await reviews.handle("bridge.mr_reviews.effort.open_commit", {
+    id: "Big",
+    sha: a,
+  });
+  expect(opened).toEqual([
+    expect.objectContaining({
+      workspaceId: "w1",
+      root: clone,
+      base: `${a}^`,
+      head: a,
+      title: "pool: add a",
+    }),
+  ]);
+  const diff = (await reviews.handle("bridge.mr_reviews.effort.diff", {
+    id: "Big",
+    from: a,
+    to: a2,
+  })) as { text: string };
+  expect(diff.text).toContain("pool");
+});
+
+test("a pick already in the target is skipped and said; a real conflict stops", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  const same = g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  const next = g.commit(clone, "pool/c.c", "c\n", "pool: add c");
+  // The target holds b already, within a larger change.
+  g.git(clone, "checkout", "-q", "-b", "target", "origin/main");
+  g.commit(clone, "pool/b.c", "b\n", "pool: b and more");
+  g.git(clone, "worktree", "add", "-q", "-b", "part", `${g.root}/part`, "target");
+  const connection = g.connection([]);
+  const run = async (shas: string[]) =>
+    parsePick(
+      (
+        await connection.run(
+          pickScript(`${g.root}/part`, ["refs/heads/target"], shas),
+          60_000,
+        )
+      ).stdout,
+    );
+  expect(await run([same.trim(), next.trim()])).toEqual({
+    picked: 1,
+    files: [],
+    skipped: [same.trim()],
+  });
+  expect(g.git(`${g.root}/part`, "log", "--format=%s", "-2").trim()).toBe(
+    "pool: add c\npool: b and more",
+  );
 });

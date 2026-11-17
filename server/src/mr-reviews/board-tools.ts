@@ -273,6 +273,88 @@ export const boardToolSchemas = {
     { effort: effortParam },
     { additionalProperties: false },
   ),
+  ledger_match: Type.Object(
+    {
+      effort: effortParam,
+      decisions: Type.Array(
+        Type.Object(
+          {
+            commit: Type.String({ minLength: 4, maxLength: 80 }),
+            match: Type.String({
+              minLength: 7,
+              maxLength: 64,
+              description: "The upstream commit proposed (its sha).",
+            }),
+            accept: Type.Boolean(),
+          },
+          { additionalProperties: false },
+        ),
+        { minItems: 1, maxItems: 500 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  ledger_plans: Type.Object(
+    {
+      effort: effortParam,
+      action: Type.Union([
+        Type.Literal("propose"),
+        Type.Literal("accept"),
+        Type.Literal("edit"),
+        Type.Literal("split"),
+        Type.Literal("drop"),
+      ]),
+      plan: Type.Optional(
+        Type.String({
+          maxLength: 120,
+          description: "The planned request (name or id); propose: its name.",
+        }),
+      ),
+      name: Type.Optional(
+        Type.String({
+          maxLength: 120,
+          description: "edit: a new name; split: the new plan's name.",
+        }),
+      ),
+      commits: Type.Optional(
+        Type.Array(Type.String({ minLength: 4, maxLength: 80 }), {
+          maxItems: 500,
+          description:
+            "propose: its commits; edit: all of them; split: those moved to the new plan.",
+        }),
+      ),
+      add: Type.Optional(
+        Type.Array(Type.String({ minLength: 4, maxLength: 80 }), {
+          maxItems: 500,
+        }),
+      ),
+      remove: Type.Optional(
+        Type.Array(Type.String({ minLength: 4, maxLength: 80 }), {
+          maxItems: 500,
+        }),
+      ),
+      depends_on: Type.Optional(
+        Type.Array(Type.String({ maxLength: 120 }), {
+          maxItems: 20,
+          description: "Planned requests it comes after.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+  part_create: Type.Object(
+    {
+      effort: effortParam,
+      plan: Type.String({ minLength: 1, maxLength: 120 }),
+      branch: Type.Optional(
+        Type.String({
+          maxLength: 100,
+          description: "The part's branch; the plan's name otherwise.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
   upstream_group: Type.Object(
     {
       group: Type.String({
@@ -514,6 +596,12 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
     "Set the disposition of up to 500 commits of an effort at once (not_for_upstream with a reason, superseded with a pointer, planned, upstream or in_review by hand, unsorted to clear), all or nothing. The user sees it with Undo.",
   effort_overlaps:
     "The other efforts and branches headed upstream holding commits of this effort (same, contains, contained, partial) and the proposed layout for each; nothing is applied.",
+  ledger_match:
+    "Confirm (accept: true) or reject fuzzy matches of an effort's commits: upstream commits Roamgate proposes as the same change under another patch id (ledger_list shows them as proposals). A confirmed one makes the commit upstream by hand, pointing at that upstream commit; a rejected one is never proposed again. All or nothing; the user sees it with Undo.",
+  ledger_plans:
+    "The effort's planned requests (each the content of one future request): propose one (plan: its name, commits, depends_on), accept, edit (name, commits, add, remove, depends_on), split (commits moved to a new plan called name) or drop one. A commit is in one planned request only, across efforts. As the effort's leader you propose; the user accepts (accept only when they said so). The user sees it with Undo.",
+  part_create:
+    "Make the part of an accepted planned request: a worktree workspace in the effort's group (through the user's worktree command), on the target, with the plan's commits cherry-picked in source order (messages kept as written). A conflict stops the pick and is reported (commit and files); nothing is aborted: resolve it in that worktree. Its branch is then a request not proposed yet. Never pushes or opens anything on a forge.",
   upstream_group:
     "Mark a Workspaces-tree group as headed upstream (its workspaces, and those of the groups inside it, hold work meant to go upstream: their branches show in Reviews, lane Not proposed upstream yet, until their request opens), or unmark it. Only when the user asked.",
   upstream_workspace:
@@ -540,10 +628,21 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
     "Set or clear, by hand, what Roamgate says of one of the user's own requests: whose move it is (me, reviewer, external or a person), the next step, the requests it waits for (drawn under them, counted Blocked), labels, a link (URL or path) and stale. Each field set wins over what Roamgate infers; whose and next show as outdated once the request moves on. Use it when the user said so, or to record what you found (\"waiting on bob's answer\"). The user is told and can undo it. No forge call.",
 };
 
+const PLAN_VERBS: Record<string, string> = {
+  propose: "proposed",
+  accept: "accepted",
+  edit: "changed",
+  split: "split",
+  drop: "dropped",
+};
+
 /** The tools that change the user's list. */
 export const BOARD_WRITING: BoardToolName[] = [
   "effort_set",
   "ledger_set",
+  "ledger_match",
+  "ledger_plans",
+  "part_create",
   "upstream_group",
   "upstream_workspace",
   "upstream_unsent",
@@ -922,13 +1021,17 @@ export function createBoardTools(
         summary: unknown;
         feeders: unknown;
         journal: unknown;
+        plans: unknown;
+        changes: unknown;
       };
-      return JSON.stringify({
+      return `${UNTRUSTED}\n${JSON.stringify({
         effort: answer.effort,
         summary: answer.summary,
         feeders: answer.feeders,
         journal: answer.journal,
-      });
+        plans: answer.plans,
+        what_changed: answer.changes,
+      })}`;
     },
 
     async effort_set(params: {
@@ -995,6 +1098,7 @@ export function createBoardTools(
       const answer = (await panel("effort.get", { id: params.effort })) as {
         commits: DerivedCommit[];
         summary: unknown;
+        proposals?: Record<string, unknown[]>;
       };
       const found = filterLedger(answer.commits, {
         ...(params.filter ? { text: params.filter } : {}),
@@ -1015,6 +1119,9 @@ export function createBoardTools(
           disposition: commit.disposition,
           ...(commit.note ? { note: commit.note } : {}),
           ...(commit.upstreamAnyway ? { upstream_anyway: true } : {}),
+          ...(answer.proposals?.[commit.key]
+            ? { proposals: answer.proposals[commit.key] }
+            : {}),
         })),
         ...(skip + limit < found.length
           ? { next_cursor: String(skip + limit) }
@@ -1046,6 +1153,59 @@ export function createBoardTools(
         ...(params.pointer ? { pointer: params.pointer } : {}),
         by: "agent",
         summary: `${caller} marked ${params.commits.length} commit${params.commits.length === 1 ? "" : "s"} ${params.disposition.replace(/_/g, " ")}`,
+      });
+      return JSON.stringify(done);
+    },
+
+    async ledger_match(params: {
+      effort: string;
+      decisions: { commit: string; match: string; accept: boolean }[];
+    }) {
+      const accepted = params.decisions.filter((each) => each.accept).length;
+      const done = await panel("ledger.match", {
+        id: params.effort,
+        decisions: params.decisions,
+        by: "agent",
+        summary: `${caller} confirmed ${accepted} match${accepted === 1 ? "" : "es"} and rejected ${params.decisions.length - accepted}`,
+      });
+      return JSON.stringify(done);
+    },
+
+    async ledger_plans(params: {
+      effort: string;
+      action: string;
+      plan?: string;
+      name?: string;
+      commits?: string[];
+      add?: string[];
+      remove?: string[];
+      depends_on?: string[];
+    }) {
+      const { effort, ...rest } = params;
+      const label = params.plan ?? params.name ?? "";
+      const done = await panel("ledger.plans", {
+        id: effort,
+        ...rest,
+        ...(params.action === "propose" && !params.name && params.plan
+          ? { name: params.plan }
+          : {}),
+        by: "agent",
+        summary: `${caller} ${PLAN_VERBS[params.action] ?? params.action} the planned request ${label}`,
+      });
+      return JSON.stringify(done);
+    },
+
+    async part_create(params: {
+      effort: string;
+      plan: string;
+      branch?: string;
+    }) {
+      const done = await panel("effort.part", {
+        id: params.effort,
+        plan: params.plan,
+        ...(params.branch ? { branch: params.branch } : {}),
+        by: "agent",
+        summary: `${caller} made the part of ${params.plan}`,
       });
       return JSON.stringify(done);
     },

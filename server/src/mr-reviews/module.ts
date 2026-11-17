@@ -124,6 +124,21 @@ export function createMrReviews(options: {
   publish?: (push: MrReviewsPush) => void;
   /** Where efforts' ledgers live (tests); else <data>/mr-reviews/efforts. */
   effortsDir?: string;
+  /** A worktree workspace through the user's worktree path (efforts' parts). */
+  createWorktree?: (input: {
+    connectionId: string;
+    workspaceId: string;
+    branch: string;
+  }) => Promise<{ path: string; workspaceId?: string }>;
+  /** A Roamgate review of a range (an effort's commit, `d`). */
+  openRange?: (input: {
+    connectionId: string;
+    workspaceId: string;
+    root: string;
+    base: string;
+    head: string;
+    title: string;
+  }) => { sessionId: string };
 }) {
   const logger = serverLogger.child("mr-reviews");
   const store = options.store ?? openMrStore();
@@ -544,6 +559,29 @@ export function createMrReviews(options: {
             );
             return node?.kind === "group" ? node.label : null;
           },
+          ...(options.createWorktree
+            ? { createWorktree: options.createWorktree }
+            : {}),
+          ...(options.openRange ? { openRange: options.openRange } : {}),
+          ...(options.tree
+            ? {
+                place: async ({ connectionId, path, workspaceId, group }) => {
+                  await options.tree!.apply([
+                    {
+                      op: "move",
+                      subject: {
+                        workspace: {
+                          connection_id: connectionId,
+                          path,
+                          ...(workspaceId ? { workspace_id: workspaceId } : {}),
+                        },
+                      },
+                      parent: { node: group },
+                    },
+                  ]);
+                },
+              }
+            : {}),
         },
         method,
         params,

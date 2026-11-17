@@ -1086,7 +1086,27 @@ words and `disposition:`, `dir:`, `file:`, `author:`, `:mark not-upstream
 REASON`, `:supersede REF`, `:plan NAME`, `:unsort`, `u` undoes the last
 bulk change, Enter shows the commit's versions across rewords and rebases)
 and **Feeders** (their commits not on the source yet, their drift); `P`,
-`L`, `F` switch tabs. A commit is upstream when its patch is in the target
+`L`, `F` switch tabs. A commit upstream under another patch id (reworded,
+reworked) gets **proposed matches**: upstream commits since the merge base
+touching the same files with a close subject, author and size, scored
+locally, shown in its row ("like abc1234 (0.8)") and under the ledger;
+`:confirm [N]` makes it upstream by hand pointing at that commit (and adds
+it to the commit's versions), `:reject [N|all]` never proposes it again.
+`d` opens the commit's diff as a review in the head workspace's Changes;
+in a commit's versions (Enter), pick two and `d` shows how they differ.
+**Plans** (`R`) lists the planned requests, each the content of one future
+request: the leader session proposes them, you **Accept**, `:split NEW`
+(the selected commits out of their plan) or **Drop** them, and `:plan NAME` puts the selected commits in one
+(a commit is in one planned request only, across efforts). An accepted
+one's **Make its part** (`:part [NAME]`) makes a worktree workspace
+in the effort's group through your worktree command, moves it onto the
+target and cherry-picks its commits in order; a conflict stops there and
+is reported, left for that worktree's session to resolve. Its branch is
+then a request not proposed yet, until its request opens. **What changed**
+(`W`, and "N changed" on the card) lists what moved since you last looked:
+new unsorted commits, commits landed upstream or now in review, feeders
+landed, parts merged, matches to confirm, and commits upstream anyway;
+**Seen** (`:seen`) starts it again. A commit is upstream when its patch is in the target
 (fetched into `refs/roamgate/upstream/...`, never your own remote-tracking
 refs, only when it moved), in review when one of your open requests holds
 it, in a part when a branch of the group holds it; what you mark by hand

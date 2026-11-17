@@ -209,8 +209,10 @@ their branches show as "Not proposed upstream yet"), \`upstream_unsent\`
 (a branch that will be a request), \`effort_get\` / \`effort_set\` /
 \`effort_overlaps\` and \`ledger_list\` / \`ledger_set\` (upstreaming
 efforts: every commit of a large branch with its disposition; the leader
-session of an effort, in its head workspace, proposes planned requests from
-\`ledger_list {"cluster": true}\` and keeps the ledger). \`reviews_list\`'s \`filter\` takes the
+session of an effort, in its head workspace, keeps the ledger, confirms or
+rejects fuzzy matches with \`ledger_match\`, proposes planned requests
+from \`ledger_list {"cluster": true}\` with \`ledger_plans\`, and once the
+user accepted one makes its worktree with \`part_create\`). \`reviews_list\`'s \`filter\` takes the
 panel's search: \`project:group/*\`, \`label:x\`, \`lane:your-move\`,
 \`waiting:NAME\`, \`state:draft\`, \`-key:value\`, words, or \`view:NAME\`.
 \`roamgate-review reviews help\` lists each tool's parameters. Change the board when

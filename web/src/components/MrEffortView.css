@@ -143,3 +143,52 @@
 .is-mobile .mr-ledger-note {
   display: none;
 }
+
+.mr-ledger-note.is-proposal {
+  color: var(--accent, currentColor);
+  font-style: italic;
+}
+
+.mr-effort-proposals,
+.mr-effort-changes section,
+.mr-effort-history {
+  margin-top: 8px;
+}
+
+.mr-effort-proposals h4,
+.mr-effort-changes h4 {
+  margin: 4px 0;
+  font-size: 0.9em;
+}
+
+.mr-effort-proposals ol,
+.mr-effort-changes ul,
+.mr-effort-plan-commits {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.mr-effort-plans {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.mr-effort-plans > li {
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.mr-effort-plans > li.is-proposed {
+  border-style: dashed;
+}
+
+.mr-effort-diff {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 0.85em;
+  white-space: pre;
+}
