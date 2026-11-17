@@ -445,6 +445,166 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
           />
         </label>
       </section>
+      <MrReviewsBackup onImported={onSaved} />
     </div>
+  );
+}
+
+type ImportChange = {
+  path: string;
+  kind: "added" | "removed" | "changed";
+  newerLocal?: boolean;
+};
+
+/**
+ * Export and import of what the Reviews authored (the order, overrides,
+ * views, efforts and their ledgers): a file to keep or carry; an import
+ * says what it would change and applies only once confirmed.
+ */
+export function MrReviewsBackup({ onImported }: { onImported: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    name: string;
+    text: string;
+    changes: ImportChange[];
+  } | null>(null);
+  const exportNow = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { text } = await mrReviewsCall<{ text: string }>("export", {});
+      const url = URL.createObjectURL(
+        new Blob([text], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `roamgate-reviews-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setMessage("Exported");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const preview = async (file: File) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const text = await file.text();
+      const answer = await mrReviewsCall<{ changes: ImportChange[] }>(
+        "import",
+        { text },
+      );
+      setPending({ name: file.name, text, changes: answer.changes });
+    } catch (cause) {
+      setPending(null);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const apply = async () => {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      await mrReviewsCall("import", { text: pending.text, apply: true });
+      setMessage(`Imported ${pending.changes.length} changes`);
+      setPending(null);
+      onImported();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const newer = pending?.changes.filter((change) => change.newerLocal).length;
+  return (
+    <section className="assistant-task-overview" aria-label="Export and import">
+      <h3 className="mr-reviews-section-title">Export and import</h3>
+      <p className="assistant-hint">
+        What you and your agents authored here: the order, pins, removals, what
+        was set by hand, saved views, requests not proposed yet, groups headed
+        upstream and efforts with their ledgers. Never secrets, nothing read
+        from the forges. Also <code>roamgate reviews export</code> and{" "}
+        <code>roamgate reviews import</code>.
+      </p>
+      <div className="assistant-task-buttons">
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy}
+          onClick={() => void exportNow()}
+        >
+          Export
+        </button>
+        <label className="ghost mr-reviews-import">
+          Import...
+          <input
+            type="file"
+            accept="application/json,.json"
+            aria-label="Import a Reviews export"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void preview(file);
+            }}
+          />
+        </label>
+      </div>
+      {pending ? (
+        <div className="mr-reviews-import-preview" role="status">
+          <p>
+            {pending.name}:{" "}
+            {pending.changes.length
+              ? `${pending.changes.length} change${pending.changes.length === 1 ? "" : "s"}`
+              : "nothing would change"}
+            {newer ? `, ${newer} where yours is newer` : ""}
+          </p>
+          <ul>
+            {pending.changes.slice(0, 200).map((change) => (
+              <li
+                key={`${change.kind}:${change.path}`}
+                className={`is-${change.kind}${change.newerLocal ? " is-newer" : ""}`}
+              >
+                {change.kind === "added"
+                  ? "+"
+                  : change.kind === "removed"
+                    ? "-"
+                    : "~"}{" "}
+                <code>{change.path}</code>
+                {change.newerLocal ? <small> yours is newer</small> : null}
+              </li>
+            ))}
+            {pending.changes.length > 200 ? (
+              <li>and {pending.changes.length - 200} more</li>
+            ) : null}
+          </ul>
+          <div className="assistant-task-buttons">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !pending.changes.length}
+              onClick={() => void apply()}
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setPending(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {message ? <p className="assistant-hint">{message}</p> : null}
+    </section>
   );
 }

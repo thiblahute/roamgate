@@ -476,6 +476,35 @@ this machine and on each SSH host when the connection starts. It needs
 default); a host without either only loses the review client. Merge request
 reviews use the `glab` login on the checkout host, like the PR/MR status card.
 
+### Export and import of the Reviews' state
+
+What the Reviews panel authors lives in `settings.json` (`mr_reviews`: the
+order, pins, removals, overrides, saved views, requests not proposed yet,
+groups and workspaces headed upstream, efforts) and, per upstreaming effort,
+in `~/.config/roamgate/mr-reviews/efforts/<id>/` (`ledger.json` and the
+append-only `history.jsonl`). To keep or move it:
+
+```sh
+roamgate reviews export --out reviews.json   # or to stdout without --out
+roamgate reviews import reviews.json         # what it would change
+roamgate reviews import reviews.json --apply # change it
+```
+
+The export is stable, key-sorted JSON: the same state gives the same file,
+so it diffs and versions well. It never holds secrets (keys or values that
+look like tokens, passwords or private keys are dropped), nor anything read
+again from the forges or derived (inference, caches, `derived.json`), nor
+the Undo journal; the forge hosts, clones and other settings stay out (the
+backup of the rest of Roamgate is a separate matter). An import lists every
+added, removed and changed item, flags the ones whose local value is newer,
+and changes nothing without `--apply`; it replaces the exported keys and
+each effort's ledger and merges histories. The commands read the service's
+`ROAMGATE_SETTINGS_PATH` like the server; a running server reads the
+settings again on its next use, so reload the panel. The Reviews settings
+have the same **Export** and **Import** (with the list of changes and an
+**Apply** confirmation). Writing exports somewhere automatically,
+committing or pushing them, is not done here.
+
 ### Permission prompts
 
 The same client answers Claude Code's permission prompts from Roamgate (the

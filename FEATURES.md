@@ -1127,6 +1127,13 @@ and rebases. **Leader** (`c`) goes to the Claude session of its head
 workspace, which leads the effort through the board's tools; with none, it
 offers to start one there, and nothing starts it but you.
 
+**Export and import** what you authored in Reviews (the order, pins,
+removals, what was set by hand, views, requests not proposed yet, groups
+headed upstream, efforts and their ledgers) from the Reviews settings or
+with `roamgate reviews export` / `import`: a stable JSON file without
+secrets; an import shows what it would change before you apply it
+([deployment](docs/DEPLOYMENT.md#export-and-import-of-the-reviews-state)).
+
 **Set it by hand** when you know better: `e` (or **Set by hand** in its
 details) edits whose move it is (yours, the reviewer's, external, or a
 person's), the next step, the requests it waits for, labels, a link (a URL,

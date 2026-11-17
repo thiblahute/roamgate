@@ -362,6 +362,49 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
   expect(diff.text).toContain("pool");
 });
 
+test("export and import through the panel: a preview first, applied with a push", async () => {
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      views: [{ name: "media", query: "project:media/*" }],
+    },
+  }));
+  const pushes: MrReviewsPush[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [],
+    publish: (push) => pushes.push(push),
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  const { text } = (await reviews.handle("bridge.mr_reviews.export", {})) as {
+    text: string;
+  };
+  expect(JSON.parse(text).mr_reviews).toEqual({
+    views: [{ name: "media", query: "project:media/*" }],
+  });
+  const changed = text.replace("project:media/*", "project:media/gst");
+  const preview = (await reviews.handle("bridge.mr_reviews.import", {
+    text: changed,
+  })) as { applied: boolean; changes: unknown[] };
+  expect(preview).toEqual({
+    applied: false,
+    changes: [{ path: "mr_reviews.views[media]", kind: "changed" }],
+  });
+  expect((await reviews.settings()).views[0]!.query).toBe("project:media/*");
+  await reviews.handle("bridge.mr_reviews.import", {
+    text: changed,
+    apply: true,
+  });
+  expect((await reviews.settings()).views[0]!.query).toBe("project:media/gst");
+  expect(pushes.at(-1)?.changed).toContain("views");
+  await expect(
+    reviews.handle("bridge.mr_reviews.import", { text: "{}" }),
+  ).rejects.toThrow(/not a Reviews export/);
+});
+
 test("a pick already in the target is skipped and said; a real conflict stops", async () => {
   const g = createGitFixture();
   fixtures.push(g);
