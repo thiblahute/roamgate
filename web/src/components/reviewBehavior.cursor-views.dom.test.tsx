@@ -185,6 +185,56 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("gn and gN to a thread in a reviewed (folded) file of another commit: that commit, the file opened, the cursor on the thread's line", async () => {
+        const a = added("a.ts", 4);
+        const b = added("b.ts", 6);
+        const second = "b".repeat(40);
+        const review = await mount({
+          files: [a, b],
+          commits: [
+            { sha: "a".repeat(40), subject: "First", files: [a] },
+            { sha: second, subject: "Second", files: [b] },
+          ],
+          threads: [
+            {
+              ...thread("t1", "b.ts", 3, "On b three"),
+              anchor: {
+                path: "b.ts",
+                line: 3,
+                side: "new",
+                commit: second,
+                commitSubject: "Second",
+              },
+            } as ReturnType<typeof thread>,
+          ],
+        });
+        expect(review.view()).toBe("1/2 aaaaaaaa First");
+        // b.ts reviewed in its commit: folded to its header there.
+        await review.press(">");
+        expect(review.view()).toBe("2/2 bbbbbbbb Second");
+        // The keys, not the tree: a file picked there shows opened.
+        await review.press("gg");
+        await review.press("]");
+        expect(review.cursorLine()?.path).toBe("b.ts");
+        await review.press("<A-v>");
+        expect(review.fileReviewed("b.ts")).toBe(true);
+        await review.press("<");
+        expect(review.view()).toBe("1/2 aaaaaaaa First");
+        for (const key of ["gn", "gN"]) {
+          await review.press("gg");
+          await review.press(key);
+          expect(review.view()).toBe("2/2 bbbbbbbb Second");
+          expect(review.lines("b.ts").map((line) => line.text)).toContain(
+            "b.ts line 3",
+          );
+          expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 3 });
+          // Back to the first commit.
+          await review.press("<");
+          expect(review.view()).toBe("1/2 aaaaaaaa First");
+        }
+        await review.unmount();
+      });
+
       test("a file marked reviewed in one commit stays so when its path is marked in another", async () => {
         const first = file("a.ts", hunk(1, 1, ["+a one"]));
         const third = file("a.ts", hunk(5, 5, ["+a five"]));

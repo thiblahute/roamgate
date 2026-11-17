@@ -2,6 +2,7 @@ import type {
   ReviewCommit,
   ReviewDiff,
   ReviewDiffFile,
+  ReviewTarget,
 } from "../../shared/review";
 import { commitMessageFile } from "./reviewModel";
 import type { GitDiffEntry, GitDiffFile } from "./types";
@@ -174,6 +175,24 @@ export function viewName(
     head: "All changes",
     subject: `${commits.length} commit${commits.length === 1 ? "" : "s"}`,
   };
+}
+
+/**
+ * A review of one commit (`SHA^..SHA`, as Review this commit opens it):
+ * named as the commit bar names a commit, its short sha and subject, a root
+ * commit saying so. Null for any other review, or before its commit is
+ * read: its own title then.
+ */
+export function oneCommitTitle(
+  target: ReviewTarget | undefined,
+  commits: readonly ReviewCommit[] | null | undefined,
+): string | null {
+  if (target?.kind !== "range" || target.compare) return null;
+  const { base, head } = target;
+  if (![`${head}^`, `${head}~1`, `${head}~`].includes(base)) return null;
+  const commit = commits?.length === 1 ? commits[0] : undefined;
+  if (!commit) return null;
+  return `${commit.sha.slice(0, 8)} ${commit.subject}${commit.parent === null ? " (root commit)" : ""}`;
 }
 
 /**

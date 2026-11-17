@@ -538,6 +538,7 @@ export function WorkspaceInspectorHost({
   const [viewTree, setViewTree] = useState<{
     label: string;
     entries: readonly GitDiffEntry[];
+    title?: string;
   } | null>(null);
   const [viewGoTo, setViewGoTo] = useState<{
     path: string;
@@ -595,7 +596,8 @@ export function WorkspaceInspectorHost({
       {...(shownReviewSnapshot
         ? {
             review: {
-              label: shownReviewSnapshot.session.title,
+              // A review of one commit: named as its commit, not SHA^..SHA.
+              label: viewTree?.title ?? shownReviewSnapshot.session.title,
               files: viewTree?.entries.length,
             },
           }
@@ -866,11 +868,14 @@ export function WorkspaceInspectorHost({
   const repoName =
     workspace?.worktree?.repo_name || workspace?.label || "Workspace";
   const checkout = checkoutLabel(workspace);
+  // Changes' diff: a file of its scope, or of the review's view (a
+  // branch, commit or range review lists its own files).
+  const changesDetail = !!diffSelection.entry || !!viewTree?.entries.length;
   const detailAvailable =
     state.view === "files"
       ? !!fileSelection.entry
       : state.view === "changes"
-        ? !!diffSelection.entry
+        ? changesDetail
         : false;
   const hasDetail = detailAvailable && drillInByView[state.view];
   // Compact layouts show the tree or the file, never both.
@@ -1196,7 +1201,7 @@ export function WorkspaceInspectorHost({
   useSystemBack(changesShown && !!commandLine, leaveCommandLine, "popup");
   useSystemBack(changesShown && changesOnly, toggleChangesOnly, "navigation");
   useSystemBack(
-    changesShown && compact && !!drillInByView.changes && !!diffSelection.entry,
+    changesShown && compact && !!drillInByView.changes && changesDetail,
     () => {
       setDrillInByView((current) => ({ ...current, changes: false }));
       onBack();
@@ -1648,9 +1653,14 @@ export function WorkspaceInspectorHost({
                     review
                     viewFiles={viewTree}
                     onScopeChange={() => setShownReview(null)}
-                    onPickViewFile={(path) =>
-                      setViewGoTo({ path, at: Date.now() })
-                    }
+                    onPickViewFile={(path) => {
+                      setViewGoTo({ path, at: Date.now() });
+                      // A phone shows the file's diff, as Working's pick.
+                      setDrillInByView((current) => ({
+                        ...current,
+                        changes: true,
+                      }));
+                    }}
                     onPickOtherFile={(path) => {
                       setOtherFileGoTo({ path, at: Date.now() });
                       setDrillInByView((current) => ({

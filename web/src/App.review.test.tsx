@@ -382,6 +382,51 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("a review read a while (a large one): its diff takes the keys once drawn, unless they went elsewhere meanwhile", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      localStorage.setItem("reviewPrefs", JSON.stringify({ vim: true }));
+      app.setNextOpened("r1");
+      const terminal = document.createElement("div");
+      terminal.tabIndex = 0;
+      document.body.append(terminal);
+      terminal.focus();
+      const diffFocused = () =>
+        document.activeElement?.classList.contains("diff-content-view") ??
+        false;
+      // Changes opens, its diff read for a few seconds: the keys wait.
+      await app.setDiffDrawn(false);
+      await app.toggleReview();
+      await app.settle(400);
+      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
+      (document.activeElement as HTMLElement | null)?.blur();
+      await app.settle(400);
+      expect(diffFocused()).toBe(false);
+      // Drawn: the keys are its.
+      await app.setDiffDrawn(true);
+      await app.settle(50);
+      expect(diffFocused()).toBe(true);
+      // Again, the keys given to something else meanwhile: they stay there.
+      await app.toggleReview();
+      await app.settle(50);
+      expect(app.inspector()?.open).toBe(false);
+      await app.setDiffDrawn(false);
+      terminal.focus();
+      await app.toggleReview();
+      await app.settle(400);
+      terminal.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      terminal.focus();
+      await app.setDiffDrawn(true);
+      await app.settle(50);
+      expect(document.activeElement).toBe(terminal);
+      terminal.remove();
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("on reviewin=changes with :novim, Option+R still gives the review's diff the keys: only the comment editor is plain", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],

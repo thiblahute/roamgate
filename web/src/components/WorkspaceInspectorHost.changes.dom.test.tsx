@@ -48,11 +48,14 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       selection: { entry: unknown },
       meta?: { userInitiated?: boolean },
     ) => void;
+    /** A file of a branch, commit or range review picked in the tree. */
+    onPickViewFile?: (path: string) => void;
   } = {};
   mock.module("./DiffViewerPanel", () => ({
     ...diffPanel,
     DiffViewerPanel: (props: typeof treeSeen) => {
       treeSeen.onSelectionChange = props.onSelectionChange;
+      treeSeen.onPickViewFile = props.onPickViewFile;
       return <div data-stub="changes-tree" aria-label="changes-tree" />;
     },
   }));
@@ -89,6 +92,10 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     };
     cursorGoTo?: unknown;
     onReviewGone?: (sessionId: string, message: string) => void;
+    /** The files of the review's view (a branch, commit or range). */
+    onViewEntries?: (
+      view: { label: string; entries: readonly unknown[] } | null,
+    ) => void;
     /** How often the diff was mounted, and unmounted. */
     mounts: number;
     unmounts: number;
@@ -111,6 +118,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         | "forgeHost"
         | "cursorGoTo"
         | "onReviewGone"
+        | "onViewEntries"
       >,
     ) => {
       useEffect(() => {
@@ -127,6 +135,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       diffSeen.forgeHost = props.forgeHost;
       diffSeen.cursorGoTo = props.cursorGoTo;
       diffSeen.onReviewGone = props.onReviewGone;
+      diffSeen.onViewEntries = props.onViewEntries;
       diffSeen.repo = props.repo;
       diffSeen.reviewScope = props.reviewScope;
       diffSeen.onCreateAnnotation = props.onCreateAnnotation;
@@ -636,6 +645,56 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
+    test("a review of one commit is named in the scope line by its short sha and subject (a root commit too), not SHA^..SHA", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      const { rememberReviewSnapshot } = await import("../review");
+      const sha = "d272642486c9f06335ef462e866f0798d7a3a4ad";
+      rememberReviewSnapshot({
+        session: {
+          id: "r8",
+          connectionId: "local",
+          workspaceId: "w1",
+          root: "/repo",
+          title: `${sha}^..${sha}`,
+          target: { kind: "range", base: `${sha}^`, head: sha },
+          gitlab: false,
+          summary: "",
+          agent: {},
+          createdAt: "2026-11-16T10:00:00Z",
+          updatedAt: "2026-11-16T10:00:00Z",
+        },
+        threads: [],
+      } as unknown as import("../../../shared/review").ReviewSnapshot);
+      const shown = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+        reviewGoTo: { review: "r8", at: Date.now() },
+      });
+      const label = () =>
+        shown.host
+          .querySelector<HTMLElement>("[data-stub=scope] .changes-scope-bar")
+          ?.getAttribute("aria-label");
+      try {
+        await act(async () => {});
+        // Its commit not read yet: the review's own title.
+        expect(label()).toBe(`repo \u00b7 ${sha}^..${sha}`);
+        await act(async () =>
+          diffSeen.onViewEntries?.({
+            label: "1/1 d2726424 base",
+            title: "d2726424 base (root commit)",
+            entries: [{ path: "a.txt", kind: "branch", status: "A" }],
+          } as Parameters<NonNullable<typeof diffSeen.onViewEntries>>[0]),
+        );
+        expect(label()).toBe(
+          "repo \u00b7 d2726424 base (root commit) \u00b7 1 file",
+        );
+      } finally {
+        await shown.unmount();
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
     test("a review shown whose code is gone lets go of its pin; with no thread Changes goes back to its own scope and says so, with threads it stays", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
@@ -987,6 +1046,103 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(onlyShown()).toBe(false);
         expect(backs).toEqual([]);
         await back();
+        expect(backs).toEqual(["back"]);
+      } finally {
+        await inspector.unmount();
+        updateLayoutPreferences({ mode: "auto" });
+        if (widthBefore)
+          Object.defineProperty(
+            HTMLElement.prototype,
+            "clientWidth",
+            widthBefore,
+          );
+        else
+          delete (HTMLElement.prototype as { clientWidth?: number })
+            .clientWidth;
+        if (historyBefore)
+          Object.defineProperty(window, "history", historyBefore);
+        localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("on a phone, a file picked in a branch, commit or range review's tree opens its diff, as Working's does; Back, the tree again", async () => {
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ vim: true }));
+      const entries: unknown[] = [null];
+      let index = 0;
+      const fake = {
+        get state() {
+          return entries[index];
+        },
+        get length() {
+          return entries.length;
+        },
+        pushState(value: unknown) {
+          entries.splice(index + 1);
+          entries.push(value);
+          index++;
+        },
+        replaceState(value: unknown) {
+          entries[index] = value;
+        },
+        back() {
+          setTimeout(() => {
+            if (index === 0) return;
+            index--;
+            window.dispatchEvent(
+              new PopStateEvent("popstate", { state: entries[index] }),
+            );
+          }, 0);
+        },
+        forward() {},
+      };
+      const historyBefore = Object.getOwnPropertyDescriptor(window, "history");
+      Object.defineProperty(window, "history", {
+        value: fake,
+        configurable: true,
+      });
+      const { initializeLayoutPreferences, updateLayoutPreferences } =
+        await import("../layoutPreferences");
+      initializeLayoutPreferences();
+      updateLayoutPreferences({ mode: "mobile" });
+      const widthBefore = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        "clientWidth",
+      );
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+        get: () => 390,
+        configurable: true,
+      });
+      const settle = () =>
+        act(async () => {
+          for (let turn = 0; turn < 6; turn++)
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      const backs: string[] = [];
+      // A commit's review: Changes' own selection has no file, the
+      // review's view lists its files.
+      const inspector = await mountInspector({ root: "/repo", backs });
+      const detail = () =>
+        inspector.host
+          .querySelector(".workspace-inspector")
+          ?.classList.contains("has-detail") ?? false;
+      try {
+        await act(async () =>
+          diffSeen.onViewEntries?.({
+            label: "1/1 abcdef12 Subject",
+            entries: [{ path: "a.txt", kind: "branch", status: "M" }],
+          }),
+        );
+        await settle();
+        expect(detail()).toBe(false);
+        await act(async () => treeSeen.onPickViewFile?.("a.txt"));
+        await settle();
+        expect(detail()).toBe(true);
+        expect(diffSeen.cursorGoTo).toMatchObject({ path: "a.txt" });
+        // The diff's Back: its tree.
+        await act(async () => window.history.back());
+        await settle();
+        expect(detail()).toBe(false);
         expect(backs).toEqual(["back"]);
       } finally {
         await inspector.unmount();

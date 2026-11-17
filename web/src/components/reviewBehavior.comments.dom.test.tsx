@@ -110,6 +110,45 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("c on your own review comment, the cursor on its line or on it (gn): its editor, as the classic pane's; on an answered one or a discussion, a reply", async () => {
+        const review = await mount({
+          files: [code()],
+          threads: [
+            mine(
+              "t1",
+              { path: "a.ts", line: 2, side: "new", text: "deux" },
+              "My note",
+            ),
+            mine(
+              "t2",
+              { path: "a.ts", line: 3, side: "new", text: "trois" },
+              "Why three?",
+              { kind: "discussion" },
+            ),
+          ],
+        });
+        // On its line.
+        await review.click({ path: "a.ts", new: 2 });
+        await review.press("c");
+        expect(review.editorText()).toBe("My note");
+        await review.editorCommand(":q");
+        expect(review.editorText()).toBeNull();
+        // On the comment itself (gn lands there).
+        await review.press("gg");
+        await review.press("gn");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
+        await review.press("c");
+        expect(review.editorText()).toBe("My note");
+        await review.editorCommand(":q");
+        // A discussion: c answers it, on its line or on it.
+        await review.press("gn");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 3 });
+        await review.press("c");
+        expect(review.editorText()).toBe("");
+        expect(review.editorPlaceholder()).toMatch(/^Your reply/);
+        await review.unmount();
+      });
+
       test("with the editor or the : prompt focused every key is theirs: the diff and the inspector take none, keep none pending, and the focus stays", async () => {
         const review = await mount({ files: [code()] });
         // Where 2j and then j go, without anything in between.
