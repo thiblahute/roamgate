@@ -11,9 +11,13 @@ const PopoverContent = ({
   className,
   align = "start",
   sideOffset = 8,
+  container,
   ...props
-}: React.ComponentPropsWithRef<typeof PopoverPrimitive.Content>) => (
-  <PopoverPrimitive.Portal>
+}: React.ComponentPropsWithRef<typeof PopoverPrimitive.Content> & {
+  /** Where the portal goes; the document's body by default. */
+  container?: HTMLElement | null;
+}) => (
+  <PopoverPrimitive.Portal container={container}>
     <div className="popover-portal">
       <PopoverPrimitive.Content
         align={align}

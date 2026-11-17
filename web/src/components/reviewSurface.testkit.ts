@@ -697,6 +697,8 @@ export async function installReviewDom() {
     Event: browser.Event,
     KeyboardEvent: browser.KeyboardEvent,
     MouseEvent: browser.MouseEvent,
+    // The menus' popovers announce themselves with one.
+    CustomEvent: browser.CustomEvent,
     CSS: { escape: (value: string) => value },
     requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) =>

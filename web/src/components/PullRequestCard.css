@@ -117,6 +117,7 @@
 }
 
 .pull-request-card-disclosure[open] > summary .pull-request-card-chevron,
+.pull-request-card-summary[data-state="open"] .pull-request-card-chevron,
 .pull-request-card-context[open] > summary svg {
   transform: rotate(90deg);
 }

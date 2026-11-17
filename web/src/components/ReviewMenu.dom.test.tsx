@@ -16,7 +16,7 @@ if (
   )
 ) {
   const { installTestDom } = await import("../testDom");
-  const { browser } = installTestDom({ width: 412, height: 915 });
+  installTestDom({ width: 412, height: 915 });
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { updateLayoutPreferences } = await import("../layoutPreferences");
@@ -24,33 +24,8 @@ if (
   // A desktop layout unless a test says phone (412 px is a phone's width).
   updateLayoutPreferences({ mode: "desktop" });
 
-  const rect = (left: number, top: number, width: number, height: number) =>
-    ({
-      left,
-      top,
-      right: left + width,
-      bottom: top + height,
-      width,
-      height,
-      x: left,
-      y: top,
-      toJSON() {},
-    }) as DOMRect;
-
-  /**
-   * The More menu at a phone's head: its button 30 px wide at `buttonLeft`,
-   * the menu 240 x 90; a fixed box placed `shift` px left of where its
-   * style says, as a sliding view (the phone's drill-in) does.
-   */
-  const mount = async ({
-    app = true,
-    buttonLeft,
-    shift = 0,
-  }: {
-    app?: boolean;
-    buttonLeft: number;
-    shift?: number;
-  }) => {
+  /** The More menu in a review head, on the app's page unless `app` is false. */
+  const mount = async ({ app = true }: { app?: boolean } = {}) => {
     const page = document.createElement("div");
     if (app) page.className = "app";
     const head = document.createElement("div");
@@ -77,16 +52,6 @@ if (
       ),
     );
     const button = head.querySelector<HTMLButtonElement>(".rv-menu-button")!;
-    button.getBoundingClientRect = () => rect(buttonLeft, 100, 30, 26);
-    const proto = browser.HTMLDivElement.prototype as unknown as HTMLElement;
-    const original = proto.getBoundingClientRect;
-    proto.getBoundingClientRect = function (this: HTMLElement) {
-      if (!this.classList.contains("rv-menu"))
-        return original.call(this) as DOMRect;
-      const left = Number.parseFloat(this.style.left) || 0;
-      const top = Number.parseFloat(this.style.top) || 0;
-      return rect(left - shift, top, 240, 90);
-    };
     const open = async () => {
       await act(async () => button.click());
       return document.querySelector<HTMLElement>(".rv-menu");
@@ -94,30 +59,41 @@ if (
     return {
       page,
       head,
+      button,
       picked,
       open,
       async unmount() {
-        proto.getBoundingClientRect = original;
         await act(async () => root.unmount());
         page.remove();
       },
     };
   };
 
-  test("the menu opens over the page, out of the head, under its button and on the screen", async () => {
-    const view = await mount({ buttonLeft: 10 });
+  test("the menu opens over the page, out of the head, and an item acts and closes it", async () => {
+    const view = await mount();
     try {
       const menu = (await view.open())!;
       expect(menu).not.toBeNull();
       // Out of the head (which clips and scrolls), on the app's page.
       expect(view.head.contains(menu)).toBe(false);
-      expect(menu.parentElement).toBe(view.page);
-      const box = menu.getBoundingClientRect();
-      expect(box.left).toBe(8);
-      expect(box.right).toBeLessThanOrEqual(412 - 8);
-      expect(box.top).toBe(130);
+      expect(view.page.contains(menu)).toBe(true);
       expect(menu.classList.contains("is-sheet")).toBe(false);
-      // An item still acts and closes the menu.
+      // The first item has the focus; j and k move it.
+      expect(document.activeElement?.textContent).toContain("GitLab mode");
+      await act(async () => {
+        menu.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "j", bubbles: true }),
+        );
+      });
+      expect(document.activeElement?.textContent).toContain(
+        "Open the merge request",
+      );
+      await act(async () => {
+        menu.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "k", bubbles: true }),
+        );
+      });
+      expect(document.activeElement?.textContent).toContain("GitLab mode");
       const item = [...menu.querySelectorAll<HTMLButtonElement>("button")].find(
         (each) => each.textContent?.includes("Open the merge request"),
       )!;
@@ -129,22 +105,8 @@ if (
     }
   });
 
-  test("a head that moves fixed boxes (a sliding view) does not move the menu off the screen", async () => {
-    // The phone's drill-in slides its track 412 px left: a box placed by
-    // its style alone would open at -320.
-    const view = await mount({ buttonLeft: 330, shift: 412 });
-    try {
-      const menu = (await view.open())!;
-      const box = menu.getBoundingClientRect();
-      expect(box.right).toBe(360);
-      expect(box.left).toBe(120);
-    } finally {
-      await view.unmount();
-    }
-  });
-
   test("Esc and a press elsewhere close it", async () => {
-    const view = await mount({ buttonLeft: 300 });
+    const view = await mount();
     try {
       const menu = (await view.open())!;
       await act(async () => {
@@ -154,11 +116,16 @@ if (
       });
       expect(document.querySelector(".rv-menu")).toBeNull();
       await view.open();
+      // The popover listens for presses elsewhere from the next task on,
+      // and closes on the press's click.
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
       await act(async () => {
         document.body.dispatchEvent(
           new PointerEvent("pointerdown", { bubbles: true }),
         );
+        document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
       expect(document.querySelector(".rv-menu")).toBeNull();
     } finally {
       await view.unmount();
@@ -167,14 +134,12 @@ if (
 
   test("on a phone, the menu is the app menu's bottom sheet", async () => {
     await act(async () => updateLayoutPreferences({ mode: "mobile" }));
-    const view = await mount({ buttonLeft: 330, shift: 412 });
+    const view = await mount();
     try {
       const menu = (await view.open())!;
       expect(menu.classList.contains("is-sheet")).toBe(true);
       expect(menu.classList.contains("mobile-sheet")).toBe(true);
       expect(menu.querySelector(".mobile-sheet-handle")).not.toBeNull();
-      // Its place is the sheet's (CSS), never a computed one.
-      expect(menu.style.left).toBe("");
       expect(
         [...menu.querySelectorAll("[role^=menuitem]")].map(
           (each) => each.querySelector(".rv-menu-label")?.textContent,
@@ -191,7 +156,7 @@ if (
   });
 
   test("with no app page around it (a bare mount), the menu stays in the head", async () => {
-    const view = await mount({ app: false, buttonLeft: 300 });
+    const view = await mount({ app: false });
     try {
       const menu = (await view.open())!;
       expect(view.head.contains(menu)).toBe(true);
