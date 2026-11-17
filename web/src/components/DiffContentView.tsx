@@ -35,11 +35,10 @@ import {
   COMMIT_MESSAGE_PATH,
   REVIEW_USER,
   type ReviewComment,
-  type ReviewSnapshot,
   type ReviewThread,
   type ReviewThreadKind,
 } from "../../../shared/review";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import { reviewCall, useReviewState } from "../review";
 import {
   latestAnswerAt,
   reviewAgent,
@@ -64,7 +63,7 @@ import {
 } from "../changesExpand";
 import { editorKey, editorPlaceholder } from "../reviewSave";
 import { feedbackNote, HELD_FOR_SEND } from "../workspaceFeedback";
-import { useReviewSessionCall } from "../reviewSessionCall";
+import { useReviewSessionCall, writeReviewSession } from "../reviewSessionCall";
 import { usePendingWrites } from "../usePendingWrites";
 import { useReviewStatusLine } from "../reviewStatusLine";
 import { plural } from "./MrThreadCard";
@@ -2175,16 +2174,15 @@ function DiffContentViewInner({
               delete kept[thread.id];
               return kept;
             });
-            ownCall("review.adopt", { thread_id: thread.id })
-              .then(() => ownCall<ReviewSnapshot>("review.get"))
-              .then(rememberReviewSnapshot)
-              .catch((error: unknown) =>
+            // Read back after, as every write on the review.
+            ownCall("review.adopt", { thread_id: thread.id }).catch(
+              (error: unknown) =>
                 setAdoptFailures((failures) => ({
                   ...failures,
                   [thread.id]:
                     error instanceof Error ? error.message : String(error),
                 })),
-              );
+            );
           }}
         >
           Make it mine
@@ -2238,23 +2236,16 @@ function DiffContentViewInner({
               : plan.action === "delete"
                 ? "review.delete"
                 : "review.edit";
-          void reviewCall(connectionClient.connectionId, method, {
-            session_id: thread.sessionId,
-            ...params,
-          })
-            .then(() =>
-              reviewCall<ReviewSnapshot>(
-                connectionClient.connectionId,
-                "review.get",
-                { session_id: thread.sessionId },
-              ),
-            )
-            .then(rememberReviewSnapshot)
-            .catch((error: unknown) =>
-              setReviewStatus(
-                `Not saved: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            );
+          void writeReviewSession(
+            connectionClient.connectionId,
+            thread.sessionId,
+            method,
+            params,
+          ).catch((error: unknown) =>
+            setReviewStatus(
+              `Not saved: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
         }
         focusDiffAfterEditor();
       }}

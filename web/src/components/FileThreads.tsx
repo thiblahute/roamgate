@@ -16,7 +16,8 @@ import {
   type ReviewThread,
   unheardComments,
 } from "../../../shared/review";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import { useReviewState } from "../review";
+import { writeReviewSession } from "../reviewSessionCall";
 import {
   cellPlacement,
   markdownSource,
@@ -288,68 +289,44 @@ export function reviewsUndelivered(
  * each in its own review, read back so the change shows at once.
  */
 export function threadWrites(connectionId: string): Required<ThreadWrites> {
-  const readBack = (sessionId: string) =>
-    reviewCall<ReviewSnapshot>(connectionId, "review.get", {
-      session_id: sessionId,
-    }).then(rememberReviewSnapshot);
+  const write = (
+    thread: ReviewThread,
+    method: string,
+    params: Record<string, unknown>,
+  ) => writeReviewSession(connectionId, thread.sessionId, method, params);
   return {
-    reply: async (thread, text, id) => {
-      await reviewCall(connectionId, "review.reply", {
-        session_id: thread.sessionId,
+    reply: (thread, text, id) =>
+      write(thread, "review.reply", {
         comment_id: thread.id,
         new_comment_id: id,
         text,
-      });
-      await readBack(thread.sessionId);
-    },
+      }),
     resolve: (thread) =>
-      void reviewCall(connectionId, "review.resolve", {
-        session_id: thread.sessionId,
+      void write(thread, "review.resolve", {
         comment_id: thread.id,
         resolved: !thread.resolved,
-      }).then(() => readBack(thread.sessionId)),
+      }),
     remove: (thread) =>
-      void reviewCall(connectionId, "review.delete", {
-        session_id: thread.sessionId,
-        comment_id: thread.id,
-      }).then(() => readBack(thread.sessionId)),
-    edit: async (thread, comment, text) => {
-      await reviewCall(connectionId, "review.edit", {
-        session_id: thread.sessionId,
-        comment_id: comment.id,
-        text,
-      });
-      await readBack(thread.sessionId);
-    },
+      void write(thread, "review.delete", { comment_id: thread.id }),
+    edit: (thread, comment, text) =>
+      write(thread, "review.edit", { comment_id: comment.id, text }),
     removeComment: (thread, comment) =>
-      void reviewCall(connectionId, "review.delete", {
-        session_id: thread.sessionId,
-        comment_id: comment.id,
-      }).then(() => readBack(thread.sessionId)),
-    restore: async (thread) => {
-      await (thread.gitlab
-        ? reviewCall(connectionId, "review.thread.add", {
-            session_id: thread.sessionId,
+      void write(thread, "review.delete", { comment_id: comment.id }),
+    restore: (thread) =>
+      thread.gitlab
+        ? write(thread, "review.thread.add", {
             kind: "draft",
             anchor: thread.anchor,
             text: thread.comments[0]?.body ?? "",
           })
-        : reviewCall(connectionId, "review.restore", {
-            session_id: thread.sessionId,
-            thread,
-          }));
-      await readBack(thread.sessionId);
-    },
-    addPart: async (thread, part, text, id) => {
-      await reviewCall(connectionId, "review.thread.add", {
-        session_id: thread.sessionId,
+        : write(thread, "review.restore", { thread }),
+    addPart: (thread, part, text, id) =>
+      write(thread, "review.thread.add", {
         kind: "discussion",
         anchor: { ...thread.anchor, message: part },
         new_thread_id: id,
         text,
-      });
-      await readBack(thread.sessionId);
-    },
+      }),
   };
 }
 
