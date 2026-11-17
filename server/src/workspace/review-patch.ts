@@ -294,13 +294,14 @@ export function reviewStateScript(
   shQuote: (value: string) => string,
 ): string {
   const lines = [enterCheckout(root, shQuote)];
+  // A range's ends, a step's two snapshots: gone, the script says so.
   if (target.kind === "range")
     lines.push(
-      baseRevision(target.base, shQuote),
-      `git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}`,
+      resolveBase(target.base, shQuote),
+      resolveHead(target.head, shQuote),
+      `printf '%s\\n%s\\n' "$b" "$h"`,
     );
   else if (target.kind === "step")
-    // Its two snapshots never change: gone, the script says so.
     lines.push(
       ...[target.before, target.after].map(
         (tree) =>
