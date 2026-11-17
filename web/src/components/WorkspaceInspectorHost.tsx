@@ -29,6 +29,7 @@ import type {
 } from "../../../shared/review";
 import type { ConnectionClient } from "../api";
 import { connectionClientScopeKey } from "../useConnectionClient";
+import { sameRoot, trimRoot } from "../filesystemPaths";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import {
   type NewReviewAnnotation,
@@ -100,6 +101,7 @@ import {
   InspectorZenEnd,
   ReviewOnlyEnd,
   useChangesTreeHidden,
+  useStoredFlag,
 } from "./changesFrame";
 import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
@@ -184,6 +186,12 @@ export type ChangesGoTo = {
   commit?: string;
   at: number;
 };
+
+/** A repository as a go-to names it: "" for the checkout's own. */
+function rootArg(root: string, ownRoot: string | undefined): string {
+  const trimmed = trimRoot(root);
+  return trimmed === ownRoot ? "" : trimmed;
+}
 
 /** A diff entry's path (from the checkout) and a path Files gave. */
 export function sameDiffPath(entryPath: string, path: string): boolean {
@@ -347,22 +355,9 @@ export function WorkspaceInspectorHost({
     entries: GitDiffEntry[];
   }>(() => ({ resourceKey: "", entries: [] }));
   /** The file tree beside a previewed file, hidden by `:files` or its button. */
-  const [filesTreeHidden, setFilesTreeHidden] = useState(() => {
-    try {
-      return roamgateLocalStorage.getItem(FILES_TREE_HIDDEN_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggleFilesTree = () =>
-    setFilesTreeHidden((hidden) => {
-      try {
-        roamgateLocalStorage.setItem(FILES_TREE_HIDDEN_KEY, hidden ? "0" : "1");
-      } catch {
-        /* Kept for this page only. */
-      }
-      return !hidden;
-    });
+  const [filesTreeHidden, toggleFilesTree] = useStoredFlag(
+    FILES_TREE_HIDDEN_KEY,
+  );
   /** Changes' tree beside the diff, hidden by `:files`. */
   const [changesTreeHidden, toggleChangesTree] = useChangesTreeHidden();
   /** Review only in Changes (`:only`): the diff alone, Esc brings all back. */
@@ -489,9 +484,8 @@ export function WorkspaceInspectorHost({
         pickChangesRepo(root);
         return;
       }
-      const trimmed = root.replace(/\/+$/, "");
       setPendingGoTo({
-        root: trimmed === ownRoot ? "" : trimmed,
+        root: rootArg(root, ownRoot),
         scope: "working",
         at: Date.now(),
       });
@@ -525,6 +519,28 @@ export function WorkspaceInspectorHost({
     path: string;
     at: number;
   } | null>(null);
+  /** A view's key: drawn anew for another client, checkout or branch. */
+  const workspaceScopeKey = (each: Workspace) =>
+    connectionClientScopeKey(
+      connectionClient,
+      connectionClient.serverRuntimeGeneration,
+      contentResourceKey,
+      each.workspace_id,
+      each.worktree?.checkout_path,
+      each.cwd,
+      each.worktree?.git_status?.branch,
+    );
+  /** The workspace's pull or merge request, as a compact card. */
+  const requestCard = (each: Workspace) => (
+    <PullRequestCard
+      key={workspaceScopeKey(each)}
+      client={connectionClient}
+      workspaceId={each.workspace_id}
+      branch={each.worktree?.git_status?.branch}
+      compact
+      onRequest={setCardRequest}
+    />
+  );
   const changesScopeBar = () => (
     <ChangesScopeBar
       repos={changesRepos}
@@ -554,22 +570,7 @@ export function WorkspaceInspectorHost({
         ? {
             request: (
               <span className="changes-request-chip">
-                <PullRequestCard
-                  key={connectionClientScopeKey(
-                    connectionClient,
-                    connectionClient.serverRuntimeGeneration,
-                    contentResourceKey,
-                    workspace.workspace_id,
-                    workspace.worktree?.checkout_path,
-                    workspace.cwd,
-                    workspace.worktree?.git_status?.branch,
-                  )}
-                  client={connectionClient}
-                  workspaceId={workspace.workspace_id}
-                  branch={workspace.worktree?.git_status?.branch}
-                  compact
-                  onRequest={setCardRequest}
-                />
+                {requestCard(workspace)}
               </span>
             ),
           }
@@ -606,19 +607,17 @@ export function WorkspaceInspectorHost({
     () => ({
       ...(cardRequest ? { requestUrl: cardRequest } : {}),
       onShowReview: (snapshot: ReviewSnapshot) => {
-        const root = snapshot.session.root.replace(/\/+$/, "");
-        const same = root === (shownRoot ?? "").replace(/\/+$/, "");
+        const same = sameRoot(snapshot.session.root, shownRoot ?? "");
         setPendingGoTo({
           review: snapshot.session.id,
-          ...(same ? {} : { root: root === ownRoot ? "" : root }),
+          ...(same ? {} : { root: rootArg(snapshot.session.root, ownRoot) }),
           at: Date.now(),
         });
       },
       onOpenLocal: (root: string) => {
-        const trimmed = root.replace(/\/+$/, "");
         setPendingGoTo({
           scope: "branch-main",
-          root: trimmed === ownRoot ? "" : trimmed,
+          root: rootArg(root, ownRoot),
           at: Date.now(),
         });
       },
@@ -911,9 +910,7 @@ export function WorkspaceInspectorHost({
     const result = viewKeys.feed(event.key);
     if (result.type !== "command") return;
     if (result.key !== "gt" && result.key !== "gT") return;
-    const views: InspectorView[] = historyAvailable
-      ? ["files", "changes", "commits", "history"]
-      : ["files", "changes", "commits"];
+    const views = viewNames;
     const at = Math.max(0, views.indexOf(state.view));
     const next =
       result.key === "gt" && result.count
@@ -944,9 +941,7 @@ export function WorkspaceInspectorHost({
       }
       return;
     }
-    const views: InspectorView[] = historyAvailable
-      ? ["files", "changes", "commits", "history"]
-      : ["files", "changes", "commits"];
+    const views = viewNames;
     const currentIndex = Math.max(0, views.indexOf(state.view));
     const nextView: InspectorView | undefined =
       event.key === "Home"
@@ -961,13 +956,7 @@ export function WorkspaceInspectorHost({
     if (!nextView) return;
     event.preventDefault();
     onViewChange(nextView);
-    const refs = {
-      files: filesTabRef,
-      changes: changesTabRef,
-      commits: commitsTabRef,
-      history: historyTabRef,
-    };
-    refs[nextView].current?.focus();
+    tabRefs[nextView].current?.focus();
   };
 
   /*
@@ -1389,24 +1378,9 @@ export function WorkspaceInspectorHost({
         workspace &&
         // Changes has it as a chip in its head's row, and only for the
         // checkout's own review.
-        state.view === "commits" ? (
-          <PullRequestCard
-            key={connectionClientScopeKey(
-              connectionClient,
-              connectionClient.serverRuntimeGeneration,
-              contentResourceKey,
-              workspace.workspace_id,
-              workspace.worktree?.checkout_path,
-              workspace.cwd,
-              workspace.worktree?.git_status?.branch,
-            )}
-            client={connectionClient}
-            workspaceId={workspace.workspace_id}
-            branch={workspace.worktree?.git_status?.branch}
-            compact
-            onRequest={setCardRequest}
-          />
-        ) : null}
+        state.view === "commits"
+          ? requestCard(workspace)
+          : null}
 
         {!workspace ? (
           <div className="workspace-inspector-unavailable">
@@ -1876,15 +1850,7 @@ export function WorkspaceInspectorHost({
                     }
                   >
                     <GitCommitHistory
-                      key={connectionClientScopeKey(
-                        connectionClient,
-                        connectionClient.serverRuntimeGeneration,
-                        contentResourceKey,
-                        workspace.workspace_id,
-                        workspace.worktree?.checkout_path,
-                        workspace.cwd,
-                        workspace.worktree?.git_status?.branch,
-                      )}
+                      key={workspaceScopeKey(workspace)}
                       client={connectionClient}
                       workspaceId={workspace.workspace_id}
                       resourceKey={contentResourceKey}
