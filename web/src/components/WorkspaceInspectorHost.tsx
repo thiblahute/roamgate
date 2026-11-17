@@ -159,30 +159,6 @@ const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
 /** No threads given: the review's files read from none. */
 const NO_FEEDBACK_THREADS: readonly ReviewThread[] = [];
 
-/**
- * What Changes shows, in a line (the review in Changes): the repository,
- * then the scope, its branch and base.
- */
-export function changesScopeLabel({
-  mode,
-  base,
-  repo,
-  branch,
-}: {
-  mode?: "working" | "branch-main" | "last-step";
-  base?: string;
-  repo?: string;
-  branch?: string;
-}): string {
-  const what =
-    mode === "branch-main"
-      ? `${branch ? `branch ${branch}` : "this branch"} vs ${base ?? "its base"}`
-      : mode === "last-step"
-        ? "Last step: what the agent's last step changed"
-        : "Working tree: uncommitted changes";
-  return repo ? `${repo} · ${what}` : what;
-}
-
 /** A diff entry's path (from the checkout) and a path Files gave. */
 export function sameDiffPath(entryPath: string, path: string): boolean {
   const relative = entryPath.replace(/^\.?\//, "");
@@ -1802,16 +1778,6 @@ export function WorkspaceInspectorHost({
                         onOpenFile={onOpenDiffFile}
                         reviewCursor
                         reviewScope={changesScope}
-                        scopeLabel={changesScopeLabel({
-                          mode: diffSelection.scopeMode,
-                          base: diffSelection.scopeBase,
-                          repo:
-                            diffSelection.repoName ??
-                            workspace?.worktree?.repo_name,
-                          branch:
-                            diffSelection.branch ??
-                            workspace?.worktree?.git_status?.branch,
-                        })}
                         scopeControls={changesScopeBar()}
                         {...(changesOnly
                           ? {

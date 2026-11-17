@@ -67,6 +67,7 @@ import { feedbackNote, HELD_FOR_SEND } from "../workspaceFeedback";
 import { useReviewSessionCall } from "../reviewSessionCall";
 import { usePendingWrites } from "../usePendingWrites";
 import { useReviewStatusLine } from "../reviewStatusLine";
+import { plural } from "./MrThreadCard";
 import { ReviewMessageBar } from "./ReviewMessageBar";
 import type { ConnectionClient } from "../api";
 import {
@@ -1323,7 +1324,6 @@ function sameRange(
 function DiffContentViewInner({
   selectionRevision = 0,
   cursorGoTo = null,
-  scopeLabel,
   scopeControls,
   headEnd,
   errorBack,
@@ -1382,9 +1382,7 @@ function DiffContentViewInner({
   placeSettled = true,
 }: {
   selectionRevision?: number;
-  /** What is shown: repository, scope, branch and base. */
-  scopeLabel?: string;
-  /** The scope line as controls (the review in Changes), for scopeLabel. */
+  /** The scope line as controls (the review in Changes). */
   scopeControls?: ReactNode;
   /** A scope that cannot load: the way back to the review it replaced. */
   errorBack?: { label: string; run: () => void };
@@ -5519,19 +5517,10 @@ function DiffContentViewInner({
     <div className="diff-content-title">
       {scopeControls ? (
         scopeControls
-      ) : scopeLabel ? (
-        <strong className="diff-content-scope" title={scopeLabel}>
-          {scopeLabel}
-          {changedFileCount
-            ? ` · ${changedFileCount} file${changedFileCount === 1 ? "" : "s"}`
-            : ""}
-        </strong>
       ) : (
         <strong>
           {changedFileCount
-            ? `${changedFileCount} changed file${
-                changedFileCount === 1 ? "" : "s"
-              }`
+            ? plural(changedFileCount, "changed file")
             : "Diff Viewer"}
         </strong>
       )}
