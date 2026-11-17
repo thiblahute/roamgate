@@ -274,8 +274,9 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       localStorage.setItem(
         "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
+        JSON.stringify({ reviewIn: "changes" }),
       );
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       await app.toggleReview();
       await app.settle(50);
@@ -305,8 +306,9 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       localStorage.setItem(
         "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
+        JSON.stringify({ reviewIn: "changes" }),
       );
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       app.setRepos(["/repo/r1", "/repo/other"]);
       await app.toggleReview();
@@ -335,8 +337,9 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       localStorage.setItem(
         "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
+        JSON.stringify({ reviewIn: "changes" }),
       );
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       await app.toggleReview();
       await app.settle(50);
@@ -355,8 +358,9 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       localStorage.setItem(
         "reviewPrefs",
-        JSON.stringify({ reviewIn: "changes", vim: true }),
+        JSON.stringify({ reviewIn: "changes" }),
       );
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r2");
       await app.toggleReview();
       await app.settle(50);
