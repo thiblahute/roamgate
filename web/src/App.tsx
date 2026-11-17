@@ -224,6 +224,7 @@ import {
   tabName,
 } from "./components/TabBar";
 import type { TerminalWorkspaceFileRequest } from "./components/TerminalView";
+import type { ChangesGoTo } from "./components/WorkspaceInspectorHost";
 import { WorkspaceSearchField } from "./components/WorkspaceSearchField";
 import { WorkspaceTree } from "./components/WorkspaceTree";
 import { CreateWorkspaceDialog } from "./components/CreateWorkspaceDialog";
@@ -423,6 +424,21 @@ const WorkspaceInspectorHost = lazyWithReload("workspace-inspector", () =>
     default: module.WorkspaceInspectorHost,
   })),
 );
+
+/** The review toggle's request: where Changes goes, or `close` to leave. */
+type ReviewToggleGoTo = Pick<
+  ChangesGoTo,
+  "path" | "line" | "root" | "commit"
+> & {
+  scope?: "working" | "branch-main";
+  /** This review, shown as the toggle shows one (the reviews list's). */
+  sessionId?: string;
+  /**
+   * Close the review (`:q`, Esc in Changes): back to what the inspector
+   * showed when the toggle showed it, else nothing.
+   */
+  close?: boolean;
+};
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 560;
@@ -3018,17 +3034,9 @@ export default function App() {
     openReviewInChangesAtRef.current(path, line);
   }, []);
   // Set below, once the inspector's callbacks exist (D6).
-  const toggleReviewInChangesRef = useRef<
-    (goTo?: {
-      path?: string;
-      line?: number;
-      scope?: "working" | "branch-main";
-      sessionId?: string;
-      root?: string;
-      commit?: string;
-      close?: boolean;
-    }) => void
-  >(() => {});
+  const toggleReviewInChangesRef = useRef<(goTo?: ReviewToggleGoTo) => void>(
+    () => {},
+  );
   /**
    * Commits' Review this commit (plan phase 8): the Branch scope on that
    * commit (a review of the commit alone when the branch does not hold it).
@@ -3890,36 +3898,9 @@ export default function App() {
   // Changes' own expanded flag and the other views' one, per checkout.
   const changesExpandedRef = useRef(new Map<string, boolean>());
   const otherExpandedRef = useRef(new Map<string, boolean>());
-  const [changesGoTo, setChangesGoTo] = useState<{
-    path?: string;
-    line?: number;
-    scope?: "working" | "branch-main";
-    /** A review shown as Changes' scope (plan phase 6). */
-    review?: string;
-    root?: string;
-    /** Of a repository the workspace does not hold (D3). */
-    elsewhere?: boolean;
-    /** Commits' Review this commit: that commit in the Branch scope. */
-    commit?: string;
-    at: number;
-  } | null>(null);
+  const [changesGoTo, setChangesGoTo] = useState<ChangesGoTo | null>(null);
   const toggleReviewInChanges = useCallback(
-    (goTo?: {
-      path?: string;
-      line?: number;
-      scope?: "working" | "branch-main";
-      /** This review, shown as the toggle shows one (the reviews list's). */
-      sessionId?: string;
-      /** The repository ("": the checkout's). */
-      root?: string;
-      /** Commits' Review this commit: that commit in the Branch scope. */
-      commit?: string;
-      /**
-       * Close the review (`:q`, Esc in Changes): back to what the inspector
-       * showed when the toggle showed it, else nothing.
-       */
-      close?: boolean;
-    }) => {
+    (goTo?: ReviewToggleGoTo) => {
       const workspace = store.get().workspaces.find((each) => each.focused);
       if (!workspace) {
         if (!goTo?.close) openDiffViewer();

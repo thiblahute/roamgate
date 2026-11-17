@@ -117,6 +117,7 @@ import {
   repoResourceKey,
 } from "../changesRepo";
 import { type ChangesScope, stepTarget, WORKING_SCOPE } from "../changesReview";
+import type { GitDiffSummaryMode } from "../gitDiffSummaryStore";
 import { useReviewState } from "../review";
 import "./WorkspaceInspectorHost.css";
 
@@ -158,6 +159,31 @@ const VIEW_NOTES: Record<InspectorView, string> = {
 const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
 /** No threads given: the review's files read from none. */
 const NO_FEEDBACK_THREADS: readonly ReviewThread[] = [];
+
+/**
+ * Files' Review: the file (absolute or relative) and line Changes' cursor
+ * goes to; `at` tells requests apart.
+ */
+export type ChangesGoTo = {
+  path?: string;
+  line?: number;
+  scope?: GitDiffSummaryMode;
+  /**
+   * A review shown as Changes' scope (a range or compare opened by name,
+   * an older step): its session.
+   */
+  review?: string;
+  /** The repository to show ("": the workspace's own). */
+  root?: string;
+  /**
+   * Of a repository the workspace does not hold (its workspace gone, an
+   * agent's review without one): shown here, marked "from elsewhere" (D3).
+   */
+  elsewhere?: boolean;
+  /** Commits' Review this commit: that commit in the Branch scope. */
+  commit?: string;
+  at: number;
+};
 
 /** A diff entry's path (from the checkout) and a path Files gave. */
 export function sameDiffPath(entryPath: string, path: string): boolean {
@@ -236,30 +262,8 @@ export function WorkspaceInspectorHost({
   onAddReviewImage?: (file: File) => Promise<string>;
   /** Shows a file of a checkout (absolute path) in its code review. */
   onShowInReview?: (path: string, line?: number) => void;
-  /**
-   * Files' Review: the file (absolute or relative) and
-   * line Changes' cursor goes to; `at` tells requests apart.
-   */
-  reviewGoTo?: {
-    path?: string;
-    line?: number;
-    scope?: "working" | "branch-main" | "last-step";
-    /**
-     * A review shown as Changes' scope (a range or compare opened by name,
-     * an older step): its session.
-     */
-    review?: string;
-    /** The repository to show ("": the workspace's own). */
-    root?: string;
-    /**
-     * Of a repository the workspace does not hold (its workspace gone, an
-     * agent's review without one): shown here, marked "from elsewhere" (D3).
-     */
-    elsewhere?: boolean;
-    /** Commits' Review this commit: that commit in the Branch scope. */
-    commit?: string;
-    at: number;
-  } | null;
+  /** Where Changes' cursor goes (Files' Review, the toggle). */
+  reviewGoTo?: ChangesGoTo | null;
   /** Commits' Review this commit (plan phase 8). */
   onReviewCommit?: (sha: string) => void;
   /**
