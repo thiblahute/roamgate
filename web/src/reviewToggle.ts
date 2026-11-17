@@ -1,5 +1,6 @@
-import type { ReviewDiff } from "../../shared/review";
 import {
+  djb2,
+  type HunkLines,
   type HunkUnit,
   type ReviewedFile,
   reviewedChanges,
@@ -13,14 +14,11 @@ import {
  */
 
 /** A short fingerprint of a file's diff: reviewed until it changes. */
-export function fileFingerprint(file: ReviewDiff["files"][number]): string {
+export function fileFingerprint(file: { hunks: readonly HunkLines[] }): string {
   let hash = 5381;
   for (const hunk of file.hunks)
-    for (const line of hunk.lines) {
-      const text = `${line.kind}${line.text}\n`;
-      for (let i = 0; i < text.length; i++)
-        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
-    }
+    for (const line of hunk.lines)
+      hash = djb2(hash, `${line.kind}${line.text}\n`);
   return `${file.hunks.length}:${(hash >>> 0).toString(36)}`;
 }
 
