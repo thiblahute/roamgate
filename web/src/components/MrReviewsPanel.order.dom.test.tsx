@@ -350,6 +350,18 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
     await settle();
     expect(rows()).toEqual(["k6", "k1", "k4", "k2", "k5"]);
     expect(order).toEqual(["k6", "k1", "k4", "k2", "k5"]);
+    // No Add row on a phone either: the head's + opens the add prompt.
+    const addBox = () =>
+      host.querySelector('[aria-label="Add a merge or pull request"]');
+    expect(addBox()).toBeNull();
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>('[aria-label="Add a request"]')!
+        .click(),
+    );
+    await settle();
+    expect(addBox()).not.toBeNull();
+    expect(document.activeElement).toBe(addBox());
     act(() => root3.unmount());
     host.remove();
     expect(

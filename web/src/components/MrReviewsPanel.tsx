@@ -1684,8 +1684,19 @@ export function MrReviewsPanel({
   const [searchFocused, setSearchFocused] = useState(false);
   const [completionAt, setCompletionAt] = useState(-1);
   const [completionsOff, setCompletionsOff] = useState(false);
+  // A request's URL (or group/project!12) in the search is one to add (or
+  // to go to, when the list has it), not words to search for.
+  const pastedQuery = mrPastedRequest(query);
+  const pastedEntry = pastedQuery
+    ? entries.find(
+        (entry) =>
+          entry.url &&
+          (pastedQuery === entry.url ||
+            pastedQuery.startsWith(`${entry.url.replace(/\/$/, "")}/`)),
+      )
+    : undefined;
   const completions = useMemo(() => {
-    if (!searchFocused || completionsOff) return [];
+    if (!searchFocused || completionsOff || mrPastedRequest(query)) return [];
     const last = /\S*$/.exec(query)?.[0] ?? "";
     if (!last.replace(/^-/, "")) return [];
     return mrFilterCompletions(query, entries).filter(
@@ -2181,9 +2192,15 @@ export function MrReviewsPanel({
     };
   };
 
-  // Adding a request by URL, and removing one from the view with an undo.
+  // Adding a request by URL (p's transient prompt, :add, a paste), and
+  // removing one from the view with an undo.
   const addRef = useRef<HTMLInputElement>(null);
-  const [addText, setAddText] = useState("");
+  /** The add prompt's text; null: closed. */
+  const [addText, setAddText] = useState<string | null>(null);
+  useEffect(() => {
+    if (addText !== null && document.activeElement !== addRef.current)
+      addRef.current?.focus();
+  }, [addText]);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [hiddenOpen, setHiddenOpen] = useState(false);
@@ -2210,7 +2227,6 @@ export function MrReviewsPanel({
     setAddError(null);
     try {
       const { key } = await pinMrRequest(value);
-      setAddText("");
       setQuery("");
       await reload();
       setSelected(key);
@@ -2819,6 +2835,12 @@ export function MrReviewsPanel({
       else void saveView(name === "save" ? "save" : "delete", wanted);
       return;
     }
+    // :add URL (or :pin URL) adds a request; :add alone opens its prompt.
+    if (name === "add" || (name === "pin" && argument)) {
+      if (argument) void add(argument);
+      else setAddText("");
+      return;
+    }
     if (name === "pin" || name === "unpin") {
       if (!current) say("Select a request first");
       else togglePin(current, name === "pin");
@@ -2905,14 +2927,17 @@ export function MrReviewsPanel({
       else return false;
       return true;
     }
-    // The add box: Enter pins what it holds, Esc empties it.
+    // The add prompt: Enter pins what it holds, Esc closes it.
     if (event.target === addRef.current) {
       if (event.key === "Escape") {
-        setAddText("");
+        setAddText(null);
         setAddError(null);
         panelRef.current?.focus({ preventScroll: true });
       } else if (event.key === "Enter" && !event.isComposing) {
-        void add(addText);
+        const text = addText ?? "";
+        setAddText(null);
+        panelRef.current?.focus({ preventScroll: true });
+        void add(text);
       } else return false;
       return true;
     }
@@ -2948,9 +2973,15 @@ export function MrReviewsPanel({
         panelRef.current?.focus({ preventScroll: true });
       } else if (key === "ArrowDown" || key === "C-n") move(1);
       else if (key === "ArrowUp" || key === "C-p") move(-1);
-      else if (key === "Enter") {
+      else if (key === "Enter" && pastedQuery && !pastedEntry) {
+        // A request's URL searched for: Enter adds it.
+        panelRef.current?.focus({ preventScroll: true });
+        void add(pastedQuery);
+      } else if (key === "Enter") {
         const found =
-          ordered.find((entry) => entry.key === selected) ?? ordered[0];
+          pastedEntry ??
+          ordered.find((entry) => entry.key === selected) ??
+          ordered[0];
         panelRef.current?.focus({ preventScroll: true });
         if (found) enter(found);
       } else return false;
@@ -3110,7 +3141,7 @@ export function MrReviewsPanel({
     } else if (event.key === "a") {
       showChat();
     } else if (event.key === "p") {
-      addRef.current?.focus();
+      setAddText("");
     } else if ((fed.key === "dd" || event.key === "Delete") && current) {
       remove(current);
     } else if (event.key === "u" && undo?.run) {
@@ -3308,6 +3339,18 @@ export function MrReviewsPanel({
             </span>
           </div>
         </div>
+        {mobile && view === "list" ? (
+          // No keys on a phone: the prompt p opens, from the head.
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Add a request"
+            title="Add a request: paste its URL"
+            onClick={() => setAddText("")}
+          >
+            <Plus size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="assistant-icon-button"
@@ -3738,32 +3781,6 @@ export function MrReviewsPanel({
                   ))}
                 </div>
               ) : null}
-              <div className="mr-reviews-add">
-                <input
-                  ref={addRef}
-                  type="text"
-                  className="mr-reviews-addbox"
-                  aria-label="Add a merge or pull request"
-                  placeholder="Add a request (p): paste its URL"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={addText}
-                  onChange={(event) => {
-                    setAddText(event.target.value);
-                    setAddError(null);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="ghost"
-                  aria-label="Add"
-                  title="Pin it to your reviews"
-                  disabled={adding || !addText.trim()}
-                  onClick={() => void add(addText)}
-                >
-                  <Plus size={14} /> Add
-                </button>
-              </div>
               {addError ? (
                 <p className="assistant-error" role="alert">
                   {addError}
@@ -3790,6 +3807,18 @@ export function MrReviewsPanel({
                     setCompletionsOff(false);
                   }}
                 />
+              ) : null}
+              {pastedQuery && !pastedEntry ? (
+                <button
+                  type="button"
+                  className="ghost mr-reviews-add-offer"
+                  title="Pin it to your reviews (Enter in the search)"
+                  disabled={adding}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void add(pastedQuery)}
+                >
+                  <Plus size={14} /> Add this request <span>{pastedQuery}</span>
+                </button>
               ) : null}
               {entries.length && completions.length ? (
                 <ul
@@ -4019,8 +4048,8 @@ export function MrReviewsPanel({
                   j/k move · Enter its review in its home, else review · gH a
                   home · i details · e set next step, whose move · w workspace ·
                   P pin · f all, to review, mine · za fold · c Claude · o on the
-                  forge · J/K reorder · / search · : command · dd remove · ? all
-                  keys
+                  forge · J/K reorder · / search · : command · p add by URL · dd
+                  remove · ? all keys
                 </p>
               ) : null}
               {toast}
@@ -4035,12 +4064,31 @@ export function MrReviewsPanel({
             ref={commandRef}
             type="text"
             aria-label="Command"
-            placeholder="note, whose, after, label, link, clear, pin, mine, refresh"
+            placeholder="note, whose, after, label, link, clear, pin, add URL, mine, refresh"
             autoComplete="off"
             spellCheck={false}
             value={command}
             onChange={(event) => setCommand(event.target.value)}
             onBlur={() => setCommand(null)}
+          />
+        </div>
+      ) : null}
+      {addText !== null ? (
+        <div className="mr-reviews-command mr-reviews-adder">
+          <span aria-hidden="true">Add</span>
+          <input
+            ref={addRef}
+            type="text"
+            aria-label="Add a merge or pull request"
+            placeholder="paste a merge or pull request URL, or group/project!12"
+            autoComplete="off"
+            spellCheck={false}
+            value={addText}
+            onChange={(event) => {
+              setAddText(event.target.value);
+              setAddError(null);
+            }}
+            onBlur={() => setAddText(null)}
           />
         </div>
       ) : null}

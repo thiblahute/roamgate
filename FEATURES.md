@@ -1239,10 +1239,14 @@ settings, `mr_reviews.views`, at most 20); `f` and `F` cycle all the chips,
 and delete views too (`reviews_view`), and `reviews_list` takes the same
 filter.
 
-**Add** and **remove** requests from the view. The Add box (`p`, with an
-Add button, on a phone too) takes the URL of any merge or pull request on
-one of your hosts, or `group/project!12`; pasting a URL anywhere in the
-panel, or dropping a link on it, does the same. It goes into a **Pinned**
+**Add** and **remove** requests from the view. `p` opens a one-line prompt
+where the `:` command line opens (on a phone, the head's **+** button) that
+takes the URL of any merge or pull request on one of your hosts, or
+`group/project!12`: Enter adds it, Esc closes it. `:add URL` (or `:pin URL`)
+does the same; a request's URL pasted in the search offers **Add this
+request**, which Enter takes (or goes to the request when the list has it),
+and pasting a URL anywhere else in the panel, or dropping a link on it,
+adds it at once. It goes into a **Pinned**
 section above For you, read from the forge, and stays there whether or not
 a query lists it, with its state, pipeline and what changed like any row.
 One the forge does not give (not found, no access, host down) shows why,
@@ -1281,7 +1285,7 @@ does the shortcut cheat sheet):
 | `:`                      | A command: `note`, `whose`, `after`, `label`, `unlabel`, `link`, `stale`, `clear`, `pin`, `unpin`, `all`, `review`, `mine`, `refresh` |
 | `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                                                                                |
 | `/`                      | Search; in the box Enter opens, Esc clears and goes back                                                                              |
-| `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                                                                             |
+| `p`                      | Add a request: a prompt to paste its URL in (Enter adds, Esc closes; `:add URL` too)                                                  |
 | `dd` / `Delete`          | Remove it from the view (a pinned one is unpinned)                                                                                    |
 | `u`                      | Undo the last change (a removal, a pin, what was set by hand, an agent's change)                                                      |
 | `H`                      | The hidden requests, to restore                                                                                                       |
