@@ -41,6 +41,7 @@ import {
 import { createMrClaude } from "./claude";
 import { createMrCuration, type RunModel } from "./curation";
 import { createMrInference } from "./inference";
+import { createMrHomes } from "./home";
 import { createMrOpener } from "./open";
 import { reviewPlacementOps } from "./tree";
 import type {
@@ -112,6 +113,8 @@ export function createMrReviews(options: {
     root: string;
     url: string;
     title: string;
+    /** The agent pane it goes to (a home's Claude). */
+    paneId?: string;
   }) => ReviewSnapshot;
   /** The review pane's "review with the agent" for a request's review. */
   requestReview?: (params: {
@@ -347,6 +350,36 @@ export function createMrReviews(options: {
     onMergeTime: () => void inference.maybeRun(),
   });
   const order = createMrOrder({ inbox, settings: saved, save: saveSettings });
+  /**
+   * A new review workspace (the project's, or a request's home) goes where
+   * the project's reviews go in the Workspaces tree.
+   */
+  const placeReviewWorkspace = options.tree
+    ? async (place: {
+        projectKey: string;
+        connectionId: string;
+        workspaceId: string;
+        label: string;
+        worktree: string;
+        clone: string;
+      }) => {
+        const tree = options.tree!;
+        const path = (await settings()).treeGroups[place.projectKey];
+        await tree.apply(
+          reviewPlacementOps(await tree.read(), {
+            ref: {
+              connection_id: place.connectionId,
+              path: place.worktree,
+              label: place.label,
+              workspace_id: place.workspaceId,
+            },
+            connectionId: place.connectionId,
+            clonePath: place.clone,
+            ...(path ? { path } : {}),
+          }),
+        );
+      }
+    : undefined;
   opener = createMrOpener({
     inbox,
     store,
@@ -357,34 +390,7 @@ export function createMrReviews(options: {
       : {}),
     clones,
     logger,
-    ...(options.tree
-      ? {
-          placeWorkspace: async (place: {
-            projectKey: string;
-            connectionId: string;
-            workspaceId: string;
-            label: string;
-            worktree: string;
-            clone: string;
-          }) => {
-            const tree = options.tree!;
-            const path = (await settings()).treeGroups[place.projectKey];
-            await tree.apply(
-              reviewPlacementOps(await tree.read(), {
-                ref: {
-                  connection_id: place.connectionId,
-                  path: place.worktree,
-                  label: place.label,
-                  workspace_id: place.workspaceId,
-                },
-                connectionId: place.connectionId,
-                clonePath: place.clone,
-                ...(path ? { path } : {}),
-              }),
-            );
-          },
-        }
-      : {}),
+    ...(placeReviewWorkspace ? { placeWorkspace: placeReviewWorkspace } : {}),
     openReview: (params) => {
       if (!options.openReview)
         throw new MrReviewsError("reviews are not available", "unavailable");
@@ -419,6 +425,35 @@ export function createMrReviews(options: {
     },
   });
 
+  // Requests' homes: their review shown there, made with an agent (D27).
+  const homes = createMrHomes({
+    item: (key) => {
+      const found = inbox.item(key);
+      if (!found)
+        throw new MrReviewsError("no such request in the inbox", "not_found");
+      return found;
+    },
+    store,
+    connections: options.connections ?? (() => []),
+    settings: saved,
+    project: (item) => opener!.project(item),
+    ...(options.createWorktree
+      ? { createWorktree: options.createWorktree }
+      : {}),
+    ...(placeReviewWorkspace ? { placeWorkspace: placeReviewWorkspace } : {}),
+    openReview: (params) => {
+      if (!options.openReview)
+        throw new MrReviewsError("reviews are not available", "unavailable");
+      return options.openReview(params);
+    },
+    markSeen: (key) => inbox.markSeen(key),
+    startMode: async () =>
+      (await readSettings()).claude_start_mode === "conversation"
+        ? "conversation"
+        : "terminal",
+    logger,
+  });
+
   /**
    * A request merged or closed this many days ago loses its review state
    * here: its review, what was seen and picked. The project's review
@@ -451,6 +486,7 @@ export function createMrReviews(options: {
         delete state.seen[key];
         delete state.ranked[key];
         delete state.drafts[key];
+        if (state.homes) delete state.homes[key];
       }
     });
     logger.info("closed requests' reviews dropped", { count: gone.length });
@@ -712,6 +748,23 @@ export function createMrReviews(options: {
         await reviewsAgent().reset();
         return reviewsAgent().snapshot();
       case "bridge.mr_reviews.open": {
+        // In one of its homes: its review shown there (D27).
+        const home = params.home as
+          | { connection_id?: unknown; workspace_id?: unknown }
+          | undefined;
+        if (home && typeof home === "object") {
+          if (
+            typeof home.connection_id !== "string" ||
+            typeof home.workspace_id !== "string"
+          )
+            throw new MrReviewsError(
+              "home: connection_id and workspace_id are required",
+            );
+          return homes.openIn(key(), {
+            connectionId: home.connection_id,
+            workspaceId: home.workspace_id,
+          });
+        }
         const result = await opener!.open(key(), {
           ...(params.checkout === "now" || params.checkout === "later"
             ? { checkout: params.checkout }
@@ -728,6 +781,49 @@ export function createMrReviews(options: {
             message: error instanceof Error ? error.message : String(error),
           }));
         return { ...result, claude: state };
+      }
+      case "bridge.mr_reviews.home": {
+        // "Start a review with a home": a workspace of its own with an agent.
+        const started = await homes.start(key());
+        linker.forget();
+        return started;
+      }
+      case "bridge.mr_reviews.panel": {
+        // The panel's search and filter, kept for every device: pushed
+        // apart from the authored state (no version, no Undo).
+        const search =
+          typeof params.search === "string"
+            ? params.search.slice(0, 500)
+            : undefined;
+        const filter =
+          typeof params.filter === "string" ? params.filter : undefined;
+        if (search === undefined && filter === undefined)
+          throw new MrReviewsError("search or filter is required");
+        const panel = await editSettings(async () => {
+          const current = await saved();
+          const stored = normalizeStoredMrReviews({
+            ...storedMrReviews(current),
+            panel: {
+              search: search ?? current.panel.search,
+              filter: filter ?? current.panel.filter,
+              // Strictly after the last write: a page orders by it.
+              at: new Date(
+                Math.max(Date.now(), Date.parse(current.panel.at || "0") + 1),
+              ).toISOString(),
+            },
+          });
+          const next = mrReviewsSettings(stored);
+          await saveSettings(next);
+          return next.panel;
+        });
+        const now = await saved();
+        options.publish?.({
+          version: now.orderVersion ?? 0,
+          order: now.order,
+          changed: ["panel"],
+          by: "user",
+        });
+        return { panel };
       }
       case "bridge.mr_reviews.workspaces": {
         // The review workspaces, for the sidebar: whose they are and the
@@ -786,7 +882,7 @@ export function createMrReviews(options: {
               connectionId: record.connectionId,
               workspaceId: record.workspaceId,
             };
-        const links = await linker.links(items, reviews);
+        const links = await linker.links(items, reviews, state.homes ?? {});
         // A branch headed upstream: its own workspace.
         const rows = upstreamRows(await settings()).rows;
         for (const row of rows)
@@ -972,6 +1068,7 @@ export function createMrReviews(options: {
     rekeyBranches,
     efforts,
     opener,
+    homes,
     claude,
     curation,
     lifecycle,

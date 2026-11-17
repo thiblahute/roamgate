@@ -28,6 +28,24 @@ const ws = (over: Partial<ScannedWorkspace>): ScannedWorkspace => ({
 });
 
 describe("a request's workspaces", () => {
+  test("its home first, whatever its name or branch; the shared review workspace last", () => {
+    const links = matchWorkspaces(
+      item,
+      [
+        ws({ workspaceId: "review", label: "Reviews \u00b7 app" }),
+        ws({ workspaceId: "a", branch: "fix-pitch" }),
+        ws({ workspaceId: "made", label: "renamed by hand", branch: "x" }),
+      ],
+      { connectionId: "local", workspaceId: "review" },
+      { connectionId: "local", workspaceId: "made" },
+    );
+    expect(links.map((link) => [link.workspaceId, link.why])).toEqual([
+      ["made", ["home"]],
+      ["a", ["branch"]],
+      ["review", ["review"]],
+    ]);
+  });
+
   test("on its branch in a clone of the project, or tracking it", () => {
     const links = matchWorkspaces(item, [
       ws({ workspaceId: "a", branch: "fix-pitch" }),

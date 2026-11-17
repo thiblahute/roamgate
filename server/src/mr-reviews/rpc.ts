@@ -624,6 +624,7 @@ export async function handleMrReviewsRpc(
           inference_hours: value.inferenceHours ?? current.inferenceHours,
           suggest_days: value.suggestDays ?? current.suggestDays,
           hints: value.hints ?? current.hints,
+          home_prompt: value.homePrompt ?? current.homePrompt,
           tree_groups: value.treeGroups ?? current.treeGroups,
           clones: Object.fromEntries(
             Object.entries(
@@ -666,7 +667,8 @@ export async function handleMrReviewsRpc(
             name !== "orderVersion" &&
             name !== "pinned" &&
             name !== "hidden" &&
-            name !== "staleDays",
+            name !== "staleDays" &&
+            name !== "homePrompt",
         )
       )
         void deps.inbox.refresh();

@@ -51,6 +51,10 @@ export type StoredMrReviewsSettings = {
   unsent?: MrUnsent[];
   efforts?: StoredMrEffort[];
   merge?: StoredMrMerge;
+  /** The panel's search and filter, on every device. */
+  panel?: { search: string; filter: string; at: string };
+  /** The first prompt of a request's home agent (empty: the default). */
+  home_prompt?: string;
 };
 
 /** The lists of `mr_reviews.merge` (and of each scope), as stored. */
@@ -257,6 +261,10 @@ export const MAX_OVERRIDES = 500;
 export const MAX_VIEWS = 20;
 export const VIEW_NAME_MAX = 40;
 export const VIEW_QUERY_MAX = 500;
+/** The panel's kept search, at most. */
+export const PANEL_SEARCH_MAX = 500;
+/** A home prompt, at most. */
+export const HOME_PROMPT_MAX = 4000;
 export const MAX_UPSTREAM_GROUPS = 50;
 export const MAX_UPSTREAM_SKIP = 200;
 export const MAX_UNSENT = 200;
@@ -334,6 +342,28 @@ export function normalizeStoredMrReviews(
   if (Number.isInteger(suggest) && suggest >= 1 && suggest <= 365)
     out.suggest_days = suggest;
   if (typeof value.hints === "string") out.hints = value.hints.slice(0, 2000);
+  if (typeof value.home_prompt === "string")
+    out.home_prompt = value.home_prompt.slice(0, HOME_PROMPT_MAX);
+  if (
+    value.panel &&
+    typeof value.panel === "object" &&
+    !Array.isArray(value.panel)
+  ) {
+    const panel = value.panel as Record<string, unknown>;
+    const filter = typeof panel.filter === "string" ? panel.filter : "all";
+    out.panel = {
+      search:
+        typeof panel.search === "string"
+          ? panel.search.slice(0, PANEL_SEARCH_MAX)
+          : "",
+      filter:
+        /^(all|review|mine)$/.test(filter) ||
+        (filter.startsWith("view:") && filter.length <= 80)
+          ? filter
+          : "all",
+      at: typeof panel.at === "string" ? panel.at.slice(0, 40) : "",
+    };
+  }
   if (
     value.tree_groups &&
     typeof value.tree_groups === "object" &&
@@ -591,6 +621,8 @@ export function mrReviewsSettings(
     upstreamSkip: stored?.upstream_skip ?? base.upstreamSkip,
     unsent: stored?.unsent ?? base.unsent,
     merge: mergeSettingsOf(stored?.merge),
+    panel: stored?.panel ?? base.panel,
+    homePrompt: stored?.home_prompt ?? base.homePrompt,
     efforts: (stored?.efforts ?? []).map((effort) => ({
       id: effort.id,
       group: effort.group,
@@ -697,5 +729,7 @@ export function storedMrReviews(
     ...(storedMergeOf(settings.merge)
       ? { merge: storedMergeOf(settings.merge) }
       : {}),
+    ...(settings.panel.at ? { panel: settings.panel } : {}),
+    ...(settings.homePrompt ? { home_prompt: settings.homePrompt } : {}),
   };
 }

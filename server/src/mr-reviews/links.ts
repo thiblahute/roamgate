@@ -99,7 +99,8 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * The workspaces that are the request's, each with why: its checkout is on
+ * The workspaces that are the request's, each with why: the home made for
+ * it, its checkout is on
  * the source branch (or tracks it) in a clone of the project, its name
  * carries the request's number or branch, or it is the request's review
  * workspace. A generic branch (the target's own name) never matches.
@@ -117,6 +118,8 @@ export function matchWorkspaces(
   >,
   workspaces: ScannedWorkspace[],
   review?: { connectionId: string; workspaceId?: string },
+  /** The home made for it ("Start a review with a home"). */
+  home?: { connectionId: string; workspaceId: string },
 ): MrWorkspaceLink[] {
   const links = new Map<string, MrWorkspaceLink>();
   const add = (
@@ -144,6 +147,12 @@ export function matchWorkspaces(
   );
   for (const workspace of workspaces) {
     const project = sameProject(workspace.remotes, item);
+    if (
+      home &&
+      home.connectionId === workspace.connectionId &&
+      home.workspaceId === workspace.workspaceId
+    )
+      add(workspace, "home");
     if (review?.workspaceId && review.connectionId === workspace.connectionId)
       if (review.workspaceId === workspace.workspaceId)
         add(workspace, "review");
@@ -165,7 +174,13 @@ export function matchWorkspaces(
     }
   }
   const rank = (link: MrWorkspaceLink) =>
-    link.why.includes("branch") ? 0 : link.why.includes("name") ? 1 : 2;
+    link.why.includes("home")
+      ? 0
+      : link.why.includes("branch")
+        ? 1
+        : link.why.includes("name")
+          ? 2
+          : 3;
   return [...links.values()].sort((a, b) => rank(a) - rank(b));
 }
 
@@ -268,6 +283,7 @@ export function createWorkspaceLinker(options: {
     async links(
       items: MrItem[],
       reviews: Record<string, { connectionId: string; workspaceId?: string }>,
+      homes: Record<string, { connectionId: string; workspaceId: string }> = {},
     ): Promise<Record<string, MrWorkspaceLink[]>> {
       const all: ScannedWorkspace[] = [];
       for (const connection of options.connections()) {
@@ -279,7 +295,12 @@ export function createWorkspaceLinker(options: {
       }
       const out: Record<string, MrWorkspaceLink[]> = {};
       for (const item of items) {
-        const found = matchWorkspaces(item, all, reviews[item.key]);
+        const found = matchWorkspaces(
+          item,
+          all,
+          reviews[item.key],
+          homes[item.key],
+        );
         if (found.length) out[item.key] = found;
       }
       return out;

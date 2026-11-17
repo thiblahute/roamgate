@@ -29,6 +29,8 @@ export type MrConnection = {
       paneId: string,
       sessionId: string,
     ): Promise<{ ok: true } | { ok: false; busy: boolean; reason: string }>;
+    /** A prompt for the session it holds in the pane; false: it holds none. */
+    prompt?(paneId: string, text: string): Promise<boolean>;
   };
 };
 

@@ -1002,6 +1002,8 @@ function mrReviewConnections(): MrConnection[] {
                 runtime.conversation.ownedSession(paneId)?.session_id ?? null,
               switch: (paneId: string, sessionId: string) =>
                 runtime.conversation.switchSession(paneId, sessionId),
+              prompt: (paneId: string, text: string) =>
+                runtime.conversation.prompt(paneId, text),
             },
             dirs: async () => {
               const [workspaces, panes] = (await Promise.all([
@@ -1062,13 +1064,14 @@ function getMrReviews(): MrReviews {
           }
         : null;
     },
-    openReview: ({ connectionId, workspaceId, root, url, title }) =>
+    openReview: ({ connectionId, workspaceId, root, url, title, paneId }) =>
       getReviewService().open({
         connectionId,
         workspaceId,
         root,
         target: { kind: "mr", url },
         title,
+        ...(paneId ? { paneId, agent: "Claude" } : {}),
         raise: false,
       }),
     openRange: ({ connectionId, workspaceId, root, base, head, title }) => ({

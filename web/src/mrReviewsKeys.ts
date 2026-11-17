@@ -9,7 +9,10 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
     "zz zt zb",
     "show the selected request in the middle, at the top, at the bottom",
   ],
-  ["Enter", "go to its workspace (as w); with none, review it"],
+  [
+    "Enter",
+    "its review in its home (its workspace: on its branch, named after it, or made for it); with none, in the project's review workspace",
+  ],
   ["i", "its details"],
   ["c", "its Claude session"],
   ["o", "open it on GitLab or GitHub"],
@@ -19,6 +22,11 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ["E", "clear what was set by hand (:clear [FIELD])"],
   ["za", "fold the requests after it, or its lane"],
   ["gx", "open its link (a URL, or a file in its workspace)"],
+  [
+    "gH",
+    "start a review with a home: a workspace of its own on its head, with a Claude session told its job (:home)",
+  ],
+  ["h l / Tab", "on a wide pane (columns): the lane on the left / right"],
   [
     "f F",
     "next / previous of all, to review, mine and your saved views (:all, :review, :mine, :view NAME)",
