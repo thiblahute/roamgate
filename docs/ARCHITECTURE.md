@@ -855,9 +855,43 @@ preview, delete, get, refresh, history, leader}` and `ledger.{set, undo}`
 (bulk, at most 500, all or nothing); a ledger change is pushed as
 `changed: ["effort"]` with `effort: {id, journal}`. The inbox carries the
 cards as `efforts` (counts, not ready, overlaps by patch id with other
-efforts and branches headed upstream, D23). Tools: `effort_get`,
-`effort_set` (with `preview`), `ledger_list` (200 a page, `cluster`),
-`ledger_set`, `effort_overlaps`.
+efforts and branches headed upstream, D23; proposals to confirm, plans by
+state, what changed). Tools: `effort_get`, `effort_set` (with `preview`),
+`ledger_list` (200 a page, `cluster`, proposals per commit), `ledger_set`,
+`effort_overlaps`, `ledger_match`, `ledger_plans`, `part_create`.
+
+Fuzzy matching (`mr-reviews/fuzzy.ts`, D14): when the commits are read
+again and some commit is not upstream exactly, `upstreamCandidatesScript`
+reads `git log --numstat` of `merge-base..target` (at most 3000) and drops
+those `git cherry source target merge-base` marks as exact; kept in
+`derived.json` `upstream` keyed by source, target and merge base. Each
+unsorted commit is scored against candidates sharing a file, a directory
+or a rare subject word: paths (file Jaccard, else half the directory
+Jaccard) 0.35, subject words weighted by inverse frequency 0.35, author
+0.1, change size on shared files 0.2; the top three above 0.42 are
+`derived.proposals`. `ledger.json` `matches` (by key: `accepted`,
+`rejected` shas) records decisions (`bridge.mr_reviews.ledger.match`,
+journaled): accepted makes the commit authored upstream with the upstream
+sha as pointer and appends a `where: "upstream"` version to
+`history.jsonl`; rejected shas are never proposed again. Planned requests
+(D25) are `ledger.json` `plans` (`{id, name, commits: keys in source
+order, dependsOn, state: proposed | accepted, part?}`), changed by
+`bridge.mr_reviews.ledger.plans` (`propose`, `accept`, `edit` with
+`add`/`remove`, `split`, `drop`; journaled with the plans before, so Undo
+restores them); their commits derive as `planned`, and a commit is in one
+plan across efforts (D4: another effort's planned commits derive as in a
+part of it, and plan changes refuse them). `bridge.mr_reviews.effort.part`
+makes an accepted plan's part through the same `createWorkspaceWorktree`
+path as the workspace menu (the `worktree_command` setting), `reset
+--keep`s the fresh worktree onto the target, cherry-picks the commits (no
+`-x`), stops on a conflict (reported with its files, never aborted),
+records `part` on the plan, places the workspace in the effort's group and
+adds its branch to `unsent`. `effort.open_commit` opens a range review
+(`sha^..sha`) in the head workspace; `effort.diff` answers `git range-diff`
+of two versions (never stored). `seen.json` (runtime, not exported) is the
+snapshot of dispositions, feeders' not-ready counts, merged plans and
+upstream-anyway commits the user last saw (`effort.seen`); the first
+reading writes it; `effort.get` answers `changes` against it.
 
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and

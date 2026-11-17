@@ -40,6 +40,18 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ["+", "more like this (a suggestion)"],
   ["r", "refresh"],
   ["a", "ask the reviews agent"],
+  [
+    "P L R F W",
+    "in an effort: Progress, Ledger, Plans (planned requests), Feeders, What changed",
+  ],
+  [
+    "d",
+    "in an effort's ledger: the commit's diff in its head workspace; with two versions picked in its history (Enter): how they differ",
+  ],
+  [
+    ": (effort)",
+    "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort",
+  ],
   ["?", "this list"],
   ["Esc", "close the list, clear the search, then hide the panel"],
 ];

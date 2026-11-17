@@ -3035,6 +3035,12 @@ export function MrReviewsPanel({
                 id={effortView}
                 onBack={closeEffort}
                 onLeader={() => void leader(effortView)}
+                onJump={(connectionId, workspaceId) => {
+                  void store
+                    .jumpToConnectionWorkspace(connectionId, workspaceId)
+                    .catch(() => {});
+                  onClose({ keepFocus: true });
+                }}
                 say={sayUndo}
               />
               {toast}

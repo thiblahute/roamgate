@@ -112,6 +112,8 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
       total: 300,
       counts: { upstream: 100, unsorted: 200 },
       notReady: 3,
+      changed: 2,
+      proposals: 1,
       overlaps: [
         {
           with: "other",
@@ -123,6 +125,8 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
       ],
     };
     const calls: [string, Record<string, unknown>][] = [];
+    const lastWrite = () =>
+      calls.filter(([m]) => m !== "bridge.mr_reviews.effort.get").pop();
     (bridge as any).call = async (
       method: string,
       params: Record<string, unknown>,
@@ -139,6 +143,61 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
             { date: "2026-11-16", counts: { unsorted: 200, upstream: 100 } },
           ],
           journal: [{ id: 4, at: "", by: "agent", summary: "kept" }],
+          proposals: {
+            k100: [
+              {
+                sha: "f".repeat(40),
+                subject: "bufferpool: lazily",
+                author: "me",
+                score: 0.8,
+                why: "same files, subject",
+              },
+            ],
+          },
+          plans: [
+            {
+              id: "p1",
+              name: "Pool base",
+              commits: ["k101", "k102"],
+              dependsOn: [],
+              state: "accepted",
+              at: "",
+              by: "user",
+            },
+            {
+              id: "p2",
+              name: "Pool API",
+              commits: ["k103"],
+              dependsOn: ["p1"],
+              state: "proposed",
+              at: "",
+              by: "agent",
+            },
+          ],
+          changes: {
+            since: "2026-11-15T10:00:00Z",
+            unsorted: ["k299"],
+            landed: [],
+            inReview: [],
+            feeders: [{ ref: "refs/heads/feed", landed: 2 }],
+            partsMerged: [],
+            proposals: ["k100"],
+            upstreamAnyway: [],
+          },
+        };
+      if (method === "bridge.mr_reviews.effort.diff")
+        return { text: "1:  111 ! 1:  222 old" };
+      if (method === "bridge.mr_reviews.effort.open_commit")
+        return { ok: true, connectionId: "local", workspaceId: "w1" };
+      if (method === "bridge.mr_reviews.ledger.match")
+        return { accepted: 1, rejected: 0, journal: 6 };
+      if (method === "bridge.mr_reviews.effort.part")
+        return {
+          ok: false,
+          branch: "pool-base",
+          picked: 1,
+          of: 2,
+          conflict: { sha: "c".repeat(40), subject: "x", files: ["pool/a.c"] },
         };
       if (method === "bridge.mr_reviews.ledger.set")
         return { changed: (params.commits as string[]).length, journal: 5 };
@@ -168,6 +227,7 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     const said: string[] = [];
     let undo: (() => Promise<unknown>) | undefined;
     const leaders: number[] = [];
+    const jumps: [string, string][] = [];
     await act(async () =>
       createRoot(host).render(
         <>
@@ -182,6 +242,9 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
             id="e1"
             onBack={() => said.push("back")}
             onLeader={() => leaders.push(2)}
+            onJump={(connection, workspace) =>
+              jumps.push([connection, workspace])
+            }
             say={(label, run) => {
               said.push(label);
               undo = run;
@@ -285,9 +348,123 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     await wait(30);
     expect(
       [...view.querySelectorAll(".mr-effort-history li")].map((li) =>
-        li.textContent?.slice(0, 14),
+        li.textContent?.trim().slice(0, 14),
       ),
     ).toEqual(["1111111111 old", "2222222222 new"]);
+    // Two versions picked: d shows how they differ.
+    const boxes = view.querySelectorAll<HTMLInputElement>(
+      ".mr-effort-history input[type=checkbox]",
+    );
+    await act(async () => {
+      boxes[0]!.click();
+      boxes[1]!.click();
+    });
+    view.focus();
+    await press("d");
+    await wait(30);
+    expect(calls[calls.length - 1]).toEqual([
+      "bridge.mr_reviews.effort.diff",
+      { id: "e1", from: "1".repeat(40), to: "2".repeat(40) },
+    ]);
+    expect(view.querySelector(".mr-effort-diff")?.textContent).toBe(
+      "1:  111 ! 1:  222 old",
+    );
+    await press("Escape");
+    await press("Escape");
+    expect(view.querySelector(".mr-effort-history")).toBeNull();
+    // d alone: the commit's diff as a review in the head workspace.
+    await press("d");
+    await wait(30);
+    expect(calls[calls.length - 1]?.[0]).toBe(
+      "bridge.mr_reviews.effort.open_commit",
+    );
+    expect(jumps).toEqual([["local", "w1"]]);
+    // A proposal shows in the row, :confirm confirms it.
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        browser.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(filter, "0064");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    view.focus();
+    expect(view.querySelector(".mr-ledger-note.is-proposal")?.textContent).toBe(
+      "like ffffffff (0.8)",
+    );
+    expect(view.querySelector(".mr-effort-proposals")?.textContent).toContain(
+      "bufferpool: lazily",
+    );
+    await press(":");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        browser.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      const box = document.activeElement as HTMLInputElement;
+      setter.call(box, "confirm");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await press("Enter");
+    await wait(30);
+    expect(calls.find(([m]) => m === "bridge.mr_reviews.ledger.match")).toEqual(
+      [
+        "bridge.mr_reviews.ledger.match",
+        {
+          id: "e1",
+          decisions: [{ commit: "k100", match: "f".repeat(40), accept: true }],
+        },
+      ],
+    );
+    expect(said).toContain("1 match confirmed");
+    // Plans: accept a proposed one, make the part of an accepted one.
+    await press("R");
+    const plans = view.querySelector(".mr-effort-plans")!;
+    expect(plans.textContent).toContain("Pool API");
+    expect(plans.textContent).toContain("after Pool base");
+    const buttons = [...plans.querySelectorAll("button")];
+    await act(async () => {
+      buttons.find((b) => b.textContent === "Accept")!.click();
+    });
+    await wait(30);
+    expect(lastWrite()).toEqual([
+      "bridge.mr_reviews.ledger.plans",
+      { id: "e1", action: "accept", plan: "p2" },
+    ]);
+    await act(async () => {
+      buttons.find((b) => b.textContent === "Make its part")!.click();
+    });
+    await wait(30);
+    expect(lastWrite()).toEqual([
+      "bridge.mr_reviews.effort.part",
+      { id: "e1", plan: "p1" },
+    ]);
+    expect(said[said.length - 1]).toBe(
+      "Part pool-base: 1 of 2 picked, stopped at cccccccccc (pool/a.c): resolve it there",
+    );
+    // What changed, then seen.
+    await press("W");
+    const changed = view.querySelector(".mr-effort-changes")!;
+    expect(changed.textContent).toContain("New unsorted commits (1)");
+    expect(changed.textContent).toContain("Feeders landed");
+    expect(changed.textContent).toContain("feed: 2 commits reached the source");
+    await press(":");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        browser.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      const box = document.activeElement as HTMLInputElement;
+      setter.call(box, "seen");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await press("Enter");
+    await wait(30);
+    expect(calls.some(([m]) => m === "bridge.mr_reviews.effort.seen")).toBe(
+      true,
+    );
+    expect(card.textContent).toContain("2 changed");
+    expect(card.textContent).toContain("1 to confirm");
     await press("c");
     expect(leaders).toEqual([2]);
   });

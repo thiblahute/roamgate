@@ -14,14 +14,20 @@ import { onGitlabHost, remoteProject } from "../review/gitlab";
 import { claudeCommand } from "./claude";
 import { type MrConnection, shQuote } from "./clones";
 import {
+  changePlans,
+  changesOf,
   createLedgerStore,
+  decideMatches,
   type DerivedFile,
   deriveEffort,
   effortSummary,
+  findPlan,
   isAuthoredDisposition,
   type LedgerStore,
   overlapOf,
+  type PlanAction,
   setDispositions,
+  snapshotOf,
   TARGET_CHECK_MS,
   undoLedger,
   upstreamRef,
@@ -150,6 +156,7 @@ export function createEffortService(options: {
       checkTarget,
       requests: (url) => requestsFor(effort, connection, url),
       parts: partsOf(effort),
+      elsewhere: takenElsewhere(effort.id),
       now,
       force,
     })
@@ -163,6 +170,33 @@ export function createEffortService(options: {
     running.set(effort.id, run);
     return run;
   }
+
+  /**
+   * Commits in another effort's planned requests or parts, by patch id:
+   * that effort's name (D4: in one plan or part across efforts).
+   */
+  function takenElsewhere(effortId: string): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const other of known) {
+      if (other.id === effortId) continue;
+      const plans = store.ledger(other.id).plans;
+      if (!plans.length) continue;
+      const patchOf = new Map(
+        (store.derived(other.id)?.commits ?? []).map((commit) => [
+          commit.key,
+          commit.patchId,
+        ]),
+      );
+      for (const plan of plans)
+        for (const key of plan.commits) {
+          const id = patchOf.get(key) ?? key;
+          if (!out.has(id)) out.set(id, other.name);
+        }
+    }
+    return out;
+  }
+  /** The efforts declared, as last read (for takenElsewhere). */
+  let known: MrEffort[] = [];
 
   /** The patch ids of each part: branches of the effort's group. */
   function partsOf(effort: MrEffort) {
@@ -277,11 +311,13 @@ export function createEffortService(options: {
     refreshOne,
     /** Derives every due effort (after an inbox refresh, on a viewer). */
     async refresh(force = false) {
-      for (const effort of (await options.settings()).efforts)
-        await refreshOne(effort, force);
+      known = (await options.settings()).efforts;
+      for (const effort of known) await refreshOne(effort, force);
     },
+    takenElsewhere,
     /** The cards, from what is on disk (no git). */
     summaries(settings: MrReviewsSettings): MrEffortSummary[] {
+      known = settings.efforts;
       const found = overlaps(settings.efforts);
       return settings.efforts.map((effort) =>
         effortSummary(
@@ -296,6 +332,7 @@ export function createEffortService(options: {
                   : {}),
               }
             : undefined,
+          { ledger: store.ledger(effort.id), seen: store.seen(effort.id) },
         ),
       );
     },
@@ -367,6 +404,31 @@ export async function handleEffortRpc(
     ) => Promise<MrReviewsSettings>;
     upstream: UpstreamScanner;
     groupLabel: (group: string) => Promise<string | null>;
+    /**
+     * Makes a worktree workspace through the user's worktree path (the
+     * `worktree_command` setting, else Herdr's), from a source workspace.
+     */
+    createWorktree?: (input: {
+      connectionId: string;
+      workspaceId: string;
+      branch: string;
+    }) => Promise<{ path: string; workspaceId?: string }>;
+    /** Puts a workspace into a Workspaces-tree group. */
+    place?: (input: {
+      connectionId: string;
+      path: string;
+      workspaceId?: string;
+      group: string;
+    }) => Promise<void>;
+    /** Opens a Roamgate review of a range in a workspace's Changes. */
+    openRange?: (input: {
+      connectionId: string;
+      workspaceId: string;
+      root: string;
+      base: string;
+      head: string;
+      title: string;
+    }) => { sessionId: string } | Promise<{ sessionId: string }>;
   },
   method: string,
   params: Record<string, unknown>,
@@ -382,6 +444,44 @@ export async function handleEffortRpc(
             : {}),
         }
       : { by: "user" as const };
+  /**
+   * The Herdr workspace at a checkout: a workspace headed upstream there,
+   * else any open workspace of the connection there (its cwd or its
+   * worktree), else the id last known.
+   */
+  const workspaceAt = async (
+    connectionId: string,
+    paths: (string | undefined)[],
+    known?: string,
+  ): Promise<string | undefined> => {
+    const wanted = paths.filter((path): path is string => !!path);
+    for (const path of wanted) {
+      const member = deps.upstream
+        .members()
+        .find(
+          (each) =>
+            each.connectionId === connectionId &&
+            each.path === path &&
+            !!each.workspaceId,
+        );
+      if (member) return member.workspaceId;
+    }
+    const listed = await service
+      .connectionOf(connectionId)
+      ?.herdr("workspace.list", {})
+      .catch(() => null);
+    const workspaces: any[] = Array.isArray(listed?.workspaces)
+      ? listed.workspaces
+      : [];
+    for (const path of wanted) {
+      const found = workspaces.find(
+        (each) =>
+          each?.worktree?.checkout_path === path || each?.cwd === path,
+      );
+      if (typeof found?.workspace_id === "string") return found.workspace_id;
+    }
+    return known;
+  };
   const effortOf = async () => {
     const found = findEffort(
       (await deps.settings()).efforts,
@@ -547,6 +647,368 @@ export async function handleEffortRpc(
         journal: ledger.journal
           .slice(-10)
           .map(({ id, at, by, summary }) => ({ id, at, by, summary })),
+        proposals: Object.fromEntries(
+          Object.entries(derived?.proposals ?? {}).filter(
+            ([key]) => !ledger.matches[key]?.accepted,
+          ),
+        ),
+        plans: ledger.plans,
+        changes: changesOf(derived, ledger, service.store.seen(effort.id)),
+      };
+    }
+    case "bridge.mr_reviews.effort.seen": {
+      // What the user saw: What changed starts again from here.
+      const effort = await effortOf();
+      const derived = service.store.derived(effort.id);
+      if (derived)
+        service.store.writeSeen(
+          effort.id,
+          snapshotOf(derived, service.store.ledger(effort.id)),
+        );
+      await service.push(effort.id, { by: "user" });
+      return { ok: true };
+    }
+    case "bridge.mr_reviews.ledger.match": {
+      const effort = await effortOf();
+      const decisions = Array.isArray(params.decisions)
+        ? (params.decisions as unknown[]).flatMap((each) => {
+            const value = each as Record<string, unknown>;
+            return value &&
+              typeof value.commit === "string" &&
+              typeof value.match === "string" &&
+              typeof value.accept === "boolean"
+              ? [
+                  {
+                    commit: value.commit,
+                    match: value.match,
+                    accept: value.accept,
+                  },
+                ]
+              : [];
+          })
+        : [];
+      if (
+        !decisions.length ||
+        decisions.length !== (params.decisions as unknown[]).length
+      )
+        throw new MrReviewsError(
+          "decisions: [{commit, match, accept}] (commit and match shas)",
+        );
+      const accepted = decisions.filter((each) => each.accept).length;
+      const result = await decideMatches(service.store, effort, {
+        decisions,
+        by: meta.by,
+        summary:
+          "summary" in meta && meta.summary
+            ? meta.summary
+            : `${accepted} match${accepted === 1 ? "" : "es"} confirmed, ${decisions.length - accepted} rejected`,
+      }).catch((error) => {
+        throw new MrReviewsError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+      await service.refreshOne(effort, true);
+      await service.push(effort.id, {
+        by: meta.by,
+        ...("summary" in meta && meta.summary ? { summary: meta.summary } : {}),
+        journal: result.journal,
+      });
+      return { ok: true, ...result };
+    }
+    case "bridge.mr_reviews.ledger.plans": {
+      const effort = await effortOf();
+      const action = String(params.action ?? "");
+      const list = (value: unknown) =>
+        Array.isArray(value)
+          ? (value as unknown[]).filter(
+              (each): each is string => typeof each === "string",
+            )
+          : undefined;
+      const plan = String(params.plan ?? "");
+      let change: PlanAction;
+      if (action === "propose")
+        change = {
+          action,
+          name: String(params.name ?? plan),
+          commits: list(params.commits) ?? [],
+          ...(list(params.depends_on)
+            ? { dependsOn: list(params.depends_on)! }
+            : {}),
+          ...(params.accepted === true ? { accepted: true } : {}),
+        };
+      else if (action === "accept" || action === "drop")
+        change = { action, plan };
+      else if (action === "edit")
+        change = {
+          action,
+          plan,
+          ...(typeof params.name === "string" ? { name: params.name } : {}),
+          ...(list(params.commits) ? { commits: list(params.commits)! } : {}),
+          ...(list(params.add) ? { add: list(params.add)! } : {}),
+          ...(list(params.remove) ? { remove: list(params.remove)! } : {}),
+          ...(list(params.depends_on)
+            ? { dependsOn: list(params.depends_on)! }
+            : {}),
+        };
+      else if (action === "split")
+        change = {
+          action,
+          plan,
+          name: String(params.name ?? ""),
+          commits: list(params.commits) ?? [],
+        };
+      else
+        throw new MrReviewsError(
+          "action: propose, accept, edit, split or drop",
+        );
+      const verb: Record<string, string> = {
+        propose: "proposed",
+        accept: "accepted",
+        edit: "changed",
+        split: "split",
+        drop: "dropped",
+      };
+      const result = await changePlans(service.store, effort, change, {
+        by: meta.by,
+        summary:
+          "summary" in meta && meta.summary
+            ? meta.summary
+            : `Planned request ${"name" in change && change.name ? change.name : plan} ${verb[action]}`,
+        taken: service.takenElsewhere(effort.id),
+      }).catch((error) => {
+        throw new MrReviewsError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+      await service.refreshOne(effort, true);
+      await service.push(effort.id, {
+        by: meta.by,
+        ...("summary" in meta && meta.summary ? { summary: meta.summary } : {}),
+        journal: result.journal,
+      });
+      return { ok: true, ...result };
+    }
+    case "bridge.mr_reviews.effort.part": {
+      // An accepted planned request gets its part (D25): a worktree in the
+      // effort's group through the user's worktree path, on the target,
+      // with the plan's commits picked in source order (no -x). A conflict
+      // stops there and is reported; nothing is aborted.
+      const effort = await effortOf();
+      const ledger = service.store.ledger(effort.id);
+      const plan = findPlan(ledger.plans, String(params.plan ?? ""));
+      if (!plan)
+        throw new MrReviewsError("no such planned request", "not_found");
+      if (plan.state !== "accepted")
+        throw new MrReviewsError(`accept ${plan.name} first`);
+      if (plan.part)
+        throw new MrReviewsError(
+          `${plan.name} has its part already: ${plan.part.path}`,
+        );
+      const commits = service.store.derived(effort.id)?.commits ?? [];
+      const bykey = new Map(commits.map((commit) => [commit.key, commit]));
+      const picked = plan.commits.flatMap((key) => {
+        const commit = bykey.get(key);
+        return commit ? [commit] : [];
+      });
+      if (picked.length !== plan.commits.length)
+        throw new MrReviewsError(
+          "some of its commits are no longer on the source: edit the plan",
+        );
+      const branch =
+        (typeof params.branch === "string" && params.branch.trim()) ||
+        plan.name
+          .toLowerCase()
+          .replace(/[^a-z0-9._/-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 60);
+      if (!/^[A-Za-z0-9][\w./-]*$/.test(branch) || branch.includes(".."))
+        throw new MrReviewsError(`"${branch}" is not a branch name`);
+      const connection = service.connectionOf(effort.clone.connectionId);
+      if (!connection)
+        throw new MrReviewsError("that connection is not ready", "unavailable");
+      const from = await workspaceAt(
+        effort.clone.connectionId,
+        [
+          effort.head?.connectionId === effort.clone.connectionId
+            ? effort.head.path
+            : undefined,
+          effort.clone.path,
+        ],
+        effort.head?.connectionId === effort.clone.connectionId
+          ? effort.head.workspaceId
+          : undefined,
+      );
+      if (!from)
+        throw new MrReviewsError(
+          "open a workspace of the effort's clone (or its head) first",
+          "not_found",
+        );
+      if (!deps.createWorktree)
+        throw new MrReviewsError(
+          "worktrees cannot be made here",
+          "unavailable",
+        );
+      const made = await deps.createWorktree({
+        connectionId: effort.clone.connectionId,
+        workspaceId: from,
+        branch,
+      });
+      const pick = parsePick(
+        (
+          await connection.run(
+            pickScript(
+              made.path,
+              [
+                upstreamRef(effort),
+                `refs/remotes/${effort.target.remote}/${effort.target.branch}`,
+              ],
+              picked.map((commit) => commit.sha),
+            ),
+            300_000,
+          )
+        ).stdout,
+      );
+      const conflict = pick.conflict
+        ? {
+            sha: pick.conflict,
+            subject:
+              picked.find((commit) => commit.sha === pick.conflict)?.subject ??
+              "",
+            files: pick.files,
+          }
+        : undefined;
+      const part = {
+        connectionId: effort.clone.connectionId,
+        path: made.path,
+        branch,
+        ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
+        ...(conflict ? { conflict } : {}),
+      };
+      await changePlans(
+        service.store,
+        effort,
+        { action: "part", plan: plan.id, part },
+        {
+          by: meta.by,
+          summary: `Part ${branch} made for ${plan.name}`,
+        },
+      );
+      await deps
+        .place?.({
+          connectionId: effort.clone.connectionId,
+          path: made.path,
+          ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
+          group: effort.group,
+        })
+        .catch(() => {});
+      // Its branch is a request not proposed yet until its request opens.
+      await deps.upstream.refresh(true);
+      const row = deps.upstream
+        .branches()
+        .find((each) => each.member.path === made.path);
+      if (row)
+        await deps.edit(async () => {
+          const latest = await deps.settings();
+          if (latest.unsent.some((each) => each.key === row.key)) return latest;
+          return deps.save(
+            {
+              ...latest,
+              unsent: [
+                ...latest.unsent,
+                {
+                  key: row.key,
+                  title: plan.name.slice(0, 300),
+                  at: new Date().toISOString(),
+                },
+              ],
+            },
+            meta,
+          );
+        });
+      await service.refreshOne(effort, true);
+      await service.push(effort.id, { by: meta.by });
+      return {
+        ok: !conflict,
+        path: made.path,
+        branch,
+        picked: pick.picked,
+        of: picked.length,
+        ...(pick.skipped.length
+          ? {
+              skipped: pick.skipped.map((sha) => ({
+                sha,
+                subject:
+                  picked.find((commit) => commit.sha === sha)?.subject ?? "",
+              })),
+            }
+          : {}),
+        ...(conflict ? { conflict } : {}),
+        ...(pick.error ? { error: pick.error } : {}),
+      };
+    }
+    case "bridge.mr_reviews.effort.open_commit": {
+      // `d`: the commit's diff as a Roamgate review in the head workspace.
+      const effort = await effortOf();
+      const sha = String(params.sha ?? "");
+      if (!/^[0-9a-f]{7,40}$/.test(sha))
+        throw new MrReviewsError("sha: a commit id");
+      const head = effort.head ?? {
+        connectionId: effort.clone.connectionId,
+        path: effort.clone.path,
+      };
+      const workspaceId = await workspaceAt(
+        head.connectionId,
+        [head.path],
+        "workspaceId" in head ? head.workspaceId : undefined,
+      );
+      if (!workspaceId)
+        throw new MrReviewsError(
+          "its head workspace is not open: open it, or set head",
+          "not_found",
+        );
+      if (!deps.openRange)
+        throw new MrReviewsError(
+          "reviews cannot be opened here",
+          "unavailable",
+        );
+      const subject =
+        service.store
+          .derived(effort.id)
+          ?.commits.find((commit) => commit.sha.startsWith(sha))?.subject ??
+        sha;
+      const opened = await deps.openRange({
+        connectionId: head.connectionId,
+        workspaceId,
+        root: head.path,
+        base: `${sha}^`,
+        head: sha,
+        title: subject.slice(0, 120),
+      });
+      return {
+        ok: true,
+        connectionId: head.connectionId,
+        workspaceId,
+        ...opened,
+      };
+    }
+    case "bridge.mr_reviews.effort.diff": {
+      // Between two versions of one commit (D24): read on demand, never kept.
+      const effort = await effortOf();
+      const from = String(params.from ?? "");
+      const to = String(params.to ?? "");
+      if (!/^[0-9a-f]{7,40}$/.test(from) || !/^[0-9a-f]{7,40}$/.test(to))
+        throw new MrReviewsError("from and to: commit ids");
+      const connection = service.connectionOf(effort.clone.connectionId);
+      if (!connection)
+        throw new MrReviewsError("that connection is not ready", "unavailable");
+      const d = shQuote(effort.clone.path);
+      const read = await connection.run(
+        `git -C ${d} range-diff --no-color ${from}^! ${to}^! 2>/dev/null || git -C ${d} diff --no-color ${from} ${to}`,
+        60_000,
+      );
+      const text = read.stdout;
+      return {
+        text: text.length > 200_000 ? `${text.slice(0, 200_000)}\n...` : text,
       };
     }
     case "bridge.mr_reviews.effort.leader": {
@@ -560,10 +1022,11 @@ export async function handleEffortRpc(
       const connection = service.connectionOf(head.connectionId);
       if (!connection)
         throw new MrReviewsError("that connection is not ready", "unavailable");
-      const workspaceId =
-        ("workspaceId" in head && head.workspaceId) ||
-        deps.upstream.members().find((each) => each.path === head.path)
-          ?.workspaceId;
+      const workspaceId = await workspaceAt(
+        head.connectionId,
+        [head.path],
+        "workspaceId" in head ? head.workspaceId : undefined,
+      );
       if (!workspaceId)
         throw new MrReviewsError(
           "its head workspace is not open: open it, or set head",
@@ -664,4 +1127,59 @@ export async function handleEffortRpc(
     default:
       return undefined;
   }
+}
+
+/**
+ * In a fresh part worktree: moved onto the target when it is elsewhere
+ * (only while clean), then the commits picked in order. Prints `P n`
+ * (picked), `S sha` for one already in the target (empty, skipped), and
+ * on a stop `X sha` with `U file` lines; never aborts.
+ */
+export function pickScript(dir: string, targets: string[], shas: string[]) {
+  return [
+    `d=${shQuote(dir)}`,
+    '[ -d "$d" ] || { echo "E\tno such worktree"; exit 0; }',
+    `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null)`,
+    'if [ -n "$t" ] && [ "$(git -C "$d" rev-parse HEAD)" != "$t" ] && [ -z "$(git -C "$d" status --porcelain)" ]; then git -C "$d" reset -q --keep "$t" || { echo "E\tcannot move the part onto the target"; exit 0; }; fi',
+    "n=0",
+    `for c in ${shas.map(shQuote).join(" ")}; do`,
+    '  if git -C "$d" -c core.editor=true cherry-pick --allow-empty "$c" >/dev/null 2>&1; then n=$((n+1)); else',
+    // Already in the target (picked empty): skipped and said, not a stop.
+    '    if [ -z "$(git -C "$d" diff --name-only --diff-filter=U)" ] && [ -z "$(git -C "$d" status --porcelain)" ] && git -C "$d" rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null; then git -C "$d" cherry-pick --skip >/dev/null 2>&1 && { printf "S\t%s\n" "$c"; continue; }; fi',
+    '    printf "P\t%s\nX\t%s\n" "$n" "$c"',
+    '    git -C "$d" diff --name-only --diff-filter=U | sed "s/^/U\t/"',
+    "    exit 0",
+    "  fi",
+    "done",
+    'printf "P\t%s\n" "$n"',
+  ].join("\n");
+}
+
+export function parsePick(stdout: string): {
+  picked: number;
+  conflict?: string;
+  files: string[];
+  skipped: string[];
+  error?: string;
+} {
+  let picked = 0;
+  const skipped: string[] = [];
+  let conflict: string | undefined;
+  let error: string | undefined;
+  const files: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const [kind, value = ""] = line.split("\t");
+    if (kind === "P") picked = Number(value) || 0;
+    else if (kind === "X") conflict = value;
+    else if (kind === "U" && value) files.push(value);
+    else if (kind === "S" && value) skipped.push(value);
+    else if (kind === "E") error = value;
+  }
+  return {
+    picked,
+    files,
+    skipped,
+    ...(conflict ? { conflict } : {}),
+    ...(error ? { error } : {}),
+  };
 }

@@ -11,7 +11,10 @@ import {
   MR_DISPOSITIONS,
   type MrDisposition,
   type MrEffort,
+  type MrEffortChanges,
   type MrEffortSummary,
+  type MrMatchProposal,
+  type MrPlan,
 } from "../../../shared/mrReviews";
 import { mrReviewsCall, onMrReviewsChange } from "../mrReviews";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
@@ -22,7 +25,9 @@ import "./MrEffortView.css";
  * Upstreaming efforts in Reviews: a card per effort at the top of Mine
  * (progress by disposition), and the effort's view: Progress (bar, counts,
  * burndown, breakdown by directory), Ledger (every commit, selectable,
- * dispositions set in bulk with Undo) and Feeders.
+ * dispositions set in bulk with Undo, fuzzy matches confirmed or
+ * rejected, `d` its diff), Plans (planned requests and their parts),
+ * Feeders and What changed since the user last looked.
  */
 
 export const DISPOSITION_TITLE: Record<MrDisposition, string> = {
@@ -56,6 +61,9 @@ type EffortDetail = {
   feeders: { ref: string; notReady: number; drift: number }[];
   daily: { date: string; counts: Partial<Record<MrDisposition, number>> }[];
   journal: { id: number; at: string; by: string; summary: string }[];
+  proposals?: Record<string, MrMatchProposal[]>;
+  plans?: MrPlan[];
+  changes?: MrEffortChanges;
 };
 
 /** The bar of an effort: one segment per disposition. */
@@ -125,6 +133,30 @@ export function MrEffortCard({
             {summary.notReady ? (
               <span className="mr-reviews-chip is-wait">
                 {summary.notReady} not ready
+              </span>
+            ) : null}
+            {summary.changed ? (
+              <span
+                className="mr-reviews-chip is-changed"
+                title="What changed since you last looked"
+              >
+                {summary.changed} changed
+              </span>
+            ) : null}
+            {summary.proposals ? (
+              <span
+                className="mr-reviews-chip is-wait"
+                title="Upstream commits that look like these: confirm or reject"
+              >
+                {summary.proposals} to confirm
+              </span>
+            ) : null}
+            {summary.plans ? (
+              <span className="mr-reviews-chip is-tree">
+                {summary.plans.accepted} planned
+                {summary.plans.proposed
+                  ? `, ${summary.plans.proposed} proposed`
+                  : ""}
               </span>
             ) : null}
             {summary.overlaps.length ? (
@@ -202,12 +234,14 @@ export function MrLedgerTable({
   cursor,
   onCursor,
   onToggle,
+  proposals,
 }: {
   commits: LedgerCommit[];
   selected: ReadonlySet<string>;
   cursor: number;
   onCursor: (index: number) => void;
   onToggle: (key: string) => void;
+  proposals?: Record<string, MrMatchProposal[]>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(0);
@@ -265,9 +299,22 @@ export function MrLedgerTable({
                 {DISPOSITION_TITLE[commit.disposition]}
                 {commit.upstreamAnyway ? ", upstream anyway" : ""}
               </span>
-              <span className="mr-ledger-note" title={commit.note}>
-                {commit.note ?? ""}
-              </span>
+              {proposals?.[commit.key]?.length ? (
+                <span
+                  className="mr-ledger-note is-proposal"
+                  title={proposals[commit.key]!.map(
+                    (each, at) =>
+                      `${at + 1}. ${each.sha.slice(0, 10)} ${each.subject} (${each.score}: ${each.why})`,
+                  ).join("\n")}
+                >
+                  like {proposals[commit.key]![0]!.sha.slice(0, 8)} (
+                  {proposals[commit.key]![0]!.score})
+                </span>
+              ) : (
+                <span className="mr-ledger-note" title={commit.note}>
+                  {commit.note ?? ""}
+                </span>
+              )}
             </div>
           );
         })}
@@ -276,18 +323,29 @@ export function MrLedgerTable({
   );
 }
 
-type Tab = "progress" | "ledger" | "feeders";
+type Tab = "progress" | "ledger" | "plans" | "feeders" | "changes";
+
+const TABS: { tab: Tab; label: string; key: string }[] = [
+  { tab: "progress", label: "Progress", key: "P" },
+  { tab: "ledger", label: "Ledger", key: "L" },
+  { tab: "plans", label: "Plans", key: "R" },
+  { tab: "feeders", label: "Feeders", key: "F" },
+  { tab: "changes", label: "What changed", key: "W" },
+];
 
 /** One effort, maximized in the panel. */
 export function MrEffortView({
   id,
   onBack,
   onLeader,
+  onJump,
   say,
 }: {
   id: string;
   onBack: () => void;
   onLeader: () => void;
+  /** Goes to a workspace (a commit's review opened there). */
+  onJump?: (connectionId: string, workspaceId: string) => void;
   /** A few words where Undo shows; with an action when it can be undone. */
   say: (label: string, undo?: () => Promise<unknown>) => void;
 }) {
@@ -302,6 +360,9 @@ export function MrEffortView({
   const [history, setHistory] = useState<Record<string, unknown>[] | null>(
     null,
   );
+  /** Two versions of the history picked for `d`, and their diff. */
+  const [versions, setVersions] = useState<string[]>([]);
+  const [diff, setDiff] = useState<string | null>(null);
   const keyState = useRef(EMPTY_KEY_STATE);
   const rootRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -382,6 +443,106 @@ export function MrEffortView({
     }
   };
 
+  /** Calls a write and says what it did, with Undo when journaled. */
+  const write = async (
+    method: string,
+    params: Record<string, unknown>,
+    label: (done: any) => string,
+  ) => {
+    try {
+      const done = await mrReviewsCall<any>(method, { id, ...params });
+      setSelected(new Set());
+      say(
+        label(done),
+        typeof done?.journal === "number"
+          ? () => mrReviewsCall("ledger.undo", { id, journal: done.journal })
+          : undefined,
+      );
+      await load();
+      return done;
+    } catch (cause) {
+      say(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    }
+  };
+
+  /** Confirms or rejects the proposals of the targeted commits. */
+  const decide = (accept: boolean, which: string) => {
+    const decisions = targets().flatMap((key) => {
+      const list = detail?.proposals?.[key] ?? [];
+      const picked =
+        which === "all" && !accept
+          ? list
+          : [list[Math.max(0, (Number(which) || 1) - 1)]].filter(Boolean);
+      return picked.map((each) => ({
+        commit: key,
+        match: each!.sha,
+        accept,
+      }));
+    });
+    if (!decisions.length) {
+      say("No proposal on that commit");
+      return;
+    }
+    void write("ledger.match", { decisions }, (done) =>
+      accept
+        ? `${done.accepted} match${done.accepted === 1 ? "" : "es"} confirmed`
+        : `${done.rejected} rejected`,
+    );
+  };
+
+  const plans = detail?.plans ?? [];
+  const planNamed = (name: string) =>
+    plans.find(
+      (plan) =>
+        plan.id === name || plan.name.toLowerCase() === name.toLowerCase(),
+    );
+
+  /** `:plan NAME`: the commits into that planned request (made when new). */
+  const plan = (name: string) => {
+    const commits = targets();
+    if (!name || !commits.length) {
+      say("Say a name: :plan NAME");
+      return;
+    }
+    const existing = planNamed(name);
+    void write(
+      "ledger.plans",
+      existing
+        ? { action: "edit", plan: existing.id, add: commits }
+        : { action: "propose", name, commits, accepted: true },
+      () =>
+        `${commits.length} commit${commits.length === 1 ? "" : "s"} planned in ${name}`,
+    );
+  };
+
+  const makePart = (name: string, branch?: string) =>
+    void write(
+      "effort.part",
+      { plan: name, ...(branch ? { branch } : {}) },
+      (done) =>
+        done.conflict
+          ? `Part ${done.branch}: ${done.picked} of ${done.of} picked, stopped at ${String(done.conflict.sha).slice(0, 10)} (${done.conflict.files.join(", ") || "empty"}): resolve it there`
+          : `Part ${done.branch} made with ${done.picked} commits${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
+    );
+
+  const openCommit = (sha: string) =>
+    void mrReviewsCall<{ connectionId: string; workspaceId: string }>(
+      "effort.open_commit",
+      { id, sha },
+    )
+      .then((answer) => onJump?.(answer.connectionId, answer.workspaceId))
+      .catch((cause) =>
+        say(cause instanceof Error ? cause.message : String(cause)),
+      );
+
+  const diffVersions = (from: string, to: string) =>
+    void mrReviewsCall<{ text: string }>("effort.diff", { id, from, to })
+      .then((answer) => setDiff(answer.text || "(no difference)"))
+      .catch((cause) =>
+        say(cause instanceof Error ? cause.message : String(cause)),
+      );
+
   const runCommand = (text: string) => {
     setCommand(null);
     rootRef.current?.focus({ preventScroll: true });
@@ -395,8 +556,48 @@ export function MrEffortView({
       void setDisposition(value, why.length ? { reason: why.join(" ") } : {});
     } else if (name === "supersede")
       void setDisposition("superseded", argument ? { pointer: argument } : {});
-    else if (name === "plan")
-      void setDisposition("planned", argument ? { reason: argument } : {});
+    else if (name === "plan") plan(argument);
+    else if (name === "confirm") decide(true, argument || "1");
+    else if (name === "reject") decide(false, argument || "1");
+    else if (name === "accept" || name === "drop") {
+      const found = planNamed(argument);
+      if (!found) say(`No planned request ${argument}`);
+      else
+        void write(
+          "ledger.plans",
+          { action: name, plan: found.id },
+          () => `${found.name} ${name === "drop" ? "dropped" : "accepted"}`,
+        );
+    } else if (name === "split") {
+      // :split NEW: the selected commits out of their plan, into a new one.
+      const commits = targets();
+      const from = plans.find((each) =>
+        commits.every((key) => each.commits.includes(key)),
+      );
+      if (!argument) say("Say the new plan's name: :split NEW");
+      else if (!from || !commits.length)
+        say("Select commits of one planned request first");
+      else
+        void write(
+          "ledger.plans",
+          { action: "split", plan: from.id, name: argument, commits },
+          () => `Split ${argument} out of ${from.name}`,
+        );
+    } else if (name === "part") {
+      // :part [NAME]: that plan's part, else the plan of the commit here.
+      const here = shown[cursor]?.key;
+      const found = argument
+        ? planNamed(argument)
+        : plans.find((each) => !!here && each.commits.includes(here));
+      if (!found)
+        say(
+          argument
+            ? `No planned request ${argument}`
+            : "Say which plan: :part NAME",
+        );
+      else makePart(found.id);
+    } else if (name === "seen")
+      void mrReviewsCall("effort.seen", { id }).then(load);
     else if (name === "unsort") void setDisposition("unsorted");
     else if (name === "refresh")
       void mrReviewsCall("effort.refresh", { id }).then(load);
@@ -426,9 +627,24 @@ export function MrEffortView({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      if (history) setHistory(null);
+      if (diff) setDiff(null);
+      else if (history) setHistory(null);
       else if (selected.size) setSelected(new Set());
       else onBack();
+      return;
+    }
+    // d is a prefix elsewhere (dd); here it is the diff, at once.
+    if (
+      event.key === "d" &&
+      tab === "ledger" &&
+      !keyState.current.pending &&
+      !keyState.current.count
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (history && versions.length === 2)
+        diffVersions(versions[0]!, versions[1]!);
+      else if (shown[cursor]) openCommit(shown[cursor]!.sha);
       return;
     }
     const fed = feedKey(keyState.current, event.key);
@@ -448,10 +664,10 @@ export function MrEffortView({
     };
     const count = fed.count ?? 1;
     let handled = true;
-    if (fed.key === "P") setTab("progress");
-    else if (fed.key === "L") setTab("ledger");
-    else if (fed.key === "F") setTab("feeders");
+    const tabKey = TABS.find((each) => each.key === fed.key);
+    if (tabKey) setTab(tabKey.tab);
     else if (fed.key === "c") onLeader();
+    else if (fed.key === ":") setCommand("");
     else if (tab !== "ledger") handled = false;
     else if (fed.key === "j" || fed.key === "ArrowDown") move(cursor + count);
     else if (fed.key === "k" || fed.key === "ArrowUp") move(cursor - count);
@@ -470,7 +686,6 @@ export function MrEffortView({
         setSelected(new Set(shown[cursor] ? [shown[cursor]!.key] : []));
       } else setAnchor(null);
     } else if (fed.key === "/") searchRef.current?.focus();
-    else if (fed.key === ":") setCommand("");
     else if (fed.key === "u") {
       const last = detail?.journal[detail.journal.length - 1];
       if (last)
@@ -481,7 +696,11 @@ export function MrEffortView({
       void mrReviewsCall<{ versions: Record<string, unknown>[] }>(
         "effort.history",
         { id, key: shown[cursor]!.key },
-      ).then((answer) => setHistory(answer.versions));
+      ).then((answer) => {
+        setHistory(answer.versions);
+        setVersions([]);
+        setDiff(null);
+      });
     else handled = false;
     if (handled) {
       event.preventDefault();
@@ -565,7 +784,8 @@ export function MrEffortView({
           {shown.length} of {detail.commits.length}
           {selected.size ? ` · ${selected.size} selected` : ""} · j/k move · x
           select · V range · :mark not-upstream REASON · :supersede REF · :plan
-          NAME · :unsort · u undo · Enter its history
+          NAME · :confirm [N] · :reject [N|all] · :unsort · u undo · d its diff
+          · Enter its history
         </p>
         <MrLedgerTable
           commits={shown}
@@ -579,25 +799,127 @@ export function MrEffortView({
               return next;
             })
           }
+          {...(detail.proposals ? { proposals: detail.proposals } : {})}
         />
-        {history ? (
-          <section className="mr-effort-history" aria-label="Its versions">
-            <h4>Its versions, oldest first</h4>
+        {shown[cursor] && detail.proposals?.[shown[cursor]!.key]?.length ? (
+          <section
+            className="mr-effort-proposals"
+            aria-label="Proposed matches"
+          >
+            <h4>Upstream commits that look like it</h4>
             <ol>
-              {history.map((version, index) => (
-                <li key={index}>
-                  <code>{String(version.sha).slice(0, 10)}</code>{" "}
-                  {String(version.subject)}{" "}
+              {detail.proposals[shown[cursor]!.key]!.map((each) => (
+                <li key={each.sha}>
+                  <code>{each.sha.slice(0, 10)}</code> {each.subject}{" "}
                   <small>
-                    {String(version.where)} ·{" "}
-                    {String(version.seenAt).slice(0, 16).replace("T", " ")}
-                  </small>
+                    {each.author} · {each.score} · {each.why}
+                  </small>{" "}
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() =>
+                      void write(
+                        "ledger.match",
+                        {
+                          decisions: [
+                            {
+                              commit: shown[cursor]!.key,
+                              match: each.sha,
+                              accept: true,
+                            },
+                          ],
+                        },
+                        () => "Match confirmed",
+                      )
+                    }
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() =>
+                      void write(
+                        "ledger.match",
+                        {
+                          decisions: [
+                            {
+                              commit: shown[cursor]!.key,
+                              match: each.sha,
+                              accept: false,
+                            },
+                          ],
+                        },
+                        () => "Rejected",
+                      )
+                    }
+                  >
+                    Reject
+                  </button>
                 </li>
               ))}
             </ol>
           </section>
         ) : null}
+        {history ? (
+          <section className="mr-effort-history" aria-label="Its versions">
+            <h4>Its versions, oldest first</h4>
+            <p className="assistant-hint">
+              Pick two, then d (or Diff) shows how they differ.
+            </p>
+            <ol>
+              {history.map((version, index) => {
+                const sha = String(version.sha);
+                return (
+                  <li key={index}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={versions.includes(sha)}
+                        onChange={() =>
+                          setVersions((current) =>
+                            current.includes(sha)
+                              ? current.filter((each) => each !== sha)
+                              : [...current, sha].slice(-2),
+                          )
+                        }
+                      />{" "}
+                      <code>{sha.slice(0, 10)}</code> {String(version.subject)}{" "}
+                      <small>
+                        {String(version.where)} ·{" "}
+                        {String(version.seenAt).slice(0, 16).replace("T", " ")}
+                      </small>
+                    </label>
+                  </li>
+                );
+              })}
+            </ol>
+            {versions.length === 2 ? (
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => diffVersions(versions[0]!, versions[1]!)}
+              >
+                Diff
+              </button>
+            ) : null}
+            {diff !== null ? (
+              <pre className="mr-effort-diff" aria-label="Between the two">
+                {diff}
+              </pre>
+            ) : null}
+          </section>
+        ) : null}
       </>
+    );
+  else if (tab === "plans")
+    body = <PlansList detail={detail} write={write} makePart={makePart} />;
+  else if (tab === "changes")
+    body = (
+      <WhatChanged
+        detail={detail}
+        onSeen={() => void mrReviewsCall("effort.seen", { id }).then(load)}
+      />
     );
   else
     body = detail.feeders.length ? (
@@ -643,16 +965,19 @@ export function MrEffortView({
         </button>
       </div>
       <nav className="assistant-primary-nav" aria-label="Effort views">
-        {(["progress", "ledger", "feeders"] as const).map((each) => (
+        {TABS.map((each) => (
           <button
-            key={each}
+            key={each.tab}
             type="button"
             className="ghost"
-            aria-pressed={tab === each}
-            title={`${each[0]!.toUpperCase()}`}
-            onClick={() => setTab(each)}
+            aria-pressed={tab === each.tab}
+            title={each.key}
+            onClick={() => setTab(each.tab)}
           >
-            {each[0]!.toUpperCase() + each.slice(1)}
+            {each.label}
+            {each.tab === "changes" && summary?.changed
+              ? ` (${summary.changed})`
+              : ""}
           </button>
         ))}
       </nav>
@@ -671,6 +996,210 @@ export function MrEffortView({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** Planned requests: accepted, proposed, their parts. */
+function PlansList({
+  detail,
+  write,
+  makePart,
+}: {
+  detail: EffortDetail;
+  write: (
+    method: string,
+    params: Record<string, unknown>,
+    label: (done: any) => string,
+  ) => Promise<unknown>;
+  makePart: (name: string) => void;
+}) {
+  const plans = detail.plans ?? [];
+  const bykey = new Map(detail.commits.map((commit) => [commit.key, commit]));
+  const names = new Map(plans.map((plan) => [plan.id, plan.name]));
+  if (!plans.length)
+    return (
+      <p className="assistant-hint">
+        No planned request yet. The leader session proposes them (c), or select
+        commits in the Ledger and :plan NAME.
+      </p>
+    );
+  return (
+    <ul className="mr-effort-plans" aria-label="Planned requests">
+      {plans.map((plan) => (
+        <li key={plan.id} className={`is-${plan.state}`}>
+          <div className="mr-reviews-dense-head">
+            <strong>{plan.name}</strong>
+            <span className="mr-reviews-dense-chips">
+              <span className="mr-reviews-chip is-tree">
+                {plan.state === "accepted" ? "accepted" : "proposed"}
+              </span>
+              <span className="mr-reviews-chip">
+                {plan.commits.length} commit
+                {plan.commits.length === 1 ? "" : "s"}
+              </span>
+              {plan.dependsOn.length ? (
+                <span className="mr-reviews-chip is-wait">
+                  after{" "}
+                  {plan.dependsOn
+                    .map((each) => names.get(each) ?? each)
+                    .join(", ")}
+                </span>
+              ) : null}
+              {plan.by === "agent" ? (
+                <span className="mr-reviews-chip">by Claude</span>
+              ) : null}
+            </span>
+          </div>
+          <ol className="mr-effort-plan-commits">
+            {plan.commits.slice(0, 12).map((key) => {
+              const commit = bykey.get(key);
+              return (
+                <li key={key}>
+                  <code>{commit?.sha.slice(0, 10) ?? "gone"}</code>{" "}
+                  {commit?.subject ?? "no longer on the source"}
+                </li>
+              );
+            })}
+            {plan.commits.length > 12 ? (
+              <li>and {plan.commits.length - 12} more</li>
+            ) : null}
+          </ol>
+          {plan.part ? (
+            <p className="assistant-hint">
+              Part <code>{plan.part.branch}</code> in {plan.part.path}
+              {plan.part.conflict
+                ? `: stopped at ${plan.part.conflict.sha.slice(0, 10)} ${plan.part.conflict.subject} (${plan.part.conflict.files.join(", ") || "empty"}); resolve it there`
+                : ""}
+            </p>
+          ) : null}
+          <div className="assistant-task-buttons">
+            {plan.state === "proposed" ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() =>
+                  void write(
+                    "ledger.plans",
+                    { action: "accept", plan: plan.id },
+                    () => `${plan.name} accepted`,
+                  )
+                }
+              >
+                Accept
+              </button>
+            ) : null}
+            {plan.state === "accepted" && !plan.part ? (
+              <button
+                type="button"
+                className="primary"
+                title="A worktree in the effort's group with these commits picked"
+                onClick={() => makePart(plan.id)}
+              >
+                Make its part
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                void write(
+                  "ledger.plans",
+                  { action: "drop", plan: plan.id },
+                  () => `${plan.name} dropped`,
+                )
+              }
+            >
+              Drop
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** What changed since the user last looked at the effort. */
+function WhatChanged({
+  detail,
+  onSeen,
+}: {
+  detail: EffortDetail;
+  onSeen: () => void;
+}) {
+  const changes = detail.changes;
+  const bykey = new Map(detail.commits.map((commit) => [commit.key, commit]));
+  const list = (title: string, keys: string[]) =>
+    keys.length ? (
+      <section key={title}>
+        <h4>
+          {title} ({keys.length})
+        </h4>
+        <ul>
+          {keys.slice(0, 30).map((key) => (
+            <li key={key}>
+              <code>{bykey.get(key)?.sha.slice(0, 10)}</code>{" "}
+              {bykey.get(key)?.subject ?? key}
+            </li>
+          ))}
+          {keys.length > 30 ? <li>and {keys.length - 30} more</li> : null}
+        </ul>
+      </section>
+    ) : null;
+  if (!changes) return <p className="assistant-hint">Nothing read yet.</p>;
+  const empty =
+    !changes.unsorted.length &&
+    !changes.landed.length &&
+    !changes.inReview.length &&
+    !changes.feeders.length &&
+    !changes.partsMerged.length &&
+    !changes.proposals.length &&
+    !changes.upstreamAnyway.length;
+  return (
+    <div className="mr-effort-changes" aria-label="What changed">
+      <p className="assistant-hint">
+        Since{" "}
+        {changes.since
+          ? changes.since.slice(0, 16).replace("T", " ")
+          : "the first reading"}
+        .{" "}
+        <button type="button" className="ghost" onClick={onSeen}>
+          Seen (:seen)
+        </button>
+      </p>
+      {empty ? <p>Nothing new.</p> : null}
+      {list("New unsorted commits", changes.unsorted)}
+      {list("Landed upstream", changes.landed)}
+      {list("Now in review", changes.inReview)}
+      {changes.feeders.length ? (
+        <section>
+          <h4>Feeders landed</h4>
+          <ul>
+            {changes.feeders.map((each) => (
+              <li key={each.ref}>
+                <code>{each.ref.replace(/^refs\/(heads|remotes)\//, "")}</code>:{" "}
+                {each.landed} commit{each.landed === 1 ? "" : "s"} reached the
+                source
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {changes.partsMerged.length ? (
+        <section>
+          <h4>Parts merged</h4>
+          <ul>
+            {changes.partsMerged.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {list(
+        "Matches to confirm (Ledger, :confirm or :reject)",
+        changes.proposals,
+      )}
+      {list("Upstream anyway (said not for upstream)", changes.upstreamAnyway)}
+    </div>
   );
 }
 

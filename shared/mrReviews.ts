@@ -548,6 +548,67 @@ export type MrEffortSummary = {
   /** Other efforts or branches holding some of its commits. */
   overlaps: MrOverlap[];
   head?: { connectionId: string; workspaceId?: string; label?: string };
+  /** Unsorted commits with a fuzzy match to confirm or reject. */
+  proposals?: number;
+  /** Planned requests, by state. */
+  plans?: { proposed: number; accepted: number };
+  /** What changed since the user last looked (What changed). */
+  changed?: number;
+};
+
+/**
+ * A planned request of an effort (D25): commits the leader session
+ * proposed (or the user made) to go upstream together. Accepted, it gets
+ * its part: a worktree in the effort's group with its commits picked.
+ */
+export type MrPlan = {
+  id: string;
+  name: string;
+  /** Ledger keys, in source order. */
+  commits: string[];
+  /** Plans it comes after (ids). */
+  dependsOn: string[];
+  state: "proposed" | "accepted";
+  part?: {
+    connectionId: string;
+    path: string;
+    branch: string;
+    workspaceId?: string;
+    /** The pick stopped here: the commit and its conflicting files. */
+    conflict?: { sha: string; subject: string; files: string[] };
+  };
+  at: string;
+  by: "user" | "agent";
+};
+
+/** An upstream commit proposed as the same change as an effort's commit (D14). */
+export type MrMatchProposal = {
+  sha: string;
+  subject: string;
+  author: string;
+  /** 0 to 1. */
+  score: number;
+  /** What made it close: "same files, subject words, size". */
+  why: string;
+};
+
+/** What changed in an effort since the user last looked. */
+export type MrEffortChanges = {
+  since: string | null;
+  /** Commits unsorted now that were not before (new on the source, or put back). */
+  unsorted: string[];
+  /** Commits upstream now that were not. */
+  landed: string[];
+  /** Commits in review now that were not. */
+  inReview: string[];
+  /** Feeders whose commits reached the source: how many. */
+  feeders: { ref: string; landed: number }[];
+  /** Plans whose part is all upstream now. */
+  partsMerged: string[];
+  /** Commits with proposals to confirm or reject. */
+  proposals: string[];
+  /** Said not for upstream, yet upstream. */
+  upstreamAnyway: string[];
 };
 
 /** Commits two branches or efforts share (D23). */

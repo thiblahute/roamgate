@@ -1071,6 +1071,39 @@ function getMrReviews(): MrReviews {
         title,
         raise: false,
       }),
+    openRange: ({ connectionId, workspaceId, root, base, head, title }) => ({
+      sessionId: getReviewService().open({
+        connectionId,
+        workspaceId,
+        root,
+        target: { kind: "range", base, head },
+        title,
+        raise: false,
+      }).session.id,
+    }),
+    // An effort's part: the same worktree path as the workspace menu's.
+    createWorktree: async ({ connectionId, workspaceId, branch }) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime) throw new Error("this connection is not ready");
+      const result: any = await createWorkspaceWorktree(
+        runtime,
+        { workspace_id: workspaceId, branch, focus: false },
+        () => true,
+      );
+      const path =
+        result?.worktree?.path ??
+        result?.worktree?.checkout_path ??
+        result?.workspace?.worktree?.checkout_path ??
+        result?.workspace?.cwd;
+      if (typeof path !== "string" || !path)
+        throw new Error("the worktree was made but its path is unknown");
+      return {
+        path,
+        ...(typeof result?.workspace?.workspace_id === "string"
+          ? { workspaceId: result.workspace.workspace_id }
+          : {}),
+      };
+    },
     requestReview: ({ sessionId, paneId, focus }) =>
       getReviewService().requestAgentReview({
         sessionId,
