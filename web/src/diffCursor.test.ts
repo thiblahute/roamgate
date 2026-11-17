@@ -16,8 +16,8 @@ import {
 } from "./diffCursor";
 
 /*
- * The adapter from Pierre's parsed hunks to the review's cursor rows (plan:
- * review into the inspector, phase 3), on patches as git writes them.
+ * The adapter from Pierre's parsed hunks to the review's cursor rows, on
+ * patches as git writes them.
  */
 
 const source = (path: string, patch: string, key = `unstaged:${path}`) => ({

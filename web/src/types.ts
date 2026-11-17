@@ -201,7 +201,7 @@ export type GitDiffKind =
   | "last-step"
   /**
    * A file's staged and unstaged changes as one diff against HEAD, the
-   * review's reading of the working changes in Changes (plan D8).
+   * review's reading of the working changes in Changes.
    */
   | "combined";
 
@@ -227,7 +227,7 @@ export interface GitDiffEntry {
   parts?: GitDiffEntry[];
 }
 
-/** A last step as a review target (plan D15). */
+/** A last step as a review target. */
 export type LastStepTarget = {
   kind?: "step";
   step: string;
@@ -250,7 +250,7 @@ export interface GitDiffSummary {
   commits?: number;
   baseline_available?: boolean;
   snapshot_id?: string;
-  /** On the Last step scope: the step as a review target (plan D15). */
+  /** On the Last step scope: the step as a review target. */
   step?: LastStepTarget;
   entries: GitDiffEntry[];
   counts: Record<Exclude<GitDiffKind, "combined">, number>;

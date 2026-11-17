@@ -9,13 +9,12 @@ import { reviewCall } from "./review";
 import { fileLines, relocateLine } from "./reviewModel";
 
 /*
- * A merge or pull request's review in Changes (plan: review into the
- * inspector, phase 7): what the review pane does with the forge, kept out
+ * A merge or pull request's review in Changes: its forge's side, kept out
  * of Changes' diff. Its discussions are read again while shown, found
  * again in today's file when written on an older head, and drawn on their
  * lines, above the diff, or counted as outside the commit shown. Nothing
  * here writes to the forge but drafts: no control labelled Send reaches
- * it (user decision 2026-11-13).
+ * it.
  */
 
 /** How often a shown merge request's discussions are read again. */

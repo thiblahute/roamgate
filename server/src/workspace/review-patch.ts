@@ -108,7 +108,7 @@ export function reviewScriptError(
       `This checkout no longer exists: ${root}`,
     );
   const unknown = /unknown revision: (\S+)/.exec(stderr);
-  // A last step whose snapshot trees git collected (plan D15).
+  // A last step whose snapshot trees git collected.
   if (unknown && target?.kind === "step") {
     const end = unknown[1] === target.before ? "base" : "head";
     return new ReviewGoneError(
@@ -195,7 +195,7 @@ export function reviewPatchScript(
       `{ printf '${SHAS_MARKER} %s %s\\n' "$m" "$h"; ${diff} "$m" "$h"${only}; } | ${cap}`,
     );
   } else if (target.kind === "step") {
-    // Tree against tree: what the agent's step changed (plan D15).
+    // Tree against tree: what the agent's step changed.
     for (const tree of [target.before, target.after])
       lines.push(checkTree(tree, shQuote));
     lines.push(
@@ -312,7 +312,7 @@ export function reviewStateScript(
     lines.push(
       "git rev-parse --verify --quiet HEAD",
       "{ git diff --no-color --no-ext-diff HEAD 2>/dev/null || git diff --no-color --no-ext-diff --cached; } | git hash-object --stdin",
-      // Every untracked file counts (no 200-file cap, plan phase 5s):
+      // Every untracked file counts (no 200-file cap):
       // Changes lists them all, and a change to any one is a change.
       `git ls-files --others --exclude-standard | { git hash-object --stdin-paths 2>/dev/null; git ls-files --others --exclude-standard; } | git hash-object --stdin`,
     );

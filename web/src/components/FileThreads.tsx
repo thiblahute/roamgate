@@ -62,7 +62,7 @@ export type ThreadWrites = {
   restore?: (thread: ReviewThread) => Promise<void>;
   /**
    * A thread on a part of a thread's message, quoting it: in that
-   * thread's review, its anchor the thread's own, as the review pane's.
+   * thread's review, its anchor the thread's own.
    */
   addPart?: (
     thread: ReviewThread,
@@ -165,7 +165,7 @@ export function placedInSource(
 
 /**
  * The threads on parts of other threads' messages, by the message, and
- * the others, as the review pane and a chat draw them.
+ * the others, as a chat draws them.
  */
 export function nestThreads(threads: readonly ReviewThread[]): {
   top: ReviewThread[];
@@ -344,12 +344,12 @@ function forgeOf(
 
 /**
  * One thread, as a chat's are drawn (ThreadCard); a merge request's
- * discussion as the review pane draws it (MrThreadCard). The parts of its
- * messages take threads of their own (+, words selected, c on a part), as
- * in the review pane and a chat, drawn under the part they quote.
+ * discussion as MrThreadCard draws it. The parts of its messages take
+ * threads of their own (+, words selected, c on a part), as in a chat,
+ * drawn under the part they quote.
  */
 /**
- * A thread drawn as the review pane draws it (the review in Changes): its
+ * A thread as the review in Changes draws it: its
  * marks and buttons under each message, its own bar, its editors in place.
  */
 export type ReviewThreadLook = {
@@ -384,9 +384,8 @@ export type ReviewThreadLook = {
     done: () => void,
   ) => ReactNode;
   /**
-   * A forge discussion (a merge request's review in Changes, plan phase 7)
-   * as the review pane draws it: found again on today's line, folded by
-   * hand (r), its draft reply in the review's editor.
+   * A forge discussion (a merge request's review in Changes): found again on
+   * today's line, folded by hand (r), its draft reply in the review's editor.
    */
   forge?: {
     /** Found again in today's file: the line it was written on. */
@@ -482,7 +481,7 @@ export function FileThread({
   const moment = thread.anchor.render?.moment;
   const where = thread.anchor.render?.graphic ?? thread.anchor.render?.selector;
   // Your review comment on the forge (a GitLab draft note): rewritten or
-  // deleted, as in the review pane, not answered there.
+  // deleted, not answered there.
   const forgeDraft = thread.gitlab?.draftId !== undefined;
   const first = thread.comments[0];
   const partsOf = (comment: string): MessageParts | undefined => {
@@ -854,7 +853,7 @@ export function useFileThreadView(
   const [partSelection, setPartSelection] = useState<PartSelection | null>(
     null,
   );
-  // The offer goes with the selection, as in the review pane.
+  // The offer goes with the selection.
   useEffect(() => {
     if (!partSelection) return;
     const onChange = () => {
@@ -1169,11 +1168,10 @@ function showQuotes() {
 }
 
 /**
- * The words the open threads drawn in a Markdown preview quote,
- * highlighted where they are in their stop (with the CSS Custom Highlight
- * API: the document's text is left as it is), as the review pane marks a
- * selected range. A quote said more than once on its stop is found by the
- * line it was written on (`text`: the file's source).
+ * The words the open threads drawn in a Markdown preview quote, highlighted
+ * where they are in their stop (with the CSS Custom Highlight API: the
+ * document's text is left as it is). A quote said more than once on its stop
+ * is found by the line it was written on (`text`: the file's source).
  */
 export function useQuoteHighlights(
   element: HTMLElement | null,

@@ -8,10 +8,9 @@ import { commitMessageFile } from "./reviewModel";
 import type { GitDiffEntry, GitDiffFile } from "./types";
 
 /*
- * A review's views in Changes (plan: review into the inspector, phase 6):
- * all the changes, or one commit at a time, as the review pane's commit bar
- * steps through them. Pure: a review diff as Changes' entries and patches,
- * and what the bar says.
+ * A review's views in Changes: all the changes, or one commit at a time, as
+ * the commit bar steps through them. Pure: a review diff as Changes' entries
+ * and patches, and what the bar says.
  */
 
 /** A review diff's file as git would print its patch, for Pierre. */
@@ -67,7 +66,7 @@ const STATUS_NAMES = {
 /**
  * A view's diff as Changes draws it: one `branch` entry per file and its
  * patch; a commit's message first, as a file whose lines take comments.
- * A summary's files (phase 5s) are listed from the start, each patch drawn
+ * A summary's files are listed from the start, each patch drawn
  * once read (`loaded`, by path); `loading` and `errors` say how the others
  * are going.
  */

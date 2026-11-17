@@ -6,9 +6,8 @@ import {
 } from "./keyMachine";
 
 /*
- * The one key machine every host runs (plan: review into the inspector,
- * phase 3): the review pane, the inspector (gt / gT), Changes' cursor and
- * the lists of threads.
+ * The one key machine every host runs: the inspector (gt / gT), Changes'
+ * cursor and the lists of threads.
  */
 
 const feedAll = (

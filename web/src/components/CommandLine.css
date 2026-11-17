@@ -1,6 +1,6 @@
 /*
- * The `:` and `/` prompt (CommandLine), the review pane's and the Files
- * preview's: in the review's colours where they are set, else the app's.
+ * The `:` and `/` prompt (CommandLine), the review's in Changes and the
+ * Files preview's: in the review's colours where they are set, else the app's.
  */
 .review-cmdline {
   display: flex;

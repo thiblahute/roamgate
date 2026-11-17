@@ -68,7 +68,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     describe(surface.name, () => {
       const { mount } = surface;
       // The review's commands, on every surface with them; the commit
-      // bar's on every surface with commits (plan phase 6).
+      // bar's on every surface with commits.
       const test = testWith(surface, "commands");
       test("an unknown command says so and names a few; :help and :set with another option are unknown", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });

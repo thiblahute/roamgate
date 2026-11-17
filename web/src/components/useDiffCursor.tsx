@@ -42,13 +42,12 @@ import {
 import type { DiffSurfaceInstance } from "./DiffSurface";
 
 /*
- * The review's Vim cursor in Changes (plan: review into the inspector,
- * phase 3). The cursor moves on rows read from Pierre's hunks
- * (diffCursor.ts), never on the DOM; Pierre draws it (setEditorActiveLine,
- * the Visual lines as its selected lines) and scrolls to it through its
- * line positions. Keys go through the one key machine (keyMachine.ts).
- * With Vim keys on or off (they only change the comment editor); not on
- * an embedded diff, which keeps its own keys and mouse.
+ * The review's Vim cursor in Changes. The cursor moves on rows read from
+ * Pierre's hunks (diffCursor.ts), never on the DOM; Pierre draws it
+ * (setEditorActiveLine, the Visual lines as its selected lines) and scrolls
+ * to it through its line positions. Keys go through the one key machine
+ * (keyMachine.ts). With Vim keys on or off (they only change the comment
+ * editor); not on an embedded diff, which keeps its own keys and mouse.
  */
 
 /** A file of the diff shown, as the cursor reads it. */
@@ -1070,7 +1069,7 @@ export function useDiffCursor({
     if (isTypingTarget(event.target) || searchPrompt) return;
     // The app's shortcuts that reach past the review (its toggles, the
     // sidebar, the overlay tab) and those leaving for another workspace,
-    // tab or pane go to the app, as from the review pane (reviewKeys.ts).
+    // tab or pane go to the app (reviewKeys.ts).
     if (
       reviewKeyRoute(
         (id) => shortcutMatches(event.nativeEvent, id),

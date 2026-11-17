@@ -103,8 +103,8 @@ export async function handleReviewRpc(
 ): Promise<unknown> {
   const params: Record<string, unknown> = { ...raw, author: REVIEW_USER };
   const sessionId = raw.session_id ?? raw.sessionId;
-  // A scope Changes shows with no review yet (plan section 2: showing a
-  // scope never makes a session): its commits and diffs, read only.
+  // A scope Changes shows with no review yet (showing a scope never makes
+  // a session): its commits and diffs, read only.
   if (
     PREVIEW_METHODS.has(method) &&
     sessionId === undefined &&

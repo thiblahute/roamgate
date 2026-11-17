@@ -1,7 +1,7 @@
 /**
- * The review in Changes as a review surface for the shared behavior tests
- * (plan: review into the inspector, gate 3): Changes' diff (DiffContentView,
- * on Pierre) with the review's cursor on ("in Changes", Vim keys), mounted
+ * The review in Changes as a review surface for the shared behavior tests:
+ * Changes' diff (DiffContentView, on Pierre) with the review's cursor on
+ * ("in Changes", Vim keys), mounted
  * on the review's files written as patches. It reads Pierre's drawing: the
  * line Pierre marks active is the cursor's, the lines it marks selected the
  * Visual selection's; its threads are the review's cards Changes draws,
@@ -219,7 +219,7 @@ export async function mountChangesReview(
   let marks: Record<string, string> = { ...(options.reviewed ?? {}) };
   let applied = 0;
   // A review of commits (the commit bar): a range shown as a review scope
-  // in Changes, as the review toggle shows one (plan phase 6).
+  // in Changes, as the review toggle shows one.
   const ofCommits = !!options.commits?.length;
   let sessionFields: Record<string, unknown> = {
     ...(ofCommits
@@ -228,8 +228,8 @@ export async function mountChangesReview(
     ...(options.session ?? {}),
   };
   // A merge request's review: shown as Changes' review scope, as the review
-  // toggle shows one (plan phase 7); its threads are the forge's, the
-  // agent's and the review pane's, not written in Changes.
+  // toggle shows one; its threads are the forge's and the agent's, not
+  // written in Changes.
   const ofRequest =
     (sessionFields.target as { kind?: string } | undefined)?.kind === "mr";
   const asReview = ofCommits || ofRequest;
@@ -252,7 +252,7 @@ export async function mountChangesReview(
     thread: ReviewThread,
     session: string,
   ): ReviewThread =>
-    // Written on a commit's view (the review pane's commit bar): the
+    // Written on a commit's view (the commit bar): the
     // review's own thread, anchored on that commit, as it is stored.
     thread.anchor.commit && !thread.anchor.feedback
       ? ({ ...thread, sessionId: session } as ReviewThread)
@@ -798,11 +798,10 @@ export async function mountChangesReview(
   let picked: GitDiffEntry | undefined = entries[0];
   let selectionRevision = 0;
   /**
-   * The workspace's repositories (plan phase 8), as the inspector lists
+   * The workspace's repositories, as the inspector lists
    * them over Changes: its scope line's chooser, p, ( and ). Picking one
    * is the host's (`openRepo`, with whether it has only uncommitted work);
-   * the review shown stays, as the review pane's host leaves it to the
-   * page.
+   * the review shown stays, left to the page.
    */
   const series =
     options.repos !== undefined || options.repoDirs !== undefined
@@ -1532,7 +1531,7 @@ export async function mountChangesReview(
       return progress.get(path)?.reviewed ?? false;
     },
     chunkProgress(path) {
-      // As the review pane's list: a count while partly reviewed.
+      // A count while partly reviewed.
       const own = progress.get(path);
       return own && !own.reviewed && own.done > 0
         ? `${own.done}/${own.total}`

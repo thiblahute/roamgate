@@ -3,11 +3,10 @@ import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
 /**
- * The checkout's review as Files shows it (plan: review into the
- * inspector, D16): a changed file's tick read from its combined diff, as
- * Changes reads it; a file with no change in the review by a comment or
- * its tick ("Other files"); the tick toggled from Files written to the
- * worktree review, opened for a first mark.
+ * The checkout's review as Files shows it: a changed file's tick read from
+ * its combined diff, as Changes reads it; a file with no change in the review
+ * by a comment or its tick ("Other files"); the tick toggled from Files
+ * written to the worktree review, opened for a first mark.
  */
 if (
   inIsolatedChild(

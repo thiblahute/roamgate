@@ -18,14 +18,13 @@ import { useReloadOnReconnect } from "./useReloadOnReconnect";
 import type { GitDiffEntry, GitDiffFile } from "./types";
 
 /*
- * The review's views in Changes (plan: review into the inspector, phase
- * 6), as the review pane's commit bar has them: all the changes, or one
+ * The review's views in Changes, on its commit bar: all the changes, or one
  * commit at a time (`<` `>`, `gc`, `:commit`, `:all`), oldest first, the
  * commit's message as a file; a branch with nothing of its own shows its
- * history, latest first. After a reload the commit shown is followed
- * through a rebase or a reword (reviewFollow.ts). The view shown is kept
- * per review (reviewPlace.ts). Reads only: a scope with no review yet is
- * read by its target (`review.diff` with no session), never opened.
+ * history, latest first. After a reload the commit shown is followed through
+ * a rebase or a reword (reviewFollow.ts). The view shown is kept per review
+ * (reviewPlace.ts). Reads only: a scope with no review yet is read by its
+ * target (`review.diff` with no session), never opened.
  */
 
 /** Where the views are read: the review's session, or the scope's target. */
@@ -180,7 +179,7 @@ export function useChangesViews({
   const diffRef = useRef<ViewLoad | null>(null);
   /**
    * The view a review opens on, asked with its commits rather than after
-   * them (as the review pane did): its place, and the answer.
+   * them: its place, and the answer.
    */
   const firstRead = useRef<{
     placeKey: string;

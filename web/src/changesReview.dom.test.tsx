@@ -3,8 +3,8 @@ import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 
 /**
- * The checkout's own review in Changes (plan: review into the inspector,
- * phase 4): the lookup of its worktree review, and the agent group on it.
+ * The checkout's own review in Changes: the lookup of its worktree review,
+ * and the agent group on it.
  */
 if (
   inIsolatedChild(

@@ -17,7 +17,7 @@ import {
 } from "./review-patch";
 
 /*
- * The Last step as a review target (plan D15): each step's snapshot trees
+ * The Last step as a review target: each step's snapshot trees
  * kept under refs while its review has threads and for the last steps,
  * read back after a restart, untracked files over 50 MB left out and named.
  */
@@ -254,7 +254,7 @@ test("a step whose refs were dropped and trees collected expires: its review say
   await restarted.dispose();
 });
 
-test("an untracked file of 20 MB is in the snapshots: only those over 50 MB are left out (D15)", async () => {
+test("an untracked file of 20 MB is in the snapshots: only those over 50 MB are left out", async () => {
   const root = await repository();
   const store = createLastStepBaselineStore(context, { refs: true });
   const done = await step(store, root, async () => {

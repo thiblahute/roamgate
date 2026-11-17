@@ -199,7 +199,7 @@ function refName(value: unknown, field: string): string {
 /** At most this many untracked files a step's target names as left out. */
 const STEP_SKIPPED_MAX = 200;
 
-/** A last step's target (plan D15): its id and its two snapshot trees. */
+/** A last step's target: its id and its two snapshot trees. */
 function parseStepTarget(
   target: Record<string, unknown>,
 ): Extract<ReviewTarget, { kind: "step" }> {
@@ -1307,8 +1307,7 @@ export function createReviewService(args: {
         threadsAt: clock(),
         error: undefined,
       });
-      // As maildesk imports it: your pending overall note fills an empty
-      // overall comment.
+      // Your pending overall note fills an empty overall comment.
       const overall = remote.find(
         (thread) => thread.gitlab?.draftId !== undefined && !thread.anchor.path,
       );
@@ -1568,7 +1567,7 @@ export function createReviewService(args: {
     return shown.map(snapshot);
   }
 
-  /** Worktree reviews whose Changes anchors are being migrated (D13). */
+  /** Worktree reviews whose Changes anchors are being migrated. */
   const migrating = new Map<string, Promise<void>>();
   const migrateAgain = new Set<string>();
   const migrationRetryAt = new Map<string, number>();
@@ -1576,7 +1575,7 @@ export function createReviewService(args: {
   const migrationTried = new Set<string>();
 
   /**
-   * Plan D13: on a read of a worktree review (review.list, review.get,
+   * On a read of a worktree review (review.list, review.get,
    * review.open), its threads still anchored on a Changes entry's own diff
    * are placed on the combined `git diff HEAD` by their line's text and
    * written back (changes-anchors.ts), in the background; the review is
@@ -1651,7 +1650,7 @@ export function createReviewService(args: {
       "message",
       REVIEW_LIMITS.messageChars,
     );
-    // The branch against Automatic's base (no base named; plan D12).
+    // The branch against Automatic's base (no base named).
     const automatic = params.automatic === true && target.kind === "range";
     let found = [...sessions.values()].find(
       (s) =>
@@ -1912,8 +1911,7 @@ export function createReviewService(args: {
   }
 
   /**
-   * The overall comment is the draft note without a position, the
-   * convention maildesk uses too.
+   * The overall comment is the draft note without a position.
    */
   async function writeSummaryDraft(target: ReviewSession) {
     const { mr, context, state } = await mergeRequestOf(target);
@@ -1960,7 +1958,7 @@ export function createReviewService(args: {
    * "Make it mine": an agent's thread in a merge request's review becomes
    * the user's draft on the forge (a GitLab draft note, a comment of their
    * pending GitHub review), with the agent's last words or the user's own
-   * rewording. Only the user does this, from the review pane; the agent's
+   * rewording. Only the user does this; the agent's
    * review comment is then gone from here (now the user's), its
    * discussion resolved.
    */
@@ -2146,7 +2144,7 @@ export function createReviewService(args: {
     const commit =
       anchor.commit && anchor.commitParent ? anchor.commit : undefined;
     // The anchor's file alone, whole: the review's patch caps (4 MiB, 200
-    // untracked files) would leave a large or late file out (phase 5s).
+    // untracked files) would leave a large or late file out.
     const paths = [
       ...new Set([anchor.path, anchor.oldPath].filter((p): p is string => !!p)),
     ];
@@ -2187,8 +2185,8 @@ export function createReviewService(args: {
       params.kind === "draft" ? "draft" : "discussion";
     const writer = author(params.author);
     await allowAgent(target, writer);
-    // The user's review comments live on the merge request, so maildesk sees
-    // them; an agent's stay here, for the user to reword and send there.
+    // The user's review comments live on the merge request; an agent's stay
+    // here, for the user to reword and send there.
     if (kind === "draft" && gitlabMode(target) && writer === REVIEW_USER) {
       const { mr, context, state } = await mergeRequestOf(target);
       const draftNote = gitlabNote(
@@ -2397,7 +2395,7 @@ export function createReviewService(args: {
     if (next !== comment.body) {
       comment.body = next;
       comment.updatedAt = now();
-      // Rewriting someone else's draft makes it the user's own, as in maildesk.
+      // Rewriting someone else's draft makes it the user's own.
       if (writer === REVIEW_USER) comment.author = REVIEW_USER;
     }
     saveThread(target, thread);
@@ -3254,8 +3252,8 @@ export function createReviewService(args: {
   }
 
   /**
-   * maildesk's "Ask Claude": the agent in the pane reviews the diff and adds
-   * review comments, in the user's voice, where a change is needed. Its
+   * Asking the agent for a review: the agent in the pane reviews the diff and
+   * adds review comments, in the user's voice, where a change is needed. Its
    * previous pass is replaced; the overall comment is only filled if empty.
    */
   async function requestAgentReview(
@@ -3591,8 +3589,8 @@ export function createReviewService(args: {
    * effort, so the overlay can find what it became.
    */
   /**
-   * A review not opened: a scope Changes shows before its first comment
-   * (plan section 2). Read only: it is never kept, listed or published.
+   * A review not opened: a scope Changes shows before its first comment.
+   * Read only: it is never kept, listed or published.
    */
   function preview(params: Record<string, unknown>): ReviewSession {
     const connectionId = text(params.connectionId, "connection", 200);
@@ -3706,7 +3704,7 @@ export function createReviewService(args: {
       throw new ReviewError("invalid commit");
     if (target.target.kind === "chat" || target.target.kind === "rendered")
       return { files: [], truncated: false };
-    // Files of a summary, a few at a time (plan phase 5s).
+    // Files of a summary, a few at a time.
     if (params.files !== undefined) {
       const { loadFiles } = args;
       if (!loadFiles) throw new ReviewError("files are read whole here");
@@ -3926,7 +3924,7 @@ export function createReviewService(args: {
 
   /**
    * The last steps of a checkout whose reviews have threads: their snapshot
-   * refs are kept past the last few steps (plan D15).
+   * refs are kept past the last few steps.
    */
   function keptSteps(root: string): string[] {
     return [...sessions.values()].flatMap((each) =>
@@ -3973,7 +3971,7 @@ export function createReviewService(args: {
       void migrateEntryAnchors(target);
       return snapshot(target);
     },
-    /** D13's migration of one review's Changes anchors (tests await it). */
+    /** The migration of one review's Changes anchors (tests await it). */
     migrateEntryAnchors: (params: Record<string, unknown>) =>
       migrateEntryAnchors(session(params.sessionId)),
     open,

@@ -22,7 +22,7 @@ import {
 } from "./review-patch";
 
 /*
- * A review's diff file by file (plan: review into the inspector, phase 5s):
+ * A review's diff file by file:
  * its summary first (each file's path, status and line counts, the two
  * commits it is between), then the files' patches a few at a time against
  * those two commits. Nothing caps the whole change; each file's patch is cut

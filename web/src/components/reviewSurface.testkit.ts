@@ -1,10 +1,8 @@
 /**
- * Behavior-level test kit for the review surfaces (plan: review into the
- * inspector, gate 3). A test drives a surface with keys and commands and
- * reads what is visible: the line with the cursor, its side, the word under
- * it, what is folded. It never asserts a surface's class names: the tests
- * ran against the classic review pane and the review in Changes alike, and
- * run against Changes since the pane retired (phase 9).
+ * Behavior-level test kit for the review surfaces. A test drives a surface
+ * with keys and commands and reads what is visible: the line with the cursor,
+ * its side, the word under it, what is folded. It never asserts a surface's
+ * class names.
  *
  * Not a test file: imported by `reviewBehavior.*.dom.test.tsx`, which run in
  * an isolated child with happy-dom installed (`installReviewDom`).

@@ -16,12 +16,11 @@ import { ReviewMenu } from "./ReviewMenu";
 import "./ChangesForge.css";
 
 /*
- * A review's forge in Changes (plan: review into the inspector, phase 7),
- * as the review pane has it: the Local / GitLab switch (gm, :switch), your
- * drafts on the forge, the GitLab draft button that puts the comments
- * waiting here there as drafts, the More menu, and the GitLab section above
- * the diff. Nothing here submits or publishes: the forge's drafts are the
- * user's to submit there.
+ * A review's forge in Changes: the Local / GitLab switch (gm, :switch), your
+ * drafts on the forge, the GitLab draft button that puts the comments waiting
+ * here there as drafts, the More menu, and the GitLab section above the diff.
+ * Nothing here submits or publishes: the forge's drafts are the user's to
+ * submit there.
  */
 
 /** What the page around Changes does for the switch. */

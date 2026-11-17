@@ -17,11 +17,10 @@ import { ThemedSelect } from "./ThemedSelect";
 import "./ChangesScopeBar.css";
 
 /*
- * Changes' scope line when it is the review (plan: review into the
- * inspector, phase 7): what is compared, said plainly, made of the controls
- * that change it, in every layout: the repository (the workspace's, as the
- * review pane's picker lists them: p, ( and )), the scope (the working
- * tree, the branch against its base, the agent's last step) and the base.
+ * Changes' scope line when it is the review: what is compared, said plainly,
+ * made of the controls that change it, in every layout: the repository (the
+ * workspace's, picked with p, ( and )), the scope (the working tree, the
+ * branch against its base, the agent's last step) and the base.
  */
 
 /** The workspace's panes' directories, and its agents'. */
@@ -40,10 +39,9 @@ export function useWorkspaceRepoDirs(workspaceId: string): {
 }
 
 /**
- * The workspace's repositories, as the review pane lists them: those its
- * panes' directories hold (and their subprojects), those its agents edit
- * (`dirs`, `agentDirs`: useWorkspaceRepoDirs), and those with a review;
- * scanned while `shown`.
+ * The workspace's repositories: those its panes' directories hold (and their
+ * subprojects), those its agents edit (`dirs`, `agentDirs`:
+ * useWorkspaceRepoDirs), and those with a review; scanned while `shown`.
  */
 export function useChangesRepos(
   connectionId: string,
@@ -86,11 +84,10 @@ export function useChangesRepos(
 }
 
 /**
- * Changes' series (plan phases 7 and 8): the workspace's repositories as
- * the review pane goes through them, `p` (`:repo`) searching them, `(` and
- * `)` (`:prevrepo`, `:nextrepo`) the previous and next by path, never
- * wrapping. A repository picked comes with whether it has only uncommitted
- * work (its Working scope), as the review pane opens its worktree review.
+ * Changes' series: the workspace's repositories, `p` (`:repo`) searching
+ * them, `(` and `)` (`:prevrepo`, `:nextrepo`) the previous and next by path,
+ * never wrapping. A repository picked comes with whether it has only
+ * uncommitted work (its Working scope).
  */
 export function useChangesSeries({
   repos,
@@ -328,7 +325,7 @@ export function ChangesScopeBar({
   };
   /**
    * A review of a repository this workspace does not hold (its workspace
-   * gone, an agent's without one), shown here all the same (D3).
+   * gone, an agent's without one), shown here all the same.
    */
   elsewhere?: boolean;
   /** The shown review's own pull or merge request, as a chip. */

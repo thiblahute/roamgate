@@ -8,9 +8,8 @@ import { describeTarget } from "./service";
 import { reviewServiceForTest } from "./testkit";
 
 /*
- * The Last step as a review target in the review service (plan D15), and
- * scopes read without a review (plan section 2: showing a scope never
- * creates or touches a session).
+ * The Last step as a review target in the review service, and scopes read
+ * without a review (showing a scope never creates or touches a session).
  */
 
 const directories: string[] = [];

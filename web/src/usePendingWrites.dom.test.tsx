@@ -3,9 +3,9 @@ import { expect, test } from "bun:test";
 import type { ReviewThread } from "../../shared/review";
 
 /**
- * A review's writes on their way (usePendingWrites, taken out of the
- * review pane): shown at once, pending, until the review has them; a
- * failure kept with its error, Retry with the same id, Discard.
+ * A review's writes on their way (usePendingWrites): shown at once, pending,
+ * until the review has them; a failure kept with its error, Retry with the
+ * same id, Discard.
  */
 if (
   inIsolatedChild(

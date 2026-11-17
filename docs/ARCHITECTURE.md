@@ -280,7 +280,7 @@ left by Changes' cursor to App's capture listener. `review.gitlab.open`
 takes an optional `url`: the request the PR/MR card shows (its chosen
 remote), opened without the branch lookup. A review of a repository the
 workspace does not hold is shown in the focused workspace's Changes on its
-root, `elsewhere` marking the scope line (D3). Git actions act on the
+root, `elsewhere` marking the scope line. Git actions act on the
 inspector's checkout only: on another repository (`ShownRepo.own` false, or
 a review whose root is not the shown checkout) the tree offers none and
 `:stage`, `gs`, `:discard` are refused with a message.
@@ -401,7 +401,7 @@ completed workspace activity period, not a new Git snapshot, so Files can
 refresh independently of Last step availability.
 
 An untracked file over 50 MB is left out of the snapshot and named with it
-(`skipped`); the step's review says so (D15). Any other capture is refused
+(`skipped`); the step's review says so. Any other capture is refused
 entirely when a tracked file exceeds 50 MB, content exceeds 128 MiB in total,
 or there are more than 10,000 files. It is also refused for symlinks,
 special or unreadable files, newline/tab filenames, applicable `filter`
@@ -1142,7 +1142,7 @@ or draft: `your_move`; else waiting). `parent` is the first open listed
 request it waits for, unless that makes a cycle; the panel draws it under
 its parent (`web/src/mrReviewsLanes.ts`).
 
-The inference (`mr-reviews/inference.ts`, section 7, D7): the own details
+The inference (`mr-reviews/inference.ts`): the own details
 query also asks GitLab `description` and `discussions(last: 10)` with each
 one's last note (`full` fields only), GitHub `body`, `comments(last: 5)` and
 `reviewThreads(last: 20)` last comments; `OwnDetails` keeps the
@@ -1156,7 +1156,7 @@ someone else) tell a meaningful change. After each refresh, once every
 `mr_reviews.inference_hours` (default 12) every open own row whose version
 moved is inferred, oldest first, 20 a batch (`runClaudeModel`, no tools,
 the people's text marked as data) on `mr_reviews.inference_model`, any
-name the agent takes, else the automatic model (D27: from the default
+name the agent takes, else the automatic model (from the default
 agent profile, `profileInferenceModel`: `sonnet` on Anthropic's endpoint,
 behind a gateway the profile's `ANTHROPIC_MODEL`, else its Sonnet or Opus
 slot; listed with the profile's models from the profiles' model discovery
@@ -1173,8 +1173,8 @@ override (`whose`, `stale`, `next`; branches keep their lane). RPC
 `bridge.mr_reviews.infer {key}` and tool `reviews_refresh {request?}` force
 one row; `mr_reviews.inference` (default on) turns the runs off.
 
-Scheduled merges and merge bots (`shared/mrReviewsMerge.ts`, section 15,
-D26): settings `mr_reviews.merge {after_labels?, bots?, bot_failures?,
+Scheduled merges and merge bots (`shared/mrReviewsMerge.ts`):
+settings `mr_reviews.merge {after_labels?, bots?, bot_failures?,
 queue_labels?, scopes?: {<host | host/group/* | host/project>: lists}}`;
 an absent list is the default, a scope's list replaces the inherited one
 (the most specific scope wins per list), patterns are case-insensitive
@@ -1204,7 +1204,7 @@ events; the inbox sets a timer for the soonest mergeable time that
 notifies the pages and runs the inference (no forge call). Board tool rows
 carry `merge` (`mergeable_at`, `via`, `failed`).
 
-Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`, section 11):
+Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`):
 `{format: "roamgate-reviews", version: 3, exported_at, mr_reviews: {order,
 pinned, hidden, overrides, views, unsent, upstream_groups, upstream_skip,
 upstream_workspaces, efforts, merge, hosts, followed, hints} as stored,
@@ -1277,7 +1277,7 @@ project has it as source branch, or holds all its commits by patch id
 (`requestPatchIdsScript` fetches the request's head into
 `refs/roamgate/mr/<n>` only when that ref is not at the inbox's
 `headSha`); that request carries `fromBranch` and `local`. Other branches
-are entries keyed `branch:<provider>:<host>/<project>@<branch>` (D6) with
+are entries keyed `branch:<provider>:<host>/<project>@<branch>` with
 `branch` (`MrBranchInfo`), `number` 0, section `authored`, lane `not_sent`
 by rule. `mr_reviews.unsent` (`{key, title?, target?, at}`, at most 200)
 marks those said to be requests (`bridge.mr_reviews.unsent {key, unsent,
@@ -1314,7 +1314,7 @@ preview, delete, get, refresh, history, leader}` and `ledger.{set, undo}`
 (bulk, at most 500, all or nothing); a ledger change is pushed as
 `changed: ["effort"]` with `effort: {id, journal}`. The inbox carries the
 cards as `efforts` (counts, not ready, overlaps by patch id with other
-efforts and branches headed upstream, D23; proposals to confirm, plans by
+efforts and branches headed upstream; proposals to confirm, plans by
 state, what changed). Deleting an effort removes its declaration only (a
 name several efforts share is refused: the id says which); its ledger stays
 under its own id for Undo, other efforts' ledgers are their own files.
@@ -1322,7 +1322,7 @@ Tools: `effort_get`, `effort_set` (with `preview`), `effort_delete`,
 `ledger_list` (200 a page, `cluster`, proposals per commit), `ledger_set`,
 `effort_overlaps`, `ledger_match`, `ledger_plans`, `part_create`.
 
-Fuzzy matching (`mr-reviews/fuzzy.ts`, D14): when the commits are read
+Fuzzy matching (`mr-reviews/fuzzy.ts`): when the commits are read
 again and some commit is not upstream exactly, `upstreamCandidatesScript`
 reads `git log --numstat` of `merge-base..target` (at most 3000) and drops
 those `git cherry source target merge-base` marks as exact; kept in
@@ -1336,12 +1336,12 @@ Jaccard) 0.35, subject words weighted by inverse frequency 0.35, author
 journaled): accepted makes the commit authored upstream with the upstream
 sha as pointer and appends a `where: "upstream"` version to
 `history.jsonl`; rejected shas are never proposed again. Planned requests
-(D25) are `ledger.json` `plans` (`{id, name, commits: keys in source
+are `ledger.json` `plans` (`{id, name, commits: keys in source
 order, dependsOn, state: proposed | accepted, part?}`), changed by
 `bridge.mr_reviews.ledger.plans` (`propose`, `accept`, `edit` with
 `add`/`remove`, `split`, `drop`; journaled with the plans before, so Undo
 restores them); their commits derive as `planned`, and a commit is in one
-plan across efforts (D4: another effort's planned commits derive as in a
+plan across efforts (another effort's planned commits derive as in a
 part of it, and plan changes refuse them). `bridge.mr_reviews.effort.part`
 makes an accepted plan's part through the same `createWorkspaceWorktree`
 path as the workspace menu (the `worktree_command` setting), `reset

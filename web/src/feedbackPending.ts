@@ -2,12 +2,10 @@ import { useSyncExternalStore } from "react";
 import type { ReviewAnnotation } from "./annotations";
 
 /*
- * The comments written in the inspector's views that are on their way to
- * the review store (plan: review into the inspector, phase 4): drawn under
- * their line as "Sending...", or, once the server refused them, as "Not
- * saved" with Retry and Discard, as the review pane draws a comment on its
- * way. A refused one is also kept in this browser (D14), where it is saved
- * on the next load.
+ * The comments written in the inspector's views that are on their way to the
+ * review store: drawn under their line as "Sending...", or, once the server
+ * refused them, as "Not saved" with Retry and Discard. A refused one is also
+ * kept in this browser, where it is saved on the next load.
  */
 
 export type PendingFeedback = {

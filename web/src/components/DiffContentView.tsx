@@ -518,7 +518,7 @@ function DiffImagePreview({
 
 /**
  * The agent saying it works on a thread (its review_working), on the
- * thread's card as the review pane drew it: a mark, what it does, since when.
+ * thread's card: a mark, what it does, since when.
  */
 function ReviewWorking({
   agentName,
@@ -565,7 +565,7 @@ type DiffThreads = {
   undelivered: Undelivered;
   /** The threads on parts of a message, by that message (drawn in it). */
   nested: ReadonlyMap<string, ReviewThread[]>;
-  /** Drawn as the review pane draws them (the review in Changes). */
+  /** Drawn as the review in Changes draws them. */
   review?: ReviewThreadLook;
 };
 
@@ -601,8 +601,8 @@ const GAP_ID = "\u0000gap:";
 const DiffDrawingContext = createContext<DiffDrawing | null>(null);
 
 /**
- * A thread of the scope's review written elsewhere than in Changes (the
- * review pane, an agent): on a line of a file, not on a message, a chat, a
+ * A thread of the scope's review written elsewhere than in Changes (an
+ * agent, say): on a line of a file, not on a message, a chat, a
  * rendered page or a terminal.
  */
 function scopeLineThread(thread: ReviewThread): boolean {
@@ -659,7 +659,7 @@ function scopeNote(thread: ReviewThread, kind: GitDiffKind): ReviewAnnotation {
 
 /**
  * The section a comment is drawn in: its own entry's (`kind:path`). A
- * comment on the combined diff (the review in Changes, D8) shown on the
+ * comment on the combined diff (the review in Changes) shown on the
  * per-entry diffs goes on the entry that numbers its side alike: the new
  * side (the working tree) on the unstaged or untracked entry, the old side
  * (HEAD) on the staged one, else on any entry of its file.
@@ -691,7 +691,7 @@ export function diffViewThreads(
   entries: readonly GitDiffEntry[],
   /**
    * By path alone: the review's threads belong to the combined diff, not to
-   * the staged or unstaged entry they were written on (plan D8).
+   * the staged or unstaged entry they were written on.
    */
   byPath = false,
 ): ReviewThread[] {
@@ -715,7 +715,7 @@ export function diffViewThreads(
 
 /**
  * The comments on a file and no line of it (the review in Changes), at
- * the file's head above its lines, as the review pane draws them.
+ * the file's head above its lines.
  */
 function DiffFileThreads({ ids }: { ids: string }) {
   const threads = useContext(DiffThreadsContext);
@@ -838,8 +838,8 @@ type DiffFileSectionProps = {
   openFileLabel?: string;
   /**
    * The review's header (the review in Changes): Open, and Rendered on a
-   * file the Files preview renders, as the review pane's; none without a
-   * Files preview to open in.
+   * file the Files preview renders; none without a Files preview to open
+   * in.
    */
   reviewHeader?: boolean;
   onRequestAnnotation?: (request: DiffAnnotationRequest) => void;
@@ -865,8 +865,8 @@ type DiffFileSectionProps = {
   /** The lines with a thread ("old:N" / "new:N", by commas): marked. */
   threadMarks?: string;
   /**
-   * The file is reviewed (every chunk) and folded to its header, as the
-   * review pane folds it; `onShowReviewed` shows it again.
+   * The file is reviewed (every chunk) and folded to its header;
+   * `onShowReviewed` shows it again.
    */
   reviewedFolded?: boolean;
   onShowReviewed?: (path: string) => void;
@@ -903,8 +903,8 @@ const DiffFileSection = memo(function DiffFileSection({
   fileThreadIds,
 }: DiffFileSectionProps) {
   /**
-   * A commit's message is words, not a change: drawn once, one column
-   * (the review pane's), even side by side.
+   * A commit's message is words, not a change: drawn once, one column,
+   * even side by side.
    */
   const message = section.entry.path === COMMIT_MESSAGE_PATH;
   const options = useMemo(
@@ -1012,7 +1012,7 @@ const DiffFileSection = memo(function DiffFileSection({
     [onLineClick, sectionKey, selectLines],
   );
   const toggle = () => {
-    // A reviewed file folded on its own opens, as in the review pane.
+    // A reviewed file folded on its own opens.
     if (reviewedFolded) {
       onShowReviewed?.(section.entry.path);
       return;
@@ -1422,7 +1422,7 @@ function DiffContentViewInner({
   /** The files' reviewed chunks, for the tree (the review in Changes). */
   onReviewProgress?: (progress: ReadonlyMap<string, ReviewProgress>) => void;
   /**
-   * The review's files with no change (D16, "Other files"), for the tree:
+   * The review's files with no change ("Other files"), for the tree:
    * each with its tick and its open threads.
    */
   onOtherFiles?: (files: readonly OtherFile[]) => void;
@@ -1433,15 +1433,15 @@ function DiffContentViewInner({
   /** A git action on a file of the working changes (`:stage`, `gs`). */
   onGitAction?: (action: GitFileAction, path: string) => boolean;
   /**
-   * The review the scope shown is (plan phase 6), found by a read-only
+   * The review the scope shown is, found by a read-only
    * lookup; the worktree review when absent.
    */
   reviewScope?: ChangesScope;
-  /** What the page does for the Local / GitLab switch (plan phase 7). */
+  /** What the page does for the Local / GitLab switch. */
   forgeHost?: ForgeHost;
   /**
    * The workspace's agent panes: the review's agent when it has none
-   * bound (the first), as the review pane finds it.
+   * bound (the first).
    */
   agentPanes?: readonly { paneId: string; agent: string }[];
   /** Go to the agent's pane (the agent's menu); the review is kept. */
@@ -1555,7 +1555,7 @@ function DiffContentViewInner({
   // it was written on: a commit's, or all the changes'.
   const viewed = useMemo(() => {
     const hidden = new Set<string>();
-    // A step's review is drawn on that step only (plan D15): not on the
+    // A step's review is drawn on that step only: not on the
     // working tree, the branch or another step.
     for (const thread of scoped.threads) {
       const target = reviewSessions.get(thread.sessionId)?.session.target;
@@ -1608,7 +1608,7 @@ function DiffContentViewInner({
     forgeView,
   ]);
   const threads = givenThreads || held.length ? viewed.threads : undefined;
-  // One review across Files and Changes (D16): a comment written in Files
+  // One review across Files and Changes: a comment written in Files
   // is drawn on its file's combined diff, at its source line.
   const annotations = useMemo(() => {
     if (!reviewCursor || embedded) return viewed.annotations;
@@ -1695,8 +1695,7 @@ function DiffContentViewInner({
   const toggleSplit = () =>
     setViewMode((mode) => (mode === "split" ? "unified" : "split"));
   // The review in Changes with no mode chosen: side by side when Changes
-  // is wide enough for it, unified below (plan D4: its width, not the
-  // window's).
+  // is wide enough for it, unified below (its width, not the window's).
   useLayoutEffect(() => {
     if (!reviewCursor || embedded || storedDiffViewMode()) return;
     const width = sectionRef.current?.getBoundingClientRect().width ?? 0;
@@ -1796,13 +1795,13 @@ function DiffContentViewInner({
   // listed in the Comments panel, as in the Files preview.
   const threadView = useFileThreadView(() => sectionRef.current);
   const [threadsOpen, setThreadsOpen] = useState(false);
-  // The phone's Back closes the conversations first (plan section 6).
+  // The phone's Back closes the conversations first.
   useSystemBack(
     reviewCursor && !embedded && threadsOpen,
     () => setThreadsOpen(false),
     "popup",
   );
-  /** The review's comment box and thread keys, "in Changes" (plan phase 4). */
+  /** The review's comment box and thread keys, "in Changes". */
   const reviewEditor = reviewCursor && !embedded;
   useEffect(() => {
     if (reviewEditor) preloadReviewCommentEditor();
@@ -1854,14 +1853,14 @@ function DiffContentViewInner({
     const name = other.replace(/\/+$/, "").split("/").pop() || other;
     return `Not on this review: it is of ${name}, not this checkout; stage and discard act on the checkout's files.`;
   })();
-  // The Local / GitLab switch (gm, :switch), as the review pane's.
+  // The Local / GitLab switch (gm, :switch).
   const forgeMode = useForgeMode({
     connectionId: connectionClient.connectionId,
     snapshot: reviewEditor ? changesAgent.snapshot : null,
     open: changesAgent.open,
     host: forgeHost ?? NO_FORGE_HOST,
   });
-  // ---- The review's threads drawn as the review pane draws them ---------
+  // ---- The review's threads ----------------------------------------------
 
   /** The checkout's review the comments here are in, once there is one. */
   const ownSnapshot = reviewEditor ? changesAgent.snapshot : null;
@@ -1934,10 +1933,10 @@ function DiffContentViewInner({
   }, [latestAnswer]);
   /** The thread dd or Delete deleted last: what u brings back. */
   const lastDeleted = useRef<ReviewThread | null>(null);
-  // The workspace's agent pane when the review has none bound, as the
-  // review pane finds it (and as the page writes the comment to it).
+  // The workspace's agent pane when the review has none bound: the page
+  // writes the comment to it.
   const ownAgent = ownSnapshot ? reviewAgent(ownSnapshot, agentPanes) : null;
-  /** What a new comment is, as the review pane writes it. */
+  /** What a new comment is. */
   const commentKind: ReviewThreadKind = ownAgent?.commentKind ?? "draft";
   /** How the review's comments go out: the editors' save policy. */
   const ownDelivery: ComposerDelivery = {
@@ -1946,7 +1945,7 @@ function DiffContentViewInner({
     agentNamed: !!ownSnapshot?.session.agent.name,
     holdForSend: ownAgent?.holdForSend ?? false,
   };
-  /** An editor's placeholder, as the review pane's says it. */
+  /** An editor's placeholder. */
   const placeholderOf = (editor: {
     kind: ReviewThreadKind;
     replyTo?: string;
@@ -2078,7 +2077,7 @@ function DiffContentViewInner({
       onSave={(text, plan) => {
         const api = threadWrites(connectionClient.connectionId);
         if (comment && plan.kind === "write" && plan.action === "delete") {
-          // Emptied: the comment goes, as the review pane's.
+          // Emptied: the comment goes.
           threadView.setEditing(null);
           if (thread.comments.length > 1) api.removeComment(thread, comment);
           else deleteThread(thread);
@@ -2686,9 +2685,8 @@ function DiffContentViewInner({
   );
 
   /*
-   * The review's Vim cursor (plan: review into the inspector, phase 3), on
-   * the files drawn as diffs; only where the inspector shows Changes "in
-   * Changes" with Vim keys on.
+   * The review's Vim cursor, on the files drawn as diffs; only where the
+   * inspector shows Changes "in Changes" with Vim keys on.
    */
   const cursorSections = useMemo(
     () =>
@@ -2763,9 +2761,8 @@ function DiffContentViewInner({
   const cursorHandle = useRef<DiffCursor>(cursor);
   cursorHandle.current = cursor;
   // The review's place: the cursor's file and line, kept in the browser
-  // per review (the review pane's place store) and back after a reload or
-  // when the review shows again. Read once the review's rows are drawn,
-  // before any is written.
+  // per review and back after a reload or when the review shows again.
+  // Read once the review's rows are drawn, before any is written.
   const placeId = reviewEditor
     ? (ownSnapshot?.session.id ?? placeKey ?? null)
     : null;
@@ -2815,21 +2812,21 @@ function DiffContentViewInner({
       new: here.new,
     });
   }, [placeId, placeRows, placeSettled, here?.path, here?.old, here?.new]);
-  // The review's reviewed marks on the rows shown (phase 5).
+  // The review's reviewed marks on the rows shown.
   const reviewLayout = useMemo(
     () => reviewedLayout(cursor.model),
     [cursor.model],
   );
   const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
   const ownReviewId = changesAgent.snapshot?.session.id;
-  // The commit shown keeps its own marks (its sha), as the review pane did.
+  // The commit shown keeps its own marks (its sha).
   const reviewView = changesReviewView(viewCommit);
   const reviewState = useMemo(
     () => reviewedState(reviewLayout.files, reviewView, reviewedMarks),
     [reviewLayout, reviewedMarks, reviewView],
   );
   /**
-   * The review's files with no change (D16): commented on or ticked in
+   * The review's files with no change: commented on or ticked in
    * Files (or here), listed under the changed files with their threads.
    */
   const otherFiles = useMemo(
@@ -2849,8 +2846,8 @@ function DiffContentViewInner({
   );
   /**
    * The threads the Comments panel lists, and the head counts: those on
-   * the files shown, then the Other files' (D16); in the review, those on
-   * the whole review too (drawn above the diff), as the review pane's list.
+   * the files shown, then the Other files'; in the review, those on the
+   * whole review too (drawn above the diff).
    */
   const listedThreads = useMemo(() => {
     const general = reviewEditor
@@ -2880,7 +2877,7 @@ function DiffContentViewInner({
   useEffect(() => {
     if (reviewEditor) otherFilesRef.current?.(otherFiles);
   }, [otherFiles, reviewEditor]);
-  /** Each combined section's staged lines, as the server told them (D8). */
+  /** Each combined section's staged lines, as the server told them. */
   const stagedLinesByKey = useMemo(() => {
     const staged = new Map<string, GitDiffFile["staged"]>();
     for (const [key, each] of Object.entries(filesByKey))
@@ -3063,8 +3060,8 @@ function DiffContentViewInner({
       [...marks].map(([key, list]) => [key, [...new Set(list)].join(",")]),
     );
   }, [readingOrder]);
-  // Reviewed chunks fold to one line, as in the review pane, unless a
-  // thread is on them or they are peeked at (za, a click on the line).
+  // Reviewed chunks fold to one line unless a thread is on them or they
+  // are peeked at (za, a click on the line).
   const [peekedChunks, setPeekedChunks] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3091,9 +3088,9 @@ function DiffContentViewInner({
     }
     return any ? folded : chunkSpansByKey;
   }, [chunkSpansByKey, peekedChunks, readingOrder]);
-  // Reviewed files fold to their header, as in the review pane, until
-  // shown again (Show, a click on the name, gn to a thread there); shown,
-  // a file stays open until it is unmarked.
+  // Reviewed files fold to their header until shown again (Show, a click
+  // on the name, gn to a thread there); shown, a file stays open until it
+  // is unmarked.
   const [shownReviewed, setShownReviewed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3157,7 +3154,7 @@ function DiffContentViewInner({
   chunkSpansRef.current = chunkSpansByKey;
   /**
    * Shows a reviewed file (only a reviewed one: kept open till unmarked),
-   * its chunks' lines too, as the review pane showed it (za folds one back).
+   * its chunks' lines too (za folds one back).
    */
   const showReviewed = useCallback((path: string) => {
     if (!reviewedPathsRef.current.has(path)) return;
@@ -3176,7 +3173,7 @@ function DiffContentViewInner({
     );
   }, []);
   // Picked in the tree, or gone to from Files' Review: a folded reviewed
-  // file shows, as the review pane's file list shows it.
+  // file shows.
   const pickedPath = selectionRevision > 0 ? (entry?.path ?? null) : null;
   useEffect(() => {
     if (pickedPath) showReviewed(pickedPath);
@@ -3301,7 +3298,7 @@ function DiffContentViewInner({
     }
     // The gaps still hidden, under the line above each (0: atop the file).
     // Side by side, from the old side: its row is drawn across both
-    // (.diff-gap), as the review pane drew it; on the new side when a
+    // (.diff-gap); on the new side when a
     // comment (or the box) is drawn under that row, which it would cover.
     const composerAt =
       pendingAnnotation &&
@@ -3411,7 +3408,7 @@ function DiffContentViewInner({
   })();
   /** Shows a thread to be read: unfolded, its line in view. */
   const showThread = (spot: PlacedThread) => {
-    // In a folded reviewed file: the file opens, as the review pane's gn;
+    // In a folded reviewed file: the file opens;
     // its lines are the cursor's again at once.
     if (foldedFiles.has(spot.path)) {
       showReviewed(spot.path);
@@ -3692,7 +3689,7 @@ function DiffContentViewInner({
         return true;
       }
     }
-    // Your review comment on the line: c rewrites it, as the review pane's.
+    // Your review comment on the line: c rewrites it.
     if (mode === "comment" && commentKind === "draft") {
       const draft = here.find(
         (each) =>
@@ -4369,7 +4366,7 @@ function DiffContentViewInner({
       if (!thread.anchor.path && !placed.has(thread.id)) add(thread);
     return found;
   }, [diffThreads, fileThreads, partThreadIds, placement, reviewEditor]);
-  // The review's overall comment, above the diff as in the review pane:
+  // The review's overall comment, above the diff:
   // written in the review's editor, kept as you leave it.
   const summary = changesAgent.summary;
   const saveSummary = (text: string, send: boolean) =>
@@ -4437,8 +4434,7 @@ function DiffContentViewInner({
         )}
       </div>
     ) : null;
-  // A merge request's review: the forge's section above the diff, as the
-  // review pane's (plan phase 7).
+  // A merge request's review: the forge's section above the diff.
   const forgeShown =
     reviewEditor && forgeView && ownSnapshot?.session.gitlab
       ? viewed.threads.filter((thread) => thread.kind === "merge-request")
@@ -4535,7 +4531,7 @@ function DiffContentViewInner({
     ) : null;
 
   /**
-   * The review's files with no change (D16), under the changed files: each
+   * The review's files with no change, under the changed files: each
    * with its tick (a tick only: no chunks to count) and its threads, on
    * the file as a whole, saying the line each is on. Open in Files shows
    * the file's text with them at their lines.
@@ -5317,7 +5313,7 @@ function DiffContentViewInner({
           description,
           run: () => {
             // Another repository's review: the checkout's git acts on the
-            // checkout only (plan section 2).
+            // checkout only.
             if (gitElsewhere) {
               say(gitElsewhere);
               return;
@@ -5332,8 +5328,7 @@ function DiffContentViewInner({
           },
         }))
       : []),
-    // The review's own words (the review pane's registry), each meaning in
-    // Changes what it means there.
+    // The review's own words.
     ...(reviewEditor ? changesReviewCommands : []),
     ...(!reviewEditor && listedThreads.length
       ? [
@@ -5354,7 +5349,7 @@ function DiffContentViewInner({
             ? [...diffCommands, ...viewCommands]
             : diffCommands,
           ...(cursor.active ? { line: cursor.goToLine } : {}),
-          // The review's list and words, as the review pane has them.
+          // The review's list and words.
           ...(reviewEditor
             ? {
                 shortcuts: {
@@ -5867,7 +5862,7 @@ function DiffContentViewInner({
           onGo={
             reviewEditor
               ? (thread) => {
-                  // On its line, the panel closed, as the review pane goes.
+                  // On its line, the panel closed.
                   setThreadsOpen(false);
                   const spot = readingOrder.find(
                     (each) => each.thread.id === thread.id,
@@ -5945,7 +5940,7 @@ type ViewProps = {
   /** A file as the view shows it, for the lines revealed around a hunk. */
   readViewFile?: (path: string) => Promise<string>;
   /**
-   * A merge request's review (plan phase 7): its discussions found again
+   * A merge request's review: its discussions found again
    * in today's file, the head they are on, all the changes shown.
    */
   forge?: {
@@ -5972,7 +5967,7 @@ type DiffContentViewProps = Omit<
     } | null,
   ) => void;
   /**
-   * Commits' Review this commit (plan phase 8): that commit shown in the
+   * Commits' Review this commit: that commit shown in the
    * Branch scope's commit bar once its commits are read; `onCommitAbsent`
    * when the scope does not hold it.
    */
@@ -5992,8 +5987,7 @@ const NO_AGENT_PANES: readonly { paneId: string; agent: string }[] = [];
  * Changes' diff. A scope that is a review of commits (the Branch scope, a
  * range opened by name) gets the review's views: the
  * commit bar, `<` `>` `gc` `:commit` `:all`, a commit's files with its
- * message first, the reload offer (plan: review into the inspector, phase
- * 6).
+ * message first, the reload offer.
  */
 export function DiffContentView({
   onViewEntries,
@@ -6065,7 +6059,7 @@ export function DiffContentView({
     if (goneSession) reviewGoneRef.current?.(goneSession, goneStatus);
   }, [goneSession, goneStatus]);
   // A merge request's review: its discussions read again while shown, an
-  // older head's found again in today's file (plan phase 7).
+  // older head's found again in today's file.
   const forgeSnapshot =
     reviewScope.kind === "review"
       ? (sessions.get(reviewScope.sessionId) ?? null)
@@ -6188,7 +6182,7 @@ export function DiffContentView({
     onRetry?.();
   };
   const reviewTarget = bound?.session.target;
-  /** A step's untracked files too large for its snapshots (D15). */
+  /** A step's untracked files too large for its snapshots. */
   const shownTarget =
     reviewScope.kind === "review"
       ? sessions.get(reviewScope.sessionId)?.session.target

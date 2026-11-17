@@ -9,13 +9,13 @@ import { handleReviewRpc } from "./rpc";
 import { reviewServiceForTest } from "./testkit";
 
 /**
- * Which review the branch's three ways in land on (plan: review into the
- * inspector, D12): the agent's `open` with no target, Option+R (the
+ * Which review the branch's three ways in land on: the agent's `open`
+ * with no target, Option+R (the
  * browser's `review.open` without a target) and a comment written in
  * Changes' Branch scope (`review.open` with the checkout's path, as
  * workspaceFeedback's route sends it). Against a real repository, with the
  * real default base lookup and the real Branch scope base selection: one
- * resolution (D12), the newer of the local default branch and its remote.
+ * resolution, the newer of the local default branch and its remote.
  */
 
 const cleanups: (() => void)[] = [];
@@ -181,7 +181,7 @@ test("review_open with no target, Option+R and a Branch-scope comment land on th
       .get({ sessionId: byAgent.session.id })
       .threads.map((thread) => thread.comments[0]?.body),
   ).toEqual(["Why?"]);
-  // Changes' Branch scope draws against the same base (D12): local main
+  // Changes' Branch scope draws against the same base: local main
   // and origin/main are the same commit, so the remote one.
   expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
 });

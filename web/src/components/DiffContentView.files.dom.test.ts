@@ -2,14 +2,13 @@ import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 
 /**
- * One review across Files and Changes (plan: review into the inspector,
- * D16), on Changes' side: a comment written in Files (a thread of the
- * checkout's worktree review, its note's source "file") is drawn on its
- * file's combined diff at its source line, listed in the Comments panel
- * and walked by gn; one on a rendered file's words with no line is on the
- * file as a whole; a file with no change that is commented on or ticked is
- * one of the review's "Other files", under the changed files, with its
- * threads and its tick-only mark.
+ * One review across Files and Changes, on Changes' side: a comment written in
+ * Files (a thread of the checkout's worktree review, its note's source
+ * "file") is drawn on its file's combined diff at its source line, listed in
+ * the Comments panel and walked by gn; one on a rendered file's words with no
+ * line is on the file as a whole; a file with no change that is commented on
+ * or ticked is one of the review's "Other files", under the changed files,
+ * with its threads and its tick-only mark.
  */
 if (
   inIsolatedChild(

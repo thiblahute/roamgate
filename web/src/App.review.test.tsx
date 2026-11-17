@@ -581,7 +581,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=changes, with nothing beyond the default branch and no work, the toggle shows the review pane's commits", async () => {
+  test("on reviewin=changes, with nothing beyond the default branch and no work, the toggle shows the review's commits", async () => {
     const branch = reviewOf("r1", "w1");
     branch.session.target = { kind: "range", base: "main", head: "HEAD" };
     const app = await mountAppWithReviews({ reviews: [branch] });
@@ -593,8 +593,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       app.setChanged("working", []);
       await app.toggleReview();
       await app.settle(50);
-      // Changes shows the review itself, its commits on its commit bar
-      // (plan phase 6): no classic pane.
+      // Changes shows the review itself, its commits on its commit bar:
+      // no classic pane.
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({ review: "r1" });
@@ -651,7 +651,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       app.setNextOpened("r2");
       await app.toggleReview();
       await app.settle(50);
-      // D3: in the focused workspace's Changes, on that repository, marked.
+      // In the focused workspace's Changes, on that repository, marked.
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({

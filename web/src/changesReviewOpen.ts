@@ -5,7 +5,7 @@ import { insideRoot, sameRoot } from "./filesystemPaths";
 import { workspaceRepos, scanRepos } from "./reviewRepos";
 
 /*
- * The review toggle (plan: review into the inspector, D6): it shows the
+ * The review toggle: it shows the
  * pinned review, else the one `openWorkspaceReview` picks (the repository
  * with work, its branch review against the base, or its uncommitted work),
  * in Changes' matching scope.
@@ -13,10 +13,10 @@ import { workspaceRepos, scanRepos } from "./reviewRepos";
  * the one Changes showed last, else the review's, picked in Changes' scope
  * line. A range or compare opened by name, a step's review, a merge
  * request's review and a branch with nothing beyond its base (its history)
- * show as a review scope (plan phases 6 and 7). A review of a repository
+ * show as a review scope. A review of a repository
  * the workspace does not hold (its workspace gone, an agent's without one)
- * shows in this workspace's Changes all the same, marked "from elsewhere"
- * (D3). Only chats and rendered files keep their own homes.
+ * shows in this workspace's Changes all the same, marked "from elsewhere".
+ * Only chats and rendered files keep their own homes.
  */
 
 export type ChangesReviewChoice =
@@ -25,15 +25,15 @@ export type ChangesReviewChoice =
       sessionId: string;
       /** Absent: as Changes last showed that repository. */
       scope?: "working" | "branch-main";
-      /** A review shown as Changes' scope: its session (plan phase 6). */
+      /** A review shown as Changes' scope: its session. */
       review?: string;
       /** The repository, when another than the inspector's ("": its own). */
       root?: string;
-      /** Of a repository this workspace does not hold (D3). */
+      /** Of a repository this workspace does not hold. */
       elsewhere?: boolean;
     }
   /**
-   * A review with a home of its own, never Changes (D16): a chat's is
+   * A review with a home of its own, never Changes: a chat's is
    * discussed in its chat, a rendered file's or site's in the Files
    * preview. `reason` says so.
    */
@@ -118,7 +118,7 @@ export async function changesReviewChoice({
   const held = (root: string) =>
     scanned.some((repo) => sameRoot(repo.root, root)) &&
     [...dirs, ...agentDirs].some((dir) => near(dir, root));
-  // A repository this workspace does not hold: shown here, marked (D3).
+  // A repository this workspace does not hold: shown here, marked.
   if (!here && !held(session.root))
     return target.kind === "worktree"
       ? {

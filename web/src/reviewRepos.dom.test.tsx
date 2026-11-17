@@ -4,9 +4,8 @@ import type { ReviewSnapshot } from "../../shared/review";
 import type { WorkspaceRepo } from "./reviewModel";
 
 /**
- * The repositories of a review's workspace (reviewRepos, taken out of the
- * review pane): scans reused for a minute, merged with the workspace's
- * reviews, and how the picker names them.
+ * The repositories of a review's workspace (reviewRepos): scans reused for a
+ * minute, merged with the workspace's reviews, and how the picker names them.
  */
 if (
   inIsolatedChild(

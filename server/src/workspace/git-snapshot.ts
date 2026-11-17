@@ -59,7 +59,7 @@ else
   git read-tree --empty
 fi
 git ls-files --cached --others --exclude-standard -z -- "$@" > "$quarantine/paths"
-# Untracked files over 50 MB are left out (plan D15), named on the output;
+# Untracked files over 50 MB are left out, named on the output;
 # a tracked file over 50 MB, or more than 128 MiB in all, refuses it.
 git -c core.quotepath=off ls-files --others --exclude-standard -- "$@" > "$quarantine/untracked"
 git ls-files --cached --others --exclude-standard -- "$@" > "$quarantine/quoted-paths"
@@ -128,7 +128,7 @@ xargs -0 sh -c '
     shift 6
     size=$1
     case "$size" in ""|*[!0-9]*) fail "unsupported dd byte count";; esac
-    # An untracked file over 50 MB is left out (plan D15).
+    # An untracked file over 50 MB is left out.
     if [ "$size" -gt 52428800 ] &&
       grep -Fxq -- "$path" "$quarantine/untracked"; then
       printf "%s\\n" "$path" >> "$quarantine/skipped"

@@ -10,9 +10,9 @@ import {
 
 /*
  * The one key machine (feedKey: counts, the g / z / d prefixes, modifiers
- * ignored) as something any host runs: the review pane, the inspector's
- * root (gt / gT), Changes' Vim cursor, and every list of threads
- * (useThreadKeys: a chat, the Files preview, Ranger, the agent's history).
+ * ignored) as something any host runs: the inspector's root (gt / gT),
+ * Changes' Vim cursor, and every list of threads (useThreadKeys: a chat, the
+ * Files preview, Ranger, the agent's history).
  * Each host keeps its own state and gives the resolved command its own
  * meaning; `gg`, `zz`, `gn`, `g;`, `gH`, `dd`, `za` mean the same everywhere.
  */

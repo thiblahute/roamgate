@@ -298,7 +298,7 @@ test("a rendered review's page comes from the connection, only for its own revie
   ).rejects.toThrow("invalid page");
 });
 
-test("no review method submits, publishes, resolves or posts on a forge: user decision 2026-11-13, drafts only", async () => {
+test("no review method submits, publishes, resolves or posts on a forge: drafts only", async () => {
   const service = setup();
   for (const method of [
     "review.gitlab.submit",

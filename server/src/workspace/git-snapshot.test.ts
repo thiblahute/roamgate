@@ -353,7 +353,7 @@ describe("bounded worktree snapshot transaction", () => {
           ],
           timeout,
         );
-      // Untracked, grown past the bound: left out and named (plan D15),
+      // Untracked, grown past the bound: left out and named,
       // its bytes never published.
       const left = await snapshotWorktree({
         root,

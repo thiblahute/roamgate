@@ -409,7 +409,7 @@ body:has(.file-preview.is-zen) .topbar {
   visibility: hidden;
 }
 
-/* The file's reviewed tick in the checkout's review (D16). */
+/* The file's reviewed tick in the checkout's review. */
 .file-preview-copy.file-preview-reviewed.is-reviewed {
   color: var(--git-added, #3fb950);
 }

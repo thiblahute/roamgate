@@ -567,7 +567,7 @@
   color: var(--muted);
 }
 
-/* The review's files with no change (D16), under the changed files. */
+/* The review's files with no change, under the changed files. */
 .diff-other-files {
   display: grid;
   gap: 8px;
@@ -774,7 +774,7 @@
 }
 
 /* A commit's message, drawn once (one column), centered at a readable
-   width, as the review pane drew it. */
+   width. */
 .diff-file-section.is-commit-message .pierre-diff-surface {
   max-width: min(100%, 88ch);
   margin-inline: auto;
@@ -790,9 +790,9 @@
   cursor: pointer;
 }
 
-/* The review's head is one row (user, 2026-11-16): the commit bar, the
-   agent's chip, the view menu and an expanding find join the scope; what
-   does not fit shrinks or goes to tooltips, never to a second row. */
+/* The review's head is one row: the commit bar, the agent's chip, the view
+   menu and an expanding find join the scope; what does not fit shrinks or
+   goes to tooltips, never to a second row. */
 .diff-content-view:not(.is-mobile) .diff-content-head.is-review {
   flex-wrap: nowrap;
   overflow: hidden;
@@ -953,9 +953,9 @@
 }
 
 /*
- * A phone's (or a narrow inspector's) review head: two rows (user,
- * 2026-11-17). The review on its own line, every control on one row under
- * it, Back first; a row too long for the screen scrolls, never wraps.
+ * A phone's (or a narrow inspector's) review head: two rows. The review on
+ * its own line, every control on one row under it, Back first; a row too
+ * long for the screen scrolls, never wraps.
  */
 .diff-content-view.is-mobile .diff-content-head.is-review {
   flex-wrap: wrap;

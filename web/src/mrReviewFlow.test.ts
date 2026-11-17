@@ -1,7 +1,7 @@
 import { expect, mock, spyOn, test } from "bun:test";
 
 /**
- * `gf` / Open in Files on a request's review (Changes or the review pane):
+ * `gf` / Open in Files on a request's review in Changes:
  * the review worktree is checked out for browsing when the inbox follows
  * on demand, never over local changes. Runs in a child: it replaces the
  * inbox module.

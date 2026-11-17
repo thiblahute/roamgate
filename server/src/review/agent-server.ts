@@ -58,8 +58,8 @@ export type ReviewAgentConnection = {
   readRoot: (path: string) => Promise<string>;
   readDefaultBase: (root: string) => Promise<string>;
   /**
-   * The workspace's last step in the checkout, as a review target (plan
-   * D15); null when none is known.
+   * The workspace's last step in the checkout, as a review target; null
+   * when none is known.
    */
   readLastStep?: (
     root: string,
@@ -235,7 +235,7 @@ export function formOf(body: string): URLSearchParams {
   return form;
 }
 
-/** No target named: the branch against Automatic's base (plan D12). */
+/** No target named: the branch against Automatic's base. */
 function automaticTarget(form: URLSearchParams): boolean {
   return !["mr", "worktree", "last_step", "compare", "range"].some((flag) =>
     form.get(flag),

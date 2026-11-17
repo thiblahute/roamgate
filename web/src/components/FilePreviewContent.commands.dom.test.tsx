@@ -164,7 +164,7 @@ if (
     const input = view.prompt();
     expect(input).not.toBeNull();
     expect(document.activeElement).toBe(input);
-    // The review pane's prompt: its line and its completions.
+    // The review's prompt: its line and its completions.
     const line = view.host.querySelector(".file-preview > .review-cmdline");
     expect(line?.firstChild?.textContent).toBe(":");
     const names = [...line!.querySelectorAll(".wild-item")].map(
@@ -374,7 +374,7 @@ if (
     await view.unmount();
   });
 
-  test("reviews in Changes: Reviewed and :reviewed tick the file in the checkout's review, as Changes' tree shows it (D16)", async () => {
+  test("reviews in Changes: Reviewed and :reviewed tick the file in the checkout's review, as Changes' tree shows it", async () => {
     const toggled: string[] = [];
     let marks = new Map<string, { reviewed: boolean; other: boolean }>();
     const host = document.createElement("div");

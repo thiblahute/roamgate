@@ -2,9 +2,9 @@ import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, test } from "bun:test";
 
 /**
- * Changes' tree "in Changes" (plan: review into the inspector, phase 5,
- * D8): the working changes in status groups, a path changed staged and
- * unstaged in both, the reviewed chunks of a file beside its name.
+ * Changes' tree "in Changes": the working changes in status groups, a path
+ * changed staged and unstaged in both, the reviewed chunks of a file beside
+ * its name.
  */
 if (
   inIsolatedChild(

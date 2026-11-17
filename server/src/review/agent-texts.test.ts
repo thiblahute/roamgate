@@ -20,8 +20,8 @@ import { createReviewService } from "./service";
 import { openReviewStorage } from "./storage";
 
 /**
- * What agents are told about the review (plan: review into the inspector,
- * phase 8): the skill, the client's help and the Claude mod's tool
+ * What agents are told about the review: the skill, the client's help and
+ * the Claude mod's tool
  * descriptions. Each claim they make about where and how the user sees a
  * review is pinned here with the behavior that makes it true: the bridge
  * raises the review in the user's browser, which shows it in the
@@ -186,7 +186,7 @@ test("the client's help says it talks to the reviews in Changes", async () => {
   );
 });
 
-test("the skill and the tools never offer to publish to a forge: drafts only (user decision 2026-11-13)", () => {
+test("the skill and the tools never offer to publish to a forge: drafts only", () => {
   expect(REVIEW_SKILL).toContain(
     "Never offer to publish, submit, resolve or post",
   );

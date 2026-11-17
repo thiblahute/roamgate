@@ -1962,7 +1962,7 @@ export default function App() {
   /**
    * The review steps aside (Cmd+K, voice arrival, Go to the agent's pane):
    * an expanded inspector on the review is collapsed, a docked one left as
-   * it is (plan section 6). Set below with the inspector's callbacks.
+   * it is. Set below with the inspector's callbacks.
    */
   const stepReviewAsideRef = useRef<() => void>(() => {});
   // Arriving in a workspace an agent opened a review in shows it, unless
@@ -2475,7 +2475,7 @@ export default function App() {
     [selectAnnotationDraft],
   );
 
-  // What the review toggle opened Changes over (D6, D4):
+  // What the review toggle opened Changes over:
   // set while Changes shows the review the toggle put there, dropped as
   // soon as the inspector leaves that Changes by any other way.
   const reviewToggleReturnRef = useRef<{
@@ -2898,7 +2898,7 @@ export default function App() {
     [openInspector],
   );
   /**
-   * A review with a home of its own (D16), shown there: a rendered file's
+   * A review with a home of its own, shown there: a rendered file's
    * in the Files preview, a chat's in its agent's pane. False for a code
    * review, whose home is Changes.
    */
@@ -2955,7 +2955,7 @@ export default function App() {
   }, [s.activeConnectionId, s.connectionGeneration]);
   /**
    * A review shown in Changes as the toggle shows one: in its workspace's
-   * inspector, else (its workspace gone, or none) the focused one's (D3).
+   * inspector, else (its workspace gone, or none) the focused one's.
    */
   const showReviewInChanges = useCallback(
     async (sessionId: string) => {
@@ -2988,7 +2988,7 @@ export default function App() {
       const snapshot = getReviewSnapshot(sessionId);
       if (snapshot && showReviewHome(snapshot)) return;
       // A review asked for in this workspace (the Reviews inbox jumps
-      // there first), or of none left (D3), shows in its Changes; another
+      // there first), or of none left, shows in its Changes; another
       // workspace's waits in that one's Changes, shown on arriving there.
       const { workspaces } = store.get();
       const own = snapshot?.session.workspaceId;
@@ -3023,12 +3023,12 @@ export default function App() {
   const showFileInReview = useCallback((path: string, line?: number) => {
     openReviewInChangesAtRef.current(path, line);
   }, []);
-  // Set below, once the inspector's callbacks exist (D6).
+  // Set below, once the inspector's callbacks exist.
   const toggleReviewInChangesRef = useRef<(goTo?: ReviewToggleGoTo) => void>(
     () => {},
   );
   /**
-   * Commits' Review this commit (plan phase 8): the Branch scope on that
+   * Commits' Review this commit: the Branch scope on that
    * commit (a review of the commit alone when the branch does not hold it).
    */
   const reviewCommit = useCallback((sha: string) => {
@@ -3263,7 +3263,7 @@ export default function App() {
             workspaceId: workspace.workspace_id,
             root: base,
             ...(agent ? { agent } : {}),
-            // Files' comments are the checkout's review's (D16).
+            // Files' comments are the checkout's review's.
             oneReview: true,
           }
         : null;
@@ -3863,7 +3863,7 @@ export default function App() {
     reviewAsideRef.current = resourceOwnerKey(current.scope);
     setInspectorExpanded(false);
   };
-  // The review toggle (D6, D4): it shows the review in the
+  // The review toggle: it shows the review in the
   // focused workspace's Changes, focused, expanded the first time for that
   // checkout and then as Changes was last left there; pressed while Changes
   // shows that review with the keys, it goes back to what the inspector
@@ -3959,7 +3959,7 @@ export default function App() {
       if (picked) goTo = undefined;
       // The toggle shows the pinned review, else the workspace's, in
       // Changes' scope for it; a chat's or a rendered file's goes to its
-      // own home (D16). Changes shows at once, in the review's scope once
+      // own home. Changes shows at once, in the review's scope once
       // that is known.
       if (!goTo) {
         toggleReviewInChangesRef.current({});
@@ -5866,7 +5866,7 @@ export default function App() {
     if (view === "history" && !paneHasAgentHistory(inspectorHistoryPane)) {
       return;
     }
-    // Changes keeps its own size (D4).
+    // Changes keeps its own size.
     let expanded = current.expanded;
     if ((view === "changes") !== (current.view === "changes")) {
       const owner = resourceOwnerKey(current.scope);
@@ -6775,7 +6775,7 @@ export default function App() {
                   )}
                   onOpen={(sessionId) => {
                     setReviewListOpen(false);
-                    // In Changes: its workspace's, else this one's (D3).
+                    // In Changes: its workspace's, else this one's.
                     void showReviewInChanges(sessionId);
                   }}
                   onClose={() => setReviewListOpen(false)}

@@ -854,7 +854,7 @@ function shouldLogRpc(
   if (method === "terminal.resize" && elapsedMs < SLOW_RPC_LOG_MS) return false;
   return (
     IMPORTANT_RPC_METHODS.has(method) ||
-    // What the review pane waits on, but its polls.
+    // The review's calls, but its polls.
     (method.startsWith("review.") && !REVIEW_POLL_METHODS.has(method)) ||
     elapsedMs >= SLOW_RPC_LOG_MS
   );
@@ -1702,7 +1702,7 @@ function getReviewService(): ReviewService {
       }
     },
   });
-  // A last step's snapshots stay while its review has threads (D15).
+  // A last step's snapshots stay while its review has threads.
   const service = reviewService;
   keepLastSteps((root) => service.keptSteps(root));
   // Images of reviews discarded before the last restart.
@@ -2146,7 +2146,7 @@ async function ensureClaudeStartHook(connectionId: string) {
   });
 }
 
-/** Lets agents on an SSH host reach the review pane over the master. */
+/** Lets agents on an SSH host reach reviews over the master. */
 function setupRemoteReviewAgent(connectionId: string, host: string) {
   // Until it is set up again, comments are not typed for a missing client.
   reviewAgentHosts.delete(connectionId);

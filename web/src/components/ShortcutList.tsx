@@ -2,7 +2,7 @@ import { useId } from "react";
 import "./ShortcutList.css";
 
 /*
- * The filterable shortcut list (`?`, `:help`): the review pane's, and the
+ * The filterable shortcut list (`?`, `:help`): the review's, and the
  * inspector's for its views. Rows are [keys, what they do]; the keys are
  * written apart by spaces ("j k", "Esc Esc").
  */
@@ -49,7 +49,7 @@ export function ShortcutList({
   onFilter: (filter: string) => void;
   /** Esc in the filter, the close button, a click beside the panel. */
   onClose: () => void;
-  /** The filter's id (the review pane's is `review-keys-filter`). */
+  /** The filter's id. */
   filterId?: string;
   placeholder?: string;
   className?: string;

@@ -237,7 +237,7 @@ export function createLegacyConnectionRuntime(args: {
   resolveLastStepWorkspaceGitRoot?: (workspaceId: string) => Promise<string>;
   /**
    * The roots of the review sessions held for this connection: Changes may
-   * show such a review in any workspace ("from elsewhere", plan D3), so its
+   * show such a review in any workspace ("from elsewhere"), so its
    * repository is a root the workspace's Git reads accept.
    */
   reviewRoots?: (connectionId: string) => string[];

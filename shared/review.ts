@@ -25,7 +25,7 @@ export type ReviewTarget =
     }
   | { kind: "worktree" }
   /**
-   * What an agent's last step changed in the checkout (plan D15): the
+   * What an agent's last step changed in the checkout: the
    * worktree snapshots (`git write-tree` of the files, untracked ones
    * included) taken before and after it. Its trees stay under
    * `refs/roamgate/steps/` while the step has threads, and for the last 5
