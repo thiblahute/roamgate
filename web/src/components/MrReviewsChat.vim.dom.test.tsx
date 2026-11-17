@@ -58,8 +58,8 @@ if (process.env.ROAMGATE_MR_REVIEWS_CHAT_VIM_DOM_TEST !== "1") {
         scrollIntoView: () => void;
       }
     ).scrollIntoView = () => {};
-    // Vim keys: the review's `:vim`, on unless turned off.
-    browser.localStorage.removeItem("roamgate:reviewPrefs");
+    // Vim keys: the one setting, on unless turned off.
+    browser.localStorage.removeItem("roamgate:vimKeys");
     const React = await import("react");
     const { act } = React;
     const { createRoot } = await import("react-dom/client");
