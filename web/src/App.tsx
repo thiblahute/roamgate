@@ -115,7 +115,8 @@ import {
   overlayPaneInput,
 } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
-import { reviewSurfaceChoice, reviewVimKeys } from "./reviewPrefs";
+import { reviewSurfaceChoice } from "./reviewPrefs";
+import { vimKeys } from "./vimKeys";
 import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
@@ -3891,7 +3892,7 @@ export default function App() {
       setInspectorExpanded(expanded);
     // The keys go to the diff (its Vim cursor), once Changes has drawn it.
     const opened = inspectorStateRef.current;
-    const vim = reviewVimKeys();
+    const vim = vimKeys();
     let frames = 0;
     const focusDiff = () => {
       if (inspectorStateRef.current !== opened) return;
