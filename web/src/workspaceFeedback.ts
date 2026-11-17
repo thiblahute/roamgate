@@ -6,6 +6,7 @@ import type {
   ReviewThread,
   ReviewThreadKind,
 } from "../../shared/review";
+import { trimRoot } from "./filesystemPaths";
 import {
   type NewReviewAnnotation,
   parseReviewAnnotation,
@@ -104,10 +105,8 @@ function firstLine(text: string): string {
   return (text.split("\n", 1)[0] ?? "").slice(0, 4000);
 }
 
-const trimRoot = (root: string) => root.replace(/\/+$/, "");
-
 function absolute(path: string, root: string): string {
-  return path.startsWith("/") ? path : `${root.replace(/\/+$/, "")}/${path}`;
+  return path.startsWith("/") ? path : `${trimRoot(root)}/${path}`;
 }
 
 /** Which review a comment belongs to, and where in it. */

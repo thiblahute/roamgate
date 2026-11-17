@@ -5,6 +5,7 @@ import {
   type ReviewTarget,
   type ReviewThread,
 } from "../../shared/review";
+import { trimRoot } from "./filesystemPaths";
 import type { LastStepTarget } from "./types";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
 import {
@@ -22,8 +23,6 @@ import { handoffStatus, notSavedStatus, saveOrKeep } from "./reviewSave";
  * and what the review's agent group does on it: Comments go to the agent,
  * Hold, Send, Agent review, the overall comment.
  */
-
-const trimRoot = (root: string) => root.replace(/\/+$/, "");
 
 /**
  * The worktree review of a checkout: the one last updated when the bridge
