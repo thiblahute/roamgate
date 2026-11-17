@@ -65,6 +65,31 @@ test("a file's fingerprint changes with its lines, not with anything else", () =
   expect(fileFingerprint(file([[["+", "a"]], [[" ", "b"]]]))).toMatch(/^2:/);
 });
 
+test("a file's fingerprint stays the one reviewed marks were stored with", () => {
+  expect(
+    fileFingerprint(
+      file([
+        [
+          ["+", "a"],
+          [" ", "b"],
+        ],
+      ]),
+    ),
+  ).toBe("1:vx98p3");
+  expect(
+    fileFingerprint(
+      file([
+        [["+", "a"]],
+        [
+          [" ", "b"],
+          ["-", "c"],
+        ],
+      ]),
+    ),
+  ).toBe("2:pc9gkh");
+  expect(fileFingerprint(file([]))).toBe("0:45h");
+});
+
 // Rows: file 0 has hunk 0 (rows 0-1), context (2), hunk 1 (3); file 1 hunk 0 (4).
 const units: HunkUnit[] = [
   { file: 0, hunk: 0 },
