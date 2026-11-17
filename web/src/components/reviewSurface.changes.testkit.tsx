@@ -1392,7 +1392,10 @@ export async function mountChangesReview(
       buttons: [
         ...card.querySelectorAll(":scope > .chat-thread-bar button"),
       ].map((button) => button.textContent ?? ""),
-      working: null,
+      working:
+        [...card.querySelectorAll(".review-working")].find(
+          (each) => each.closest(".chat-thread") === card,
+        )?.textContent ?? null,
     };
   };
   const threadCard = (threadId: string) => {

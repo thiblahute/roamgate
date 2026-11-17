@@ -522,6 +522,44 @@ function DiffImagePreview({
 }
 
 /**
+ * The agent saying it works on a thread (its review_working), on the
+ * thread's card as the review pane drew it: a mark, what it does, since when.
+ */
+function ReviewWorking({
+  agentName,
+  message,
+  at,
+}: {
+  agentName: string;
+  message: string | undefined;
+  at: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.round((now - Date.parse(at)) / 1000));
+  return (
+    <div className="review-working" role="status">
+      <span className="review-working-mark" aria-hidden="true" />
+      <span>
+        <strong>{agentName}</strong> is working on this
+        {message ? `: ${message}` : "..."}
+      </span>
+      <span className="review-working-time">
+        {Number.isFinite(seconds)
+          ? seconds < 60
+            ? `${seconds} s`
+            : `${Math.floor(seconds / 60)} min`
+          : ""}
+      </span>
+    </div>
+  );
+}
+
+/**
  * The threads the diff's comments are (a comment written here is a thread
  * of its review), drawn under their lines as the Files preview draws its.
  */
@@ -1882,12 +1920,13 @@ function DiffContentViewInner({
     changesAgent.review(focus);
     sectionRef.current?.focus({ preventScroll: true });
   };
+  const workingAgentName = ownSnapshot
+    ? reviewAgent(ownSnapshot, agentPanes).agentName
+    : "Agent";
   const statusLine = useReviewStatusLine({
     session: ownSnapshot?.session ?? null,
     threads: drawnThreads ?? NO_THREADS,
-    agentName: ownSnapshot
-      ? reviewAgent(ownSnapshot, agentPanes).agentName
-      : "Agent",
+    agentName: workingAgentName,
     draftSession: changesDraftSession(resourceKey),
     status: reviewStatus,
     setStatus: setStatusWith,
@@ -2237,9 +2276,18 @@ function DiffContentViewInner({
       notify={say}
     />
   );
+  const agentWorking = ownSnapshot?.session.agent.working;
   const reviewLook: ReviewThreadLook | undefined = reviewEditor
     ? {
         newLines: newLinesOf,
+        working: (thread) =>
+          agentWorking?.threadId === thread.id ? (
+            <ReviewWorking
+              agentName={workingAgentName}
+              message={agentWorking.message}
+              at={agentWorking.at}
+            />
+          ) : null,
         forge: {
           outdatedLine: (thread) =>
             forgeView?.relocations.get(thread.id)?.wasLine,
@@ -5581,12 +5629,16 @@ function DiffContentViewInner({
         </button>
       ) : null}
       {reviewEditor && (statusLine || agentSaid) ? (
-        // With an agent, its chip's tooltip says it; else one short line.
+        // One short line by the agent's chip (what it works on, its last
+        // word), whole in the tooltip; a mark while it works.
         <span
-          className={`changes-review-status${changesAgent.agentName ? " sr-only" : ""}`}
+          className={`changes-review-status${agentWorking ? " is-working" : ""}`}
           aria-live="polite"
           title={agentSaid || statusLine}
         >
+          {agentWorking ? (
+            <span className="review-working-mark" aria-hidden="true" />
+          ) : null}
           {agentSaid || statusLine}
         </span>
       ) : null}
