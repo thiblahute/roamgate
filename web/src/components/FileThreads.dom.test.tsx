@@ -13,23 +13,10 @@ if (
   const { browser } = installTestDom();
 
   const writes: { method: string; params: Record<string, unknown> }[] = [];
-  const comment = (id: string, body: string) => ({
-    id,
-    author: "you",
-    body,
-    createdAt: "2026-11-10T10:00:00Z",
-    updatedAt: "2026-11-10T10:00:00Z",
-  });
-  const thread = (id: string, line: number, resolved: boolean) => ({
-    id,
-    sessionId: "s1",
-    kind: "discussion",
-    anchor: { path: "plan.md", line, render: { quote: "para" } },
-    comments: [comment(`${id}c`, `**On** \`${id}\``)],
-    resolved,
-    createdAt: `2026-11-10T10:00:0${line}Z`,
-    updatedAt: `2026-11-10T10:00:0${line}Z`,
-  });
+  const { fileThread: thread, threadComment } = await import(
+    "./FileThreads.testkit"
+  );
+  const comment = (id: string, body: string) => threadComment(id, "you", body);
   const review = {
     session: {
       id: "s1",

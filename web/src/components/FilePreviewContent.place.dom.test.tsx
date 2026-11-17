@@ -28,6 +28,9 @@ if (
     }
   }
   const { installTestDom } = await import("../testDom");
+  const { previewEntry, previewFile, settlePreview } = await import(
+    "./FilePreviewContent.testkit"
+  );
   installTestDom({
     extra: { ResizeObserver: FakeResizeObserver },
   });
@@ -58,33 +61,13 @@ if (
     "../previewPlaces"
   );
 
-  const settle = async () => {
-    for (let i = 0; i < 20; i++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
-  };
+  const settle = settlePreview;
   const files: Record<string, string> = {
     "a.md": `# A\n\n${"Words of A.\n\n".repeat(40)}[to B](b.md)\n`,
     "b.md": "# B\n\nWords of B.\n",
   };
-  const preview = (path: string) => ({
-    workspace_id: "w1",
-    checkout_path: "/repo",
-    root: "/repo",
-    path,
-    size: files[path]!.length,
-    mtime_ms: 0,
-    text: files[path]!,
-    binary: false,
-    truncated: false,
-  });
-  const entry = (path: string) => ({
-    name: path,
-    path,
-    type: "file" as const,
-    size: 1,
-    mtime_ms: 0,
-    hidden: false,
-  });
+  const preview = (path: string) => previewFile(path, files[path]!);
+  const entry = previewEntry;
 
   /**
    * The inspector as the app draws it: one per checkout (`scope`, drawn

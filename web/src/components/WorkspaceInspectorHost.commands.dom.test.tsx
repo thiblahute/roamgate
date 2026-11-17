@@ -128,20 +128,13 @@ if (
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { WorkspaceInspectorHost } = await import("./WorkspaceInspectorHost");
+  const { inspectorProps, inspectorWorkspace } = await import(
+    "./WorkspaceInspectorHost.testkit"
+  );
   type Props = Parameters<typeof WorkspaceInspectorHost>[0];
   type View = Props["state"]["view"];
-  type Workspace = NonNullable<Props["workspace"]>;
 
-  const workspace = {
-    workspace_id: "w1",
-    number: 1,
-    label: "Repo",
-    focused: true,
-    pane_count: 1,
-    tab_count: 1,
-    agent_status: "",
-    worktree: { repo_name: "repo", checkout_path: "/repo" },
-  } as unknown as Workspace;
+  const workspace = inspectorWorkspace();
 
   async function mountInspector(options: { view?: View; agentPane?: boolean }) {
     let view: View = options.view ?? "files";
@@ -152,78 +145,42 @@ if (
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    const client = {
-      connectionId: "local",
-      generation: 1,
-      serverRuntimeGeneration: 1,
-      isCurrent: () => true,
-      acceptsServerGeneration: () => true,
-      call: async () => ({}),
-    } as unknown as Props["connectionClient"];
-    const empty = { entry: null, preview: null, loading: false, error: null };
     const render = (): Promise<void> =>
       act(async () =>
         root.render(
           <WorkspaceInspectorHost
-            state={{
-              scope: {
-                kind: "workspace",
-                connectionId: "local",
-                workspaceId: "w1",
-              } as Props["state"]["scope"],
-              open: true,
-              view,
-              dock,
-              size: 480,
-              expanded,
-            }}
-            visible
-            workspace={workspace}
-            historyPane={
-              options.agentPane
+            {...inspectorProps({
+              state: {
+                scope: {
+                  kind: "workspace",
+                  connectionId: "local",
+                  workspaceId: "w1",
+                },
+                open: true,
+                view,
+                dock,
+                size: 480,
+                expanded,
+              } as Props["state"],
+              workspace,
+              historyPane: options.agentPane
                 ? ({ pane_id: "p1", agent: "claude" } as Props["historyPane"])
-                : undefined
-            }
-            fileSelection={empty as Props["fileSelection"]}
-            onSelectFileTab={() => {}}
-            previewRequestRef={{ current: 0 }}
-            diffSelection={
-              {
-                entry: null,
-                file: null,
-                loading: false,
-                error: null,
-                entries: [],
-                files: {},
-                fileErrors: {},
-              } as unknown as Props["diffSelection"]
-            }
-            connectionClient={client}
-            onFileSelectionChange={() => {}}
-            onDiffSelectionChange={() => {}}
-            onOpenDiffFile={() => {}}
-            annotations={[]}
-            onCreateAnnotation={() => {}}
-            onReanchorFileAnnotations={() => {}}
-            onReanchorDiffAnnotations={() => {}}
-            onEditAnnotation={() => {}}
-            onOpenDocument={() => {}}
-            onRefreshFile={() => {}}
-            onViewChange={(next) => {
-              views.push(next);
-              view = next;
-              void render();
-            }}
-            onDockChange={(next) => {
-              dock = next;
-              void render();
-            }}
-            onExpandedChange={(next) => {
-              expanded = next;
-              void render();
-            }}
-            onClose={() => closed.push("inspector")}
-            onBack={() => {}}
+                : undefined,
+              onViewChange: (next) => {
+                views.push(next);
+                view = next;
+                void render();
+              },
+              onDockChange: (next) => {
+                dock = next;
+                void render();
+              },
+              onExpandedChange: (next) => {
+                expanded = next;
+                void render();
+              },
+              onClose: () => closed.push("inspector"),
+            })}
           />,
         ),
       );
