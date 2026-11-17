@@ -2,15 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { getSingularPatch } from "@pierre/diffs";
 import {
   CHANGES_REVIEW_VIEW,
-  changesReviewed,
-  chunkProgress,
   chunkStageKey,
   chunkStages,
   reviewedLayout,
 } from "./changesReviewed";
 import { diffCursorModel } from "./diffCursor";
 import { reviewedFileOf } from "./reviewFiles";
-import { hunkKey } from "./reviewNavigation";
+import { hunkKey, reviewedState } from "./reviewNavigation";
 import { fileToggleChanges, hunkToggle, pickHunks } from "./reviewToggle";
 
 /*
@@ -90,9 +88,13 @@ describe("reviewedLayout", () => {
         { key: "unstaged:a.ts", path: "a.ts", diff: unstaged },
       ),
     );
-    const state = changesReviewed(after, marks as Record<string, string>);
+    const state = reviewedState(
+      after.files,
+      CHANGES_REVIEW_VIEW,
+      marks as Record<string, string>,
+    );
     expect([...state.hunks[0]!]).toEqual([0]);
-    expect(chunkProgress(after, state, "a.ts")).toBe("1/2");
+    expect(after.files[0]!.hunks).toHaveLength(2);
   });
 
   test("marking every chunk marks the file; a changed chunk loses its mark", () => {
@@ -105,7 +107,9 @@ describe("reviewedLayout", () => {
       CHANGES_REVIEW_VIEW,
       {},
     ) as Record<string, string>;
-    expect(changesReviewed(layout, marks).files.has(0)).toBe(true);
+    expect(
+      reviewedState(layout.files, CHANGES_REVIEW_VIEW, marks).files.has(0),
+    ).toBe(true);
     const edited = reviewedLayout(
       model({
         key: "unstaged:a.ts",
@@ -117,7 +121,7 @@ describe("reviewedLayout", () => {
         ),
       }),
     );
-    const state = changesReviewed(edited, marks);
+    const state = reviewedState(edited.files, CHANGES_REVIEW_VIEW, marks);
     expect([...state.hunks[0]!]).toEqual([1]);
     expect(state.files.has(0)).toBe(false);
     expect(

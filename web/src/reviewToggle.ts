@@ -24,31 +24,6 @@ export function fileFingerprint(file: ReviewDiff["files"][number]): string {
   return `${file.hunks.length}:${(hash >>> 0).toString(36)}`;
 }
 
-/**
- * The view's hunk of row `at`, or for context revealed the nearest one in
- * the same file (`fileOf` gives a row's file, `count` the rows).
- */
-export function hunkNear(
-  units: readonly HunkUnit[],
-  fileOf: (at: number) => number | undefined,
-  count: number,
-  at: number,
-): HunkUnit {
-  const own = units[at];
-  if (own) return own;
-  const file = fileOf(at);
-  for (let distance = 1; distance < count; distance++) {
-    let inFile = false;
-    for (const near of [at - distance, at + distance]) {
-      if (fileOf(near) !== file) continue;
-      inFile = true;
-      if (units[near]) return units[near];
-    }
-    if (!inFile) break;
-  }
-  return null;
-}
-
 /** Hunks picked, by file. */
 export type PickedHunks = Map<number, Set<number>>;
 

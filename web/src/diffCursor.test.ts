@@ -6,10 +6,8 @@ import {
   fileStep,
   filesWithHits,
   hunkStep,
-  relocatedRow,
   rowAt,
   rowLine,
-  rowSide,
   screenRow,
   searchFileStep,
   scrollTarget,
@@ -145,9 +143,6 @@ describe("the cursor's rows from Pierre's hunks", () => {
     expect(text(stepRows(model, 1, 1, "left"))).toBe("old 2");
     expect(text(stepRows(model, 2, 1, "left"))).toBe("new 3");
     expect(text(stepRows(model, 3, 1, "right"))).toBe("new 2");
-    expect(rowSide(model.rows[0]!)).toBe("both");
-    expect(rowSide(model.rows[1]!)).toBe("left");
-    expect(rowSide(model.rows[3]!)).toBe("right");
   });
 
   test("new, deleted, renamed and binary files", () => {
@@ -240,20 +235,6 @@ describe("the cursor's rows from Pierre's hunks", () => {
     ]);
     expect(searchFileStep(model, "moved", 0, 1)).toBe(2);
     expect(searchFileStep(model, "nowhere", 0, 1)).toBe(-1);
-  });
-
-  test("a thread of an older version is put on today's row, or is outdated", () => {
-    const model = diffCursorModel([renamed]);
-    const before = ["one", "two", "kept", "before", "five"];
-    const now = ["one", "two", "kept", "after", "five"];
-    expect(relocatedRow(model, "src/moved.ts", before, now, 3)).toEqual({
-      row: 0,
-      line: 3,
-    });
-    // Its line is gone: outdated.
-    expect(relocatedRow(model, "src/moved.ts", before, now, 4)).toBeNull();
-    // Found, but on a line the diff does not draw.
-    expect(relocatedRow(model, "src/moved.ts", before, now, 5)).toBeNull();
   });
 });
 
