@@ -1,5 +1,8 @@
 import { Cpu } from "lucide-react";
-import { shortModelName } from "../../../shared/agentModels";
+import {
+  MODEL_PROVIDER_SEPARATOR,
+  shortModelName,
+} from "../../../shared/agentModels";
 import type { ConnectionClient } from "../api";
 import { modelTitle, useSessionProfile } from "../sessionProfiles";
 import "./ModelChip.css";
@@ -34,7 +37,35 @@ export function ModelChip({
       aria-label={`Model: ${name}`}
     >
       <Cpu size={12} aria-hidden="true" />
-      <span className="agent-chat-model-name">{name}</span>
+      <ModelLabel className="agent-chat-model-name" label={name} />
+    </span>
+  );
+}
+
+/**
+ * A short model label ("igalia . GLM 5p3", shortModelName) in two parts,
+ * so that a narrow chip cuts the provider first and keeps the model's name:
+ * "ig... GLM 5p3", then "GLM 5p3", then "GLM 5...". A label without a
+ * provider (or a profile's name) is one part.
+ */
+export function ModelLabel({
+  label,
+  className,
+}: {
+  label: string;
+  className?: string;
+}) {
+  const at = label.indexOf(MODEL_PROVIDER_SEPARATOR);
+  const classes = `model-label${className ? ` ${className}` : ""}`;
+  if (at <= 0) return <span className={classes}>{label}</span>;
+  return (
+    <span className={`${classes} has-provider`}>
+      <span className="model-label-provider">
+        {label.slice(0, at + MODEL_PROVIDER_SEPARATOR.length).trimEnd()}
+      </span>
+      <span className="model-label-name">
+        {label.slice(at + MODEL_PROVIDER_SEPARATOR.length)}
+      </span>
     </span>
   );
 }

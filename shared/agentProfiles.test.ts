@@ -111,6 +111,13 @@ describe("profiles", () => {
         env: { ANTHROPIC_MODEL: "kimi-k3p1-pro" },
       }),
     ).toBe("Kimi k3p1 pro");
+    expect(
+      profileModelLabel({
+        name: "Igalia",
+        agent: "claude",
+        env: { ANTHROPIC_MODEL: "igalia/glm-5p3" },
+      }),
+    ).toBe("igalia \u00b7 GLM 5p3");
     expect(profileModelLabel({ name: "Claude", agent: "claude" })).toBe(
       "Claude",
     );

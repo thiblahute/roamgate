@@ -8,6 +8,7 @@ import {
   parseModelCommand,
   sameModel,
   shortModelName,
+  shortModelParts,
 } from "./agentModels";
 
 describe("/model typed", () => {
@@ -157,7 +158,6 @@ describe("a model's short name", () => {
     expect(shortModelName("claude-opus-4-20250514")).toBe("Opus 4");
     expect(shortModelName("claude-3-5-haiku-20241022")).toBe("Haiku 3.5");
     expect(shortModelName("claude-opus-5-5[1m]")).toBe("Opus 5.5 1M");
-    expect(shortModelName("anthropic/claude-sonnet-4-5")).toBe("Sonnet 4.5");
     expect(shortModelName("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(
       "Sonnet 4.5",
     );
@@ -171,6 +171,37 @@ describe("a model's short name", () => {
     expect(shortModelName("glm-5p3")).toBe("GLM 5p3");
     expect(shortModelName("kimi-k3p1-pro")).toBe("Kimi k3p1 pro");
     expect(shortModelName("gpt-5.6-sol")).toBe("GPT 5.6 sol");
-    expect(shortModelName("unsloth/Qwen3.6-35B")).toBe("Qwen3.6 35B");
+  });
+
+  test("a gateway's provider stays in front, the segment before the model", () => {
+    expect(shortModelName("igalia/glm-5p3")).toBe("igalia \u00b7 GLM 5p3");
+    expect(shortModelName("openrouter/anthropic/claude-sonnet-4-5")).toBe(
+      "anthropic \u00b7 Sonnet 4.5",
+    );
+    expect(shortModelName("anthropic/claude-sonnet-4-5")).toBe(
+      "anthropic \u00b7 Sonnet 4.5",
+    );
+    expect(shortModelName("unsloth/Qwen3.6-35B")).toBe(
+      "unsloth \u00b7 Qwen3.6 35B",
+    );
+    expect(shortModelName("igalia/glm-5p3[1m]")).toBe(
+      "igalia \u00b7 GLM 5p3 1M",
+    );
+    expect(shortModelParts("igalia/glm-5p3")).toEqual({
+      provider: "igalia",
+      name: "GLM 5p3",
+    });
+  });
+
+  test("no prefix without a slash, nor around a lone one", () => {
+    expect(shortModelParts("claude-opus-5-5")).toEqual({
+      provider: null,
+      name: "Opus 5.5",
+    });
+    expect(shortModelName("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(
+      "Sonnet 4.5",
+    );
+    expect(shortModelParts("/glm-5p3").provider).toBeNull();
+    expect(shortModelParts("a/b/").provider).toBeNull();
   });
 });

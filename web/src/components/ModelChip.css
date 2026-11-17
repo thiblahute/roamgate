@@ -24,6 +24,35 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * A model label with its provider ("igalia . GLM 5p3"): when the chip is
+ * too narrow the provider gives way first, the model's name last.
+ */
+.model-label.has-provider {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  gap: 0.3em;
+  text-overflow: clip;
+}
+
+.model-label-provider,
+.model-label-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-label-provider {
+  flex: 0 1000 auto;
+  opacity: 0.8;
+}
+
+.model-label-name {
+  flex: 0 1 auto;
+}
+
 /* A phone's narrow header: the name alone, kept short. */
 @media (max-width: 640px) {
   .agent-chat-model {

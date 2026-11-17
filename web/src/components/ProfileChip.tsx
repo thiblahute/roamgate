@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cpu, Gauge, TriangleAlert } from "lucide-react";
 import { shortModelName } from "../../../shared/agentModels";
+import { ModelLabel } from "./ModelChip";
 import type { ConnectionClient } from "../api";
 import {
   activeLimit,
@@ -56,7 +57,7 @@ export function ProfileChip({
         aria-label={`Model: ${model}`}
       >
         <Cpu size={14} aria-hidden="true" />
-        <span>{model}</span>
+        <ModelLabel label={model} />
       </span>
     ) : null;
   const current = data.profile ?? data.default;
@@ -190,7 +191,7 @@ export function ProfileChip({
         onClick={open}
       >
         <Gauge size={14} aria-hidden="true" />
-        {label ? <span>{label}</span> : null}
+        {label ? <ModelLabel label={label} /> : null}
       </button>
       {menu
         ? createPortal(
