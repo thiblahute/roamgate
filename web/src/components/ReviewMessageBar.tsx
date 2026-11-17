@@ -38,6 +38,34 @@ export type ReviewMessageBarProps = {
   onDelete: () => void;
 };
 
+/** A write on its way: Sending..., then Not saved with Retry and Discard. */
+export function PendingStatus({
+  error,
+  onRetry,
+  onDiscard,
+}: {
+  error: string | undefined;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) {
+  return error === undefined ? (
+    <div className="rc-bar" role="status">
+      <span className="rc-kind">Sending...</span>
+    </div>
+  ) : (
+    <div className="rc-bar" role="alert">
+      <span className="rc-kind rc-failed">Not saved: {error}</span>
+      <span className="spacer" />
+      <button type="button" className="btn ghost" onClick={onRetry}>
+        Retry
+      </button>
+      <button type="button" className="btn ghost" onClick={onDiscard}>
+        Discard
+      </button>
+    </div>
+  );
+}
+
 export function ReviewMessageBar({
   thread,
   comment,
@@ -54,29 +82,12 @@ export function ReviewMessageBar({
   onDelete,
 }: ReviewMessageBarProps) {
   if (pending)
-    return pending.error ? (
-      <div className="rc-bar" role="alert">
-        <span className="rc-kind rc-failed">Not saved: {pending.error}</span>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="btn ghost"
-          onClick={() => onRetryWrite(pending)}
-        >
-          Retry
-        </button>
-        <button
-          type="button"
-          className="btn ghost"
-          onClick={() => onDiscardWrite(pending)}
-        >
-          Discard
-        </button>
-      </div>
-    ) : (
-      <div className="rc-bar" role="status">
-        <span className="rc-kind">Sending...</span>
-      </div>
+    return (
+      <PendingStatus
+        error={pending.error}
+        onRetry={() => onRetryWrite(pending)}
+        onDiscard={() => onDiscardWrite(pending)}
+      />
     );
   const discussion = thread.kind === "discussion";
   const mine = comment.author === REVIEW_USER;
