@@ -176,18 +176,14 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { WorkspaceInspectorHost } = await import("./WorkspaceInspectorHost");
+  const { inspectorProps, inspectorWorkspace } = await import(
+    "./WorkspaceInspectorHost.testkit"
+  );
   type Props = Parameters<typeof WorkspaceInspectorHost>[0];
   type View = Props["state"]["view"];
   type Workspace = NonNullable<Props["workspace"]>;
 
-  const workspace: Workspace = {
-    workspace_id: "w1",
-    number: 1,
-    label: "Repo",
-    focused: true,
-    pane_count: 1,
-    tab_count: 1,
-    agent_status: "",
+  const workspace = inspectorWorkspace({
     worktree: {
       repo_name: "repo",
       checkout_path: "/repo",
@@ -201,8 +197,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         conflicted: 1,
         dirty: true,
       },
-    },
-  } as unknown as Workspace;
+    } as Workspace["worktree"],
+  });
 
   async function mountInspector(options: {
     view?: View;
@@ -241,43 +237,29 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    const client = {
-      connectionId: "local",
-      generation: 1,
-      serverRuntimeGeneration: 1,
-      isCurrent: () => true,
-      acceptsServerGeneration: () => true,
-      call: async () => ({}),
-    } as unknown as Props["connectionClient"];
-    const empty = { entry: null, preview: null, loading: false, error: null };
     const render = () =>
       act(async () =>
         root.render(
           <WorkspaceInspectorHost
-            state={{
-              scope: {
-                kind: "workspace",
-                connectionId: "local",
-                workspaceId: "w1",
-              } as Props["state"]["scope"],
-              open: true,
-              view,
-              dock: "right",
-              size: 480,
-              expanded: options.expanded ?? false,
-            }}
-            visible={options.visible ?? true}
-            workspace={"workspace" in options ? options.workspace : workspace}
-            historyPane={
-              options.agentPane
+            {...inspectorProps({
+              state: {
+                scope: {
+                  kind: "workspace",
+                  connectionId: "local",
+                  workspaceId: "w1",
+                },
+                open: true,
+                view,
+                dock: "right",
+                size: 480,
+                expanded: options.expanded ?? false,
+              } as Props["state"],
+              visible: options.visible ?? true,
+              workspace: "workspace" in options ? options.workspace : workspace,
+              historyPane: options.agentPane
                 ? ({ pane_id: "p1", agent: "claude" } as Props["historyPane"])
-                : undefined
-            }
-            fileSelection={empty as Props["fileSelection"]}
-            onSelectFileTab={() => {}}
-            previewRequestRef={{ current: 0 }}
-            diffSelection={
-              {
+                : undefined,
+              diffSelection: {
                 entry: options.entry ?? null,
                 file: null,
                 loading: false,
@@ -291,45 +273,33 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
                   : {}),
                 ...(options.scopeMode ? { scopeMode: options.scopeMode } : {}),
                 ...(options.step ? { step: options.step } : {}),
-              } as unknown as Props["diffSelection"]
-            }
-            {...(options.reviewGoTo ? { reviewGoTo: options.reviewGoTo } : {})}
-            connectionClient={client}
-            onFileSelectionChange={() => {}}
-            onDiffSelectionChange={() => {}}
-            onOpenDiffFile={options.onOpenDiffFile ?? (() => {})}
-            {...(options.onCloseReview
-              ? { onCloseReview: options.onCloseReview }
-              : {})}
-            {...(options.onShowReviews
-              ? { onShowReviews: options.onShowReviews }
-              : {})}
-            {...(options.onFocusAgentPane
-              ? { onFocusAgentPane: options.onFocusAgentPane }
-              : {})}
-            {...(options.onReviewGone
-              ? { onReviewGone: options.onReviewGone }
-              : {})}
-            annotations={[]}
-            onCreateAnnotation={(input) =>
-              options.created?.push(input as Record<string, unknown>)
-            }
-            onReanchorFileAnnotations={() => {}}
-            onReanchorDiffAnnotations={() => {}}
-            onEditAnnotation={() => {}}
-            onOpenDocument={() => {}}
-            onRefreshFile={() => {}}
-            onViewChange={(next) => {
-              views.push(next);
-              view = next;
-              void render();
-            }}
-            onDockChange={() => {}}
-            onExpandedChange={(expanded) =>
-              options.calls?.push(`expanded ${expanded}`)
-            }
-            onClose={() => options.calls?.push("close")}
-            onBack={() => options.backs?.push("back")}
+              } as unknown as Props["diffSelection"],
+              ...(options.reviewGoTo ? { reviewGoTo: options.reviewGoTo } : {}),
+              onOpenDiffFile: options.onOpenDiffFile ?? (() => {}),
+              ...(options.onCloseReview
+                ? { onCloseReview: options.onCloseReview }
+                : {}),
+              ...(options.onShowReviews
+                ? { onShowReviews: options.onShowReviews }
+                : {}),
+              ...(options.onFocusAgentPane
+                ? { onFocusAgentPane: options.onFocusAgentPane }
+                : {}),
+              ...(options.onReviewGone
+                ? { onReviewGone: options.onReviewGone }
+                : {}),
+              onCreateAnnotation: (input) =>
+                options.created?.push(input as Record<string, unknown>),
+              onViewChange: (next) => {
+                views.push(next);
+                view = next;
+                void render();
+              },
+              onExpandedChange: (expanded) =>
+                options.calls?.push(`expanded ${expanded}`),
+              onClose: () => options.calls?.push("close"),
+              onBack: () => options.backs?.push("back"),
+            })}
           />,
         ),
       );

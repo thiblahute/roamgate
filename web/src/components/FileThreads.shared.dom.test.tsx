@@ -13,15 +13,9 @@ if (
   installTestDom();
   const writes: { method: string; params: Record<string, unknown> }[] = [];
 
-  const at = (second: number) =>
-    `2026-11-10T10:00:${String(second).padStart(2, "0")}Z`;
-  const comment = (id: string, author: string, body: string, second = 0) => ({
-    id,
-    author,
-    body,
-    createdAt: at(second),
-    updatedAt: at(second),
-  });
+  const { threadTime: at, threadComment: comment } = await import(
+    "./FileThreads.testkit"
+  );
   const base = {
     connectionId: "local",
     workspaceId: "w1",

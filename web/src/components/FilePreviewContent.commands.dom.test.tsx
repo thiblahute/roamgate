@@ -16,6 +16,9 @@ if (
   )
 ) {
   const { installTestDom } = await import("../testDom");
+  const { previewEntry, previewFile, settlePreview } = await import(
+    "./FilePreviewContent.testkit"
+  );
   installTestDom();
 
   const { LEGACY_DEFAULT_CONNECTION_ID } = await import("../connectionStorage");
@@ -84,30 +87,10 @@ if (
   );
   const { inspectorCompletions } = await import("../inspectorCommands");
 
-  const settle = async () => {
-    for (let i = 0; i < 20; i++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
-  };
+  const settle = settlePreview;
   const markdown = "# Plan\n\nFirst para.\n\nSecond para.\n\nThird para.\n";
-  const preview = (path: string, text: string) => ({
-    workspace_id: "w1",
-    checkout_path: "/repo",
-    root: "/repo",
-    path,
-    size: text.length,
-    mtime_ms: 0,
-    text,
-    binary: false,
-    truncated: false,
-  });
-  const entry = (path: string) => ({
-    name: path,
-    path,
-    type: "file" as const,
-    size: 1,
-    mtime_ms: 0,
-    hidden: false,
-  });
+  const preview = previewFile;
+  const entry = previewEntry;
 
   /** The preview of `path`, with every callback counted. */
   async function mount(path = "plan.md", text = markdown) {

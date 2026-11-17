@@ -17,6 +17,9 @@ if (
   )
 ) {
   const { installTestDom } = await import("../testDom");
+  const { previewEntry, previewFile } = await import(
+    "./FilePreviewContent.testkit"
+  );
   installTestDom();
 
   const { describe, jest, mock } = await import("bun:test");
@@ -56,25 +59,8 @@ if (
   );
   const { CHANGED_ON_DISK_POLL_MS } = await import("../useChangedOnDisk");
 
-  const read = () => ({
-    workspace_id: "w1",
-    checkout_path: "/repo",
-    root: "/repo",
-    path: "notes.md",
-    size: disk.text.length,
-    mtime_ms: disk.mtime,
-    text: disk.text,
-    binary: false,
-    truncated: false,
-  });
-  const entry = {
-    name: "notes.md",
-    path: "notes.md",
-    type: "file" as const,
-    size: 1,
-    mtime_ms: 0,
-    hidden: false,
-  };
+  const read = () => previewFile("notes.md", disk.text, disk.mtime);
+  const entry = previewEntry("notes.md");
 
   /** Let the fake timers and the calls' promises run. */
   async function advance(ms: number) {
