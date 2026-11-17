@@ -1,4 +1,4 @@
-import { ChevronLeft, RefreshCw } from "lucide-react";
+import { ChevronLeft, RefreshCw, Trash2 } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -18,10 +18,15 @@ import {
   upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import type { WorkspaceRef } from "../../../shared/workspaceTree";
-import { mrReviewsCall, onMrReviewsChange } from "../mrReviews";
+import {
+  mrReviewsCall,
+  onMrReviewsChange,
+  orderMrRequests,
+} from "../mrReviews";
 import { type ShownReply, showReply } from "../mrReviewFlow";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import { useWorkspaceTree } from "../workspaceTreeStore";
+import { ConfirmDialog } from "./ModalDialogs";
 import "./MrEffortView.css";
 
 /**
@@ -30,7 +35,8 @@ import "./MrEffortView.css";
  * burndown, breakdown by directory), Ledger (every commit, selectable,
  * dispositions set in bulk with Undo, fuzzy matches confirmed or
  * rejected, `d` its diff in the head workspace's Changes), Plans (planned requests and their parts),
- * Feeders and What changed since the user last looked.
+ * Feeders and What changed since the user last looked. Delete (`:delete`)
+ * takes its declaration out after a confirmation, with Undo.
  */
 
 export const DISPOSITION_TITLE: Record<MrDisposition, string> = {
@@ -360,6 +366,8 @@ export function MrEffortView({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [anchor, setAnchor] = useState<number | null>(null);
   const [command, setCommand] = useState<string | null>(null);
+  /** Asking before deleting the effort. */
+  const [deleting, setDeleting] = useState(false);
   const [history, setHistory] = useState<Record<string, unknown>[] | null>(
     null,
   );
@@ -563,6 +571,28 @@ export function MrEffortView({
       diffText(from, to);
     });
 
+  /**
+   * Deletes its declaration (its ledger stays on disk under its id), says
+   * so with Undo and goes back to the inbox. No branch or worktree moves.
+   */
+  const deleteEffort = async () => {
+    const name = detail?.effort.name ?? id;
+    try {
+      const done = await mrReviewsCall<{ version: number }>("effort.delete", {
+        id,
+      });
+      say(
+        `Deleted the effort ${name}`,
+        done.version
+          ? () => orderMrRequests({ op: "undo", version: done.version })
+          : undefined,
+      );
+      onBack();
+    } catch (cause) {
+      say(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   const runCommand = (text: string) => {
     setCommand(null);
     rootRef.current?.focus({ preventScroll: true });
@@ -621,6 +651,7 @@ export function MrEffortView({
     else if (name === "unsort") void setDisposition("unsorted");
     else if (name === "refresh")
       void mrReviewsCall("effort.refresh", { id }).then(load);
+    else if (name === "delete") setDeleting(true);
     else if (name) say(`Not a command: ${name}`);
   };
 
@@ -983,6 +1014,14 @@ export function MrEffortView({
         <button type="button" className="ghost" onClick={onLeader} title="c">
           Leader session
         </button>
+        <button
+          type="button"
+          className="ghost"
+          title="Delete this effort, after a confirmation (:delete)"
+          onClick={() => setDeleting(true)}
+        >
+          <Trash2 size={13} /> {"Delete effort\u2026"}
+        </button>
       </div>
       <nav className="assistant-primary-nav" aria-label="Effort views">
         {TABS.map((each) => (
@@ -1015,6 +1054,18 @@ export function MrEffortView({
           />
         </div>
       ) : null}
+      <ConfirmDialog
+        open={deleting}
+        title={`Delete the effort ${detail?.effort.name ?? ""}?`}
+        message={`${detail?.effort.name ?? "This effort"} leaves Reviews with its card, its ledger marks, its plans and its history${summary ? ` (${summary.total} commits)` : ""}. Its parts' branches and worktrees stay as they are, and so do the other efforts. Undo brings it all back.`}
+        confirmLabel="Delete effort"
+        danger
+        onConfirm={() => void deleteEffort()}
+        onClose={() => {
+          setDeleting(false);
+          rootRef.current?.focus({ preventScroll: true });
+        }}
+      />
     </section>
   );
 }

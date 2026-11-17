@@ -58,7 +58,7 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ],
   [
     ": (effort)",
-    "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort",
+    "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort, delete (the effort, after a confirmation, with Undo)",
   ],
   ["?", "this list"],
   ["Esc", "close the list, clear the search, then hide the panel"],

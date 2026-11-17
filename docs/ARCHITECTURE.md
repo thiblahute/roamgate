@@ -981,7 +981,10 @@ preview, delete, get, refresh, history, leader}` and `ledger.{set, undo}`
 `changed: ["effort"]` with `effort: {id, journal}`. The inbox carries the
 cards as `efforts` (counts, not ready, overlaps by patch id with other
 efforts and branches headed upstream, D23; proposals to confirm, plans by
-state, what changed). Tools: `effort_get`, `effort_set` (with `preview`),
+state, what changed). Deleting an effort removes its declaration only (a
+name several efforts share is refused: the id says which); its ledger stays
+under its own id for Undo, other efforts' ledgers are their own files.
+Tools: `effort_get`, `effort_set` (with `preview`), `effort_delete`,
 `ledger_list` (200 a page, `cluster`, proposals per commit), `ledger_set`,
 `effort_overlaps`, `ledger_match`, `ledger_plans`, `part_create`.
 
