@@ -134,7 +134,22 @@ export function reviewScriptError(
  * and agents name one commit) is the empty tree: the commit adds it all.
  */
 export function resolveBase(base: string, shQuote: (value: string) => string) {
-  return `b=$(${baseRevision(base, shQuote)}) || { echo "unknown revision: ${base.replace(/["$`\\]/g, "")}" >&2; exit 3; }`;
+  return `b=$(${baseRevision(base, shQuote)}) || ${unknownRevision(base)}`;
+}
+
+/** A script's exit on a revision it cannot find, naming it. */
+export function unknownRevision(name: string): string {
+  return `{ echo "unknown revision: ${name.replace(/["$`\\]/g, "")}" >&2; exit 3; }`;
+}
+
+/** A review's head commit into $h. */
+export function resolveHead(head: string, shQuote: (value: string) => string) {
+  return `h=$(git rev-parse --verify --quiet ${shQuote(`${head}^{commit}`)}) || ${unknownRevision(head)}`;
+}
+
+/** Fails the script unless `tree` (a step's snapshot) is there. */
+export function checkTree(tree: string, shQuote: (value: string) => string) {
+  return `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} >/dev/null || ${unknownRevision(tree)}`;
 }
 
 /** The commands printing a review base's object name; false when none. */
@@ -171,7 +186,7 @@ export function reviewPatchScript(
   if (target.kind === "range") {
     lines.push(
       resolveBase(target.base, shQuote),
-      `h=$(git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}) || { echo "unknown revision: ${target.head.replace(/["$`\\]/g, "")}" >&2; exit 3; }`,
+      resolveHead(target.head, shQuote),
       // Review what the head adds, as a merge request would show it; or,
       // comparing two versions of a branch, tree against tree.
       target.compare
@@ -182,9 +197,7 @@ export function reviewPatchScript(
   } else if (target.kind === "step") {
     // Tree against tree: what the agent's step changed (plan D15).
     for (const tree of [target.before, target.after])
-      lines.push(
-        `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} >/dev/null || { echo "unknown revision: ${tree}" >&2; exit 3; }`,
-      );
+      lines.push(checkTree(tree, shQuote));
     lines.push(
       `{ printf '${SHAS_MARKER} %s %s\\n' ${shQuote(target.before)} ${shQuote(target.after)}; ${diff} ${shQuote(target.before)} ${shQuote(target.after)}${only}; } | ${cap}`,
     );
@@ -291,7 +304,7 @@ export function reviewStateScript(
     lines.push(
       ...[target.before, target.after].map(
         (tree) =>
-          `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} || { echo "unknown revision: ${tree}" >&2; exit 3; }`,
+          `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} || ${unknownRevision(tree)}`,
       ),
     );
   else if (target.kind === "worktree")
@@ -638,7 +651,7 @@ export function reviewCommitsScript(
   return [
     enterCheckout(root, shQuote),
     resolveBase(base, shQuote),
-    `h=$(git rev-parse --verify --quiet ${shQuote(`${head}^{commit}`)}) || { echo "unknown revision: ${head.replace(/["$`\\]/g, "")}" >&2; exit 3; }`,
+    resolveHead(head, shQuote),
     // From a tree (the empty tree, to review everything): every commit.
     `if [ "$(git cat-file -t "$b")" = tree ]; then git log --reverse --no-color --format=${shQuote(format)} -n ${REVIEW_MAX_COMMITS} "$h"; exit 0; fi`,
     `m=$(git merge-base "$b" "$h") || m="$b"`,

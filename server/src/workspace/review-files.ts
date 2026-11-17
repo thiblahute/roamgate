@@ -13,7 +13,9 @@ import {
   DIFF_OPTIONS,
   enterCheckout,
   GIT,
+  checkTree,
   resolveBase,
+  resolveHead,
   runReviewScript,
   SHAS_MARKER,
   validReviewPath,
@@ -57,17 +59,14 @@ function endsScript(of: ReviewSummaryOf, shQuote: (value: string) => string) {
   if (target.kind === "range")
     return [
       resolveBase(target.base, shQuote),
-      `h=$(git rev-parse --verify --quiet ${shQuote(`${target.head}^{commit}`)}) || { echo "unknown revision: ${target.head.replace(/["$`\\]/g, "")}" >&2; exit 3; }`,
+      resolveHead(target.head, shQuote),
       target.compare
         ? `m="$b"`
         : `m=$(git merge-base "$b" "$h" 2>/dev/null) || m="$b"`,
     ];
   if (target.kind === "step")
     return [
-      ...[target.before, target.after].map(
-        (tree) =>
-          `git rev-parse --verify --quiet ${shQuote(`${tree}^{tree}`)} >/dev/null || { echo "unknown revision: ${tree}" >&2; exit 3; }`,
-      ),
+      ...[target.before, target.after].map((tree) => checkTree(tree, shQuote)),
       `m=${shQuote(target.before)}`,
       `h=${shQuote(target.after)}`,
     ];

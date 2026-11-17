@@ -6,6 +6,7 @@ import { GIT_DIFF_MAX_BYTES, GIT_DIFF_TIMEOUT_MS } from "./file-constants";
 import { gitShellCommandArgv } from "./git-shell";
 import { trimIncompleteUtf8Tail } from "./preview";
 import type { RunProcessWithCodeTimeout } from "./file-types";
+import { DIFF_OPTIONS, GIT as REVIEW_GIT } from "./review-patch";
 
 /*
  * One file of the working changes as the review reads them (plan: review
@@ -17,15 +18,9 @@ import type { RunProcessWithCodeTimeout } from "./file-types";
  */
 
 /**
- * git with the user's settings that change how a diff reads pinned (as the
- * review's patch loader does): real UTF-8 names, `a/` and `b/` prefixes,
- * blank context lines kept, pathspecs taken literally.
+ * git as the review's patch loader runs it, pathspecs taken literally.
  */
-const GIT =
-  "git -c core.quotePath=false -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.suppressBlankEmpty=false --literal-pathspecs";
-/** Diff options that keep the output a plain patch of the files. */
-const DIFF_OPTIONS =
-  "--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/";
+const GIT = `${REVIEW_GIT} --literal-pathspecs`;
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 /** Line ranges, first and last, both included. */
