@@ -134,7 +134,7 @@ test("the skill and the review_open tool say a review opens on the branch agains
 
 test("the skill names the mod's tools, those behind tool search apart", () => {
   const named = (text: string) =>
-    [...text.matchAll(/`((?:review|agent)_[a-z_]+)`/g)].map((m) => m[1]);
+    [...text.matchAll(/`((?:reviews?|agent)_[a-z_]+)`/g)].map((m) => m[1]);
   const paragraph = REVIEW_SKILL.slice(
     REVIEW_SKILL.indexOf("**Prefer Roamgate's tools when you have them.**"),
     REVIEW_SKILL.indexOf("## Two kinds of comment"),

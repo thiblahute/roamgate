@@ -147,7 +147,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     name: "review_reply",
     command: "reply",
     description:
-      "Answer a thread of a Roamgate review, or of your chat with the user, in that thread. Answer every thread Roamgate gives you once, saying what you did or changed; for a comment on your chat the thread is where the answer goes, so do not repeat it in the chat. Never reply to yourself; to correct an answer, use review_edit. On a merge request's discussion (gl:...) the reply becomes the user's pending draft in their voice: it stays in Roamgate, and only the user sends it to GitLab.",
+      "Answer a thread of a Roamgate review, of your chat with the user, or of the view of an upstreaming effort you lead, in that thread. Answer every thread Roamgate gives you once, saying what you did or changed; for a comment on your chat the thread is where the answer goes, so do not repeat it in the chat. Never reply to yourself; to correct an answer, use review_edit. On a merge request's discussion (gl:...) the reply becomes the user's pending draft in their voice: it stays in Roamgate, and only the user sends it to GitLab.",
     inputSchema: schema({ comment_id: COMMENT, text: TEXT, review: REVIEW }, [
       "comment_id",
       "text",
