@@ -1,12 +1,16 @@
 import { sshCommandArgv } from "../bridge/ssh-command";
 import { fetchOriginDefaultBranch } from "../workspace/default-branch";
-import { GIT_PULL_TIMEOUT_MS } from "../workspace/file-constants";
+import {
+  GIT_DIFF_TIMEOUT_MS,
+  GIT_PULL_TIMEOUT_MS,
+} from "../workspace/file-constants";
 import type { RunProcessWithCodeTimeout } from "../workspace/file-types";
 import type { LegacyConnectionRuntime } from "../connections/runtime";
 import { assertUnixHost } from "../connections/unix-only";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import {
   readGuiSettings,
+  repoSettingsKey,
   workspaceRepoSettingsKey,
   worktreeCommandFor,
 } from "../config/gui-settings";
@@ -85,6 +89,32 @@ export function worktreeCheckoutPath(directory: string, branch: string) {
 
 /** A worktree command may check out a large tree and its nested repositories. */
 export const WORKTREE_COMMAND_TIMEOUT_MS = 300_000;
+
+/**
+ * The repository a checkout belongs to, as Herdr names it: its absolute git
+ * common directory (`<repo>/.git`, or the bare repository), the same for the
+ * main checkout and every linked worktree. Null when git cannot tell.
+ */
+export async function gitCommonDir(
+  root: string,
+  host: string | undefined,
+  runProcess: RunProcessWithCodeTimeout,
+): Promise<string | null> {
+  const command = `GIT_TERMINAL_PROMPT=0 git -C ${shQuote(root)} rev-parse --path-format=absolute --git-common-dir`;
+  const result = await runProcess(
+    host ? sshCommandArgv(host, command) : ["sh", "-lc", command],
+    GIT_DIFF_TIMEOUT_MS,
+  ).catch(() => null);
+  const dir = result?.code === 0 ? result.stdout.trim() : "";
+  return dir.startsWith("/") ? dir.replace(/\/+$/, "") : null;
+}
+
+/** Herdr's repo_name for a git common directory: `roamgate` for `roamgate/.git`. */
+export function repoNameFromCommonDir(commonDir: string) {
+  const parts = commonDir.split("/").filter(Boolean);
+  const last = parts.at(-1) ?? "";
+  return last === ".git" ? (parts.at(-2) ?? "") : last;
+}
 
 /** Herdr's worktree.create default, `~/.herdr/worktrees/<repo>/<branch slug>`. */
 export function herdrDefaultCheckoutPath(repoName: string, branch: string) {
@@ -185,13 +215,41 @@ export async function createWorkspaceWorktree(
     ...createParams,
     base: baseSync.commit,
   };
-  const key = workspaceRepoSettingsKey(
+  // Herdr does not always describe the workspace's repository (a workspace
+  // opened outside a checkout, or one it has not inspected yet): git then
+  // names it from the root the worktree is created from, so that every
+  // checkout of a repository shares its settings.
+  const reportedRepoKey =
+    typeof sourceWorkspace?.worktree?.repo_key === "string"
+      ? sourceWorkspace.worktree.repo_key
+      : "";
+  let commonDir: string | null = null;
+  if (!reportedRepoKey) {
+    commonDir = await gitCommonDir(
+      baseSync.root,
+      runtime.sshHost(),
+      runProcess,
+    );
+    assertCurrent();
+  }
+  const settings = await readSettings();
+  assertCurrent();
+  const fallbackKey = workspaceRepoSettingsKey(
     sourceWorkspace,
     runtime.sshHost(),
     runtime.identity?.id,
   );
-  const settings = await readSettings();
-  assertCurrent();
+  const commonDirKey = commonDir
+    ? repoSettingsKey(commonDir, runtime.sshHost(), runtime.identity?.id)
+    : null;
+  // Settings saved under the checkout path before keep applying.
+  const key =
+    commonDirKey &&
+    (settings.repositories[commonDirKey] ||
+      !fallbackKey ||
+      !settings.repositories[fallbackKey])
+      ? commonDirKey
+      : fallbackKey;
   const command = worktreeCommandFor(settings, key);
   if (guardedCommand && (command ?? null) !== expectedWorktreeCommand)
     throw new Error("The worktree command changed.");
@@ -234,6 +292,7 @@ export async function createWorkspaceWorktree(
           runProcess,
           repoName:
             sourceWorkspace?.worktree?.repo_name ||
+            (commonDir && repoNameFromCommonDir(commonDir)) ||
             baseSync.root.replace(/\/+$/, "").split("/").pop() ||
             "",
           assertCurrent,
