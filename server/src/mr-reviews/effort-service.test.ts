@@ -1,12 +1,14 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { MrReviewsPush } from "../../../shared/mrReviews";
+import { fixupTargets, type MrReviewsPush } from "../../../shared/mrReviews";
 import { WORKSPACE_TREE_VERSION } from "../../../shared/workspaceTree";
 import { updateGuiSettings } from "../config/gui-settings";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
 import {
+  parsePartStops,
   parsePick,
+  partStopsScript,
   pickedOnBranch,
   pickScript,
   readableError,
@@ -692,6 +694,278 @@ test("a pick already in the target is skipped and said; a real conflict stops", 
     "pool: add c\npool: b and more",
   );
 });
+
+/** A clone with a part worktree on origin/main, and a pick runner there. */
+function partFixture() {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  const part = `${g.root}/part`;
+  const connection = g.connection([]);
+  const run = async (shas: string[]) =>
+    parsePick(
+      (
+        await connection.run(
+          pickScript(part, ["refs/remotes/origin/main"], shas, "part"),
+          60_000,
+        )
+      ).stdout,
+    );
+  const worktree = () =>
+    g.git(clone, "worktree", "add", "-q", "-b", "part", part, "origin/main");
+  return { g, clone, part, connection, run, worktree };
+}
+
+test("fixups fold into their targets in the part: the same tree, a squash! adds its body, a fixup without its target stays and is said", async () => {
+  const { g, clone, part, run, worktree } = partFixture();
+  g.commit(clone, "pool/x.c", "x\n", "pool: add x");
+  const a = g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  const b = g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  const fa = g.commit(clone, "pool/a.c", "a fixed\n", "fixup! pool: add a");
+  const sb = g.commit(
+    clone,
+    "pool/b.c",
+    "b better\n",
+    "squash! pool: add b\n\nAlso why b is better.",
+  );
+  const fx = g.commit(clone, "pool/y.c", "y\n", "fixup! pool: add x");
+  const shas = [a, b, fa, sb, fx];
+  // The tree the picks make without folding, in a scratch worktree.
+  g.git(
+    clone,
+    "worktree",
+    "add",
+    "-q",
+    "--detach",
+    `${g.root}/plain`,
+    "origin/main",
+  );
+  for (const sha of shas) g.git(`${g.root}/plain`, "cherry-pick", sha);
+  const plain = g.git(`${g.root}/plain`, "rev-parse", "HEAD^{tree}").trim();
+  worktree();
+  expect(await run(shas)).toEqual({
+    picked: 5,
+    files: [],
+    skipped: [],
+    onBranch: { count: 5, ids: expect.any(Array) },
+    fold: { count: 3, sameTree: true, unfolded: ["fixup! pool: add x"] },
+  });
+  expect(g.git(part, "rev-parse", "HEAD^{tree}").trim()).toBe(plain);
+  expect(
+    g.git(part, "log", "--reverse", "--format=%s", "origin/main..HEAD").trim(),
+  ).toBe("pool: add a\npool: add b\nfixup! pool: add x");
+  expect(g.git(part, "log", "-1", "--format=%B", "HEAD~2").trim()).toBe(
+    "pool: add a",
+  );
+  expect(g.git(part, "log", "-1", "--format=%B", "HEAD~1").trim()).toBe(
+    "pool: add b\n\nAlso why b is better.",
+  );
+  // The Plans tab says the same before the part is made.
+  expect(
+    fixupTargets(
+      [
+        "pool: add a",
+        "pool: add b",
+        "fixup! pool: add a",
+        "squash! pool: add b",
+        "fixup! pool: add x",
+      ].map((subject, index) => ({ sha: shas[index]!, subject })),
+    ),
+  ).toEqual([undefined, undefined, 0, 1, -1]);
+});
+
+test("folding a fixup that conflicts stops there and is reported, nothing aborted", async () => {
+  const { g, clone, part, connection, run, worktree } = partFixture();
+  const a = g.commit(clone, "pool/a.c", "1\n", "pool: add a");
+  const b = g.commit(clone, "pool/a.c", "2\n", "pool: change a");
+  const fa = g.commit(clone, "pool/a.c", "3\n", "fixup! pool: add a");
+  worktree();
+  const result = await run([a, b, fa]);
+  const stopped = g
+    .git(part, "rev-parse", "-q", "--verify", "REBASE_HEAD")
+    .trim();
+  expect(result).toMatchObject({
+    picked: 3,
+    files: ["pool/a.c"],
+    folding: { sha: stopped, subject: "fixup! pool: add a" },
+  });
+  expect(result.fold).toBeUndefined();
+  expect(g.git(part, "log", "-1", "--format=%s", stopped).trim()).toBe(
+    "fixup! pool: add a",
+  );
+  // The view reads it as that part's stop.
+  const stops = parsePartStops(
+    (await connection.run(partStopsScript([part]), 30_000)).stdout,
+  );
+  expect(stops.get(part)).toEqual({
+    sha: stopped,
+    files: ["pool/a.c"],
+    subject: "fixup! pool: add a",
+    folding: true,
+  });
+});
+
+test("a part folds its plan's fixups, says the ones it cannot, and starts from an upstream branch holding the plan", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/x.c", "x\n", "pool: add x");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  g.commit(clone, "pool/a.c", "a fixed\n", "fixup! pool: add a");
+  g.commit(clone, "pool/y.c", "y\n", "fixup! pool: add x");
+  g.commit(clone, "pool/b.c", "b better\n", "fixup! pool: add b");
+  // b and its fixup, already one commit on a local upstream branch.
+  g.git(clone, "branch", "-q", "upstream/pool-b", "origin/main");
+  g.git(clone, "checkout", "-q", "upstream/pool-b");
+  const squashed = g.commit(clone, "pool/b.c", "b better\n", "pool: add b");
+  g.git(clone, "checkout", "-q", "big");
+  const workspaces = [{ workspace_id: "w1", label: "big", cwd: clone }];
+  const connection = g.connection(workspaces);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const nodes: any[] = [
+    { id: "g1", kind: "group", parent: null, label: "Big" },
+    {
+      id: "n1",
+      kind: "workspace",
+      parent: "g1",
+      ref: { connection_id: "local", label: "big" },
+    },
+  ];
+  const made: string[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({ version: WORKSPACE_TREE_VERSION, nodes }),
+      apply: async (ops) => {
+        for (const op of ops as any[])
+          if (op.op === "move")
+            nodes.push({
+              id: `n${nodes.length}`,
+              kind: "workspace",
+              parent: op.parent.node,
+              ref: {
+                connection_id: "local",
+                label: op.subject.workspace.path.split("/").pop(),
+              },
+            });
+      },
+    },
+    createWorktree: async ({ branch }) => {
+      const path = join(g.root, `part-${branch.replace(/\//g, "-")}`);
+      g.git(clone, "worktree", "add", "-q", "-b", branch, path, "origin/main");
+      made.push(path);
+      workspaces.push({
+        workspace_id: `w${workspaces.length + 1}`,
+        label: path.split("/").pop()!,
+        cwd: path,
+      });
+      return { path, workspaceId: `w${workspaces.length}` };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big" },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const [, a, b, fa, fx, fb] = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  ).commits.map((c: any) => c.sha);
+  const plan = (name: string, commits: string[]) =>
+    reviews.handle("bridge.mr_reviews.ledger.plans", {
+      id: "Big",
+      action: "propose",
+      name,
+      commits,
+      accepted: true,
+    });
+  await plan("Pool a", [a, fa, fx]);
+  await plan("Pool b", [b, fb]);
+  // a and its fixup: one commit; x's fixup, its target not in the plan,
+  // left as a commit and said.
+  expect(
+    JSON.parse(
+      await reviews.boardTool(
+        "part_create",
+        { effort: "Big", plan: "Pool a" },
+        "Claude",
+      ),
+    ),
+  ).toMatchObject({
+    ok: true,
+    branch: "pool-a",
+    picked: 3,
+    of: 3,
+    folded: 1,
+    unfolded: [
+      {
+        sha: expect.stringMatching(new RegExp(`^${fx}`)),
+        subject: "fixup! pool: add x",
+      },
+    ],
+  });
+  expect(
+    g
+      .git(made[0]!, "log", "--reverse", "--format=%s", "origin/main..HEAD")
+      .trim(),
+  ).toBe("pool: add a\nfixup! pool: add x");
+  // A branch named by from that lacks the plan's changes: refused, nothing made.
+  await expect(
+    reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool b",
+      from: "pool-a",
+    }),
+  ).rejects.toThrow(/pool-a does not hold the plan's changes/);
+  expect(made).toHaveLength(1);
+  // upstream/pool-b holds b and its fixup: the part starts there.
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool b",
+    }),
+  ).toMatchObject({
+    ok: true,
+    branch: "pool-b",
+    picked: 2,
+    of: 2,
+    from: "upstream/pool-b",
+  });
+  expect(g.git(made[1]!, "rev-parse", "HEAD").trim()).toBe(squashed);
+  expect(g.git(clone, "rev-parse", "upstream/pool-b").trim()).toBe(squashed);
+  const planned = (
+    (await reviews.handle("bridge.mr_reviews.effort.get", {
+      id: "Big",
+    })) as { plans: any[] }
+  ).plans;
+  expect(planned.find((each) => each.name === "Pool b").part).toMatchObject({
+    branch: "pool-b",
+    from: "upstream/pool-b",
+  });
+  // Their commits count in a part though their patch ids changed.
+  await reviews.efforts.refresh(true);
+  expect(
+    (await reviews.inbox.get({ viewer: false })).efforts![0]!.counts,
+  ).toMatchObject({ in_part: 5, unsorted: 1 });
+}, 30_000);
 
 test("a duplicate effort deleted by a tool: by id only, the other's ledger kept, Undo restores it, no branch touched", async () => {
   const g = createGitFixture();

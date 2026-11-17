@@ -730,8 +730,18 @@ export type MrPlan = {
     path: string;
     branch: string;
     workspaceId?: string;
-    /** The pick stopped here: the commit and its conflicting files. */
-    conflict?: { sha: string; subject: string; files: string[] };
+    /** Made from this existing branch's commit, nothing picked. */
+    from?: string;
+    /**
+     * The pick stopped here: the commit and its conflicting files; folding
+     * when it was the fixups being folded (a rebase), not a pick.
+     */
+    conflict?: {
+      sha: string;
+      subject: string;
+      files: string[];
+      folding?: boolean;
+    };
   };
   at: string;
   by: "user" | "agent";
@@ -951,3 +961,38 @@ export type MrAgentSnapshot = {
   /** Questions waiting for the running one, oldest first. */
   queue: { id: string; mode: "follow_up"; text: string; sent_at: string }[];
 };
+
+const FIXUP_PREFIX = /^(?:(?:fixup|squash|amend)! )+/;
+
+/**
+ * Where each commit of a part folds when the part is made, as git's
+ * autosquash matches it (the subject after `fixup! `, `squash! ` or
+ * `amend! `: the same subject, a commit id, or the start of a subject,
+ * among the commits before it; a fixup of a fixup goes to the latter's
+ * target): undefined for a commit that is not a fixup, -1 for one whose
+ * target is not among them (it stays a commit), else its target's index.
+ */
+export function fixupTargets(
+  commits: { sha: string; subject: string }[],
+): (number | undefined)[] {
+  const out: (number | undefined)[] = [];
+  commits.forEach((commit, index) => {
+    const prefix = FIXUP_PREFIX.exec(commit.subject)?.[0];
+    if (!prefix) {
+      out.push(undefined);
+      return;
+    }
+    const wanted = commit.subject.slice(prefix.length);
+    const before = commits.slice(0, index);
+    let found = before.findIndex((each) => each.subject === wanted);
+    if (found < 0 && wanted.length >= 4 && !wanted.includes(" "))
+      found = before.findIndex((each) => each.sha.startsWith(wanted));
+    if (found < 0)
+      found = before.findIndex((each) => each.subject.startsWith(wanted));
+    const further = found < 0 ? undefined : out[found];
+    out.push(
+      found < 0 ? -1 : further !== undefined && further >= 0 ? further : found,
+    );
+  });
+  return out;
+}
