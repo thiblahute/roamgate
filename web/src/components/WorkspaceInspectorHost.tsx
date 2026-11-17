@@ -44,11 +44,10 @@ import { parseReviewCommand } from "../reviewNavigation";
 import {
   reviewSurfaceChoice,
   reviewSurfaceMessage,
-  reviewVimKeys,
   useReviewPrefs,
   writeReviewPrefs,
 } from "../reviewPrefs";
-import { setVimKeys, vimKeys } from "../vimKeys";
+import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
 import { useZenEscape, useZenMode } from "../useZenMode";
 import { resetKeyMachines, useKeyMachine } from "../keyMachine";
 import { store } from "../store";
@@ -312,9 +311,8 @@ export function WorkspaceInspectorHost({
    * cursor and keys there. On classic, Changes keeps upstream's.
    */
   const reviewPrefs = useReviewPrefs();
-  const reviewInChanges =
-    reviewSurfaceChoice(reviewPrefs) === "changes" &&
-    reviewVimKeys(reviewPrefs);
+  const vim = useVimKeys();
+  const reviewInChanges = reviewSurfaceChoice(reviewPrefs) === "changes" && vim;
   /** The shortcut list (`?`, `:help`), with what its filter starts with. */
   const [shortcuts, setShortcuts] = useState<{ filter: string } | null>(null);
   const [drillInByView, setDrillInByView] = useState<
