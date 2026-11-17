@@ -4,16 +4,18 @@
   flex: none;
 }
 
-/* Over the page, next to its button: ReviewMenu places it (floatingPlace). */
+/* Over the page, next to its button: a Radix popover places it, within the
+   window's height left to it (in the content's zoomed pixels). */
 .rv-menu {
-  position: fixed;
   z-index: 5600;
-  top: 0;
-  left: 0;
   display: flex;
   box-sizing: border-box;
   min-width: min(240px, calc(100vw - 16px));
-  max-width: calc(100vw - 16px);
+  max-width: calc(100vw / var(--ui-scale, 1) - 16px);
+  max-height: calc(
+    var(--radix-popover-content-available-height, 100dvh) /
+    var(--popover-content-zoom, var(--ui-scale, 1))
+  );
   overflow: auto;
   overscroll-behavior: contain;
   flex-direction: column;
@@ -64,12 +66,15 @@
 }
 
 /* On a phone, the app menu's bottom sheet (ConfigMenu's), its rows sized
-   for a finger. */
+   for a finger: the popover's place is the screen's bottom edge. */
+[data-radix-popper-content-wrapper]:has(> .rv-menu.is-sheet) {
+  position: fixed !important;
+  inset: auto 0 0 !important;
+  min-width: 0 !important;
+  transform: none !important;
+}
+
 .rv-menu.is-sheet {
-  top: auto;
-  right: 0;
-  bottom: 0;
-  left: 0;
   width: 100%;
   min-width: 0;
   max-width: none;

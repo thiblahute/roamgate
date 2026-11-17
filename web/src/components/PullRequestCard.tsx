@@ -6,15 +6,15 @@ import {
   GitPullRequest,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   pullRequestUnavailable,
   type PullRequestStatus,
 } from "../../../shared/pullRequest";
 import type { ConnectionClient } from "../api";
 import { useConnectionReady } from "../useConnectionClient";
-import { placeFixed, viewportSize } from "./floatingPlace";
 import { ThemedSelect } from "./ThemedSelect";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import "./PullRequestCard.css";
 
 export function PullRequestCard({
@@ -143,30 +143,6 @@ export function PullRequestCard({
 
 type PullRequestStale = { failedAt: string; message?: string };
 
-/** Where a compact card's details open: on the window, under the chip. */
-export type ChipDetailsPlace = { top: number; left: number; width: number };
-
-/** The details' widest, as the card's own (640 px), within the window. */
-const CHIP_DETAILS_WIDTH = 576;
-
-/**
- * Under the chip's summary and left-aligned with it, moved left to stay
- * within the window (8 px from its edges), never wider than the window.
- */
-export function chipDetailsPlace(
-  summary: { bottom: number; left: number },
-  windowWidth: number,
-): ChipDetailsPlace {
-  const width = Math.max(0, Math.min(CHIP_DETAILS_WIDTH, windowWidth - 16));
-  return {
-    top: Math.round(summary.bottom + 4),
-    left: Math.round(
-      Math.max(8, Math.min(summary.left, windowWidth - width - 8)),
-    ),
-    width,
-  };
-}
-
 export function PullRequestCardView({
   compact = false,
   current,
@@ -193,20 +169,11 @@ export function PullRequestCardView({
 }) {
   /*
    * Compact, the card is a chip in a row that clips what overflows it: its
-   * details open on the window, under the chip, as the review's menus do.
+   * details open over the page (the app's), under the chip, as the review's
+   * menus do, and the chip itself stays one line.
    */
-  const [place, setPlace] = useState<ChipDetailsPlace | null>(null);
-  const detailsRef = useRef<HTMLDivElement | null>(null);
-  // On the window's pixels even where an ancestor (a container, a sliding
-  // view) is what a fixed box is placed against.
-  useLayoutEffect(() => {
-    const details = detailsRef.current;
-    if (!place || !details) return;
-    placeFixed(details, {
-      ...place,
-      maxHeight: Math.max(120, viewportSize().height - place.top - 8),
-    });
-  }, [place]);
+  const [chipOpen, setChipOpen] = useState(false);
+  const [layer, setLayer] = useState<HTMLElement | null>(null);
   const pr = current?.state === "ready" ? current.request : undefined;
   if (
     compact &&
@@ -246,6 +213,193 @@ export function PullRequestCardView({
   const staleLabel = stale
     ? `Refresh failed; showing last known status from ${new Date(current?.refreshedAt ?? stale.failedAt).toLocaleString()}`
     : "";
+  const summary = (
+    <summary
+      className="pull-request-card-summary"
+      onClick={
+        compact
+          ? (event) => {
+              // The details open in the popover, never in the chip.
+              event.preventDefault();
+              setLayer(event.currentTarget.closest<HTMLElement>(".app"));
+              setChipOpen((value) => !value);
+            }
+          : undefined
+      }
+    >
+      <span className="pull-request-card-icon">
+        <GitPullRequest size={17} aria-hidden="true" />
+      </span>
+      <span className="pull-request-card-heading">
+        <span className="pull-request-card-eyebrow">
+          {pr ? (
+            <a
+              className="pull-request-card-link"
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${provider} #${pr.number} in a new tab`}
+              title={`Open on ${provider}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {provider} #{pr.number}
+              <ArrowUpRight size={13} aria-hidden="true" />
+            </a>
+          ) : (
+            `${provider} status`
+          )}
+        </span>
+        <span
+          className="pull-request-card-title"
+          role="status"
+          aria-live="polite"
+        >
+          {pr?.title ?? label}
+        </span>
+      </span>
+      {pr ? (
+        <span
+          className="pull-request-card-badge"
+          data-state={pr.draft ? "draft" : pr.state}
+        >
+          {pr.draft ? `Draft / ${pr.state}` : pr.state}
+        </span>
+      ) : null}
+      {stale ? (
+        <span
+          className="pull-request-card-stale"
+          title={staleLabel}
+          aria-label={staleLabel}
+          role="img"
+        >
+          Last known
+        </span>
+      ) : null}
+      <ChevronRight
+        className="pull-request-card-chevron"
+        size={14}
+        aria-hidden="true"
+      />
+      <button
+        className="pull-request-card-refresh"
+        type="button"
+        title="Refresh PR/MR status"
+        aria-label="Refresh PR/MR status"
+        disabled={loading}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRefresh();
+        }}
+      >
+        <RefreshCw size={14} aria-hidden="true" />
+      </button>
+    </summary>
+  );
+  const details = (
+    <>
+      {current ? (
+        <PullRequestSelectors
+          current={current}
+          onRemoteChange={onRemoteChange}
+          onMatchChange={onMatchChange}
+        />
+      ) : null}
+      {pr ? (
+        <div className="pull-request-card-signals">
+          <div
+            className="pull-request-card-route"
+            aria-label="Source and target branches"
+          >
+            <code>{pr.source}</code>
+            <ArrowRight size={13} aria-hidden="true" />
+            <code>{pr.target}</code>
+          </div>
+          <dl>
+            <div>
+              <dt>
+                <CircleDot size={12} aria-hidden="true" />
+                {current?.provider === "github" ? "Checks" : "Pipeline"}
+              </dt>
+              <dd>{current?.ci ?? "Unavailable"}</dd>
+            </div>
+            <div>
+              <dt>
+                <CircleDot size={12} aria-hidden="true" />
+                {current?.provider === "github"
+                  ? "Review decision"
+                  : "Approvals"}
+              </dt>
+              <dd>{current?.review ?? "Unavailable"}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
+      {current || error || !loading ? (
+        <details className="pull-request-card-context">
+          <summary>
+            <ChevronRight size={12} aria-hidden="true" />
+            {message ? "Details & troubleshooting" : "Checkout details"}
+          </summary>
+          {message ? (
+            <p className="pull-request-card-message">{message}</p>
+          ) : null}
+          <dl>
+            {pr ? (
+              <div>
+                <dt>Author</dt>
+                <dd>{pr.author}</dd>
+              </div>
+            ) : null}
+            {current?.remotes.map((remote) => (
+              <div key={remote.name}>
+                <dt>Remote / {remote.name}</dt>
+                <dd>
+                  {remote.host}/{remote.repository}
+                </dd>
+              </div>
+            ))}
+            {current ? (
+              <>
+                <div>
+                  <dt>Checkout</dt>
+                  <dd>
+                    <code>{current.root}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>
+                    <code>{current.branch || "Detached HEAD"}</code>
+                    {current.rebasing ? " (rebase in progress)" : null}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+            {stale ? (
+              <div>
+                <dt>Last refresh failed</dt>
+                <dd>
+                  <time dateTime={stale.failedAt}>
+                    {new Date(stale.failedAt).toLocaleString()}
+                  </time>
+                </dd>
+              </div>
+            ) : null}
+            {finishedAt ? (
+              <div>
+                <dt>{stale ? "Last successful refresh" : "Last refreshed"}</dt>
+                <dd>
+                  <time dateTime={finishedAt}>
+                    {new Date(finishedAt).toLocaleString()}
+                  </time>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </details>
+      ) : null}
+    </>
+  );
   return (
     <section
       className={`pull-request-card${compact ? " is-compact" : ""}`}
@@ -254,200 +408,31 @@ export function PullRequestCardView({
       data-attention={needsAttention || undefined}
       data-stale={stale ? true : undefined}
     >
-      <details
-        className="pull-request-card-disclosure"
-        onToggle={(event) => {
-          if (!compact) return;
-          const details = event.currentTarget;
-          const summary = details.querySelector("summary");
-          setPlace(
-            details.open && summary
-              ? chipDetailsPlace(
-                  summary.getBoundingClientRect(),
-                  window.innerWidth,
-                )
-              : null,
-          );
-        }}
-      >
-        <summary className="pull-request-card-summary">
-          <span className="pull-request-card-icon">
-            <GitPullRequest size={17} aria-hidden="true" />
-          </span>
-          <span className="pull-request-card-heading">
-            <span className="pull-request-card-eyebrow">
-              {pr ? (
-                <a
-                  className="pull-request-card-link"
-                  href={pr.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Open ${provider} #${pr.number} in a new tab`}
-                  title={`Open on ${provider}`}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {provider} #{pr.number}
-                  <ArrowUpRight size={13} aria-hidden="true" />
-                </a>
-              ) : (
-                `${provider} status`
-              )}
-            </span>
-            <span
-              className="pull-request-card-title"
-              role="status"
-              aria-live="polite"
-            >
-              {pr?.title ?? label}
-            </span>
-          </span>
-          {pr ? (
-            <span
-              className="pull-request-card-badge"
-              data-state={pr.draft ? "draft" : pr.state}
-            >
-              {pr.draft ? `Draft / ${pr.state}` : pr.state}
-            </span>
-          ) : null}
-          {stale ? (
-            <span
-              className="pull-request-card-stale"
-              title={staleLabel}
-              aria-label={staleLabel}
-              role="img"
-            >
-              Last known
-            </span>
-          ) : null}
-          <ChevronRight
-            className="pull-request-card-chevron"
-            size={14}
-            aria-hidden="true"
-          />
-          <button
-            className="pull-request-card-refresh"
-            type="button"
-            title="Refresh PR/MR status"
-            aria-label="Refresh PR/MR status"
-            disabled={loading}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRefresh();
-            }}
+      {compact ? (
+        <Popover open={chipOpen} onOpenChange={setChipOpen}>
+          <details className="pull-request-card-disclosure" open={false}>
+            <PopoverTrigger asChild>{summary}</PopoverTrigger>
+          </details>
+          <PopoverContent
+            container={layer}
+            align="start"
+            sideOffset={4}
+            collisionPadding={8}
+            className="pull-request-card pull-request-card-content is-chip-details"
+            aria-label="Pull or merge request details"
+            // The review's own keys stay out of the details.
+            onKeyDown={(event) => event.stopPropagation()}
+            onKeyUp={(event) => event.stopPropagation()}
           >
-            <RefreshCw size={14} aria-hidden="true" />
-          </button>
-        </summary>
-        <div
-          ref={detailsRef}
-          className="pull-request-card-content"
-          style={compact && place ? { position: "fixed", ...place } : undefined}
-        >
-          {current ? (
-            <PullRequestSelectors
-              current={current}
-              onRemoteChange={onRemoteChange}
-              onMatchChange={onMatchChange}
-            />
-          ) : null}
-          {pr ? (
-            <div className="pull-request-card-signals">
-              <div
-                className="pull-request-card-route"
-                aria-label="Source and target branches"
-              >
-                <code>{pr.source}</code>
-                <ArrowRight size={13} aria-hidden="true" />
-                <code>{pr.target}</code>
-              </div>
-              <dl>
-                <div>
-                  <dt>
-                    <CircleDot size={12} aria-hidden="true" />
-                    {current?.provider === "github" ? "Checks" : "Pipeline"}
-                  </dt>
-                  <dd>{current?.ci ?? "Unavailable"}</dd>
-                </div>
-                <div>
-                  <dt>
-                    <CircleDot size={12} aria-hidden="true" />
-                    {current?.provider === "github"
-                      ? "Review decision"
-                      : "Approvals"}
-                  </dt>
-                  <dd>{current?.review ?? "Unavailable"}</dd>
-                </div>
-              </dl>
-            </div>
-          ) : null}
-          {current || error || !loading ? (
-            <details className="pull-request-card-context">
-              <summary>
-                <ChevronRight size={12} aria-hidden="true" />
-                {message ? "Details & troubleshooting" : "Checkout details"}
-              </summary>
-              {message ? (
-                <p className="pull-request-card-message">{message}</p>
-              ) : null}
-              <dl>
-                {pr ? (
-                  <div>
-                    <dt>Author</dt>
-                    <dd>{pr.author}</dd>
-                  </div>
-                ) : null}
-                {current?.remotes.map((remote) => (
-                  <div key={remote.name}>
-                    <dt>Remote / {remote.name}</dt>
-                    <dd>
-                      {remote.host}/{remote.repository}
-                    </dd>
-                  </div>
-                ))}
-                {current ? (
-                  <>
-                    <div>
-                      <dt>Checkout</dt>
-                      <dd>
-                        <code>{current.root}</code>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Branch</dt>
-                      <dd>
-                        <code>{current.branch || "Detached HEAD"}</code>
-                        {current.rebasing ? " (rebase in progress)" : null}
-                      </dd>
-                    </div>
-                  </>
-                ) : null}
-                {stale ? (
-                  <div>
-                    <dt>Last refresh failed</dt>
-                    <dd>
-                      <time dateTime={stale.failedAt}>
-                        {new Date(stale.failedAt).toLocaleString()}
-                      </time>
-                    </dd>
-                  </div>
-                ) : null}
-                {finishedAt ? (
-                  <div>
-                    <dt>
-                      {stale ? "Last successful refresh" : "Last refreshed"}
-                    </dt>
-                    <dd>
-                      <time dateTime={finishedAt}>
-                        {new Date(finishedAt).toLocaleString()}
-                      </time>
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </details>
-          ) : null}
-        </div>
-      </details>
+            {details}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <details className="pull-request-card-disclosure">
+          {summary}
+          <div className="pull-request-card-content">{details}</div>
+        </details>
+      )}
     </section>
   );
 }

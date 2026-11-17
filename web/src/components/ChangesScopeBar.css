@@ -119,9 +119,19 @@
   text-overflow: ellipsis;
 }
 
-.changes-request-chip .pull-request-card-disclosure[open] > :not(summary) {
-  z-index: 40;
+/* The chip's details, over the page under it (a Radix popover). */
+.pull-request-card.is-chip-details {
+  z-index: 5600;
   box-sizing: border-box;
+  width: 576px;
+  max-width: calc(100vw / var(--ui-scale, 1) - 16px);
+  max-height: min(
+    300px,
+    calc(
+      var(--radix-popover-content-available-height, 100dvh) /
+      var(--popover-content-zoom, var(--ui-scale, 1))
+    )
+  );
   background: var(--viewer-header-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
