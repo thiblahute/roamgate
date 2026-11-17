@@ -23,6 +23,7 @@ import { configCommand } from "./config";
 import { createConnectionsCommand } from "./connections";
 import { createDoctorCommand } from "./doctor";
 import { createPushCommand } from "./push";
+import { createReviewsCommand } from "./reviews";
 import { serviceRuntime } from "./service-context";
 import { runServiceLogs } from "./service-logs";
 import { createUpdateCommand, rollbackCommand } from "./update";
@@ -102,6 +103,7 @@ export function cliCommands(): CliCommand[] {
     createConnectionsCommand(),
     createPushCommand(),
     createActivityCommand(),
+    createReviewsCommand(),
     createUpdateCommand(),
     rollbackCommand,
     pluginCommand,

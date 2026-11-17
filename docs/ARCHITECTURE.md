@@ -805,6 +805,21 @@ override (`whose`, `stale`, `next`; branches keep their lane). RPC
 `bridge.mr_reviews.infer {key}` and tool `reviews_refresh {request?}` force
 one row; `mr_reviews.inference` (default on) turns the runs off.
 
+Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`, section 11):
+`{format: "roamgate-reviews", version: 1, exported_at, mr_reviews: {order,
+pinned, hidden, overrides, views, unsent, upstream_groups, upstream_skip,
+efforts} as stored, efforts: {<id>: {ledger (without journal), history}}}`
+in key-sorted JSON (`stableJson`), every key matching a secret pattern
+dropped and token-like values masked (`withoutSecrets`). `importChanges`
+diffs item by item (overrides and ledger entries by key, lists by id,
+key, name or ref, the order whole, histories by line count), flagging
+`newerLocal` by `at`. Applying replaces the exported keys (others kept,
+`order_version` bumped), each ledger (journal emptied, version past the
+local one) and merges history lines. `roamgate reviews export [--out]` /
+`import FILE [--apply]` work on the files; RPCs `bridge.mr_reviews.export`
+(`{text}`) and `bridge.mr_reviews.import {text, apply?}` (`{applied,
+changes}`, applied through `saveSettings` with its push).
+
 The board's tools are one handler table (`mr-reviews/board-tools.ts`:
 `reviews_list` with lanes, next steps, overrides and paging, `reviews_override`,
 `reviews_order`, `reviews_sort`, `reviews_pin`, `reviews_unpin`,

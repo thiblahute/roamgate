@@ -723,3 +723,43 @@
 .mr-branch-commits code {
   color: var(--muted);
 }
+
+.mr-reviews-import {
+  position: relative;
+  cursor: pointer;
+}
+
+.mr-reviews-import input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.mr-reviews-import-preview ul {
+  max-height: 240px;
+  overflow: auto;
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 0.9em;
+}
+
+.mr-reviews-import-preview .is-newer {
+  color: var(--warning, #b7791f);
+}
+
+.assistant-task-overview[aria-label="Export and import"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mr-reviews-import-preview code {
+  word-break: break-all;
+}
+
+.mr-reviews-import {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 0.85em;
+}

@@ -53,7 +53,19 @@ import {
   type MrReviewsRpcDeps,
 } from "./rpc";
 import { type MrChangeMeta, createMrOrder, editSettings } from "./order";
-import { mrReviewsSettings, storedMrReviews } from "./settings";
+import {
+  mrReviewsSettings,
+  normalizeStoredMrReviews,
+  storedMrReviews,
+} from "./settings";
+import {
+  applyLedgers,
+  exportReviews,
+  importChanges,
+  importedMrReviews,
+  parseReviewsExport,
+  stableJson,
+} from "./export";
 import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
 
 /**
@@ -286,8 +298,10 @@ export function createMrReviews(options: {
     }
     return { rows, covered };
   }
+  const effortsRoot =
+    options.effortsDir ?? join(dataRoot(), "mr-reviews", "efforts");
   const efforts = createEffortService({
-    root: options.effortsDir ?? join(dataRoot(), "mr-reviews", "efforts"),
+    root: effortsRoot,
     settings: saved,
     connections: options.connections ?? (() => []),
     items: () => inbox.items(),
@@ -602,6 +616,47 @@ export function createMrReviews(options: {
       if (answer !== undefined) return answer;
     }
     switch (method) {
+      case "bridge.mr_reviews.export": {
+        // What the Reviews authored, as the CLI's `roamgate reviews export`.
+        const value = exportReviews({
+          stored: storedMrReviews(await saved()) as Record<string, unknown>,
+          effortsRoot,
+        });
+        return { text: stableJson(value) };
+      }
+      case "bridge.mr_reviews.import": {
+        // What an export would change; applied only when asked (never silent).
+        if (typeof params.text !== "string" || params.text.length > 50_000_000)
+          throw new MrReviewsError("text: an export's JSON");
+        let incoming: ReturnType<typeof parseReviewsExport>;
+        try {
+          incoming = parseReviewsExport(params.text);
+        } catch (error) {
+          throw new MrReviewsError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+        const local = exportReviews({
+          stored: storedMrReviews(await saved()) as Record<string, unknown>,
+          effortsRoot,
+        });
+        const changes = importChanges(local, incoming);
+        if (params.apply !== true) return { applied: false, changes };
+        await editSettings(async () => {
+          const current = storedMrReviews(await saved()) as Record<
+            string,
+            unknown
+          >;
+          const next = normalizeStoredMrReviews(
+            importedMrReviews(current, incoming),
+          );
+          return saveSettings(mrReviewsSettings(next), { by: "user" });
+        });
+        const ledgers = applyLedgers(incoming, effortsRoot);
+        void efforts.refresh(true);
+        inbox.changed();
+        return { applied: true, changes, ledgers };
+      }
       case "bridge.mr_reviews.infer": {
         // One row now (`:infer`, reviews_refresh), whatever the schedule.
         const target = key();
