@@ -600,3 +600,128 @@ test("Retry sends what waits to the session's pane, or says why it cannot", asyn
   await Bun.sleep(40);
   expect(panes).toHaveLength(1);
 });
+
+/** An effort's review, as the effort view opens it with its first comment. */
+function openEffort(service: ReviewService) {
+  return service.open({
+    connectionId: "local",
+    root: "/big",
+    target: { kind: "effort", effort: "e1" },
+    title: "Effort Big",
+    agent: "Claude",
+    raise: false,
+  }).session;
+}
+
+test("an effort's threads are anchored to its tab, item and words, and refused when malformed", async () => {
+  const { service } = deliverySetup();
+  const effort = openEffort(service);
+  // The same effort is the same review.
+  expect(openEffort(service).id).toBe(effort.id);
+  const thread = await service.addThread({
+    sessionId: effort.id,
+    anchor: {
+      effort: {
+        tab: "plans",
+        item: { kind: "commit", key: "k3", label: "0003bbbb pool: change 3" },
+        plan: "p1",
+        quote: "change 3",
+      },
+    },
+    text: "Not in this one",
+  });
+  expect(thread.anchor.effort).toEqual({
+    tab: "plans",
+    item: { kind: "commit", key: "k3", label: "0003bbbb pool: change 3" },
+    plan: "p1",
+    quote: "change 3",
+  });
+  // On the tab alone.
+  const tab = await service.addThread({
+    sessionId: effort.id,
+    anchor: { effort: { tab: "progress" } },
+    text: "Slow this week",
+  });
+  expect(tab.anchor.effort).toEqual({ tab: "progress" });
+  for (const effortPart of [
+    { tab: "elsewhere" },
+    { tab: "ledger", item: { kind: "branch", key: "x" } },
+    { tab: "ledger", item: { kind: "commit" } },
+  ])
+    await expect(
+      service.addThread({
+        sessionId: effort.id,
+        anchor: { effort: effortPart },
+        text: "x",
+      }),
+    ).rejects.toThrow();
+  expect(() =>
+    service.open({
+      connectionId: "local",
+      root: "/big",
+      target: { kind: "effort", effort: "../e1" },
+    }),
+  ).toThrow("invalid effort");
+  // Not a review of the checkout: listed only with the chats.
+  expect(service.list({ connectionId: "local" })).toEqual([]);
+  expect(service.list({ chats: true }).map((each) => each.session.id)).toEqual([
+    effort.id,
+  ]);
+});
+
+test("an effort's comments go to its leader with where they are, and wait while no leader runs", async () => {
+  let leader: string | null = null;
+  const asked: string[] = [];
+  const { service, panes, prompts } = deliverySetup({
+    sessionPane: async (id) => {
+      asked.push(id);
+      return id === "effort:e1" ? leader : null;
+    },
+  });
+  const effort = openEffort(service);
+  await service.addThread({
+    sessionId: effort.id,
+    anchor: {
+      effort: {
+        tab: "ledger",
+        item: { kind: "commit", key: "k2", label: "0002bbbb pool: change 2" },
+        quote: "pool: change 2",
+      },
+    },
+    text: "Upstream already?",
+  });
+  await Bun.sleep(40);
+  // No leader session: nothing typed, the comment waits and says why.
+  expect(panes).toEqual([]);
+  expect(asked).toContain("effort:e1");
+  expect(service.get({ sessionId: effort.id }).session.deliveryError).toBe(
+    "no leader session runs for this effort: the comments wait for one",
+  );
+  // The leader starts: the comment goes to its pane, once.
+  leader = "w3:p1";
+  await Bun.sleep(80);
+  expect(panes).toEqual(["w3:p1"]);
+  expect(prompts[0]).toContain('[Roamgate review "Effort Big" (effort)]');
+  expect(prompts[0]).toContain(
+    "from me on the view of the upstreaming effort you lead (Effort Big, id e1)",
+  );
+  expect(prompts[0]).toContain(
+    'on commit "0002bbbb pool: change 2" (ledger key k2) in the Ledger tab, about this part:',
+  );
+  expect(prompts[0]).toContain("  > pool: change 2");
+  expect(prompts[0]).toContain("Upstream already?");
+  expect(prompts[0]).toContain("reply --comment ID");
+  expect(
+    service.get({ sessionId: effort.id }).session.deliveryError,
+  ).toBeUndefined();
+  // Whichever session leads later: it is looked up again each time.
+  leader = "w3:p7";
+  await service.addThread({
+    sessionId: effort.id,
+    anchor: { effort: { tab: "plans", item: { kind: "plan", key: "p1" } } },
+    text: "Accept it?",
+  });
+  await Bun.sleep(40);
+  expect(panes).toEqual(["w3:p1", "w3:p7"]);
+  expect(prompts[1]).toContain("on planned request p1 in the Plans tab:");
+});

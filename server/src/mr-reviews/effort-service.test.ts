@@ -246,6 +246,7 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
   const made: string[] = [];
   const placed: unknown[] = [];
   const opened: unknown[] = [];
+  const threads: unknown[] = [];
   const reviews = createMrReviews({
     run: async () => ({ code: 1, stdout: "", stderr: "" }),
     store: openMrStore(join(dir, `state-${Math.random()}.json`)),
@@ -285,6 +286,12 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
     openRange: (input) => {
       opened.push(input);
       return { sessionId: "s1" };
+    },
+    effortReview: (input) => {
+      threads.push(input);
+      return input.open
+        ? ({ session: { id: "rs-effort" }, threads: [] } as any)
+        : null;
     },
     effortsDir: join(dir, `efforts-${Math.random()}`),
   });
@@ -416,6 +423,31 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
     to: a2,
   })) as { text: string };
   expect(diff.text).toContain("pool");
+  // The threads on its view: read, then opened in the head's checkout by
+  // the first comment, for its leader.
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.threads", { id: "Big" }),
+  ).toEqual({ snapshot: null });
+  const effortId = (await reviews.settings()).efforts[0]!.id;
+  expect(threads[0]).toEqual({
+    effort: effortId,
+    connectionId: "local",
+    root: clone,
+    title: "Effort Big",
+    open: false,
+  });
+  await reviews.handle("bridge.mr_reviews.effort.threads", {
+    id: "Big",
+    open: true,
+  });
+  expect(threads[1]).toEqual({
+    effort: effortId,
+    connectionId: "local",
+    workspaceId: "w1",
+    root: clone,
+    title: "Effort Big",
+    open: true,
+  });
 }, 30_000);
 
 test("a part of an effort headed in a linked worktree starts from the repository's parent workspace, else its main checkout's path", async () => {

@@ -27,7 +27,12 @@ export type ReviewTarget =
    * An agent chat (its agent session, or its pane): no diff, threads on
    * parts of its messages.
    */
-  | { kind: "chat"; chat: string };
+  | { kind: "chat"; chat: string }
+  /**
+   * An upstreaming effort's view in Reviews (its id): no diff, threads on
+   * what the view shows, delivered to the effort's leader session.
+   */
+  | { kind: "effort"; effort: string };
 
 export type ReviewSide = "old" | "new";
 
@@ -60,7 +65,93 @@ export type ReviewAnchor = {
   message?: ReviewMessagePart;
   /** On a part of a message of an agent chat (a chat review). */
   chat?: ReviewChatPart;
+  /** On what an effort's view shows (an effort review). */
+  effort?: ReviewEffortPart;
 };
+
+/** The tabs of an effort's view. */
+export const REVIEW_EFFORT_TABS = [
+  "progress",
+  "ledger",
+  "plans",
+  "feeders",
+  "changes",
+] as const;
+export type ReviewEffortTab = (typeof REVIEW_EFFORT_TABS)[number];
+
+/** What one points at in an effort's view. */
+export const REVIEW_EFFORT_ITEMS = [
+  /** A planned request: its id. */
+  "plan",
+  /** A commit (a Ledger row, a plan's commit, a What changed entry): its ledger key, which follows rebases by patch id. */
+  "commit",
+  /** A count of the Progress tab: its name ("upstream", "total"...). */
+  "counter",
+  /** A directory of the Progress breakdown: its path. */
+  "directory",
+  /** A feeder: its ref. */
+  "feeder",
+  /** A part of What changed: its heading. */
+  "change",
+] as const;
+export type ReviewEffortItemKind = (typeof REVIEW_EFFORT_ITEMS)[number];
+
+/**
+ * Where a thread of an effort review is: the tab, what was pointed at in
+ * it by a stable key (absent: the tab itself), and the words selected.
+ */
+export type ReviewEffortPart = {
+  tab: ReviewEffortTab;
+  item?: {
+    kind: ReviewEffortItemKind;
+    key: string;
+    /** How it read: a plan's name, a commit's sha and subject. */
+    label?: string;
+  };
+  /** A commit shown in a plan: that plan's id. */
+  plan?: string;
+  /** The words commented on. */
+  quote?: string;
+};
+
+/**
+ * The agent session an effort review's comments follow: its leader, the
+ * Claude session of its head workspace, looked up when they are sent.
+ */
+export const EFFORT_SESSION_PREFIX = "effort:";
+
+/** Why an effort's comments wait: no leader session runs. */
+export const EFFORT_NO_LEADER =
+  "no leader session runs for this effort: the comments wait for one";
+
+/** A thread's place in an effort's view, in words. */
+export function describeEffortPart(part: ReviewEffortPart): string {
+  const tab = {
+    progress: "Progress",
+    ledger: "Ledger",
+    plans: "Plans",
+    feeders: "Feeders",
+    changes: "What changed",
+  }[part.tab];
+  const item = part.item;
+  if (!item) return `the ${tab} tab`;
+  const label = item.label ? ` "${item.label}"` : "";
+  const name =
+    item.kind === "plan"
+      ? `planned request ${item.key}${label}`
+      : item.kind === "commit"
+        ? `commit${label} (ledger key ${item.key})${part.plan ? ` in planned request ${part.plan}` : ""}`
+        : item.kind === "counter"
+          ? item.label
+            ? `the count "${item.label}"`
+            : `the ${item.key} count`
+          : item.kind === "directory"
+            ? `directory ${item.key}`
+            : item.kind === "feeder"
+              ? `feeder ${item.key}`
+              : `"${item.label ?? item.key}"`;
+  return `${name} in the ${tab} tab`;
+}
 
 export type ReviewChatPart = {
   /** The chat message's id in the agent's history. */

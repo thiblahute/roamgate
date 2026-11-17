@@ -174,6 +174,10 @@ export function createMrReviews(options: {
     title: string;
     compare?: boolean;
   }) => { sessionId: string; snapshot?: ReviewSnapshot };
+  /** The review of an effort's view (`effort.threads`). */
+  effortReview?: NonNullable<
+    Parameters<typeof handleEffortRpc>[0]["effortReview"]
+  >;
 }) {
   const logger = serverLogger.child("mr-reviews");
   const store = options.store ?? openMrStore();
@@ -654,6 +658,9 @@ export function createMrReviews(options: {
             ? { createWorktree: options.createWorktree }
             : {}),
           ...(options.openRange ? { openRange: options.openRange } : {}),
+          ...(options.effortReview
+            ? { effortReview: options.effortReview }
+            : {}),
           ...(options.tree
             ? {
                 place: async ({ connectionId, path, workspaceId, group }) => {

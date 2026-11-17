@@ -28,6 +28,7 @@ import {
   rangerChatSession,
 } from "../../shared/rangerChat";
 import { isHtmlPath } from "../../shared/filePreview";
+import { EFFORT_SESSION_PREFIX } from "../../shared/review";
 import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
 import { canRevealFiles } from "./workspace/file-manager";
 import { createWebPushService } from "./notifications/web-push";
@@ -1051,9 +1052,61 @@ function getMrReviews(): MrReviews {
     removeReview: (sessionId) => {
       getReviewService().remove({ sessionId });
     },
+    effortReview: ({
+      effort,
+      connectionId,
+      workspaceId,
+      root,
+      title,
+      open,
+    }) => {
+      const service = getReviewService();
+      // Wherever it was opened: its head may have moved since.
+      const found = service
+        .list({ chats: true })
+        .find(
+          ({ session }) =>
+            session.target.kind === "effort" &&
+            session.target.effort === effort,
+        );
+      if (found || !open) return found ?? null;
+      return service.open({
+        connectionId,
+        workspaceId,
+        root,
+        target: { kind: "effort", effort },
+        title,
+        agent: "Claude",
+        raise: false,
+      });
+    },
   });
   mrReviews.start();
   return mrReviews;
+}
+
+/**
+ * An effort's leader, as the Leader session button finds it: the Claude
+ * pane of its head workspace on that connection, else null (its threads
+ * wait for one).
+ */
+async function effortLeaderPane(
+  connectionId: string,
+  effort: string,
+): Promise<string | null> {
+  try {
+    const answer = (await getMrReviews().handle(
+      "bridge.mr_reviews.effort.leader",
+      { id: effort },
+    )) as { state?: string; connectionId?: string; paneId?: string };
+    return answer.state === "ready" &&
+      answer.connectionId === connectionId &&
+      answer.paneId
+      ? answer.paneId
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** GitLab project ids by host and path, for finding branches' merge requests. */
@@ -1222,6 +1275,12 @@ function getReviewService(): ReviewService {
     sessionPane: async (connectionId, sessionId) => {
       // A Ranger chat is in no pane: its threads go to the chat itself.
       if (rangerChatSession(sessionId)) return sessionId;
+      // An effort's threads go to its leader, whichever pane runs it now.
+      if (sessionId.startsWith(EFFORT_SESSION_PREFIX))
+        return effortLeaderPane(
+          connectionId,
+          sessionId.slice(EFFORT_SESSION_PREFIX.length),
+        );
       const { runtime } = resolveReadyConnection(
         connectionManager,
         connectionId,

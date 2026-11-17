@@ -601,7 +601,11 @@ minutes. `watch`, a long poll on the service, is for agents without a pane.
 Comments follow the agent's session, not a pane. When a review binds an agent
 pane, the service records the session Herdr (or conversation mode) reports there
 (`agent.sessionId`); a chat's threads (target `chat`) follow the chat's own
-session. Each delivery looks the session up (`agent.list`, with the panes
+session, and an upstreaming effort's (target `effort`, anchored by
+`anchor.effort`: tab, item kind and stable key, the plan a commit was shown
+in, the words) follow its leader, looked up as the session `effort:ID`: the
+Claude pane of its head workspace, as the Leader session button finds it,
+none (the comments wait) when it runs nowhere. Each delivery looks the session up (`agent.list`, with the panes
 conversation mode holds): the pane reporting it, else the pane reporting the
 session a Claude session went on in after a resume or /clear (its successor
 transcript, see `session-resolver.ts`). That pane becomes the review's pane. A

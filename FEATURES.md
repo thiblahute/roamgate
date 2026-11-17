@@ -1131,9 +1131,25 @@ landed, parts merged, matches to confirm, and commits upstream anyway;
 refs, only when it moved), in review when one of your open requests holds
 it, in a part when a branch of the group holds it; what you mark by hand
 (not for upstream, superseded, planned) follows the commit across rewording
-and rebases. **Leader** (`c`) goes to the Claude session of its head
+and rebases. **Leader session** (`gl`) goes to the Claude session of its head
 workspace, which leads the effort through the board's tools; with none, it
-offers to start one there, and nothing starts it but you. **Delete effort…**
+offers to start one there, and nothing starts it but you.
+Comment anywhere in an effort's view, for its leader: select words, or
+point at something (a click, `j`/`k`, the ledger's cursor) such as a plan
+card, a commit row of the ledger, a plan or What changed, a count of
+Progress, a directory, a feeder or a heading of What changed, then `c` or
+**Comment**; `C` comments on the tab. The thread sits under what it is on
+(a ledger row shows how many are open on it, its threads under the ledger
+when the cursor is on it) and keeps its place across refreshes and
+rebases, a commit by its ledger key; one whose item is gone is listed with
+the tab's own. It goes to the leader session as review comments do, with
+the tab, the item and the words quoted, and the leader answers in the
+thread. While no leader session runs, comments wait ("waiting for the
+leader session", **Retry**) and go once one does. The heading counts the
+open threads; `n`/`N` and `gn`/`gN` go from thread to thread (the open ones,
+on any tab), and on a thread `r` resolves or reopens it, `R` replies, `dd`
+deletes your lone comment and `za` folds it, as in Changes. `?` lists the
+view's keys. **Delete effort…**
 in its view (or `:delete`) takes an effort out, a duplicate declared by
 mistake for one, after a confirmation naming it: its card, ledger marks,
 plans and history leave Reviews and Undo brings them back; its parts'
