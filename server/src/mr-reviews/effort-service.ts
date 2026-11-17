@@ -301,6 +301,12 @@ export function createEffortService(options: {
     ];
     if (name.startsWith("refs/") && found.includes(name)) return name;
     if (found.length === 1) return found[0]!;
+    // A local branch first, as git reads a short name.
+    if (
+      !name.startsWith("refs/remotes/") &&
+      found.includes(`refs/heads/${short}`)
+    )
+      return `refs/heads/${short}`;
     throw new MrReviewsError(
       found.length
         ? `"${name}" is ambiguous in ${clone}: ${found.join(", ")}`

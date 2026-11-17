@@ -229,7 +229,7 @@ export const boardToolSchemas = {
         Type.String({
           maxLength: 300,
           description:
-            "The branch followed: a ref name, resolved once to one exact ref of the clone (refused when ambiguous).",
+            "The branch followed: a ref name, resolved once to one exact ref of the clone (the local branch first; refused when only several remote ones fit).",
         }),
       ),
       target: Type.Optional(

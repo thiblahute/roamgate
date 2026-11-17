@@ -1092,8 +1092,8 @@ clone (`refs/roamgate/mr/N`, never your own branches) only when it moved.
 of it is upstream. Declare one on a group or a workspace headed upstream
 (its menu, **Declare an upstreaming effort…**, which from a workspace's
 menu starts from that workspace's branch, or `:declare` in Reviews): the
-source branch (resolved once to one exact ref of the clone, refused when
-ambiguous), its target (`origin/main` unless said), feeders (branches
+source branch (resolved once to one exact ref of the clone, the local
+branch first, refused when only several remote ones fit), its target (`origin/main` unless said), feeders (branches
 landing into it) and a name; **Preview** first shows what it holds and the
 other efforts or branches holding the same commits, with the proposed
 layout (one effort and a feeder, stacked efforts, or shared commits put in
