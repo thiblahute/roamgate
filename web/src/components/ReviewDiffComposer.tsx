@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from "react";
-import { roamgateLocalStorage } from "../browserStorage";
+import { vimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import { keepReviewDraft, takeReviewDraft } from "../reviewDrafts";
 import { editorKey, editorSave, type ReviewEditor } from "../reviewSave";
@@ -25,18 +25,6 @@ const ReviewCommentEditorLazy = lazyWithReload("review-comment-editor", () =>
 /** Where a Changes editor's unsent text is kept: beside no review session. */
 export function changesDraftSession(resourceKey: string): string {
   return `changes:${resourceKey}`;
-}
-
-/** Vim keys in comment boxes: the review's `:vim` setting. */
-function vimKeys(): boolean {
-  try {
-    const prefs = JSON.parse(
-      roamgateLocalStorage.getItem("reviewPrefs") ?? "{}",
-    ) as { vim?: boolean };
-    return prefs.vim !== false;
-  } catch {
-    return true;
-  }
 }
 
 /** What a suggestion on a line says: the line as it reads, to change. */
