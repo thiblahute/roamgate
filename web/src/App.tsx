@@ -72,8 +72,10 @@ import {
 import {
   livePins,
   pinHolds,
+  readReviewMemory,
   reviewPinKey as makeReviewPinKey,
   withLatest,
+  writeReviewMemory,
 } from "./reviewPins";
 import { takeVoiceArrival } from "./voiceArrival";
 import { LAYOUT_CHANGE_EVENT, useLayoutPreferences } from "./layoutPreferences";
@@ -382,21 +384,6 @@ const AssistantPanel = lazyWithReload("assistant", () =>
 
 /** The review pinned to each workspace's Changes. */
 const CHANGES_PINS_KEY = "reviewChangesPins";
-
-function readStoredJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = roamgateLocalStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredJson(key: string, value: unknown) {
-  try {
-    roamgateLocalStorage.setItem(key, JSON.stringify(value));
-  } catch {}
-}
 
 /** After the page shows: the review's code is fetched then. */
 const REVIEW_PRELOAD_DELAY_MS = 3000;
@@ -1908,10 +1895,10 @@ export default function App() {
   // there, and arriving in a workspace an agent opened one in shows it.
   // They survive a reload.
   const [changesPins, setChangesPins] = useState<Record<string, string>>(() =>
-    readStoredJson<Record<string, string>>(CHANGES_PINS_KEY, {}),
+    readReviewMemory(CHANGES_PINS_KEY),
   );
   useEffect(() => {
-    writeStoredJson(CHANGES_PINS_KEY, changesPins);
+    writeReviewMemory(CHANGES_PINS_KEY, changesPins);
   }, [changesPins]);
   const [reviewListOpen, setReviewListOpen] = useState(false);
   const focusedWorkspaceId =
