@@ -717,7 +717,9 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
 
     test("Changes gets the review's cursor only on `:set reviewin=changes` with Vim keys on", async () => {
       const { writeReviewPrefs } = await import("../reviewPrefs");
-      writeReviewPrefs({ vim: undefined, reviewIn: undefined });
+      const { setVimKeys } = await import("../vimKeys");
+      writeReviewPrefs({ reviewIn: undefined });
+      setVimKeys(true);
       const inspector = await mountInspector({ view: "changes" });
       try {
         await act(async () => {
@@ -741,7 +743,8 @@ if (process.env.ROAMGATE_INSPECTOR_COMMANDS_DOM_TEST !== "1") {
         expect(diffProps?.reviewCursor).toBe(false);
       } finally {
         await inspector.unmount();
-        writeReviewPrefs({ vim: undefined, reviewIn: undefined });
+        writeReviewPrefs({ reviewIn: undefined });
+        setVimKeys(true);
       }
     });
   });
