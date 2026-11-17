@@ -1,3 +1,4 @@
+import type { ReviewSnapshot } from "../../../shared/review";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -428,7 +429,10 @@ export async function handleEffortRpc(
       base: string;
       head: string;
       title: string;
-    }) => { sessionId: string } | Promise<{ sessionId: string }>;
+      compare?: boolean;
+    }) =>
+      | { sessionId: string; snapshot?: ReviewSnapshot }
+      | Promise<{ sessionId: string; snapshot?: ReviewSnapshot }>;
   },
   method: string,
   params: Record<string, unknown>,
@@ -475,8 +479,7 @@ export async function handleEffortRpc(
       : [];
     for (const path of wanted) {
       const found = workspaces.find(
-        (each) =>
-          each?.worktree?.checkout_path === path || each?.cwd === path,
+        (each) => each?.worktree?.checkout_path === path || each?.cwd === path,
       );
       if (typeof found?.workspace_id === "string") return found.workspace_id;
     }
@@ -947,11 +950,16 @@ export async function handleEffortRpc(
       };
     }
     case "bridge.mr_reviews.effort.open_commit": {
-      // `d`: the commit's diff as a Roamgate review in the head workspace.
+      // `d`: the commit's diff as a Roamgate review in the head workspace's
+      // Changes (D32: the page goes there); with `from`, two versions of
+      // one commit compared tree to tree.
       const effort = await effortOf();
       const sha = String(params.sha ?? "");
       if (!/^[0-9a-f]{7,40}$/.test(sha))
         throw new MrReviewsError("sha: a commit id");
+      const from = params.from === undefined ? "" : String(params.from);
+      if (from && !/^[0-9a-f]{7,40}$/.test(from))
+        throw new MrReviewsError("from: a commit id");
       const head = effort.head ?? {
         connectionId: effort.clone.connectionId,
         path: effort.clone.path,
@@ -980,9 +988,10 @@ export async function handleEffortRpc(
         connectionId: head.connectionId,
         workspaceId,
         root: head.path,
-        base: `${sha}^`,
-        head: sha,
-        title: subject.slice(0, 120),
+        ...(from
+          ? { base: from, head: sha, compare: true }
+          : { base: `${sha}^`, head: sha }),
+        title: (from ? `${subject} (two versions)` : subject).slice(0, 120),
       });
       return {
         ok: true,

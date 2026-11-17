@@ -622,6 +622,7 @@ export async function handleMrReviewsRpc(
           curation: value.curation ?? current.curation,
           inference: value.inference ?? current.inference,
           inference_hours: value.inferenceHours ?? current.inferenceHours,
+          inference_model: value.inferenceModel ?? current.inferenceModel,
           suggest_days: value.suggestDays ?? current.suggestDays,
           hints: value.hints ?? current.hints,
           home_prompt: value.homePrompt ?? current.homePrompt,
@@ -668,7 +669,8 @@ export async function handleMrReviewsRpc(
             name !== "pinned" &&
             name !== "hidden" &&
             name !== "staleDays" &&
-            name !== "homePrompt",
+            name !== "homePrompt" &&
+            name !== "inferenceModel",
         )
       )
         void deps.inbox.refresh();

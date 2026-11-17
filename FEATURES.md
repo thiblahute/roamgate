@@ -1052,7 +1052,8 @@ it, resolved or not), its description and status, and your branches' local
 state ("Answer bob on the locking question", "Waiting for bob to
 re-review"): marked "inferred" on the row and shown beside what you set by
 hand in its details, which always wins. It runs twice a day over what
-moved (every 12 hours, the **Your own work** settings), and at once for
+moved (every 12 hours, the **Your own work** settings, which also name
+its model: empty, Sonnet, or any model name), and at once for
 one request when someone else answers, a pipeline fails, changes are
 requested, it conflicts or it is merged or closed (at most every two hours
 a request); your own pushes wait for the next run. `:infer` reads the
@@ -1106,8 +1107,11 @@ touching the same files with a close subject, author and size, scored
 locally, shown in its row ("like abc1234 (0.8)") and under the ledger;
 `:confirm [N]` makes it upstream by hand pointing at that commit (and adds
 it to the commit's versions), `:reject [N|all]` never proposes it again.
-`d` opens the commit's diff as a review in the head workspace's Changes;
-in a commit's versions (Enter), pick two and `d` shows how they differ.
+`d` takes you to the head workspace and shows the commit's diff in its
+Changes, as Enter on a request opens its review in its home (the Reviews
+pane hides); in a commit's versions (Enter), pick two and `d` compares
+them there, tree to tree (as text in the pane when that workspace is not
+open).
 **Plans** (`R`) lists the planned requests, each the content of one future
 request: the leader session proposes them, you **Accept**, `:split NEW`
 (the selected commits out of their plan) or **Drop** them, and `:plan NAME` puts the selected commits in one

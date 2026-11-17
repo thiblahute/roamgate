@@ -17,6 +17,7 @@ import {
   type MrPlan,
 } from "../../../shared/mrReviews";
 import { mrReviewsCall, onMrReviewsChange } from "../mrReviews";
+import { type ShownReply, showReply } from "../mrReviewFlow";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import { useWorkspaceTree } from "../workspaceTreeStore";
 import "./MrEffortView.css";
@@ -26,7 +27,7 @@ import "./MrEffortView.css";
  * (progress by disposition), and the effort's view: Progress (bar, counts,
  * burndown, breakdown by directory), Ledger (every commit, selectable,
  * dispositions set in bulk with Undo, fuzzy matches confirmed or
- * rejected, `d` its diff), Plans (planned requests and their parts),
+ * rejected, `d` its diff in the head workspace's Changes), Plans (planned requests and their parts),
  * Feeders and What changed since the user last looked.
  */
 
@@ -526,22 +527,39 @@ export function MrEffortView({
           : `Part ${done.branch} made with ${done.picked} commits${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
     );
 
-  const openCommit = (sha: string) =>
-    void mrReviewsCall<{ connectionId: string; workspaceId: string }>(
-      "effort.open_commit",
-      { id, sha },
-    )
-      .then((answer) => onJump?.(answer.connectionId, answer.workspaceId))
-      .catch((cause) =>
-        say(cause instanceof Error ? cause.message : String(cause)),
-      );
+  /**
+   * `d` (D32): the commit's diff (or, with `from`, two versions of it) in
+   * the head workspace's Changes; the page goes there as Enter on a
+   * request goes to its home, and the Reviews pane hides.
+   */
+  const openCommit = async (sha: string, from?: string) => {
+    const answer = await mrReviewsCall<
+      Partial<ShownReply> & { connectionId: string; workspaceId: string }
+    >("effort.open_commit", { id, sha, ...(from ? { from } : {}) });
+    if (answer.snapshot && answer.sessionId)
+      await showReply(answer as ShownReply);
+    onJump?.(answer.connectionId, answer.workspaceId);
+  };
 
-  const diffVersions = (from: string, to: string) =>
+  const showCommit = (sha: string) =>
+    void openCommit(sha).catch((cause) =>
+      say(cause instanceof Error ? cause.message : String(cause)),
+    );
+
+  const diffText = (from: string, to: string) =>
     void mrReviewsCall<{ text: string }>("effort.diff", { id, from, to })
       .then((answer) => setDiff(answer.text || "(no difference)"))
       .catch((cause) =>
         say(cause instanceof Error ? cause.message : String(cause)),
       );
+
+  // Two versions in the head workspace's Changes; here as text when that
+  // workspace cannot show them (not open, no review there).
+  const diffVersions = (from: string, to: string) =>
+    void openCommit(to, from).catch((cause) => {
+      say(cause instanceof Error ? cause.message : String(cause));
+      diffText(from, to);
+    });
 
   const runCommand = (text: string) => {
     setCommand(null);
@@ -644,7 +662,7 @@ export function MrEffortView({
       event.stopPropagation();
       if (history && versions.length === 2)
         diffVersions(versions[0]!, versions[1]!);
-      else if (shown[cursor]) openCommit(shown[cursor]!.sha);
+      else if (shown[cursor]) showCommit(shown[cursor]!.sha);
       return;
     }
     const fed = feedKey(keyState.current, event.key);
@@ -785,7 +803,7 @@ export function MrEffortView({
           {selected.size ? ` · ${selected.size} selected` : ""} · j/k move · x
           select · V range · :mark not-upstream REASON · :supersede REF · :plan
           NAME · :confirm [N] · :reject [N|all] · :unsort · u undo · d its diff
-          · Enter its history
+          in the head workspace · Enter its history
         </p>
         <MrLedgerTable
           commits={shown}
@@ -865,7 +883,7 @@ export function MrEffortView({
           <section className="mr-effort-history" aria-label="Its versions">
             <h4>Its versions, oldest first</h4>
             <p className="assistant-hint">
-              Pick two, then d (or Diff) shows how they differ.
+              Pick two, then d (or Diff) compares them in the head workspace.
             </p>
             <ol>
               {history.map((version, index) => {

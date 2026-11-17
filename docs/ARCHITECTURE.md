@@ -822,8 +822,12 @@ conflicts|needsRebase` (branches: `head|ahead|behind|dirty`); its facts
 (state, pipeline, conflicts, changes requested, approvals, the last note by
 someone else) tell a meaningful change. After each refresh, once every
 `mr_reviews.inference_hours` (default 12) every open own row whose version
-moved is inferred, oldest first, 20 a batch (`runClaudeModel`, the
-curation's model, no tools, the people's text marked as data); between
+moved is inferred, oldest first, 20 a batch (`runClaudeModel`, no tools,
+the people's text marked as data) on `mr_reviews.inference_model`, any
+name the agent takes, else the automatic model (`sonnet`, D27; the
+module's `inferenceModels.automatic`, listed with the names to suggest by
+`bridge.mr_reviews.inference_models`); the suggestions keep their own
+(`CURATION_MODEL`, Opus); between
 runs only rows with a meaningful change, each at most every two hours.
 Dependencies found without the model (references in the description and
 notes resolved to listed requests; a request whose patch ids are all in a
@@ -994,8 +998,11 @@ path as the workspace menu (the `worktree_command` setting), `reset
 `-x`), stops on a conflict (reported with its files, never aborted),
 records `part` on the plan, places the workspace in the effort's group and
 adds its branch to `unsent`. `effort.open_commit` opens a range review
-(`sha^..sha`) in the head workspace; `effort.diff` answers `git range-diff`
-of two versions (never stored). `seen.json` (runtime, not exported) is the
+(`sha^..sha`, or with `from` a tree-to-tree compare of two versions) in
+the head workspace and answers its snapshot, which the page shows as a
+home's review (workspace focused, Changes up); `effort.diff` answers `git
+range-diff` of two versions (never stored), the fallback when that
+workspace is not open. `seen.json` (runtime, not exported) is the
 snapshot of dispositions, feeders' not-ready counts, merged plans and
 upstream-anyway commits the user last saw (`effort.seen`); the first
 reading writes it; `effort.get` answers `changes` against it.

@@ -11,6 +11,8 @@ import {
   containedIn,
   createMrInference,
   INFERENCE_DEBOUNCE_MS,
+  INFERENCE_MODEL,
+  inferenceModel,
   inferenceOutdated,
   inferencePrompt,
   meaningful,
@@ -20,6 +22,11 @@ import {
   rowVersion,
 } from "./inference";
 import { assignLanes } from "./lanes";
+import {
+  mrReviewsSettings,
+  normalizeStoredMrReviews,
+  storedMrReviews,
+} from "./settings";
 import { openMrStore } from "./store";
 
 const dir = mkdtempSync(join(realpathSync("/tmp"), "mr-infer-"));
@@ -327,4 +334,45 @@ test("lanes: an override wins, then the inference while it holds, else the rules
     [5, "stale", { text: "Answer bob on the locking", from: "inferred" }],
   ]);
   expect(d.parent).toBe(key(1));
+});
+
+test("the model: Sonnet when automatic, the automatic one given, the setting first (D27)", async () => {
+  const auto = { ...DEFAULT_MR_REVIEWS_SETTINGS };
+  expect(INFERENCE_MODEL).toBe("sonnet");
+  expect(inferenceModel(auto)).toBe("sonnet");
+  expect(inferenceModel(auto, () => "glm-5p3")).toBe("glm-5p3");
+  expect(inferenceModel(auto, () => "")).toBe("sonnet");
+  const set = { ...auto, inferenceModel: " haiku " };
+  expect(inferenceModel(set, () => "glm-5p3")).toBe("haiku");
+  // Stored only when set: empty or spaced is automatic.
+  expect(
+    normalizeStoredMrReviews({ inference_model: "  " }),
+  ).not.toHaveProperty("inference_model");
+  expect(
+    normalizeStoredMrReviews({ inference_model: "a b" }),
+  ).not.toHaveProperty("inference_model");
+  const stored = normalizeStoredMrReviews({ inference_model: " kimi-k3 " });
+  expect(mrReviewsSettings(stored).inferenceModel).toBe("kimi-k3");
+  expect(storedMrReviews(mrReviewsSettings(stored)).inference_model).toBe(
+    "kimi-k3",
+  );
+  expect(storedMrReviews(auto)).not.toHaveProperty("inference_model");
+  // A run asks the model the settings say, read again each pass.
+  const store = openMrStore(join(dir, `state-${Math.random()}.json`));
+  const models: string[] = [];
+  let settings: MrReviewsSettings = auto;
+  const inference = createMrInference({
+    store,
+    settings: async () => settings,
+    rows: async () => [entry(1)],
+    users: () => new Map([["h", "me"]]),
+    run: async (model) => {
+      models.push(model);
+      return { text: "[]", ms: 1 };
+    },
+  });
+  await inference.infer(key(1));
+  settings = { ...auto, inferenceModel: "opus" };
+  await inference.infer(key(1));
+  expect(models).toEqual(["sonnet", "opus"]);
 });

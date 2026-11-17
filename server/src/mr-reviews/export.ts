@@ -7,14 +7,15 @@ import { emptyLedger, type LedgerFile } from "./efforts";
  * Export and import of what the Reviews author (section 11, D21, D22):
  * the `mr_reviews` keys the user and their agents write (order, pins,
  * removals, overrides, views, requests not proposed yet, groups and
- * workspaces headed upstream, efforts) and each effort's authored ledger
- * with its history, as stable key-sorted JSON. Never secrets, never
+ * workspaces headed upstream, efforts, merge rules; since version 2 also
+ * the hosts, followed projects and hints, D30) and each effort's authored
+ * ledger with its history, as stable key-sorted JSON. Never secrets, never
  * derived data (forge state, inference, caches, derived.json, what the
  * user last saw), never the Undo journal. Run by hand or by a tool only.
  */
 
 export const REVIEWS_EXPORT_FORMAT = "roamgate-reviews";
-export const REVIEWS_EXPORT_VERSION = 1;
+export const REVIEWS_EXPORT_VERSION = 2;
 
 /** The authored keys of `mr_reviews` in settings.json. */
 export const EXPORTED_KEYS = [
@@ -28,7 +29,27 @@ export const EXPORTED_KEYS = [
   "upstream_skip",
   "efforts",
   "merge",
+  "hosts",
+  "followed",
+  "hints",
 ] as const;
+
+type ExportedKey = (typeof EXPORTED_KEYS)[number];
+
+/**
+ * The export version each key arrived in: an older export says nothing
+ * of a newer key, so importing it keeps the local value (never removes it).
+ */
+const KEY_SINCE: Partial<Record<ExportedKey, number>> = {
+  hosts: 2,
+  followed: 2,
+  hints: 2,
+};
+
+/** The keys an export of that version carries. */
+function keysOf(version: number): ExportedKey[] {
+  return EXPORTED_KEYS.filter((key) => (KEY_SINCE[key] ?? 1) <= version);
+}
 
 export type ExportedLedger = Omit<LedgerFile, "journal">;
 
@@ -204,11 +225,15 @@ function itemsOf(path: string, value: unknown): Map<string, unknown> {
           : (each?.id ??
             each?.key ??
             each?.name ??
-            (each?.provider && each?.project
+            (each?.provider && each?.project && each?.number !== undefined
               ? `${each.provider}:${each.host}/${each.project}#${each.number}`
-              : each?.connection_id
-                ? `${each.connection_id}:${each.path ?? each.label ?? ""}`
-                : `#${index}`));
+              : each?.provider && each?.project
+                ? `${each.provider}:${each.host}/${each.project}`
+                : each?.provider && each?.host
+                  ? `${each.provider}:${each.host}`
+                  : each?.connection_id
+                    ? `${each.connection_id}:${each.path ?? each.label ?? ""}`
+                    : `#${index}`));
       out.set(`${path}[${String(name)}]`, each);
     });
   } else if (value && typeof value === "object")
@@ -232,9 +257,10 @@ export function importChanges(
   local: ReviewsExport,
   incoming: ReviewsExport,
 ): ImportChange[] {
+  const keys = keysOf(Math.min(local.version, incoming.version));
   const flat = (state: ReviewsExport) => {
     const out = new Map<string, unknown>();
-    for (const key of EXPORTED_KEYS) {
+    for (const key of keys) {
       const value = state.mr_reviews[key];
       if (key === "order") {
         if (value !== undefined) out.set("mr_reviews.order", value);
@@ -334,7 +360,7 @@ export function importedMrReviews(
   incoming: ReviewsExport,
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...(stored ?? {}) };
-  for (const key of EXPORTED_KEYS) {
+  for (const key of keysOf(incoming.version)) {
     if (incoming.mr_reviews[key] === undefined) delete next[key];
     else next[key] = incoming.mr_reviews[key];
   }

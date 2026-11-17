@@ -35,6 +35,8 @@ export type StoredMrReviewsSettings = {
   curation?: boolean;
   inference?: boolean;
   inference_hours?: number;
+  /** The inference's model (empty or absent: automatic). */
+  inference_model?: string;
   suggest_days?: number;
   hints?: string;
   tree_groups?: Record<string, string[]>;
@@ -265,6 +267,8 @@ export const VIEW_QUERY_MAX = 500;
 export const PANEL_SEARCH_MAX = 500;
 /** A home prompt, at most. */
 export const HOME_PROMPT_MAX = 4000;
+/** A model name, as `claude --model` takes it. */
+export const INFERENCE_MODEL_MAX = 200;
 export const MAX_UPSTREAM_GROUPS = 50;
 export const MAX_UPSTREAM_SKIP = 200;
 export const MAX_UNSENT = 200;
@@ -338,6 +342,10 @@ export function normalizeStoredMrReviews(
   const hours = Number(value.inference_hours);
   if (Number.isInteger(hours) && hours >= 1 && hours <= 168)
     out.inference_hours = hours;
+  if (typeof value.inference_model === "string") {
+    const model = value.inference_model.trim().slice(0, INFERENCE_MODEL_MAX);
+    if (model && !/\s/.test(model)) out.inference_model = model;
+  }
   const suggest = Number(value.suggest_days);
   if (Number.isInteger(suggest) && suggest >= 1 && suggest <= 365)
     out.suggest_days = suggest;
@@ -596,6 +604,7 @@ export function mrReviewsSettings(
     curation: stored?.curation ?? base.curation,
     inference: stored?.inference ?? base.inference,
     inferenceHours: stored?.inference_hours ?? base.inferenceHours,
+    inferenceModel: stored?.inference_model ?? base.inferenceModel,
     suggestDays: stored?.suggest_days ?? base.suggestDays,
     hints: stored?.hints ?? base.hints,
     treeGroups: stored?.tree_groups ?? base.treeGroups,
@@ -664,6 +673,9 @@ export function storedMrReviews(
       : {}),
     ...(settings.inferenceHours !== DEFAULT_MR_REVIEWS_SETTINGS.inferenceHours
       ? { inference_hours: settings.inferenceHours }
+      : {}),
+    ...(settings.inferenceModel
+      ? { inference_model: settings.inferenceModel }
       : {}),
     suggest_days: settings.suggestDays,
     hints: settings.hints,

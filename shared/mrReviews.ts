@@ -505,6 +505,11 @@ export type MrReviewsSettings = {
   /** Hours between two inference runs over what moved (D7). */
   inferenceHours: number;
   /**
+   * The model the inference runs on, any name the agent takes; empty:
+   * automatic (Sonnet, D27).
+   */
+  inferenceModel: string;
+  /**
    * Only requests updated this many days ago at most are suggested; an
    * older one is considered again once it changes.
    */
@@ -577,6 +582,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   curation: true,
   inference: true,
   inferenceHours: 12,
+  inferenceModel: "",
   suggestDays: 30,
   hints: "",
   treeGroups: {},
