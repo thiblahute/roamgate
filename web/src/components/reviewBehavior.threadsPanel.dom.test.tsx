@@ -323,6 +323,7 @@ if (
         );
         await review.press("gn");
         expect(where()).toBe("1 of 2 unresolved");
+        expect(review.notice()).toBe("1 of 2 unresolved");
         expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
         // Over the resolved one on a.ts into the reviewed file, opened.
         await review.press("gn");

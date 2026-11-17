@@ -133,12 +133,16 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test(":files shows and hides the file list", async () => {
+      test(":files and f show and hide the file list", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });
         expect(review.filesShown()).toBe(true);
         await review.command(":files");
         expect(review.filesShown()).toBe(false);
         await review.command(":files");
+        expect(review.filesShown()).toBe(true);
+        await review.press("f");
+        expect(review.filesShown()).toBe(false);
+        await review.press("f");
         expect(review.filesShown()).toBe(true);
         await review.unmount();
       });

@@ -36,6 +36,17 @@ export type SurfaceOptions = {
   threads?: ReviewThread[];
   /** Reviewed marks the review starts with (the session's `reviewed`). */
   reviewed?: Record<string, string>;
+  /**
+   * How Changes lists the files: the working tree's entries (default), or
+   * one combined entry per file whose chunks say how much is staged.
+   */
+  changes?: "unstaged" | "combined";
+  /** Files with changes in the index too: their staged entries, listed first. */
+  stagedFiles?: ReviewDiffFile[];
+  /** A combined file's staged lines, by path, as git tells them. */
+  staged?: Record<string, StagedLines>;
+  /** No review of the checkout yet: the bridge holds one once it is opened. */
+  unopened?: boolean;
   /** Side by side from the start (a remembered preference); unset: default. */
   split?: boolean;
   /** The window's width (default 1024, below the side by side default). */
@@ -116,6 +127,21 @@ export type SurfaceOptions = {
   phone?: boolean;
   /** The surface's stylesheet applied, for what is shown or hidden. */
   styles?: boolean;
+};
+
+/** Ranges of lines (first, last) in the index, on each side. */
+export type StagedLines = {
+  old: [number, number][];
+  new: [number, number][];
+};
+
+/** A chunk's marker in the margin, on one of its lines. */
+export type ChunkMarker = {
+  /** The line's number on its side. */
+  line: number;
+  /** How much of the chunk is in the index. */
+  stage: "staged" | "unstaged" | "partly";
+  reviewed: boolean;
 };
 
 /** A commit of the review; with `files`, the changes it makes. */
@@ -242,12 +268,23 @@ export interface ReviewSurface {
   fileColumns(path: string): 1 | 2 | null;
   /** Press a gap's button (`gaps(path)[index]`, by its label). */
   expandGap(path: string, index: number, button: string): Promise<void>;
-  /** Pick a file in the file list: the cursor goes to it, shown. */
-  goToFile(path: string): Promise<void>;
+  /**
+   * Pick a file in the file list: the cursor goes to it, shown. With a
+   * line (Files' Review on that line): to it, or the nearest one shown.
+   */
+  goToFile(path: string, line?: number): Promise<void>;
   /** A file shows as reviewed (folded, ticked). */
   fileReviewed(path: string): boolean;
   /** The file list's chunk progress for a file, as "1/2", or null. */
   chunkProgress(path: string): string | null;
+  /**
+   * The chunk markers in a file's margin, line by line: staged or not,
+   * reviewed or not. `entry` picks the file's staged entry when it has
+   * one (default: its working tree's, or its combined one).
+   */
+  chunkMarkers(path: string, entry?: "staged"): ChunkMarker[];
+  /** The index changes: a combined file's staged lines, by path. */
+  setStaged(staged: Record<string, StagedLines>): Promise<void>;
   /** The reviewed marks as the bridge holds them after every update. */
   reviewedMarks(): Record<string, string>;
   /** Close and open the review again, as a page reload. */
@@ -404,6 +441,11 @@ export interface ReviewSurface {
   // Threads.
   /** The threads shown, above the diff and under its lines, in order. */
   shownThreads(): ShownThread[];
+  /**
+   * Where j / k stand in the threads under a line: a message, a part of
+   * one, or a folded thread (its one line), with its text; null on a line.
+   */
+  threadStop(): { kind: "message" | "part" | "thread"; text: string } | null;
   /** The texts of the comments drawn at a file's head, before its lines. */
   fileComments(path: string): string[];
   /** The texts of the comment boxes drawn in the review, in order. */

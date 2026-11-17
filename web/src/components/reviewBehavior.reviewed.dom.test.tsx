@@ -48,6 +48,9 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.press("v");
         expect(review.fileReviewed("a.ts")).toBe(true);
         expect(review.reviewedMarks()["all:a.ts"]).toBeTruthy();
+        // The file's mark and its two chunks'.
+        expect(Object.keys(review.reviewedMarks())).toHaveLength(3);
+        expect(review.notices()).toContain("Reviewed (1/3)");
         expect(texts(review)).not.toContain("a 2");
         expect(texts(review)).not.toContain("a twenty-three");
         expect(review.text()).toContain("✓ reviewed");
@@ -56,12 +59,28 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         // Folded whole: gg goes to the first line left to review.
         await review.press("gg");
         expect(review.cursorLine()?.path).toBe("b.ts");
-        // Picked in the file list, it shows, and v unmarks it.
+        // Picked in the file list, it shows, still reviewed, and v
+        // unmarks it.
         await review.goToFile("a.ts");
         expect(review.cursorLine()?.path).toBe("a.ts");
+        expect(review.text()).not.toContain("✓ reviewed");
+        expect(review.chunkMarkers("a.ts").length).toBeGreaterThan(0);
+        expect(review.chunkMarkers("a.ts").every((m) => m.reviewed)).toBe(true);
+        // The same pick drawn again (no new pick) leaves the cursor be.
+        await review.press("j");
+        const at = review.cursorLine();
+        await review.push({});
+        expect(review.cursorLine()).toEqual(at);
         await review.press("v");
         expect(review.fileReviewed("a.ts")).toBe(false);
         expect(review.reviewedMarks()["all:a.ts"]).toBe("");
+        expect(review.notices()).toContain(
+          "No longer reviewed, nor its chunks",
+        );
+        // Unmarked (kept as ""), none reviewed.
+        expect(
+          Object.values(review.reviewedMarks()).every((value) => value === ""),
+        ).toBe(true);
         expect(texts(review)).toContain("a 2");
         await review.unmount();
       });
@@ -211,6 +230,23 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(folded[0]?.text).toBe("\u2713 reviewed: 3 lines, za shows them");
         expect(cursorText()).toBe("a.ts line 20");
         expect(review.chunkProgress("a.ts")).toBe("1/2");
+        expect(review.notices()).toContain("Chunk reviewed (1/2 in the file)");
+        // The margin marks the chunk's lines reviewed, the next chunk's not.
+        expect(review.chunkMarkers("a.ts")).toContainEqual({
+          line: 1,
+          stage: "unstaged",
+          reviewed: true,
+        });
+        expect(review.chunkMarkers("a.ts")).toContainEqual({
+          line: 20,
+          stage: "unstaged",
+          reviewed: false,
+        });
+        // k comes back onto the folded line only; j from it goes past it.
+        await review.press("k");
+        expect(review.cursorLine()?.kind).toBe("reviewed");
+        await review.press("j");
+        expect(cursorText()).toBe("a.ts line 20");
 
         // A click on it shows it again, za folds it back.
         await review.click({ path: "a.ts", kind: "reviewed" });
@@ -264,6 +300,117 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(await review.keyTaken("<A-v>")).toBe(false);
         expect(updates()).toBe(before);
         expect(texts(review)).toContain("b.ts line 1");
+        await review.unmount();
+      });
+
+      test("gu and gU jump to the next and previous chunk not reviewed, wrapping", async () => {
+        const review = await mount({ files: files() });
+        const at = () => review.cursorLine()?.text;
+        expect(at()).toBe("a 1");
+        await review.press("gu");
+        expect(at()).toBe("a 22");
+        await review.press("gu");
+        expect(at()).toBe("b 1");
+        await review.press("gu");
+        expect(at()).toBe("c 1");
+        await review.press("gu");
+        expect(at()).toBe("a 1");
+        await review.press("gU");
+        expect(at()).toBe("c 1");
+        await review.unmount();
+      });
+
+      test("with no review yet, the first mark opens the checkout's review", async () => {
+        const review = await mount({ files: files(), unopened: true });
+        await review.press("r");
+        expect(
+          review
+            .calls()
+            .map((call) => call.method)
+            .filter((method) => /^review\.(open|update)$/.test(method)),
+        ).toEqual(["review.open", "review.update"]);
+        expect(review.calls("review.open")[0]?.params).toMatchObject({
+          workspace_id: "workspace",
+          path: "/repo",
+          target: { kind: "worktree" },
+        });
+        expect(review.chunkProgress("a.ts")).toBe("1/2");
+        await review.unmount();
+      });
+
+      test("a staged entry's chunks carry the staged marker, the working tree's theirs", async () => {
+        const review = await mount({
+          stagedFiles: [file("a.ts", hunk(1, 1, [" one", "-two", "+deux"]))],
+          files: [file("a.ts", hunk(20, 20, [" x", "-y", "+z", " w"]))],
+        });
+        const staged = review.chunkMarkers("a.ts", "staged");
+        expect(staged.length).toBeGreaterThan(0);
+        expect(staged.every((m) => m.stage === "staged")).toBe(true);
+        const unstaged = review.chunkMarkers("a.ts");
+        expect(unstaged.length).toBeGreaterThan(0);
+        expect(unstaged.every((m) => m.stage === "unstaged")).toBe(true);
+        await review.unmount();
+      });
+
+      test("a combined diff's chunks carry staged, unstaged or partly staged, as the index holds them", async () => {
+        const review = await mount({
+          changes: "combined",
+          files: [
+            file(
+              "a.ts",
+              hunk(1, 1, [" one", "-two", "+deux", " three"]),
+              hunk(20, 20, [" x", "-y", "+z", "+zz", " w"]),
+              hunk(40, 41, [" k", "-l", "+m", " n"]),
+            ),
+            file("b.ts", hunk(1, 1, [" p", "-q", "+r"])),
+          ],
+          // The first chunk all in the index, the second its removal and
+          // one of its two lines, the third none of it; b.ts none.
+          staged: {
+            "a.ts": {
+              old: [
+                [2, 2],
+                [21, 21],
+              ],
+              new: [
+                [2, 2],
+                [21, 21],
+              ],
+            },
+          },
+        });
+        const a = review.chunkMarkers("a.ts");
+        const stageOf = (line: number) => [
+          ...new Set(a.filter((m) => m.line === line).map((m) => m.stage)),
+        ];
+        expect(stageOf(2)).toEqual(["staged"]);
+        expect(stageOf(21)).toContain("partly");
+        expect(stageOf(22)).toContain("partly");
+        expect(stageOf(42)).toContain("unstaged");
+        const b = review.chunkMarkers("b.ts");
+        expect(b.length).toBeGreaterThan(0);
+        expect(b.every((m) => m.stage === "unstaged")).toBe(true);
+        await review.unmount();
+      });
+
+      test("a combined chunk keeps its reviewed mark when it is staged: its id is the same", async () => {
+        const review = await mount({
+          changes: "combined",
+          files: [file("b.ts", hunk(1, 1, [" p", "-q", "+r"]))],
+        });
+        await review.press("r");
+        expect(review.chunkMarkers("b.ts")).toContainEqual({
+          line: 2,
+          stage: "unstaged",
+          reviewed: true,
+        });
+        // Staged: the same combined diff, the index now holds its lines.
+        await review.setStaged({ "b.ts": { old: [[2, 2]], new: [[2, 2]] } });
+        expect(review.chunkMarkers("b.ts")).toContainEqual({
+          line: 2,
+          stage: "staged",
+          reviewed: true,
+        });
         await review.unmount();
       });
     });

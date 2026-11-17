@@ -44,6 +44,12 @@ if (
       expect(own.hostCalls("gitAction")).toEqual([
         { name: "gitAction", args: ["stage", "a.ts"] },
       ]);
+      // gs too; s alone is not staging (it starts a suggestion).
+      await own.press("gs");
+      expect(own.hostCalls("gitAction")).toHaveLength(2);
+      expect(own.hostCalls("gitAction")[1]?.args).toEqual(["stage", "a.ts"]);
+      await own.press("s");
+      expect(own.hostCalls("gitAction")).toHaveLength(2);
       await own.unmount();
 
       const url = "https://gitlab.example/group/project/-/merge_requests/7";
