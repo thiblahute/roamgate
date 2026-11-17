@@ -1020,6 +1020,12 @@ function getMrReviews(): MrReviews {
           focus: false,
         },
         () => true,
+        undefined,
+        undefined,
+        undefined,
+        // Never an existing checkout: the worktree command takes one as
+        // done, and the part's pick would then run in it.
+        { freshPath: "part" },
       );
       const path =
         result?.worktree?.path ??

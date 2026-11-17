@@ -20,6 +20,7 @@ import {
   changesOf,
   createLedgerStore,
   decideMatches,
+  type DerivedCommit,
   type DerivedFile,
   deriveEffort,
   effortSummary,
@@ -536,6 +537,56 @@ export async function handleEffortRpc(
       "not_found",
     );
   };
+  /**
+   * A part's stop as its worktree has it now, not as the pick left it:
+   * a pick resolved and committed there is no stop any more, another one
+   * is the new stop. Read when the view asks; kept without a journal entry
+   * (the worktree's state, not a decision).
+   */
+  const livePartStops = async (effort: MrEffort, commits: DerivedCommit[]) => {
+    const ledger = service.store.ledger(effort.id);
+    const stopped = ledger.plans.filter((plan) => plan.part?.conflict);
+    const connection = stopped.length
+      ? service.connectionOf(effort.clone.connectionId)
+      : null;
+    if (!connection) return ledger;
+    const out = await connection
+      .run(partStopsScript(stopped.map((plan) => plan.part!.path)), 30_000)
+      .catch(() => null);
+    if (!out) return ledger;
+    const now = parsePartStops(out.stdout);
+    const changed = stopped.filter((plan) => {
+      const live = now.get(plan.part!.path);
+      const was = plan.part!.conflict!;
+      return (
+        live !== undefined &&
+        (live === null ||
+          live.sha !== was.sha ||
+          live.files.join("\n") !== was.files.join("\n"))
+      );
+    });
+    if (!changed.length) return ledger;
+    return service.store.queue(effort.id, () => {
+      const latest = service.store.ledger(effort.id);
+      for (const plan of latest.plans) {
+        const live = plan.part?.conflict ? now.get(plan.part.path) : undefined;
+        if (live === undefined || !plan.part) continue;
+        if (live === null) delete plan.part.conflict;
+        else
+          plan.part.conflict = {
+            sha: live.sha,
+            subject:
+              live.sha === plan.part.conflict!.sha
+                ? plan.part.conflict!.subject
+                : (commits.find((commit) => commit.sha === live.sha)?.subject ??
+                  ""),
+            files: live.files,
+          };
+      }
+      service.store.writeLedger(effort.id, latest);
+      return latest;
+    });
+  };
   const effortOf = async () => {
     const found = findEffort(
       (await deps.settings()).efforts,
@@ -716,7 +767,7 @@ export async function handleEffortRpc(
       const effort = await effortOf();
       const settings = await deps.settings();
       const derived = service.store.derived(effort.id);
-      const ledger = service.store.ledger(effort.id);
+      const ledger = await livePartStops(effort, derived?.commits ?? []);
       return {
         effort,
         summary: service
@@ -912,6 +963,18 @@ export async function handleEffortRpc(
           "worktrees cannot be made here",
           "unavailable",
         );
+      // A new branch only: an existing one (here or on origin) is someone
+      // else's work, which a part must never check out or move.
+      const taken = (
+        await connection.run(
+          `git -C ${shQuote(effort.clone.path)} for-each-ref --format='%(refname)' ${shQuote(`refs/heads/${branch}`)} ${shQuote(`refs/remotes/origin/${branch}`)}`,
+          30_000,
+        )
+      ).stdout.trim();
+      if (taken)
+        throw new MrReviewsError(
+          `the branch ${branch} exists already (${taken.split("\n")[0]}): name the part's branch with branch`,
+        );
       const from = await partSource(effort, connection);
       const made = await deps
         .createWorktree({
@@ -922,6 +985,20 @@ export async function handleEffortRpc(
         .catch((error) => {
           throw new MrReviewsError(readableError(error));
         });
+      // The checkout made must be the new branch's own: never an existing
+      // worktree its path led to, which is left as it is, unrecorded.
+      const at = (
+        await connection.run(
+          `cd ${shQuote(made.path)} 2>/dev/null && printf '%s\\n%s\\n' "$(pwd -P)" "$(git rev-parse --show-toplevel 2>/dev/null)" && git symbolic-ref -q HEAD`,
+          30_000,
+        )
+      ).stdout
+        .trim()
+        .split("\n");
+      if (!at[0] || at[0] !== at[1] || at[2] !== `refs/heads/${branch}`)
+        throw new MrReviewsError(
+          `${made.path} is not a new worktree on ${branch}${at[2] ? ` (it is on ${at[2].replace(/^refs\/heads\//, "")})` : ""}: nothing picked there, and it is not this part`,
+        );
       const pick = parsePick(
         (
           await connection.run(
@@ -932,11 +1009,25 @@ export async function handleEffortRpc(
                 `refs/remotes/${effort.target.remote}/${effort.target.branch}`,
               ],
               picked.map((commit) => commit.sha),
+              branch,
             ),
             300_000,
           )
         ).stdout,
       );
+      // Only the commits read back on the branch count as picked.
+      const onBranch = pick.onBranch
+        ? pickedOnBranch(picked, pick.onBranch)
+        : 0;
+      const missing =
+        !pick.error && !pick.conflict
+          ? picked.length - pick.skipped.length - onBranch
+          : 0;
+      const error =
+        pick.error ??
+        (missing > 0
+          ? `${missing} of the plan's commits are not on ${branch}`
+          : undefined);
       const conflict = pick.conflict
         ? {
             sha: pick.conflict,
@@ -997,10 +1088,10 @@ export async function handleEffortRpc(
       await service.refreshOne(effort, true);
       await service.push(effort.id, { by: meta.by });
       return {
-        ok: !conflict,
+        ok: !conflict && !error,
         path: made.path,
         branch,
-        picked: pick.picked,
+        picked: onBranch,
         of: picked.length,
         ...(pick.skipped.length
           ? {
@@ -1012,7 +1103,7 @@ export async function handleEffortRpc(
             }
           : {}),
         ...(conflict ? { conflict } : {}),
-        ...(pick.error ? { error: pick.error } : {}),
+        ...(error ? { error } : {}),
       };
     }
     case "bridge.mr_reviews.effort.open_commit": {
@@ -1264,17 +1355,32 @@ export function readableError(error: unknown) {
 }
 
 /**
- * In a fresh part worktree: moved onto the target when it is elsewhere
- * (only while clean), then the commits picked in order. Prints `P n`
- * (picked), `S sha` for one already in the target (empty, skipped), and
- * on a stop `X sha` with `U file` lines; never aborts.
+ * In a fresh part worktree: refused unless it is on the part's branch;
+ * moved onto the target when it is elsewhere, only while clean and only
+ * while the branch was just made (one reflog entry: never an existing
+ * branch's commits dropped), then the commits picked in order. Prints
+ * `P n` (picked), `S sha` for one already in the target (empty,
+ * skipped), and on a stop `X sha` with `U file` lines; never aborts.
+ * Then what the branch holds over the target, read back: `N count` and
+ * an `I patch-id` line per commit with a diff.
  */
-export function pickScript(dir: string, targets: string[], shas: string[]) {
+export function pickScript(
+  dir: string,
+  targets: string[],
+  shas: string[],
+  branch: string,
+) {
   return [
     `d=${shQuote(dir)}`,
     '[ -d "$d" ] || { echo "E\tno such worktree"; exit 0; }',
+    `[ "$(git -C "$d" symbolic-ref -q HEAD)" = ${shQuote(`refs/heads/${branch}`)} ] || { echo "E\tthe worktree is not on the part's branch"; exit 0; }`,
     `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null)`,
-    'if [ -n "$t" ] && [ "$(git -C "$d" rev-parse HEAD)" != "$t" ] && [ -z "$(git -C "$d" status --porcelain)" ]; then git -C "$d" reset -q --keep "$t" || { echo "E\tcannot move the part onto the target"; exit 0; }; fi',
+    'report() { [ -n "$t" ] || return 0; printf "N\t%s\n" "$(git -C "$d" rev-list --count "$t"..HEAD)"; git -C "$d" log --no-merges -p --format="commit %H" "$t"..HEAD | git -C "$d" patch-id --stable | awk \'{ print "I\t" $1 }\'; }',
+    `fresh=$(git -C "$d" reflog show --format=%H ${shQuote(`refs/heads/${branch}`)} 2>/dev/null | wc -l)`,
+    'if [ -n "$t" ] && [ "$(git -C "$d" rev-parse HEAD)" != "$t" ]; then',
+    '  if [ "$fresh" -ne 1 ] || [ -n "$(git -C "$d" status --porcelain)" ]; then echo "E\tthe branch is not a fresh one on a clean worktree: not moved onto the target"; exit 0; fi',
+    '  git -C "$d" reset -q --keep "$t" || { echo "E\tcannot move the part onto the target"; exit 0; }',
+    "fi",
     "n=0",
     `for c in ${shas.map(shQuote).join(" ")}; do`,
     '  if git -C "$d" -c core.editor=true cherry-pick --allow-empty "$c" >/dev/null 2>&1; then n=$((n+1)); else',
@@ -1282,11 +1388,43 @@ export function pickScript(dir: string, targets: string[], shas: string[]) {
     '    if [ -z "$(git -C "$d" diff --name-only --diff-filter=U)" ] && [ -z "$(git -C "$d" status --porcelain)" ] && git -C "$d" rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null; then git -C "$d" cherry-pick --skip >/dev/null 2>&1 && { printf "S\t%s\n" "$c"; continue; }; fi',
     '    printf "P\t%s\nX\t%s\n" "$n" "$c"',
     '    git -C "$d" diff --name-only --diff-filter=U | sed "s/^/U\t/"',
+    "    report",
     "    exit 0",
     "  fi",
     "done",
     'printf "P\t%s\n" "$n"',
+    "report",
   ].join("\n");
+}
+
+/**
+ * For each part worktree: `X path sha` with `U path file` lines while a
+ * pick is stopped there, `D path` when none is. A missing worktree says
+ * nothing (its stop is kept as it was).
+ */
+export function partStopsScript(paths: string[]) {
+  return [
+    `for d in ${paths.map(shQuote).join(" ")}; do`,
+    '  [ -d "$d" ] || continue',
+    '  if c=$(git -C "$d" rev-parse -q --verify CHERRY_PICK_HEAD 2>/dev/null); then',
+    '    printf "X\t%s\t%s\n" "$d" "$c"',
+    '    git -C "$d" diff --name-only --diff-filter=U | while IFS= read -r f; do printf "U\t%s\t%s\n" "$d" "$f"; done',
+    '  elif git -C "$d" rev-parse -q --verify HEAD >/dev/null 2>&1; then printf "D\t%s\n" "$d"; fi',
+    "done",
+  ].join("\n");
+}
+
+/** A part's path: its stop now, or null when the pick is no longer stopped. */
+export function parsePartStops(stdout: string) {
+  const out = new Map<string, { sha: string; files: string[] } | null>();
+  for (const line of stdout.split("\n")) {
+    const [kind, path = "", value = ""] = line.split("\t");
+    if (kind === "D" && path) out.set(path, null);
+    else if (kind === "X" && path && value)
+      out.set(path, { sha: value, files: [] });
+    else if (kind === "U" && value) out.get(path)?.files.push(value);
+  }
+  return out;
 }
 
 export function parsePick(stdout: string): {
@@ -1295,8 +1433,11 @@ export function parsePick(stdout: string): {
   files: string[];
   skipped: string[];
   error?: string;
+  /** Read back: commits over the target and their patch ids (with a diff). */
+  onBranch?: { count: number; ids: string[] };
 } {
   let picked = 0;
+  let onBranch: { count: number; ids: string[] } | undefined;
   const skipped: string[] = [];
   let conflict: string | undefined;
   let error: string | undefined;
@@ -1308,6 +1449,8 @@ export function parsePick(stdout: string): {
     else if (kind === "U" && value) files.push(value);
     else if (kind === "S" && value) skipped.push(value);
     else if (kind === "E") error = value;
+    else if (kind === "N") onBranch = { count: Number(value) || 0, ids: [] };
+    else if (kind === "I" && value && onBranch) onBranch.ids.push(value);
   }
   return {
     picked,
@@ -1315,5 +1458,25 @@ export function parsePick(stdout: string): {
     skipped,
     ...(conflict ? { conflict } : {}),
     ...(error ? { error } : {}),
+    ...(onBranch ? { onBranch } : {}),
   };
+}
+
+/**
+ * How many of a part's commits its branch really holds over the target:
+ * those with a diff by patch id, the empty ones (no patch id) by the
+ * commits left over. Never more than were asked for.
+ */
+export function pickedOnBranch(
+  commits: { patchId: string }[],
+  onBranch: { count: number; ids: string[] },
+) {
+  const ids = new Set(onBranch.ids);
+  const withDiff = commits.filter(
+    (commit) => !commit.patchId.startsWith("sha:"),
+  );
+  const found = withDiff.filter((commit) => ids.has(commit.patchId)).length;
+  const empty = commits.length - withDiff.length;
+  const spare = Math.max(0, onBranch.count - onBranch.ids.length);
+  return found + Math.min(empty, spare);
 }

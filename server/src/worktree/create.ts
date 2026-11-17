@@ -168,6 +168,57 @@ export function herdrDefaultCheckoutPath(repoName: string, branch: string) {
   return `~/.herdr/worktrees/${repoName}/${slug || "worktree"}`;
 }
 
+/**
+ * The first of `base`, `base-<suffix>`, `base-<suffix>-2`, ... that is
+ * nothing yet on the checkout's host: no file or directory there, and no
+ * worktree of the repository registered at it (a missing one Git still
+ * lists). The worktree command takes an existing checkout as done, so a
+ * new branch must never be given a path that exists. Absolute, `~`
+ * resolved on the host.
+ */
+export async function freeWorktreePath({
+  base,
+  suffix,
+  repo,
+  host,
+  runProcess,
+}: {
+  base: string;
+  suffix: string;
+  repo: string;
+  host?: string;
+  runProcess: RunProcessWithCodeTimeout;
+}): Promise<string> {
+  const trimmed = base.replace(/\/+$/, "");
+  const candidates = [
+    trimmed,
+    `${trimmed}-${suffix}`,
+    ...Array.from({ length: 8 }, (_, at) => `${trimmed}-${suffix}-${at + 2}`),
+  ];
+  const script = [
+    `listed=$(git -C ${shQuote(repo)} worktree list --porcelain 2>/dev/null | sed -n "s/^worktree //p")`,
+    `for p in ${candidates.map(shQuote).join(" ")}; do`,
+    '  case "$p" in "~/"*) p="$HOME/${p#"~/"}" ;; esac',
+    '  [ -e "$p" ] || [ -L "$p" ] && continue',
+    '  printf "%s\n" "$listed" | grep -qxF -- "$p" && continue',
+    '  printf "%s\n" "$p"; exit 0',
+    "done",
+    "exit 3",
+  ].join("\n");
+  const run = await runProcess(
+    worktreeShellArgv(host, script),
+    GIT_DIFF_TIMEOUT_MS,
+  );
+  const path = run.code === 0 ? run.stdout.trim().split("\n").pop()! : "";
+  if (!path.startsWith("/"))
+    throw new Error(
+      run.code === 3
+        ? `${trimmed} and its ${suffix} variants are all taken: remove one or name another branch`
+        : `cannot tell whether ${trimmed} is free${run.stderr.trim() ? `: ${run.stderr.trim()}` : ""}`,
+    );
+  return path;
+}
+
 /** Shared by the workspace UI and Ranger's confirmed operations. */
 export async function createWorkspaceWorktree(
   runtime: LegacyConnectionRuntime,
@@ -179,9 +230,15 @@ export async function createWorkspaceWorktree(
   {
     readSettings = readGuiSettings,
     runProcess = runProcessWithCodeTimeout,
+    freshPath,
   }: {
     readSettings?: typeof readGuiSettings;
     runProcess?: RunProcessWithCodeTimeout;
+    /**
+     * Never a path that exists: the first free one with this suffix
+     * (`<branch>-<suffix>`, then numbered), an effort's part's `part`.
+     */
+    freshPath?: string;
   } = {},
 ) {
   const assertCurrent = () => {
@@ -287,6 +344,25 @@ export async function createWorkspaceWorktree(
     if (directory)
       rpcParams.path = worktreeCheckoutPath(directory, rpcParams.branch);
   }
+  const repoName =
+    sourceWorkspace?.worktree?.repo_name ||
+    (commonDir && repoNameFromCommonDir(commonDir)) ||
+    baseSync.root.replace(/\/+$/, "").split("/").pop() ||
+    "";
+  if (freshPath && typeof rpcParams.branch === "string") {
+    beforeSend();
+    rpcParams.path = await freeWorktreePath({
+      base:
+        typeof rpcParams.path === "string" && rpcParams.path
+          ? rpcParams.path
+          : herdrDefaultCheckoutPath(repoName, rpcParams.branch),
+      suffix: freshPath,
+      repo: baseSync.root,
+      host: runtime.sshHost(),
+      runProcess,
+    });
+    assertCurrent();
+  }
   if (guardedRoot) {
     if (baseSync.root !== expectedRoot)
       throw new Error("The worktree source repository changed.");
@@ -317,11 +393,7 @@ export async function createWorkspaceWorktree(
     command && !commandFallback
       ? await runWorktreeCommand(runtime, command, rpcParams, baseSync, {
           runProcess,
-          repoName:
-            sourceWorkspace?.worktree?.repo_name ||
-            (commonDir && repoNameFromCommonDir(commonDir)) ||
-            baseSync.root.replace(/\/+$/, "").split("/").pop() ||
-            "",
+          repoName,
           assertCurrent,
           beforeSend,
         })
