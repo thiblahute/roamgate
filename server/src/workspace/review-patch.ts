@@ -306,6 +306,12 @@ export async function readReviewRoot(args: {
   shQuote: (value: string) => string;
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
 }): Promise<string> {
+  // An empty or relative path would run Git in the login directory (the
+  // SSH host's home), answering for the wrong place.
+  if (!isHostPath(args.path))
+    throw new Error(
+      `a review's checkout must be an absolute path, not "${args.path.slice(0, 200)}"`,
+    );
   const command = `git -C ${args.shQuote(args.path)} rev-parse --show-toplevel`;
   const argv = args.host
     ? sshReadCommandArgv(args.host, command, [], "review.root")

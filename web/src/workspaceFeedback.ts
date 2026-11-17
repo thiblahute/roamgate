@@ -86,7 +86,19 @@ type Route = {
   anchor: (session: ReviewSession) => ReviewAnchor;
   /** A terminal comment: held until the user's Send. */
   held: boolean;
+  /**
+   * Where it goes when `open` finds no Git repository: a file of a
+   * workspace whose directory is not a checkout (a home directory) has
+   * its own rendered review.
+   */
+  fallback?: Route;
 };
+
+/** A review.open refused because its path is in no Git repository. */
+export function isNoRepositoryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not a git repository|not inside a git repository/i.test(message);
+}
 
 function firstLine(text: string): string {
   return (text.split("\n", 1)[0] ?? "").slice(0, 4000);
@@ -198,24 +210,7 @@ export function feedbackRoute(
     };
   const file = absolute(note.path, place.root);
   const root = trimRoot(place.root);
-  // One review (D16): a file of the checkout is the worktree review's, its
-  // path relative to that review's repository, its rendered anchor kept.
-  if (place.oneReview && file.startsWith(`${root}/`))
-    return {
-      held: false,
-      open: { path: place.root, target: { kind: "worktree" } },
-      anchor: (session) => {
-        const top = trimRoot(session.root);
-        return {
-          path: file.startsWith(`${top}/`)
-            ? file.slice(top.length + 1)
-            : file.slice(root.length + 1),
-          ...lineAnchor,
-          ...(Object.keys(render).length ? { render } : {}),
-        };
-      },
-    };
-  return {
+  const rendered: Route = {
     held: false,
     open: {
       file,
@@ -231,6 +226,30 @@ export function feedbackRoute(
       ...(Object.keys(render).length ? { render } : {}),
     }),
   };
+  // One review (D16): a file of the checkout is the worktree review's, its
+  // path relative to that review's repository, its rendered anchor kept.
+  // The repository is the one holding the file (its directory's): the
+  // workspace's directory may hold checkouts without being one.
+  if (place.oneReview && file.startsWith(`${root}/`))
+    return {
+      held: false,
+      open: {
+        path: file.slice(0, file.lastIndexOf("/")) || "/",
+        target: { kind: "worktree" },
+      },
+      anchor: (session) => {
+        const top = trimRoot(session.root);
+        return {
+          path: file.startsWith(`${top}/`)
+            ? file.slice(top.length + 1)
+            : file.slice(root.length + 1),
+          ...lineAnchor,
+          ...(Object.keys(render).length ? { render } : {}),
+        };
+      },
+      fallback: rendered,
+    };
+  return rendered;
 }
 
 function hash32(text: string, seed: number): number {
@@ -311,14 +330,23 @@ export async function writeFeedback(
   capture?: FeedbackCapture,
   hold = false,
 ): Promise<{ threadId: string; held: boolean; snapshot: ReviewSnapshot }> {
-  const route = feedbackRoute(note, place);
-  const opened = await call<ReviewSnapshot>("review.open", {
-    workspace_id: place.workspaceId,
-    ...route.open,
-    ...(place.agent && note.source !== "terminal"
-      ? { agent_pane: place.agent.paneId, agent: place.agent.name }
-      : {}),
-  });
+  let route = feedbackRoute(note, place);
+  const open = (each: Route) =>
+    call<ReviewSnapshot>("review.open", {
+      workspace_id: place.workspaceId,
+      ...each.open,
+      ...(place.agent && note.source !== "terminal"
+        ? { agent_pane: place.agent.paneId, agent: place.agent.name }
+        : {}),
+    });
+  let opened: ReviewSnapshot;
+  try {
+    opened = await open(route);
+  } catch (error) {
+    if (!route.fallback || !isNoRepositoryError(error)) throw error;
+    route = route.fallback;
+    opened = await open(route);
+  }
   const { session } = opened;
   // A question with no agent to ask: held for Send in the workspace's
   // threads (the review pane's holdForSend).
