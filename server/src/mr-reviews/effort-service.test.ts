@@ -486,3 +486,135 @@ test("a pick already in the target is skipped and said; a real conflict stops", 
     "pool: add c\npool: b and more",
   );
 });
+
+test("a duplicate effort deleted by a tool: by id only, the other's ledger kept, Undo restores it, no branch touched", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  const connection = g.connection([
+    { workspace_id: "w1", label: "big", cwd: clone },
+  ]);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const pushes: MrReviewsPush[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", label: "big" },
+          },
+        ],
+      }),
+      apply: async () => {},
+    },
+    publish: (push) => pushes.push(push),
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  // The same branch declared twice: two efforts named Big, the same commits.
+  const declare = async () =>
+    JSON.parse(
+      await reviews.boardTool(
+        "effort_set",
+        { group: "Big", source: "refs/heads/big" },
+        "Claude",
+      ),
+    ).effort.id as string;
+  const kept = await declare();
+  const duplicate = await declare();
+  expect(kept).not.toBe(duplicate);
+  await reviews.efforts.refresh(true);
+  const list = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: kept }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  );
+  const [a, b] = list.commits.map((c: any) => c.sha);
+  // Each marks a different commit (same patch ids in both).
+  await reviews.handle("bridge.mr_reviews.ledger.set", {
+    id: kept,
+    commits: [b],
+    disposition: "not_for_upstream",
+    reason: "debug only",
+  });
+  await reviews.handle("bridge.mr_reviews.ledger.set", {
+    id: duplicate,
+    commits: [a],
+    disposition: "superseded",
+    pointer: "elsewhere",
+  });
+  await reviews.handle("bridge.mr_reviews.ledger.plans", {
+    id: kept,
+    action: "propose",
+    name: "Pool a",
+    commits: [a],
+  });
+  const branches = g.git(clone, "branch", "--list").trim();
+  // A name both have deletes neither.
+  await expect(
+    reviews.boardTool("effort_delete", { effort: "big" }, "Claude"),
+  ).rejects.toThrow(/several efforts are named Big: give its id/);
+  expect((await reviews.settings()).efforts).toHaveLength(2);
+  const done = await reviews.boardTool(
+    "effort_delete",
+    { effort: duplicate },
+    "Claude in lead",
+  );
+  expect(done).toContain(`Deleted the effort Big (${duplicate})`);
+  expect((await reviews.settings()).efforts.map((each) => each.id)).toEqual([
+    kept,
+  ]);
+  const push = pushes.at(-1)!;
+  expect(push).toMatchObject({
+    changed: ["efforts"],
+    by: "agent",
+    summary: "Claude in lead deleted the effort Big",
+  });
+  expect(push.undo).toBeNumber();
+  // The other effort's ledger and plans, untouched; no branch moved.
+  await reviews.efforts.refresh(true);
+  const cards = () => reviews.inbox.get({ viewer: false });
+  expect((await cards()).efforts!.map((each) => each.id)).toEqual([kept]);
+  expect((await cards()).efforts![0]!.counts).toEqual({
+    planned: 1,
+    not_for_upstream: 1,
+  });
+  expect((await cards()).efforts![0]!.plans).toEqual({
+    proposed: 1,
+    accepted: 0,
+  });
+  expect(g.git(clone, "branch", "--list").trim()).toBe(branches);
+  // Undo brings it back with its own marks.
+  await reviews.handle("bridge.mr_reviews.order", {
+    op: "undo",
+    version: push.undo,
+  });
+  await reviews.efforts.refresh(true);
+  const back = (await cards()).efforts!.find((each) => each.id === duplicate);
+  expect(back?.counts).toEqual({ unsorted: 1, superseded: 1 });
+  expect(
+    (await cards()).efforts!.find((each) => each.id === kept)?.counts,
+  ).toEqual({ planned: 1, not_for_upstream: 1 });
+  await expect(
+    reviews.boardTool("effort_delete", { effort: "nope" }, "Claude"),
+  ).rejects.toThrow(/no such effort/);
+});

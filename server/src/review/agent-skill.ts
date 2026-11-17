@@ -206,7 +206,7 @@ waits for, labels, a link, stale), \`reviews_order\`, \`reviews_sort\`,
 \`reviews_view\` (saved views), \`upstream_group\` / \`upstream_workspace\`
 (which Workspaces-tree groups and workspaces hold work headed upstream:
 their branches show as "Not proposed upstream yet"), \`upstream_unsent\`
-(a branch that will be a request), \`effort_get\` / \`effort_set\` /
+(a branch that will be a request), \`effort_get\` / \`effort_set\` / \`effort_delete\` /
 \`effort_overlaps\` and \`ledger_list\` / \`ledger_set\` (upstreaming
 efforts: every commit of a large branch with its disposition; the leader
 session of an effort, in its head workspace, keeps the ledger, confirms or

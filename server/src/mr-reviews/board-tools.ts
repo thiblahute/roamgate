@@ -262,6 +262,17 @@ export const boardToolSchemas = {
     },
     { additionalProperties: false },
   ),
+  effort_delete: Type.Object(
+    {
+      effort: Type.String({
+        minLength: 1,
+        maxLength: 120,
+        description:
+          "The effort: its id (effort_get), or its name when no other effort has it.",
+      }),
+    },
+    { additionalProperties: false },
+  ),
   ledger_list: Type.Object(
     {
       effort: effortParam,
@@ -647,6 +658,8 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
     "An upstreaming effort: its declaration (source, target, feeders, head workspace), counts by disposition (upstream, in_review, in_part, planned, not_for_upstream, superseded, unsorted), feeders with commits not on the source yet, overlaps with other efforts and branches, and the last bulk changes.",
   effort_set:
     "Declare an upstreaming effort on a group or a workspace headed upstream (group, source branch; target defaults to origin/main, the clone to the group's first workspace), or change one (effort). preview: true only says what it would hold and its overlaps. Declaring never starts a session. The user is told and can undo it.",
+  effort_delete:
+    "Delete an upstreaming effort (by id, or by name when no other effort has it): only when the user asked. Its declaration leaves Reviews with its card, ledger marks, plans and history; the other efforts' ledgers, its parts' branches and worktrees are never touched. The user sees it with Undo, which brings it all back.",
   ledger_list:
     "An effort's commits, oldest first, 200 a page (cursor), each with sha, subject, author, top directory, disposition and note; filter with words and disposition:, dir:, file:, author: tokens. cluster: true adds a first grouping of the unsorted commits for proposing planned requests.",
   ledger_set:
@@ -698,6 +711,7 @@ const PLAN_VERBS: Record<string, string> = {
 /** The tools that change the user's list. */
 export const BOARD_WRITING: BoardToolName[] = [
   "effort_set",
+  "effort_delete",
   "ledger_set",
   "ledger_match",
   "ledger_plans",
@@ -1224,6 +1238,21 @@ export function createBoardTools(
         },
       );
       return JSON.stringify(answer);
+    },
+
+    async effort_delete(params: { effort: string }) {
+      const wanted = params.effort.trim();
+      const named = (await deps.settings()).efforts.find(
+        (each) =>
+          each.id === wanted ||
+          each.name.toLowerCase() === wanted.toLowerCase(),
+      );
+      const answer = (await panel("effort.delete", {
+        id: params.effort,
+        by: "agent",
+        summary: `${caller} deleted the effort ${(named?.name ?? wanted).slice(0, 80)}`,
+      })) as { effort: { id: string; name: string } };
+      return `Deleted the effort ${answer.effort.name} (${answer.effort.id}): its declaration, card, ledger marks, plans and history left Reviews; no branch or worktree was touched. The user can undo it.`;
     },
 
     async ledger_list(params: {

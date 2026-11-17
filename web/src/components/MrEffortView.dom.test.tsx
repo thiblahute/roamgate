@@ -29,6 +29,7 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
       navigator: browser.navigator,
       HTMLElement: browser.HTMLElement,
       HTMLInputElement: browser.HTMLInputElement,
+      HTMLButtonElement: browser.HTMLButtonElement,
       Element: browser.Element,
       Node: browser.Node,
       NodeFilter: browser.NodeFilter,
@@ -194,6 +195,8 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
             upstreamAnyway: [],
           },
         };
+      if (method === "bridge.mr_reviews.effort.delete")
+        return { ok: true, effort: { id: "e1", name: "Big" }, version: 7 };
       if (method === "bridge.mr_reviews.effort.diff")
         return { text: "1:  111 ! 1:  222 old" };
       if (method === "bridge.mr_reviews.effort.open_commit")
@@ -518,5 +521,70 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
     expect(card.textContent).toContain("1 to confirm");
     await press("c");
     expect(leaders).toEqual([2]);
+
+    // Delete: :delete asks first, naming the effort and what goes with it;
+    // Escape keeps it.
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+    await press(":");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        browser.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      const box = document.activeElement as HTMLInputElement;
+      setter.call(box, "delete");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await press("Enter");
+    expect(dialog()?.getAttribute("aria-label")).toBe("Delete the effort Big?");
+    expect(dialog()?.textContent).toContain(
+      "Big leaves Reviews with its card, its ledger marks, its plans and its history (300 commits)",
+    );
+    expect(dialog()?.textContent).toContain(
+      "Its parts' branches and worktrees stay as they are",
+    );
+    expect(dialog()?.textContent).toContain("Undo brings it all back");
+    await act(async () => {
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(dialog()).toBeNull();
+    expect(calls.some(([m]) => m === "bridge.mr_reviews.effort.delete")).toBe(
+      false,
+    );
+    expect(said).not.toContain("back");
+    // The heading's button, then confirmed: deleted, said with Undo, back
+    // to the inbox.
+    const deleteButton = [...view.querySelectorAll("button")].find(
+      (each) => each.textContent?.trim() === "Delete effort\u2026",
+    )!;
+    await act(async () => {
+      deleteButton.click();
+    });
+    const confirmButton = [...dialog()!.querySelectorAll("button")].find(
+      (each) => each.textContent === "Delete effort",
+    )!;
+    await act(async () => {
+      confirmButton.click();
+    });
+    await wait(30);
+    expect(dialog()).toBeNull();
+    expect(lastWrite()).toEqual([
+      "bridge.mr_reviews.effort.delete",
+      { id: "e1" },
+    ]);
+    expect(said.slice(-2)).toEqual(["Deleted the effort Big", "back"]);
+    await act(async () => {
+      await undo!();
+    });
+    expect(calls[calls.length - 1]).toEqual([
+      "bridge.mr_reviews.order",
+      { op: "undo", version: 7 },
+    ]);
   });
 }

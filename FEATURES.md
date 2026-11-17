@@ -1133,7 +1133,12 @@ it, in a part when a branch of the group holds it; what you mark by hand
 (not for upstream, superseded, planned) follows the commit across rewording
 and rebases. **Leader** (`c`) goes to the Claude session of its head
 workspace, which leads the effort through the board's tools; with none, it
-offers to start one there, and nothing starts it but you.
+offers to start one there, and nothing starts it but you. **Delete effort…**
+in its view (or `:delete`) takes an effort out, a duplicate declared by
+mistake for one, after a confirmation naming it: its card, ledger marks,
+plans and history leave Reviews and Undo brings them back; its parts'
+branches and worktrees stay as they are, and so do the other efforts'
+ledgers, even over the same commits.
 
 **Export and import** what you authored in Reviews (the order, pins,
 removals, what was set by hand, views, requests not proposed yet, groups

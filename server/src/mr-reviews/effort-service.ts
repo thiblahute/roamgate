@@ -630,6 +630,19 @@ export async function handleEffortRpc(
       return { ok: true, effort, version: saved.orderVersion ?? 0 };
     }
     case "bridge.mr_reviews.effort.delete": {
+      // A name several efforts share (a duplicate declared by mistake)
+      // deletes none: its id says which.
+      const wanted = String(params.id ?? params.effort ?? "");
+      const declared = (await deps.settings()).efforts;
+      const named = declared.filter(
+        (each) => each.name.toLowerCase() === wanted.trim().toLowerCase(),
+      );
+      if (!declared.some((each) => each.id === wanted) && named.length > 1)
+        throw new MrReviewsError(
+          `several efforts are named ${named[0]!.name}: give its id (${named
+            .map((each) => `${each.id}: ${each.source} in ${each.clone.path}`)
+            .join("; ")})`,
+        );
       const effort = await effortOf();
       const saved = await deps.edit(async () => {
         const latest = await deps.settings();
@@ -641,8 +654,14 @@ export async function handleEffortRpc(
           meta,
         );
       });
-      // Its ledger stays on disk: declaring it again (or Undo) finds it.
-      return { ok: true, version: saved.orderVersion ?? 0 };
+      // Only its declaration goes. Its ledger (marks, plans, history)
+      // stays on disk under its own id, for Undo, and no other effort's
+      // ledger, no branch and no worktree is touched.
+      return {
+        ok: true,
+        effort: { id: effort.id, name: effort.name },
+        version: saved.orderVersion ?? 0,
+      };
     }
     case "bridge.mr_reviews.effort.refresh": {
       const effort = await effortOf();
