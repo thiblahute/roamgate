@@ -534,7 +534,9 @@ export function MrEffortView({
       (done) =>
         done.conflict
           ? `Part ${done.branch}: ${done.picked} of ${done.of} picked, stopped at ${String(done.conflict.sha).slice(0, 10)} (${done.conflict.files.join(", ") || "empty"}): resolve it there`
-          : `Part ${done.branch} made with ${done.picked} commits${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
+          : done.error
+            ? `Part ${done.branch}: ${done.picked} of ${done.of} on its branch: ${done.error}`
+            : `Part ${done.branch} made with ${done.picked} commits${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
     );
 
   /**

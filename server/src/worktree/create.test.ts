@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,10 +7,11 @@ import {
   workspaceRepoSettingsKey,
 } from "../config/gui-settings";
 import type { LegacyConnectionRuntime } from "../connections/runtime";
-import { shQuote } from "../utils/process-utils";
+import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import type { GuiSettings } from "../config/gui-settings";
 import {
   createWorkspaceWorktree,
+  freeWorktreePath,
   herdrDefaultCheckoutPath,
   syncWorktreeBase,
   WORKTREE_COMMAND_TIMEOUT_MS,
@@ -939,6 +940,38 @@ describe("repository worktree directory", () => {
         explicit.syncBase,
       );
       expect(explicit.rpcParams[0]?.path).toBe("/elsewhere");
+
+      // An effort's part: the first path free on the host, never one
+      // that exists.
+      const fresh = creationFixture();
+      const probed: string[] = [];
+      await createWorkspaceWorktree(
+        fresh.runtime,
+        { workspace_id: "source", branch: "team/feature" },
+        fresh.isCurrent,
+        undefined,
+        fresh.syncBase,
+        undefined,
+        {
+          freshPath: "part",
+          runProcess: async (argv) => {
+            const script = remoteScript(argv.at(-1)!);
+            if (script.includes("worktree list")) {
+              probed.push(script);
+              return {
+                code: 0,
+                stdout: "/srv/trees/team-feature-part\n",
+                stderr: "",
+              };
+            }
+            return { code: 1, stdout: "", stderr: "" };
+          },
+        },
+      );
+      expect(probed[0]).toContain(
+        "'/srv/trees/team-feature' '/srv/trees/team-feature-part' '/srv/trees/team-feature-part-2'",
+      );
+      expect(fresh.rpcParams[0]?.path).toBe("/srv/trees/team-feature-part");
     } finally {
       if (previous === undefined) delete process.env.ROAMGATE_SETTINGS_PATH;
       else process.env.ROAMGATE_SETTINGS_PATH = previous;
@@ -1074,4 +1107,43 @@ test("a command changed while its install probe runs is not dispatched", async (
   ).rejects.toThrow("The worktree command changed");
   expect(executed).toBe(false);
   expect(f.methods).toEqual([]);
+});
+
+test("a fresh worktree path skips any existing directory and any worktree Git still lists", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rg-fresh-")));
+  try {
+    const repo = join(root, "repo");
+    const git = (...args: string[]) => {
+      const run = Bun.spawnSync(["git", ...args], {
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "T",
+          GIT_AUTHOR_EMAIL: "t@example.org",
+          GIT_COMMITTER_NAME: "T",
+          GIT_COMMITTER_EMAIL: "t@example.org",
+        },
+      });
+      if (run.exitCode !== 0) throw new Error(run.stderr.toString());
+    };
+    git("init", "-q", repo);
+    git("-C", repo, "commit", "-q", "--allow-empty", "-m", "init");
+    const base = join(root, "wt", "layer");
+    const free = () =>
+      freeWorktreePath({
+        base,
+        suffix: "part",
+        repo,
+        runProcess: runProcessWithCodeTimeout,
+      });
+    expect(await free()).toBe(base);
+    // Another branch's worktree at the path, a plain directory at the
+    // next, and a removed worktree Git still lists at the one after.
+    git("-C", repo, "worktree", "add", "-q", "-b", "layer", base);
+    Bun.spawnSync(["mkdir", "-p", `${base}-part`]);
+    git("-C", repo, "worktree", "add", "-q", "-b", "gone", `${base}-part-2`);
+    rmSync(`${base}-part-2`, { recursive: true });
+    expect(await free()).toBe(`${base}-part-3`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

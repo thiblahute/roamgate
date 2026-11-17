@@ -5,7 +5,12 @@ import type { MrReviewsPush } from "../../../shared/mrReviews";
 import { WORKSPACE_TREE_VERSION } from "../../../shared/workspaceTree";
 import { updateGuiSettings } from "../config/gui-settings";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
-import { parsePick, pickScript, readableError } from "./effort-service";
+import {
+  parsePick,
+  pickedOnBranch,
+  pickScript,
+  readableError,
+} from "./effort-service";
 import { createMrReviews } from "./module";
 import { openMrStore } from "./store";
 
@@ -363,6 +368,20 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
   expect(
     g.git(made[1]!, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD").trim(),
   ).toMatch(/^[0-9a-f]{40}$/);
+  const planOf = async (name: string) =>
+    (
+      (await reviews.handle("bridge.mr_reviews.effort.get", {
+        id: "Big",
+      })) as { plans: any[] }
+    ).plans.find((plan) => plan.name === name);
+  expect((await planOf("Change a")).part.conflict).toMatchObject({
+    files: ["pool/a.c"],
+  });
+  // Resolved and committed there: the view reads the part as it is now.
+  g.git(made[1]!, "checkout", "--theirs", "pool/a.c");
+  g.git(made[1]!, "add", "pool/a.c");
+  g.git(made[1]!, "-c", "core.editor=true", "cherry-pick", "--continue");
+  expect((await planOf("Change a")).part).not.toHaveProperty("conflict");
   // `d`: the commit's diff as a review in the head workspace.
   await reviews.handle("bridge.mr_reviews.effort.open_commit", {
     id: "Big",
@@ -397,7 +416,7 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
     to: a2,
   })) as { text: string };
   expect(diff.text).toContain("pool");
-});
+}, 30_000);
 
 test("a part of an effort headed in a linked worktree starts from the repository's parent workspace, else its main checkout's path", async () => {
   const g = createGitFixture();
@@ -538,7 +557,7 @@ test("a part of an effort headed in a linked worktree starts from the repository
     cwd: clone,
     branch: "pool-b",
   });
-});
+}, 30_000);
 
 test("Herdr's errors read without their code or a closing period", () => {
   expect(
@@ -626,7 +645,7 @@ test("a pick already in the target is skipped and said; a real conflict stops", 
     parsePick(
       (
         await connection.run(
-          pickScript(`${g.root}/part`, ["refs/heads/target"], shas),
+          pickScript(`${g.root}/part`, ["refs/heads/target"], shas, "part"),
           60_000,
         )
       ).stdout,
@@ -635,6 +654,7 @@ test("a pick already in the target is skipped and said; a real conflict stops", 
     picked: 1,
     files: [],
     skipped: [same.trim()],
+    onBranch: { count: 1, ids: [expect.stringMatching(/^[0-9a-f]{40}$/)] },
   });
   expect(g.git(`${g.root}/part`, "log", "--format=%s", "-2").trim()).toBe(
     "pool: add c\npool: b and more",
@@ -772,3 +792,116 @@ test("a duplicate effort deleted by a tool: by id only, the other's ledger kept,
     reviews.boardTool("effort_delete", { effort: "nope" }, "Claude"),
   ).rejects.toThrow(/no such effort/);
 });
+
+test("what a part holds is read back from its branch, never taken from the pick", () => {
+  // One commit with a diff and one empty: only what the branch holds.
+  const commits = [{ patchId: "p1" }, { patchId: "sha:e1" }];
+  expect(pickedOnBranch(commits, { count: 2, ids: ["p1"] })).toBe(2);
+  expect(pickedOnBranch(commits, { count: 1, ids: ["p1"] })).toBe(1);
+  expect(pickedOnBranch(commits, { count: 1, ids: ["other"] })).toBe(0);
+  expect(pickedOnBranch(commits, { count: 0, ids: [] })).toBe(0);
+});
+
+test("a part never goes into an existing worktree or onto an existing branch", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  // A layer of the stack already has b, in its own worktree at the path
+  // the part's branch would get.
+  const layer = join(g.root, "pool-b");
+  g.git(clone, "worktree", "add", "-q", "-b", "layer", layer, "big");
+  const layerHead = g.git(layer, "rev-parse", "HEAD").trim();
+  const workspaces = [{ workspace_id: "w1", label: "big", cwd: clone }];
+  const connection = g.connection(workspaces);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const placed: unknown[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", label: "big" },
+          },
+        ],
+      }),
+      apply: async (ops) => {
+        placed.push(...ops);
+      },
+    },
+    // As git recworktree does: the branch made, an existing checkout at
+    // the path taken as done, and that path given back.
+    createWorktree: async ({ branch }) => {
+      const path = join(g.root, branch);
+      g.git(clone, "branch", branch, "origin/main");
+      const listed = g.git(clone, "worktree", "list", "--porcelain");
+      if (!listed.includes(`worktree ${path}\n`))
+        g.git(clone, "worktree", "add", "-q", path, branch);
+      return { path };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big" },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const list = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  );
+  const b = list.commits[1].sha;
+  await reviews.handle("bridge.mr_reviews.ledger.plans", {
+    id: "Big",
+    action: "propose",
+    name: "Pool b",
+    commits: [b],
+    accepted: true,
+  });
+  // An existing branch is refused before anything is made.
+  await expect(
+    reviews.boardTool(
+      "part_create",
+      { effort: "Big", plan: "Pool b", branch: "layer" },
+      "Claude",
+    ),
+  ).rejects.toThrow(/branch layer exists already/);
+  // The path held the layer's worktree: refused, nothing picked or moved.
+  await expect(
+    reviews.boardTool(
+      "part_create",
+      { effort: "Big", plan: "Pool b" },
+      "Claude",
+    ),
+  ).rejects.toThrow(/not a new worktree on pool-b \(it is on layer\)/);
+  expect(g.git(layer, "rev-parse", "HEAD").trim()).toBe(layerHead);
+  expect(g.git(layer, "symbolic-ref", "HEAD").trim()).toBe("refs/heads/layer");
+  expect(placed).toEqual([]);
+  const plan = (
+    (await reviews.handle("bridge.mr_reviews.effort.get", {
+      id: "Big",
+    })) as { plans: any[] }
+  ).plans.find((each) => each.name === "Pool b");
+  expect(plan).not.toHaveProperty("part");
+}, 30_000);
