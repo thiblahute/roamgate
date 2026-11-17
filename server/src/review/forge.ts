@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import {
   type ForgePipeline,
   type ForgePipelineStatus,
@@ -15,11 +13,11 @@ import {
   validHost,
   validProject,
 } from "../../../shared/forge";
-import { sshCommandArgv, sshReadCommandArgv } from "../bridge/ssh-command";
 import { type MrCache, createMrCache } from "../mr-cache/cache";
 import { forgeGate } from "../workspace/forge-calls";
-import { gitShellCommandArgv } from "../workspace/git-shell";
 import { readPullRequestStatus } from "../workspace/pull-request";
+import { runForgeScript, spawnGh } from "./forge-cli";
+import { type Memo, memo } from "./memo";
 import { enterCheckout, scanReviewRepos } from "../workspace/review-patch";
 import {
   findBranchMergeRequest,
@@ -42,7 +40,6 @@ import {
  * is linked.
  */
 
-const TIMEOUT_MS = 30_000;
 /** How long an answer is shared by every chip and browser asking it. */
 export const FORGE_STATUS_TTL_MS = 15_000;
 /** A session's repositories and their branches' requests. */
@@ -513,51 +510,8 @@ async function gh(
   );
 }
 
-/**
- * gh on the checkout's host. Only a read may be `retrySafe`: a cold SSH
- * retry of a write (a REST POST, PATCH or DELETE, a GraphQL mutation) could
- * make it twice, such as a second pending comment.
- */
-export async function spawnGh(
-  context: ForgeContext,
-  full: string[],
-  retrySafe: boolean,
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  const env = {
-    GH_PROMPT_DISABLED: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    NO_COLOR: "1",
-  };
-  if (context.host) {
-    const command = `{ cd ${context.shQuote(context.root)} 2>/dev/null || cd; } && ${Object.entries(
-      env,
-    )
-      .map(([key, value]) => `${key}=${value}`)
-      .join(" ")} ${full.map(context.shQuote).join(" ")}`;
-    return context.runProcessWithCodeTimeout(
-      retrySafe
-        ? sshReadCommandArgv(context.host, command, [], "forge.github")
-        : sshCommandArgv(context.host, command, [], "forge.github"),
-      TIMEOUT_MS,
-    );
-  }
-  try {
-    return await context.runProcessWithCodeTimeout(full, TIMEOUT_MS, {
-      cwd: existsSync(context.root) ? context.root : homedir(),
-      env: { ...process.env, ...env },
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return { code: 127, stdout: "", stderr: "" };
-    throw error;
-  }
-}
-
 /** Whether gh is logged in to a host, by runner, checkout host and host. */
-const ghLogins = new WeakMap<
-  Run,
-  Map<string, { until: number; answer: Promise<number> }>
->();
+const ghLogins = new WeakMap<Run, Map<string, Memo<number>>>();
 
 /** gh's exit code for `auth status` on that host: 0 when logged in. */
 export function ghHostLogin(context: ForgeContext, host: string) {
@@ -566,17 +520,12 @@ export function ghHostLogin(context: ForgeContext, host: string) {
     known = new Map();
     ghLogins.set(context.runProcessWithCodeTimeout, known);
   }
-  const key = `${context.host ?? ""}\n${host}`;
-  const entry = known.get(key);
-  if (entry && entry.until > Date.now()) return entry.answer;
-  const answer = gh(context, ["auth", "status", "--hostname", host], {
-    host,
-    kind: "auth",
-  }).then((result) => result.code);
-  const next = { until: Date.now() + 5 * 60_000, answer };
-  known.set(key, next);
-  answer.catch(() => known.delete(key));
-  return answer;
+  return memo(known, `${context.host ?? ""}\n${host}`, 5 * 60_000, () =>
+    gh(context, ["auth", "status", "--hostname", host], {
+      host,
+      kind: "auth",
+    }).then((result) => result.code),
+  );
 }
 
 const GITHUB_QUERY = `query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { nameWithOwner pullRequest(number: $n) { number title url state isDraft updatedAt baseRefName headRefName author { login } reviewDecision reviews(states: APPROVED) { totalCount } reviewThreads(first: 100) { nodes { isResolved } } commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name status conclusion } ... on StatusContext { context state } } } } } } } } } }`;
@@ -796,7 +745,7 @@ export async function readGithubStatuses(
   return statuses;
 }
 
-type Cached<T> = { until: number; value: Promise<T> };
+type Cached<T> = Memo<T>;
 
 /**
  * Shares answers: one request per (checkout host, forge host, project,
@@ -815,26 +764,11 @@ export function createForgeCache(
     ttl: number,
     load: () => Promise<T>,
   ): Promise<T> {
-    const known = map.get(key);
-    if (known && known.until > clock()) return known.value;
     // Expired entries go; the map stays small.
-    if (map.size > 500)
+    if (map.size > 500 && !((map.get(key)?.until ?? 0) > clock()))
       for (const [other, entry] of map)
         if (entry.until <= clock()) map.delete(other);
-    const entry: Cached<T> = {
-      until: Number.POSITIVE_INFINITY,
-      value: load(),
-    };
-    map.set(key, entry);
-    entry.value.then(
-      () => {
-        entry.until = clock() + ttl;
-      },
-      () => {
-        if (map.get(key) === entry) map.delete(key);
-      },
-    );
-    return entry.value;
+    return memo(map, key, ttl, load, clock);
   }
   // Chips of one forge host asked together, and those asked lately, are
   // read with one GraphQL query; each answer stands as long as it can.
@@ -1081,12 +1015,7 @@ export async function readDefaultProject(
   context: ForgeContext,
 ): Promise<ForgeProject | null> {
   const script = remotesScript(context.root, context.shQuote);
-  const result = await context.runProcessWithCodeTimeout(
-    context.host
-      ? sshReadCommandArgv(context.host, script, [], "forge.remotes")
-      : gitShellCommandArgv(script),
-    TIMEOUT_MS,
-  );
+  const result = await runForgeScript(context, script, "forge.remotes");
   if (result.code !== 0) return null;
   const remotes: Record<string, string> = {};
   let glabHost = "";
