@@ -1717,6 +1717,9 @@ function DiffContentViewInner({
       }),
     [],
   );
+  /** S, `:diff`: side by side, or unified. */
+  const toggleSplit = () =>
+    setViewMode((mode) => (mode === "split" ? "unified" : "split"));
   // The review in Changes with no mode chosen: side by side when Changes
   // is wide enough for it, unified below (plan D4: its width, not the
   // window's).
@@ -2039,6 +2042,16 @@ function DiffContentViewInner({
       ? "GitHub"
       : "GitLab";
   };
+  /** The rewrite of a comment opened, its thread unfolded. */
+  const openEditor = (thread: ReviewThread, commentId: string) => {
+    if (threadView.folded(thread)) threadView.unfold([thread.id]);
+    threadView.setEditing(commentId);
+  };
+  /** A reply to a thread opened, the thread unfolded. */
+  const openReply = (thread: ReviewThread) => {
+    if (threadView.folded(thread)) threadView.unfold([thread.id]);
+    threadView.setReplying(thread.id);
+  };
   /** What every review editor in Changes shares. */
   const composerBase = () => ({
     delivery: ownDelivery,
@@ -2316,10 +2329,7 @@ function DiffContentViewInner({
               })()}
               onRetryWrite={pendingWrites.retryWrite}
               onDiscardWrite={pendingWrites.discardWrite}
-              onEdit={() => {
-                if (threadView.folded(thread)) threadView.unfold([thread.id]);
-                threadView.setEditing(comment.id);
-              }}
+              onEdit={() => openEditor(thread, comment.id)}
               onDelete={() => deleteThread(thread)}
             />
           );
@@ -2743,8 +2753,7 @@ function DiffContentViewInner({
     sections: cursorSections,
     split: effectiveViewMode === "split",
     rootRef: sectionRef,
-    onToggleSplit: () =>
-      setViewMode((mode) => (mode === "split" ? "unified" : "split")),
+    onToggleSplit: toggleSplit,
     onReload: onRetry,
     ...(onSearchElsewhere ? { searchElsewhere: onSearchElsewhere } : {}),
     runCommand: (input) => {
@@ -3673,13 +3682,11 @@ function DiffContentViewInner({
       const lone = owner.kind !== "discussion" && owner.comments.length < 2;
       const first = owner.comments[0];
       if (lone && first?.author === REVIEW_USER) {
-        if (threadView.folded(owner)) threadView.unfold([owner.id]);
-        threadView.setEditing(first.id);
+        openEditor(owner, first.id);
         return true;
       }
       if (!lone) {
-        if (threadView.folded(owner)) threadView.unfold([owner.id]);
-        threadView.setReplying(owner.id);
+        openReply(owner);
         return true;
       }
     }
@@ -3707,8 +3714,7 @@ function DiffContentViewInner({
         (each) => !each.thread.resolved && each.thread.kind === "discussion",
       );
       if (open) {
-        if (threadView.folded(open.thread)) threadView.unfold([open.thread.id]);
-        threadView.setReplying(open.thread.id);
+        openReply(open.thread);
         return true;
       }
     }
@@ -3721,9 +3727,7 @@ function DiffContentViewInner({
       );
       const first = draft?.thread.comments[0];
       if (draft && first) {
-        if (threadView.folded(draft.thread))
-          threadView.unfold([draft.thread.id]);
-        threadView.setEditing(first.id);
+        openEditor(draft.thread, first.id);
         return true;
       }
     }
@@ -4188,8 +4192,7 @@ function DiffContentViewInner({
           thread.kind !== "merge-request" &&
           (thread.kind === "discussion" || comment === thread.comments[0]);
         const edit = (thread: ReviewThread, comment: ReviewComment) => {
-          if (threadView.folded(thread)) threadView.unfold([thread.id]);
-          threadView.setEditing(comment.id);
+          openEditor(thread, comment.id);
           return true;
         };
         const selected = threadView.cursor?.startsWith("m:")
@@ -5240,7 +5243,7 @@ function DiffContentViewInner({
         say("Review saved");
         return;
       case "split":
-        setViewMode((mode) => (mode === "split" ? "unified" : "split"));
+        toggleSplit();
         return;
       case "comments":
         setHideComments((hidden) => !hidden);
@@ -5351,8 +5354,7 @@ function DiffContentViewInner({
             name: "diff",
             aliases: ["s"],
             description: "side by side / unified (Split, Unified)",
-            run: () =>
-              setViewMode((mode) => (mode === "split" ? "unified" : "split")),
+            run: toggleSplit,
           },
           {
             name: "split",
