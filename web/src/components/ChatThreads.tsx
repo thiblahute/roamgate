@@ -17,7 +17,7 @@ import {
   type ReviewSnapshot,
   type ReviewThread,
 } from "../../../shared/review";
-import { roamgateLocalStorage } from "../browserStorage";
+import { vimKeys } from "../vimKeys";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import { looseText } from "../reviewMessageParts";
 import {
@@ -79,18 +79,6 @@ export function reviewDelivery(
   if (!head) return null;
   const count = body.match(/^- \[[0-9a-f]{8}\]/gm)?.length ?? 0;
   return { title: head[2] === "chat" ? "this chat" : head[1]!, count };
-}
-
-/** Vim keys in comment boxes: the review's `:vim` setting. */
-function vimKeys(): boolean {
-  try {
-    const prefs = JSON.parse(
-      roamgateLocalStorage.getItem("reviewPrefs") ?? "{}",
-    ) as { vim?: boolean };
-    return prefs.vim !== false;
-  } catch {
-    return true;
-  }
 }
 
 /** How a message starts, for the agent to tell which one is meant. */
