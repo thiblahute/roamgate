@@ -394,7 +394,9 @@ export function ChangesScopeBar({
             onChange={onPickRepo}
             onSelectedClose={onDone}
           />
-          <span className="changes-scope-hint">
+          {/* The repositories' keys, said to screen readers (the title
+              shows them). */}
+          <span className="changes-scope-hint sr-only">
             {repos.length} repositories in this workspace; p searches, ( )
             switch
           </span>

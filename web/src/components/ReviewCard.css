@@ -21,7 +21,9 @@
   white-space: pre-wrap;
 }
 
-.rc .rc-bar {
+/* A comment's line of words and buttons: a review card's (.rc), a forge
+   discussion's (.mrt) and a thread's in Changes (DiffContentView.css). */
+.rc-bar {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -30,11 +32,11 @@
   font-size: 11px;
 }
 
-.rc .rc-bar .spacer {
+.rc-bar .spacer {
   flex: 1;
 }
 
-.rc .rc-bar .btn {
+.rc-bar .btn {
   padding: 1px 8px;
   font-size: 11px;
 }

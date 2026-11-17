@@ -6,24 +6,6 @@
   --rv-gitlab: #fc6d26;
 }
 
-.mrt .rc-bar {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-top: 4px;
-  color: var(--rv-faint);
-  font-size: 11px;
-}
-
-.mrt .rc-bar .spacer {
-  flex: 1;
-}
-
-.mrt .rc-bar .btn {
-  padding: 1px 8px;
-  font-size: 11px;
-}
-
 .mrt .mr-note.focused {
   box-shadow: inset 2px 0 0 var(--rv-accent);
   outline: 1px solid var(--rv-accent);
