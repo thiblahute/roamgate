@@ -30,16 +30,20 @@ export function repoRootOf(
     : undefined;
 }
 
+/** Where a pane is: its foreground program's directory, else its own. */
+export function paneDir(pane: Pane | undefined): string {
+  return pane?.foreground_cwd ?? pane?.cwd ?? "";
+}
+
 /** The directories holding a workspace's repositories, and its agents'. */
 export function workspaceRepoDirs(panes: readonly Pane[]): {
   dirs: string[];
   agentDirs: string[];
 } {
-  const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
-  const dirs = panes.map(dirOf).filter((dir) => dir.startsWith("/"));
+  const dirs = panes.map(paneDir).filter((dir) => dir.startsWith("/"));
   const agentDirs = panes
     .filter((pane) => pane.agent)
-    .map((pane) => pane.cwd ?? dirOf(pane))
+    .map((pane) => pane.cwd ?? paneDir(pane))
     .filter((dir) => dir.startsWith("/"));
   return { dirs: [...new Set(dirs)], agentDirs: [...new Set(agentDirs)] };
 }
