@@ -1,4 +1,4 @@
-import type { MrInboxEntry } from "../../shared/mrReviews";
+import type { MrInboxEntry, MrWorkspaceLink } from "../../shared/mrReviews";
 import type { ReviewSnapshot } from "../../shared/review";
 import { mrReviewsCall } from "./mrReviews";
 import { rememberReviewSnapshot, requestReviewShown } from "./review";
@@ -82,6 +82,59 @@ export async function openMrReview(
     checkout: reply.checkout,
     ...(reply.claude ? { claude: reply.claude } : {}),
   };
+}
+
+type ShownReply = {
+  connectionId: string;
+  workspaceId: string;
+  sessionId: string;
+  snapshot: ReviewSnapshot;
+};
+
+/** Goes to the workspace and shows the review there (its Changes). */
+async function showReply(reply: ShownReply) {
+  rememberReviewSnapshot(reply.snapshot);
+  await store
+    .jumpToConnectionWorkspace(reply.connectionId, reply.workspaceId)
+    .catch(() => {});
+  requestReviewShown(reply.connectionId, reply.sessionId);
+}
+
+/**
+ * Opens a request's review in one of its homes (a workspace on its branch,
+ * named after it, or made for it), not in the project's review workspace.
+ */
+export async function openMrReviewInHome(
+  entry: Pick<MrInboxEntry, "key">,
+  home: Pick<MrWorkspaceLink, "connectionId" | "workspaceId">,
+): Promise<void> {
+  const reply = await mrReviewsCall<ShownReply>("open", {
+    key: entry.key,
+    home: { connection_id: home.connectionId, workspace_id: home.workspaceId },
+  });
+  await showReply(reply);
+}
+
+export type MrHomeStarted = ShownReply & {
+  created: boolean;
+  branch?: string;
+  agent: {
+    state: "prompted" | "starting" | "foreign" | "none";
+    paneId: string | null;
+  };
+};
+
+/**
+ * "Start a review with a home": the bridge makes the request a workspace
+ * of its own with a Claude told its job; the page goes there and shows its
+ * review.
+ */
+export async function startMrReviewHome(
+  entry: Pick<MrInboxEntry, "key">,
+): Promise<MrHomeStarted> {
+  const reply = await mrReviewsCall<MrHomeStarted>("home", { key: entry.key });
+  await showReply(reply);
+  return reply;
 }
 
 /**

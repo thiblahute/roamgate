@@ -800,3 +800,79 @@
   font-family: var(--mono-font, monospace);
   font-size: 12px;
 }
+
+/* A wide pane: the board. The lanes (and each other section) are columns
+   side by side, each scrolling on its own; the board scrolls sideways when
+   there are more than fit, so the lanes keep their order on one line. */
+.mr-reviews-sections {
+  display: contents;
+}
+
+.assistant-panel.is-maximized.is-board .mr-reviews-body {
+  max-width: none;
+}
+
+.is-board .mr-reviews-body {
+  overflow-y: auto;
+}
+
+.mr-reviews-board {
+  display: flex;
+  flex: 1 1 0;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 320px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.mr-reviews-board > .mr-reviews-section.has-lanes {
+  display: contents;
+}
+
+.mr-reviews-board > .mr-reviews-section.has-lanes > .mr-reviews-section-title {
+  display: none;
+}
+
+.mr-reviews-board > .mr-reviews-section:not(.has-lanes),
+.mr-reviews-board .mr-reviews-lane {
+  display: flex;
+  flex: 1 0 340px;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 640px;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 8px;
+  background: var(--viewer-content-bg);
+}
+
+.mr-reviews-board .mr-reviews-lane + .mr-reviews-lane {
+  margin-top: 0;
+}
+
+.mr-reviews-board > .mr-reviews-section > .assistant-task-list,
+.mr-reviews-board .mr-reviews-lane > .assistant-task-list {
+  flex: 1 1 auto;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.mr-reviews-board .mr-reviews-lane > .assistant-task-list {
+  padding-left: 0;
+}
+
+/* A folded lane: a narrow column with its title read sideways. */
+.mr-reviews-board .mr-reviews-lane.is-folded {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.mr-reviews-board .mr-reviews-lane.is-folded > .mr-reviews-lane-title {
+  writing-mode: vertical-rl;
+}

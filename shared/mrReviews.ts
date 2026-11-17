@@ -354,15 +354,67 @@ export function parseMrWhose(text: string): MrWhose | null {
 
 /**
  * A workspace that is a request's (`bridge.mr_reviews.links`): on its
- * branch, named after it, or its review workspace, on any connection.
+ * branch, named after it, made as its home ("Start a review with a home"),
+ * or its review workspace, on any connection.
  */
 export type MrWorkspaceLink = {
   connectionId: string;
   connectionLabel: string;
   workspaceId: string;
   label: string;
-  why: ("branch" | "name" | "review")[];
+  why: ("home" | "branch" | "name" | "review")[];
 };
+
+/**
+ * A request's homes: its workspaces other than the project's shared review
+ * workspace (one linked only as where its review is), the first first.
+ */
+export function mrHomeLinks(
+  links: readonly MrWorkspaceLink[] | undefined,
+): MrWorkspaceLink[] {
+  return (links ?? []).filter((link) =>
+    link.why.some((why) => why !== "review"),
+  );
+}
+
+/**
+ * The search and filter the Reviews panel shows, kept across runs and
+ * devices (`mr_reviews.panel`): `at` orders the writes, so an older answer
+ * never takes a newer search back.
+ */
+export type MrPanelState = { search: string; filter: string; at: string };
+
+/** The first prompt of a request's home agent, when the setting is empty. */
+export const DEFAULT_MR_HOME_PROMPT = [
+  "This workspace is the home of the review of {url}",
+  '({ref} "{title}" by {author}, into {target}).',
+  "Review it with Roamgate's review tools: open its review in this workspace's",
+  "Changes, read the forge discussions, and draft your comments as the",
+  "user's pending drafts: only the user sends them. Never post to the forge",
+  "(no comment, approval, push or merge). Keep your notes here, in this",
+  "workspace, for the next sessions. Start with a short summary of the",
+  "request and what you plan to look at.",
+].join(" ");
+
+/** The home prompt with the request's facts in place of its {fields}. */
+export function mrHomePrompt(
+  template: string,
+  facts: {
+    url: string;
+    ref: string;
+    title: string;
+    author: string;
+    target: string;
+    source: string;
+    project: string;
+  },
+): string {
+  const text = template.trim() || DEFAULT_MR_HOME_PROMPT;
+  return text.replace(
+    /\{(url|ref|title|author|target|source|project)\}/g,
+    (_, name: keyof typeof facts) => facts[name],
+  );
+}
 
 /** A request the user removed from the view, for the Restore list. */
 export type MrHiddenEntry = {
@@ -412,6 +464,8 @@ export type MrInbox = {
   hidden: MrHiddenEntry[];
   /** The user's saved searches. */
   views?: MrSavedView[];
+  /** The search and filter kept across runs and devices. */
+  panel?: MrPanelState;
   /** Upstreaming efforts' cards. */
   efforts?: MrEffortSummary[];
   /** The Workspaces-tree groups headed upstream. */
@@ -501,6 +555,13 @@ export type MrReviewsSettings = {
   efforts: MrEffort[];
   /** Scheduled merges and merge bots: patterns and names, per scope. */
   merge: MrMergeSettings;
+  /** The search and filter the panel shows, on every device. */
+  panel: MrPanelState;
+  /**
+   * The first prompt of a request's home agent ({url} {ref} {title}
+   * {author} {target} {source} {project}); empty: DEFAULT_MR_HOME_PROMPT.
+   */
+  homePrompt: string;
   /** Read only: each project's review worktree, where it is. */
   reviewWorktrees?: { project: string; connectionId: string; path: string }[];
   /** Read only: the hosts found signed in, when `hosts` is empty. */
@@ -531,6 +592,8 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   unsent: [],
   efforts: [],
   merge: EMPTY_MR_MERGE_SETTINGS,
+  panel: { search: "", filter: "all", at: "" },
+  homePrompt: "",
 };
 
 /**
@@ -689,6 +752,7 @@ export const MR_PUSH_KINDS = [
   "upstream",
   "efforts",
   "effort",
+  "panel",
 ] as const;
 export type MrPushKind = (typeof MR_PUSH_KINDS)[number];
 

@@ -349,6 +349,10 @@ export function createMrOpener(deps: MrOpenerDeps) {
   }
 
   return {
+    /** The project's clone, review worktree and workspace (made when missing). */
+    project(entry: MrItem) {
+      return locked(mrProjectKey(entry), () => projectOf(entry));
+    },
     async open(
       key: string,
       options: { checkout?: "now" | "later" } = {},

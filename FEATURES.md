@@ -1245,34 +1245,70 @@ the settings (`mr_reviews.pinned`, `mr_reviews.hidden`), so every device
 follows. The keys, as in Roamgate's other lists (`?` lists them, and so
 does the shortcut cheat sheet):
 
-| Key                      | Action                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)                                   |
-| `gg`/`G`, Home/End       | First / last (`2G`: the second)                                                   |
-| `zz` / `zt` / `zb`       | Show the selected request in the middle, at the top, at the bottom of the list    |
-| `Enter`                  | Go to its workspace (the first, as `w`); with none, open its review               |
-| `i`                      | Its details                                                                       |
-| `c`                      | Its Claude session                                                                |
-| `o`                      | Open it on GitLab or GitHub                                                       |
-| `w`                      | Go to its workspace (`2w`: the second), on its connection                         |
-| `P`                      | Pin it on top, or unpin it                                                        |
-| `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it           |
-| `b`                      | A branch headed upstream will be a request (not proposed yet), or back            |
-| `za`                     | Fold the requests under it, or its lane                                           |
-| `gx`                     | Open its link (a URL, or a file in its workspace)                                 |
-| `f` / `F`                 | Next / previous of all, to review, mine and your saved views                      |
+| Key                      | Action                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `j`/`k`, Down/Up         | Next / previous request; a count repeats (`3j`)                                                                                       |
+| `gg`/`G`, Home/End       | First / last (`2G`: the second)                                                                                                       |
+| `zz` / `zt` / `zb`       | Show the selected request in the middle, at the top, at the bottom of the list                                                        |
+| `Enter`, a click         | Its review in its home (the first); with none, in the project's review workspace                                                      |
+| `i`                      | Its details                                                                                                                           |
+| `c`                      | Its Claude session                                                                                                                    |
+| `o`                      | Open it on GitLab or GitHub                                                                                                           |
+| `w`                      | Go to its workspace (`2w`: the second), on its connection                                                                             |
+| `P`                      | Pin it on top, or unpin it                                                                                                            |
+| `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it                                                               |
+| `b`                      | A branch headed upstream will be a request (not proposed yet), or back                                                                |
+| `za`                     | Fold the requests under it, or its lane                                                                                               |
+| `gx`                     | Open its link (a URL, or a file in its workspace)                                                                                     |
+| `gH`                     | Start a review with a home: its own workspace and a Claude told its job (`:home`)                                                     |
+| `h`/`l`, Tab/Shift+Tab   | On a wide pane (columns): the column on the left / right                                                                              |
+| `f` / `F`                | Next / previous of all, to review, mine and your saved views                                                                          |
 | `:`                      | A command: `note`, `whose`, `after`, `label`, `unlabel`, `link`, `stale`, `clear`, `pin`, `unpin`, `all`, `review`, `mine`, `refresh` |
-| `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                            |
-| `/`                      | Search; in the box Enter opens, Esc clears and goes back                          |
-| `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                         |
-| `dd` / `Delete`          | Remove it from the view (a pinned one is unpinned)                                |
-| `u`                      | Undo the last change (a removal, a pin, what was set by hand, an agent's change)  |
-| `H`                      | The hidden requests, to restore                                                   |
-| `x` / `+`                | Not interested / more like this (a suggestion); `x` on another request removes it |
-| `r`                      | Refresh                                                                           |
-| `a`                      | Ask the reviews agent                                                             |
-| `?`                      | List the keys                                                                     |
-| `Esc`                    | Step back: the key list, the search, then hide the panel (maximized or not)       |
+| `J`/`K`, Alt+Down/Alt+Up | Move it down / up in your order (`3J`)                                                                                                |
+| `/`                      | Search; in the box Enter opens, Esc clears and goes back                                                                              |
+| `p`                      | Add a request: focus the Add box (Enter pins, Esc clears)                                                                             |
+| `dd` / `Delete`          | Remove it from the view (a pinned one is unpinned)                                                                                    |
+| `u`                      | Undo the last change (a removal, a pin, what was set by hand, an agent's change)                                                      |
+| `H`                      | The hidden requests, to restore                                                                                                       |
+| `x` / `+`                | Not interested / more like this (a suggestion); `x` on another request removes it                                                     |
+| `r`                      | Refresh                                                                                                                               |
+| `a`                      | Ask the reviews agent                                                                                                                 |
+| `?`                      | List the keys                                                                                                                         |
+| `Esc`                    | Step back: the key list, the search, then hide the panel (maximized or not)                                                           |
+
+**A request's home** is a workspace of its own: one on its branch, one named
+after it ("!3326"), or one made for it. Enter, a click and **Review** open
+its review in its home's Changes (the first; the others are in its details),
+its head fetched there; only a request with no home opens in the project's
+shared review workspace below. **Start a review with a home** (`gH`,
+`:home`, the row's button on a request without one, or its details) makes
+one: a worktree through your worktree path (your `worktree_command`, else
+Herdr's) on the request's branch name at its head, named after the request
+("!3326 rtpgccbwe: Fix..."), placed where the project's reviews go in the
+Workspaces tree, with the review shown there and a Claude session started
+in it and told its job: this workspace is the home of that review; review it
+with Roamgate's review tools, read the forge discussions, draft comments as
+your pending drafts (only you send them), never post to the forge, and keep
+its notes there. The text is a setting (Reviews' settings, **Review homes**;
+`{url}`, `{ref}`, `{title}`, `{author}`, `{target}`, `{source}`,
+`{project}` take the request's) and shows in the button's tooltip. The board
+remembers the home (`mr_reviews` state), so the request goes there from now
+on; git only fetches from the forge.
+
+**The search and the filter are kept**: reopening the panel, reloading the
+page or restarting shows the search you left (`project:gstreamer/*`), on
+your other devices too (`mr_reviews.panel`); Esc or clearing the box empties
+it everywhere. A saved view whose search it is shows selected.
+
+**On a wide pane** (maximized, or any width that fits two columns of 420 px)
+the lanes show side by side as a board: each lane, and To review, Pinned and
+Suggested, a column with its title and count that scrolls on its own;
+requests waiting for another stay nested under it in its column; a folded
+lane is a narrow column, an empty Suggested none. The board scrolls sideways
+when there are more columns than fit, so the lanes keep their order on one
+line. `j`/`k` stay in a column, `h`/`l` and Tab go across at the same
+height, `zz` centers in its column; the add box, search and filters span the
+top, the efforts' cards too. Narrow panes and phones keep the one list.
 
 Opening a request gives each project one review worktree,
 `<your clone>.worktrees/review`, shown as a **Reviews · project**

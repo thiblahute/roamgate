@@ -81,6 +81,23 @@ export type MrProjectRecord = {
   checkedOut?: string;
 };
 
+/**
+ * A request's home made by "Start a review with a home": the board links
+ * the request to it (why "home") while its workspace is open.
+ */
+export type MrHomeRecord = {
+  connectionId: string;
+  workspaceId: string;
+  /** Its worktree. */
+  path: string;
+  branch?: string;
+  at: string;
+  /** The request's review there. */
+  sessionId?: string;
+  /** The Claude session started there. */
+  claudeSession?: string;
+};
+
 export type MrState = {
   version: 1;
   seen: Record<string, MrSeen>;
@@ -112,6 +129,8 @@ export type MrState = {
   inferred?: Record<string, MrInferred>;
   /** When the last twice-daily inference run started. */
   inferenceAt?: string;
+  /** Requests' homes, by key. */
+  homes?: Record<string, MrHomeRecord>;
 };
 
 export const FEEDBACK_KEPT = 200;
@@ -161,6 +180,7 @@ export function normalizeState(raw: unknown): MrState {
     pins: record(value.pins),
     ownDetails: record(value.ownDetails),
     inferred: record(value.inferred),
+    homes: record(value.homes),
     ...(typeof value.inferenceAt === "string"
       ? { inferenceAt: value.inferenceAt }
       : {}),

@@ -696,6 +696,23 @@ carries the number (`!12`, `#12`, `mr-12`) or the branch in such a clone or
 outside any repository, or when it holds the request's review (its review
 record, or the project's review worktree checked out on it). A source branch
 that is the target's, `main` or `master`, never matches. No forge call.
+A request's home made by `bridge.mr_reviews.home {key}` (state
+`homes[key]`: connection, workspace, worktree, branch, review and Claude
+session) matches as `home`, ranked first. Homes are the links with any
+reason but `review` alone (`mrHomeLinks`); the page opens a request with a
+home through `bridge.mr_reviews.open {key, home: {connection_id,
+workspace_id}}`, which fetches its head into that checkout (from the remote
+that is the project, else its https URL) and opens its review there
+(`home.ts`). `home` makes the worktree through `createWorkspaceWorktree`
+from the clone's own workspace (opened when none is: Herdr starts worktrees
+from the repository's parent) on the source branch name (or
+`review/N-name` when the clone has that branch), `reset --keep` to the head,
+renames the workspace `!N title`, places it as the project's review
+workspace (`tree_groups`), opens its review bound to its first pane, types
+`claude --session-id` there and sends the prompt (`mr_reviews.home_prompt`,
+else `DEFAULT_MR_HOME_PROMPT`) once Claude is idle (`agent.prompt`) or held
+by conversation mode (its own prompt), for up to ten minutes. An existing
+live home is reused.
 
 State
 (`<data>/mr-reviews/state.json`): what the user saw of each request
@@ -853,6 +870,11 @@ list queries, at most 10) and the override's. Saved views are
 returned with the inbox as `views`, changed by
 `bridge.mr_reviews.view {action: save|delete, name, query?}` (a save of an
 existing name replaces its query) and pushed as `changed: ["views"]`.
+The panel's search and filter are `mr_reviews.panel` (`{search, filter,
+at}`), written by `bridge.mr_reviews.panel {search?, filter?}` (`at` strictly
+after the previous write), returned with the inbox as `panel` and pushed as
+`changed: ["panel"]` without a new version; a page takes a panel whose `at`
+is newer than the one it last wrote or took, unless it is typing or saving.
 
 Branches headed upstream (`mr-reviews/upstream.ts`): settings
 `mr_reviews.upstream_groups` (Workspaces-tree group ids, at most 50; groups

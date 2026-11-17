@@ -892,6 +892,7 @@ export function createMrInbox(deps: MrInboxDeps) {
         ...(settings.order.length ? { order: settings.order } : {}),
         orderVersion: settings.orderVersion ?? 0,
         ...(settings.views.length ? { views: settings.views } : {}),
+        ...(settings.panel?.at ? { panel: settings.panel } : {}),
         ...(settings.upstreamGroups.length
           ? { upstreamGroups: settings.upstreamGroups }
           : {}),

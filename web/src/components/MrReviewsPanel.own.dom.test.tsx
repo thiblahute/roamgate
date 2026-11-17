@@ -177,6 +177,18 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
             ],
           },
         };
+      if (method === "bridge.mr_reviews.open" && params.home) {
+        const home = params.home as {
+          connection_id: string;
+          workspace_id: string;
+        };
+        return {
+          connectionId: home.connection_id,
+          workspaceId: home.workspace_id,
+          sessionId: "rs-home",
+          snapshot: { session: { id: "rs-home" }, threads: [] },
+        };
+      }
       if (method === "bridge.mr_reviews.open")
         return {
           needClone: {
@@ -324,14 +336,27 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
     )!;
     await act(async () => button.click());
     expect(jumps[jumps.length - 1]).toEqual(["mac", "w-pitch"]);
-    // Enter with a workspace: the first one, as w.
+    // Enter with a home: its review in the first one, not in the
+    // project's review workspace.
     await toggle();
     await keys("jj");
     expect(selected()).toEndWith("#5");
     await press("Enter");
+    await wait(30);
     expect(jumps.slice(1)).toEqual([
       ["mac", "w-pitch"],
       ["mac", "w-pitch"],
+    ]);
+    expect(
+      calls.filter(([method]) => method === "bridge.mr_reviews.open"),
+    ).toEqual([
+      [
+        "bridge.mr_reviews.open",
+        {
+          key: "gitlab:gitlab.example.org/group/app#5",
+          home: { connection_id: "mac", workspace_id: "w-pitch" },
+        },
+      ],
     ]);
     expect(panel()).toBeNull();
     // One with none says so, and goes nowhere.
@@ -347,7 +372,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
     await press("Enter");
     await wait(30);
     expect(
-      calls.filter(([method]) => method === "bridge.mr_reviews.open"),
+      calls.filter(([method]) => method === "bridge.mr_reviews.open").slice(1),
     ).toEqual([
       [
         "bridge.mr_reviews.open",

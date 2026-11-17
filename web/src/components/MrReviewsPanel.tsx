@@ -8,6 +8,7 @@ import {
   ExternalLink,
   GripVertical,
   House,
+  HousePlus,
   Keyboard,
   LoaderCircle,
   Maximize2,
@@ -40,6 +41,8 @@ import {
   type MrSavedView,
   type MrSection,
   type MrWorkspaceLink,
+  mrHomeLinks,
+  mrHomePrompt,
   mrRefLabel,
 } from "../../../shared/mrReviews";
 import {
@@ -55,12 +58,14 @@ import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
   hideMrRequest,
+  loadMrReviewsSettings,
   mrReviewsCall,
   onMrReviewsChange,
   type MrOverrideEdit,
   orderMrRequests,
   overrideMrRequest,
   pinMrRequest,
+  saveMrPanel,
   unhideMrRequest,
   unpinMrRequest,
   useMrInbox,
@@ -72,8 +77,10 @@ import {
   type MrClaudeState,
   mrClaude,
   openMrReview,
+  openMrReviewInHome,
   setMrClone,
   showMrClaude,
+  startMrReviewHome,
 } from "../mrReviewFlow";
 import {
   MR_REVIEWS_KEYS,
@@ -376,6 +383,11 @@ const FILTER_TITLE: Record<string, string> = {
 const filterTitle = (filter: MrFilter) =>
   FILTER_TITLE[filter] ?? filter.slice("view:".length);
 const FILTER_KEY = "mrReviewsFilter";
+/** The search kept for the next run (and the server's copy's time). */
+const SEARCH_KEY = "mrReviewsSearch";
+const PANEL_AT_KEY = "mrReviewsPanelAt";
+/** How long the search waits for more typing before it is kept. */
+const SEARCH_SAVE_MS = 600;
 const MAXIMIZED_KEY = "mrReviewsMaximized";
 
 function storedFilter(): MrFilter {
@@ -387,6 +399,28 @@ function storedFilter(): MrFilter {
   } catch {
     return "all";
   }
+}
+
+function storedText(key: string): string {
+  try {
+    return roamgateLocalStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** A filter the panel knows, else everything. */
+function validFilter(value: string): MrFilter {
+  return FILTERS.includes(value as MrFilter) || value.startsWith("view:")
+    ? (value as MrFilter)
+    : "all";
+}
+
+/** Two searches the same once spaces are set aside. */
+function sameSearch(a: string, b: string): boolean {
+  const norm = (text: string) =>
+    text.trim().split(/\s+/).join(" ").toLowerCase();
+  return norm(a) === norm(b);
 }
 
 function keep(key: string, value: string) {
@@ -892,9 +926,12 @@ export function MrReviewRow({
   links,
   onGoWorkspace,
   onTogglePin,
+  onStartHome,
   tree,
   onToggleChildren,
 }: {
+  /** Makes it a home (gH): shown on the selected request without one. */
+  onStartHome?: () => void;
   /** In a lane: its depth, children, and parent. */
   tree?: MrLaneRow;
   /** Folds or unfolds the requests drawn under it (za). */
@@ -919,7 +956,8 @@ export function MrReviewRow({
   const chips = ownChips(entry).filter(
     (chip) => !dense || chip.label !== "pipeline success" || chip.changed,
   );
-  const first = links?.[0];
+  const homes = mrHomeLinks(links);
+  const first = homes[0] ?? links?.[0];
   const drag = move?.drag;
   const depth = tree?.depth ?? 0;
   return (
@@ -1004,6 +1042,23 @@ export function MrReviewRow({
           >
             <House size={14} />
             {links!.length > 1 ? <small>{links!.length}</small> : null}
+          </button>
+        </span>
+      ) : null}
+      {selected &&
+      onStartHome &&
+      !homes.length &&
+      !entry.unavailable &&
+      !entry.branch ? (
+        <span className="mr-reviews-move">
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Start a review with a home"
+            title="Start a review with a home: a workspace of its own with a Claude session told its job (gH, :home)"
+            onClick={onStartHome}
+          >
+            <HousePlus size={14} />
           </button>
         </span>
       ) : null}
@@ -1367,6 +1422,36 @@ type SurfaceRect = { top: number; right: number; bottom: number; left: number };
  * from the window's edges, followed as the window and the page move. Null
  * while there are none (a phone, a test): the stylesheet's place then.
  */
+/**
+ * The pane width from which the lanes show as a board's columns: two
+ * columns of 420 px, with the body's padding and the gap.
+ */
+export const MR_BOARD_MIN_WIDTH = 2 * 420 + 12 + 24;
+
+/** An element's width, followed as it changes (0 where nothing is laid out). */
+export function usePanelWidth(
+  ref: { current: HTMLElement | null },
+  enabled: boolean,
+): number {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const measure = () =>
+      setWidth(Math.round(ref.current?.getBoundingClientRect().width ?? 0));
+    measure();
+    const Observer = (globalThis as { ResizeObserver?: typeof ResizeObserver })
+      .ResizeObserver;
+    const observer = Observer ? new Observer(measure) : null;
+    if (observer && ref.current) observer.observe(ref.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [enabled, ref]);
+  return enabled ? width : 0;
+}
+
 export function useSurfaceRect(enabled: boolean): SurfaceRect | null {
   const [rect, setRect] = useState<SurfaceRect | null>(null);
   useLayoutEffect(() => {
@@ -1483,6 +1568,7 @@ export function MrReviewsPanel({
   const setFilter = (next: MrFilter) => {
     setFilterState(next);
     keep(FILTER_KEY, next);
+    queuePanel({ filter: next }, 0);
   };
   const surface = useSurfaceRect(!mobile);
   const [selected, setSelected] = useState<string | null>(
@@ -1513,8 +1599,70 @@ export function MrReviewsPanel({
       suggested: orderMrEntries(groups.suggested, order),
     };
   }, [entries, order]);
-  /** The search (/): the requests shown, each section narrowed. */
-  const [query, setQuery] = useState("");
+  /**
+   * The search (/): the requests shown, each section narrowed. Kept for
+   * the next run and the user's other devices (mr_reviews.panel), with the
+   * filter: written a moment after the typing stops, taken from the
+   * bridge when another device wrote it later.
+   */
+  const [query, setQueryState] = useState(() => storedText(SEARCH_KEY));
+  const panelAt = useRef(storedText(PANEL_AT_KEY));
+  const pendingPanel = useRef<{ search?: string; filter?: string }>({});
+  const panelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelSaving = useRef(0);
+  const flushPanel = () => {
+    if (panelTimer.current) clearTimeout(panelTimer.current);
+    panelTimer.current = null;
+    const change = pendingPanel.current;
+    pendingPanel.current = {};
+    if (!Object.keys(change).length) return;
+    panelSaving.current++;
+    void saveMrPanel(change)
+      .then(({ panel }) => {
+        if (panel?.at && panel.at > panelAt.current) {
+          panelAt.current = panel.at;
+          keep(PANEL_AT_KEY, panel.at);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        panelSaving.current--;
+      });
+  };
+  const queuePanel = (
+    change: { search?: string; filter?: string },
+    delay: number,
+  ) => {
+    pendingPanel.current = { ...pendingPanel.current, ...change };
+    if (panelTimer.current) clearTimeout(panelTimer.current);
+    panelTimer.current = setTimeout(flushPanel, delay);
+  };
+  const setQuery = (next: string) => {
+    setQueryState(next);
+    keep(SEARCH_KEY, next);
+    queuePanel({ search: next }, SEARCH_SAVE_MS);
+  };
+  // Closed while typing: kept all the same.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unmount only
+  useEffect(() => () => flushPanel(), []);
+  const serverPanel = inbox?.panel;
+  useEffect(() => {
+    if (!serverPanel?.at || serverPanel.at <= panelAt.current) return;
+    // What is being typed or saved here wins; the next read says again.
+    if (panelTimer.current || panelSaving.current) return;
+    panelAt.current = serverPanel.at;
+    keep(PANEL_AT_KEY, serverPanel.at);
+    setQueryState(serverPanel.search);
+    keep(SEARCH_KEY, serverPanel.search);
+    const next = validFilter(serverPanel.filter);
+    setFilterState(next);
+    keep(FILTER_KEY, next);
+  }, [serverPanel]);
+  /** The saved view the search is, shown selected (filter All only). */
+  const searchView =
+    filter === "all" && query.trim()
+      ? views.find((view) => sameSearch(view.query, query))
+      : undefined;
   const searchRef = useRef<HTMLInputElement>(null);
   // The search completes keys, then values (Tab, the arrows), as the
   // inspector's : line does.
@@ -1576,6 +1724,66 @@ export function MrReviewsPanel({
       ? laneGroups.flatMap((group) => group.rows.map((row) => row.entry))
       : shown[section],
   );
+  /** The sections the filter shows. */
+  const visibleSections = SECTIONS.filter(
+    (section) =>
+      (section !== "pinned" || bySection.pinned.length) &&
+      // A view shows the sections it keeps something of.
+      (!filter.startsWith("view:") || shown[section].length) &&
+      (filter === "all" ||
+        filter.startsWith("view:") ||
+        (filter === "mine"
+          ? section === "authored" ||
+            (section === "pinned" && bySection.pinned.some(isOwn))
+          : section !== "authored" &&
+            (section !== "pinned" ||
+              bySection.pinned.some((entry) => !isOwn(entry))))),
+  );
+  /**
+   * A wide pane shows a board: each lane (and each other section) a column
+   * of its own, side by side, scrolling on its own. Narrow panes and
+   * phones keep the one stacked list.
+   */
+  const panelWidth = usePanelWidth(panelRef, !mobile);
+  const board = !mobile && panelWidth >= MR_BOARD_MIN_WIDTH;
+  const boardRef = useRef<HTMLDivElement>(null);
+  /** The sections drawn: an empty Suggested takes no column on the board. */
+  const drawnSections = board
+    ? visibleSections.filter(
+        (section) => section !== "suggested" || shown.suggested.length,
+      )
+    : visibleSections;
+  /** The board's columns, left to right, with the rows each shows. */
+  const columns: MrInboxEntry[][] = board
+    ? drawnSections.flatMap((section) =>
+        section === "authored" && lanesOn
+          ? laneGroups.map((group) => group.rows.map((row) => row.entry))
+          : [shown[section]],
+      )
+    : [];
+  const columnOf = (key: string | null) =>
+    key === null
+      ? -1
+      : columns.findIndex((rows) => rows.some((entry) => entry.key === key));
+  /** h / l, Tab: the column on the left or right, at the same height. */
+  const moveColumn = (step: number) => {
+    if (!columns.length) return false;
+    const at = columnOf(selected);
+    const row =
+      at < 0 ? 0 : columns[at]!.findIndex((entry) => entry.key === selected);
+    for (
+      let next = at < 0 ? (step > 0 ? 0 : columns.length - 1) : at + step;
+      next >= 0 && next < columns.length;
+      next += step
+    ) {
+      const rows = columns[next]!;
+      if (!rows.length) continue;
+      setSelected(rows[Math.min(row, rows.length - 1)]!.key);
+      return true;
+    }
+    return true;
+  };
+
   /** The rows a row moves among (J / K, drag): its section, or its lane. */
   const siblingsOf = (entry: MrInboxEntry): MrInboxEntry[] =>
     entry.section === "authored" && lanesOn
@@ -1588,6 +1796,9 @@ export function MrReviewsPanel({
   const [orderError, setOrderError] = useState<string | null>(null);
   const detailEntry = detail
     ? entries.find((entry) => entry.key === detail)
+    : undefined;
+  const detailHome = detailEntry
+    ? mrHomeLinks(links[detailEntry.key])[0]
     : undefined;
 
   useEffect(() => {
@@ -1819,6 +2030,15 @@ export function MrReviewsPanel({
 
   const move = (step: number) => {
     if (!ordered.length) return;
+    // On the board, j / k stay in the column.
+    const column = board ? columns[columnOf(selected)] : undefined;
+    if (column) {
+      const at = column.findIndex((entry) => entry.key === selected);
+      setSelected(
+        column[Math.min(column.length - 1, Math.max(0, at + step))]!.key,
+      );
+      return;
+    }
     const at = ordered.findIndex((entry) => entry.key === selected);
     const next =
       at < 0
@@ -2325,13 +2545,96 @@ export function MrReviewsPanel({
   };
 
   /**
-   * Enter: the request's workspace when it has one (the first, as w),
-   * else its review.
+   * A request's default action (Enter, a click, Review): its review in its
+   * home, the first of its own workspaces (on its branch, named after it,
+   * made for it); only a request with none opens in the project's shared
+   * review workspace. A branch goes to its workspace.
    */
   const enter = (entry: MrInboxEntry) => {
-    const link = links[entry.key]?.[0];
-    if (link) goWorkspace(entry, link);
-    else void open(entry);
+    const home = mrHomeLinks(links[entry.key])[0];
+    if (!home) {
+      const link = entry.branch ? links[entry.key]?.[0] : undefined;
+      if (link) goWorkspace(entry, link);
+      else void open(entry);
+      return;
+    }
+    if (entry.branch || entry.unavailable) {
+      goWorkspace(entry, home);
+      return;
+    }
+    void openInHome(entry, home);
+  };
+  const openInHome = async (entry: MrInboxEntry, home: MrWorkspaceLink) => {
+    setSelected(entry.key);
+    setOpening(entry.key);
+    setPrompt(null);
+    try {
+      await openMrReviewInHome(entry, home);
+      markSeen(entry);
+      onClose({ keepFocus: true });
+    } catch (cause) {
+      // Its workspace at least (the review could not be shown there).
+      say(
+        `Its review did not open in ${home.label || "its home"}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+      goWorkspace(entry, home);
+    } finally {
+      setOpening(null);
+    }
+  };
+
+  // The home prompt as the settings say, for the tooltip.
+  const [homePrompt, setHomePrompt] = useState("");
+  useEffect(() => {
+    let live = true;
+    void loadMrReviewsSettings()
+      .then((value) => {
+        if (live) setHomePrompt(value.homePrompt ?? "");
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [view]);
+  const homePromptOf = (entry: MrInboxEntry) =>
+    mrHomePrompt(homePrompt, {
+      url: entry.url,
+      ref: mrRefLabel(entry),
+      title: entry.title,
+      author: entry.author,
+      target: entry.targetBranch,
+      source: entry.sourceBranch,
+      project: entry.project,
+    });
+  /**
+   * "Start a review with a home" (gH, :home): a workspace of its own on
+   * its head, placed with the project's reviews, a Claude told its job;
+   * the request goes there from now on.
+   */
+  const startHome = async (entry: MrInboxEntry) => {
+    if (entry.branch) {
+      say("A branch has no request yet: its home is its own workspace");
+      return;
+    }
+    setSelected(entry.key);
+    setOpening(entry.key);
+    setPrompt(null);
+    say(`Making ${mrRefLabel(entry, true)} a home...`);
+    try {
+      const started = await startMrReviewHome(entry);
+      markSeen(entry);
+      if (started.agent.state === "foreign")
+        say("Its home's pane runs another agent: Claude was not started");
+      onClose({ keepFocus: true });
+    } catch (cause) {
+      setPrompt({
+        kind: "error",
+        entry,
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setOpening(null);
+    }
   };
 
   // The command line (:), as the review pane's.
@@ -2504,6 +2807,9 @@ export function MrReviewsPanel({
     if (name === "pin" || name === "unpin") {
       if (!current) say("Select a request first");
       else togglePin(current, name === "pin");
+    } else if (name === "home") {
+      if (!current) say("Select a request first");
+      else void startHome(current);
     } else if (name === "all" || name === "review" || name === "mine")
       setFilter(name);
     else if (name === "refresh" || name === "e") void reload(true);
@@ -2665,6 +2971,7 @@ export function MrReviewsPanel({
       else if (fed.key === "b") toggleUnsent(detailEntry);
       else if (fed.key === "E") clearOverride(detailEntry, "all");
       else if (fed.key === "gx") openLink(detailEntry);
+      else if (fed.key === "gH") void startHome(detailEntry);
       else if (fed.key === ":") setCommand("");
       else return false;
       return true;
@@ -2685,7 +2992,22 @@ export function MrReviewsPanel({
     if (fed.type === "wait") return true;
     const count = fed.count ?? 1;
     const current = ordered.find((entry) => entry.key === selected);
-    if (fed.key === "j" || fed.key === "ArrowDown") {
+    if (
+      board &&
+      (fed.key === "h" ||
+        fed.key === "l" ||
+        fed.key === "ArrowLeft" ||
+        fed.key === "ArrowRight" ||
+        fed.key === "Tab")
+    ) {
+      moveColumn(
+        fed.key === "h" ||
+          fed.key === "ArrowLeft" ||
+          (fed.key === "Tab" && event.shiftKey)
+          ? -count
+          : count,
+      );
+    } else if (fed.key === "j" || fed.key === "ArrowDown") {
       move(count);
     } else if (fed.key === "k" || fed.key === "ArrowUp") {
       move(-count);
@@ -2731,6 +3053,8 @@ export function MrReviewsPanel({
       clearOverride(current, "all");
     } else if (fed.key === "gx" && current) {
       openLink(current);
+    } else if (fed.key === "gH" && current) {
+      void startHome(current);
     } else if (
       (fed.key === "za" || fed.key === "zc" || fed.key === "zo") &&
       current
@@ -2850,6 +3174,27 @@ export function MrReviewsPanel({
       ? `Updated ${relative(inbox.refreshedAt)}`
       : "Not read yet";
 
+  /** The efforts' cards: atop Mine, or across the board's top. */
+  const effortCards = efforts.length ? (
+    <ul className="assistant-task-list mr-effort-cards" aria-label="Efforts">
+      {efforts
+        .filter(
+          (each) =>
+            !query ||
+            each.name.toLowerCase().includes(query.toLowerCase()) ||
+            query.toLowerCase().includes(`effort:${each.name.toLowerCase()}`),
+        )
+        .map((each) => (
+          <MrEffortCard
+            key={each.id}
+            summary={each}
+            onOpen={() => openEffort(each.id)}
+            onLeader={() => void leader(each.id)}
+          />
+        ))}
+    </ul>
+  ) : null;
+
   const toast = undo ? (
     <div className="mr-reviews-undo" role="status">
       <span>{undo.label}.</span>
@@ -2865,7 +3210,7 @@ export function MrReviewsPanel({
     <aside
       ref={panelRef}
       tabIndex={-1}
-      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}`}
+      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}${board ? " is-board" : ""}`}
       aria-label="Reviews"
       style={
         surface && !mobile
@@ -3248,9 +3593,27 @@ export function MrReviewsPanel({
                       type="button"
                       className="primary"
                       disabled={opening === detailEntry.key}
-                      onClick={() => void open(detailEntry)}
+                      title={
+                        detailHome
+                          ? `Its review in its home, ${detailHome.label || detailHome.workspaceId} (Enter)`
+                          : "Its review in the project's review workspace (Enter)"
+                      }
+                      onClick={() => enter(detailEntry)}
                     >
-                      {opening === detailEntry.key ? "Opening..." : "Review"}
+                      {opening === detailEntry.key
+                        ? "Opening..."
+                        : detailHome
+                          ? "Review in its home"
+                          : "Review"}
+                    </button>
+                    <button
+                      type="button"
+                      className={detailHome ? "ghost" : "primary"}
+                      disabled={opening === detailEntry.key}
+                      title={`A workspace of its own on its head, with a Claude session told (gH, :home): ${homePromptOf(detailEntry)}`}
+                      onClick={() => void startHome(detailEntry)}
+                    >
+                      <HousePlus size={13} /> Start a review with a home
                     </button>
                     <button
                       type="button"
@@ -3431,7 +3794,11 @@ export function MrReviewsPanel({
                     <button
                       key={each}
                       type="button"
-                      aria-pressed={filter === each}
+                      aria-pressed={
+                        searchView
+                          ? each === `view:${searchView.name}`
+                          : filter === each
+                      }
                       className={`ghost${each.startsWith("view:") ? " mr-reviews-view-chip" : ""}`}
                       title={
                         each.startsWith("view:")
@@ -3491,168 +3858,141 @@ export function MrReviewsPanel({
                   ) : null}
                 </div>
               ) : null}
-              {SECTIONS.filter(
-                (section) =>
-                  (section !== "pinned" || bySection.pinned.length) &&
-                  // A view shows the sections it keeps something of.
-                  (!filter.startsWith("view:") || shown[section].length) &&
-                  (filter === "all" ||
-                    filter.startsWith("view:") ||
-                    (filter === "mine"
-                      ? section === "authored" ||
-                        (section === "pinned" && bySection.pinned.some(isOwn))
-                      : section !== "authored" &&
-                        (section !== "pinned" ||
-                          bySection.pinned.some((entry) => !isOwn(entry))))),
-              ).map((section) => (
-                <section
-                  key={section}
-                  className="mr-reviews-section"
-                  aria-label={SECTION_TITLE[section]}
-                >
-                  <h3 className="mr-reviews-section-title">
-                    {SECTION_TITLE[section]}
-                    <span>
-                      {query || filter !== "all"
-                        ? `${shown[section].length} of ${bySection[section].length}`
-                        : bySection[section].length}
-                    </span>
-                  </h3>
-                  {section === "authored" && efforts.length ? (
-                    <ul
-                      className="assistant-task-list mr-effort-cards"
-                      aria-label="Efforts"
-                    >
-                      {efforts
-                        .filter(
-                          (each) =>
-                            !query ||
-                            each.name
-                              .toLowerCase()
-                              .includes(query.toLowerCase()) ||
-                            query
-                              .toLowerCase()
-                              .includes(`effort:${each.name.toLowerCase()}`),
-                        )
-                        .map((each) => (
-                          <MrEffortCard
-                            key={each.id}
-                            summary={each}
-                            onOpen={() => openEffort(each.id)}
-                            onLeader={() => void leader(each.id)}
+              {board && visibleSections.includes("authored")
+                ? effortCards
+                : null}
+              <div
+                ref={boardRef}
+                className={board ? "mr-reviews-board" : "mr-reviews-sections"}
+              >
+                {drawnSections.map((section) => (
+                  <section
+                    key={section}
+                    className={`mr-reviews-section${section === "authored" && lanesOn ? " has-lanes" : ""}`}
+                    aria-label={SECTION_TITLE[section]}
+                  >
+                    <h3 className="mr-reviews-section-title">
+                      {SECTION_TITLE[section]}
+                      <span>
+                        {query || filter !== "all"
+                          ? `${shown[section].length} of ${bySection[section].length}`
+                          : bySection[section].length}
+                      </span>
+                    </h3>
+                    {section === "authored" && !board ? effortCards : null}
+                    {section === "authored" && lanesOn ? (
+                      laneGroups.map((group) => (
+                        <div
+                          key={group.lane}
+                          className={`mr-reviews-lane is-${group.lane}${group.folded ? " is-folded" : ""}`}
+                          role="group"
+                          aria-label={MR_LANE_TITLE[group.lane]}
+                        >
+                          <button
+                            type="button"
+                            className="mr-reviews-lane-title"
+                            aria-expanded={!group.folded}
+                            title={`${group.folded ? "Show" : "Fold"} this lane (za)`}
+                            onClick={() => toggleLane(group.lane)}
+                          >
+                            {group.folded ? (
+                              <ChevronRight size={13} />
+                            ) : (
+                              <ChevronDown size={13} />
+                            )}
+                            {MR_LANE_TITLE[group.lane]}
+                            <span>{group.count}</span>
+                          </button>
+                          {!group.folded &&
+                          group.count >
+                            group.rows.filter(
+                              (row) => row.entry.lane === group.lane,
+                            ).length ? (
+                            <p className="assistant-hint mr-reviews-lane-hint">
+                              {(() => {
+                                const under =
+                                  group.count -
+                                  group.rows.filter(
+                                    (row) => row.entry.lane === group.lane,
+                                  ).length;
+                                return `${under} drawn under the request${under === 1 ? "" : "s"} ${under === 1 ? "it waits" : "they wait"} for`;
+                              })()}
+                            </p>
+                          ) : null}
+                          {group.rows.length ? (
+                            <ul className="assistant-task-list">
+                              {group.rows.map((row) => (
+                                <MrReviewRow
+                                  key={row.entry.key}
+                                  entry={row.entry}
+                                  tree={row}
+                                  onToggleChildren={() =>
+                                    toggleChildren(row.entry.key)
+                                  }
+                                  selected={row.entry.key === selected}
+                                  onSelect={() => setSelected(row.entry.key)}
+                                  onOpen={() => enter(row.entry)}
+                                  move={rowMove(row.entry)}
+                                  onRemove={() => remove(row.entry)}
+                                  links={links[row.entry.key]}
+                                  onGoWorkspace={(link) =>
+                                    goWorkspace(row.entry, link)
+                                  }
+                                  onTogglePin={() => togglePin(row.entry)}
+                                  onStartHome={() => void startHome(row.entry)}
+                                />
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : shown[section].length ? (
+                      <ul className="assistant-task-list">
+                        {shown[section].map((entry) => (
+                          <MrReviewRow
+                            key={entry.key}
+                            entry={entry}
+                            selected={entry.key === selected}
+                            onSelect={() => setSelected(entry.key)}
+                            onOpen={() => enter(entry)}
+                            move={rowMove(entry)}
+                            onRemove={() => remove(entry)}
+                            links={links[entry.key]}
+                            onGoWorkspace={(link) => goWorkspace(entry, link)}
+                            onTogglePin={() => togglePin(entry)}
+                            onStartHome={() => void startHome(entry)}
                           />
                         ))}
-                    </ul>
-                  ) : null}
-                  {section === "authored" && lanesOn ? (
-                    laneGroups.map((group) => (
-                      <div
-                        key={group.lane}
-                        className={`mr-reviews-lane is-${group.lane}`}
-                        role="group"
-                        aria-label={MR_LANE_TITLE[group.lane]}
-                      >
-                        <button
-                          type="button"
-                          className="mr-reviews-lane-title"
-                          aria-expanded={!group.folded}
-                          title={`${group.folded ? "Show" : "Fold"} this lane (za)`}
-                          onClick={() => toggleLane(group.lane)}
-                        >
-                          {group.folded ? (
-                            <ChevronRight size={13} />
-                          ) : (
-                            <ChevronDown size={13} />
-                          )}
-                          {MR_LANE_TITLE[group.lane]}
-                          <span>{group.count}</span>
-                        </button>
-                        {!group.folded &&
-                        group.count >
-                          group.rows.filter(
-                            (row) => row.entry.lane === group.lane,
-                          ).length ? (
-                          <p className="assistant-hint mr-reviews-lane-hint">
-                            {(() => {
-                              const under =
-                                group.count -
-                                group.rows.filter(
-                                  (row) => row.entry.lane === group.lane,
-                                ).length;
-                              return `${under} drawn under the request${under === 1 ? "" : "s"} ${under === 1 ? "it waits" : "they wait"} for`;
-                            })()}
-                          </p>
-                        ) : null}
-                        {group.rows.length ? (
-                          <ul className="assistant-task-list">
-                            {group.rows.map((row) => (
-                              <MrReviewRow
-                                key={row.entry.key}
-                                entry={row.entry}
-                                tree={row}
-                                onToggleChildren={() =>
-                                  toggleChildren(row.entry.key)
-                                }
-                                selected={row.entry.key === selected}
-                                onSelect={() => setSelected(row.entry.key)}
-                                onOpen={() => void open(row.entry)}
-                                move={rowMove(row.entry)}
-                                onRemove={() => remove(row.entry)}
-                                links={links[row.entry.key]}
-                                onGoWorkspace={(link) =>
-                                  goWorkspace(row.entry, link)
-                                }
-                                onTogglePin={() => togglePin(row.entry)}
-                              />
-                            ))}
-                          </ul>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : shown[section].length ? (
-                    <ul className="assistant-task-list">
-                      {shown[section].map((entry) => (
-                        <MrReviewRow
-                          key={entry.key}
-                          entry={entry}
-                          selected={entry.key === selected}
-                          onSelect={() => setSelected(entry.key)}
-                          onOpen={() => void open(entry)}
-                          move={rowMove(entry)}
-                          onRemove={() => remove(entry)}
-                          links={links[entry.key]}
-                          onGoWorkspace={(link) => goWorkspace(entry, link)}
-                          onTogglePin={() => togglePin(entry)}
-                        />
-                      ))}
-                    </ul>
-                  ) : bySection[section].length ? (
-                    <p className="assistant-hint">Nothing matches.</p>
-                  ) : (
-                    <p className="assistant-hint">
-                      {section === "mine"
-                        ? inbox.refreshedAt
-                          ? "Nothing waits for you."
-                          : "Reading the forges..."
-                        : section === "authored"
+                      </ul>
+                    ) : bySection[section].length ? (
+                      <p className="assistant-hint">Nothing matches.</p>
+                    ) : (
+                      <p className="assistant-hint">
+                        {section === "mine"
                           ? inbox.refreshedAt
-                            ? "No request of yours is open."
+                            ? "Nothing waits for you."
                             : "Reading the forges..."
-                          : inbox.curation.state === "off"
-                            ? "Follow projects in the settings to get suggestions."
-                            : inbox.curation.state === "running"
-                              ? "Claude is picking suggestions..."
-                              : "No suggestion right now."}
-                    </p>
-                  )}
-                </section>
-              ))}
+                          : section === "authored"
+                            ? inbox.refreshedAt
+                              ? "No request of yours is open."
+                              : "Reading the forges..."
+                            : inbox.curation.state === "off"
+                              ? "Follow projects in the settings to get suggestions."
+                              : inbox.curation.state === "running"
+                                ? "Claude is picking suggestions..."
+                                : "No suggestion right now."}
+                      </p>
+                    )}
+                  </section>
+                ))}
+              </div>
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
-                  j/k move · Enter its workspace, else review · i details · e
-                  set next step, whose move · w workspace · P pin · f all, to
-                  review, mine · za fold · c Claude · o on the forge · J/K
-                  reorder · / search · : command · dd remove · ? all keys
+                  j/k move · Enter its review in its home, else review · gH a
+                  home · i details · e set next step, whose move · w workspace ·
+                  P pin · f all, to review, mine · za fold · c Claude · o on the
+                  forge · J/K reorder · / search · : command · dd remove · ? all
+                  keys
                 </p>
               ) : null}
               {toast}

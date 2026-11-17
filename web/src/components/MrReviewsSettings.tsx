@@ -1,7 +1,10 @@
 import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ForgeProvider } from "../../../shared/forge";
-import type { MrReviewsSettings } from "../../../shared/mrReviews";
+import {
+  DEFAULT_MR_HOME_PROMPT,
+  type MrReviewsSettings,
+} from "../../../shared/mrReviews";
 import { MrMergeSettingsSection } from "./MrMergeSettings";
 import {
   loadMrReviewsSettings,
@@ -365,6 +368,27 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
               const days = Number(event.target.value);
               if (Number.isInteger(days) && days >= 0 && days <= 365)
                 void save({ retentionDays: days });
+            }}
+          />
+        </label>
+      </section>
+      <section className="assistant-task-overview">
+        <h3 className="mr-reviews-section-title">Review homes</h3>
+        <label className="form-field">
+          <span>
+            What a request's home agent is told first (Start a review with a
+            home): {"{url} {ref} {title} {author} {target} {source} {project}"}{" "}
+            take the request's; empty, the default
+          </span>
+          <textarea
+            rows={5}
+            aria-label="Home prompt"
+            placeholder={DEFAULT_MR_HOME_PROMPT}
+            defaultValue={settings.homePrompt ?? ""}
+            disabled={busy}
+            onBlur={(event) => {
+              if (event.target.value !== (settings.homePrompt ?? ""))
+                void save({ homePrompt: event.target.value });
             }}
           />
         </label>

@@ -3,6 +3,7 @@ import type {
   MrInbox,
   MrOverride,
   MrOverrideField,
+  MrPanelState,
   MrReviewsPush,
   MrReviewsSettings,
   MrWorkspaceLink,
@@ -73,8 +74,8 @@ function follow() {
   if (following) return;
   following = true;
   bridge.onMrReviews((push) => {
-    // A ledger's change carries no new version: said to who follows it.
-    if (push.changed.includes("effort")) {
+    // A ledger's change, the panel's search: no new version; read again.
+    if (push.changed.includes("effort") || push.changed.includes("panel")) {
       void loadMrInbox({ viewer: false }).catch(() => {});
       for (const listener of changeListeners) listener(push);
       return;
@@ -141,6 +142,17 @@ export function saveMrReviewsSettings(
   settings: Partial<MrReviewsSettings>,
 ): Promise<MrReviewsSettings> {
   return mrReviewsCall<MrReviewsSettings>("settings.update", { settings });
+}
+
+/**
+ * Keeps the panel's search and filter for the next run and the user's
+ * other devices; answers with what is kept and when.
+ */
+export function saveMrPanel(change: {
+  search?: string;
+  filter?: string;
+}): Promise<{ panel: MrPanelState }> {
+  return mrReviewsCall<{ panel: MrPanelState }>("panel", change);
 }
 
 /** Pins a request by URL (or `project!12`): it stays listed. */
