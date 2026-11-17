@@ -10,34 +10,8 @@ if (
   )
 ) {
   test("a pushed order shows at once, keeps the selection and a drag, the agent's change has Undo, and the manual order wins in Suggested", async () => {
-    const { Window } = await import("happy-dom");
-    const browser = new Window({ url: "http://localhost/" });
-    for (const [key, value] of Object.entries({
-      window: browser,
-      document: browser.document,
-      navigator: browser.navigator,
-      HTMLElement: browser.HTMLElement,
-      HTMLInputElement: browser.HTMLInputElement,
-      Element: browser.Element,
-      Node: browser.Node,
-      NodeFilter: browser.NodeFilter,
-      localStorage: browser.localStorage,
-      sessionStorage: browser.sessionStorage,
-      MutationObserver: browser.MutationObserver,
-      Event: browser.Event,
-      CustomEvent: browser.CustomEvent,
-      KeyboardEvent: browser.KeyboardEvent,
-      MouseEvent: browser.MouseEvent,
-      CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
-      getComputedStyle: browser.getComputedStyle.bind(browser),
-      requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
-      IS_REACT_ACT_ENVIRONMENT: true,
-    }))
-      Object.defineProperty(globalThis, key, {
-        value,
-        configurable: true,
-        writable: true,
-      });
+    const { installTestDom } = await import("../testDom");
+    const { browser } = installTestDom();
     (browser.HTMLElement.prototype as any).scrollIntoView = () => {};
     const React = await import("react");
     const { act } = React;
