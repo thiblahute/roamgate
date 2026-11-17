@@ -67,7 +67,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test("Left and Right change side on a changed row; j and k then stay on that side", async () => {
+      test("Left and Right change side on a changed row from a line's edge; j and k then stay on that side", async () => {
         const review = await mount({ files: replaced(), split: true });
         const at = () => [review.cursorLine()?.text, review.cursorSide()];
         await review.press("j");
@@ -83,7 +83,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(at()).toEqual(["bottom", "both"]);
         await review.press("2k");
         expect(at()).toEqual(["new 2", "new"]);
-        await review.press("<Left>");
+        // From the line's start (elsewhere Left moves a character, as h).
+        await review.press("0<Left>");
         expect(at()).toEqual(["old 2", "old"]);
         await review.press("k");
         expect(at()).toEqual(["old 1", "old"]);
@@ -97,6 +98,61 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(at()).toEqual(["new 2", "new"]);
         await review.unmount();
       });
+
+      for (const vim of [true, false])
+        test(`side by side, Left and Right move a character as h and l do, counts too, crossing to the other side at a line's edge (Vim keys ${vim ? "on" : "off"})`, async () => {
+          const review = await mount({
+            files: [
+              file(
+                "a.ts",
+                hunk(1, 1, [" a b c d e", "-x y z", "+p q r s", " f g h"]),
+              ),
+            ],
+            split: true,
+            vim,
+          });
+          const at = () => [review.cursorLine()?.text, review.cursorSide()];
+          expect(at()).toEqual(["a b c d e", "both"]);
+          // An unchanged line: a character at a time, as l and h.
+          await review.press("<Right><Right>");
+          expect(review.cursorWord()).toEqual({ start: 2, text: "b" });
+          await review.press("<Left>");
+          expect(review.cursorWord()).toEqual({ start: 1, text: " " });
+          await review.press("3<Right>");
+          expect(review.cursorWord()).toEqual({ start: 4, text: "c" });
+          await review.press("2<Left>");
+          expect(review.cursorWord()).toEqual({ start: 2, text: "b" });
+          await review.press("2l");
+          expect(review.cursorWord()).toEqual({ start: 4, text: "c" });
+          await review.press("h");
+          expect(review.cursorWord()).toEqual({ start: 3, text: " " });
+          // At the ends of a line with nothing beside it, it stays there.
+          await review.press("9<Left>");
+          expect(review.cursorWord()).toEqual({ start: 0, text: "a" });
+          await review.press("<Left>");
+          expect(at()).toEqual(["a b c d e", "both"]);
+          expect(review.cursorWord()).toEqual({ start: 0, text: "a" });
+          // A changed line: along the side it is on.
+          await review.press("j");
+          expect(at()).toEqual(["p q r s", "new"]);
+          await review.press("<Right><Right>");
+          expect(at()).toEqual(["p q r s", "new"]);
+          expect(review.cursorWord()).toEqual({ start: 2, text: "q" });
+          await review.press("<Left><Left>");
+          expect(review.cursorWord()).toEqual({ start: 0, text: "p" });
+          // Left at its start: the removed line beside it, at its end.
+          await review.press("<Left>");
+          expect(at()).toEqual(["x y z", "old"]);
+          expect(review.cursorWord()).toEqual({ start: 4, text: "z" });
+          await review.press("<Left><Left>");
+          expect(at()).toEqual(["x y z", "old"]);
+          expect(review.cursorWord()).toEqual({ start: 2, text: "y" });
+          // Right at its end: back to the added line, at its start.
+          await review.press("$<Right>");
+          expect(at()).toEqual(["p q r s", "new"]);
+          expect(review.cursorWord()).toEqual({ start: 0, text: "p" });
+          await review.unmount();
+        });
 
       test("Left and Right move a character in a unified diff", async () => {
         const review = await mount({ files: replaced(), split: false });

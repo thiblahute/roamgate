@@ -25,7 +25,10 @@ export const REVIEW_KEYS: readonly ShortcutRow[] = [
   ["w b E", "next word / previous word / end of word"],
   ["h l", "one character left / right"],
   ["0 ^ $", "start / first character / end of the line"],
-  ["← →", "side by side: the removed / added line of the row"],
+  [
+    "← →",
+    "as h l; side by side, past a line's start / end: the line beside it",
+  ],
   ["/", "search the diff (smart case); n / N next / previous match, Esc ends"],
   ["* #", "search the word under the cursor, forward / backward"],
   ["c Enter i a", "comment on the line"],

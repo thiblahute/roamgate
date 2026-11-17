@@ -77,7 +77,10 @@ export const DIFF_CURSOR_KEYS: readonly ShortcutRow[] = [
   ["w b E", "next word / previous word / end of word"],
   ["h l", "one character left / right"],
   ["0 ^ $", "start / first character / end of the line"],
-  ["← →", "side by side: the removed / added line of the row"],
+  [
+    "← →",
+    "as h l; side by side, past a line's start / end: the line beside it",
+  ],
   ["/", "search the diff (smart case); n / N next / previous match, Esc ends"],
   ["* #", "search the word under the cursor, forward / backward"],
   ["V", "select lines (j / k extend, Shift+click too); Esc cancels"],
@@ -845,20 +848,28 @@ export function useDiffCursor({
         return true;
       case "ArrowLeft":
       case "ArrowRight": {
-        const pair = split
-          ? model.splitLines.find(
-              (line) => line.left === at || line.right === at,
-            )
-          : undefined;
-        if (pair) {
-          splitSide.current = key === "ArrowLeft" ? "left" : "right";
-          const other = key === "ArrowLeft" ? pair.left : pair.right;
-          if (other !== null && other !== at) jumpTo(other, undefined, "none");
-          else setCursorState((current) => ({ ...current, scroll: "none" }));
+        // As h / l; side by side, from a line's start (Left) or end
+        // (Right), on to the line facing it on the other side.
+        const left = key === "ArrowLeft";
+        const last = Math.max(0, (row?.text.length ?? 1) - 1);
+        const pair =
+          split && (left ? cursor.col <= 0 : cursor.col >= last)
+            ? model.splitLines.find(
+                (line) => line.left === at || line.right === at,
+              )
+            : undefined;
+        const other = left ? pair?.left : pair?.right;
+        if (other !== null && other !== undefined && other !== at) {
+          splitSide.current = left ? "left" : "right";
+          jumpTo(
+            other,
+            left ? Math.max(0, (rows[other]?.text.length ?? 1) - 1) : 0,
+            "none",
+          );
         } else
           jumpTo(
             at,
-            key === "ArrowLeft" ? Math.max(0, cursor.col - n) : cursor.col + n,
+            left ? Math.max(0, cursor.col - n) : cursor.col + n,
             "none",
           );
         return true;

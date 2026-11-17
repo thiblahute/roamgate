@@ -195,6 +195,28 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      for (const vim of [true, false])
+        test(`Left and Right in the comment editor are the editor's (its caret), not the diff's cursor (Vim keys ${vim ? "on" : "off"})`, async () => {
+          const review = await mount({ files: [code()], vim });
+          await review.click({ path: "a.ts", new: 2 });
+          const at = review.cursorLine();
+          const word = review.cursorWord();
+          await review.press("c");
+          expect(review.editorText()).toBe("");
+          await review.type("ab");
+          // The editor gets them untouched and keeps the focus (the DOM
+          // runtime lays nothing out, so the caret itself is not read).
+          const typed = await review.keysInFocus("<Left><Left><Right>");
+          expect(typed.length).toBe(3);
+          expect(
+            typed.filter((each) => !each.untouched || !each.stayed),
+          ).toEqual([]);
+          expect(review.editorText()).toBe("ab");
+          expect(review.cursorLine()).toEqual(at);
+          expect(review.cursorWord()).toEqual(word);
+          await review.unmount();
+        });
+
       test("the editor under a line is the page's, not the diff's: its root is the document, its caret drawn, its words the review's", async () => {
         const review = await mount({ files: [code()] });
         await review.press("jc");
