@@ -13,25 +13,30 @@ import { ZenDock } from "./ZenIsland";
 
 export const CHANGES_TREE_HIDDEN_KEY = "inspectorChangesTreeHidden";
 
-/** Changes' tree hidden, remembered in the browser; and its toggle. */
-export function useChangesTreeHidden(): [boolean, () => void] {
-  const [hidden, setHidden] = useState(() => {
+/** A flag remembered in the browser under `key`; and its toggle. */
+export function useStoredFlag(key: string): [boolean, () => void] {
+  const [on, setOn] = useState(() => {
     try {
-      return roamgateLocalStorage.getItem(CHANGES_TREE_HIDDEN_KEY) === "1";
+      return roamgateLocalStorage.getItem(key) === "1";
     } catch {
       return false;
     }
   });
   const toggle = () =>
-    setHidden((was) => {
+    setOn((was) => {
       try {
-        roamgateLocalStorage.setItem(CHANGES_TREE_HIDDEN_KEY, was ? "0" : "1");
+        roamgateLocalStorage.setItem(key, was ? "0" : "1");
       } catch {
         /* Kept for this page only. */
       }
       return !was;
     });
-  return [hidden, toggle];
+  return [on, toggle];
+}
+
+/** Changes' tree hidden, remembered in the browser; and its toggle. */
+export function useChangesTreeHidden(): [boolean, () => void] {
+  return useStoredFlag(CHANGES_TREE_HIDDEN_KEY);
 }
 
 /** The classes of Changes' resource: its tree hidden, Review only. */
