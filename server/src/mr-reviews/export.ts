@@ -9,13 +9,14 @@ import { emptyLedger, type LedgerFile } from "./efforts";
  * removals, overrides, views, requests not proposed yet, groups and
  * workspaces headed upstream, efforts, merge rules; since version 2 also
  * the hosts, followed projects and hints, D30) and each effort's authored
- * ledger with its history, as stable key-sorted JSON. Never secrets, never
+ * ledger with its history, as stable key-sorted JSON (version 3 adds the
+ * workspaces headed upstream by themselves). Never secrets, never
  * derived data (forge state, inference, caches, derived.json, what the
  * user last saw), never the Undo journal. Run by hand or by a tool only.
  */
 
 export const REVIEWS_EXPORT_FORMAT = "roamgate-reviews";
-export const REVIEWS_EXPORT_VERSION = 2;
+export const REVIEWS_EXPORT_VERSION = 3;
 
 /** The authored keys of `mr_reviews` in settings.json. */
 export const EXPORTED_KEYS = [
@@ -27,6 +28,7 @@ export const EXPORTED_KEYS = [
   "unsent",
   "upstream_groups",
   "upstream_skip",
+  "upstream_workspaces",
   "efforts",
   "merge",
   "hosts",
@@ -44,6 +46,7 @@ const KEY_SINCE: Partial<Record<ExportedKey, number>> = {
   hosts: 2,
   followed: 2,
   hints: 2,
+  upstream_workspaces: 3,
 };
 
 /** The keys an export of that version carries. */

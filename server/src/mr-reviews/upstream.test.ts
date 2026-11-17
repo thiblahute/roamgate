@@ -1,7 +1,11 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { MrItem, MrReviewsPush } from "../../../shared/mrReviews";
+import {
+  type MrItem,
+  type MrReviewsPush,
+  upstreamWorkspaceHome,
+} from "../../../shared/mrReviews";
 import {
   type WorkspaceTree,
   WORKSPACE_TREE_VERSION,
@@ -93,6 +97,152 @@ test("members: under a marked group, nested groups too, minus the skipped", () =
   expect(
     upstreamMembers(t, { upstreamGroups: [], upstreamSkip: [] }, live),
   ).toEqual([]);
+});
+
+test("members: a workspace headed upstream by itself, with a node or none", () => {
+  const t = tree([
+    { id: "a", parent: "g1", path: "/a", label: "a" },
+    { id: "b", parent: "g3", path: "/b", label: "b" },
+  ]);
+  const live = new Map([
+    [
+      "local",
+      ["a", "b", "c", "d"].map((name) => ({
+        workspace_id: `w-${name}`,
+        label: name,
+        // The tree's nodes name a and b by their label.
+        ...(name === "a" || name === "b" ? {} : { path: `/${name}` }),
+      })),
+    ],
+  ]);
+  const dirs = new Map([
+    ["local\0w-a", "/a"],
+    ["local\0w-b", "/b"],
+  ]);
+  const b = { connection_id: "local", label: "b" };
+  const c = { connection_id: "local", path: "/c", label: "c" };
+  expect(
+    upstreamMembers(
+      t,
+      { upstreamGroups: [], upstreamSkip: [], upstreamWorkspaces: [b, c] },
+      live,
+      dirs,
+    ).map((member) => [member.workspaceId, member.group]),
+  ).toEqual([
+    ["w-b", upstreamWorkspaceHome(b)],
+    ["w-c", upstreamWorkspaceHome(c)],
+  ]);
+  // In a marked group, the group is its home.
+  expect(
+    upstreamMembers(
+      t,
+      {
+        upstreamGroups: ["g1"],
+        upstreamSkip: [],
+        upstreamWorkspaces: [{ connection_id: "local", label: "a" }],
+      },
+      live,
+      dirs,
+    ).map((member) => [member.workspaceId, member.group]),
+  ).toEqual([["w-a", "g1"]]);
+  expect(upstreamWorkspaceHome(c)).toMatch(/^ws-[0-9a-f]{16}$/);
+});
+
+test("a workspace headed upstream by itself: marked, listed, an effort's home, exported, unmarked", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "solo");
+  g.git(clone, "checkout", "-q", "-b", "solo-work");
+  g.commit(clone, "a.c", "a\n", "Solo change");
+  const connection = g.connection([
+    { workspace_id: "w1", label: "solo", cwd: clone },
+  ]);
+  // The workspace has no node of the tree; a group elsewhere.
+  const workspaceTree: WorkspaceTree = {
+    version: WORKSPACE_TREE_VERSION,
+    nodes: [{ id: "g1", kind: "group", parent: null, label: "Upstream" }],
+  };
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: { hosts: [{ host: FORGE_HOST, provider: "gitlab" }] },
+  }));
+  const pushes: MrReviewsPush[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: { read: async () => workspaceTree, apply: async () => {} },
+    publish: (push) => pushes.push(push),
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  // As the page names it: Herdr gives this workspace no folder of its own.
+  const ref = { connection_id: "local", label: "solo", workspace_id: "w1" };
+  const key = `branch:gitlab:${FORGE_HOST}/media/engine@solo-work`;
+  const snapshot = async () => reviews.inbox.get({ viewer: false });
+  expect(
+    await reviews.handle("bridge.mr_reviews.upstream.workspace", {
+      ref,
+      headed: true,
+    }),
+  ).toMatchObject({ ok: true, headed: true, changed: true });
+  expect(pushes.at(-1)!.changed).toEqual(["upstream"]);
+  expect(await reviews.handle("bridge.mr_reviews.upstream.marks", {})).toEqual({
+    groups: [],
+    skip: [],
+    workspaces: [ref],
+  });
+  expect((await reviews.settings()).upstreamSkip).toEqual([]);
+  await reviews.inbox.get({ viewer: true });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  await reviews.upstream.refresh(true);
+  const shown = await snapshot();
+  expect(shown.upstreamWorkspaces).toEqual([ref]);
+  expect(shown.entries.find((entry) => entry.key === key)).toMatchObject({
+    lane: "not_sent",
+    branch: { name: "solo-work", workspaceLabel: "solo" },
+  });
+  // Its home is the workspace: declared from its menu, or by a tool by name.
+  const home = upstreamWorkspaceHome(ref);
+  const preview = JSON.parse(
+    await reviews.boardTool(
+      "effort_set",
+      { group: "solo", source: "refs/heads/solo-work", preview: true },
+      "Claude",
+    ),
+  );
+  expect(preview.effort).toMatchObject({ group: home, name: "solo" });
+  const declared = (await reviews.handle("bridge.mr_reviews.effort.set", {
+    group: home,
+    source: "refs/heads/solo-work",
+  })) as { effort: { group: string; name: string; clone: unknown } };
+  expect(declared.effort).toMatchObject({
+    group: home,
+    name: "solo",
+    clone: { connectionId: "local", path: clone },
+  });
+  // Exported with the rest.
+  const { text } = (await reviews.handle("bridge.mr_reviews.export", {})) as {
+    text: string;
+  };
+  const exported = JSON.parse(text);
+  expect(exported.version).toBe(3);
+  expect(exported.mr_reviews.upstream_workspaces).toEqual([ref]);
+  // Unmarked: no row; never a skip.
+  expect(
+    await reviews.handle("bridge.mr_reviews.upstream.workspace", {
+      ref,
+      headed: false,
+    }),
+  ).toMatchObject({ changed: true });
+  const after = await reviews.settings();
+  expect(after.upstreamWorkspaces).toEqual([]);
+  expect(after.upstreamSkip).toEqual([]);
+  await reviews.upstream.refresh(true);
+  expect((await snapshot()).entries.some((entry) => entry.key === key)).toBe(
+    false,
+  );
 });
 
 const own = (n: number, extra: Partial<MrItem> = {}): MrItem => ({

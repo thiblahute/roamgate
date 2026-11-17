@@ -1,6 +1,6 @@
 import type { AssistantSource } from "./assistant";
 import { forgeRefLabel } from "./forge";
-import type { WorkspaceRef } from "./workspaceTree";
+import { type WorkspaceRef, workspaceRefKey } from "./workspaceTree";
 import {
   EMPTY_MR_MERGE_SETTINGS,
   type MrMergeInfo,
@@ -470,6 +470,8 @@ export type MrInbox = {
   efforts?: MrEffortSummary[];
   /** The Workspaces-tree groups headed upstream. */
   upstreamGroups?: string[];
+  /** The workspaces headed upstream by themselves, outside such a group. */
+  upstreamWorkspaces?: WorkspaceRef[];
 };
 
 export type MrVerdict = "not_interested" | "more_like_this";
@@ -554,6 +556,11 @@ export type MrReviewsSettings = {
   upstreamGroups: string[];
   /** Workspaces in such a group that are not (the tree's references). */
   upstreamSkip: WorkspaceRef[];
+  /**
+   * Workspaces headed upstream by themselves, in no such group (the
+   * tree's references; a workspace needs no node of the tree for it).
+   */
+  upstreamWorkspaces: WorkspaceRef[];
   /** Branches said to be requests, not proposed yet (D25: "not sent"). */
   unsent: MrUnsent[];
   /** Upstreaming efforts, each declared on a group headed upstream. */
@@ -595,6 +602,7 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   views: [],
   upstreamGroups: [],
   upstreamSkip: [],
+  upstreamWorkspaces: [],
   unsent: [],
   efforts: [],
   merge: EMPTY_MR_MERGE_SETTINGS,
@@ -602,13 +610,48 @@ export const DEFAULT_MR_REVIEWS_SETTINGS: MrReviewsSettings = {
   homePrompt: "",
 };
 
+/** Whether a stored workspace reference names that workspace. */
+export function sameUpstreamWorkspace(
+  stored: WorkspaceRef,
+  ref: WorkspaceRef,
+): boolean {
+  return (
+    workspaceRefKey(stored) === workspaceRefKey(ref) ||
+    (stored.connection_id === ref.connection_id &&
+      !!stored.path &&
+      stored.path === ref.path)
+  );
+}
+
+/**
+ * The home id of a workspace headed upstream by itself: what its branches
+ * and efforts name in place of a group node (`ws-` and a hash of its
+ * reference's identity, so it is the same on every page and the server).
+ */
+export function upstreamWorkspaceHome(ref: WorkspaceRef): string {
+  const text = workspaceRefKey(ref);
+  // Two 32-bit FNV-1a passes with different seeds: 16 hex digits.
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    a = Math.imul(a ^ code, 0x01000193) >>> 0;
+    b = Math.imul(b ^ code, 0x01000193 + 2) >>> 0;
+  }
+  return `ws-${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
+}
+
 /**
  * An upstreaming effort: a large branch (the source) followed commit by
- * commit until all of it is upstream, declared on a group headed upstream.
+ * commit until all of it is upstream, declared on a group headed upstream
+ * or on a workspace headed upstream by itself.
  */
 export type MrEffort = {
   id: string;
-  /** The Workspaces-tree group node. */
+  /**
+   * Its home: the Workspaces-tree group node, or a workspace's
+   * `upstreamWorkspaceHome`.
+   */
   group: string;
   name: string;
   /** The clone the source is read in. */

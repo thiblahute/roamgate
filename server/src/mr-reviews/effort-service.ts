@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { forgeRefLabel } from "../../../shared/forge";
-import type {
-  MrEffort,
-  MrEffortSummary,
-  MrItem,
-  MrOverlap,
-  MrReviewsPush,
-  MrReviewsSettings,
+import {
+  type MrEffort,
+  type MrEffortSummary,
+  type MrItem,
+  type MrOverlap,
+  type MrReviewsPush,
+  type MrReviewsSettings,
+  upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import { onGitlabHost, remoteProject } from "../review/gitlab";
 import { claudeCommand } from "./claude";
@@ -502,10 +503,18 @@ export async function handleEffortRpc(
       const existing = params.id
         ? findEffort(current.efforts, String(params.id))
         : null;
+      // Its home: a group headed upstream, or a workspace headed upstream
+      // by itself (its home id).
       const group = String(params.group ?? existing?.group ?? "");
-      if (!current.upstreamGroups.includes(group) && !existing)
+      if (
+        !current.upstreamGroups.includes(group) &&
+        !current.upstreamWorkspaces.some(
+          (ref) => upstreamWorkspaceHome(ref) === group,
+        ) &&
+        !existing
+      )
         throw new MrReviewsError(
-          "an effort is declared on a group headed upstream",
+          "an effort is declared on a group or a workspace headed upstream",
         );
       const members = deps.upstream
         .members()

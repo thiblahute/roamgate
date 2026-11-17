@@ -15,7 +15,9 @@ import {
   type MrEffortSummary,
   type MrMatchProposal,
   type MrPlan,
+  upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
+import type { WorkspaceRef } from "../../../shared/workspaceTree";
 import { mrReviewsCall, onMrReviewsChange } from "../mrReviews";
 import { type ShownReply, showReply } from "../mrReviewFlow";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
@@ -1221,25 +1223,52 @@ function WhatChanged({
   );
 }
 
-/** Declaring an effort on a group headed upstream, its overlaps shown first. */
+/** What a menu opens the declaring with: the home and the source. */
+export type MrDeclarePrefill = {
+  /** A group node id, or a workspace's `upstreamWorkspaceHome`. */
+  home?: string;
+  /** The source branch (the head workspace's branch). */
+  source?: string;
+};
+
+/**
+ * Declaring an effort on a group or a workspace headed upstream, its
+ * overlaps shown first.
+ */
 export function MrEffortDeclare({
   groups,
+  workspaces = [],
+  initial,
   onDone,
   onCancel,
 }: {
   /** The groups headed upstream, by id. */
   groups: string[];
+  /** The workspaces headed upstream by themselves. */
+  workspaces?: WorkspaceRef[];
+  initial?: MrDeclarePrefill;
   onDone: (id: string) => void;
   onCancel: () => void;
 }) {
   const tree = useWorkspaceTree();
-  const named = groups.flatMap((id) => {
-    const node = tree.nodes.find((each) => each.id === id);
-    return node?.kind === "group" ? [{ id, label: node.label }] : [];
-  });
-  const [group, setGroup] = useState(named[0]?.id ?? "");
+  const named = [
+    ...groups.flatMap((id) => {
+      const node = tree.nodes.find((each) => each.id === id);
+      return node?.kind === "group" ? [{ id, label: node.label }] : [];
+    }),
+    ...workspaces.map((ref) => ({
+      id: upstreamWorkspaceHome(ref),
+      label: ref.label || ref.path || "Workspace",
+    })),
+  ];
+  const [picked, setGroup] = useState(initial?.home ?? "");
+  // The homes may arrive after the form opens: the one asked for, else the
+  // first.
+  const group = named.some((each) => each.id === picked)
+    ? picked
+    : (named[0]?.id ?? "");
   const [name, setName] = useState("");
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState(initial?.source ?? "");
   const [target, setTarget] = useState("origin/main");
   const [feeders, setFeeders] = useState("");
   const [preview, setPreview] = useState<MrEffortSummary | null>(null);
@@ -1271,8 +1300,9 @@ export function MrEffortDeclare({
   if (!named.length)
     return (
       <p className="assistant-hint">
-        Mark a group of the Workspaces tree as Headed upstream first (its menu),
-        with the source's clone among its workspaces.
+        Mark a workspace or a group of the Workspaces tree as Headed upstream
+        first (the workspace or group menu), with the source's clone among its
+        workspaces.
       </p>
     );
   return (
@@ -1292,7 +1322,7 @@ export function MrEffortDeclare({
       }}
     >
       <label>
-        <span>Group</span>
+        <span>Home</span>
         <select
           value={group}
           onChange={(event) => setGroup(event.target.value)}

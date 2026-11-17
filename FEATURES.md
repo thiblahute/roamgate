@@ -1069,8 +1069,11 @@ changes, not by a drag.
 **Branches headed upstream** show before any request exists. A group of
 the Workspaces tree marked **Headed upstream** (its menu; groups inside it
 are too) says its workspaces hold work meant to go upstream; a workspace
-there can say **Not headed upstream** (its menu), and a checkout with no
-remote on one of your forge hosts is left out. Each such workspace's branch
+there shows **Headed upstream (as GROUP)** in its menu and can say **Not
+headed upstream**. A workspace in no such group is marked **Headed
+upstream** by itself from its own menu (unchecked again the same way). A
+checkout with no remote on one of your forge hosts is left out. Each such
+workspace's branch
 with commits beyond its target (the `upstream`, else `origin` remote's
 default branch) is a row in **Not proposed upstream yet**: its commits,
 how far behind it is, changed and unpushed files, and its next step
@@ -1086,9 +1089,10 @@ the checkouts, at most once a minute; a request's head is fetched into the
 clone (`refs/roamgate/mr/N`, never your own branches) only when it moved.
 
 **Upstreaming efforts** follow a large branch commit by commit until all
-of it is upstream. Declare one on a group headed upstream (its menu,
-**Declare an upstreaming effort…**, or `:declare` in Reviews): the source
-branch (resolved once to one exact ref of the clone, refused when
+of it is upstream. Declare one on a group or a workspace headed upstream
+(its menu, **Declare an upstreaming effort…**, which from a workspace's
+menu starts from that workspace's branch, or `:declare` in Reviews): the
+source branch (resolved once to one exact ref of the clone, refused when
 ambiguous), its target (`origin/main` unless said), feeders (branches
 landing into it) and a name; **Preview** first shows what it holds and the
 other efforts or branches holding the same commits, with the proposed

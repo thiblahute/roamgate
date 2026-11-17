@@ -1,5 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { focusBeforeMrReviews } from "../mrReviewsOpen";
+import type { MrDeclarePrefill } from "./MrEffortView";
 import { MrReviewsPanel } from "./MrReviewsPanel";
 
 let root: Root | null = null;
@@ -23,7 +24,12 @@ function close(options: { keepFocus?: boolean } = {}) {
 }
 
 let renders = 0;
-function render(select?: string, open?: string, view?: "chat" | "declare") {
+function render(
+  select?: string,
+  open?: string,
+  view?: "chat" | "declare",
+  declare?: MrDeclarePrefill,
+) {
   // A new key remounts it, so a request to open, or the chat, is taken
   // once.
   root?.render(
@@ -33,6 +39,7 @@ function render(select?: string, open?: string, view?: "chat" | "declare") {
       initialSelect={open ?? select}
       initialOpen={open}
       {...(view ? { initialView: view } : {})}
+      {...(declare ? { initialDeclare: declare } : {})}
     />,
   );
 }
@@ -46,9 +53,11 @@ export function showMrReviews(
   select?: string,
   open?: string,
   view?: "chat" | "declare",
+  /** Declaring: the home and source to fill in. */
+  declare?: MrDeclarePrefill,
 ) {
   if (root) {
-    render(select, open, view);
+    render(select, open, view, declare);
     return;
   }
   previousFocus = document.activeElement;
@@ -56,7 +65,7 @@ export function showMrReviews(
   host.className = "mr-reviews-root";
   document.body.append(host);
   root = createRoot(host);
-  render(select, open, view);
+  render(select, open, view, declare);
 }
 
 export function toggleMrReviews() {

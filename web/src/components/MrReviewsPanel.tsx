@@ -103,7 +103,12 @@ import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
 import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
-import { MrEffortCard, MrEffortDeclare, MrEffortView } from "./MrEffortView";
+import {
+  MrEffortCard,
+  MrEffortDeclare,
+  type MrDeclarePrefill,
+  MrEffortView,
+} from "./MrEffortView";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
@@ -1521,6 +1526,7 @@ export function MrReviewsPanel({
   initialSelect,
   initialOpen,
   initialView,
+  initialDeclare,
   renderActions,
   onOpenEntry,
 }: {
@@ -1532,6 +1538,8 @@ export function MrReviewsPanel({
   initialSelect?: string;
   /** The reviews agent's chat at once (a voice answer's card), or declaring an effort. */
   initialView?: "chat" | "declare";
+  /** Declaring: the home and source a menu fills in. */
+  initialDeclare?: MrDeclarePrefill;
   /** Step (b) on: the buttons of a request's detail (Review...). */
   renderActions?: (entry: MrInboxEntry) => ReactNode;
   /** Opening a request (Enter without a workspace, a click): its review (else its detail). */
@@ -3494,6 +3502,8 @@ export function MrReviewsPanel({
           {declaring ? (
             <MrEffortDeclare
               groups={inbox?.upstreamGroups ?? []}
+              workspaces={inbox?.upstreamWorkspaces ?? []}
+              {...(initialDeclare ? { initial: initialDeclare } : {})}
               onCancel={closeEffort}
               onDone={(id) => {
                 setDeclaring(false);

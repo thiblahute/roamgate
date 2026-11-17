@@ -1,9 +1,4 @@
-import {
-  headedGroupOf,
-  isSkipped,
-  setWorkspaceHeaded,
-  useUpstreamMarks,
-} from "../mrUpstream";
+import { useUpstreamMarks, workspaceUpstreamItems } from "../mrUpstream";
 import { roamgateLocalStorage, subscribeLocalStorage } from "../browserStorage";
 import { useOverlayTabMarks } from "../overlayTabs";
 import type { PullRequestSummary } from "../../../shared/pullRequest";
@@ -1553,23 +1548,20 @@ export function WorkspaceTree({
               },
             }),
         },
-        // In a group headed upstream: this one may not be.
-        ...(menuNode &&
-        menuNode.kind === "workspace" &&
-        headedGroupOf(tree, upstreamMarks, menuNode.parent)
-          ? [
-              {
-                label: isSkipped(upstreamMarks, menuNode.ref)
-                  ? "Headed upstream again"
-                  : "Not headed upstream",
-                action: () =>
-                  void setWorkspaceHeaded(
-                    menuNode.ref,
-                    isSkipped(upstreamMarks, menuNode.ref),
-                  ).catch(() => {}),
-              },
-            ]
-          : []),
+        ...workspaceUpstreamItems({
+          tree,
+          marks: upstreamMarks,
+          ref:
+            menuNode?.kind === "workspace"
+              ? menuNode.ref
+              : workspaceRefFor(menuConnectionId, menu.workspace),
+          parent: menuNode?.parent ?? null,
+          branch: menu.workspace.worktree?.git_status?.branch,
+          declare: (prefill) =>
+            void import("./MrReviewsRoot").then((module) =>
+              module.showMrReviews(undefined, undefined, "declare", prefill),
+            ),
+        }),
       ]
     : [];
   useEffect(

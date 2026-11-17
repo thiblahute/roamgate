@@ -50,6 +50,7 @@ export type StoredMrReviewsSettings = {
   views?: { name: string; query: string }[];
   upstream_groups?: string[];
   upstream_skip?: WorkspaceRef[];
+  upstream_workspaces?: WorkspaceRef[];
   unsent?: MrUnsent[];
   efforts?: StoredMrEffort[];
   merge?: StoredMrMerge;
@@ -271,6 +272,7 @@ export const HOME_PROMPT_MAX = 4000;
 export const INFERENCE_MODEL_MAX = 200;
 export const MAX_UPSTREAM_GROUPS = 50;
 export const MAX_UPSTREAM_SKIP = 200;
+export const MAX_UPSTREAM_WORKSPACES = 200;
 export const MAX_UNSENT = 200;
 
 /** A view's name: a few words, no colon (`:view NAME` reads it). */
@@ -501,17 +503,24 @@ export function normalizeStoredMrReviews(
         ),
       ),
     ].slice(0, MAX_UPSTREAM_GROUPS);
-  if (Array.isArray(value.upstream_skip)) {
+  const refs = (list: unknown[], max: number) => {
     const seen = new Set<string>();
-    out.upstream_skip = value.upstream_skip
+    return list
       .flatMap((raw) => {
         const ref = parseWorkspaceRef(raw);
         if (!ref || seen.has(workspaceRefKey(ref))) return [];
         seen.add(workspaceRefKey(ref));
         return [ref];
       })
-      .slice(0, MAX_UPSTREAM_SKIP);
-  }
+      .slice(0, max);
+  };
+  if (Array.isArray(value.upstream_skip))
+    out.upstream_skip = refs(value.upstream_skip, MAX_UPSTREAM_SKIP);
+  if (Array.isArray(value.upstream_workspaces))
+    out.upstream_workspaces = refs(
+      value.upstream_workspaces,
+      MAX_UPSTREAM_WORKSPACES,
+    );
   if (Array.isArray(value.unsent)) {
     const seen = new Set<string>();
     out.unsent = list(value.unsent)
@@ -628,6 +637,7 @@ export function mrReviewsSettings(
     views: stored?.views ?? base.views,
     upstreamGroups: stored?.upstream_groups ?? base.upstreamGroups,
     upstreamSkip: stored?.upstream_skip ?? base.upstreamSkip,
+    upstreamWorkspaces: stored?.upstream_workspaces ?? base.upstreamWorkspaces,
     unsent: stored?.unsent ?? base.unsent,
     merge: mergeSettingsOf(stored?.merge),
     panel: stored?.panel ?? base.panel,
@@ -706,6 +716,9 @@ export function storedMrReviews(
       : {}),
     ...(settings.upstreamSkip.length
       ? { upstream_skip: settings.upstreamSkip }
+      : {}),
+    ...(settings.upstreamWorkspaces.length
+      ? { upstream_workspaces: settings.upstreamWorkspaces }
       : {}),
     ...(settings.unsent.length ? { unsent: settings.unsent } : {}),
     ...(settings.efforts.length

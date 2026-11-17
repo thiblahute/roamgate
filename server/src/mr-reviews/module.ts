@@ -4,6 +4,7 @@ import {
   type MrReviewsPush,
   type MrReviewsSettings,
   parseBranchKey,
+  upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import {
   type GuiSettings,
@@ -93,6 +94,7 @@ const PUSHED_FIELDS: [keyof MrReviewsSettings, MrPushKind][] = [
   ["unsent", "unsent"],
   ["upstreamGroups", "upstream"],
   ["upstreamSkip", "upstream"],
+  ["upstreamWorkspaces", "upstream"],
   ["efforts", "efforts"],
 ];
 
@@ -640,7 +642,12 @@ export function createMrReviews(options: {
             const node = (await options.tree?.read())?.nodes.find(
               (each) => each.id === group,
             );
-            return node?.kind === "group" ? node.label : null;
+            if (node?.kind === "group") return node.label;
+            // A workspace headed upstream by itself: its name.
+            const ref = (await saved()).upstreamWorkspaces.find(
+              (each) => upstreamWorkspaceHome(each) === group,
+            );
+            return ref ? (ref.label ?? ref.path ?? null) : null;
           },
           ...(options.createWorktree
             ? { createWorktree: options.createWorktree }
@@ -1031,6 +1038,7 @@ export function createMrReviews(options: {
         order,
         more,
         upstreamChanged: () => upstream.refresh(true),
+        ...(options.tree ? { tree: options.tree.read } : {}),
       },
       method,
       params,

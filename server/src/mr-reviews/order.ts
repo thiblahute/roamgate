@@ -69,6 +69,7 @@ const UNDO_LISTS = [
   "unsent",
   "upstreamGroups",
   "upstreamSkip",
+  "upstreamWorkspaces",
   "efforts",
 ] as const;
 const UNDO_LIST_KEY: {
@@ -82,6 +83,7 @@ const UNDO_LIST_KEY: {
   unsent: (entry) => entry.key,
   upstreamGroups: (id) => id,
   upstreamSkip: (ref) => workspaceRefKey(ref),
+  upstreamWorkspaces: (ref) => workspaceRefKey(ref),
   efforts: (effort) => effort.id,
 };
 /** Records Undo restores key by key. */
