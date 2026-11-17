@@ -343,9 +343,9 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
       host.querySelector<HTMLElement>('[data-mr-key="k4"]')!.focus();
     });
     const moveDown = host.querySelector<HTMLButtonElement>(
-      '[aria-label="Move down"]',
+      '[aria-label="Move down (J)"]',
     )!;
-    expect(host.querySelector('[aria-label="Move up"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Move up (K)"]')).not.toBeNull();
     await act(async () => moveDown.click());
     await settle();
     expect(rows()).toEqual(["k6", "k1", "k4", "k2", "k5"]);

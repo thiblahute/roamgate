@@ -688,7 +688,7 @@ asks the latest 10 merged and closed (GitLab: 10 of each); settled ones
 older than `retentionDays` are dropped. Then the details (kind
 `own-details`: pipeline, notes, base, pending review, and `own`,
 `MrOwnStatus`: approvers, approved, changes requested, unresolved threads,
-conflicts, needs rebase), 40 requests per query, one alias per project,
+conflicts, needs rebase), up to 40 requests per query, one alias per project,
 only for a request new, updated or with a new head since its details were
 read, still settling (pipeline running or pending, mergeability being
 computed), or, for up to 10 open ones per refresh, read over an hour ago.
@@ -699,6 +699,19 @@ once the request leaves the list). Every listed item has `reasons:
 asked the basic ones (`conflicts`, `shouldBeRebased`) from then on; a list
 that fails keeps the host's last own items, details that fail keep those
 known.
+
+Every inbox query (the to-review query, the light list, the details) stays
+under the host's GraphQL complexity limit (`complexity.ts`): its
+complexity is estimated as GitLab counts it (a field 1, a resolver its
+selection plus 1, 1 more when sorted, 1% more per item it loads unless
+asked by id), and its parts (the user's lists and each followed project;
+the open page and each settled list; the requests, by project) are cut in
+as many queries as fit under 250 for GitLab, no limit for GitHub. A query
+refused with "Query has complexity of N, which exceeds max complexity of
+M" teaches that host M and how far the estimate fell short (kept in
+memory for the bridge's life); it is split and asked again at once, so
+the refusal never shows unless a single part is refused alone. The field
+levels above fall back only for refused fields, never for complexity.
 Their entries get the section `authored` (after `mine`; pinned wins), and
 they are seen (never `isNew`) when first listed. `MrSeen` keeps the state,
 pipeline, approvers, unresolved count and conflicts too (`mrSeenOf`), so
