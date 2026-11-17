@@ -937,3 +937,79 @@ test("a part never goes into an existing worktree or onto an existing branch", a
   ).plans.find((each) => each.name === "Pool b");
   expect(plan).not.toHaveProperty("part");
 }, 30_000);
+
+test("an effort's leader is its head workspace's conversation session, even stopped", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  const base = g.connection([{ workspace_id: "w1", label: "big", cwd: clone }]);
+  // Conversation mode holds w1:p1, its process stopped: Herdr sees only
+  // the holder there (agent.get: not found).
+  let held: string | null = "held-session";
+  const connection = {
+    ...base,
+    herdr: async (method: string, params?: Record<string, unknown>) => {
+      if (method === "agent.get")
+        throw new Error(`agent_not_found: ${String(params?.target)}`);
+      return base.herdr(method, params);
+    },
+    conversation: {
+      owned: (paneId: string) => (paneId === "w1:p1" ? held : null),
+      switch: async () => ({ ok: true as const }),
+    },
+  };
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", label: "big" },
+          },
+        ],
+      }),
+      apply: async () => {},
+    },
+    publish: () => {},
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  const id = JSON.parse(
+    await reviews.boardTool(
+      "effort_set",
+      { group: "Big", source: "refs/heads/big" },
+      "Claude",
+    ),
+  ).effort.id as string;
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.leader", { id }),
+  ).toEqual({
+    state: "ready",
+    connectionId: "local",
+    workspaceId: "w1",
+    paneId: "w1:p1",
+  });
+  // Given back to the terminal and no agent there: a pane to start one in.
+  held = null;
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.leader", { id }),
+  ).toEqual({ state: "none", connectionId: "local", workspaceId: "w1" });
+});

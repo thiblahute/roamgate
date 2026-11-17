@@ -1248,10 +1248,15 @@ export async function handleEffortRpc(
       ).filter((pane: any) => pane?.workspace_id === workspaceId);
       let free: string | null = null;
       for (const pane of panes) {
-        const agent = await connection
-          .herdr("agent.get", { target: pane.pane_id })
-          .then((answer: any) => answer?.agent ?? null)
-          .catch(() => null);
+        // A pane conversation mode holds runs its Claude, even stopped:
+        // Herdr sees only the holder there, yet a message wakes the session.
+        const held = !!connection.conversation?.owned(pane.pane_id);
+        const agent = held
+          ? { agent: "claude" }
+          : await connection
+              .herdr("agent.get", { target: pane.pane_id })
+              .then((answer: any) => answer?.agent ?? null)
+              .catch(() => null);
         const name = typeof agent?.agent === "string" ? agent.agent : "";
         if (/claude/i.test(name))
           return {
