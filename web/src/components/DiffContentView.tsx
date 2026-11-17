@@ -2723,6 +2723,8 @@ function DiffContentViewInner({
   });
   // The rows of folded reviewed chunks (set once they are known, below).
   const foldedRowsRef = useRef<ReadonlySet<number>>(new Set());
+  // Unfolds what hides a row (a search's hit): set with the folds, below.
+  const revealRowRef = useRef<(row: number) => void>(() => {});
   const cursor = useDiffCursor({
     enabled: reviewCursor && !embedded,
     sections: cursorSections,
@@ -2746,6 +2748,7 @@ function DiffContentViewInner({
     },
     goTo: cursorGoTo,
     skipRow: (row: number) => foldedRowsRef.current.has(row),
+    revealRow: (row: number) => revealRowRef.current(row),
     ...(reviewEditor
       ? {
           onComment: (
@@ -3253,6 +3256,21 @@ function DiffContentViewInner({
       return next;
     });
     return true;
+  };
+  revealRowRef.current = (row) => {
+    const path = cursor.model.rows[row]?.path;
+    // A folded reviewed file shows, its chunks with it; else the folded
+    // chunk the row is in.
+    if (path && foldedFiles.has(path)) {
+      showReviewed(path);
+      return;
+    }
+    const found = reviewedSpanAt(row);
+    if (!found?.span.folded) return;
+    const id = `${found.key}\n${found.span.id}`;
+    setPeekedChunks((current) =>
+      current.has(id) ? current : new Set(current).add(id),
+    );
   };
   peekFoldedRef.current = () => {
     const at = cursorHandle.current.rowIndex();

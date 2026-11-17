@@ -1205,8 +1205,21 @@ export async function mountChangesReview(
     if (
       this.hasAttribute("data-line") ||
       this.hasAttribute("data-column-number")
-    )
+    ) {
+      // On a screen, a drawn line where the screen shows it.
+      const section = (
+        this.getRootNode() as { host?: Element }
+      ).host?.closest<HTMLElement>("[data-diff-entry-key]");
+      if (
+        options.viewport !== undefined &&
+        section &&
+        this.hasAttribute("data-line-type")
+      ) {
+        const top = layout.rowTop(shown(this, pathOf(section)));
+        if (Number.isFinite(top)) return box(top - layout.scroll, LINE);
+      }
       return box(0, LINE);
+    }
     // No screen asked for: one tall enough that Pierre draws every row.
     if (options.viewport === undefined)
       return this === scroller() ? box(0, 100_000) : rect.call(this);

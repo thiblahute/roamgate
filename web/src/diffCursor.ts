@@ -292,6 +292,97 @@ export function searchHits(
   return found.sort((a, b) => a.at - b.at || a.start - b.start);
 }
 
+/**
+ * The search's next hit and whether it went round: past the last hit back
+ * to the first (n), or before the first to the last (N).
+ */
+export function searchStepWrapping(
+  hits: readonly Match[],
+  cursor: Cursor,
+  direction: 1 | -1,
+): { hit: Match; wrapped: boolean } | null {
+  const hit = nextMatch(hits, cursor, direction);
+  if (!hit) return null;
+  const after =
+    hit.at > cursor.at || (hit.at === cursor.at && hit.start > cursor.col);
+  const before =
+    hit.at < cursor.at || (hit.at === cursor.at && hit.start < cursor.col);
+  return { hit, wrapped: direction === 1 ? !after : !before };
+}
+
+/** How the screen follows the cursor: see `scrollTarget`. */
+export type ScrollMode = "center" | "start" | "end" | "nearest" | "reveal";
+
+/**
+ * Where the scroller goes (its new scrollTop) to show a row, or null when
+ * it stays. `inset` is the height of what stays stuck atop the scroller
+ * over the row (its file's header): the row goes below it, never under.
+ * "reveal" (a search's hit) keeps `margin` around the row; a row further
+ * than half a screen away is centred, as Vim's search does.
+ */
+export function scrollTarget(
+  place: { top: number; height: number },
+  view: { top: number; height: number },
+  mode: ScrollMode,
+  inset = 0,
+  margin = 0,
+): number | null {
+  const { top, height } = view;
+  const room = Math.max(place.height, height - inset);
+  const center = place.top - inset - (room - place.height) / 2;
+  let next = top;
+  if (mode === "start") next = place.top - inset;
+  else if (mode === "end") next = place.top + place.height - height;
+  else if (mode === "center") next = center;
+  else {
+    const pad =
+      mode === "reveal" ? Math.min(margin, (room - place.height) / 2) : 0;
+    const first = top + inset + pad;
+    const last = top + height - pad;
+    if (place.top < first) next = place.top - inset - pad;
+    else if (place.top + place.height > last)
+      next = place.top + place.height - height + pad;
+    if (
+      mode === "reveal" &&
+      (first - place.top > room / 2 ||
+        place.top + place.height - last > room / 2)
+    )
+      next = center;
+  }
+  next = Math.max(0, next);
+  return Math.abs(next - top) < 1 ? null : next;
+}
+
+/**
+ * The height of what sticks atop a diff's scroller over a file's rows: the
+ * stuck elements of the file's section (its header) and of the scroller
+ * outside every section, each its `top` plus its height.
+ */
+export function stickyInset(
+  scroller: HTMLElement,
+  section: HTMLElement | null,
+): number {
+  const candidates: Element[] = [];
+  if (section) candidates.push(...section.children);
+  for (const child of scroller.children) {
+    if (child.hasAttribute("data-diff-entry-key")) continue;
+    candidates.push(child);
+    for (const inner of child.children)
+      if (!inner.hasAttribute("data-diff-entry-key")) candidates.push(inner);
+  }
+  const view = scroller.ownerDocument.defaultView;
+  let inset = 0;
+  for (const element of candidates) {
+    if (!(element instanceof (view?.HTMLElement ?? HTMLElement))) continue;
+    const style = view?.getComputedStyle(element);
+    if (style?.position !== "sticky") continue;
+    const stuck = Number.parseFloat(style.top);
+    if (!Number.isFinite(stuck)) continue;
+    inset = Math.max(inset, stuck + element.offsetHeight);
+  }
+  return inset;
+}
+
 /** The next hit after (or before) the cursor, wrapping around. */
 export function searchStep(
   hits: readonly Match[],

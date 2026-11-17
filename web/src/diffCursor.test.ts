@@ -12,7 +12,9 @@ import {
   rowSide,
   screenRow,
   searchFileStep,
+  scrollTarget,
   searchHits,
+  searchStepWrapping,
   stepRows,
   wordStep,
 } from "./diffCursor";
@@ -252,5 +254,57 @@ describe("the cursor's rows from Pierre's hunks", () => {
     expect(relocatedRow(model, "src/moved.ts", before, now, 4)).toBeNull();
     // Found, but on a line the diff does not draw.
     expect(relocatedRow(model, "src/moved.ts", before, now, 5)).toBeNull();
+  });
+});
+
+describe("where the screen goes for the cursor", () => {
+  const row = (top: number) => ({ top, height: 20 });
+  const view = (top: number) => ({ top, height: 400 });
+
+  test("a row is put below the header stuck atop the screen, never under it", () => {
+    // Under a 40 px header at the screen's top: brought below it.
+    expect(scrollTarget(row(1010), view(1000), "nearest", 40)).toBe(970);
+    // Below the header already: the screen stays.
+    expect(scrollTarget(row(1040), view(1000), "nearest", 40)).toBeNull();
+    // zt: right below the header; zz: centred in what it leaves.
+    expect(scrollTarget(row(2000), view(1000), "start", 40)).toBe(1960);
+    expect(scrollTarget(row(2000), view(1000), "center", 40)).toBe(1790);
+    // Never above the top.
+    expect(scrollTarget(row(30), view(500), "start", 40)).toBe(0);
+  });
+
+  test("a search's hit keeps lines to spare, and is centred from afar", () => {
+    // Just under the header: below it, 60 px to spare.
+    expect(scrollTarget(row(1030), view(1000), "reveal", 40, 60)).toBe(930);
+    // Near the bottom edge: up so 60 px stay below it.
+    expect(scrollTarget(row(1350), view(1000), "reveal", 40, 60)).toBe(1030);
+    // In the clear: the screen stays.
+    expect(scrollTarget(row(1200), view(1000), "reveal", 40, 60)).toBeNull();
+    // Far away (more than half a screen): centred below the header.
+    expect(scrollTarget(row(5000), view(1000), "reveal", 40, 60)).toBe(4790);
+  });
+
+  test("a search's step says when it went round", () => {
+    const hits = [
+      { at: 1, start: 0, end: 3 },
+      { at: 5, start: 2, end: 5 },
+    ];
+    expect(searchStepWrapping(hits, { at: 1, col: 0 }, 1)).toEqual({
+      hit: hits[1]!,
+      wrapped: false,
+    });
+    expect(searchStepWrapping(hits, { at: 5, col: 2 }, 1)).toEqual({
+      hit: hits[0]!,
+      wrapped: true,
+    });
+    expect(searchStepWrapping(hits, { at: 1, col: 0 }, -1)).toEqual({
+      hit: hits[1]!,
+      wrapped: true,
+    });
+    expect(searchStepWrapping(hits, { at: 9, col: 0 }, -1)).toEqual({
+      hit: hits[1]!,
+      wrapped: false,
+    });
+    expect(searchStepWrapping([], { at: 0, col: 0 }, 1)).toBeNull();
   });
 });

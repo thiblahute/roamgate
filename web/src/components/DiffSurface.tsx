@@ -148,6 +148,15 @@ const DIFF_SELECTION_CSS = `
   [data-column-number][data-chunk-fold-head]::after {
     content: "✓";
   }
+  /* The search's hits (Changes' / and *): each one marked, the one the
+     cursor is on (the current one) strongly. */
+  ::highlight(roamgate-diff-search) {
+    background-color: color-mix(in srgb, #e3b341 38%, transparent);
+  }
+  ::highlight(roamgate-diff-search-current) {
+    background-color: #f0883e;
+    color: #0d1117;
+  }
   ::highlight(roamgate-diff-cursor) {
     background-color: var(--diffs-selection-base);
     color: var(--diffs-bg);

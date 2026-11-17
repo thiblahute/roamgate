@@ -21,10 +21,12 @@ import {
   rowAt,
   rowLine,
   screenRow,
+  scrollTarget,
   searchFileStep,
   searchHits,
-  searchStep,
+  searchStepWrapping,
   stepRows,
+  stickyInset,
   wordStep,
 } from "../diffCursor";
 import { isTypingTarget } from "../inspectorCommands";
@@ -32,7 +34,7 @@ import { runKeyCommand, useKeyMachine } from "../keyMachine";
 import { reviewKeyRoute } from "../reviewKeys";
 import { shortcutMatches } from "../shortcutPreferences";
 import { store } from "../store";
-import { type Match, wordAt } from "../reviewNavigation";
+import { type Match, searchRegExp, wordAt } from "../reviewNavigation";
 import type { DiffSurfaceInstance } from "./DiffSurface";
 import type { ShortcutRow } from "./ShortcutList";
 
@@ -55,7 +57,11 @@ export type DiffCursorSection = {
 };
 
 /** Where a move leaves the cursor's line on the screen. */
-type ScrollTo = "center" | "start" | "end" | "nearest" | "none";
+/** The lines kept between a search's hit and the screen's edges. */
+const SEARCH_MARGIN_LINES = 3;
+
+/** "reveal": a search's hit, kept clear of the edges (scrollTarget). */
+type ScrollTo = "center" | "start" | "end" | "nearest" | "reveal" | "none";
 
 type CursorState = { at: number; col: number; scroll: ScrollTo };
 
@@ -228,6 +234,7 @@ export function useDiffCursor({
   onScrollTo,
   goTo: lineGoTo = null,
   skipRow,
+  revealRow,
   searchElsewhere,
 }: {
   enabled: boolean;
@@ -282,6 +289,11 @@ export function useDiffCursor({
   /** Rows the cursor steps over (a folded reviewed chunk's but its first). */
   skipRow?: (row: number) => boolean;
   /**
+   * A search's hit in a row the cursor steps over (a folded reviewed chunk
+   * or file): unfolds what hides it, as Vim opens a fold for a search.
+   */
+  revealRow?: (row: number) => void;
+  /**
    * A pattern found nowhere in the view: a file of another of the
    * review's views whose path matches, shown (the commit bar's views);
    * null when none has.
@@ -326,6 +338,8 @@ export function useDiffCursor({
     wholeWord: boolean;
   } | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
+  /** The last n / N went round: back at the top, or at the bottom. */
+  const [wrapped, setWrapped] = useState<"top" | "bottom" | null>(null);
   const [searchPrompt, setSearchPrompt] = useState(false);
   /** A search that found no line: n / N go file to file by path. */
   const fileSearch = useRef<string | null>(null);
@@ -379,15 +393,24 @@ export function useDiffCursor({
   /** Moves the cursor; the line goes to the middle unless told. */
   const skipRowRef = useRef(skipRow);
   skipRowRef.current = skipRow;
+  const revealRowRef = useRef(revealRow);
+  revealRowRef.current = revealRow;
   const jumpTo = useCallback(
-    (target: number, column?: number, scroll: ScrollTo = "center") => {
+    (
+      target: number,
+      column?: number,
+      scroll: ScrollTo = "center",
+      reveal = false,
+    ) => {
       const current = modelRef.current;
       if (!current.rows.length) return;
       let next = clampRow(current, target, anchorRef.current);
       // In a folded chunk: on its one line, or past it when the cursor
-      // was on that line already.
+      // was on that line already. A search's hit there unfolds it.
       const skip = skipRowRef.current;
-      if (skip?.(next)) {
+      if (reveal && skip?.(next) && revealRowRef.current)
+        revealRowRef.current(next);
+      else if (skip?.(next)) {
         let head = next;
         while (head > 0 && skip(head)) head -= 1;
         let past = next;
@@ -656,39 +679,185 @@ export function useDiffCursor({
 
   const onScrollToRef = useRef(onScrollTo);
   onScrollToRef.current = onScrollTo;
+  /** What stays stuck atop the scroller over a row's file: its header. */
+  const insetFor = useCallback(
+    (index: number): number => {
+      const box = scroller();
+      const key = modelRef.current.rows[index]?.key;
+      if (!box || key === undefined) return 0;
+      const section =
+        [
+          ...(rootRef.current?.querySelectorAll<HTMLElement>(
+            "[data-diff-entry-key]",
+          ) ?? []),
+        ].find((each) => each.dataset.diffEntryKey === key) ?? null;
+      return stickyInset(box, section);
+    },
+    [rootRef, scroller],
+  );
   const scrollToRow = useCallback(
     (index: number, mode: ScrollTo) => {
       if (mode === "none") return;
       const box = scroller();
       const place = rowBox(index);
       if (!box || !place) return;
-      const height = box.clientHeight;
-      const top = box.scrollTop;
-      let next = top;
-      if (mode === "start") next = place.top;
-      else if (mode === "end") next = place.top + place.height - height;
-      else if (mode === "center")
-        next = place.top - (height - place.height) / 2;
-      else if (place.top < top) next = place.top;
-      else if (place.top + place.height > top + height)
-        next = place.top + place.height - height;
-      if (Math.abs(next - top) < 1) return;
+      const next = scrollTarget(
+        place,
+        { top: box.scrollTop, height: box.clientHeight },
+        mode,
+        insetFor(index),
+        SEARCH_MARGIN_LINES * place.height,
+      );
+      if (next === null) return;
       onScrollToRef.current?.();
-      box.scrollTo({ top: Math.max(0, next) });
+      box.scrollTo({ top: next });
     },
-    [rowBox, scroller],
+    [insetFor, rowBox, scroller],
+  );
+
+  /**
+   * Once drawn, the cursor's line where it really is (Pierre's positions
+   * do not know what a fold hides): put clear of the stuck header again
+   * when it is not.
+   */
+  const settleRow = useCallback(
+    (index: number, mode: ScrollTo) => {
+      if (mode === "none") return;
+      const box = scroller();
+      const current = modelRef.current.rows[index];
+      if (!box || !current || cursorRef.current.at !== index) return;
+      const line = shadowOf(current.key)?.querySelector<HTMLElement>(
+        "[data-line][data-editor-active-line]",
+      );
+      if (!line) return;
+      const drawn = line.getBoundingClientRect();
+      const frame = box.getBoundingClientRect();
+      if (!drawn.height || !frame.height) return;
+      const next = scrollTarget(
+        {
+          top: box.scrollTop + drawn.top - frame.top,
+          height: drawn.height,
+        },
+        { top: box.scrollTop, height: box.clientHeight },
+        mode === "reveal" ? "reveal" : "nearest",
+        insetFor(index),
+        SEARCH_MARGIN_LINES * drawn.height,
+      );
+      if (next === null) return;
+      onScrollToRef.current?.();
+      box.scrollTo({ top: next });
+    },
+    [insetFor, scroller, shadowOf],
   );
 
   useEffect(() => {
     if (!enabled) return;
     scrollToRow(at, cursor.scroll);
-  }, [enabled, at, cursor, scrollToRow]);
+    if (cursor.scroll === "none") return;
+    const mode = cursor.scroll;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => settleRow(at, mode));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [enabled, at, cursor, scrollToRow, settleRow]);
 
   // ---- Search -----------------------------------------------------------
 
   const hits = useMemo(
     () => (search ? searchHits(model, search.pattern, search.wholeWord) : []),
     [model, search],
+  );
+
+  // Every hit drawn on the screen marked, the cursor's (the current one)
+  // more strongly: Pierre's lines are in shadow roots, so with the CSS
+  // Custom Highlight API. Drawn again as Pierre draws rows on a scroll.
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  const hitsRef = useRef(hits);
+  hitsRef.current = hits;
+  const drawSearch = useCallback(() => {
+    const registry = highlightRegistry();
+    if (!registry) return;
+    const shown = enabled ? searchRef.current : null;
+    const regexp = shown ? searchRegExp(shown.pattern, shown.wholeWord) : null;
+    const root = rootRef.current;
+    if (!regexp || !root) {
+      registry.delete(SEARCH_HIGHLIGHT);
+      registry.delete(SEARCH_CURRENT_HIGHLIGHT);
+      return;
+    }
+    const all: Range[] = [];
+    for (const section of root.querySelectorAll<HTMLElement>(
+      "[data-diff-entry-key]",
+    ))
+      for (const line of section
+        .querySelector("diffs-container")
+        ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-line]") ?? []) {
+        const text = line.textContent ?? "";
+        regexp.lastIndex = 0;
+        for (const match of text.matchAll(regexp)) {
+          if (!match[0]) break;
+          const range = textRange(line, match.index!, match[0].length);
+          if (range) all.push(range);
+        }
+      }
+    const current: Range[] = [];
+    const at = cursorRef.current.at;
+    const hit = hitsRef.current.find(
+      (each) => each.at === at && each.start === cursorRef.current.col,
+    );
+    const row = modelRef.current.rows[at];
+    if (hit && row && hit.end > hit.start)
+      for (const line of shadowOf(row.key)?.querySelectorAll<HTMLElement>(
+        "[data-line][data-editor-active-line]",
+      ) ?? []) {
+        const range = textRange(line, hit.start, hit.end - hit.start);
+        if (range) current.push(range);
+      }
+    setHighlight(registry, SEARCH_HIGHLIGHT, all, 0);
+    setHighlight(registry, SEARCH_CURRENT_HIGHLIGHT, current, 1);
+  }, [enabled, rootRef, shadowOf]);
+  useLayoutEffect(() => {
+    void cursor;
+    void hits;
+    void split;
+    drawSearch();
+    const frame = requestAnimationFrame(drawSearch);
+    const timer = setTimeout(drawSearch, 60);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [cursor, hits, split, drawSearch]);
+  useEffect(() => {
+    if (!search) return;
+    const box = scroller();
+    if (!box) return;
+    let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      frame = requestAnimationFrame(drawSearch);
+      timer = setTimeout(drawSearch, 120);
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      box.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [search, scroller, drawSearch]);
+  useEffect(
+    () => () => {
+      highlightRegistry()?.delete(SEARCH_HIGHLIGHT);
+      highlightRegistry()?.delete(SEARCH_CURRENT_HIGHLIGHT);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -726,8 +895,27 @@ export function useDiffCursor({
     }
     setNotFound(null);
     setSearch({ pattern, wholeWord });
-    const target = searchStep(found, { at, col: cursor.col }, direction);
-    if (target) jumpTo(target.at, target.start, "nearest");
+    goToHit(found, direction);
+  };
+
+  /** The next hit, its fold opened, clear of the edges; a wrap told. */
+  const goToHit = (found: readonly Match[], direction: 1 | -1) => {
+    const step = searchStepWrapping(found, { at, col: cursor.col }, direction);
+    if (!step) return;
+    const wrap =
+      step.wrapped && found.length > 1
+        ? direction === 1
+          ? "top"
+          : "bottom"
+        : null;
+    setWrapped(wrap);
+    if (wrap)
+      notify(
+        wrap === "top"
+          ? "Search hit the bottom, continuing at the top"
+          : "Search hit the top, continuing at the bottom",
+      );
+    jumpTo(step.hit.at, step.hit.start, "reveal", true);
   };
 
   const repeatSearch = (direction: 1 | -1) => {
@@ -735,8 +923,7 @@ export function useDiffCursor({
       searchFile(fileSearch.current, direction);
       return;
     }
-    const target = searchStep(hits, { at, col: cursor.col }, direction);
-    if (target) jumpTo(target.at, target.start, "nearest");
+    goToHit(hits, direction);
   };
 
   // ---- Keys -------------------------------------------------------------
@@ -1128,13 +1315,17 @@ export function useDiffCursor({
   const current = search
     ? hits.findIndex((hit: Match) => hit.at === at && hit.start === cursor.col)
     : -1;
+  /** Files listed but not drawn (not read yet, or closed): not searched. */
+  const unread = search
+    ? stableSections.filter((section) => !section.patch).length
+    : 0;
   const status: ReactNode = search ? (
     <>
       <span className="diff-cursor-label">
         {search.wholeWord ? "Word " : "Search "}
       </span>
       <mark>{search.pattern}</mark>
-      {`  match ${current + 1 || "-"} of ${hits.length}${search.wholeWord ? " (whole word)" : ""} · n / N next / previous · Esc clears`}
+      {`  match ${current + 1 || "-"} of ${hits.length}${search.wholeWord ? " (whole word)" : ""}${wrapped && current >= 0 ? ` · wrapped to the ${wrapped}` : ""}${unread ? ` · ${unread} file${unread === 1 ? "" : "s"} not read yet, not searched` : ""} · n / N next / previous · Esc clears`}
     </>
   ) : notFound ? (
     <>
@@ -1175,6 +1366,61 @@ export function useDiffCursor({
   };
 }
 
+const SEARCH_HIGHLIGHT = "roamgate-diff-search";
+const SEARCH_CURRENT_HIGHLIGHT = "roamgate-diff-search-current";
+
+type HighlightRegistry = Map<string, unknown>;
+type HighlightClass = new (...ranges: Range[]) => { priority: number };
+
+/** The page's CSS highlights, where the browser has them. */
+function highlightRegistry(): HighlightRegistry | null {
+  return (
+    (globalThis as { CSS?: { highlights?: HighlightRegistry } }).CSS
+      ?.highlights ?? null
+  );
+}
+
+function setHighlight(
+  registry: HighlightRegistry,
+  name: string,
+  ranges: Range[],
+  priority: number,
+) {
+  const Highlight = (globalThis as { Highlight?: HighlightClass }).Highlight;
+  if (!Highlight || !ranges.length) {
+    registry.delete(name);
+    return;
+  }
+  const highlight = new Highlight(...ranges);
+  highlight.priority = priority;
+  registry.set(name, highlight);
+}
+
+/** The range of `length` characters from `start` in a drawn line's text. */
+function textRange(
+  line: HTMLElement,
+  start: number,
+  length: number,
+): Range | null {
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  let range: Range | null = null;
+  const end = start + length;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const size = node.textContent?.length ?? 0;
+    if (!range && start < offset + size) {
+      range = document.createRange();
+      range.setStart(node, start - offset);
+    }
+    if (range && end <= offset + size) {
+      range.setEnd(node, end - offset);
+      return range;
+    }
+    offset += size;
+  }
+  return null;
+}
+
 /**
  * The cursor's column in the line, drawn with the CSS Custom Highlight API
  * where the browser has it (Pierre's lines are in a shadow root: no element
@@ -1199,7 +1445,10 @@ function drawColumnHighlight(line: HTMLElement, col: number) {
       const range = document.createRange();
       range.setStart(node, col - offset);
       range.setEnd(node, col - offset + 1);
-      registry.set("roamgate-diff-cursor", new Highlight(range));
+      const highlight = new Highlight(range) as { priority?: number };
+      // Over the search's marks.
+      highlight.priority = 2;
+      registry.set("roamgate-diff-cursor", highlight);
       return;
     }
     offset += length;
