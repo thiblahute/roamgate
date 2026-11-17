@@ -4,6 +4,7 @@ import { workspaceRepoDirs } from "../changesRepo";
 import type { InspectorCommand } from "../inspectorCommands";
 import { useReviewState } from "../review";
 import type { ReviewSnapshot } from "../../../shared/review";
+import type { GitDiffSummaryMode } from "../gitDiffSummaryStore";
 import type { WorkspaceRepo } from "../reviewModel";
 import {
   repoLabel,
@@ -22,8 +23,6 @@ import "./ChangesScopeBar.css";
  * review pane's picker lists them: p, ( and )), the scope (the working
  * tree, the branch against its base, the agent's last step) and the base.
  */
-
-export type ChangesScope = "working" | "branch-main" | "last-step";
 
 /** The workspace's panes' directories, and its agents'. */
 export function useWorkspaceRepoDirs(workspaceId: string): {
@@ -170,7 +169,7 @@ export function changesScopeFacts({
   files,
   untracked,
 }: {
-  mode: ChangesScope;
+  mode: GitDiffSummaryMode;
   commits?: number;
   files: number;
   untracked?: number;
@@ -204,7 +203,7 @@ export function changesReviewShortLabel(
 
 /** The scope's choice, as the line says it. */
 export function changesScopeChoice(
-  mode: ChangesScope,
+  mode: GitDiffSummaryMode,
   branch: string | undefined,
   base: string | undefined,
 ): string {
@@ -300,7 +299,7 @@ export function ChangesScopeBar({
   /** The repository shown. */
   root: string | undefined;
   repoName: string | undefined;
-  mode: ChangesScope;
+  mode: GitDiffSummaryMode;
   branch?: string;
   /** The base the Branch scope compares against, resolved. */
   base?: string;
@@ -313,7 +312,7 @@ export function ChangesScopeBar({
   pickerOpen: boolean;
   onPickerOpen: (open: boolean) => void;
   onPickRepo: (root: string) => void;
-  onScope: (mode: ChangesScope) => void;
+  onScope: (mode: GitDiffSummaryMode) => void;
   onBase: (branch: string) => void;
   /** A choice made: the keys back to the diff. */
   onDone: () => void;
@@ -433,7 +432,7 @@ export function ChangesScopeBar({
           if (value.startsWith("branch:")) {
             onBase(value.slice("branch:".length));
             onScope("branch-main");
-          } else onScope(value as ChangesScope);
+          } else onScope(value as GitDiffSummaryMode);
         }}
         onSelectedClose={onDone}
       />
