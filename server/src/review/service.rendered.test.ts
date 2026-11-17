@@ -1,33 +1,16 @@
-import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { reviewServiceForTest } from "./testkit";
+import { expect, test } from "bun:test";
 import {
-  createReviewService,
   describeTarget,
   parseRenderPart,
   parseReviewTarget,
   renderedPlace,
-  type ReviewService,
 } from "./service";
-import { openReviewStorage } from "./storage";
 
 /** Rendered reviews: a file or a site shown rendered, threads on it. */
-const directories: string[] = [];
-const services: ReviewService[] = [];
-afterEach(() => {
-  for (const service of services.splice(0)) service.close();
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
-});
-
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
-  directories.push(dir);
   const prompts: string[] = [];
-  const service = createReviewService({
-    storage: openReviewStorage(dir),
-    publish: () => {},
+  const { service } = reviewServiceForTest({
     loadDiff: async () => {
       throw new Error("a rendered review has no diff");
     },
@@ -36,7 +19,6 @@ function setup() {
       prompts.push(text);
     },
   });
-  services.push(service);
   return { service, prompts };
 }
 
