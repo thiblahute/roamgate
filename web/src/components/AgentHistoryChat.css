@@ -962,3 +962,10 @@
   width: 24px;
   height: 24px;
 }
+
+/* An item away from the view, not drawn (chatMountWindow): an empty box of
+   the size it was last drawn at, until it comes near. */
+.agent-history-chat-content > .agent-history-chat-away {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}

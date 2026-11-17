@@ -1,4 +1,5 @@
 import { useRenderTrace } from "../renderTrace";
+import { useMountWindow } from "./chatMountWindow";
 import { ShellCommandBlock } from "./AgentChatShell";
 import {
   type ComponentProps,
@@ -84,6 +85,7 @@ import {
   type OlderMessages,
   reviewDelivery,
   useChatParts,
+  useChatThreadedEntries,
 } from "./ChatThreads";
 import {
   type ChatAnchor,
@@ -2139,6 +2141,22 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
     followRef.current = false;
   }, []);
 
+  // Only the items near the view are drawn (chatMountWindow), and those
+  // a jump goes to: the message a search highlights, those with comment
+  // threads (the threads' panel and j / k go to them).
+  const mountWindow = useMountWindow(listRef, contentRef, items.length);
+  const threaded = useChatThreadedEntries();
+  const pinnedItem = useCallback(
+    (item: ChatItem) =>
+      item.type === "message"
+        ? item.sequence === highlightedSequence ||
+          (threaded?.has(item.entry.id) ?? false)
+        : item.type === "tools" &&
+          !!threaded &&
+          item.entries.some((entry) => threaded.has(entry.id)),
+    [highlightedSequence, threaded],
+  );
+
   // What a place needs of the items: their ids, blocks and times.
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -2430,8 +2448,23 @@ export const AgentHistoryChat = memo(function AgentHistoryChat({
       }}
     >
       <div ref={contentRef} className="agent-history-chat-content">
-        {items.map((item) =>
-          item.type === "custom" ? (
+        {items.map((item, index) =>
+          item.type !== "custom" &&
+          !mountWindow.drawn(itemKey(item), index) &&
+          !pinnedItem(item) ? (
+            <div
+              key={itemKey(item)}
+              className="agent-history-chat-away"
+              data-mount-placeholder="true"
+              {...(item.type === "message"
+                ? {
+                    "data-bubble-id": item.entry.id,
+                    "data-sequence": item.sequence,
+                  }
+                : { "data-place-id": item.id })}
+              style={{ height: mountWindow.heightOf(itemKey(item)) }}
+            />
+          ) : item.type === "custom" ? (
             <div
               key={item.id}
               className="agent-history-chat-custom"

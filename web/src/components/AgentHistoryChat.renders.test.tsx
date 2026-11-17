@@ -158,6 +158,126 @@ if (process.env.ROAMGATE_CHAT_RENDERS_DOM_TEST !== "1") {
     await React.act(async () => root.unmount());
   }, 20_000);
 
+  test("a long chat draws only its newest items and those near the view", async () => {
+    const { AgentHistoryChat } = await import("./AgentHistoryChat");
+    const { groupHistoryChatItems } = await import("./agentHistoryView");
+    const { MOUNT_TAIL } = await import("./chatMountWindow");
+    type Entry = import("./agentHistory").HistoryEntry;
+    const { takeRenderCounts } = await import("../renderTrace");
+    const { createRoot } = await import("react-dom/client");
+
+    // An observer the test drives: what is near the view is said by hand.
+    let observer: {
+      callback: IntersectionObserverCallback;
+      targets: Set<Element>;
+    } | null = null;
+    class DrivenIntersectionObserver {
+      targets = new Set<Element>();
+      constructor(public callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        this.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target);
+      }
+      disconnect() {
+        this.targets.clear();
+      }
+    }
+    Object.defineProperty(globalThis, "IntersectionObserver", {
+      value: class extends DrivenIntersectionObserver {
+        constructor(callback: IntersectionObserverCallback) {
+          super(callback);
+          observer = { callback, targets: this.targets };
+        }
+      },
+      configurable: true,
+      writable: true,
+    });
+    const near = (id: string, isIntersecting = true) => {
+      const target = [...observer!.targets].find(
+        (element) => (element as HTMLElement).dataset.bubbleId === id,
+      )!;
+      observer!.callback(
+        [
+          {
+            target,
+            isIntersecting,
+            boundingClientRect: { height: 300 },
+          } as unknown as IntersectionObserverEntry,
+        ],
+        observer as unknown as IntersectionObserver,
+      );
+    };
+
+    try {
+      const entries: Entry[] = Array.from({ length: 200 }, (_, n) => ({
+        id: `m${n}`,
+        role: n % 2 ? "assistant" : "user",
+        kind: "message",
+        text: `message ${n}`,
+        sent_at: "2026-01-01T00:00:00Z",
+      }));
+      const items = groupHistoryChatItems(entries);
+      const container = document.createElement("div");
+      document.body.append(container);
+      const root = createRoot(container);
+      const listRef = React.createRef<HTMLDivElement>();
+      const contentRef = React.createRef<HTMLDivElement>();
+      const onOpen = () => {};
+      const render = (highlightedSequence: number | null = null) =>
+        React.act(async () =>
+          root.render(
+            <AgentHistoryChat
+              items={items}
+              listRef={listRef}
+              contentRef={contentRef}
+              onOpen={onOpen}
+              highlightedSequence={highlightedSequence}
+            />,
+          ),
+        );
+      takeRenderCounts();
+      await render();
+      const bubbles = () =>
+        contentRef.current!.querySelectorAll(
+          ":scope > [data-bubble-id]:not([data-mount-placeholder])",
+        );
+      // The newest items only; the others are boxes the place, the
+      // minimap and the jumps still find by id and sequence.
+      expect(bubbles().length).toBe(MOUNT_TAIL);
+      expect(takeRenderCounts()).toStartWith(`ChatBubble ${MOUNT_TAIL} `);
+      const away = contentRef.current!.querySelector<HTMLElement>(
+        '[data-bubble-id="m10"]',
+      )!;
+      expect(away.dataset.mountPlaceholder).toBe("true");
+      expect(away.dataset.sequence).toBe("11");
+      expect(away.textContent).toBe("");
+
+      // Scrolled near: drawn, and only it.
+      await React.act(async () => near("m10"));
+      expect(bubbles().length).toBe(MOUNT_TAIL + 1);
+      expect(
+        contentRef.current!.querySelector('[data-bubble-id="m10"]')
+          ?.textContent,
+      ).toContain("message 10");
+      expect(takeRenderCounts()).toMatch(/^AgentHistoryChat 1 .*ChatBubble 1 /);
+
+      // Gone far again: it stays drawn while few are.
+      await React.act(async () => near("m10", false));
+      expect(bubbles().length).toBe(MOUNT_TAIL + 1);
+
+      // The message a search goes to is drawn wherever it is.
+      await render(4);
+      expect(
+        contentRef.current!.querySelector('[data-bubble-id="m3"]')?.textContent,
+      ).toContain("message 3");
+      await React.act(async () => root.unmount());
+    } finally {
+      Reflect.deleteProperty(globalThis, "IntersectionObserver");
+    }
+  }, 20_000);
+
   test("a turn's tool block stays, open, as the transcript replaces the streamed calls", async () => {
     const { AgentHistoryChat } = await import("./AgentHistoryChat");
     const { groupHistoryChatItems } = await import("./agentHistoryView");

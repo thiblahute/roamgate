@@ -85,6 +85,8 @@ import "./ChatThreads.css";
 type ChatThreads = {
   /** The parts of a message one comments on, and the threads on them. */
   partsFor: (entry: HistoryEntry) => MessageParts;
+  /** The entries (messages, tool calls) threads are drawn under. */
+  threaded: ReadonlySet<string>;
 };
 
 const ChatThreadsContext = createContext<ChatThreads | null>(null);
@@ -92,6 +94,11 @@ const ChatThreadsContext = createContext<ChatThreads | null>(null);
 /** Parts and threads for a message, when the chat has threads. */
 export function useChatParts(entry: HistoryEntry): MessageParts | undefined {
   return useContext(ChatThreadsContext)?.partsFor(entry);
+}
+
+/** The entries threads are drawn under, when the chat has threads. */
+export function useChatThreadedEntries(): ReadonlySet<string> | undefined {
+  return useContext(ChatThreadsContext)?.threaded;
 }
 
 /**
@@ -1395,9 +1402,10 @@ function ChatThreadsScope({
     };
   });
 
+  const threaded = useMemo(() => new Set(byEntry.keys()), [byEntry]);
   // Rebuilt when what partsFor reads changes, not on every render.
   const value = useMemo<ChatThreads>(
-    () => ({ partsFor }),
+    () => ({ partsFor, threaded }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       byEntry,
@@ -1411,6 +1419,7 @@ function ChatThreadsScope({
       write,
       comment,
       undelivered,
+      threaded,
     ],
   );
   // The same for the files the chat's calls changed.
