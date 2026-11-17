@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  changesReviewShortLabel,
   changesScopeChoice,
   changesScopeFacts,
   changesScopeOptions,
@@ -74,4 +75,20 @@ describe("a scope that cannot load", () => {
     );
     expect(plainDiffError("git diff exited 128")).toBe("git diff exited 128");
   });
+});
+
+test("a merge or pull request's review is named on a phone by its number and title", () => {
+  expect(
+    changesReviewShortLabel({
+      url: "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/merge_requests/3326",
+      title: "rtpgccbwe: Fix the estimation",
+    }),
+  ).toBe("!3326 rtpgccbwe: Fix the estimation");
+  expect(
+    changesReviewShortLabel({
+      url: "https://github.com/powerfooI/roamgate/pull/12",
+      title: "Add a thing",
+    }),
+  ).toBe("#12 Add a thing");
+  expect(changesReviewShortLabel(undefined)).toBeUndefined();
 });

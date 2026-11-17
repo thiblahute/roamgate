@@ -12,8 +12,10 @@ import {
   FolderOpen,
   MessageSquare,
   MessageSquareOff,
+  MessageSquarePlus,
   MessageSquareText,
   Search,
+  WrapText,
   X,
 } from "lucide-react";
 import {
@@ -378,8 +380,10 @@ function loadDiffViewMode(): DiffViewMode {
   return storedDiffViewMode() ?? "split";
 }
 
-function loadMobileDiffWrap() {
-  return roamgateLocalStorage.getItem(MOBILE_DIFF_WRAP_KEY) === "true";
+/** A phone's Wrap as chosen; null: never chosen (the review wraps then). */
+function loadMobileDiffWrap(): boolean | null {
+  const stored = roamgateLocalStorage.getItem(MOBILE_DIFF_WRAP_KEY);
+  return stored === "true" ? true : stored === "false" ? false : null;
 }
 
 function loadDesktopDiffWrap() {
@@ -1687,7 +1691,15 @@ function DiffContentViewInner({
     setShownViewMode(width >= SPLIT_MIN_WIDTH ? "split" : "unified");
   }, [reviewCursor, embedded]);
   const [desktopWrap, setDesktopWrap] = useState(() => loadDesktopDiffWrap());
-  const [mobileWrap, setMobileWrap] = useState(() => loadMobileDiffWrap());
+  const [mobileWrapChoice, setMobileWrapChoice] = useState(() =>
+    loadMobileDiffWrap(),
+  );
+  // A review on a phone wraps until told otherwise: scrolling its lines
+  // sideways on a phone is unusable.
+  const mobileWrapDefault = reviewCursor && !embedded;
+  const mobileWrap = mobileWrapChoice ?? mobileWrapDefault;
+  const toggleMobileWrap = () =>
+    setMobileWrapChoice((choice) => !(choice ?? mobileWrapDefault));
   useEffect(
     () =>
       subscribeLocalStorage((key) => {
@@ -1696,7 +1708,7 @@ function DiffContentViewInner({
         if (key === null || key === DESKTOP_DIFF_WRAP_KEY)
           setDesktopWrap(loadDesktopDiffWrap());
         if (key === null || key === MOBILE_DIFF_WRAP_KEY)
-          setMobileWrap(loadMobileDiffWrap());
+          setMobileWrapChoice(loadMobileDiffWrap());
       }),
     [],
   );
@@ -4750,8 +4762,12 @@ function DiffContentViewInner({
     roamgateLocalStorage.setItem(DESKTOP_DIFF_WRAP_KEY, String(desktopWrap));
   }, [desktopWrap]);
   useEffect(() => {
-    roamgateLocalStorage.setItem(MOBILE_DIFF_WRAP_KEY, String(mobileWrap));
-  }, [mobileWrap]);
+    if (mobileWrapChoice !== null)
+      roamgateLocalStorage.setItem(
+        MOBILE_DIFF_WRAP_KEY,
+        String(mobileWrapChoice),
+      );
+  }, [mobileWrapChoice]);
   useEffect(() => {
     requestedImagePreviewsRef.current.clear();
     imagePreviewRequestByKeyRef.current.clear();
@@ -5349,9 +5365,7 @@ function DiffContentViewInner({
       name: "wrap",
       description: "wrap the long lines, or not (Wrap)",
       run: () =>
-        mobile
-          ? setMobileWrap((value) => !value)
-          : setDesktopWrap((value) => !value),
+        mobile ? toggleMobileWrap() : setDesktopWrap((value) => !value),
     },
     ...(reviewEditor && onGitAction
       ? (
@@ -5433,6 +5447,425 @@ function DiffContentViewInner({
         },
   );
 
+  /** On a phone (or a narrow inspector), the review's head in two rows. */
+  const phoneRow = mobile && reviewEditor;
+  const headBack =
+    mobile && backAction ? (
+      <button
+        type="button"
+        className="diff-content-back"
+        title={backAction.label}
+        aria-label={backAction.label}
+        onClick={backAction.onClick}
+      >
+        <ChevronLeft size={14} aria-hidden="true" />
+      </button>
+    ) : null;
+  const headTitle = embedded ? null : (
+    <div className="diff-content-title">
+      {scopeControls ? (
+        scopeControls
+      ) : scopeLabel ? (
+        <strong className="diff-content-scope" title={scopeLabel}>
+          {scopeLabel}
+          {changedFileCount
+            ? ` · ${changedFileCount} file${changedFileCount === 1 ? "" : "s"}`
+            : ""}
+        </strong>
+      ) : (
+        <strong>
+          {changedFileCount
+            ? `${changedFileCount} changed file${
+                changedFileCount === 1 ? "" : "s"
+              }`
+            : "Diff Viewer"}
+        </strong>
+      )}
+    </div>
+  );
+  const headControls = (
+    <>
+      {/* The review's commit bar joins the head's row (no row of its own). */}
+      {reviewEditor ? viewBar : null}
+      {!embedded && showFileSelector && visibleEntries.length > 1 ? (
+        <label className="diff-file-index">
+          <span>File</span>
+          <select
+            aria-label="Jump to changed file"
+            value={activeEntryKey}
+            onChange={(event) => {
+              const target = visibleEntries.find(
+                (candidate) =>
+                  diffEntryKey(candidate) === event.currentTarget.value,
+              );
+              if (target) handleSelectFile(target);
+            }}
+          >
+            {!activeEntryKey ? <option value="">Choose a file</option> : null}
+            {visibleEntries.map((candidate) => (
+              <option
+                key={diffEntryKey(candidate)}
+                value={diffEntryKey(candidate)}
+              >
+                {candidate.path} ({candidate.kind})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {mobile && !reviewEditor ? (
+        <button
+          type="button"
+          className={`diff-wrap-toggle ${mobileWrap ? "is-active" : ""}`}
+          onClick={toggleMobileWrap}
+          aria-pressed={mobileWrap}
+        >
+          Wrap
+        </button>
+      ) : null}
+      {reviewEditor ? (
+        <ChangesAgentBar
+          agent={changesAgent}
+          overallOpen={overallOpen}
+          onOverall={setOverallOpen}
+          onAsk={() => cursorHandle.current.comment("ask")}
+          {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
+          status={agentSaid || statusLine || ""}
+        />
+      ) : null}
+      {reviewEditor ? (
+        <ChangesForgeHead
+          connectionId={connectionClient.connectionId}
+          snapshot={ownSnapshot}
+          forge={forge}
+          mode={forgeMode}
+          threads={drawnThreads ?? NO_THREADS}
+        />
+      ) : null}
+      {reviewEditor &&
+      !changesAgent.agentName &&
+      !overallOpen &&
+      !changesAgent.summary.trim() ? (
+        <button
+          type="button"
+          className="diff-overall-toggle"
+          title="An overall comment on the review (:overall)"
+          {...(mobile ? { "aria-label": "Overall comment" } : {})}
+          onClick={() => setOverallOpen(true)}
+        >
+          {mobile ? (
+            <MessageSquarePlus size={14} aria-hidden="true" />
+          ) : (
+            <>
+              Overall<span className="diff-head-word"> comment</span>
+            </>
+          )}
+        </button>
+      ) : null}
+      {reviewEditor && (statusLine || agentSaid) ? (
+        // With an agent, its chip's tooltip says it; else one short line.
+        <span
+          className={`changes-review-status${changesAgent.agentName ? " sr-only" : ""}`}
+          aria-live="polite"
+          title={agentSaid || statusLine}
+        >
+          {agentSaid || statusLine}
+        </span>
+      ) : null}
+      {reviewEditor && focusBar !== null ? (
+        <div className="diff-review-focusbar">
+          <span className="note">
+            {changesAgent.agentName ?? "Agent"} review, focus (optional):
+          </span>
+          <input
+            // The focus bar takes the keys as soon as it opens.
+            // biome-ignore lint/a11y/noAutofocus: see above
+            autoFocus
+            aria-label="Review focus"
+            value={focusBar}
+            placeholder="locking, API, error paths... (Enter starts, Esc cancels)"
+            onChange={(event) => setFocusBar(event.target.value)}
+            onFocus={(event) => event.target.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                startAgentReview(focusBar);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setFocusBar(null);
+                sectionRef.current?.focus({ preventScroll: true });
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn primary rv-sm"
+            onClick={() => startAgentReview(focusBar)}
+          >
+            Start
+          </button>
+        </div>
+      ) : null}
+      <div className="diff-content-actions">
+        {hunkTargets.length ? (
+          <div className="diff-hunk-navigation" aria-label="Change navigation">
+            <button
+              type="button"
+              onClick={() => goToHunk(-1)}
+              aria-label="Previous change"
+              title="Previous change"
+            >
+              <ChevronUp size={14} />
+            </button>
+            <span>
+              {hunkIndex < 0 ? "–" : hunkIndex + 1}/{hunkTargets.length}
+              {mobile ? (
+                ""
+              ) : (
+                <span className="diff-head-word">
+                  {` ${hunkTargets.length === 1 ? "change" : "changes"}`}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => goToHunk(1)}
+              aria-label="Next change"
+              title="Next change"
+            >
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        ) : null}
+        {!embedded && !mobile ? (
+          <div
+            className={`diff-search-controls${searchQuery ? " has-query" : ""}`}
+          >
+            <label className="diff-search">
+              <Search size={13} />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    goToSearchMatch(e.shiftKey ? -1 : 1);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Find loaded files"
+                disabled={!hasSearchableDiff}
+              />
+            </label>
+            <span
+              className="diff-search-count"
+              role="status"
+              aria-live="polite"
+            >
+              {deferredSearchQuery && searchMatchCount
+                ? `${searchIndex + 1}/${searchMatchCount}`
+                : deferredSearchQuery
+                  ? "No results"
+                  : ""}
+            </span>
+            <button
+              type="button"
+              className="diff-search-button"
+              onClick={() => goToSearchMatch(-1)}
+              disabled={!searchMatchCount}
+              aria-label="Previous matching loaded file"
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              type="button"
+              className="diff-search-button"
+              onClick={() => goToSearchMatch(1)}
+              disabled={!searchMatchCount}
+              aria-label="Next matching loaded file"
+            >
+              <ChevronDown size={14} />
+            </button>
+            {searchQuery ? (
+              <button
+                type="button"
+                className="diff-search-button"
+                onClick={() => {
+                  setSearchQuery("");
+                  focusSearch();
+                }}
+                aria-label="Clear diff search"
+              >
+                <X size={14} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {reviewEditor && reviewLayout.files.length ? (
+        <span
+          className="diff-reviewed-count"
+          title="Files reviewed (r a chunk, v a file)"
+        >
+          {reviewedFileCount}/{reviewLayout.files.length}
+          <span className="diff-head-word"> reviewed</span>
+        </span>
+      ) : null}
+      {reviewEditor && listedThreads.length ? (
+        <button
+          type="button"
+          className={`diff-comments-toggle${hideComments ? "" : " is-active"}`}
+          aria-pressed={!hideComments}
+          aria-label="Comments"
+          title={
+            hideComments
+              ? `Show the ${listedThreads.length} hidden comment${listedThreads.length === 1 ? "" : "s"} (t, :comments)`
+              : "Show / hide every comment (t, :comments)"
+          }
+          onClick={() => setHideComments((hidden) => !hidden)}
+        >
+          {hideComments ? (
+            <MessageSquareOff size={14} />
+          ) : (
+            <MessageSquare size={14} />
+          )}
+          {hideComments ? (
+            <span className="rv-badge">{listedThreads.length}</span>
+          ) : null}
+        </button>
+      ) : null}
+      {reviewEditor && readingOrder.length ? (
+        <UnresolvedNav
+          className="diff-unresolved-nav"
+          total={unresolvedTotal}
+          position={unresolvedAt}
+          openOnly={threadView.openOnly}
+          onStep={(direction) => {
+            reviewHandlers.current.threadKey?.(
+              direction === 1 ? "gn" : "gN",
+              null,
+            );
+            sectionRef.current?.focus({ preventScroll: true });
+          }}
+          onOpenOnly={() => {
+            toggleOpenOnly();
+            sectionRef.current?.focus({ preventScroll: true });
+          }}
+        />
+      ) : null}
+      {listedThreads.length ? (
+        <ThreadsChip
+          className="diff-threads-chip"
+          threads={listedThreads}
+          undelivered={
+            diffThreads?.undelivered
+              ? {
+                  count: diffThreads.undelivered.ids.size,
+                  reason: diffThreads.undelivered.reason,
+                }
+              : undefined
+          }
+          open={threadsOpen}
+          onToggle={() => setThreadsOpen((open) => !open)}
+        />
+      ) : null}
+      {mobile && reviewEditor ? (
+        // A phone's diff is unified: its view menu only wraps.
+        <ReviewMenu
+          className="diff-view-menu"
+          title="How the diff is drawn: long lines wrapped or not (:set)"
+          label={
+            <>
+              <WrapText size={14} aria-hidden="true" />
+              <ChevronDown size={12} />
+            </>
+          }
+          items={[
+            {
+              label: "Wrap long lines",
+              checked: mobileWrap,
+              onSelect: toggleMobileWrap,
+            },
+          ]}
+        />
+      ) : null}
+      {!mobile && reviewEditor ? (
+        // The review's one view menu: side by side, unified, wrapped
+        // (S and :set stay).
+        <ReviewMenu
+          className="diff-view-menu"
+          title="How the diff is drawn: side by side or unified, lines wrapped (S, :set)"
+          label={
+            <>
+              <Columns2 size={13} aria-hidden="true" />
+              <span className="diff-head-word">
+                {viewMode === "split" ? "Split" : "Unified"}
+                {desktopWrap ? " · Wrap" : ""}
+              </span>
+              <ChevronDown size={12} />
+            </>
+          }
+          items={[
+            {
+              label: "Split",
+              hint: "S",
+              checked: viewMode === "split",
+              onSelect: () => setViewMode("split"),
+            },
+            {
+              label: "Unified",
+              hint: "S",
+              checked: viewMode === "unified",
+              onSelect: () => setViewMode("unified"),
+            },
+            {
+              label: "Wrap",
+              checked: desktopWrap,
+              onSelect: () => setDesktopWrap((value) => !value),
+            },
+          ]}
+        />
+      ) : !mobile ? (
+        <div className="diff-display-controls">
+          <div className="diff-view-toggle" aria-label="Diff view mode">
+            <button
+              type="button"
+              className={viewMode === "split" ? "is-active" : ""}
+              onClick={() => setViewMode("split")}
+              aria-pressed={viewMode === "split"}
+            >
+              Split
+            </button>
+            <button
+              type="button"
+              className={viewMode === "unified" ? "is-active" : ""}
+              onClick={() => setViewMode("unified")}
+              aria-pressed={viewMode === "unified"}
+            >
+              Unified
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`diff-wrap-toggle ${desktopWrap ? "is-active" : ""}`}
+            onClick={() => setDesktopWrap((value) => !value)}
+            aria-pressed={desktopWrap}
+          >
+            Wrap
+          </button>
+        </div>
+      ) : null}
+      {headEnd}
+    </>
+  );
+
   return (
     <section
       ref={sectionRef}
@@ -5468,393 +5901,18 @@ function DiffContentViewInner({
       }}
     >
       <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
-        {mobile && backAction ? (
-          <button
-            type="button"
-            className="diff-content-back"
-            title={backAction.label}
-            aria-label={backAction.label}
-            onClick={backAction.onClick}
-          >
-            <ChevronLeft size={14} aria-hidden="true" />
-          </button>
-        ) : null}
-        {embedded ? null : (
-          <div className="diff-content-title">
-            {scopeControls ? (
-              scopeControls
-            ) : scopeLabel ? (
-              <strong className="diff-content-scope" title={scopeLabel}>
-                {scopeLabel}
-                {changedFileCount
-                  ? ` · ${changedFileCount} file${changedFileCount === 1 ? "" : "s"}`
-                  : ""}
-              </strong>
-            ) : (
-              <strong>
-                {changedFileCount
-                  ? `${changedFileCount} changed file${
-                      changedFileCount === 1 ? "" : "s"
-                    }`
-                  : "Diff Viewer"}
-              </strong>
-            )}
+        {phoneRow ? null : headBack}
+        {headTitle}
+        {phoneRow ? (
+          // A phone's review head: the review on its own line above, every
+          // control on one row under it (Back first), scrolled, never wrapped.
+          <div className="diff-review-row">
+            {headBack}
+            {headControls}
           </div>
+        ) : (
+          headControls
         )}
-        {/* The review's commit bar joins the head's row (no row of its own). */}
-        {reviewEditor ? viewBar : null}
-        {!embedded && showFileSelector && visibleEntries.length > 1 ? (
-          <label className="diff-file-index">
-            <span>File</span>
-            <select
-              aria-label="Jump to changed file"
-              value={activeEntryKey}
-              onChange={(event) => {
-                const target = visibleEntries.find(
-                  (candidate) =>
-                    diffEntryKey(candidate) === event.currentTarget.value,
-                );
-                if (target) handleSelectFile(target);
-              }}
-            >
-              {!activeEntryKey ? <option value="">Choose a file</option> : null}
-              {visibleEntries.map((candidate) => (
-                <option
-                  key={diffEntryKey(candidate)}
-                  value={diffEntryKey(candidate)}
-                >
-                  {candidate.path} ({candidate.kind})
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {mobile ? (
-          <button
-            type="button"
-            className={`diff-wrap-toggle ${mobileWrap ? "is-active" : ""}`}
-            onClick={() => setMobileWrap((value) => !value)}
-            aria-pressed={mobileWrap}
-          >
-            Wrap
-          </button>
-        ) : null}
-        {reviewEditor ? (
-          <ChangesAgentBar
-            agent={changesAgent}
-            overallOpen={overallOpen}
-            onOverall={setOverallOpen}
-            onAsk={() => cursorHandle.current.comment("ask")}
-            {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
-            status={agentSaid || statusLine || ""}
-          />
-        ) : null}
-        {reviewEditor ? (
-          <ChangesForgeHead
-            connectionId={connectionClient.connectionId}
-            snapshot={ownSnapshot}
-            forge={forge}
-            mode={forgeMode}
-            threads={drawnThreads ?? NO_THREADS}
-          />
-        ) : null}
-        {reviewEditor &&
-        !changesAgent.agentName &&
-        !overallOpen &&
-        !changesAgent.summary.trim() ? (
-          <button
-            type="button"
-            className="diff-overall-toggle"
-            title="An overall comment on the review (:overall)"
-            onClick={() => setOverallOpen(true)}
-          >
-            Overall<span className="diff-head-word"> comment</span>
-          </button>
-        ) : null}
-        {reviewEditor && (statusLine || agentSaid) ? (
-          // With an agent, its chip's tooltip says it; else one short line.
-          <span
-            className={`changes-review-status${changesAgent.agentName ? " sr-only" : ""}`}
-            aria-live="polite"
-            title={agentSaid || statusLine}
-          >
-            {agentSaid || statusLine}
-          </span>
-        ) : null}
-        {reviewEditor && focusBar !== null ? (
-          <div className="diff-review-focusbar">
-            <span className="note">
-              {changesAgent.agentName ?? "Agent"} review, focus (optional):
-            </span>
-            <input
-              // The focus bar takes the keys as soon as it opens.
-              // biome-ignore lint/a11y/noAutofocus: see above
-              autoFocus
-              aria-label="Review focus"
-              value={focusBar}
-              placeholder="locking, API, error paths... (Enter starts, Esc cancels)"
-              onChange={(event) => setFocusBar(event.target.value)}
-              onFocus={(event) => event.target.select()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  startAgentReview(focusBar);
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setFocusBar(null);
-                  sectionRef.current?.focus({ preventScroll: true });
-                }
-              }}
-            />
-            <button
-              type="button"
-              className="btn primary rv-sm"
-              onClick={() => startAgentReview(focusBar)}
-            >
-              Start
-            </button>
-          </div>
-        ) : null}
-        <div className="diff-content-actions">
-          {hunkTargets.length ? (
-            <div
-              className="diff-hunk-navigation"
-              aria-label="Change navigation"
-            >
-              <button
-                type="button"
-                onClick={() => goToHunk(-1)}
-                aria-label="Previous change"
-                title="Previous change"
-              >
-                <ChevronUp size={14} />
-              </button>
-              <span>
-                {hunkIndex < 0 ? "–" : hunkIndex + 1}/{hunkTargets.length}
-                {mobile ? (
-                  ""
-                ) : (
-                  <span className="diff-head-word">
-                    {` ${hunkTargets.length === 1 ? "change" : "changes"}`}
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={() => goToHunk(1)}
-                aria-label="Next change"
-                title="Next change"
-              >
-                <ChevronDown size={14} />
-              </button>
-            </div>
-          ) : null}
-          {!embedded && !mobile ? (
-            <div
-              className={`diff-search-controls${searchQuery ? " has-query" : ""}`}
-            >
-              <label className="diff-search">
-                <Search size={13} />
-                <input
-                  ref={searchInputRef}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      goToSearchMatch(e.shiftKey ? -1 : 1);
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSearchQuery("");
-                    }
-                  }}
-                  placeholder="Find loaded files"
-                  disabled={!hasSearchableDiff}
-                />
-              </label>
-              <span
-                className="diff-search-count"
-                role="status"
-                aria-live="polite"
-              >
-                {deferredSearchQuery && searchMatchCount
-                  ? `${searchIndex + 1}/${searchMatchCount}`
-                  : deferredSearchQuery
-                    ? "No results"
-                    : ""}
-              </span>
-              <button
-                type="button"
-                className="diff-search-button"
-                onClick={() => goToSearchMatch(-1)}
-                disabled={!searchMatchCount}
-                aria-label="Previous matching loaded file"
-              >
-                <ChevronUp size={14} />
-              </button>
-              <button
-                type="button"
-                className="diff-search-button"
-                onClick={() => goToSearchMatch(1)}
-                disabled={!searchMatchCount}
-                aria-label="Next matching loaded file"
-              >
-                <ChevronDown size={14} />
-              </button>
-              {searchQuery ? (
-                <button
-                  type="button"
-                  className="diff-search-button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    focusSearch();
-                  }}
-                  aria-label="Clear diff search"
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {reviewEditor && reviewLayout.files.length ? (
-          <span
-            className="diff-reviewed-count"
-            title="Files reviewed (r a chunk, v a file)"
-          >
-            {reviewedFileCount}/{reviewLayout.files.length}
-            <span className="diff-head-word"> reviewed</span>
-          </span>
-        ) : null}
-        {reviewEditor && listedThreads.length ? (
-          <button
-            type="button"
-            className={`diff-comments-toggle${hideComments ? "" : " is-active"}`}
-            aria-pressed={!hideComments}
-            aria-label="Comments"
-            title={
-              hideComments
-                ? `Show the ${listedThreads.length} hidden comment${listedThreads.length === 1 ? "" : "s"} (t, :comments)`
-                : "Show / hide every comment (t, :comments)"
-            }
-            onClick={() => setHideComments((hidden) => !hidden)}
-          >
-            {hideComments ? (
-              <MessageSquareOff size={14} />
-            ) : (
-              <MessageSquare size={14} />
-            )}
-            {hideComments ? (
-              <span className="rv-badge">{listedThreads.length}</span>
-            ) : null}
-          </button>
-        ) : null}
-        {reviewEditor && readingOrder.length ? (
-          <UnresolvedNav
-            className="diff-unresolved-nav"
-            total={unresolvedTotal}
-            position={unresolvedAt}
-            openOnly={threadView.openOnly}
-            onStep={(direction) => {
-              reviewHandlers.current.threadKey?.(
-                direction === 1 ? "gn" : "gN",
-                null,
-              );
-              sectionRef.current?.focus({ preventScroll: true });
-            }}
-            onOpenOnly={() => {
-              toggleOpenOnly();
-              sectionRef.current?.focus({ preventScroll: true });
-            }}
-          />
-        ) : null}
-        {listedThreads.length ? (
-          <ThreadsChip
-            className="diff-threads-chip"
-            threads={listedThreads}
-            undelivered={
-              diffThreads?.undelivered
-                ? {
-                    count: diffThreads.undelivered.ids.size,
-                    reason: diffThreads.undelivered.reason,
-                  }
-                : undefined
-            }
-            open={threadsOpen}
-            onToggle={() => setThreadsOpen((open) => !open)}
-          />
-        ) : null}
-        {!mobile && reviewEditor ? (
-          // The review's one view menu: side by side, unified, wrapped
-          // (S and :set stay).
-          <ReviewMenu
-            className="diff-view-menu"
-            title="How the diff is drawn: side by side or unified, lines wrapped (S, :set)"
-            label={
-              <>
-                <Columns2 size={13} aria-hidden="true" />
-                <span className="diff-head-word">
-                  {viewMode === "split" ? "Split" : "Unified"}
-                  {desktopWrap ? " · Wrap" : ""}
-                </span>
-                <ChevronDown size={12} />
-              </>
-            }
-            items={[
-              {
-                label: "Split",
-                hint: "S",
-                checked: viewMode === "split",
-                onSelect: () => setViewMode("split"),
-              },
-              {
-                label: "Unified",
-                hint: "S",
-                checked: viewMode === "unified",
-                onSelect: () => setViewMode("unified"),
-              },
-              {
-                label: "Wrap",
-                checked: desktopWrap,
-                onSelect: () => setDesktopWrap((value) => !value),
-              },
-            ]}
-          />
-        ) : !mobile ? (
-          <div className="diff-display-controls">
-            <div className="diff-view-toggle" aria-label="Diff view mode">
-              <button
-                type="button"
-                className={viewMode === "split" ? "is-active" : ""}
-                onClick={() => setViewMode("split")}
-                aria-pressed={viewMode === "split"}
-              >
-                Split
-              </button>
-              <button
-                type="button"
-                className={viewMode === "unified" ? "is-active" : ""}
-                onClick={() => setViewMode("unified")}
-                aria-pressed={viewMode === "unified"}
-              >
-                Unified
-              </button>
-            </div>
-            <button
-              type="button"
-              className={`diff-wrap-toggle ${desktopWrap ? "is-active" : ""}`}
-              onClick={() => setDesktopWrap((value) => !value)}
-              aria-pressed={desktopWrap}
-            >
-              Wrap
-            </button>
-          </div>
-        ) : null}
-        {headEnd}
       </div>
       {reviewEditor ? null : viewBar}
 
