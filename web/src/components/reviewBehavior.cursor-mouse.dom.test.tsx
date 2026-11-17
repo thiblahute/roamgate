@@ -97,6 +97,13 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.click({ path: "a.ts", new: 6 });
         await review.click({ path: "b.ts", new: 2 }, true);
         expect(selected()).toEqual(["a.ts:6", "a.ts:7", "a.ts:8"]);
+        // A comment on it is on those lines too, not the first one alone.
+        await review.press("c");
+        await review.type("All three");
+        await review.editorPress("<C-Enter>");
+        expect(review.calls("review.thread.add")[0]?.params).toMatchObject({
+          anchor: { path: "a.ts", line: 6, endLine: 8, side: "new" },
+        });
         await review.unmount();
       });
 
