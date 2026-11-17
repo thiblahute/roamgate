@@ -190,6 +190,11 @@ export type AppWithReviews = {
   inspectorView(view: Parameters<InspectorProps["onViewChange"]>[0]): void;
   /** Docks or expands the shown inspector, as its header's button does. */
   inspectorExpand(expanded: boolean): void;
+  /**
+   * Changes' diff drawn (default) or still read (a large review): drawn
+   * without its cursor until then, as DiffContentView is.
+   */
+  setDiffDrawn(drawn: boolean): Promise<void>;
   /** The tab bar's Review button, or null. */
   tabBarReview(): HTMLButtonElement | null;
   click(button: HTMLElement): Promise<void>;
@@ -219,6 +224,9 @@ type Page = {
   highlighterPreloads: number;
   focusedPanes: string[];
   inspectorProps: InspectorProps | null;
+  /** Changes' diff has its rows (its cursor), and its redraw. */
+  diffDrawn: boolean;
+  redrawDiff: (() => void) | null;
 };
 
 let page: Page | null = null;
@@ -433,9 +441,16 @@ async function mockApp(before?: () => Promise<void> | void) {
     ...inspectorModule,
     WorkspaceInspectorHost: (props: InspectorProps) => {
       now().inspectorProps = props;
-      // Changes' diff, which the review toggle gives the keys to.
+      const [, redraw] = React.useState(0);
+      now().redrawDiff = () => redraw((count) => count + 1);
+      // Changes' diff, which the review toggle gives the keys to: its
+      // cursor once its rows are drawn (a large review: later).
       return props.state?.open && props.state.view === "changes" ? (
-        <div className="diff-content-view" data-review-cursor tabIndex={0} />
+        now().diffDrawn ? (
+          <div className="diff-content-view" data-review-cursor tabIndex={0} />
+        ) : (
+          <div className="diff-content-view" tabIndex={-1} />
+        )
       ) : null;
     },
   }));
@@ -500,6 +515,8 @@ export async function mountAppWithReviews(options: {
     highlighterPreloads: 0,
     focusedPanes: [],
     inspectorProps: null,
+    diffDrawn: true,
+    redrawDiff: null,
   };
   await mockApp(options.before);
   const notices: string[] = [];
@@ -671,6 +688,11 @@ export async function mountAppWithReviews(options: {
     inspectorExpand(expanded) {
       if (!current.inspectorProps) throw new Error("no inspector shown");
       current.inspectorProps.onExpandedChange(expanded);
+    },
+    async setDiffDrawn(drawn) {
+      current.diffDrawn = drawn;
+      await React.act(async () => current.redrawDiff?.());
+      await settle();
     },
     tabBarReview() {
       return (

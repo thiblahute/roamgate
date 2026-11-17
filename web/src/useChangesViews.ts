@@ -59,6 +59,11 @@ export type ChangesViews = {
     fileErrors: Record<string, string>;
   } | null;
   /**
+   * The view `shown` is (a commit's sha, null for all the changes): the
+   * one shown before while the next one is read; undefined with none.
+   */
+  shownSha: string | null | undefined;
+  /**
    * A file of the view wanted now (picked, Load diff, Retry): its patch
    * read next, large or generated as it may be.
    */
@@ -146,6 +151,8 @@ export function useChangesViews({
   const [goneCommit, setGoneCommit] = useState<ReviewCommit | null>(null);
   /** The view shown's diff, read file by file; `drawn` its version. */
   const [diff, setDiff] = useState<ViewLoad | null>(null);
+  /** The view `diff` is: its commit, null for all the changes. */
+  const [diffSha, setDiffSha] = useState<string | null>(null);
   const [drawn, setDrawn] = useState(0);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -377,6 +384,7 @@ export function useChangesViews({
           return;
         shown = true;
         setDiff(view);
+        setDiffSha(sha);
         setDrawn(view.version);
       };
       reveal();
@@ -601,6 +609,7 @@ export function useChangesViews({
     ready: active && commits !== null && readFor === placeKey,
     name: active && commits?.length ? viewName(commits, current) : null,
     shown,
+    shownSha: shown ? diffSha : undefined,
     loading,
     status,
     failed: active && failure !== null,

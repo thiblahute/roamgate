@@ -399,6 +399,8 @@ function writeStoredJson(key: string, value: unknown) {
 
 /** After the page shows: the review's code is fetched then. */
 const REVIEW_PRELOAD_DELAY_MS = 3000;
+/** How long the review toggle waits for a large review's diff to draw. */
+const REVIEW_DRAWN_WAIT_MS = 60_000;
 
 /** The review's code, the comments' highlighter included, loading ahead. */
 function preloadReviewCode() {
@@ -4093,23 +4095,48 @@ export default function App() {
       }
       // The keys go to the diff (its cursor), once Changes has drawn it;
       // `:novim` keeps the cursor too (only the editor is plain).
+      // A large review is drawn once read (seconds): the keys wait for it,
+      // unless the user gives them to something else meanwhile (a press,
+      // keys typed in another place than the page or the inspector).
       const opened = inspectorStateRef.current;
-      let frames = 0;
+      const since = performance.now();
+      let elsewhere = false;
+      const pressed = () => {
+        elsewhere = true;
+      };
+      const typed = (event: KeyboardEvent) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target !== document.body &&
+          !target.closest(".workspace-inspector-slot")
+        )
+          elsewhere = true;
+      };
+      document.addEventListener("pointerdown", pressed, true);
+      document.addEventListener("keydown", typed, true);
+      const stop = () => {
+        document.removeEventListener("pointerdown", pressed, true);
+        document.removeEventListener("keydown", typed, true);
+      };
       const focusDiff = () => {
-        if (inspectorStateRef.current !== opened) return;
+        if (inspectorStateRef.current !== opened || elsewhere) return stop();
         const target = [
           ...document.querySelectorAll<HTMLElement>(
             ".workspace-inspector-slot .diff-content-view[data-review-cursor]",
           ),
         ].find((element) => element.getClientRects().length > 0);
         if (target) {
+          stop();
           // A hold elsewhere (the keys given back) would pull them back.
           reviewFocusHoldRef.current?.();
           reviewFocusHoldRef.current = null;
           target.focus({ preventScroll: true });
           const slot = target.closest(".workspace-inspector-slot");
           if (slot) reviewFocusHoldRef.current = holdFocus(target, slot);
-        } else if (frames++ < 120) requestAnimationFrame(focusDiff);
+        } else if (performance.now() - since < REVIEW_DRAWN_WAIT_MS)
+          requestAnimationFrame(focusDiff);
+        else stop();
       };
       requestAnimationFrame(focusDiff);
     },

@@ -199,6 +199,7 @@ import {
 } from "../unresolvedThreads";
 import { usePendingFeedback } from "../feedbackPending";
 import { useInspectorCommands } from "../useInspectorCommands";
+import { oneCommitTitle } from "../changesViews";
 import { useChangesViews, type ViewsSource } from "../useChangesViews";
 import { ChangesCommitBar } from "./ChangesCommitBar";
 import type { InspectorCommand } from "../inspectorCommands";
@@ -3170,11 +3171,27 @@ function DiffContentViewInner({
     if (pickedPath) showReviewed(pickedPath);
     pickDone.current = selectionRevision;
   }, [pickedPath, selectionRevision, showReviewed]);
+  // Once its file's lines are read (file by file): whether it is reviewed
+  // is that view's then. Not taken from another view's file of that path.
+  const goToRowPath = (() => {
+    const wanted = cursorGoTo?.path;
+    if (!wanted || goToDone.current === cursorGoTo.at) return null;
+    const relative = (path: string) => path.replace(/^\.?\//, "");
+    return (
+      cursor.model.rows.find(
+        (row) =>
+          row.path === wanted ||
+          relative(row.path) === wanted ||
+          wanted.endsWith(`/${relative(row.path)}`),
+      )?.path ?? null
+    );
+  })();
   useEffect(() => {
-    if (!cursorGoTo?.path) return;
-    showReviewed(cursorGoTo.path);
+    if (!cursorGoTo?.path || goToDone.current === cursorGoTo.at) return;
+    if (!goToRowPath && Date.now() - cursorGoTo.at < 10_000) return;
+    showReviewed(goToRowPath ?? cursorGoTo.path);
     goToDone.current = cursorGoTo.at;
-  }, [cursorGoTo?.path, cursorGoTo?.at, showReviewed]);
+  }, [cursorGoTo?.path, cursorGoTo?.at, goToRowPath, showReviewed]);
   // The cursor steps over a folded chunk's lines but its first, and over
   // every line of a folded reviewed file.
   foldedRowsRef.current = (() => {
@@ -3613,9 +3630,20 @@ function DiffContentViewInner({
           return true;
         }
       }
-      if (threadView.folded(owner)) threadView.unfold([owner.id]);
-      threadView.setReplying(owner.id);
-      return true;
+      // Your review comment no one answered has no reply: c rewrites it,
+      // as on its line (and as the classic pane's c did).
+      const lone = owner.kind !== "discussion" && owner.comments.length < 2;
+      const first = owner.comments[0];
+      if (lone && first?.author === REVIEW_USER) {
+        if (threadView.folded(owner)) threadView.unfold([owner.id]);
+        threadView.setEditing(first.id);
+        return true;
+      }
+      if (!lone) {
+        if (threadView.folded(owner)) threadView.unfold([owner.id]);
+        threadView.setReplying(owner.id);
+        return true;
+      }
     }
     const section = renderedSectionsRef.current.find(
       (candidate) => candidate.key === key,
@@ -5976,7 +6004,12 @@ type DiffContentViewProps = Omit<
    * range opened by name), for the tree; null when the scope's are shown.
    */
   onViewEntries?: (
-    view: { label: string; entries: readonly GitDiffEntry[] } | null,
+    view: {
+      label: string;
+      entries: readonly GitDiffEntry[];
+      /** A review of one commit's name: its short sha and subject. */
+      title?: string;
+    } | null,
   ) => void;
   /**
    * Commits' Review this commit (plan phase 8): that commit shown in the
@@ -6095,7 +6128,22 @@ export function DiffContentView({
     path: string;
     line?: number;
     at: number;
+    /**
+     * The view it is in (gn to another commit's thread): gone to once that
+     * view is shown, not in the one shown while it is read.
+     */
+    sha?: string | null;
   } | null>(null);
+  const shownSha = views.shownSha;
+  useEffect(() => {
+    if (!viewGoTo || viewGoTo.sha === undefined) return;
+    if (shownSha !== viewGoTo.sha) return;
+    setViewGoTo({
+      path: viewGoTo.path,
+      ...(viewGoTo.line !== undefined ? { line: viewGoTo.line } : {}),
+      at: Date.now(),
+    });
+  }, [viewGoTo, shownSha]);
   const sectionKeys = useRef<HTMLDivElement | null>(null);
   const say = (message: string) => store.notify({ kind: "info", message });
   const viewEntriesRef = useRef(onViewEntries);
@@ -6104,11 +6152,19 @@ export function DiffContentView({
   const viewLabel = views.name
     ? `${views.name.head} ${views.name.subject}`
     : (bound?.session.title ?? "Review");
+  const reviewTitle =
+    oneCommitTitle(bound?.session.target, views.commits) ?? undefined;
   useEffect(() => {
     viewEntriesRef.current?.(
-      shownEntries ? { label: viewLabel, entries: shownEntries } : null,
+      shownEntries
+        ? {
+            label: viewLabel,
+            entries: shownEntries,
+            ...(reviewTitle ? { title: reviewTitle } : {}),
+          }
+        : null,
     );
-  }, [shownEntries, viewLabel]);
+  }, [shownEntries, viewLabel, reviewTitle]);
   useEffect(() => () => viewEntriesRef.current?.(null), []);
   // Review this commit: shown once the Branch scope's commits are read.
   const commitAbsentRef = useRef(onCommitAbsent);
@@ -6200,7 +6256,9 @@ export function DiffContentView({
   // The file a search found in another view is the one picked there, as
   // the tree's pick would: the cursor goes there once it is drawn.
   const goTo =
-    viewGoTo && (!cursorGoTo || viewGoTo.at > cursorGoTo.at)
+    viewGoTo &&
+    viewGoTo.sha === undefined &&
+    (!cursorGoTo || viewGoTo.at > cursorGoTo.at)
       ? viewGoTo
       : cursorGoTo;
   const picked =
@@ -6269,6 +6327,7 @@ export function DiffContentView({
       path: anchor.path!,
       ...(anchor.line !== undefined ? { line: anchor.line } : {}),
       at: Date.now(),
+      sha,
     });
     return true;
   };
