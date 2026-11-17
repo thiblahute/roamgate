@@ -230,10 +230,7 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
 
     test("a held comment is edited, moved, deleted and gone to from its card", () => {
       // The plain box (Vim keys off); the Vim editor is tested below.
-      localStorage.setItem(
-        "roamgate:reviewPrefs",
-        JSON.stringify({ vim: false }),
-      );
+      localStorage.setItem("roamgate:vimKeys", "false");
       const view = mount(held);
       const textarea = view.panel.querySelector<HTMLTextAreaElement>(
         '[data-review-annotation-id="held"] textarea',
@@ -325,10 +322,7 @@ if (process.env.ROAMGATE_WORKSPACE_THREADS_DOM_TEST !== "1") {
 
     /** The panel with the held comments in the Vim editor, once drawn. */
     async function mountVim(annotations: readonly Annotation[] = held) {
-      localStorage.setItem(
-        "roamgate:reviewPrefs",
-        JSON.stringify({ vim: true }),
-      );
+      localStorage.setItem("roamgate:vimKeys", "true");
       const view = mount(annotations);
       await act(async () => {
         for (let tick = 0; tick < 8; tick++)

@@ -31,7 +31,7 @@ import {
   useShortcutPreferences,
 } from "../shortcutPreferences";
 import type { Pane } from "../types";
-import { reviewVimKeys } from "../composerVim";
+import { vimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ThemedSelect } from "./ThemedSelect";
@@ -178,7 +178,7 @@ export function AnnotationPanel({
   );
   const [targetPaneId, setTargetPaneId] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
-  const [vim] = useState(reviewVimKeys);
+  const [vim] = useState(vimKeys);
 
   useEffect(() => {
     if (preferredPaneId) setTargetPaneId(preferredPaneId);
