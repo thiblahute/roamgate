@@ -95,18 +95,8 @@ export function reviewedLayout(model: DiffCursorModel): ChangesReviewedLayout {
     return {
       path,
       fingerprint: fileFingerprint({
-        path,
-        oldPath: path,
-        hunks: lines[file]!.map((own) => ({
-          header: "",
-          lines: own.map((line) => ({
-            kind: line.kind,
-            old: null,
-            new: null,
-            text: line.text,
-          })),
-        })),
-      } as Parameters<typeof fileFingerprint>[0]),
+        hunks: lines[file]!.map((own) => ({ lines: own })),
+      }),
       hunks: ids,
     };
   });

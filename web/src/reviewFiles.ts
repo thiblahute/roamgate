@@ -142,7 +142,7 @@ export function reviewedFileOf(
   const hunks = parsed.file.hunks;
   return {
     path,
-    fingerprint: fileFingerprint({ ...parsed.file, path, oldPath: path }),
+    fingerprint: fileFingerprint(parsed.file),
     hunks: hunkIds(path, hunks),
   };
 }

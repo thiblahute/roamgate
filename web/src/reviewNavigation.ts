@@ -433,8 +433,15 @@ export function reviewedIndexes(
   return reviewed;
 }
 
-/** The changed lines of a hunk, as hunkIds reads them. */
-type HunkLines = { lines: readonly { kind: string; text: string }[] };
+/** The lines of a hunk, as hunkIds and fileFingerprint read them. */
+export type HunkLines = { lines: readonly { kind: string; text: string }[] };
+
+/** djb2 of `text`, going on from `hash` (5381 to start). */
+export function djb2(hash: number, text: string): number {
+  for (let i = 0; i < text.length; i++)
+    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return hash;
+}
 
 /**
  * Each hunk's identity: a hash of the file's path and of the hunk's removed
@@ -451,8 +458,7 @@ export function hunkIds(path: string, hunks: readonly HunkLines[]): string[] {
   return hunks.map((hunk) => {
     let hash = 5381;
     const feed = (text: string) => {
-      for (let i = 0; i < text.length; i++)
-        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+      hash = djb2(hash, text);
     };
     feed(`${path}\n`);
     let changed = 0;
