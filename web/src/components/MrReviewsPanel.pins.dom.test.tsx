@@ -279,7 +279,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
     await key("Escape");
     expect(addBox().value).toBe("");
     expect(document.activeElement).toBe(panel);
-    await click(host.querySelector('[aria-label="Unpin it"]'));
+    await click(host.querySelector('[aria-label="Unpin (dd)"]'));
     expect(rows()).toEqual([keyOf(7), keyOf(1), keyOf(2), keyOf(3)]);
 
     // dd removes the selected For you request: undo toast, "1 hidden" chip.

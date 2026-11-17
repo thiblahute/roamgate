@@ -29,8 +29,11 @@ import {
   type InboxFetchers,
   NotSignedInError,
 } from "./fetchers";
+import { createComplexityGuard } from "./complexity";
 import {
   type HostAnswer,
+  inboxParts,
+  mergeAnswers,
   OWN_DETAILS_BATCH,
   OWN_MAX_PAGES,
   type OwnDetails,
@@ -45,6 +48,7 @@ import {
   parseOwnDetails,
   parseOwnList,
   lesserOwnFields,
+  ownListParts,
   unknownFieldError,
   withOwnDetails,
 } from "./queries";
@@ -138,6 +142,9 @@ export type MrInboxDeps = {
   onMergeTime?: () => void;
 };
 
+/** A host refused the own-requests fields asked: ask the lesser ones. */
+class FieldsRefused extends Error {}
+
 type HostResult = {
   state: MrHostState;
   answer?: HostAnswer;
@@ -157,6 +164,21 @@ export function createMrInbox(deps: MrInboxDeps) {
   let stopped = true;
   /** The own-requests fields each GitLab host takes. */
   const ownFields = new Map<string, OwnFields>();
+  /** Each host's complexity limit, learned from its refusals. */
+  const complexity = createComplexityGuard({
+    onLearn: (host, limit) =>
+      logger.info("forge query complexity limit learned", {
+        host,
+        max: limit.max,
+        scale: Number(limit.scale.toFixed(2)),
+      }),
+  });
+
+  /** A GraphQL query to a host, by its provider. */
+  const ask = (host: Host, query: string, call?: FetchCall) =>
+    host.provider === "gitlab"
+      ? deps.fetchers.gitlab(host.host, query, call)
+      : deps.fetchers.github(host.host, query, call);
 
   /**
    * Every request known: the forges' lists, then those the reviews agent
@@ -250,18 +272,20 @@ export function createMrInbox(deps: MrInboxDeps) {
     const items = new Map<string, MrItem>();
     let after: string | undefined;
     for (let page = 0; page < OWN_MAX_PAGES; page++) {
-      const answer =
-        host.provider === "gitlab"
-          ? await deps.fetchers.gitlab(
-              host.host,
-              gitlabOwnListQuery(after),
-              OWN_CALL,
-            )
-          : await deps.fetchers.github(
-              host.host,
-              githubOwnListQuery(after),
-              OWN_CALL,
-            );
+      const cursor = after;
+      // Its lists in several queries when the host's limit asks for it.
+      const answer = mergeAnswers(
+        await complexity.run(
+          host.host,
+          host.provider,
+          ownListParts(host.provider, cursor),
+          (parts) =>
+            host.provider === "gitlab"
+              ? gitlabOwnListQuery(cursor, parts)
+              : githubOwnListQuery(cursor, parts),
+          (query) => ask(host, query, OWN_CALL),
+        ),
+      );
       const read = parseOwnList(host.provider, host.host, answer);
       for (const item of read.items)
         if (!items.has(item.key)) items.set(item.key, item);
@@ -276,49 +300,68 @@ export function createMrInbox(deps: MrInboxDeps) {
     return [...items.values()];
   }
 
-  /** Details of some own requests, in batches; a host refusing fields gets the basic ones. */
+  /**
+   * Details of some own requests, in batches sized to the host's
+   * complexity limit (OWN_DETAILS_BATCH at most); a batch refused for its
+   * complexity is split and asked again, a host refusing fields gets the
+   * lesser ones (and the batches asked so far are kept).
+   */
   async function readOwnDetails(
     host: Host,
     due: MrItem[],
   ): Promise<Map<string, OwnDetails>> {
     const found = new Map<string, OwnDetails>();
     const sorted = [...due].sort((a, b) => a.project.localeCompare(b.project));
-    for (let index = 0; index < sorted.length; index += OWN_DETAILS_BATCH) {
-      const batch = sorted.slice(index, index + OWN_DETAILS_BATCH);
-      for (const [key, details] of await readOwnBatch(host, batch))
-        found.set(key, details);
+    let left = sorted;
+    while (left.length) {
+      const fields = ownFields.get(host.host) ?? "full";
+      const lesser = lesserOwnFields(host.provider, fields);
+      const asked = new Set<MrItem>();
+      try {
+        await complexity.run(
+          host.host,
+          host.provider,
+          left,
+          (batch) => ownDetailsQuery(host.provider, batch, fields),
+          async (query, batch) => {
+            let answer: unknown;
+            try {
+              answer = await ask(host, query, OWN_DETAILS_CALL);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              if (
+                lesser &&
+                /field/i.test(message) &&
+                !/complexity/i.test(message)
+              )
+                throw new FieldsRefused();
+              throw error;
+            }
+            if (lesser && unknownFieldError(answer)) throw new FieldsRefused();
+            for (const [key, details] of parseOwnDetails(
+              host.provider,
+              host.host,
+              answer,
+            ))
+              found.set(key, details);
+            for (const item of batch) asked.add(item);
+            return answer;
+          },
+          OWN_DETAILS_BATCH,
+        );
+        return found;
+      } catch (error) {
+        if (!(error instanceof FieldsRefused)) throw error;
+        ownFields.set(host.host, lesser!);
+        logger.info("own requests read with fewer fields", {
+          host: host.host,
+          fields: lesser,
+        });
+        left = left.filter((item) => !asked.has(item));
+      }
     }
     return found;
-  }
-
-  async function readOwnBatch(
-    host: Host,
-    batch: MrItem[],
-  ): Promise<Map<string, OwnDetails>> {
-    const fields = ownFields.get(host.host) ?? "full";
-    const lesser = lesserOwnFields(host.provider, fields);
-    const fallBack = () => {
-      ownFields.set(host.host, lesser!);
-      logger.info("own requests read with fewer fields", {
-        host: host.host,
-        fields: lesser,
-      });
-      return readOwnBatch(host, batch);
-    };
-    const query = ownDetailsQuery(host.provider, batch, fields);
-    let answer: unknown;
-    try {
-      answer =
-        host.provider === "gitlab"
-          ? await deps.fetchers.gitlab(host.host, query, OWN_DETAILS_CALL)
-          : await deps.fetchers.github(host.host, query, OWN_DETAILS_CALL);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (lesser && /field/i.test(message)) return fallBack();
-      throw error;
-    }
-    if (lesser && unknownFieldError(answer)) return fallBack();
-    return parseOwnDetails(host.provider, host.host, answer);
   }
 
   /**
@@ -451,18 +494,23 @@ export function createMrInbox(deps: MrInboxDeps) {
   ): Promise<HostResult> {
     const base = { host: host.host, provider: host.provider };
     try {
+      // The lists and the followed projects, in as many queries as the
+      // host's complexity limit asks.
+      const answers = await complexity.run(
+        host.host,
+        host.provider,
+        inboxParts(followed),
+        (parts) =>
+          host.provider === "gitlab"
+            ? gitlabInboxQuery(followed, parts)
+            : githubInboxQuery(followed, parts),
+        (query) => ask(host, query),
+      );
+      const merged = mergeAnswers(answers);
       const answer =
         host.provider === "gitlab"
-          ? parseGitlabInbox(
-              host.host,
-              followed,
-              await deps.fetchers.gitlab(host.host, gitlabInboxQuery(followed)),
-            )
-          : parseGithubInbox(
-              host.host,
-              followed,
-              await deps.fetchers.github(host.host, githubInboxQuery(followed)),
-            );
+          ? parseGitlabInbox(host.host, followed, merged)
+          : parseGithubInbox(host.host, followed, merged);
       // Its own query: a failure there keeps what was known of them.
       let own: MrItem[] | undefined;
       try {

@@ -29,13 +29,33 @@ export const FILES_KEPT = 40;
 const GITLAB_FIELDS =
   "iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } }";
 
+/**
+ * A part of the inbox query: the user's own lists ("mine") or a followed
+ * project by its index. The parts can be asked in several queries (a host's
+ * complexity limit) and their answers merged with mergeAnswers.
+ */
+export type InboxPart = "mine" | number;
+
+/** Every part of the inbox query for these followed projects. */
+export function inboxParts(followed: string[]): InboxPart[] {
+  return ["mine", ...followed.map((_, index) => index)];
+}
+
 /** One GraphQL query for a GitLab host. JSON strings are GraphQL strings. */
-export function gitlabInboxQuery(followed: string[]): string {
-  const followedParts = followed.map(
-    (project, index) =>
-      `f${index}: project(fullPath: ${JSON.stringify(project)}) { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: ${FOLLOWED_PAGE}) { nodes { ${GITLAB_FIELDS} diffStats { path } } } }`,
-  );
-  return `query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: ${INBOX_PAGE}) { nodes { ${GITLAB_FIELDS} } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: ${INBOX_PAGE}) { nodes { ${GITLAB_FIELDS} } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: ${INBOX_PAGE}) { nodes { action target { ... on MergeRequest { ${GITLAB_FIELDS} } } } } } ${followedParts.join(" ")} }`;
+export function gitlabInboxQuery(
+  followed: string[],
+  parts: InboxPart[] = inboxParts(followed),
+): string {
+  const followedParts = parts.flatMap((part) => {
+    if (part === "mine" || followed[part] === undefined) return [];
+    return [
+      `f${part}: project(fullPath: ${JSON.stringify(followed[part])}) { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: ${FOLLOWED_PAGE}) { nodes { ${GITLAB_FIELDS} diffStats { path } } } }`,
+    ];
+  });
+  const mine = parts.includes("mine")
+    ? `currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: ${INBOX_PAGE}) { nodes { ${GITLAB_FIELDS} } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: ${INBOX_PAGE}) { nodes { ${GITLAB_FIELDS} } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: ${INBOX_PAGE}) { nodes { action target { ... on MergeRequest { ${GITLAB_FIELDS} } } } } } `
+    : "";
+  return `query { ${mine}${followedParts.join(" ")} }`;
 }
 
 const GITHUB_FIELDS =
@@ -46,15 +66,56 @@ function githubSearch(alias: string, filter: string): string {
 }
 
 /** One GraphQL query for a GitHub host. */
-export function githubInboxQuery(followed: string[]): string {
-  const followedParts = followed.flatMap((project, index) => {
-    const [owner, name, ...rest] = project.split("/");
+export function githubInboxQuery(
+  followed: string[],
+  parts: InboxPart[] = inboxParts(followed),
+): string {
+  const followedParts = parts.flatMap((part) => {
+    if (part === "mine" || followed[part] === undefined) return [];
+    const [owner, name, ...rest] = followed[part].split("/");
     if (!owner || !name || rest.length) return [];
     return [
-      `f${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { nameWithOwner pullRequests(states: OPEN, first: ${FOLLOWED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ${GITHUB_FIELDS} files(first: ${FILES_KEPT}) { nodes { path } } } } }`,
+      `f${part}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { nameWithOwner pullRequests(states: OPEN, first: ${FOLLOWED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ${GITHUB_FIELDS} files(first: ${FILES_KEPT}) { nodes { path } } } } }`,
     ];
   });
-  return `query { viewer { login } ${githubSearch("rr", "review-requested:@me")} ${githubSearch("as", "assignee:@me")} ${githubSearch("mn", "mentions:@me")} ${followedParts.join(" ")} }`;
+  const mine = parts.includes("mine")
+    ? `viewer { login } ${githubSearch("rr", "review-requested:@me")} ${githubSearch("as", "assignee:@me")} ${githubSearch("mn", "mentions:@me")} `
+    : "";
+  return `query { ${mine}${followedParts.join(" ")} }`;
+}
+
+/**
+ * The answers of a query asked in several parts, as one: their data
+ * merged (an object both have, like currentUser, merged in turn), their
+ * errors together. An answer without data adds its errors only.
+ */
+export function mergeAnswers(answers: unknown[]): unknown {
+  if (answers.length === 1) return answers[0];
+  const data: Record<string, any> = {};
+  const errors: unknown[] = [];
+  let any = false;
+  for (const answer of answers) {
+    const part = (answer as { data?: unknown } | null)?.data;
+    const partErrors = (answer as { errors?: unknown } | null)?.errors;
+    if (Array.isArray(partErrors)) errors.push(...partErrors);
+    if (!part || typeof part !== "object") continue;
+    any = true;
+    for (const [key, value] of Object.entries(part)) {
+      const before = data[key];
+      data[key] =
+        before &&
+        value &&
+        typeof before === "object" &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+          ? { ...before, ...value }
+          : value;
+    }
+  }
+  return {
+    ...(any ? { data } : {}),
+    ...(errors.length ? { errors } : {}),
+  };
 }
 
 function text(value: unknown, max = 500): string {
@@ -366,29 +427,55 @@ const PAGE_INFO = "pageInfo { hasNextPage endCursor }";
  * first by creation (an order that holds while paging); the first page also
  * asks the latest merged and closed ones.
  */
-export function gitlabOwnListQuery(after?: string): string {
-  const open = `op: authoredMergeRequests(state: opened, sort: CREATED_DESC, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ${GITLAB_OWN_LIST} } }`;
-  const settled = after
-    ? ""
-    : [
-        ["mg", "merged"],
-        ["cl", "closed"],
-      ]
-        .map(
-          ([alias, state]) =>
-            ` ${alias}: authoredMergeRequests(state: ${state}, sort: UPDATED_DESC, first: ${OWN_SETTLED_PAGE}) { nodes { ${GITLAB_OWN_LIST} } }`,
-        )
-        .join("");
-  return `query { currentUser { username ${open}${settled} } }`;
+export function gitlabOwnListQuery(
+  after?: string,
+  parts: OwnListPart[] = ownListParts("gitlab", after),
+): string {
+  const open = parts.includes("op")
+    ? ` op: authoredMergeRequests(state: opened, sort: CREATED_DESC, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ${GITLAB_OWN_LIST} } }`
+    : "";
+  const settled = (
+    [
+      ["mg", "merged"],
+      ["cl", "closed"],
+    ] as const
+  )
+    .filter(([alias]) => parts.includes(alias))
+    .map(
+      ([alias, state]) =>
+        ` ${alias}: authoredMergeRequests(state: ${state}, sort: UPDATED_DESC, first: ${OWN_SETTLED_PAGE}) { nodes { ${GITLAB_OWN_LIST} } }`,
+    )
+    .join("");
+  return `query { currentUser { username${open}${settled} } }`;
+}
+
+/**
+ * The lists of an own-requests page: the open ones ("op"), and on the
+ * first page the settled ones (GitLab "mg" and "cl", GitHub "st"). They
+ * can be asked in several queries (a host's complexity limit).
+ */
+export type OwnListPart = "op" | "mg" | "cl" | "st";
+
+export function ownListParts(
+  provider: "gitlab" | "github",
+  after?: string,
+): OwnListPart[] {
+  if (after) return ["op"];
+  return provider === "gitlab" ? ["op", "mg", "cl"] : ["op", "st"];
 }
 
 /** One page of the user's open pull requests on a GitHub host, and on the first the latest closed. */
-export function githubOwnListQuery(after?: string): string {
-  const open = `op: search(type: ISSUE, query: ${JSON.stringify("is:pr is:open author:@me archived:false sort:created-desc")}, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`;
-  const settled = after
-    ? ""
-    : ` st: search(type: ISSUE, query: ${JSON.stringify("is:pr is:closed author:@me archived:false sort:updated-desc")}, first: ${OWN_SETTLED_PAGE}) { nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`;
-  return `query { viewer { login } ${open}${settled} }`;
+export function githubOwnListQuery(
+  after?: string,
+  parts: OwnListPart[] = ownListParts("github", after),
+): string {
+  const open = parts.includes("op")
+    ? ` op: search(type: ISSUE, query: ${JSON.stringify("is:pr is:open author:@me archived:false sort:created-desc")}, first: ${OWN_PAGE}${after ? `, after: ${JSON.stringify(after)}` : ""}) { ${PAGE_INFO} nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`
+    : "";
+  const settled = parts.includes("st")
+    ? ` st: search(type: ISSUE, query: ${JSON.stringify("is:pr is:closed author:@me archived:false sort:updated-desc")}, first: ${OWN_SETTLED_PAGE}) { nodes { ... on PullRequest { ${GITHUB_OWN_LIST} } } }`
+    : "";
+  return `query { viewer { login }${open}${settled} }`;
 }
 
 export type OwnListPage = {

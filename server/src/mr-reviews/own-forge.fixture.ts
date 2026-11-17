@@ -1,3 +1,4 @@
+import { estimateComplexity } from "./complexity";
 import type { InboxFetchers } from "./fetchers";
 import { parseLabelEvents } from "./queries";
 
@@ -68,7 +69,18 @@ export function createOwnForge(
   provider: "gitlab" | "github",
   host: string,
   initial: FakeRequest[],
-  options: { refuseFull?: boolean } = {},
+  options: {
+    refuseFull?: boolean;
+    /**
+     * GitLab's complexity limit: a query whose complexity (the estimate
+     * times `complexityScale`, as the real count differs) is above it is
+     * refused as glab refuses it, with an error.
+     */
+    maxComplexity?: number;
+    complexityScale?: number;
+    /** Others' open requests, the followed projects' (GitLab). */
+    followed?: FakeRequest[];
+  } = {},
 ) {
   let requests = initial;
   const calls: FakeCall[] = [];
@@ -252,11 +264,52 @@ export function createOwnForge(
     };
   }
 
+  /** The followed projects a GitLab inbox query asks, by alias. */
+  function followedAnswer(query: string): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    for (const match of query.matchAll(
+      /(f\d+): project\(fullPath: "([^"]+)"\)/g,
+    ))
+      data[match[1]!] = {
+        fullPath: match[2],
+        mergeRequests: {
+          nodes: (options.followed ?? [])
+            .filter((r) => r.project === match[2] && r.state === "open")
+            .map((r) => ({
+              ...gitlabLight(r),
+              author: { username: "someone" },
+              diffStats: [],
+            })),
+        },
+      };
+    return data;
+  }
+
   function answer(query: string): {
     kind: FakeCall["kind"];
     body: unknown;
     numbers: number[];
   } {
+    if (provider === "gitlab" && /\bf\d+: project\(/.test(query))
+      return {
+        kind: "inbox",
+        numbers: [],
+        body: {
+          data: {
+            ...(/\brr: /.test(query)
+              ? {
+                  currentUser: {
+                    username: "me",
+                    rr: { nodes: [] },
+                    as: { nodes: [] },
+                    todos: { nodes: [] },
+                  },
+                }
+              : {}),
+            ...followedAnswer(query),
+          },
+        },
+      };
     if (/\brr: /.test(query))
       return {
         kind: "inbox",
@@ -445,7 +498,21 @@ export function createOwnForge(
     return { kind: "other", numbers: [], body: { data: {} } };
   }
 
+  /** Complexity refusals, the queries glab was told off for. */
+  const refused: { query: string; complexity: number }[] = [];
+
   async function ask(query: string): Promise<unknown> {
+    if (options.maxComplexity !== undefined) {
+      const complexity = Math.ceil(
+        estimateComplexity(query) * (options.complexityScale ?? 1),
+      );
+      if (complexity > options.maxComplexity) {
+        refused.push({ query, complexity });
+        throw new Error(
+          `GitLab: glab: Query has complexity of ${complexity}, which exceeds max complexity of ${options.maxComplexity}`,
+        );
+      }
+    }
     const { kind, body, numbers } = answer(query);
     calls.push({
       kind,
@@ -490,6 +557,7 @@ export function createOwnForge(
   return {
     fetchers,
     calls,
+    refused,
     /** The calls since the last reset, and resets them. */
     take(): FakeCall[] {
       return calls.splice(0);

@@ -1,6 +1,8 @@
 .global-tooltip {
   position: fixed;
-  z-index: 5000;
+  /* Over every overlay that has titles (the Reviews pane at 5700, dialogs
+     at 6000, toasts at 6001): under one, it hid the title it took over. */
+  z-index: 7000;
   width: max-content;
   max-width: min(360px, calc((100vw - 24px) / var(--ui-scale, 1)));
   padding: 7px 9px;

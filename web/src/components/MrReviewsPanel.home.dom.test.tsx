@@ -340,7 +340,9 @@ if (process.env.ROAMGATE_MR_REVIEWS_HOME_DOM_TEST !== "1") {
     await keys("j");
     expect(selected()).toBe(key(1));
     expect(
-      document.querySelector("button[aria-label='Start a review with a home']"),
+      document.querySelector(
+        "button[aria-label='Start a review with a home (gH)']",
+      ),
     ).not.toBeNull();
     await keys("gH");
     await wait(50);
@@ -363,7 +365,9 @@ if (process.env.ROAMGATE_MR_REVIEWS_HOME_DOM_TEST !== "1") {
     await keys("j");
     expect(selected()).toBe(key(2));
     expect(
-      document.querySelector("button[aria-label='Start a review with a home']"),
+      document.querySelector(
+        "button[aria-label='Start a review with a home (gH)']",
+      ),
     ).toBeNull();
     await press(":");
     const command = document.querySelector<HTMLInputElement>(

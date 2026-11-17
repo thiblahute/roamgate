@@ -98,6 +98,7 @@ import {
   storedFoldedLanes,
 } from "../mrReviewsLanes";
 import { requestMrFileOpen } from "../mrReviewsOpen";
+import { shortcutLabel } from "../shortcutPreferences";
 import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
 import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
@@ -655,6 +656,18 @@ function linkTitle(link: MrWorkspaceLink): string {
   return `${link.label || link.workspaceId} on ${link.connectionLabel} (${why})`;
 }
 
+/** The row's house button: its home, else its other workspace, and its key. */
+function goTitle(link: MrWorkspaceLink, home: boolean, count: number): string {
+  const more = count > 1 ? `; ${count - 1} more in its details (2w...)` : "";
+  return `Go to its ${home ? "home" : "workspace"}: ${link.label || link.workspaceId} (w)${more}`;
+}
+
+/** The close button: Esc, and the global key that opens and closes it. */
+function closeTitle(): string {
+  const global = shortcutLabel("reviews.inbox");
+  return `Close (Esc${global === "Unassigned" ? "" : ` or ${global}`})`;
+}
+
 function draftsLabel(entry: MrInboxEntry): string | null {
   if (!entry.drafts) return null;
   return `${entry.drafts} draft${entry.drafts === 1 ? "" : "s"} on ${entry.provider === "gitlab" ? "GitLab" : "GitHub"}`;
@@ -978,7 +991,7 @@ export function MrReviewRow({
       {drag ? (
         <span
           className="mr-reviews-grip"
-          title="Drag to move it in your order (J / K)"
+          title="Drag to reorder (J / K)"
           aria-hidden="true"
         >
           <GripVertical size={13} />
@@ -1020,7 +1033,7 @@ export function MrReviewRow({
                 : "Fold the requests after it"
             }
             aria-expanded={!tree.collapsed}
-            title={`${tree.children} request${tree.children === 1 ? "" : "s"} wait${tree.children === 1 ? "s" : ""} for it (za)`}
+            title={`${tree.collapsed ? "Show" : "Fold"} the ${tree.children} request${tree.children === 1 ? "" : "s"} waiting for it (za)`}
             onClick={onToggleChildren}
           >
             {tree.collapsed ? (
@@ -1036,8 +1049,8 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button mr-reviews-workspace"
-            aria-label={`Go to its workspace ${first.label || first.workspaceId}`}
-            title={`${linkTitle(first)} (w)${links!.length > 1 ? `; ${links!.length - 1} more in its details` : ""}`}
+            aria-label={goTitle(first, homes.length > 0, links!.length)}
+            title={goTitle(first, homes.length > 0, links!.length)}
             onClick={() => onGoWorkspace(first)}
           >
             <House size={14} />
@@ -1054,8 +1067,8 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label="Start a review with a home"
-            title="Start a review with a home: a workspace of its own with a Claude session told its job (gH, :home)"
+            aria-label="Start a review with a home (gH)"
+            title="Start a review with a home (gH): a workspace of its own with a Claude session told its job"
             onClick={onStartHome}
           >
             <HousePlus size={14} />
@@ -1067,11 +1080,9 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label={entry.section === "pinned" ? "Unpin" : "Pin"}
+            aria-label={entry.section === "pinned" ? "Unpin (P)" : "Pin (P)"}
             title={
-              entry.section === "pinned"
-                ? "Unpin it (P, :unpin)"
-                : "Pin it on top (P, :pin)"
+              entry.section === "pinned" ? "Unpin (P)" : "Pin it on top (P)"
             }
             aria-pressed={entry.section === "pinned"}
             onClick={onTogglePin}
@@ -1089,15 +1100,11 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label={
-              entry.section === "pinned"
-                ? "Unpin it"
-                : "Remove it from the view"
-            }
+            aria-label={entry.section === "pinned" ? "Unpin (dd)" : "Hide (dd)"}
             title={
               entry.section === "pinned"
-                ? "Unpin it (dd)"
-                : "Remove it from the view (dd)"
+                ? "Unpin (dd)"
+                : "Hide it from the view (dd, u undoes)"
             }
             onClick={onRemove}
           >
@@ -1110,7 +1117,7 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label="Move up"
+            aria-label="Move up (K)"
             title="Move up (K)"
             disabled={!move.canUp}
             onClick={() => move.onStep?.(-1)}
@@ -1120,7 +1127,7 @@ export function MrReviewRow({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label="Move down"
+            aria-label="Move down (J)"
             title="Move down (J)"
             disabled={!move.canDown}
             onClick={() => move.onStep?.(1)}
@@ -3293,7 +3300,7 @@ export function MrReviewsPanel({
         <button
           type="button"
           className="assistant-icon-button"
-          aria-label="Refresh"
+          aria-label="Refresh (r)"
           title="Refresh (r)"
           disabled={inbox?.refreshing}
           onClick={() => void reload(true)}
@@ -3304,7 +3311,11 @@ export function MrReviewsPanel({
           <button
             type="button"
             className="assistant-icon-button"
-            title={maximized ? "Restore window" : "Maximize window"}
+            title={
+              maximized
+                ? "Restore: back to a floating window"
+                : "Maximize: fill the window"
+            }
             aria-label={maximized ? "Restore Reviews" : "Maximize Reviews"}
             aria-pressed={maximized}
             onClick={() => setMaximized((current) => !current)}
@@ -3316,7 +3327,7 @@ export function MrReviewsPanel({
           <button
             type="button"
             className="assistant-icon-button"
-            aria-label="Keys"
+            aria-label="Keys (?)"
             title="Keys (?)"
             aria-pressed={helpOpen}
             onClick={() => setHelpOpen((open) => !open)}
@@ -3328,7 +3339,11 @@ export function MrReviewsPanel({
           type="button"
           className="assistant-icon-button"
           aria-label="Reviews settings"
-          title="Hosts, followed projects, checkout"
+          title={
+            view === "settings"
+              ? "Back to the list (Esc)"
+              : "Settings: hosts, followed projects, checkout"
+          }
           aria-pressed={view === "settings"}
           onClick={() => setView(view === "settings" ? "list" : "settings")}
         >
@@ -3337,8 +3352,8 @@ export function MrReviewsPanel({
         <button
           type="button"
           className="assistant-icon-button"
-          aria-label="Close Reviews"
-          title="Close"
+          aria-label="Close Reviews (Esc)"
+          title={closeTitle()}
           onClick={() => onClose()}
         >
           <X size={16} />
@@ -3892,7 +3907,7 @@ export function MrReviewsPanel({
                             type="button"
                             className="mr-reviews-lane-title"
                             aria-expanded={!group.folded}
-                            title={`${group.folded ? "Show" : "Fold"} this lane (za)`}
+                            title={`${group.folded ? "Expand" : "Fold"} ${MR_LANE_TITLE[group.lane]} (za)`}
                             onClick={() => toggleLane(group.lane)}
                           >
                             {group.folded ? (

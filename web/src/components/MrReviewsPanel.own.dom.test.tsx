@@ -332,7 +332,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_OWN_DOM_TEST !== "1") {
     ).toBe(true);
     await toggle();
     const button = document.querySelector<HTMLButtonElement>(
-      "button[aria-label='Go to its workspace pitch fix']",
+      "button[aria-label^='Go to its'][aria-label*=': pitch fix (w)']",
     )!;
     await act(async () => button.click());
     expect(jumps[jumps.length - 1]).toEqual(["mac", "w-pitch"]);
