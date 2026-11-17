@@ -22,7 +22,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 30_000);
 } else {
-  const { installReviewDom, file, hunk, thread } = await import(
+  const { installReviewDom, file, hunk, settle, thread } = await import(
     "./reviewSurface.testkit"
   );
   await installReviewDom();
@@ -255,6 +255,21 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           plain.calls("review.thread.add").map((call) => call.params.text),
         ).toEqual(["No Vim here"]);
         await plain.unmount();
+      });
+
+      test("Vim keys turned off elsewhere (Configuration, another device) make the open review's next comment plain", async () => {
+        const review = await mount({ files: [code()] });
+        (await import("../vimKeys")).setVimKeys(false);
+        await settle();
+        await review.click({ path: "a.ts", new: 2 });
+        await review.press("c");
+        await review.type("Plain now");
+        await review.editorPress("<Esc>");
+        expect(review.editorText()).toBeNull();
+        expect(
+          review.calls("review.thread.add").map((call) => call.params.text),
+        ).toEqual(["Plain now"]);
+        await review.unmount();
       });
 
       test("a pasted image goes in as Markdown linking the file stored with the review", async () => {

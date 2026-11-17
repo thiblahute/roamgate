@@ -26,6 +26,8 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
+  // The plain message box: these tests type into its textarea.
+  (await import("../vimKeys")).setVimKeys(false);
   test("sends the shared draft and confirms before typing into a busy agent", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost" });
@@ -499,6 +501,73 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
         "Connection or pane changed",
       );
       expect(terminalComposerUploadCount(draftKey)).toBe(0);
+    } finally {
+      await React.act(async () => root.unmount());
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else delete (globalThis as Record<string, unknown>)[key];
+      }
+    }
+  }, 10_000);
+
+  test("the message box follows the one Vim keys setting as it changes", async () => {
+    const { Window } = await import("happy-dom");
+    const browser = new Window({ url: "http://localhost" });
+    const originals = new Map<string, PropertyDescriptor | undefined>();
+    for (const [key, value] of Object.entries({
+      window: browser,
+      document: browser.document,
+      navigator: browser.navigator,
+      localStorage: browser.localStorage,
+      sessionStorage: browser.sessionStorage,
+      HTMLElement: browser.HTMLElement,
+      Element: browser.Element,
+      Node: browser.Node,
+      Event: browser.Event,
+      MutationObserver: browser.MutationObserver,
+      getComputedStyle: browser.getComputedStyle.bind(browser),
+      requestAnimationFrame: (cb: FrameRequestCallback) =>
+        setTimeout(() => cb(0), 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
+      IS_REACT_ACT_ENVIRONMENT: true,
+    })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+      Object.defineProperty(globalThis, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    }
+    const { setVimKeys } = await import("../vimKeys");
+    const { createRoot } = await import("react-dom/client");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const settled = async () => {
+      for (let i = 0; i < 20; i += 1)
+        await React.act(() => new Promise((done) => setTimeout(done, 5)));
+    };
+    try {
+      await React.act(async () =>
+        root.render(
+          <AgentHistoryComposer
+            draftKey={terminalComposerDraftKey("local", 1, "vim-pane")}
+            agent="codex"
+            status="idle"
+            stateSeq={1}
+            onSend={async () => {}}
+            onUploadImage={async (file) => `/tmp/${file.name}`}
+            onError={() => {}}
+          />,
+        ),
+      );
+      expect(container.querySelector("textarea")).not.toBeNull();
+      await React.act(async () => setVimKeys(true));
+      await settled();
+      expect(container.querySelector("textarea")).toBeNull();
+      expect(container.querySelector(".cm-editor")).not.toBeNull();
+      await React.act(async () => setVimKeys(false));
+      expect(container.querySelector("textarea")).not.toBeNull();
     } finally {
       await React.act(async () => root.unmount());
       for (const [key, descriptor] of originals) {

@@ -225,13 +225,7 @@ export async function mountClassicReview(
       JSON.stringify({ split: options.split }),
     );
   if (options.vim !== undefined)
-    localStorage.setItem(
-      "reviewPrefs",
-      JSON.stringify({
-        ...JSON.parse(localStorage.getItem("reviewPrefs") ?? "{}"),
-        vim: options.vim,
-      }),
-    );
+    (await import("../vimKeys")).setVimKeys(options.vim);
   (
     window as unknown as {
       happyDOM?: {
@@ -1107,12 +1101,8 @@ export async function mountClassicReview(
       await settleAll();
     },
     vimPreference() {
-      try {
-        return JSON.parse(roamgateLocalStorage.getItem("reviewPrefs") ?? "{}")
-          .vim;
-      } catch {
-        return undefined;
-      }
+      const stored = roamgateLocalStorage.getItem("vimKeys");
+      return stored === null ? undefined : stored === "true";
     },
 
     // The comment editor.

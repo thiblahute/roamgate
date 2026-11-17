@@ -26,6 +26,7 @@ import {
 } from "../../../shared/review";
 import { RpcError } from "../api";
 import { roamgateLocalStorage } from "../browserStorage";
+import { setVimKeys, useVimKeys, vimKeys } from "../vimKeys";
 import { copyTextWithFeedback } from "../copyText";
 import { BoundedCache } from "../boundedCache";
 import { detectShortcutPlatform, formatShortcut } from "../shortcutBindings";
@@ -191,7 +192,6 @@ const NOT_FOUND_MS = 2500;
 type Prefs = {
   split?: boolean;
   filesHidden?: boolean;
-  vim?: boolean;
   /** Resolved conversations listed too (H in the list); hidden by default. */
   resolvedShown?: boolean;
 };
@@ -1098,7 +1098,7 @@ export function ReviewOverlay({
   const [filesShown, setFilesShown] = useState(() => !prefs.filesHidden);
   // Not remembered: a review always opens with its discussions shown.
   const [hideComments, setHideComments] = useState(false);
-  const [vimMode, setVimMode] = useState(() => prefs.vim !== false);
+  const vimMode = useVimKeys();
   // Touch screens: their keyboards lack Esc, which Vim needs.
   const coarsePointer =
     globalThis.matchMedia?.("(pointer: coarse)")?.matches === true;
@@ -4440,11 +4440,8 @@ export function ReviewOverlay({
         onShowList?.();
         break;
       case "vim":
-        setVimMode((value) => {
-          const next = command.on ?? !value;
-          writePrefs({ vim: next });
-          return next;
-        });
+        // The one Vim keys setting, for every editor and device.
+        setVimKeys(command.on ?? !vimKeys());
         break;
       default:
         notify(

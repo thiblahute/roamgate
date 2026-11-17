@@ -18,6 +18,8 @@ if (process.env.ROAMGATE_PANE_CHAT_DOM_TEST !== "1") {
     expect(code).toBe(0);
   }, 15_000);
 } else {
+  // The plain message box: these tests type into its textarea.
+  (await import("../vimKeys")).setVimKeys(false);
   test("a pane's chat has one slim row and says what the agent does", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({ url: "http://localhost/" });

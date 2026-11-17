@@ -29,8 +29,8 @@ import {
 } from "../appearance";
 import { lazyWithReload } from "../lazyWithReload";
 import { setDefaultPaneView, useDefaultPaneView } from "../paneView";
-import { setComposerVimKeys, useComposerVimKeys } from "../composerVim";
 import { setPaneJumpScope, usePaneJumpScope } from "../paneJumpScope";
+import { setVimKeys, useVimKeys } from "../vimKeys";
 import { shortcutLabel } from "../shortcutPreferences";
 import {
   mobileTerminalShortcutCount,
@@ -150,7 +150,7 @@ export function ConfigurationDialog({
   const connectionClient = useConnectionClient();
   const [tab, setTab] = useState<ConfigurationTab>(initialTab);
   const defaultPaneView = useDefaultPaneView();
-  const composerVim = useComposerVimKeys();
+  const vim = useVimKeys();
   const paneJumpScope = usePaneJumpScope();
   const [detail, setDetail] = useState<Detail | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -549,20 +549,20 @@ export function ConfigurationDialog({
                   <Keyboard size={15} />
                 </span>
                 <div className="config-item-copy">
-                  <strong>Vim keys in agent chats</strong>
+                  <strong>Vim keys</strong>
                   <span>
-                    {composerVim
-                      ? "Message boxes start in insert mode; :w sends"
-                      : "Message boxes are plain text boxes"}
+                    {vim
+                      ? "In the review, comments, previews and message boxes, on every device"
+                      : "Plain text boxes and the arrows, on every device"}
                   </span>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-label="Vim keys in agent chats"
-                  aria-checked={composerVim}
-                  className={"settings-switch" + (composerVim ? " is-on" : "")}
-                  onClick={() => setComposerVimKeys(!composerVim)}
+                  aria-label="Vim keys"
+                  aria-checked={vim}
+                  className={"settings-switch" + (vim ? " is-on" : "")}
+                  onClick={() => setVimKeys(!vim)}
                 >
                   <span />
                 </button>

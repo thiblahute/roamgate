@@ -8,7 +8,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { useComposerVimKeys } from "../composerVim";
+import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import { ImagePlus, Send, TriangleAlert, X } from "lucide-react";
 import { useLayoutPreferences } from "../layoutPreferences";
@@ -317,7 +317,7 @@ export function AgentHistoryComposer({
     event.preventDefault();
     event.nativeEvent.stopPropagation();
   };
-  const vimSetting = useComposerVimKeys();
+  const vimSetting = useVimKeys();
   const vimKeys = vimKeysProp ?? vimSetting;
   const stored = vimKeys ? readTerminalComposerSelection(draftKey) : null;
   const shownSelection = stored

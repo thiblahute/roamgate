@@ -1,5 +1,5 @@
 import { shortcutMatches } from "../shortcutPreferences";
-import { roamgateLocalStorage } from "../browserStorage";
+import { vimKeys } from "../vimKeys";
 import {
   audioMimeForPath,
   AUDIO_INLINE_PREVIEW_MAX_BYTES,
@@ -157,21 +157,6 @@ function definePreviewExCommands(deps: CodeMirrorPreviewDeps) {
   if (previewExCommandsDefined) return;
   previewExCommandsDefined = true;
   deps.Vim.defineEx("files", "files", (cm) => previewFilesCommands.get(cm)?.());
-}
-
-/**
- * Vim keys to move around a previewed file, as in the review (its `:vim`
- * setting, on unless turned off there).
- */
-function previewVimKeys(): boolean {
-  try {
-    const prefs = JSON.parse(
-      roamgateLocalStorage.getItem("reviewPrefs") ?? "{}",
-    ) as { vim?: boolean };
-    return prefs.vim !== false;
-  } catch {
-    return true;
-  }
 }
 
 function loadCodeMirrorPreviewDeps() {
@@ -1138,7 +1123,7 @@ function CodeMirrorPreview({
         state: deps.EditorState.create({
           doc: text,
           extensions: [
-            ...(previewVimKeys() ? [deps.vim()] : []),
+            ...(vimKeys() ? [deps.vim()] : []),
             deps.basicSetup,
             deps.configuredShortcutGuard,
             deps.search({ top: true }),
