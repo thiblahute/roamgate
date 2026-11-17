@@ -163,38 +163,33 @@ export async function handleReviewRpc(
         throw new ReviewError(
           `the review's path must be absolute, not "${path.slice(0, 200)}"`,
         );
-      // A chat has no repository: its agent's directory names it.
-      if ((raw.target as { kind?: unknown } | undefined)?.kind === "chat")
-        return service.open({
+      // With its title and the workspace's agent, so comments can go to
+      // it from the start.
+      const open = (
+        root: string,
+        target: unknown,
+        more: { automatic?: boolean } = {},
+      ) =>
+        service.open({
           connectionId: connection.id,
           workspaceId,
-          root: path || "/",
-          target: raw.target,
+          root,
+          target,
+          ...more,
           title: raw.title,
           agent: raw.agent,
           paneId: raw.agent_pane,
           raise: false,
         });
+      const asked = raw.target as { kind?: unknown; url?: unknown } | undefined;
+      // A chat has no repository: its agent's directory names it.
+      if (asked?.kind === "chat") return open(path || "/", raw.target);
       // A site has no checkout.
-      {
-        const target = raw.target as
-          | { kind?: unknown; url?: unknown }
-          | undefined;
-        if (target?.kind === "rendered" && target.url !== undefined)
-          return service.open({
-            connectionId: connection.id,
-            workspaceId,
-            root: "/",
-            target,
-            title: raw.title,
-            agent: raw.agent,
-            paneId: raw.agent_pane,
-            raise: false,
-          });
-      }
+      if (asked?.kind === "rendered" && asked.url !== undefined)
+        return open("/", asked);
       // A file to discuss, rendered: its checkout and path in it.
       if (
-        (raw.target as { kind?: unknown } | undefined)?.kind === "rendered" &&
+        asked?.kind === "rendered" &&
         typeof raw.file === "string" &&
         connection.readRoot
       ) {
@@ -203,16 +198,7 @@ export async function handleReviewRpc(
           (directory) => readRoot(directory),
           raw.file,
         );
-        return service.open({
-          connectionId: connection.id,
-          workspaceId,
-          root,
-          target,
-          title: raw.title,
-          agent: raw.agent,
-          paneId: raw.agent_pane,
-          raise: false,
-        });
+        return open(root, target);
       }
       const root =
         isHostPath(path) && connection.readRoot
@@ -231,18 +217,7 @@ export async function handleReviewRpc(
           : defaultBase
             ? { kind: "range", base: defaultBase, head: "HEAD" }
             : undefined);
-      return service.open({
-        connectionId: connection.id,
-        workspaceId,
-        root,
-        target,
-        automatic: !raw.target && !!defaultBase,
-        title: raw.title,
-        // The workspace's agent, so comments can go to it from the start.
-        agent: raw.agent,
-        paneId: raw.agent_pane,
-        raise: false,
-      });
+      return open(root, target, { automatic: !raw.target && !!defaultBase });
     }
     case "review.repos": {
       // The repositories under the given directories (the workspace's
