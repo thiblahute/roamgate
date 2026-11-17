@@ -159,6 +159,10 @@ export async function handleReviewRpc(
       // A directory picks one of the workspace's repositories; else the
       // workspace's own.
       const path = typeof raw.path === "string" ? raw.path : "";
+      if (path && !isHostPath(path))
+        throw new ReviewError(
+          `the review's path must be absolute, not "${path.slice(0, 200)}"`,
+        );
       // A chat has no repository: its agent's directory names it.
       if ((raw.target as { kind?: unknown } | undefined)?.kind === "chat")
         return service.open({

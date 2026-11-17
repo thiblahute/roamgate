@@ -289,8 +289,9 @@ describe("one review across Files and Changes (D16)", () => {
   };
   test("reviews in Changes: a file comment opens the checkout's worktree review, its rendered anchor kept", () => {
     const route = feedbackRoute(rendered, { ...place, oneReview: true });
+    // The file's directory: the server finds the repository holding it.
     expect(route.open).toEqual({
-      path: "/repo",
+      path: "/repo/docs",
       target: { kind: "worktree" },
     });
     expect(route.anchor(session({ kind: "worktree" } as never))).toEqual({
@@ -308,12 +309,90 @@ describe("one review across Files and Changes (D16)", () => {
       { ...place, root: "/repo/docs/", oneReview: true },
     );
     expect(route.open).toEqual({
-      path: "/repo/docs/",
+      path: "/repo/docs",
       target: { kind: "worktree" },
     });
     expect(route.anchor(session({ kind: "worktree" } as never)).path).toBe(
       "docs/guide.md",
     );
+  });
+  test("a workspace whose directory is not a repository: the file's own repository's worktree review", async () => {
+    // A workspace in the home directory, a page of a checkout under it.
+    const home = { ...place, root: "/home/me", oneReview: true };
+    const page = {
+      ...rendered,
+      path: "/home/me/blog/public/post/index.html",
+    } as ReviewAnnotation;
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    const call = async <T>(method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method !== "review.open") return {} as T;
+      // As the server's readReviewRoot answers: the home directory is in
+      // no repository, the page's directory is in the blog's.
+      const path = String(params.path);
+      if (path !== "/home/me/blog" && !path.startsWith("/home/me/blog/"))
+        throw new Error(
+          "fatal: not a git repository (or any of the parent directories): .git",
+        );
+      return {
+        session: {
+          ...session({ kind: "worktree" } as never),
+          root: "/home/me/blog",
+        },
+        threads: [],
+      } as T;
+    };
+    await writeFeedback(call, page, home, 1);
+    expect(calls[0]!.params).toEqual({
+      workspace_id: "w1",
+      path: "/home/me/blog/public/post",
+      target: { kind: "worktree" },
+    });
+    expect(calls[1]!.params.anchor).toMatchObject({
+      path: "public/post/index.html",
+    });
+  });
+  test("a file in no repository at all: its own rendered review, not a failed comment", async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    const call = async <T>(method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method !== "review.open") return {} as T;
+      if (
+        params.target &&
+        (params.target as { kind: string }).kind !== "rendered"
+      )
+        throw new Error(
+          "fatal: not a git repository (or any of the parent directories): .git",
+        );
+      return {
+        session: {
+          ...session({ kind: "rendered", path: "notes.md" } as never),
+          root: "/home/me",
+        },
+        threads: [],
+      } as T;
+    };
+    await writeFeedback(
+      call,
+      { ...rendered, path: "/home/me/notes.md" } as ReviewAnnotation,
+      { ...place, root: "/home/me", oneReview: true },
+      1,
+    );
+    expect(calls.map((each) => each.params.target)).toEqual([
+      { kind: "worktree" },
+      { kind: "rendered" },
+    ]);
+    expect(calls[1]!.params.file).toBe("/home/me/notes.md");
+    expect(calls[2]!.method).toBe("review.thread.add");
+    expect(calls[2]!.params.anchor).toMatchObject({ path: "notes.md" });
+  });
+  test("any other refusal is the caller's to keep the comment", async () => {
+    const call = async <T>(): Promise<T> => {
+      throw new Error("review store is read-only");
+    };
+    await expect(
+      writeFeedback(call, rendered, { ...place, oneReview: true }, 1),
+    ).rejects.toThrow("read-only");
   });
   test("a file outside the checkout, and a site, keep their rendered review", () => {
     expect(
@@ -361,7 +440,7 @@ describe("one review across Files and Changes (D16)", () => {
     );
     expect(calls[0]!.params).toEqual({
       workspace_id: "w1",
-      path: "/repo",
+      path: "/repo/docs",
       target: { kind: "worktree" },
     });
     const added = calls[1]!.params;

@@ -25,6 +25,32 @@ test("the browser opens by workspace and always writes as the user", async () =>
   expect(thread.comments[0]!.author).toBe("you");
 });
 
+test("a relative path is refused; an empty one is the workspace's own", async () => {
+  const service = setup();
+  const asked: string[] = [];
+  const reading = {
+    ...local,
+    readRoot: async (path: string) => {
+      asked.push(path);
+      return "/repo";
+    },
+  };
+  await expect(
+    handleReviewRpc(service, reading, "review.open", {
+      workspace_id: "w1",
+      path: "blog/public",
+      target: { kind: "worktree" },
+    }),
+  ).rejects.toThrow("must be absolute");
+  const opened = (await handleReviewRpc(service, reading, "review.open", {
+    workspace_id: "w1",
+    path: "",
+    target: { kind: "worktree" },
+  })) as { session: { root: string } };
+  expect(opened.session.root).toBe("/repo");
+  expect(asked).toEqual([]);
+});
+
 test("a review is invisible from another connection", async () => {
   const service = setup();
   const opened = (await handleReviewRpc(service, local, "review.open", {

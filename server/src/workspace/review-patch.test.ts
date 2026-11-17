@@ -220,6 +220,24 @@ test("the repository root is found from a subdirectory", async () => {
   );
 });
 
+test("an empty or relative checkout is refused, never run in the login directory", async () => {
+  let ran = false;
+  const runs = {
+    shQuote,
+    runProcessWithCodeTimeout: async () => {
+      ran = true;
+      return { code: 0, stdout: "/home/me\n", stderr: "" };
+    },
+  };
+  await expect(readReviewRoot({ ...runs, path: "" })).rejects.toThrow(
+    "must be an absolute path",
+  );
+  await expect(
+    readReviewRoot({ ...runs, path: "blog/public", host: "mac" }),
+  ).rejects.toThrow("must be an absolute path");
+  expect(ran).toBe(false);
+});
+
 test("a cut patch drops its partial last file", () => {
   const output = [
     "ROAMGATE-REVIEW-SHAS b h",
