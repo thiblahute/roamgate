@@ -414,13 +414,16 @@ export async function handleEffortRpc(
     groupLabel: (group: string) => Promise<string | null>;
     /**
      * Makes a worktree workspace through the user's worktree path (the
-     * `worktree_command` setting, else Herdr's), from a source workspace.
+     * `worktree_command` setting, else Herdr's), from the repository's
+     * parent workspace, or from its main checkout's path (`cwd`) when no
+     * workspace is open there.
      */
-    createWorktree?: (input: {
-      connectionId: string;
-      workspaceId: string;
-      branch: string;
-    }) => Promise<{ path: string; workspaceId?: string }>;
+    createWorktree?: (
+      input: { connectionId: string; branch: string } & (
+        | { workspaceId: string; cwd?: never }
+        | { cwd: string; workspaceId?: never }
+      ),
+    ) => Promise<{ path: string; workspaceId?: string }>;
     /** Puts a workspace into a Workspaces-tree group. */
     place?: (input: {
       connectionId: string;
@@ -491,6 +494,47 @@ export async function handleEffortRpc(
       if (typeof found?.workspace_id === "string") return found.workspace_id;
     }
     return known;
+  };
+  /**
+   * Where a part's worktree starts: Herdr refuses a linked worktree as the
+   * source, so, as the workspace menu's New worktree does, the repository's
+   * parent workspace (its main checkout), never the head's linked one. With
+   * none open, the main checkout's path, which Herdr and the worktree
+   * command take as well.
+   */
+  const partSource = async (
+    effort: MrEffort,
+    connection: MrConnection,
+  ): Promise<{ workspaceId: string } | { cwd: string }> => {
+    const connectionId = effort.clone.connectionId;
+    const head =
+      effort.head?.connectionId === connectionId ? effort.head : undefined;
+    const main = await mainCheckout(connection, effort.clone.path);
+    if (main) {
+      const at = await workspaceAt(connectionId, [main]);
+      if (at) return { workspaceId: at };
+    }
+    const listed = await connection
+      .herdr("workspace.list", {})
+      .catch(() => null);
+    const workspaces: any[] = Array.isArray(listed?.workspaces)
+      ? listed.workspaces
+      : [];
+    const known = await workspaceAt(
+      connectionId,
+      [head?.path, effort.clone.path],
+      head?.workspaceId,
+    );
+    const workspace = workspaces.find((each) => each?.workspace_id === known);
+    const parent = workspace && repoParentWorkspace(workspaces, workspace);
+    if (parent) return { workspaceId: parent };
+    if (main) return { cwd: main };
+    if (known && workspace?.worktree?.is_linked_worktree !== true)
+      return { workspaceId: known };
+    throw new MrReviewsError(
+      "open a workspace on the main checkout of the effort's clone first: worktrees start from there",
+      "not_found",
+    );
   };
   const effortOf = async () => {
     const found = findEffort(
@@ -863,33 +907,21 @@ export async function handleEffortRpc(
       const connection = service.connectionOf(effort.clone.connectionId);
       if (!connection)
         throw new MrReviewsError("that connection is not ready", "unavailable");
-      const from = await workspaceAt(
-        effort.clone.connectionId,
-        [
-          effort.head?.connectionId === effort.clone.connectionId
-            ? effort.head.path
-            : undefined,
-          effort.clone.path,
-        ],
-        effort.head?.connectionId === effort.clone.connectionId
-          ? effort.head.workspaceId
-          : undefined,
-      );
-      if (!from)
-        throw new MrReviewsError(
-          "open a workspace of the effort's clone (or its head) first",
-          "not_found",
-        );
       if (!deps.createWorktree)
         throw new MrReviewsError(
           "worktrees cannot be made here",
           "unavailable",
         );
-      const made = await deps.createWorktree({
-        connectionId: effort.clone.connectionId,
-        workspaceId: from,
-        branch,
-      });
+      const from = await partSource(effort, connection);
+      const made = await deps
+        .createWorktree({
+          connectionId: effort.clone.connectionId,
+          branch,
+          ...from,
+        })
+        .catch((error) => {
+          throw new MrReviewsError(readableError(error));
+        });
       const pick = parsePick(
         (
           await connection.run(
@@ -1170,6 +1202,65 @@ export async function handleEffortRpc(
     default:
       return undefined;
   }
+}
+
+/**
+ * The main checkout of the repository a checkout belongs to (the folder of
+ * its git common directory), where Herdr starts new worktrees from. Null
+ * for a bare repository or when git cannot tell.
+ */
+async function mainCheckout(
+  connection: MrConnection,
+  path: string,
+): Promise<string | null> {
+  const run = await connection
+    .run(
+      `git -C ${shQuote(path)} rev-parse --path-format=absolute --git-common-dir`,
+      30_000,
+    )
+    .catch(() => null);
+  const common = run?.code === 0 ? run.stdout.trim().replace(/\/+$/, "") : "";
+  return common.endsWith("/.git") ? common.slice(0, -"/.git".length) : null;
+}
+
+/**
+ * A linked worktree workspace's repository parent, as the workspace menu
+ * finds it: the one Roamgate recorded, else the only main checkout of the
+ * same repository. The workspace itself when it is not a linked worktree.
+ */
+export function repoParentWorkspace(
+  workspaces: any[],
+  workspace: any,
+): string | undefined {
+  const worktree = workspace?.worktree;
+  if (worktree?.is_linked_worktree !== true)
+    return worktree?.is_linked_worktree === false
+      ? workspace.workspace_id
+      : undefined;
+  const mains = workspaces.filter(
+    (each) =>
+      each?.worktree?.is_linked_worktree === false &&
+      !!worktree.repo_key &&
+      each.worktree.repo_key === worktree.repo_key &&
+      typeof each.workspace_id === "string",
+  );
+  const explicit = mains.find(
+    (each) => each.workspace_id === worktree.parent_workspace_id,
+  );
+  return (explicit ?? (mains.length === 1 ? mains[0] : undefined))
+    ?.workspace_id;
+}
+
+/**
+ * An error as the user reads it: without Herdr's code prefix
+ * (`linked_worktree_source: ...`) or a closing period, which the toast adds.
+ */
+export function readableError(error: unknown) {
+  const text = error instanceof Error ? error.message : String(error);
+  return text
+    .replace(/^[a-z][a-z0-9_]*: /, "")
+    .trim()
+    .replace(/\.+$/, "");
 }
 
 /**

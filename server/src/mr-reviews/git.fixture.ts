@@ -35,7 +35,13 @@ export type GitFixture = {
   ) => string;
   /** A connection running scripts in a shell here, with these workspaces. */
   connection: (
-    workspaces: { workspace_id: string; label: string; cwd: string }[],
+    workspaces: {
+      workspace_id: string;
+      label: string;
+      cwd: string;
+      /** Herdr's worktree metadata, when the test needs it. */
+      worktree?: Record<string, unknown>;
+    }[],
     id?: string,
   ) => MrConnection & { scripts: string[] };
   cleanup: () => void;
@@ -135,10 +141,13 @@ export function createGitFixture(): GitFixture {
       herdr: async (method: string) =>
         method === "workspace.list"
           ? {
-              workspaces: workspaces.map(({ workspace_id, label }) => ({
-                workspace_id,
-                label,
-              })),
+              workspaces: workspaces.map(
+                ({ workspace_id, label, worktree }) => ({
+                  workspace_id,
+                  label,
+                  ...(worktree ? { worktree } : {}),
+                }),
+              ),
             }
           : {
               panes: workspaces.map((each) => ({

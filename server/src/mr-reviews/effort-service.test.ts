@@ -5,7 +5,7 @@ import type { MrReviewsPush } from "../../../shared/mrReviews";
 import { WORKSPACE_TREE_VERSION } from "../../../shared/workspaceTree";
 import { updateGuiSettings } from "../config/gui-settings";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
-import { parsePick, pickScript } from "./effort-service";
+import { parsePick, pickScript, readableError } from "./effort-service";
 import { createMrReviews } from "./module";
 import { openMrStore } from "./store";
 
@@ -397,6 +397,160 @@ test("planned requests by tool, a part made with its commits picked, a conflict 
     to: a2,
   })) as { text: string };
   expect(diff.text).toContain("pool");
+});
+
+test("a part of an effort headed in a linked worktree starts from the repository's parent workspace, else its main checkout's path", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  g.git(clone, "checkout", "-q", "main");
+  // The effort's head: a linked worktree of the clone, alone in its group.
+  const head = join(g.root, "head");
+  g.git(clone, "worktree", "add", "-q", head, "big");
+  const repo_key = join(clone, ".git");
+  const workspaces: {
+    workspace_id: string;
+    label: string;
+    cwd: string;
+    worktree?: Record<string, unknown>;
+  }[] = [
+    {
+      workspace_id: "w1",
+      label: "engine",
+      cwd: clone,
+      worktree: { is_linked_worktree: false, repo_key },
+    },
+    {
+      workspace_id: "w2",
+      label: "head",
+      cwd: head,
+      worktree: { is_linked_worktree: true, repo_key },
+    },
+  ];
+  const connection = g.connection(workspaces);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const calls: Record<string, unknown>[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", label: "head" },
+          },
+        ],
+      }),
+      apply: async () => {},
+    },
+    // As Herdr does: no new worktree from a linked one, by id or by path.
+    createWorktree: async (input) => {
+      calls.push(input);
+      const source = workspaces.find(
+        (each) => each.workspace_id === input.workspaceId,
+      );
+      if (
+        source?.worktree?.is_linked_worktree === true ||
+        (input.cwd !== undefined && input.cwd !== clone)
+      )
+        throw new Error(
+          "linked_worktree_source: New and open worktree actions start from the repo parent workspace.",
+        );
+      const path = join(g.root, `part-${input.branch}`);
+      g.git(
+        clone,
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        input.branch,
+        path,
+        "origin/main",
+      );
+      return { path };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big", head: "head" },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const [a, b] = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  ).commits.map((c: any) => c.sha);
+  for (const [name, sha] of [
+    ["Pool a", a],
+    ["Pool b", b],
+  ])
+    await reviews.handle("bridge.mr_reviews.ledger.plans", {
+      id: "Big",
+      action: "propose",
+      name,
+      commits: [sha],
+      accepted: true,
+    });
+  // The main checkout's workspace is open: the part starts there.
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool a",
+      branch: "pool-a",
+    }),
+  ).toMatchObject({ ok: true, picked: 1 });
+  expect(calls[0]).toEqual({
+    connectionId: "local",
+    workspaceId: "w1",
+    branch: "pool-a",
+  });
+  // None open there: the main checkout's path.
+  workspaces.splice(0, 1);
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool b",
+      branch: "pool-b",
+    }),
+  ).toMatchObject({ ok: true, picked: 1 });
+  expect(calls[1]).toEqual({
+    connectionId: "local",
+    cwd: clone,
+    branch: "pool-b",
+  });
+});
+
+test("Herdr's errors read without their code or a closing period", () => {
+  expect(
+    readableError(
+      new Error(
+        "linked_worktree_source: New and open worktree actions start from the repo parent workspace.",
+      ),
+    ),
+  ).toBe("New and open worktree actions start from the repo parent workspace");
+  expect(readableError("Worktree command failed (exit 1): no")).toBe(
+    "Worktree command failed (exit 1): no",
+  );
 });
 
 test("export and import through the panel: a preview first, applied with a push", async () => {

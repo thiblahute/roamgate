@@ -3212,7 +3212,10 @@ export function MrReviewsPanel({
 
   const toast = undo ? (
     <div className="mr-reviews-undo" role="status">
-      <span>{undo.label}.</span>
+      <span>
+        {undo.label}
+        {/[.!?]$/.test(undo.label) ? "" : "."}
+      </span>
       {undo.run ? (
         <button type="button" className="ghost" onClick={undoRemoval}>
           Undo (u)

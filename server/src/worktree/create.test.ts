@@ -797,6 +797,74 @@ describe("configured worktree command", () => {
   });
 });
 
+test("a main checkout given by its path is a source: its repository's directory and command apply", async () => {
+  const sent: [string, Record<string, unknown>][] = [];
+  const commands: string[] = [];
+  const runtime = {
+    sshHost: () => undefined,
+    files: {
+      resolveWorkspaceGitRoot: async () => {
+        throw new Error("no workspace to resolve");
+      },
+    },
+    herdr: {
+      call: async (method: string, params: Record<string, unknown>) => {
+        sent.push([method, params]);
+        return { workspace: { workspace_id: "created", cwd: "/wt/part" } };
+      },
+    },
+    worktreeParents: { rememberWorktreeParent: async () => {} },
+    worktreeHooks: {
+      sourceWorkspaceForWorktreeCreate: async () => null,
+      runWorktreeSetupHook: async () => ({ status: "skipped" }),
+    },
+  } as unknown as LegacyConnectionRuntime;
+  await createWorkspaceWorktree(
+    runtime,
+    { cwd: "/repo", branch: "part", focus: false },
+    () => true,
+    undefined,
+    async ({ workspaceId, resolveGitRoot }) => ({
+      workspace_id: workspaceId,
+      root: (await resolveGitRoot(workspaceId)).root,
+      base: "origin/main",
+      commit,
+      command: "",
+      stdout: "",
+      stderr: "",
+    }),
+    undefined,
+    {
+      readSettings: async () => ({
+        version: 1,
+        repositories: {
+          "local:/repo/.git": {
+            worktree_command: "mk {path}",
+            worktree_directory: "/wt",
+          },
+        },
+        workspace_auto_sync: {},
+        custom: {},
+        ui: {},
+      }),
+      runProcess: async (argv) => {
+        const command = argv.at(-1) ?? "";
+        commands.push(command);
+        if (command.includes("--git-common-dir"))
+          return { code: 0, stdout: "/repo/.git\n", stderr: "" };
+        if (command.includes("command -v"))
+          return { code: 0, stdout: "", stderr: "" };
+        return { code: 0, stdout: "\n/wt/part\n", stderr: "" };
+      },
+    },
+  );
+  expect(commands.at(-1)).toContain("export ROAMGATE_WORKTREE_PATH='/wt/part'");
+  expect(commands.at(-1)).toContain("export ROAMGATE_WORKTREE_REPO='/repo'");
+  expect(sent).toEqual([
+    ["worktree.open", { path: "/wt/part", cwd: "/repo", focus: false }],
+  ]);
+});
+
 test("Windows runtimes refuse worktree creation before any helper runs", async () => {
   const fixture = creationFixture();
   Object.assign(fixture.runtime, { remotePlatform: "windows" });
