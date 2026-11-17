@@ -387,7 +387,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      localStorage.setItem("reviewPrefs", JSON.stringify({ vim: true }));
+      localStorage.setItem("reviewPrefs", "{}");
+      localStorage.setItem("vimKeys", "true");
       app.setNextOpened("r1");
       const terminal = document.createElement("div");
       terminal.tabIndex = 0;
