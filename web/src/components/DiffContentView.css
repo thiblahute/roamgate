@@ -364,17 +364,6 @@
   border-radius: 3px;
 }
 
-/* The search prompt (`/`) at the diff's bottom edge. */
-.diff-content-view > .review-cmdline {
-  flex: none;
-  background: var(--viewer-header-bg);
-  color: var(--text);
-}
-
-.diff-content-view > .review-cmdline .review-cmd {
-  color: inherit;
-}
-
 /* The review's comment editor, under the line it comments. */
 .diff-review-composer {
   max-width: min(640px, 100%);

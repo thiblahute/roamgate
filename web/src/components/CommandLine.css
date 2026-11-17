@@ -11,6 +11,19 @@
   font: 13px var(--rv-code, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
+/* At the bottom edge of the diff (`/`), the Files preview and the inspector. */
+:is(.diff-content-view, .file-preview, .workspace-inspector) > .review-cmdline {
+  flex: none;
+  background: var(--viewer-header-bg);
+  color: var(--text);
+}
+
+:is(.diff-content-view, .file-preview, .workspace-inspector)
+  > .review-cmdline
+  .review-cmd {
+  color: inherit;
+}
+
 .review-cmd {
   flex: 0 1 220px;
   border: 0;
