@@ -8,12 +8,12 @@ import {
 } from "./review";
 import { readReviewMemory, withLatest, writeReviewMemory } from "./reviewPins";
 import { store } from "./store";
-import type { Pane } from "./types";
+import { paneDir } from "./changesRepo";
+import { insideRoot } from "./filesystemPaths";
+import type { WorkspaceRepo } from "./reviewModel";
 
-type ScannedRepo = {
-  root: string;
-  ahead: number;
-  dirty: boolean;
+/** A repository review.repos found: the pane's own (seed), the agent's. */
+type ScannedRepo = WorkspaceRepo & {
   seed: boolean;
   touched?: boolean;
   active: number;
@@ -21,14 +21,6 @@ type ScannedRepo = {
 
 /** The review last shown in each workspace: Option+R goes back to it. */
 const LAST_KEY = "roamgate.review.last";
-
-function paneDir(pane: Pane | undefined): string {
-  return pane?.foreground_cwd ?? pane?.cwd ?? "";
-}
-
-function inside(dir: string, root: string): boolean {
-  return dir === root || dir.startsWith(`${root}/`);
-}
 
 /**
  * Option+R, or a repository picked in the review: the workspace's review of
@@ -105,7 +97,7 @@ export async function openWorkspaceReview(
       "review.repos",
       { paths: dirs, agent_paths: [agentPane.cwd ?? paneDir(agentPane)] },
     ).catch(() => ({ repos: [] }));
-    const changed = (repo: ScannedRepo) => repo.ahead > 0 || repo.dirty;
+    const changed = (repo: ScannedRepo) => !!repo.ahead || !!repo.dirty;
     const own = scan.repos.find((repo) => repo.seed);
     const touched = scan.repos
       .filter((repo) => repo.touched)
@@ -126,7 +118,7 @@ export async function openWorkspaceReview(
       .filter((snapshot) =>
         options.root
           ? snapshot.session.root === dir
-          : inside(dir, snapshot.session.root),
+          : insideRoot(dir, snapshot.session.root),
       )
       .sort((a, b) => b.session.root.length - a.session.root.length)[0];
   const agentName = agentPane?.agent ?? "agent";

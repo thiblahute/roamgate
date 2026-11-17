@@ -1,6 +1,6 @@
 import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
-import { workspaceRepoDirs } from "./changesRepo";
+import { paneDir, workspaceRepoDirs } from "./changesRepo";
 import { insideRoot, sameRoot } from "./filesystemPaths";
 import { workspaceRepos, scanRepos } from "./reviewRepos";
 
@@ -96,13 +96,12 @@ export async function changesReviewChoice({
       home: "reviews",
       reason: "An effort's threads are discussed in its view in Reviews.",
     };
-  const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
   // A workspace without a known checkout shows its focused pane's
   // repository in Changes.
   const focused = panes.find((pane) => pane.focused) ?? panes[0];
   const here = checkoutRoot
     ? sameRoot(session.root, checkoutRoot)
-    : !!focused && insideRoot(dirOf(focused), session.root);
+    : !!focused && insideRoot(paneDir(focused), session.root);
   const { dirs, agentDirs } = workspaceRepoDirs(panes);
   const scanned = await scanRepos(
     connectionId,
