@@ -88,6 +88,18 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("Shift+click in another file shows the selection to the end of the file it started in", async () => {
+        const review = await mount({
+          files: [added("a.ts", 8), added("b.ts", 4)],
+        });
+        const selected = () =>
+          review.selection().map((line) => `${line.path}:${line.new}`);
+        await review.click({ path: "a.ts", new: 6 });
+        await review.click({ path: "b.ts", new: 2 }, true);
+        expect(selected()).toEqual(["a.ts:6", "a.ts:7", "a.ts:8"]);
+        await review.unmount();
+      });
+
       testWith(surface, "file-folds")(
         "a click on a file's header folds its lines away, another shows them",
         async () => {
