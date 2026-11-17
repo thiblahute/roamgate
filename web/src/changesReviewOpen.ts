@@ -1,6 +1,7 @@
 import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
 import { workspaceRepoDirs } from "./changesRepo";
+import { insideRoot, sameRoot } from "./filesystemPaths";
 import { workspaceRepos, scanRepos } from "./reviewRepos";
 
 /*
@@ -42,11 +43,6 @@ export type ChangesReviewChoice =
       home: "chat" | "files" | "reviews";
       reason: string;
     };
-
-function sameRoot(a: string, b: string): boolean {
-  const trim = (path: string) => path.replace(/\/+$/, "");
-  return trim(a) === trim(b);
-}
 
 /** Where a picked review shows: Changes' scope, or its own home. */
 export async function changesReviewChoice({
@@ -103,13 +99,10 @@ export async function changesReviewChoice({
   const dirOf = (pane: Pane) => pane.foreground_cwd ?? pane.cwd ?? "";
   // A workspace without a known checkout shows its focused pane's
   // repository in Changes.
-  const inside = (dir: string) =>
-    sameRoot(dir, session.root) ||
-    dir.startsWith(`${session.root.replace(/\/+$/, "")}/`);
   const focused = panes.find((pane) => pane.focused) ?? panes[0];
   const here = checkoutRoot
     ? sameRoot(session.root, checkoutRoot)
-    : !!focused && inside(dirOf(focused));
+    : !!focused && insideRoot(dirOf(focused), session.root);
   const { dirs, agentDirs } = workspaceRepoDirs(panes);
   const scanned = await scanRepos(
     connectionId,
@@ -121,11 +114,8 @@ export async function changesReviewChoice({
   // review's root is scanned too, so a repository is the workspace's when
   // one of its panes' or agents' directories is in it (or holds it, a
   // subproject).
-  const trimmed = (path: string) => path.replace(/\/+$/, "");
   const near = (dir: string, root: string) =>
-    sameRoot(dir, root) ||
-    trimmed(dir).startsWith(`${trimmed(root)}/`) ||
-    trimmed(root).startsWith(`${trimmed(dir)}/`);
+    insideRoot(dir, root) || insideRoot(root, dir);
   const held = (root: string) =>
     scanned.some((repo) => sameRoot(repo.root, root)) &&
     [...dirs, ...agentDirs].some((dir) => near(dir, root));

@@ -28,3 +28,18 @@ export function directoryPreviewPath(
 export function directoryPreviewName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? "";
 }
+
+/** A root without its trailing slashes. */
+export function trimRoot(root: string): string {
+  return root.replace(/\/+$/, "");
+}
+
+/** Whether two roots name one directory, trailing slashes aside. */
+export function sameRoot(a: string, b: string): boolean {
+  return trimRoot(a) === trimRoot(b);
+}
+
+/** Whether `path` is `root` or inside it. */
+export function insideRoot(path: string, root: string): boolean {
+  return sameRoot(path, root) || path.startsWith(`${trimRoot(root)}/`);
+}
