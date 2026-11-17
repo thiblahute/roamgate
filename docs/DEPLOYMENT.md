@@ -669,9 +669,10 @@ or under `profiles` in `settings.json`:
   otherwise. Browsers see the path, never the value, and logs name only the
   variables. Keep tokens in files: plain values are shown in the settings.
 - `default` (the built-in Claude unless set) is what new sessions, the
-  Claude in conversation mode, the reviews' Claude, Ranger's Claude Code
-  turns, the reviews agent and the voice helpers (front, router, cleaner,
-  research, tools) start with. `claude_command` in `voice.json` still wins
+  Claude in conversation mode, the reviews' Claude (in the review
+  workspace and in a request's home), Ranger's Claude Code turns, the
+  reviews agent and the voice helpers (front, router, cleaner, research,
+  tools) start with. `claude_command` in `voice.json` still wins
   for the voice helpers.
 - For a profile with `ANTHROPIC_BASE_URL`, the settings list its server's
   models (`GET <base>/v1/models`, with its token as both `Authorization:
