@@ -236,10 +236,7 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     companion.__resetCompanionCallForTests();
     setVoiceFronting(true);
     // The plain box (Vim keys off); the Vim one's focus is tested below.
-    localStorage.setItem(
-      "roamgate:reviewPrefs",
-      JSON.stringify({ vim: false }),
-    );
+    localStorage.setItem("roamgate:vimKeys", "false");
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -348,7 +345,7 @@ if (process.env.ROAMGATE_COMPANION_PANEL_DOM_TEST !== "1") {
     companion.__resetCompanionCallForTests();
     setVoiceFronting(true);
     drafts.clearTerminalComposerDraft("companion");
-    localStorage.setItem("roamgate:reviewPrefs", JSON.stringify({ vim }));
+    localStorage.setItem("roamgate:vimKeys", String(vim));
     const sent: string[] = [];
     let closed = 0;
     const host = document.createElement("div");
