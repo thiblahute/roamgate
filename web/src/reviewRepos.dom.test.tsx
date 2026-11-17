@@ -6,7 +6,7 @@ import type { WorkspaceRepo } from "./reviewModel";
 /**
  * The repositories of a review's workspace (reviewRepos, taken out of the
  * review pane): scans reused for a minute, merged with the workspace's
- * reviews, scanned once the review shows, and how the picker names them.
+ * reviews, and how the picker names them.
  */
 if (
   inIsolatedChild(
@@ -20,7 +20,6 @@ if (
   const calls: [string, Record<string, unknown>, unknown][] = [];
   let scanned: WorkspaceRepo[] = [];
   let failScan = false;
-  let sessions = new Map<string, ReviewSnapshot>();
   mock.module("./review", () => ({
     reviewCall: async (
       connection: string,
@@ -34,22 +33,14 @@ if (
       return { repos: scanned };
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({ sessions, openRequest: null }),
+    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
   }));
   const { installReviewDom } = await import(
     "./components/reviewSurface.testkit"
   );
   await installReviewDom();
-  const { act } = await import("react");
-  const { createRoot } = await import("react-dom/client");
-  const {
-    clearRepoScans,
-    repoLabel,
-    scanRepos,
-    useWorkspaceRepos,
-    workspaceRepos,
-    worktreeOnly,
-  } = await import("./reviewRepos");
+  const { clearRepoScans, repoLabel, scanRepos, workspaceRepos, worktreeOnly } =
+    await import("./reviewRepos");
 
   type Session = ReviewSnapshot["session"];
   const session = (more: Partial<Session> = {}): Session =>
@@ -133,32 +124,6 @@ if (
         session({ workspaceId: undefined }),
       ),
     ).toEqual([{ root: "/w/app" }, { root: "/w/z" }]);
-  });
-
-  test("the panes' directories are scanned once the review shows", async () => {
-    clearRepoScans();
-    calls.length = 0;
-    scanned = [{ root: "/w/lib", ahead: 2 }];
-    sessions = new Map();
-    let repos: WorkspaceRepo[] = [];
-    const own = session();
-    function Host({ shown }: { shown: boolean }) {
-      repos = useWorkspaceRepos("c", own, ["/w/lib"], ["/w/agent"], shown);
-      return null;
-    }
-    const root = createRoot(document.createElement("div"));
-    await act(async () => root.render(<Host shown={false} />));
-    expect(calls).toEqual([]);
-    expect(repos).toEqual([{ root: "/w/app" }]);
-    await act(async () => root.render(<Host shown />));
-    expect(calls.map(([call, params]) => [call, params])).toEqual([
-      [
-        "c review.repos",
-        { paths: ["/w/app", "/w/lib"], agent_paths: ["/w/agent"] },
-      ],
-    ]);
-    expect(repos).toEqual([{ root: "/w/app" }, { root: "/w/lib", ahead: 2 }]);
-    await act(async () => root.unmount());
   });
 
   test("the picker names a repository with what it has; work only in progress opens its worktree review", () => {

@@ -44,15 +44,6 @@ function rememberLast(workspaceKey: string, sessionId: string) {
   } catch {}
 }
 
-/**
- * A review shown in its workspace from inside another (the merge
- * request's review from the local one): Option+R comes back to it.
- */
-export function rememberWorkspaceReview(snapshot: ReviewSnapshot) {
-  const { connectionId, workspaceId, id } = snapshot.session;
-  if (workspaceId) rememberLast(`${connectionId}\n${workspaceId}`, id);
-}
-
 function paneDir(pane: Pane | undefined): string {
   return pane?.foreground_cwd ?? pane?.cwd ?? "";
 }
@@ -282,37 +273,6 @@ export async function openCommitReview(
     });
     return null;
   }
-}
-
-/**
- * Show in code review: the checkout a file (absolute path) is reviewed in,
- * the deepest root of the connection's reviews holding it (a code review's,
- * a rendered file's, whose root is its checkout's), else its directory,
- * whose repository a new review finds.
- */
-export function fileReviewRoot(
-  sessions: Iterable<ReviewSnapshot>,
-  connectionId: string | null | undefined,
-  path: string,
-): string {
-  const roots = [...sessions]
-    .map(({ session }) => session)
-    .filter(
-      (session) =>
-        session.connectionId === connectionId &&
-        session.target.kind !== "chat" &&
-        !(session.target.kind === "rendered" && session.target.url) &&
-        path.startsWith(`${session.root.replace(/\/+$/, "")}/`),
-    )
-    .map((session) => session.root)
-    .sort((a, b) => b.length - a.length);
-  return roots[0] ?? path.slice(0, path.lastIndexOf("/"));
-}
-
-/** A file's path in a review of the checkout at `root`. */
-export function pathInReview(root: string, path: string): string {
-  const base = root.replace(/\/+$/, "");
-  return path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
 }
 
 /**
