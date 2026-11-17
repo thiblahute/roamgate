@@ -105,6 +105,7 @@ import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
 import {
   ChangesScopeBar,
+  changesReviewShortLabel,
   useChangesRepos,
   useChangesSeries,
   useWorkspaceRepoDirs,
@@ -599,6 +600,7 @@ export function WorkspaceInspectorHost({
               // A review of one commit: named as its commit, not SHA^..SHA.
               label: viewTree?.title ?? shownReviewSnapshot.session.title,
               files: viewTree?.entries.length,
+              short: changesReviewShortLabel(shownReviewSnapshot.mergeRequest),
             },
           }
         : {})}

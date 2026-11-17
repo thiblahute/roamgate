@@ -6,13 +6,14 @@ import {
   GitPullRequest,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   pullRequestUnavailable,
   type PullRequestStatus,
 } from "../../../shared/pullRequest";
 import type { ConnectionClient } from "../api";
 import { useConnectionReady } from "../useConnectionClient";
+import { placeFixed, viewportSize } from "./floatingPlace";
 import { ThemedSelect } from "./ThemedSelect";
 import "./PullRequestCard.css";
 
@@ -195,6 +196,17 @@ export function PullRequestCardView({
    * details open on the window, under the chip, as the review's menus do.
    */
   const [place, setPlace] = useState<ChipDetailsPlace | null>(null);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
+  // On the window's pixels even where an ancestor (a container, a sliding
+  // view) is what a fixed box is placed against.
+  useLayoutEffect(() => {
+    const details = detailsRef.current;
+    if (!place || !details) return;
+    placeFixed(details, {
+      ...place,
+      maxHeight: Math.max(120, viewportSize().height - place.top - 8),
+    });
+  }, [place]);
   const pr = current?.state === "ready" ? current.request : undefined;
   if (
     compact &&
@@ -327,6 +339,7 @@ export function PullRequestCardView({
           </button>
         </summary>
         <div
+          ref={detailsRef}
           className="pull-request-card-content"
           style={compact && place ? { position: "fixed", ...place } : undefined}
         >

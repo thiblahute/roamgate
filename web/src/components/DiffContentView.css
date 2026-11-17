@@ -970,3 +970,106 @@
   padding: 1px 8px;
   font-size: 12px;
 }
+
+/*
+ * A phone's (or a narrow inspector's) review head: two rows (user,
+ * 2026-11-17). The review on its own line, every control on one row under
+ * it, Back first; a row too long for the screen scrolls, never wraps.
+ */
+.diff-content-view.is-mobile .diff-content-head.is-review {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  column-gap: 6px;
+  padding: 4px 8px;
+}
+
+.diff-content-view.is-mobile
+  .diff-content-head.is-review
+  > .diff-content-title {
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diff-review-row {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.diff-review-row::-webkit-scrollbar {
+  display: none;
+}
+
+.diff-review-row > * {
+  flex: none;
+}
+
+/* What the row has no room for: the commit's < > (its picker steps, and
+   < > keep stepping), the agent's mode (its chip's tooltip and menu say
+   it), the Local / GitLab chip (the More menu switches it, the review's
+   line names the merge request) and the status line (read out). */
+.diff-content-view.is-mobile
+  .diff-review-row
+  :is(.diff-commit-step, .diff-agent-mode),
+.diff-content-view.is-mobile .diff-content-head.is-review div.rv-mode-switch {
+  display: none;
+}
+
+.diff-content-view.is-mobile .diff-review-row .changes-review-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.diff-content-view.is-mobile .diff-review-row .diff-commit-name {
+  min-height: 28px;
+}
+
+.diff-content-view.is-mobile .diff-review-row .diff-overall-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+}
+
+/* A phone's commit picker: each commit on one line, its subject cut. */
+.diff-content-view.is-mobile .diff-commit-picker-panel li > button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-content-view.is-mobile
+  .diff-commit-picker-panel
+  li
+  > button
+  > span:last-child {
+  display: none;
+}
+
+/* Tighter controls, for the row to fit a phone's width. */
+.diff-content-view.is-mobile .diff-review-row {
+  gap: 4px;
+}
+
+.diff-content-view.is-mobile
+  .diff-review-row
+  :is(.rv-menu-button, .diff-commit-name) {
+  padding-inline: 5px;
+}
+
+.diff-content-view.is-mobile
+  .diff-review-row
+  .diff-view-menu
+  .lucide-chevron-down {
+  display: none;
+}

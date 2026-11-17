@@ -138,3 +138,75 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * On a phone or in a narrow inspector, the line is the review's identity
+ * (user, 2026-11-17): the workspace's name is the inspector's title already,
+ * so a lone repository's name goes, with the separator; a merge request's
+ * review is named by its number and title, the scope picker saying it all.
+ */
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  > :is(
+    strong.changes-scope-name:not(:has(.changes-scope-elsewhere)),
+    .changes-scope-sep
+  ) {
+  display: none;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  .changes-scope-mode {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 2px;
+  font-weight: 600;
+}
+
+.changes-scope-short {
+  display: none;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  :is(.changes-scope-full, .changes-scope-short) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  .changes-scope-value:has(.changes-scope-short)
+  .changes-scope-full {
+  display: none;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  .changes-scope-short {
+  display: inline;
+}
+
+/* The request's chip: its icon and number; the details say the rest. */
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-request-chip
+  :is(
+    .pull-request-card-title,
+    .pull-request-card-badge,
+    .pull-request-card-refresh
+  ) {
+  display: none;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-scope-bar
+  .changes-request-chip {
+  flex: none;
+}
+
+:is(.workspace-inspector.is-compact, .diff-content-view.is-mobile)
+  .changes-request-chip
+  .pull-request-card-heading {
+  display: none;
+}

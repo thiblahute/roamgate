@@ -4,11 +4,18 @@
   flex: none;
 }
 
+/* Over the page, next to its button: ReviewMenu places it (floatingPlace). */
 .rv-menu {
   position: fixed;
-  z-index: 40;
+  z-index: 5600;
+  top: 0;
+  left: 0;
   display: flex;
-  min-width: 240px;
+  box-sizing: border-box;
+  min-width: min(240px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  overflow: auto;
+  overscroll-behavior: contain;
   flex-direction: column;
   padding: 4px;
   border: 1px solid var(--rv-border, var(--border));
@@ -54,4 +61,38 @@
 .rv-menu kbd {
   color: var(--rv-faint, var(--muted));
   font-size: 11px;
+}
+
+/* On a phone, the app menu's bottom sheet (ConfigMenu's), its rows sized
+   for a finger. */
+.rv-menu.is-sheet {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: min(78dvh, 640px);
+  max-height: min(
+    calc(78dvh / var(--ui-scale, 1)),
+    calc(640px / var(--ui-scale, 1))
+  );
+  padding: 4px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  border: none;
+  border-top: 1px solid var(--shell-border, var(--border));
+  border-radius: 14px 14px 0 0;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg, 0 -6px 24px rgb(0 0 0 / 25%));
+}
+
+.rv-menu.is-sheet button[role^="menuitem"] {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+
+.rv-menu .mobile-sheet-handle {
+  justify-content: center;
+  padding: 4px 8px;
 }

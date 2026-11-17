@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { workspaceRepoDirs } from "../changesRepo";
 import type { InspectorCommand } from "../inspectorCommands";
@@ -186,6 +187,21 @@ export function changesScopeFacts({
   return facts.join(" · ");
 }
 
+/**
+ * A merge or pull request's review, as a phone's line names it: its number
+ * and title ("!3326 rtpgccbwe: Fix ..."); undefined for any other review.
+ */
+export function changesReviewShortLabel(
+  mergeRequest: { url: string; title: string } | undefined,
+): string | undefined {
+  if (!mergeRequest) return undefined;
+  const gitlab = /\/-\/merge_requests\/(\d+)/.exec(mergeRequest.url);
+  const github = /\/pull\/(\d+)/.exec(mergeRequest.url);
+  const number = gitlab ? `!${gitlab[1]}` : github ? `#${github[1]}` : "";
+  const title = mergeRequest.title.trim();
+  return [number, title].filter(Boolean).join(" ") || undefined;
+}
+
 /** The scope's choice, as the line says it. */
 export function changesScopeChoice(
   mode: ChangesScope,
@@ -305,7 +321,12 @@ export function ChangesScopeBar({
    * A review shown as the scope (a range or compare opened by name): its
    * name, and the files of the view shown.
    */
-  review?: { label: string; files?: number | undefined };
+  review?: {
+    label: string;
+    files?: number | undefined;
+    /** Its name on a phone (changesReviewShortLabel). */
+    short?: string | undefined;
+  };
   /**
    * A review of a repository this workspace does not hold (its workspace
    * gone, an agent's without one), shown here all the same (D3).
@@ -392,6 +413,20 @@ export function ChangesScopeBar({
         aria-label="What Changes compares"
         title="What Changes compares (:working, :branch, :last)"
         value={scopeValue}
+        {...(review?.short
+          ? {
+              // Both names: the line shows the full one, a phone's the short.
+              icon: (
+                <>
+                  <span className="themed-select-value changes-scope-value">
+                    <span className="changes-scope-full">{review.label}</span>
+                    <span className="changes-scope-short">{review.short}</span>
+                  </span>
+                  <ChevronDown size={13} aria-hidden="true" />
+                </>
+              ),
+            }
+          : {})}
         options={scopeOptions}
         onChange={(value) => {
           if (value === "review") return;
