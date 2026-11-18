@@ -3582,7 +3582,6 @@ export const store = {
       return Promise.resolve(false);
     }
     const switching = target.connectionId !== state.activeConnectionId;
-    const cached = state.sessionsByConnectionId[target.connectionId];
     if (switching && !selectConnectionNow(target.connectionId)) {
       return Promise.resolve(false);
     }
@@ -3592,14 +3591,21 @@ export const store = {
     ) {
       return Promise.resolve(false);
     }
+    // Known from the connection's last list and shown by the browser alone:
+    // go there now. The refresh navigateBrowser starts corrects the rest,
+    // instead of the switch waiting on a round trip to the host.
+    const known =
+      options.fromKnownList &&
+      knownBrowserTarget(target.workspaceId, target.paneId);
+    if (known) {
+      void navigateBrowser(known.workspaceId, known.tabId, known.paneId);
+      return Promise.resolve(true);
+    }
     // A connection this page has not listed yet: whether the browser or the
     // host chooses what is shown is unknown until it answers. Ask first, and
     // show the target once listed, rather than move the host's own focus and
     // then show whatever the host had focused.
-    if (
-      switching &&
-      cached?.serverRuntimeGeneration !== target.runtimeGeneration
-    ) {
+    if (switching && !state.lastRefresh && state.workspaces.length === 0) {
       const lease = captureConnectionLease();
       set({
         browserNavigation: selectBrowserTarget(
@@ -3616,16 +3622,6 @@ export const store = {
             setForConnection(lease, { navigationMode: "browser-local" });
           return store.focusWorkspaceSourceNow(target, options);
         });
-    }
-    // Known from the connection's last list and shown by the browser alone:
-    // go there now. The refresh navigateBrowser starts corrects the rest,
-    // instead of the switch waiting on a round trip to the host.
-    const known =
-      options.fromKnownList &&
-      knownBrowserTarget(target.workspaceId, target.paneId);
-    if (known) {
-      void navigateBrowser(known.workspaceId, known.tabId, known.paneId);
-      return Promise.resolve(true);
     }
     if (!target.paneId) {
       return action(

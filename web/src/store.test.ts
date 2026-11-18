@@ -1345,76 +1345,92 @@ describe("workspace source navigation", () => {
     },
   );
 
-  test("a first-visit browser-local source lands on its pane, not on the host's focus", async () => {
-    const other = {
-      ...partitionState().workspaces[0]!,
-      workspace_id: "beta-other",
-      active_tab_id: "beta-other-tab",
-      focused: true,
-    };
-    const tabs = [
-      {
-        ...session("beta").tabs[0]!,
-        tab_id: "beta-other-tab",
+  test.each(["no", "a never listed"] as const)(
+    "a first-visit browser-local source with %s session lands on its pane, not on the host's focus",
+    async (cached) => {
+      const other = {
+        ...partitionState().workspaces[0]!,
         workspace_id: "beta-other",
-      },
-      {
-        ...session("beta").tabs[0]!,
-        tab_id: "beta-tab",
-        workspace_id: "beta-only",
-      },
-    ];
-    const panes = [
-      {
-        ...session("beta").panes[0]!,
-        pane_id: "beta-other-pane",
-        tab_id: "beta-other-tab",
-        workspace_id: "beta-other",
+        active_tab_id: "beta-other-tab",
         focused: true,
-      },
-      {
-        ...session("beta").panes[0]!,
-        pane_id: "beta-pane",
-        tab_id: "beta-tab",
-        workspace_id: "beta-only",
-        focused: true,
-      },
-    ];
-    const f = sourceFixture("browser-local", {
-      "tab.list": { tabs },
-      "pane.list": { panes },
-      "pane.get": { pane: panes[1] },
-      "pane.layout": {
-        tab_id: "beta-tab",
-        focused_pane_id: "beta-pane",
-        panes: [{ pane_id: "beta-pane" }],
-        splits: [],
-      },
-    });
-    f.setList(async () => ({
-      workspaces: [other, { ...f.workspace, focused: false }],
-      navigation_mode: "browser-local",
-    }));
-    try {
-      expect(
-        await store.focusWorkspaceSource(
-          { ...f.target, paneId: "beta-pane" },
-          { fromKnownList: true },
-        ),
-      ).toBe(true);
-      expect(store.get().activeConnectionId).toBe("beta");
-      // The host's own focus stays where it is.
-      expect(
-        f.calls.filter((call) =>
-          ["workspace.focus", "tab.focus", "pane.focus"].includes(call.method),
-        ),
-      ).toEqual([]);
-      expect(store.get().browserNavigation.workspaceId).toBe("beta-only");
-      expect(store.get().selectedPaneId).toBe("beta-pane");
-    } finally {
-      f.restore();
-    }
-  });
+      };
+      const tabs = [
+        {
+          ...session("beta").tabs[0]!,
+          tab_id: "beta-other-tab",
+          workspace_id: "beta-other",
+        },
+        {
+          ...session("beta").tabs[0]!,
+          tab_id: "beta-tab",
+          workspace_id: "beta-only",
+        },
+      ];
+      const panes = [
+        {
+          ...session("beta").panes[0]!,
+          pane_id: "beta-other-pane",
+          tab_id: "beta-other-tab",
+          workspace_id: "beta-other",
+          focused: true,
+        },
+        {
+          ...session("beta").panes[0]!,
+          pane_id: "beta-pane",
+          tab_id: "beta-tab",
+          workspace_id: "beta-only",
+          focused: true,
+        },
+      ];
+      const f = sourceFixture("browser-local", {
+        "tab.list": { tabs },
+        "pane.list": { panes },
+        "pane.get": { pane: panes[1] },
+        "pane.layout": {
+          tab_id: "beta-tab",
+          focused_pane_id: "beta-pane",
+          panes: [{ pane_id: "beta-pane" }],
+          splits: [],
+        },
+      });
+      if (cached !== "no") {
+        // The catalog can hold an empty session for a connection never shown.
+        const current = store.get();
+        __storeTesting.replaceState({
+          ...current,
+          sessionsByConnectionId: {
+            ...current.sessionsByConnectionId,
+            beta: emptyServerSessionState(1),
+          },
+        });
+      }
+      f.setList(async () => ({
+        workspaces: [other, { ...f.workspace, focused: false }],
+        navigation_mode: "browser-local",
+      }));
+      try {
+        expect(
+          await store.focusWorkspaceSource(
+            { ...f.target, paneId: "beta-pane" },
+            { fromKnownList: true },
+          ),
+        ).toBe(true);
+        expect(store.get().activeConnectionId).toBe("beta");
+        // The host's own focus stays where it is.
+        expect(
+          f.calls.filter((call) =>
+            ["workspace.focus", "tab.focus", "pane.focus"].includes(
+              call.method,
+            ),
+          ),
+        ).toEqual([]);
+        expect(store.get().browserNavigation.workspaceId).toBe("beta-only");
+        expect(store.get().selectedPaneId).toBe("beta-pane");
+      } finally {
+        f.restore();
+      }
+    },
+  );
 
   test("a pane known from the connection's last list is shown before the host answers", async () => {
     const f = sourceFixture("browser-local");
