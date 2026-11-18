@@ -61,6 +61,7 @@ import {
   migrateLegacyConnectionStorage,
 } from "./connectionStorage";
 import { disposeTerminalConnection } from "./terminalConnection";
+import { withLocalSeen } from "./localSeen";
 import {
   type GitStatusPush,
   parseGitStatusPush,
@@ -1686,6 +1687,8 @@ async function refreshNow(lease = captureConnectionLease()) {
         overlappingGitStatuses,
       );
     }
+    // Looks this page just sent, which this list may predate (localSeen.ts).
+    if (next.panes) next.panes = withLocalSeen(lease.connectionId, next.panes);
     const patch = stabilizeRefreshPatch(state, next);
     if (patch) {
       if (!setForConnection(lease, patch)) return;
@@ -3532,6 +3535,13 @@ export const store = {
     void store.focusPaneNow(paneId);
   },
 
+  /** Shows at once the looks this page just sent (localSeen.ts). */
+  applyLocalSeen(connectionId: string) {
+    if (connectionId !== state.activeConnectionId) return;
+    const panes = withLocalSeen(connectionId, state.panes);
+    if (panes !== state.panes) set({ panes });
+  },
+
   focusTaskNotificationTarget(target: TaskNotificationTarget) {
     return store.focusWorkspaceSource(target);
   },
@@ -3571,10 +3581,9 @@ export const store = {
     if (!taskNotificationTargetIsCurrent(state, target)) {
       return Promise.resolve(false);
     }
-    if (
-      target.connectionId !== state.activeConnectionId &&
-      !selectConnectionNow(target.connectionId)
-    ) {
+    const switching = target.connectionId !== state.activeConnectionId;
+    const cached = state.sessionsByConnectionId[target.connectionId];
+    if (switching && !selectConnectionNow(target.connectionId)) {
       return Promise.resolve(false);
     }
     if (
@@ -3582,6 +3591,31 @@ export const store = {
       state.serverRuntimeGeneration !== target.runtimeGeneration
     ) {
       return Promise.resolve(false);
+    }
+    // A connection this page has not listed yet: whether the browser or the
+    // host chooses what is shown is unknown until it answers. Ask first, and
+    // show the target once listed, rather than move the host's own focus and
+    // then show whatever the host had focused.
+    if (
+      switching &&
+      cached?.serverRuntimeGeneration !== target.runtimeGeneration
+    ) {
+      const lease = captureConnectionLease();
+      set({
+        browserNavigation: selectBrowserTarget(
+          state.browserNavigation,
+          target.workspaceId,
+        ),
+      });
+      return lease.client
+        .call("workspace.list")
+        .catch(() => null)
+        .then((result) => {
+          if (!leaseIsCurrent(lease)) return false;
+          if (result?.navigation_mode === "browser-local")
+            setForConnection(lease, { navigationMode: "browser-local" });
+          return store.focusWorkspaceSourceNow(target, options);
+        });
     }
     // Known from the connection's last list and shown by the browser alone:
     // go there now. The refresh navigateBrowser starts corrects the rest,

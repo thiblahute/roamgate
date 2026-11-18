@@ -1543,8 +1543,8 @@ export default function App() {
     boolean | null
   >(null);
   const [mobileView, setMobileView] = useState<MobileView>("session");
-  // Finished agents on screen are seen: no longer Done anywhere.
-  useMarkAgentsSeen(!mobile || mobileView === "session", mobile);
+  // The workspace on screen is seen: its agents are no longer Done anywhere.
+  useMarkAgentsSeen(!mobile || mobileView === "session");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMounted, setAssistantMounted] = useState(false);
   const [assistantTaskTarget, setAssistantTaskTarget] =
