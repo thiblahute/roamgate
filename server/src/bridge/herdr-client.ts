@@ -1,6 +1,11 @@
 import { EventEmitter } from "node:events";
 import * as net from "node:net";
 import { type Logger, serverLogger } from "../utils/logger";
+import {
+  closeDescriptor,
+  connectUnix,
+  writeDescriptor,
+} from "./unix-connect-sync";
 
 const MAX_NDJSON_LINE_BYTES = 1024 * 1024;
 const SUBSCRIPTION_ACK_TIMEOUT_MS = 8000;
@@ -21,14 +26,15 @@ type OneShotHandlers = {
 };
 
 /**
- * Bun.connect where it can: under Bun, a node:net unix socket sometimes
- * delivers a one-shot response about 100 ms late. Windows keeps node:net,
- * which reaches Herdr's named pipes.
+ * Bun.connect where it can: it writes sooner after connecting than node:net,
+ * and a request Herdr does not find on its first read waits 100 ms (see
+ * connectUnix). Windows keeps node:net, which reaches Herdr's named pipes.
  */
 function connectOneShot(
   path: string,
   handlers: OneShotHandlers,
   useBunSocket = process.platform !== "win32",
+  connectedFd?: number,
 ): void {
   if (!useBunSocket) {
     const socket = net.createConnection({ path });
@@ -52,16 +58,25 @@ function connectOneShot(
       write: (data) => socket.write(data),
       terminate: () => socket.terminate(),
     });
-  Bun.connect({
-    unix: path,
-    socket: {
-      open: (socket) => handlers.open(wrap(socket)),
-      drain: (socket) => handlers.drain(wrap(socket)),
-      data: (_socket, chunk) => handlers.data(chunk),
-      close: () => handlers.close(),
-      error: (_socket, error) => handlers.error(error),
-    },
-  }).catch((error: Error) => handlers.error(error));
+  const events = {
+    open: (socket: import("bun").Socket<undefined>) =>
+      handlers.open(wrap(socket)),
+    drain: (socket: import("bun").Socket<undefined>) =>
+      handlers.drain(wrap(socket)),
+    data: (_socket: unknown, chunk: Uint8Array) => handlers.data(chunk),
+    close: () => handlers.close(),
+    error: (_socket: unknown, error: Error) => handlers.error(error),
+  };
+  // A descriptor connectUnix already connected: Bun owns it from here and
+  // closes it with the socket. Bun.connect takes { fd } (Bun.FdSocketOptions)
+  // though its overloads only declare TCP and unix options.
+  (connectedFd === undefined
+    ? Bun.connect({ unix: path, socket: events })
+    : Bun.connect({
+        fd: connectedFd,
+        socket: events,
+      } satisfies Bun.FdSocketOptions as unknown as Bun.UnixSocketOptions)
+  ).catch((error: Error) => handlers.error(error));
 }
 
 /**
@@ -93,6 +108,12 @@ export class HerdrClient extends EventEmitter {
   private connectionId: string | undefined;
   /** Bun.connect for one-shot calls; false keeps node:net, as on Windows. */
   private useBunSocket: boolean;
+  /**
+   * Connect and write each request in one synchronous step where the
+   * platform allows it (see connectUnix), so Herdr's first read finds
+   * the request instead of sleeping 100 ms.
+   */
+  private syncConnect: boolean;
 
   constructor(
     private socketPath: string,
@@ -100,12 +121,16 @@ export class HerdrClient extends EventEmitter {
       logger?: Logger;
       connectionId?: string;
       useBunSocket?: boolean;
+      syncConnect?: boolean;
     } = {},
   ) {
     super();
     this.logger = options.logger ?? serverLogger.child("herdr");
     this.connectionId = options.connectionId;
     this.useBunSocket = options.useBunSocket ?? process.platform !== "win32";
+    this.syncConnect =
+      this.useBunSocket &&
+      (options.syncConnect ?? process.platform === "linux");
   }
 
   /** One-shot RPC: open -> send one request -> read one response -> close. */
@@ -245,44 +270,72 @@ export class HerdrClient extends EventEmitter {
           if (written <= 0) return;
           unsent = unsent.subarray(written);
         }
-        writtenAt = performance.now();
+        writtenAt ??= performance.now();
       };
       const fail = (error: unknown, fallback: string) =>
         finish(error instanceof Error ? error : new Error(fallback));
-      connectOneShot(
-        this.socketPath,
-        {
-          open(socket) {
-            s = socket;
-            if (done) {
-              socket.terminate();
-              return;
-            }
-            try {
-              beforeSend?.();
-              sendRest(socket);
-            } catch (error) {
-              fail(error, "RPC dispatch rejected");
-            }
-          },
-          drain(socket) {
-            if (done || !unsent.length) return;
-            try {
-              sendRest(socket);
-            } catch (error) {
-              fail(error, "RPC write failed");
-            }
-          },
-          data: onData,
-          close() {
-            finish(new Error(`connection closed before response: ${method}`));
-          },
-          error(e) {
-            finish(new Error(`${e.code ?? "error"}: ${e.message}`));
-          },
+      // beforeSend runs once, as late as possible before the first byte.
+      let checked = false;
+      const check = () => {
+        if (checked) return;
+        checked = true;
+        beforeSend?.();
+      };
+      const handlers: OneShotHandlers = {
+        open(socket) {
+          s = socket;
+          if (done) {
+            socket.terminate();
+            return;
+          }
+          try {
+            check();
+            sendRest(socket);
+          } catch (error) {
+            fail(error, "RPC dispatch rejected");
+          }
         },
-        this.useBunSocket,
-      );
+        drain(socket) {
+          if (done || !unsent.length) return;
+          try {
+            sendRest(socket);
+          } catch (error) {
+            fail(error, "RPC write failed");
+          }
+        },
+        data: onData,
+        close() {
+          finish(new Error(`connection closed before response: ${method}`));
+        },
+        error(e) {
+          finish(new Error(`${e.code ?? "error"}: ${e.message}`));
+        },
+      };
+      if (!this.syncConnect) {
+        connectOneShot(this.socketPath, handlers, this.useBunSocket);
+        return;
+      }
+      // After this call returns, like the open callback, so a caller's
+      // beforeSend still sees what it changed right after calling. Connect,
+      // check and write stay one synchronous step.
+      queueMicrotask(() => {
+        if (done) return;
+        const fd = connectUnix(this.socketPath);
+        if (fd === null) {
+          connectOneShot(this.socketPath, handlers, true);
+          return;
+        }
+        try {
+          check();
+        } catch (error) {
+          closeDescriptor(fd);
+          fail(error, "RPC dispatch rejected");
+          return;
+        }
+        unsent = unsent.subarray(writeDescriptor(fd, unsent));
+        if (!unsent.length) writtenAt = performance.now();
+        connectOneShot(this.socketPath, handlers, true, fd);
+      });
     });
   }
 
