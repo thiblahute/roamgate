@@ -18,6 +18,8 @@ import { isTerminalClipboardPayload } from "./terminal-clipboard";
 import { readSemanticNotification } from "./semantic-notification";
 
 const HANDSHAKE_TIMEOUT_MS = 8_000;
+// Further wakes while the welcome has not come, after the first one.
+const ENDPOINT_WAKE_RETRY_MS = [30, 70];
 
 // ClientMessage tags used by the stable endpoint contract. The variant order is
 // frozen for endpoint generation 1; compatible behavior arrives through
@@ -169,7 +171,18 @@ export class EndpointClient extends EventEmitter {
       throw new Error(`Herdr endpoint does not advertise ${method}`);
   }
 
-  async connect(cols: number, rows: number): Promise<void> {
+  /**
+   * `wakeHerdr`, when given, makes Herdr's main loop run now: an idle Herdr
+   * accepts a new client connection only when that loop wakes, which it
+   * otherwise does every 250 ms (CLIENT_ACCEPT_POLL_INTERVAL in Herdr's
+   * src/server/headless.rs). It runs once the connection is queued, then
+   * again while no welcome has come.
+   */
+  async connect(
+    cols: number,
+    rows: number,
+    wakeHerdr?: () => void,
+  ): Promise<void> {
     if (this.sock) throw new Error("endpoint client is already connected");
     if (this.closed) throw new Error("endpoint client is closed");
     await new Promise<void>((resolve, reject) => {
@@ -184,7 +197,10 @@ export class EndpointClient extends EventEmitter {
         this.close();
       }, HANDSHAKE_TIMEOUT_MS);
       this.pendingWelcome = { resolve, reject, timer };
-      sock.once("connect", () => this.sendHello(cols, rows));
+      sock.once("connect", () => {
+        this.sendHello(cols, rows);
+        if (wakeHerdr) this.wakeUntilWelcome(wakeHerdr);
+      });
       sock.on("data", (c) =>
         this.onData(Buffer.isBuffer(c) ? c : Buffer.from(c)),
       );
@@ -197,6 +213,21 @@ export class EndpointClient extends EventEmitter {
         this.emit("close");
       });
     });
+  }
+
+  private wakeUntilWelcome(wakeHerdr: () => void) {
+    let attempt = 0;
+    const wake = () => {
+      if (this.closed || this.welcomed) return;
+      try {
+        wakeHerdr();
+      } catch {
+        // Only a hint: the accept poll still comes.
+      }
+      const delayMs = ENDPOINT_WAKE_RETRY_MS[attempt++];
+      if (delayMs !== undefined) setTimeout(wake, delayMs).unref?.();
+    };
+    wake();
   }
 
   private sendHello(cols: number, rows: number) {

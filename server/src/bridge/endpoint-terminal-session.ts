@@ -102,6 +102,7 @@ export class EndpointTerminalSession extends EventEmitter {
     private firstSurfaceWaitMs = FIRST_SURFACE_WAIT_MS,
     surfaceCodecsEnabled = true,
     private paneLookupRetryMs: readonly number[] = PANE_LOOKUP_RETRY_MS,
+    private wakeHerdr?: () => void,
   ) {
     super();
     this.client = new EndpointClient(socketPath, surfaceCodecsEnabled);
@@ -151,7 +152,11 @@ export class EndpointTerminalSession extends EventEmitter {
       // endpoint handshake instead of after it.
       const lookup = this.findPaneId();
       lookup.catch(() => undefined);
-      await this.client.connect(surfaceSize.cols, surfaceSize.rows);
+      await this.client.connect(
+        surfaceSize.cols,
+        surfaceSize.rows,
+        this.wakeHerdr,
+      );
       mark("hello_ms");
       this.client.assertMethod("pane.focus");
       const paneId = await lookup;

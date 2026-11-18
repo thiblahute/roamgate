@@ -323,6 +323,13 @@ export function createLegacyConnectionRuntime(args: {
       assertSupportedHerdrProtocol(protocol);
       return protocol;
     },
+    // Any request Herdr's main loop handles wakes it; a fresh tab list is a
+    // cheap one, and keeps the reused one current.
+    wakeHerdr: () => {
+      herdr
+        .call("tab.list", {}, 2000, undefined, { fresh: true })
+        .catch(() => undefined);
+    },
     // Creation checks Herdr's current state, never a reused answer.
     createEmptyWorkspace: createEmptyWorkspaceCreator(
       (method, params, timeoutMs) =>

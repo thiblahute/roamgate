@@ -400,6 +400,47 @@ describe("EndpointClient (endpoint generation 1)", () => {
     }
   });
 
+  test("wakes Herdr once connected, and again until the welcome", async () => {
+    const socketPath = path.join(
+      tmpdir(),
+      `herdr-gui-endpoint-${process.pid}-${crypto.randomUUID()}.sock`,
+    );
+    // A Herdr that has not accepted the connection yet: nothing answers.
+    const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const client = new EndpointClient(socketPath);
+    client.on("error", () => undefined);
+    let wakes = 0;
+    const connecting = client.connect(80, 24, () => {
+      wakes++;
+    });
+    connecting.catch(() => undefined);
+    try {
+      await Bun.sleep(250);
+      expect(wakes).toBe(3);
+    } finally {
+      client.close();
+    }
+
+    let welcomedWakes = 0;
+    const welcoming = new EndpointClient(
+      await startEndpointServer(() => undefined),
+    );
+    try {
+      await welcoming.connect(80, 24, () => {
+        welcomedWakes++;
+      });
+      await Bun.sleep(150);
+      expect(welcomedWakes).toBe(1);
+    } finally {
+      welcoming.close();
+    }
+  });
+
   test("rejects startup when the peer closes before the snapshot", async () => {
     const socketPath = await startEndpointServer(
       (_hello, socket) => socket.end(),
