@@ -1532,6 +1532,7 @@ keys, filtered as you type; `:help WORD` opens the list filtered:
 | `:expand`                    | the expand button, or restore                                                                                               |
 | `:vim`, `:novim`             | Vim keys in comment editors, message boxes and the previews, on / off (one setting); the review's other keys stay           |
 | `:set vim` / `novim`         | the same                                                                                                                    |
+| `:set wide` / `nowide`       | full width diffs (the review's view menu's **Full width diffs**), or diffs in a centred column of code width (the default)  |
 | `:help` (`WORD`)             | the shortcut list (`?`), filtered by the word                                                                               |
 | `:q` (`:quit`, `:close`)     | Files: closes the file's tab; elsewhere closes the inspector                                                                |
 

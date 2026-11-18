@@ -20,7 +20,8 @@
   --accent-active: rgba(122, 162, 247, 0.45);
   /* Words written and read in the review (comments, their editor): the
      classic review's sans, never the diff's code font around them. */
-  --sans-font: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --sans-font:
+    -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
   --shell-bg: var(--bg);
   --shell-panel: var(--panel);
   --shell-topbar: var(--topbar);
@@ -87,6 +88,23 @@
   /* The reading column: a chat's messages, and a rendered Markdown file,
      centred in it however wide the view. */
   --reading-column-width: 820px;
+  /* The interface's text, which the diff views give back to their parts
+     after measuring their code column in the diff's font. */
+  --ui-font:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --ui-font-size: 15px;
+  /* The diff's code font (Pierre draws with it) and its reading column:
+     each side of a split diff, or a unified one, is that many columns of
+     code wide at most, plus its gutter (line numbers, markers), centred in
+     the view. Measured in the code font's ch, so it follows its size. */
+  --diff-code-font:
+    "SF Mono", Monaco, Consolas, "Ubuntu Mono", "Liberation Mono",
+    "Courier New", monospace;
+  --diff-code-font-size: 13px;
+  --diff-split-columns: 120;
+  --diff-unified-columns: 140;
+  --diff-gutter-columns: 9;
 }
 
 /* The black background option: the dark theme on pure black with neutral

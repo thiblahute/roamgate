@@ -480,11 +480,29 @@ if (
         place().focus();
         await inspector.press(place(), ":");
         await inspector.type("set n");
-        expect(inspector.completions()).toEqual(["set novim"]);
+        expect(inspector.completions()).toEqual(["set novim", "set nowide"]);
         await inspector.press(inspector.prompt()!, "Escape");
       } finally {
         await inspector.unmount();
         setVimKeys(true);
+      }
+    });
+
+    test(":set wide and :set nowide switch full width diffs, said as set", async () => {
+      const { setWideDiffs, wideDiffs } = await import("../wideDiffs");
+      setWideDiffs(false);
+      const inspector = await mountInspector({ view: "changes" });
+      try {
+        const place = () => inspector.place("changes");
+        told.length = 0;
+        await inspector.command(place(), "set wide");
+        expect(wideDiffs()).toBe(true);
+        await inspector.command(place(), "set nowide");
+        expect(wideDiffs()).toBe(false);
+        expect(told).toEqual(["Full width diffs", "Diffs centred"]);
+      } finally {
+        await inspector.unmount();
+        setWideDiffs(false);
       }
     });
 

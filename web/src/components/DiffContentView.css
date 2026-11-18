@@ -24,6 +24,75 @@
   background: var(--diff-bg);
 }
 
+/*
+ * The diff's reading column (tokens.css): its files, their heads, gap rows
+ * and threads, and the review's blocks above and below them, at most a code
+ * width wide and centred, unless full width diffs are on (:set wide, the
+ * review's view menu). A view narrower than the column looks as it would
+ * without it. The width is in the code font's ch: the view takes that font
+ * to measure it (--diff-char, a length every part inherits as such), and
+ * gives its parts back the interface's text, at the size it had.
+ */
+@property --diff-char {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --diff-ui-font-size {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 15px;
+}
+
+:where(:has(> .diff-content-view)) {
+  --diff-ui-font-size: 1em;
+}
+
+.diff-content-view {
+  --diffs-font-family: var(--diff-code-font);
+  --diffs-font-size: var(--diff-code-font-size);
+  --diff-char: 1ch;
+  --diff-column: calc(
+    (var(--diff-unified-columns) + var(--diff-gutter-columns)) *
+    var(--diff-char)
+  );
+  font-family: var(--diff-code-font);
+  font-size: var(--diff-code-font-size);
+}
+
+.diff-content-view[data-diff-style="split"] {
+  --diff-column: calc(
+    2 *
+    (var(--diff-split-columns) + var(--diff-gutter-columns)) *
+    var(--diff-char)
+  );
+}
+
+.diff-content-view[data-wide-diffs] {
+  --diff-column: 100%;
+}
+
+:where(.diff-content-view > *) {
+  font-family: var(--ui-font);
+  font-size: var(--diff-ui-font-size);
+}
+
+.diff-content-view .diff-file-section {
+  max-width: var(--diff-column);
+  margin-inline: auto;
+}
+
+.diff-content-view .diff-review-overall,
+.diff-content-view .diff-review-general,
+.diff-content-view .diff-other-files {
+  padding-inline: calc(max(0px, (100% - var(--diff-column)) / 2) + 12px);
+}
+
+.diff-content-view .diff-forge {
+  padding-inline: max(0px, (100% - var(--diff-column)) / 2);
+}
+
 .diff-content-head {
   flex: 0 0 auto;
   display: flex;
