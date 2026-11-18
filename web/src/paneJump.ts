@@ -498,6 +498,10 @@ function filterPaneSearchEntries(
   );
 }
 
+/** Which pane leads its workspace: one waiting on the user, then one Done. */
+const leadRank = (entry: PaneJumpEntry) =>
+  entry.needsYou ? NEEDS_YOU_RANK[entry.needsYou] : Number.MAX_SAFE_INTEGER;
+
 /**
  * One entry per workspace, keeping the pane each was most recently used
  * through. The kept entry is current whenever any pane of its workspace is:
@@ -514,7 +518,7 @@ function workspaceJumpEntries(entries: PaneJumpEntry[]): PaneJumpEntry[] {
       continue;
     }
     // A pane that needs the user leads its workspace: going there goes to it.
-    const lead = needsRank(entry) < needsRank(kept) ? entry : kept;
+    const lead = leadRank(entry) < leadRank(kept) ? entry : kept;
     const seenAt = Math.max(entry.seenAt ?? -1, kept.seenAt ?? -1);
     byWorkspace.set(key, {
       ...lead,
@@ -697,12 +701,16 @@ function paneJumpEntry(
 }
 
 const NEEDS_YOU_RANK = { blocked: 0, done: 1 } as const;
+/** What lifts an entry in a list: an agent waiting on the user, never Done. */
 const needsRank = (entry: PaneJumpEntry) =>
-  entry.needsYou ? NEEDS_YOU_RANK[entry.needsYou] : 2;
+  entry.needsYou && entry.needsYou !== "done"
+    ? NEEDS_YOU_RANK[entry.needsYou]
+    : 2;
 
 /**
- * What needs the user first, the agents asking something before those done
- * unseen, each group keeping its order; with `only`, nothing else.
+ * The agents asking something first, keeping their order, then the rest
+ * as they were: one done unseen shows it but stays in place; with `only`,
+ * nothing but what needs the user.
  */
 export function needsYouFirst(
   entries: PaneJumpEntry[],

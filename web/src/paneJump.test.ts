@@ -1008,10 +1008,18 @@ describe("what needs the user, and when they last looked", () => {
     expect(titles(search("notes"))).toEqual(["notes"]);
   });
 
-  test("needsYouFirst keeps each group's order", () => {
+  test("needsYouFirst lifts what waits on the user, never what is Done", () => {
     const entries = paneSearchEntries(snapshot, "", null, [], "panes");
-    expect(
-      needsYouFirst(entries).map((entry) => entry.needsYou ?? "-"),
-    ).toEqual(["blocked", "done", "-", "-", "-"]);
+    const blocked = entries.filter((entry) => entry.needsYou === "blocked");
+    expect(blocked).toHaveLength(1);
+    expect(entries.some((entry) => entry.needsYou === "done")).toBe(true);
+    // The rest keep their order, the Done one among them.
+    expect(needsYouFirst(entries)).toEqual([
+      ...blocked,
+      ...entries.filter((entry) => entry.needsYou !== "blocked"),
+    ]);
+    // Without anything waiting, Done moves nothing.
+    const quiet = entries.filter((entry) => entry.needsYou !== "blocked");
+    expect(needsYouFirst([...quiet].reverse())).toEqual([...quiet].reverse());
   });
 });
