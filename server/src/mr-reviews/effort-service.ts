@@ -9,7 +9,9 @@ import {
   type MrItem,
   type MrOverlap,
   type MrReviewsPush,
+  type MrPlan,
   type MrReviewsSettings,
+  fixupTargets,
   upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
 import { onGitlabHost, remoteProject } from "../review/gitlab";
@@ -962,10 +964,15 @@ export async function handleEffortRpc(
       // effort's group through the user's worktree path, on the target,
       // with the plan's commits picked in source order (no -x) and their
       // fixups folded into their targets. A conflict stops there and is
-      // reported; nothing is aborted. When a local upstream/<plan> branch
-      // (or the one named by from) already holds the plan's changes over
-      // the target, the part starts at its commit instead, nothing picked;
-      // that branch is only read, never moved.
+      // reported; nothing is aborted. Its base: the part of the plan it
+      // depends on (the last one in source order), or of the plan its
+      // fixups all fix (refused while that one has none); the target
+      // otherwise. When a local upstream/<plan> branch (or the one named by
+      // from) already holds the plan's changes over the target, the part
+      // starts at its commit instead, nothing picked; when it is a port of
+      // the plan (its own content) sitting on the base, too, said ported:
+      // its commits, never the source's. That branch is only read, never
+      // moved.
       const effort = await effortOf();
       const ledger = service.store.ledger(effort.id);
       const plan = findPlan(ledger.plans, String(params.plan ?? ""));
@@ -987,11 +994,61 @@ export async function handleEffortRpc(
         throw new MrReviewsError(
           "some of its commits are no longer on the source: edit the plan",
         );
-      const slug = plan.name
-        .toLowerCase()
-        .replace(/[^a-z0-9._/-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 60);
+      const slugOf = (name: string) =>
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9._/-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 60);
+      const slug = slugOf(plan.name);
+      const upstreamOf = (name: string) =>
+        name.startsWith("upstream/") ? name : `upstream/${name}`;
+      // Its base: the part it stacks on. Plans in source order (their
+      // last commit), the last one wins.
+      const position = new Map(
+        commits.map((commit, index) => [commit.key, index]),
+      );
+      const lastAt = (each: MrPlan) =>
+        Math.max(-1, ...each.commits.map((key) => position.get(key) ?? -1));
+      const planOfKey = new Map(
+        ledger.plans.flatMap((each) =>
+          each.commits.map((key) => [key, each] as const),
+        ),
+      );
+      const fixes = fixupTargets(commits);
+      const fixed = new Map<string, MrPlan>();
+      const fixupOnly =
+        picked.length > 0 &&
+        picked.every((commit) => {
+          const target = fixes[position.get(commit.key) ?? -1];
+          const of =
+            target === undefined || target < 0
+              ? undefined
+              : planOfKey.get(commits[target]!.key);
+          if (!of || of.id === plan.id) return false;
+          fixed.set(of.id, of);
+          return true;
+        });
+      if (fixupOnly) {
+        const without = [...fixed.values()].find((each) => !each.part);
+        if (without)
+          throw new MrReviewsError(
+            `${plan.name} only fixes commits of ${without.name}: make the part of ${without.name} first, ${plan.name}'s part starts on it`,
+          );
+      }
+      const stacked = [
+        ...plan.dependsOn.flatMap((id) => {
+          const each = ledger.plans.find((other) => other.id === id);
+          return each?.part ? [each] : [];
+        }),
+        ...(fixupOnly ? fixed.values() : []),
+      ];
+      const on = stacked.sort((a, b) => lastAt(b) - lastAt(a))[0];
+      if (on?.part?.conflict)
+        throw new MrReviewsError(
+          `the part of ${on.name} (${on.part.branch}), which this one starts on, is stopped at a conflict: resolve it there first`,
+        );
+      const baseRef = on?.part ? `refs/heads/${on.part.branch}` : undefined;
       const branch =
         (typeof params.branch === "string" && params.branch.trim()) || slug;
       const isBranchName = (name: string) =>
@@ -1001,8 +1058,7 @@ export async function handleEffortRpc(
       const named = typeof params.from === "string" ? params.from.trim() : "";
       if (named && !isBranchName(named))
         throw new MrReviewsError(`"${named}" is not a branch name`);
-      const base =
-        named || (slug.startsWith("upstream/") ? slug : `upstream/${slug}`);
+      const base = named || upstreamOf(slug);
       const connection = service.connectionOf(effort.clone.connectionId);
       if (!connection)
         throw new MrReviewsError("that connection is not ready", "unavailable");
@@ -1040,13 +1096,64 @@ export async function handleEffortRpc(
           )
         ).stdout,
       );
-      if (named && !carries.sha)
+      if (named && carries.missing)
+        throw new MrReviewsError(`${named} is not a local branch of the clone`);
+      if (
+        baseRef &&
+        !(
+          await connection.run(
+            `git -C ${shQuote(effort.clone.path)} rev-parse -q --verify ${shQuote(`${baseRef}^{commit}`)}`,
+            30_000,
+          )
+        ).stdout.trim()
+      )
         throw new MrReviewsError(
-          carries.missing
-            ? `${named} is not a local branch of the clone`
-            : `${named} does not hold the plan's changes over the target (${carries.not ?? "unknown"}): nothing made`,
+          `the branch ${on!.part!.branch} of ${on!.name}'s part, which this one starts on, is gone`,
         );
-      const start = carries.sha ? carries.sha : undefined;
+      // Not the plan's changes as they are: a port of it on the base is
+      // still the part's start (its content, said), never the source's
+      // commits picked beside it. A branch named by from must touch the
+      // plan's files as well.
+      let start = carries.sha ? carries.sha : undefined;
+      let ported:
+        | { onlyInPlan: string[]; onlyInBranch: string[]; summary: string }
+        | undefined;
+      if (!start && !carries.missing) {
+        const ons = [
+          ...(baseRef ? [{ label: "base", ref: baseRef }] : []),
+          ...stacked.flatMap((each) =>
+            [
+              ...(each.part?.from ? [each.part.from] : []),
+              upstreamOf(slugOf(each.name)),
+            ].map((name) => ({ label: "upstream", ref: `refs/heads/${name}` })),
+          ),
+        ];
+        const prepared = parsePrepared(
+          (
+            await connection.run(
+              preparedScript(
+                effort.clone.path,
+                base,
+                ons,
+                targets,
+                effort.source,
+              ),
+              120_000,
+            )
+          ).stdout,
+        );
+        const planFiles = new Set(picked.flatMap((commit) => commit.files));
+        const usable =
+          prepared.sha &&
+          (!named || prepared.files.some((file) => planFiles.has(file)));
+        if (usable) {
+          start = prepared.sha;
+          ported = portedDifference([...planFiles], prepared.files);
+        } else if (named)
+          throw new MrReviewsError(
+            `${named} does not hold the plan's changes over the target (${carries.not ?? "unknown"}) and is no port of it on the part's base (${prepared.sha ? "none of the plan's files" : (prepared.not ?? "unknown")}): nothing made`,
+          );
+      }
       const from = await partSource(effort, connection);
       const made = await deps
         .createWorktree({
@@ -1076,7 +1183,7 @@ export async function handleEffortRpc(
           await connection.run(
             pickScript(
               made.path,
-              start ? [start] : targets,
+              start ? [start] : baseRef ? [baseRef] : targets,
               start ? [] : picked.map((commit) => commit.sha),
               branch,
             ),
@@ -1088,7 +1195,7 @@ export async function handleEffortRpc(
       // the fixups are folded, by patch id; folding must keep the tree).
       // From a branch holding them all, checked tree to tree: all of them.
       const onBranch = start
-        ? pick.error
+        ? pick.error || ported
           ? 0
           : picked.length
         : pick.onBranch
@@ -1138,6 +1245,8 @@ export async function handleEffortRpc(
         branch,
         ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
         ...(start ? { from: base } : {}),
+        ...(ported ? { ported: true } : {}),
+        ...(!start && on?.part ? { base: on.part.branch } : {}),
         ...(conflict ? { conflict } : {}),
       };
       await changePlans(
@@ -1146,7 +1255,7 @@ export async function handleEffortRpc(
         { action: "part", plan: plan.id, part },
         {
           by: meta.by,
-          summary: `Part ${branch} made for ${plan.name}${start ? ` from ${base}` : ""}`,
+          summary: `Part ${branch} made for ${plan.name}${start ? ` from ${base}${ported ? " (ported)" : ""}` : on?.part ? ` on ${on.part.branch}` : ""}`,
         },
       );
       await deps
@@ -1190,6 +1299,17 @@ export async function handleEffortRpc(
         picked: onBranch,
         of: picked.length,
         ...(start ? { from: base } : {}),
+        ...(ported
+          ? {
+              ported: true,
+              differs: {
+                only_in_plan: ported.onlyInPlan,
+                only_in_branch: ported.onlyInBranch,
+                summary: ported.summary,
+              },
+            }
+          : {}),
+        ...(!start && on?.part ? { base: on.part.branch } : {}),
         ...(folded ? { folded } : {}),
         ...(unfolded.length ? { unfolded } : {}),
         ...(pick.skipped.length
@@ -1585,6 +1705,84 @@ export function carriesScript(
     'out=$(git -C "$d" merge-tree --write-tree --merge-base="$base" "$b" "$cur" 2>/dev/null) || { echo "N\tsome plan changes are not there"; exit 0; }',
     '[ "$(printf "%s\n" "$out" | head -n 1)" = "$(git -C "$d" rev-parse "$b^{tree}")" ] && printf "Y\t%s\n" "$b" || echo "N\tsome plan changes are not there"',
   ].join("\n");
+}
+
+/**
+ * Whether a local branch is a port of a plan sitting on the part's base:
+ * `M` when there is no such branch; `N reason` when it is not; else
+ * `O label ref sha` for what it is built on (one of ons, each when its
+ * tip is where the branch leaves it, or the target, an older commit of
+ * it as well), none of its own commits on the source, then `B file` for
+ * each file it changes over there. Only read: no ref, index or worktree
+ * touched.
+ */
+export function preparedScript(
+  dir: string,
+  branch: string,
+  ons: { label: string; ref: string }[],
+  targets: string[],
+  source: string,
+) {
+  return [
+    `d=${shQuote(dir)}`,
+    `b=$(git -C "$d" rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) || { echo M; exit 0; }`,
+    `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null) || { echo "N\tthe target is unknown"; exit 0; }`,
+    `src=$(git -C "$d" rev-parse -q --verify ${shQuote(`${source}^{commit}`)} 2>/dev/null)`,
+    '[ "$(git -C "$d" rev-list --count "$t..$b")" -gt 0 ] || { echo "N\tnothing over the target"; exit 0; }',
+    'own() { [ -z "$src" ] || [ "$(git -C "$d" rev-list --count "$1..$b" "^$src")" = "$(git -C "$d" rev-list --count "$1..$b")" ]; }',
+    'on() { printf "O\t%s\t%s\t%s\n" "$1" "$2" "$b"; git -C "$d" diff --name-only "$3" "$b" | sed "s/^/B\t/"; exit 0; }',
+    ...ons.map(
+      ({ label, ref }) =>
+        `r=$(git -C "$d" rev-parse -q --verify ${shQuote(`${ref}^{commit}`)} 2>/dev/null) && [ "$r" != "$b" ] && [ "$(git -C "$d" merge-base "$r" "$b")" = "$r" ] && own "$r" && on ${shQuote(label)} ${shQuote(ref)} "$r"`,
+    ),
+    'm=$(git -C "$d" merge-base "$t" "$b") || { echo "N\tno common history with the target"; exit 0; }',
+    `own "$t" && on target ${shQuote(targets[0]!)} "$m"`,
+    'echo "N\tsome of its commits are on the source"',
+  ].join("\n");
+}
+
+export function parsePrepared(stdout: string): {
+  sha?: string;
+  on?: { label: string; ref: string };
+  files: string[];
+  missing?: true;
+  not?: string;
+} {
+  const files: string[] = [];
+  let found: { sha: string; on: { label: string; ref: string } } | undefined;
+  for (const line of stdout.split("\n")) {
+    const [kind, value = "", ...rest] = line.split("\t");
+    if (kind === "M") return { missing: true, files };
+    if (kind === "N") return { not: value, files };
+    if (kind === "O" && /^[0-9a-f]{40,64}$/.test(rest[1] ?? ""))
+      found = { sha: rest[1]!, on: { label: value, ref: rest[0]! } };
+    else if (kind === "B" && value && found)
+      files.push([value, ...rest].join("\t"));
+  }
+  return found ? { ...found, files } : { not: "it could not be read", files };
+}
+
+/** A port against the plan: the files only one of them changes, in short. */
+export function portedDifference(planFiles: string[], branchFiles: string[]) {
+  const inPlan = new Set(planFiles);
+  const inBranch = new Set(branchFiles);
+  const onlyInPlan = [...inPlan].filter((file) => !inBranch.has(file)).sort();
+  const onlyInBranch = [...inBranch].filter((file) => !inPlan.has(file)).sort();
+  const some = (files: string[]) =>
+    `${files.slice(0, 5).join(", ")}${files.length > 5 ? ` and ${files.length - 5} more` : ""}`;
+  const parts = [
+    ...(onlyInPlan.length ? [`only in the plan: ${some(onlyInPlan)}`] : []),
+    ...(onlyInBranch.length
+      ? [`only in the branch: ${some(onlyInBranch)}`]
+      : []),
+  ];
+  return {
+    onlyInPlan: onlyInPlan.slice(0, 50),
+    onlyInBranch: onlyInBranch.slice(0, 50),
+    summary: parts.length
+      ? parts.join("; ")
+      : "the same files, their content its own",
+  };
 }
 
 export function parseCarries(stdout: string): {

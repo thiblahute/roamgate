@@ -1119,13 +1119,20 @@ request: the leader session proposes them, you **Accept**, `:split NEW`
 (the selected commits out of their plan) or **Drop** them, and `:plan NAME` puts the selected commits in one
 (a commit is in one planned request only, across efforts). An accepted
 one's **Make its part** (`:part [NAME]`) makes a worktree workspace
-in the effort's group through your worktree command, moves it onto the
-target and cherry-picks its commits in order, then folds each `fixup!`,
+in the effort's group through your worktree command, moves it onto its
+base and cherry-picks its commits in order, then folds each `fixup!`,
 `squash!` or `amend!` commit into its target (a plan's fixup rows say
 where they fold; one whose target is not in the plan stays a commit and
-is said). When a local `upstream/<plan name>` branch already holds the
+is said). Its base is the part of the plan it depends on (the last one
+in source order), or, for a plan made only of fixups of another plan's
+commits, that plan's part (refused until that part exists); the target
+otherwise. When a local `upstream/<plan name>` branch already holds the
 plan's changes over the target, the part starts at its commit instead,
-nothing picked, that branch left as it is. A conflict stops there and
+nothing picked, that branch left as it is. When that branch is a port of
+the plan (its content differs) sitting on the part's base, the part
+starts there too, never with the source's commits: the card says "from
+`upstream/<plan name>` (ported: differs from the plan's commits)" and the
+result lists the files only in the plan and only in the branch. A conflict stops there and
 is reported, left for that worktree's session to resolve. Its branch is
 then a request not proposed yet, until its request opens. **What changed**
 (`W`, and "N changed" on the card) lists what moved since you last looked:
