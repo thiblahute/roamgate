@@ -18,11 +18,15 @@ import { effortPlanEntries } from "./effort-board";
 import { mrReviewsSettings } from "./settings";
 import {
   branchCommitsScript,
+  branchEntry,
   createUpstreamScanner,
   headedGroups,
+  ownCommits,
   parseBranchCommits,
   parseRequestPatchIds,
   parseUpstreamScan,
+  partBases,
+  pushedBranchUrl,
   requestOfBranch,
   requestPatchIdsScript,
   targetOf,
@@ -548,6 +552,169 @@ test("a part nested under its effort's head workspace links to its fork request 
       patchIds: new Map(),
     }).p1?.number,
   ).toBe(591);
+});
+
+test("a stacked part's row: titled and counted from the branch it sits on, linked where it is pushed", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "stack");
+  // The plans below it: kept on upstream/<name> branches, no part of
+  // their own; the part's branch sits on the last one.
+  g.git(clone, "checkout", "-q", "-b", "upstream/test-prep");
+  g.commit(clone, "a.c", "a\n", "Share the test runner");
+  g.git(clone, "checkout", "-q", "-b", "upstream/core");
+  g.commit(clone, "b.c", "b\n", "Add the review service");
+  g.git(clone, "checkout", "-q", "-b", "site-proxy");
+  const tip = g.commit(clone, "c.c", "c\n", "Preview sites through a proxy");
+  // main moved on since: the target is behind, the base is not.
+  const other = g.clone("media/engine", "other");
+  g.commit(other, "m.c", "m\n", "Upstream work");
+  g.git(other, "push", "-q", "origin", "HEAD:main");
+  g.git(clone, "fetch", "-q", "origin");
+  // Pushed to the user's fork, on the same host.
+  g.git(clone, "remote", "add", "fork", `https://${FORGE_HOST}/me/engine.git`);
+  g.git(clone, "update-ref", "refs/remotes/fork/site-proxy", tip);
+  g.git(clone, "branch", "-q", "--set-upstream-to=fork/site-proxy");
+
+  const part = { connectionId: "local", path: clone, branch: "site-proxy" };
+  const plans = [
+    { id: "p1", name: "test-prep" },
+    { id: "p2", name: "core" },
+    {
+      id: "p3",
+      name: "site-proxy",
+      dependsOn: ["p2"],
+      part,
+    },
+  ];
+  expect(partBases({ dependsOn: ["p2"], part: part }, plans)).toEqual([
+    "upstream/core",
+  ]);
+  // A base it was made on comes first, then the plans it depends on, last first.
+  expect(
+    partBases(
+      {
+        dependsOn: ["p1", "p2"],
+        part: { ...part, base: "core-part" },
+      },
+      [{ ...plans[0]!, part: { ...part, branch: "prep-part" } }, plans[1]!],
+    ),
+  ).toEqual(["core-part", "upstream/core", "prep-part", "upstream/test-prep"]);
+
+  const connection = g.connection([
+    { workspace_id: "w-part", label: "site-proxy", cwd: clone },
+  ]);
+  const home = upstreamWorkspaceHome({
+    connection_id: "local",
+    path: clone,
+    workspace_id: "w-part",
+  });
+  const settings = mrReviewsSettings({
+    hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+  });
+  const scanner = createUpstreamScanner({
+    connections: () => [connection],
+    tree: async () => ({ version: WORKSPACE_TREE_VERSION, nodes: [] }),
+    settings: async () => settings,
+    items: () => [],
+    parts: () => [
+      {
+        connectionId: "local",
+        workspaceId: "w-part",
+        label: "site-proxy",
+        path: clone,
+        group: home,
+        plan: "site-proxy",
+        // One gone first: the next that exists is used.
+        bases: ["upstream/gone", "upstream/core"],
+      },
+    ],
+  });
+  await scanner.refresh(true);
+  const branch = scanner.branches()[0]!;
+  expect(branch.target).toMatchObject({
+    ref: "origin/main",
+    behind: 1,
+    ahead: 3,
+  });
+  expect(branch.base).toMatchObject({
+    ref: "upstream/core",
+    behind: 0,
+    ahead: 1,
+  });
+  expect(branch.url).toBe(`https://${FORGE_HOST}/me/engine/-/tree/site-proxy`);
+  // The branch still holds every commit beyond the target (overlaps, links).
+  expect(branch.commits).toHaveLength(3);
+  const entry = branchEntry(branch, settings, "me");
+  expect(entry.title).toBe("Preview sites through a proxy");
+  expect(entry.branch).toMatchObject({
+    target: "upstream/core",
+    below: "upstream/core",
+    ahead: 1,
+    behind: 0,
+    url: `https://${FORGE_HOST}/me/engine/-/tree/site-proxy`,
+  });
+  expect(entry.branch!.commits.map((commit) => commit.subject)).toEqual([
+    "Preview sites through a proxy",
+  ]);
+});
+
+test("a branch's own commits: those no listed branch below it holds", () => {
+  const commit = (n: number) => ({
+    sha: String(n).repeat(40),
+    at: n,
+    subject: `Commit ${n}`,
+    patchId: `p${n}`,
+  });
+  const at = (branch: string, commits: ReturnType<typeof commit>[]) => ({
+    key: `branch:${branch}`,
+    branch,
+    provider: "gitlab" as const,
+    host: FORGE_HOST,
+    project: "media/engine",
+    commits,
+  });
+  const prep = at("prep", [commit(1)]);
+  const core = at("core", [commit(2), commit(1)]);
+  const top = at("top", [commit(3), commit(2), commit(1)]);
+  const elsewhere = { ...at("other", [commit(1)]), project: "media/other" };
+  expect(ownCommits(top, [prep, core, top, elsewhere])).toEqual({
+    commits: [commit(3)],
+    below: "core",
+  });
+  expect(ownCommits(prep, [prep, core, top])).toEqual({ commits: [commit(1)] });
+  // A branch holding another's commits under other patches is not below.
+  const reworked = at("reworked", [{ ...commit(9), patchId: "p9" }]);
+  expect(ownCommits(top, [reworked]).commits).toHaveLength(3);
+  // Not pushed, or pushed to another host: no page.
+  expect(
+    pushedBranchUrl(
+      { remotes: [{ name: "origin", url: "git@github.com:me/engine.git" }] },
+      { provider: "github", host: "github.com" },
+    ),
+  ).toBeUndefined();
+  expect(
+    pushedBranchUrl(
+      {
+        upstream: "my/fork/feature/x",
+        remotes: [
+          { name: "my", url: "git@github.com:other/engine.git" },
+          { name: "my/fork", url: "git@github.com:me/engine.git" },
+        ],
+      },
+      { provider: "github", host: "github.com" },
+    ),
+  ).toBe("https://github.com/me/engine/tree/feature/x");
+  expect(
+    pushedBranchUrl(
+      {
+        upstream: "origin/x",
+        remotes: [{ name: "origin", url: "git@gitlab.example.org:me/e.git" }],
+      },
+      { provider: "github", host: "github.com" },
+    ),
+  ).toBeUndefined();
 });
 
 test("branch rows: lane, not proposed yet, overrides, and the request's key once it opens", async () => {

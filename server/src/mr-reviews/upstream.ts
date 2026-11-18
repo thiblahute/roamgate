@@ -3,6 +3,7 @@ import {
   type MrBranchInfo,
   type MrInboxEntry,
   type MrItem,
+  type MrPlan,
   type MrReviewsSettings,
   mrBranchKey,
   sameUpstreamWorkspace,
@@ -50,7 +51,40 @@ export type UpstreamMember = {
    * workspace marked by itself its `upstreamWorkspaceHome`.
    */
   group: string;
+  /**
+   * What an effort's part sits on (the branch of the part it depends on,
+   * or that plan's upstream/<name> branch), tried in order: its row counts
+   * its own commits and how far behind from the first that exists, not
+   * from the target.
+   */
+  bases?: string[];
+  /** The plan an effort's part is made for. */
+  plan?: string;
 };
+
+/**
+ * What an effort's part sits on, to try in order: the base it was made
+ * on, else for the plans it depends on (the last first) their part's
+ * branch, the branch that part was made from, or their upstream/<name>
+ * branch (a plan proposed without a part, its work kept there).
+ */
+export function partBases(
+  plan: Pick<MrPlan, "dependsOn" | "part">,
+  plans: readonly Pick<MrPlan, "id" | "name" | "part">[],
+): string[] {
+  const out: string[] = [];
+  const add = (ref: string | undefined) => {
+    if (ref && !out.includes(ref)) out.push(ref);
+  };
+  add(plan.part?.base);
+  const deps = plans.filter((each) => plan.dependsOn.includes(each.id));
+  for (const dep of deps.reverse()) {
+    add(dep.part?.branch);
+    add(dep.part?.from);
+    add(`upstream/${dep.name}`);
+  }
+  return out;
+}
 
 /** The marked groups and every group below them. */
 export function headedGroups(
@@ -160,20 +194,27 @@ export function upstreamMembers(
 
 /**
  * For each directory: `W <dir>`, `B <branch>`, `H <head>`, `D <dirty
- * files>`, `P <unpushed>` (against its own upstream branch), `M <name>
- * <url>` per remote, and for `upstream` then `origin`, when they have a
- * default branch: `T <remote> <ref> <sha> <behind> <ahead>`. Cheap: no log.
+ * files>`, `P <unpushed>` and `U <remote>/<branch>` (its own upstream
+ * branch), `M <name> <url>` per remote, and for `upstream` then `origin`,
+ * when they have a default branch: `T <remote> <ref> <sha> <behind>
+ * <ahead>`; with bases, `X <ref> <sha> <behind> <ahead>` for the first of
+ * them that exists (one HEAD holds, else any). Cheap: no log.
  */
-export function upstreamScanScript(dirs: string[]): string {
+export function upstreamScanScript(
+  dirs: string[],
+  bases: ReadonlyMap<string, readonly string[]> = new Map(),
+): string {
   return [
-    `for d in ${dirs.map(shQuote).join(" ")}; do`,
-    '  [ -d "$d" ] || continue',
-    '  git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || continue',
+    "scan() {",
+    "  d=$1; shift",
+    '  [ -d "$d" ] || return 0',
+    '  git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || return 0',
     '  printf "W\\t%s\\n" "$d"',
     '  b=$(git -C "$d" symbolic-ref --short -q HEAD 2>/dev/null) && printf "B\\t%s\\n" "$b"',
     '  h=$(git -C "$d" rev-parse -q --verify HEAD 2>/dev/null) && printf "H\\t%s\\n" "$h"',
     '  printf "D\\t%s\\n" "$(git -C "$d" status --porcelain 2>/dev/null | wc -l | tr -d " ")"',
     `  p=$(git -C "$d" rev-list --count '@{u}..HEAD' 2>/dev/null) && printf "P\\t%s\\n" "$p"`,
+    `  u=$(git -C "$d" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) && printf "U\\t%s\\n" "$u"`,
     `  git -C "$d" config --get-regexp '^remote\\..*\\.url$' 2>/dev/null | while read -r k u; do n=\${k#remote.}; printf "M\\t%s\\t%s\\n" "\${n%.url}" "$u"; done`,
     "  for r in upstream origin; do",
     '    git -C "$d" config --get "remote.$r.url" >/dev/null 2>&1 || continue',
@@ -184,7 +225,13 @@ export function upstreamScanScript(dirs: string[]): string {
     '    c=$(git -C "$d" rev-list --left-right --count "$t...HEAD" 2>/dev/null | tr "\\t" " ")',
     '    printf "T\\t%s\\t%s\\t%s\\t%s\\n" "$r" "$t" "$s" "$c"',
     "  done",
-    "done",
+    // The base: the first that HEAD holds, else the first that exists.
+    '  x=; for b in "$@"; do git -C "$d" rev-parse -q --verify "refs/heads/$b^{commit}" >/dev/null 2>&1 && b="refs/heads/$b"; git -C "$d" rev-parse -q --verify "$b^{commit}" >/dev/null 2>&1 || continue; [ -n "$x" ] || x=$b; if git -C "$d" merge-base --is-ancestor "$b" HEAD 2>/dev/null; then x=$b; break; fi; done',
+    '  if [ -n "$x" ]; then s=$(git -C "$d" rev-parse -q --verify "$x^{commit}") && c=$(git -C "$d" rev-list --left-right --count "$x...HEAD" 2>/dev/null | tr "\\t" " ") && printf "X\\t%s\\t%s\\t%s\\n" "${x#refs/heads/}" "$s" "$c"; fi',
+    "}",
+    ...dirs.map((dir) =>
+      ["scan", dir, ...(bases.get(dir) ?? [])].map(shQuote).join(" "),
+    ),
     "exit 0",
   ].join("\n");
 }
@@ -194,6 +241,10 @@ export type ScannedCheckout = {
   head?: string;
   dirty: number;
   unpushed?: number;
+  /** Its own upstream branch: `<remote>/<branch>`. */
+  upstream?: string;
+  /** What an effort's part sits on, counted from. */
+  base?: { ref: string; sha: string; behind: number; ahead: number };
   remotes: { name: string; url: string }[];
   targets: {
     remote: string;
@@ -220,7 +271,12 @@ export function parseUpstreamScan(
     else if (kind === "H" && /^[0-9a-f]{40,64}$/.test(a)) current.head = a;
     else if (kind === "D") current.dirty = Number(a) || 0;
     else if (kind === "P" && /^\d+$/.test(a)) current.unpushed = Number(a);
-    else if (kind === "M" && b) current.remotes.push({ name: a, url: b });
+    else if (kind === "U") current.upstream = a;
+    else if (kind === "X" && b && /^[0-9a-f]{40,64}$/.test(b) && c) {
+      const [behind, ahead] = c.split(" ").map(Number);
+      if (Number.isFinite(behind) && Number.isFinite(ahead))
+        current.base = { ref: a, sha: b, behind: behind!, ahead: ahead! };
+    } else if (kind === "M" && b) current.remotes.push({ name: a, url: b });
     else if (kind === "T" && b && c && d) {
       const [behind, ahead] = d.split(" ").map(Number);
       if (Number.isFinite(behind) && Number.isFinite(ahead))
@@ -239,17 +295,22 @@ export function parseUpstreamScan(
 /**
  * The commits of each `dir target` pair beyond the target, newest first:
  * `W <dir>` then `C <sha> <author time> <subject>` and `I <patch id>
- * <sha>` lines.
+ * <sha>` lines; with a base, `O <sha>` for those beyond the base too.
  */
 export function branchCommitsScript(
-  pairs: { dir: string; target: string }[],
+  pairs: { dir: string; target: string; base?: string }[],
 ): string {
   return [
-    ...pairs.flatMap(({ dir, target }) => [
+    ...pairs.flatMap(({ dir, target, base }) => [
       `d=${shQuote(dir)}; t=${shQuote(target)}`,
       'printf "W\\t%s\\n" "$d"',
       `git -C "$d" log --no-merges --max-count=${BRANCH_COMMITS} --format='C%x09%H%x09%at%x09%s' "$t..HEAD" 2>/dev/null`,
       `git -C "$d" log --no-merges --max-count=${BRANCH_COMMITS} -p --format='commit %H' "$t..HEAD" 2>/dev/null | git -C "$d" patch-id --stable 2>/dev/null | awk '{ print "I\\t" $1 "\\t" $2 }'`,
+      ...(base
+        ? [
+            `git -C "$d" rev-list --no-merges --max-count=${BRANCH_COMMITS} ${shQuote(`${base}..HEAD`)} 2>/dev/null | awk '{ print "O\\t" $1 }'`,
+          ]
+        : []),
     ]),
     "exit 0",
   ].join("\n");
@@ -260,6 +321,8 @@ export type BranchCommit = {
   at: number;
   subject: string;
   patchId?: string;
+  /** Beyond the base it sits on as well: its own (an effort's part). */
+  own?: boolean;
 };
 
 export function parseBranchCommits(
@@ -282,6 +345,9 @@ export function parseBranchCommits(
     } else if (kind === "I" && b) {
       const commit = bySha.get(b);
       if (commit) commit.patchId = a;
+    } else if (kind === "O") {
+      const commit = bySha.get(a);
+      if (commit) commit.own = true;
     }
   }
   return out;
@@ -336,8 +402,97 @@ export type UpstreamBranch = {
   dirty: number;
   unpushed?: number;
   target: { ref: string; sha: string; behind: number; ahead: number };
+  /**
+   * What an effort's part sits on (the part it depends on, say): its own
+   * commits (marked own) and how far behind are counted from there.
+   */
+  base?: { ref: string; sha: string; behind: number; ahead: number };
+  /** Where it is pushed, on the forge (its own upstream branch's page). */
+  url?: string;
   commits: BranchCommit[];
 };
+
+/**
+ * A branch's page on the forge, where its own upstream branch is: the
+ * remote's project on the same host as the target (a fork, say).
+ */
+export function pushedBranchUrl(
+  checkout: Pick<ScannedCheckout, "upstream" | "remotes">,
+  target: { provider: ForgeProvider; host: string },
+): string | undefined {
+  const upstream = checkout.upstream;
+  if (!upstream) return undefined;
+  const remote = [...checkout.remotes]
+    .sort((a, b) => b.name.length - a.name.length)
+    .find((each) => upstream.startsWith(`${each.name}/`));
+  if (!remote) return undefined;
+  const project = remoteProject(remote.url);
+  const name = upstream.slice(remote.name.length + 1);
+  if (!project || !name) return undefined;
+  const host = target.host.toLowerCase();
+  if (
+    !(target.provider === "gitlab"
+      ? onGitlabHost(project.host, host)
+      : project.host === host || project.host === `ssh.${host}`)
+  )
+    return undefined;
+  const path = name.split("/").map(encodeURIComponent).join("/");
+  return target.provider === "gitlab"
+    ? `https://${host}/${project.project}/-/tree/${path}`
+    : `https://${host}/${project.project}/tree/${path}`;
+}
+
+/**
+ * A branch's own commits, newest first: beyond the base it sits on (an
+ * effort's part), else those no other listed branch of the project below
+ * it holds (one whose commits, by patch id, are all in this one's), and
+ * the branch below it nearest, when there is one.
+ */
+export function ownCommits(
+  branch: Pick<
+    UpstreamBranch,
+    "key" | "provider" | "host" | "project" | "commits" | "base"
+  >,
+  others: readonly Pick<
+    UpstreamBranch,
+    "key" | "provider" | "host" | "project" | "commits" | "branch"
+  >[] = [],
+): { commits: BranchCommit[]; below?: string } {
+  if (branch.base) {
+    const own = branch.commits.filter((commit) => commit.own);
+    return { commits: own, below: branch.base.ref };
+  }
+  const ids = new Set(
+    branch.commits.flatMap((commit) =>
+      commit.patchId ? [commit.patchId] : [],
+    ),
+  );
+  if (!ids.size) return { commits: branch.commits };
+  const below = others
+    .filter(
+      (other) =>
+        other.key !== branch.key &&
+        other.provider === branch.provider &&
+        other.host.toLowerCase() === branch.host.toLowerCase() &&
+        other.project.toLowerCase() === branch.project.toLowerCase() &&
+        other.commits.length > 0 &&
+        other.commits.length < branch.commits.length &&
+        other.commits.every(
+          (commit) => !!commit.patchId && ids.has(commit.patchId),
+        ),
+    )
+    .sort((a, b) => b.commits.length - a.commits.length);
+  if (!below.length) return { commits: branch.commits };
+  const held = new Set(
+    below.flatMap((other) => other.commits.map((commit) => commit.patchId!)),
+  );
+  return {
+    commits: branch.commits.filter(
+      (commit) => !commit.patchId || !held.has(commit.patchId),
+    ),
+    below: below[0]!.branch,
+  };
+}
 
 /**
  * The request a branch is: one of the user's on the target project at the
@@ -392,9 +547,12 @@ export function branchEntry(
   branch: UpstreamBranch,
   settings: Pick<MrReviewsSettings, "unsent">,
   user: string,
+  /** The other branches read: one below it holds commits not its own. */
+  others: readonly UpstreamBranch[] = [],
 ): MrInboxEntry {
   const unsent = settings.unsent.find((each) => each.key === branch.key);
-  const oldest = branch.commits[branch.commits.length - 1];
+  const own = ownCommits(branch, others);
+  const oldest = own.commits[own.commits.length - 1];
   const newest = branch.commits[0];
   const info: MrBranchInfo = {
     name: branch.branch,
@@ -403,12 +561,16 @@ export function branchEntry(
     workspaceId: branch.member.workspaceId,
     workspaceLabel: branch.member.label,
     path: branch.member.path,
-    target: branch.target.ref,
-    ahead: branch.target.ahead,
-    behind: branch.target.behind,
+    target: branch.base?.ref ?? branch.target.ref,
+    ahead:
+      branch.base?.ahead ??
+      (own.below ? own.commits.length : branch.target.ahead),
+    behind: branch.base?.behind ?? branch.target.behind,
+    ...(own.below ? { below: own.below } : {}),
+    ...(branch.url ? { url: branch.url } : {}),
     dirty: branch.dirty,
     ...(branch.unpushed !== undefined ? { unpushed: branch.unpushed } : {}),
-    commits: branch.commits.slice(0, ROW_COMMITS).map((commit) => ({
+    commits: own.commits.slice(0, ROW_COMMITS).map((commit) => ({
       sha: commit.sha,
       subject: commit.subject,
       at: new Date(commit.at * 1000).toISOString(),
@@ -422,7 +584,8 @@ export function branchEntry(
     number: 0,
     key: branch.key,
     url: "",
-    title: unsent?.title || oldest?.subject || branch.branch,
+    title:
+      unsent?.title || oldest?.subject || branch.member.plan || branch.branch,
     author: user,
     draft: false,
     state: "open",
@@ -599,7 +762,21 @@ export function createUpstreamScanner(options: {
     const read = [...members];
     for (const part of parts) {
       const id = `${part.connectionId}\0${part.path}`;
-      if (known.has(id)) continue;
+      if (known.has(id)) {
+        // Marked by itself as well: still the part, on its base.
+        const at = read.findIndex(
+          (member) =>
+            member.connectionId === part.connectionId &&
+            member.path === part.path,
+        );
+        if (at >= 0 && (part.bases?.length || part.plan))
+          read[at] = {
+            ...read[at]!,
+            ...(part.bases?.length ? { bases: part.bases } : {}),
+            ...(part.plan ? { plan: part.plan } : {}),
+          };
+        continue;
+      }
       known.add(id);
       const identity = live
         .get(part.connectionId)
@@ -613,15 +790,26 @@ export function createUpstreamScanner(options: {
       );
       if (!mine.length) continue;
       const dirs = [...new Set(mine.map((member) => member.path))];
+      const bases = new Map(
+        mine.flatMap((member) =>
+          member.bases?.length ? [[member.path, member.bases] as const] : [],
+        ),
+      );
       let scanned: Map<string, ScannedCheckout>;
       try {
         scanned = parseUpstreamScan(
-          (await connection.run(upstreamScanScript(dirs), 30_000)).stdout,
+          (await connection.run(upstreamScanScript(dirs, bases), 30_000))
+            .stdout,
         );
       } catch {
         continue;
       }
-      const wanted: { dir: string; target: string; cache: string }[] = [];
+      const wanted: {
+        dir: string;
+        target: string;
+        base?: string;
+        cache: string;
+      }[] = [];
       const found: {
         member: UpstreamMember;
         checkout: ScannedCheckout;
@@ -633,9 +821,14 @@ export function createUpstreamScanner(options: {
         const target = targetOf(checkout, settings.hosts);
         if (!target || !target.target.ahead) continue;
         found.push({ member, checkout, target });
-        const cache = `${member.path}\0${checkout.head}\0${target.target.sha}`;
+        const cache = commitsKey(member.path, checkout, target.target.sha);
         if (!commitsCache.has(cache))
-          wanted.push({ dir: member.path, target: target.target.ref, cache });
+          wanted.push({
+            dir: member.path,
+            target: target.target.ref,
+            ...(checkout.base ? { base: checkout.base.sha } : {}),
+            cache,
+          });
       }
       if (wanted.length) {
         try {
@@ -652,8 +845,9 @@ export function createUpstreamScanner(options: {
       for (const { member, checkout, target } of found) {
         const commits =
           commitsCache.get(
-            `${member.path}\0${checkout.head}\0${target.target.sha}`,
+            commitsKey(member.path, checkout, target.target.sha),
           ) ?? [];
+        const url = pushedBranchUrl(checkout, target);
         next.push({
           key: mrBranchKey({ ...target, branch: checkout.branch! }),
           provider: target.provider,
@@ -668,6 +862,8 @@ export function createUpstreamScanner(options: {
             ? { unpushed: checkout.unpushed }
             : {}),
           target: target.target,
+          ...(checkout.base ? { base: checkout.base } : {}),
+          ...(url ? { url } : {}),
           commits,
         });
       }
@@ -675,9 +871,12 @@ export function createUpstreamScanner(options: {
     }
     // A cache entry no branch uses any more goes.
     const used = new Set(
-      next.map(
-        (branch) =>
-          `${branch.member.path}\0${branch.head}\0${branch.target.sha}`,
+      next.map((branch) =>
+        commitsKey(
+          branch.member.path,
+          { head: branch.head, ...(branch.base ? { base: branch.base } : {}) },
+          branch.target.sha,
+        ),
       ),
     );
     for (const key of commitsCache.keys())
@@ -710,6 +909,15 @@ export function createUpstreamScanner(options: {
 }
 
 export type UpstreamScanner = ReturnType<typeof createUpstreamScanner>;
+
+/** A branch's commits as read: by its checkout, head, target and base. */
+function commitsKey(
+  path: string,
+  checkout: Pick<ScannedCheckout, "head" | "base">,
+  target: string,
+): string {
+  return `${path}\0${checkout.head}\0${target}\0${checkout.base?.sha ?? ""}`;
+}
 
 /**
  * Fetches the user's open requests' heads of a branch's target project
