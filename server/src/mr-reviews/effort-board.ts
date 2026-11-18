@@ -3,12 +3,14 @@ import { requestOfBranch, type UpstreamBranch } from "./upstream";
 
 /**
  * The inbox entry of each planned request of an effort, for its Board:
- * the request its part's branch is (by the branch's name, else by the
- * patch ids of its commits, as the inbox links branches), else that
- * branch's own row (not proposed yet). A part whose checkout was not read
- * (not ahead of its target, not headed upstream) is found by its branch's
- * name among the user's requests. Nothing here asks a forge: the entries
- * are the inbox's as computed.
+ * the request its part's branch is (at the branch's head, else by name,
+ * else by the patch ids of its commits, as the inbox links branches),
+ * else that branch's own row (not proposed yet). The request's source
+ * branch may be the part's branch, the branch it was made from, or
+ * `upstream/<part branch>` (a fork's naming). A part whose checkout was
+ * not read (not ahead of its target, not headed upstream) is found by
+ * those names among the user's requests. Nothing here asks a forge: the
+ * entries are the inbox's as computed.
  */
 export function effortPlanEntries(input: {
   effort: Pick<MrEffort, "group">;
@@ -50,8 +52,17 @@ export function effortPlanEntries(input: {
           each.branch === part.branch &&
           each.member.group === input.effort.group,
       );
+    const names = [
+      ...new Set([
+        part.branch,
+        ...(part.from ? [part.from] : []),
+        ...(part.branch.startsWith("upstream/")
+          ? []
+          : [`upstream/${part.branch}`]),
+      ]),
+    ];
     if (branch) {
-      const request = requestOfBranch(branch, requests, input.patchIds);
+      const request = requestOfBranch(branch, requests, input.patchIds, names);
       const found = request ? byKey.get(request.key) : byKey.get(branch.key);
       if (found) out[plan.id] = found;
       continue;
@@ -60,7 +71,7 @@ export function effortPlanEntries(input: {
       (entry) =>
         entry.reasons.includes("authored") &&
         entry.state !== "closed" &&
-        entry.sourceBranch === part.branch &&
+        names.includes(entry.sourceBranch) &&
         inProject(entry),
     );
     const found =

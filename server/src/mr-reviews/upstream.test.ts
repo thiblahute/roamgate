@@ -14,8 +14,11 @@ import { updateGuiSettings } from "../config/gui-settings";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
 import { createMrReviews } from "./module";
 import { openMrStore } from "./store";
+import { effortPlanEntries } from "./effort-board";
+import { mrReviewsSettings } from "./settings";
 import {
   branchCommitsScript,
+  createUpstreamScanner,
   headedGroups,
   parseBranchCommits,
   parseRequestPatchIds,
@@ -406,6 +409,145 @@ test("a checkout's branch, target, commits and a request's patch ids, from real 
     requestOfBranch(branch, [own(8, { sourceBranch: "fix", state: "closed" })]),
   ).toBe(null);
   expect(requestOfBranch(branch, [own(7)])).toBe(null);
+});
+
+test("a part nested under its effort's head workspace links to its fork request at the same head", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const head = g.clone("media/engine", "upstreaming");
+  const clone = g.clone("media/engine", "part");
+  // The part's branch X, pushed to the fork as upstream/X (#591 on GitHub).
+  g.git(clone, "checkout", "-q", "-b", "pr-badge-fork-remote");
+  const tip = g.commit(clone, "a.c", "a\n", "Find a branch's request");
+  const connection = g.connection([
+    { workspace_id: "w-head", label: "upstreaming", cwd: head },
+    { workspace_id: "w-part", label: "pr-badge-fork-remote", cwd: clone },
+  ]);
+  // Only the head workspace is marked; the part sits under it in the tree.
+  const home = upstreamWorkspaceHome({
+    connection_id: "local",
+    path: head,
+    workspace_id: "w-head",
+  });
+  const settings = mrReviewsSettings({
+    hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+    upstream_workspaces: [
+      { connection_id: "local", path: head, workspace_id: "w-head" },
+    ],
+  });
+  const workspaceTree: WorkspaceTree = {
+    version: WORKSPACE_TREE_VERSION,
+    nodes: [
+      {
+        id: "n-head",
+        kind: "workspace",
+        parent: null,
+        ref: { connection_id: "local", path: head, workspace_id: "w-head" },
+      },
+      {
+        id: "n-part",
+        kind: "workspace",
+        parent: "n-head",
+        ref: { connection_id: "local", path: clone, workspace_id: "w-part" },
+      },
+    ],
+  };
+  const part = {
+    connectionId: "local",
+    path: clone,
+    branch: "pr-badge-fork-remote",
+    workspaceId: "w-part",
+    from: "upstream/pr-badge-fork-remote",
+  };
+  const request = own(591, {
+    sourceBranch: "upstream/pr-badge-fork-remote",
+    headSha: tip,
+  });
+  const scanner = (withParts: boolean) =>
+    createUpstreamScanner({
+      connections: () => [connection],
+      tree: async () => workspaceTree,
+      settings: async () => settings,
+      items: () => [request],
+      ...(withParts
+        ? {
+            parts: () => [
+              {
+                connectionId: "local",
+                workspaceId: "w-part",
+                label: part.branch,
+                path: clone,
+                group: home,
+              },
+            ],
+          }
+        : {}),
+    });
+  // Without the effort's parts, only the head workspace is read.
+  const before = scanner(false);
+  await before.refresh(true);
+  expect(before.branches().map((each) => each.branch)).toEqual([]);
+  const scanned = scanner(true);
+  await scanned.refresh(true);
+  const branch = scanned.branches().find((each) => each.member.path === clone)!;
+  expect(branch).toMatchObject({
+    branch: "pr-badge-fork-remote",
+    head: tip,
+    member: { group: home, label: "pr-badge-fork-remote" },
+  });
+  // The workspaces headed upstream are still only the marked ones.
+  expect(scanned.members().map((each) => each.path)).not.toContain(clone);
+  // At its head, whatever the request's source branch is called; no
+  // request head fetched for it.
+  expect(requestOfBranch(branch, [request])?.number).toBe(591);
+  expect(
+    connection.scripts.some((script) => script.includes("refs/roamgate/mr/")),
+  ).toBe(false);
+  // Elsewhere: not by head, nor by that other name unless given.
+  const moved = { ...request, headSha: "f".repeat(40) };
+  expect(requestOfBranch(branch, [moved])).toBe(null);
+  expect(requestOfBranch(branch, [moved], new Map(), [part.from])?.number).toBe(
+    591,
+  );
+  // On the effort's Board: in its request's lane, scanned or not.
+  const entry = {
+    ...request,
+    section: "authored" as const,
+    unread: null,
+    isNew: false,
+    lane: "waiting" as const,
+  };
+  const plan = {
+    id: "p1",
+    name: "pr-badge-fork-remote",
+    commits: ["c1"],
+    dependsOn: [],
+    state: "accepted" as const,
+    at: "",
+    by: "agent" as const,
+    part,
+  };
+  for (const branches of [scanned.branches(), before.branches()])
+    expect(
+      effortPlanEntries({
+        effort: { group: home },
+        plans: [plan],
+        branches,
+        entries: [{ ...entry, headSha: "f".repeat(40) }],
+        patchIds: new Map(),
+      }).p1?.number,
+    ).toBe(591);
+  // Not made from upstream/X: found under that name all the same.
+  expect(
+    effortPlanEntries({
+      effort: { group: home },
+      plans: [{ ...plan, part: { ...part, from: undefined } }],
+      branches: before.branches(),
+      entries: [{ ...entry, headSha: "f".repeat(40) }],
+      patchIds: new Map(),
+    }).p1?.number,
+  ).toBe(591);
 });
 
 test("branch rows: lane, not proposed yet, overrides, and the request's key once it opens", async () => {

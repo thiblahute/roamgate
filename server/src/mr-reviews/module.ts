@@ -26,6 +26,7 @@ import {
   branchEntry,
   createUpstreamScanner,
   requestOfBranch,
+  type UpstreamMember,
 } from "./upstream";
 import { renameOverrideKeys } from "./overrides";
 import { join } from "node:path";
@@ -276,7 +277,34 @@ export function createMrReviews(options: {
     tree: options.tree?.read ?? (async () => emptyWorkspaceTree()),
     settings,
     items: () => inbox.items(),
+    // Read when the scan runs, after the efforts are made below.
+    parts: (value) => effortParts(value),
   });
+  function effortParts(value: MrReviewsSettings): UpstreamMember[] {
+    try {
+      return partMembers(value);
+    } catch {
+      // Not made yet, or a ledger not readable: only the marked ones.
+      return [];
+    }
+  }
+  function partMembers(value: MrReviewsSettings): UpstreamMember[] {
+    return value.efforts.flatMap((effort) =>
+      efforts.store.ledger(effort.id).plans.flatMap((plan) =>
+        plan.part
+          ? [
+              {
+                connectionId: plan.part.connectionId,
+                workspaceId: plan.part.workspaceId ?? "",
+                label: plan.part.branch,
+                path: plan.part.path,
+                group: effort.group,
+              },
+            ]
+          : [],
+      ),
+    );
+  }
   function upstreamRows(value: MrReviewsSettings) {
     const items = inbox.items();
     const users = inbox.users();
