@@ -448,12 +448,17 @@ export async function handleEffortRpc(
         | { cwd: string; workspaceId?: never }
       ),
     ) => Promise<{ path: string; workspaceId?: string }>;
-    /** Puts a workspace into a Workspaces-tree group. */
+    /**
+     * Puts a workspace in the Workspaces tree: under the workspace `under`
+     * (nested in its node, as Move into... does) when given, else into the
+     * group `group`.
+     */
     place?: (input: {
       connectionId: string;
       path: string;
       workspaceId?: string;
       group: string;
+      under?: { connectionId: string; path: string; workspaceId?: string };
     }) => Promise<void>;
     /** Opens a Roamgate review of a range in a workspace's Changes. */
     openRange?: (input: {
@@ -1258,14 +1263,30 @@ export async function handleEffortRpc(
           summary: `Part ${branch} made for ${plan.name}${start ? ` from ${base}${ported ? " (ported)" : ""}` : on?.part ? ` on ${on.part.branch}` : ""}`,
         },
       );
-      await deps
-        .place?.({
-          connectionId: effort.clone.connectionId,
-          path: made.path,
-          ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
-          group: effort.group,
-        })
-        .catch(() => {});
+      // Under the effort's head workspace when it has one, else in its
+      // group (and there too when the head cannot take it).
+      const placed = {
+        connectionId: effort.clone.connectionId,
+        path: made.path,
+        ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
+        group: effort.group,
+      };
+      const underHead = effort.head
+        ? await deps
+            .place?.({
+              ...placed,
+              under: {
+                connectionId: effort.head.connectionId,
+                path: effort.head.path,
+                ...(effort.head.workspaceId
+                  ? { workspaceId: effort.head.workspaceId }
+                  : {}),
+              },
+            })
+            .then(() => true)
+            .catch(() => false)
+        : false;
+      if (!underHead) await deps.place?.(placed).catch(() => {});
       // Its branch is a request not proposed yet until its request opens.
       await deps.upstream.refresh(true);
       const row = deps.upstream

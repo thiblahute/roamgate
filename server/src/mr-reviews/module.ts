@@ -663,7 +663,13 @@ export function createMrReviews(options: {
             : {}),
           ...(options.tree
             ? {
-                place: async ({ connectionId, path, workspaceId, group }) => {
+                place: async ({
+                  connectionId,
+                  path,
+                  workspaceId,
+                  group,
+                  under,
+                }) => {
                   await options.tree!.apply([
                     {
                       op: "move",
@@ -674,7 +680,17 @@ export function createMrReviews(options: {
                           ...(workspaceId ? { workspace_id: workspaceId } : {}),
                         },
                       },
-                      parent: { node: group },
+                      parent: under
+                        ? {
+                            workspace: {
+                              connection_id: under.connectionId,
+                              path: under.path,
+                              ...(under.workspaceId
+                                ? { workspace_id: under.workspaceId }
+                                : {}),
+                            },
+                          }
+                        : { node: group },
                     },
                   ]);
                 },

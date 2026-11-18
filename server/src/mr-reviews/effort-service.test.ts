@@ -493,6 +493,7 @@ test("a part of an effort headed in a linked worktree starts from the repository
     },
   }));
   const calls: Record<string, unknown>[] = [];
+  const applied: any[] = [];
   const reviews = createMrReviews({
     run: async () => ({ code: 1, stdout: "", stderr: "" }),
     store: openMrStore(join(dir, `state-${Math.random()}.json`)),
@@ -511,7 +512,9 @@ test("a part of an effort headed in a linked worktree starts from the repository
           },
         ],
       }),
-      apply: async () => {},
+      apply: async (ops) => {
+        applied.push(...ops);
+      },
     },
     // As Herdr does: no new worktree from a linked one, by id or by path.
     createWorktree: async (input) => {
@@ -577,6 +580,24 @@ test("a part of an effort headed in a linked worktree starts from the repository
     workspaceId: "w1",
     branch: "pool-a",
   });
+  // The part's workspace sits under the effort's head, not in its group.
+  expect(applied).toEqual([
+    {
+      op: "move",
+      subject: {
+        workspace: {
+          connection_id: "local",
+          path: join(g.root, "part-pool-a"),
+        },
+      },
+      parent: {
+        workspace: expect.objectContaining({
+          connection_id: "local",
+          path: head,
+        }),
+      },
+    },
+  ]);
   // None open there: the main checkout's path.
   workspaces.splice(0, 1);
   expect(

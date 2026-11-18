@@ -1119,7 +1119,8 @@ request: the leader session proposes them, you **Accept**, `:split NEW`
 (the selected commits out of their plan) or **Drop** them, and `:plan NAME` puts the selected commits in one
 (a commit is in one planned request only, across efforts). An accepted
 one's **Make its part** (`:part [NAME]`) makes a worktree workspace
-in the effort's group through your worktree command, moves it onto its
+through your worktree command, nested under the effort's head workspace
+in the Workspaces tree (in the effort's group when it has no head), moves it onto its
 base and cherry-picks its commits in order, then folds each `fixup!`,
 `squash!` or `amend!` commit into its target (a plan's fixup rows say
 where they fold; one whose target is not in the plan stays a commit and
