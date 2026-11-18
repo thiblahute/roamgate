@@ -323,14 +323,18 @@ export function createLegacyConnectionRuntime(args: {
       assertSupportedHerdrProtocol(protocol);
       return protocol;
     },
+    // Creation checks Herdr's current state, never a reused answer.
     createEmptyWorkspace: createEmptyWorkspaceCreator(
-      (method, params, timeoutMs) => herdr.call(method, params, timeoutMs),
+      (method, params, timeoutMs) =>
+        herdr.call(method, params, timeoutMs, undefined, { fresh: true }),
     ),
     validateCreationSource: async (source) => {
       const result = await herdr.call(
         "pane.get",
         { pane_id: source.pane_id },
         5000,
+        undefined,
+        { fresh: true },
       );
       assertEndpointCreationSource(source, result?.pane);
     },

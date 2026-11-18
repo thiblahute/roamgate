@@ -40,6 +40,12 @@ type SubscribeCall = {
   suppressAck?: boolean;
 };
 
+/**
+ * The tests hand events to the loop themselves, not through the client's
+ * subscription, so the client never learns to drop its reused pane lists.
+ */
+const newClient = (path: string) => new HerdrClient(path, { readReuseMs: 0 });
+
 function fakeHerdr(options: {
   panes: () => unknown[];
   ackSubscribe?: (call: SubscribeCall) => void;
@@ -162,7 +168,7 @@ test("subscribes per agent pane and forwards status events", async () => {
     panes: () => [agentPane("w1:p1"), plainPane("w1:p2")],
   });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const events: unknown[] = [];
   const paneLists: Array<{ result: unknown; revision?: number }> = [];
   client.on("event", (event) => events.push(event));
@@ -201,7 +207,7 @@ test("rebuilds the subscription when a membership event changes the pane set", a
   let panes = [agentPane("w1:p1")];
   const herdr = fakeHerdr({ panes: () => panes });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -241,7 +247,7 @@ test("rebuilds immediately when a pane move replaces the subscribed pane id", as
   let panes = [agentPane("w1:p1")];
   const herdr = fakeHerdr({ panes: () => panes });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -275,7 +281,7 @@ test("rebuilds immediately when a pane move replaces the subscribed pane id", as
 test("ignores unrelated events and membership events that do not change the set", async () => {
   const herdr = fakeHerdr({ panes: () => [agentPane("w1:p1")] });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -319,7 +325,7 @@ test("retries with a fresh listing when herdr rejects the subscription", async (
     },
   });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const errors: string[] = [];
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
@@ -341,7 +347,7 @@ test("waits for an agent pane before subscribing", async () => {
   let panes: unknown[] = [plainPane("w1:p1")];
   const herdr = fakeHerdr({ panes: () => panes });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -367,7 +373,7 @@ test("waits for an agent pane before subscribing", async () => {
 test("resubscribes when the subscription socket closes", async () => {
   const herdr = fakeHerdr({ panes: () => [agentPane("w1:p1")] });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -389,7 +395,7 @@ test("honors a rebuild requested while a listing was in flight", async () => {
   let defer = true;
   const herdr = fakeHerdr({ panes: () => panes, deferLists: () => defer });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
@@ -423,7 +429,7 @@ test("honors a rebuild requested while a listing was in flight", async () => {
 test("recovers when subscribe throws synchronously", async () => {
   const herdr = fakeHerdr({ panes: () => [agentPane("w1:p1")] });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   let thrown = false;
   const flaky = {
     call: (method: string, params: Record<string, unknown>, timeout?: number) =>
@@ -460,7 +466,7 @@ test("recovers when subscribe throws synchronously", async () => {
 test("stop is idempotent and closes the active subscription", async () => {
   const herdr = fakeHerdr({ panes: () => [agentPane("w1:p1")] });
   await herdr.ready;
-  const client = new HerdrClient(herdr.path);
+  const client = newClient(herdr.path);
   const loop = createAgentStatusSubscriptionLoop({
     herdr: client,
     connectionId: "test",
