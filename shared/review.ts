@@ -63,6 +63,22 @@ export type ReviewTarget =
 
 export type ReviewSide = "old" | "new";
 
+/** Path parts that name a tool's metadata, never a branch of code. */
+const METADATA_PARTS = new Set(["entire", "checkpoint", "checkpoints"]);
+
+/**
+ * A ref that holds a tool's metadata rather than code: anything outside
+ * `refs/heads/` and `refs/remotes/` (notes, stashes), and branches such as
+ * Entire's `entire/checkpoints/v1`. Never a branch's base, even when a
+ * remote's HEAD names it.
+ */
+export function isMetadataRef(name: string): boolean {
+  if (name.startsWith("refs/") && !/^refs\/(heads|remotes)\//.test(name))
+    return true;
+  const parts = name.replace(/^refs\/(heads|remotes)\//, "").split("/");
+  return parts.some((part) => METADATA_PARTS.has(part.toLowerCase()));
+}
+
 /** A last step's review: "last step 14:02" (when it ended), else its trees. */
 export function describeStepTarget(
   target: Extract<ReviewTarget, { kind: "step" }>,

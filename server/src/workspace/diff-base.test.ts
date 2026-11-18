@@ -3,6 +3,7 @@ import {
   chooseDefaultBase,
   type DefaultBaseFacts,
   defaultBaseCandidates,
+  isMetadataRef,
   parseFactsOutput,
   resolveDefaultBase,
   selectDiffBase,
@@ -48,6 +49,56 @@ describe("Inspector comparison base selection", () => {
     expect(automatic(branches.slice(2), "")).toBe(
       "refs/remotes/origin/release/stable",
     );
+  });
+
+  test("passes over a remote HEAD naming a metadata branch (Entire's checkpoints)", () => {
+    const branches = [
+      ...refs(
+        "refs/heads/main",
+        "refs/heads/feature",
+        "refs/remotes/origin/feature",
+        "refs/remotes/origin/entire/checkpoints/v1",
+      ),
+      {
+        name: "refs/remotes/origin/HEAD",
+        symbolic: "refs/remotes/origin/entire/checkpoints/v1",
+      },
+    ];
+    expect(automatic(branches, "main")).toBe("refs/heads/main");
+    expect(automatic(branches, "")).toBe("refs/heads/main");
+    // Another remote's HEAD naming a real branch is taken instead.
+    expect(
+      automatic(
+        [
+          ...branches,
+          ...refs("refs/remotes/upstream/main"),
+          {
+            name: "refs/remotes/upstream/HEAD",
+            symbolic: "refs/remotes/upstream/main",
+          },
+        ],
+        "",
+      ),
+    ).toBe("refs/remotes/upstream/main");
+  });
+
+  test("tells metadata refs from branches", () => {
+    for (const name of [
+      "refs/remotes/origin/entire/checkpoints/v1",
+      "entire/checkpoints/v1",
+      "origin/entire/checkpoints/v1",
+      "refs/notes/commits",
+      "refs/stash",
+    ])
+      expect(isMetadataRef(name)).toBe(true);
+    for (const name of [
+      "refs/heads/main",
+      "refs/remotes/origin/main",
+      "origin/release/stable",
+      "main",
+      "entirely-new",
+    ])
+      expect(isMetadataRef(name)).toBe(false);
   });
 
   test("supports other remotes, configured local defaults, and origin fallbacks", () => {

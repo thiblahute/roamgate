@@ -1,6 +1,9 @@
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 import { gitShellCommandArgv } from "./git-shell";
+import { isMetadataRef } from "../../../shared/review";
+
+export { isMetadataRef };
 
 type Ref = { name: string; symbolic?: string; sha?: string };
 
@@ -16,14 +19,17 @@ export type DefaultBaseCandidates = { local?: string; remote?: string };
  * the local branch of the same name. A remote HEAD is the recorded
  * default, unlike the current feature branch's upstream: origin's first,
  * then other remotes'; without one, origin's `init.defaultBranch`, main
- * or master, and the local one of the same name.
+ * or master, and the local one of the same name. A remote HEAD naming a
+ * metadata ref (isMetadataRef) is no default branch and is passed over.
  */
 export function defaultBaseCandidates(
   refs: Ref[],
   configuredDefault: string,
 ): DefaultBaseCandidates {
   const existing = new Set(
-    refs.filter((ref) => !ref.symbolic).map((ref) => ref.name),
+    refs
+      .filter((ref) => !ref.symbolic && !isMetadataRef(ref.name))
+      .map((ref) => ref.name),
   );
   const has = (name: string) => (existing.has(name) ? name : undefined);
   const remoteHeads = refs
@@ -31,7 +37,8 @@ export function defaultBaseCandidates(
       (ref) =>
         ref.name.startsWith("refs/remotes/") &&
         ref.name.endsWith("/HEAD") &&
-        ref.symbolic,
+        ref.symbolic &&
+        !isMetadataRef(ref.symbolic),
     )
     .sort(
       (a, b) =>

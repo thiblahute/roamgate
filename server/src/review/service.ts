@@ -25,6 +25,7 @@ import {
   EFFORT_NO_LEADER,
   EFFORT_SESSION_PREFIX,
   describeStepTarget,
+  isMetadataRef,
   isSuggestion,
   REVIEW_EFFORT_ITEMS,
   REVIEW_EFFORT_TABS,
@@ -1895,8 +1896,10 @@ export function createReviewService(args: {
         sameTarget(s.target, target),
     );
     // Automatic's base moved between the local default branch and its
-    // remote counterpart (a stale local main caught up, or pushed): the
-    // branch's review follows it, comments and all, as after a rebase.
+    // remote counterpart (a stale local main caught up, or pushed), or off
+    // a metadata ref it was wrongly taken from (a remote HEAD naming
+    // Entire's checkpoints): the branch's review follows it, comments and
+    // all, as after a rebase.
     const moved =
       !found && automatic
         ? [...sessions.values()]
@@ -1909,7 +1912,8 @@ export function createReviewService(args: {
                 target.kind === "range" &&
                 !s.target.compare &&
                 s.target.head === target.head &&
-                counterpartBases(s.target.base, target.base),
+                (counterpartBases(s.target.base, target.base) ||
+                  isMetadataRef(s.target.base)),
             )
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
         : undefined;

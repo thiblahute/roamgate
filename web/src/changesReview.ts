@@ -5,6 +5,7 @@ import {
   type ReviewTarget,
   type ReviewThread,
 } from "../../shared/review";
+import { onMetadataBase } from "./checkoutReviews";
 import { trimRoot } from "./filesystemPaths";
 import type { LastStepTarget } from "./types";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
@@ -136,7 +137,9 @@ export function scopeReview(
       target.head === "HEAD"
     ) {
       if (scope.base) rank = target.base === scope.base ? 1 : 0;
-      else if (session.automaticBase !== false)
+      // Not one Automatic took off a metadata ref: shown with the
+      // checkout's other threads until its first comment moves it.
+      else if (session.automaticBase !== false && !onMetadataBase(session))
         // Automatic's review: of that base, else of its counterpart, else
         // any review that follows Automatic.
         rank = !scope.automaticBase

@@ -299,6 +299,77 @@ test("when Automatic's base moves, the branch's review follows it with its comme
   expect(service.list({ root }).length).toBe(1);
 });
 
+/**
+ * A remote whose HEAD names Entire's metadata branch (an orphan
+ * "Initialize metadata branch"), as `git remote set-head` can leave it.
+ */
+function entireRepository() {
+  const { root, upstream } = repository();
+  git(upstream, "checkout", "-q", "--orphan", "entire/checkpoints/v1");
+  git(
+    upstream,
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "Initialize metadata branch",
+  );
+  git(upstream, "checkout", "-q", "main");
+  git(root, "fetch", "-q");
+  git(root, "remote", "set-head", "origin", "entire/checkpoints/v1");
+  return { root, upstream };
+}
+
+test("a remote HEAD naming Entire's checkpoints is no base: the default branch is", async () => {
+  const { root } = entireRepository();
+  expect(git(root, "symbolic-ref", "refs/remotes/origin/HEAD").trim()).toBe(
+    "refs/remotes/origin/entire/checkpoints/v1",
+  );
+  const { agentOpen, optionR } = setup(root);
+  expect(await branchScopeBase(root)).toBe("refs/remotes/origin/main");
+  expect((await optionR()).session.target).toEqual({
+    kind: "range",
+    base: "origin/main",
+    head: "HEAD",
+  });
+  expect((await agentOpen()).session.target).toBe("origin/main..HEAD");
+});
+
+test("a branch's review once based on a metadata ref follows Automatic to the default branch", async () => {
+  const { root } = entireRepository();
+  const { service, branchComment } = setup(root);
+  // Opened before: Automatic took the remote HEAD's metadata branch.
+  const before = service.open({
+    connectionId: "local",
+    workspaceId: "w1",
+    root,
+    target: {
+      kind: "range",
+      base: "origin/entire/checkpoints/v1",
+      head: "HEAD",
+    },
+    automatic: true,
+  });
+  service.addThread({
+    sessionId: before.session.id,
+    anchor: { path: "a.ts", line: 1, side: "new" },
+    text: "Written then",
+  });
+  const after = await branchComment("Written now");
+  expect(after.session.id).toBe(before.session.id);
+  const now = service.get({ sessionId: before.session.id });
+  expect(now.session.target).toEqual({
+    kind: "range",
+    base: "origin/main",
+    head: "HEAD",
+  });
+  expect(now.threads.map((thread) => thread.comments[0]?.body)).toEqual([
+    "Written then",
+    "Written now",
+  ]);
+  expect(service.list({ root }).length).toBe(1);
+});
+
 test("an agent's range of the checked-out branch joins the Branch scope's review", async () => {
   const { root } = repository();
   const { service, agentOpen, branchComment } = setup(root);
