@@ -219,6 +219,21 @@ if (process.env.ROAMGATE_MR_REVIEWS_BRANCHES_DOM_TEST !== "1") {
       "from fix",
       "2 unpushed",
     ]);
+    // A request's reference and title link to it on the forge, in a new
+    // tab, and so does an action over its card; a branch not pushed has
+    // neither.
+    const link = row(entry(1).key).querySelector("a.mr-reviews-forge-link");
+    expect(link?.getAttribute("href")).toBe(entry(1).url);
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.textContent).toBe("!1 Change 1");
+    expect(
+      row(entry(1).key)
+        .closest("li")
+        ?.querySelector("a.mr-reviews-forge")
+        ?.getAttribute("aria-label"),
+    ).toBe("Open on GitLab (o)");
+    expect(row(branchKey).querySelector("a")).toBeNull();
+    expect(row(branchKey).closest("li")?.querySelector("a")).toBeNull();
     // b: it will be a request, said with Undo.
     await press("j");
     await press("j");

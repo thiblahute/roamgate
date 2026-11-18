@@ -68,32 +68,102 @@
   min-width: 0;
 }
 
-/* A request: the grip it is dragged by, its row, its up / down buttons
-   when selected. */
+/* A request: its card, and its actions over the card's top right corner
+   (never beside it: a card keeps the width of its list, selected or not). */
 .mr-reviews-item {
   position: relative;
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
 }
 
+/* The card is not a <button> (the forge link inside): look like one. */
 .mr-reviews-item > .mr-reviews-row {
-  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.mr-reviews-item > .mr-reviews-row:hover {
+  border-color: var(--accent);
+}
+
+.mr-reviews-item > .mr-reviews-row:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* An action always shown (its home): the card's text keeps clear of it. */
+.mr-reviews-item.has-action:not(.is-selected) > .mr-reviews-row {
+  padding-right: 34px;
+}
+
+.mr-reviews-actions {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border-radius: 6px;
+}
+
+.mr-reviews-actions:empty {
+  display: none;
+}
+
+.mr-reviews-actions > .assistant-icon-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.mr-reviews-actions > .mr-reviews-action-more {
+  display: none;
+}
+
+.mr-reviews-item:hover > .mr-reviews-actions,
+.mr-reviews-item.is-selected > .mr-reviews-actions,
+.mr-reviews-item:focus-within > .mr-reviews-actions {
+  border: 1px solid var(--viewer-border);
+  background: var(--viewer-panel-bg);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 25%));
+}
+
+/* The selected card's: a compact strip under its last line, over none
+   of its text. */
+.mr-reviews-item.is-selected > .mr-reviews-actions {
+  position: static;
+  justify-content: flex-end;
+  margin-top: 2px;
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+
+.mr-reviews-item:hover > .mr-reviews-actions > .mr-reviews-action-more,
+.mr-reviews-item.is-selected > .mr-reviews-actions > .mr-reviews-action-more,
+.mr-reviews-item:focus-within > .mr-reviews-actions > .mr-reviews-action-more {
+  display: inline-flex;
 }
 
 .mr-reviews-grip {
-  display: flex;
-  flex: none;
   align-items: center;
-  margin-right: -2px;
+  justify-content: center;
+  width: 16px;
   color: var(--muted);
   cursor: grab;
-  opacity: 0;
-}
-
-.mr-reviews-item:hover > .mr-reviews-grip,
-.mr-reviews-item.is-dragging > .mr-reviews-grip {
-  opacity: 1;
 }
 
 .mr-reviews-item.is-dragging {
@@ -119,12 +189,37 @@
   bottom: -5px;
 }
 
+/* The Leader button beside an effort's card. */
 .mr-reviews-move {
   display: flex;
   flex: none;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+}
+
+/* A row's reference and title: its page on the forge. */
+.mr-reviews-forge-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mr-reviews-forge-link > .mr-reviews-number {
+  color: var(--accent);
+}
+
+.mr-reviews-forge-link:hover,
+.mr-reviews-forge-link:hover > .mr-reviews-number {
+  text-decoration: underline;
+}
+
+/* A tap on a phone opens the card: only the number is the link there. */
+.is-mobile .mr-reviews-forge-link {
+  pointer-events: none;
+}
+
+.is-mobile .mr-reviews-forge-link > .mr-reviews-number {
+  pointer-events: auto;
 }
 
 .mr-reviews-row.is-selected {
@@ -810,12 +905,27 @@
 }
 
 .is-board .mr-reviews-body {
+  overflow-x: hidden;
   overflow-y: auto;
+}
+
+/* Nothing is wider than the pane: the header, the search and the effort
+   cards fit it; only the board scrolls sideways, inside. */
+.mr-reviews-body > *,
+.mr-reviews-sections > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mr-reviews-body .assistant-task-list {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .mr-reviews-board {
   display: flex;
   flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
   align-items: stretch;
   gap: 12px;
   min-height: 320px;
