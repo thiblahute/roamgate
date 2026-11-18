@@ -95,13 +95,14 @@ function sizedSendInput(client: HerdrClient, lineBytes: number) {
   }
 }
 
-for (const [transport, useBunSocket] of [
-  ["Bun.connect", true],
-  ["node:net", false],
+for (const [transport, useBunSocket, syncConnect] of [
+  ["a synchronous connect", true, true],
+  ["Bun.connect", true, false],
+  ["node:net", false, false],
 ] as const) {
   describe(`HerdrClient one-shot lifecycle over ${transport}`, () => {
     const oneShot = (socketPath: string) =>
-      new HerdrClient(socketPath, { useBunSocket });
+      new HerdrClient(socketPath, { useBunSocket, syncConnect });
 
     test("rechecks authorization after socket connection and sends no revoked request", async () => {
       let received = false;
@@ -224,6 +225,21 @@ for (const [transport, useBunSocket] of [
     });
   });
 }
+
+describe("HerdrClient synchronous connect", () => {
+  test("falls back to Bun.connect when the synchronous connect fails", async () => {
+    const missing = join(
+      tmpdir(),
+      `herdr-gui-herdr-client-missing-${crypto.randomUUID()}.sock`,
+    );
+    const tooLong = join(tmpdir(), "x".repeat(120), "herdr.sock");
+    for (const socketPath of [missing, tooLong]) {
+      await expect(
+        new HerdrClient(socketPath, { syncConnect: true }).call("ping"),
+      ).rejects.toThrow();
+    }
+  });
+});
 
 describe("HerdrClient subscription lifecycle", () => {
   test("close before acknowledgement rejects ready and resolves closed", async () => {
