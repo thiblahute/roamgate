@@ -1175,12 +1175,64 @@ describe("EndpointTerminalSession", () => {
 
   test("rejects connect when the terminal has no pane", async () => {
     const socketPath = await startSessionServer({});
+    let lookups = 0;
     const session = new EndpointTerminalSession(
       socketPath,
       "term_x",
-      async () => null,
+      async () => {
+        lookups++;
+        return null;
+      },
+      silentLogger,
+      undefined,
+      true,
+      [1, 1],
     );
     await expect(session.connect(80, 24)).rejects.toThrow("no pane found");
+    expect(lookups).toBe(3);
+  });
+
+  test("looks the pane up while the endpoint handshake runs", async () => {
+    const order: string[] = [];
+    const socketPath = await startSessionServer({
+      onHello: () => order.push("hello"),
+    });
+    const session = new EndpointTerminalSession(
+      socketPath,
+      "term_1",
+      async () => {
+        order.push("lookup");
+        await Bun.sleep(30);
+        order.push("found");
+        return "w1:p1";
+      },
+    );
+    try {
+      await session.connect(80, 24);
+      expect(order).toEqual(["lookup", "hello", "found"]);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("retries a lookup that misses a terminal created a moment ago", async () => {
+    const socketPath = await startSessionServer({});
+    let lookups = 0;
+    const session = new EndpointTerminalSession(
+      socketPath,
+      "term_1",
+      async () => (++lookups < 3 ? null : "w1:p1"),
+      silentLogger,
+      undefined,
+      true,
+      [1, 1, 1],
+    );
+    try {
+      await session.connect(80, 24);
+      expect(lookups).toBe(3);
+    } finally {
+      session.close();
+    }
   });
 
   test("classifies input and sends pane.scroll with absolute offsets", async () => {
@@ -3427,7 +3479,8 @@ test("required pane.focus absent fails attach explicitly without legacy takeover
       "does not advertise pane.focus",
     );
     expect(requests).toEqual([]);
-    expect(lookups).toBe(0);
+    // The read-only pane lookup runs during the handshake; nothing else.
+    expect(lookups).toBeLessThanOrEqual(1);
     expect(bridge.statusTerminals()).toEqual([]);
     expect(await bridge.navigationMode()).toBe("browser-local");
   } finally {

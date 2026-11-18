@@ -25,6 +25,9 @@ const ESC_FLUSH_MS = 25;
 // dropped from echo timing: the sample would mostly measure idle time.
 export const ECHO_SAMPLE_MAX_MS = 5000;
 const FIRST_SURFACE_WAIT_MS = 10_000;
+// Waits between pane lookups that miss: 1.2 s in all, past the second a
+// pane list answer is reused for.
+const PANE_LOOKUP_RETRY_MS = [100, 300, 800];
 // Boot correction plus rounding follow-ups; nested splits can need three.
 const SURFACE_FIT_MAX_ATTEMPTS = 3;
 // How long a misfitting frame waits for the settled replacement.
@@ -98,6 +101,7 @@ export class EndpointTerminalSession extends EventEmitter {
     private logger: Logger = silentLogger,
     private firstSurfaceWaitMs = FIRST_SURFACE_WAIT_MS,
     surfaceCodecsEnabled = true,
+    private paneLookupRetryMs: readonly number[] = PANE_LOOKUP_RETRY_MS,
   ) {
     super();
     this.client = new EndpointClient(socketPath, surfaceCodecsEnabled);
@@ -143,10 +147,14 @@ export class EndpointTerminalSession extends EventEmitter {
       const mark = (phase: string) => {
         phases[phase] = Math.round(performance.now() - startedAt);
       };
+      // The lookup only needs Herdr's control socket: it runs during the
+      // endpoint handshake instead of after it.
+      const lookup = this.findPaneId();
+      lookup.catch(() => undefined);
       await this.client.connect(surfaceSize.cols, surfaceSize.rows);
       mark("hello_ms");
       this.client.assertMethod("pane.focus");
-      const paneId = await this.lookupPaneId(this.terminalId);
+      const paneId = await lookup;
       mark("lookup_ms");
       if (!paneId) {
         throw new Error(
@@ -187,6 +195,21 @@ export class EndpointTerminalSession extends EventEmitter {
         this.connecting = null;
       });
     return this.connecting;
+  }
+
+  /**
+   * The pane showing this terminal. A terminal created a moment ago can be
+   * missing from a pane list Herdr's client reuses (see REUSED_READS in
+   * herdr-client) until Herdr's event for it arrives, so a miss is retried
+   * for a little longer than that reuse lasts.
+   */
+  private async findPaneId(): Promise<string | null> {
+    for (const delayMs of [...this.paneLookupRetryMs, null]) {
+      const paneId = await this.lookupPaneId(this.terminalId);
+      if (paneId || delayMs === null || this.closed) return paneId;
+      await Bun.sleep(delayMs);
+    }
+    return null;
   }
 
   private enqueueCommand<T>(run: () => Promise<T>): Promise<T> {
