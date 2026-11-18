@@ -1,5 +1,12 @@
-import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   BLOCK_STATUS_LABELS,
   type Block,
@@ -8,6 +15,8 @@ import {
   clockOf,
   clockMinutes,
   DAY_STATUS_LABELS,
+  dayProjects,
+  formatHoursClock,
   acceptanceLost,
   evidenceText,
   failureText,
@@ -29,6 +38,11 @@ import {
   isoAt,
   openQuestions,
   placeIn,
+  plural,
+  PROJECT_STATE_LABELS,
+  type ProjectTotal,
+  projectKey,
+  projectState,
   type Preview,
   recentRange,
   SOURCE_LABELS,
@@ -106,6 +120,18 @@ export function HoursView({
     if (error) errorRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [error]);
   const [submit, setSubmit] = useState<Submit | null>(null);
+  /** The project lines shown open, by projectKey, for the date shown. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const toggleLine = useCallback(
+    (key: string) =>
+      setExpanded((current) => {
+        const next = new Set(current);
+        if (!next.delete(key)) next.add(key);
+        return next;
+      }),
+    [],
+  );
   const request = useRef(0);
   const poll = useRef<number | null>(null);
   const alive = useRef(true);
@@ -159,6 +185,7 @@ export function HoursView({
     setLoading(true);
     setDay(null);
     setSubmit(null);
+    setExpanded(new Set());
     void load();
   }, [load]);
   useEffect(() => {
@@ -231,6 +258,22 @@ export function HoursView({
     }
     setBusy(null);
   };
+
+  /** Accepts blocks one by one, then says which acceptances did not hold. */
+  const acceptBlocks = (key: string, ids: readonly string[]) =>
+    void operate(
+      key,
+      async () => {
+        for (const id of ids)
+          await timeReport("block-accept", { date, block: id });
+      },
+      (next) => {
+        const lost = ids.filter((id) => acceptanceLost(id, next)).length;
+        return lost
+          ? `The provider did not keep ${lost === 1 ? "one acceptance" : `${lost} acceptances`}: those blocks are still to review.`
+          : null;
+      },
+    );
 
   const startPreview = async () => {
     setSubmit({ step: "previewing" });
@@ -366,20 +409,21 @@ export function HoursView({
         {loading && !day ? <p className="hours-muted">Loading...</p> : null}
         {day ? (
           <>
-            <Strip day={day} zoom={zoom} onZoom={onZoom} />
-            {questions.length ? (
-              <section className="hours-section" aria-label="Questions">
-                <h3>
-                  Questions{" "}
-                  <span className="hours-muted">
-                    answer in place; the rest of the day stays editable
-                  </span>
-                </h3>
-                {questions.map((block) => (
+            <ProjectList
+              day={day}
+              targets={targets}
+              busy={busy}
+              blockErrors={blockErrors}
+              expanded={expanded}
+              onToggle={toggleLine}
+              onAcceptAll={(ids) => acceptBlocks("all", ids)}
+              onAcceptLine={(key, ids) => acceptBlocks(`line:${key}`, ids)}
+              renderBlock={(block, lineBusy) =>
+                block.status === "needs_input" ? (
                   <QuestionCard
                     key={block.id}
                     block={block}
-                    busy={busy === block.id}
+                    busy={busy === block.id || lineBusy}
                     onAnswer={(optionId, remember) =>
                       void operate(block.id, () =>
                         timeReport("block-answer", {
@@ -390,103 +434,64 @@ export function HoursView({
                       )
                     }
                   />
-                ))}
-              </section>
-            ) : null}
-            <section className="hours-section" aria-label="Blocks">
+                ) : (
+                  <BlockCard
+                    key={block.id}
+                    date={date}
+                    block={block}
+                    targets={targets}
+                    busy={busy === block.id || busy === "all" || lineBusy}
+                    operate={(run, verify) =>
+                      void operate(block.id, run, verify)
+                    }
+                    error={blockErrors[block.id] ?? null}
+                    mappingWorkspace={subjectWorkspace(block)}
+                    onEditMapping={onEditMapping}
+                  />
+                )
+              }
+            />
+            <section className="hours-section" aria-label="Timeline">
               <h3>
-                Blocks{" "}
+                <button
+                  type="button"
+                  className="hours-disclosure"
+                  aria-expanded={timelineOpen}
+                  onClick={() => setTimelineOpen((open) => !open)}
+                >
+                  <ChevronRight size={14} aria-hidden="true" />
+                  Timeline
+                </button>{" "}
                 <span className="hours-muted">
-                  {
-                    day.blocks.filter((block) => block.status === "proposed")
-                      .length
-                  }{" "}
-                  proposed,{" "}
-                  {
-                    day.blocks.filter((block) => block.status === "accepted")
-                      .length
-                  }{" "}
-                  accepted
+                  the blocks over the day
+                  {day.gaps.length
+                    ? `, ${plural(day.gaps.length, "gap")} (${formatMinutes(gapMinutes(day.gaps))} unexplained)`
+                    : ""}
                 </span>
-                {day.blocks.some((block) => block.status === "proposed") ? (
-                  <button
-                    type="button"
-                    className="hours-btn is-small hours-push"
-                    disabled={busy !== null}
-                    onClick={() => {
-                      const ids = day.blocks
-                        .filter((block) => block.status === "proposed")
-                        .map((block) => block.id);
-                      void operate(
-                        "all",
-                        async () => {
-                          for (const id of ids)
-                            await timeReport("block-accept", {
-                              date,
-                              block: id,
-                            });
-                        },
-                        (next) => {
-                          const lost = ids.filter((id) =>
-                            acceptanceLost(id, next),
-                          ).length;
-                          return lost
-                            ? `The provider did not keep ${lost === 1 ? "one acceptance" : `${lost} acceptances`}: those blocks are still to review.`
-                            : null;
-                        },
-                      );
-                    }}
-                  >
-                    Accept all
-                  </button>
-                ) : null}
               </h3>
-              {day.blocks.filter((block) => block.status !== "needs_input")
-                .length === 0 ? (
-                <p className="hours-muted">No blocks for this day.</p>
+              {timelineOpen ? (
+                <>
+                  <Strip day={day} zoom={zoom} onZoom={onZoom} />
+                  {day.gaps.length ? (
+                    <div className="hours-gaps" aria-label="Gaps">
+                      {day.gaps.map((gap) => (
+                        <GapRow
+                          key={gap.start}
+                          gap={gap}
+                          targets={targets}
+                          busy={busy === `gap-${gap.start}`}
+                          onClaim={(body) =>
+                            void operate(`gap-${gap.start}`, () =>
+                              timeReport("block-create", { date, body }),
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : null}
-              <div className="hours-blocks">
-                {day.blocks
-                  .filter((block) => block.status !== "needs_input")
-                  .map((block) => (
-                    <BlockCard
-                      key={block.id}
-                      date={date}
-                      block={block}
-                      targets={targets}
-                      busy={busy === block.id || busy === "all"}
-                      operate={(run, verify) =>
-                        void operate(block.id, run, verify)
-                      }
-                      error={blockErrors[block.id] ?? null}
-                      mappingWorkspace={subjectWorkspace(block)}
-                      onEditMapping={onEditMapping}
-                    />
-                  ))}
-              </div>
             </section>
-            {day.gaps.length ? (
-              <section className="hours-section" aria-label="Gaps">
-                <h3>
-                  Gaps <span className="hours-muted">unexplained time</span>
-                </h3>
-                <div className="hours-gaps">
-                  {day.gaps.map((gap) => (
-                    <GapRow
-                      key={gap.start}
-                      gap={gap}
-                      targets={targets}
-                      busy={busy === `gap-${gap.start}`}
-                      onClaim={(body) =>
-                        void operate(`gap-${gap.start}`, () =>
-                          timeReport("block-create", { date, body }),
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
             <div className="hours-submitbar">
               <span className="hours-muted">{submitHint(day)}</span>
               <button
@@ -565,6 +570,260 @@ function DayList({
         </button>
       ))}
     </nav>
+  );
+}
+
+const PROJECT_TONE: Record<ReturnType<typeof projectState>, string> = {
+  question: "is-yellow",
+  pending: "is-blue",
+  accepted: "is-green",
+  submitted: "is-green",
+};
+
+function gapMinutes(gaps: readonly Gap[]): number {
+  return gaps.reduce(
+    (sum, gap) =>
+      sum + Math.max(0, (Date.parse(gap.end) - Date.parse(gap.start)) / 60_000),
+    0,
+  );
+}
+
+/**
+ * The day in one line per project and task type, with the time to report
+ * (rounded up to whole units) and its state, and the day's total. A line
+ * opens (click, Enter, or `za`) on the blocks it is made of, where they are
+ * answered, accepted and edited as before.
+ */
+function ProjectList({
+  day,
+  targets,
+  busy,
+  blockErrors,
+  expanded,
+  onToggle,
+  onAcceptAll,
+  onAcceptLine,
+  renderBlock,
+}: {
+  day: Day;
+  targets: Targets | null;
+  busy: string | null;
+  blockErrors: Record<string, string>;
+  expanded: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+  onAcceptAll: (ids: string[]) => void;
+  onAcceptLine: (key: string, ids: string[]) => void;
+  renderBlock: (block: Block, lineBusy: boolean) => ReactNode;
+}) {
+  const pendingZ = useRef(false);
+  const byId = new Map(day.blocks.map((block) => [block.id, block]));
+  const lines = dayProjects(day);
+  const skipped = day.blocks.filter((block) => block.status === "skipped");
+  const total = lines.reduce((sum, line) => sum + line.minutes, 0);
+  const proposed = day.blocks
+    .filter((block) => block.status === "proposed")
+    .map((block) => block.id);
+  const taskLabel = (id: string) =>
+    targets?.task_types.find((entry) => entry.id === id)?.label ?? id;
+  // `za` folds or opens the line with the focus, as in the reviews.
+  const onKeyDown = (event: KeyboardEvent) => {
+    const toggle = (event.target as Element).closest?.<HTMLElement>(
+      "button[data-line-key]",
+    );
+    const plain =
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.nativeEvent.isComposing;
+    if (!toggle || !plain) {
+      pendingZ.current = false;
+      return;
+    }
+    if (event.key === "z" && !pendingZ.current) {
+      pendingZ.current = true;
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "a" && pendingZ.current) {
+      event.preventDefault();
+      onToggle(toggle.dataset.lineKey!);
+    }
+    pendingZ.current = false;
+  };
+  const row = (
+    key: string,
+    line: ProjectTotal | null,
+    blocks: Block[],
+    head: ReactNode,
+  ) => {
+    const open = expanded.has(key);
+    const lineBusy = busy === `line:${key}`;
+    const failed = blocks.some((block) => blockErrors[block.id]);
+    const toAccept = blocks
+      .filter((block) => block.status === "proposed" && block.target)
+      .map((block) => block.id);
+    const state = line ? projectState(line) : null;
+    return (
+      <div
+        key={key}
+        className={`hours-line${open ? " is-open" : ""}${line ? "" : " is-skipped"}${state ? ` is-${state}` : ""}`}
+      >
+        <div className="hours-line-row">
+          <button
+            type="button"
+            className="hours-line-toggle"
+            data-line-key={key}
+            aria-expanded={open}
+            title={open ? "Hide its blocks (za)" : "Show its blocks (za)"}
+            onClick={() => onToggle(key)}
+          >
+            <ChevronRight
+              size={14}
+              aria-hidden="true"
+              className="hours-line-chevron"
+            />
+            <span
+              className="hours-line-bar"
+              style={{ background: targetColor(line?.target) }}
+            />
+            {failed ? (
+              <span className="hours-chip is-red">Failed: open to see</span>
+            ) : null}
+            {head}
+          </button>
+          <span className="hours-line-action">
+            {toAccept.length ? (
+              <button
+                type="button"
+                className="hours-btn is-small is-primary"
+                disabled={busy !== null}
+                title={`Accept its ${plural(toAccept.length, "proposed block")}`}
+                onClick={() => onAcceptLine(key, toAccept)}
+              >
+                Accept
+              </button>
+            ) : null}
+          </span>
+        </div>
+        {open ? (
+          <div className="hours-line-blocks">
+            {blocks.map((block) => renderBlock(block, lineBusy))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+  return (
+    <section
+      className="hours-section"
+      aria-label="Projects"
+      onKeyDown={onKeyDown}
+    >
+      <h3>
+        Projects{" "}
+        <span className="hours-muted">
+          each rounded up to whole {UNIT_MINUTES} minutes; open one for its
+          blocks
+        </span>
+        {proposed.length ? (
+          <button
+            type="button"
+            className="hours-btn is-small hours-push"
+            disabled={busy !== null}
+            onClick={() => onAcceptAll(proposed)}
+          >
+            Accept all
+          </button>
+        ) : null}
+      </h3>
+      {lines.length === 0 && skipped.length === 0 ? (
+        <p className="hours-muted">Nothing to report for this day.</p>
+      ) : null}
+      <div className="hours-lines">
+        {lines.map((line) => {
+          const blocks = line.blocks.flatMap((id) => {
+            const block = byId.get(id);
+            return block ? [block] : [];
+          });
+          const state = projectState(line);
+          const questions = blocks.filter(
+            (block) => block.status === "needs_input",
+          ).length;
+          return row(
+            projectKey(line),
+            line,
+            blocks,
+            <>
+              <span className="hours-line-name">
+                <strong>{line.target?.label ?? "Waiting for an answer"}</strong>
+                {line.target && line.task_type ? (
+                  <span className="hours-muted">
+                    {" "}
+                    · {taskLabel(line.task_type)}
+                  </span>
+                ) : null}
+                {!line.target && questions ? (
+                  <span className="hours-muted">
+                    {" "}
+                    · {plural(questions, "question")}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className="hours-line-time"
+                title={`Worked ${formatMinutes(line.worked_minutes)}, reported ${formatMinutes(line.minutes)}: rounded up to whole ${UNIT_MINUTES}-minute units`}
+              >
+                {formatHoursClock(line.minutes)}
+              </span>
+              <span className="hours-line-state">
+                <span className={`hours-chip ${PROJECT_TONE[state]}`}>
+                  {PROJECT_STATE_LABELS[state]}
+                </span>
+              </span>
+            </>,
+          );
+        })}
+        {skipped.length
+          ? row(
+              "skipped",
+              null,
+              skipped,
+              <>
+                <span className="hours-line-name">
+                  <strong>Not logged</strong>
+                  <span className="hours-muted">
+                    {" "}
+                    · {plural(skipped.length, "block")}, not reported
+                  </span>
+                </span>
+                <span className="hours-line-time" />
+                <span className="hours-line-state">
+                  <span className="hours-chip">Not logged</span>
+                </span>
+              </>,
+            )
+          : null}
+        {lines.length ? (
+          // Laid out as a line, so its time stands under theirs.
+          <div className="hours-line hours-line-total">
+            <div className="hours-line-row">
+              <div className="hours-line-toggle">
+                <span className="hours-line-chevron" />
+                <span className="hours-line-bar" />
+                <span className="hours-line-name">
+                  <strong>Total</strong>
+                </span>
+                <span className="hours-line-time">
+                  {formatHoursClock(total)}
+                </span>
+                <span className="hours-line-state" />
+              </div>
+              <span className="hours-line-action" />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

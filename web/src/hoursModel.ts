@@ -180,6 +180,22 @@ export function failureText(error: { message: string; code?: string }): string {
     : error.message;
 }
 
+/**
+ * The day's time on one project and task type: `minutes` is `worked_minutes`
+ * rounded up to whole units, the time to report. `target` null is time
+ * still waiting for an answer.
+ */
+export type ProjectTotal = {
+  target: Target | null;
+  task_type?: string | null;
+  worked_minutes: number;
+  minutes: number;
+  /** The ids of the blocks it is made of, the line's detail. */
+  blocks: string[];
+  accepted: boolean;
+  submitted: boolean;
+};
+
 export type Day = {
   date: string;
   status: DayStatus;
@@ -195,6 +211,8 @@ export type Day = {
   refreshing?: boolean;
   timeline?: Segment[];
   input_hash?: string;
+  /** One line per project; providers before it leave it out. */
+  projects?: ProjectTotal[];
 };
 
 export type Explanation = {
@@ -447,4 +465,84 @@ export function evidenceText(entry: Evidence): string {
     entry.kind === "agent_session" ? AGENT_ELSEWHERE.exec(entry.title) : null;
   const title = agent ? `agent in ${agent[1]}` : entry.title;
   return `${title}${entry.minutes ? ` ${formatMinutes(entry.minutes)}` : ""}`;
+}
+
+/** `minutes` rounded up to whole report units. */
+export function roundUpToUnit(minutes: number): number {
+  return Math.ceil(Math.max(0, minutes) / UNIT_MINUTES) * UNIT_MINUTES;
+}
+
+/**
+ * The day per project and task type, as a provider computes `projects`:
+ * skipped blocks are left out, the blocks still asking (or with no project)
+ * are one line with no target, and each line's worked time is rounded up to
+ * whole units. Lines come in the order of their first block.
+ */
+export function projectTotals(blocks: readonly Block[]): ProjectTotal[] {
+  const lines = new Map<string, ProjectTotal>();
+  for (const block of blocks) {
+    if (block.status === "skipped") continue;
+    const target =
+      block.status === "needs_input" ? null : (block.target ?? null);
+    const taskType = target ? (block.task_type ?? null) : null;
+    const key = projectKey({ target, task_type: taskType });
+    let line = lines.get(key);
+    if (!line) {
+      line = {
+        target,
+        task_type: taskType,
+        worked_minutes: 0,
+        minutes: 0,
+        blocks: [],
+        accepted: true,
+        submitted: true,
+      };
+      lines.set(key, line);
+    }
+    line.worked_minutes += block.worked_minutes ?? block.minutes;
+    line.blocks.push(block.id);
+    line.accepted &&=
+      block.status === "accepted" || block.status === "submitted";
+    line.submitted &&= block.status === "submitted";
+  }
+  return [...lines.values()].map((line) => ({
+    ...line,
+    minutes: roundUpToUnit(line.worked_minutes),
+    accepted: line.accepted && line.target !== null,
+    submitted: line.submitted && line.target !== null,
+  }));
+}
+
+/** The day's lines: the provider's, else computed from its blocks. */
+export function dayProjects(day: Day): ProjectTotal[] {
+  return day.projects ?? projectTotals(day.blocks);
+}
+
+/** A line's identity across reads of the day (block ids can change). */
+export function projectKey(line: {
+  target: Target | null;
+  task_type?: string | null;
+}): string {
+  return `${line.target?.id ?? ""}\u0000${line.task_type ?? ""}`;
+}
+
+export type ProjectState = "question" | "pending" | "accepted" | "submitted";
+
+export function projectState(line: ProjectTotal): ProjectState {
+  if (!line.target) return "question";
+  if (line.submitted) return "submitted";
+  return line.accepted ? "accepted" : "pending";
+}
+
+export const PROJECT_STATE_LABELS: Record<ProjectState, string> = {
+  question: "Question",
+  pending: "Pending",
+  accepted: "Accepted",
+  submitted: "Submitted",
+};
+
+/** "1:45", "0:15": reported time as hours and minutes. */
+export function formatHoursClock(minutes: number): string {
+  const whole = Math.max(0, Math.round(minutes));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }

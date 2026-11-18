@@ -29,6 +29,7 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     Node: browser.Node,
     Event: browser.Event,
     MouseEvent: browser.MouseEvent,
+    KeyboardEvent: browser.KeyboardEvent,
     IS_REACT_ACT_ENVIRONMENT: true,
   }))
     Object.defineProperty(globalThis, key, {
@@ -191,7 +192,8 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
         await Promise.resolve();
       });
   };
-  const mount = async () => {
+  /** Mounts the day; `open` opens every project line and the timeline. */
+  const mount = async ({ open = true } = {}) => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -201,6 +203,11 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
       );
     });
     await settle();
+    if (open)
+      for (const toggle of container.querySelectorAll(
+        'button[data-line-key][aria-expanded="false"], .hours-disclosure[aria-expanded="false"]',
+      ))
+        await click(toggle);
     return { container, unmount: () => act(async () => root.unmount()) };
   };
   const text = (element: Element | null | undefined) =>
@@ -230,6 +237,140 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
     await settle();
   };
   const ops = () => calls.map((call) => call.op);
+
+  /** Adds an accepted rounded block to b1's project, and a skipped one. */
+  const projectDay = (shape: "blocks" | "projects") => {
+    reset();
+    const blocks = day.blocks as Record<string, unknown>[];
+    blocks.push(
+      {
+        id: "b5",
+        start: T("10:30"),
+        end: T("10:45"),
+        minutes: 15,
+        worked_minutes: 7,
+        status: "accepted",
+        source: "manual",
+        target: { id: "10", label: "Just remote investment" },
+        task_type: "development",
+      },
+      {
+        id: "s1",
+        start: T("11:00"),
+        end: T("11:30"),
+        minutes: 30,
+        status: "skipped",
+        source: "answer",
+      },
+    );
+    if (shape === "projects")
+      day.projects = [
+        {
+          target: { id: "10", label: "Just remote investment" },
+          task_type: "development",
+          worked_minutes: 67,
+          minutes: 75,
+          blocks: ["b1", "b5"],
+          accepted: false,
+          submitted: false,
+        },
+        {
+          target: null,
+          task_type: null,
+          worked_minutes: 60,
+          minutes: 60,
+          blocks: ["q1"],
+          accepted: false,
+          submitted: false,
+        },
+      ];
+  };
+
+  for (const shape of ["projects", "blocks"] as const)
+    test(`the day is one line per project, its blocks behind it (${shape === "projects" ? "the provider's lines" : "lines computed from the blocks"})`, async () => {
+      projectDay(shape);
+      const { container, unmount } = await mount({ open: false });
+      const toggles = () => [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          "button[data-line-key]",
+        ),
+      ];
+      const words = (toggle: Element) =>
+        [...toggle.children].map(text).filter(Boolean).join(" ");
+      expect(toggles().map(words)).toEqual([
+        "Just remote investment · Development 1:15 Pending",
+        "Waiting for an answer · 1 question 1:00 Question",
+        "Not logged · 1 block, not reported Not logged",
+      ]);
+      expect(
+        toggles()[0]!.querySelector(".hours-line-time")!.getAttribute("title"),
+      ).toBe(
+        "Worked 1h 07m, reported 1h 15m: rounded up to whole 15-minute units",
+      );
+      expect(
+        words(container.querySelector(".hours-line-total .hours-line-toggle")!),
+      ).toBe("Total 2:15");
+      // The blocks, questions and timeline stay hidden until asked for.
+      expect(container.querySelector(".hours-block")).toBeNull();
+      expect(container.querySelector(".hours-question")).toBeNull();
+      expect(container.querySelector(".hours-strip")).toBeNull();
+      expect(
+        toggles().every((t) => t.getAttribute("aria-expanded") === "false"),
+      ).toBe(true);
+      // A click opens a line on its blocks, found by id.
+      await click(toggles()[0]);
+      expect(toggles()[0]!.getAttribute("aria-expanded")).toBe("true");
+      expect(
+        [...container.querySelectorAll(".hours-block")].map((card) =>
+          card.getAttribute("aria-label"),
+        ),
+      ).toEqual(["08:00 to 09:00", "10:30 to 10:45"]);
+      // `za` opens the waiting line, and the question is answered there.
+      for (const key of ["z", "a"])
+        await act(async () => {
+          toggles()[1]!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+      expect(text(container.querySelector(".hours-question strong"))).toBe(
+        "Where should 60 min on roamgate be logged?",
+      );
+      calls.length = 0;
+      await click(button(container, /^Suggested/));
+      expect(ops().slice(0, 2)).toEqual(["block-answer", "day"]);
+      // `za` again folds it.
+      for (const key of ["z", "a"])
+        await act(async () => {
+          toggles()[1]!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+        });
+      expect(container.querySelector(".hours-question")).toBeNull();
+      // A line's Accept accepts its proposed blocks, and only those.
+      calls.length = 0;
+      await click(
+        button(container.querySelector(".hours-line-row")!, "Accept"),
+      );
+      expect(calls.filter((call) => call.op === "block-accept")).toEqual([
+        { op: "block-accept", params: { date: "2026-11-03", block: "b1" } },
+      ]);
+      expect(ops()).toContain("day");
+      await unmount();
+    });
+
+  test("the timeline and its gaps open on request", async () => {
+    reset();
+    const { container, unmount } = await mount({ open: false });
+    const disclosure = container.querySelector(".hours-disclosure")!;
+    expect(text(disclosure.closest("h3"))).toBe(
+      "Timeline the blocks over the day, 1 gap (30m unexplained)",
+    );
+    expect(container.querySelector(".hours-gap")).toBeNull();
+    await click(disclosure);
+    expect(container.querySelector(".hours-strip")).not.toBeNull();
+    expect(container.querySelectorAll(".hours-gap")).toHaveLength(1);
+    await unmount();
+  });
 
   test("the day shows its questions, blocks, gaps and a split, and cannot be submitted while asking", async () => {
     reset();
@@ -570,6 +711,7 @@ if (process.env.ROAMGATE_HOURS_DOM_TEST !== "1") {
       root.render(<Zoomable />);
     });
     await settle();
+    await click(container.querySelector(".hours-disclosure"));
     const range = () => text(container.querySelector(".timeline-zoom-range"));
     expect(container.querySelector(".timeline-zoom-range")).toBeNull();
     await click(button(container, "Work hours"));

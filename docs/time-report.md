@@ -22,8 +22,8 @@ Schemas: [`time-report.schema.json`](./time-report.schema.json) (`$defs`:
 `DayInput`, `Segment`, `Day`, `DaySummary`, `Block`, `BlockPatch`,
 `BlockCreate`, `Gap`, `Target`, `TaskType`, `Evidence`, `Question`,
 `QuestionOption`, `Explanation`, `Preview`, `Change`, `SubmitResult`,
-`Health`, `Reopened`, `Allocation`, `MappingSet`, `Mapping`, `Mappings`,
-`MappingDelete`). The activity
+`Health`, `Reopened`, `ProjectTotal`, `Allocation`, `MappingSet`, `Mapping`,
+`Mappings`, `MappingDelete`). The activity
 shapes it refers to are in [`activity.schema.json`](./activity.schema.json).
 
 ## Running the command
@@ -115,9 +115,17 @@ The activity timeline's **Hours** tab (**Activity** in the command menu and
 the application menu, or `Option+A` / `Alt+A`; a command-menu search for
 "hours" opens this tab) shows the provider's day: `day` when a date is shown, polled
 every few seconds (2 s up to 15 s) while the day says `refreshing`; **Refresh**
-runs `refresh`. After every block operation the day is read again, since a
-block's id can change. Questions are answered with `block-answer` (the
-**Remember** box is `remember`). **Preview submit** is off while a block is
+runs `refresh`. The day reads as one line per entry of `Day.projects` (project
+and task type, `minutes` as `h:mm`, and pending, accepted or submitted), with
+the day's total; the `target: null` line is time waiting for an answer. A
+provider without `projects` gets the same lines computed from its blocks:
+skipped blocks left out, the ones asking (or with no project) on the null
+line, each line's worked minutes summed and rounded up to whole 15 minutes.
+Skipped blocks sit on a last **Not logged** line, outside the total. Opening a
+line (click, Enter or `za`) shows its blocks, found by the ids in `blocks`;
+the timeline and the gaps open under **Timeline**. After every block operation
+the day is read again, since a block's id can change. Questions are answered
+with `block-answer` (the **Remember** box is `remember`). **Preview submit** is off while a block is
 `needs_input`; it runs `submit-preview`, then a confirmation step whose
 **I checked these entries** box enables **Submit**, which sends the token with
 `confirmed: true`. A failed submit shows what was written. A failed block operation is
