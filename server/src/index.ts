@@ -1350,7 +1350,33 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   }
   if (method === "connections.agent_sessions") {
     try {
-      const result = await readConnectionAgentSessions(connectionManager);
+      const sessions = await readConnectionAgentSessions(connectionManager);
+      // Their agents as agent.list gives them: seen in Roamgate and when,
+      // and what they said, so another connection's workspaces go by the
+      // user's last look and show Done the same way on every device.
+      const result = {
+        connections: await Promise.all(
+          sessions.connections.map(async (snapshot) => {
+            if (!snapshot.agents) return snapshot;
+            const runtime = connectionManager.readyRuntime(
+              snapshot.connection_id,
+            );
+            const boot = runtime
+              ? await herdrBoots.get(snapshot.connection_id, () =>
+                  runtime.recoveryIdentity(AbortSignal.timeout(3_000)),
+                )
+              : null;
+            return {
+              ...snapshot,
+              agents: agentSeen.annotate(
+                snapshot.connection_id,
+                snapshot.agents,
+                boot,
+              ),
+            };
+          }),
+        ),
+      };
       sendReply({ id, result }, "connections-agent-sessions");
     } catch (error) {
       sendError("connections-agent-sessions-error", error);

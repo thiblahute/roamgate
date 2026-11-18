@@ -188,12 +188,58 @@ export function recordWorkspaceVisit(
 }
 
 /**
+ * When this browser last visited each workspace (ms), by history key: the
+ * newest `WORKSPACE_HISTORY_LIMIT` kept.
+ */
+export type WorkspaceVisitTimes = Readonly<Record<string, number>>;
+
+/** Records a visit at `at`, dropping the oldest beyond the history's size. */
+export function recordWorkspaceVisitTime(
+  times: WorkspaceVisitTimes,
+  key: string,
+  at: number,
+): WorkspaceVisitTimes {
+  return Object.fromEntries(
+    Object.entries({ ...times, [key]: at })
+      .sort(([, left], [, right]) => right - left)
+      .slice(0, WORKSPACE_HISTORY_LIMIT),
+  );
+}
+
+/** Reads stored visit times back, dropping anything that is not one. */
+export function parseWorkspaceVisitTimes(
+  raw: string | null,
+): WorkspaceVisitTimes {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(
+          (entry): entry is [string, number] =>
+            entry[0].includes("\0") &&
+            typeof entry[1] === "number" &&
+            Number.isFinite(entry[1]),
+        )
+        .sort(([, left], [, right]) => right - left)
+        .slice(0, WORKSPACE_HISTORY_LIMIT),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Projects live pane state into a deduplicated, most-recent-first switcher.
  * `connections` adds the panes of connections that are not displayed (the
  * all-connections view); the displayed one's entry there is ignored.
  * `workspaceHistory` orders the workspace scope by when each workspace was
  * last visited, across every connection, so the shortcut walks back through
- * them in the order they were left.
+ * them in the order they were left. `serverEntries` adds, in workspace
+ * scope, connections no session of this browser covers (see
+ * `serverSessionPaneEntries`).
  */
 export function paneJumpEntries(
   snapshot: PaneJumpSnapshot,
@@ -201,6 +247,7 @@ export function paneJumpEntries(
   connections: readonly ConnectionSessionView[] = [],
   scope: PaneJumpScope = "panes",
   workspaceHistory?: WorkspaceHistory,
+  serverEntries: readonly PaneJumpEntry[] = [],
 ): PaneJumpEntry[] {
   // Workspace scope reads every pane: collapsed to one entry each, the recent
   // panes alone would hide workspaces that were never visited in this browser.
@@ -208,6 +255,7 @@ export function paneJumpEntries(
   const entries = [
     ...orderedPaneJumpEntries(snapshot, activePaneId, everyPane),
     ...connectionPaneEntries(connections, everyPane),
+    ...(everyPane ? serverEntries : []),
   ];
   if (!everyPane) return entries;
   return orderByWorkspaceHistory(
@@ -219,13 +267,17 @@ export function paneJumpEntries(
 export type WorkspaceHistory = {
   activeConnectionId: string;
   keys: readonly string[];
+  /** When this browser visited them, for those it has a time for. */
+  visitedAt?: WorkspaceVisitTimes;
 };
 
 /**
- * The current workspace first, then the others by when the user last looked
- * at them on any device, then by when this browser last visited those it
- * has no such time for. Stable: workspaces never visited keep their order
- * at the end.
+ * The current workspace first, then the others by when the user last saw
+ * them, newest first: the last look at any of their agents, on any device
+ * (agent seen tracking), or this browser's last visit, whichever is later.
+ * Visits without a time keep this browser's visit order after those.
+ * What needs the user does not move them. Stable: workspaces never seen
+ * keep their order at the end.
  */
 function orderByWorkspaceHistory(
   workspaces: PaneJumpEntry[],
@@ -234,22 +286,34 @@ function orderByWorkspaceHistory(
   const rank = new Map(
     (history?.keys ?? []).map((key, index) => [key, index] as const),
   );
-  const rankOf = (entry: PaneJumpEntry) => {
-    if (!history) return Number.MAX_SAFE_INTEGER;
-    const key = workspaceHistoryKey(
-      entry.connectionId ??
-        entry.source?.connectionId ??
-        history.activeConnectionId,
-      entry.workspaceId,
-    );
-    return rank.get(key) ?? Number.MAX_SAFE_INTEGER;
-  };
+  const keyOf = (entry: PaneJumpEntry) =>
+    history
+      ? workspaceHistoryKey(
+          entry.connectionId ??
+            entry.source?.connectionId ??
+            history.activeConnectionId,
+          entry.workspaceId,
+        )
+      : undefined;
   return workspaces
-    .map((entry, index) => ({ entry, index, rank: rankOf(entry) }))
+    .map((entry, index) => {
+      const key = keyOf(entry);
+      return {
+        entry,
+        index,
+        rank:
+          (key !== undefined ? rank.get(key) : undefined) ??
+          Number.MAX_SAFE_INTEGER,
+        seenAt: Math.max(
+          entry.seenAt ?? -1,
+          (key !== undefined ? history?.visitedAt?.[key] : undefined) ?? -1,
+        ),
+      };
+    })
     .sort(
       (left, right) =>
         Number(right.entry.current) - Number(left.entry.current) ||
-        (right.entry.seenAt ?? -1) - (left.entry.seenAt ?? -1) ||
+        right.seenAt - left.seenAt ||
         left.rank - right.rank ||
         left.index - right.index,
     )
