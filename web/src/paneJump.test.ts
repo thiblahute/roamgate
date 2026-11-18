@@ -24,6 +24,7 @@ import type {
   ConnectionAgentSessions,
   ServerAgentPane,
 } from "./useAllServerAgentSessions";
+import { parseWorkspaceVisitTimes, recordWorkspaceVisitTime } from "./paneJump";
 
 function workspace(workspaceId: string, label: string): Workspace {
   return {
@@ -821,6 +822,86 @@ describe("what needs the user, and when they last looked", () => {
     // Going to two goes to its agent that is done.
     expect(entries[0]?.paneId).toBe("p2");
     expect(entries[0]?.needsYou).toBe("done");
+  });
+
+  test("the recent list goes by when the user last saw each workspace, across connections", () => {
+    // The phone shows the desktop (`local` here); the Mac (`box`) has no
+    // session in this browser, only the server's summary of it.
+    const mac = {
+      connection_id: "box",
+      connection_generation: 1,
+      workspaces: [workspace("wF", "tasks"), workspace("wG", "notes")],
+      tabs: [tab("tF", "wF"), tab("tG", "wG")],
+      panes: [
+        withState(pane("pF", "wF", "tF", "claude"), "done", 50),
+        withState(pane("pG", "wG", "tG", "claude"), "idle", 400),
+      ],
+      agents: null,
+    };
+    const serverEntries = serverSessionPaneEntries(
+      [connection("local", "Desktop"), connection("box", "Mac")],
+      [mac],
+      "local",
+    );
+    const recent = (visitedAt = {}) =>
+      paneJumpEntries(
+        snapshot,
+        "p3",
+        [],
+        "workspaces",
+        { ...history, visitedAt },
+        serverEntries,
+      );
+    // three is displayed; then notes (Mac, seen at 400) before one (300),
+    // two (500 through p5) first of the others: four, blocked but never
+    // looked at, and tasks, done, stay where their last look puts them.
+    expect(titles(recent())).toEqual([
+      "three",
+      "two",
+      "notes",
+      "one",
+      "tasks",
+      "four",
+    ]);
+    // This browser opened four (no agent seen) and the Mac's tasks since.
+    expect(
+      titles(
+        recent({
+          [workspaceHistoryKey("local", "w4")]: 600,
+          [workspaceHistoryKey("box", "wF")]: 700,
+        }),
+      ),
+    ).toEqual(["three", "tasks", "four", "two", "notes", "one"]);
+    expect(recent()[4]).toMatchObject({
+      needsYou: "done",
+      source: { connectionId: "box", workspaceId: "wF" },
+    });
+  });
+
+  test("what needs the user shows in the recent list but does not reorder it", () => {
+    const entries = paneJumpEntries(snapshot, null, [], "workspaces", history);
+    expect(entries.map((entry) => entry.needsYou ?? "-")).toEqual([
+      "done",
+      "-",
+      "-",
+      "blocked",
+    ]);
+    expect(titles(entries)).toEqual(["two", "one", "three", "four"]);
+  });
+
+  test("records when this browser visited each workspace", () => {
+    const a = workspaceHistoryKey("local", "w1");
+    const b = workspaceHistoryKey("desktop", "w1");
+    let times = recordWorkspaceVisitTime({}, a, 1);
+    times = recordWorkspaceVisitTime(times, b, 2);
+    times = recordWorkspaceVisitTime(times, a, 3);
+    expect(times).toEqual({ [a]: 3, [b]: 2 });
+    expect(parseWorkspaceVisitTimes(JSON.stringify(times))).toEqual(times);
+    expect(
+      parseWorkspaceVisitTimes(JSON.stringify({ [a]: 1, w1: 2, [b]: "3" })),
+    ).toEqual({ [a]: 1 });
+    for (const raw of [null, "", "{", "[1]", "42"])
+      expect(parseWorkspaceVisitTimes(raw)).toEqual({});
   });
 
   test("Find puts what needs the user first; ! keeps only that", () => {

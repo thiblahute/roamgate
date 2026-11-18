@@ -195,10 +195,13 @@ import {
   needsYouFirst,
   NEEDS_YOU_QUERY,
   parseWorkspaceHistory,
+  parseWorkspaceVisitTimes,
   type PointerPosition,
   pointerLeftOrigin,
   recordWorkspaceVisit,
+  recordWorkspaceVisitTime,
   workspaceHistoryKey,
+  type WorkspaceVisitTimes,
 } from "./paneJump";
 import { sortAgentPanes } from "./agentOrder";
 import { markAgentOpened } from "./agentRecency";
@@ -901,6 +904,18 @@ function readWorkspaceHistory(): readonly string[] {
     );
   } catch {
     return [];
+  }
+}
+
+const WORKSPACE_VISIT_TIMES_STORAGE_KEY = "workspaceSwitcherVisitTimes";
+
+function readWorkspaceVisitTimes(): WorkspaceVisitTimes {
+  try {
+    return parseWorkspaceVisitTimes(
+      roamgateLocalStorage.getItem(WORKSPACE_VISIT_TIMES_STORAGE_KEY),
+    );
+  } catch {
+    return {};
   }
 }
 
@@ -1898,14 +1913,28 @@ export default function App() {
       /* The switcher still works for this page without storage. */
     }
   }, [workspaceHistory]);
+  // And when, so that a workspace this browser visited ranks against the
+  // last look at another one's agents, on any device.
+  const [workspaceVisitedAt, setWorkspaceVisitedAt] =
+    useState<WorkspaceVisitTimes>(readWorkspaceVisitTimes);
+  useEffect(() => {
+    try {
+      roamgateLocalStorage.setItem(
+        WORKSPACE_VISIT_TIMES_STORAGE_KEY,
+        JSON.stringify(workspaceVisitedAt),
+      );
+    } catch {
+      /* The switcher still works for this page without storage. */
+    }
+  }, [workspaceVisitedAt]);
   const visitWorkspace = useCallback(
-    (connectionId: string, workspaceId: string) =>
-      setWorkspaceHistory((history) =>
-        recordWorkspaceVisit(
-          history,
-          workspaceHistoryKey(connectionId, workspaceId),
-        ),
-      ),
+    (connectionId: string, workspaceId: string) => {
+      const key = workspaceHistoryKey(connectionId, workspaceId);
+      setWorkspaceHistory((history) => recordWorkspaceVisit(history, key));
+      setWorkspaceVisitedAt((times) =>
+        recordWorkspaceVisitTime(times, key, Date.now()),
+      );
+    },
     [],
   );
   const visitedWorkspaceId = activePane?.workspace_id;
@@ -1932,6 +1961,7 @@ export default function App() {
     const history = {
       activeConnectionId: s.activeConnectionId,
       keys: workspaceHistory,
+      visitedAt: workspaceVisitedAt,
     };
     if (paneJumpSearch === null)
       return withWaitsOn(
@@ -2000,6 +2030,7 @@ export default function App() {
     s.tabs,
     s.workspaces,
     workspaceHistory,
+    workspaceVisitedAt,
   ]);
   // The workspaces whose agent needs the user, on every connection.
   const needsYouCount = useMemo(
@@ -3529,46 +3560,6 @@ export default function App() {
       ),
     [s.activeConnectionId, reviewState.prompts],
   );
-  const workspaceRecentEntries = useMemo(
-    () =>
-      mobile && !workspaceTreeShown
-        ? // Every pane, one entry per workspace: an agent that needs the user
-          // leads its workspace even in a pane not visited lately.
-          workspaceAttention(
-            paneSearchEntries(
-              {
-                layout: s.layout,
-                panes: s.panes,
-                recentPaneIds: s.recentPaneIds,
-                tabs: s.tabs,
-                workspaces: s.workspaces,
-              },
-              "",
-              activePaneId,
-              connectionSessions,
-              "workspaces",
-              {
-                activeConnectionId: s.activeConnectionId,
-                keys: workspaceHistory,
-              },
-            ),
-          )
-        : null,
-    [
-      activePaneId,
-      connectionSessions,
-      mobile,
-      s.activeConnectionId,
-      s.layout,
-      s.panes,
-      s.recentPaneIds,
-      s.tabs,
-      s.workspaces,
-      workspaceAttention,
-      workspaceHistory,
-      workspaceTreeShown,
-    ],
-  );
   // Other connections' workspaces, read from the summary the tree lists them
   // by while the phone's list is open: a connection this browser holds no
   // session for is searched too, as on the desktop.
@@ -3594,6 +3585,52 @@ export default function App() {
       workspaceSearchSessions.snapshots,
     ],
   );
+  // The phone's recent list is the switcher's: the workspaces the user saw
+  // last first, on every connection it can reach; what needs the user shows
+  // but does not reorder them.
+  const workspaceRecentEntries = useMemo(
+    () =>
+      mobile && !workspaceTreeShown
+        ? withWaitsOn(
+            paneJumpEntries(
+              {
+                layout: s.layout,
+                panes: s.panes,
+                recentPaneIds: s.recentPaneIds,
+                tabs: s.tabs,
+                workspaces: s.workspaces,
+              },
+              activePaneId,
+              connectionSessions,
+              "workspaces",
+              {
+                activeConnectionId: s.activeConnectionId,
+                keys: workspaceHistory,
+                visitedAt: workspaceVisitedAt,
+              },
+              workspaceSearchServerEntries,
+            ),
+            s.activeConnectionId,
+            reviewState.prompts,
+          )
+        : null,
+    [
+      activePaneId,
+      connectionSessions,
+      mobile,
+      reviewState.prompts,
+      s.activeConnectionId,
+      s.layout,
+      s.panes,
+      s.recentPaneIds,
+      s.tabs,
+      s.workspaces,
+      workspaceHistory,
+      workspaceSearchServerEntries,
+      workspaceTreeShown,
+      workspaceVisitedAt,
+    ],
+  );
   const workspaceSearchResults = useMemo(
     () =>
       mobile && workspaceSearch.trim()
@@ -3613,6 +3650,7 @@ export default function App() {
               {
                 activeConnectionId: s.activeConnectionId,
                 keys: workspaceHistory,
+                visitedAt: workspaceVisitedAt,
               },
               undefined,
               workspaceSearchServerEntries,
@@ -3633,6 +3671,7 @@ export default function App() {
       workspaceSearch,
       workspaceAttention,
       workspaceSearchServerEntries,
+      workspaceVisitedAt,
     ],
   );
   const paneJumpLanding = usePaneJumpLanding(
