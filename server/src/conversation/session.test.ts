@@ -320,6 +320,19 @@ describe("the barge-in mix", () => {
     });
   });
 
+  test("speech sent twice with one uuid is taken once", async () => {
+    const context = setup();
+    expect(await context.session.voice({ text: "hello", uuid: "v1" })).toEqual({
+      action: "sent",
+      id: "v1",
+    });
+    expect(await context.session.voice({ text: "hello", uuid: "v1" })).toEqual({
+      action: "sent",
+      id: "v1",
+    });
+    expect(context.users()).toHaveLength(1);
+  });
+
   test("speech while a permission waits is queued", async () => {
     const pending = Promise.withResolvers<AgentPromptAnswer | null>();
     const context = setup({ answer: () => pending.promise });
@@ -1037,6 +1050,18 @@ describe("the process", () => {
     await stuck.warm();
     expect(await stuck.stop()).toBe(true);
     expect(stuckProcess.killed).toBe(true);
+  });
+});
+
+describe("waiting for a turn's result", () => {
+  test("idle: at once; a turn: when its result comes, or false past the wait", async () => {
+    const context = setup();
+    expect(await context.session.waitForResult(10)).toBe(true);
+    await startTurn(context);
+    expect(await context.session.waitForResult(10)).toBe(false);
+    const waiting = context.session.waitForResult(1000);
+    context.proc().push(RESULT);
+    expect(await waiting).toBe(true);
   });
 });
 
