@@ -859,8 +859,12 @@ export function MrEffortView({
       if (here) openCard(here);
     } else if (key === "o") {
       if (!here) return true;
-      if (here.entry && !here.entry.branch && here.entry.url)
-        window.open(here.entry.url, "_blank", "noopener");
+      const url = here.entry
+        ? here.entry.branch
+          ? here.entry.branch.url
+          : here.entry.url
+        : undefined;
+      if (url) window.open(url, "_blank", "noopener");
       else say(`${here.plan.name} is not on the forge yet`);
     } else if (key === "e") {
       if (!here) return true;

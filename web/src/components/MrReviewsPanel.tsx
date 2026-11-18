@@ -744,6 +744,7 @@ export function branchChips(
       label: `${branch.ahead} commit${branch.ahead === 1 ? "" : "s"}`,
       tone: "tree",
     });
+    if (branch.below) chips.push({ label: `on ${branch.below}`, tone: "tree" });
     if (branch.behind)
       chips.push({ label: `${branch.behind} behind`, tone: "wait" });
     if (branch.dirty)
@@ -761,6 +762,51 @@ export function branchChips(
   return chips;
 }
 
+/** A row's page on the forge: its request's, or its pushed branch's. */
+export function mrForgeUrl(
+  entry: Pick<MrInboxEntry, "url" | "branch">,
+): string | undefined {
+  return (entry.branch ? entry.branch.url : entry.url) || undefined;
+}
+
+/** The forge's name: "GitLab", "GitHub". */
+export function mrForgeName(entry: Pick<MrInboxEntry, "provider">): string {
+  return entry.provider === "gitlab" ? "GitLab" : "GitHub";
+}
+
+/**
+ * A row's reference and title: a link to its page on the forge (a new
+ * tab), the rest of the card opening it here.
+ */
+function MrRowTitle({ entry }: { entry: MrInboxEntry }) {
+  const url = mrForgeUrl(entry);
+  const label = (
+    <>
+      <span className="mr-reviews-number">{mrRefLabel(entry, true)}</span>{" "}
+      <span className="mr-reviews-title">{entry.title}</span>
+    </>
+  );
+  return (
+    <strong>
+      {url ? (
+        <a
+          className="mr-reviews-forge-link"
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          tabIndex={-1}
+          title={`Open on ${mrForgeName(entry)} (o)`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {label}
+        </a>
+      ) : (
+        label
+      )}
+    </strong>
+  );
+}
+
 /** A request's row as it always was: others' requests, suggestions. */
 function MrRowBody({
   entry,
@@ -776,10 +822,7 @@ function MrRowBody({
   return (
     <>
       <div>
-        <strong>
-          <span className="mr-reviews-number">{mrRefLabel(entry, true)}</span>{" "}
-          {entry.title}
-        </strong>
+        <MrRowTitle entry={entry} />
         {entry.unavailable ? null : (
           <span className={`assistant-task-state is-${stateLabel(entry)}`}>
             {stateLabel(entry)}
@@ -859,10 +902,7 @@ function MrDenseRow({
   return (
     <>
       <div className="mr-reviews-dense-head">
-        <strong>
-          <span className="mr-reviews-number">{mrRefLabel(entry, true)}</span>{" "}
-          {entry.title}
-        </strong>
+        <MrRowTitle entry={entry} />
         <span className="mr-reviews-dense-chips" aria-label="Where it stands">
           {state !== "open" ? (
             <span className={`assistant-task-state is-${state}`}>{state}</span>
@@ -1002,10 +1042,20 @@ export function MrReviewRow({
   const first = homes[0] ?? links?.[0];
   const drag = move?.drag;
   const depth = tree?.depth ?? 0;
+  const url = mrForgeUrl(entry);
+  const go = first && onGoWorkspace ? first : null;
+  const startHome =
+    selected &&
+    onStartHome &&
+    !homes.length &&
+    !entry.unavailable &&
+    !entry.branch;
+  const pin = selected && onTogglePin && !entry.unavailable && !entry.branch;
+  const remove = onRemove && !entry.branch && (selected || entry.unavailable);
   return (
     <li
       {...itemProps}
-      className={`mr-reviews-item${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}${depth ? " is-child" : ""}${tree?.last ? " is-last-child" : ""}`}
+      className={`mr-reviews-item${selected ? " is-selected" : ""}${go || (remove && entry.unavailable) ? " has-action" : ""}${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}${depth ? " is-child" : ""}${tree?.last ? " is-last-child" : ""}`}
       style={
         depth
           ? ({ "--mr-depth": depth } as unknown as CSSProperties)
@@ -1018,21 +1068,15 @@ export function MrReviewRow({
       onDrop={drag?.onDrop}
       onDragEnd={drag?.onDragEnd}
     >
-      {drag ? (
-        <span
-          className="mr-reviews-grip"
-          title="Drag to reorder (J / K)"
-          aria-hidden="true"
-        >
-          <GripVertical size={13} />
-        </span>
-      ) : null}
-      <button
-        type="button"
+      {/* The card: a link to the forge inside, so not a <button>. */}
+      <div
+        role="button"
+        tabIndex={0}
         className={`assistant-task-row mr-reviews-row${selected ? " is-selected" : ""}${unread ? " is-unread" : ""}`}
         aria-current={selected ? "true" : undefined}
         data-mr-key={entry.key}
         onFocus={onSelect}
+        // Enter, as every key, is the panel's (the Board's).
         onClick={onOpen}
       >
         {dense ? (
@@ -1052,7 +1096,7 @@ export function MrReviewRow({
             drafts={drafts}
           />
         )}
-      </button>
+      </div>
       {tree?.children ? (
         <span className="mr-reviews-fold-place">
           <button
@@ -1075,42 +1119,47 @@ export function MrReviewRow({
           </button>
         </span>
       ) : null}
-      {first && onGoWorkspace ? (
-        <span className="mr-reviews-move">
-          <button
-            type="button"
-            className="assistant-icon-button mr-reviews-workspace"
-            aria-label={goTitle(first, homes.length > 0, links!.length)}
-            title={goTitle(first, homes.length > 0, links!.length)}
-            onClick={() => onGoWorkspace(first)}
+      {/* Its actions, over the card's top right corner: never beside it,
+          so a card keeps its width selected or not. Its home stays; the
+          others show on hover and on the selected card. */}
+      <span className="mr-reviews-actions">
+        {drag ? (
+          <span
+            className="mr-reviews-grip mr-reviews-action-more"
+            title="Drag to reorder (J / K)"
+            aria-hidden="true"
           >
-            <House size={14} />
-            {links!.length > 1 ? <small>{links!.length}</small> : null}
-          </button>
-        </span>
-      ) : null}
-      {selected &&
-      onStartHome &&
-      !homes.length &&
-      !entry.unavailable &&
-      !entry.branch ? (
-        <span className="mr-reviews-move">
+            <GripVertical size={13} />
+          </span>
+        ) : null}
+        {url ? (
+          <a
+            className="assistant-icon-button mr-reviews-forge mr-reviews-action-more"
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            tabIndex={selected ? 0 : -1}
+            aria-label={`Open on ${mrForgeName(entry)} (o)`}
+            title={`Open on ${mrForgeName(entry)} (o)`}
+          >
+            <ExternalLink size={14} />
+          </a>
+        ) : null}
+        {startHome ? (
           <button
             type="button"
-            className="assistant-icon-button"
+            className="assistant-icon-button mr-reviews-action-more"
             aria-label="Start a review with a home (gH)"
             title="Start a review with a home (gH): a workspace of its own with a Claude session told its job"
             onClick={onStartHome}
           >
             <HousePlus size={14} />
           </button>
-        </span>
-      ) : null}
-      {selected && onTogglePin && !entry.unavailable && !entry.branch ? (
-        <span className="mr-reviews-move">
+        ) : null}
+        {pin ? (
           <button
             type="button"
-            className="assistant-icon-button"
+            className="assistant-icon-button mr-reviews-action-more"
             aria-label={entry.section === "pinned" ? "Unpin (P)" : "Pin (P)"}
             title={
               entry.section === "pinned" ? "Unpin (P)" : "Pin it on top (P)"
@@ -1124,13 +1173,11 @@ export function MrReviewRow({
               <Pin size={14} />
             )}
           </button>
-        </span>
-      ) : null}
-      {onRemove && !entry.branch && (selected || entry.unavailable) ? (
-        <span className="mr-reviews-move">
+        ) : null}
+        {remove ? (
           <button
             type="button"
-            className="assistant-icon-button"
+            className={`assistant-icon-button${entry.unavailable && !selected ? "" : " mr-reviews-action-more"}`}
             aria-label={entry.section === "pinned" ? "Unpin (dd)" : "Hide (dd)"}
             title={
               entry.section === "pinned"
@@ -1141,32 +1188,44 @@ export function MrReviewRow({
           >
             <EyeOff size={14} />
           </button>
-        </span>
-      ) : null}
-      {selected && move?.onStep ? (
-        <span className="mr-reviews-move">
+        ) : null}
+        {selected && move?.onStep ? (
+          <>
+            <button
+              type="button"
+              className="assistant-icon-button mr-reviews-action-more"
+              aria-label="Move up (K)"
+              title="Move up (K)"
+              disabled={!move.canUp}
+              onClick={() => move.onStep?.(-1)}
+            >
+              <ArrowUp size={14} />
+            </button>
+            <button
+              type="button"
+              className="assistant-icon-button mr-reviews-action-more"
+              aria-label="Move down (J)"
+              title="Move down (J)"
+              disabled={!move.canDown}
+              onClick={() => move.onStep?.(1)}
+            >
+              <ArrowDown size={14} />
+            </button>
+          </>
+        ) : null}
+        {go ? (
           <button
             type="button"
-            className="assistant-icon-button"
-            aria-label="Move up (K)"
-            title="Move up (K)"
-            disabled={!move.canUp}
-            onClick={() => move.onStep?.(-1)}
+            className="assistant-icon-button mr-reviews-workspace"
+            aria-label={goTitle(go, homes.length > 0, links!.length)}
+            title={goTitle(go, homes.length > 0, links!.length)}
+            onClick={() => onGoWorkspace!(go)}
           >
-            <ArrowUp size={14} />
+            <House size={14} />
+            {links!.length > 1 ? <small>{links!.length}</small> : null}
           </button>
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Move down (J)"
-            title="Move down (J)"
-            disabled={!move.canDown}
-            onClick={() => move.onStep?.(1)}
-          >
-            <ArrowDown size={14} />
-          </button>
-        </span>
-      ) : null}
+        ) : null}
+      </span>
     </li>
   );
 }
@@ -3109,7 +3168,9 @@ export function MrReviewsPanel({
     } else if (event.key === "c" && current) {
       void withClaude(current, false);
     } else if (event.key === "o" && current?.branch) {
-      say(`${current.branch.name} is not on the forge yet`);
+      if (current.branch.url)
+        window.open(current.branch.url, "_blank", "noopener");
+      else say(`${current.branch.name} is not on the forge yet`);
     } else if (event.key === "o" && current) {
       window.open(current.url, "_blank", "noopener");
       markSeen(current);

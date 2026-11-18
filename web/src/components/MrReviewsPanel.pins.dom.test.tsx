@@ -370,10 +370,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_PINS_DOM_TEST !== "1") {
 
     // Pinned ones follow the order and the search.
     await click(
-      host
-        .querySelector('[data-mr-key="' + keyOf(7) + '"]')
-        ?.closest("li")
-        ?.querySelector("button") ?? null,
+      host.querySelector('.mr-reviews-row[data-mr-key="' + keyOf(7) + '"]'),
     );
     await settle();
     await type(
