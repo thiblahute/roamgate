@@ -46,6 +46,7 @@ import {
   type ThreadDelivery,
 } from "../reviewDelivery";
 import { keepReviewDraft } from "../reviewDrafts";
+import { checkoutReviews } from "../checkoutReviews";
 import { newClientId } from "../reviewPending";
 import {
   authorLabel,
@@ -1497,9 +1498,10 @@ function DiffContentViewInner({
   const repoOwn = repo?.own;
   // A question held for Send (no agent to ask) is drawn on its line too,
   // saying so.
+  // The checkout's, with no changed file too (its Other files only).
   const heldRoot =
     reviewCursor && !embedded
-      ? (file?.root ?? Object.values(files)[0]?.root)
+      ? (file?.root ?? Object.values(files)[0]?.root ?? repoRoot)
       : null;
   const shownScope = useScopeByValue(reviewScope);
   // The scope's review's threads the host does not give: a question held
@@ -1513,28 +1515,56 @@ function DiffContentViewInner({
       shownScope,
     );
     const given = new Set((givenThreads ?? []).map((thread) => thread.id));
-    return (own?.threads ?? [])
-      .filter(
+    // One review per checkout: the threads of its other code reviews too
+    // (the working tree's, the branch's against another base, an agent's
+    // range), whatever this scope compares. Not beside a merge request's,
+    // which shows the local ones meant for it as pending.
+    const siblings =
+      forgeView || own?.session.target.kind === "mr"
+        ? []
+        : checkoutReviews(
+            reviewSessions.values(),
+            connectionClient.connectionId,
+            heldRoot,
+          ).filter((each) => each.session.id !== own?.session.id);
+    const seen = new Set<string>();
+    const fresh = (thread: ReviewThread) => {
+      if (given.has(thread.id) || seen.has(thread.id)) return false;
+      seen.add(thread.id);
+      return true;
+    };
+    const sibling = (thread: ReviewThread) =>
+      thread.held !== undefined
+        ? thread.anchor.feedback !== undefined
+        : // A comment written in another workspace's views too.
+          thread.anchor.feedback !== undefined ||
+          scopeLineThread(thread) ||
+          scopeGeneralThread(thread);
+    return [
+      ...(own?.threads ?? []).filter(
         (thread) =>
-          !given.has(thread.id) &&
+          fresh(thread) &&
           (thread.held !== undefined
             ? thread.anchor.feedback !== undefined
             : thread.anchor.feedback === undefined &&
               (scopeLineThread(thread) ||
-                // A merge request's: on the whole request too.
-                (!!forgeView && scopeGeneralThread(thread)))),
-      )
-      .flatMap((thread) => {
-        // A forge discussion: on its line, found again, on the whole
-        // request, or not in this commit's view.
-        if (!forgeView) return [thread];
-        const placed = placeForgeThread(thread, {
-          viewCommit,
-          headSha: forgeView.headSha,
-          relocations: forgeView.relocations,
-        });
-        return placed ? [placed] : [];
+                // On the whole review too: a merge request's, an agent's.
+                scopeGeneralThread(thread))),
+      ),
+      ...siblings.flatMap((each) =>
+        each.threads.filter((thread) => sibling(thread) && fresh(thread)),
+      ),
+    ].flatMap((thread) => {
+      // A forge discussion: on its line, found again, on the whole
+      // request, or not in this commit's view.
+      if (!forgeView) return [thread];
+      const placed = placeForgeThread(thread, {
+        viewCommit,
+        headSha: forgeView.headSha,
+        relocations: forgeView.relocations,
       });
+      return placed ? [placed] : [];
+    });
   }, [
     connectionClient.connectionId,
     givenThreads,
@@ -2851,6 +2881,18 @@ function DiffContentViewInner({
   );
   const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
   const ownReviewId = changesAgent.snapshot?.session.id;
+  /** The checkout's code reviews, whose threads are this review's too. */
+  const checkoutReviewIds = useMemo(
+    () =>
+      new Set(
+        checkoutReviews(
+          reviewSessions.values(),
+          connectionClient.connectionId,
+          heldRoot,
+        ).map((each) => each.session.id),
+      ),
+    [connectionClient.connectionId, heldRoot, reviewSessions],
+  );
   // The commit shown keeps its own marks (its sha).
   const reviewView = changesReviewView(viewCommit);
   const reviewState = useMemo(
@@ -2865,16 +2907,27 @@ function DiffContentViewInner({
     () =>
       reviewEditor
         ? otherReviewFiles(
-            // The worktree review's own: an older rendered file's review
-            // keeps its threads (shown in Files, and here on a change).
+            // The checkout's code reviews' (this one's, its working
+            // tree's, its branch's under any base): an older rendered
+            // file's review keeps its threads (shown in Files, and here on
+            // a change).
             (drawnThreads ?? NO_THREADS).filter(
-              (thread) => thread.sessionId === ownReviewId,
+              (thread) =>
+                thread.sessionId === ownReviewId ||
+                checkoutReviewIds.has(thread.sessionId),
             ),
             reviewedMarks,
             new Set(entries.map((each) => each.path)),
           )
         : NO_OTHER_FILES,
-    [drawnThreads, entries, ownReviewId, reviewEditor, reviewedMarks],
+    [
+      checkoutReviewIds,
+      drawnThreads,
+      entries,
+      ownReviewId,
+      reviewEditor,
+      reviewedMarks,
+    ],
   );
   /**
    * The threads the Comments panel lists, and the head counts: those on
@@ -2897,6 +2950,27 @@ function DiffContentViewInner({
     });
     return [...shownThreads, ...more];
   }, [drawnThreads, otherFiles, reviewEditor, shownThreads]);
+  /**
+   * What the Comments panel lists in the review, and its chip counts: the
+   * threads of this view's files and the Other files', then those written
+   * on another view (a commit's, all the changes'), so none is missing.
+   */
+  const panelThreads = useMemo(() => {
+    if (!reviewEditor || !viewed.otherView.length) return listedThreads;
+    const listed = new Set(listedThreads.map((thread) => thread.id));
+    return [
+      ...listedThreads,
+      ...viewed.otherView.filter((thread) => !listed.has(thread.id)),
+    ];
+  }, [listedThreads, reviewEditor, viewed.otherView]);
+  /** Said after where a listed thread is: its view, outdated. */
+  const panelWhereNote = useMemo(() => {
+    const view = otherViewNote(viewed.otherView);
+    return (thread: ReviewThread) =>
+      [view(thread), thread.anchor.outdated ? "outdated" : undefined]
+        .filter(Boolean)
+        .join(", ") || undefined;
+  }, [viewed.otherView]);
   const otherFileOf = (thread: ReviewThread) =>
     otherFiles.find((other) => other.threads.includes(thread))?.path;
   /** Shows an Other file's block (its threads), from the panel or the tree. */
@@ -5852,10 +5926,10 @@ function DiffContentViewInner({
           }}
         />
       ) : null}
-      {listedThreads.length ? (
+      {panelThreads.length ? (
         <ThreadsChip
           className="diff-threads-chip"
-          threads={listedThreads}
+          threads={panelThreads}
           undelivered={
             diffThreads?.undelivered
               ? {
@@ -6044,13 +6118,9 @@ function DiffContentViewInner({
         <ThreadsList
           className="diff-threads"
           threads={
-            reviewEditor
-              ? conversationOrder([...listedThreads, ...viewed.otherView])
-              : listedThreads
+            reviewEditor ? conversationOrder(panelThreads) : listedThreads
           }
-          {...(reviewEditor && viewed.otherView.length
-            ? { whereNote: otherViewNote(viewed.otherView) }
-            : {})}
+          {...(reviewEditor ? { whereNote: panelWhereNote } : {})}
           api={diffThreads?.api ?? threadWrites(connectionClient.connectionId)}
           onGo={
             reviewEditor

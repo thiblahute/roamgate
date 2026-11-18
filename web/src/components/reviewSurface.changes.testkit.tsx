@@ -317,10 +317,11 @@ export async function mountChangesReview(
           [
             String(session.id),
             {
-              session: { workspaceId: "workspace", ...session } as Record<
-                string,
-                unknown
-              >,
+              session: {
+                workspaceId: "workspace",
+                connectionId,
+                ...session,
+              } as Record<string, unknown>,
               threads: (options.shared ?? [])
                 .filter((thread) => thread.sessionId === session.id)
                 .map((thread) => asFeedback(thread, String(session.id))),

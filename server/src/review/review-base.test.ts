@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import { resolveDefaultBase } from "../workspace/diff-base";
-import { readDefaultBase } from "../workspace/review-patch";
+import { readDefaultBase, readReviewHeads } from "../workspace/review-patch";
 import { createReviewAgentServer } from "./agent-server";
 import { handleReviewRpc } from "./rpc";
 import { reviewServiceForTest } from "./testkit";
@@ -76,7 +76,11 @@ async function branchScopeBase(root: string) {
 function setup(root: string) {
   const dir = temp("rg-rb-");
   const home = temp("rg-rbh-");
-  const { service } = reviewServiceForTest({ dir });
+  const { service } = reviewServiceForTest({
+    dir,
+    loadHeads: (_connection, entries) =>
+      readReviewHeads({ entries, shQuote, runProcessWithCodeTimeout }),
+  });
   const defaultBase = (path: string) =>
     readDefaultBase({ root: path, shQuote, runProcessWithCodeTimeout });
   const agent = createReviewAgentServer({
@@ -293,4 +297,21 @@ test("when Automatic's base moves, the branch's review follows it with its comme
     "Kept?",
   ]);
   expect(service.list({ root }).length).toBe(1);
+});
+
+test("an agent's range of the checked-out branch joins the Branch scope's review", async () => {
+  const { root } = repository();
+  const { service, agentOpen, branchComment } = setup(root);
+  const branch = await branchComment("On the branch");
+  // The agent names the branch and its base itself.
+  const byAgent = await agentOpen("--range", "main..topic");
+  expect(byAgent.session.id).toBe(branch.session.id);
+  expect(service.list({ root }).length).toBe(1);
+  // Another range is another review, and one kept is kept.
+  git(root, "branch", "older", "HEAD~1");
+  const other = await agentOpen("--range", "main..older");
+  expect(other.session.id).not.toBe(branch.session.id);
+  expect((await agentOpen("--range", "main..older")).session.id).toBe(
+    other.session.id,
+  );
 });
