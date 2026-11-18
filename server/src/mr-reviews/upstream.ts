@@ -340,17 +340,22 @@ export type UpstreamBranch = {
 };
 
 /**
- * The request a branch is: one of the user's on the target project from
- * that branch (open or merged; a closed one leaves the branch's work
- * unproposed), or one whose commits hold all of the branch's by patch id.
+ * The request a branch is: one of the user's on the target project at the
+ * branch's head (whatever its source branch is called, a fork's
+ * `upstream/<name>` say), else from that branch (or one of `names`; open
+ * or merged; a closed one leaves the branch's work unproposed), else one
+ * whose commits hold all of the branch's by patch id.
  */
 export function requestOfBranch(
   branch: Pick<
     UpstreamBranch,
     "provider" | "host" | "project" | "branch" | "commits"
-  >,
+  > &
+    Partial<Pick<UpstreamBranch, "head">>,
   items: readonly MrItem[],
   patchIds: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
+  /** Other names its request's source branch may have. */
+  names: readonly string[] = [],
 ): MrItem | null {
   const same = (item: MrItem) =>
     item.provider === branch.provider &&
@@ -362,7 +367,13 @@ export function requestOfBranch(
       same(item) &&
       item.state !== "closed",
   );
-  const byName = own.find((item) => item.sourceBranch === branch.branch);
+  const byHead = branch.head
+    ? own.find((item) => item.headSha === branch.head)
+    : undefined;
+  if (byHead) return byHead;
+  const byName =
+    own.find((item) => item.sourceBranch === branch.branch) ??
+    own.find((item) => names.includes(item.sourceBranch));
   if (byName) return byName;
   const ids = branch.commits.flatMap((commit) =>
     commit.patchId ? [commit.patchId] : [],
@@ -492,6 +503,12 @@ export function createUpstreamScanner(options: {
   settings: () => Promise<MrReviewsSettings>;
   /** The inbox's requests: a branch's own request covers it. */
   items?: () => MrItem[];
+  /**
+   * The efforts' parts' checkouts, read as well wherever they sit in the
+   * Workspaces tree (under the effort's head workspace, say), with their
+   * effort's group as home.
+   */
+  parts?: (settings: MrReviewsSettings) => UpstreamMember[];
   now?: () => number;
 }) {
   const now = options.now ?? (() => Date.now());
@@ -562,9 +579,11 @@ export function createUpstreamScanner(options: {
 
   async function scan(): Promise<void> {
     const settings = await options.settings();
+    const parts = options.parts?.(settings) ?? [];
     if (
       !settings.upstreamGroups.length &&
-      !settings.upstreamWorkspaces.length
+      !settings.upstreamWorkspaces.length &&
+      !parts.length
     ) {
       branches = [];
       return;
@@ -574,9 +593,22 @@ export function createUpstreamScanner(options: {
     const { live, dirs } = await readLiveWorkspaces(connections);
     const members = upstreamMembers(tree, settings, live, dirs);
     lastMembers = members;
+    const known = new Set(
+      members.map((member) => `${member.connectionId}\0${member.path}`),
+    );
+    const read = [...members];
+    for (const part of parts) {
+      const id = `${part.connectionId}\0${part.path}`;
+      if (known.has(id)) continue;
+      known.add(id);
+      const identity = live
+        .get(part.connectionId)
+        ?.find((each) => each.workspace_id === part.workspaceId);
+      read.push(identity?.label ? { ...part, label: identity.label } : part);
+    }
     const next: UpstreamBranch[] = [];
     for (const connection of connections) {
-      const mine = members.filter(
+      const mine = read.filter(
         (member) => member.connectionId === connection.id,
       );
       if (!mine.length) continue;
