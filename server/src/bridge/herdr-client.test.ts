@@ -241,6 +241,168 @@ describe("HerdrClient synchronous connect", () => {
   });
 });
 
+/**
+ * Answers each request, after `delayMs`, with the methods received so far
+ * (`n` is this request's number) and lets a test hold answers back.
+ */
+async function startCountingServer(delayMs = 0) {
+  const received: string[] = [];
+  const socketPath = await startServer((socket, data) => {
+    const request = JSON.parse(data.toString("utf8"));
+    received.push(request.method);
+    const n = received.length;
+    setTimeout(
+      () =>
+        socket.end(
+          `${JSON.stringify({ id: request.id, result: { n, method: request.method, params: request.params } })}\n`,
+        ),
+      delayMs,
+    );
+  });
+  return { socketPath, received };
+}
+
+describe("HerdrClient shared reads", () => {
+  test("concurrent identical reads share one request", async () => {
+    const { socketPath, received } = await startCountingServer(20);
+    const client = new HerdrClient(socketPath);
+    const results = await Promise.all([
+      client.call("pane.list"),
+      client.call("pane.list"),
+      client.call("agent.get", { pane_id: "p1" }),
+      client.call("agent.get", { pane_id: "p1" }),
+      client.call("agent.get", { pane_id: "p2" }),
+    ]);
+    expect(received.sort()).toEqual(["agent.get", "agent.get", "pane.list"]);
+    expect(results[0]).toEqual(results[1]);
+    expect(results[2]).toEqual(results[3]);
+    expect(results[4].params).toEqual({ pane_id: "p2" });
+    // Each caller owns its copy.
+    results[0].n = -1;
+    expect(results[1].n).not.toBe(-1);
+  });
+
+  test("reuses a list answer briefly, but not a get answer", async () => {
+    const { socketPath, received } = await startCountingServer();
+    const client = new HerdrClient(socketPath, { readReuseMs: 60_000 });
+    const first = await client.call("workspace.list");
+    expect(await client.call("workspace.list")).toEqual(first);
+    await client.call("pane.get", { pane_id: "p1" });
+    await client.call("pane.get", { pane_id: "p1" });
+    expect(received).toEqual(["workspace.list", "pane.get", "pane.get"]);
+
+    const expiring = new HerdrClient(socketPath, { readReuseMs: 0 });
+    await expiring.call("tab.list");
+    await expiring.call("tab.list");
+    expect(received.filter((method) => method === "tab.list")).toHaveLength(2);
+  });
+
+  test("a change through the client, or a Herdr event, ends reuse", async () => {
+    const { socketPath, received } = await startCountingServer();
+    const client = new HerdrClient(socketPath, { readReuseMs: 60_000 });
+    await client.call("pane.list");
+    await client.call("pane.split", { pane_id: "p1" });
+    await client.call("pane.list");
+    // Pings change nothing.
+    await client.call("ping");
+    await client.call("pane.list");
+    expect(received).toEqual(["pane.list", "pane.split", "pane.list", "ping"]);
+
+    client.invalidateReads();
+    await client.call("pane.list");
+    expect(received.at(-1)).toBe("pane.list");
+    expect(received).toHaveLength(5);
+  });
+
+  test("a read in flight when a change starts is not joined after it", async () => {
+    const { socketPath, received } = await startCountingServer(30);
+    const client = new HerdrClient(socketPath, { readReuseMs: 60_000 });
+    const before = client.call("pane.list");
+    await Bun.sleep(5);
+    const change = client.call("tab.create", {});
+    const after = client.call("pane.list");
+    const [beforeResult, , afterResult] = await Promise.all([
+      before,
+      change,
+      after,
+    ]);
+    expect(received).toEqual(["pane.list", "tab.create", "pane.list"]);
+    expect(afterResult.n).toBeGreaterThan(beforeResult.n);
+    // Neither read overlapping the change is reused once it ends.
+    expect((await client.call("pane.list")).n).toBe(4);
+  });
+
+  test("an event on a subscription ends reuse", async () => {
+    let subscriber: net.Socket | undefined;
+    const received: string[] = [];
+    const socketPath = await startServer((socket, data) => {
+      const request = JSON.parse(data.toString("utf8"));
+      received.push(request.method);
+      if (request.method === "events.subscribe") {
+        subscriber = socket;
+        socket.write(`${JSON.stringify({ id: request.id, result: {} })}\n`);
+        return;
+      }
+      socket.end(`${JSON.stringify({ id: request.id, result: {} })}\n`);
+    });
+    const client = new HerdrClient(socketPath, { readReuseMs: 60_000 });
+    const subscription = client.subscribe(["pane.created"]);
+    await subscription.ready;
+    await client.call("pane.list");
+    await client.call("pane.list");
+    const event = new Promise((resolve) => client.once("event", resolve));
+    subscriber!.write(
+      `${JSON.stringify({ event: "pane.created", data: {} })}\n`,
+    );
+    await event;
+    await client.call("pane.list");
+    subscription.close();
+    expect(received).toEqual(["events.subscribe", "pane.list", "pane.list"]);
+  });
+
+  test("a fresh read neither joins nor reuses, and refreshes reuse", async () => {
+    const { socketPath, received } = await startCountingServer(10);
+    const client = new HerdrClient(socketPath, { readReuseMs: 60_000 });
+    const [shared, fresh] = await Promise.all([
+      client.call("workspace.list"),
+      client.call("workspace.list", {}, 5000, undefined, { fresh: true }),
+    ]);
+    expect(received).toEqual(["workspace.list", "workspace.list"]);
+    expect(fresh.n).toBe(2);
+    expect(shared.n).toBe(1);
+    // The later answer is the one reused.
+    expect((await client.call("workspace.list")).n).toBe(2);
+    expect(
+      (
+        await client.call("workspace.list", {}, 5000, undefined, {
+          fresh: true,
+        })
+      ).n,
+    ).toBe(3);
+  });
+
+  test("checks each caller's beforeSend for that caller only", async () => {
+    const { socketPath, received } = await startCountingServer(10);
+    const client = new HerdrClient(socketPath);
+    const refused = client.call("pane.list", {}, 5000, () => {
+      throw new Error("Approval revoked");
+    });
+    const allowed = client.call("pane.list", {}, 5000, () => undefined);
+    await expect(refused).rejects.toThrow("Approval revoked");
+    await expect(allowed).resolves.toMatchObject({ method: "pane.list" });
+    expect(received).toEqual(["pane.list"]);
+  });
+
+  test("a caller joining a read in flight keeps its own timeout", async () => {
+    const { socketPath } = await startCountingServer(200);
+    const client = new HerdrClient(socketPath);
+    const patient = client.call("pane.list", {}, 5000);
+    const hurried = client.call("pane.list", {}, 20);
+    await expect(hurried).rejects.toThrow("timeout: pane.list");
+    await expect(patient).resolves.toMatchObject({ method: "pane.list" });
+  });
+});
+
 describe("HerdrClient subscription lifecycle", () => {
   test("close before acknowledgement rejects ready and resolves closed", async () => {
     const client = new HerdrClient(await startServer());

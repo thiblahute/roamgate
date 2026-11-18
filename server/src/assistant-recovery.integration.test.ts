@@ -829,12 +829,14 @@ test("confirmed Ranger proposals schedule custom notifications and deduplicate p
       },
     ]);
     expect(f.requests).toHaveLength(11);
-    expect(
-      f.calls.filter(
-        (call) =>
-          call.method === "pane.list" && call.params?.workspace_id === "w1",
-      ),
-    ).toHaveLength(3);
+    // One pane listing per run, except that the restarted bridge may reuse
+    // its first answer for a run within a second of it.
+    const listings = f.calls.filter(
+      (call) =>
+        call.method === "pane.list" && call.params?.workspace_id === "w1",
+    ).length;
+    expect(listings).toBeGreaterThanOrEqual(2);
+    expect(listings).toBeLessThanOrEqual(3);
   } finally {
     await f.dispose();
   }

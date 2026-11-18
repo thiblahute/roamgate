@@ -10,6 +10,46 @@ import {
 const MAX_NDJSON_LINE_BYTES = 1024 * 1024;
 const SUBSCRIPTION_ACK_TIMEOUT_MS = 8000;
 
+/**
+ * Reads whose answer does not depend on who asks: identical calls made while
+ * one is in flight share its request (Herdr handles requests one at a time,
+ * and a pane.list costs it about 10 ms).
+ */
+const SHARED_READS = new Set([
+  "workspace.list",
+  "workspace.get",
+  "tab.list",
+  "tab.get",
+  "pane.list",
+  "pane.get",
+  "pane.layout",
+  "agent.list",
+  "agent.get",
+]);
+
+/**
+ * The topology lists every page, poller and lookup asks for (each browser
+ * refreshes them every few seconds and on every event): an answer is reused
+ * for READ_REUSE_MS after its request started, unless a Herdr event or a
+ * change made through this client came in since.
+ */
+const REUSED_READS = new Set([
+  "workspace.list",
+  "tab.list",
+  "pane.list",
+  "agent.list",
+]);
+const READ_REUSE_MS = 1000;
+
+/** Methods that change nothing in Herdr, so keep the reads above valid. */
+const NON_CHANGING = new Set(["ping"]);
+
+type SharedRead = {
+  generation: number;
+  startedAt: number;
+  result: Promise<unknown>;
+};
+
 /** The one-shot socket a call writes its request to. */
 type OneShotSocket = {
   /** Bytes the socket took; the rest waits for `drain`. */
@@ -122,6 +162,7 @@ export class HerdrClient extends EventEmitter {
       connectionId?: string;
       useBunSocket?: boolean;
       syncConnect?: boolean;
+      readReuseMs?: number;
     } = {},
   ) {
     super();
@@ -131,10 +172,160 @@ export class HerdrClient extends EventEmitter {
     this.syncConnect =
       this.useBunSocket &&
       (options.syncConnect ?? process.platform === "linux");
+    this.readReuseMs = options.readReuseMs ?? READ_REUSE_MS;
+  }
+
+  /**
+   * Bumped by every Herdr event and by every change made through this
+   * client (when it starts and when it ends): a read started before that is
+   * neither joined nor reused afterwards.
+   */
+  private readGeneration = 0;
+  private sharedReads = new Map<string, SharedRead>();
+  private reusedReads = new Map<string, SharedRead>();
+  private readReuseMs: number;
+
+  /** Forget shared and reused reads: Herdr's state may have changed. */
+  invalidateReads(): void {
+    this.readGeneration += 1;
+    this.sharedReads.clear();
+    this.reusedReads.clear();
+  }
+
+  /**
+   * Herdr RPC. Reads in SHARED_READS join an identical one in flight, and
+   * those in REUSED_READS reuse a recent answer (see READ_REUSE_MS); each
+   * caller gets its own copy of the result. A shared read checks each
+   * caller's beforeSend for that caller only (a read sent for a caller whose
+   * check then fails changes nothing; that caller is just refused).
+   * `fresh` asks Herdr anew, for a check a decision rests on.
+   */
+  call(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = 8000,
+    beforeSend?: () => void,
+    options: { fresh?: boolean } = {},
+  ): Promise<any> {
+    if (SHARED_READS.has(method)) {
+      return this.sharedRead(
+        method,
+        params,
+        timeoutMs,
+        beforeSend,
+        options.fresh === true,
+      );
+    }
+    if (NON_CHANGING.has(method)) {
+      return this.request(method, params, timeoutMs, beforeSend);
+    }
+    this.invalidateReads();
+    const result = this.request(method, params, timeoutMs, beforeSend);
+    const settled = () => this.invalidateReads();
+    result.then(settled, settled);
+    return result;
+  }
+
+  private sharedRead(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number,
+    beforeSend: (() => void) | undefined,
+    fresh: boolean,
+  ): Promise<any> {
+    const key = `${method}\n${JSON.stringify(params)}`;
+    const generation = this.readGeneration;
+    const now = performance.now();
+    const reusable = this.reusedReads.get(key);
+    const inFlight = this.sharedReads.get(key);
+    let read: SharedRead;
+    let reuse: "cache" | "in_flight" | null = null;
+    if (
+      !fresh &&
+      reusable?.generation === generation &&
+      now - reusable.startedAt < this.readReuseMs
+    ) {
+      read = reusable;
+      reuse = "cache";
+    } else if (!fresh && inFlight?.generation === generation) {
+      read = inFlight;
+      reuse = "in_flight";
+    } else {
+      const started: SharedRead = {
+        generation,
+        startedAt: now,
+        result: this.request(method, params, timeoutMs),
+      };
+      read = started;
+      this.sharedReads.set(key, started);
+      const forget = () => {
+        if (this.sharedReads.get(key) === started) this.sharedReads.delete(key);
+      };
+      started.result.then(() => {
+        forget();
+        const kept = this.reusedReads.get(key);
+        // Never replace an answer with one Herdr was asked for earlier.
+        if (
+          REUSED_READS.has(method) &&
+          this.readGeneration === started.generation &&
+          (!kept || kept.startedAt <= started.startedAt)
+        )
+          this.reusedReads.set(key, started);
+      }, forget);
+    }
+    if (reuse && this.logger.enabled("debug")) {
+      void read.result.then(
+        () =>
+          this.logger.debug("herdr call reused", {
+            connection: this.connectionId,
+            method,
+            reuse,
+            total_ms: Math.round(performance.now() - now),
+            age_ms: Math.round(performance.now() - read.startedAt),
+          }),
+        () => undefined,
+      );
+    }
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const settle = (outcome: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        outcome();
+      };
+      // Like an unshared call: checked after call() returns.
+      queueMicrotask(() => {
+        try {
+          beforeSend?.();
+        } catch (error) {
+          settle(() =>
+            reject(
+              error instanceof Error
+                ? error
+                : new Error("RPC dispatch rejected"),
+            ),
+          );
+          return;
+        }
+        // The request that started carries its caller's own timeout.
+        if (reuse === "in_flight") {
+          timer = setTimeout(
+            () => settle(() => reject(new Error(`timeout: ${method}`))),
+            timeoutMs,
+          );
+        }
+        read.result.then(
+          (value) => settle(() => resolve(structuredClone(value))),
+          (error) => settle(() => reject(error)),
+        );
+      });
+    });
   }
 
   /** One-shot RPC: open -> send one request -> read one response -> close. */
-  call(
+  private request(
     method: string,
     params: Record<string, unknown> = {},
     timeoutMs = 8000,
@@ -455,6 +646,8 @@ export class HerdrClient extends EventEmitter {
             rejectReady(new Error(message));
             s.destroy();
           } else {
+            // Events may have been missed while not subscribed.
+            this.invalidateReads();
             resolveReady();
           }
           continue;
@@ -465,6 +658,7 @@ export class HerdrClient extends EventEmitter {
           !Array.isArray(msg) &&
           typeof (msg as { event?: unknown }).event === "string"
         ) {
+          this.invalidateReads();
           this.emit("event", msg);
         }
       }
@@ -492,6 +686,6 @@ export class HerdrClient extends EventEmitter {
   }
 
   ping(): Promise<any> {
-    return this.call("ping");
+    return this.request("ping");
   }
 }
