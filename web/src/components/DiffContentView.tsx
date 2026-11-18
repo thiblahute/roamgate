@@ -573,6 +573,8 @@ const NO_MARKS: Readonly<Record<string, string>> = {};
 const NO_OTHER_FILES: readonly OtherFile[] = [];
 const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
 const NO_THREADS: ReviewThread[] = [];
+/** How long Go to it waits for a thread's view, file and lines to land. */
+const THREAD_GO_TO_MS = 15_000;
 const NO_FORGE_HOST: ForgeHost = {};
 const NO_NESTED: ReadonlyMap<string, ReviewThread[]> = new Map();
 
@@ -711,6 +713,21 @@ export function diffViewThreads(
         : undefined;
     return thread ? [thread] : [];
   });
+}
+
+/**
+ * Where the Comments panel says a thread of another view is: on a commit
+ * (its short sha), or on all the changes.
+ */
+export function otherViewNote(
+  threads: readonly ReviewThread[],
+): (thread: ReviewThread) => string | undefined {
+  const ids = new Set(threads.map((thread) => thread.id));
+  return (thread) => {
+    if (!ids.has(thread.id)) return undefined;
+    const { commit } = thread.anchor;
+    return commit ? `on commit ${commit.slice(0, 8)}` : "on all the changes";
+  };
 }
 
 /**
@@ -1350,6 +1367,7 @@ function DiffContentViewInner({
   agentPanes = NO_AGENT_PANES,
   onFocusAgentPane,
   onThreadsElsewhere,
+  onShowThreadView,
   onCloseReview,
   onShowReviews,
   reviewOnly = false,
@@ -1451,6 +1469,11 @@ function DiffContentViewInner({
    * view of the review (a commit, one rewritten out of it), shown there;
    * false when there is none.
    */
+  /**
+   * Go to it on a thread written on another view (a commit's, all the
+   * changes'): that view shown; false when there is none to show.
+   */
+  onShowThreadView?: (thread: ReviewThread) => boolean;
   onThreadsElsewhere?: (
     direction: 1 | -1,
     drawn: ReadonlySet<string>,
@@ -1555,6 +1578,9 @@ function DiffContentViewInner({
   // it was written on: a commit's, or all the changes'.
   const viewed = useMemo(() => {
     const hidden = new Set<string>();
+    // Hidden as written on another view (a commit's, all the changes'):
+    // still listed in the Comments panel, which shows that view.
+    const otherView = new Set<string>();
     // A step's review is drawn on that step only: not on the
     // working tree, the branch or another step.
     for (const thread of scoped.threads) {
@@ -1592,12 +1618,15 @@ function DiffContentViewInner({
             (own === viewCommit ||
               viewCommit.startsWith(own) ||
               own.startsWith(viewCommit));
-      if (!shows) hidden.add(note.id);
+      if (shows) continue;
+      if (!hidden.has(note.id)) otherView.add(note.id);
+      hidden.add(note.id);
     }
-    if (!hidden.size) return scoped;
+    if (!hidden.size) return { ...scoped, otherView: NO_THREADS };
     return {
       annotations: scoped.annotations.filter((note) => !hidden.has(note.id)),
       threads: scoped.threads.filter((thread) => !hidden.has(thread.id)),
+      otherView: scoped.threads.filter((thread) => otherView.has(thread.id)),
     };
   }, [
     scoped,
@@ -3406,8 +3435,52 @@ function DiffContentViewInner({
         )
       : null;
   })();
+  /**
+   * A thread being gone to (the Comments panel's Go to it, n / N to one
+   * whose lines are not drawn): its view shown, its file opened and read,
+   * the lines around it revealed, then shown (showThread). Taken up again
+   * as each of those lands (below, once the folds are known).
+   */
+  const threadGoToRef = useRef<{
+    id: string;
+    at: number;
+    /** Its view (a commit's, all the changes') asked for. */
+    view: boolean;
+    /** The sections opened or read for it. */
+    opened: Set<string>;
+    /** The lines hidden around it asked for. */
+    revealed: boolean;
+  } | null>(null);
+  const [, setThreadGoToTurn] = useState(0);
+  const goToAnyThread = (thread: ReviewThread) => {
+    threadGoToRef.current = {
+      id: thread.id,
+      at: Date.now(),
+      view: false,
+      opened: new Set(),
+      revealed: false,
+    };
+    setThreadGoToTurn((turn) => turn + 1);
+    // Taken up once more when it is given up, to say so.
+    setTimeout(
+      () => setThreadGoToTurn((turn) => turn + 1),
+      THREAD_GO_TO_MS + 50,
+    );
+  };
+  /** Whether a thread's line is among the rows drawn (its file open, read). */
+  const spotDrawn = (spot: PlacedThread) =>
+    cursorHandle.current.model.rows.some(
+      (row) =>
+        row.key === spot.key &&
+        (spot.side === "old" ? row.old : row.new) === spot.line,
+    );
   /** Shows a thread to be read: unfolded, its line in view. */
   const showThread = (spot: PlacedThread) => {
+    // Its file folded, not read, or its view another: opened on the way.
+    if (!spotDrawn(spot)) {
+      goToAnyThread(spot.thread);
+      return;
+    }
     // In a folded reviewed file: the file opens;
     // its lines are the cursor's again at once.
     if (foldedFiles.has(spot.path)) {
@@ -5128,6 +5201,110 @@ function DiffContentViewInner({
       window.removeEventListener("keydown", onKey, { capture: true });
   }, [embedded, mobile, focusSearch]);
 
+  // A thread gone to (goToAnyThread): one step each time something lands,
+  // until it is shown, or found gone, or given up.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each render
+  useEffect(() => {
+    const pending = threadGoToRef.current;
+    if (!pending) return;
+    const done = () => {
+      threadGoToRef.current = null;
+    };
+    const thread =
+      scoped.threads.find((each) => each.id === pending.id) ??
+      drawnThreads?.find((each) => each.id === pending.id);
+    if (!thread) return done();
+    if (Date.now() - pending.at > THREAD_GO_TO_MS) {
+      done();
+      say("This comment's line could not be shown.");
+      return;
+    }
+    const spot = readingOrder.find((each) => each.thread.id === pending.id);
+    const gone = !!placement?.unplaced.some((each) => each.id === pending.id);
+    if (!spot && !gone) {
+      // Not in this view: its own (a commit's, all the changes') shown.
+      if (pending.view) return;
+      if (onShowThreadView?.(thread)) {
+        pending.view = true;
+        return;
+      }
+      done();
+      goToThread(thread);
+      return;
+    }
+    const section =
+      renderedSections.find((each) => each.key === spot?.key) ??
+      renderedSections.find((each) => each.entry.path === thread.anchor.path);
+    if (!section) {
+      done();
+      goToThread(thread);
+      return;
+    }
+    // Its file folded (by hand, as large) or not read yet: opened, read.
+    if (section.collapsed || !section.file) {
+      if (!pending.opened.has(section.key)) {
+        pending.opened.add(section.key);
+        if (section.collapsed) toggleSectionCollapsed(section.key, true);
+        if (!section.file) handleSelectFile(section.entry);
+      }
+      return;
+    }
+    if (spot && !gone) {
+      // Drawn once its lines are the cursor's.
+      if (!spotDrawn(spot)) return;
+      done();
+      showThread(spot);
+      // Its card in sight too, once drawn under the lines just shown.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          sectionRef.current
+            ?.querySelector(
+              `.chat-thread[data-thread-id="${CSS.escape(thread.id)}"]`,
+            )
+            ?.scrollIntoView?.({ block: "nearest" }),
+        ),
+      );
+      return;
+    }
+    // Not found on its line: maybe among the lines the diff hides, shown;
+    // else gone, and the nearest line of its file is gone to.
+    const { side = "new" } = thread.anchor;
+    const line = thread.anchor.endLine ?? thread.anchor.line ?? 0;
+    const shownPatch =
+      expandedCache.current.get(section.key)?.file.diff ?? section.file.diff;
+    const hidden =
+      side === "new" && line > 0 && shownPatch
+        ? revealLine(shownPatch, line)
+        : null;
+    if (hidden) {
+      if (!pending.revealed) {
+        pending.revealed = true;
+        expandGaps(section.key, [hidden]);
+      }
+      return;
+    }
+    done();
+    const rows = cursorHandle.current.model.rows;
+    let best = -1;
+    let distance = Number.POSITIVE_INFINITY;
+    rows.forEach((row, at) => {
+      if (row.key !== section.key) return;
+      const number =
+        (side === "old" ? row.old : row.new) ??
+        (side === "old" ? row.new : row.old);
+      if (number === null) return;
+      const away = Math.abs(number - (thread.anchor.line ?? 0));
+      if (away < distance) {
+        distance = away;
+        best = at;
+      }
+    });
+    if (best >= 0) cursorHandle.current.moveTo(best);
+    say(
+      `This comment's line is no longer in the diff: ${best >= 0 ? "on the nearest line" : "its file is shown"}.`,
+    );
+  });
+
   const diffList = visibleEntries.length ? (
     <DiffSurfaceScroll
       className={`pierre-diff-scroll ${mobile ? "is-compact" : ""} ${continuous ? "is-continuous" : ""}`}
@@ -5856,13 +6033,19 @@ function DiffContentViewInner({
         <ThreadsList
           className="diff-threads"
           threads={
-            reviewEditor ? conversationOrder(listedThreads) : listedThreads
+            reviewEditor
+              ? conversationOrder([...listedThreads, ...viewed.otherView])
+              : listedThreads
           }
+          {...(reviewEditor && viewed.otherView.length
+            ? { whereNote: otherViewNote(viewed.otherView) }
+            : {})}
           api={diffThreads?.api ?? threadWrites(connectionClient.connectionId)}
           onGo={
             reviewEditor
               ? (thread) => {
-                  // On its line, the panel closed.
+                  // On its line, the panel closed: its view shown, its
+                  // file opened and read, its lines revealed on the way.
                   setThreadsOpen(false);
                   const spot = readingOrder.find(
                     (each) => each.thread.id === thread.id,
@@ -5870,7 +6053,7 @@ function DiffContentViewInner({
                   const other = spot ? undefined : otherFileOf(thread);
                   if (spot) showThread(spot);
                   else if (other) showOtherFile(other);
-                  else goToThread(thread);
+                  else goToAnyThread(thread);
                   sectionRef.current?.focus({ preventScroll: true });
                 }
               : goToThread
@@ -6285,6 +6468,29 @@ export function DiffContentView({
     });
     return true;
   };
+  /**
+   * Go to it on a thread of another view: its commit's (one rewritten out
+   * of the review too, named as it was), or all the changes'.
+   */
+  const showThreadView = (thread: ReviewThread): boolean => {
+    if (!views.active || !views.commits?.length) return false;
+    const { commit, commitSubject, commitParent } = thread.anchor;
+    const order = views.commits.map((each) => each.sha);
+    const sha = commit
+      ? (order.find((each) => each.startsWith(commit)) ?? commit)
+      : null;
+    if (sha === views.sha) return false;
+    views.show(
+      sha,
+      sha === null || order.includes(sha)
+        ? undefined
+        : {
+            ...(commitSubject ? { subject: commitSubject } : {}),
+            ...(commitParent ? { parent: commitParent } : {}),
+          },
+    );
+    return true;
+  };
   const commands: InspectorCommand[] = [
     {
       name: "commit",
@@ -6340,6 +6546,7 @@ export function DiffContentView({
       cursorGoTo={goTo ?? null}
       onRetry={reload}
       onThreadsElsewhere={threadsElsewhere}
+      onShowThreadView={showThreadView}
       placeKey={placeKey}
       placeSettled={
         !views.active ||
