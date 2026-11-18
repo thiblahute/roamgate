@@ -129,8 +129,10 @@ export function entry(
 
 /** Install a happy-dom window as the global DOM; returns a restore. */
 export async function installChangesDom(url = "http://localhost/") {
-  const { installTestDom } = await import("../testDom");
-  return installTestDom({ url, pierre: true });
+  const { installTestDom, warmPierre } = await import("../testDom");
+  const installed = installTestDom({ url, pierre: true });
+  await warmPierre();
+  return installed;
 }
 
 const PATCH = "@@ -1 +1 @@\n-old\n+new\n";

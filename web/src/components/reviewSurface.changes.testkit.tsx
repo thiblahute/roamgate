@@ -136,6 +136,8 @@ export async function mountChangesReview(
   options: SurfaceOptions,
 ): Promise<ReviewSurface> {
   const restoreGlobals = installPierreGlobals();
+  const { warmPierre } = await import("../testDom");
+  await warmPierre();
   // The bridge in memory: the checkout's worktree review, its reviewed
   // marks written by review.update.
   const { backend, mockReviewBackend, setUpScreen } = await import(
