@@ -2138,7 +2138,10 @@ is kept, and hints for the suggestions.
   **Automatic** takes the newer of the local default branch and its remote
   counterpart: `origin/main` when the local `main` is behind it, the local
   one when it is ahead (unless it is checked out), and when they diverged
-  the one whose merge-base with the branch is newest. **Against** and
+  the one whose merge-base with the branch is newest. A remote HEAD naming
+  a tool's metadata branch (Entire's `entire/checkpoints/v1`, notes) is
+  passed over for `main` or `master`; a branch's review once based on one
+  moves onto the default branch with its comments. **Against** and
   **Compare against** name the base chosen. Option+R and an agent's review
   use the same base; when it moves (a stale `main` caught up, say) the
   branch's review follows it with its comments. A comment under a branch

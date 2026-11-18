@@ -249,7 +249,11 @@ opens that review. Reading a range's commits (`review.commits`, an agent's
 no longer has (`server/src/review/commit-anchors.ts`): onto the commit with
 the same patch id, else subject (another branch's review only by patch id),
 at the line reading the same text (and quote), else onto that line in the
-whole change, else `anchor.outdated`, kept where it was.
+whole change, else `anchor.outdated`, kept where it was. Automatic's base
+never is a metadata ref (`isMetadataRef`: outside `refs/heads` and
+`refs/remotes`, or Entire's `entire/checkpoints`), even one a remote HEAD
+names; a review that followed Automatic onto one moves onto the default
+branch at its next automatic open.
 
 A review of commits (the Branch scope, a range) has two kinds of view
 in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,

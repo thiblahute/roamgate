@@ -1,4 +1,8 @@
-import type { ReviewSession, ReviewSnapshot } from "../../shared/review";
+import {
+  isMetadataRef,
+  type ReviewSession,
+  type ReviewSnapshot,
+} from "../../shared/review";
 import { trimRoot } from "./filesystemPaths";
 
 /*
@@ -44,4 +48,13 @@ export function checkoutReviews(
   return found.sort((a, b) =>
     b.session.updatedAt.localeCompare(a.session.updatedAt),
   );
+}
+
+/**
+ * A branch review that followed Automatic onto a metadata ref (a remote
+ * HEAD naming Entire's checkpoints): no longer the Branch scope's, whose
+ * first comment moves it onto the default branch.
+ */
+export function onMetadataBase(session: ReviewSession): boolean {
+  return session.target.kind === "range" && isMetadataRef(session.target.base);
 }
