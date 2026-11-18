@@ -99,6 +99,8 @@ export function createTerminalBridge(args: {
   /** Popup surfaces follow this connection's focused Space, not the shell default. */
   focusedWorkspaceId?: () => Promise<string | null>;
   surfaceCodecsEnabled?: () => Promise<boolean>;
+  /** Makes Herdr accept a new endpoint connection now (see EndpointClient). */
+  wakeHerdr?: () => void;
   validateCreationSource?: (source: EndpointCreationSource) => Promise<void>;
   createEmptyWorkspace?: (
     params: Record<string, unknown>,
@@ -916,6 +918,8 @@ export function createTerminalBridge(args: {
             logger,
             undefined,
             surfaceCodecsEnabled,
+            undefined,
+            args.wakeHerdr,
           )
         : new ThinClient(args.clientSocketPath, bridgeProtocol);
     let resolveFirstFrame!: (seen: boolean) => void;
