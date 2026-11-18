@@ -9,8 +9,8 @@ import {
   type ConversationPrompt,
   type ConversationSessionOptions,
   createConversationSession,
-  isSpokenStop,
 } from "./session";
+import { isSpokenStop } from "./session-voice";
 import {
   answerInterrupts,
   answerRewinds,
