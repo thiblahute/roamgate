@@ -40,8 +40,8 @@ import {
   type ConversationSession,
   type ConversationSessionOptions,
   createConversationSession,
-  isSpokenStop,
 } from "./session";
+import { isSpokenStop } from "./session-voice";
 import type { ShellRun, ShellRunner } from "./shell";
 import {
   BASH_OUTPUT_LIMIT,

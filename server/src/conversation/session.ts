@@ -3,12 +3,8 @@ import type {
   AgentChatEvent,
   AgentChatNextPrompt,
   AgentChatQueued,
-  AgentChatRewindCheck,
-  AgentChatRewindMode,
-  AgentChatRewindResult,
   AgentChatStatus,
   AgentChatStreamedText,
-  AgentChatVoiceAction,
 } from "../../../shared/agentChat";
 import type { AgentPromptAnswer, AgentQuestion } from "../../../shared/review";
 import { claudeProtocolDriver } from "./drivers/claude";
@@ -21,9 +17,18 @@ import type {
   RewindContext,
 } from "./drivers/types";
 import type { HeadlessProcess, SpawnHeadless } from "./headless";
+import {
+  type ConversationResumeState,
+  keptResumeState,
+  resumeStateOf,
+} from "./session-resume";
+import { createSessionRewind } from "./session-rewind";
+import { createReplyStream } from "./session-stream";
+import { createVoiceInput } from "./session-voice";
 
 // Claude's rewind check lives with its driver; re-exported here.
 export { rewindCheckOf } from "./drivers/claude-rewind";
+export type { ConversationResumeState } from "./session-resume";
 
 /** A permission or a question for the user, answered in the browser. */
 export type ConversationPrompt = {
@@ -100,68 +105,11 @@ export type ConversationSessionOptions = {
   driver?: ProtocolDriver;
 };
 
-const STOP_WORDS =
-  /^\s*(?:stop|stop it|stop now|arr[e\u00ea]te|halt)\s*[.!]*\s*$/i;
-
-/** A spoken "stop": always an interrupt, never a message. */
-export function isSpokenStop(text: string): boolean {
-  return STOP_WORDS.test(text);
-}
-
 type PermissionRequest = PromptRequest;
 
 /** A user line carrying another Claude session's or a teammate's message. */
 const PEER_LINE =
   /^\{"type":"user".*(?:<cross-session-message\b|<teammate-message\b|"origin":\{"kind":"peer")/;
-
-/**
- * What a session's lines left it in, saved with where they end in the
- * holder's log: a runtime after this one (a Roamgate restart) takes it up
- * there and reads only the lines after, instead of every line of the
- * process again.
- */
-export type ConversationResumeState = {
-  version: 1;
-  turn: boolean;
-  compacting: boolean;
-  activity: string | null;
-  last_block: "text" | "thinking" | "tool_use" | null;
-  tools: string[];
-  tasks: string[];
-  /** Permissions and questions not answered yet: asked again. */
-  prompts: PermissionRequest[];
-  next_prompt: AgentChatNextPrompt | null;
-  /** The reply text of the turn that runs, for a browser that reloads. */
-  streamed: AgentChatStreamedText[];
-  turn_uuid: string | null;
-  respawned_for_queue: boolean;
-  taken: string[];
-  recent: [string, { text: string; images: string[] }][];
-  /** The driver's codec state (DriverCodec.save). */
-  parser: unknown;
-};
-
-/** Past this, a saved state is not kept: its lines are read again. */
-const MAX_RESUME_BYTES = 1024 * 1024;
-
-function resumeStateOf(value: unknown): ConversationResumeState | null {
-  if (!value || typeof value !== "object") return null;
-  const state = value as Partial<ConversationResumeState>;
-  if (
-    state.version !== 1 ||
-    typeof state.turn !== "boolean" ||
-    !Array.isArray(state.tools) ||
-    !Array.isArray(state.tasks) ||
-    !Array.isArray(state.prompts) ||
-    !Array.isArray(state.streamed) ||
-    !Array.isArray(state.taken) ||
-    !Array.isArray(state.recent) ||
-    !state.parser ||
-    typeof state.parser !== "object"
-  )
-    return null;
-  return state as ConversationResumeState;
-}
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -228,9 +176,6 @@ export function createConversationSession(options: ConversationSessionOptions) {
     string,
     (answer: { error?: string; response?: Record<string, unknown> }) => void
   >();
-  // A rewind runs: nothing is written meanwhile (what is sent waits in the
-  // queue) and no handover may cut it.
-  let rewinding = false;
   let resultWaiters: (() => void)[] = [];
   const queue: AgentChatQueued[] = (options.queue ?? []).map((item) => ({
     ...item,
@@ -279,77 +224,14 @@ export function createConversationSession(options: ConversationSessionOptions) {
   // The message that started the turn that runs.
   let turnUuid: string | null = null;
 
-  // Deltas wait here for about a frame, per block.
-  const pending = new Map<
-    string,
-    { message_id: string; index: number; text: string }
-  >();
-  let deltaTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // The reply text the browsers were sent of the turn that runs, by block:
-  // a browser that subscribes in the middle of it (a reload) starts from
-  // there, not from the next delta.
-  const streamed = new Map<string, AgentChatStreamedText>();
-
-  function track(event: AgentChatEvent) {
-    switch (event.type) {
-      case "delta": {
-        const key = `${event.message_id}:${event.index}`;
-        const block = streamed.get(key);
-        if (block) block.text += event.text;
-        else
-          streamed.set(key, {
-            message_id: event.message_id,
-            index: event.index,
-            text: event.text,
-            done: false,
-          });
-        return;
-      }
-      case "block_stop": {
-        const key = `${event.message_id}:${event.index}`;
-        const block = streamed.get(key);
-        if (event.text !== undefined)
-          streamed.set(key, {
-            message_id: event.message_id,
-            index: event.index,
-            text: event.text,
-            done: true,
-          });
-        else if (block) block.done = true;
-        return;
-      }
-      case "abandoned":
-        for (const [key, block] of streamed)
-          if (
-            block.message_id === event.message_id &&
-            block.index >= event.from_index
-          )
-            streamed.delete(key);
-        return;
-      case "result":
-      case "session":
-        streamed.clear();
-        return;
-    }
-  }
-
-  function flushDeltas() {
-    if (deltaTimer) clearTimeout(deltaTimer);
-    deltaTimer = null;
-    for (const delta of pending.values()) {
-      const event = { type: "delta" as const, ...delta };
-      track(event);
-      if (!muted) options.emit(event);
-    }
-    pending.clear();
-  }
-
-  function emit(event: AgentChatEvent) {
-    flushDeltas();
-    track(event);
-    if (!muted) options.emit(event);
-  }
+  // The reply on its way to the browsers, and what was sent of it.
+  const reply = createReplyStream({
+    coalesceMs,
+    emit: options.emit,
+    muted: () => muted,
+  });
+  const emit = reply.emit;
+  const flushDeltas = reply.flush;
 
   function status(): AgentChatStatus {
     if (!proc) {
@@ -519,19 +401,13 @@ export function createConversationSession(options: ConversationSessionOptions) {
         });
         pushStatus();
         return;
-      case "delta": {
-        const key = `${item.message_id}:${item.index}`;
-        const held = pending.get(key);
-        if (held) held.text += item.text;
-        else
-          pending.set(key, {
-            message_id: item.message_id,
-            index: item.index,
-            text: item.text,
-          });
-        deltaTimer ??= setTimeout(flushDeltas, coalesceMs);
+      case "delta":
+        reply.delta({
+          message_id: item.message_id,
+          index: item.index,
+          text: item.text,
+        });
         return;
-      }
       case "block_stop":
         emit({
           type: "block_stop",
@@ -555,12 +431,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
         // partial text in the transcript, so the chat keeps it too.
         if (interrupting) return;
         // A retry's blocks: their deltas never reach the browser either.
-        for (const [key, held] of pending)
-          if (
-            held.message_id === item.message_id &&
-            held.index >= item.from_index
-          )
-            pending.delete(key);
+        reply.dropPending(item.message_id, item.from_index);
         emit({
           type: "abandoned",
           message_id: item.message_id,
@@ -732,7 +603,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
       !prompts.size &&
       !starting &&
       delivering === 0 &&
-      !rewinding
+      !rewinds.running()
     );
   }
 
@@ -944,10 +815,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
       if (item && typeof item.request_id === "string")
         deferred.set(item.request_id, item);
     nextPrompt = state.next_prompt ?? null;
-    streamed.clear();
-    for (const block of state.streamed)
-      if (block && typeof block.message_id === "string")
-        streamed.set(`${block.message_id}:${block.index}`, { ...block });
+    reply.restore(state.streamed);
     turnUuid = typeof state.turn_uuid === "string" ? state.turn_uuid : null;
     respawnedForQueue = state.respawned_for_queue === true;
     for (const id of state.taken)
@@ -1145,70 +1013,33 @@ export function createConversationSession(options: ConversationSessionOptions) {
     log,
   };
 
-  /**
-   * What a rewind to before `uuid` could do to the code, from the
-   * transcript alone: the sheet asks it as the user picks, so it starts
-   * nothing and asks the process nothing.
-   */
-  async function rewindCheck(uuid: string): Promise<AgentChatRewindCheck> {
-    if (!driver.rewind) return { code: "unknown" };
-    return driver.rewind.check(rewindContext, uuid);
-  }
-
-  /**
-   * Rewinds the session to before the user's message `uuid` (the driver's
-   * rewind: the conversation, the code, or both). The one process does it
-   * between turns: there is never a second writer.
-   */
-  async function rewind(input: {
-    uuid: string;
-    lastSeen?: string;
-    mode: AgentChatRewindMode;
-    interrupt?: boolean;
-  }): Promise<AgentChatRewindResult> {
-    const refuse = (reason: string) => ({ ok: false as const, reason });
-    if (!driver.rewind) return refuse(`${agentName} cannot rewind`);
-    if (rewinding) return refuse("A rewind is running already");
-    if (stopping) return refuse("The session is being handed back");
-    if (queue.length)
-      return refuse(
-        "Messages wait in the queue; send them or take them back first",
-      );
-    if (busy() && input.interrupt && proc) {
-      await interrupt();
-      await waitForResult(interruptWaitMs);
-    }
-    if (busy())
-      return refuse(
-        prompts.size
-          ? "A question or permission waits for an answer"
-          : "A turn is running; stop it first",
-      );
-    rewinding = true;
-    pushStatus();
-    try {
-      const result = await driver.rewind.run(rewindContext, {
-        uuid: input.uuid,
-        ...(input.lastSeen !== undefined ? { lastSeen: input.lastSeen } : {}),
-        mode: input.mode,
-      });
-      // Every browser drops what it streamed of the turns cut, and what it
-      // still showed as on its way out of the queue.
-      if (result.ok && input.mode !== "code")
-        emit({ type: "rewound", uuid: input.uuid });
-      return result;
-    } catch (error) {
-      return refuse(error instanceof Error ? error.message : String(error));
-    } finally {
-      rewinding = false;
-      pushStatus();
-      if (queue.length && !disposed) flushQueue();
-    }
-  }
+  // Rewinds, through the driver: while one runs nothing is written (what
+  // is sent waits in the queue) and no handover may cut it.
+  const rewinds = createSessionRewind({
+    driver,
+    context: rewindContext,
+    stopping: () => stopping,
+    queueLength: () => queue.length,
+    busy,
+    running: () => ({ process: proc !== null, prompts: prompts.size }),
+    interrupt,
+    waitForResult,
+    interruptWaitMs,
+    emit,
+    pushStatus,
+    flushQueue: () => {
+      if (!disposed) flushQueue();
+    },
+  });
+  const { rewind, rewindCheck } = rewinds;
 
   function busy() {
     return (
-      turn || compacting || prompts.size > 0 || delivering > 0 || rewinding
+      turn ||
+      compacting ||
+      prompts.size > 0 ||
+      delivering > 0 ||
+      rewinds.running()
     );
   }
 
@@ -1272,8 +1103,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
       next_prompt: nextPrompt ? { ...nextPrompt } : null,
     }),
     /** The reply text sent so far of the turn that runs, by block. */
-    streamed: (): AgentChatStreamedText[] =>
-      [...streamed.values()].map((block) => ({ ...block })),
+    streamed: (): AgentChatStreamedText[] => reply.streamed(),
     /**
      * Starts the process ahead of the first turn. When it cannot start,
      * what was typed meanwhile stays queued and the chat says so.
@@ -1333,78 +1163,35 @@ export function createConversationSession(options: ConversationSessionOptions) {
       return { status: "sent" as const, id };
     },
 
-    /**
-     * A spoken message, the barge-in mix: "stop" interrupts; while Claude
-     * is writing reply text the turn is interrupted (the partial reply
-     * stays) and the speech becomes the next turn; at any other point of a
-     * turn (tools, thinking, between two steps) the speech goes to stdin
-     * now and steers the same turn. A pending prompt is left alone: the
-     * speech waits in the queue.
-     */
-    async voice(input: {
-      text: string;
-      stop?: boolean;
-      uuid?: string;
-    }): Promise<{ action: AgentChatVoiceAction; id?: string }> {
-      const text = input.text.trim();
-      if (input.stop || isSpokenStop(text)) {
-        await interrupt();
-        return { action: "interrupted" };
-      }
-      if (!text) throw new Error("Nothing to send");
-      if (input.uuid && !take(input.uuid))
-        return {
-          action: queue.some((each) => each.id === input.uuid)
-            ? "queued"
-            : "sent",
-          id: input.uuid,
-        };
-      if (ready()) {
-        if (!queue.length) {
-          const id = await deliver(text, [], input.uuid);
-          return { action: "sent", id };
-        }
-        // Left from a start that failed: they go first, with this one.
-        const id = input.uuid ?? randomUUID();
-        queue.push({
-          id,
-          text,
-          images: [],
-          queued_at: new Date().toISOString(),
-        });
-        pushQueue();
-        return { action: (await drainQueue(id)) ? "sent" : "queued", id };
-      }
-      if (!turn || prompts.size || compacting) {
-        const item: AgentChatQueued = {
-          id: input.uuid ?? randomUUID(),
-          text,
-          images: [],
-          queued_at: new Date().toISOString(),
-        };
+    /** A spoken message, the barge-in mix (session-voice.ts). */
+    voice: createVoiceInput({
+      turn: () => ({
+        running: turn,
+        compacting,
+        prompts: prompts.size,
+        tools: tools.size,
+        lastBlock,
+      }),
+      ready,
+      take,
+      queued: (id) => queue.some((each) => each.id === id),
+      queueLength: () => queue.length,
+      enqueue: (item) => {
         queue.push(item);
         pushQueue();
-        return { action: "queued", id: item.id };
-      }
-      if (tools.size || lastBlock !== "text") {
-        const id = input.uuid ?? randomUUID();
-        delivering += 1;
-        try {
-          const message = await userMessage(text, [], id, [], true);
-          // The turn may have ended meanwhile: then it is a turn of its own.
-          if (!turn) return { action: "sent", id: await deliver(text, [], id) };
-          write(message);
-          remember(id, text, []);
-        } finally {
-          delivering -= 1;
-        }
-        return { action: "steered", id };
-      }
-      await interrupt();
-      await waitForResult(interruptWaitMs);
-      const id = await deliver(text, [], input.uuid);
-      return { action: "interrupted_then_sent", id };
-    },
+      },
+      drainQueue,
+      deliver,
+      interrupt,
+      waitForResult,
+      interruptWaitMs,
+      delivering: (change) => {
+        delivering += change;
+      },
+      steerMessage: (text, uuid) => userMessage(text, [], uuid, [], true),
+      write,
+      remember,
+    }),
 
     interrupt,
     waitForResult,
@@ -1495,21 +1282,6 @@ export function createConversationSession(options: ConversationSessionOptions) {
       if (!proc || ending || disposed) return null;
       const position = proc.position?.();
       if (!position) return null;
-      const blocks = new Map(
-        [...streamed].map(([key, block]) => [key, { ...block }]),
-      );
-      // Deltas not sent yet are part of the text so far.
-      for (const [key, held] of pending) {
-        const block = blocks.get(key);
-        if (block) block.text += held.text;
-        else
-          blocks.set(key, {
-            message_id: held.message_id,
-            index: held.index,
-            text: held.text,
-            done: false,
-          });
-      }
       const state: ConversationResumeState = {
         version: 1,
         turn,
@@ -1520,16 +1292,16 @@ export function createConversationSession(options: ConversationSessionOptions) {
         tasks: [...tasks],
         prompts: [...deferred.values(), ...asking.values()],
         next_prompt: nextPrompt ? { ...nextPrompt } : null,
-        streamed: [...blocks.values()],
+        // Deltas not sent yet are part of the text so far.
+        streamed: reply.snapshot(),
         turn_uuid: turnUuid,
         respawned_for_queue: respawnedForQueue,
         taken: [...taken],
         recent: [...recent].map(([uuid, message]) => [uuid, { ...message }]),
         parser: codec.save(),
       };
-      // A huge reply so far: its lines are read again instead.
-      if (JSON.stringify(state).length > MAX_RESUME_BYTES) return null;
-      return { ...position, state };
+      const kept = keptResumeState(state);
+      return kept ? { ...position, state: kept } : null;
     },
 
     async attach(): Promise<boolean> {
