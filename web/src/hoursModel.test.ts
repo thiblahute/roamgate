@@ -3,6 +3,10 @@ import {
   acceptanceLost,
   evidenceText,
   canPreview,
+  dayProjects,
+  formatHoursClock,
+  projectState,
+  projectTotals,
   groupEvidence,
   clockMinutes,
   failureText,
@@ -215,4 +219,123 @@ test("an agent's time elsewhere reads short", () => {
     }),
   ).toBe("agent in roamgate 12m");
   expect(evidenceText({ kind: "commit", title: "fix" })).toBe("fix");
+});
+
+test("project totals sum the worked time per project and task type, rounded up", () => {
+  const jr = { id: "10", label: "Just remote" };
+  const ig = { id: "12", label: "Igalia internal" };
+  const at = (
+    id: string,
+    status: Day["blocks"][0]["status"],
+    minutes: number,
+    extra: Partial<Day["blocks"][0]> = {},
+  ): Day["blocks"][0] => ({
+    id,
+    start: "2026-11-03T08:00:00-03:00",
+    end: "2026-11-03T09:00:00-03:00",
+    minutes,
+    status,
+    source: "ai",
+    ...extra,
+  });
+  const lines = projectTotals([
+    at("a", "accepted", 15, {
+      target: jr,
+      task_type: "dev",
+      worked_minutes: 7,
+    }),
+    at("q", "needs_input", 30, { target: jr, task_type: "dev" }),
+    at("b", "proposed", 45, {
+      target: jr,
+      task_type: "dev",
+      worked_minutes: 38,
+    }),
+    at("c", "submitted", 30, { target: ig }),
+    at("s", "skipped", 60, { target: ig }),
+    at("d", "accepted", 15, { target: jr, task_type: "review" }),
+    at("n", "proposed", 15),
+  ]);
+  expect(lines).toEqual([
+    {
+      target: jr,
+      task_type: "dev",
+      worked_minutes: 45,
+      minutes: 45,
+      blocks: ["a", "b"],
+      accepted: false,
+      submitted: false,
+    },
+    // Asking, or with no project: one line with no target.
+    {
+      target: null,
+      task_type: null,
+      worked_minutes: 45,
+      minutes: 45,
+      blocks: ["q", "n"],
+      accepted: false,
+      submitted: false,
+    },
+    {
+      target: ig,
+      task_type: null,
+      worked_minutes: 30,
+      minutes: 30,
+      blocks: ["c"],
+      accepted: true,
+      submitted: true,
+    },
+    {
+      target: jr,
+      task_type: "review",
+      worked_minutes: 15,
+      minutes: 15,
+      blocks: ["d"],
+      accepted: true,
+      submitted: false,
+    },
+  ]);
+  // 7 minutes worked alone is a whole unit; 31 is three.
+  expect(
+    projectTotals([
+      at("x", "accepted", 15, { target: ig, worked_minutes: 7 }),
+    ])[0]!.minutes,
+  ).toBe(15);
+  expect(
+    projectTotals([at("x", "accepted", 31, { target: ig })])[0]!.minutes,
+  ).toBe(45);
+  expect(lines.map(projectState)).toEqual([
+    "pending",
+    "question",
+    "submitted",
+    "accepted",
+  ]);
+});
+
+test("a day's lines are the provider's when it gives them", () => {
+  const day: Day = {
+    date: "2026-11-03",
+    status: "proposed",
+    blocks: [block("08:00", "09:00", "proposed")],
+    gaps: [],
+  };
+  expect(dayProjects(day)).toHaveLength(1);
+  expect(dayProjects(day)[0]!.minutes).toBe(30);
+  const projects = [
+    {
+      target: null,
+      worked_minutes: 1,
+      minutes: 15,
+      blocks: [],
+      accepted: false,
+      submitted: false,
+    },
+  ];
+  expect(dayProjects({ ...day, projects })).toBe(projects);
+});
+
+test("reported time reads as hours and minutes", () => {
+  expect(formatHoursClock(0)).toBe("0:00");
+  expect(formatHoursClock(15)).toBe("0:15");
+  expect(formatHoursClock(75)).toBe("1:15");
+  expect(formatHoursClock(600)).toBe("10:00");
 });

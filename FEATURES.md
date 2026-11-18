@@ -1060,10 +1060,15 @@ across a project and its subprojects. It works in panes on SSH hosts too.
 - **Hours** (the timeline's **Hours** tab, with a
   [time-report provider](docs/time-report.md); searching the command menu for
   "hours" opens it there) shows a day's time
-  to report: tracked against expected time, the provider's cleaned timeline
-  with its blocks over it, questions answered in place (the model's guess
-  first; every answer is recorded, **Remember** makes it stick), blocks to
-  accept, edit, split, delete or explain, and gaps to claim. Submitting is a
+  to report as one line per project and task type: the time to report
+  (worked time rounded up to whole 15 minutes, as `h:mm`), whether it is
+  pending, accepted or submitted, and the day's total; time still waiting for
+  an answer is a line of its own. **Accept** on a line accepts its proposed
+  blocks. A line opens (click, Enter, or `za`) on its blocks: questions
+  answered in place (the model's guess first; every answer is recorded,
+  **Remember** makes it stick), blocks to accept, edit, split, delete or
+  explain. **Timeline** opens the provider's cleaned timeline with the blocks
+  over it, and the gaps to claim. Submitting is a
   click only: **Preview submit** (off while questions are open) shows exactly
   what would be written, then a confirmation with **I checked these entries**
   sends it. The full view works on a phone.

@@ -140,6 +140,11 @@
           "type": "string",
           "format": "date-time",
           "description": "The end of the day's window: the start of the next day at day_start, in the time zone of the day."
+        },
+        "projects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProjectTotal" },
+          "description": "The day in one line per project, each rounded up to 15 minutes. The blocks are the detail."
         }
       }
     },
@@ -719,6 +724,33 @@
         }
       },
       "description": "Set on a block that had been accepted and was reopened since, until it is accepted again."
+    },
+    "ProjectTotal": {
+      "type": "object",
+      "description": "What was worked on one project and task type in a day. target is null for time not placed yet.",
+      "required": [
+        "target",
+        "worked_minutes",
+        "minutes",
+        "blocks",
+        "accepted",
+        "submitted"
+      ],
+      "properties": {
+        "target": {
+          "oneOf": [{ "$ref": "#/$defs/Target" }, { "type": "null" }]
+        },
+        "task_type": { "type": ["string", "null"] },
+        "worked_minutes": { "type": "integer", "minimum": 0 },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "worked_minutes rounded up to whole 15 minute units: the time to report."
+        },
+        "blocks": { "type": "array", "items": { "type": "string" } },
+        "accepted": { "type": "boolean" },
+        "submitted": { "type": "boolean" }
+      }
     }
   }
 }
