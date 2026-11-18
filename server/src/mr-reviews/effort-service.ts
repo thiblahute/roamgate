@@ -631,6 +631,313 @@ export async function handleEffortRpc(
       return latest;
     });
   };
+  /**
+   * A part's new worktree in the Workspaces tree: under the effort's head
+   * workspace when it has one, else in its group (and there too when the
+   * head cannot take it).
+   */
+  const placePart = async (
+    effort: MrEffort,
+    made: { path: string; workspaceId?: string },
+  ) => {
+    const placed = {
+      connectionId: effort.clone.connectionId,
+      path: made.path,
+      ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
+      group: effort.group,
+    };
+    const underHead = effort.head
+      ? await deps
+          .place?.({
+            ...placed,
+            under: {
+              connectionId: effort.head.connectionId,
+              path: effort.head.path,
+              ...(effort.head.workspaceId
+                ? { workspaceId: effort.head.workspaceId }
+                : {}),
+            },
+          })
+          .then(() => true)
+          .catch(() => false)
+      : false;
+    if (!underHead) await deps.place?.(placed).catch(() => {});
+  };
+  /**
+   * Refresh part: an existing part's record read again from its branch as
+   * it is now (moved by hand onto a port or a squashed commit, say).
+   * Nothing is made, picked or moved: the worktree at its path and the
+   * branch it is on are only read, and only the record is rewritten,
+   * journaled for Undo. Its base: the part it stacks on when its branch
+   * holds that part's tip, else the target; from: the branch given, else
+   * an upstream/* branch at its commit; ported when it does not hold the
+   * plan's changes as they are but is a port of them on its base; its
+   * fixups left as commits read from its branch; its stop read from its
+   * worktree. A worktree or branch gone is refused, unless from names an
+   * existing local branch to attach the part to: its worktree when it has
+   * one, else a new worktree at a free path on it (the branch not moved).
+   */
+  const refreshPart = async (input: {
+    effort: MrEffort;
+    plan: MrPlan;
+    picked: DerivedCommit[];
+    on: MrPlan | undefined;
+    stacked: MrPlan[];
+    upstream: string;
+    upstreamOf: (plan: MrPlan) => string;
+  }) => {
+    const { effort, plan, picked, on, stacked } = input;
+    const was = plan.part!;
+    const connection = service.connectionOf(effort.clone.connectionId);
+    if (!connection)
+      throw new MrReviewsError("that connection is not ready", "unavailable");
+    const clone = effort.clone.path;
+    const named = typeof params.from === "string" ? params.from.trim() : "";
+    if (
+      named &&
+      !(/^[A-Za-z0-9][\w./-]*$/.test(named) && !named.includes(".."))
+    )
+      throw new MrReviewsError(`"${named}" is not a branch name`);
+    const branchAt = async (name: string) =>
+      parseBranchWorktrees(
+        (await connection.run(branchWorktreesScript(clone, name), 30_000))
+          .stdout,
+      );
+    const now = parsePartCheckout(
+      (
+        await connection.run(
+          partCheckoutScript(was.path, clone, was.branch),
+          30_000,
+        )
+      ).stdout,
+    );
+    let path = was.path;
+    let workspaceId = was.workspaceId;
+    let branch: string;
+    let from: string | undefined;
+    let attached: "existing" | "made" | undefined;
+    if (now.branch) {
+      branch = now.branch;
+      if (named) {
+        if (!(await branchAt(named)).sha)
+          throw new MrReviewsError(
+            `${named} is not a local branch of the clone: nothing changed`,
+          );
+        from = named;
+      }
+    } else {
+      const why =
+        now.state === "detached"
+          ? `its worktree ${was.path} is on no branch`
+          : now.state === "unborn"
+            ? `its branch ${now.unborn} is gone (its worktree ${was.path} is on no commit)`
+            : `its worktree ${was.path} is gone${now.stored ? "" : `, and so is its branch ${was.branch}`}`;
+      if (!named)
+        throw new MrReviewsError(
+          `${plan.name}'s part cannot be read: ${why}. Give from (an existing local branch) to attach the part to it; nothing changed`,
+          "gone",
+        );
+      const found = await branchAt(named);
+      if (!found.sha)
+        throw new MrReviewsError(
+          `${plan.name}'s part cannot be read (${why}), and ${named} is not a local branch of the clone: nothing changed`,
+        );
+      branch = named;
+      if (found.worktree) {
+        path = found.worktree;
+        attached = "existing";
+        workspaceId = await workspaceAt(effort.clone.connectionId, [path]);
+      } else {
+        if (!deps.createWorktree)
+          throw new MrReviewsError(
+            "worktrees cannot be made here",
+            "unavailable",
+          );
+        const made = await deps
+          .createWorktree({
+            connectionId: effort.clone.connectionId,
+            branch: named,
+            ...(await partSource(effort, connection)),
+          })
+          .catch((error) => {
+            throw new MrReviewsError(readableError(error));
+          });
+        // Its own checkout of that branch, the branch where it was.
+        const at = (
+          await connection.run(
+            `cd ${shQuote(made.path)} 2>/dev/null && printf '%s\\n%s\\n' "$(pwd -P)" "$(git rev-parse --show-toplevel 2>/dev/null)" && git symbolic-ref -q HEAD && git rev-parse HEAD`,
+            30_000,
+          )
+        ).stdout
+          .trim()
+          .split("\n");
+        if (
+          !at[0] ||
+          at[0] !== at[1] ||
+          at[2] !== `refs/heads/${named}` ||
+          at[3] !== found.sha
+        )
+          throw new MrReviewsError(
+            `${made.path} is not a worktree on ${named} at ${found.sha.slice(0, 10)}: not recorded as the part`,
+          );
+        path = made.path;
+        workspaceId = made.workspaceId;
+        attached = "made";
+        await placePart(effort, made);
+      }
+    }
+    const targets = [
+      upstreamRef(effort),
+      `refs/remotes/${effort.target.remote}/${effort.target.branch}`,
+    ];
+    const baseRef = on?.part ? `refs/heads/${on.part.branch}` : undefined;
+    const content = parsePartContent(
+      (
+        await connection.run(
+          partContentScript(clone, branch, targets, baseRef),
+          120_000,
+        )
+      ).stdout,
+    );
+    if (!content.sha)
+      throw new MrReviewsError(
+        `the branch ${branch} cannot be read: nothing changed`,
+        "gone",
+      );
+    const base = content.onBase && on?.part ? on.part.branch : undefined;
+    const carries = parseCarries(
+      (
+        await connection.run(
+          carriesScript(
+            clone,
+            branch,
+            targets,
+            picked.map((commit) => commit.sha),
+            content.onBase,
+          ),
+          120_000,
+        )
+      ).stdout,
+    );
+    const stop = parsePartStops(
+      (await connection.run(partStopsScript([path]), 30_000)).stdout,
+    ).get(path);
+    const conflict = stop
+      ? {
+          sha: stop.sha,
+          subject:
+            stop.subject ??
+            picked.find((commit) => commit.sha === stop.sha)?.subject ??
+            "",
+          files: stop.files,
+          ...(stop.folding ? { folding: true } : {}),
+        }
+      : undefined;
+    const onBranch = carries.sha
+      ? picked.length
+      : pickedOnBranch(picked, content.onBranch);
+    // Not the plan's changes as they are, nor stopped picking them: a
+    // port of them on its base, its content its own.
+    let ported:
+      | { onlyInPlan: string[]; onlyInBranch: string[]; summary: string }
+      | undefined;
+    if (!carries.sha && !conflict && onBranch < picked.length) {
+      const ons = [
+        ...(baseRef ? [{ label: "base", ref: baseRef }] : []),
+        ...stacked.flatMap((each) =>
+          [...(each.part?.from ? [each.part.from] : []), input.upstreamOf(each)]
+            .filter((name) => name !== branch)
+            .map((name) => ({ label: "upstream", ref: `refs/heads/${name}` })),
+        ),
+      ];
+      const prepared = parsePrepared(
+        (
+          await connection.run(
+            preparedScript(clone, branch, ons, targets, effort.source),
+            120_000,
+          )
+        ).stdout,
+      );
+      const planFiles = new Set(picked.flatMap((commit) => commit.files));
+      if (prepared.sha && prepared.files.some((file) => planFiles.has(file)))
+        ported = portedDifference([...planFiles], prepared.files);
+    }
+    from ??= [
+      ...content.upstream.filter((name) => name === input.upstream),
+      ...content.upstream,
+    ].find((name) => name !== branch);
+    const left = [...picked];
+    const unfolded = content.fixups.map((subject) => {
+      const at = left.findIndex((commit) => commit.subject === subject);
+      const [commit] = at < 0 ? [] : left.splice(at, 1);
+      return { sha: commit?.sha ?? "", subject };
+    });
+    const fixupsInPlan = picked.filter((commit) =>
+      new RegExp(FIXUP_SUBJECT).test(commit.subject),
+    ).length;
+    const folded =
+      !ported && !conflict && onBranch === picked.length
+        ? Math.max(0, fixupsInPlan - unfolded.filter((each) => each.sha).length)
+        : 0;
+    const part = {
+      connectionId: effort.clone.connectionId,
+      path,
+      branch,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(from ? { from } : {}),
+      ...(ported ? { ported: true } : {}),
+      ...(base ? { base } : {}),
+      ...(conflict ? { conflict } : {}),
+      unfolded: unfolded.map((each) => each.subject),
+      refreshed: new Date().toISOString(),
+    };
+    const said = [
+      ...(from ? [`from ${from}`] : []),
+      ...(base ? [`on ${base}`] : []),
+      ...(ported ? ["ported"] : []),
+      ...(conflict ? ["stopped"] : []),
+    ];
+    await changePlans(
+      service.store,
+      effort,
+      { action: "part", plan: plan.id, part },
+      {
+        by: meta.by,
+        summary: `Part ${branch} of ${plan.name} refreshed${said.length ? ` (${said.join(", ")})` : ""}`,
+      },
+    );
+    await service.refreshOne(effort, true);
+    await service.push(effort.id, { by: meta.by });
+    return {
+      ok: !conflict,
+      refreshed: true,
+      path,
+      branch,
+      sha: content.sha,
+      picked: onBranch,
+      of: picked.length,
+      ...(attached ? { attached } : {}),
+      ...(from ? { from } : {}),
+      ...(ported
+        ? {
+            ported: true,
+            differs: {
+              only_in_plan: ported.onlyInPlan,
+              only_in_branch: ported.onlyInBranch,
+              summary: ported.summary,
+            },
+          }
+        : {}),
+      ...(base ? { base } : {}),
+      ...(on?.part && !base ? { not_on: on.part.branch } : {}),
+      ...(folded ? { folded } : {}),
+      ...(unfolded.length ? { unfolded } : {}),
+      ...(!carries.sha && !ported && carries.not
+        ? { not_held: carries.not }
+        : {}),
+      ...(conflict ? { conflict } : {}),
+    };
+  };
   const effortOf = async () => {
     const found = findEffort(
       (await deps.settings()).efforts,
@@ -985,9 +1292,16 @@ export async function handleEffortRpc(
         throw new MrReviewsError("no such planned request", "not_found");
       if (plan.state !== "accepted")
         throw new MrReviewsError(`accept ${plan.name} first`);
-      if (plan.part)
+      // Refreshed: its record read again from its branch as it is now.
+      const refresh = params.refresh === true;
+      if (plan.part && !refresh)
         throw new MrReviewsError(
           `${plan.name} has its part already: ${plan.part.path}`,
+        );
+      if (refresh && !plan.part)
+        throw new MrReviewsError(
+          `${plan.name} has no part to refresh: make it first`,
+          "not_found",
         );
       const commits = service.store.derived(effort.id)?.commits ?? [];
       const bykey = new Map(commits.map((commit) => [commit.key, commit]));
@@ -1034,7 +1348,7 @@ export async function handleEffortRpc(
           fixed.set(of.id, of);
           return true;
         });
-      if (fixupOnly) {
+      if (fixupOnly && !refresh) {
         const without = [...fixed.values()].find((each) => !each.part);
         if (without)
           throw new MrReviewsError(
@@ -1049,11 +1363,21 @@ export async function handleEffortRpc(
         ...(fixupOnly ? fixed.values() : []),
       ];
       const on = stacked.sort((a, b) => lastAt(b) - lastAt(a))[0];
-      if (on?.part?.conflict)
+      if (on?.part?.conflict && !refresh)
         throw new MrReviewsError(
           `the part of ${on.name} (${on.part.branch}), which this one starts on, is stopped at a conflict: resolve it there first`,
         );
       const baseRef = on?.part ? `refs/heads/${on.part.branch}` : undefined;
+      if (refresh)
+        return refreshPart({
+          effort,
+          plan,
+          picked,
+          on,
+          stacked,
+          upstream: upstreamOf(slug),
+          upstreamOf: (each) => upstreamOf(slugOf(each.name)),
+        });
       const branch =
         (typeof params.branch === "string" && params.branch.trim()) || slug;
       const isBranchName = (name: string) =>
@@ -1253,6 +1577,9 @@ export async function handleEffortRpc(
         ...(ported ? { ported: true } : {}),
         ...(!start && on?.part ? { base: on.part.branch } : {}),
         ...(conflict ? { conflict } : {}),
+        ...(!start && !conflict && !pick.error
+          ? { unfolded: unfolded.map((each) => each.subject) }
+          : {}),
       };
       await changePlans(
         service.store,
@@ -1263,30 +1590,7 @@ export async function handleEffortRpc(
           summary: `Part ${branch} made for ${plan.name}${start ? ` from ${base}${ported ? " (ported)" : ""}` : on?.part ? ` on ${on.part.branch}` : ""}`,
         },
       );
-      // Under the effort's head workspace when it has one, else in its
-      // group (and there too when the head cannot take it).
-      const placed = {
-        connectionId: effort.clone.connectionId,
-        path: made.path,
-        ...(made.workspaceId ? { workspaceId: made.workspaceId } : {}),
-        group: effort.group,
-      };
-      const underHead = effort.head
-        ? await deps
-            .place?.({
-              ...placed,
-              under: {
-                connectionId: effort.head.connectionId,
-                path: effort.head.path,
-                ...(effort.head.workspaceId
-                  ? { workspaceId: effort.head.workspaceId }
-                  : {}),
-              },
-            })
-            .then(() => true)
-            .catch(() => false)
-        : false;
-      if (!underHead) await deps.place?.(placed).catch(() => {});
+      await placePart(effort, made);
       // Its branch is a request not proposed yet until its request opens.
       await deps.upstream.refresh(true);
       const row = deps.upstream
@@ -1708,13 +2012,16 @@ export function carriesScript(
   branch: string,
   targets: string[],
   shas: string[],
+  onto?: string,
 ) {
   return [
     `d=${shQuote(dir)}`,
     `b=$(git -C "$d" rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) || { echo M; exit 0; }`,
     `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null) || { echo "N\tthe target is unknown"; exit 0; }`,
     '[ "$(git -C "$d" rev-list --count "$t..$b")" -gt 0 ] || { echo "N\tnothing over the target"; exit 0; }',
-    'm=$(git -C "$d" merge-base "$t" "$b") || { echo "N\tno common history with the target"; exit 0; }',
+    onto
+      ? `m=${shQuote(onto)}`
+      : 'm=$(git -C "$d" merge-base "$t" "$b") || { echo "N\tno common history with the target"; exit 0; }',
     'base=$(git -C "$d" rev-parse "$m^{tree}")',
     "cur=$base",
     `for c in ${shas.map(shQuote).join(" ")}; do`,
@@ -1726,6 +2033,146 @@ export function carriesScript(
     'out=$(git -C "$d" merge-tree --write-tree --merge-base="$base" "$b" "$cur" 2>/dev/null) || { echo "N\tsome plan changes are not there"; exit 0; }',
     '[ "$(printf "%s\n" "$out" | head -n 1)" = "$(git -C "$d" rev-parse "$b^{tree}")" ] && printf "Y\t%s\n" "$b" || echo "N\tsome plan changes are not there"',
   ].join("\n");
+}
+
+/**
+ * A part's worktree as it is now: `W branch sha` when it is a worktree on
+ * a branch, `U branch` on a branch with no commit (gone), `D` on no
+ * branch, `M` when there is no worktree at its path; then `S sha` when
+ * the branch it was recorded on still exists. Only read.
+ */
+export function partCheckoutScript(
+  path: string,
+  clone: string,
+  branch: string,
+) {
+  return [
+    `d=${shQuote(path)}`,
+    'if [ -d "$d" ] && p=$(cd "$d" 2>/dev/null && pwd -P) && [ "$p" = "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" ]; then',
+    '  if r=$(git -C "$d" symbolic-ref -q HEAD); then',
+    '    if s=$(git -C "$d" rev-parse -q --verify "$r^{commit}" 2>/dev/null); then printf "W\t%s\t%s\n" "${r#refs/heads/}" "$s"; else printf "U\t%s\n" "${r#refs/heads/}"; fi',
+    "  else echo D; fi",
+    "else echo M; fi",
+    `s=$(git -C ${shQuote(clone)} rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) && printf "S\t%s\n" "$s"`,
+    "exit 0",
+  ].join("\n");
+}
+
+export function parsePartCheckout(stdout: string): {
+  branch?: string;
+  sha?: string;
+  state: "ok" | "unborn" | "detached" | "missing";
+  unborn?: string;
+  /** The branch it was recorded on exists still. */
+  stored: boolean;
+} {
+  let out: ReturnType<typeof parsePartCheckout> = {
+    state: "missing",
+    stored: false,
+  };
+  let stored = false;
+  for (const line of stdout.split("\n")) {
+    const [kind, value = "", sha = ""] = line.split("\t");
+    if (kind === "W" && value && /^[0-9a-f]{40,64}$/.test(sha))
+      out = { branch: value, sha, state: "ok", stored: false };
+    else if (kind === "U" && value)
+      out = { state: "unborn", unborn: value, stored: false };
+    else if (kind === "D") out = { state: "detached", stored: false };
+    else if (kind === "S" && value) stored = true;
+  }
+  return { ...out, stored };
+}
+
+/**
+ * A local branch of the clone: `S sha` when it exists, then `W path` for
+ * the worktree it is checked out in, if any. Only read.
+ */
+export function branchWorktreesScript(clone: string, branch: string) {
+  return [
+    `c=${shQuote(clone)}`,
+    `s=$(git -C "$c" rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) || exit 0`,
+    'printf "S\t%s\n" "$s"',
+    `git -C "$c" worktree list --porcelain | awk -v want=${shQuote(`branch refs/heads/${branch}`)} '/^worktree /{p=substr($0,10)} $0==want{print "W\t" p}'`,
+  ].join("\n");
+}
+
+export function parseBranchWorktrees(stdout: string): {
+  sha?: string;
+  worktree?: string;
+} {
+  let sha: string | undefined;
+  let worktree: string | undefined;
+  for (const line of stdout.split("\n")) {
+    const [kind, ...rest] = line.split("\t");
+    const value = rest.join("\t");
+    if (kind === "S" && /^[0-9a-f]{40,64}$/.test(value)) sha = value;
+    else if (kind === "W" && value && !worktree) worktree = value;
+  }
+  return { ...(sha ? { sha } : {}), ...(worktree ? { worktree } : {}) };
+}
+
+/**
+ * What a part's branch holds, read in the clone: `H sha` (its tip), `A
+ * sha` when it holds the tip of base (the part it stacks on), `N count`
+ * and an `I patch-id` line per commit with a diff over the target, `K
+ * subject` per fixup!, squash! or amend! commit over its base (or the
+ * target), `U ref` per upstream/* branch at its tip. Only read.
+ */
+export function partContentScript(
+  clone: string,
+  branch: string,
+  targets: string[],
+  base?: string,
+) {
+  return [
+    `d=${shQuote(clone)}`,
+    `b=$(git -C "$d" rev-parse -q --verify ${shQuote(`refs/heads/${branch}^{commit}`)} 2>/dev/null) || exit 0`,
+    `t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[0]!)} 2>/dev/null) || t=$(git -C "$d" rev-parse -q --verify ${shQuote(targets[1] ?? targets[0]!)} 2>/dev/null) || exit 0`,
+    'printf "H\t%s\n" "$b"',
+    "start=$t",
+    ...(base
+      ? [
+          `if r=$(git -C "$d" rev-parse -q --verify ${shQuote(`${base}^{commit}`)} 2>/dev/null) && [ "$(git -C "$d" merge-base "$r" "$b")" = "$r" ]; then printf "A\t%s\n" "$r"; start=$r; fi`,
+        ]
+      : []),
+    'printf "N\t%s\n" "$(git -C "$d" rev-list --count "$t..$b")"',
+    'git -C "$d" log --no-merges -p --format="commit %H" "$t..$b" | git -C "$d" patch-id --stable | awk \'{ print "I\t" $1 }\'',
+    `git -C "$d" log --reverse --no-merges --format=%s "$start..$b" | grep -E ${shQuote(FIXUP_SUBJECT)} | sed "s/^/K\t/"`,
+    'git -C "$d" for-each-ref --points-at "$b" --format="U\t%(refname)" refs/heads/upstream/',
+    "exit 0",
+  ].join("\n");
+}
+
+export function parsePartContent(stdout: string): {
+  sha?: string;
+  onBase?: string;
+  onBranch: { count: number; ids: string[] };
+  fixups: string[];
+  upstream: string[];
+} {
+  let sha: string | undefined;
+  let onBase: string | undefined;
+  const onBranch = { count: 0, ids: [] as string[] };
+  const fixups: string[] = [];
+  const upstream: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const [kind, ...rest] = line.split("\t");
+    const value = rest.join("\t");
+    if (kind === "H" && /^[0-9a-f]{40,64}$/.test(value)) sha = value;
+    else if (kind === "A" && /^[0-9a-f]{40,64}$/.test(value)) onBase = value;
+    else if (kind === "N") onBranch.count = Number(value) || 0;
+    else if (kind === "I" && value) onBranch.ids.push(value);
+    else if (kind === "K" && value) fixups.push(value);
+    else if (kind === "U" && value.startsWith("refs/heads/"))
+      upstream.push(value.slice("refs/heads/".length));
+  }
+  return {
+    ...(sha ? { sha } : {}),
+    ...(onBase ? { onBase } : {}),
+    onBranch,
+    fixups,
+    upstream,
+  };
 }
 
 /**

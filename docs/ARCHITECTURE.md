@@ -1018,7 +1018,10 @@ path as the workspace menu (the `worktree_command` setting), `reset
 --keep`s the fresh worktree onto the target, cherry-picks the commits (no
 `-x`), stops on a conflict (reported with its files, never aborted),
 records `part` on the plan, places the workspace in the effort's group and
-adds its branch to `unsent`. `effort.open_commit` opens a range review
+adds its branch to `unsent`; with `refresh: true` it only reads an
+existing part's worktree and branch (base, from, ported, unfolded fixups,
+stop) and rewrites its `part` record through the same journaled plan
+change, never moving a ref or a file. `effort.open_commit` opens a range review
 (`sha^..sha`, or with `from` a tree-to-tree compare of two versions) in
 the head workspace and answers its snapshot, which the page shows as a
 home's review (workspace focused, Changes up); `effort.diff` answers `git

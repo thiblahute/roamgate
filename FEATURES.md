@@ -1137,7 +1137,16 @@ starts there too, never with the source's commits: the card says "from
 `upstream/<plan name>` (ported: differs from the plan's commits)" and the
 result lists the files only in the plan and only in the branch. A conflict stops there and
 is reported, left for that worktree's session to resolve. Its branch is
-then a request not proposed yet, until its request opens. **What changed**
+then a request not proposed yet, until its request opens. A part whose
+branch was moved by hand (onto a port or a squashed commit) gets
+**Refresh part** (`part_create` with `refresh: true` for the leader): it
+makes, picks and moves nothing, reads its worktree and the branch it is
+on now, and rewrites only the part's record, with Undo: its base, the
+`upstream/*` branch at its commit (or the one named by `from`), ported or
+not, which fixups it still holds as commits and its stop; the card then
+shows that. A worktree or branch gone is refused, saying so; `from` then
+names an existing branch to attach the part to (its worktree, or a new
+one at a free path, that branch not moved). **What changed**
 (`W`, and "N changed" on the card) lists what moved since you last looked:
 new unsorted commits, commits landed upstream or now in review, feeders
 landed, parts merged, matches to confirm, and commits upstream anyway;

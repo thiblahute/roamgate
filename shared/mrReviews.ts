@@ -740,6 +740,13 @@ export type MrPlan = {
     /** Picked on this part's branch (a plan it depends on or fixes), not the target. */
     base?: string;
     /**
+     * The fixups its branch still holds as commits (their subjects), as
+     * read from it; the plan's other fixups are folded there.
+     */
+    unfolded?: string[];
+    /** When the record was last read again from its branch (Refresh part). */
+    refreshed?: string;
+    /**
      * The pick stopped here: the commit and its conflicting files; folding
      * when it was the fixups being folded (a rebase), not a pick.
      */
