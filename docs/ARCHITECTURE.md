@@ -1029,7 +1029,17 @@ range-diff` of two versions (never stored), the fallback when that
 workspace is not open. `seen.json` (runtime, not exported) is the
 snapshot of dispositions, feeders' not-ready counts, merged plans and
 upstream-anyway commits the user last saw (`effort.seen`); the first
-reading writes it; `effort.get` answers `changes` against it.
+reading writes it; `effort.get` answers `changes` against it. For the
+Board, `effort.get` also answers `board`: per plan with a part, the inbox
+entry it is, from the entries the inbox already computed (no forge call):
+the request its part's branch is (`requestOfBranch`: by source branch
+name, else by the patch ids of the user's requests read for linking), else
+that branch's own row; a part whose checkout the scan did not read is
+found by its branch name among the user's requests of the effort's
+project. The page puts each plan in a column (`mrEffortColumn`): Planned,
+Not proposed yet, the request's lane, or Done, preferring the live inbox
+entry of the same key. Comments on a card anchor to `{tab: "board", item:
+{kind: "card", key: <plan id>}}`.
 
 Pinned and hidden requests are settings too: `mr_reviews.pinned` (refs
 `{provider, host, project, number}`, newest first, at most 100) and

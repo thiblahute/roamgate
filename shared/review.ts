@@ -71,6 +71,7 @@ export type ReviewAnchor = {
 
 /** The tabs of an effort's view. */
 export const REVIEW_EFFORT_TABS = [
+  "board",
   "progress",
   "ledger",
   "plans",
@@ -93,6 +94,8 @@ export const REVIEW_EFFORT_ITEMS = [
   "feeder",
   /** A part of What changed: its heading. */
   "change",
+  /** A card of the Board: its planned request's id. */
+  "card",
 ] as const;
 export type ReviewEffortItemKind = (typeof REVIEW_EFFORT_ITEMS)[number];
 
@@ -127,6 +130,7 @@ export const EFFORT_NO_LEADER =
 /** A thread's place in an effort's view, in words. */
 export function describeEffortPart(part: ReviewEffortPart): string {
   const tab = {
+    board: "Board",
     progress: "Progress",
     ledger: "Ledger",
     plans: "Plans",
@@ -149,7 +153,9 @@ export function describeEffortPart(part: ReviewEffortPart): string {
             ? `directory ${item.key}`
             : item.kind === "feeder"
               ? `feeder ${item.key}`
-              : `"${item.label ?? item.key}"`;
+              : item.kind === "card"
+                ? `the card of planned request ${item.key}${label}`
+                : `"${item.label ?? item.key}"`;
   return `${name} in the ${tab} tab`;
 }
 

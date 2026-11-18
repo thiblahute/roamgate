@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { MrEffortColumn } from "../../../shared/mrEffortBoard";
 import type { ReviewThread } from "../../../shared/review";
 import {
   MR_DISPOSITIONS,
@@ -21,11 +22,14 @@ import {
   type MrEffort,
   type MrEffortChanges,
   type MrEffortSummary,
+  type MrInboxEntry,
   type MrMatchProposal,
   fixupTargets,
   type MrPlan,
+  type MrWorkspaceLink,
   upstreamWorkspaceHome,
 } from "../../../shared/mrReviews";
+import { roamgateLocalStorage } from "../browserStorage";
 import type { WorkspaceRef } from "../../../shared/workspaceTree";
 import {
   mrReviewsCall,
@@ -48,6 +52,15 @@ import {
   useEffortThreads,
 } from "./EffortThreads";
 import { ConfirmDialog } from "./ModalDialogs";
+import {
+  type BoardCard,
+  boardColumns,
+  boardStep,
+  cardPoint,
+  MrEffortBoard,
+  pointedPlan,
+  walkable,
+} from "./MrEffortBoard";
 import "./MrEffortView.css";
 
 /**
@@ -94,6 +107,8 @@ type EffortDetail = {
   proposals?: Record<string, MrMatchProposal[]>;
   plans?: MrPlan[];
   changes?: MrEffortChanges;
+  /** Each plan's request (or its part's branch row), as the inbox has it. */
+  board?: Record<string, MrInboxEntry>;
 };
 
 /** The bar of an effort: one segment per disposition. */
@@ -365,7 +380,7 @@ export function MrLedgerTable({
   );
 }
 
-type Tab = "progress" | "ledger" | "plans" | "feeders" | "changes";
+type Tab = "board" | "progress" | "ledger" | "plans" | "feeders" | "changes";
 
 /** A commit as one points at it: by its ledger key, which follows rebases. */
 function commitPoint(
@@ -387,12 +402,27 @@ function commitPoint(
 const ledgerPoint = (commit: LedgerCommit) => commitPoint("ledger", commit);
 
 const TABS: { tab: Tab; label: string; key: string }[] = [
+  { tab: "board", label: "Board", key: "B" },
   { tab: "progress", label: "Progress", key: "P" },
   { tab: "ledger", label: "Ledger", key: "L" },
   { tab: "plans", label: "Plans", key: "R" },
   { tab: "feeders", label: "Feeders", key: "F" },
   { tab: "changes", label: "What changed", key: "W" },
 ];
+
+const NO_ENTRIES: readonly MrInboxEntry[] = [];
+
+/** The effort view's tab last shown, on this browser. */
+const TAB_KEY = "mrEffortTab";
+
+function storedTab(): Tab {
+  try {
+    const value = roamgateLocalStorage.getItem(TAB_KEY);
+    return TABS.find((each) => each.tab === value)?.tab ?? "board";
+  } catch {
+    return "board";
+  }
+}
 
 /** One effort, maximized in the panel. */
 export function MrEffortView({
@@ -401,6 +431,13 @@ export function MrEffortView({
   onLeader,
   onJump,
   say,
+  entries = NO_ENTRIES,
+  links,
+  wide = true,
+  onEnter,
+  onGoWorkspace,
+  onStartHome,
+  editor,
 }: {
   id: string;
   onBack: () => void;
@@ -409,10 +446,36 @@ export function MrEffortView({
   onJump?: (connectionId: string, workspaceId: string) => void;
   /** A few words where Undo shows; with an action when it can be undone. */
   say: (label: string, undo?: () => Promise<unknown>) => void;
+  /** The inbox's entries, live: the Board's cards follow them. */
+  entries?: readonly MrInboxEntry[];
+  /** Their workspaces (the house button), by key. */
+  links?: Readonly<Record<string, MrWorkspaceLink[]>>;
+  /** The Board's columns side by side (else one list, as on a phone). */
+  wide?: boolean;
+  /** A card's request opened as the inbox opens it (Enter). */
+  onEnter?: (entry: MrInboxEntry) => void;
+  onGoWorkspace?: (entry: MrInboxEntry, link: MrWorkspaceLink) => void;
+  onStartHome?: (entry: MrInboxEntry) => void;
+  /** What one sets by hand on a request (e), the inbox's form; null: none. */
+  editor?: (entry: MrInboxEntry, close: () => void) => ReactNode;
 }) {
   const [detail, setDetail] = useState<EffortDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("progress");
+  const [tab, setTabState] = useState<Tab>(storedTab);
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next);
+    try {
+      roamgateLocalStorage.setItem(TAB_KEY, next);
+    } catch {
+      // Kept for this page only when the browser keeps nothing.
+    }
+  }, []);
+  /** The Board's folded columns: Done until asked. */
+  const [folded, setFolded] = useState<ReadonlySet<MrEffortColumn>>(
+    () => new Set<MrEffortColumn>(["done"]),
+  );
+  /** The request whose form (e) shows on the Board. */
+  const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -532,6 +595,7 @@ export function MrEffortView({
       const part = thread.anchor.effort!;
       const item = part.item;
       if (!item) return -1;
+      if (part.tab === "board") return planAt.get(item.key) ?? 0;
       if (part.tab === "plans")
         return (
           (planAt.get(part.plan ?? (item.kind === "plan" ? item.key : "")) ??
@@ -557,6 +621,17 @@ export function MrEffortView({
     if (!thread || !part) return;
     lastThread.current = thread.id;
     setTab(part.tab);
+    if (part.tab === "board" && part.item?.kind === "card") {
+      const card = cardAt(part.item.key);
+      if (card) {
+        setFolded((current) => {
+          const next = new Set(current);
+          next.delete(card.column);
+          return next;
+        });
+        setPointed(cardPoint(card.plan));
+      }
+    }
     if (part.tab === "ledger" && part.item?.kind === "commit") {
       const key = part.item.key;
       const at = shown.findIndex((commit) => commit.key === key);
@@ -698,6 +773,109 @@ export function MrEffortView({
   };
 
   const plans = detail?.plans ?? [];
+  /** The Board: each plan's card in its column. */
+  const columns = useMemo(() => {
+    const disposition = new Map(
+      (detail?.commits ?? []).map((commit) => [commit.key, commit.disposition]),
+    );
+    return boardColumns({
+      plans: detail?.plans ?? [],
+      linked: detail?.board ?? {},
+      entries,
+      upstream: (plan) =>
+        plan.commits.length > 0 &&
+        plan.commits.every((key) => disposition.get(key) === "upstream"),
+    });
+  }, [detail, entries]);
+  const planNames = useMemo(
+    () => new Map((detail?.plans ?? []).map((each) => [each.id, each.name])),
+    [detail],
+  );
+  const cardAt = (planId: string | null): BoardCard | undefined =>
+    planId
+      ? columns
+          .flatMap((each) => each.cards)
+          .find((card) => card.plan.id === planId)
+      : undefined;
+  const pointCard = (card: BoardCard) => {
+    setPointed(cardPoint(card.plan));
+    requestAnimationFrame(() =>
+      rootRef.current
+        ?.querySelector<HTMLElement>(
+          `.mr-effort-board [data-mr-plan="${CSS.escape(card.plan.id)}"]`,
+        )
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+    );
+  };
+  const toggleColumn = (column: MrEffortColumn) =>
+    setFolded((current) => {
+      const next = new Set(current);
+      if (!next.delete(column)) next.add(column);
+      return next;
+    });
+  /**
+   * A card's default action (Enter, a click): its request's review in its
+   * home, as the inbox opens it; a part with no request, its workspace;
+   * a plan with no part, its place in Plans.
+   */
+  const openCard = (card: BoardCard) => {
+    const { plan, entry } = card;
+    const part = plan.part;
+    if (entry && !entry.branch && onEnter) {
+      onEnter(entry);
+      return;
+    }
+    if (part?.workspaceId && onJump) {
+      onJump(part.connectionId, part.workspaceId);
+      return;
+    }
+    if (entry && onEnter) {
+      onEnter(entry);
+      return;
+    }
+    setTab("plans");
+    setPointed({
+      tab: "plans",
+      item: { kind: "plan", key: plan.id, label: plan.name },
+    });
+  };
+  /** The Board's own keys; false when the key is not one of them. */
+  const boardKey = (key: string, count: number): boolean => {
+    const here = cardAt(pointedPlan(pointed));
+    const walk = walkable(columns, folded);
+    const go = (move: { step?: number; side?: number }) => {
+      const next = boardStep(walk, here?.plan.id ?? null, move, wide);
+      if (next) pointCard(next);
+    };
+    if (key === "j" || key === "ArrowDown") go({ step: count });
+    else if (key === "k" || key === "ArrowUp") go({ step: -count });
+    else if (key === "l" || key === "ArrowRight") go({ side: count });
+    else if (key === "h" || key === "ArrowLeft") go({ side: -count });
+    else if (key === "gg") go({ step: -1_000_000 });
+    else if (key === "G") go({ step: 1_000_000 });
+    else if (key === "za" || key === "zo" || key === "zc")
+      toggleColumn(here?.column ?? "done");
+    else if (key === "Enter") {
+      if (here) openCard(here);
+    } else if (key === "o") {
+      if (!here) return true;
+      if (here.entry && !here.entry.branch && here.entry.url)
+        window.open(here.entry.url, "_blank", "noopener");
+      else say(`${here.plan.name} is not on the forge yet`);
+    } else if (key === "e") {
+      if (!here) return true;
+      if (here.entry && editor) setEditing(here.entry.key);
+      else
+        say(`${here.plan.name} has no request nor branch yet to set by hand`);
+    } else if (key === "w") {
+      const link = here?.entry ? links?.[here.entry.key]?.[0] : undefined;
+      if (here?.entry && link && onGoWorkspace) onGoWorkspace(here.entry, link);
+      else if (here?.plan.part?.workspaceId && onJump)
+        onJump(here.plan.part.connectionId, here.plan.part.workspaceId);
+      else if (here) say(`${here.plan.name} has no workspace yet`);
+    } else return false;
+    return true;
+  };
   const planNamed = (name: string) =>
     plans.find(
       (plan) =>
@@ -902,6 +1080,7 @@ export function MrEffortView({
       event.preventDefault();
       event.stopPropagation();
       if (helpOpen) setHelpOpen(false);
+      else if (editing) setEditing(null);
       else if (diff) setDiff(null);
       else if (history) setHistory(null);
       else if (selected.size) setSelected(new Set());
@@ -950,6 +1129,7 @@ export function MrEffortView({
       stepThread(fed.key === "gn" ? 1 : -1, true);
     else if (fed.key === "?") setHelpOpen((open) => !open);
     else if (fed.key === ":") setCommand("");
+    else if (tab === "board") handled = boardKey(fed.key, count);
     else if (tab !== "ledger") {
       if (fed.key === "j" || fed.key === "ArrowDown") movePointed(count);
       else if (fed.key === "k" || fed.key === "ArrowUp") movePointed(-count);
@@ -1033,7 +1213,9 @@ export function MrEffortView({
     if (!detail || !summary) return [];
     const drawn = new Set<string>();
     const add = (point: EffortPoint) => drawn.add(pointKey(point));
-    if (tab === "progress") {
+    if (tab === "board")
+      for (const plan of detail.plans ?? []) add(cardPoint(plan));
+    else if (tab === "progress") {
       for (const point of counterPoints(summary)) add(point);
       for (const [dir] of dirs.slice(0, 30))
         add({ tab, item: { kind: "directory", key: dir } });
@@ -1080,7 +1262,45 @@ export function MrEffortView({
   if (error) body = <p className="assistant-error">{error}</p>;
   else if (!detail || !summary)
     body = <p className="assistant-hint">Reading the effort...</p>;
-  else if (tab === "progress")
+  else if (tab === "board") {
+    const editingEntry = editing
+      ? columns
+          .flatMap((each) => each.cards)
+          .find((card) => card.entry?.key === editing)?.entry
+      : undefined;
+    body = (
+      <>
+        <MrEffortBoard
+          columns={columns}
+          names={planNames}
+          wide={wide}
+          folded={folded}
+          onToggleColumn={toggleColumn}
+          pointed={pointed}
+          onPoint={(card) => setPointed(cardPoint(card.plan))}
+          onOpen={openCard}
+          {...(links ? { links } : {})}
+          {...(onGoWorkspace ? { onGoWorkspace } : {})}
+          {...(onStartHome ? { onStartHome } : {})}
+          editor={
+            editingEntry && editor
+              ? editor(editingEntry, () => {
+                  setEditing(null);
+                  rootRef.current?.focus({ preventScroll: true });
+                })
+              : null
+          }
+        />
+        {wide && columns.length ? (
+          <p className="assistant-hint">
+            j/k a card · h/l a column · Enter its review in its home · o on the
+            forge · e set next step · w workspace · za fold · c comment for the
+            leader · ? all keys
+          </p>
+        ) : null}
+      </>
+    );
+  } else if (tab === "progress")
     body = (
       <div className="mr-effort-progress">
         <EffortBar summary={summary} />

@@ -116,10 +116,10 @@ a part of one of your messages in your chat with the user (a review whose
 target is \`chat\`): answer it with \`reply\` in that thread, and only there;
 the chat does not get the same answer again. A thread with \`on_effort\` is
 a comment on the view of an upstreaming effort you lead (a review whose
-target is \`effort\`): \`tab\` (progress, ledger, plans, feeders or changes),
-\`item\` (what was pointed at: a \`plan\` id, a \`commit\` ledger key, a
-\`counter\`, a \`directory\`, a \`feeder\` ref or a \`change\` heading; null
-for the tab), \`plan\` (the planned request a commit was shown in) and
+target is \`effort\`): \`tab\` (board, progress, ledger, plans, feeders or
+changes), \`item\` (what was pointed at: a \`plan\` id, a \`card\` of the
+Board by its plan id, a \`commit\` ledger key, a \`counter\`, a
+\`directory\`, a \`feeder\` ref or a \`change\` heading; null for the tab), \`plan\` (the planned request a commit was shown in) and
 \`quote\` (the words selected). Answer it with \`reply\` in that thread.
 
 ## Reviewing for the user

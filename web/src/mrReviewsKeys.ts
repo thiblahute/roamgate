@@ -4,8 +4,16 @@
  */
 export const EFFORT_KEYS: [string, string][] = [
   [
-    "P L R F W",
-    "Progress, Ledger, Plans (planned requests), Feeders, What changed",
+    "B P L R F W",
+    "Board (a card per planned request, in the inbox's lanes), Progress, Ledger, Plans (planned requests), Feeders, What changed; the last one shown opens next time",
+  ],
+  [
+    "j k h l",
+    "on the Board: the next / previous card in its column (through every column on a phone), the column on the left / right",
+  ],
+  [
+    "Enter o e w za",
+    "on the Board: the card's review in its home (a part's workspace, a plan's place in Plans), its request on the forge, set its next step and whose move, its workspace, fold or unfold its column (Done starts folded)",
   ],
   [
     "j k / Down Up",
@@ -20,7 +28,7 @@ export const EFFORT_KEYS: [string, string][] = [
   ["Enter", "in the ledger: the commit's versions"],
   [
     "c",
-    "comment on the words selected, else on what the cursor is on (a commit, a plan, a count, a directory, a feeder, a part of What changed): the thread goes to the leader session, which answers in it; held while none runs",
+    "comment on the words selected, else on what the cursor is on (a card of the Board, a commit, a plan, a count, a directory, a feeder, a part of What changed): the thread goes to the leader session, which answers in it; held while none runs",
   ],
   ["C", "comment on the tab"],
   ["n N", "the next / previous thread"],

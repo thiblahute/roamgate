@@ -721,6 +721,13 @@ export type MrRowMove = {
 
 type MrChip = ReturnType<typeof ownChips>[number];
 
+/** Chips a row's caller adds (an effort's Board: its plan's). */
+export type MrExtraChip = {
+  label: string;
+  tone: "good" | "bad" | "wait" | "tree";
+  title?: string;
+};
+
 /**
  * A branch headed upstream: its commits, how far behind, local changes,
  * "not proposed yet"; a request from one: that branch and what is not
@@ -836,12 +843,14 @@ function MrDenseRow({
   tree,
   unread,
   drafts,
+  extra,
 }: {
   entry: MrInboxEntry;
   chips: MrChip[];
   tree?: MrLaneRow;
   unread: string | null;
   drafts: string | null;
+  extra?: MrExtraChip[];
 }) {
   const next = entry.next;
   const fromOverride = next?.from === "override";
@@ -886,6 +895,15 @@ function MrDenseRow({
           {entry.override?.labels?.map((label) => (
             <span key={`label:${label}`} className="mr-reviews-chip is-label">
               {label}
+            </span>
+          ))}
+          {extra?.map((chip) => (
+            <span
+              key={`extra:${chip.label}`}
+              className={`mr-reviews-chip is-${chip.tone}`}
+              title={chip.title}
+            >
+              {chip.label}
             </span>
           ))}
         </span>
@@ -947,7 +965,13 @@ export function MrReviewRow({
   onStartHome,
   tree,
   onToggleChildren,
+  extra,
+  itemProps,
 }: {
+  /** More chips, after its own (an effort's Board: its plan's). */
+  extra?: MrExtraChip[];
+  /** More attributes of its item (an effort's Board: what c comments on). */
+  itemProps?: Record<string, string | undefined>;
   /** Makes it a home (gH): shown on the selected request without one. */
   onStartHome?: () => void;
   /** In a lane: its depth, children, and parent. */
@@ -980,6 +1004,7 @@ export function MrReviewRow({
   const depth = tree?.depth ?? 0;
   return (
     <li
+      {...itemProps}
       className={`mr-reviews-item${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}${depth ? " is-child" : ""}${tree?.last ? " is-last-child" : ""}`}
       style={
         depth
@@ -1017,6 +1042,7 @@ export function MrReviewRow({
             tree={tree}
             unread={unread}
             drafts={drafts}
+            {...(extra ? { extra } : {})}
           />
         ) : (
           <MrRowBody
@@ -3569,6 +3595,30 @@ export function MrReviewsPanel({
                   onClose({ keepFocus: true });
                 }}
                 say={sayUndo}
+                entries={entries}
+                links={links}
+                wide={board}
+                onEnter={enter}
+                onGoWorkspace={goWorkspace}
+                onStartHome={(entry) => void startHome(entry)}
+                editor={(entry, close) => (
+                  <MrOverrideForm
+                    entry={entry}
+                    known={entries}
+                    busy={overrideBusy}
+                    error={overrideError}
+                    onCancel={close}
+                    onSave={(change) => {
+                      if (!change) {
+                        close();
+                        return;
+                      }
+                      void setOverride(entry, change, "Saved").then((ok) => {
+                        if (ok) close();
+                      });
+                    }}
+                  />
+                )}
               />
               {toast}
             </>

@@ -275,3 +275,30 @@
   color: var(--text);
   cursor: pointer;
 }
+
+/* The Board: the inbox's lanes as columns, a card per planned request. */
+.mr-effort-board {
+  min-width: 0;
+}
+
+.mr-effort-board.mr-reviews-board {
+  min-height: 360px;
+}
+
+.mr-effort-board.mr-reviews-sections {
+  display: grid;
+  gap: 10px;
+}
+
+/* The card's own selection says where the cursor is. */
+.mr-effort-view .mr-effort-board [data-pointed="true"] {
+  outline: none;
+}
+
+.mr-effort-card-threads {
+  list-style: none;
+}
+
+.mr-effort-card-threads:empty {
+  display: none;
+}
