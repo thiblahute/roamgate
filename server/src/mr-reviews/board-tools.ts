@@ -411,7 +411,13 @@ export const boardToolSchemas = {
         Type.String({
           maxLength: 100,
           description:
-            "A local branch to start the part at, nothing picked (upstream/<plan name> is tried by itself): one holding the plan's changes over the target, or a port of the plan sitting on the part's base and touching its files; refused otherwise.",
+            "A local branch to start the part at, nothing picked (upstream/<plan name> is tried by itself): one holding the plan's changes over the target, or a port of the plan sitting on the part's base and touching its files; refused otherwise. With refresh: the branch recorded as the part's from, or, when its worktree or branch is gone, the existing local branch to attach the part to.",
+        }),
+      ),
+      refresh: Type.Optional(
+        Type.Boolean({
+          description:
+            "Refresh the plan's existing part: read its record again from its branch as it is now; nothing made or moved.",
         }),
       ),
     },
@@ -678,7 +684,7 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
   ledger_plans:
     "The effort's planned requests (each the content of one future request): propose one (plan: its name, commits, depends_on), accept, edit (name, commits, add, remove, depends_on), split (commits moved to a new plan called name) or drop one. A commit is in one planned request only, across efforts. As the effort's leader you propose; the user accepts (accept only when they said so). The user sees it with Undo.",
   part_create:
-    "Make the part of an accepted planned request: a worktree workspace (through the user's worktree command) placed under the effort's head workspace in the Workspaces tree, or in the effort's group when it has no head, on its base, with the plan's commits cherry-picked in source order (messages kept as written), then every fixup!, squash! and amend! commit folded into its target in the part (a squash! adds its body to the target's message; folded counts them); a fixup whose target is not in the part stays a commit and is reported in unfolded. Its base (base says which) is the branch of the part of the plan it depends_on (the last one in source order when several have parts), or, for a plan made only of fixups of another plan's commits, that plan's part (refused, naming it, while that plan has no part); the target otherwise. When a local branch upstream/<plan name> (or the branch named by from) already holds the plan's changes over the target, the part starts at its commit instead and nothing is picked (from says which). When that branch is a port of the plan (its content differs: voice stripped, retitled, reworked) and sits on the part's base (it contains the base, or is built on the target or on the upstream branch of the part it depends on, none of its commits the source's), the part starts there as well: ported: true, and differs lists the files only in the plan and only in the branch; the source's commits are then never picked. That branch is only read, never moved. Always a new branch at a path that did not exist (an existing branch is refused; a taken path gets a -part suffix); picked counts only the commits read back on the branch, folding checked to keep its tree. A conflict stops the pick (or the folding) and is reported (commit and files); nothing is aborted: resolve it in that worktree. Its branch is then a request not proposed yet. Never pushes or opens anything on a forge.",
+    "Make the part of an accepted planned request: a worktree workspace (through the user's worktree command) placed under the effort's head workspace in the Workspaces tree, or in the effort's group when it has no head, on its base, with the plan's commits cherry-picked in source order (messages kept as written), then every fixup!, squash! and amend! commit folded into its target in the part (a squash! adds its body to the target's message; folded counts them); a fixup whose target is not in the part stays a commit and is reported in unfolded. Its base (base says which) is the branch of the part of the plan it depends_on (the last one in source order when several have parts), or, for a plan made only of fixups of another plan's commits, that plan's part (refused, naming it, while that plan has no part); the target otherwise. When a local branch upstream/<plan name> (or the branch named by from) already holds the plan's changes over the target, the part starts at its commit instead and nothing is picked (from says which). When that branch is a port of the plan (its content differs: voice stripped, retitled, reworked) and sits on the part's base (it contains the base, or is built on the target or on the upstream branch of the part it depends on, none of its commits the source's), the part starts there as well: ported: true, and differs lists the files only in the plan and only in the branch; the source's commits are then never picked. That branch is only read, never moved. Always a new branch at a path that did not exist (an existing branch is refused; a taken path gets a -part suffix); picked counts only the commits read back on the branch, folding checked to keep its tree. A conflict stops the pick (or the folding) and is reported (commit and files); nothing is aborted: resolve it in that worktree. Its branch is then a request not proposed yet. With refresh: true, for a plan that has its part (moved by hand onto a port or a squashed commit, say), nothing is made, picked or moved: its worktree (the path recorded) and the branch it is on now are only read, and the part's record is rewritten (journaled, the user can undo it): base (the depends_on part whose tip its branch holds, else the target), from (the branch from names, else an upstream/* branch at its commit), ported and differs (it does not hold the plan's changes as they are but is a port of them on its base), picked (plan changes present), folded and unfolded (the fixups its branch still holds as commits) and conflict (a stop in its worktree). A worktree or branch gone is refused, saying so; then from names an existing local branch to attach the part to: its worktree when it has one, else a new worktree at a free path on it (that branch not moved). Never pushes or opens anything on a forge.",
   upstream_group:
     "Mark a Workspaces-tree group as headed upstream (its workspaces, and those of the groups inside it, hold work meant to go upstream: their branches show in Reviews, lane Not proposed upstream yet, until their request opens), or unmark it. Only when the user asked.",
   upstream_workspace:
@@ -1375,14 +1381,18 @@ export function createBoardTools(
       plan: string;
       branch?: string;
       from?: string;
+      refresh?: boolean;
     }) {
       const done = await panel("effort.part", {
         id: params.effort,
         plan: params.plan,
         ...(params.branch ? { branch: params.branch } : {}),
         ...(params.from ? { from: params.from } : {}),
+        ...(params.refresh ? { refresh: true } : {}),
         by: "agent",
-        summary: `${caller} made the part of ${params.plan}`,
+        summary: params.refresh
+          ? `${caller} refreshed the part of ${params.plan}`
+          : `${caller} made the part of ${params.plan}`,
       });
       return JSON.stringify(done);
     },

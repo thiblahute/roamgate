@@ -1155,6 +1155,216 @@ test("a part stacks on the part it depends on or fixes, refuses fixups of a plan
   expect(g.git(clone, "rev-parse", "upstream/pool-d").trim()).toBe(onSource);
 }, 30_000);
 
+test("a part moved by hand is refreshed from its branch: ported, its base and from, nothing moved; one whose worktree and branch are gone is refused, then attached with from", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  const clone = g.clone("media/engine", "engine");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\nvoice\n", "pool: add b");
+  g.commit(clone, "pool/b.c", "b\nvoice fixed\n", "fixup! pool: add b");
+  g.commit(clone, "pool/z.c", "z\n", "fixup! pool: add z");
+  g.commit(clone, "pool/c.c", "c\n", "pool: add c");
+  const workspaces = [{ workspace_id: "w1", label: "big", cwd: clone }];
+  const connection = g.connection(workspaces);
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const made: string[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", label: "big" },
+          },
+        ],
+      }),
+      apply: async () => {},
+    },
+    // An existing branch is checked out as it is, as Herdr does.
+    createWorktree: async ({ branch }) => {
+      const path = join(g.root, `part-${branch.replace(/\//g, "-")}`);
+      const exists = g.git(clone, "branch", "--list", branch).trim().length;
+      if (exists) g.git(clone, "worktree", "add", "-q", path, branch);
+      else
+        g.git(
+          clone,
+          "worktree",
+          "add",
+          "-q",
+          "-b",
+          branch,
+          path,
+          "origin/main",
+        );
+      made.push(path);
+      workspaces.push({
+        workspace_id: `w${workspaces.length + 1}`,
+        label: path.split("/").pop()!,
+        cwd: path,
+      });
+      return { path, workspaceId: `w${workspaces.length}` };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big" },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const [a, b, fb, fz, c] = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  ).commits.map((commit: any) => commit.sha);
+  const propose = (name: string, commits: string[], depends_on?: string[]) =>
+    reviews.handle("bridge.mr_reviews.ledger.plans", {
+      id: "Big",
+      action: "propose",
+      name,
+      commits,
+      accepted: true,
+      ...(depends_on ? { depends_on } : {}),
+    });
+  await propose("Pool a", [a]);
+  await propose("Pool b", [b, fb, fz], ["Pool a"]);
+  await propose("Pool c", [c]);
+  const part = async (params: Record<string, unknown>) =>
+    JSON.parse(
+      await reviews.boardTool(
+        "part_create",
+        { effort: "Big", ...params },
+        "Claude",
+      ),
+    );
+  const plans = async () =>
+    (await reviews.handle("bridge.mr_reviews.effort.get", {
+      id: "Big",
+    })) as { plans: any[]; journal: { id: number }[] };
+  expect(await part({ plan: "Pool a" })).toMatchObject({ ok: true });
+  expect(await part({ plan: "Pool b" })).toMatchObject({
+    ok: true,
+    base: "pool-a",
+    folded: 1,
+  });
+  expect(await part({ plan: "Pool c" })).toMatchObject({ ok: true });
+  const poolB = made[1]!;
+  // Pool b ported by hand on pool-a: its voice stripped, a note added;
+  // its part's branch moved onto it.
+  g.git(clone, "branch", "-q", "upstream/pool-b", "pool-a");
+  g.git(clone, "checkout", "-q", "upstream/pool-b");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b, no voice");
+  const port = g.commit(clone, "docs/b.md", "b\n", "docs: b");
+  g.git(clone, "checkout", "-q", "big");
+  g.git(poolB, "reset", "-q", "--keep", port);
+  const stale = (await plans()).plans.find((each) => each.name === "Pool b");
+  expect(stale.part.from).toBeUndefined();
+  expect(stale.part.ported).toBeUndefined();
+  const state = () => [
+    g.git(clone, "for-each-ref", "--format=%(refname) %(objectname)"),
+    g.git(clone, "worktree", "list", "--porcelain"),
+    ...made.map((path) => g.git(path, "status", "--porcelain")),
+  ];
+  const before = state();
+  expect(await part({ plan: "Pool b", refresh: true })).toMatchObject({
+    ok: true,
+    refreshed: true,
+    path: poolB,
+    branch: "pool-b",
+    sha: port,
+    from: "upstream/pool-b",
+    ported: true,
+    base: "pool-a",
+    differs: { only_in_plan: ["pool/z.c"], only_in_branch: ["docs/b.md"] },
+  });
+  // Nothing moved, nothing made: only the record.
+  expect(state()).toEqual(before);
+  expect(made).toHaveLength(3);
+  const { plans: after, journal } = await plans();
+  expect(after.find((each) => each.name === "Pool b").part).toMatchObject({
+    path: poolB,
+    branch: "pool-b",
+    from: "upstream/pool-b",
+    ported: true,
+    base: "pool-a",
+    unfolded: [],
+  });
+  expect(journal.at(-1)).toMatchObject({
+    summary:
+      "Part pool-b of Pool b refreshed (from upstream/pool-b, on pool-a, ported)",
+  });
+  // Undo puts the record back as it was.
+  await reviews.handle("bridge.mr_reviews.ledger.undo", {
+    id: "Big",
+    journal: journal.at(-1)!.id,
+  });
+  expect(
+    (await plans()).plans.find((each) => each.name === "Pool b").part,
+  ).toEqual(stale.part);
+  // Pool c's worktree and branch gone: refused, saying so, nothing changed.
+  const poolC = made[2]!;
+  g.git(clone, "worktree", "remove", "--force", poolC);
+  g.git(clone, "branch", "-q", "-D", "pool-c");
+  await expect(part({ plan: "Pool c", refresh: true })).rejects.toThrow(
+    /Pool c's part cannot be read: its worktree .* is gone, and so is its branch pool-c\. Give from/,
+  );
+  await expect(
+    part({ plan: "Pool c", refresh: true, from: "nowhere" }),
+  ).rejects.toThrow(/nowhere is not a local branch of the clone/);
+  // Attached to an existing branch in its own worktree: no worktree made.
+  const again = join(g.root, "c-again");
+  g.git(clone, "worktree", "add", "-q", "-b", "c-again", again, "big");
+  const cAgain = g.git(clone, "rev-parse", "c-again").trim();
+  expect(
+    await part({ plan: "Pool c", refresh: true, from: "c-again" }),
+  ).toMatchObject({
+    refreshed: true,
+    attached: "existing",
+    path: again,
+    branch: "c-again",
+  });
+  expect(made).toHaveLength(3);
+  expect(g.git(clone, "rev-parse", "c-again").trim()).toBe(cAgain);
+  // A branch with no worktree: one made at a free path, the branch not moved.
+  g.git(clone, "worktree", "remove", "--force", again);
+  g.git(clone, "branch", "-q", "c-later", "big");
+  const later = g.git(clone, "rev-parse", "c-later").trim();
+  const attached = await part({
+    plan: "Pool c",
+    refresh: true,
+    from: "c-later",
+  });
+  expect(attached).toMatchObject({
+    refreshed: true,
+    attached: "made",
+    branch: "c-later",
+    sha: later,
+  });
+  expect(made).toHaveLength(4);
+  expect(attached.path).toBe(made[3]);
+  expect(g.git(clone, "rev-parse", "c-later").trim()).toBe(later);
+  expect(
+    (await plans()).plans.find((each) => each.name === "Pool c").part,
+  ).toMatchObject({ branch: "c-later", path: made[3] });
+}, 30_000);
+
 test("a duplicate effort deleted by a tool: by id only, the other's ledger kept, Undo restores it, no branch touched", async () => {
   const g = createGitFixture();
   fixtures.push(g);

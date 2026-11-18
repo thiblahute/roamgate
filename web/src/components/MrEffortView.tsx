@@ -738,6 +738,28 @@ export function MrEffortView({
               : `Part ${done.branch} made${done.base ? ` on ${done.base}` : ""} with ${done.picked} commits${done.folded ? `, ${done.folded} fixup${done.folded === 1 ? "" : "s"} folded` : ""}${done.unfolded?.length ? `, ${done.unfolded.length} fixup${done.unfolded.length === 1 ? "" : "s"} left as commits (target not in the part)` : ""}${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
     );
 
+  const refreshPart = (name: string) =>
+    void write("effort.part", { plan: name, refresh: true }, (done) =>
+      [
+        `Part ${done.branch} refreshed: ${done.picked} of ${done.of} plan commits there`,
+        ...(done.from ? [`from ${done.from}`] : []),
+        ...(done.base ? [`on ${done.base}`] : []),
+        ...(done.ported
+          ? [
+              `a port of the plan (${done.differs?.summary ?? "it differs from the plan's commits"})`,
+            ]
+          : []),
+        ...(done.unfolded?.length
+          ? [
+              `${done.unfolded.length} fixup${done.unfolded.length === 1 ? "" : "s"} left as commits`,
+            ]
+          : []),
+        ...(done.conflict
+          ? [`stopped at ${String(done.conflict.sha).slice(0, 10)}`]
+          : []),
+      ].join(", "),
+    );
+
   /**
    * `d` (D32): the commit's diff (or, with `from`, two versions of it) in
    * the head workspace's Changes; the page goes there as Enter on a
@@ -1271,6 +1293,7 @@ export function MrEffortView({
         detail={detail}
         write={write}
         makePart={makePart}
+        refreshPart={refreshPart}
         pointed={pointed}
       />
     );
@@ -1560,6 +1583,7 @@ function PlansList({
   detail,
   write,
   makePart,
+  refreshPart,
   pointed,
 }: {
   detail: EffortDetail;
@@ -1570,6 +1594,7 @@ function PlansList({
     label: (done: any) => string,
   ) => Promise<unknown>;
   makePart: (name: string) => void;
+  refreshPart: (name: string) => void;
 }) {
   const plans = detail.plans ?? [];
   const bykey = new Map(detail.commits.map((commit) => [commit.key, commit]));
@@ -1628,10 +1653,25 @@ function PlansList({
               const targets = fixupTargets(
                 known.map((commit) => commit ?? { sha: "", subject: "" }),
               );
+              // A part read from its branch (made or refreshed) says
+              // which fixups it still holds as commits.
+              const left = plan.part?.unfolded;
               const folds = (index: number) => {
                 const target = targets[index];
-                if (target === undefined || !known[index] || plan.part?.from)
+                const commit = known[index];
+                if (
+                  target === undefined ||
+                  !commit ||
+                  plan.part?.from ||
+                  plan.part?.ported
+                )
                   return null;
+                if (left)
+                  return left.includes(commit.subject)
+                    ? "left as a commit in the part"
+                    : target < 0
+                      ? "folded in the part"
+                      : `folded into ${known[target]?.sha.slice(0, 10) ?? ""} in the part`;
                 if (target < 0)
                   return "its target is not in this plan: it stays a commit";
                 const into = known[target]?.sha.slice(0, 10) ?? "";
@@ -1671,16 +1711,17 @@ function PlansList({
                 <>
                   {" "}
                   from <code>{plan.part.from}</code>
-                  {plan.part.ported
-                    ? " (ported: differs from the plan's commits)"
-                    : null}
                 </>
-              ) : plan.part.base ? (
+              ) : null}
+              {plan.part.base ? (
                 <>
                   {" "}
                   on <code>{plan.part.base}</code>
                 </>
               ) : null}
+              {plan.part.ported
+                ? " (ported: differs from the plan's commits)"
+                : null}
               {plan.part.conflict
                 ? `: stopped ${plan.part.conflict.folding ? "folding fixups " : ""}at ${plan.part.conflict.sha.slice(0, 10)} ${plan.part.conflict.subject} (${plan.part.conflict.files.join(", ") || "empty"}); resolve it there`
                 : ""}
@@ -1710,6 +1751,16 @@ function PlansList({
                 onClick={() => makePart(plan.id)}
               >
                 Make its part
+              </button>
+            ) : null}
+            {plan.state === "accepted" && plan.part ? (
+              <button
+                type="button"
+                className="ghost"
+                title="Read the part again from its branch as it is now: nothing made or moved"
+                onClick={() => refreshPart(plan.id)}
+              >
+                Refresh part
               </button>
             ) : null}
             <button
