@@ -162,3 +162,31 @@ export function spyStoreConnection(
       }) as ReturnType<typeof store.get>,
   );
 }
+
+/**
+ * Load Pierre's highlighter, its themes and the tests' languages before a
+ * diff is drawn. Pierre loads them on its first diff through dynamic imports
+ * and Shiki's WASM, which take real time: on a busy machine longer than the
+ * kits' settling rounds, and the first diff read was not drawn yet.
+ */
+export async function warmPierre(
+  langs: readonly string[] = ["text", "typescript", "markdown"],
+) {
+  const {
+    DEFAULT_THEMES,
+    getThemes,
+    preloadHighlighter,
+    resolveLanguages,
+    resolveThemes,
+  } = await import("@pierre/diffs");
+  const themes = getThemes(DEFAULT_THEMES);
+  await Promise.all([
+    resolveThemes(themes, "shiki-wasm"),
+    resolveLanguages([...langs]),
+    preloadHighlighter({
+      themes,
+      langs: [...langs],
+      preferredHighlighter: "shiki-wasm",
+    }),
+  ]);
+}
