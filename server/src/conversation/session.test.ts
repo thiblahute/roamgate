@@ -17,6 +17,7 @@ import {
   type FakeClaude,
   fakeClaudeProcess,
   fakeSpawner,
+  RESULT,
   settle,
 } from "./testing";
 
@@ -72,13 +73,6 @@ function setup(
     sessionIds,
   };
 }
-
-const RESULT = {
-  type: "result",
-  subtype: "success",
-  is_error: false,
-  result: "ok",
-};
 
 async function startTurn(context: ReturnType<typeof setup>, text = "hi") {
   const sent = await context.session.send({ text });

@@ -90,6 +90,14 @@ export function fakeClaudeProcess(
 
 export type FakeClaude = ReturnType<typeof fakeClaudeProcess>;
 
+/** A turn's successful result line, as claude prints it. */
+export const RESULT = {
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  result: "ok",
+};
+
 /** Answers an interrupt as the CLI does: a control_response, then a result. */
 export function answerInterrupts(
   message: Record<string, unknown>,
