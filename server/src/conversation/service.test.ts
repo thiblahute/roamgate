@@ -1080,6 +1080,125 @@ describe("a holder gone with its host", () => {
   });
 });
 
+describe("the holder's requests, the parked queue and the owned panes", () => {
+  test("messages parked while the terminal has the session can be edited and taken back", async () => {
+    const first = setup();
+    await first.service.handover(PANE, "conversation");
+    await settle();
+    first.service.dispose();
+    const second = setup(first.store, { carriedQueueDelayMs: 60_000 });
+    second.fake.live.delete(second.fake.claudePid);
+    second.fake.pane.agent = null;
+    second.fake.pane.process = {
+      shell_pid: 800,
+      foreground_process_group_id: 800,
+      foreground_processes: [{ pid: 800, argv: ["fish"] }],
+    };
+    const ws = { name: "w" };
+    second.service.subscribe(ws, PANE);
+    expect(
+      await second.service.send(PANE, { text: "first", uuid: "m1" }),
+    ).toEqual({ status: "queued", id: "m1" });
+    expect(second.service.editQueued(PANE, "m1", " changed ")).toBe(true);
+    expect(second.service.editQueued(PANE, "nope", "x")).toBe(false);
+    expect(second.service.state(PANE).queue).toEqual([
+      expect.objectContaining({ id: "m1", text: "changed" }),
+    ]);
+    expect(second.service.removeQueued(PANE, "nope")).toBeNull();
+    expect(second.service.removeQueued(PANE, "m1")).toMatchObject({
+      id: "m1",
+      text: "changed",
+    });
+    expect(second.service.state(PANE).queue).toEqual([]);
+    const queues = second.sent
+      .filter(([, envelope]) => envelope.event === "agent_chat.queue")
+      .map(([, envelope]) =>
+        (envelope.data as { queue: { text: string }[] }).queue.map(
+          (item) => item.text,
+        ),
+      );
+    expect(queues.slice(-2)).toEqual([["changed"], []]);
+  });
+
+  test("a holder polling a pane whose lease says terminal is told to resume", async () => {
+    const { service, store, fake } = setup();
+    await service.handover(PANE, "conversation");
+    await settle();
+    store.set({ ...store.get(PANE)!, phase: "terminal" });
+    expect(
+      await service.holder.hold({
+        paneId: PANE,
+        sessionId: fake.sessionId,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({ action: "resume", session_id: fake.sessionId, cwd: fake.cwd });
+  });
+
+  test("a holder this runtime never knew keeps holding until its poll is cut", async () => {
+    const { service } = setup(undefined, { holdPollMs: 60_000 });
+    const controller = new AbortController();
+    const reply = service.holder.hold({
+      paneId: "w9:p9",
+      sessionId: "s9",
+      signal: controller.signal,
+    });
+    controller.abort();
+    expect(await reply).toEqual({ action: "hold", session_id: "s9" });
+  });
+
+  test("a holder's log for a pane with no channel is not taken", () => {
+    const { service } = setup();
+    expect(
+      service.holder.output({
+        paneId: PANE,
+        holderId: "h1",
+        offset: 0,
+        end: 3,
+        data: "abc",
+      }),
+    ).toEqual({});
+  });
+
+  test("without a spawner of its own, a start needs a holder that runs it", async () => {
+    const { service, spawner } = setup(undefined, { spawn: undefined });
+    await service.handover(PANE, "conversation");
+    await eventually(() => service.state(PANE).lost !== undefined);
+    expect(service.state(PANE).lost?.reason).toMatch(
+      /pane holder is from an older Roamgate/,
+    );
+    expect(spawner.spawned).toHaveLength(0);
+  });
+
+  test("cancelling a switch with no exit waited for clears nothing", () => {
+    const { service } = setup();
+    expect(service.cancelHandover(PANE)).toEqual({ ok: true, cleared: false });
+  });
+
+  test("the panes conversation mode holds, as Herdr would show them", async () => {
+    const { service, fake, spawner } = setup();
+    expect(service.ownedPanes()).toEqual([]);
+    await service.handover(PANE, "conversation");
+    await settle();
+    expect(service.ownedPanes()).toEqual([
+      {
+        pane_id: PANE,
+        session_id: fake.sessionId,
+        cwd: fake.cwd,
+        phase: "conversation",
+        agent: "claude",
+        agent_status: "idle",
+      },
+    ]);
+    await service.send(PANE, { text: "work" });
+    await settle();
+    expect(service.ownedPanes()[0]?.agent_status).toBe("working");
+    spawner.spawned[0]!.fake.push(RESULT);
+    await settle();
+    expect(service.ownedPanes()[0]?.agent_status).toBe("idle");
+    expect(service.handingOver()).toBe(false);
+  });
+});
+
 describe("a conversation process that cannot be read", () => {
   const HOLDER = "d".repeat(32);
   const holderStatus = (extra: Partial<HolderStatus> = {}): HolderStatus => ({
