@@ -124,7 +124,7 @@ if (
       expect(
         head().querySelector(":scope > .diff-content-title"),
       ).not.toBeNull();
-      // Its view menu: side by side, unified, Wrap.
+      // Its view menu: side by side, unified, Wrap, full width diffs.
       const button = head().querySelector<HTMLButtonElement>(
         ".diff-view-menu .rv-menu-button",
       )!;
@@ -133,7 +133,7 @@ if (
         [...document.querySelectorAll(".rv-menu .rv-menu-label")].map(
           (each) => each.textContent,
         ),
-      ).toEqual(["Split", "Unified", "Wrap"]);
+      ).toEqual(["Split", "Unified", "Wrap", "Full width diffs"]);
     } finally {
       await diff.unmount();
     }

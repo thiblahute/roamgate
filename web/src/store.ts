@@ -81,6 +81,12 @@ import {
   disconnectVimKeys,
   VIM_KEYS_SETTING_KEY,
 } from "./vimKeys";
+import {
+  adoptWideDiffs,
+  connectWideDiffs,
+  disconnectWideDiffs,
+  WIDE_DIFFS_SETTING_KEY,
+} from "./wideDiffs";
 import { isReconnectRetryableError } from "./reconnectRetry";
 import { readableConnections, topologyIsStale } from "./connectionSessions";
 import {
@@ -1553,6 +1559,8 @@ let uiSettingsPushVersion = 0;
 let latestShortcutPush: unknown;
 let vimKeysPushVersion = 0;
 let latestVimKeysPush: unknown;
+let wideDiffsPushVersion = 0;
+let latestWideDiffsPush: unknown;
 let overlayTabsPushVersion = 0;
 let latestOverlayTabsPush: unknown;
 async function hydrateUiSettings() {
@@ -1561,6 +1569,7 @@ async function hydrateUiSettings() {
   const epoch = uiSettingsEpoch;
   const pushVersion = uiSettingsPushVersion;
   const vimPushVersion = vimKeysPushVersion;
+  const widePushVersion = wideDiffsPushVersion;
   const overlayPushVersion = overlayTabsPushVersion;
   try {
     const result = await bridge.call("bridge.ui_settings.get");
@@ -1587,6 +1596,17 @@ async function hydrateUiSettings() {
       vimPushVersion === vimKeysPushVersion
         ? ui[VIM_KEYS_SETTING_KEY]
         : latestVimKeysPush,
+    );
+    connectWideDiffs(
+      async (on) => {
+        await bridge.call("bridge.ui_settings.update", {
+          key: WIDE_DIFFS_SETTING_KEY,
+          value: on,
+        });
+      },
+      widePushVersion === wideDiffsPushVersion
+        ? ui[WIDE_DIFFS_SETTING_KEY]
+        : latestWideDiffsPush,
     );
     connectOverlayTabs(
       async (value) => {
@@ -2704,6 +2724,7 @@ function handleBridgeStatus(s: ConnectionStatus) {
     uiSettingsHydrated = false;
     disconnectShortcutPreferences();
     disconnectVimKeys();
+    disconnectWideDiffs();
     disconnectOverlayTabs();
     catalogReadyForConnection = false;
     terminalReattachPending = true;
@@ -3441,6 +3462,11 @@ export const store = {
         vimKeysPushVersion += 1;
         latestVimKeysPush = push.value;
         adoptVimKeys(push.value);
+      }
+      if (push.key === WIDE_DIFFS_SETTING_KEY) {
+        wideDiffsPushVersion += 1;
+        latestWideDiffsPush = push.value;
+        adoptWideDiffs(push.value);
       }
       if (push.key === OVERLAY_TAB_SETTING_KEY) {
         overlayTabsPushVersion += 1;

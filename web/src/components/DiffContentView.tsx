@@ -216,6 +216,7 @@ import { notAReviewCommand, reviewCommands } from "../reviewCommands";
 import { CHANGES_REVIEW_KEYS } from "../reviewShortcuts";
 import { readReviewPlace, writeReviewPlace } from "../reviewPlace";
 import { SPLIT_MIN_WIDTH } from "../reviewPrefs";
+import { setWideDiffs, useWideDiffs } from "../wideDiffs";
 import "./DiffContentView.css";
 import "./ReviewCard.css";
 
@@ -1772,6 +1773,8 @@ function DiffContentViewInner({
   const theme = useDocumentTheme();
   const effectiveViewMode: DiffViewMode = mobile ? "unified" : viewMode;
   const splitView = effectiveViewMode === "split";
+  /** Full width diffs (:set wide), else the files in a centred column. */
+  const wide = useWideDiffs();
   const wrapEnabled = mobile ? mobileWrap : desktopWrap;
   const activeEntryKey = entry ? diffEntryKey(entry) : "";
   useEffect(() => {
@@ -5919,6 +5922,12 @@ function DiffContentViewInner({
               checked: desktopWrap,
               onSelect: () => setDesktopWrap((value) => !value),
             },
+            {
+              label: "Full width diffs",
+              hint: ":set wide",
+              checked: wide,
+              onSelect: () => setWideDiffs(!wide),
+            },
           ]}
         />
       ) : !mobile ? (
@@ -5962,6 +5971,8 @@ function DiffContentViewInner({
         mobile ? "is-mobile" : ""
       }`}
       aria-label={embedded ? "File changes" : "Diff Viewer content"}
+      data-diff-style={splitView ? "split" : "unified"}
+      data-wide-diffs={wide ? "" : undefined}
       tabIndex={-1}
       data-review-cursor={cursor.active ? "" : undefined}
       onKeyDown={

@@ -33,14 +33,7 @@ body {
   margin: 0;
   background: var(--shell-bg);
   color: var(--text);
-  font:
-    15px / 1.45 -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  font: var(--ui-font-size) / 1.45 var(--ui-font);
 }
 
 button {
