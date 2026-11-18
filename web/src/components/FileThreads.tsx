@@ -1274,8 +1274,11 @@ export function ThreadsList({
   className,
   title = "Comments",
   editor,
+  whereNote,
 }: {
   threads: readonly ReviewThread[];
+  /** Said after where a thread is (another view's: its commit). */
+  whereNote?: (thread: ReviewThread) => string | undefined;
   api: Pick<FileThreadsApi, "reply" | "resolve">;
   onGo: (thread: ReviewThread) => void;
   onClose: () => void;
@@ -1293,20 +1296,24 @@ export function ThreadsList({
     <ThreadsPanel
       className={className}
       title={title}
-      threads={threads.map((thread) => ({
-        id: thread.id,
-        resolved: thread.resolved,
-        where:
+      threads={threads.map((thread) => {
+        const where =
           thread.anchor.terminal !== undefined
             ? `Terminal: ${thread.anchor.terminal.title}`
-            : renderedWhere(thread.anchor),
-        comments: thread.comments.map((comment) => ({
-          id: comment.id,
-          author: comment.author === REVIEW_USER ? "You" : comment.author,
-          body: comment.body,
-        })),
-        canReply: thread.kind === "discussion",
-      }))}
+            : renderedWhere(thread.anchor);
+        const note = whereNote?.(thread);
+        return {
+          id: thread.id,
+          resolved: thread.resolved,
+          where: note ? `${where} (${note})` : where,
+          comments: thread.comments.map((comment) => ({
+            id: comment.id,
+            author: comment.author === REVIEW_USER ? "You" : comment.author,
+            body: comment.body,
+          })),
+          canReply: thread.kind === "discussion",
+        };
+      })}
       onClose={onClose}
       onGo={(id) => {
         const thread = byId.get(id);
