@@ -93,7 +93,7 @@
 }
 
 .diff-commit-picker-panel {
-  width: min(560px, 92vw);
+  width: min(860px, 92vw);
   max-height: 60vh;
   display: flex;
   flex-direction: column;
@@ -121,18 +121,59 @@
   overflow: auto;
 }
 
+/* A row is one line: place and sha, the subject cut to the room left, the
+   author and date in a column that never wraps. */
 .diff-commit-picker-panel li > button {
   display: flex;
+  align-items: baseline;
   width: 100%;
-  justify-content: space-between;
-  gap: 12px;
+  min-width: 0;
+  height: auto;
+  gap: 10px;
   padding: 5px 12px;
   border: 0;
   background: transparent;
   color: var(--text);
   font: inherit;
+  line-height: 1.4;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.diff-commit-choice-id {
+  flex: none;
+  width: var(--choice-id, auto);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.diff-commit-choice-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-commit-choice-meta {
+  flex: none;
+  display: inline-flex;
+  gap: 8px;
+  max-width: 45%;
+  font-weight: 400;
+}
+
+.diff-commit-choice-author {
+  min-width: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-commit-choice-date {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .diff-commit-picker-panel li > button.on {
@@ -141,6 +182,13 @@
 
 .diff-commit-picker-panel li > button.current {
   font-weight: 600;
+}
+
+/* A narrow screen: the date alone beside the subject. */
+@media (max-width: 640px) {
+  .diff-commit-choice-author {
+    display: none;
+  }
 }
 
 .diff-commit-picker-panel li.note {

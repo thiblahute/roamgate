@@ -1021,22 +1021,6 @@
   padding: 3px 6px;
 }
 
-/* A phone's commit picker: each commit on one line, its subject cut. */
-.diff-content-view.is-mobile .diff-commit-picker-panel li > button > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diff-content-view.is-mobile
-  .diff-commit-picker-panel
-  li
-  > button
-  > span:last-child {
-  display: none;
-}
-
 /* Tighter controls, for the row to fit a phone's width. */
 .diff-content-view.is-mobile .diff-review-row {
   gap: 4px;
