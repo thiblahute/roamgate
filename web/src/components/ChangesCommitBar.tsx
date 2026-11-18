@@ -4,6 +4,9 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
+import { type CSSProperties, useLayoutEffect, useRef } from "react";
+import type { CommitChoice } from "../reviewModel";
+import { formatUiDateTime } from "../uiLocale";
 import type { ChangesViews } from "../useChangesViews";
 import "./ChangesCommitBar.css";
 
@@ -15,6 +18,63 @@ import "./ChangesCommitBar.css";
 
 const plural = (count: number, word: string) =>
   `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/**
+ * One row of the commit picker, one line high: its place and sha, its
+ * subject cut to the room left (whole in the tooltip), its author and a
+ * short date (the full one in the tooltip) in a column that never wraps.
+ */
+export function PickerRow({
+  choice,
+  total,
+  selected,
+  current,
+  onPick,
+}: {
+  choice: CommitChoice;
+  total: number;
+  selected: boolean;
+  current: boolean;
+  onPick: () => void;
+}) {
+  const commit = choice.commit;
+  const className = `diff-commit-choice${selected ? " on" : ""}${current ? " current" : ""}`;
+  if (!commit)
+    return (
+      <button type="button" className={className} onClick={onPick}>
+        <span className="diff-commit-choice-subject">
+          All changes ({plural(total, "commit")})
+        </span>
+        <span className="diff-commit-choice-meta note">the whole change</span>
+      </button>
+    );
+  const id = `${choice.position ? `${choice.position}/${total} ` : ""}${choice.sha?.slice(0, 8) ?? ""}`;
+  const when = commit.date ? formatUiDateTime(commit.date) : "";
+  return (
+    <button
+      type="button"
+      className={className}
+      // The width the longest place and sha take, for every row alike.
+      style={
+        { "--choice-id": `${String(total).length * 2 + 10}ch` } as CSSProperties
+      }
+      title={`${id} ${commit.subject}`}
+      onClick={onPick}
+    >
+      <span className="diff-commit-choice-id note">{id}</span>
+      <span className="diff-commit-choice-subject">{commit.subject}</span>
+      <span
+        className="diff-commit-choice-meta note"
+        title={[commit.author, commit.date].filter(Boolean).join(", ")}
+      >
+        {commit.author ? (
+          <span className="diff-commit-choice-author">{commit.author}</span>
+        ) : null}
+        {when ? <span className="diff-commit-choice-date">{when}</span> : null}
+      </span>
+    </button>
+  );
+}
 
 export function ChangesCommitBar({
   views,
@@ -28,6 +88,14 @@ export function ChangesCommitBar({
   onDone: () => void;
 }) {
   const { name, commits, picker } = views;
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const at = picker?.at;
+  // The selected row stays in sight as j / k move it.
+  useLayoutEffect(() => {
+    if (at === undefined) return;
+    const row = listRef.current?.children[at]?.querySelector("button");
+    row?.scrollIntoView?.({ block: "nearest" });
+  }, [at]);
   if (!name && !views.changed && !views.status && !picker) return null;
   return (
     <div className="diff-review-views">
@@ -103,6 +171,8 @@ export function ChangesCommitBar({
         // biome-ignore lint/a11y/noStaticElementInteractions: Esc closes it
         <div
           className="diff-commit-picker"
+          // Over the review for a moment: Zen's way out stays docked.
+          data-zen-transient=""
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               views.pick(undefined);
@@ -151,40 +221,19 @@ export function ChangesCommitBar({
                 event.stopPropagation();
               }}
             />
-            <ul>
+            <ul ref={listRef}>
               {picker.choices.map((choice, index) => (
                 <li key={choice.sha ?? "all"}>
-                  <button
-                    type="button"
-                    className={`${index === picker.at ? "on" : ""}${choice.sha === views.sha ? " current" : ""}`}
-                    onClick={() => {
+                  <PickerRow
+                    choice={choice}
+                    total={commits?.length ?? 0}
+                    selected={index === picker.at}
+                    current={choice.sha === views.sha}
+                    onPick={() => {
                       views.pick(choice);
                       onDone();
                     }}
-                  >
-                    <span>
-                      {choice.commit ? (
-                        <>
-                          <span className="note">
-                            {choice.position
-                              ? `${choice.position}/${commits?.length ?? 0} `
-                              : ""}
-                            {choice.sha?.slice(0, 8)}
-                          </span>{" "}
-                          {choice.commit.subject}
-                        </>
-                      ) : (
-                        `All changes (${plural(commits?.length ?? 0, "commit")})`
-                      )}
-                    </span>
-                    <span className="note">
-                      {choice.commit
-                        ? [choice.commit.author, choice.commit.date]
-                            .filter(Boolean)
-                            .join(", ")
-                        : "the whole change"}
-                    </span>
-                  </button>
+                  />
                 </li>
               ))}
               {picker.choices.length ? null : (
