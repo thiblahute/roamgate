@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { ConnectionClient } from "./api";
+import { recordLocalSeen } from "./localSeen";
 import { activePaneIdForSnapshot } from "./paneJump";
 import { store } from "./store";
 import { useConnectionClient } from "./useConnectionClient";
@@ -7,13 +8,21 @@ import { useConnectionClient } from "./useConnectionClient";
 type Snapshot = ReturnType<typeof store.get>;
 
 /**
- * The agents of panes on screen, as the browser shows them: those of the
- * visible layout, or the one pane a phone (or a zoomed pane) shows.
+ * The agents the user is looking at: every agent of the workspace on screen,
+ * in every tab, as Herdr counts its focused Space seen. Focusing a workspace
+ * by any path (the tree, the switcher, Find, a jump) shows it, so its agents
+ * are seen there, whatever pane is displayed.
  */
-export function panesOnScreen(snapshot: Snapshot, single: boolean): string[] {
+export function panesOnScreen(snapshot: Snapshot): string[] {
   const active = activePaneIdForSnapshot(snapshot);
-  if (single || snapshot.layout?.zoomed) return active ? [active] : [];
-  return snapshot.layout?.panes.map((pane) => pane.pane_id) ?? [];
+  if (!active) return [];
+  const workspaceId = snapshot.panes.find(
+    (pane) => pane.pane_id === active,
+  )?.workspace_id;
+  if (workspaceId === undefined) return [active];
+  return snapshot.panes
+    .filter((pane) => pane.workspace_id === workspaceId)
+    .map((pane) => pane.pane_id);
 }
 
 /**
@@ -22,19 +31,19 @@ export function panesOnScreen(snapshot: Snapshot, single: boolean): string[] {
  * looked), and each finished state seen, which is then no longer Done on any
  * device until the next turn ends (server agent-seen.ts). Herdr's own Done
  * depends on where Herdr is focused, which a browser does not follow.
- * Returns the function that stops watching.
+ * `seenLocally` gets each check's marks as they are sent, so the page's
+ * lists can show them at once. Returns the function that stops watching.
  */
 export function watchAgentsSeen({
   client,
-  single,
   getSnapshot,
   subscribe,
   refresh,
   win,
   doc,
+  seenLocally,
 }: {
   client: Pick<ConnectionClient, "call">;
-  single: boolean;
   getSnapshot: () => Snapshot;
   subscribe: (listener: () => void) => () => void;
   refresh: () => unknown;
@@ -43,17 +52,22 @@ export function watchAgentsSeen({
     Document,
     "visibilityState" | "hasFocus" | "addEventListener" | "removeEventListener"
   >;
+  seenLocally?: (
+    looks: readonly { paneId: string; terminalId: string; seq?: number }[],
+  ) => void;
 }): () => void {
   /** Agents on screen, and the finished state each was last seen in. */
   let shown = new Map<string, { paneId: string; terminalId: string }>();
   const finished = new Map<string, number>();
+  let looks: { paneId: string; terminalId: string; seq?: number }[] = [];
   const mark = (
     key: string,
     paneId: string,
     terminalId: string,
     seq?: number,
     wasDone = false,
-  ) =>
+  ) => {
+    looks.push({ paneId, terminalId, ...(seq === undefined ? {} : { seq }) });
     void client
       .call("agent_seen.mark", {
         pane_id: paneId,
@@ -67,11 +81,12 @@ export function watchAgentsSeen({
       .catch(() => {
         if (seq !== undefined) finished.delete(key);
       });
+  };
   const check = () => {
     const snapshot = getSnapshot();
     const looking = doc.visibilityState === "visible" && doc.hasFocus();
     const now = new Map<string, { paneId: string; terminalId: string }>();
-    for (const paneId of looking ? panesOnScreen(snapshot, single) : []) {
+    for (const paneId of looking ? panesOnScreen(snapshot) : []) {
       const pane = snapshot.panes.find((each) => each.pane_id === paneId);
       if (!pane?.agent || !pane.terminal_id) continue;
       const key = `${paneId}\u0000${pane.terminal_id}`;
@@ -90,6 +105,10 @@ export function watchAgentsSeen({
     for (const [key, { paneId, terminalId }] of shown)
       if (!now.has(key)) mark(key, paneId, terminalId);
     shown = now;
+    if (looks.length === 0) return;
+    const sent = looks;
+    looks = [];
+    seenLocally?.(sent);
   };
   check();
   const off = subscribe(check);
@@ -104,19 +123,33 @@ export function watchAgentsSeen({
   };
 }
 
-/** Marks agents seen while `onScreen` (watchAgentsSeen). */
-export function useMarkAgentsSeen(onScreen: boolean, single: boolean) {
+/**
+ * Marks agents seen while `onScreen` (watchAgentsSeen), and shows the marks
+ * in this page's lists at once.
+ */
+export function useMarkAgentsSeen(onScreen: boolean) {
   const client = useConnectionClient();
   useEffect(() => {
     if (!onScreen) return;
     return watchAgentsSeen({
       client,
-      single,
       getSnapshot: () => store.get(),
       subscribe: (listener) => store.subscribe(listener),
       refresh: () => store.refresh(),
       win: window,
       doc: document,
+      seenLocally: (looks) => {
+        const at = Date.now();
+        for (const look of looks)
+          recordLocalSeen(
+            client.connectionId,
+            look.paneId,
+            look.terminalId,
+            look.seq,
+            at,
+          );
+        store.applyLocalSeen(client.connectionId);
+      },
     });
-  }, [client, onScreen, single]);
+  }, [client, onScreen]);
 }

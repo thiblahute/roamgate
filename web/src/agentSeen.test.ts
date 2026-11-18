@@ -8,23 +8,27 @@ const rect = { x: 0, y: 0, width: 80, height: 24 };
 const pane = (id: string, status: string, seq?: number) => ({
   pane_id: id,
   terminal_id: `t-${id}`,
+  workspace_id: id === "c" ? "w2" : "w1",
   agent: "claude",
   agent_status: status,
   ...(seq === undefined ? {} : { state_change_seq: seq }),
 });
 
-function harness(single = false) {
+// a and b are in the workspace on screen (b in another tab when `zoomed`, as
+// on a phone, which shows one pane); c is in another workspace.
+function harness(zoomed = false) {
   let snapshot = {
     selectedPaneId: "a",
     panes: [pane("a", "working"), pane("b", "done", 4), pane("c", "idle", 2)],
     layout: {
-      zoomed: false,
+      zoomed,
       panes: [
         { pane_id: "a", focused: true, rect },
-        { pane_id: "b", focused: false, rect },
+        ...(zoomed ? [] : [{ pane_id: "b", focused: false, rect }]),
       ],
     },
   } as unknown as Snapshot;
+  const seenLocally: { paneId: string; seq?: number }[][] = [];
   const listeners = new Set<() => void>();
   const calls: Record<string, unknown>[] = [];
   let answer: (params: Record<string, unknown>) => Promise<unknown> = async (
@@ -45,7 +49,6 @@ function harness(single = false) {
         return answer(params!);
       },
     },
-    single,
     getSnapshot: () => snapshot,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -54,9 +57,17 @@ function harness(single = false) {
     refresh: () => refreshes++,
     win: win as unknown as Window,
     doc: doc as unknown as Document,
+    seenLocally: (looks) =>
+      seenLocally.push(
+        looks.map(({ paneId, seq }) => ({
+          paneId,
+          ...(seq === undefined ? {} : { seq }),
+        })),
+      ),
   });
   return {
     calls,
+    seenLocally,
     stop,
     win,
     doc,
@@ -104,16 +115,27 @@ test("agents on screen are marked as they come, finish and leave", async () => {
   });
   await settle();
   expect(page.refreshes()).toBe(1);
-  // b leaves the screen: looked at until now.
+  // Another workspace comes on screen: its agent is seen in its finished
+  // state, and a and b were looked at until now.
   page.update((snapshot) => ({
     ...snapshot,
-    layout: { ...snapshot.layout!, panes: [snapshot.layout!.panes[0]!] },
+    selectedPaneId: "c",
+    layout: {
+      ...snapshot.layout!,
+      panes: [{ pane_id: "c", focused: true, rect }],
+    },
   }));
-  expect(page.calls[page.calls.length - 1]).toEqual({
-    pane_id: "b",
-    terminal_id: "t-b",
-  });
-  expect(page.calls).toHaveLength(4);
+  expect(page.calls.slice(3)).toEqual([
+    { pane_id: "c", terminal_id: "t-c", seq: 2 },
+    { pane_id: "a", terminal_id: "t-a" },
+    { pane_id: "b", terminal_id: "t-b" },
+  ]);
+  // Each check hands its marks over at once, for the page's own lists.
+  expect(page.seenLocally).toEqual([
+    [{ paneId: "a" }, { paneId: "b", seq: 4 }],
+    [{ paneId: "a", seq: 9 }],
+    [{ paneId: "c", seq: 2 }, { paneId: "a" }, { paneId: "b" }],
+  ]);
   page.stop();
   expect(page.listeners.size).toBe(0);
 });
@@ -150,29 +172,46 @@ test("nothing is seen while the window is hidden or unfocused", () => {
   expect(page.calls).toHaveLength(2);
 });
 
-test("a phone sees only its pane, and a failed mark is sent again", async () => {
+test("every agent of the workspace on screen is seen, even in a tab not shown", async () => {
+  // A phone, or a zoomed pane, shows a alone: b, in the same workspace, is
+  // seen too, as Herdr sees its focused Space.
   const page = harness(true);
-  expect(page.calls).toEqual([{ pane_id: "a", terminal_id: "t-a" }]);
+  expect(page.calls).toEqual([
+    { pane_id: "a", terminal_id: "t-a" },
+    { pane_id: "b", terminal_id: "t-b", seq: 4 },
+  ]);
+  await settle();
+  expect(page.refreshes()).toBe(1);
+  page.stop();
+});
+
+test("a failed mark is sent again", async () => {
+  const page = harness();
+  await settle();
+  expect(page.refreshes()).toBe(1);
   page.answer(() => Promise.reject(new Error("offline")));
   page.update((snapshot) => ({
     ...snapshot,
-    selectedPaneId: "b",
+    panes: snapshot.panes.map((each) =>
+      each.pane_id === "b" ? { ...each, state_change_seq: 5 } : each,
+    ),
   }));
-  expect(page.calls.slice(1)).toEqual([
-    { pane_id: "b", terminal_id: "t-b", seq: 4 },
-    { pane_id: "a", terminal_id: "t-a" },
-  ]);
+  expect(page.calls[page.calls.length - 1]).toEqual({
+    pane_id: "b",
+    terminal_id: "t-b",
+    seq: 5,
+  });
   await settle();
-  expect(page.refreshes()).toBe(0);
+  expect(page.refreshes()).toBe(1);
   page.answer(async () => ({ marked: true }));
   page.update((snapshot) => ({ ...snapshot }));
   expect(page.calls[page.calls.length - 1]).toEqual({
     pane_id: "b",
     terminal_id: "t-b",
-    seq: 4,
+    seq: 5,
   });
   await settle();
-  expect(page.refreshes()).toBe(1);
+  expect(page.refreshes()).toBe(2);
   page.stop();
 });
 
