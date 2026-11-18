@@ -6,6 +6,7 @@ import { forgeRefLabel } from "../../../shared/forge";
 import {
   type MrEffort,
   type MrEffortSummary,
+  type MrInboxEntry,
   type MrItem,
   type MrOverlap,
   type MrReviewsPush,
@@ -37,6 +38,7 @@ import {
   undoLedger,
   upstreamRef,
 } from "./efforts";
+import { effortPlanEntries } from "./effort-board";
 import { MrReviewsError } from "./rpc";
 import {
   parseRequestPatchIds,
@@ -435,6 +437,8 @@ export async function handleEffortRpc(
       meta: { by: "user" | "agent"; summary?: string; undoable?: boolean },
     ) => Promise<MrReviewsSettings>;
     upstream: UpstreamScanner;
+    /** The inbox's entries as computed (no forge call): the Board's cards. */
+    entries?: () => Promise<MrInboxEntry[]>;
     groupLabel: (group: string) => Promise<string | null>;
     /**
      * Makes a worktree workspace through the user's worktree path (the
@@ -1137,6 +1141,17 @@ export async function handleEffortRpc(
         ),
         plans: ledger.plans,
         changes: changesOf(derived, ledger, service.store.seen(effort.id)),
+        ...(deps.entries
+          ? {
+              board: effortPlanEntries({
+                effort,
+                plans: ledger.plans,
+                branches: deps.upstream.branches(),
+                entries: await deps.entries(),
+                patchIds: deps.upstream.patchIds(),
+              }),
+            }
+          : {}),
       };
     }
     case "bridge.mr_reviews.effort.seen": {

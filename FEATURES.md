@@ -1096,14 +1096,33 @@ landing into it) and a name; **Preview** first shows what it holds and the
 other efforts or branches holding the same commits, with the proposed
 layout (one effort and a feeder, stacked efforts, or shared commits put in
 one part only). Its card at the top of Mine shows a bar by disposition and
-"N of M upstream"; Enter or `i` opens it maximized, with **Progress**
+"N of M upstream"; Enter or `i` opens it maximized, on the tab last shown
+there. **Board** (`B`, the first) shows its work as the inbox's own
+requests: a card per planned request in columns, side by side on a wide
+screen, one list under the columns' titles on a phone. A plan without a
+part is **Planned** ("proposed" or "accepted"), one whose part has no
+request yet **Not proposed yet** (its branch's row when the inbox has
+one), one whose request is open in that request's lane (**Your move**,
+**Waiting**, **Merging**, **Blocked**, **Stale**) drawn with the inbox's
+card (number, title, pipeline, approvals, next step, merge-after, home
+button), and merged ones in **Done**, folded until you open it. A part's
+branch links to its request by name (a request opened from
+`you:upstream/<name>` too) or by the patch ids of its commits, from the
+requests the inbox already read. Each card says the plan's "after X", its
+commits and its part's state (ported, conflict). The inbox's keys work on
+it: `j`/`k` from card to card in a column (through every column on a
+phone), `h`/`l` between columns, Enter the request's review in its home
+(a part with no request: its workspace; a plan with no part: its place in
+Plans), `o` on the forge, `e` its next step and whose move, `w` its
+workspace, `za` folds a column, and `c` comments on the card for the
+leader. **Progress**
 (counts, a burndown, a breakdown by directory, overlaps), **Ledger** (every
 commit of `target..source`: `j`/`k`, `x` and `V` select, `/` filters with
 words and `disposition:`, `dir:`, `file:`, `author:`, `:mark not-upstream
 REASON`, `:supersede REF`, `:plan NAME`, `:unsort`, `u` undoes the last
 bulk change, Enter shows the commit's versions across rewords and rebases)
-and **Feeders** (their commits not on the source yet, their drift); `P`,
-`L`, `F` switch tabs. A commit upstream under another patch id (reworded,
+and **Feeders** (their commits not on the source yet, their drift); `B`,
+`P`, `L`, `F` switch tabs. A commit upstream under another patch id (reworded,
 reworked) gets **proposed matches**: upstream commits since the merge base
 touching the same files with a close subject, author and size, scored
 locally, shown in its row ("like abc1234 (0.8)") and under the ledger;
@@ -1157,8 +1176,8 @@ and rebases. **Leader session** (`gl`) goes to the Claude session of its head
 workspace, which leads the effort through the board's tools; with none, it
 offers to start one there, and nothing starts it but you.
 Comment anywhere in an effort's view, for its leader: select words, or
-point at something (a click, `j`/`k`, the ledger's cursor) such as a plan
-card, a commit row of the ledger, a plan or What changed, a count of
+point at something (a click, `j`/`k`, the ledger's cursor) such as a card
+of the Board, a plan card, a commit row of the ledger, a plan or What changed, a count of
 Progress, a directory, a feeder or a heading of What changed, then `c` or
 **Comment**; `C` comments on the tab. The thread sits under what it is on
 (a ledger row shows how many are open on it, its threads under the ledger

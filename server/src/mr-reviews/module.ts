@@ -643,6 +643,7 @@ export function createMrReviews(options: {
           edit: editSettings,
           save: saveSettings,
           upstream,
+          entries: async () => inbox.snapshot(await settings()).entries,
           groupLabel: async (group) => {
             const node = (await options.tree?.read())?.nodes.find(
               (each) => each.id === group,

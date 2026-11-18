@@ -52,6 +52,8 @@ if (process.env.ROAMGATE_MR_EFFORT_DOM_TEST !== "1") {
       });
     (browser.HTMLElement.prototype as any).scrollIntoView = () => {};
     localStorage.setItem("roamgate:mrReviewsFilter", "mine");
+    // Progress, as last shown (the Board opens first otherwise).
+    localStorage.setItem("roamgate:mrEffortTab", "progress");
 
     const React = await import("react");
     const { act } = React;
