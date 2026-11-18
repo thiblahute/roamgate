@@ -2293,13 +2293,15 @@ export async function mountChangesReview(
       const list = input.parentElement?.querySelector("ul");
       return {
         query: input.value,
-        choices: [...(list?.querySelectorAll("li") ?? [])].map((item) =>
-          (
-            item.querySelector("button > span:first-child")?.textContent ??
-            item.textContent ??
-            ""
-          ).trim(),
-        ),
+        // A commit's row: its place and sha, then its subject (its author
+        // and date left out); All changes: its subject alone.
+        choices: [...(list?.querySelectorAll("li") ?? [])].map((item) => {
+          const part = (name: string) =>
+            item.querySelector(`.diff-commit-choice-${name}`)?.textContent ??
+            "";
+          const read = [part("id"), part("subject")].filter(Boolean).join(" ");
+          return (read || item.textContent || "").trim();
+        }),
       };
     },
     banner() {
