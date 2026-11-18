@@ -253,7 +253,9 @@ whole change, else `anchor.outdated`, kept where it was. Automatic's base
 never is a metadata ref (`isMetadataRef`: outside `refs/heads` and
 `refs/remotes`, or Entire's `entire/checkpoints`), even one a remote HEAD
 names; a review that followed Automatic onto one moves onto the default
-branch at its next automatic open.
+branch at its next automatic open. Comment text left unsent is kept per
+editor (`reviewDrafts.ts`, keyed by where it was written); Changes reopens
+the newest in place once its rows are drawn, and `:drafts` the next.
 
 A review of commits (the Branch scope, a range) has two kinds of view
 in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,

@@ -108,3 +108,88 @@ export function discardReviewDrafts(sessionId: string) {
   delete drafts[sessionId];
   writeDrafts(drafts);
 }
+
+/** Where a kept draft was written, read back from its editor's key. */
+export type ReviewDraftPlace =
+  | {
+      kind: "new";
+      key: string;
+      at: number;
+      /** What it writes: a review comment or a discussion. */
+      comment: string;
+      path: string;
+      line: number;
+      side: "old" | "new";
+      text: string;
+    }
+  | { kind: "reply"; key: string; at: number; threadId: string }
+  | { kind: "edit"; key: string; at: number; commentId: string }
+  | { kind: "overall"; key: string; at: number };
+
+/** A draft's place from its key (reviewSave's editorKey); null: unknown. */
+export function draftPlaceOf(key: string, at: number): ReviewDraftPlace | null {
+  if (key === "overall") return { kind: "overall", key, at };
+  if (key.startsWith("reply:"))
+    return { kind: "reply", key, at, threadId: key.slice("reply:".length) };
+  if (key.startsWith("edit:"))
+    return { kind: "edit", key, at, commentId: key.slice("edit:".length) };
+  const match = /^new:([^:]+):(\{.*\})$/s.exec(key);
+  if (!match) return null;
+  try {
+    const anchor = JSON.parse(match[2]!) as {
+      path?: unknown;
+      line?: unknown;
+      side?: unknown;
+      text?: unknown;
+    };
+    if (
+      typeof anchor.path !== "string" ||
+      !anchor.path ||
+      typeof anchor.line !== "number" ||
+      (anchor.side !== "old" && anchor.side !== "new")
+    )
+      return null;
+    return {
+      kind: "new",
+      key,
+      at,
+      comment: match[1]!,
+      path: anchor.path,
+      line: anchor.line,
+      side: anchor.side,
+      text: typeof anchor.text === "string" ? anchor.text : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** A review's drafts and where each was written, the newest first. */
+export function reviewDraftPlaces(sessionId: string): ReviewDraftPlace[] {
+  return Object.entries(readDrafts()[sessionId] ?? {})
+    .map(([key, draft]) => draftPlaceOf(key, draft.at))
+    .filter((place): place is ReviewDraftPlace => place !== null)
+    .sort((a, b) => b.at - a.at);
+}
+
+/**
+ * Where a draft is, as the review says it: `play.c:144`, a reply on a
+ * thread's place, the overall comment. `whereOf` names a thread's place
+ * (a reply's thread, an edit's comment's); undefined when not shown.
+ */
+export function describeDraftPlace(
+  place: ReviewDraftPlace,
+  whereOf: (ids: {
+    threadId?: string;
+    commentId?: string;
+  }) => string | undefined,
+): string {
+  if (place.kind === "overall") return "the overall comment";
+  if (place.kind === "new") return `${place.path}:${place.line}`;
+  const where =
+    place.kind === "reply"
+      ? whereOf({ threadId: place.threadId })
+      : whereOf({ commentId: place.commentId });
+  const what = place.kind === "reply" ? "a reply" : "an edit";
+  return where ? `${what} on ${where}` : what;
+}

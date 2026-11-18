@@ -111,6 +111,7 @@ test("Tab offers the listed names in order, aliases never", () => {
     "send",
     "hold",
     "overall",
+    "drafts",
     "conversations",
     "threads",
     "unresolved",

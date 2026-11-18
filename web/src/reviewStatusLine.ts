@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 import { plural } from "./components/MrThreadCard";
-import { reviewDraftCount } from "./reviewDrafts";
+import { describeDraftPlace, reviewDraftPlaces } from "./reviewDrafts";
 
 /*
  * The review's status line: the agent waiting for an answer in its pane,
@@ -41,6 +41,29 @@ export function reviewStatusText({
         ? `${agentName}: ${agent.update.message}`
         : "")
   );
+}
+
+/**
+ * What the status line says of the drafts a review keeps: how many, where
+ * each was written, and how to reopen them; empty with none.
+ */
+export function keptDraftsText(
+  draftSession: string,
+  threads: readonly ReviewThread[],
+): string {
+  const places = reviewDraftPlaces(draftSession);
+  if (!places.length) return "";
+  const whereOf = (ids: { threadId?: string; commentId?: string }) => {
+    const thread = threads.find((each) =>
+      ids.threadId
+        ? each.id === ids.threadId
+        : each.comments.some((comment) => comment.id === ids.commentId),
+    );
+    const { path, line } = thread?.anchor ?? {};
+    return path ? (line ? `${path}:${line}` : path) : undefined;
+  };
+  const where = places.map((place) => describeDraftPlace(place, whereOf));
+  return `${plural(places.length, "unsent draft")} kept: ${where.join(", ")}. :drafts reopens ${places.length === 1 ? "it" : "the newest"} where it was written.`;
 }
 
 /**
@@ -101,14 +124,14 @@ export function useReviewStatusLine({
     reviewSaid.current = null;
     setStatus((current) => (current === said ? "" : current));
   }, [workingAt, setStatus]);
-  // Drafts left from before: said once, as the review opens.
+  // Drafts left from before: said once, as the review opens, with where
+  // each was written (the review reopens the newest in place, `:drafts`
+  // the next).
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
   useEffect(() => {
-    const count = reviewDraftCount(draftSession);
-    if (count)
-      setStatus(
-        () =>
-          `${plural(count, "unsent draft")} kept: reopen the comment to go on.`,
-      );
+    const said = keptDraftsText(draftSession, threadsRef.current);
+    if (said) setStatus(() => said);
   }, [draftSession, setStatus]);
   return session
     ? reviewStatusText({ session, agentName, now, status })

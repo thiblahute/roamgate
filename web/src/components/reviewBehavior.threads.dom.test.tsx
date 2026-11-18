@@ -810,13 +810,16 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         });
         expect(review.status()).toBe("Claude is working: reading b.ts");
 
-        // Text left in an editor as the review went away: said once back.
+        // Text left in an editor as the review went away: reopened where
+        // it was written once back, and said so.
         await review.push({ session: { agent: claude.agent } });
         await review.press("4jc");
         await review.writeInEditor("Half a thought");
         await review.reload();
-        expect(review.status()).toBe(
-          "1 unsent draft kept: reopen the comment to go on.",
+        expect(review.editorOpen()).toBe(true);
+        expect(review.editorText()).toBe("Half a thought");
+        expect(review.status()).toMatch(
+          /^Your unsent draft on a\.ts:\d+ is back, where it was written\.$/,
         );
         await review.unmount();
       });

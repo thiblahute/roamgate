@@ -207,7 +207,9 @@ Inspector button, shortcuts, or workspace/agent menus.
 - Changes has the review's comments. `c`, Enter, `i` or
   `a` comment on the cursor's line, or on the lines `V` selected, in the
   review's Vim editor under that line (Cmd+Enter, Save or `:w` sends it, Esc
-  keeps what you wrote as a draft that comes back, a key or two is a stray
+  keeps what you wrote as a draft that comes back: reopening the review
+  reopens the newest one where it was written and says where the others
+  are, `:drafts` reopens the next; a key or two is a stray
   and is not sent, an image pasted in is stored with the review, `s` or
   `:suggest` starts a suggestion with the line as it reads, in GitLab's
   suggestion format; on a removed line it says
