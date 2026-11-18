@@ -27,6 +27,13 @@ function docksChanged() {
 /** How far down the screen a header still counts as the top one. */
 const TOP_EDGE = 80;
 
+/**
+ * What covers a header only for a moment (a picker, a menu): the header
+ * stays the top one under it, so Zen's way out stays docked instead of
+ * hanging over the header for as long as it is open.
+ */
+const TRANSIENT = "[data-zen-transient], [data-radix-popper-content-wrapper]";
+
 /** The group a dock ends. */
 const hostOf = (dock: Dock) => dock.element.parentElement;
 
@@ -52,7 +59,11 @@ function topZenDock(): Dock | null {
             box.top + box.height / 2,
           )
         : null;
-    if (hit && !host.contains(hit) && !hit.closest(".zen-island, .topbar"))
+    if (
+      hit &&
+      !host.contains(hit) &&
+      !hit.closest(`.zen-island, .topbar, ${TRANSIENT}`)
+    )
       continue;
     return dock;
   }

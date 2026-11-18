@@ -70,11 +70,15 @@ if (process.env.ROAMGATE_ZEN_ISLAND_DOM_TEST !== "1") {
         },
       },
     );
+    // Something drawn over every header (a picker, another view).
+    let cover: Element | null = null;
     document.elementFromPoint = (_x: number, y: number) =>
+      cover ??
       [...document.querySelectorAll(".group")].reverse().find((group) => {
         const top = tops.get(group.className) ?? 0;
         return y >= top && y <= top + 28;
-      }) ?? null;
+      }) ??
+      null;
 
     let exits = 0;
     const App = ({
@@ -163,6 +167,43 @@ if (process.env.ROAMGATE_ZEN_ISLAND_DOM_TEST !== "1") {
     // The review closes: back in the inspector's header.
     await act(async () => {
       root.render(<App inspector />);
+    });
+    await settle();
+    expect(
+      document.querySelector(".group.inspector .zen-dock-island"),
+    ).not.toBeNull();
+
+    // A picker open over it for a moment: still docked there, not hung
+    // over the header behind the picker.
+    const picker = document.createElement("div");
+    picker.setAttribute("data-zen-transient", "");
+    picker.innerHTML = "<ul><li>a commit</li></ul>";
+    document.body.append(picker);
+    cover = picker.querySelector("li");
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    await settle();
+    expect(
+      document.querySelector(".group.inspector .zen-dock-island"),
+    ).not.toBeNull();
+    expect(document.querySelector(".zen-island")).toBeNull();
+
+    // Another view over it: the header is not the top one any more.
+    const overlay = document.createElement("section");
+    document.body.append(overlay);
+    cover = overlay;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    await settle();
+    expect(document.querySelector(".zen-dock-island")).toBeNull();
+    expect(document.querySelector(".app > .zen-island")).not.toBeNull();
+    cover = null;
+    picker.remove();
+    overlay.remove();
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
     });
     await settle();
     expect(
