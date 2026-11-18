@@ -733,6 +733,13 @@ export type MrPlan = {
     /** Made from this existing branch's commit, nothing picked. */
     from?: string;
     /**
+     * That branch is a port of the plan: it sits on the part's base, its
+     * content its own (not the plan's commits as they are).
+     */
+    ported?: boolean;
+    /** Picked on this part's branch (a plan it depends on or fixes), not the target. */
+    base?: string;
+    /**
      * The pick stopped here: the commit and its conflicting files; folding
      * when it was the fixups being folded (a rebase), not a pick.
      */

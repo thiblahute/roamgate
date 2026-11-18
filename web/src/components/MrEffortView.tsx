@@ -732,8 +732,10 @@ export function MrEffortView({
           : done.error
             ? `Part ${done.branch}: ${done.picked} of ${done.of} on its branch: ${done.error}`
             : done.from
-              ? `Part ${done.branch} made from ${done.from}, which holds its ${done.of} commits: nothing picked`
-              : `Part ${done.branch} made with ${done.picked} commits${done.folded ? `, ${done.folded} fixup${done.folded === 1 ? "" : "s"} folded` : ""}${done.unfolded?.length ? `, ${done.unfolded.length} fixup${done.unfolded.length === 1 ? "" : "s"} left as commits (target not in the part)` : ""}${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
+              ? done.ported
+                ? `Part ${done.branch} made from ${done.from}, a port of the plan (${done.differs?.summary ?? "it differs from the plan's commits"}): nothing picked`
+                : `Part ${done.branch} made from ${done.from}, which holds its ${done.of} commits: nothing picked`
+              : `Part ${done.branch} made${done.base ? ` on ${done.base}` : ""} with ${done.picked} commits${done.folded ? `, ${done.folded} fixup${done.folded === 1 ? "" : "s"} folded` : ""}${done.unfolded?.length ? `, ${done.unfolded.length} fixup${done.unfolded.length === 1 ? "" : "s"} left as commits (target not in the part)` : ""}${done.skipped?.length ? ` (${done.skipped.length} already in the target, skipped)` : ""}`,
     );
 
   /**
@@ -1669,6 +1671,14 @@ function PlansList({
                 <>
                   {" "}
                   from <code>{plan.part.from}</code>
+                  {plan.part.ported
+                    ? " (ported: differs from the plan's commits)"
+                    : null}
+                </>
+              ) : plan.part.base ? (
+                <>
+                  {" "}
+                  on <code>{plan.part.base}</code>
                 </>
               ) : null}
               {plan.part.conflict
