@@ -51,6 +51,12 @@ import {
 import { ReviewGoneError } from "../workspace/review-patch";
 import type { ReviewFileRequest } from "../workspace/review-files";
 import { combinedAnchor, entryAnchored } from "./changes-anchors";
+import {
+  lineInFile,
+  movedAnchor,
+  rewrittenCommit,
+  rewrittenOut,
+} from "./commit-anchors";
 import { serialize } from "./memo";
 import { createAgentPrompts } from "./prompts";
 import { ReviewSessions } from "./sessions";
@@ -835,28 +841,45 @@ export function createReviewService(args: {
   }
 
   /**
+   * A review of the checkout's own code, one review with its others in
+   * Changes: its working tree, or a range of its commits (not a compare
+   * of two versions of a branch).
+   */
+  function checkoutCode(target: ReviewSession): boolean {
+    const { target: what } = target;
+    return what.kind === "worktree" || (what.kind === "range" && !what.compare);
+  }
+
+  /**
    * The reviews whose threads a review shows with its own (`shared`): in
-   * a code review, those of the checkout's rendered files; in a rendered
-   * file, those of the checkout's code reviews.
+   * a code review, those of the checkout's rendered files; in a review of
+   * the checkout's code (checkoutCode), its other ones too, whatever they
+   * compare (the working tree, the branch against one base or another, an
+   * agent's range), so a comment written under one is never missing from
+   * another; in a rendered file, those of the checkout's code reviews.
    */
   function linkedOf(target: ReviewSession): ReviewSession[] {
     const code = codeReview(target);
     if (!code && !renderedFile(target)) return [];
+    const own = checkoutCode(target);
     return sessions
       .ofCheckout(target)
       .filter(
         (other) =>
           other.id !== target.id &&
-          (code ? !!renderedFile(other) : codeReview(other)),
+          (code
+            ? !!renderedFile(other) || (own && checkoutCode(other))
+            : codeReview(other)),
       );
   }
 
   /**
    * The threads of the linked reviews on what this one shows: a rendered
-   * file's in a code review, a code review's on the file in a rendered
-   * one (with a merge request's GitLab threads). Each stays in its own
-   * review (its sessionId), which delivers it and takes what is written
-   * on it. Pending drafts the review shows already are left out.
+   * file's in a code review, the checkout's other code reviews' (on a
+   * file or on the whole review), a code review's on the file in a
+   * rendered one (with a merge request's GitLab threads). Each stays in
+   * its own review (its sessionId), which delivers it and takes what is
+   * written on it. Pending drafts the review shows already are left out.
    */
   function sharedThreads(target: ReviewSession): ReviewThread[] {
     const linked = linkedOf(target);
@@ -871,7 +894,9 @@ export function createReviewService(args: {
           ? (gitlabState.get(other.id)?.threads ?? [])
           : [];
       for (const thread of [...local, ...remote]) {
-        if (seen.has(thread.id) || !thread.anchor.path) continue;
+        if (seen.has(thread.id)) continue;
+        if (!thread.anchor.path && !(path === undefined && checkoutCode(other)))
+          continue;
         if (path !== undefined && thread.anchor.path !== path) continue;
         seen.add(thread.id);
         shared.push(thread);
@@ -1644,6 +1669,216 @@ export function createReviewService(args: {
           : undefined,
       );
     migrating.set(target.id, task);
+    return task;
+  }
+
+  /**
+   * The target to open for an agent's range of the checkout: its own when
+   * a review of it is kept, else that of a review of the same checkout
+   * comparing the same two commits under other names (the branch's
+   * `main..topic` and the Branch scope's `origin/main..HEAD` with topic
+   * checked out), the one that follows HEAD first, so the agent joins the
+   * review the user writes in instead of starting another. Unchanged when
+   * the commits cannot be read.
+   */
+  async function equivalentTarget(params: {
+    connectionId: string;
+    root: string;
+    target: ReviewTarget;
+  }): Promise<ReviewTarget> {
+    const { connectionId, root, target } = params;
+    if (target.kind !== "range" || target.compare || !args.loadHeads)
+      return target;
+    const kept = [...sessions.values()].filter(
+      (s) =>
+        s.connectionId === connectionId &&
+        s.root === root &&
+        s.target.kind === "range" &&
+        !s.target.compare,
+    );
+    if (!kept.length || kept.some((s) => sameTarget(s.target, target)))
+      return target;
+    const refs = [
+      target.base,
+      target.head,
+      ...kept.flatMap((s) =>
+        s.target.kind === "range" ? [s.target.base, s.target.head] : [],
+      ),
+    ];
+    const names = [...new Set(refs)];
+    let shas: (string | null)[];
+    try {
+      shas = await args.loadHeads(
+        connectionId,
+        names.map((ref) => ({ root, ref })),
+      );
+    } catch {
+      return target;
+    }
+    const sha = (ref: string) => shas[names.indexOf(ref)] ?? null;
+    const base = sha(target.base);
+    const head = sha(target.head);
+    if (!base || !head) return target;
+    const same = kept
+      .filter(
+        (s) =>
+          s.target.kind === "range" &&
+          sha(s.target.base) === base &&
+          sha(s.target.head) === head,
+      )
+      .sort(
+        (a, b) =>
+          Number(b.target.kind === "range" && b.target.head === "HEAD") -
+            Number(a.target.kind === "range" && a.target.head === "HEAD") ||
+          b.updatedAt.localeCompare(a.updatedAt),
+      )[0];
+    return same?.target ?? target;
+  }
+
+  /**
+   * Threads tried against a list of commits (its key): one not moved is
+   * looked at again only once the branch changes.
+   */
+  const rewriteTried = new Map<string, string>();
+  /** When a read of the review may look for rewritten commits again. */
+  const rewriteReadAt = new Map<string, number>();
+  /** Re-anchoring passes running, by the review whose commits they read. */
+  const rewriting = new Map<string, Promise<void>>();
+
+  /**
+   * Threads of the checkout's reviews written on a commit the branch no
+   * longer has (amended, rebased, replayed) moved onto what it became and
+   * onto their line there, else their line in the whole change; outdated
+   * only when nothing matches (commit-anchors.ts). Run in the background
+   * when a range's commits are read (`list`, else read here), for the
+   * threads of this review and of the checkout's other code reviews on
+   * the same head (another branch's are moved only to the same patch
+   * id). Each thread is tried once per list of commits; the reviews of
+   * those that moved are published.
+   */
+  function reanchorRewritten(
+    target: ReviewSession,
+    list?: ReviewCommit[],
+  ): Promise<void> {
+    const { target: what } = target;
+    if (what.kind !== "range" || what.compare || !args.loadCommits)
+      return Promise.resolve();
+    const running = rewriting.get(target.id);
+    if (running) return running;
+    const { loadCommits } = args;
+    const task = (async () => {
+      const commits =
+        list ?? (await commitList(target, loadCommits).catch(() => []));
+      if (!commits.length || commits[0]?.history) return;
+      const key = `${commits.length}:${commits[commits.length - 1]!.sha}`;
+      const owners = [...sessions.values()].filter(
+        (s) =>
+          s.connectionId === target.connectionId &&
+          s.root === target.root &&
+          (s.target.kind === "worktree" ||
+            (s.target.kind === "range" && !s.target.compare)),
+      );
+      const todo = owners.flatMap((owner) =>
+        [...threadsOf(owner.id).values()].filter(
+          (thread) =>
+            !!thread.anchor.path &&
+            rewrittenOut(thread.anchor, commits) &&
+            rewriteTried.get(thread.id) !== key,
+        ),
+      );
+      if (!todo.length) return;
+      for (const thread of todo) rewriteTried.set(thread.id, key);
+      // Which reviews follow the same head: theirs move by subject too.
+      const sameHead = new Set([target.id]);
+      const others = owners.filter(
+        (owner) =>
+          owner.id !== target.id &&
+          todo.some((thread) => thread.sessionId === owner.id),
+      );
+      if (others.length && args.loadHeads) {
+        const headOf = (owner: ReviewSession) =>
+          owner.target.kind === "range" ? owner.target.head : "HEAD";
+        const [head, ...heads] = await args
+          .loadHeads(
+            target.connectionId,
+            [target, ...others].map((owner) => ({
+              root: owner.root,
+              ref: headOf(owner),
+            })),
+          )
+          .catch(() => [] as (string | null)[]);
+        others.forEach((owner, index) => {
+          if (head && heads[index] === head) sameHead.add(owner.id);
+        });
+      }
+      const stale = [...new Set(todo.map((thread) => thread.anchor.commit!))];
+      const patchIds = args.loadPatchIds
+        ? await args
+            .loadPatchIds(target, [
+              ...stale,
+              ...commits.slice(-200).map((commit) => commit.sha),
+            ])
+            .catch(() => ({}) as Record<string, string>)
+        : {};
+      const commitDiffs = new Map<string, Promise<ReviewDiff | undefined>>();
+      const commitDiff = (sha: string) => {
+        let diff = commitDiffs.get(sha);
+        if (!diff) {
+          diff = fromCheckout(target, () => args.loadDiff(target, sha)).catch(
+            () => undefined,
+          );
+          commitDiffs.set(sha, diff);
+        }
+        return diff;
+      };
+      const paths = [...new Set(todo.map((thread) => thread.anchor.path!))];
+      const whole = await fromCheckout(target, () =>
+        args.loadDiff(target, undefined, { paths }),
+      ).catch(() => undefined);
+      const fileIn = (diff: ReviewDiff | undefined, path: string) =>
+        diff?.files.find((file) => file.path === path || file.oldPath === path);
+      const moved = new Set<string>();
+      for (const thread of todo) {
+        const own = sameHead.has(thread.sessionId);
+        const to = rewrittenCommit(thread.anchor, commits, patchIds, own);
+        const path = thread.anchor.path!;
+        let anchor: ReviewAnchor | null = null;
+        if (to) {
+          const line = lineInFile(
+            thread.anchor,
+            fileIn(await commitDiff(to.sha), path),
+          );
+          const inWhole = line
+            ? null
+            : lineInFile(thread.anchor, fileIn(whole, path));
+          anchor = line
+            ? movedAnchor(thread.anchor, to, line)
+            : inWhole
+              ? movedAnchor(thread.anchor, null, inWhole)
+              : movedAnchor(thread.anchor, to, null, true);
+        } else if (own) {
+          const inWhole = lineInFile(thread.anchor, fileIn(whole, path));
+          anchor = inWhole
+            ? movedAnchor(thread.anchor, null, inWhole)
+            : thread.anchor.outdated
+              ? null
+              : movedAnchor(thread.anchor, undefined, null, true);
+        }
+        const owner = sessions.get(thread.sessionId);
+        // Edited, moved or deleted meanwhile: left for the next pass.
+        if (!anchor || !owner || threadsOf(owner.id).get(thread.id) !== thread)
+          continue;
+        // Not a user edit: its updatedAt stays.
+        thread.anchor = anchor;
+        storage.saveThread(thread);
+        moved.add(owner.id);
+      }
+      for (const id of moved) {
+        const owner = sessions.get(id);
+        if (owner) publishSession(owner);
+      }
+    })().finally(() => rewriting.delete(target.id));
+    rewriting.set(target.id, task);
     return task;
   }
 
@@ -3659,6 +3894,8 @@ export function createReviewService(args: {
     )
       return { commits: [] };
     const list = await commitList(target, loadCommits);
+    // The checkout's threads on commits the branch no longer has: moved on.
+    void reanchorRewritten(target, list);
     const follow =
       typeof params.follow === "string" &&
       /^[0-9a-f]{7,64}$/.test(params.follow)
@@ -3984,12 +4221,22 @@ export function createReviewService(args: {
     get: (params: Record<string, unknown>) => {
       const target = session(params.sessionId);
       void migrateEntryAnchors(target);
+      // An agent reading the review: its threads off rewritten commits
+      // too, at most every half minute.
+      if ((rewriteReadAt.get(target.id) ?? 0) <= clock()) {
+        rewriteReadAt.set(target.id, clock() + 30_000);
+        void reanchorRewritten(target);
+      }
       return snapshot(target);
     },
+    /** Moves threads off rewritten commits (tests await it). */
+    reanchorRewritten: (params: Record<string, unknown>) =>
+      reanchorRewritten(session(params.sessionId)),
     /** The migration of one review's Changes anchors (tests await it). */
     migrateEntryAnchors: (params: Record<string, unknown>) =>
       migrateEntryAnchors(session(params.sessionId)),
     open,
+    equivalentTarget,
     update,
     remove,
     addThread,

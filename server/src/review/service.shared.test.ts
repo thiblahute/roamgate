@@ -168,3 +168,81 @@ test("a sub-thread on a part of a shared thread's comment lives in that thread's
     service.get({ sessionId: rendered.id }).shared?.map((t) => t.id),
   ).toEqual([thread.id, part.id]);
 });
+
+test("a checkout's code reviews show each other's threads, whatever they compare", async () => {
+  const { service, open, pushes } = setup();
+  // The three a checkout gathered: its working tree (Files, Working), the
+  // branch against Automatic's base, an agent's range of the branch.
+  const worktree = open({ kind: "worktree" });
+  const branch = open({ kind: "range", base: "origin/main", head: "HEAD" });
+  const agents = open({ kind: "range", base: "main", head: "topic" });
+  // Not the checkout's code as one review: a compare, a step, another
+  // checkout's.
+  const compare = open({
+    kind: "range",
+    base: "topic-before",
+    head: "topic",
+    compare: true,
+  });
+  const step = open({
+    kind: "step",
+    step: "s1",
+    before: "a".repeat(40),
+    after: "b".repeat(40),
+  });
+  const elsewhere = open({ kind: "worktree" }, "/elsewhere");
+  const add = async (sessionId: string, text: string, path?: string) =>
+    (
+      await service.addThread({
+        sessionId,
+        anchor: path ? { path, line: 1, side: "new", text: "x" } : {},
+        text,
+      })
+    ).id;
+  const onWorktree = await add(worktree.id, "In Files", "NAMING.md");
+  const onBranch = await add(branch.id, "On a commit", "play.c");
+  const onAgents = await add(agents.id, "Re-posted", "api.rs");
+  const general = await add(branch.id, "On the whole branch");
+  const onCompare = await add(compare.id, "Compared", "play.c");
+  const onStep = await add(step.id, "A step", "play.c");
+  await add(elsewhere.id, "Elsewhere", "play.c");
+  const shared = (id: string) =>
+    (service.get({ sessionId: id }).shared ?? [])
+      .map((thread) => thread.id)
+      .sort();
+  expect(shared(agents.id)).toEqual([onWorktree, onBranch, general].sort());
+  expect(shared(worktree.id)).toEqual([onBranch, onAgents, general].sort());
+  expect(shared(branch.id)).toEqual([onWorktree, onAgents].sort());
+  // Each stays in its own review, which takes what is written on it.
+  expect(
+    service
+      .get({ sessionId: agents.id })
+      .shared?.find((thread) => thread.id === onBranch)?.sessionId,
+  ).toBe(branch.id);
+  for (const id of [compare.id, step.id, elsewhere.id])
+    expect(shared(id)).not.toContain(onBranch);
+  expect(shared(agents.id)).not.toContain(onCompare);
+  expect(shared(agents.id)).not.toContain(onStep);
+  // A reply from the agent's review goes to the thread's own review.
+  pushes.length = 0;
+  await service.reply({
+    sessionId: agents.id,
+    commentId: onBranch,
+    author: "claude",
+    text: "Answered from the agent's review",
+  });
+  expect(
+    service
+      .get({ sessionId: branch.id })
+      .threads.find((thread) => thread.id === onBranch)
+      ?.comments.map((comment) => comment.body),
+  ).toEqual(["On a commit", "Answered from the agent's review"]);
+  // The reviews showing it are told.
+  const told = new Set(
+    pushes.flatMap((push) =>
+      push.type === "session" ? [push.snapshot.session.id] : [],
+    ),
+  );
+  expect(told.has(agents.id)).toBe(true);
+  expect(told.has(worktree.id)).toBe(true);
+});

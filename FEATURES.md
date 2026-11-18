@@ -269,6 +269,21 @@ Inspector button, shortcuts, or workspace/agent menus.
   is a tick only: chunk counts are the changed files'. Comments made in
   Files before this are kept in their file's own review: Files shows them,
   and Changes too on a file with a change.
+- Whatever scope a comment was written under (Working, the Branch scope
+  against one base or another, a commit's view, a range an agent opened),
+  Changes shows it with the checkout's other comments: each scope lists the
+  threads of all the checkout's reviews (not a compare's or a step's), each
+  drawn where its line is found and listed with where it was written when
+  not (another commit's, all the changes', or Other files). The chip and
+  the Comments panel count them all. An agent's `review_open` of a range
+  that names the same commits as the Branch scope (`main..topic` with topic
+  checked out) joins that review.
+- A comment written on a commit follows it when the branch is amended,
+  rebased or replayed: onto the commit it became (the same patch, else the
+  same subject) and its line there, found by its text, else onto that line
+  in all the changes. One whose line is found nowhere stays where it was,
+  marked **outdated** in the Comments panel; Go to it shows the nearest
+  line.
 - Each scope of Changes is a review: Working the checkout's
   uncommitted work, Branch the branch's review against its base (a base
   picked in Compare against is its own review), Last step the review of the

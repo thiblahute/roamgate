@@ -237,6 +237,19 @@ with `workspace_id`, `checkout` and `target`: an unstored session,
 `service.preview*`), so an agent's id-less `review_get` keeps finding the
 review last written. The first comment, mark or agent action opens it
 (`review.open` with the scope's target, `scopeOpenTarget`).
+A checkout's code reviews (its `worktree` review and its ranges, not a
+compare, a step or a merge request) are one review: each scope draws and
+lists the threads of all of them (`checkoutReviews.ts`), and the server
+gives each such review the others' threads as `shared`, so an agent's
+`review_get` reads them too and a reply goes to the thread's own review.
+An agent's `review_open` of a range whose two ends name the same commits as
+a kept range of the checkout (`review.equivalentTarget`, with `loadHeads`)
+opens that review. Reading a range's commits (`review.commits`, an agent's
+`review.get`) moves the checkout's threads written on a commit the branch
+no longer has (`server/src/review/commit-anchors.ts`): onto the commit with
+the same patch id, else subject (another branch's review only by patch id),
+at the line reading the same text (and quote), else onto that line in the
+whole change, else `anchor.outdated`, kept where it was.
 
 A review of commits (the Branch scope, a range) has two kinds of view
 in Changes (`useChangesViews.ts`, `ChangesCommitBar.tsx`): all the changes,

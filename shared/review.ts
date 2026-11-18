@@ -96,6 +96,11 @@ export type ReviewAnchor = {
   /** That commit's parent: the base of a GitLab position on it. */
   commitParent?: string;
   /**
+   * Its commit was rewritten (amended, rebased) and neither the change it
+   * became nor its line was found again: kept where it was written.
+   */
+  outdated?: true;
+  /**
    * On a part of an earlier message: the thread and comment it is in, and
    * the words quoted from it. The rest of the anchor is that thread's.
    */

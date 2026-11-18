@@ -985,11 +985,19 @@ export function createReviewAgentServer(args: {
             : undefined,
         ));
       const workspaceId = form.get("workspace") || undefined;
+      const automatic = !rendered && automaticTarget(form);
       const opened = args.service.open({
         connectionId: connection.id,
         root,
-        target,
-        automatic: !rendered && automaticTarget(form),
+        // A range the user already reviews under other names: that review.
+        target: automatic
+          ? target
+          : await args.service.equivalentTarget({
+              connectionId: connection.id,
+              root,
+              target,
+            }),
+        automatic,
         title: form.get("title") || undefined,
         workspaceId,
         paneId: pane,
