@@ -24,6 +24,7 @@ import { AssistantUserError } from "../assistant/errors";
 import { createMrAgent, type MrAgent } from "./agent";
 import {
   branchEntry,
+  partBases,
   createUpstreamScanner,
   requestOfBranch,
   type UpstreamMember,
@@ -289,21 +290,24 @@ export function createMrReviews(options: {
     }
   }
   function partMembers(value: MrReviewsSettings): UpstreamMember[] {
-    return value.efforts.flatMap((effort) =>
-      efforts.store.ledger(effort.id).plans.flatMap((plan) =>
-        plan.part
-          ? [
-              {
-                connectionId: plan.part.connectionId,
-                workspaceId: plan.part.workspaceId ?? "",
-                label: plan.part.branch,
-                path: plan.part.path,
-                group: effort.group,
-              },
-            ]
-          : [],
-      ),
-    );
+    return value.efforts.flatMap((effort) => {
+      const plans = efforts.store.ledger(effort.id).plans;
+      return plans.flatMap((plan) => {
+        if (!plan.part) return [];
+        const bases = partBases(plan, plans);
+        return [
+          {
+            connectionId: plan.part.connectionId,
+            workspaceId: plan.part.workspaceId ?? "",
+            label: plan.part.branch,
+            path: plan.part.path,
+            group: effort.group,
+            plan: plan.name,
+            ...(bases.length ? { bases } : {}),
+          },
+        ];
+      });
+    });
   }
   function upstreamRows(value: MrReviewsSettings) {
     const items = inbox.items();
@@ -346,7 +350,12 @@ export function createMrReviews(options: {
       )
         continue;
       rows.push({
-        ...branchEntry(branch, value, users.get(branch.host) ?? ""),
+        ...branchEntry(
+          branch,
+          value,
+          users.get(branch.host) ?? "",
+          upstream.branches(),
+        ),
         ...(effort ? { effort: effort.name } : {}),
       });
     }

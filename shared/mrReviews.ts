@@ -198,7 +198,14 @@ export type MrBranchInfo = {
   dirty: number;
   /** Commits not pushed to its own upstream branch. */
   unpushed?: number;
-  /** Its commits beyond the target, newest first (at most 50 here). */
+  /**
+   * The branch it sits on (an effort's part's base, or a listed branch
+   * whose commits it holds): its commits and ahead are its own beyond it.
+   */
+  below?: string;
+  /** Its page on the forge, when it is pushed. */
+  url?: string;
+  /** Its own commits beyond the target, newest first (at most 50 here). */
   commits: { sha: string; subject: string; at: string }[];
   /** The Headed upstream group it is in. */
   group: string;
