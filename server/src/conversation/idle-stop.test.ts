@@ -1,100 +1,24 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { AgentChatEventEnvelope } from "../../../shared/agentChat";
 import { idleStopRefusal } from "./idle-stop";
-import { createLeaseStore, type LeaseStore } from "./lease";
+import type { ConversationServiceOptions } from "./service";
 import {
-  type ConversationServiceOptions,
-  createConversationService,
-} from "./service";
+  disposeServices,
+  heldPane,
+  PANE,
+  setupService as setup,
+  userTexts,
+  type Ws,
+} from "./service-testing";
 import {
   answerInterrupts,
   fakeClaudeProcess,
-  fakeHerdr,
   fakeSpawner,
+  RESULT,
   settle,
-  virtualClock,
 } from "./testing";
 
-type Ws = { name: string };
-const PANE = "w1:p1";
-const services: { dispose(): void }[] = [];
-afterEach(() => {
-  for (const service of services.splice(0)) service.dispose();
-});
-
-const RESULT = {
-  type: "result",
-  subtype: "success",
-  is_error: false,
-  result: "ok",
-};
-
-/** A conversation service on a fake Herdr and fake headless processes. */
-function setup(
-  leases?: LeaseStore,
-  extra: Partial<ConversationServiceOptions<Ws>> = {},
-) {
-  const clock = virtualClock();
-  const sent: [Ws, AgentChatEventEnvelope][] = [];
-  const spawner = fakeSpawner();
-  const ref: {
-    service?: ReturnType<typeof createConversationService<Ws>>;
-  } = {};
-  const holderPolls: Promise<unknown>[] = [];
-  const holderAborts: AbortController[] = [];
-  const startHolder = () => {
-    const controller = new AbortController();
-    holderAborts.push(controller);
-    holderPolls.push(
-      ref.service!.holder.hold({
-        paneId: PANE,
-        sessionId: fake.sessionId,
-        signal: controller.signal,
-      }),
-    );
-  };
-  const fake = fakeHerdr({ onHolder: startHolder });
-  const store = leases ?? createLeaseStore({ connectionId: "c1", file: null });
-  const service = createConversationService<Ws>({
-    connectionId: "c1",
-    herdr: fake.herdr,
-    leases: store,
-    spawn: spawner.spawn,
-    ask: async () => "allow",
-    readImage: async () => ({ media_type: "image/png", data: "" }),
-    send: (ws, envelope) => sent.push([ws, envelope]),
-    holderCommand: (id) => `hold ${id}\r`,
-    handover: { sleep: clock.sleep, now: clock.now, confirmTimeoutMs: 1000 },
-    session: { stopWaitMs: 50, interruptWaitMs: 50 },
-    holdPollMs: 60_000,
-    ...extra,
-  });
-  ref.service = service;
-  services.push({
-    dispose() {
-      for (const controller of holderAborts) controller.abort();
-      service.dispose();
-    },
-  });
-  return { service, fake, spawner, sent, store, holderPolls, startHolder };
-}
-
-function userTexts(fake: { written: Record<string, unknown>[] }) {
-  return fake.written
-    .filter((message) => message.type === "user")
-    .map((message) => (message.message as { content: unknown }).content);
-}
-
-/** The pane as conversation mode leaves it: the holder in its shell. */
-function heldPane(fake: ReturnType<typeof fakeHerdr>) {
-  fake.live.delete(fake.claudePid);
-  fake.pane.agent = null;
-  fake.pane.process = {
-    shell_pid: 800,
-    foreground_process_group_id: 950,
-    foreground_processes: [{ pid: 950, argv: ["python3", "roamgate-hold"] }],
-  };
-}
+afterEach(disposeServices);
 
 test("the rules: what keeps a session's process up", () => {
   const idle = {

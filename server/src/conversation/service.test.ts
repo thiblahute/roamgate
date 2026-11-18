@@ -4,131 +4,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentChatEventEnvelope } from "../../../shared/agentChat";
 import { withOwnedSessions } from "../agent/agent-sessions";
-import {
-  createLeaseStore,
-  flushLeaseFiles,
-  forgetLeaseFiles,
-  type LeaseStore,
-} from "./lease";
+import { createLeaseStore, flushLeaseFiles, forgetLeaseFiles } from "./lease";
 import type { HolderStatus } from "./pane-child";
 import { handleAgentChatRpc, isAgentChatMethod } from "./rpc";
+import { type ConversationServiceOptions, createSlots } from "./service";
 import {
-  type ConversationServiceOptions,
-  createConversationService,
-  createSlots,
-} from "./service";
+  disposeLater,
+  disposeServices,
+  eventually,
+  heldPane,
+  PANE,
+  setupService as setup,
+  userTexts,
+  type Ws,
+} from "./service-testing";
 import {
   answerInterrupts,
   answerRewinds,
   fakeClaudeProcess,
-  fakeHerdr,
   fakeSpawner,
+  RESULT,
   settle,
-  virtualClock,
 } from "./testing";
 
-const PANE = "w1:p1";
-type Ws = { name: string };
-const services: { dispose(): void }[] = [];
-afterEach(() => {
-  for (const service of services.splice(0)) service.dispose();
-});
-
-function setup(
-  leases?: LeaseStore,
-  extra: Partial<ConversationServiceOptions<Ws>> = {},
-  /** What the holder typed into the pane says of itself as it polls. */
-  holder: { status?: HolderStatus } = {},
-) {
-  const clock = virtualClock();
-  const sent: [Ws, AgentChatEventEnvelope][] = [];
-  const spawner = fakeSpawner();
-  const ref: {
-    service?: ReturnType<typeof createConversationService<Ws>>;
-  } = {};
-  const holderPolls: Promise<unknown>[] = [];
-  const holderAborts: AbortController[] = [];
-  const startHolder = () => {
-    const controller = new AbortController();
-    holderAborts.push(controller);
-    holderPolls.push(
-      ref.service!.holder.hold({
-        paneId: PANE,
-        sessionId: fake.sessionId,
-        signal: controller.signal,
-        ...(holder.status ? { status: holder.status } : {}),
-      }),
-    );
-  };
-  const fake = fakeHerdr({ onHolder: startHolder });
-  const store = leases ?? createLeaseStore({ connectionId: "c1", file: null });
-  const service = createConversationService<Ws>({
-    connectionId: "c1",
-    herdr: fake.herdr,
-    leases: store,
-    spawn: spawner.spawn,
-    ask: async () => "allow",
-    readImage: async () => ({ media_type: "image/png", data: "" }),
-    send: (ws, envelope) => sent.push([ws, envelope]),
-    holderCommand: (id) => `hold ${id}\r`,
-    handover: { sleep: clock.sleep, now: clock.now, confirmTimeoutMs: 1000 },
-    session: { stopWaitMs: 50, interruptWaitMs: 50 },
-    holdPollMs: 60_000,
-    ...extra,
-  });
-  ref.service = service;
-  services.push({
-    dispose() {
-      for (const controller of holderAborts) controller.abort();
-      service.dispose();
-    },
-  });
-  return {
-    service,
-    fake,
-    spawner,
-    sent,
-    store,
-    holderPolls,
-    holderAborts,
-    startHolder,
-    clock,
-  };
-}
-
-/** Waits (real time, briefly) until the check holds. */
-async function eventually(check: () => boolean, ms = 1000) {
-  const deadline = Date.now() + ms;
-  while (!check()) {
-    if (Date.now() > deadline) throw new Error("timed out");
-    await Bun.sleep(1);
-    await settle();
-  }
-}
-
-function userTexts(fake: { written: Record<string, unknown>[] }) {
-  return fake.written
-    .filter((message) => message.type === "user")
-    .map((message) => (message.message as { content: unknown }).content);
-}
-
-/** The pane as conversation mode leaves it: the holder in its shell. */
-function heldPane(fake: ReturnType<typeof fakeHerdr>) {
-  fake.live.delete(fake.claudePid);
-  fake.pane.agent = null;
-  fake.pane.process = {
-    shell_pid: 800,
-    foreground_process_group_id: 950,
-    foreground_processes: [{ pid: 950, argv: ["python3", "roamgate-hold"] }],
-  };
-}
-
-const RESULT = {
-  type: "result",
-  subtype: "success",
-  is_error: false,
-  result: "ok",
-};
+afterEach(disposeServices);
 
 describe("conversation service", () => {
   test("refuses to send while the terminal owns the session", async () => {
@@ -2295,7 +2194,7 @@ describe("an Anthropic API key in the pane's environment", () => {
     await service.handover(PANE, "conversation");
     await eventually(() => !!service.state(PANE).api_key_question);
     const polls = new AbortController();
-    services.push({ dispose: () => polls.abort() });
+    disposeLater(() => polls.abort());
     void service.holder.hold({
       paneId: PANE,
       sessionId: service.state(PANE).session_id!,
