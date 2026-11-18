@@ -194,6 +194,7 @@ import {
   serverSessionPaneEntries,
   needsYouFirst,
   NEEDS_YOU_QUERY,
+  otherConnectionLabel,
   parseWorkspaceHistory,
   parseWorkspaceVisitTimes,
   type PointerPosition,
@@ -917,6 +918,15 @@ function readWorkspaceVisitTimes(): WorkspaceVisitTimes {
   } catch {
     return {};
   }
+}
+
+/** The connection a row lives on, when not the displayed one. */
+function ConnectionBadge({ label }: { label?: string }) {
+  return label ? (
+    <span className="pane-jump-server-badge" title={label}>
+      {label}
+    </span>
+  ) : null;
 }
 
 function PaneJumpOverlay({
@@ -5420,6 +5430,13 @@ export default function App() {
                       <span className="pane-jump-text">
                         <span className="pane-jump-title-line">
                           <strong>{entry.title}</strong>
+                          <ConnectionBadge
+                            label={otherConnectionLabel(
+                              entry,
+                              s.activeConnectionId,
+                              s.connections,
+                            )}
+                          />
                           {entry.current ? (
                             <span className="pane-jump-current-badge">
                               Current
