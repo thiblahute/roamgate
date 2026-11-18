@@ -45,7 +45,13 @@ import {
   sharedThreadDelivery,
   type ThreadDelivery,
 } from "../reviewDelivery";
-import { keepReviewDraft } from "../reviewDrafts";
+import {
+  describeDraftPlace,
+  keepReviewDraft,
+  type ReviewDraftPlace,
+  reviewDraftCount,
+  reviewDraftPlaces,
+} from "../reviewDrafts";
 import { checkoutReviews } from "../checkoutReviews";
 import { newClientId } from "../reviewPending";
 import {
@@ -4802,6 +4808,113 @@ function DiffContentViewInner({
     setComposerKind(null);
     focusDiffAfterEditor();
   };
+  /**
+   * A kept draft reopened where it was written (its editor takes its words
+   * back): a new comment's line, a reply's or an edit's thread, the overall
+   * comment. False when its place is not in this view.
+   */
+  const reopenDraftAt = (place: ReviewDraftPlace): boolean => {
+    if (place.kind === "overall") {
+      setOverallOpen(true);
+      return true;
+    }
+    if (place.kind === "reply" || place.kind === "edit") {
+      const thread = (drawnThreads ?? []).find((each) =>
+        place.kind === "reply"
+          ? each.id === place.threadId
+          : each.comments.some((comment) => comment.id === place.commentId),
+      );
+      if (!thread) return false;
+      const spot = readingOrder.find((each) => each.thread.id === thread.id);
+      if (spot) showThread(spot);
+      if (place.kind === "reply") openReply(thread);
+      else openEditor(thread, place.commentId);
+      return true;
+    }
+    const section = renderedSectionsRef.current.find(
+      (each) => each.entry.path === place.path && !!each.file?.diff,
+    );
+    if (!section?.file?.diff || !onCreateAnnotation) return false;
+    const target = findDiffReviewSelection(
+      section.file.diff,
+      {
+        start: place.line,
+        end: place.line,
+        side: place.side === "old" ? "deletions" : "additions",
+      },
+      effectiveViewMode === "split" ? "split" : "unified",
+    );
+    // The line reads otherwise now: not its place any more.
+    if (!target || (target.quote.split("\n", 1)[0] ?? "") !== place.text)
+      return false;
+    cursorHandle.current.goTo(section.key, place.line, place.side);
+    setComposerKind(
+      place.comment === "draft" || place.comment === "discussion"
+        ? place.comment
+        : null,
+    );
+    setComposerSeed(undefined);
+    setPendingAnnotation({
+      x: 0,
+      y: 0,
+      path: section.entry.path,
+      kind: section.entry.kind,
+      ...target,
+    });
+    return true;
+  };
+  /** Where a kept reply's or edit's thread is, as the panel says it. */
+  const draftThreadWhere = (ids: { threadId?: string; commentId?: string }) => {
+    const thread = (drawnThreads ?? []).find((each) =>
+      ids.threadId
+        ? each.id === ids.threadId
+        : each.comments.some((comment) => comment.id === ids.commentId),
+    );
+    const { path, line } = thread?.anchor ?? {};
+    return path ? (line ? `${path}:${line}` : path) : undefined;
+  };
+  /**
+   * `:drafts`, and once as the review opens: the newest kept draft that is
+   * in this view reopened in place, the others said with where they are.
+   */
+  const reopenDraft = (quiet = false) => {
+    const places = reviewDraftPlaces(changesDraftSession(resourceKey));
+    if (!places.length) {
+      if (!quiet) say("No unsent draft is kept.");
+      return;
+    }
+    const opened = places.find((place) => reopenDraftAt(place));
+    const others = places
+      .filter((place) => place !== opened)
+      .map((place) => describeDraftPlace(place, draftThreadWhere));
+    const rest = others.length
+      ? ` ${plural(others.length, "more draft")} kept: ${others.join(", ")} (:drafts reopens ${others.length === 1 ? "it" : "the next"}).`
+      : "";
+    if (opened)
+      setReviewStatus(
+        `Your unsent draft on ${describeDraftPlace(opened, draftThreadWhere)} is back, where it was written.${rest}`,
+      );
+    else if (!quiet)
+      setReviewStatus(
+        `${plural(places.length, "unsent draft")} kept, not in this view: ${others.join(", ")}.`,
+      );
+  };
+  // Drafts kept from before reopened in place once the review's rows are
+  // drawn, once per review and view shown (a draft of another scope or
+  // commit comes back when that one shows).
+  const draftsReopened = useRef<string | null>(null);
+  const draftsKey = reviewEditor ? changesDraftSession(resourceKey) : null;
+  const draftsView = `${placeId ?? ""}\n${viewCommit ?? ""}`;
+  const reopenDraftRef = useRef(reopenDraft);
+  reopenDraftRef.current = reopenDraft;
+  const drawnRows = cursor.model.rows.length;
+  useEffect(() => {
+    const once = draftsKey && `${draftsKey}\n${draftsView}`;
+    if (!draftsKey || !once || draftsReopened.current === once) return;
+    if (!placeSettled || !drawnRows) return;
+    draftsReopened.current = once;
+    if (reviewDraftCount(draftsKey)) reopenDraftRef.current(true);
+  }, [draftsKey, draftsView, placeSettled, drawnRows]);
   const composerNode: ReactNode =
     reviewEditor && pendingAnnotation ? (
       <ReviewDiffComposer
@@ -5456,6 +5569,7 @@ function DiffContentViewInner({
       ask: () => cursorHandle.current.comment("ask"),
       suggest: () => cursorHandle.current.comment("suggest"),
       overall: () => setOverallOpen(true),
+      drafts: () => reopenDraft(),
       threads: () => setThreadsOpen(true),
       unresolved: () => toggleOpenOnly(),
       unreviewed: () => reviewHandlers.current.threadKey("gu", null),

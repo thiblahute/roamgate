@@ -18,6 +18,7 @@ export type ReviewActions = Record<
   | "send"
   | "hold"
   | "overall"
+  | "drafts"
   | "threads"
   | "unresolved"
   | "unreviewed"
@@ -45,6 +46,7 @@ const TABLE: [string, string, keyof ReviewActions, ...string[]][] = [
   ["send", "send the held comments to the agent", "send", "handoff"],
   ["hold", "hold comments until :send / send as written", "hold"],
   ["overall", "write the overall comment on the review", "overall", "summary"],
+  ["drafts", "reopen the next unsent draft where it was written", "drafts"],
   [
     "conversations",
     "every conversation of the review, resolved too (T)",

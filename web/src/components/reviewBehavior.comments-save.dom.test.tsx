@@ -158,15 +158,13 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           "Your unsent text is back. Cmd+Enter sends it.",
         );
         await review.editorPress("<Esc><Esc>");
+        // Back after a reload: reopened where it was written, and said so.
         await review.reload();
         expect(review.text()).toContain(
-          "1 unsent draft kept: reopen the comment to go on.",
+          "Your unsent draft on a.ts:2 is back, where it was written.",
         );
-        // (A click on the line the cursor is on would open an editor.)
-        await review.press("gg");
-        await review.click({ path: "a.ts", new: 2 });
-        await review.press("C");
         expect(review.editorText()).toBe("Is this right?");
+        expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
         await review.editorCommand(":q");
         await review.press("C");
         expect(review.editorText()).toBe("");

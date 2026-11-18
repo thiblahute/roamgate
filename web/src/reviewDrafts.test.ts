@@ -2,9 +2,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
   DRAFTS_MAX_CHARS,
   DRAFTS_PER_SESSION,
+  describeDraftPlace,
   discardReviewDrafts,
+  draftPlaceOf,
   keepReviewDraft,
   reviewDraftCount,
+  reviewDraftPlaces,
   takeReviewDraft,
 } from "./reviewDrafts";
 
@@ -96,4 +99,42 @@ test("damaged storage reads as no drafts", () => {
     JSON.stringify({ s1: { a: { text: 3 }, b: { text: "ok", at: 1 } } }),
   );
   expect(reviewDraftCount("s1")).toBe(1);
+});
+
+test("each draft says where it was written, the newest first", () => {
+  keepReviewDraft(
+    "s1",
+    `new:discussion:${JSON.stringify({ path: "play.c", line: 144, side: "new", text: "die (" })}`,
+    "Logging?",
+    1,
+  );
+  keepReviewDraft("s1", "reply:t1", "And?", 3);
+  keepReviewDraft("s1", "edit:c1", "Reworded", 2);
+  keepReviewDraft("s1", "overall", "All good", 4);
+  keepReviewDraft("s1", "new:bogus", "Lost key", 5);
+  const places = reviewDraftPlaces("s1");
+  expect(places.map((place) => place.kind)).toEqual([
+    "overall",
+    "reply",
+    "edit",
+    "new",
+  ]);
+  expect(places[3]).toMatchObject({
+    kind: "new",
+    comment: "discussion",
+    path: "play.c",
+    line: 144,
+    side: "new",
+    text: "die (",
+  });
+  const whereOf = (ids: { threadId?: string; commentId?: string }) =>
+    ids.threadId === "t1" ? "api.rs:100" : undefined;
+  expect(places.map((place) => describeDraftPlace(place, whereOf))).toEqual([
+    "the overall comment",
+    "a reply on api.rs:100",
+    "an edit",
+    "play.c:144",
+  ]);
+  // A key from no editor is no place.
+  expect(draftPlaceOf("new:bogus", 0)).toBeNull();
 });
