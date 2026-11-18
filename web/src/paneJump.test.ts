@@ -24,7 +24,11 @@ import type {
   ConnectionAgentSessions,
   ServerAgentPane,
 } from "./useAllServerAgentSessions";
-import { parseWorkspaceVisitTimes, recordWorkspaceVisitTime } from "./paneJump";
+import {
+  otherConnectionLabel,
+  parseWorkspaceVisitTimes,
+  recordWorkspaceVisitTime,
+} from "./paneJump";
 
 function workspace(workspaceId: string, label: string): Workspace {
   return {
@@ -875,6 +879,54 @@ describe("what needs the user, and when they last looked", () => {
     expect(recent()[4]).toMatchObject({
       needsYou: "done",
       source: { connectionId: "box", workspaceId: "wF" },
+    });
+  });
+
+  test("rows from another connection name it, the displayed one's do not", () => {
+    const connections = [
+      connection("local", "Desktop"),
+      connection("box", "Mac"),
+      connection("pi", "Pi"),
+    ];
+    const serverEntries = serverSessionPaneEntries(
+      connections,
+      [
+        {
+          connection_id: "box",
+          connection_generation: 1,
+          workspaces: [workspace("wF", "tasks")],
+          tabs: [tab("tF", "wF")],
+          panes: [pane("pF", "wF", "tF", "claude")],
+          agents: null,
+        },
+      ],
+      "local",
+    );
+    const pi = connectionView("pi", "Pi", {
+      workspaces: [workspace("w1", "garden")],
+      tabs: [tab("t1", "w1")],
+      panes: [pane("p1", "w1", "t1")],
+    });
+    const labels = Object.fromEntries(
+      paneJumpEntries(
+        snapshot,
+        "p3",
+        [pi],
+        "workspaces",
+        history,
+        serverEntries,
+      ).map((entry) => [
+        entry.title,
+        otherConnectionLabel(entry, "local", connections) ?? "-",
+      ]),
+    );
+    expect(labels).toEqual({
+      one: "-",
+      two: "-",
+      three: "-",
+      four: "-",
+      tasks: "Mac",
+      garden: "Pi",
     });
   });
 

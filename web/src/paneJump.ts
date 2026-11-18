@@ -141,6 +141,25 @@ function connectionPaneEntries(
   return entries;
 }
 
+/**
+ * The name of the connection an entry lives on, when that is not the
+ * displayed one: a list spanning connections says where each one is.
+ */
+export function otherConnectionLabel(
+  entry: Pick<PaneJumpEntry, "connectionId" | "source" | "serverLabel">,
+  activeConnectionId: string,
+  connections: readonly Pick<ConnectionSummary, "id" | "label">[],
+): string | undefined {
+  const connectionId = entry.connectionId ?? entry.source?.connectionId;
+  if (!connectionId || connectionId === activeConnectionId) return undefined;
+  return (
+    entry.source?.serverLabel ??
+    entry.serverLabel ??
+    connections.find((connection) => connection.id === connectionId)?.label ??
+    connectionId
+  );
+}
+
 /** Identifies a workspace across connections: workspace ids repeat. */
 export function workspaceHistoryKey(
   connectionId: string,

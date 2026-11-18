@@ -987,6 +987,14 @@
     color: var(--accent);
   }
 
+  .workspace-search-results .pane-jump-server-badge {
+    flex-shrink: 1;
+    max-width: 9em;
+    padding: 1px 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .workspace-search-results {
     flex: 1 1 auto;
     min-height: 0;
