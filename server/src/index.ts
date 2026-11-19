@@ -22,9 +22,12 @@ import packageJson from "../../package.json";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
   flushCoalescedMessages,
+  receiveWebSocketAck,
   sendWebSocketMessage,
   WebSocketCleanupTracker,
+  WS_BACKPRESSURE_HARD_LIMIT_BYTES,
   WS_PER_MESSAGE_DEFLATE,
+  webSocketFlowStats,
 } from "./bridge/websocket-send";
 import {
   browserUrlFor,
@@ -1861,6 +1864,9 @@ function main() {
         },
         websocket: {
           perMessageDeflate: WS_PER_MESSAGE_DEFLATE,
+          // Bun drops sends past its own limit; the slow-socket policy in
+          // websocket-send decides when a socket is too far behind.
+          backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
           open(ws) {
             clients.add(ws);
             clientSessions.set(ws, ws.data.sessionToken);
@@ -1883,6 +1889,7 @@ function main() {
                   file_reveal: canRevealFiles(ws.remoteAddress),
                   connection_runtime_generation: true,
                   embedded_assistant: true,
+                  flow_control: true,
                   herdr_task_notifications:
                     config.taskNotificationSource === "herdr",
                 },
@@ -1915,6 +1922,18 @@ function main() {
             if (!clients.has(ws)) return;
             const text =
               typeof message === "string" ? message : message.toString();
+            if (
+              receiveWebSocketAck(ws, text, {
+                cleanup: () => {
+                  webSocketCleanup.cleanup(ws);
+                },
+                warn: (detail) =>
+                  logger.warn("websocket send failed", {
+                    detail: detail.replace(/^\[bridge\] /, ""),
+                  }),
+              })
+            )
+              return;
             const { id, method, connectionId, connectionGeneration, lane } =
               parseRpcMeta(text);
             const startedAt = Date.now();
@@ -1975,9 +1994,14 @@ function main() {
           },
           close(ws) {
             const { client, viewedTerminals } = webSocketCleanup.complete(ws);
+            const flow = webSocketFlowStats(ws);
             logger.debug("client disconnected", {
               client,
               clients: clients.size,
+              sent: flow.sent,
+              unacked: flow.enabled ? flow.sent - flow.acked : "n/a",
+              queued: flow.queued,
+              rate: flow.rate,
               terminals: viewedTerminals.length
                 ? viewedTerminals.join(",")
                 : "none",

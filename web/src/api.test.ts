@@ -57,13 +57,18 @@ function createTestBridge(connectTimeoutMs = 5, reconnectDelayMs = 1000) {
 function sendHello(
   socket: HangingWebSocket,
   defaultConnectionId = "legacy-default",
+  extraCapabilities: Record<string, boolean> = {},
 ) {
   socket.onmessage?.({
     data: JSON.stringify({
       hello: true,
       bridge_protocol_version: 2,
       default_connection_id: defaultConnectionId,
-      capabilities: { connection_id: true, connection_scoped_http: true },
+      capabilities: {
+        connection_id: true,
+        connection_scoped_http: true,
+        ...extraCapabilities,
+      },
     }),
   } as MessageEvent);
 }
@@ -1622,7 +1627,7 @@ describe("bridge connection lifecycle", () => {
     const realNow = performance.now.bind(performance);
     let pageStall = 0;
 
-    async function connectedBridge() {
+    async function connectedBridge(capabilities: Record<string, boolean> = {}) {
       PingedWebSocket.instances = [];
       installBrowserGlobals(PingedWebSocket as unknown as typeof WebSocket);
       jest.useFakeTimers();
@@ -1632,7 +1637,7 @@ describe("bridge connection lifecycle", () => {
       bridge.connect();
       await Promise.resolve();
       const socket = PingedWebSocket.instances[0];
-      sendHello(socket);
+      sendHello(socket, "legacy-default", capabilities);
       expect(bridge.status).toBe("connected");
       jest.advanceTimersByTime(10_000);
       expect(socket.pings().length).toBe(1);
@@ -1647,7 +1652,7 @@ describe("bridge connection lifecycle", () => {
     test("tears down a socket that stays silent for a whole window", async () => {
       const { bridge, socket } = await connectedBridge();
 
-      await advance(6_000);
+      await advance(10_000);
 
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
       expect(bridge.status).toBe("disconnected");
@@ -1658,16 +1663,16 @@ describe("bridge connection lifecycle", () => {
 
       // The page is busy rendering what earlier messages brought; the pong
       // waits behind them, but every handled message proves the socket alive.
-      await advance(3_000);
+      await advance(5_000);
       socket.deliver({ event: "pane.output", data: {} });
-      await advance(3_000);
+      await advance(5_000);
 
       expect(socket.closeReasons).toEqual([]);
       expect(bridge.status).toBe("connected");
 
       socket.deliver({ id: socket.pings()[0].id, result: { ok: true } });
       await flushMicrotasks();
-      await advance(4_000);
+      await advance(10_000);
       expect(socket.closeReasons).toEqual([]);
       expect(socket.pings().length).toBe(2);
     });
@@ -1677,12 +1682,12 @@ describe("bridge connection lifecycle", () => {
 
       // A long task held the main thread: the deadline runs 9 s late.
       pageStall = 9_000;
-      await advance(6_000);
+      await advance(10_000);
       expect(socket.closeReasons).toEqual([]);
       expect(bridge.status).toBe("connected");
 
       // Still nothing in a window the page could watch: the socket is dead.
-      await advance(6_000);
+      await advance(10_000);
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
       expect(bridge.status).toBe("disconnected");
     });
@@ -1694,9 +1699,75 @@ describe("bridge connection lifecycle", () => {
 
       bridge.probeConnectionNow();
       expect(socket.pings().length).toBe(2);
-      await advance(6_000);
+      await advance(10_000);
 
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
+    });
+
+    test("stretches the silence window to several measured round trips", async () => {
+      const { bridge, socket } = await connectedBridge();
+      // A loaded link: the pong takes 4 s.
+      pageStall = 4_000;
+      socket.deliver({ id: socket.pings()[0].id, result: { ok: true } });
+      await flushMicrotasks();
+      expect(bridge.heartbeatWindowMs()).toBe(16_000);
+
+      await advance(10_000);
+      expect(socket.pings().length).toBe(2);
+      await advance(10_000);
+      expect(socket.closeReasons).toEqual([]);
+      await advance(6_000);
+      expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
+    });
+
+    test("keeps a socket while chunks of a large message arrive", async () => {
+      const { bridge, socket } = await connectedBridge({ flow_control: true });
+      const reply = bridge.call("bridge.status", {}, null);
+      const request = JSON.parse(socket.sent[socket.sent.length - 1] ?? "{}");
+      const big = JSON.stringify({ id: request.id, result: { x: "y" } });
+      const chunk = (index: number, last: boolean, text: string) =>
+        socket.onmessage?.({
+          data: `\u0001${index}:${last ? 1 : 0}:${text}`,
+        } as MessageEvent);
+
+      await advance(8_000);
+      chunk(7, false, big.slice(0, 10));
+      await advance(8_000);
+      chunk(7, true, big.slice(10));
+      await flushMicrotasks();
+
+      expect(socket.closeReasons).toEqual([]);
+      expect(bridge.status).toBe("connected");
+      expect(await reply).toEqual({ x: "y" });
+    });
+
+    test("acknowledges received characters once the bridge paces its sends", async () => {
+      const { socket } = await connectedBridge({ flow_control: true });
+      const acks = () =>
+        socket.sent
+          .map((raw) => JSON.parse(raw))
+          .filter((msg) => "ack" in msg)
+          .map((msg) => msg.ack);
+      // The hello itself is acknowledged before any request.
+      const helloAck = acks()[0];
+      expect(helloAck).toBeGreaterThan(0);
+      expect(JSON.parse(socket.sent[0])).toEqual({ ack: helloAck });
+
+      const frame = JSON.stringify({ event: "x", data: {} });
+      socket.onmessage?.({ data: frame } as MessageEvent);
+      await advance(100);
+      expect(acks().slice(-1)[0]).toBe(helloAck + frame.length);
+
+      const large = JSON.stringify({ event: "x", data: "z".repeat(40_000) });
+      socket.onmessage?.({ data: large } as MessageEvent);
+      expect(acks().slice(-1)[0]).toBe(helloAck + frame.length + large.length);
+    });
+
+    test("sends no acknowledgements to a bridge without flow control", async () => {
+      const { socket } = await connectedBridge();
+      socket.deliver({ event: "x", data: {} });
+      await advance(1_000);
+      expect(socket.sent.some((raw) => raw.includes('"ack"'))).toBe(false);
     });
   });
 });

@@ -1,10 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { connect, createServer, type Socket } from "node:net";
 import {
   dropCoalescedMessage,
   flushCoalescedMessages,
+  receiveWebSocketAck,
   sendWebSocketMessage,
+  WS_BACKPRESSURE_HARD_LIMIT_BYTES,
   WS_BACKPRESSURE_LIMIT_BYTES,
+  WS_CHUNK_MARKER,
+  WS_FLOW_CHUNK_CHARS,
+  WS_FLOW_INITIAL_WINDOW_CHARS,
+  WS_FLOW_QUEUE_LIMIT_CHARS,
+  WS_FLOW_URGENT_CHARS,
+  WS_STALL_TIMEOUT_MS,
+  webSocketFlowStats,
   WS_COALESCE_LIMIT_BYTES,
   WS_COMPRESSION_MIN_BYTES,
   WS_PER_MESSAGE_DEFLATE,
@@ -215,8 +224,8 @@ describe("browser WebSocket sending", () => {
     }
   });
 
-  test("closes a slow connection when a queued send crosses the buffer limit", () => {
-    const bufferedAmount = WS_BACKPRESSURE_LIMIT_BYTES + 1;
+  test("closes a slow connection when a queued send crosses the hard limit", () => {
+    const bufferedAmount = WS_BACKPRESSURE_HARD_LIMIT_BYTES + 1;
     const { closes, sent, ws } = createWebSocket({
       bufferedAmounts: [0, bufferedAmount],
       sendResult: -1,
@@ -250,8 +259,8 @@ describe("browser WebSocket sending", () => {
     expect(closeArgumentCounts).toEqual([0]);
   });
 
-  test("uses Bun's buffered amount API to close a persistently slow client", () => {
-    const bufferedAmount = WS_BACKPRESSURE_LIMIT_BYTES + 1;
+  test("uses Bun's buffered amount API to close a client past the hard limit", () => {
+    const bufferedAmount = WS_BACKPRESSURE_HARD_LIMIT_BYTES + 1;
     const { closes, sent, ws } = createWebSocket({ bufferedAmount });
     const outcome = sendWithObservability(ws);
 
@@ -430,5 +439,199 @@ describe("dropping a held frame when it goes stale", () => {
     buffered = 0;
     flushCoalescedMessages(ws, opts);
     expect(sent).toEqual(["t2-frame"]);
+  });
+});
+
+describe("a large buffer on a slow link", () => {
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  test("keeps the socket while one large reply drains", () => {
+    setSystemTime(new Date(0));
+    const buffered = WS_BACKPRESSURE_LIMIT_BYTES * 1.4;
+    const { closes, ws } = createWebSocket({ bufferedAmount: buffered });
+    expect(sendWithObservability(ws).result).toBe(true);
+    // Draining, slowly: still above the limit 40 s later.
+    for (let second = 1; second <= 40; second++) {
+      setSystemTime(new Date(second * 1000));
+      ws.getBufferedAmount = () => buffered - second * 1000;
+      expect(sendWithObservability(ws).result).toBe(true);
+    }
+    expect(closes).toEqual([]);
+  });
+
+  test("closes a socket whose buffer stops draining", () => {
+    setSystemTime(new Date(0));
+    const buffered = WS_BACKPRESSURE_LIMIT_BYTES + 1;
+    const { closes, ws } = createWebSocket({ bufferedAmount: buffered });
+    expect(sendWithObservability(ws).result).toBe(true);
+    setSystemTime(new Date(WS_STALL_TIMEOUT_MS));
+    expect(sendWithObservability(ws).result).toBe(true);
+    setSystemTime(new Date(WS_STALL_TIMEOUT_MS + 1000));
+    const outcome = sendWithObservability(ws);
+    expect(outcome.result).toBe(false);
+    expect(outcome.warnings).toEqual([
+      `[bridge] closing slow websocket during terminal frame: ${buffered}B buffered, not draining for 31s`,
+    ]);
+    expect(closes).toEqual([[1013, "client too slow"]]);
+  });
+
+  test("a drain counts as progress", () => {
+    setSystemTime(new Date(0));
+    const buffered = WS_BACKPRESSURE_LIMIT_BYTES + 1;
+    const { closes, ws } = createWebSocket({ bufferedAmount: buffered });
+    sendWithObservability(ws);
+    setSystemTime(new Date(WS_STALL_TIMEOUT_MS - 1000));
+    flushCoalescedMessages(ws, { cleanup() {} });
+    setSystemTime(new Date(WS_STALL_TIMEOUT_MS + 1000));
+    expect(sendWithObservability(ws).result).toBe(true);
+    expect(closes).toEqual([]);
+  });
+});
+
+/** Reassembles what a browser would hand to its message handler. */
+function reassemble(frames: string[]): string[] {
+  const parts = new Map<string, string[]>();
+  const messages: string[] = [];
+  for (const frame of frames) {
+    if (!frame.startsWith(WS_CHUNK_MARKER)) {
+      messages.push(frame);
+      continue;
+    }
+    const idEnd = frame.indexOf(":", 1);
+    const id = frame.slice(1, idEnd);
+    const text = frame.slice(idEnd + 3);
+    const list = parts.get(id) ?? [];
+    list.push(text);
+    parts.set(id, list);
+    if (frame[idEnd + 1] === "1") {
+      messages.push(list.join(""));
+      parts.delete(id);
+    }
+  }
+  return messages;
+}
+
+describe("flow control", () => {
+  function flowSocket() {
+    const socket = createWebSocket();
+    const send = (payload: string, context = "message", coalesceKey?: string) =>
+      sendWebSocketMessage(socket.ws, payload, {
+        cleanup() {},
+        coalesceKey,
+        context,
+        warn() {},
+      });
+    const sentChars = () =>
+      socket.sent.reduce((total, frame) => total + frame.length, 0);
+    const ackAll = () =>
+      receiveWebSocketAck(socket.ws, `{"ack":${sentChars()}}`, {
+        cleanup() {},
+        warn() {},
+      });
+    return { ...socket, ackAll, send, sentChars };
+  }
+
+  test("stays off until the browser acknowledges, for older pages", () => {
+    const { send, sent } = flowSocket();
+    const large = "x".repeat(WS_FLOW_INITIAL_WINDOW_CHARS * 3);
+    send(large);
+    expect(sent).toEqual([large]);
+  });
+
+  test("treats only acknowledgements as acknowledgements", () => {
+    const { ws } = flowSocket();
+    expect(
+      receiveWebSocketAck(ws, '{"id":"1","method":"bridge.ping"}', {
+        cleanup() {},
+      }),
+    ).toBe(false);
+    expect(receiveWebSocketAck(ws, '{"ack":0}', { cleanup() {} })).toBe(true);
+    expect(webSocketFlowStats(ws).enabled).toBe(true);
+  });
+
+  test("keeps about a window in flight and sends a large message in chunks", () => {
+    const { ackAll, send, sent, sentChars } = flowSocket();
+    ackAll();
+    const large = JSON.stringify({ id: "r", result: "y".repeat(2_000_000) });
+    expect(send(large, "review")).toBe(true);
+
+    expect(
+      sent.every((frame) => frame.length <= WS_FLOW_CHUNK_CHARS + 16),
+    ).toBe(true);
+    expect(sentChars()).toBeLessThan(
+      WS_FLOW_INITIAL_WINDOW_CHARS + WS_FLOW_CHUNK_CHARS + 16,
+    );
+    // A pong goes out at once, between the chunks.
+    send('{"id":"ping","result":{"ok":true}}', "bridge-ping");
+    expect(sent.at(-1)).toBe('{"id":"ping","result":{"ok":true}}');
+
+    while (reassemble(sent).length < 2) ackAll();
+    expect(reassemble(sent)).toEqual([
+      '{"id":"ping","result":{"ok":true}}',
+      large,
+    ]);
+  });
+
+  test("never splits a surrogate pair across chunks", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    const large = `${"a".repeat(WS_FLOW_CHUNK_CHARS - 1)}\u{1f600}${"b".repeat(WS_FLOW_CHUNK_CHARS)}`;
+    send(large);
+    while (reassemble(sent).length < 1) ackAll();
+    for (const frame of sent) {
+      const lastCode = frame.charCodeAt(frame.length - 1);
+      expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false);
+    }
+    expect(reassemble(sent)).toEqual([large]);
+  });
+
+  test("keeps a context's messages in order behind a queued one", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    const large = "L".repeat(WS_FLOW_INITIAL_WINDOW_CHARS * 2);
+    send(large, "review");
+    send("small review update", "review");
+    send("other", "agent-list");
+    expect(sent.at(-1)).toBe("other");
+    while (reassemble(sent).length < 3) ackAll();
+    expect(reassemble(sent)).toEqual(["other", large, "small review update"]);
+  });
+
+  test("interleaves a queued reply of another context with a large one", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    const large = "L".repeat(WS_FLOW_INITIAL_WINDOW_CHARS * 4);
+    const medium = "M".repeat(WS_FLOW_URGENT_CHARS * 2);
+    send(large, "review");
+    send(medium, "agent-list");
+    ackAll();
+    ackAll();
+    // The medium reply arrived long before the large one is complete.
+    expect(reassemble(sent)).toEqual([medium]);
+  });
+
+  test("holds terminal repaints while the window is full and sends the newest on ack", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    send("x".repeat(WS_FLOW_INITIAL_WINDOW_CHARS * 2), "review");
+    const before = sent.length;
+    send("frame 1", "terminal-frame", "t1");
+    send("frame 2", "terminal-frame", "t1");
+    expect(sent.length).toBe(before);
+    while (!sent.includes("frame 2")) ackAll();
+    expect(sent.includes("frame 1")).toBe(false);
+  });
+
+  test("closes a browser that stops reading past the queue limit", () => {
+    const { ackAll, closes, send } = flowSocket();
+    ackAll();
+    const chunk = "q".repeat(8 * 1024 * 1024);
+    let result = true;
+    for (let i = 0; i <= WS_FLOW_QUEUE_LIMIT_CHARS / chunk.length; i++)
+      result = send(chunk, "review");
+    expect(result).toBe(false);
+    expect(closes).toEqual([[1013, "client too slow"]]);
   });
 });
