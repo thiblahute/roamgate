@@ -195,6 +195,8 @@ export interface BridgeHello {
     embedded_assistant?: boolean;
     /** The bridge paces its sends by the acknowledgements this page sends. */
     flow_control?: boolean;
+    /** The bridge answers topology list reads as changes (see takeList). */
+    list_delta?: boolean;
     [key: string]: unknown;
   };
 }
@@ -331,6 +333,13 @@ export interface ConnectionClient {
 
 const LEGACY_DEFAULT_CONNECTION_ID = "legacy-default";
 const RPC_TIMEOUT_MS = 30000;
+/** Topology lists the bridge can answer as changes (`list_delta`). */
+const LIST_DELTA_METHODS = new Set([
+  "workspace.list",
+  "tab.list",
+  "pane.list",
+  "agent.list",
+]);
 /** A call times out only after this long with nothing at all arriving... */
 const RPC_PROGRESS_GRACE_MS = 5000;
 /** ...or once it waited this many times its timeout. */
@@ -446,6 +455,7 @@ function isBridgeHello(value: unknown): value is BridgeHello {
     "file_reveal",
     "embedded_assistant",
     "flow_control",
+    "list_delta",
   ]) {
     const value = capabilities[capability];
     if (value !== undefined && typeof value !== "boolean") return false;
@@ -501,6 +511,11 @@ export class Bridge {
   private flowAckTimer: ReturnType<typeof setTimeout> | null = null;
   /** Chunks of large messages still arriving, by message. */
   private chunkParts = new Map<string, string[]>();
+  /** The topology lists read on this socket, by connection and method. */
+  private lists = new Map<
+    string,
+    { stamp: string; result: Record<string, unknown> }
+  >();
   private reconnectEnabled = true;
   private _status: ConnectionStatus = "disconnected";
   private _activeConnectionId = LEGACY_DEFAULT_CONNECTION_ID;
@@ -816,11 +831,69 @@ export class Bridge {
     );
   }
 
+  /**
+   * A topology list as the bridge answered it: whole and stamped, kept for
+   * the next read, or as the changes since the kept one, applied to it.
+   */
+  private takeList(key: string, value: unknown): unknown {
+    if (!value || typeof value !== "object") return value;
+    const answer = value as Record<string, unknown>;
+    const delta = answer.list_delta as
+      | {
+          base?: unknown;
+          stamp?: unknown;
+          array?: unknown;
+          id?: unknown;
+          rest?: unknown;
+          order?: unknown;
+          upsert?: unknown;
+        }
+      | undefined;
+    if (!delta) {
+      if (typeof answer.list_stamp === "string")
+        this.lists.set(key, { stamp: answer.list_stamp, result: answer });
+      return value;
+    }
+    const held = this.lists.get(key);
+    const array = typeof delta.array === "string" ? delta.array : "";
+    const idField = typeof delta.id === "string" ? delta.id : "";
+    const before = held?.result[array];
+    if (
+      !held ||
+      held.stamp !== delta.base ||
+      typeof delta.stamp !== "string" ||
+      !Array.isArray(before) ||
+      !Array.isArray(delta.order) ||
+      !Array.isArray(delta.upsert)
+    ) {
+      this.lists.delete(key);
+      throw new Error("list changes arrived without the list they change");
+    }
+    const byId = new Map<unknown, unknown>();
+    for (const item of before)
+      byId.set((item as Record<string, unknown>)[idField], item);
+    for (const item of delta.upsert)
+      byId.set((item as Record<string, unknown>)?.[idField], item);
+    const items = delta.order.map((id) => byId.get(id));
+    if (items.some((item) => item === undefined)) {
+      this.lists.delete(key);
+      throw new Error("list changes name an item the list lacks");
+    }
+    const result = {
+      ...(delta.rest && typeof delta.rest === "object" ? delta.rest : {}),
+      [array]: items,
+    } as Record<string, unknown>;
+    this.lists.set(key, { stamp: delta.stamp, result });
+    return result;
+  }
+
   private resetFlow() {
     this.flowControl = false;
     this.flowReceived = 0;
     this.flowReported = 0;
     this.chunkParts.clear();
+    // The bridge keeps the versions it gave per socket.
+    this.lists.clear();
     if (this.flowAckTimer) clearTimeout(this.flowAckTimer);
     this.flowAckTimer = null;
   }
@@ -1281,7 +1354,24 @@ export class Bridge {
       return Promise.reject(new Error("bridge send buffer is full"));
     }
     const id = `c${++this.seq}_${Date.now().toString(36)}`;
-    return new Promise((resolve, reject) => {
+    const listKey =
+      connectionId !== null &&
+      LIST_DELTA_METHODS.has(method) &&
+      this._hello?.capabilities?.list_delta === true
+        ? `${connectionId}\0${method}`
+        : null;
+    if (listKey)
+      params = { ...params, since: this.lists.get(listKey)?.stamp ?? null };
+    return new Promise((resolveCall, reject) => {
+      const resolve = listKey
+        ? (value: unknown) => {
+            try {
+              resolveCall(this.takeList(listKey, value));
+            } catch (error) {
+              reject(error as Error);
+            }
+          }
+        : resolveCall;
       const startedAt = Date.now();
       // A reply on a slow link arrives behind whatever was sent before it:
       // while frames keep arriving the call waits on, up to a few times its

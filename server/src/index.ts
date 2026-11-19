@@ -19,6 +19,7 @@ import { canRevealFiles } from "./workspace/file-manager";
 import { createWebPushService } from "./notifications/web-push";
 import { rmSync } from "node:fs";
 import packageJson from "../../package.json";
+import { createListDeltas, LIST_DELTA_SHAPES } from "./bridge/list-delta";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
   flushCoalescedMessages,
@@ -336,6 +337,9 @@ function markRpcError(
   if (!id) return;
   rpcOutcomes.set(rpcOutcomeKey(ws, id), { status: "error", detail });
 }
+
+/** Topology lists answered as changes to what each socket holds. */
+const listReply = createListDeltas();
 
 /** Characters of each RPC's reply, for the log: what a slow link carried. */
 const rpcReplyChars = new Map<string, number>();
@@ -1184,6 +1188,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       connection.recoveryIdentity(AbortSignal.timeout(3_000)),
     );
   if (method === "agent.list") {
+    const agentSince =
+      params && "since" in params ? { since: params.since } : null;
+    if (agentSince && params) delete params.since;
     try {
       const [list, boot] = await Promise.all([
         connection.remotePlatform === "windows"
@@ -1192,7 +1199,21 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         herdrBoot(),
       ]);
       const result = agentSeen.annotate(connection.identity.id, list, boot);
-      sendReply({ id, result }, "agent-list");
+      sendReply(
+        {
+          id,
+          result: agentSince
+            ? listReply(
+                ws,
+                connection.identity.id,
+                method,
+                result,
+                agentSince.since,
+              )
+            : result,
+        },
+        "agent-list",
+      );
     } catch (e) {
       sendError("agent-list-error", e);
     }
@@ -1604,6 +1625,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       // A failed lookup must not prevent input.
     }
   }
+  // A page holding a topology list sends its stamp; Herdr never sees it.
+  const listSince =
+    params && LIST_DELTA_SHAPES[method] && "since" in params
+      ? { since: params.since }
+      : null;
+  if (listSince && params) delete params.since;
   try {
     if (method === "tab.rename" && typeof params?.tab_id === "string") {
       connection.tabAutoRenamer?.markManualRename(
@@ -1638,6 +1665,22 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         tab_move_supported: await terminalBridge.tabMoveSupported(),
         endpoint_availability: terminalBridge.endpointAvailability(),
       };
+    }
+    if (listSince) {
+      sendReply(
+        {
+          id,
+          result: listReply(
+            ws,
+            connection.identity.id,
+            method,
+            result,
+            listSince.since,
+          ),
+        },
+        method,
+      );
+      return;
     }
     sendReply({ id, result }, method);
   } catch (e) {
@@ -1929,6 +1972,7 @@ function main() {
                   connection_runtime_generation: true,
                   embedded_assistant: true,
                   flow_control: true,
+                  list_delta: true,
                   herdr_task_notifications:
                     config.taskNotificationSource === "herdr",
                 },

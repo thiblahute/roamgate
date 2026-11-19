@@ -1795,6 +1795,71 @@ describe("bridge connection lifecycle", () => {
       expect(String(failed)).toContain("timeout: review.list");
     });
 
+    test("rebuilds a topology list from the changes the bridge sends", async () => {
+      const { bridge, socket } = await connectedBridge({ list_delta: true });
+      const client = bridge.connection();
+      const read = async (answer: unknown) => {
+        const reply = client.call("pane.list");
+        await flushMicrotasks();
+        const request = JSON.parse(socket.sent[socket.sent.length - 1]!);
+        socket.deliver({
+          id: request.id,
+          connection_id: request.connection_id,
+          result: answer,
+        });
+        return { request, result: await reply };
+      };
+      const first = await read({
+        type: "pane_list",
+        panes: [
+          { pane_id: "p1", s: "idle" },
+          { pane_id: "p2", s: "idle" },
+        ],
+        list_stamp: "v1",
+      });
+      expect(first.request.params).toEqual({ since: null });
+      const second = await read({
+        list_delta: {
+          base: "v1",
+          stamp: "v2",
+          array: "panes",
+          id: "pane_id",
+          rest: { type: "pane_list" },
+          order: ["p2", "p3"],
+          upsert: [{ pane_id: "p3", s: "working" }],
+        },
+      });
+      expect(second.request.params).toEqual({ since: "v1" });
+      expect(second.result).toEqual({
+        type: "pane_list",
+        panes: [
+          { pane_id: "p2", s: "idle" },
+          { pane_id: "p3", s: "working" },
+        ],
+      });
+      // Changes against a list the page does not hold fail once, and the
+      // next read asks for the whole list.
+      await expect(
+        read({
+          list_delta: {
+            base: "v9",
+            stamp: "v10",
+            array: "panes",
+            id: "pane_id",
+            rest: {},
+            order: [],
+            upsert: [],
+          },
+        }).then((each) => each.result),
+      ).rejects.toThrow("without the list");
+      const again = client.call("pane.list");
+      await flushMicrotasks();
+      expect(JSON.parse(socket.sent[socket.sent.length - 1]!).params).toEqual({
+        since: null,
+      });
+      void again.catch(() => {});
+    });
+
     test("sends no acknowledgements to a bridge without flow control", async () => {
       const { socket } = await connectedBridge();
       socket.deliver({ event: "x", data: {} });
