@@ -877,7 +877,10 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           generation: route.generation,
           requestId: id,
           isCurrent: route.isCurrent,
-          send: (payload, context) => safeSend(ws, payload, context),
+          send: (payload, context) => {
+            if (id) rpcReplyChars.set(rpcOutcomeKey(ws, id), payload.length);
+            return safeSend(ws, payload, context);
+          },
           markError: (message) => markRpcError(ws, id, message),
         })
       : null;
