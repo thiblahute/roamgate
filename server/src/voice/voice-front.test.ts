@@ -175,6 +175,22 @@ describe("parseFrontReply", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain('"tu me réponds vite"');
   });
 
+  test("the prompt takes a session that has not answered yet as busy", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "it reads them when it finishes its current turn",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "No answer yet means busy, not stuck",
+    );
+    // Stuck only on what it saw, said with the status and how long.
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "look at its status and when it was last active",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "say what you saw: its status and for how long",
+    );
+  });
+
   test("the prompt knows the words said reach the sessions marked [Voice]", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain(
       'they reach the session starting with "[Voice] "',
