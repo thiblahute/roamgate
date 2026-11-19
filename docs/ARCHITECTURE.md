@@ -2673,7 +2673,12 @@ without), and refuses `Sec-Fetch-Site: cross-site` and `Origin: null` (403).
 Nothing is sent before the client's hello:
 
 ```json
-{"op":"hello","since":41,"client":"android","preferences":{"completed":true,"blocked":true}}
+{
+  "op": "hello",
+  "since": 41,
+  "client": "android",
+  "preferences": { "completed": true, "blocked": true }
+}
 ```
 
 `since` is the last event id the client handled, or `null` for a client with
