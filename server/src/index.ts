@@ -2028,6 +2028,7 @@ function main() {
               queued: flow.queued,
               rate: flow.rate,
               heaviest: flow.heaviest,
+              last_ack_ms: flow.lastAckAgeMs ?? undefined,
               terminals: viewedTerminals.length
                 ? viewedTerminals.join(",")
                 : "none",

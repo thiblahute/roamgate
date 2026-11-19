@@ -67,6 +67,8 @@ interface SocketFlow {
   acked: number;
   /** Characters the bridge asked to send, by context, for close logs. */
   asked: Map<string, number>;
+  /** When the browser last acknowledged anything (0: never). */
+  lastAckAt: number;
   /** In flight was at least half the window at the last acknowledgement. */
   busy: boolean;
   enabled: boolean;
@@ -94,6 +96,7 @@ function flowOf(ws: WebSocketSendTarget): SocketFlow {
     flow = {
       acked: 0,
       asked: new Map(),
+      lastAckAt: 0,
       busy: false,
       enabled: false,
       lastBuffered: 0,
@@ -126,6 +129,8 @@ export interface WebSocketFlowStats {
   enabled: boolean;
   /** The three contexts the bridge asked to send the most for, with sizes. */
   heaviest: string;
+  /** Since the browser last acknowledged, in ms; null when it never did. */
+  lastAckAgeMs: number | null;
   queued: number;
   rate: number;
   sent: number;
@@ -145,6 +150,7 @@ export function webSocketFlowStats(
       .slice(0, 3)
       .map(([context, chars]) => `${context}:${chars}`)
       .join(","),
+    lastAckAgeMs: flow.lastAckAt ? Date.now() - flow.lastAckAt : null,
     queued: flow.queuedChars,
     rate: Math.round(flow.rate),
     sent: flow.sent,
@@ -462,6 +468,13 @@ export function receiveWebSocketAck(
   if (!Number.isFinite(received)) return true;
   const flow = flowOf(ws);
   const now = Date.now();
+  // A long silence with data in flight: the link or the page stalled.
+  if (flow.lastAckAt && now - flow.lastAckAt > 5_000 && inFlight(flow) > 0)
+    websocketLogger.debug("acknowledgements resumed", {
+      gap_ms: now - flow.lastAckAt,
+      unacked: inFlight(flow),
+    });
+  flow.lastAckAt = now;
   if (!flow.enabled) {
     flow.enabled = true;
     flow.sampleAt = now;
