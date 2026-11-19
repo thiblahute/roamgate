@@ -710,7 +710,9 @@ function getReviewService(): ReviewService {
       const coalesceKey =
         push.type === "session"
           ? `review:${push.snapshot.session.id}`
-          : undefined;
+          : push.type === "prompts"
+            ? `review-prompts:${push.connectionId}`
+            : undefined;
       if (payload.length > 1024 * 1024)
         logger.debug("large review push", {
           type: push.type,
@@ -719,7 +721,9 @@ function getReviewService(): ReviewService {
                 session: push.snapshot.session.id,
                 threads: push.snapshot.threads.length,
               }
-            : {}),
+            : push.type === "prompts"
+              ? { prompts: push.prompts.length }
+              : {}),
           chars: payload.length,
         });
       for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
