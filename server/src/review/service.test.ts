@@ -10,6 +10,7 @@ import {
 } from "./service";
 import { openReviewStorage } from "./storage";
 import { ReviewGoneError } from "../workspace/review-patch";
+import { TurnCauses } from "../voice/turn-causes";
 
 const directories: string[] = [];
 const services: ReviewService[] = [];
@@ -2272,4 +2273,24 @@ test("comparing two versions is its own review, titled OLD vs NEW", () => {
     target: { kind: "range", base: "main", head: "HEAD", compare: "yes" },
   }).session;
   expect(plain.id).toBe(range.id);
+});
+
+test("the turn a review comment starts is noted as the user's", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const causes = new TurnCauses();
+  const service = createReviewService({
+    storage: openReviewStorage(dir),
+    publish: () => {},
+    loadDiff: async () => ({ files: [], truncated: false }),
+    promptAgent: async () => {},
+    causes,
+  });
+  services.push(service);
+  const session = openSession(service);
+  await service.update({ sessionId: session.id, summary: "All good" });
+  await service.handoff({ sessionId: session.id });
+  const turn = causes.turn("local", "w1:p2");
+  expect(turn.cause).toMatchObject({ by: "user", via: "review" });
+  expect(turn.userAt).not.toBeNull();
 });

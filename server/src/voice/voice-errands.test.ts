@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TurnCauses } from "./turn-causes";
 import {
   type ErrandEntry,
   type ErrandSessionStatus,
@@ -164,5 +165,18 @@ describe("VoiceErrands", () => {
     await sleep(30);
     expect(errands.state(first)!.notice?.kind).toBe("working");
     expect(errands.state(second)!.notice).toBeNull();
+  });
+
+  test("the turn an errand starts is noted as the companion's", async () => {
+    const causes = new TurnCauses();
+    const errands = new VoiceErrands(
+      { read: async () => [], prompt: async () => {}, causes },
+      timing,
+    );
+    await errands.start("local/wF:p5", "[Voice] The score?");
+    expect(causes.turn("local", "wF:p5").cause).toMatchObject({
+      by: "companion",
+    });
+    expect(causes.turn("local", "wF:p5").userAt).toBeNull();
   });
 });

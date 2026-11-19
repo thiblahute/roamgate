@@ -196,6 +196,22 @@ describe("parseFrontReply", () => {
     expect(FRONT_SYSTEM_PROMPT).not.toContain("has not moved");
   });
 
+  test("the prompt keeps quiet on a turn the user just started themselves", () => {
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "An EVENT about a session's turn ends with what started it",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      'Stay quiet ("") when the turn was the user\'s own and they gave that input within the last few minutes, or they are looking at the session',
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "Speak for a turn your own errand started (say its result)",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "a session waiting on the user, and a failure (CI or a pipeline failed, an error)",
+    );
+    expect(FRONT_SYSTEM_PROMPT).toContain("Never read the parentheses out");
+  });
+
   test("the prompt knows the words said reach the sessions marked [Voice]", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain(
       'they reach the session starting with "[Voice] "',

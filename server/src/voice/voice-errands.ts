@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { type TurnCauses, turnCauses } from "./turn-causes";
 
 /** The history entries the errands session's answer is read from. */
 export type ErrandEntry = {
@@ -30,6 +31,8 @@ export type ErrandDeps = {
     connectionId: string,
     paneId: string,
   ) => Promise<ErrandSessionStatus | null>;
+  /** Where the turns a job starts are noted as the companion's. */
+  causes?: Pick<TurnCauses, "note">;
 };
 
 /**
@@ -100,6 +103,9 @@ export class VoiceErrands {
     const connectionId = pane.slice(0, slash);
     const paneId = pane.slice(slash + 1);
     const before = await this.deps.read(connectionId, paneId);
+    (this.deps.causes ?? turnCauses).note(connectionId, paneId, {
+      by: "companion",
+    });
     await this.deps.prompt(connectionId, paneId, text);
     const id = randomUUID();
     const state: ErrandState = { done: false, answer: null, notice: null };

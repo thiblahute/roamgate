@@ -344,7 +344,16 @@ export async function tellVoiceEvent(
   current: string,
   sessions: VoiceSessionInfo[],
   context: string,
-  about: { kind?: "event" | "answer" | "progress"; agent?: string } = {},
+  about: {
+    kind?: "event" | "answer" | "progress";
+    agent?: string;
+    /** The session an event is about (`<connection>/<pane>`), its turn's
+     * length and whether the user looks at it: the server adds what
+     * started that turn. */
+    pane?: string;
+    turn_ms?: number;
+    looking?: boolean;
+  } = {},
 ): Promise<string> {
   try {
     const response = await fetch("/api/voice/event", {

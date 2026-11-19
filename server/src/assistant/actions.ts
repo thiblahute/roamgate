@@ -17,6 +17,7 @@ import {
   resolveRepoSettingsKey,
   worktreeCheckoutPath,
 } from "../worktree/create";
+import { turnCauses } from "../voice/turn-causes";
 import { surfaceAssistantUserError } from "./errors";
 
 export type AssistantActionPreview = Omit<
@@ -1047,6 +1048,7 @@ export async function prepareAssistantAction(args: {
           if ((await occupant(paneId)).identity !== frozen.identity)
             throw new Error("Pane occupant changed");
           let result: unknown;
+          turnCauses.note(target.connection_id, paneId, { by: "ranger" });
           try {
             result = await dispatch(async (beforeSend) =>
               // Conversation mode holds the pane: a message, not keystrokes.

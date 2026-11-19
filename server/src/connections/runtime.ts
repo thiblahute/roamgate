@@ -98,6 +98,7 @@ import {
   runProcessWithCodeTimeout as runProcessWithCodeTimeoutBase,
   shQuote,
 } from "../utils/process-utils";
+import { turnCauses } from "../voice/turn-causes";
 import { createWorkspaceAutoSync } from "../workspace/auto-sync";
 import { createFileHandlers } from "../workspace/files";
 import {
@@ -156,6 +157,9 @@ function withStatusReports(
     },
   };
 }
+
+/** Keys typed in a terminal note the user's input at most this often. */
+const TYPED_NOTE_MS = 10_000;
 
 const DEFAULT_EVENTS = [
   "workspace.created",
@@ -697,8 +701,28 @@ export function createLegacyConnectionRuntime(args: {
       return null;
     }
   };
+  // When the user last typed in each terminal, for the voice companion's
+  // events (voice/turn-causes.ts): an Enter is noted at once, other keys
+  // at most every TYPED_NOTE_MS.
+  const typedAt = new Map<string, number>();
+  const noteTyped = (terminalId: string, input: Uint8Array) => {
+    const submitted = input.includes(0x0d);
+    const now = Date.now();
+    const last = typedAt.get(terminalId);
+    if (!submitted && last !== undefined && now - last < TYPED_NOTE_MS) return;
+    typedAt.delete(terminalId);
+    typedAt.set(terminalId, now);
+    if (typedAt.size > 200) typedAt.delete(typedAt.keys().next().value!);
+    void lookupPaneId(terminalId).then((paneId) => {
+      if (!paneId) return;
+      if (submitted)
+        turnCauses.note(identity.id, paneId, { by: "user", via: "terminal" });
+      else turnCauses.noteUser(identity.id, paneId);
+    });
+  };
   const terminalBridge = createTerminalBridge({
     connectionId: identity.id,
+    onInput: noteTyped,
     broadcast: args.broadcast,
     logger: logger.child("terminal"),
     connectionGeneration: args.connectionGeneration,

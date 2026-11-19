@@ -98,6 +98,8 @@ export function createTerminalBridge(args: {
   lookupPaneId?: (terminalId: string) => Promise<string | null>;
   /** Why nothing may be typed into this terminal now, if so. */
   inputRefusal?: (terminalId: string) => Promise<string | null>;
+  /** A browser typed `input` into this terminal (the user did). */
+  onInput?: (terminalId: string, input: Uint8Array) => void;
   /** Popup surfaces follow this connection's focused Space, not the shell default. */
   focusedWorkspaceId?: () => Promise<string | null>;
   surfaceCodecsEnabled?: () => Promise<boolean>;
@@ -1560,6 +1562,7 @@ export function createTerminalBridge(args: {
           session: shared,
         };
         thin.input(input);
+        args.onInput?.(requestedTerminalId, input);
         return reply({ ok: true });
       }
       if (method === "terminal.resize") {
