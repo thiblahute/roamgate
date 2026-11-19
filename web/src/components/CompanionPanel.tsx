@@ -29,6 +29,7 @@ import {
 } from "../companionCall";
 import { useFollowScroll } from "../followScroll";
 import { store } from "../store";
+import { useAllServerAgentSessions } from "../useAllServerAgentSessions";
 import { setPaneView } from "../paneView";
 import {
   cancelResearch,
@@ -290,6 +291,8 @@ export function CompanionPanel({
   ask?: number;
 }) {
   const call = useSyncExternalStore(subscribeCompanionCall, companionCallState);
+  // Every connection's sessions, for typed turns to name (voiceSessions).
+  useAllServerAgentSessions(true);
   const fronting = useSyncExternalStore(subscribeVoiceFronting, voiceFronting);
   const reading = useCompanionReading();
   const dialogRef = useRef<HTMLDivElement | null>(null);
