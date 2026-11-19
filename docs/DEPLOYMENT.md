@@ -1237,6 +1237,7 @@ companion to put it on, unless `call_music_at_start` is `true`.
 | `call_background_release_ms` | `3000`  | Quiet time before the music comes back up                           |
 | `call_music_at_start`        | `false` | Whether a call starts with the music on                             |
 | `call_music_device`          | unset   | The Spotify Connect device music asked for on a call plays on       |
+| `call_music_full_volume`     | `true`  | Whether music put on `call_music_device` also gets volume 100       |
 
 The music ducks while the companion's speech is being made or plays, and
 while you talk (from the start of your speech to its final words): down in
@@ -1308,7 +1309,11 @@ null sink of its own and record that sink's monitor:
 With `call_music_device`, the companion's tools, asked for music during a
 call with music, play it on that device (unless the request names another),
 so a call whose helper runs on the desktop takes the desktop's Spotify app,
-not the connector's default device. `pulsesrc` is live and clocked; raw
+not the connector's default device. Starting, resuming or moving music
+there also sets that device's volume to 100, since the call sets the
+music's level and Spotify can fall back to 0 after a pause;
+`"call_music_full_volume": false` leaves the device's volume alone.
+`pulsesrc` is live and clocked; raw
 audio from a FIFO (`filesrc ! rawaudioparse`) is neither, and arrives late
 in the running mix.
 
